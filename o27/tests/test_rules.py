@@ -479,8 +479,87 @@ def test_super_inning():
 # Test 7: Stolen base, pickoff, balk (§4.3 baserunning events)
 # ---------------------------------------------------------------------------
 
+def test_contact_runner_outs():
+    print("\n[Test 7] Contact resolution — runner outs recorded (fielder's choice / stay)")
+
+    # 7a: Fielder's choice — batter safe, runner on 1B thrown out → 1 out.
+    print("  7a: Fielder's choice (run chosen) — runner thrown out, batter safe")
+    state = _fresh_state()
+    state.half = "top"
+    state.bases[0] = "runner_FC"   # runner on 1B
+
+    apply_event(state, {
+        "type": "ball_in_play",
+        "choice": "run",
+        "outcome": fld.outcome_fielders_choice(runner_out_idx=0,
+                                               runner_advances=[0, 0, 0]),
+    })
+    _assert("runner removed from 1B on FC", state.bases[0] != "runner_FC",
+            f"bases={state.bases}")
+    _assert("batter placed on 1B (FC, batter_safe=True)",
+            state.current_batter is not None, "")   # lineup advanced → next batter
+    _assert("1 out recorded on FC", state.outs == 1, f"outs={state.outs}")
+
+    # 7b: Fielder's choice — both batter and runner out (DP) → 2 outs.
+    print("  7b: Fielder's choice with batter also out (double play) → 2 outs")
+    state2 = _fresh_state()
+    state2.half = "top"
+    state2.bases[0] = "runner_DP"
+    apply_event(state2, {
+        "type": "ball_in_play",
+        "choice": "run",
+        "outcome": {
+            "hit_type": "fielders_choice",
+            "batter_safe": False,   # batter also out
+            "caught_fly": False,
+            "runner_advances": [0, 0, 0],
+            "runner_out_idx": 0,    # runner on 1B thrown out
+        },
+    })
+    _assert("2 outs on double play", state2.outs == 2, f"outs={state2.outs}")
+
+    # 7c: Valid stay — runner on 1B thrown out → 1 out, at-bat continues, no hit credit.
+    print("  7c: Stay with runner thrown out → out recorded, at-bat continues, no hit credit")
+    state3 = _fresh_state()
+    state3.half = "top"
+    state3.bases[0] = "runner_S"   # runner on 1B
+
+    apply_event(state3, {
+        "type": "ball_in_play",
+        "choice": "stay",
+        "outcome": {
+            "hit_type": "ground_out",   # runner on 1B thrown out, batter_safe=True forced by stay
+            "batter_safe": True,
+            "caught_fly": False,
+            "runner_advances": [0, 0, 0],
+            "runner_out_idx": 0,        # runner thrown out
+        },
+    })
+    _assert("1 out recorded on stay+runner-out", state3.outs == 1, f"outs={state3.outs}")
+    _assert("at-bat continues (count reset to 0-0)", state3.count.balls == 0
+            and state3.count.strikes == 0, f"count={state3.count}")
+    _assert("no hit credit when only runner thrown out (no advancement)",
+            state3.current_at_bat_hits == 0, f"hits={state3.current_at_bat_hits}")
+
+    # 7d: Valid stay — runner advances (not thrown out) → hit credit awarded.
+    print("  7d: Stay with runner advancing → hit credit")
+    state4 = _fresh_state()
+    state4.half = "top"
+    state4.bases[0] = "runner_ADV"
+
+    apply_event(state4, {
+        "type": "ball_in_play",
+        "choice": "stay",
+        "outcome": fld.outcome_stay_ground_ball([1, 0, 0]),   # runner advances 1B→2B
+    })
+    _assert("runner advanced on stay", state4.bases[1] == "runner_ADV",
+            f"bases={state4.bases}")
+    _assert("hit credit awarded for runner advance", state4.current_at_bat_hits == 1,
+            f"hits={state4.current_at_bat_hits}")
+
+
 def test_baserunning_events():
-    print("\n[Test 7] §4.3 baserunning events (stolen_base_attempt, pickoff, balk)")
+    print("\n[Test 8] §4.3 baserunning events (stolen_base_attempt, pickoff, balk)")
 
     # 7a: Successful stolen base — runner advances, no out.
     print("  7a: Successful stolen base")
@@ -571,7 +650,7 @@ def test_baserunning_events():
 # ---------------------------------------------------------------------------
 
 def test_joker_cannot_field():
-    print("\n[Test 8] Joker cannot field (§2.3)")
+    print("\n[Test 9] Joker cannot field (§2.3)")
 
     # After a joker bats their PA should be in joker_fielding_restricted.
     state = _fresh_state()
@@ -695,6 +774,7 @@ def run_all():
     test_joker_insertion()
     test_halftime()
     test_super_inning()
+    test_contact_runner_outs()
     test_baserunning_events()
     test_joker_cannot_field()
     test_package_imports()

@@ -309,6 +309,10 @@ def _resolve_contact(
     # ---- RUN CHOSEN ----
     if choice == "run":
         log.append(f"  {batter.name} runs → {hit_type}.")
+        # Capture runner at runner_out_idx BEFORE advance_runners clears the slot.
+        runner_out_idx = outcome.get("runner_out_idx")
+        thrown_out_id = (state.bases[runner_out_idx]
+                         if runner_out_idx is not None else None)
         new_bases, runs, adv_log = advance_runners(
             state.bases, outcome, batter_id, is_stay=False
         )
@@ -316,6 +320,9 @@ def _resolve_contact(
         log += adv_log
         if runs:
             log += _score_run(state, runs)
+        # Record out for runner thrown out on fielder's choice / DP.
+        if thrown_out_id is not None:
+            log += _record_out(state, thrown_out_id)
         if not batter_safe:
             log.append(f"  {batter.name} is out.")
             log += _record_out(state, batter_id)
@@ -336,6 +343,10 @@ def _resolve_contact(
         # Batter is out; runners still advance per fielding play.
         log.append(f"  {batter.name} STAYS — but is OUT "
                    f"({'2-strike contact' if state.count.strikes == 2 else 'caught fly'}).")
+        # Capture runner thrown out BEFORE advance_runners clears the slot.
+        runner_out_idx = outcome.get("runner_out_idx")
+        thrown_out_id = (state.bases[runner_out_idx]
+                         if runner_out_idx is not None else None)
         new_bases, runs, adv_log = advance_runners(
             state.bases, outcome, batter_id, is_stay=True
         )
@@ -343,6 +354,8 @@ def _resolve_contact(
         log += adv_log
         if runs:
             log += _score_run(state, runs)
+        if thrown_out_id is not None:
+            log += _record_out(state, thrown_out_id)
         log += _record_out(state, batter_id)
         log += _end_at_bat(state)
         return log
@@ -354,6 +367,10 @@ def _resolve_contact(
     modified_outcome["batter_safe"] = True   # batter can't be put out on this play
 
     original_bases = list(state.bases)   # snapshot BEFORE mutation for credit check
+    # Capture runner thrown out BEFORE advance_runners clears the slot.
+    runner_out_idx_stay = outcome.get("runner_out_idx")
+    stay_thrown_out_id = (state.bases[runner_out_idx_stay]
+                          if runner_out_idx_stay is not None else None)
 
     new_bases, runs, adv_log = advance_runners(
         state.bases, modified_outcome, batter_id, is_stay=True
@@ -362,9 +379,18 @@ def _resolve_contact(
     log += adv_log
     if runs:
         log += _score_run(state, runs)
+    # Record out for runner thrown out during valid stay (at-bat continues).
+    if stay_thrown_out_id is not None:
+        log += _record_out(state, stay_thrown_out_id)
 
-    # Award hit credit for the stay (§2.7): runner advanced without the batter being retired.
-    if runs > 0 or new_bases != original_bases:
+    # Award hit credit (§2.7): only when a runner successfully advanced to a higher
+    # base or scored — NOT when the only change was a runner being thrown out.
+    # new_bases[i] is not None and ≠ original means a runner ARRIVED at that base.
+    runner_successfully_advanced = runs > 0 or any(
+        new_bases[i] is not None and new_bases[i] != original_bases[i]
+        for i in range(3)
+    )
+    if runner_successfully_advanced:
         stay_mod.credit_stay_hit(state)
         log.append(f"  Hit credited to {batter.name} (stay). "
                    f"Total this AB: {state.current_at_bat_hits}.")
