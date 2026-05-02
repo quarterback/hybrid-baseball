@@ -59,11 +59,12 @@ class Player:
     is_pitcher: bool = False
     is_joker: bool = False
 
-    # Skill attributes — stubs for Phase 1, used by probability models in Phase 2.
-    skill: float = 0.5              # 0.0–1.0 general batting / pitching quality
-    speed: float = 0.5              # 0.0–1.0 baserunning speed
-    stay_aggressiveness: float = 0.5        # 0.0–1.0 tendency to choose stay
-    contact_quality_threshold: float = 0.4  # threshold for stay heuristic
+    # Skill attributes — used by Phase 2 probability models.
+    skill: float = 0.5              # 0.0–1.0 batting quality (contact, discipline)
+    speed: float = 0.5              # 0.0–1.0 baserunning / steal speed
+    stay_aggressiveness: float = 0.4        # 0.0–1.0 tendency to choose stay
+    contact_quality_threshold: float = 0.45 # P(stay | medium contact) gate
+    pitcher_skill: float = 0.5      # 0.0–1.0 pitching quality (separate from batting skill)
 
     def __hash__(self) -> int:
         return hash(self.player_id)

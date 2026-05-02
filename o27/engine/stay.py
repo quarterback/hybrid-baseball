@@ -63,56 +63,28 @@ def should_stay(
     is_triple: bool = False,
 ) -> bool:
     """
-    Decide whether the batter should stay or run.
+    Deterministic stay-vs-run decision (Phase 1 rule-based; also used in tests).
 
-    Phase 1 returns a deterministic rule-based decision.
-    Phase 2 will weight this with random draws against batter.stay_aggressiveness.
+    For probabilistic Phase 2 decisions use engine.prob.should_stay_prob().
 
-    Args:
-        state:          Current GameState.
-        batter:         The current batter Player.
-        contact_quality: "weak" | "medium" | "hard".
-        caught_fly:     True if the fielder caught the ball in the air.
-        is_hr:          True if the ball is clearly a home run.
-        is_triple:      True if the ball reaches the outfield gap (likely triple).
-
-    Returns:
-        True  → batter stays at home plate.
-        False → batter becomes a batter-runner.
+    Returns True → batter stays at home plate.
     """
-    # Stay never available on empty bases.
     if not state.runners_on_base:
         return False
-
-    # Home runs: stay does not apply (§2.6).
     if is_hr:
         return False
-
-    # Triples: reaching 3B is too valuable to forfeit (§4.5).
     if is_triple:
         return False
-
-    # Hard contact: run (§4.5).
     if contact_quality == CONTACT_QUALITY_HARD:
         return False
-
-    # 2 outs: run (§4.5) — staying with 2 outs is risky and unproductive.
     if state.outs == 2:
         return False
-
-    # Two-strike contact: batter is out on stay; still "chooses" stay per rule —
-    # but heuristic should not deliberately self-out. Return False.
     if state.count.strikes == 2:
         return False
-
-    # Caught fly: batter is out on stay; avoid choosing it.
     if caught_fly:
         return False
-
-    # Weak or medium contact, runners on base, < 2 outs, not 2-strike: stay.
     if contact_quality in (CONTACT_QUALITY_WEAK, CONTACT_QUALITY_MEDIUM):
         return True
-
     return False
 
 

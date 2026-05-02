@@ -155,36 +155,90 @@ def pitching_change(
 
 
 # ---------------------------------------------------------------------------
-# Manager decision heuristics (Phase 2 stubs)
+# Manager decision heuristics (Phase 2)
 # ---------------------------------------------------------------------------
 
 def should_insert_joker(state: GameState) -> Optional[Player]:
     """
-    Phase 1 stub: always returns None (no automatic joker insertion).
+    Phase 2 §4.6 heuristic: insert highest-skill available joker when:
+      - Runners in scoring position, AND
+      - Current scheduled batter is a weak hitter (skill < 0.38 OR is_pitcher), AND
+      - Game leverage is high: score within 4 AND at least 5 outs remaining.
 
-    Phase 2 (§4.6): insert highest-skill joker when:
-      - Runners in scoring position AND
-      - Current scheduled batter is a weak hitter (e.g., pitcher) AND
-      - Game leverage is high (close score, deep in half).
+    Returns the joker Player to insert, or None.
     """
-    return None
+    if state.is_super_inning:
+        return None
+    team = state.batting_team
+    if not team.jokers_available:
+        return None
+    # Only consider jokers not yet used this half.
+    available = [j for j in team.jokers_available
+                 if j.player_id not in team.jokers_used_this_half]
+    if not available:
+        return None
+
+    # Condition 1: runners in scoring position.
+    if not state.runners_in_scoring_position:
+        return None
+
+    # Condition 2: current scheduled batter is weak.
+    batter = state.current_batter
+    batter_is_weak = batter.skill < 0.38 or batter.is_pitcher
+    if not batter_is_weak:
+        return None
+
+    # Condition 3: high leverage — close game with outs remaining.
+    score_diff = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
+    high_leverage = score_diff <= 4 and state.outs < 22
+    if not high_leverage:
+        return None
+
+    # Insert the highest-skill available joker.
+    return max(available, key=lambda j: j.skill)
 
 
 def should_change_pitcher(state: GameState) -> bool:
     """
-    Phase 1 stub: always returns False.
+    Phase 2: trigger a pitching change when the pitcher's spell count exceeds
+    their fatigue threshold (skill-scaled: higher-skill pitchers go longer).
 
-    Phase 2: trigger when pitcher_spell_count exceeds a fatigue threshold
-    derived from pitcher skill.
+    Threshold = max(10, 10 + round(pitcher.pitcher_skill * 20))  → 10–30 BF.
     """
-    return False
+    if state.is_super_inning:
+        return False
+    pitcher = state.get_current_pitcher()
+    if pitcher is None:
+        return False
+    threshold = max(10, 10 + round(pitcher.pitcher_skill * 20))
+    return state.pitcher_spell_count >= threshold
+
+
+def pick_new_pitcher(state: GameState) -> Optional[Player]:
+    """
+    Pick the best available non-restricted pitcher from the fielding team's
+    roster, excluding the current pitcher and fielding-restricted jokers.
+
+    Returns None if no other pitcher is available.
+    """
+    fielding = state.fielding_team
+    current_id = state.current_pitcher_id
+    restricted = fielding.joker_fielding_restricted
+    candidates = [
+        p for p in fielding.roster
+        if p.player_id != current_id
+        and p.player_id not in restricted
+        and not p.is_joker
+    ]
+    if not candidates:
+        return None
+    # Prefer is_pitcher=True players; among equals, highest pitcher_skill.
+    candidates.sort(key=lambda p: (p.is_pitcher, p.pitcher_skill), reverse=True)
+    return candidates[0]
 
 
 def should_pinch_hit(state: GameState) -> Optional[Player]:
     """
-    Phase 1 stub: always returns None.
-
-    Phase 2: identify situations where a bench bat is clearly superior to the
-    scheduled hitter.
+    Phase 2 stub: returns None (pinch-hit heuristic deferred to Phase 3+).
     """
     return None
