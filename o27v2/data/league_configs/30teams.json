@@ -1,0 +1,13 @@
+{
+  "id": "30teams",
+  "label": "30-Team League (Standard)",
+  "team_count": 30,
+  "level": "MLB",
+  "games_per_team": 162,
+  "season_days": 162,
+  "leagues": ["AL", "NL"],
+  "divisions_per_league": 3,
+  "teams_per_division": 5,
+  "intra_division_weight": 0.46,
+  "inter_division_weight": 0.54
+}

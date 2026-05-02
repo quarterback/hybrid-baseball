@@ -53,6 +53,8 @@
             href="{{ url_for('schedule') }}">Schedule</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint == 'teams' %}active{% endif %}"
             href="{{ url_for('teams') }}">Teams</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}"
+            href="{{ url_for('new_league_get') }}" style="color:#f0883e !important">New League</a></li>
       </ul>
       <form class="d-flex gap-2" id="sim-form">
         <input type="number" class="form-control form-control-sm" id="sim-n" value="5" min="1" max="50"

@@ -6,8 +6,10 @@ Routes:
   GET  /standings         Full division standings
   GET  /schedule          Full schedule (filter: team, unplayed/played)
   GET  /game/<id>         Box score for a completed game
-  GET  /teams             30-team roster list
+  GET  /teams             Team roster list
   GET  /team/<id>         Single team roster + season stats
+  GET  /new-league        League-creation screen (pick preset config)
+  POST /new-league        Apply the chosen config (reset DB + reseed)
   POST /api/sim           Simulate the next N games (JSON response)
 """
 from __future__ import annotations
@@ -22,6 +24,7 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, a
 
 from o27v2 import db
 from o27v2.sim import simulate_game, simulate_next_n
+from o27v2.league import get_league_configs
 
 app = Flask(__name__, template_folder="templates")
 app.config["SECRET_KEY"] = "o27v2-dev-key"
@@ -97,7 +100,7 @@ def standings():
 @app.route("/schedule")
 def schedule():
     team_id = request.args.get("team", type=int)
-    status = request.args.get("status", "all")  # all | played | unplayed
+    status  = request.args.get("status", "all")
 
     sql = """
         SELECT g.*,
@@ -124,8 +127,8 @@ def schedule():
         sql += " WHERE " + " AND ".join(where_clauses)
     sql += " ORDER BY g.game_date, g.id LIMIT 200"
 
-    games = db.fetchall(sql, tuple(params))
-    teams = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
+    games       = db.fetchall(sql, tuple(params))
+    teams       = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
     selected_team = None
     if team_id:
         selected_team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
@@ -188,7 +191,7 @@ def game_detail(game_id: int):
 
     def _avg(bs: list[dict]) -> str:
         hits = sum(r["hits"] for r in bs)
-        ab = sum(r["ab"] for r in bs)
+        ab   = sum(r["ab"]   for r in bs)
         if ab == 0:
             return ".000"
         return f".{int(hits / ab * 1000):03d}"
@@ -244,6 +247,36 @@ def team_detail(team_id: int):
                            win_pct=_win_pct)
 
 
+@app.route("/new-league", methods=["GET"])
+def new_league_get():
+    configs = get_league_configs()
+    current_team_count = db.fetchone("SELECT COUNT(*) as n FROM teams")
+    current_n = current_team_count["n"] if current_team_count else 0
+    return render_template("new_league.html",
+                           configs=configs,
+                           current_team_count=current_n)
+
+
+@app.route("/new-league", methods=["POST"])
+def new_league_post():
+    from o27v2.league import seed_league
+    from o27v2.schedule import seed_schedule
+
+    config_id  = request.form.get("config_id", "30teams")
+    rng_seed   = int(request.form.get("rng_seed", 42))
+
+    configs = get_league_configs()
+    if config_id not in configs:
+        abort(400, f"Unknown config: {config_id}")
+
+    db.drop_all()
+    db.init_db()
+    seed_league(rng_seed=rng_seed, config_id=config_id)
+    seed_schedule(config_id=config_id, rng_seed=rng_seed)
+
+    return redirect(url_for("index"))
+
+
 # ---------------------------------------------------------------------------
 # API endpoints
 # ---------------------------------------------------------------------------
@@ -251,11 +284,11 @@ def team_detail(team_id: int):
 @app.route("/api/sim", methods=["POST"])
 def api_sim():
     """Simulate the next N unplayed games. POST body: {n: int, seed_base: int|null}"""
-    data = request.get_json(silent=True) or {}
-    n = int(data.get("n", 5))
-    n = max(1, min(n, 50))
+    data      = request.get_json(silent=True) or {}
+    n         = int(data.get("n", 5))
+    n         = max(1, min(n, 50))
     seed_base = data.get("seed_base")
-    results = simulate_next_n(n, seed_base=seed_base)
+    results   = simulate_next_n(n, seed_base=seed_base)
     return jsonify({"simulated": len(results), "results": results})
 
 
@@ -269,3 +302,9 @@ def api_sim_game(game_id: int):
         return jsonify(result)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/league-configs")
+def api_league_configs():
+    """Return all available league configs as JSON."""
+    return jsonify(list(get_league_configs().values()))

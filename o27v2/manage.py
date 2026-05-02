@@ -2,11 +2,14 @@
 O27v2 management CLI.
 
 Usage:
-    python o27v2/manage.py runserver        — start the Flask web app
-    python o27v2/manage.py initdb           — create DB schema + seed league
-    python o27v2/manage.py resetdb          — drop all tables + re-seed
-    python o27v2/manage.py sim [N]          — simulate N next games (default 10)
-    python o27v2/manage.py smoke            — run 10-seed smoke test
+    python o27v2/manage.py runserver [--config CONFIG_ID]
+    python o27v2/manage.py initdb   [--config CONFIG_ID]
+    python o27v2/manage.py resetdb  [--config CONFIG_ID]
+    python o27v2/manage.py sim [N]
+    python o27v2/manage.py smoke
+    python o27v2/manage.py configs              — list available league configs
+
+CONFIG_ID defaults to '30teams'.  Valid values: 8teams 12teams 16teams 24teams 30teams 36teams
 """
 from __future__ import annotations
 import sys
@@ -17,33 +20,50 @@ if _workspace not in sys.path:
     sys.path.insert(0, _workspace)
 
 from o27v2 import db
-from o27v2.league import seed_league
+from o27v2.league import seed_league, get_league_configs
 from o27v2.schedule import seed_schedule
 
 
-def cmd_initdb():
-    print("Initialising database…")
+def _parse_config_flag(args: list[str]) -> tuple[str, list[str]]:
+    """Extract --config VALUE from args; return (config_id, remaining_args)."""
+    config_id = "30teams"
+    remaining = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--config" and i + 1 < len(args):
+            config_id = args[i + 1]
+            i += 2
+        else:
+            remaining.append(args[i])
+            i += 1
+    return config_id, remaining
+
+
+def cmd_initdb(config_id: str = "30teams"):
+    print(f"Initialising database (config: {config_id})…")
     db.init_db()
     print("  Tables created.")
-    seed_league()
-    print("  30 teams + players seeded.")
-    n = seed_schedule()
+    seed_league(config_id=config_id)
+    cfg = get_league_configs()[config_id]
+    print(f"  {cfg['team_count']} teams + players seeded.")
+    n = seed_schedule(config_id=config_id)
     if n:
-        print(f"  {n} games scheduled.")
+        print(f"  {n} games scheduled ({cfg['games_per_team']} per team).")
     else:
         print("  Schedule already exists.")
     print("Done.")
 
 
-def cmd_resetdb():
-    print("Dropping all tables…")
+def cmd_resetdb(config_id: str = "30teams"):
+    cfg = get_league_configs()[config_id]
+    print(f"Resetting database (config: {config_id}, {cfg['team_count']} teams)…")
     db.drop_all()
     db.init_db()
     print("  Tables recreated.")
-    seed_league()
-    print("  30 teams + players seeded.")
-    n = seed_schedule()
-    print(f"  {n} games scheduled.")
+    seed_league(config_id=config_id)
+    print(f"  {cfg['team_count']} teams + players seeded.")
+    n = seed_schedule(config_id=config_id)
+    print(f"  {n} games scheduled ({cfg['games_per_team']} per team).")
     print("Done.")
 
 
@@ -67,12 +87,20 @@ def cmd_smoke():
     sys.exit(0 if ok else 1)
 
 
-def cmd_runserver():
+def cmd_configs():
+    configs = get_league_configs()
+    print(f"{'ID':<12} {'Label':<30} {'Teams':>5} {'GPT':>5} {'Level':<5}")
+    print("-" * 60)
+    for cid, cfg in configs.items():
+        print(f"{cid:<12} {cfg['label']:<30} {cfg['team_count']:>5} "
+              f"{cfg['games_per_team']:>5} {cfg.get('level','MLB'):<5}")
+
+
+def cmd_runserver(config_id: str = "30teams"):
     from o27v2.web.app import app
-    # Ensure DB is initialised before starting
     db.init_db()
-    seed_league()
-    seed_schedule()
+    seed_league(config_id=config_id)
+    seed_schedule(config_id=config_id)
 
     port = int(os.environ.get("PORT", 5001))
     print(f"Starting O27v2 web app on port {port}…")
@@ -85,16 +113,22 @@ def cmd_runserver():
 def main():
     args = sys.argv[1:]
     if not args or args[0] == "runserver":
-        cmd_runserver()
+        config_id, _ = _parse_config_flag(args[1:] if args else [])
+        cmd_runserver(config_id)
     elif args[0] == "initdb":
-        cmd_initdb()
+        config_id, _ = _parse_config_flag(args[1:])
+        cmd_initdb(config_id)
     elif args[0] == "resetdb":
-        cmd_resetdb()
+        config_id, _ = _parse_config_flag(args[1:])
+        cmd_resetdb(config_id)
     elif args[0] == "sim":
-        n = int(args[1]) if len(args) > 1 else 10
+        _, rest = _parse_config_flag(args[1:])
+        n = int(rest[0]) if rest else 10
         cmd_sim(n)
     elif args[0] == "smoke":
         cmd_smoke()
+    elif args[0] == "configs":
+        cmd_configs()
     else:
         print(__doc__)
         sys.exit(1)

@@ -22,8 +22,8 @@
   </div>
   <div class="col-md-3">
     <div class="card text-center p-3">
-      <div class="score-big text-secondary">30</div>
-      <div class="score-label">Teams — 6 Divisions</div>
+      <div class="score-big text-secondary" id="team-count-stat">{% set ns = namespace(total=0) %}{% for d in divisions.values() %}{% set ns.total = ns.total + d|length %}{% endfor %}{{ ns.total }}</div>
+      <div class="score-label">Teams — {{ divisions | length }} Divisions</div>
     </div>
   </div>
 </div>

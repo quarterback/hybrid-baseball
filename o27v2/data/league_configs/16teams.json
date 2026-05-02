@@ -1,0 +1,13 @@
+{
+  "id": "16teams",
+  "label": "16-Team League",
+  "team_count": 16,
+  "level": "AA",
+  "games_per_team": 90,
+  "season_days": 140,
+  "leagues": ["AL", "NL"],
+  "divisions_per_league": 2,
+  "teams_per_division": 4,
+  "intra_division_weight": 0.42,
+  "inter_division_weight": 0.58
+}

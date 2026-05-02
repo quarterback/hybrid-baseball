@@ -1,0 +1,13 @@
+{
+  "id": "24teams",
+  "label": "24-Team League",
+  "team_count": 24,
+  "level": "MLB",
+  "games_per_team": 138,
+  "season_days": 155,
+  "leagues": ["AL", "NL"],
+  "divisions_per_league": 3,
+  "teams_per_division": 4,
+  "intra_division_weight": 0.44,
+  "inter_division_weight": 0.56
+}

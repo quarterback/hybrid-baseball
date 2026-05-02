@@ -1,0 +1,13 @@
+{
+  "id": "12teams",
+  "label": "12-Team League",
+  "team_count": 12,
+  "level": "AAA",
+  "games_per_team": 66,
+  "season_days": 110,
+  "leagues": ["AL", "NL"],
+  "divisions_per_league": 2,
+  "teams_per_division": 3,
+  "intra_division_weight": 0.40,
+  "inter_division_weight": 0.60
+}

@@ -24,7 +24,23 @@ from o27.engine.state import GameState, Team, Player
 from o27.engine.game import run_game
 from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
-from o27v2.league import generate_players, TEAMS
+from o27v2.league import generate_players, _load_teams_db
+
+
+# ---------------------------------------------------------------------------
+# Load team definitions from the database (no DB connection required)
+# ---------------------------------------------------------------------------
+
+def _get_team_defs() -> list[dict]:
+    """Return a list of team defs from teams_database.json (MLB level first)."""
+    all_teams = _load_teams_db()
+    mlb = [t for t in all_teams if t["level"] == "MLB"]
+    if len(mlb) >= 20:
+        return mlb
+    return all_teams
+
+
+_TEAM_DEFS = _get_team_defs()
 
 
 # ---------------------------------------------------------------------------
@@ -72,8 +88,11 @@ def run_one_game(seed: int, visitors_idx: int = 0, home_idx: int = 1) -> dict:
     v_players = generate_players(visitors_idx, random.Random(visitors_idx))
     h_players = generate_players(home_idx,     random.Random(home_idx))
 
-    visitors = _make_engine_team(TEAMS[visitors_idx], v_players, "visitors")
-    home     = _make_engine_team(TEAMS[home_idx],     h_players, "home")
+    vdef = _TEAM_DEFS[visitors_idx % len(_TEAM_DEFS)]
+    hdef = _TEAM_DEFS[home_idx     % len(_TEAM_DEFS)]
+
+    visitors = _make_engine_team(vdef, v_players, "visitors")
+    home     = _make_engine_team(hdef, h_players, "home")
 
     state = GameState(visitors=visitors, home=home)
     state.current_pitcher_id = _find_pitcher(home)
@@ -119,7 +138,10 @@ def run_smoke_tests() -> bool:
     ]
 
     for i, (seed, (vi, hi)) in enumerate(zip(SEEDS, pair_assignments)):
-        label = f"Game {i+1:2d} seed={seed:>6} | {TEAMS[vi]['abbrev']} @ {TEAMS[hi]['abbrev']}"
+        vdef = _TEAM_DEFS[vi % len(_TEAM_DEFS)]
+        hdef = _TEAM_DEFS[hi % len(_TEAM_DEFS)]
+        label = (f"Game {i+1:2d} seed={seed:>6} | "
+                 f"{vdef['abbreviation']} @ {hdef['abbreviation']}")
         try:
             result = run_one_game(seed, visitors_idx=vi, home_idx=hi)
 
@@ -132,7 +154,7 @@ def run_smoke_tests() -> bool:
             ]
             if all(checks):
                 score_str = f"{result['away_score']}–{result['home_score']}"
-                si_note = f" (SI)" if result["super_inning"] > 0 else ""
+                si_note   = " (SI)" if result["super_inning"] > 0 else ""
                 print(f"  {PASS} {label} → {score_str}{si_note}")
             else:
                 print(f"  {FAIL} {label} → checks={checks}")

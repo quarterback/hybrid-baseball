@@ -1,0 +1,13 @@
+{
+  "id": "8teams",
+  "label": "8-Team League",
+  "team_count": 8,
+  "level": "AAA",
+  "games_per_team": 56,
+  "season_days": 84,
+  "leagues": ["AL", "NL"],
+  "divisions_per_league": 2,
+  "teams_per_division": 2,
+  "intra_division_weight": 0.40,
+  "inter_division_weight": 0.60
+}
