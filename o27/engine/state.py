@@ -152,8 +152,20 @@ class Team:
             self.lineup_position = (self.lineup_position + 1) % len(self.lineup)
 
     def reset_half(self) -> None:
-        """Reset intra-half tracking at the start of a new half."""
+        """Reset intra-half tracking at the start of a new half.
+
+        PRD §2.3: each joker may bat once *per half-inning*, so jokers used in
+        the previous half are available again.  We restore any joker from the
+        full roster that is not already in jokers_available and was used last
+        half (i.e., it is a joker but not currently in the pool).
+        """
         self.jokers_used_this_half = set()
+        # Re-admit jokers that were consumed in the previous half back into
+        # the available pool (they can bat again in a future half-inning).
+        current_available_ids = {j.player_id for j in self.jokers_available}
+        for player in self.roster:
+            if player.is_joker and player.player_id not in current_available_ids:
+                self.jokers_available.append(player)
 
     def reset_super(self) -> None:
         """Reset super-inning tracking for a new round."""

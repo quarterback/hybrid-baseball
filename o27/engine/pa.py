@@ -295,7 +295,8 @@ def _resolve_contact(
     hit_type = outcome.get("hit_type", "")
 
     # PRD §2.6: stay does not apply to home runs — batter must run.
-    if hit_type == "home_run" and choice == "stay":
+    # fielding.py emits hit_type "hr" for home runs.
+    if hit_type in ("hr", "home_run") and choice == "stay":
         log.append("  [Home run — stay not applicable. Batter must run.]")
         choice = "run"
 

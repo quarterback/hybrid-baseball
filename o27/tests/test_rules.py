@@ -262,16 +262,31 @@ def test_stay_constraints():
     _assert("no out recorded on valid stay",
             state4.outs == 0, f"outs={state4.outs}")
 
-    # 3e: Home run with stay chosen → treated as run (stay doesn't apply).
-    print("  3e: Home run → stay does not apply")
+    # 3e: Home run with stay chosen → resolver forces run (stay doesn't apply).
+    #     Batter AND runner score; at-bat ends; no stay continuation.
+    print("  3e: Home run + stay → forced run, both batter and runner score")
     state5 = _fresh_state()
     state5.half = "top"
-    state5.bases[0] = "runner_D"
-    is_hr_stay = stay_mod.should_stay(
-        state5, state5.current_batter, "hard", is_hr=True
-    )
-    _assert("should_stay returns False for home run",
-            not is_hr_stay, f"got {is_hr_stay}")
+    state5.bases[0] = "runner_D"   # 1 runner on 1B
+    outs_before5 = state5.outs
+
+    apply_event(state5, {
+        "type": "ball_in_play", "choice": "stay",
+        "outcome": fld.outcome_home_run(),
+    })
+    _assert("no out on HR-stay (batter scores)",
+            state5.outs == outs_before5,
+            f"outs before={outs_before5}, after={state5.outs}")
+    _assert("batter + runner both score on HR-stay (2 runs)",
+            state5.score["visitors"] == 2,
+            f"score={state5.score}")
+    _assert("bases clear after HR-stay",
+            state5.bases == [None, None, None],
+            f"bases={state5.bases}")
+    _assert("should_stay heuristic returns False for home run",
+            not stay_mod.should_stay(
+                state5, state5.current_batter, "hard", is_hr=True),
+            "")
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +336,24 @@ def test_joker_insertion():
     insert_joker(state2, j1, lineup_position=0)
     ok4, reason4 = can_insert_joker(state2, j2)
     _assert("different joker can still be inserted", ok4, reason4)
+
+    # 4f: Joker used in top half is available again for bottom half (per-half-inning rule).
+    print("  4f: Joker resets after half-inning reset")
+    state3 = _fresh_state()
+    state3.half = "top"
+    team3 = state3.visitors
+    j3 = team3.jokers_available[0]
+    insert_joker(state3, j3, lineup_position=0)
+    _assert("joker not available mid-half after use",
+            j3 not in team3.jokers_available,
+            f"available={[x.name for x in team3.jokers_available]}")
+    # Simulate end of half → reset for bottom half.
+    team3.reset_half()
+    _assert("joker available again after half reset",
+            any(p.player_id == j3.player_id for p in team3.jokers_available),
+            f"available={[x.name for x in team3.jokers_available]}")
+    _assert("used-this-half set cleared after reset",
+            len(team3.jokers_used_this_half) == 0, "")
 
 
 # ---------------------------------------------------------------------------
