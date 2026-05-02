@@ -1,0 +1,257 @@
+Right. The whole point of forking an existing sim instead of writing one from scratch is to get a real player generation system, real stat distributions, real archetype variety — not two hand-tuned rosters that the v1.0 build settled for. Let me look at what's actually out there now.Found it. The last result — **Add9Sus4/Baseball-Simulation** — is the right base. Let me confirm what it actually has.Confirmed. **Add9Sus4/Baseball-Simulation** is the right base. It has exactly the architecture you want: full 30-team season, divisions, leagues, schedules with realistic 2/3/4-game series, randomly generated player attributes, full play-by-play, box scores, league leaders. Web app already.
+
+Plus **pybaseball** (PyPI library) gives you free access to real MLB/MiLB names and historical stats — not for the gameplay (you don't want real player data driving your variant) but as a name pool for your generator. Solves the "real-feeling names" requirement cleanly.
+
+Rewriting the PRD with the fork-and-adapt approach as the foundation:
+
+---
+
+# PRD: O27 — Baseball Variant Simulator (v1)
+
+**Owner:** Ron Bronson
+**Status:** Draft for build
+**Approach:** Fork [Add9Sus4/Baseball-Simulation](https://github.com/Add9Sus4/Baseball-Simulation), adapt for O27 rules
+
+## 1. What this is
+
+O27 is a baseball variant played in one inning of 27 outs per side with a stay-at-plate option borrowed from pesäpallo. This project simulates O27 games, full seasons, full leagues with complete stats engines, manager AI, injuries, midseason trades, and advanced sabermetrics. Goal: develop and stress-test the rule variant by running it at scale.
+
+The product is a single-user web app: pick teams, sim games or seasons, browse results.
+
+## 2. Why fork
+
+Building a season simulator from scratch reproduces years of work that already exists in open source. **Add9Sus4/Baseball-Simulation** is a Python web app that already has:
+
+- 30-team league with divisions and conferences.
+- Full season schedule generation with 2/3/4-game series and interleague play.
+- Randomly generated player attributes (skill, speed, power, contact, age).
+- Full per-pitch play-by-play simulation engine.
+- Box scores per game.
+- League leaders pages (top 10 in offensive and defensive categories).
+- Team and player stat aggregation across the season.
+- Editable rosters, lineups, positions.
+- Browsable game history.
+
+The fork strategy: take this base, swap the rules engine for O27, keep everything else. The 30-team architecture becomes "8–36 team configurable" with light schedule-generator changes.
+
+The v1.0 build's contribution is the O27 rules logic (state machine, stay mechanic, joker handling, super-inning) — that gets ported into the new fork as the rules layer. The fork brings the league-management and persistence everything-else.
+
+## 3. Rules of O27 (locked)
+
+- One inning, two halves. 27 outs per half. Halftime between.
+- Lineup cycles freely.
+- 12-batter active lineup: 9 position players (pitcher must bat) + 3 jokers (power / speed / contact).
+- Jokers can be inserted any number of times, anywhere in the order. Cannot field after batting.
+- Stay mechanic: on contact with runners on, batter chooses run or stay. Stay = batter stays at home, runners advance per fielding play, at-bat continues with fresh count. Stay unavailable bases-empty. 2-strike contact + stay = batter out. Caught fly + stay = batter out. HR forces run.
+- Multi-hit at-bats via repeated stays. Stay hits uncategorized.
+- Standard baseball for everything else.
+- Bullpen of 3–5 pitchers carried beyond the 12-batter lineup.
+- Tied regular-season games count as 0.5 wins each. Playoff ties resolve via super-inning.
+
+## 4. League structure
+
+### 4.1 Configurable size: 8–36 teams
+
+The forked base supports 30. Modify the schedule generator to handle:
+
+| Teams | Divisions | Games/team |
+|---|---|---|
+| 8 | 2 × 4 | 28 |
+| 12 | 2 × 6 | 30 |
+| 16 | 4 × 4 | 60 |
+| 20 | 4 × 5 | 80 |
+| 24 | 6 × 4 | 100 |
+| 30 | 6 × 5 | 120 |
+| 36 | 6 × 6 | 144 |
+
+Configurable via JSON. Each league config specifies team count, division structure, games per team, intra/inter-division ratio, playoff format.
+
+### 4.2 Real-feeling team names
+
+Curated database of MLB + MiLB names, level-tagged:
+
+- **MLB:** Yankees, Red Sox, Dodgers, Giants, Cubs, Cardinals, etc. (all 30).
+- **AAA:** Toledo Mud Hens, Albuquerque Isotopes, Sacramento River Cats, Lehigh Valley IronPigs, Buffalo Bisons, Tacoma Rainiers, Round Rock Express, etc.
+- **AA:** Reading Fightin Phils, Erie SeaWolves, Frisco RoughRiders, Birmingham Barons, etc.
+- **A and lower:** Modesto Nuts, Asheville Tourists, Hudson Valley Renegades, etc.
+
+Ship with ~80 team names across levels in `teams_database.json`. User picks any combination for a league. A 24-team league might pull from MLB + AAA. A 12-team league might be all AA names for a different feel. User-editable.
+
+### 4.3 Real-feeling player names
+
+Player generator draws from regional pools weighted to feel like a real baseball roster:
+
+- USA / Anglo: ~50%
+- Latin America: ~30% (Dominican, Venezuelan, Puerto Rican, Cuban, Mexican)
+- Japanese / Korean: ~10%
+- Other (European, Caribbean, Pacific Rim): ~10%
+
+Each region has its own first-name and last-name JSON pool. Generator samples region first (per the weights), then names from that region. A 17-player roster ends up looking like a real professional baseball team. Configurable weights per league.
+
+Use **pybaseball** library to scrape historical MLB/MiLB rosters as a one-time ingestion to seed the name pools — gives several thousand real-sounding names per region without ongoing dependency.
+
+## 5. The sim engine
+
+### 5.1 Core architecture (from the fork)
+
+- Per-pitch simulation. Player attributes drive per-pitch outcome probabilities.
+- Box score generation, league leader aggregation, full season standings — all already exist.
+- Web app frontend (Flask/Django depending on what the fork uses).
+- Editable lineups and rosters.
+
+### 5.2 What changes for O27
+
+- **Rules layer:** swap the 9-inning / 3-out structure for 1-inning / 27-out structure with halftime. This is a contained change in the game-loop module.
+- **Stay mechanic:** add the stay/run decision branch on contact-with-runners-on, plus the stay-eligibility constraints. Port from the v1.0 build.
+- **Joker handling:** extend the lineup model to support 3 jokers as DH-like specialists with archetype tags. Add the situational insertion AI.
+- **Super-inning tiebreaker:** add the post-game super-inning loop for tied games (regulation = walk-off draw allowed; playoffs = super-inning required).
+- **Bullpen extension:** the fork likely already has bullpen depth; verify it supports 3–5 pitchers and adapt fatigue rules to O27's longer halves.
+
+### 5.3 What stays the same
+
+- Schedule generation (with the team-count adaptation).
+- Per-player attribute randomization.
+- Stat aggregation.
+- Web pages, navigation, persistence.
+- League leaders, team pages, player pages.
+
+## 6. The web app
+
+Inherited from the fork. Pages:
+
+- **Dashboard.** Recent activity, active leagues.
+- **Sim a game** → box score.
+- **Sim a season** → standings + playoff bracket.
+- **Box score** for any game (the primary read view).
+- **Season page** with standings, playoff bracket, transaction log.
+- **League leaders** sortable across all stat categories.
+- **Roster** per team showing lineup + jokers + bullpen + injuries.
+- **Player page** career view: every game, season totals, leaderboard ranks, advanced stats, injury history, transaction history.
+- **Trade log** league-wide history.
+
+Match the visual register of Baseball Reference — clean tables, monospace numbers.
+
+## 7. Stats engine
+
+### 7.1 Standard counting stats
+
+Per batter: PA, AB, R, H, 2B, 3B, HR, RBI, BB, K, HBP, AVG, OBP, SLG, OPS.
+Per pitcher: BF, outs recorded, H, R, BB, K, HBP, runs allowed per 27 outs faced.
+
+### 7.2 O27-specific
+
+Per batter: stays, stay hits, stay RBI, multi-hit at-bats, stay efficiency.
+Per pitcher: stays allowed, rally length distribution.
+
+### 7.3 Advanced sabermetrics
+
+- **wOBA, wRC+** for batters. Stay hits get their own coefficient (between BB and 1B). All weights re-tuned for O27's run environment.
+- **WAR** for batters. Replacement level = 25th percentile skill. Offensive WAR + heuristic defensive runs saved + replacement adjustment.
+- **FIP, xFIP** for pitchers, calibrated to O27 environment.
+- **Pythagorean expected W-L** with O27-calibrated exponent (likely ~1.5 vs MLB's 1.83 given higher run environment).
+- **Net run rate** for tiebreakers.
+
+## 8. Manager AI
+
+### 8.1 Heuristic baseline
+
+Per-team manager profiles that tune heuristic decisions: aggressive vs. patient, power-favoring vs. contact-favoring, quick hook vs. slow hook on pitchers. Decisions:
+
+- Stay vs. run on contact.
+- Joker insertion (situational: power when down 3+ with outs short; contact when RISP; speed on corners with one out).
+- Pitching changes by role and fatigue.
+- Pinch hit only when in-lineup batter is a pitcher and bench bat available.
+
+### 8.2 ML-trained policy
+
+Trained neural network (PPO, self-play). State features include score diff, outs remaining, half, base occupancy, count, batter skill+archetype, pitcher fatigue, jokers remaining, bench depth, current rally length, recent stay rate.
+
+Reward = game outcome margin, discounted back through decisions.
+
+```
+python -m o27.train --episodes 50000 --output models/manager_v1.pt
+```
+
+Validation: trained policy must beat heuristic ≥55% across 1000 games.
+
+User can pick `heuristic` or `learned` per team or per game at sim time.
+
+## 9. Injury model
+
+### 9.1 Types
+
+- Day-to-day (1–3 games): minor strains, fouled-off-foot, stiffness.
+- Short-term IL (10–25 games): pulls, sprains, oblique strains, mild concussions.
+- Long-term IL (60+ games or season-ending): UCL tears, fractures, surgery.
+
+### 9.2 Triggers
+
+Per-game injury draw weighted by position, age, workload, with random base rate ~1.5%/player/game (~0.1% long-term). Pitchers and catchers higher rate. Older players higher rate. High recent BF for pitchers gets a bump.
+
+### 9.3 Roster impact
+
+Injured players unavailable. Manager auto-promotes from depth chart. Position-shortage = performance penalty. Recovery counter ticks per game; player returns automatically.
+
+## 10. Trades and roster moves
+
+### 10.1 Trade engine
+
+Heuristic trade engine evaluates during the season:
+
+- **Trade deadline:** 2/3 of season (configurable).
+- **Triggers:** contenders buy, sellers sell.
+- **Matching:** team with need (e.g., bullpen depth) paired with team selling at that position. Skill-weighted equivalent value.
+- **Volume:** ~3–8 deadline trades + 0–2 minor trades earlier.
+
+### 10.2 Other moves
+
+- Waiver claims when injuries deplete bullpen.
+- Demotion/promotion swap for struggling players.
+- DFA: roster removal, available on waivers.
+
+### 10.3 v1 limit: 1-for-1 or 2-for-2 trades only
+
+Multi-team, complex packages out of scope for v1 but data model accommodates them later.
+
+## 11. Tuning targets
+
+After the engine is wired up:
+
+- Avg runs/game: 22–26.
+- Avg stays/game: 1.0–2.5.
+- Pitching changes/game: 2–4 workhorse, 6–10 committee.
+- Joker insertions/game: 5–9.
+- Super-inning rate (playoffs): <8%.
+- Win-rate symmetry: matched-strength teams ~50/50 across home/away swap.
+- Injuries per team per season: 8–15.
+- Trade deadline activity: 3–8 deadline trades per league per season.
+- Trained AI vs. heuristic: ≥55% win rate.
+
+500-game batch script lives in repo to verify any of these any time.
+
+## 12. Build order
+
+1. **Fork Add9Sus4/Baseball-Simulation** as the base. Get it running locally. Read its rules engine to understand what we're replacing.
+2. **Port O27 rules engine** from v1.0 into the fork. Replace the 9-inning game loop with the 27-out / one-inning structure plus stay mechanic plus super-inning.
+3. **Adapt schedule generator** for 8–36 teams instead of fixed 30. Adapt division structure flexibly.
+4. **Real-name data files.** Build `teams_database.json` (MLB + MiLB) and regional player-name JSONs. Use pybaseball to seed name pools as a one-time scrape.
+5. **Joker archetypes.** Wire power/speed/contact into the player attribute model and roster generator.
+6. **Pitcher roles.** Workhorse vs committee distinction in roster generation; role-aware pitching changes.
+7. **Verify single-game tuning targets** with batch script (avg runs, avg stays, super-inning rate).
+8. **Injury model.** Per-game draws, IL handling, depth-chart promotion. Probably partly inherited from the fork.
+9. **Trade engine.** Heuristic trades at deadline, transaction log, waiver claims.
+10. **O27-specific stats.** Stays, stay hits, stay efficiency, multi-hit at-bats.
+11. **Advanced sabermetrics.** wOBA / wRC+ / WAR / FIP / xFIP calibrated to O27 environment.
+12. **ML manager training pipeline.** PPO self-play, model serialization.
+13. **Final tuning.** Run multiple full seasons across configurations.
+
+## 13. Data files shipped
+
+- `teams_database.json` — ~80 MLB + MiLB names by level.
+- `names_usa.json`, `names_latin.json`, `names_japan_korea.json`, `names_other.json` — ~2000 names total per region from pybaseball scrape.
+- 6 sample league configs: 8, 12, 16, 24, 30, 36 teams.
+- Pre-generated initial rosters across the 30 default teams covering archetype/philosophy combinations.
+
+---
+
+That's v1. Fork the existing thing, swap in O27 rules, keep all the league-management infrastructure that already exists. Most of what was previously "build from scratch" becomes "configure what's already there." The hard part — real season-management plumbing — is inherited; the unique part — O27's rules — is the work.
