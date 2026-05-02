@@ -779,19 +779,25 @@ def test_pinch_hit_heuristic():
     from o27.engine.manager import should_pinch_hit
 
     # --- Build a state that satisfies all trigger conditions ---
+    # In O27, all 12 players are in the lineup from the start, so a valid
+    # pinch hitter must be a roster member who is NOT already in the lineup.
+    # We add a bench player to the roster only (not the lineup) to model this.
     visitors = _make_team("visitors", "Red")
     home     = _make_team("home",     "Blue")
     state    = GameState(visitors=visitors, home=home)
     state.current_pitcher_id = home.roster[8].player_id
     state.half = "top"
 
-    # Give the pitcher low batting skill so a pinch hitter is a meaningful upgrade.
-    # (All demo players default to skill=0.5; pitcher should be worse at batting.)
-    visitors.roster[8].skill = 0.25   # pitcher at roster/lineup index 8
-    # lineup[8] IS the same object as roster[8] (same reference), so no separate update.
+    # Give the pitcher low batting skill (default is 0.5; lower it for realistic gap).
+    visitors.roster[8].skill = 0.25   # roster[8] == lineup[8] (same object reference)
 
-    # Advance lineup to the pitcher slot (position 8 = index 8, the pitcher).
-    visitors.lineup_position = 8      # pitcher is now the scheduled batter
+    # Add a genuine bench player: in roster but NOT in lineup.
+    bench = Player(player_id="VBENCH", name="RedBench", skill=0.65)
+    visitors.roster.append(bench)
+    # NOTE: bench is NOT added to visitors.lineup — that's what makes them eligible.
+
+    # Advance lineup to the pitcher slot (index 8, the pitcher).
+    visitors.lineup_position = 8
 
     # Runner on 2B (scoring position).
     state.bases[1] = "some_runner"
@@ -805,15 +811,27 @@ def test_pinch_hit_heuristic():
     state.score["home"] = 5
 
     result = should_pinch_hit(state)
-    _assert("pinch_hit fires when pitcher up, RISP, no jokers, score tied",
+    _assert("pinch_hit fires when pitcher up, RISP, no jokers, score tied, bench available",
             result is not None,
             f"got {result}")
     if result is not None:
-        _assert("pinch hitter is not a pitcher",
-                not result.is_pitcher, f"replacement={result}")
+        _assert("pinch hitter is the bench player (not in lineup)",
+                result.player_id == "VBENCH", f"replacement={result}")
         _assert("pinch hitter skill > pitcher skill",
                 result.skill > visitors.lineup[8].skill,
                 f"ph={result.skill:.2f} pitcher={visitors.lineup[8].skill:.2f}")
+        _assert("pinch hitter is NOT already in lineup",
+                all(p.player_id != result.player_id for p in visitors.lineup),
+                f"found {result.player_id} in lineup")
+
+    # --- Verify lineup integrity after applying the pinch-hit event ---
+    from o27.engine.pa import apply_event
+    apply_event(state, {"type": "pinch_hit", "replacement": bench})
+    lineup_ids = [p.player_id for p in visitors.lineup]
+    unique_ids = list(dict.fromkeys(lineup_ids))  # preserves order, removes dups
+    _assert("lineup has no duplicate players after pinch hit",
+            lineup_ids == unique_ids,
+            f"dups: {[pid for pid in lineup_ids if lineup_ids.count(pid) > 1]}")
 
     # --- Condition not met: score gap > 1 → should return None ---
     state.score["home"] = 10   # score gap = 5

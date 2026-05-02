@@ -272,12 +272,16 @@ def should_pinch_hit(state: GameState) -> Optional[Player]:
     if score_diff > 1:
         return None
 
-    # Find the best candidate from the team roster.
+    # In O27, all 12 active players are in the lineup from the start, so
+    # candidates must come from roster members NOT currently in the lineup
+    # (i.e., genuine "bench" players added before the game for this purpose).
+    # Selecting an active lineup player would duplicate them in the batting order.
+    lineup_ids = {p.player_id for p in team.lineup}
     candidates = [
         p for p in team.roster
         if not p.is_pitcher
         and not p.is_joker
-        and p.player_id != batter.player_id
+        and p.player_id not in lineup_ids
     ]
     if not candidates:
         return None
