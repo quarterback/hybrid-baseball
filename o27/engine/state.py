@@ -114,8 +114,9 @@ class Team:
     roster: list = field(default_factory=list)          # All Player objects (12)
     lineup: list = field(default_factory=list)          # Active batting order (12)
     lineup_position: int = 0
-    jokers_available: list = field(default_factory=list)    # joker Player objects not yet inserted
-    jokers_used_this_half: set = field(default_factory=set) # player_ids used this half
+    jokers_available: list = field(default_factory=list)       # jokers not yet explicitly slot-moved this half
+    jokers_used_this_half: set = field(default_factory=set)    # player_ids that have batted this half
+    joker_fielding_restricted: set = field(default_factory=set) # PRD §2.3: jokers who've batted (cannot field)
 
     # Super-inning
     super_lineup: list = field(default_factory=list)        # 5 selected Player objects
@@ -149,19 +150,27 @@ class Team:
                 pos = (pos + 1) % n
             self.super_lineup_position = pos
         else:
-            self.lineup_position = (self.lineup_position + 1) % len(self.lineup)
+            n = len(self.lineup)
+            self.lineup_position = (self.lineup_position + 1) % n
+            # PRD §2.3: jokers who have already batted this half cannot bat again.
+            for _ in range(n):
+                batter = self.lineup[self.lineup_position]
+                if batter.is_joker and batter.player_id in self.jokers_used_this_half:
+                    self.lineup_position = (self.lineup_position + 1) % n
+                else:
+                    break
 
     def reset_half(self) -> None:
         """Reset intra-half tracking at the start of a new half.
 
-        PRD §2.3: each joker may bat once *per half-inning*, so jokers used in
-        the previous half are available again.  We restore any joker from the
-        full roster that is not already in jokers_available and was used last
-        half (i.e., it is a joker but not currently in the pool).
+        PRD §2.3: each joker may bat once *per half-inning*.
+        - jokers_used_this_half is cleared (all jokers eligible again).
+        - jokers_available is restored (all roster jokers back in the pool).
+        - joker_fielding_restricted persists: once a joker has batted during
+          the game they remain restricted from fielding for the whole game.
         """
         self.jokers_used_this_half = set()
-        # Re-admit jokers that were consumed in the previous half back into
-        # the available pool (they can bat again in a future half-inning).
+        # Re-admit all roster jokers into the available pool for the new half.
         current_available_ids = {j.player_id for j in self.jokers_available}
         for player in self.roster:
             if player.is_joker and player.player_id not in current_available_ids:

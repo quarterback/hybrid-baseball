@@ -57,11 +57,13 @@ def _make_player(pid: str, name: str, is_pitcher=False, is_joker=False) -> Playe
 
 
 def _make_team(team_id: str, name: str) -> Team:
-    """9-batter starting lineup + 3 jokers in the reserve pool (not pre-seeded in lineup).
+    """12-batter active lineup: 9 position players (slot 9 = pitcher) + 3 jokers.
 
-    Jokers are available for mid-inning insertion but are NOT placed in the
-    starting lineup — inserting one at lineup position P adds them to the order
-    without duplication, keeping the lineup at 9+N where N jokers have been used.
+    All 12 are in the lineup from the start (PRD §4.2 / task requirement).
+    Jokers are also in jokers_available so the manager can explicitly re-slot
+    them mid-inning (insert_joker moves them within the 12, does not grow it).
+    Once a joker bats, they are added to jokers_used_this_half and are skipped
+    by advance_lineup for the rest of that half.
     """
     prefix = team_id[0].upper()
     starters = []
@@ -72,13 +74,13 @@ def _make_team(team_id: str, name: str) -> Team:
     for j in range(1, 4):
         jk = _make_player(f"{prefix}J{j}", f"{name[:3]}J{j}", is_joker=True)
         jokers.append(jk)
-    roster = starters + jokers   # full 12-player roster
+    roster = starters + jokers          # full 12-player roster
     return Team(
         team_id=team_id,
         name=name,
         roster=roster,
-        lineup=list(starters),   # starting batting order: 9 players (no jokers yet)
-        jokers_available=list(jokers),
+        lineup=list(roster),            # all 12 in batting order
+        jokers_available=list(jokers),  # available for explicit mid-inning slot moves
     )
 
 
@@ -119,10 +121,14 @@ def test_27_out_half():
 
     _assert("outs == 27", state.outs == 27, f"got {state.outs}")
     _assert("half is over", state.is_half_over(), "")
-    # Lineup cycles: 27 outs / 9 starters = exactly 3 full cycles → back to position 0
-    expected_pos = 27 % 9   # = 0
+    # Lineup is 12 batters (9 position + 3 jokers).  Each joker bats once in the
+    # first cycle then is skipped for the rest of the half:
+    #   PA  1-12: all 12 bat → pos wraps to 0
+    #   PA 13-21: positions 0-8 bat (jokers skipped) → pos wraps to 0
+    #   PA 22-27: positions 0-5 bat → after advance, pos = 6
+    expected_pos = 6
     _assert(
-        f"lineup_position == {expected_pos} (3 full cycles of 9)",
+        f"lineup_position == {expected_pos} (12-batter lineup, jokers skipped after first use)",
         state.visitors.lineup_position == expected_pos,
         f"got {state.visitors.lineup_position}",
     )
@@ -304,10 +310,14 @@ def test_joker_insertion():
     ok, reason = can_insert_joker(state, joker)
     _assert("can insert joker (first time)", ok, reason)
 
-    # 4b: Insert the joker.
+    # 4b: Insert the joker (moves within 12; must not grow the list).
     log = insert_joker(state, joker, lineup_position=2)
-    _assert("joker inserted into lineup",
+    _assert("joker still in lineup after insertion (moved, not added)",
             joker in team.lineup, f"lineup={[p.name for p in team.lineup]}")
+    _assert("lineup stays at 12 after insertion (no duplicate)",
+            len(team.lineup) == 12, f"len={len(team.lineup)}")
+    _assert("joker is now at the inserted slot",
+            team.lineup[2] is joker, f"slot2={team.lineup[2].name}")
     _assert("joker marked used this half",
             joker.player_id in team.jokers_used_this_half,
             f"used={team.jokers_used_this_half}")
@@ -466,15 +476,154 @@ def test_super_inning():
 
 
 # ---------------------------------------------------------------------------
+# Test 7: Stolen base, pickoff, balk (§4.3 baserunning events)
+# ---------------------------------------------------------------------------
+
+def test_baserunning_events():
+    print("\n[Test 7] §4.3 baserunning events (stolen_base_attempt, pickoff, balk)")
+
+    # 7a: Successful stolen base — runner advances, no out.
+    print("  7a: Successful stolen base")
+    state = _fresh_state()
+    state.half = "top"
+    state.bases[0] = "runner_A"   # runner on 1B
+
+    apply_event(state, {"type": "stolen_base_attempt", "base_idx": 0, "success": True})
+    _assert("runner advanced from 1B after successful steal",
+            state.bases[0] is None and state.bases[1] == "runner_A",
+            f"bases={state.bases}")
+    _assert("no out on successful steal", state.outs == 0, f"outs={state.outs}")
+
+    # 7b: Failed stolen base — runner out.
+    print("  7b: Failed stolen base (caught stealing)")
+    state2 = _fresh_state()
+    state2.half = "top"
+    state2.bases[0] = "runner_B"
+
+    apply_event(state2, {"type": "stolen_base_attempt", "base_idx": 0, "success": False})
+    _assert("runner removed from 1B on caught stealing",
+            state2.bases[0] is None, f"bases={state2.bases}")
+    _assert("out recorded on caught stealing", state2.outs == 1, f"outs={state2.outs}")
+
+    # 7c: Steal of home — runner scores.
+    print("  7c: Steal of home")
+    state3 = _fresh_state()
+    state3.half = "top"
+    state3.bases[2] = "runner_C"   # runner on 3B
+
+    apply_event(state3, {"type": "stolen_base_attempt", "base_idx": 2, "success": True})
+    _assert("runner off 3B after steal of home", state3.bases[2] is None, f"bases={state3.bases}")
+    _assert("run scored on steal of home",
+            state3.score[state3.batting_team.team_id] == 1,
+            f"score={state3.score}")
+
+    # 7d: Successful pickoff — runner out.
+    print("  7d: Pickoff (success)")
+    state4 = _fresh_state()
+    state4.half = "top"
+    state4.bases[1] = "runner_D"  # runner on 2B
+
+    apply_event(state4, {"type": "pickoff_attempt", "base_idx": 1, "success": True})
+    _assert("runner removed from 2B on pickoff", state4.bases[1] is None, f"bases={state4.bases}")
+    _assert("out recorded on pickoff", state4.outs == 1, f"outs={state4.outs}")
+
+    # 7e: Failed pickoff — runner safe, no out.
+    print("  7e: Pickoff (failure)")
+    state5 = _fresh_state()
+    state5.half = "top"
+    state5.bases[0] = "runner_E"
+
+    apply_event(state5, {"type": "pickoff_attempt", "base_idx": 0, "success": False})
+    _assert("runner stays on base after failed pickoff",
+            state5.bases[0] == "runner_E", f"bases={state5.bases}")
+    _assert("no out on failed pickoff", state5.outs == 0, f"outs={state5.outs}")
+
+    # 7f: Balk — all runners advance one base.
+    print("  7f: Balk")
+    state6 = _fresh_state()
+    state6.half = "top"
+    state6.bases[0] = "runner_F"
+    state6.bases[1] = "runner_G"
+
+    apply_event(state6, {"type": "balk"})
+    _assert("1B runner advanced to 2B on balk",
+            state6.bases[0] is None and state6.bases[1] == "runner_F",
+            f"bases={state6.bases}")
+    _assert("2B runner advanced to 3B on balk",
+            state6.bases[2] == "runner_G",
+            f"bases={state6.bases}")
+
+    # 7g: stolen_base_attempt against empty base is a no-op (no error raised).
+    print("  7g: Steal attempt on empty base")
+    state7 = _fresh_state()
+    state7.half = "top"
+    try:
+        apply_event(state7, {"type": "stolen_base_attempt", "base_idx": 0, "success": True})
+        _assert("no exception on empty-base steal attempt", True)
+    except Exception as exc:
+        _assert("no exception on empty-base steal attempt", False, str(exc))
+    _assert("bases unchanged after empty steal attempt",
+            state7.bases == [None, None, None], f"bases={state7.bases}")
+
+
+# ---------------------------------------------------------------------------
+# Test 8: Joker cannot field (§2.3)
+# ---------------------------------------------------------------------------
+
+def test_joker_cannot_field():
+    print("\n[Test 8] Joker cannot field (§2.3)")
+
+    # After a joker bats their PA should be in joker_fielding_restricted.
+    state = _fresh_state()
+    state.half = "top"
+    team = state.visitors
+
+    # Move joker to position 0 so they bat immediately.
+    joker = team.jokers_available[0]
+    insert_joker(state, joker, lineup_position=0)
+
+    # Joker is now current batter — complete their PA with a ground out.
+    apply_event(state, {
+        "type": "ball_in_play",
+        "choice": "run",
+        "outcome": fld.outcome_ground_out([0, 0, 0]),
+    })
+
+    _assert("joker in joker_fielding_restricted after batting",
+            joker.player_id in team.joker_fielding_restricted,
+            f"restricted={team.joker_fielding_restricted}")
+    _assert("joker in jokers_used_this_half after batting",
+            joker.player_id in team.jokers_used_this_half,
+            f"used={team.jokers_used_this_half}")
+
+    # reset_half clears used-this-half but NOT fielding restriction.
+    team.reset_half()
+    _assert("jokers_used_this_half cleared after reset", len(team.jokers_used_this_half) == 0, "")
+    _assert("joker_fielding_restricted persists across halves",
+            joker.player_id in team.joker_fielding_restricted,
+            f"restricted={team.joker_fielding_restricted}")
+
+    # Verify fielding restriction is queryable via helper.
+    def cannot_field(player_id: str, t: "Team") -> bool:
+        return player_id in t.joker_fielding_restricted
+
+    _assert("cannot_field returns True for restricted joker",
+            cannot_field(joker.player_id, team), "")
+    other = team.roster[0]
+    _assert("cannot_field returns False for regular player",
+            not cannot_field(other.player_id, team), "")
+
+
+# ---------------------------------------------------------------------------
 # Test runner
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Test 7: Package importability
+# Test 9: Package importability (all o27.* modules import cleanly)
 # ---------------------------------------------------------------------------
 
 def test_package_imports():
-    print("\n[Test 7] Package importability")
+    print("\n[Test 9] Package importability")
     import importlib
     for mod_path in [
         "o27",
@@ -499,7 +648,7 @@ def test_package_imports():
 # ---------------------------------------------------------------------------
 
 def test_pitcher_across_halftime():
-    print("\n[Test 8] Pitcher state across halftime")
+    print("\n[Test 10] Pitcher state across halftime")
 
     # Build a state manually (like run_game does) with both halves.
     from o27.engine.game import _set_fielding_pitcher
@@ -546,6 +695,8 @@ def run_all():
     test_joker_insertion()
     test_halftime()
     test_super_inning()
+    test_baserunning_events()
+    test_joker_cannot_field()
     test_package_imports()
     test_pitcher_across_halftime()
 

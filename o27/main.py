@@ -40,10 +40,12 @@ def make_demo_player(pid: str, name: str, is_pitcher=False, is_joker=False) -> P
 
 
 def make_demo_team(team_id: str, name: str) -> Team:
-    """Build a demo roster: 9 position players (slot 9 = pitcher) + 3 jokers.
+    """Build a demo roster: 12-batter active lineup (9 position + 3 jokers).
 
-    Starting lineup contains only the 9 position players.  Jokers are held in
-    jokers_available and can be inserted mid-inning (once per half-inning each).
+    All 12 are placed in the lineup from the start (PRD §4.2).
+    Jokers are also in jokers_available for explicit mid-inning slot moves.
+    Each joker bats at most once per half-inning; after batting they are
+    tracked in jokers_used_this_half and skipped by advance_lineup.
     """
     prefix = team_id[0].upper()
     starters = []
@@ -55,13 +57,13 @@ def make_demo_team(team_id: str, name: str) -> Team:
     for j in range(1, 4):
         jk = make_demo_player(f"{prefix}J{j}", f"{name[:3]}-J{j}", is_joker=True)
         jokers.append(jk)
-
+    roster = starters + jokers
     return Team(
         team_id=team_id,
         name=name,
-        roster=starters + jokers,
-        lineup=list(starters),          # 9-batter starting order
-        jokers_available=list(jokers),
+        roster=roster,
+        lineup=list(roster),            # full 12-batter active lineup
+        jokers_available=list(jokers),  # available for explicit slot moves
     )
 
 

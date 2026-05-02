@@ -95,8 +95,9 @@ def _score_run(state: GameState, n: int = 1) -> list[str]:
 def _end_at_bat(state: GameState) -> list[str]:
     """
     Finalize a completed at-bat (not a stay continuation).
+    - Records joker usage / fielding restriction before advancing lineup.
     - Resets count.
-    - Advances lineup.
+    - Advances lineup (skipping used jokers in regular halves).
     - Increments pitcher spell count.
     - Resets multi-hit tracker.
     Returns log lines.
@@ -105,6 +106,12 @@ def _end_at_bat(state: GameState) -> list[str]:
     hits = state.current_at_bat_hits
     if hits > 1:
         log.append(f"  Multi-hit at-bat: {hits} credited hits.")
+    # PRD §2.3: joker may bat once per half-inning and cannot field afterwards.
+    batter = state.current_batter
+    if batter.is_joker:
+        team = state.batting_team
+        team.jokers_used_this_half.add(batter.player_id)
+        team.joker_fielding_restricted.add(batter.player_id)
     state.count.reset()
     state.current_at_bat_hits = 0
     state.batting_team.advance_lineup()
@@ -207,7 +214,6 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     # ------------------------------------------------------------------
 
     if etype == "stolen_base_attempt":
-        from engine.baserunning import stolen_base
         base_idx = event["base_idx"]
         success = event.get("success", True)    # Phase 1: explicit; Phase 2: probabilistic
         runner_id = state.bases[base_idx]

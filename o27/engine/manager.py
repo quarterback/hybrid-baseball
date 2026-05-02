@@ -62,9 +62,11 @@ def insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[
     # Remove from available pool.
     team.jokers_available = [j for j in team.jokers_available
                               if j.player_id != joker.player_id]
-    # Set the current batter to the joker by adjusting lineup_position.
-    # We do this by inserting the joker into the lineup at the specified slot
-    # and setting the position to point at it.
+    # Move the joker to the desired slot within the existing 12-batter lineup.
+    # The joker is already in the lineup; remove-then-insert re-orders without
+    # changing the list length (preserves the 12-batter active lineup invariant).
+    if joker in team.lineup:
+        team.lineup.remove(joker)
     team.lineup.insert(lineup_position, joker)
     team.lineup_position = lineup_position % len(team.lineup)
 
