@@ -294,6 +294,11 @@ def _resolve_contact(
     batter_safe = outcome.get("batter_safe", True)
     hit_type = outcome.get("hit_type", "")
 
+    # PRD §2.6: stay does not apply to home runs — batter must run.
+    if hit_type == "home_run" and choice == "stay":
+        log.append("  [Home run — stay not applicable. Batter must run.]")
+        choice = "run"
+
     # ---- RUN CHOSEN ----
     if choice == "run":
         log.append(f"  {batter.name} runs → {hit_type}.")

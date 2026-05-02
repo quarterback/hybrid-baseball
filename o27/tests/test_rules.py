@@ -57,22 +57,27 @@ def _make_player(pid: str, name: str, is_pitcher=False, is_joker=False) -> Playe
 
 
 def _make_team(team_id: str, name: str) -> Team:
-    """12-batter team: 9 position players (slot 9 = pitcher) + 3 jokers."""
+    """9-batter starting lineup + 3 jokers in the reserve pool (not pre-seeded in lineup).
+
+    Jokers are available for mid-inning insertion but are NOT placed in the
+    starting lineup — inserting one at lineup position P adds them to the order
+    without duplication, keeping the lineup at 9+N where N jokers have been used.
+    """
     prefix = team_id[0].upper()
-    roster = []
+    starters = []
     for i in range(1, 10):
-        roster.append(_make_player(f"{prefix}{i}", f"{name[:3]}{i}",
-                                   is_pitcher=(i == 9)))
+        starters.append(_make_player(f"{prefix}{i}", f"{name[:3]}{i}",
+                                     is_pitcher=(i == 9)))
     jokers = []
     for j in range(1, 4):
         jk = _make_player(f"{prefix}J{j}", f"{name[:3]}J{j}", is_joker=True)
         jokers.append(jk)
-        roster.append(jk)
+    roster = starters + jokers   # full 12-player roster
     return Team(
         team_id=team_id,
         name=name,
         roster=roster,
-        lineup=roster[:12],
+        lineup=list(starters),   # starting batting order: 9 players (no jokers yet)
         jokers_available=list(jokers),
     )
 
@@ -114,10 +119,10 @@ def test_27_out_half():
 
     _assert("outs == 27", state.outs == 27, f"got {state.outs}")
     _assert("half is over", state.is_half_over(), "")
-    # Lineup cycles: 27 outs / 12 batters = 2 full cycles + 3 extras → position 3
-    expected_pos = 27 % 12
+    # Lineup cycles: 27 outs / 9 starters = exactly 3 full cycles → back to position 0
+    expected_pos = 27 % 9   # = 0
     _assert(
-        f"lineup_position == {expected_pos} (cycled through)",
+        f"lineup_position == {expected_pos} (3 full cycles of 9)",
         state.visitors.lineup_position == expected_pos,
         f"got {state.visitors.lineup_position}",
     )

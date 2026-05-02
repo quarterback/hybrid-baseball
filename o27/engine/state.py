@@ -132,9 +132,22 @@ class Team:
         return self.lineup[self.lineup_position % len(self.lineup)]
 
     def advance_lineup(self) -> None:
-        """Advance the lineup position (wraps around)."""
+        """Advance the lineup position (wraps around).
+
+        In super-inning mode: skip over any batters already dismissed so that
+        dismissed batters are never sent back to the plate.  The caller must
+        check is_half_over() before calling current_batter() again — once all
+        5 are dismissed the skip loop will cycle without finding anyone, but
+        is_half_over() will return True first, ending the half.
+        """
         if self.super_lineup:
-            self.super_lineup_position = (self.super_lineup_position + 1) % len(self.super_lineup)
+            n = len(self.super_lineup)
+            pos = (self.super_lineup_position + 1) % n
+            for _ in range(n):
+                if self.super_lineup[pos].player_id not in self.super_dismissed:
+                    break
+                pos = (pos + 1) % n
+            self.super_lineup_position = pos
         else:
             self.lineup_position = (self.lineup_position + 1) % len(self.lineup)
 
