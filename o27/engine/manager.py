@@ -129,8 +129,8 @@ def pitching_change(
     old_pitcher = state.fielding_team.get_player(old_pitcher_id) if old_pitcher_id else None
 
     log = []
-    if old_pitcher:
-        # Close the current spell with full stats.
+    if old_pitcher and state.pitcher_spell_count > 0:
+        # Close the current spell only when the pitcher actually faced batters.
         spell = SpellRecord(
             pitcher_id=old_pitcher.player_id,
             pitcher_name=old_pitcher.name,

@@ -25,13 +25,17 @@ class PitcherStats:
 
     @classmethod
     def from_spell_log(cls, spell_log: list, pitcher_id: str, name: str) -> "PitcherStats":
-        """Build aggregate PitcherStats from BF/outs/runs entries in spell_log."""
+        """Build aggregate PitcherStats from all fields in spell_log entries."""
         s = cls(player_id=pitcher_id, name=name)
         for rec in spell_log:
             if rec.pitcher_id == pitcher_id:
                 s.batters_faced += rec.batters_faced
                 s.outs_recorded += rec.outs_recorded
                 s.runs_allowed  += rec.runs_allowed
+                s.hits_allowed  += rec.hits_allowed
+                s.bb            += rec.bb
+                s.k             += rec.k
+                s.hbp           += rec.hbp
                 s.spell_count   += 1
                 if rec.batters_faced > s.max_spell:
                     s.max_spell = rec.batters_faced

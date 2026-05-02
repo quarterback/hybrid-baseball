@@ -18,7 +18,13 @@ Winner: {{ winner_name }} (super-inning)
 {% for pair in round_pairs %}
 
   Round {{ pair.round_num }}:
-    {{ pair.v_name }}: {{ pair.v_lineup }} → {{ pair.v_runs }} run(s) ({{ pair.v_dismissals }} dismissals)
-    {{ pair.h_name }}: {{ pair.h_lineup }} → {{ pair.h_runs }} run(s) ({{ pair.h_dismissals }} dismissals)
+    {{ pair.v_name }}: {{ pair.v_runs }} run(s), {{ pair.v_dismissals }} dismissals
+{% for outcome in pair.v_outcomes %}
+      {{ outcome }}
+{% endfor %}
+    {{ pair.h_name }}: {{ pair.h_runs }} run(s), {{ pair.h_dismissals }} dismissals
+{% for outcome in pair.h_outcomes %}
+      {{ outcome }}
+{% endfor %}
 {% endfor %}
 {% endif %}

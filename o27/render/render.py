@@ -206,17 +206,20 @@ class Renderer:
         def _totals(rows: list[BatterStats]) -> BatterStats:
             t = BatterStats(player_id="TOTALS", name="TOTALS")
             for r in rows:
-                t.pa      += r.pa
-                t.ab      += r.ab
-                t.runs    += r.runs
-                t.hits    += r.hits
-                t.doubles += r.doubles
-                t.triples += r.triples
-                t.hr      += r.hr
-                t.rbi     += r.rbi
-                t.bb      += r.bb
-                t.k       += r.k
-                t.sty     += r.sty
+                t.pa           += r.pa
+                t.ab           += r.ab
+                t.runs         += r.runs
+                t.hits         += r.hits
+                t.doubles      += r.doubles
+                t.triples      += r.triples
+                t.hr           += r.hr
+                t.rbi          += r.rbi
+                t.bb           += r.bb
+                t.k            += r.k
+                t.hbp          += r.hbp
+                t.sty          += r.sty
+                t.stay_rbi     += r.stay_rbi
+                t.multi_hit_abs += r.multi_hit_abs
             return t
 
         # Build per-pitcher aggregates from spell_log (includes H/BB/K/HBP).
@@ -322,13 +325,13 @@ class Renderer:
             round_pairs.append({
                 "round_num": rn,
                 "v_name": v.team_name,
-                "v_lineup": ", ".join(v.selected_batter_names) if v.selected_batter_names else "(unknown)",
                 "v_runs": v.runs,
                 "v_dismissals": v.dismissals,
+                "v_outcomes": v.batter_outcomes if v.batter_outcomes else [],
                 "h_name": h.team_name if h else "—",
-                "h_lineup": ", ".join(h.selected_batter_names) if h and h.selected_batter_names else "(unknown)",
                 "h_runs": h.runs if h else 0,
                 "h_dismissals": h.dismissals if h else 0,
+                "h_outcomes": h.batter_outcomes if h and h.batter_outcomes else [],
             })
         winner_name = ""
         if state.winner:
@@ -391,8 +394,89 @@ class Renderer:
         ]
 
     # -----------------------------------------------------------------------
-    # Internal: plate-appearance tracking
+    # Super-inning per-batter outcome helpers
     # -----------------------------------------------------------------------
+
+    def snapshot_batter_stats(self, player_ids: list[str]) -> dict:
+        """
+        Return a snapshot of key batter stat fields for the given player_ids.
+        Call BEFORE a super-inning half; compare with batter_outcomes_since()
+        AFTER the half to derive per-batter outcome strings.
+        """
+        snap = {}
+        for pid in player_ids:
+            s = self._batter_stats.get(pid)
+            if s:
+                snap[pid] = {
+                    "hits": s.hits, "doubles": s.doubles, "triples": s.triples,
+                    "hr": s.hr, "bb": s.bb, "k": s.k, "hbp": s.hbp, "sty": s.sty,
+                }
+            else:
+                snap[pid] = {
+                    "hits": 0, "doubles": 0, "triples": 0,
+                    "hr": 0, "bb": 0, "k": 0, "hbp": 0, "sty": 0,
+                }
+        return snap
+
+    def batter_outcomes_since(
+        self, players: list, snapshot: dict
+    ) -> list[str]:
+        """
+        Derive a brief outcome label for each player relative to the snapshot.
+        Returns a list of "Name: outcome" strings, one per player.
+        """
+        results = []
+        for p in players:
+            pid = p.player_id
+            pre = snapshot.get(pid, {})
+            s = self._batter_stats.get(pid)
+            post = {
+                "hits": s.hits if s else 0,
+                "doubles": s.doubles if s else 0,
+                "triples": s.triples if s else 0,
+                "hr": s.hr if s else 0,
+                "bb": s.bb if s else 0,
+                "k": s.k if s else 0,
+                "hbp": s.hbp if s else 0,
+                "sty": s.sty if s else 0,
+            }
+            label = self._outcome_label(pre, post)
+            results.append(f"{p.name}: {label}")
+        return results
+
+    @staticmethod
+    def _outcome_label(pre: dict, post: dict) -> str:
+        """Derive a brief outcome string from the delta of two BatterStats snapshots."""
+        dh   = post.get("hits", 0)     - pre.get("hits", 0)
+        dbb  = post.get("bb", 0)       - pre.get("bb", 0)
+        dhbp = post.get("hbp", 0)      - pre.get("hbp", 0)
+        dk   = post.get("k", 0)        - pre.get("k", 0)
+        dhr  = post.get("hr", 0)       - pre.get("hr", 0)
+        d3b  = post.get("triples", 0)  - pre.get("triples", 0)
+        d2b  = post.get("doubles", 0)  - pre.get("doubles", 0)
+        dsty = post.get("sty", 0)      - pre.get("sty", 0)
+
+        # Terminal outcome (in precedence order)
+        if dbb > 0:
+            term = "BB"
+        elif dhbp > 0:
+            term = "HBP"
+        elif dhr > 0:
+            term = "HR"
+        elif d3b > 0:
+            term = "3B"
+        elif d2b > 0:
+            term = "2B"
+        elif dh - d2b - d3b - dhr > 0:
+            term = "1B"
+        elif dk > 0:
+            term = "K"
+        else:
+            term = "out"
+
+        # Annotate stay count when the batter accumulated stay hits before terminal
+        prefix = f"{dsty}×stay, " if dsty > 0 else ""
+        return f"{prefix}{term}"
 
     def _on_new_pa(self, batter) -> None:
         s = self._get_stats(batter)

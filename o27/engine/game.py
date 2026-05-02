@@ -146,9 +146,12 @@ def run_game(
         state.partnership_first_batter_id = None
         _set_fielding_pitcher(state)
         super_score_before_v = state.score["visitors"]
+        v5_ids = [p.player_id for p in v5]
+        v_snap = renderer.snapshot_batter_stats(v5_ids) if renderer else {}
         full_log.append(_half_header(state, renderer))
         full_log += run_half(state, event_provider, renderer)
         _close_current_spell(state)
+        v_outcomes = renderer.batter_outcomes_since(v5, v_snap) if renderer else []
 
         # Home bats (super_bottom).
         state.half = "super_bottom"
@@ -163,27 +166,32 @@ def run_game(
         state.partnership_first_batter_id = None
         _set_fielding_pitcher(state)
         super_score_before_h = state.score["home"]
+        h5_ids = [p.player_id for p in h5]
+        h_snap = renderer.snapshot_batter_stats(h5_ids) if renderer else {}
         full_log.append(_half_header(state, renderer))
         full_log += run_half(state, event_provider, renderer)
         _close_current_spell(state)
+        h_outcomes = renderer.batter_outcomes_since(h5, h_snap) if renderer else []
 
-        # Record round (with batter names for end-of-game log).
+        # Record round (with batter names + per-batter outcomes for end-of-game log).
         v_runs = state.score["visitors"] - super_score_before_v
         h_runs = state.score["home"] - super_score_before_h
         round_rec = SuperInningRound(
             team_name=state.visitors.name,
-            selected_batter_ids=[p.player_id for p in v5],
+            selected_batter_ids=v5_ids,
             selected_batter_names=[p.name for p in v5],
             runs=v_runs,
             dismissals=len(state.visitors.super_dismissed),
+            batter_outcomes=v_outcomes,
         )
         state.super_inning_rounds.append(round_rec)
         round_rec2 = SuperInningRound(
             team_name=state.home.name,
-            selected_batter_ids=[p.player_id for p in h5],
+            selected_batter_ids=h5_ids,
             selected_batter_names=[p.name for p in h5],
             runs=h_runs,
             dismissals=len(state.home.super_dismissed),
+            batter_outcomes=h_outcomes,
         )
         state.super_inning_rounds.append(round_rec2)
 

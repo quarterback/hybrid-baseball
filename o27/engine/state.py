@@ -122,7 +122,8 @@ class SuperInningRound:
     selected_batter_ids: list = field(default_factory=list)
     selected_batter_names: list = field(default_factory=list)
     runs: int = 0
-    dismissals: int = 0  # outs recorded (max 5)
+    dismissals: int = 0          # outs recorded (max 5)
+    batter_outcomes: list = field(default_factory=list)  # brief per-batter outcome strings
 
 
 # ---------------------------------------------------------------------------
