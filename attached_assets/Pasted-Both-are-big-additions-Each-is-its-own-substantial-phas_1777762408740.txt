@@ -1,0 +1,369 @@
+Both are big additions. Each is its own substantial phase. Let me fold them into the PRD properly — they shouldn't be afterthoughts in §8, they're core to the build.
+
+---
+
+# PRD: O27 v1.1 — Roster Archetypes, Season Play & Manager AI
+
+**Owner:** Ron Bronson
+**Status:** Draft for build
+**Builds on:** O27 v1.0 (current Replit build)
+
+## 1. Context
+
+O27 v1.0 ships with a working single-game simulator. v1.1 expands the project from "one-off game sim" to "full league simulation" with three new pillars:
+
+1. **Roster archetypes** — joker specialization (power/speed/contact) and pitcher philosophies (workhorse/committee).
+2. **Season + playoff structure** — multi-team league play with standings, tiebreakers, and a postseason.
+3. **ML manager AI** — learned decision policies that improve through self-play, replacing the heuristic-only AI.
+
+Plus terminology cleanup and joker-rule updates from v1.0 review.
+
+## 2. Joker archetypes
+
+[Same as previous draft — power/speed/contact specs unchanged]
+
+### 2.1 The three archetypes
+
+**Power joker:** skill 0.68–0.78, speed 0.35–0.50, stay_aggressiveness 0.02–0.08, contact_quality_threshold 0.10–0.18, hard_contact_bias 1.3.
+
+**Speed joker:** skill 0.55–0.65, speed 0.78–0.92, stay_aggressiveness 0.05–0.15, contact_quality_threshold 0.30–0.40, steal_aggression 1.5.
+
+**Contact joker:** skill 0.60–0.72, speed 0.45–0.60, stay_aggressiveness 0.40–0.60, contact_quality_threshold 0.50–0.70, weak_contact_bias 1.4.
+
+### 2.2 Roster requirement
+
+Exactly one joker of each archetype.
+
+### 2.3 Joker usage rule (CHANGED FROM v1.0)
+
+A joker may bat any number of times per game. The "once per half-inning" constraint is removed. Jokers cannot field — once they bat, they're restricted from fielding for the rest of the game.
+
+### 2.4 Code changes
+
+- Remove the skip-jokers-already-batted loop in `Team.advance_lineup()`.
+- Remove the `jokers_used_this_half` gate in `manager.can_insert_joker()`.
+- Keep `joker_fielding_restricted` enforcement.
+- Update tests: remove "cannot insert same joker twice" cases; add "can insert same joker multiple times."
+
+## 3. Pitching philosophy: workhorse vs. committee
+
+### 3.1 Workhorse roster
+
+1× starter (skill 0.70–0.78, fatigue threshold 18–22 BF), 2× long relief (skill 0.55–0.62, fatigue threshold 12–15 BF). Total bullpen: 3 pitchers.
+
+### 3.2 Committee roster
+
+4× spell pitchers (skill 0.55–0.65, fatigue threshold 6–8 BF), 1× closer (skill 0.65–0.70, fatigue threshold 5–6 BF). Total bullpen: 5 pitchers.
+
+### 3.3 New Player fields
+
+```python
+fatigue_threshold: int = 14
+pitcher_role: Optional[str] = None  # "starter" | "long_relief" | "spell" | "closer"
+```
+
+Replace the formula in `prob.py` with `pitcher.fatigue_threshold` directly.
+
+### 3.4 Role-aware manager AI
+
+```python
+def should_change_pitcher(state):
+    pitcher = current_pitcher
+    if pitcher.role == "starter":
+        return spell_count > pitcher.fatigue_threshold
+    if pitcher.role == "spell":
+        return spell_count >= pitcher.fatigue_threshold
+    if pitcher.role == "closer":
+        return False  # manager rotates them in explicitly
+```
+
+## 4. Roster construction and pinch-hit eligibility
+
+### 4.1 Sizes
+
+12 active batters (9 position + 3 jokers), 3–5 bullpen pitchers. Total roster: 15–17.
+
+### 4.2 Any roster player can pinch-hit
+
+Any player on the roster can be used as a pinch hitter, including bullpen pitchers. Using a pitcher as a pinch hitter is heavily discouraged — pitchers have low batting skill. The AI's `should_pinch_hit` heuristic must:
+
+1. Exhaust non-pitcher bench players first.
+2. Only consider a bullpen pitcher when no other bench bat is available AND the in-lineup batter is also a pitcher AND leverage is extremely high.
+
+A bullpen pitcher who pinch-hits is now an active player and can subsequently take the mound.
+
+## 5. Season simulation
+
+### 5.1 League structure
+
+A configurable league. Defaults:
+- **Teams:** 12.
+- **Divisions:** 2 (East/West), 6 teams each.
+- **Schedule:** 30 games per team. 18 intra-division (each opponent 3.6× — round to 18 by playing each division opponent 3-4 times), 12 inter-division (each opponent twice).
+- **Configurable** via league config JSON: team count, division structure, games per team, intra/inter ratio.
+
+### 5.2 Schedule generation
+
+A round-robin scheduler that respects:
+- Each team plays the configured number of games.
+- Home/away balance: each team is home for ~50% of its games.
+- No more than 3 consecutive home or away games (the "homestand" constraint).
+- Intra-division opponents distributed across the season, not bunched.
+
+Output: a list of (date_index, home_team_id, away_team_id) tuples.
+
+### 5.3 Standings
+
+Track per team:
+- W / L / T (ties allowed pre-postseason — see §5.5)
+- Run differential (RF − RA across all games)
+- Net run rate (NRR) — sum of all team's runs / sum of all opponent's outs faced, minus reverse. Cricket-style.
+- Head-to-head record vs each other team.
+
+### 5.4 Standings tiebreakers (in order)
+
+1. Win-loss record.
+2. Head-to-head record.
+3. Net run rate.
+4. Run differential.
+5. Coin flip.
+
+### 5.5 Regular-season ties
+
+Regular-season games may end in ties (no super-inning required during the regular season — saves time, keeps games at predictable length). Configurable: a league can opt in to super-innings for regular-season games if desired. Default: regular-season ties allowed and recorded as 0.5 wins for each team.
+
+### 5.6 Playoffs
+
+After the regular season:
+- **Division winners** (top of each division) get byes to the second round.
+- **Wild cards:** next 2 best records across the league regardless of division.
+- **Round 1 (wild card):** wild cards play each other in a best-of-3 series.
+- **Round 2 (division series):** each division winner hosts the wild card winner. Best-of-5.
+- **Championship:** division winners face off. Best-of-7.
+- **All playoff games go to super-inning if tied** (no regular-season-style draws in the postseason).
+
+### 5.7 Series mechanics
+
+- Higher-seed team is home for games 1, 2, 5, 7 (in a best-of-7).
+- Each game uses the team's full roster — pitchers and jokers reset between games.
+- Pitcher fatigue does NOT carry between games (each game is fresh).
+
+### 5.8 Output
+
+A season simulation produces:
+- Final standings (per division, with all tiebreaker columns).
+- Playoff bracket and results.
+- Per-team season stats (team-level batting and pitching summaries).
+- Per-player season stats aggregated across all games.
+- A league leaderboard for batting average, runs, RBIs, stays, stay efficiency, etc.
+- Champion's full roster page.
+
+Use Jinja templates similar to the box score templates already in v1.0. New templates: `standings.j2`, `playoff_bracket.j2`, `season_leaders.j2`.
+
+### 5.9 CLI
+
+```
+python -m o27.season --league config.json --seed 42 --output season_42/
+```
+
+Outputs a directory with:
+- `standings.txt`
+- `playoffs.txt`
+- `leaders.txt`
+- `games/{game_id}.txt` — full play-by-play for each game (optional, behind a `--full-pbp` flag)
+
+## 6. ML manager AI
+
+This replaces (or augments) the heuristic manager AI with a learned policy.
+
+### 6.1 Decision points to learn
+
+At each decision point, the manager AI sees a state vector and outputs an action:
+
+1. **Stay vs. run** (per batter, on contact with runners on, when stay is eligible). Binary.
+2. **Joker insertion** (each PA where jokers remain available). 4-way: insert power / insert speed / insert contact / no joker.
+3. **Pitching change** (each PA, fielding side). Binary: change or not. If change, sub-decision: which bullpen pitcher.
+4. **Pinch hit** (each PA where the upcoming batter is weak). Binary, then which bench bat.
+
+### 6.2 State representation
+
+A feature vector per decision:
+- Score differential (current team − opponent).
+- Outs remaining in current half.
+- Half (top/bottom — encoded as 0/1).
+- Bases occupancy (3 binary flags).
+- Count (balls, strikes).
+- Current batter skill / archetype / stay_aggressiveness.
+- Current pitcher fatigue (BF / threshold).
+- Jokers remaining (3 booleans, one per archetype).
+- Bench depth (count of available pinch-hit candidates).
+- Lineup position (which batter slot is up).
+
+### 6.3 Reward function
+
+Per game: reward = (team's runs) − (opponent's runs) at game end. Win = +(margin), loss = −(margin), tie = 0.
+
+For training: discount reward back through decisions in the game. A decision early in the top half gets a smaller share of the final outcome credit than a decision in the bottom of the 27th out.
+
+### 6.4 Training architecture
+
+Two viable approaches; recommend starting with the simpler one and graduating if needed:
+
+**Option A — Self-play with policy gradients (REINFORCE / PPO).**
+- Initialize a neural net (small MLP, ~3 hidden layers of 64–128 units each) for each decision type.
+- Run thousands of self-play games where both managers use the current policy.
+- Update policy weights via policy gradient on the discounted reward signal.
+- Library: `torch` or `jax`. Lightweight, runs on CPU.
+
+**Option B — Tabular Q-learning over discretized state buckets.**
+- Bucket the state space into ~10,000 discrete states.
+- Maintain Q-tables for each decision type.
+- Update Q-values via temporal-difference learning during self-play.
+- No deep learning dependency. Much smaller scope. Less powerful but interpretable.
+
+Recommend Option A for power, Option B for explainability. Either way, the trained model serializes to a file that the regular sim loads at startup.
+
+### 6.5 Training pipeline
+
+```
+python -m o27.train --episodes 50000 --output models/manager_v1.pt --algo ppo
+```
+
+The trainer:
+1. Generates self-play games.
+2. Records every (state, action, eventual_reward) tuple.
+3. Updates the policy.
+4. Validates against the heuristic AI every N episodes (the trained policy must consistently beat the heuristic for the model to be saved).
+
+### 6.6 Integration with the sim
+
+```
+python -m o27.main --manager learned --model models/manager_v1.pt --seed 42
+python -m o27.main --manager heuristic  # falls back to v1.0 logic
+python -m o27.main --manager mixed --visitors-manager learned --home-manager heuristic
+```
+
+The `mixed` mode is for evaluation: see how often learned beats heuristic across many seeds.
+
+### 6.7 Out of scope for v1.1
+
+- Per-team trained managers (every team uses the same policy).
+- Online learning during a real season (the model is frozen at training time).
+- Adversarial training (training one policy against a different one — too complex for v1).
+
+## 7. Terminology cleanup
+
+| Current | New |
+|---|---|
+| "PARTNERSHIP LOG" | "RALLY LOG" |
+| "Avg runs/partnership" | "Avg runs/rally" |
+| "PITCHER SPELL LOG" | "PITCHING LOG" |
+| "BF this spell" | "batters faced" |
+| Required run rate line in box score | Remove |
+| "Required run rate: X.XXX R/out" in halftime | Replace with "Bears need to score X runs to win" |
+| "dismissal" / "dismissed" | "out" / "is out" |
+
+## 8. Tuning adjustments
+
+### 8.1 Stay aggressiveness floor
+
+Raise non-archetype batter defaults to 0.15–0.25 and contact joker defaults to 0.4–0.6. Target: **1.0–2.5 stays/game**.
+
+### 8.2 Multi-hit at-bat tracking
+
+The `_check_multi_hit` helper should fire on the `run` branch of `ball_in_play`, not just on outs.
+
+### 8.3 Box score line score
+
+Drop the redundant inning column.
+
+## 9. Roster + league file format
+
+Two file types:
+
+**Roster JSON** (per team):
+```json
+{
+  "name": "Millbrook Foxes",
+  "philosophy": "committee",
+  "lineup": [...],
+  "jokers": { "power": {...}, "speed": {...}, "contact": {...} },
+  "bullpen": [...]
+}
+```
+
+**League config JSON**:
+```json
+{
+  "name": "O27 League 2026",
+  "teams": ["foxes.json", "bears.json", ...],
+  "divisions": {
+    "East": ["foxes", "bears", "hawks", ...],
+    "West": [...]
+  },
+  "games_per_team": 30,
+  "intra_division_ratio": 0.6,
+  "regular_season_ties_allowed": true,
+  "playoff_format": {
+    "wildcard": "best_of_3",
+    "division_series": "best_of_5",
+    "championship": "best_of_7"
+  }
+}
+```
+
+## 10. Build phases
+
+**Phase 1 — Archetypes & joker rule update.**
+- Add Player fields.
+- Update `prob.py` to consume biases.
+- Remove once-per-half-inning gate.
+- Update tests.
+
+**Phase 2 — Heuristic manager AI updates.**
+- Situational joker selection.
+- Role-aware pitching changes.
+- Pinch-hit prefers bench over bullpen.
+
+**Phase 3 — Roster + league JSON loaders.**
+- 4 sample team rosters across (workhorse/committee) × (power/speed/balanced).
+- Sample 12-team league file.
+- `--roster` and `--league` CLI args.
+
+**Phase 4 — Terminology pass.**
+- Update Jinja templates.
+
+**Phase 5 — Season simulator.**
+- Schedule generator.
+- Standings tracker with tiebreakers.
+- Playoff bracket logic.
+- New Jinja templates for standings/playoffs/leaders.
+- `o27.season` CLI module.
+
+**Phase 6 — ML manager AI.**
+- State representation.
+- Choose Option A (PPO) or Option B (Q-learning) — recommend A.
+- Self-play training loop.
+- Model serialization.
+- `o27.train` CLI module.
+- Integration with main sim via `--manager learned`.
+
+**Phase 7 — Tuning.**
+Run 500-game single-game batches AND a full 12-team season. Verify:
+- Single-game stays/game: 1.0–2.5
+- Single-game super-inning rate: <8%
+- Season run differential matches team skill (better teams win more, but variance is real)
+- Learned manager beats heuristic manager in head-to-head ≥ 55% of games
+- Champion is not always the best regular-season team (some upset frequency is healthy)
+
+## 11. Open questions
+
+1. League scheduling: should games be played in real chronological order with fatigue carrying across same-day doubleheaders? Default: no carry-over between games.
+2. Trade deadline / midseason roster moves? Out of scope for v1.1.
+3. Year-over-year continuity (a player ages, retires, gets drafted)? Out of scope for v1.1.
+4. Should the trained manager AI be visible to the user (e.g., decision explanations rendered alongside the play-by-play)? Nice-to-have for v1.2.
+5. Should there be different model files for different team philosophies (one for committee, one for workhorse)? Probably yes long-term, but v1.1 ships a single general model.
+
+---
+
+Ready for handoff.

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}O27 — Seed {{ seed }}{% endblock %}
+{% block content %}
+
+<div class="game-nav">
+  <a href="/game?seed={{ prev_seed }}" class="btn btn-outline">← Seed {{ prev_seed }}</a>
+  <a href="/" class="btn btn-outline">All games</a>
+  <a href="/game?seed={{ next_seed }}" class="btn btn-outline">Seed {{ next_seed }} →</a>
+</div>
+
+{# ── SCOREBOARD ── #}
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-head">
+    Final Score — Seed {{ seed }}
+    {% if super_flag %}<span class="super-badge">Super-inning</span>{% endif %}
+  </div>
+  <div class="scoreboard">
+    <div class="team-block visitors">
+      <span class="team-label">Visitors</span>
+      <span class="team-name visitors">{{ visitors_name }}</span>
+      {% if winner_name == visitors_name %}<span class="winner-badge">Winner</span>{% endif %}
+    </div>
+    <div class="score-middle">
+      <div class="score-line">{{ visitors_score }}&ndash;{{ home_score }}</div>
+      <div class="score-label">Final</div>
+    </div>
+    <div class="team-block home">
+      <span class="team-label">Home</span>
+      <span class="team-name home">{{ home_name }}</span>
+      {% if winner_name == home_name %}<span class="winner-badge">Winner</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── TABS ── #}
+<div class="card">
+  <div class="card-head" style="padding:0;">
+    <div class="tabs" style="margin-bottom:0; border-bottom:none;">
+      <button class="tab-btn active"
+              data-tab-group="main" data-tab-id="pbp"
+              onclick="switchTab('main','pbp')">Play-by-play</button>
+      <button class="tab-btn"
+              data-tab-group="main" data-tab-id="box"
+              onclick="switchTab('main','box')">Box score</button>
+      {% if sections.spells %}
+      <button class="tab-btn"
+              data-tab-group="main" data-tab-id="spells"
+              onclick="switchTab('main','spells')">Pitching</button>
+      {% endif %}
+      {% if sections.super %}
+      <button class="tab-btn"
+              data-tab-group="main" data-tab-id="super"
+              onclick="switchTab('main','super')">Super-inning</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── PLAY-BY-PLAY PANEL ── #}
+  <div class="tab-panel active card-body" style="padding:.75rem;"
+       data-panel-group="main" data-panel-id="pbp">
+    {% if sections.halves %}
+      {% for half in sections.halves %}
+      <details {% if loop.index <= 2 %}open{% endif %}>
+        <summary>{{ half.header }}</summary>
+        <div class="pbp-wrap">{% for line in half.lines %}{{ line | e }}
+{% endfor %}</div>
+      </details>
+      {% endfor %}
+    {% else %}
+      <div class="pbp-wrap">{% for line in log_lines %}{{ line | e }}
+{% endfor %}</div>
+    {% endif %}
+  </div>
+
+  {# ── BOX SCORE PANEL ── #}
+  <div class="tab-panel card-body" style="padding:.75rem;"
+       data-panel-group="main" data-panel-id="box">
+    {% if sections.box_score %}
+    <div class="pbp-wrap" style="max-height:500px; font-size:0.78rem;">{% for line in sections.box_score %}{{ line | e }}
+{% endfor %}</div>
+    {% if sections.partnerships %}
+    <div style="margin-top:1rem;">
+      <div style="font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin-bottom:.4rem;">Partnership Log</div>
+      <div class="pbp-wrap" style="max-height:220px; font-size:0.78rem;">{% for line in sections.partnerships %}{{ line | e }}
+{% endfor %}</div>
+    </div>
+    {% endif %}
+    {% else %}
+    <p style="color:var(--muted); font-size:.85rem;">No box score data available.</p>
+    {% endif %}
+  </div>
+
+  {# ── PITCHING PANEL ── #}
+  {% if sections.spells %}
+  <div class="tab-panel card-body" style="padding:.75rem;"
+       data-panel-group="main" data-panel-id="spells">
+    <div class="pbp-wrap" style="max-height:400px; font-size:0.78rem;">{% for line in sections.spells %}{{ line | e }}
+{% endfor %}</div>
+  </div>
+  {% endif %}
+
+  {# ── SUPER-INNING PANEL ── #}
+  {% if sections.super %}
+  <div class="tab-panel card-body" style="padding:.75rem;"
+       data-panel-group="main" data-panel-id="super">
+    <div class="pbp-wrap" style="max-height:400px; font-size:0.78rem;">{% for line in sections.super %}{{ line | e }}
+{% endfor %}</div>
+  </div>
+  {% endif %}
+
+</div>{# /card #}
+
+{% endblock %}

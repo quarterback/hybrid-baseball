@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}O27 Stats{% endblock %}
+{% block content %}
+
+<h1>O27 STATS</h1>
+<p class="subtitle">Scores, box scores, play-by-play — Millbrook Foxes vs Ironvale Bears</p>
+
+<div class="card">
+  <div class="card-head">Run a game</div>
+  <div class="card-body">
+    <form class="seed-form" method="get" action="/game">
+      <label for="seed">Seed</label>
+      <input type="number" id="seed" name="seed" value="0" min="0">
+      <button type="submit" class="btn btn-primary">Simulate</button>
+      <a href="/random" class="btn btn-outline">Random</a>
+    </form>
+    <p style="margin-top:.75rem; font-size:.8rem; color:var(--muted);">
+      Same seed always produces the same game. Try seeds 0–999 for variety.
+    </p>
+  </div>
+</div>
+
+{% if recent %}
+<div class="card">
+  <div class="card-head">Recent games</div>
+  <div class="card-body" style="padding:.75rem 1rem;">
+    <ul class="recent-list">
+      {% for s in recent %}
+      <li><a href="/game?seed={{ s }}">Seed {{ s }}</a></li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
