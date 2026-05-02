@@ -9,11 +9,14 @@ Covers:
 Phase 1: constraint enforcement + heuristic stubs that always return False
          (no AI decisions; Phase 1 tests drive manager events explicitly).
 Phase 2: heuristic logic for joker insertion, pitching changes, pinch hits.
+
+All tunable thresholds are imported from o27.config.
 """
 
 from __future__ import annotations
 from .state import GameState, Player, SpellRecord
 from typing import Optional
+from o27 import config as cfg
 
 
 # ---------------------------------------------------------------------------
@@ -177,8 +180,10 @@ def should_insert_joker(state: GameState) -> Optional[Player]:
     """
     Phase 2 §4.6 heuristic: insert highest-skill available joker when:
       - Runners in scoring position, AND
-      - Current scheduled batter is a weak hitter (skill < 0.38 OR is_pitcher), AND
-      - Game leverage is high: score within 4 AND at least 5 outs remaining.
+      - Current scheduled batter is a weak hitter
+        (skill < cfg.JOKER_WEAK_BATTER_THRESHOLD OR is_pitcher), AND
+      - Game leverage is high: score within cfg.JOKER_SCORE_DIFF_MAX AND
+        outs < cfg.JOKER_OUTS_CEILING.
 
     Returns the joker Player to insert, or None.
     """
@@ -199,13 +204,13 @@ def should_insert_joker(state: GameState) -> Optional[Player]:
 
     # Condition 2: current scheduled batter is weak.
     batter = state.current_batter
-    batter_is_weak = batter.skill < 0.38 or batter.is_pitcher
+    batter_is_weak = batter.skill < cfg.JOKER_WEAK_BATTER_THRESHOLD or batter.is_pitcher
     if not batter_is_weak:
         return None
 
     # Condition 3: high leverage — close game with outs remaining.
     score_diff = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
-    high_leverage = score_diff <= 4 and state.outs < 22
+    high_leverage = score_diff <= cfg.JOKER_SCORE_DIFF_MAX and state.outs < cfg.JOKER_OUTS_CEILING
     if not high_leverage:
         return None
 
@@ -218,14 +223,18 @@ def should_change_pitcher(state: GameState) -> bool:
     Phase 2: trigger a pitching change when the pitcher's spell count exceeds
     their fatigue threshold (skill-scaled: higher-skill pitchers go longer).
 
-    Threshold = max(10, 10 + round(pitcher.pitcher_skill * 20))  → 10–30 BF.
+    Threshold = max(cfg.PITCHER_CHANGE_BASE,
+                    cfg.PITCHER_CHANGE_BASE + round(pitcher.pitcher_skill * cfg.PITCHER_CHANGE_SCALE))
     """
     if state.is_super_inning:
         return False
     pitcher = state.get_current_pitcher()
     if pitcher is None:
         return False
-    threshold = max(10, 10 + round(pitcher.pitcher_skill * 20))
+    threshold = max(
+        cfg.PITCHER_CHANGE_BASE,
+        cfg.PITCHER_CHANGE_BASE + round(pitcher.pitcher_skill * cfg.PITCHER_CHANGE_SCALE),
+    )
     return state.pitcher_spell_count >= threshold
 
 
@@ -259,7 +268,8 @@ def should_pinch_hit(state: GameState) -> Optional[Player]:
       - Runners in scoring position (2B or 3B occupied), AND
       - No jokers remain available to bat this half (joker insertion preferred
         when jokers exist; pinch hit is the fallback), AND
-      - Game is in a high-leverage tie-or-close situation (score within 1).
+      - Game is in a high-leverage tie-or-close situation
+        (score within cfg.PINCH_HIT_SCORE_DIFF_MAX).
 
     The replacement is the highest-skill non-pitcher non-joker roster member
     who is distinct from the current batter.  Returns None when conditions are
@@ -284,7 +294,7 @@ def should_pinch_hit(state: GameState) -> Optional[Player]:
 
     # Only pinch hit in very tight, high-leverage situations.
     score_diff = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
-    if score_diff > 1:
+    if score_diff > cfg.PINCH_HIT_SCORE_DIFF_MAX:
         return None
 
     # In O27, all 12 active players are in the lineup from the start, so
@@ -303,7 +313,7 @@ def should_pinch_hit(state: GameState) -> Optional[Player]:
 
     best = max(candidates, key=lambda p: p.skill)
     # Only substitute if the replacement offers a meaningful skill upgrade.
-    if best.skill <= batter.skill + 0.05:
+    if best.skill <= batter.skill + cfg.PINCH_HIT_SKILL_EDGE:
         return None
 
     return best

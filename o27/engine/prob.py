@@ -4,6 +4,9 @@ Probabilistic event provider for O27 Phase 2.
 All random draws flow through a single random.Random instance (rng) so that
 seeding it once produces fully deterministic output.
 
+All tunable parameters are imported from o27.config — edit that file to
+retune the simulation without touching engine logic.
+
 Public API
 ----------
   ProbabilisticProvider(rng)  — callable event_provider for run_game()
@@ -18,28 +21,13 @@ from typing import Optional
 from .state import GameState, Player
 from . import stay as stay_mod
 from . import manager as mgr
+from o27 import config as cfg
 
 
 # ---------------------------------------------------------------------------
 # Pitch outcome model
 # ---------------------------------------------------------------------------
 
-# Base probability table per (balls, strikes) count.
-# Format: (p_ball, p_called_strike, p_swinging_strike, p_foul, p_contact)
-_PITCH_BASE: dict[tuple, tuple] = {
-    (0, 0): (0.32, 0.18, 0.13, 0.14, 0.23),
-    (1, 0): (0.36, 0.16, 0.11, 0.14, 0.23),
-    (2, 0): (0.40, 0.14, 0.09, 0.14, 0.23),
-    (3, 0): (0.44, 0.13, 0.07, 0.13, 0.23),
-    (0, 1): (0.29, 0.15, 0.18, 0.16, 0.22),
-    (1, 1): (0.32, 0.13, 0.17, 0.17, 0.21),
-    (2, 1): (0.36, 0.11, 0.14, 0.18, 0.21),
-    (3, 1): (0.40, 0.09, 0.12, 0.18, 0.21),
-    (0, 2): (0.22, 0.10, 0.26, 0.22, 0.20),
-    (1, 2): (0.25, 0.08, 0.26, 0.21, 0.20),
-    (2, 2): (0.29, 0.07, 0.23, 0.21, 0.20),
-    (3, 2): (0.33, 0.05, 0.21, 0.21, 0.20),
-}
 _PITCH_NAMES = ("ball", "called_strike", "swinging_strike", "foul", "contact")
 
 
@@ -51,29 +39,32 @@ def _pitch_probs(
     spell_count: int,
 ) -> tuple:
     """Return adjusted pitch-outcome probability tuple (sums to 1.0)."""
-    base = list(_PITCH_BASE.get((balls, strikes), _PITCH_BASE[(0, 0)]))
+    base = list(cfg.PITCH_BASE.get((balls, strikes), cfg.PITCH_BASE[(0, 0)]))
 
     # Pitcher dominance: pitcher_skill > 0.5 shifts probability toward strikes.
     p_dom = (pitcher.pitcher_skill - 0.5) * 2   # −1.0 to +1.0
-    base[0] -= p_dom * 0.04   # fewer balls
-    base[1] += p_dom * 0.02   # more called strikes
-    base[2] += p_dom * 0.02   # more swinging strikes
-    base[4] -= p_dom * 0.03   # fewer contact events
+    base[0] += p_dom * cfg.PITCHER_DOM_BALL
+    base[1] += p_dom * cfg.PITCHER_DOM_CALLED
+    base[2] += p_dom * cfg.PITCHER_DOM_SWINGING
+    base[4] += p_dom * cfg.PITCHER_DOM_CONTACT
 
     # Batter dominance: skill > 0.5 shifts probability toward contact.
     b_dom = (batter.skill - 0.5) * 2            # −1.0 to +1.0
-    base[2] -= b_dom * 0.03   # fewer swinging strikes (makes better contact)
-    base[4] += b_dom * 0.03   # more contact
+    base[2] += b_dom * cfg.BATTER_DOM_SWINGING
+    base[4] += b_dom * cfg.BATTER_DOM_CONTACT
 
     # Fatigue: spell_count > threshold degrades pitcher performance.
-    fatigue_threshold = max(10, 10 + round(pitcher.pitcher_skill * 8))
+    fatigue_threshold = max(
+        cfg.FATIGUE_THRESHOLD_BASE,
+        cfg.FATIGUE_THRESHOLD_BASE + round(pitcher.pitcher_skill * cfg.FATIGUE_THRESHOLD_SCALE),
+    )
     if spell_count > fatigue_threshold:
-        fatigue = min(0.6, (spell_count - fatigue_threshold) / 20.0)
-        base[0] += fatigue * 0.06   # more balls
-        base[4] += fatigue * 0.04   # more contact
-        base[1] -= fatigue * 0.04   # fewer called strikes
-        base[2] -= fatigue * 0.03   # fewer swinging strikes
-        base[3] -= fatigue * 0.03   # fewer fouls
+        fatigue = min(cfg.FATIGUE_MAX, (spell_count - fatigue_threshold) / cfg.FATIGUE_SCALE)
+        base[0] += fatigue * cfg.FATIGUE_BALL
+        base[4] += fatigue * cfg.FATIGUE_CONTACT
+        base[1] += fatigue * cfg.FATIGUE_CALLED
+        base[2] += fatigue * cfg.FATIGUE_SWINGING
+        base[3] += fatigue * cfg.FATIGUE_FOUL
 
     # Normalise.
     base = [max(0.01, p) for p in base]
@@ -108,18 +99,14 @@ def contact_quality(rng: random.Random, batter: Player, pitcher: Player) -> str:
     """
     Determine whether contact is weak, medium, or hard.
 
-    Base distribution: [weak=0.38, medium=0.40, hard=0.22].
+    Base distribution from config.CONTACT_*_BASE.
     Adjusted by batter.skill vs pitcher.pitcher_skill matchup.
     """
-    base_weak   = 0.38
-    base_medium = 0.40
-    base_hard   = 0.22
-
     matchup = batter.skill - pitcher.pitcher_skill   # +ve → batter advantage
-    shift = matchup * 0.25                            # up to ±0.125 swing
+    shift = matchup * cfg.CONTACT_MATCHUP_SHIFT       # up to ±0.125 swing
 
-    weak_p   = max(0.05, base_weak   - shift)
-    hard_p   = max(0.05, base_hard   + shift)
+    weak_p   = max(0.05, cfg.CONTACT_WEAK_BASE   - shift)
+    hard_p   = max(0.05, cfg.CONTACT_HARD_BASE   + shift)
     medium_p = max(0.05, 1.0 - weak_p - hard_p)
 
     total = weak_p + medium_p + hard_p
@@ -146,7 +133,7 @@ def _runner_advance(
 ) -> int:
     """Compute bases advanced by one runner; may take an extra base if fast."""
     advance = base_advance
-    if rng.random() < extra_chance + max(0.0, (speed - 0.5) * 0.35):
+    if rng.random() < extra_chance + max(0.0, (speed - 0.5) * cfg.RUNNER_EXTRA_SPEED_SCALE):
         advance += 1
     return advance
 
@@ -204,35 +191,10 @@ def runner_advances_for_hit(
 # Contact outcome (fielding resolution) model
 # ---------------------------------------------------------------------------
 
-# Each entry: (hit_type, batter_safe, caught_fly, cumulative_weight)
-_WEAK_CONTACT = [
-    ("ground_out",      False, False, 0.50),
-    ("fly_out",         False, True,  0.18),
-    ("line_out",        False, False, 0.10),
-    ("single",          True,  False, 0.18),
-    ("fielders_choice", True,  False, 0.04),
-]
-_MEDIUM_CONTACT = [
-    ("ground_out",      False, False, 0.22),
-    ("fly_out",         False, True,  0.14),
-    ("line_out",        False, False, 0.12),
-    ("single",          True,  False, 0.32),
-    ("double",          True,  False, 0.12),
-    ("fielders_choice", True,  False, 0.08),
-]
-_HARD_CONTACT = [
-    ("single",   True,  False, 0.20),
-    ("double",   True,  False, 0.24),
-    ("triple",   True,  False, 0.08),
-    ("hr",       True,  False, 0.12),
-    ("fly_out",  False, True,  0.21),
-    ("line_out", False, False, 0.15),
-]
-
 _CONTACT_TABLES = {
-    "weak":   _WEAK_CONTACT,
-    "medium": _MEDIUM_CONTACT,
-    "hard":   _HARD_CONTACT,
+    "weak":   cfg.WEAK_CONTACT,
+    "medium": cfg.MEDIUM_CONTACT,
+    "hard":   cfg.HARD_CONTACT,
 }
 
 
@@ -267,7 +229,7 @@ def resolve_contact(
 
     Returns an outcome dict compatible with apply_event / advance_runners.
     """
-    table = _CONTACT_TABLES.get(quality, _WEAK_CONTACT)
+    table = _CONTACT_TABLES.get(quality, cfg.WEAK_CONTACT)
     hit_type, batter_safe, caught_fly, _ = _pick_from_table(rng, table)
 
     # Compute runner advances based on hit type and runner speeds.
@@ -341,18 +303,14 @@ def should_stay_prob(
 # Between-pitch events (stolen base, wild pitch)
 # ---------------------------------------------------------------------------
 
-_SB_ATTEMPT_SPEED_THRESHOLD = 0.62   # minimum speed to attempt a steal
-_SB_ATTEMPT_PROB_PER_PITCH  = 0.06   # chance per pitch to attempt
-
-
 def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
     """
     Optionally return a between-pitch event (stolen base attempt or wild pitch).
 
     Called before each pitch draw; returns None if no event fires.
     """
-    # Wild pitch: 2% chance per pitch with runners on base.
-    if state.runners_on_base and rng.random() < 0.02:
+    # Wild pitch: small chance per pitch with runners on base.
+    if state.runners_on_base and rng.random() < cfg.WILD_PITCH_PROB:
         return {"type": "wild_pitch"}
 
     # Stolen base attempt: check 1B and 2B runners.
@@ -361,14 +319,18 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
         if pid is None:
             continue
         speed = _get_speed(pid, state)
-        if speed < _SB_ATTEMPT_SPEED_THRESHOLD:
+        if speed < cfg.SB_ATTEMPT_SPEED_THRESHOLD:
             continue
-        if rng.random() < _SB_ATTEMPT_PROB_PER_PITCH:
+        if rng.random() < cfg.SB_ATTEMPT_PROB_PER_PITCH:
             # Probability of success: speed-based.
             pitcher = state.get_current_pitcher()
             pitcher_skill = pitcher.pitcher_skill if pitcher else 0.5
-            success_p = 0.55 + (speed - 0.5) * 0.50 - pitcher_skill * 0.15
-            success = rng.random() < max(0.25, min(0.90, success_p))
+            success_p = (
+                cfg.SB_SUCCESS_BASE
+                + (speed - 0.5) * cfg.SB_SUCCESS_SPEED_SCALE
+                - pitcher_skill * cfg.SB_SUCCESS_PITCHER_SCALE
+            )
+            success = rng.random() < max(cfg.SB_SUCCESS_MIN, min(cfg.SB_SUCCESS_MAX, success_p))
             return {
                 "type": "stolen_base_attempt",
                 "base_idx": base_idx,

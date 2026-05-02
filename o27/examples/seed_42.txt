@@ -1,0 +1,975 @@
+
+────────────────────────────────────────────────────────────
+TOP HALF | Millbrook Foxes batting
+────────────────────────────────────────────────────────────
+--- Now batting: M. Ashby ---
+[0 outs | 0-0 | empty] FOUL
+  Foul ball. Count: 0-1.
+[0 outs | 0-1 | empty] BALL
+  Ball 1. Count: 1-1.
+[0 outs | 1-1 | empty] BALL
+  Ball 2. Count: 2-1.
+[0 outs | 2-1 | empty] BALL
+  Ball 3. Count: 3-1.
+[0 outs | 3-1 | empty] FOUL
+  Foul ball. Count: 3-2.
+[0 outs | 3-2 | empty] FOUL
+  Foul ball. Count: 3-2.
+[0 outs | 3-2 | empty] BALL IN PLAY
+  M. Ashby runs → ground out.
+  M. Ashby is out.
+--- Now batting: D. Cortez ---
+[1 outs | 0-0 | empty] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[1 outs | 0-1 | empty] BALL
+  Ball 1. Count: 1-1.
+[1 outs | 1-1 | empty] BALL
+  Ball 2. Count: 2-1.
+[1 outs | 2-1 | empty] FOUL
+  Foul ball. Count: 2-2.
+[1 outs | 2-2 | empty] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: R. Tanner ---
+[2 outs | 0-0 | empty] BALL
+  Ball 1. Count: 1-0.
+[2 outs | 1-0 | empty] SWINGING STRIKE
+  Strike (swinging). Count: 1-1.
+[2 outs | 1-1 | empty] BALL IN PLAY
+  R. Tanner runs → single.
+--- Now batting: L. Moreau ---
+[2 outs | 0-0 | 1B] BALL IN PLAY
+  L. Moreau runs → ground out.
+  L. Moreau is out.
+  Runner advances from 1B to 2B.
+--- Now batting: T. Hollis ---
+[3 outs | 0-0 | 2B] BALL IN PLAY
+  T. Hollis runs → single.
+  Runner scores from 2B.
+--- Now batting: C. Nkrumah ---
+[3 outs | 0-0 | 1B] BALL IN PLAY
+  C. Nkrumah STAYS at the plate.
+  Hit credited (stay). Total this AB: 1.
+  Stay — fresh 0-0 count.
+  Runner advances from 1B to 3B.
+[3 outs | 0-0 | 3B] BALL
+  Ball 1. Count: 1-0.
+[3 outs | 1-0 | 3B] FOUL
+  Foul ball. Count: 1-1.
+[3 outs | 1-1 | 3B] CALLED STRIKE
+  Strike (called). Count: 1-2.
+[3 outs | 1-2 | 3B] CALLED STRIKE
+  Strike (called). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: P. Svensson ---
+[4 outs | 0-0 | 3B] FOUL
+  Foul ball. Count: 0-1.
+[4 outs | 0-1 | 3B] BALL
+  Ball 1. Count: 1-1.
+[4 outs | 1-1 | 3B] BALL
+  Ball 2. Count: 2-1.
+[4 outs | 2-1 | 3B] BALL IN PLAY
+  P. Svensson runs → single.
+  Runner scores from 3B.
+[4 outs | 0-0 | 1B] STOLEN BASE ATTEMPT
+  Stolen base — runner advances to 2B.
+--- Now batting: K. Yamada ---
+[4 outs | 0-0 | 2B] BALL IN PLAY
+  K. Yamada runs → double.
+  Runner scores from 2B.
+[4 outs | 0-0 | 2B] JOKER INSERTION
+  JOKER: Millbrook Foxes inserts V. Ramos (joker) into lineup.
+--- Now batting: V. Ramos [JOKER] ---
+[4 outs | 0-0 | 2B] BALL IN PLAY
+  V. Ramos runs → fly out.
+  V. Ramos is out.
+[5 outs | 0-0 | 2B] JOKER INSERTION
+  JOKER: Millbrook Foxes inserts B. Lepage (joker) into lineup.
+--- Now batting: B. Lepage [JOKER] ---
+[5 outs | 0-0 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[5 outs | 0-1 | 2B] BALL
+  Ball 1. Count: 1-1.
+[5 outs | 1-1 | 2B] BALL
+  Ball 2. Count: 2-1.
+[5 outs | 2-1 | 2B] FOUL
+  Foul ball. Count: 2-2.
+[5 outs | 2-2 | 2B] BALL
+  Ball 3. Count: 3-2.
+[5 outs | 3-2 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+[6 outs | 0-0 | 2B] JOKER INSERTION
+  JOKER: Millbrook Foxes inserts G. Osei (joker) into lineup.
+--- Now batting: G. Osei [JOKER] ---
+[6 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[6 outs | 1-0 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 1-1.
+[6 outs | 1-1 | 2B] BALL
+  Ball 2. Count: 2-1.
+[6 outs | 2-1 | 2B] BALL IN PLAY
+  G. Osei runs → double.
+  Runner scores from 2B.
+--- Now batting: S. Okafor [P] ---
+[6 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[6 outs | 1-0 | 2B] BALL IN PLAY
+  S. Okafor runs → fly out.
+  S. Okafor is out.
+--- Now batting: M. Ashby ---
+[7 outs | 0-0 | 2B] FOUL
+  Foul ball. Count: 0-1.
+[7 outs | 0-1 | 2B] BALL IN PLAY
+  M. Ashby runs → ground out.
+  M. Ashby is out.
+--- Now batting: D. Cortez ---
+[8 outs | 0-0 | 2B] BALL IN PLAY
+  D. Cortez STAYS at the plate.
+  Stay — fresh 0-0 count.
+[8 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[8 outs | 1-0 | 2B] FOUL
+  Foul ball. Count: 1-1.
+[8 outs | 1-1 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 1-2.
+[8 outs | 1-2 | 2B] CALLED STRIKE
+  Strike (called). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: R. Tanner ---
+[9 outs | 0-0 | 2B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[9 outs | 0-1 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-2.
+[9 outs | 0-2 | 2B] BALL
+  Ball 1. Count: 1-2.
+[9 outs | 1-2 | 2B] BALL IN PLAY
+  R. Tanner runs → line out.
+  R. Tanner is out.
+--- Now batting: L. Moreau ---
+[10 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[10 outs | 1-0 | 2B] BALL
+  Ball 2. Count: 2-0.
+[10 outs | 2-0 | 2B] BALL
+  Ball 3. Count: 3-0.
+[10 outs | 3-0 | 2B] BALL
+  WALK — L. Moreau awarded 1B.
+--- Now batting: T. Hollis ---
+[10 outs | 0-0 | 1B, 2B] BALL
+  Ball 1. Count: 1-0.
+[10 outs | 1-0 | 1B, 2B] BALL IN PLAY
+  T. Hollis runs → ground out.
+  T. Hollis is out.
+  Runner scores from 2B.
+  Runner advances from 1B to 2B.
+--- Now batting: C. Nkrumah ---
+[11 outs | 0-0 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[11 outs | 0-1 | 2B] BALL IN PLAY
+  C. Nkrumah runs → single.
+  Runner scores from 2B.
+--- Now batting: P. Svensson ---
+[11 outs | 0-0 | 1B] FOUL
+  Foul ball. Count: 0-1.
+[11 outs | 0-1 | 1B] BALL
+  Ball 1. Count: 1-1.
+[11 outs | 1-1 | 1B] BALL IN PLAY
+  P. Svensson runs → ground out.
+  P. Svensson is out.
+  Runner advances from 1B to 2B.
+--- Now batting: K. Yamada ---
+[12 outs | 0-0 | 2B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[12 outs | 0-1 | 2B] BALL
+  Ball 1. Count: 1-1.
+[12 outs | 1-1 | 2B] BALL IN PLAY
+  K. Yamada runs → fly out.
+  K. Yamada is out.
+--- Now batting: S. Okafor [P] ---
+[13 outs | 0-0 | 2B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[13 outs | 0-1 | 2B] BALL IN PLAY
+  S. Okafor runs → single.
+  Runner scores from 2B.
+--- Now batting: M. Ashby ---
+[13 outs | 0-0 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[13 outs | 0-1 | 1B] BALL
+  Ball 1. Count: 1-1.
+[13 outs | 1-1 | 1B] BALL IN PLAY
+  M. Ashby runs → single.
+  Runner advances from 1B to 2B.
+[13 outs | 0-0 | 1B, 2B] PITCHING CHANGE
+  PITCHING CHANGE: C. Lindqvist exits (22 BF this spell).
+--- Now batting: D. Cortez ---
+[13 outs | 0-0 | 1B, 2B] BALL
+  Ball 1. Count: 1-0.
+[13 outs | 1-0 | 1B, 2B] BALL
+  Ball 2. Count: 2-0.
+[13 outs | 2-0 | 1B, 2B] BALL
+  Ball 3. Count: 3-0.
+[13 outs | 3-0 | 1B, 2B] BALL
+  WALK — D. Cortez awarded 1B.
+  Runner advances from 2B to 3B.
+  Runner advances from 1B to 2B.
+--- Now batting: R. Tanner ---
+[13 outs | 0-0 | 1B, 2B, 3B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[13 outs | 0-1 | 1B, 2B, 3B] FOUL
+  Foul ball. Count: 0-2.
+[13 outs | 0-2 | 1B, 2B, 3B] CALLED STRIKE
+  Strike (called). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: L. Moreau ---
+[14 outs | 0-0 | 1B, 2B, 3B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[14 outs | 0-1 | 1B, 2B, 3B] BALL
+  Ball 1. Count: 1-1.
+[14 outs | 1-1 | 1B, 2B, 3B] BALL IN PLAY
+  L. Moreau runs → ground out.
+  L. Moreau is out.
+  Runner scores from 2B.
+  Runner advances from 1B to 2B.
+--- Now batting: T. Hollis ---
+[15 outs | 0-0 | 2B, 3B] BALL
+  Ball 1. Count: 1-0.
+[15 outs | 1-0 | 2B, 3B] FOUL
+  Foul ball. Count: 1-1.
+[15 outs | 1-1 | 2B, 3B] BALL
+  Ball 2. Count: 2-1.
+[15 outs | 2-1 | 2B, 3B] BALL
+  Ball 3. Count: 3-1.
+[15 outs | 3-1 | 2B, 3B] BALL
+  WALK — T. Hollis awarded 1B.
+--- Now batting: C. Nkrumah ---
+[15 outs | 0-0 | 1B, 2B, 3B] BALL IN PLAY
+  C. Nkrumah runs → single.
+  Runner scores from 3B.
+  Runner scores from 2B.
+  Runner advances from 1B to 2B.
+[15 outs | 0-0 | 1B, 2B] WILD PITCH
+  Wild pitch — runners advance.
+  Runner advances from 2B to 3B.
+  Runner advances from 1B to 2B.
+--- Now batting: P. Svensson ---
+[15 outs | 0-0 | 2B, 3B] BALL
+  Ball 1. Count: 1-0.
+[15 outs | 1-0 | 2B, 3B] CALLED STRIKE
+  Strike (called). Count: 1-1.
+[15 outs | 1-1 | 2B, 3B] WILD PITCH
+  Wild pitch — runners advance.
+  Runner scores from 3B.
+  Runner advances from 2B to 3B.
+  1 run(s) score.
+[15 outs | 1-1 | 3B] BALL IN PLAY
+  P. Svensson runs → HOME RUN.
+  Runner scores.
+  Batter scores (HR).
+--- Now batting: K. Yamada ---
+[15 outs | 0-0 | empty] BALL IN PLAY
+  K. Yamada runs → ground out.
+  K. Yamada is out.
+--- Now batting: S. Okafor [P] ---
+[16 outs | 0-0 | empty] BALL IN PLAY
+  S. Okafor runs → double.
+--- Now batting: M. Ashby ---
+[16 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[16 outs | 1-0 | 2B] BALL
+  Ball 2. Count: 2-0.
+[16 outs | 2-0 | 2B] BALL IN PLAY
+  M. Ashby runs → single.
+  Runner scores from 2B.
+--- Now batting: D. Cortez ---
+[16 outs | 0-0 | 1B] BALL IN PLAY
+  D. Cortez runs → line out.
+  D. Cortez is out.
+--- Now batting: R. Tanner ---
+[17 outs | 0-0 | 1B] BALL IN PLAY
+  R. Tanner runs → double.
+  Runner advances from 1B to 3B.
+--- Now batting: L. Moreau ---
+[17 outs | 0-0 | 2B, 3B] BALL
+  Ball 1. Count: 1-0.
+[17 outs | 1-0 | 2B, 3B] BALL IN PLAY
+  L. Moreau runs → single.
+  Runner scores from 3B.
+  Runner scores from 2B.
+--- Now batting: T. Hollis ---
+[17 outs | 0-0 | 1B] BALL
+  Ball 1. Count: 1-0.
+[17 outs | 1-0 | 1B] BALL
+  Ball 2. Count: 2-0.
+[17 outs | 2-0 | 1B] BALL IN PLAY
+  T. Hollis runs → fly out.
+  T. Hollis is out.
+--- Now batting: C. Nkrumah ---
+[18 outs | 0-0 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[18 outs | 0-1 | 1B] BALL
+  Ball 1. Count: 1-1.
+[18 outs | 1-1 | 1B] BALL
+  Ball 2. Count: 2-1.
+[18 outs | 2-1 | 1B] BALL
+  Ball 3. Count: 3-1.
+[18 outs | 3-1 | 1B] CALLED STRIKE
+  Strike (called). Count: 3-2.
+[18 outs | 3-2 | 1B] BALL
+  WALK — C. Nkrumah awarded 1B.
+  Runner advances from 1B to 2B.
+--- Now batting: P. Svensson ---
+[18 outs | 0-0 | 1B, 2B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[18 outs | 0-1 | 1B, 2B] FOUL
+  Foul ball. Count: 0-2.
+[18 outs | 0-2 | 1B, 2B] WILD PITCH
+  Wild pitch — runners advance.
+  Runner advances from 2B to 3B.
+  Runner advances from 1B to 2B.
+[18 outs | 0-2 | 2B, 3B] FOUL
+  Foul ball. Count: 0-2.
+[18 outs | 0-2 | 2B, 3B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: K. Yamada ---
+[19 outs | 0-0 | 2B, 3B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[19 outs | 0-1 | 2B, 3B] FOUL
+  Foul ball. Count: 0-2.
+[19 outs | 0-2 | 2B, 3B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: S. Okafor [P] ---
+[20 outs | 0-0 | 2B, 3B] BALL
+  Ball 1. Count: 1-0.
+[20 outs | 1-0 | 2B, 3B] FOUL
+  Foul ball. Count: 1-1.
+[20 outs | 1-1 | 2B, 3B] BALL
+  Ball 2. Count: 2-1.
+[20 outs | 2-1 | 2B, 3B] STOLEN BASE ATTEMPT
+  Stolen base — runner advances to 3B.
+[20 outs | 2-1 | 3B] SWINGING STRIKE
+  Strike (swinging). Count: 2-2.
+[20 outs | 2-2 | 3B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: M. Ashby ---
+[21 outs | 0-0 | 3B] BALL
+  Ball 1. Count: 1-0.
+[21 outs | 1-0 | 3B] BALL IN PLAY
+  M. Ashby runs → single.
+  Runner scores from 3B.
+--- Now batting: D. Cortez ---
+[21 outs | 0-0 | 1B] BALL IN PLAY
+  D. Cortez runs → single.
+  Runner advances from 1B to 2B.
+--- Now batting: R. Tanner ---
+[21 outs | 0-0 | 1B, 2B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[21 outs | 0-1 | 1B, 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-2.
+[21 outs | 0-2 | 1B, 2B] STOLEN BASE ATTEMPT
+  Runner caught stealing at 3B.
+[22 outs | 0-2 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+[23 outs | 0-0 | 1B] PITCHING CHANGE
+  PITCHING CHANGE: A. Driscoll exits (20 BF this spell).
+--- Now batting: L. Moreau ---
+[23 outs | 0-0 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[23 outs | 0-1 | 1B] BALL IN PLAY
+  L. Moreau runs → double.
+  Runner advances from 1B to 3B.
+--- Now batting: T. Hollis ---
+[23 outs | 0-0 | 2B, 3B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[23 outs | 0-1 | 2B, 3B] BALL IN PLAY
+  T. Hollis runs → single.
+  Runner scores from 3B.
+  Runner scores from 2B.
+--- Now batting: C. Nkrumah ---
+[23 outs | 0-0 | 1B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[23 outs | 0-1 | 1B] FOUL
+  Foul ball. Count: 0-2.
+[23 outs | 0-2 | 1B] FOUL
+  Foul ball. Count: 0-2.
+[23 outs | 0-2 | 1B] CALLED STRIKE
+  Strike (called). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: P. Svensson ---
+[24 outs | 0-0 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[24 outs | 0-1 | 1B] FOUL
+  Foul ball. Count: 0-2.
+[24 outs | 0-2 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: K. Yamada ---
+[25 outs | 0-0 | 1B] BALL
+  Ball 1. Count: 1-0.
+[25 outs | 1-0 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 1-1.
+[25 outs | 1-1 | 1B] FOUL
+  Foul ball. Count: 1-2.
+[25 outs | 1-2 | 1B] STOLEN BASE ATTEMPT
+  Stolen base — runner advances to 2B.
+[25 outs | 1-2 | 2B] BALL IN PLAY
+  K. Yamada runs → line out.
+  K. Yamada is out.
+--- Now batting: S. Okafor [P] ---
+[26 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[26 outs | 1-0 | 2B] BALL
+  Ball 2. Count: 2-0.
+[26 outs | 2-0 | 2B] CALLED STRIKE
+  Strike (called). Count: 2-1.
+[26 outs | 2-1 | 2B] BALL
+  Ball 3. Count: 3-1.
+[26 outs | 3-1 | 2B] STOLEN BASE ATTEMPT
+  Stolen base — runner advances to 3B.
+[26 outs | 3-1 | 3B] BALL
+  WALK — S. Okafor awarded 1B.
+--- Now batting: M. Ashby ---
+[26 outs | 0-0 | 1B, 3B] BALL
+  Ball 1. Count: 1-0.
+[26 outs | 1-0 | 1B, 3B] BALL
+  Ball 2. Count: 2-0.
+[26 outs | 2-0 | 1B, 3B] BALL
+  Ball 3. Count: 3-0.
+[26 outs | 3-0 | 1B, 3B] FOUL
+  Foul ball. Count: 3-1.
+[26 outs | 3-1 | 1B, 3B] FOUL
+  Foul ball. Count: 3-2.
+[26 outs | 3-2 | 1B, 3B] BALL
+  WALK — M. Ashby awarded 1B.
+  Runner advances from 1B to 2B.
+[26 outs | 0-0 | 1B, 2B, 3B] STOLEN BASE ATTEMPT
+  Stolen base — runner advances to 2B.
+--- Now batting: D. Cortez ---
+[26 outs | 0-0 | 2B, 3B] FOUL
+  Foul ball. Count: 0-1.
+[26 outs | 0-1 | 2B, 3B] FOUL
+  Foul ball. Count: 0-2.
+[26 outs | 0-2 | 2B, 3B] BALL
+  Ball 1. Count: 1-2.
+[26 outs | 1-2 | 2B, 3B] FOUL
+  Foul ball. Count: 1-2.
+[26 outs | 1-2 | 2B, 3B] FOUL
+  Foul ball. Count: 1-2.
+[26 outs | 1-2 | 2B, 3B] FOUL
+  Foul ball. Count: 1-2.
+[26 outs | 1-2 | 2B, 3B] BALL IN PLAY
+  D. Cortez runs → single.
+  Runner scores from 3B.
+  Runner scores from 2B.
+--- Now batting: R. Tanner ---
+[26 outs | 0-0 | 1B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[26 outs | 0-1 | 1B] FOUL
+  Foul ball. Count: 0-2.
+[26 outs | 0-2 | 1B] FOUL
+  Foul ball. Count: 0-2.
+[26 outs | 0-2 | 1B] BALL
+  Ball 1. Count: 1-2.
+[26 outs | 1-2 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+
+End of top half — Millbrook Foxes: 21 run(s), 20 hit(s), 27 out(s) | Run rate: 0.778 R/out | Stays: 2
+============================================================
+HALFTIME
+  Millbrook Foxes: 21 run(s)
+  Ironvale Bears need 22 run(s) to win
+  Required run rate: 0.815 R/out
+============================================================
+
+────────────────────────────────────────────────────────────
+BOTTOM HALF | Ironvale Bears batting
+────────────────────────────────────────────────────────────
+--- Now batting: A. Driscoll ---
+[0 outs | 0-0 | empty] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[0 outs | 0-1 | empty] CALLED STRIKE
+  Strike (called). Count: 0-2.
+[0 outs | 0-2 | empty] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: N. Petrov ---
+[1 outs | 0-0 | empty] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[1 outs | 0-1 | empty] BALL IN PLAY
+  N. Petrov runs → single.
+--- Now batting: O. Fitzgerald ---
+[1 outs | 0-0 | 1B] FOUL
+  Foul ball. Count: 0-1.
+[1 outs | 0-1 | 1B] FOUL
+  Foul ball. Count: 0-2.
+[1 outs | 0-2 | 1B] CALLED STRIKE
+  Strike (called). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: J. Makinde ---
+[2 outs | 0-0 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[2 outs | 0-1 | 1B] CALLED STRIKE
+  Strike (called). Count: 0-2.
+[2 outs | 0-2 | 1B] CALLED STRIKE
+  Strike (called). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: R. Colburn ---
+[3 outs | 0-0 | 1B] BALL IN PLAY
+  R. Colburn runs → single.
+  Runner advances from 1B to 2B.
+--- Now batting: T. Wachowski ---
+[3 outs | 0-0 | 1B, 2B] BALL
+  Ball 1. Count: 1-0.
+[3 outs | 1-0 | 1B, 2B] BALL
+  Ball 2. Count: 2-0.
+[3 outs | 2-0 | 1B, 2B] BALL IN PLAY
+  T. Wachowski STAYS at the plate.
+  Hit credited (stay). Total this AB: 1.
+  Stay — fresh 0-0 count.
+  Runner scores from 2B.
+  Runner advances from 1B to 2B.
+[3 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[3 outs | 1-0 | 2B] CALLED STRIKE
+  Strike (called). Count: 1-1.
+[3 outs | 1-1 | 2B] FOUL
+  Foul ball. Count: 1-2.
+[3 outs | 1-2 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: E. Solberg ---
+[4 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[4 outs | 1-0 | 2B] FOUL
+  Foul ball. Count: 1-1.
+[4 outs | 1-1 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 1-2.
+[4 outs | 1-2 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: H. Mwangi ---
+[5 outs | 0-0 | 2B] FOUL
+  Foul ball. Count: 0-1.
+[5 outs | 0-1 | 2B] FOUL
+  Foul ball. Count: 0-2.
+[5 outs | 0-2 | 2B] CALLED STRIKE
+  Strike (called). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: C. Lindqvist [P] ---
+[6 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[6 outs | 1-0 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 1-1.
+[6 outs | 1-1 | 2B] BALL
+  Ball 2. Count: 2-1.
+[6 outs | 2-1 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 2-2.
+[6 outs | 2-2 | 2B] BALL IN PLAY
+  C. Lindqvist runs → fly out.
+  C. Lindqvist is out.
+--- Now batting: D. Oduya [JOKER] ---
+[7 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[7 outs | 1-0 | 2B] BALL
+  Ball 2. Count: 2-0.
+[7 outs | 2-0 | 2B] BALL
+  Ball 3. Count: 3-0.
+[7 outs | 3-0 | 2B] CALLED STRIKE
+  Strike (called). Count: 3-1.
+[7 outs | 3-1 | 2B] BALL
+  WALK — D. Oduya awarded 1B.
+--- Now batting: M. Castillo [JOKER] ---
+[7 outs | 0-0 | 1B, 2B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[7 outs | 0-1 | 1B, 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-2.
+[7 outs | 0-2 | 1B, 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: P. Graves [JOKER] ---
+[8 outs | 0-0 | 1B, 2B] BALL
+  Ball 1. Count: 1-0.
+[8 outs | 1-0 | 1B, 2B] CALLED STRIKE
+  Strike (called). Count: 1-1.
+[8 outs | 1-1 | 1B, 2B] CALLED STRIKE
+  Strike (called). Count: 1-2.
+[8 outs | 1-2 | 1B, 2B] FOUL
+  Foul ball. Count: 1-2.
+[8 outs | 1-2 | 1B, 2B] BALL
+  Ball 2. Count: 2-2.
+[8 outs | 2-2 | 1B, 2B] CALLED STRIKE
+  Strike (called). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: A. Driscoll ---
+[9 outs | 0-0 | 1B, 2B] BALL
+  Ball 1. Count: 1-0.
+[9 outs | 1-0 | 1B, 2B] SWINGING STRIKE
+  Strike (swinging). Count: 1-1.
+[9 outs | 1-1 | 1B, 2B] BALL
+  Ball 2. Count: 2-1.
+[9 outs | 2-1 | 1B, 2B] CALLED STRIKE
+  Strike (called). Count: 2-2.
+[9 outs | 2-2 | 1B, 2B] BALL IN PLAY
+  A. Driscoll runs → double.
+  Runner scores from 2B.
+  Runner advances from 1B to 3B.
+--- Now batting: N. Petrov ---
+[9 outs | 0-0 | 2B, 3B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[9 outs | 0-1 | 2B, 3B] BALL IN PLAY
+  N. Petrov runs → ground out.
+  N. Petrov is out.
+  Runner scores from 3B.
+--- Now batting: O. Fitzgerald ---
+[10 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[10 outs | 1-0 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 1-1.
+[10 outs | 1-1 | 2B] BALL
+  Ball 2. Count: 2-1.
+[10 outs | 2-1 | 2B] FOUL
+  Foul ball. Count: 2-2.
+[10 outs | 2-2 | 2B] FOUL
+  Foul ball. Count: 2-2.
+[10 outs | 2-2 | 2B] FOUL
+  Foul ball. Count: 2-2.
+[10 outs | 2-2 | 2B] FOUL
+  Foul ball. Count: 2-2.
+[10 outs | 2-2 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: J. Makinde ---
+[11 outs | 0-0 | 2B] FOUL
+  Foul ball. Count: 0-1.
+[11 outs | 0-1 | 2B] BALL IN PLAY
+  J. Makinde runs → ground out.
+  J. Makinde is out.
+--- Now batting: R. Colburn ---
+[12 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[12 outs | 1-0 | 2B] FOUL
+  Foul ball. Count: 1-1.
+[12 outs | 1-1 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 1-2.
+[12 outs | 1-2 | 2B] BALL
+  Ball 2. Count: 2-2.
+[12 outs | 2-2 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: T. Wachowski ---
+[13 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[13 outs | 1-0 | 2B] BALL IN PLAY
+  T. Wachowski runs → HOME RUN.
+  Runner scores.
+  Batter scores (HR).
+--- Now batting: E. Solberg ---
+[13 outs | 0-0 | empty] BALL IN PLAY
+  E. Solberg runs → fly out.
+  E. Solberg is out.
+--- Now batting: H. Mwangi ---
+[14 outs | 0-0 | empty] BALL
+  Ball 1. Count: 1-0.
+[14 outs | 1-0 | empty] FOUL
+  Foul ball. Count: 1-1.
+[14 outs | 1-1 | empty] SWINGING STRIKE
+  Strike (swinging). Count: 1-2.
+[14 outs | 1-2 | empty] FOUL
+  Foul ball. Count: 1-2.
+[14 outs | 1-2 | empty] BALL IN PLAY
+  H. Mwangi runs → fly out.
+  H. Mwangi is out.
+[15 outs | 0-0 | empty] PITCHING CHANGE
+  PITCHING CHANGE: S. Okafor exits (20 BF this spell).
+--- Now batting: C. Lindqvist [P] ---
+[15 outs | 0-0 | empty] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[15 outs | 0-1 | empty] BALL
+  Ball 1. Count: 1-1.
+[15 outs | 1-1 | empty] CALLED STRIKE
+  Strike (called). Count: 1-2.
+[15 outs | 1-2 | empty] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: A. Driscoll ---
+[16 outs | 0-0 | empty] FOUL
+  Foul ball. Count: 0-1.
+[16 outs | 0-1 | empty] BALL IN PLAY
+  A. Driscoll runs → line out.
+  A. Driscoll is out.
+--- Now batting: N. Petrov ---
+[17 outs | 0-0 | empty] BALL
+  Ball 1. Count: 1-0.
+[17 outs | 1-0 | empty] BALL IN PLAY
+  N. Petrov runs → HOME RUN.
+  Batter scores (HR).
+--- Now batting: O. Fitzgerald ---
+[17 outs | 0-0 | empty] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[17 outs | 0-1 | empty] CALLED STRIKE
+  Strike (called). Count: 0-2.
+[17 outs | 0-2 | empty] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: J. Makinde ---
+[18 outs | 0-0 | empty] BALL IN PLAY
+  J. Makinde runs → single.
+--- Now batting: R. Colburn ---
+[18 outs | 0-0 | 1B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[18 outs | 0-1 | 1B] CALLED STRIKE
+  Strike (called). Count: 0-2.
+[18 outs | 0-2 | 1B] FOUL
+  Foul ball. Count: 0-2.
+[18 outs | 0-2 | 1B] BALL
+  Ball 1. Count: 1-2.
+[18 outs | 1-2 | 1B] BALL IN PLAY
+  R. Colburn runs → single.
+  Runner advances from 1B to 2B.
+--- Now batting: T. Wachowski ---
+[18 outs | 0-0 | 1B, 2B] BALL
+  Ball 1. Count: 1-0.
+[18 outs | 1-0 | 1B, 2B] SWINGING STRIKE
+  Strike (swinging). Count: 1-1.
+[18 outs | 1-1 | 1B, 2B] BALL
+  Ball 2. Count: 2-1.
+[18 outs | 2-1 | 1B, 2B] BALL IN PLAY
+  T. Wachowski runs → ground out.
+  T. Wachowski is out.
+  Runner scores from 2B.
+  Runner advances from 1B to 2B.
+--- Now batting: E. Solberg ---
+[19 outs | 0-0 | 2B] BALL
+  Ball 1. Count: 1-0.
+[19 outs | 1-0 | 2B] BALL IN PLAY
+  E. Solberg runs → fly out.
+  E. Solberg is out.
+--- Now batting: H. Mwangi ---
+[20 outs | 0-0 | 2B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[20 outs | 0-1 | 2B] BALL IN PLAY
+  H. Mwangi runs → single.
+  Runner scores from 2B.
+--- Now batting: C. Lindqvist [P] ---
+[20 outs | 0-0 | 1B] BALL
+  Ball 1. Count: 1-0.
+[20 outs | 1-0 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 1-1.
+[20 outs | 1-1 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 1-2.
+[20 outs | 1-2 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: A. Driscoll ---
+[21 outs | 0-0 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[21 outs | 0-1 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-2.
+[21 outs | 0-2 | 1B] BALL
+  Ball 1. Count: 1-2.
+[21 outs | 1-2 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-0.
+  STRIKEOUT.
+--- Now batting: N. Petrov ---
+[22 outs | 0-0 | 1B] BALL IN PLAY
+  N. Petrov runs → line out.
+  N. Petrov is out.
+--- Now batting: O. Fitzgerald ---
+[23 outs | 0-0 | 1B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[23 outs | 0-1 | 1B] BALL IN PLAY
+  O. Fitzgerald runs → triple.
+  Runner scores from 1B.
+--- Now batting: J. Makinde ---
+[23 outs | 0-0 | 3B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[23 outs | 0-1 | 3B] BALL IN PLAY
+  J. Makinde runs → triple.
+  Runner scores from 3B.
+--- Now batting: R. Colburn ---
+[23 outs | 0-0 | 3B] CALLED STRIKE
+  Strike (called). Count: 0-1.
+[23 outs | 0-1 | 3B] CALLED STRIKE
+  Strike (called). Count: 0-2.
+[23 outs | 0-2 | 3B] BALL
+  Ball 1. Count: 1-2.
+[23 outs | 1-2 | 3B] BALL IN PLAY
+  R. Colburn runs → line out.
+  R. Colburn is out.
+--- Now batting: T. Wachowski ---
+[24 outs | 0-0 | 3B] BALL IN PLAY
+  T. Wachowski runs → line out.
+  T. Wachowski is out.
+--- Now batting: E. Solberg ---
+[25 outs | 0-0 | 3B] BALL
+  Ball 1. Count: 1-0.
+[25 outs | 1-0 | 3B] FOUL
+  Foul ball. Count: 1-1.
+[25 outs | 1-1 | 3B] BALL
+  Ball 2. Count: 2-1.
+[25 outs | 2-1 | 3B] FOUL
+  Foul ball. Count: 2-2.
+[25 outs | 2-2 | 3B] BALL IN PLAY
+  E. Solberg runs → line out.
+  E. Solberg is out.
+--- Now batting: H. Mwangi ---
+[26 outs | 0-0 | 3B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[26 outs | 0-1 | 3B] SWINGING STRIKE
+  Strike (swinging). Count: 0-2.
+[26 outs | 0-2 | 3B] BALL IN PLAY
+  H. Mwangi runs → single.
+  Runner scores from 3B.
+--- Now batting: C. Lindqvist [P] ---
+[26 outs | 0-0 | 1B] SWINGING STRIKE
+  Strike (swinging). Count: 0-1.
+[26 outs | 0-1 | 1B] FOUL
+  Foul ball. Count: 0-2.
+[26 outs | 0-2 | 1B] BALL
+  Ball 1. Count: 1-2.
+[26 outs | 1-2 | 1B] FOUL
+  Foul ball. Count: 1-2.
+[26 outs | 1-2 | 1B] BALL IN PLAY
+  C. Lindqvist runs → ground out.
+  C. Lindqvist is out.
+  Runner advances from 1B to 2B.
+
+End of bottom half — Ironvale Bears: 11 run(s), 12 hit(s), 27 out(s) | Run rate: 0.407 R/out | Stays: 1
+
+============================================================
+GAME OVER: MILLBROOK FOXES WIN 21–11
+============================================================
+Final score: Millbrook Foxes 21, Ironvale Bears 11
+============================================================
+LINE SCORE
+                  1      R
+Millbrook Foxes     21     21
+Ironvale Bears      11     11
+
+============================================================
+MILLBROOK FOXES BATTING
+Player                PA   AB    R    H   2B   3B   HR    RBI   BB    K  HBP  STY  SRBI   MH
+────────────────────────────────────────────────────────────────────────────────────────────────
+M. Ashby                6    5    3    3    0    0    0     2    1    0    0    0     0    0
+D. Cortez               6    5    2    2    0    0    0     2    1    2    0    1     0    0
+R. Tanner               6    6    2    2    1    0    0     0    0    3    0    0     0    0
+L. Moreau               5    4    2    2    1    0    0     3    1    0    0    0     0    0
+T. Hollis               5    4    3    2    0    0    0     4    1    0    0    0     0    0
+C. Nkrumah              5    4    3    3    0    0    0     3    1    2    0    1     0    0
+P. Svensson             5    5    2    2    0    0    1     3    0    2    0    0     0    0
+K. Yamada               5    5    1    1    1    0    0     1    0    1    0    0     0    0
+S. Okafor               5    4    2    2    1    0    0     1    1    1    0    0     0    0
+V. Ramos                1    1    0    0    0    0    0     0    0    0    0    0     0    0
+B. Lepage               1    1    0    0    0    0    0     0    0    1    0    0     0    0
+G. Osei                 1    1    1    1    1    0    0     1    0    0    0    0     0    0
+────────────────────────────────────────────────────────────────────────────────────────────────
+TOTALS                 51   45   21   20    5    0    1    20    6   12    0    2     0    0
+
+Pitcher                BF  OUT    H    R   BB    K  HBP
+──────────────────────────────────────────────────────
+S. Okafor              20   15    5    5    1   10    0
+M. Ashby               19   12    7    6    0    4    0
+
+============================================================
+IRONVALE BEARS BATTING
+Player                PA   AB    R    H   2B   3B   HR    RBI   BB    K  HBP  STY  SRBI   MH
+────────────────────────────────────────────────────────────────────────────────────────────────
+A. Driscoll             4    4    1    1    1    0    0     1    0    2    0    0     0    0
+N. Petrov               4    4    2    2    0    0    1     2    0    0    0    0     0    0
+O. Fitzgerald           4    4    1    1    0    1    0     1    0    3    0    0     0    0
+J. Makinde              4    4    2    2    0    1    0     1    0    1    0    0     0    0
+R. Colburn              4    4    2    2    0    0    0     0    0    1    0    0     0    0
+T. Wachowski            4    4    1    2    0    0    1     4    0    1    0    1     1    0
+E. Solberg              4    4    0    0    0    0    0     0    0    1    0    0     0    0
+H. Mwangi               4    4    1    2    0    0    0     2    0    1    0    0     0    0
+C. Lindqvist            4    4    0    0    0    0    0     0    0    2    0    0     0    0
+D. Oduya                1    0    1    0    0    0    0     0    1    0    0    0     0    0
+M. Castillo             1    1    0    0    0    0    0     0    0    1    0    0     0    0
+P. Graves               1    1    0    0    0    0    0     0    0    1    0    0     0    0
+────────────────────────────────────────────────────────────────────────────────────────────────
+TOTALS                 39   38   11   12    1    2    2    11    1   14    0    1     1    0
+
+Pitcher                BF  OUT    H    R   BB    K  HBP
+──────────────────────────────────────────────────────
+C. Lindqvist           31   17   12   11    3    7    0
+A. Driscoll            20   10    8   10    3    5    0
+
+============================================================
+Run rate:  Millbrook Foxes  0.778    Ironvale Bears  0.407
+Stays:     Millbrook Foxes  2    Ironvale Bears  1
+Required run rate (Ironvale Bears): 0.815 R/out (needed 22 runs in 27 outs)
+============================================================
+============================================================
+PARTNERSHIP LOG
+Batter 1              Batter 2                Runs  Half
+──────────────────────────────────────────────────────────────────
+M. Ashby              D. Cortez                  0  top
+D. Cortez             L. Moreau                  0  top
+L. Moreau             C. Nkrumah                 1  top
+C. Nkrumah            V. Ramos                   2  top
+V. Ramos              B. Lepage                  0  top
+B. Lepage             S. Okafor                  1  top
+S. Okafor             M. Ashby                   0  top
+M. Ashby              D. Cortez                  0  top
+D. Cortez             R. Tanner                  0  top
+R. Tanner             T. Hollis                  1  top
+T. Hollis             P. Svensson                1  top
+P. Svensson           K. Yamada                  0  top
+K. Yamada             R. Tanner                  1  top
+R. Tanner             L. Moreau                  1  top
+L. Moreau             K. Yamada                  5  top
+K. Yamada             D. Cortez                  1  top
+D. Cortez             T. Hollis                  2  top
+T. Hollis             P. Svensson                0  top
+P. Svensson           K. Yamada                  0  top
+K. Yamada             S. Okafor                  0  top
+S. Okafor             M. Ashby                   1  top
+M. Ashby              R. Tanner                  0  top
+R. Tanner             C. Nkrumah                 2  top
+C. Nkrumah            P. Svensson                0  top
+P. Svensson           K. Yamada                  0  top
+K. Yamada             R. Tanner                  2  top
+A. Driscoll           O. Fitzgerald              0  bottom
+O. Fitzgerald         J. Makinde                 0  bottom
+J. Makinde            T. Wachowski               1  bottom
+T. Wachowski          E. Solberg                 0  bottom
+E. Solberg            H. Mwangi                  0  bottom
+H. Mwangi             C. Lindqvist               0  bottom
+C. Lindqvist          M. Castillo                0  bottom
+M. Castillo           P. Graves                  0  bottom
+P. Graves             N. Petrov                  2  bottom
+N. Petrov             O. Fitzgerald              0  bottom
+O. Fitzgerald         J. Makinde                 0  bottom
+J. Makinde            R. Colburn                 0  bottom
+R. Colburn            E. Solberg                 2  bottom
+E. Solberg            H. Mwangi                  0  bottom
+H. Mwangi             C. Lindqvist               0  bottom
+C. Lindqvist          A. Driscoll                0  bottom
+A. Driscoll           O. Fitzgerald              1  bottom
+O. Fitzgerald         T. Wachowski               1  bottom
+T. Wachowski          E. Solberg                 0  bottom
+E. Solberg            C. Lindqvist               1  bottom
+C. Lindqvist          A. Driscoll                0  bottom
+A. Driscoll           N. Petrov                  0  bottom
+N. Petrov             R. Colburn                 2  bottom
+R. Colburn            T. Wachowski               0  bottom
+T. Wachowski          E. Solberg                 0  bottom
+E. Solberg            C. Lindqvist               1  bottom
+──────────────────────────────────────────────────────────────────
+Total partnerships: 52  |  Avg runs/partnership: 0.62
+============================================================
+PITCHER SPELL LOG
+Pitcher               Half         PA#   BF  OUT    R    H   BB    K  HBP
+──────────────────────────────────────────────────────────────────────────
+C. Lindqvist          top            1   22   13     7     9     1     4     0
+A. Driscoll           top           23   20   10    10     8     3     5     0
+C. Lindqvist          top           43    9    4     4     3     2     3     0
+S. Okafor             bottom         1   20   15     5     5     1    10     0
+M. Ashby              bottom        21   19   12     6     7     0     4     0
+──────────────────────────────────────────────────────────────────────────
+Total spells: 5
