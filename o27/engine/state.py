@@ -1,11 +1,27 @@
 """
 GameState and supporting data structures for the O27 simulator.
 
-Half naming convention:
+Half naming convention (state.half):
   "top"          — visitors batting (first half of regulation)
   "bottom"       — home batting (second half of regulation)
   "super_top"    — visitors batting in super-inning tiebreaker
   "super_bottom" — home batting in super-inning tiebreaker
+
+Public state contract (convenience entry points):
+  state.batting_team          → Team currently at bat
+  state.fielding_team         → Team currently in the field
+  state.current_batter        → Player now at the plate (property)
+  state.get_current_pitcher() → Player now pitching (method)
+  state.active_lineup         → list[Player] from the appropriate Team lineup
+  state.runners_on_base       → bool
+  state.runner_count          → int
+  state.is_super_inning       → bool
+
+Active-lineup model:
+  Each Team stores a 12-player lineup (9 position + 3 jokers) in Team.lineup.
+  Jokers are part of the lineup from the start; once a joker bats they are
+  added to Team.jokers_used_this_half and skipped by Team.advance_lineup().
+  In super-innings Team.super_lineup (5 players) is used instead.
 """
 
 from __future__ import annotations
@@ -261,6 +277,19 @@ class GameState:
     @property
     def current_batter(self) -> Player:
         return self.batting_team.current_batter()
+
+    @property
+    def active_lineup(self) -> list:
+        """Return the list that is currently active for the batting team.
+
+        In super-innings this is the 5-player super_lineup; in regulation it
+        is the 12-batter Team.lineup (jokers already included, used ones
+        skipped by advance_lineup).
+        """
+        team = self.batting_team
+        if team.super_lineup:
+            return list(team.super_lineup)
+        return list(team.lineup)
 
     @property
     def runners_on_base(self) -> bool:

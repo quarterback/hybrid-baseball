@@ -68,13 +68,15 @@ def make_demo_team(team_id: str, name: str) -> Team:
 
 
 def make_demo_state() -> GameState:
-    """Build a minimal demo GameState for Phase 1."""
+    """Build a minimal demo GameState for Phase 1.
+
+    The fielding pitcher is initialized by run_game() when it calls
+    _set_fielding_pitcher() at the start of each half, so the caller
+    does not need to set current_pitcher_id manually.
+    """
     visitors = make_demo_team("visitors", "Visitors")
     home = make_demo_team("home", "Home")
-    state = GameState(visitors=visitors, home=home)
-    # Home team pitches first (visitors bat in the top half).
-    state.current_pitcher_id = home.roster[8].player_id
-    return state
+    return GameState(visitors=visitors, home=home)
 
 
 # ---------------------------------------------------------------------------

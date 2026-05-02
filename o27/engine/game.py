@@ -62,6 +62,7 @@ def run_game(
     # === TOP HALF ===
     state.half = "top"
     state.batting_team.reset_half()
+    _set_fielding_pitcher(state)   # home pitches in the top half
     full_log.append(_half_header(state))
     half_log = run_half(state, event_provider)
     full_log += half_log
@@ -267,16 +268,31 @@ def setup_super_inning(
 def _set_fielding_pitcher(state: GameState) -> None:
     """Point current_pitcher_id at the fielding team's pitcher.
 
-    Called whenever the fielding team changes (halftime, super-inning transitions)
-    so that state.get_current_pitcher() always returns a valid Player.
-    Falls back to the first roster member if no explicit pitcher is found.
+    Called whenever the fielding team changes (top half start, halftime,
+    super-inning transitions) so that state.get_current_pitcher() always
+    returns a valid Player.
+
+    Pitcher selection order:
+      1. First roster player with is_pitcher=True who is NOT in
+         joker_fielding_restricted (PRD §2.3: jokers who've batted cannot field).
+      2. Fallback: first non-restricted roster member.
+      3. Last-resort fallback: roster[0] (avoids returning None on a bad roster).
     """
     fielding = state.fielding_team
+    restricted = fielding.joker_fielding_restricted
+    # Pass 1: find the designated pitcher who is allowed to field.
     for player in fielding.roster:
-        if player.is_pitcher:
+        if player.is_pitcher and player.player_id not in restricted:
             state.current_pitcher_id = player.player_id
             state.pitcher_spell_count = 0
             return
+    # Pass 2: no designated pitcher available; pick any non-restricted player.
+    for player in fielding.roster:
+        if player.player_id not in restricted:
+            state.current_pitcher_id = player.player_id
+            state.pitcher_spell_count = 0
+            return
+    # Last resort.
     if fielding.roster:
         state.current_pitcher_id = fielding.roster[0].player_id
         state.pitcher_spell_count = 0
