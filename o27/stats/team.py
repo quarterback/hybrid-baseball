@@ -28,15 +28,16 @@ class TeamStats:
     @property
     def required_run_rate(self) -> Optional[float]:
         """
-        Minimum R/out the home side must sustain to win.
-        Only meaningful during / after the bottom half when target_runs is set.
-        Uses remaining outs (27 total) at the point this is called.
+        Minimum R/out the home side must sustain to win from the current point.
+        Uses remaining runs needed (target - scored so far) / remaining outs.
+        Only meaningful during the bottom half when target_runs is set.
         Returns None when target is not yet known.
         """
         if self.target_runs is None:
             return None
         remaining_outs = max(1, 27 - self.outs)
-        return self.target_runs / remaining_outs
+        runs_needed = max(0, self.target_runs - self.runs)
+        return runs_needed / remaining_outs
 
     @property
     def required_run_rate_full(self) -> Optional[float]:

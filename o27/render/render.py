@@ -651,15 +651,26 @@ class Renderer:
         runs_scored = disp.get("runs_scored", 0)
         ab_hits_before = ctx.get("at_bat_hits_before", 0)
 
-        def _check_multi_hit() -> None:
-            """Increment multi_hit_abs if 2+ stay-credited hits accumulated this AB."""
-            if ab_hits_before >= 2:
+        # O27 multi-hit AB: at-bats (not walks/HBP) with 2+ credited hits.
+        # Credited hits = stay hits accumulated prior to this event (ab_hits_before)
+        # PLUS the terminal running hit, if this event is a run-chosen safety hit.
+        _SAFETY_HITS = frozenset(
+            ("single", "infield_single", "double", "triple", "hr", "home_run")
+        )
+
+        def _check_multi_hit(terminal_hit: bool = False) -> None:
+            """
+            Called only when the at-bat ends AND s.ab was just incremented.
+            terminal_hit=True when the final event also credits a safety hit to batter.
+            """
+            total = ab_hits_before + (1 if terminal_hit else 0)
+            if total >= 2:
                 s.multi_hit_abs += 1
 
         if etype == "ball" and disp["is_walk"]:
+            # Walk is NOT an at-bat; no multi_hit_abs.
             s.bb += 1
             s.rbi += runs_scored
-            _check_multi_hit()
 
         elif etype == "foul_tip_caught":
             s.ab += 1
@@ -672,13 +683,14 @@ class Renderer:
             _check_multi_hit()
 
         elif etype == "hit_by_pitch":
+            # HBP is NOT an at-bat; no multi_hit_abs.
             s.hbp += 1
             s.rbi += runs_scored
-            _check_multi_hit()
 
         elif etype == "ball_in_play":
             choice = disp.get("choice", "run")
             hit_type = disp.get("hit_type", "")
+            is_safety_hit = hit_type in _SAFETY_HITS
 
             if choice == "stay":
                 if disp.get("stay_valid"):
@@ -689,14 +701,16 @@ class Renderer:
                     if runs_scored > 0:
                         s.stay_rbi += runs_scored
                     s.rbi += runs_scored
+                    # At-bat CONTINUES — do NOT check multi_hit_abs yet.
                 elif disp.get("stay_batter_out"):
+                    # Stay results in out → at-bat ends as an AB, no new hit.
                     s.ab += 1
                     s.rbi += runs_scored
-                    _check_multi_hit()
+                    _check_multi_hit(terminal_hit=False)
             else:
+                # Run chosen — at-bat ends.
                 s.ab += 1
-                if hit_type in ("single", "double", "triple", "hr", "home_run",
-                                "infield_single"):
+                if is_safety_hit:
                     s.hits += 1
                 if hit_type == "double":
                     s.doubles += 1
@@ -705,7 +719,8 @@ class Renderer:
                 elif hit_type in ("hr", "home_run"):
                     s.hr += 1
                 s.rbi += runs_scored
-                _check_multi_hit()
+                # Terminal running hit counts toward multi-hit AB.
+                _check_multi_hit(terminal_hit=is_safety_hit)
 
         # Credit runs-scored (R) to the players who left the bases.
         if runs_scored > 0:

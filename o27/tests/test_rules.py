@@ -899,6 +899,128 @@ def test_seeded_determinism():
             f"got {len(log_a)} lines")
 
 
+# ---------------------------------------------------------------------------
+# Test 13: multi_hit_abs stat accuracy
+# ---------------------------------------------------------------------------
+
+def test_multi_hit_abs_stat():
+    """
+    Verifies three multi-hit-AB scenarios via the Renderer using run_half
+    (avoids the full game loop / potential super-inning infinite loop):
+
+      (a) 1 stay-credited hit + terminal single  → multi_hit_abs = 1
+      (b) 2 stay-credited hits + terminal K      → multi_hit_abs = 1
+      (c) 2 stay-credited hits + terminal walk   → multi_hit_abs = 0
+          (walk is not an AB, so multi-hit cannot apply)
+    """
+    print("\n[Test 13] multi_hit_abs stat accuracy")
+    from o27.render.render import Renderer
+    import o27.engine.fielding as fld_mod
+
+    def _run_half_scenario(events, batter_slot=1):
+        """Run one half with the given scripted events and return batter stats."""
+        state = _fresh_state()
+        renderer = Renderer()
+        prov = make_script_provider(events)
+        run_half(state, prov, renderer=renderer)
+        batter = state.visitors.roster[batter_slot]
+        return renderer._batter_stats.get(batter.player_id)
+
+    # runner_advances format: [adv_1B, adv_2B, adv_3B] (bases each runner gains).
+    # (a) 1 stay-credited hit (runner advances 1B→2B) + terminal run single.
+    s_a = _run_half_scenario([
+        # Batter 0 walks → runner on 1B.
+        {"type": "ball"}, {"type": "ball"}, {"type": "ball"}, {"type": "ball"},
+        # Batter 1: stay, runner 1B→2B (hit credited), batter stays at plate.
+        {"type": "ball_in_play", "choice": "stay",
+         "outcome": {"hit_type": "single", "batter_safe": True,
+                     "runner_advances": [1, 0, 0]}},
+        # Batter 1: run single (terminal) → 2nd credited hit; batter reaches 1B.
+        {"type": "ball_in_play", "choice": "run",
+         "outcome": {"hit_type": "single", "batter_safe": True,
+                     "runner_advances": [0, 0, 0]}},
+    ], batter_slot=1)
+    _assert("(a) 1 stay hit + terminal single → hits=2",
+            s_a is not None and s_a.hits == 2,
+            f"hits={s_a.hits if s_a else None}")
+    _assert("(a) 1 stay hit + terminal single → multi_hit_abs=1",
+            s_a is not None and s_a.multi_hit_abs == 1,
+            f"multi_hit_abs={s_a.multi_hit_abs if s_a else None}")
+
+    # (b) 2 stay-credited hits + terminal strikeout → multi_hit_abs=1.
+    s_b = _run_half_scenario([
+        {"type": "ball"}, {"type": "ball"}, {"type": "ball"}, {"type": "ball"},
+        # Batter 1: 1st stay hit — runner 1B→2B.
+        {"type": "ball_in_play", "choice": "stay",
+         "outcome": {"hit_type": "single", "batter_safe": True,
+                     "runner_advances": [1, 0, 0]}},
+        # Batter 1: 2nd stay hit — runner 2B→3B.
+        {"type": "ball_in_play", "choice": "stay",
+         "outcome": {"hit_type": "single", "batter_safe": True,
+                     "runner_advances": [0, 1, 0]}},
+        # Strikeout — terminal at-bat with 2 credited hits → multi_hit_abs=1.
+        {"type": "swinging_strike"},
+        {"type": "swinging_strike"},
+        {"type": "swinging_strike"},
+    ], batter_slot=1)
+    _assert("(b) 2 stay hits + K → multi_hit_abs=1",
+            s_b is not None and s_b.multi_hit_abs == 1,
+            f"multi_hit_abs={s_b.multi_hit_abs if s_b else None}")
+
+    # (c) 2 stay-credited hits + walk → walk is NOT an AB → multi_hit_abs=0.
+    s_c = _run_half_scenario([
+        {"type": "ball"}, {"type": "ball"}, {"type": "ball"}, {"type": "ball"},
+        # Batter 1: 1st stay hit — runner 1B→2B.
+        {"type": "ball_in_play", "choice": "stay",
+         "outcome": {"hit_type": "single", "batter_safe": True,
+                     "runner_advances": [1, 0, 0]}},
+        # Batter 1: 2nd stay hit — runner 2B→3B.
+        {"type": "ball_in_play", "choice": "stay",
+         "outcome": {"hit_type": "single", "batter_safe": True,
+                     "runner_advances": [0, 1, 0]}},
+        # Walk — NOT an at-bat; multi_hit_abs must remain 0.
+        {"type": "ball"}, {"type": "ball"}, {"type": "ball"}, {"type": "ball"},
+    ], batter_slot=1)
+    _assert("(c) 2 stay hits + walk → multi_hit_abs=0 (walk ≠ AB)",
+            s_c is not None and s_c.multi_hit_abs == 0,
+            f"multi_hit_abs={s_c.multi_hit_abs if s_c else None}")
+
+
+# ---------------------------------------------------------------------------
+# Test 14: TeamStats.required_run_rate (in-progress chase)
+# ---------------------------------------------------------------------------
+
+def test_team_stats_required_run_rate():
+    """
+    TeamStats.required_run_rate must reflect remaining runs needed divided
+    by remaining outs — not the full target divided by remaining outs.
+    """
+    print("\n[Test 14] TeamStats.required_run_rate mid-chase accuracy")
+    from o27.stats.team import TeamStats
+
+    # Target: need 22 runs in 27 outs.  After 10 outs + 8 runs scored:
+    # runs_needed = 22 - 8 = 14, remaining_outs = 27 - 10 = 17.
+    # required_run_rate = 14/17 ≈ 0.8235.
+    ts = TeamStats(team_name="Bears", runs=8, outs=10, target_runs=22)
+    rr = ts.required_run_rate
+    expected = (22 - 8) / (27 - 10)
+    _assert("required_run_rate = (target-runs)/remaining_outs",
+            rr is not None and abs(rr - expected) < 1e-9,
+            f"got {rr:.6f}, expected {expected:.6f}")
+
+    # required_run_rate_full is still target/27 regardless of progress.
+    rrf = ts.required_run_rate_full
+    _assert("required_run_rate_full = target_runs/27",
+            rrf is not None and abs(rrf - 22/27) < 1e-9,
+            f"got {rrf:.6f}, expected {22/27:.6f}")
+
+    # Edge: already won (runs >= target) → runs_needed=0 → required_rr=0.
+    ts2 = TeamStats(team_name="Bears", runs=22, outs=20, target_runs=22)
+    _assert("required_run_rate=0 when target already reached",
+            ts2.required_run_rate == 0.0,
+            f"got {ts2.required_run_rate}")
+
+
 def run_all():
     print("=" * 60)
     print("O27 Phase 1 Rule Verification Tests")
@@ -918,6 +1040,8 @@ def run_all():
     test_pitcher_across_halftime()
     test_pinch_hit_heuristic()
     test_seeded_determinism()
+    test_multi_hit_abs_stat()
+    test_team_stats_required_run_rate()
 
     print("\n" + "=" * 60)
     passes = sum(1 for _, s, _ in _results if s == PASS)
