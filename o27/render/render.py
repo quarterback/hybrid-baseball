@@ -34,6 +34,24 @@ _NON_PA_EVENTS = frozenset(
      "wild_pitch", "passed_ball"}
 )
 
+# Maps internal hit_type strings → human-readable prose for the transcript.
+_HIT_TYPE_DISPLAY: dict[str, str] = {
+    "single":          "single",
+    "infield_single":  "infield single",
+    "double":          "double",
+    "triple":          "triple",
+    "hr":              "HOME RUN",
+    "home_run":        "HOME RUN",
+    "ground_out":      "ground out",
+    "fly_out":         "fly out",
+    "line_out":        "line out",
+    "fielders_choice": "fielder's choice",
+    "double_play":     "double play",
+    "stay_ground":     "ground ball (stay)",
+    "stay_fly_no_catch": "fly ball (stay)",
+    "error":           "error",
+}
+
 
 class Renderer:
     """Jinja2 renderer for O27 play-by-play and structured output."""
@@ -93,8 +111,8 @@ class Renderer:
         etype = event["type"]
         lines: list[str] = []
 
-        # Detect new plate appearance (batter change, ignoring manager/baserunning
-        # events that fire between or during PAs without changing the batter).
+        # Detect new plate appearance (batter change), ignoring manager /
+        # between-pitch events that fire without changing the batter.
         is_pa_event = etype not in _NON_PA_EVENTS
         if is_pa_event and batter.player_id != self._current_pa_batter_id:
             self._on_new_pa(batter)
@@ -113,10 +131,14 @@ class Renderer:
         if rendered:
             lines.append(rendered)
 
+        # Append runner advancement narrative computed from state delta.
+        runner_lines = self._compute_runner_lines(ctx, state_after, etype, disp, event)
+        lines.extend(runner_lines)
+
         return lines
 
     def render_half_header(self, state) -> str:
-        """Return the half-inning header line (e.g. 'TOP HALF | Foxes batting')."""
+        """Return the half-inning header line."""
         half_labels = {
             "top": "TOP HALF",
             "bottom": "BOTTOM HALF",
@@ -143,11 +165,11 @@ class Renderer:
         return rendered.split("\n") if rendered else []
 
     def render_half_summary(self, state, which: str) -> list[str]:
-        """Render the end-of-half summary line."""
+        """Render the end-of-half summary including runs, hits, outs, and run rate."""
         team = state.visitors if which == "top" else state.home
         runs = state.score[team.team_id]
-        outs = max(state.outs, 1)
-        rr = runs / outs
+        outs = state.outs
+        rr = runs / max(outs, 1)
         hits = sum(
             s.hits
             for pid, s in self._batter_stats.items()
@@ -163,7 +185,7 @@ class Renderer:
             "",
             (
                 f"End of {half_label} half — {team.name}: "
-                f"{runs} run(s), {hits} hit(s) | "
+                f"{runs} run(s), {hits} hit(s), {outs} out(s) | "
                 f"Run rate: {rr:.3f} R/out | Stays: {stays}"
             ),
         ]
@@ -289,6 +311,92 @@ class Renderer:
         return f"--- Now batting: {batter.name}{tag} ---"
 
     # -----------------------------------------------------------------------
+    # Internal: runner advancement narrative
+    # -----------------------------------------------------------------------
+
+    def _compute_runner_lines(
+        self, ctx: dict, state_after, etype: str, disp: dict, event: dict
+    ) -> list[str]:
+        """
+        Compute human-readable runner advancement narrative by comparing the
+        bases snapshot (before event) with the post-event bases.  Returns a
+        list of indented lines suitable for appending to the event output.
+
+        This covers contact plays, walk force-advances, HBP force-advances,
+        and HR clearances, without depending on the raw apply_event() log.
+        """
+        # Only meaningful for contact and pitch events that move runners.
+        if etype not in (
+            "ball_in_play", "ball", "hit_by_pitch",
+            "balk", "wild_pitch", "passed_ball",
+        ):
+            return []
+
+        bases_before = ctx["bases_list"]
+        bases_after = list(state_after.bases)
+        base_names = ["1B", "2B", "3B"]
+        hit_type = disp.get("hit_type", "")
+        runs_scored = disp.get("runs_scored", 0)
+        lines: list[str] = []
+
+        # --- HOME RUN: everyone scores ---
+        if etype == "ball_in_play" and hit_type in ("hr", "home_run"):
+            for i in range(2, -1, -1):
+                if bases_before[i] is not None:
+                    lines.append(f"  Runner scores.")
+            lines.append("  Batter scores (HR).")
+            return lines
+
+        # --- Identify runner thrown out (fielder's choice / stay play) ---
+        thrown_out_base: Optional[int] = None
+        if etype == "ball_in_play":
+            outcome = event.get("outcome", {})
+            runner_out_idx = outcome.get("runner_out_idx")
+            if runner_out_idx is not None and bases_before[runner_out_idx] is not None:
+                thrown_out_base = runner_out_idx
+
+        # --- Track each runner who was on base before the play ---
+        after_id_set = {pid for pid in bases_after if pid is not None}
+        for i in range(2, -1, -1):  # process 3B → 2B → 1B (score order)
+            old_pid = bases_before[i]
+            if old_pid is None:
+                continue
+
+            # Runner thrown out on this play.
+            if thrown_out_base is not None and i == thrown_out_base:
+                lines.append(f"  Runner at {base_names[i]} thrown out.")
+                continue
+
+            if old_pid in after_id_set:
+                # Runner is still on a base — find which one.
+                for j in range(3):
+                    if bases_after[j] == old_pid and j != i:
+                        lines.append(
+                            f"  Runner advances from {base_names[i]} to {base_names[j]}."
+                        )
+                        break
+            else:
+                # Runner left the bases without being thrown out → scored.
+                lines.append(f"  Runner scores from {base_names[i]}.")
+
+        # --- Walk / HBP force-advance scoring (no specific runner narrative needed
+        #     if we already handled it above, but catch the case where no runner
+        #     was on a scored-from base because they were forced through empty bases) ---
+        if etype in ("ball", "hit_by_pitch") and runs_scored > 0:
+            runner_lines_count = sum(1 for ln in lines if "scores" in ln)
+            shortfall = runs_scored - runner_lines_count
+            for _ in range(shortfall):
+                lines.append("  Runner scores (forced).")
+
+        # --- Wild pitch / passed ball / balk: no base-by-base narration,
+        #     but note runs scored if any ---
+        if etype in ("wild_pitch", "passed_ball", "balk"):
+            if runs_scored > 0:
+                lines.append(f"  {runs_scored} run(s) score.")
+
+        return lines
+
+    # -----------------------------------------------------------------------
     # Internal: display context builder
     # -----------------------------------------------------------------------
 
@@ -332,6 +440,7 @@ class Renderer:
             "ball_number": 0,
             "new_count": str(state_after.count),
             "hit_type": "",
+            "hit_type_display": "",
             "choice": "run",
             "batter_safe": True,
             "new_bases": state_after.bases_summary(),
@@ -377,6 +486,9 @@ class Renderer:
 
             d["choice"] = choice
             d["hit_type"] = hit_type
+            d["hit_type_display"] = _HIT_TYPE_DISPLAY.get(
+                hit_type, hit_type.replace("_", " ")
+            )
             d["batter_safe"] = batter_safe
             d["new_bases"] = state_after.bases_summary()
 
@@ -466,7 +578,8 @@ class Renderer:
                     s.rbi += runs_scored
             else:
                 s.ab += 1
-                if hit_type in ("single", "double", "triple", "hr", "home_run"):
+                if hit_type in ("single", "double", "triple", "hr", "home_run",
+                                "infield_single"):
                     s.hits += 1
                 if hit_type == "double":
                     s.doubles += 1
@@ -492,17 +605,15 @@ class Renderer:
         bases_before = ctx["bases_list"]
         bases_after = list(state_after.bases)
 
-        # Collect player_ids that left the bases.
-        before_ids = [pid for pid in bases_before if pid is not None]
+        # Collect player_ids that left the bases (3B → 2B → 1B order).
         after_set = {pid for pid in bases_after if pid is not None}
-        # Preserve 3B→2B→1B order (index 2, 1, 0) so front-runners are credited.
         left_ids: list[str] = []
         for i in (2, 1, 0):
             pid = bases_before[i]
             if pid is not None and pid not in after_set:
                 left_ids.append(pid)
 
-        # If batter hit a HR, they score too (not a "base runner" who left).
+        # If batter hit a HR, they score too.
         hit_type = disp.get("hit_type", "")
         if etype == "ball_in_play" and hit_type in ("hr", "home_run"):
             batter_pid = ctx["batter"].player_id
