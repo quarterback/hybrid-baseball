@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Box Score — {{ game.away_abbrev }} @ {{ game.home_abbrev }}{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('schedule', status='played') }}">Schedule</a></li>
+    <li class="breadcrumb-item active">Game #{{ game.id }}</li>
+  </ol>
+</nav>
+
+{% if not game.played %}
+<div class="alert alert-warning">This game has not been played yet.</div>
+{% else %}
+
+<!-- Scoreboard -->
+<div class="card mb-4">
+  <div class="card-body py-4">
+    <div class="row text-center align-items-center">
+      <div class="col">
+        <div class="text-secondary small">AWAY</div>
+        <a href="{{ url_for('team_detail', team_id=game.away_team_id) }}"
+           class="text-decoration-none">
+          <div class="score-big team-abbrev mt-1">{{ game.away_abbrev }}</div>
+          <div class="text-secondary">{{ game.away_name }}</div>
+        </a>
+        {% if game.winner_id == game.away_team_id %}
+        <span class="winner-badge mt-1 d-inline-block">WIN</span>
+        {% endif %}
+      </div>
+      <div class="col-auto px-5">
+        <div class="score-big">{{ game.away_score }} – {{ game.home_score }}</div>
+        <div class="text-secondary small mt-1">{{ game.game_date }}</div>
+        {% if game.super_inning %}
+        <span class="si-badge">Super-Inning</span>
+        {% endif %}
+        {% if game.seed is not none %}
+        <div class="text-secondary" style="font-size:.7rem">seed {{ game.seed }}</div>
+        {% endif %}
+      </div>
+      <div class="col">
+        <div class="text-secondary small">HOME</div>
+        <a href="{{ url_for('team_detail', team_id=game.home_team_id) }}"
+           class="text-decoration-none">
+          <div class="score-big team-abbrev mt-1">{{ game.home_abbrev }}</div>
+          <div class="text-secondary">{{ game.home_name }}</div>
+        </a>
+        {% if game.winner_id == game.home_team_id %}
+        <span class="winner-badge mt-1 d-inline-block">WIN</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Batting -->
+<div class="row g-3 mb-3">
+  {% for team_label, batting, team_name in [
+      ('Away', away_batting, game.away_name),
+      ('Home', home_batting, game.home_name)] %}
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header fw-bold">{{ team_name }} — Batting</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead><tr>
+            <th>Player</th><th>Pos</th><th>PA</th><th>AB</th>
+            <th>H</th><th>2B</th><th>3B</th><th>HR</th>
+            <th>R</th><th>RBI</th><th>BB</th><th>K</th><th>STY</th>
+          </tr></thead>
+          <tbody>
+          {% for b in batting %}
+          <tr>
+            <td>{{ b.player_name }}{% if b.stays > 0 %} <span class="si-badge">S</span>{% endif %}</td>
+            <td class="text-secondary">{{ b.position }}</td>
+            <td>{{ b.pa }}</td>
+            <td>{{ b.ab }}</td>
+            <td class="fw-bold">{{ b.hits }}</td>
+            <td>{{ b.doubles }}</td>
+            <td>{{ b.triples }}</td>
+            <td>{{ b.hr }}</td>
+            <td>{{ b.runs }}</td>
+            <td>{{ b.rbi }}</td>
+            <td>{{ b.bb }}</td>
+            <td>{{ b.k }}</td>
+            <td>{{ b.stays }}</td>
+          </tr>
+          {% endfor %}
+          {% if batting %}
+          <tr class="fw-bold" style="background:#1f2937">
+            <td colspan="2">Totals</td>
+            <td>{{ batting | sum(attribute='pa') }}</td>
+            <td>{{ batting | sum(attribute='ab') }}</td>
+            <td>{{ batting | sum(attribute='hits') }}</td>
+            <td>{{ batting | sum(attribute='doubles') }}</td>
+            <td>{{ batting | sum(attribute='triples') }}</td>
+            <td>{{ batting | sum(attribute='hr') }}</td>
+            <td>{{ batting | sum(attribute='runs') }}</td>
+            <td>{{ batting | sum(attribute='rbi') }}</td>
+            <td>{{ batting | sum(attribute='bb') }}</td>
+            <td>{{ batting | sum(attribute='k') }}</td>
+            <td>{{ batting | sum(attribute='stays') }}</td>
+          </tr>
+          {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Pitching -->
+<div class="row g-3">
+  {% for team_label, pitching, team_name in [
+      ('Away', away_pitching, game.away_name),
+      ('Home', home_pitching, game.home_name)] %}
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header fw-bold">{{ team_name }} — Pitching</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead><tr>
+            <th>Pitcher</th><th>BF</th><th>OUT</th><th>H</th><th>R</th><th>BB</th><th>K</th>
+          </tr></thead>
+          <tbody>
+          {% for p in pitching %}
+          <tr>
+            <td>{{ p.player_name }}</td>
+            <td>{{ p.batters_faced }}</td>
+            <td>{{ p.outs_recorded }}</td>
+            <td>{{ p.hits_allowed }}</td>
+            <td>{{ p.runs_allowed }}</td>
+            <td>{{ p.bb }}</td>
+            <td>{{ p.k }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endif %}
+{% endblock %}

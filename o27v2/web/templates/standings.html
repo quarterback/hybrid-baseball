@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Standings{% endblock %}
+{% block content %}
+<h2 class="mb-4 fw-bold">League Standings</h2>
+
+<div class="row g-3">
+{% for div_name, div_teams in divisions.items() %}
+{% set leader = div_teams[0] %}
+<div class="col-lg-4 col-md-6">
+  <div class="card">
+    <div class="card-header division-header">{{ div_name }}</div>
+    <div class="card-body p-0">
+      <table class="table table-sm mb-0">
+        <thead><tr>
+          <th>Team</th><th>W</th><th>L</th><th>PCT</th><th>GB</th>
+        </tr></thead>
+        <tbody>
+        {% for t in div_teams %}
+        <tr>
+          <td>
+            <a href="{{ url_for('team_detail', team_id=t.id) }}" class="text-decoration-none">
+              <span class="team-abbrev">{{ t.abbrev }}</span>
+              <span class="text-secondary small"> {{ t.city }}</span>
+            </a>
+          </td>
+          <td class="fw-bold">{{ t.wins }}</td>
+          <td class="text-secondary">{{ t.losses }}</td>
+          <td>{{ win_pct(t) }}</td>
+          <td class="text-secondary">{{ gb(leader, t) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% endblock %}

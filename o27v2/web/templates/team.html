@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{{ team.name }}{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('teams') }}">Teams</a></li>
+    <li class="breadcrumb-item active">{{ team.name }}</li>
+  </ol>
+</nav>
+
+<div class="row g-3 mb-4">
+  <div class="col-auto">
+    <div class="card p-4 text-center" style="min-width:160px">
+      <div class="team-abbrev" style="font-size:3rem">{{ team.abbrev }}</div>
+      <div class="fw-bold fs-5">{{ team.name }}</div>
+      <div class="text-secondary small">{{ team.city }}</div>
+      <div class="text-secondary small">{{ team.division }} · {{ team.league }}</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="row g-2">
+      <div class="col-auto">
+        <div class="card p-3 text-center">
+          <div class="score-big" style="color:#2ea043">{{ team.wins }}</div>
+          <div class="score-label">Wins</div>
+        </div>
+      </div>
+      <div class="col-auto">
+        <div class="card p-3 text-center">
+          <div class="score-big text-danger">{{ team.losses }}</div>
+          <div class="score-label">Losses</div>
+        </div>
+      </div>
+      <div class="col-auto">
+        <div class="card p-3 text-center">
+          <div class="score-big">{{ win_pct(team) }}</div>
+          <div class="score-label">Win Pct</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header fw-bold">Roster</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead><tr>
+            <th>Name</th><th>Pos</th><th>Skill</th><th>Spd</th><th>Ptch</th>
+          </tr></thead>
+          <tbody>
+          {% for p in players %}
+          <tr {% if p.is_joker %}style="color:#f0883e"{% elif p.is_pitcher %}style="color:#79c0ff"{% endif %}>
+            <td>
+              {{ p.name }}
+              {% if p.is_joker %}<span class="si-badge">JKR</span>{% endif %}
+              {% if p.is_pitcher %}<span class="badge bg-info text-dark ms-1" style="font-size:.65rem">P</span>{% endif %}
+            </td>
+            <td class="text-secondary">{{ p.position }}</td>
+            <td>
+              <div class="d-flex align-items-center gap-1">
+                <div style="background:#30363d;border-radius:3px;width:50px;height:6px">
+                  <div class="progress-bar-skill" style="width:{{ (p.skill * 100)|int }}%"></div>
+                </div>
+                <small class="text-secondary">{{ '%.2f'|format(p.skill) }}</small>
+              </div>
+            </td>
+            <td class="text-secondary small">{{ '%.2f'|format(p.speed) }}</td>
+            <td class="text-secondary small">{{ '%.2f'|format(p.pitcher_skill) }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header fw-bold">Recent Games</div>
+      <div class="card-body p-0">
+        {% if recent %}
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Date</th><th>Opp</th><th>Score</th><th>W/L</th><th></th></tr></thead>
+          <tbody>
+          {% for g in recent %}
+          {% set is_home = (g.home_team_id == team.id) %}
+          {% set our_score = g.home_score if is_home else g.away_score %}
+          {% set their_score = g.away_score if is_home else g.home_score %}
+          {% set opp_abbrev = g.away_abbrev if is_home else g.home_abbrev %}
+          {% set opp_id = g.away_team_id if is_home else g.home_team_id %}
+          {% set won = (g.winner_id == team.id) %}
+          <tr>
+            <td class="text-secondary small">{{ g.game_date }}</td>
+            <td>
+              {% if is_home %}vs{% else %}@{% endif %}
+              <a href="{{ url_for('team_detail', team_id=opp_id) }}" class="team-abbrev text-decoration-none">
+                {{ opp_abbrev }}
+              </a>
+            </td>
+            <td class="fw-bold">{{ our_score }}–{{ their_score }}</td>
+            <td>
+              {% if won %}<span class="text-success fw-bold">W</span>
+              {% else %}<span class="text-danger fw-bold">L</span>{% endif %}
+              {% if g.super_inning %}<span class="si-badge ms-1">SI</span>{% endif %}
+            </td>
+            <td><a href="{{ url_for('game_detail', game_id=g.id) }}" class="small">Box</a></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="p-4 text-center text-secondary">No games played yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

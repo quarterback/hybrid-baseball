@@ -20,6 +20,10 @@ author = "agent"
 task = "workflow.run"
 args = "O27 Web"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "O27v2 Web"
+
 [[workflows.workflow]]
 name = "O27 Web"
 author = "agent"
@@ -31,6 +35,18 @@ waitForPort = 5000
 
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow]]
+name = "O27v2 Web"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8080 python3 o27v2/manage.py runserver"
+waitForPort = 8080
 
 [agent]
 stack = "PNPM_WORKSPACE"
