@@ -105,7 +105,7 @@ def _end_at_bat(state: GameState) -> list[str]:
     - Records joker usage / fielding restriction before advancing lineup.
     - Resets count.
     - Advances lineup (skipping used jokers in regular halves).
-    - Increments pitcher spell count.
+    - Increments pitcher spell count and total PA counter.
     - Resets multi-hit tracker.
     Returns log lines.
     """
@@ -123,6 +123,7 @@ def _end_at_bat(state: GameState) -> list[str]:
     state.current_at_bat_hits = 0
     state.batting_team.advance_lineup()
     state.pitcher_spell_count += 1
+    state.total_pa_this_half += 1
     return log
 
 
@@ -175,6 +176,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     if etype == "foul_tip_caught":
         # Foul tip caught = strikeout (§2.4).
         log.append("  Foul tip caught — STRIKEOUT.")
+        state.pitcher_k_this_spell += 1
         batter_id = state.current_batter.player_id
         log += _record_out(state, batter_id)
         log += _end_at_bat(state)
@@ -183,6 +185,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     if etype == "hit_by_pitch":
         batter = state.current_batter
         log.append(f"  HBP — {batter.name} awarded 1B.")
+        state.pitcher_hbp_this_spell += 1
         # Push runners if forced.
         state.bases, runs, advance_log = _force_advance_for_walk(state.bases, batter.player_id)
         log += advance_log
@@ -316,6 +319,9 @@ def _resolve_contact(
     # ---- RUN CHOSEN ----
     if choice == "run":
         log.append(f"  {batter.name} runs → {hit_type}.")
+        # Track hits allowed for the current pitcher's spell.
+        if hit_type in ("single", "infield_single", "double", "triple", "hr", "home_run"):
+            state.pitcher_h_this_spell += 1
         # Capture runner at runner_out_idx BEFORE advance_runners clears the slot.
         runner_out_idx = outcome.get("runner_out_idx")
         thrown_out_id = (state.bases[runner_out_idx]
@@ -416,6 +422,7 @@ def _walk(state: GameState) -> list[str]:
     """Award a walk (4 balls). Force-advances runners."""
     batter = state.current_batter
     log = [f"  WALK — {batter.name} awarded 1B."]
+    state.pitcher_bb_this_spell += 1
     state.bases, runs, adv_log = _force_advance_for_walk(state.bases, batter.player_id)
     log += adv_log
     if runs:
@@ -458,6 +465,7 @@ def _strike(state: GameState, log: list, swinging: bool) -> list[str]:
     if state.count.strikes >= 3:
         batter_id = state.current_batter.player_id
         log.append(f"  STRIKEOUT.")
+        state.pitcher_k_this_spell += 1
         log += _record_out(state, batter_id)
         log += _end_at_bat(state)
     return log

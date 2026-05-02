@@ -137,6 +137,11 @@ def pitching_change(
             batters_faced=state.pitcher_spell_count,
             outs_recorded=state.pitcher_outs_this_spell,
             runs_allowed=state.pitcher_runs_this_spell,
+            hits_allowed=state.pitcher_h_this_spell,
+            bb=state.pitcher_bb_this_spell,
+            k=state.pitcher_k_this_spell,
+            hbp=state.pitcher_hbp_this_spell,
+            start_batter_num=state.pitcher_start_pa + 1,
             half=state.half,
             super_inning_number=state.super_inning_number,
         )
@@ -148,6 +153,11 @@ def pitching_change(
     state.pitcher_spell_count = 0
     state.pitcher_outs_this_spell = 0
     state.pitcher_runs_this_spell = 0
+    state.pitcher_h_this_spell = 0
+    state.pitcher_bb_this_spell = 0
+    state.pitcher_k_this_spell = 0
+    state.pitcher_hbp_this_spell = 0
+    state.pitcher_start_pa = state.total_pa_this_half
     log.append(f"  {new_pitcher.name} takes the mound.")
 
     state.events.append({

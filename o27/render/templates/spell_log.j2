@@ -1,13 +1,13 @@
 {#- spell_log.j2 — Pitcher spell log appended after partnership log -#}
-{%- set div = "──────────────────────────────────────────────────────────────────" -%}
-{%- set col_head = "Pitcher               Half         BF  OUT    R" -%}
+{%- set div = "──────────────────────────────────────────────────────────────────────────" -%}
+{%- set col_head = "Pitcher               Half         PA#   BF  OUT    R    H   BB    K  HBP" -%}
 
 ============================================================
 PITCHER SPELL LOG
 {{ col_head }}
 {{ div }}
 {% for s in spells %}
-{{ "%-22s" | format(s.pitcher_name) }}{{ "%-13s" | format(s.half) }}{{ "%3d" | format(s.batters_faced) }}  {{ "%3d" | format(s.outs_recorded) }}  {{ "%4d" | format(s.runs_allowed) }}
+{{ "%-22s" | format(s.pitcher_name) }}{{ "%-13s" | format(s.half) }}{{ "%3d" | format(s.start_batter_num) }}  {{ "%3d" | format(s.batters_faced) }}  {{ "%3d" | format(s.outs_recorded) }}  {{ "%4d" | format(s.runs_allowed) }}  {{ "%4d" | format(s.hits_allowed) }}  {{ "%4d" | format(s.bb) }}  {{ "%4d" | format(s.k) }}  {{ "%4d" | format(s.hbp) }}
 {% endfor %}
 {{ div }}
 Total spells: {{ spells | length }}

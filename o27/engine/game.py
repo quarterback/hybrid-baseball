@@ -19,8 +19,8 @@ For Phase 2+, the provider calls probability models.
 An optional Renderer (Phase 3+) may be passed to run_game(). When present:
   - All output is rendered via Jinja2 templates instead of raw log strings.
   - Batter stats are accumulated for the final box score.
-  - The box score is appended to the log at game end.
-  - Partnership log and spell log are appended after the box score.
+  - The box score, partnership log, spell log, and super-inning log are
+    appended at the end of the transcript.
 
 Without a Renderer (existing test paths), raw log strings are returned
 unchanged — no behavior difference for test_rules.py.
@@ -72,12 +72,13 @@ def run_game(
 
     # === TOP HALF ===
     state.half = "top"
+    state.total_pa_this_half = 0
     state.batting_team.reset_half()
     _set_fielding_pitcher(state)
     full_log.append(_half_header(state, renderer))
     half_log = run_half(state, event_provider, renderer)
     full_log += half_log
-    _close_current_spell(state)          # close top-half pitcher's final spell
+    _close_current_spell(state)
     full_log += _half_summary(state, "top", renderer)
 
     # === HALFTIME ===
@@ -89,6 +90,7 @@ def run_game(
     state.outs = 0
     state.bases = [None, None, None]
     state.count.reset()
+    state.total_pa_this_half = 0
     state.batting_team.reset_half()
     state.partnership_runs = 0
     state.partnership_first_batter_id = None
@@ -96,7 +98,7 @@ def run_game(
     full_log.append(_half_header(state, renderer))
     half_log = run_half(state, event_provider, renderer)
     full_log += half_log
-    _close_current_spell(state)          # close bottom-half pitcher's final spell
+    _close_current_spell(state)
     full_log += _half_summary(state, "bottom", renderer)
 
     # === WINNER CHECK ===
@@ -108,6 +110,8 @@ def run_game(
             full_log += renderer.render_box_score(state)
             full_log += renderer.render_partnership_log(state)
             full_log += renderer.render_spell_log(state)
+            if state.super_inning_number > 0:
+                full_log += renderer.render_super_inning_log(state)
         return state, full_log
 
     # === SUPER-INNING (tie) ===
@@ -134,6 +138,7 @@ def run_game(
         state.outs = 0
         state.bases = [None, None, None]
         state.count.reset()
+        state.total_pa_this_half = 0
         state.visitors.reset_super()
         state.visitors.super_lineup = v5
         state.visitors.super_lineup_position = 0
@@ -150,6 +155,7 @@ def run_game(
         state.outs = 0
         state.bases = [None, None, None]
         state.count.reset()
+        state.total_pa_this_half = 0
         state.home.reset_super()
         state.home.super_lineup = h5
         state.home.super_lineup_position = 0
@@ -161,12 +167,21 @@ def run_game(
         full_log += run_half(state, event_provider, renderer)
         _close_current_spell(state)
 
-        # Record round.
+        # Record round (with batter names for end-of-game log).
         v_runs = state.score["visitors"] - super_score_before_v
         h_runs = state.score["home"] - super_score_before_h
+        v_names = [
+            (state.visitors.get_player(pid) or state.home.get_player(pid))
+            for pid in [p.player_id for p in v5]
+        ]
+        h_names = [
+            (state.home.get_player(pid) or state.visitors.get_player(pid))
+            for pid in [p.player_id for p in h5]
+        ]
         round_rec = SuperInningRound(
             team_name=state.visitors.name,
             selected_batter_ids=[p.player_id for p in v5],
+            selected_batter_names=[p.name for p in v5],
             runs=v_runs,
             dismissals=len(state.visitors.super_dismissed),
         )
@@ -174,6 +189,7 @@ def run_game(
         round_rec2 = SuperInningRound(
             team_name=state.home.name,
             selected_batter_ids=[p.player_id for p in h5],
+            selected_batter_names=[p.name for p in h5],
             runs=h_runs,
             dismissals=len(state.home.super_dismissed),
         )
@@ -197,6 +213,7 @@ def run_game(
                 full_log += renderer.render_box_score(state)
                 full_log += renderer.render_partnership_log(state)
                 full_log += renderer.render_spell_log(state)
+                full_log += renderer.render_super_inning_log(state)
 
     return state, full_log
 
@@ -316,12 +333,10 @@ def _close_current_spell(state: GameState) -> None:
     """
     if state.current_pitcher_id is None:
         return
-    pitcher = state.fielding_team.get_player(state.current_pitcher_id)
-    if pitcher is None:
-        # Pitcher may be on the OTHER team's roster if halves have swapped;
-        # try both rosters.
-        pitcher = (state.visitors.get_player(state.current_pitcher_id)
-                   or state.home.get_player(state.current_pitcher_id))
+    # Try fielding_team first; at end of half the half-state hasn't changed yet
+    pitcher = (state.fielding_team.get_player(state.current_pitcher_id)
+               or state.visitors.get_player(state.current_pitcher_id)
+               or state.home.get_player(state.current_pitcher_id))
     if pitcher is None or state.pitcher_spell_count == 0:
         return
     spell = SpellRecord(
@@ -330,39 +345,50 @@ def _close_current_spell(state: GameState) -> None:
         batters_faced=state.pitcher_spell_count,
         outs_recorded=state.pitcher_outs_this_spell,
         runs_allowed=state.pitcher_runs_this_spell,
+        hits_allowed=state.pitcher_h_this_spell,
+        bb=state.pitcher_bb_this_spell,
+        k=state.pitcher_k_this_spell,
+        hbp=state.pitcher_hbp_this_spell,
+        start_batter_num=state.pitcher_start_pa + 1,
         half=state.half,
         super_inning_number=state.super_inning_number,
     )
     state.spell_log.append(spell)
-    # Reset spell counters (will be re-initialised by _set_fielding_pitcher).
     state.pitcher_spell_count = 0
     state.pitcher_outs_this_spell = 0
     state.pitcher_runs_this_spell = 0
+    state.pitcher_h_this_spell = 0
+    state.pitcher_bb_this_spell = 0
+    state.pitcher_k_this_spell = 0
+    state.pitcher_hbp_this_spell = 0
 
 
 def _set_fielding_pitcher(state: GameState) -> None:
-    """Point current_pitcher_id at the fielding team's pitcher."""
+    """Point current_pitcher_id at the fielding team's pitcher and reset counters."""
     fielding = state.fielding_team
     restricted = fielding.joker_fielding_restricted
-    for player in fielding.roster:
-        if player.is_pitcher and player.player_id not in restricted:
-            state.current_pitcher_id = player.player_id
-            state.pitcher_spell_count = 0
-            state.pitcher_outs_this_spell = 0
-            state.pitcher_runs_this_spell = 0
-            return
-    for player in fielding.roster:
-        if player.player_id not in restricted:
-            state.current_pitcher_id = player.player_id
-            state.pitcher_spell_count = 0
-            state.pitcher_outs_this_spell = 0
-            state.pitcher_runs_this_spell = 0
-            return
-    if fielding.roster:
-        state.current_pitcher_id = fielding.roster[0].player_id
+
+    def _assign(player: Player) -> None:
+        state.current_pitcher_id = player.player_id
         state.pitcher_spell_count = 0
         state.pitcher_outs_this_spell = 0
         state.pitcher_runs_this_spell = 0
+        state.pitcher_h_this_spell = 0
+        state.pitcher_bb_this_spell = 0
+        state.pitcher_k_this_spell = 0
+        state.pitcher_hbp_this_spell = 0
+        state.pitcher_start_pa = state.total_pa_this_half
+
+    for player in fielding.roster:
+        if player.is_pitcher and player.player_id not in restricted:
+            _assign(player)
+            return
+    for player in fielding.roster:
+        if player.player_id not in restricted:
+            _assign(player)
+            return
+    if fielding.roster:
+        _assign(fielding.roster[0])
 
 
 def _half_header(state: GameState, renderer=None) -> str:

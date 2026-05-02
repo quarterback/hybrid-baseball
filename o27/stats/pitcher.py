@@ -3,6 +3,8 @@ Pitcher stat accumulator for O27 (Phase 4).
 
 PitcherStats aggregates per-pitcher totals across all spells in a game.
 Spell-by-spell breakdown lives in state.spell_log (SpellRecord objects).
+Hit, BB, K, and HBP counts are tracked by the Renderer (which sees each
+event) and merged in via merge_render_stats().
 """
 from dataclasses import dataclass, field
 
@@ -23,7 +25,7 @@ class PitcherStats:
 
     @classmethod
     def from_spell_log(cls, spell_log: list, pitcher_id: str, name: str) -> "PitcherStats":
-        """Build aggregate PitcherStats from a game's spell_log."""
+        """Build aggregate PitcherStats from BF/outs/runs entries in spell_log."""
         s = cls(player_id=pitcher_id, name=name)
         for rec in spell_log:
             if rec.pitcher_id == pitcher_id:
@@ -34,3 +36,10 @@ class PitcherStats:
                 if rec.batters_faced > s.max_spell:
                     s.max_spell = rec.batters_faced
         return s
+
+    def merge_render_stats(self, h: int, bb: int, k: int, hbp: int) -> None:
+        """Merge H/BB/K/HBP tracked by the Renderer into this aggregate."""
+        self.hits_allowed += h
+        self.bb  += bb
+        self.k   += k
+        self.hbp += hbp

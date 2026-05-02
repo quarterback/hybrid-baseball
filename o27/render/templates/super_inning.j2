@@ -1,4 +1,4 @@
-{#- super_inning.j2 — Super-inning round header or summary.
+{#- super_inning.j2 — Super-inning round header, summary, or final log.
     The tie banner ("TIE — SUPER-INNING TIEBREAKER") is emitted separately
     by Renderer.render_super_inning_tie() and is NOT repeated here.
 -#}
@@ -9,4 +9,16 @@
   {{ home_name }}: {{ home_lineup }}
 {% elif mode == "summary" %}
   Super-inning R{{ round_num }}: {{ visitors_name }} {{ visitors_runs }} – {{ home_name }} {{ home_runs }}
+{% elif mode == "final_log" %}
+
+============================================================
+SUPER-INNING LOG
+============================================================
+Winner: {{ winner_name }} (super-inning)
+{% for pair in round_pairs %}
+
+  Round {{ pair.round_num }}:
+    {{ pair.v_name }}: {{ pair.v_lineup }} → {{ pair.v_runs }} run(s) ({{ pair.v_dismissals }} dismissals)
+    {{ pair.h_name }}: {{ pair.h_lineup }} → {{ pair.h_runs }} run(s) ({{ pair.h_dismissals }} dismissals)
+{% endfor %}
 {% endif %}

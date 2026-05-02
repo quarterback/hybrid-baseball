@@ -94,6 +94,11 @@ class SpellRecord:
     batters_faced: int = 0
     outs_recorded: int = 0
     runs_allowed: int = 0
+    hits_allowed: int = 0
+    bb: int = 0
+    k: int = 0
+    hbp: int = 0
+    start_batter_num: int = 0   # ordinal PA number when this spell began
     half: str = "top"
     super_inning_number: int = 0
 
@@ -115,6 +120,7 @@ class SuperInningRound:
     """One team's turn in a super-inning round."""
     team_name: str
     selected_batter_ids: list = field(default_factory=list)
+    selected_batter_names: list = field(default_factory=list)
     runs: int = 0
     dismissals: int = 0  # outs recorded (max 5)
 
@@ -243,6 +249,12 @@ class GameState:
     pitcher_spell_count: int = 0       # batters faced in current spell
     pitcher_outs_this_spell: int = 0   # outs recorded in current spell
     pitcher_runs_this_spell: int = 0   # runs allowed in current spell
+    pitcher_h_this_spell: int = 0      # hits allowed in current spell
+    pitcher_bb_this_spell: int = 0     # walks issued in current spell
+    pitcher_k_this_spell: int = 0      # strikeouts in current spell
+    pitcher_hbp_this_spell: int = 0    # hit batters in current spell
+    pitcher_start_pa: int = 0          # total_pa_this_half when spell began
+    total_pa_this_half: int = 0        # cumulative PA count this half (incremented on PA end)
     current_pitcher_id: Optional[str] = None
     spell_log: list = field(default_factory=list)
 

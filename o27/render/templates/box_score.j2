@@ -1,11 +1,14 @@
-{#- box_score.j2 — Full O27 box score in §4.7 reference format
-    Uses Python %-format via the |format filter; ljust registered as custom filter.
--#}
+{#- box_score.j2 — Full O27 box score in §4.7 reference format -#}
 {%- macro row(s) -%}
 {{ "%-20s" | format(s.name) }}  {{ "%3d" | format(s.pa) }}  {{ "%3d" | format(s.ab) }}  {{ "%3d" | format(s.runs) }}  {{ "%3d" | format(s.hits) }}  {{ "%3d" | format(s.doubles) }}  {{ "%3d" | format(s.triples) }}  {{ "%3d" | format(s.hr) }}  {{ "%4d" | format(s.rbi) }}  {{ "%3d" | format(s.bb) }}  {{ "%3d" | format(s.k) }}  {{ "%3d" | format(s.sty) }}
 {%- endmacro -%}
+{%- macro pitcher_row(p) -%}
+{{ "%-20s" | format(p.name) }}  {{ "%3d" | format(p.batters_faced) }}  {{ "%3d" | format(p.outs_recorded) }}  {{ "%3d" | format(p.hits_allowed) }}  {{ "%3d" | format(p.runs_allowed) }}  {{ "%3d" | format(p.bb) }}  {{ "%3d" | format(p.k) }}  {{ "%3d" | format(p.hbp) }}
+{%- endmacro -%}
 {%- set col_head = "Player                PA   AB    R    H   2B   3B   HR    RBI   BB    K  STY" -%}
+{%- set p_col_head = "Pitcher                BF  OUT    H    R   BB    K  HBP" -%}
 {%- set div = "────────────────────────────────────────────────────────────────────────────" -%}
+{%- set p_div = "──────────────────────────────────────────────────────" -%}
 
 ============================================================
 LINE SCORE
@@ -23,6 +26,14 @@ LINE SCORE
 {{ div }}
 {{ row(visitors_totals) }}
 
+{% if visitors_pitchers %}
+{{ p_col_head }}
+{{ p_div }}
+{% for p in visitors_pitchers %}
+{{ pitcher_row(p) }}
+{% endfor %}
+{% endif %}
+
 ============================================================
 {{ home_name | upper }} BATTING
 {{ col_head }}
@@ -33,7 +44,18 @@ LINE SCORE
 {{ div }}
 {{ row(home_totals) }}
 
+{% if home_pitchers %}
+{{ p_col_head }}
+{{ p_div }}
+{% for p in home_pitchers %}
+{{ pitcher_row(p) }}
+{% endfor %}
+{% endif %}
+
 ============================================================
 Run rate:  {{ visitors_name }}  {{ "%.3f" | format(visitors_rr) }}    {{ home_name }}  {{ "%.3f" | format(home_rr) }}
 Stays:     {{ visitors_name }}  {{ visitors_stays }}    {{ home_name }}  {{ home_stays }}
+{% if required_rr is not none %}
+Required run rate ({{ home_name }}): {{ "%.3f" | format(required_rr) }} R/out (needed {{ target_runs }} runs in 27 outs)
+{% endif %}
 ============================================================

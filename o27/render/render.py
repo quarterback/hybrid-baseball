@@ -24,6 +24,8 @@ from typing import Optional
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from o27.stats.batter import BatterStats
+from o27.stats.pitcher import PitcherStats
+from o27.stats.team import TeamStats
 
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -67,6 +69,10 @@ class Renderer:
         )
         self._batter_stats: dict[str, BatterStats] = {}
         self._current_pa_batter_id: Optional[str] = None
+        # Pitcher render stats are tracked per spell via SpellRecord (H/BB/K/HBP
+        # fields populated in the engine).  This dict holds aggregated per-pitcher
+        # totals built at render_box_score() time from state.spell_log.
+        self._pitcher_stats_cache: Optional[dict[str, PitcherStats]] = None
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -191,7 +197,7 @@ class Renderer:
         ]
 
     def render_box_score(self, state) -> list[str]:
-        """Render the full dual-team box score."""
+        """Render the full dual-team box score, including pitcher lines and required RR."""
         def _rows(team):
             return [
                 self._batter_stats.get(
@@ -217,6 +223,35 @@ class Renderer:
                 t.sty     += r.sty
             return t
 
+        # Build per-pitcher aggregates from spell_log (includes H/BB/K/HBP).
+        pitcher_map: dict[str, PitcherStats] = {}
+        for spell in state.spell_log:
+            pid = spell.pitcher_id
+            if pid not in pitcher_map:
+                pitcher_map[pid] = PitcherStats(
+                    player_id=pid, name=spell.pitcher_name
+                )
+            ps = pitcher_map[pid]
+            ps.batters_faced += spell.batters_faced
+            ps.outs_recorded += spell.outs_recorded
+            ps.runs_allowed  += spell.runs_allowed
+            ps.hits_allowed  += spell.hits_allowed
+            ps.bb            += spell.bb
+            ps.k             += spell.k
+            ps.hbp           += spell.hbp
+            ps.spell_count   += 1
+
+        # Split pitcher aggregates by team (pitcher pitches for the FIELDING team,
+        # so a visitors-roster pitcher pitched against the home side → listed under visitors).
+        v_pitcher_ids = {p.player_id for p in state.visitors.roster}
+        h_pitcher_ids = {p.player_id for p in state.home.roster}
+        v_pitchers = [ps for pid, ps in pitcher_map.items() if pid in v_pitcher_ids]
+        h_pitchers = [ps for pid, ps in pitcher_map.items() if pid in h_pitcher_ids]
+
+        # TeamStats for required run rate footer.
+        target_runs = state.target_score + 1 if state.target_score is not None else None
+        required_rr = target_runs / 27 if target_runs is not None else None
+
         v_rows = _rows(state.visitors)
         h_rows = _rows(state.home)
         v_runs = state.score["visitors"]
@@ -236,6 +271,10 @@ class Renderer:
             home_rr=h_runs / 27,
             visitors_stays=sum(s.sty for s in v_rows),
             home_stays=sum(s.sty for s in h_rows),
+            visitors_pitchers=v_pitchers,
+            home_pitchers=h_pitchers,
+            required_rr=required_rr,
+            target_runs=target_runs,
         ).rstrip("\n")
         return rendered.split("\n") if rendered else []
 
@@ -261,6 +300,41 @@ class Renderer:
             return []
         tmpl = self._env.get_template("spell_log.j2")
         rendered = tmpl.render(spells=spells).rstrip("\n")
+        return rendered.split("\n") if rendered else []
+
+    def render_super_inning_log(self, state) -> list[str]:
+        """Render the end-of-game super-inning summary block (final_log mode)."""
+        rounds = state.super_inning_rounds
+        if not rounds:
+            return []
+        # Pair visitor + home rounds by super-inning number.
+        # Rounds are appended in pairs: v_round, h_round, v_round, h_round ...
+        round_pairs = []
+        for i in range(0, len(rounds), 2):
+            v = rounds[i]
+            h = rounds[i + 1] if i + 1 < len(rounds) else None
+            rn = i // 2 + 1
+            round_pairs.append({
+                "round_num": rn,
+                "v_name": v.team_name,
+                "v_lineup": ", ".join(v.selected_batter_names) if v.selected_batter_names else "(unknown)",
+                "v_runs": v.runs,
+                "v_dismissals": v.dismissals,
+                "h_name": h.team_name if h else "—",
+                "h_lineup": ", ".join(h.selected_batter_names) if h and h.selected_batter_names else "(unknown)",
+                "h_runs": h.runs if h else 0,
+                "h_dismissals": h.dismissals if h else 0,
+            })
+        winner_name = ""
+        if state.winner:
+            t = state.visitors if state.winner == "visitors" else state.home
+            winner_name = t.name
+        tmpl = self._env.get_template("super_inning.j2")
+        rendered = tmpl.render(
+            mode="final_log",
+            winner_name=winner_name,
+            round_pairs=round_pairs,
+        ).rstrip("\n")
         return rendered.split("\n") if rendered else []
 
     def render_super_inning_tie(self) -> list[str]:
@@ -570,22 +644,32 @@ class Renderer:
         s = self._get_stats(batter)
         etype = event["type"]
         runs_scored = disp.get("runs_scored", 0)
+        ab_hits_before = ctx.get("at_bat_hits_before", 0)
+
+        def _check_multi_hit() -> None:
+            """Increment multi_hit_abs if 2+ stay-credited hits accumulated this AB."""
+            if ab_hits_before >= 2:
+                s.multi_hit_abs += 1
 
         if etype == "ball" and disp["is_walk"]:
             s.bb += 1
             s.rbi += runs_scored
+            _check_multi_hit()
 
         elif etype == "foul_tip_caught":
             s.ab += 1
             s.k += 1
+            _check_multi_hit()
 
         elif etype in ("called_strike", "swinging_strike") and disp["is_strikeout"]:
             s.ab += 1
             s.k += 1
+            _check_multi_hit()
 
         elif etype == "hit_by_pitch":
             s.hbp += 1
             s.rbi += runs_scored
+            _check_multi_hit()
 
         elif etype == "ball_in_play":
             choice = disp.get("choice", "run")
@@ -596,10 +680,14 @@ class Renderer:
                     s.sty += 1
                     if disp.get("stay_hit_credited"):
                         s.hits += 1
+                    # stay_rbi: credit RBI for runs that score on a valid stay.
+                    if runs_scored > 0:
+                        s.stay_rbi += runs_scored
                     s.rbi += runs_scored
                 elif disp.get("stay_batter_out"):
                     s.ab += 1
                     s.rbi += runs_scored
+                    _check_multi_hit()
             else:
                 s.ab += 1
                 if hit_type in ("single", "double", "triple", "hr", "home_run",
@@ -612,6 +700,7 @@ class Renderer:
                 elif hit_type in ("hr", "home_run"):
                     s.hr += 1
                 s.rbi += runs_scored
+                _check_multi_hit()
 
         # Credit runs-scored (R) to the players who left the bases.
         if runs_scored > 0:
