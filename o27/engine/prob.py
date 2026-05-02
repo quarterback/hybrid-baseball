@@ -431,18 +431,30 @@ class ProbabilisticProvider:
     # ------------------------------------------------------------------
 
     def _try_manager_action(self, state: GameState) -> Optional[dict]:
-        """Return one manager event if conditions are met, else None."""
+        """Return one manager event if conditions are met, else None.
+
+        Priority order:
+          1. Pitching change (fielding team decision).
+          2. Joker insertion (preferred over pinch hit when jokers remain).
+          3. Pinch hit (fallback when jokers exhausted and pitcher is up in
+             a tie-game, runners-in-scoring-position situation).
+        """
         # Pitching change check.
         if mgr.should_change_pitcher(state):
             new_p = mgr.pick_new_pitcher(state)
             if new_p is not None:
                 return {"type": "pitching_change", "new_pitcher": new_p}
 
-        # Joker insertion check.
+        # Joker insertion check (preferred over pinch hit).
         joker = mgr.should_insert_joker(state)
         if joker is not None:
             pos = state.batting_team.lineup_position
             return {"type": "joker_insertion", "joker": joker, "lineup_position": pos}
+
+        # Pinch hit check (fallback when jokers are exhausted).
+        replacement = mgr.should_pinch_hit(state)
+        if replacement is not None:
+            return {"type": "pinch_hit", "replacement": replacement}
 
         return None
 

@@ -239,6 +239,52 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
 
 def should_pinch_hit(state: GameState) -> Optional[Player]:
     """
-    Phase 2 stub: returns None (pinch-hit heuristic deferred to Phase 3+).
+    Phase 2 heuristic: send up a pinch hitter for the pitcher when:
+      - Current scheduled batter is the pitcher (is_pitcher=True), AND
+      - Runners in scoring position (2B or 3B occupied), AND
+      - No jokers remain available to bat this half (joker insertion preferred
+        when jokers exist; pinch hit is the fallback), AND
+      - Game is in a high-leverage tie-or-close situation (score within 1).
+
+    The replacement is the highest-skill non-pitcher non-joker roster member
+    who is distinct from the current batter.  Returns None when conditions are
+    not met or no improvement is available.
     """
-    return None
+    if state.is_super_inning:
+        return None
+
+    batter = state.current_batter
+    if not batter.is_pitcher:
+        return None
+
+    # Prefer joker insertion when jokers are still available this half.
+    team = state.batting_team
+    jokers_left = [j for j in team.jokers_available
+                   if j.player_id not in team.jokers_used_this_half]
+    if jokers_left:
+        return None
+
+    if not state.runners_in_scoring_position:
+        return None
+
+    # Only pinch hit in very tight, high-leverage situations.
+    score_diff = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
+    if score_diff > 1:
+        return None
+
+    # Find the best candidate from the team roster.
+    candidates = [
+        p for p in team.roster
+        if not p.is_pitcher
+        and not p.is_joker
+        and p.player_id != batter.player_id
+    ]
+    if not candidates:
+        return None
+
+    best = max(candidates, key=lambda p: p.skill)
+    # Only substitute if the replacement offers a meaningful skill upgrade.
+    if best.skill <= batter.skill + 0.05:
+        return None
+
+    return best

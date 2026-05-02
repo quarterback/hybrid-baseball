@@ -762,6 +762,83 @@ def test_pitcher_across_halftime():
             f"is_pitcher={bottom_pitcher.is_pitcher}")
 
 
+# ---------------------------------------------------------------------------
+# Test 11: Pinch-hit heuristic fires under correct conditions
+# ---------------------------------------------------------------------------
+
+def test_pinch_hit_heuristic():
+    """
+    Verify should_pinch_hit() returns a replacement when:
+      - Current batter is the pitcher (skill 0.30)
+      - Runners in scoring position (2B occupied)
+      - No jokers remain available this half
+      - Score is tied (within 1)
+    And returns None when conditions are NOT met (e.g. score is not close).
+    """
+    print("\n[Test 11] Pinch-hit heuristic fires correctly")
+    from o27.engine.manager import should_pinch_hit
+
+    # --- Build a state that satisfies all trigger conditions ---
+    visitors = _make_team("visitors", "Red")
+    home     = _make_team("home",     "Blue")
+    state    = GameState(visitors=visitors, home=home)
+    state.current_pitcher_id = home.roster[8].player_id
+    state.half = "top"
+
+    # Give the pitcher low batting skill so a pinch hitter is a meaningful upgrade.
+    # (All demo players default to skill=0.5; pitcher should be worse at batting.)
+    visitors.roster[8].skill = 0.25   # pitcher at roster/lineup index 8
+    # lineup[8] IS the same object as roster[8] (same reference), so no separate update.
+
+    # Advance lineup to the pitcher slot (position 8 = index 8, the pitcher).
+    visitors.lineup_position = 8      # pitcher is now the scheduled batter
+
+    # Runner on 2B (scoring position).
+    state.bases[1] = "some_runner"
+
+    # Exhaust all jokers for this half so pinch hit becomes the fallback.
+    for j in visitors.jokers_available:
+        visitors.jokers_used_this_half.add(j.player_id)
+
+    # Score tied.
+    state.score["visitors"] = 5
+    state.score["home"] = 5
+
+    result = should_pinch_hit(state)
+    _assert("pinch_hit fires when pitcher up, RISP, no jokers, score tied",
+            result is not None,
+            f"got {result}")
+    if result is not None:
+        _assert("pinch hitter is not a pitcher",
+                not result.is_pitcher, f"replacement={result}")
+        _assert("pinch hitter skill > pitcher skill",
+                result.skill > visitors.lineup[8].skill,
+                f"ph={result.skill:.2f} pitcher={visitors.lineup[8].skill:.2f}")
+
+    # --- Condition not met: score gap > 1 → should return None ---
+    state.score["home"] = 10   # score gap = 5
+    result_no_fire = should_pinch_hit(state)
+    _assert("pinch_hit does NOT fire when score gap > 1",
+            result_no_fire is None,
+            f"got {result_no_fire}")
+
+    # --- Condition not met: no runners in scoring position ---
+    state.score["home"] = 5    # reset to tie
+    state.bases[1] = None      # clear 2B
+    result_no_risp = should_pinch_hit(state)
+    _assert("pinch_hit does NOT fire without RISP",
+            result_no_risp is None,
+            f"got {result_no_risp}")
+
+    # --- Condition not met: batter is not the pitcher ---
+    state.bases[1] = "some_runner"   # restore RISP
+    visitors.lineup_position = 0     # batter is now the leadoff hitter (not pitcher)
+    result_not_pitcher = should_pinch_hit(state)
+    _assert("pinch_hit does NOT fire when batter is not the pitcher",
+            result_not_pitcher is None,
+            f"got {result_not_pitcher}")
+
+
 def run_all():
     print("=" * 60)
     print("O27 Phase 1 Rule Verification Tests")
@@ -779,6 +856,7 @@ def run_all():
     test_joker_cannot_field()
     test_package_imports()
     test_pitcher_across_halftime()
+    test_pinch_hit_heuristic()
 
     print("\n" + "=" * 60)
     passes = sum(1 for _, s, _ in _results if s == PASS)
