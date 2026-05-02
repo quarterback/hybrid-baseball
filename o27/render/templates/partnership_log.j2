@@ -1,0 +1,13 @@
+{#- partnership_log.j2 — Partnership log appended after box score -#}
+{%- set div = "──────────────────────────────────────────────────────────────────" -%}
+{%- set col_head = "Batter 1              Batter 2                Runs  Half" -%}
+
+============================================================
+PARTNERSHIP LOG
+{{ col_head }}
+{{ div }}
+{% for p in partnerships %}
+{{ "%-22s" | format(p.batter1_name) }}{{ "%-24s" | format(p.batter2_name) }}{{ "%4d" | format(p.runs) }}  {{ p.half }}
+{% endfor %}
+{{ div }}
+Total partnerships: {{ partnerships | length }}  |  Avg runs/partnership: {{ avg_rpp }}

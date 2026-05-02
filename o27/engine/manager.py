@@ -130,12 +130,15 @@ def pitching_change(
 
     log = []
     if old_pitcher:
-        # Close the current spell.
+        # Close the current spell with full stats.
         spell = SpellRecord(
             pitcher_id=old_pitcher.player_id,
             pitcher_name=old_pitcher.name,
             batters_faced=state.pitcher_spell_count,
+            outs_recorded=state.pitcher_outs_this_spell,
+            runs_allowed=state.pitcher_runs_this_spell,
             half=state.half,
+            super_inning_number=state.super_inning_number,
         )
         state.spell_log.append(spell)
         log.append(f"  PITCHING CHANGE: {old_pitcher.name} exits "
@@ -143,6 +146,8 @@ def pitching_change(
 
     state.current_pitcher_id = new_pitcher.player_id
     state.pitcher_spell_count = 0
+    state.pitcher_outs_this_spell = 0
+    state.pitcher_runs_this_spell = 0
     log.append(f"  {new_pitcher.name} takes the mound.")
 
     state.events.append({

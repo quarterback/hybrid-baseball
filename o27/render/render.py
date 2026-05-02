@@ -239,6 +239,30 @@ class Renderer:
         ).rstrip("\n")
         return rendered.split("\n") if rendered else []
 
+    def render_partnership_log(self, state) -> list[str]:
+        """Render the full partnership log after the box score."""
+        partnerships = state.partnership_log
+        if not partnerships:
+            return []
+        total_runs = sum(p.runs for p in partnerships)
+        count = len(partnerships)
+        avg_rpp = f"{total_runs / count:.2f}" if count else "0.00"
+        tmpl = self._env.get_template("partnership_log.j2")
+        rendered = tmpl.render(
+            partnerships=partnerships,
+            avg_rpp=avg_rpp,
+        ).rstrip("\n")
+        return rendered.split("\n") if rendered else []
+
+    def render_spell_log(self, state) -> list[str]:
+        """Render the pitcher spell log after the partnership log."""
+        spells = state.spell_log
+        if not spells:
+            return []
+        tmpl = self._env.get_template("spell_log.j2")
+        rendered = tmpl.render(spells=spells).rstrip("\n")
+        return rendered.split("\n") if rendered else []
+
     def render_super_inning_tie(self) -> list[str]:
         return ["\n=== TIE — SUPER-INNING TIEBREAKER ==="]
 

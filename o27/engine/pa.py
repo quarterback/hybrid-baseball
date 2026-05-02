@@ -57,6 +57,7 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
     """
     log = []
     state.outs += 1
+    state.pitcher_outs_this_spell += 1
 
     # Super-inning: track dismissed batters.
     if state.is_super_inning:
@@ -67,11 +68,16 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
     # Partnership: close when an out is recorded.
     second_batter_id = batter_id
     if state.partnership_first_batter_id is not None:
+        # Look up names from both rosters (runner outs may be from either team).
+        b1 = (state.batting_team.get_player(state.partnership_first_batter_id)
+              or state.fielding_team.get_player(state.partnership_first_batter_id))
+        b2 = (state.batting_team.get_player(second_batter_id)
+              or state.fielding_team.get_player(second_batter_id))
         rec = PartnershipRecord(
             batter1_id=state.partnership_first_batter_id,
-            batter1_name="",   # Phase 4 will fill names
+            batter1_name=b1.name if b1 else state.partnership_first_batter_id,
             batter2_id=second_batter_id,
-            batter2_name="",
+            batter2_name=b2.name if b2 else second_batter_id,
             runs=state.partnership_runs,
             half=state.half,
             super_inning_number=state.super_inning_number,
@@ -89,6 +95,7 @@ def _score_run(state: GameState, n: int = 1) -> list[str]:
     team_id = state.batting_team.team_id
     state.score[team_id] += n
     state.partnership_runs += n
+    state.pitcher_runs_this_spell += n
     return [f"  Run(s) scored: +{n} → {state.batting_team.name} {state.score[team_id]}"]
 
 

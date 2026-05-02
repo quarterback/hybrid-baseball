@@ -241,6 +241,8 @@ class GameState:
 
     # --- Pitcher / spell tracking ---
     pitcher_spell_count: int = 0       # batters faced in current spell
+    pitcher_outs_this_spell: int = 0   # outs recorded in current spell
+    pitcher_runs_this_spell: int = 0   # runs allowed in current spell
     current_pitcher_id: Optional[str] = None
     spell_log: list = field(default_factory=list)
 
