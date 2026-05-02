@@ -1,8 +1,10 @@
 """
 O27 Simulator — CLI entry point.
 
-Usage:
-    python main.py [--seed SEED] [--output FILE]
+Usage (from repo root):
+    python -m o27.main [--seed SEED] [--output FILE]
+    python o27/main.py [--seed SEED] [--output FILE]
+    pnpm run o27
 
 Phase 1: runs a scripted demonstration game (no probability models).
 Phase 2: will use seeded random probability models.
@@ -12,12 +14,16 @@ import sys
 import os
 import argparse
 
-# Allow imports from the o27/ directory.
-sys.path.insert(0, os.path.dirname(__file__))
+# When run as `python o27/main.py`, sys.path[0] is the o27/ directory and the
+# parent workspace root is not on the path.  Add it so that `o27` resolves as
+# a proper importable package (mirrors what `python -m o27.main` does).
+_workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _workspace_root not in sys.path:
+    sys.path.insert(0, _workspace_root)
 
-from engine.state import GameState, Team, Player
-from engine.game import run_game, make_script_provider
-from engine import fielding as fld
+from o27.engine.state import GameState, Team, Player
+from o27.engine.game import run_game, make_script_provider
+from o27.engine import fielding as fld
 
 
 # ---------------------------------------------------------------------------
@@ -34,30 +40,29 @@ def make_demo_player(pid: str, name: str, is_pitcher=False, is_joker=False) -> P
 
 
 def make_demo_team(team_id: str, name: str) -> Team:
-    """Build a 12-batter demo roster (9 position players + 3 jokers)."""
+    """Build a demo roster: 9 position players (slot 9 = pitcher) + 3 jokers.
+
+    Starting lineup contains only the 9 position players.  Jokers are held in
+    jokers_available and can be inserted mid-inning (once per half-inning each).
+    """
     prefix = team_id[0].upper()
-    players = []
+    starters = []
     for i in range(1, 10):
-        is_p = (i == 9)  # slot 9 is the pitcher
         p = make_demo_player(f"{prefix}{i}", f"{name[:3]}-{i}",
-                             is_pitcher=is_p)
-        players.append(p)
+                             is_pitcher=(i == 9))
+        starters.append(p)
     jokers = []
     for j in range(1, 4):
-        jk = make_demo_player(f"{prefix}J{j}", f"{name[:3]}-J{j}",
-                              is_joker=True)
+        jk = make_demo_player(f"{prefix}J{j}", f"{name[:3]}-J{j}", is_joker=True)
         jokers.append(jk)
-        players.append(jk)
 
-    t = Team(
+    return Team(
         team_id=team_id,
         name=name,
-        roster=players,
-        lineup=players[:12],   # full 12 in order
+        roster=starters + jokers,
+        lineup=list(starters),          # 9-batter starting order
         jokers_available=list(jokers),
     )
-    # Pitcher starts on the mound for the opposing team.
-    return t
 
 
 def make_demo_state() -> GameState:
@@ -65,8 +70,8 @@ def make_demo_state() -> GameState:
     visitors = make_demo_team("visitors", "Visitors")
     home = make_demo_team("home", "Home")
     state = GameState(visitors=visitors, home=home)
-    # Set starting pitchers.
-    state.current_pitcher_id = home.roster[8].player_id   # pitcher bats 9th
+    # Home team pitches first (visitors bat in the top half).
+    state.current_pitcher_id = home.roster[8].player_id
     return state
 
 
@@ -101,16 +106,14 @@ def make_demo_events() -> list:
     events += [
         {"type": "ball_in_play",
          "choice": "run",
-         "outcome": fld.outcome_single([2, 1, 1])},  # runner on 1B advances to 3B
+         "outcome": fld.outcome_single([2, 1, 1])},
     ]
 
     # PA 4: stay play — runner on 3B and 1B, batter stays
     events += [
-        # First pitch of new at-bat — ball in play, batter stays
         {"type": "ball_in_play",
          "choice": "stay",
          "outcome": fld.outcome_stay_ground_ball([1, 1, 1])},
-        # Continuation: batter gets another pitch, hits again and runs
         {"type": "ball_in_play",
          "choice": "run",
          "outcome": fld.outcome_single([1, 1, 1])},

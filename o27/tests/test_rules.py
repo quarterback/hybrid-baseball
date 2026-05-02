@@ -21,18 +21,18 @@ Tests:
 import sys
 import os
 
-# Allow imports from o27/ when running from either the repo root or o27/.
+# Ensure the workspace root is in sys.path so 'o27' resolves as a package.
 _here = os.path.dirname(os.path.abspath(__file__))
-_o27 = os.path.dirname(_here)
-if _o27 not in sys.path:
-    sys.path.insert(0, _o27)
+_workspace_root = os.path.dirname(os.path.dirname(_here))
+if _workspace_root not in sys.path:
+    sys.path.insert(0, _workspace_root)
 
-from engine.state import GameState, Team, Player
-from engine.game import run_game, run_half, halftime, check_winner, make_script_provider
-from engine.pa import apply_event
-from engine import fielding as fld
-from engine import stay as stay_mod
-from engine.manager import insert_joker, can_insert_joker
+from o27.engine.state import GameState, Team, Player
+from o27.engine.game import run_game, run_half, halftime, check_winner, make_script_provider
+from o27.engine.pa import apply_event
+from o27.engine import fielding as fld
+from o27.engine import stay as stay_mod
+from o27.engine.manager import insert_joker, can_insert_joker
 
 
 # ---------------------------------------------------------------------------
@@ -469,6 +469,71 @@ def test_super_inning():
 # Test runner
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Test 7: Package importability
+# ---------------------------------------------------------------------------
+
+def test_package_imports():
+    print("\n[Test 7] Package importability")
+    import importlib
+    for mod_path in [
+        "o27",
+        "o27.engine",
+        "o27.engine.state",
+        "o27.engine.game",
+        "o27.engine.pa",
+        "o27.engine.stay",
+        "o27.engine.manager",
+        "o27.engine.fielding",
+        "o27.engine.baserunning",
+    ]:
+        try:
+            importlib.import_module(mod_path)
+            _assert(f"import {mod_path}", True)
+        except ImportError as exc:
+            _assert(f"import {mod_path}", False, str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Test 8: Pitcher state across halftime
+# ---------------------------------------------------------------------------
+
+def test_pitcher_across_halftime():
+    print("\n[Test 8] Pitcher state across halftime")
+
+    # Build a state manually (like run_game does) with both halves.
+    from o27.engine.game import _set_fielding_pitcher
+
+    state = _fresh_state()
+
+    # Top half: home team pitches.
+    state.half = "top"
+    _assert("pitcher valid in top half (home pitches)",
+            state.get_current_pitcher() is not None,
+            f"pitcher={state.get_current_pitcher()}")
+    _assert("top-half pitcher belongs to home roster",
+            any(p.player_id == state.current_pitcher_id
+                for p in state.home.roster),
+            f"pitcher_id={state.current_pitcher_id}")
+
+    # Transition to bottom half (visitors pitch).
+    state.half = "bottom"
+    _set_fielding_pitcher(state)
+    _assert("pitcher valid in bottom half (visitors pitch)",
+            state.get_current_pitcher() is not None,
+            f"pitcher={state.get_current_pitcher()}")
+    _assert("bottom-half pitcher belongs to visitors roster",
+            any(p.player_id == state.current_pitcher_id
+                for p in state.visitors.roster),
+            f"pitcher_id={state.current_pitcher_id}")
+
+    # Verify pitcher is the is_pitcher=True player.
+    bottom_pitcher = state.get_current_pitcher()
+    _assert("bottom-half pitcher has is_pitcher=True",
+            bottom_pitcher.is_pitcher,
+            f"is_pitcher={bottom_pitcher.is_pitcher}")
+
+
 def run_all():
     print("=" * 60)
     print("O27 Phase 1 Rule Verification Tests")
@@ -481,6 +546,8 @@ def run_all():
     test_joker_insertion()
     test_halftime()
     test_super_inning()
+    test_package_imports()
+    test_pitcher_across_halftime()
 
     print("\n" + "=" * 60)
     passes = sum(1 for _, s, _ in _results if s == PASS)

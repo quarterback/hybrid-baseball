@@ -38,11 +38,11 @@ A plate appearance ends when:
 """
 
 from __future__ import annotations
-from engine.state import GameState, Player, PartnershipRecord, SpellRecord
-from engine import stay as stay_mod
-from engine import manager as mgr
-from engine.baserunning import advance_runners, wild_pitch_advance
-from engine import fielding as fld
+from .state import GameState, Player, PartnershipRecord, SpellRecord
+from . import stay as stay_mod
+from . import manager as mgr
+from .baserunning import advance_runners, wild_pitch_advance
+from . import fielding as fld
 from typing import Optional
 
 

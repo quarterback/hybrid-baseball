@@ -12,7 +12,7 @@ Phase 2: heuristic logic for joker insertion, pitching changes, pinch hits.
 """
 
 from __future__ import annotations
-from engine.state import GameState, Player, SpellRecord
+from .state import GameState, Player, SpellRecord
 from typing import Optional
 
 

@@ -17,7 +17,7 @@ Key rules from the PRD:
 """
 
 from __future__ import annotations
-from engine.state import GameState, Player
+from .state import GameState, Player
 
 
 # ---------------------------------------------------------------------------

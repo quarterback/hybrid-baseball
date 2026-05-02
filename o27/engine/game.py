@@ -26,11 +26,11 @@ Public API
 """
 
 from __future__ import annotations
-from engine.state import (
+from .state import (
     GameState, Team, Player, SpellRecord, SuperInningRound
 )
-from engine.pa import apply_event
-from engine import manager as mgr
+from .pa import apply_event
+from . import manager as mgr
 from typing import Callable, Iterator, Optional
 
 
@@ -79,6 +79,7 @@ def run_game(
     state.batting_team.reset_half()
     state.partnership_runs = 0
     state.partnership_first_batter_id = None
+    _set_fielding_pitcher(state)   # visitors now field; set their pitcher
     full_log.append(_half_header(state))
     half_log = run_half(state, event_provider)
     full_log += half_log
@@ -117,6 +118,7 @@ def run_game(
         state.visitors.reset_super()
         state.visitors.super_lineup = v5
         state.visitors.super_lineup_position = 0
+        _set_fielding_pitcher(state)   # home fields in super_top
         super_score_before_v = state.score["visitors"]
         full_log.append(_half_header(state))
         full_log += run_half(state, event_provider)
@@ -129,6 +131,7 @@ def run_game(
         state.home.reset_super()
         state.home.super_lineup = h5
         state.home.super_lineup_position = 0
+        _set_fielding_pitcher(state)   # visitors field in super_bottom
         super_score_before_h = state.score["home"]
         full_log.append(_half_header(state))
         full_log += run_half(state, event_provider)
@@ -260,6 +263,24 @@ def setup_super_inning(
 # ---------------------------------------------------------------------------
 # Internal utilities
 # ---------------------------------------------------------------------------
+
+def _set_fielding_pitcher(state: GameState) -> None:
+    """Point current_pitcher_id at the fielding team's pitcher.
+
+    Called whenever the fielding team changes (halftime, super-inning transitions)
+    so that state.get_current_pitcher() always returns a valid Player.
+    Falls back to the first roster member if no explicit pitcher is found.
+    """
+    fielding = state.fielding_team
+    for player in fielding.roster:
+        if player.is_pitcher:
+            state.current_pitcher_id = player.player_id
+            state.pitcher_spell_count = 0
+            return
+    if fielding.roster:
+        state.current_pitcher_id = fielding.roster[0].player_id
+        state.pitcher_spell_count = 0
+
 
 def _half_header(state: GameState) -> str:
     half_labels = {
