@@ -405,6 +405,7 @@ def _resolve_contact(
     )
     if runner_successfully_advanced:
         stay_mod.credit_stay_hit(state)
+        state.pitcher_h_this_spell += 1    # stay-credited hit counts against pitcher
         log.append(f"  Hit credited to {batter.name} (stay). "
                    f"Total this AB: {state.current_at_bat_hits}.")
 

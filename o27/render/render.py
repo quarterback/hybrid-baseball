@@ -69,10 +69,6 @@ class Renderer:
         )
         self._batter_stats: dict[str, BatterStats] = {}
         self._current_pa_batter_id: Optional[str] = None
-        # Pitcher render stats are tracked per spell via SpellRecord (H/BB/K/HBP
-        # fields populated in the engine).  This dict holds aggregated per-pitcher
-        # totals built at render_box_score() time from state.spell_log.
-        self._pitcher_stats_cache: Optional[dict[str, PitcherStats]] = None
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -248,14 +244,23 @@ class Renderer:
         v_pitchers = [ps for pid, ps in pitcher_map.items() if pid in v_pitcher_ids]
         h_pitchers = [ps for pid, ps in pitcher_map.items() if pid in h_pitcher_ids]
 
-        # TeamStats for required run rate footer.
-        target_runs = state.target_score + 1 if state.target_score is not None else None
-        required_rr = target_runs / 27 if target_runs is not None else None
-
         v_rows = _rows(state.visitors)
         h_rows = _rows(state.home)
         v_runs = state.score["visitors"]
         h_runs = state.score["home"]
+
+        # Use TeamStats for required run rate footer (full-game projection).
+        target_runs: Optional[int] = None
+        required_rr: Optional[float] = None
+        if state.target_score is not None:
+            home_ts = TeamStats(
+                team_name=state.home.name,
+                runs=h_runs,
+                outs=27,
+                target_runs=state.target_score + 1,
+            )
+            target_runs = home_ts.target_runs
+            required_rr = home_ts.required_run_rate_full
 
         tmpl = self._env.get_template("box_score.j2")
         rendered = tmpl.render(

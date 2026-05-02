@@ -170,14 +170,6 @@ def run_game(
         # Record round (with batter names for end-of-game log).
         v_runs = state.score["visitors"] - super_score_before_v
         h_runs = state.score["home"] - super_score_before_h
-        v_names = [
-            (state.visitors.get_player(pid) or state.home.get_player(pid))
-            for pid in [p.player_id for p in v5]
-        ]
-        h_names = [
-            (state.home.get_player(pid) or state.visitors.get_player(pid))
-            for pid in [p.player_id for p in h5]
-        ]
         round_rec = SuperInningRound(
             team_name=state.visitors.name,
             selected_batter_ids=[p.player_id for p in v5],
