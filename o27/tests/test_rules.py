@@ -857,6 +857,48 @@ def test_pinch_hit_heuristic():
             f"got {result_not_pitcher}")
 
 
+# ---------------------------------------------------------------------------
+# Test 12: Seeded determinism — two runs with same seed produce identical output
+# ---------------------------------------------------------------------------
+
+def test_seeded_determinism():
+    """
+    Run a full game twice with the same seed using ProbabilisticProvider and
+    assert that both runs produce character-for-character identical log output.
+    Also verify a different seed produces different output (sanity check).
+    """
+    print("\n[Test 12] Seeded determinism across two full game runs")
+    import io, contextlib
+    from o27.main import make_foxes, make_bears
+    from o27.engine.prob import ProbabilisticProvider
+    from o27.engine.game import run_game
+    import random
+
+    def _run(seed: int) -> list:
+        from o27.engine.state import GameState
+        rng = random.Random(seed)
+        foxes = make_foxes()
+        bears = make_bears()
+        state = GameState(visitors=foxes, home=bears)
+        provider = ProbabilisticProvider(rng)
+        _final_state, log = run_game(state, provider)
+        return log
+
+    log_a = _run(42)
+    log_b = _run(42)
+    log_c = _run(99)
+
+    _assert("same seed → identical full-game log",
+            log_a == log_b,
+            f"first diff at line {next((i for i,(a,b) in enumerate(zip(log_a,log_b)) if a!=b), -1)}")
+    _assert("different seed → different log",
+            log_a != log_c,
+            "seed 42 and seed 99 produced identical games (unexpected)")
+    _assert("game log is non-trivial (>50 lines)",
+            len(log_a) > 50,
+            f"got {len(log_a)} lines")
+
+
 def run_all():
     print("=" * 60)
     print("O27 Phase 1 Rule Verification Tests")
@@ -875,6 +917,7 @@ def run_all():
     test_package_imports()
     test_pitcher_across_halftime()
     test_pinch_hit_heuristic()
+    test_seeded_determinism()
 
     print("\n" + "=" * 60)
     passes = sum(1 for _, s, _ in _results if s == PASS)
