@@ -321,13 +321,16 @@ def print_metrics(agg: dict) -> None:
     print(_row("  Avg stays/game  visitors", f"{vst['mean']:.3f}"))
     print(_row("  Avg stays/game  home",     f"{hst['mean']:.3f}"))
     mh = agg["multi_hit_abs"]
-    print(_row("Avg multi-hit ABs/game",  f"{mh['mean']:.3f}"))
+    pa_mean = agg["pas"]["mean"] if agg["pas"]["mean"] > 0 else 1.0
+    mh_rate = mh["mean"] / pa_mean * 100.0
+    print(_row("Avg multi-hit ABs/game",
+               f"{mh['mean']:.3f}  ({mh_rate:.2f}% of PAs)"))
 
     # --- Super-inning ---
     print(f"\n  {'SUPER-INNING':}")
     print(_hr())
     si_pct = agg["super_inning_pct"]
-    flag = _flag(si_pct, 0.0, 5.0)
+    flag = "✓" if si_pct < 5.0 else "!"
     print(_row("Super-inning frequency",
                f"{si_pct:.2f}%  ({agg['super_count']}/{n})",
                "target <5%",

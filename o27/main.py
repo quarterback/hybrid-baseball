@@ -20,6 +20,8 @@ _workspace_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _workspace_root not in sys.path:
     sys.path.insert(0, _workspace_root)
 
+from o27 import config as _cfg
+
 from o27.engine.state import GameState, Team, Player
 from o27.engine.game import run_game, make_script_provider
 from o27.engine.prob import ProbabilisticProvider
@@ -35,11 +37,11 @@ def _player(
     pid: str,
     name: str,
     *,
-    skill: float = 0.50,
-    speed: float = 0.50,
-    pitcher_skill: float = 0.50,
-    stay_aggressiveness: float = 0.35,
-    contact_quality_threshold: float = 0.45,
+    skill: float = _cfg.PLAYER_DEFAULT_SKILL,
+    speed: float = _cfg.PLAYER_DEFAULT_SPEED,
+    pitcher_skill: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL,
+    stay_aggressiveness: float = _cfg.PLAYER_DEFAULT_STAY_AGGRESSIVENESS,
+    contact_quality_threshold: float = _cfg.PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD,
     is_pitcher: bool = False,
     is_joker: bool = False,
 ) -> Player:
