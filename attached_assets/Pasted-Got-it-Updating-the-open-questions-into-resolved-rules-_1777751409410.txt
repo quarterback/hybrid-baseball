@@ -1,0 +1,190 @@
+Got it. Updating the open questions into resolved rules and folding them into the PRD.
+
+# PRD: Hybrid Baseball-Cricket-Pesäpallo Simulation (v0.2)
+
+**Working name:** TBD
+**Owner:** Ron Bronson
+**Status:** Draft for build
+
+## 1. Concept
+
+A baseball simulation with cricket-style innings structure and a pesäpallo-flavored stay-at-plate mechanic. Otherwise standard baseball.
+
+## 2. Rules specification
+
+### 2.1 Game structure
+
+- **One inning per game**, two halves: top (visitors bat) and bottom (home bats).
+- Between halves: **halftime**.
+- Each half-inning ends when EITHER:
+  - 27 outs accumulated, OR
+  - Entire lineup has batted through and final batter is dismissed
+- Higher run total at end of bottom half wins.
+- Ties allowed → super-inning tiebreaker.
+
+### 2.2 Super-inning tiebreaker
+
+- Each manager picks 5 batters from the full roster (any batter, including those dismissed in regulation).
+- That side bats until all 5 are dismissed; record runs.
+- Other side does the same.
+- Higher super-inning total wins.
+- Repeat with new 5-batter selections until decided.
+- Any pitcher may be used in a super-inning.
+
+### 2.3 Pitching and counts
+
+Standard baseball. Balls, strikes, walks, strikeouts, HBP, foul rules, foul tip caught = out. Pitcher substitution standard. No forced rotation. Track pitcher fatigue as batters faced in current spell. No hard cap on spell length — fatigue-driven.
+
+### 2.4 Lineup composition
+
+- 12 batters per side: 9 position players (pitcher must bat) + 3 jokers (designated hitters).
+- Jokers cannot play the field. Jokers can be swapped in for any fielder (the fielder leaves the game).
+- **Joker insertion is flexible (pesäpallo-style):** jokers do not have a fixed lineup slot. A manager can insert a joker at any point in the batting order during the inning. Constraint: each individual joker can only bat once per half-inning.
+- Once a batter is dismissed, they are out for the half-inning. They do not return.
+- Pinch hitters can be inserted mid-inning, standard baseball — pinch hitter takes the replaced batter's spot, replaced batter is gone.
+
+### 2.5 The stay mechanic
+
+When a batter makes fair contact AND at least one runner is on base, batter chooses at contact:
+
+**Run:** Standard baseball. Batter becomes batter-runner, all standard plays apply. At-bat ends.
+
+**Stay:** Batter does not leave home plate. Defense plays runners only. Batter cannot be put out on this play. No force at first, no double play through first. At-bat continues with fresh 0-0 count.
+
+### 2.6 Stay constraints
+
+- Bases empty: stay unavailable.
+- Two-strike contact + stay: batter is out, runners advance per fielded play.
+- Caught fly ball with stay: batter is out. Runners may tag.
+- Infield fly rule: standard.
+- Bunt + stay: allowed, recorded as a hit.
+- Stay with runner thrown out: that runner is out, at-bat continues with fresh count.
+- Multiple stays per at-bat: allowed, no cap.
+- Home runs: stay does not apply. Batter runs and scores normally.
+
+### 2.7 Hit credit
+
+A batter can record multiple hits in a single at-bat via repeated stays. Each stay that results in runner advancement without an out on the batter = one hit credited. Hits from stays are uncategorized — they are simply hits. Singles, doubles, triples, and home runs only exist when the batter actually runs and reaches a base.
+
+### 2.8 Stay choice mechanics
+
+Decision is made at contact, not pre-pitch. Defense does not know in advance. Sim models this probabilistically based on batter archetype, contact quality, base state, outs, score, half-inning context.
+
+### 2.9 Everything else
+
+Standard baseball: stolen bases, pickoffs, balks, wild pitches, passed balls, sacrifice bunts (likely obsolete given stay — track usage), intentional walks, defensive shifts.
+
+## 3. Statistics
+
+Standard baseball stats plus:
+
+- **Stays:** count per batter / game / team
+- **Stay RBI:** runs driven in via stay
+- **Stay efficiency:** runs scored per stay attempt
+- **Multi-hit at-bats:** at-bats producing multiple credited hits
+- **Partnership runs:** runs between two consecutive outs
+- **Spell length:** consecutive batters faced by a pitcher
+
+Stay hits are recorded as hits, no extra-base subdivision.
+
+## 4. Simulation requirements
+
+### 4.1 Architecture
+
+- Python game-state engine.
+- Jinja2 templates for play-by-play rendering.
+- State persists in Python; Jinja renders snapshots.
+- No GUI in v1. Text output only.
+
+### 4.2 Core state
+
+```
+GameState:
+  half: "top" | "bottom" | "super"
+  super_inning_number: int (0 if not in super)
+  batting_team, fielding_team
+  outs: int (0–27, or 0–5 in super)
+  bases: {first, second, third} → batter_id or None
+  current_batter_id, current_pitcher_id
+  count: {balls: 0–3, strikes: 0–2}
+  score: {team_a, team_b}
+  partnership_runs: int
+  pitcher_spell_count: int
+  lineup_position: int per team
+  dismissed_batters: set per team
+  active_lineup: list of 12 (or 5 in super)
+  jokers_used_this_half: set per team
+  jokers_available: set per team
+```
+
+### 4.3 Event types
+
+- `ball`, `called_strike`, `swinging_strike`, `foul`, `foul_tip_caught`, `hit_by_pitch`, `wild_pitch`, `passed_ball`
+- `ball_in_play` → `contact_resolved`:
+  - `run_chosen` → standard play
+  - `stay_chosen` → modified play
+- `stolen_base_attempt`, `pickoff_attempt`, `balk`
+- `joker_insertion` (manager event, mid-inning)
+- `pinch_hit` (manager event)
+- `pitching_change` (manager event)
+
+### 4.4 Probability models
+
+- Pitch outcome given pitcher skill, batter skill, count, fatigue.
+- Contact quality given swing and pitch quality.
+- Stay-vs-run choice given contact quality, base state, outs, score, half.
+- Fielding outcome given contact quality and positioning.
+- Baserunning outcome given runner speed and fielding play.
+- Manager decisions for joker insertion, pinch hitting, pitching changes (heuristic v1).
+
+Rule-based heuristics acceptable for v1.
+
+### 4.5 Stay choice heuristic (v1)
+
+- Stay if: weak/medium contact AND runners in scoring position AND <2 outs AND not 2-strike count.
+- Run if: hard contact, OR 2 outs, OR bases empty (forced), OR ball clearly leaving the park.
+- Tunable per batter: `stay_aggressiveness` (0.0–1.0), `contact_quality_threshold`.
+
+### 4.6 Joker insertion heuristic (v1)
+
+- Insert highest-skill available joker when: runners in scoring position AND current scheduled batter is a weak hitter (e.g., pitcher) AND game leverage is high.
+- Constraint: each joker once per half-inning.
+
+### 4.7 Output
+
+Jinja templates render pitch-level events, at-bat outcomes, half-inning summaries, halftime summary, partnership log, spell log, box score, line score, super-inning log.
+
+## 5. Scope for v1
+
+**In scope:**
+- Single game, two AI teams, seeded determinism.
+- One-inning structure with halftime and super-inning tiebreaker.
+- 12-batter lineups with flexible joker insertion.
+- Stay mechanic with multi-hit at-bats.
+- Heuristic decision models.
+- Text output via Jinja.
+- Box score, partnership log, spell log.
+
+**Out of scope:**
+- GUI / web frontend.
+- Season simulation.
+- Roster construction tools.
+- ML decision policies.
+- Real player names / stats import.
+- Live human manager input.
+
+## 6. Build phases
+
+**Phase 1:** State machine + event resolver, raw state output. Verify rules with scripted scenarios including: 27-out half, full-lineup-out half, multi-hit at-bats, joker insertion, super-inning, halftime transition.
+
+**Phase 2:** Probability models and manager decision heuristics. Full-game end-to-end with seeded randomness.
+
+**Phase 3:** Jinja templates for play-by-play.
+
+**Phase 4:** Box score, partnership log, spell log, super-inning log, halftime summary.
+
+**Phase 5:** Tuning. Play 100 games, measure stay rate, half-inning duration, run distribution, super-inning frequency. Adjust heuristics.
+
+---
+
+All open questions resolved. Ready for handoff.

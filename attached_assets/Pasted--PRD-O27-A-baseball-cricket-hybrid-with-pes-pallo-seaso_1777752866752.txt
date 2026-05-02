@@ -1,0 +1,291 @@
+# PRD: O27
+
+**A baseball-cricket hybrid with pesäpallo seasoning.**
+
+**Owner:** Ron Bronson
+**Status:** Ready for build
+**Target environment:** Replit (Python)
+
+---
+
+## 1. Concept
+
+O27 is a baseball variant played in **one inning of 27 outs per side**, structured like cricket (top half, halftime, bottom half). Standard baseball rules apply with one mechanical change: the **stay** option, borrowed from pesäpallo. On contact with runners on base, the batter chooses at the moment of contact to either run to first (standard baseball) or stay at home plate (runners advance per fielding outcome, batter is not a runner, at-bat continues with fresh count).
+
+Sim testing confirms the structure produces ~23 runs/game (vs. ~10 in baseball), with run rate (~0.43 R/out) emerging as a natural cricket-flavored scoring stat. The stay mechanic functions as occasional strategic texture rather than the dominant feature — by design, given baseball's lower contact rates relative to pesäpallo.
+
+The name: **O** for one inning, **27** for the outs.
+
+---
+
+## 2. Rules
+
+### 2.1 Game structure
+
+- One inning, two halves: top (visitors) and bottom (home), with **halftime** between.
+- Each half ends when 27 outs are recorded.
+- Higher run total at end of bottom half wins.
+- Ties allowed → super-inning tiebreaker.
+
+### 2.2 Super-inning tiebreaker
+
+- Each manager selects 5 batters from the full roster (including those already used).
+- Each side bats until all 5 are dismissed.
+- Higher super-inning total wins.
+- Repeat with new selections until decided.
+- Any pitcher may be used.
+
+### 2.3 Lineup
+
+- 12 batters per side: 9 position players (pitcher must bat) + 3 jokers (designated hitters).
+- Jokers cannot field. Jokers can be swapped in for any fielder mid-game (the fielder leaves the game).
+- **Joker insertion is flexible (pesäpallo-style):** jokers do not have a fixed lineup slot. A manager can insert a joker at any point in the batting order during the inning. Each individual joker may bat only once per half-inning.
+- **Lineup cycles freely.** Once a batter is dismissed, the next batter in the order comes up. Batters are NOT eliminated for the half-inning; the lineup cycles like baseball. The half ends only at 27 outs.
+- Pinch hitters may be inserted mid-inning, standard baseball rules. Replaced batter is gone.
+
+### 2.4 Pitching
+
+Standard baseball: balls, strikes, walks (4 balls), strikeouts (3 strikes), HBP, foul rules, foul tip caught = out. Pitcher substitution standard. Track pitcher fatigue as batters faced in current spell. No forced rotation, no overs, no hard cap on spell length.
+
+### 2.5 The stay mechanic
+
+When a batter makes fair contact AND at least one runner is on base, the batter chooses at contact:
+
+- **Run:** standard baseball. Batter becomes batter-runner; all standard plays apply. At-bat ends.
+- **Stay:** batter does not leave home plate. Defense plays runners only. Batter cannot be put out on the play. No force at first; no double play through first. At-bat continues with fresh 0-0 count.
+
+### 2.6 Stay constraints
+
+- Bases empty: stay unavailable.
+- Two-strike contact + stay: batter is out; runners advance per fielded play.
+- Caught fly ball with stay: batter is out (standard fly out). Runners may tag.
+- Infield fly rule: standard application.
+- Bunt + stay: allowed, recorded as a hit.
+- Stay with runner thrown out: that runner is out; at-bat continues with fresh count.
+- Multiple stays per at-bat: allowed; no cap.
+- Home runs: stay does not apply. Batter runs and scores normally.
+
+### 2.7 Hit credit
+
+A batter can record multiple hits in a single at-bat via repeated stays. Each stay that results in runner advancement without an out on the batter = one hit credited. Hits from stays are uncategorized — they are simply hits. Singles, doubles, triples, and home runs only exist when the batter actually runs and reaches a base.
+
+### 2.8 Stay choice mechanics
+
+The decision is made at contact, not pre-pitch. The defense does not know in advance. The simulation models this probabilistically based on contact quality, base state, outs, score, and game context.
+
+### 2.9 Everything else
+
+Standard baseball: stolen bases, pickoffs, balks, wild pitches, passed balls, sacrifice bunts (likely obsolete given stay — track usage), intentional walks, defensive shifts.
+
+---
+
+## 3. Statistics
+
+**Standard baseball stats apply** (AVG, OBP, SLG, ERA, WHIP, etc.) plus the following O27-specific stats:
+
+- **Run rate (R/out):** primary scoring efficiency stat, cricket-borrowed. Average is ~0.43 R/out based on sim.
+- **Required run rate:** for the team batting second once they know the target. Pressure stat.
+- **Partnership runs:** runs scored between two consecutive outs. Narrative stat.
+- **Stays:** count per batter / game / team.
+- **Stay RBI:** runs driven in via stay.
+- **Stay efficiency:** runs scored per stay attempt.
+- **Multi-hit at-bats:** at-bats producing multiple credited hits.
+- **Spell length:** consecutive batters faced by a pitcher.
+- **Net run rate:** for tiebreakers across multiple games (cricket-style).
+
+Stay hits are recorded as hits with no extra-base subdivision.
+
+---
+
+## 4. Simulation requirements
+
+### 4.1 Architecture
+
+- Python game-state engine.
+- Jinja2 templates for play-by-play rendering.
+- State persists in Python; Jinja receives state snapshots and renders narrative.
+- No GUI in v1. Text output only (terminal, file, or rendered Jinja output).
+- Replit-compatible: single repo, `main.py` entry point, `requirements.txt` with `jinja2`.
+
+### 4.2 Core state
+
+```python
+GameState:
+  half: "top" | "bottom" | "super"
+  super_inning_number: int  # 0 if not in super
+  batting_team, fielding_team
+  outs: int  # 0–27, or 0–5 in super
+  bases: list[3]  # [1B, 2B, 3B], each batter_id or None
+  current_batter_id, current_pitcher_id
+  count: {balls: 0–3, strikes: 0–2}
+  score: {team_a, team_b}
+  partnership_runs: int
+  pitcher_spell_count: int  # batters faced in current spell
+  lineup_position: int per team
+  active_lineup: list of 12 (or 5 in super)
+  jokers_used_this_half: set per team
+  jokers_available: set per team
+```
+
+### 4.3 Event types
+
+- `ball`, `called_strike`, `swinging_strike`, `foul`, `foul_tip_caught`, `hit_by_pitch`, `wild_pitch`, `passed_ball`
+- `ball_in_play` → `contact_resolved`:
+  - `run_chosen` → standard play
+  - `stay_chosen` → modified play (no batter-runner)
+- `stolen_base_attempt`, `pickoff_attempt`, `balk`
+- Manager events: `joker_insertion`, `pinch_hit`, `pitching_change`
+
+### 4.4 Probability models
+
+For v1, rule-based heuristics are acceptable for all of these:
+
+- Pitch outcome distribution given pitcher skill, batter skill, count, fatigue.
+- Contact quality given swing decision and pitch quality.
+- Stay-vs-run choice given contact quality, base state, outs, score, half.
+- Fielding outcome given contact quality and positioning.
+- Baserunning outcome given runner speed and fielding play.
+- Manager decisions for joker insertion, pinch hitting, pitching changes.
+
+### 4.5 Stay choice heuristic (v1)
+
+Default rules:
+- **Stay** if: weak/medium contact AND runners on base AND <2 outs AND not 2-strike count.
+- **Run** if: hard contact, OR 2 outs, OR bases empty (forced), OR HR, OR triple (reaching 3rd is too valuable to forfeit).
+- Tunable per batter: `stay_aggressiveness` (0.0–1.0), `contact_quality_threshold`.
+
+Tuning target: stays should fire ~0.3–1.0 times per game on average. More than that suggests the heuristic is too aggressive given baseball's contact economy.
+
+### 4.6 Joker insertion heuristic (v1)
+
+- Insert highest-skill available joker when: runners in scoring position AND current scheduled batter is a weak hitter (e.g., pitcher) AND game leverage is high (close score, late in half).
+- Constraint: each joker once per half-inning.
+
+### 4.7 Output
+
+Jinja templates render:
+- Pitch-level events
+- At-bat outcomes
+- Half-inning summaries with run rate
+- Halftime summary (target announced for bottom half)
+- Partnership log
+- Pitcher spell log
+- Box score (12-batter table per side, single inning column, R total)
+- Line score
+- Super-inning log if applicable
+
+Box score reference format:
+
+```
+            1      R
+VISITORS   13     13
+HOME       10     10
+
+VISITORS BATTING
+Player        PA  AB   R   H  2B  3B  HR  RBI  BB   K  STY
+[12 rows]
+TOTALS
+
+Run rate: VISITORS 0.48   HOME 0.37
+Stays:    VISITORS 2      HOME 1
+```
+
+---
+
+## 5. Scope for v1
+
+**In scope:**
+- Single game, two AI teams, seeded determinism (`random.seed()` from CLI arg).
+- One-inning structure with halftime and super-inning tiebreaker.
+- 12-batter lineups with flexible joker insertion.
+- Stay mechanic with multi-hit at-bats.
+- Heuristic decision models.
+- Text output via Jinja.
+- Box score, partnership log, spell log, run rate stats.
+- CLI: `python main.py --seed 42 --output game.txt`
+
+**Out of scope for v1:**
+- GUI / web frontend.
+- Season simulation, standings, playoffs.
+- Roster construction tools.
+- ML-based decision policies.
+- Real player names / stats import (use generated names).
+- Live human manager input.
+
+---
+
+## 6. Build phases
+
+**Phase 1:** State machine and event resolver. Raw state output to verify rules with scripted scenarios:
+- 27-out half with full lineup cycling
+- Multi-hit at-bats via stays
+- Joker insertion mid-inning
+- Halftime transition with target announcement
+- Super-inning trigger and resolution
+
+**Phase 2:** Probability models and manager decision heuristics. Full-game end-to-end with seeded randomness.
+
+**Phase 3:** Jinja templates for play-by-play and box score rendering.
+
+**Phase 4:** Statistical output — box score, partnership log, spell log, super-inning log, halftime summary with run rate and required run rate.
+
+**Phase 5:** Tuning. Run 500+ games, measure:
+- Avg runs/game (target: ~22–24)
+- Avg stays/game (target: ~0.3–1.0)
+- Half-inning duration (avg PAs)
+- Run distribution shape
+- Super-inning frequency (target: <5%)
+
+Adjust heuristics until output matches expected ranges.
+
+---
+
+## 7. Reference: simulation findings
+
+A proof-of-concept simulator confirmed the design works as intended:
+
+| Metric | Standard baseball | O27 |
+|---|---|---|
+| Avg runs/game | 10.2 | 23.1 |
+| Avg PAs/game | 76.9 | 79.1 |
+| Stays/game | — | 0.31 |
+| Avg run rate | — | 0.43 R/out |
+
+The structural change (one inning of 27 outs) is the dominant effect on game character. The stay mechanic adds strategic texture and occasional dramatic at-bats without breaking pacing. The PA count is nearly identical to baseball, meaning game length is comparable.
+
+This is **baseball-cricket with pesäpallo seasoning**, not a pesäpallo sim. Hitting in baseball is too hard for stays to dominate the way they do in pesäpallo (where top hitters reach .700 contact rates). That's a feature, not a bug — the goal is a recognizable baseball game with cricket scoring depth and pesäpallo flavor, not a transplanted Finnish sport.
+
+---
+
+## 8. File structure (suggested)
+
+```
+o27/
+├── main.py              # CLI entry point
+├── requirements.txt     # jinja2
+├── engine/
+│   ├── state.py         # GameState dataclass
+│   ├── pa.py            # Plate appearance resolver
+│   ├── fielding.py      # Fielding outcome resolution
+│   ├── baserunning.py   # Runner advancement logic
+│   ├── stay.py          # Stay-vs-run decision heuristic
+│   ├── manager.py       # Joker/PH/pitching decisions
+│   └── game.py          # Top-level game loop
+├── stats/
+│   ├── batter.py        # Batter stat accumulator
+│   ├── pitcher.py       # Pitcher stat accumulator
+│   └── team.py          # Team-level stats incl. run rate
+├── render/
+│   ├── templates/
+│   │   ├── play_by_play.j2
+│   │   ├── box_score.j2
+│   │   ├── halftime.j2
+│   │   └── super_inning.j2
+│   └── render.py        # Jinja2 wrapper
+└── tests/
+    └── test_rules.py    # Scripted scenarios per Phase 1
+```
+
+---
+
+Ready for build handoff.
