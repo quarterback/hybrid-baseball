@@ -114,19 +114,20 @@ def _collect_game_metrics(state: GameState, renderer: FastRenderer) -> dict:
     # Run rate = total runs / 54 outs (27 per half, two regulation halves).
     run_rate = total_runs / 54.0
 
-    # PAs from spell log: sum of all BF across regulation halves only.
-    reg_halves = {"top", "bottom"}
-    total_pa = sum(
-        spell.batters_faced
-        for spell in state.spell_log
-        if spell.half in reg_halves
+    # PAs per half from spell log (BF = PA for each half separately).
+    top_pa = sum(
+        spell.batters_faced for spell in state.spell_log if spell.half == "top"
     )
+    bot_pa = sum(
+        spell.batters_faced for spell in state.spell_log if spell.half == "bottom"
+    )
+    total_pa = top_pa + bot_pa
 
     # Spell lengths from regulation halves (for avg spell length metric).
     spell_lengths = [
         spell.batters_faced
         for spell in state.spell_log
-        if spell.half in reg_halves
+        if spell.half in ("top", "bottom")
     ]
 
     # Joker insertions from state event log.
@@ -135,8 +136,20 @@ def _collect_game_metrics(state: GameState, renderer: FastRenderer) -> dict:
         if e.get("type") == "joker_insertion"
     )
 
-    # Stays and multi-hit ABs from FastRenderer.
-    stays = renderer.total_stays()
+    # Per-team stays from FastRenderer batter stats.
+    v_player_ids = {p.player_id for p in state.visitors.roster}
+    h_player_ids = {p.player_id for p in state.home.roster}
+    v_stays = sum(
+        s.sty for pid, s in renderer._batter_stats.items()
+        if pid in v_player_ids
+    )
+    h_stays = sum(
+        s.sty for pid, s in renderer._batter_stats.items()
+        if pid in h_player_ids
+    )
+    total_stays = v_stays + h_stays
+
+    # Multi-hit ABs from FastRenderer.
     multi_hit_abs = renderer.total_multi_hit_abs()
 
     # Super-inning triggered?
@@ -147,8 +160,12 @@ def _collect_game_metrics(state: GameState, renderer: FastRenderer) -> dict:
         "h_runs": h_runs,
         "total_runs": total_runs,
         "run_rate": run_rate,
+        "top_pa": top_pa,
+        "bot_pa": bot_pa,
         "total_pa": total_pa,
-        "stays": stays,
+        "stays": total_stays,
+        "v_stays": v_stays,
+        "h_stays": h_stays,
         "multi_hit_abs": multi_hit_abs,
         "had_super": had_super,
         "joker_insertions": joker_insertions,
@@ -183,8 +200,12 @@ def aggregate_metrics(game_metrics: list[dict]) -> dict:
     v_runs       = [m["v_runs"]           for m in game_metrics]
     h_runs       = [m["h_runs"]           for m in game_metrics]
     run_rates    = [m["run_rate"]          for m in game_metrics]
+    top_pas      = [m["top_pa"]            for m in game_metrics]
+    bot_pas      = [m["bot_pa"]            for m in game_metrics]
     pas          = [m["total_pa"]          for m in game_metrics]
     stays        = [m["stays"]             for m in game_metrics]
+    v_stays      = [m["v_stays"]           for m in game_metrics]
+    h_stays      = [m["h_stays"]           for m in game_metrics]
     multi_hits   = [m["multi_hit_abs"]     for m in game_metrics]
     jokers       = [m["joker_insertions"]  for m in game_metrics]
     super_count  = sum(1 for m in game_metrics if m["had_super"])
@@ -196,8 +217,12 @@ def aggregate_metrics(game_metrics: list[dict]) -> dict:
         "v_runs":           _agg(v_runs),
         "h_runs":           _agg(h_runs),
         "run_rate":         _agg(run_rates),
+        "top_pas":          _agg(top_pas),
+        "bot_pas":          _agg(bot_pas),
         "pas":              _agg(pas),
         "stays":            _agg(stays),
+        "v_stays":          _agg(v_stays),
+        "h_stays":          _agg(h_stays),
         "multi_hit_abs":    _agg(multi_hits),
         "joker_insertions": _agg(jokers),
         "spell_lengths":    _agg(all_spells),
@@ -275,6 +300,10 @@ def print_metrics(agg: dict) -> None:
                flag))
     print(_row("  Median / Std / Min / Max",
                f"{pa['median']:.0f} / {pa['std']:.1f} / {int(pa['min'])} / {int(pa['max'])}"))
+    top_pa = agg["top_pas"]
+    bot_pa = agg["bot_pas"]
+    print(_row("  Avg PAs/half  (top)",   f"{top_pa['mean']:.1f}"))
+    print(_row("  Avg PAs/half  (bottom)", f"{bot_pa['mean']:.1f}"))
 
     # --- Stays ---
     print(f"\n  {'STAY MECHANIC':}")
@@ -287,6 +316,10 @@ def print_metrics(agg: dict) -> None:
                flag))
     print(_row("  Median / Std / Min / Max",
                f"{st['median']:.1f} / {st['std']:.2f} / {int(st['min'])} / {int(st['max'])}"))
+    vst = agg["v_stays"]
+    hst = agg["h_stays"]
+    print(_row("  Avg stays/game  visitors", f"{vst['mean']:.3f}"))
+    print(_row("  Avg stays/game  home",     f"{hst['mean']:.3f}"))
     mh = agg["multi_hit_abs"]
     print(_row("Avg multi-hit ABs/game",  f"{mh['mean']:.3f}"))
 

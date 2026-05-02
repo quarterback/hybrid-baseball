@@ -28,6 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from o27 import config as _cfg
+
 
 # ---------------------------------------------------------------------------
 # Count
@@ -60,11 +62,12 @@ class Player:
     is_joker: bool = False
 
     # Skill attributes — used by Phase 2 probability models.
-    skill: float = 0.5              # 0.0–1.0 batting quality (contact, discipline)
-    speed: float = 0.5              # 0.0–1.0 baserunning / steal speed
-    stay_aggressiveness: float = 0.4        # 0.0–1.0 tendency to choose stay
-    contact_quality_threshold: float = 0.45 # P(stay | medium contact) gate
-    pitcher_skill: float = 0.5      # 0.0–1.0 pitching quality (separate from batting skill)
+    # Defaults come from o27.config so all tunables are in one place.
+    skill: float = _cfg.PLAYER_DEFAULT_SKILL
+    speed: float = _cfg.PLAYER_DEFAULT_SPEED
+    stay_aggressiveness: float = _cfg.PLAYER_DEFAULT_STAY_AGGRESSIVENESS
+    contact_quality_threshold: float = _cfg.PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD
+    pitcher_skill: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL
 
     def __hash__(self) -> int:
         return hash(self.player_id)

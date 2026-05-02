@@ -188,6 +188,18 @@ SB_SUCCESS_MAX: float             = 0.90   # ceiling on steal success
 WILD_PITCH_PROB: float = 0.015  # per pitch with runners on base (tuned: 0.02→0.015, reduces cheap-run ties)
 
 # ---------------------------------------------------------------------------
+# Player attribute defaults (used as dataclass field defaults in state.py)
+# ---------------------------------------------------------------------------
+# These are the fallback values when a player is created without explicit attrs.
+# Per-player overrides in main.py intentionally deviate from these baselines.
+
+PLAYER_DEFAULT_SKILL: float                    = 0.50
+PLAYER_DEFAULT_SPEED: float                    = 0.50
+PLAYER_DEFAULT_PITCHER_SKILL: float            = 0.50
+PLAYER_DEFAULT_STAY_AGGRESSIVENESS: float      = 0.40   # 0.0–1.0 tendency to choose stay
+PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD: float = 0.45  # P(stay | medium contact) gate
+
+# ---------------------------------------------------------------------------
 # Manager heuristics — joker insertion (§4.6)
 # ---------------------------------------------------------------------------
 
