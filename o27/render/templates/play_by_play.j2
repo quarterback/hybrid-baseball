@@ -1,0 +1,90 @@
+{#- play_by_play.j2
+    Renders one O27 game event as play-by-play text.
+    Receives a pre-processed display context dict from Renderer._build_disp().
+    Uses trim_blocks + lstrip_blocks so block tags don't produce blank lines.
+-#}
+[{{ outs }} outs | {{ count }} | {{ bases }}] {{ display_type }}
+{% if event_type == "ball" %}
+{% if is_walk %}
+  WALK — {{ batter_name }} awarded 1B.
+{% else %}
+  Ball {{ ball_number }}. Count: {{ new_count }}.
+{% endif %}
+{% elif event_type == "called_strike" or event_type == "swinging_strike" %}
+  Strike ({{ "swinging" if swinging else "called" }}). Count: {{ new_count }}.
+{% if is_strikeout %}
+  STRIKEOUT.
+{% endif %}
+{% elif event_type == "foul" %}
+  Foul ball. Count: {{ new_count }}.
+{% elif event_type == "foul_tip_caught" %}
+  Foul tip caught — STRIKEOUT.
+{% elif event_type == "hit_by_pitch" %}
+  HBP — {{ batter_name }} awarded 1B.
+{% elif event_type == "wild_pitch" %}
+  Wild pitch — runners advance.
+{% if runs_scored > 0 %}
+  {{ runs_scored }} run(s) score.
+{% endif %}
+{% elif event_type == "passed_ball" %}
+  Passed ball — runners advance.
+{% if runs_scored > 0 %}
+  {{ runs_scored }} run(s) score.
+{% endif %}
+{% elif event_type == "balk" %}
+  Balk — runners advance one base.
+{% if runs_scored > 0 %}
+  {{ runs_scored }} run(s) score.
+{% endif %}
+{% elif event_type == "ball_in_play" %}
+{% if choice == "stay" %}
+{% if stay_batter_out %}
+  {{ batter_name }} STAYS — but is OUT (2-strike contact or caught fly).
+{% if runs_scored > 0 %}
+  {{ runs_scored }} run(s) score.
+{% endif %}
+{% else %}
+  {{ batter_name }} STAYS at the plate.
+{% if stay_hit_credited %}
+  Hit credited (stay). Total this AB: {{ at_bat_hits }}.
+{% endif %}
+{% if runs_scored > 0 %}
+  {{ runs_scored }} run(s) score.
+{% endif %}
+  Stay — fresh 0-0 count.
+{% endif %}
+{% else %}
+  {{ batter_name }} runs → {{ hit_type }}.
+{% if not batter_safe %}
+  {{ batter_name }} is out.
+{% endif %}
+{% if runs_scored > 0 %}
+  {{ runs_scored }} run(s) score.
+{% endif %}
+{% endif %}
+{% elif event_type == "stolen_base_attempt" %}
+{% if steal_success %}
+{% if steal_home %}
+  Stolen base — runner scores from 3B!
+{% else %}
+  Stolen base — runner advances to {{ steal_to }}.
+{% endif %}
+{% else %}
+  Runner caught stealing at {{ steal_to }}.
+{% endif %}
+{% if runs_scored > 0 %}
+  {{ runs_scored }} run(s) score.
+{% endif %}
+{% elif event_type == "pickoff_attempt" %}
+{% if pickoff_success %}
+  Pickoff — runner out at {{ pickoff_base }}!
+{% else %}
+  Pickoff attempt — runner safe.
+{% endif %}
+{% elif event_type == "joker_insertion" %}
+  JOKER: {{ batting_team_name }} inserts {{ joker_name }} (joker) into lineup.
+{% elif event_type == "pitching_change" %}
+  PITCHING CHANGE: {{ old_pitcher_name }} exits ({{ old_spell_count }} BF this spell).
+{% elif event_type == "pinch_hit" %}
+  PINCH HIT: {{ replacement_name }} bats for {{ replaced_name }}.
+{% endif %}

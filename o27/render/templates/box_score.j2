@@ -1,0 +1,39 @@
+{#- box_score.j2 — Full O27 box score in §4.7 reference format
+    Uses Python %-format via the |format filter; ljust registered as custom filter.
+-#}
+{%- macro row(s) -%}
+{{ "%-20s" | format(s.name) }}  {{ "%3d" | format(s.pa) }}  {{ "%3d" | format(s.ab) }}  {{ "%3d" | format(s.runs) }}  {{ "%3d" | format(s.hits) }}  {{ "%3d" | format(s.doubles) }}  {{ "%3d" | format(s.triples) }}  {{ "%3d" | format(s.hr) }}  {{ "%4d" | format(s.rbi) }}  {{ "%3d" | format(s.bb) }}  {{ "%3d" | format(s.k) }}  {{ "%3d" | format(s.sty) }}
+{%- endmacro -%}
+{%- set col_head = "Player                PA   AB    R    H   2B   3B   HR    RBI   BB    K  STY" -%}
+{%- set div = "────────────────────────────────────────────────────────────────────────────" -%}
+
+============================================================
+LINE SCORE
+                  1      R
+{{ "%-18s" | format(visitors_name) }}  {{ "%2d" | format(visitors_runs) }}     {{ "%2d" | format(visitors_runs) }}
+{{ "%-18s" | format(home_name) }}  {{ "%2d" | format(home_runs) }}     {{ "%2d" | format(home_runs) }}
+
+============================================================
+{{ visitors_name | upper }} BATTING
+{{ col_head }}
+{{ div }}
+{% for s in visitors_rows %}
+{{ row(s) }}
+{% endfor %}
+{{ div }}
+{{ row(visitors_totals) }}
+
+============================================================
+{{ home_name | upper }} BATTING
+{{ col_head }}
+{{ div }}
+{% for s in home_rows %}
+{{ row(s) }}
+{% endfor %}
+{{ div }}
+{{ row(home_totals) }}
+
+============================================================
+Run rate:  {{ visitors_name }}  {{ "%.3f" | format(visitors_rr) }}    {{ home_name }}  {{ "%.3f" | format(home_rr) }}
+Stays:     {{ visitors_name }}  {{ visitors_stays }}    {{ home_name }}  {{ home_stays }}
+============================================================

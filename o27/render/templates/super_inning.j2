@@ -1,0 +1,13 @@
+{#- super_inning.j2 — Super-inning round header or summary -#}
+{% if mode == "header" %}
+
+=== TIE — SUPER-INNING TIEBREAKER ===
+
+--- Super-Inning Round {{ round_num }} ---
+  {{ visitors_name }} vs {{ home_name }} — 5 batters per side
+{% elif mode == "lineups" %}
+  {{ visitors_name }} super lineup: {{ visitors_lineup }}
+  {{ home_name }} super lineup: {{ home_lineup }}
+{% elif mode == "summary" %}
+  Super-inning R{{ round_num }}: {{ visitors_name }} {{ visitors_runs }} – {{ home_name }} {{ home_runs }}
+{% endif %}

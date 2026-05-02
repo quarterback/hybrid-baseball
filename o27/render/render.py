@@ -1,14 +1,515 @@
 """
-Jinja2 rendering stub for Phase 1.
-Full implementation in Phase 3.
+Jinja2 play-by-play and box score renderer for O27.
+
+The Renderer class:
+  - Loads Jinja2 templates from render/templates/
+  - Captures pre-event game state snapshots
+  - Renders each event via play_by_play.j2
+  - Tracks per-batter stats as a side effect of rendering (for box score)
+  - Provides render_halftime(), render_half_summary(), render_box_score(),
+    render_game_over() for structural output sections
+
+Usage (see engine/game.py for integration):
+    renderer = Renderer()
+    ctx = renderer.capture_context(state)          # BEFORE apply_event
+    apply_event(state, event)
+    lines = renderer.render_event(event, ctx, state)  # AFTER apply_event
 """
+
+from __future__ import annotations
+
+import os
+from typing import Optional
+
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
+from o27.stats.batter import BatterStats
+
+_TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
+
+# Manager / between-pitch event types that do NOT start a new plate appearance.
+_NON_PA_EVENTS = frozenset(
+    {"joker_insertion", "pitching_change", "pinch_hit",
+     "stolen_base_attempt", "pickoff_attempt", "balk",
+     "wild_pitch", "passed_ball"}
+)
 
 
 class Renderer:
-    """Placeholder renderer. Phase 3 will fill this in."""
+    """Jinja2 renderer for O27 play-by-play and structured output."""
 
-    def render_event(self, event_type: str, **kwargs) -> str:
-        return f"[{event_type}] {kwargs}"
+    def __init__(self, template_dir: Optional[str] = None) -> None:
+        tdir = template_dir or _TEMPLATE_DIR
+        self._env = Environment(
+            loader=FileSystemLoader(tdir),
+            undefined=StrictUndefined,
+            trim_blocks=True,
+            lstrip_blocks=True,
+            keep_trailing_newline=False,
+        )
+        self._batter_stats: dict[str, BatterStats] = {}
+        self._current_pa_batter_id: Optional[str] = None
 
-    def render_summary(self, summary_type: str, data: dict) -> str:
-        return f"[{summary_type}] {data}"
+    # -----------------------------------------------------------------------
+    # Public API — called by the game loop
+    # -----------------------------------------------------------------------
+
+    def capture_context(self, state) -> dict:
+        """
+        Snapshot the game state BEFORE an event is applied.
+        Returns a plain dict (no live state references) so it stays valid
+        after state mutation.
+        """
+        batter = state.current_batter
+        pitcher = state.get_current_pitcher()
+        batting_tid = state.batting_team.team_id
+        return {
+            "batter": batter,
+            "pitcher": pitcher,
+            "outs": state.outs,
+            "count_balls": state.count.balls,
+            "count_strikes": state.count.strikes,
+            "count": str(state.count),
+            "bases": state.bases_summary(),
+            "bases_list": list(state.bases),          # copy — safe after mutation
+            "score": dict(state.score),               # copy
+            "batting_team_id": batting_tid,
+            "batting_team_name": state.batting_team.name,
+            "fielding_team_name": state.fielding_team.name,
+            "visitors_name": state.visitors.name,
+            "home_name": state.home.name,
+            "half": state.half,
+            "spell_count": state.pitcher_spell_count,
+            "is_super": state.is_super_inning,
+            "at_bat_hits_before": state.current_at_bat_hits,
+        }
+
+    def render_event(self, event: dict, ctx: dict, state_after) -> list[str]:
+        """
+        Render one game event as a list of play-by-play text lines.
+        Also updates internal per-batter stats used by render_box_score().
+        """
+        batter = ctx["batter"]
+        etype = event["type"]
+        lines: list[str] = []
+
+        # Detect new plate appearance (batter change, ignoring manager/baserunning
+        # events that fire between or during PAs without changing the batter).
+        is_pa_event = etype not in _NON_PA_EVENTS
+        if is_pa_event and batter.player_id != self._current_pa_batter_id:
+            self._on_new_pa(batter)
+            lines.append(self._batter_intro(batter))
+            self._current_pa_batter_id = batter.player_id
+
+        # Build the template context dict (all display values pre-computed).
+        disp = self._build_disp(event, ctx, state_after)
+
+        # Update batter stats.
+        self._update_stats(event, ctx, state_after, disp)
+
+        # Render via Jinja2 template.
+        tmpl = self._env.get_template("play_by_play.j2")
+        rendered = tmpl.render(**disp).rstrip("\n")
+        if rendered:
+            lines.append(rendered)
+
+        return lines
+
+    def render_half_header(self, state) -> str:
+        """Return the half-inning header line (e.g. 'TOP HALF | Foxes batting')."""
+        half_labels = {
+            "top": "TOP HALF",
+            "bottom": "BOTTOM HALF",
+            "super_top": f"SUPER-INNING R{state.super_inning_number} — VISITORS",
+            "super_bottom": f"SUPER-INNING R{state.super_inning_number} — HOME",
+        }
+        label = half_labels.get(state.half, state.half.upper())
+        batting = state.batting_team.name
+        return f"\n{'─' * 60}\n{label} | {batting} batting\n{'─' * 60}"
+
+    def render_halftime(self, state) -> list[str]:
+        """Render the halftime break announcement."""
+        v_score = state.score["visitors"]
+        target_runs = v_score + 1
+        required_rr = target_runs / 27
+        tmpl = self._env.get_template("halftime.j2")
+        rendered = tmpl.render(
+            visitors_name=state.visitors.name,
+            home_name=state.home.name,
+            visitors_score=v_score,
+            target_runs=target_runs,
+            required_rr=required_rr,
+        ).rstrip("\n")
+        return rendered.split("\n") if rendered else []
+
+    def render_half_summary(self, state, which: str) -> list[str]:
+        """Render the end-of-half summary line."""
+        team = state.visitors if which == "top" else state.home
+        runs = state.score[team.team_id]
+        outs = max(state.outs, 1)
+        rr = runs / outs
+        hits = sum(
+            s.hits
+            for pid, s in self._batter_stats.items()
+            if any(p.player_id == pid for p in team.roster)
+        )
+        stays = sum(
+            s.sty
+            for pid, s in self._batter_stats.items()
+            if any(p.player_id == pid for p in team.roster)
+        )
+        half_label = "top" if which == "top" else "bottom"
+        return [
+            "",
+            (
+                f"End of {half_label} half — {team.name}: "
+                f"{runs} run(s), {hits} hit(s) | "
+                f"Run rate: {rr:.3f} R/out | Stays: {stays}"
+            ),
+        ]
+
+    def render_box_score(self, state) -> list[str]:
+        """Render the full dual-team box score."""
+        def _rows(team):
+            return [
+                self._batter_stats.get(
+                    p.player_id,
+                    BatterStats(player_id=p.player_id, name=p.name),
+                )
+                for p in team.roster
+            ]
+
+        def _totals(rows: list[BatterStats]) -> BatterStats:
+            t = BatterStats(player_id="TOTALS", name="TOTALS")
+            for r in rows:
+                t.pa      += r.pa
+                t.ab      += r.ab
+                t.runs    += r.runs
+                t.hits    += r.hits
+                t.doubles += r.doubles
+                t.triples += r.triples
+                t.hr      += r.hr
+                t.rbi     += r.rbi
+                t.bb      += r.bb
+                t.k       += r.k
+                t.sty     += r.sty
+            return t
+
+        v_rows = _rows(state.visitors)
+        h_rows = _rows(state.home)
+        v_runs = state.score["visitors"]
+        h_runs = state.score["home"]
+
+        tmpl = self._env.get_template("box_score.j2")
+        rendered = tmpl.render(
+            visitors_name=state.visitors.name,
+            home_name=state.home.name,
+            visitors_rows=v_rows,
+            home_rows=h_rows,
+            visitors_totals=_totals(v_rows),
+            home_totals=_totals(h_rows),
+            visitors_runs=v_runs,
+            home_runs=h_runs,
+            visitors_rr=v_runs / 27,
+            home_rr=h_runs / 27,
+            visitors_stays=sum(s.sty for s in v_rows),
+            home_stays=sum(s.sty for s in h_rows),
+        ).rstrip("\n")
+        return rendered.split("\n") if rendered else []
+
+    def render_super_inning_tie(self) -> list[str]:
+        return ["\n=== TIE — SUPER-INNING TIEBREAKER ==="]
+
+    def render_super_inning_round_header(self, state, round_num: int,
+                                         v5, h5) -> list[str]:
+        tmpl = self._env.get_template("super_inning.j2")
+        rendered = tmpl.render(
+            mode="header",
+            round_num=round_num,
+            visitors_name=state.visitors.name,
+            home_name=state.home.name,
+            visitors_lineup=", ".join(p.name for p in v5),
+            home_lineup=", ".join(p.name for p in h5),
+        ).rstrip("\n")
+        return rendered.split("\n") if rendered else []
+
+    def render_super_inning_round_summary(self, state, round_num: int,
+                                          v_runs: int, h_runs: int) -> list[str]:
+        tmpl = self._env.get_template("super_inning.j2")
+        rendered = tmpl.render(
+            mode="summary",
+            round_num=round_num,
+            visitors_name=state.visitors.name,
+            home_name=state.home.name,
+            visitors_runs=v_runs,
+            home_runs=h_runs,
+        ).rstrip("\n")
+        return rendered.split("\n") if rendered else []
+
+    def render_game_over(self, state) -> list[str]:
+        """Render the final game-over banner."""
+        winner = state.winner
+        if not winner:
+            return []
+        other = "home" if winner == "visitors" else "visitors"
+        w_team = state.visitors if winner == "visitors" else state.home
+        o_team = state.home if winner == "visitors" else state.visitors
+        w_score = state.score[winner]
+        o_score = state.score[other]
+        suffix = " (super-inning)" if state.super_inning_number > 0 else ""
+        sep = "=" * 60
+        return [
+            f"\n{sep}",
+            f"GAME OVER{suffix}: {w_team.name.upper()} WIN {w_score}–{o_score}",
+            sep,
+            f"Final score: {w_team.name} {w_score}, {o_team.name} {o_score}",
+        ]
+
+    # -----------------------------------------------------------------------
+    # Internal: plate-appearance tracking
+    # -----------------------------------------------------------------------
+
+    def _on_new_pa(self, batter) -> None:
+        s = self._get_stats(batter)
+        s.pa += 1
+
+    def _get_stats(self, player) -> BatterStats:
+        if player.player_id not in self._batter_stats:
+            self._batter_stats[player.player_id] = BatterStats(
+                player_id=player.player_id, name=player.name
+            )
+        return self._batter_stats[player.player_id]
+
+    def _batter_intro(self, batter) -> str:
+        tag = ""
+        if batter.is_joker:
+            tag = " [JOKER]"
+        elif batter.is_pitcher:
+            tag = " [P]"
+        return f"--- Now batting: {batter.name}{tag} ---"
+
+    # -----------------------------------------------------------------------
+    # Internal: display context builder
+    # -----------------------------------------------------------------------
+
+    def _build_disp(self, event: dict, ctx: dict, state_after) -> dict:
+        """Build the full Jinja2 template context dict from event + snapshots."""
+        batter = ctx["batter"]
+        pitcher = ctx["pitcher"]
+        etype = event["type"]
+        batting_tid = ctx["batting_team_id"]
+        score_before = ctx["score"].get(batting_tid, 0)
+        score_after = state_after.score.get(batting_tid, 0)
+        runs_scored = max(0, score_after - score_before)
+
+        # --- Base context (all keys always present to satisfy StrictUndefined) ---
+        d: dict = {
+            "event_type": etype,
+            "display_type": etype.upper().replace("_", " "),
+            "outs": ctx["outs"],
+            "count": ctx["count"],
+            "bases": ctx["bases"],
+            "batter_name": batter.name,
+            "batter_is_joker": batter.is_joker,
+            "batter_is_pitcher": batter.is_pitcher,
+            "pitcher_name": pitcher.name if pitcher else "—",
+            "visitors_name": ctx["visitors_name"],
+            "home_name": ctx["home_name"],
+            "score_visitors": ctx["score"].get("visitors", 0),
+            "score_home": ctx["score"].get("home", 0),
+            "runs_scored": runs_scored,
+            # Flags (event-specific; default False)
+            "is_walk": False,
+            "is_strikeout": False,
+            "swinging": False,
+            "stay_valid": False,
+            "stay_batter_out": False,
+            "stay_hit_credited": False,
+            "steal_success": False,
+            "steal_home": False,
+            "pickoff_success": False,
+            # String placeholders
+            "ball_number": 0,
+            "new_count": str(state_after.count),
+            "hit_type": "",
+            "choice": "run",
+            "batter_safe": True,
+            "new_bases": state_after.bases_summary(),
+            "at_bat_hits": state_after.current_at_bat_hits,
+            "steal_to": "",
+            "pickoff_base": "",
+            "joker_name": "",
+            "batting_team_name": ctx["batting_team_name"],
+            "fielding_team_name": ctx["fielding_team_name"],
+            "new_pitcher_name": "",
+            "old_pitcher_name": pitcher.name if pitcher else "—",
+            "old_spell_count": ctx["spell_count"],
+            "replacement_name": "",
+            "replaced_name": batter.name,
+        }
+
+        # --- Event-specific overrides ---
+
+        if etype == "ball":
+            is_walk = ctx["count_balls"] == 3
+            d["is_walk"] = is_walk
+            d["ball_number"] = 4 if is_walk else state_after.count.balls
+            d["new_count"] = str(state_after.count)
+
+        elif etype in ("called_strike", "swinging_strike"):
+            d["is_strikeout"] = ctx["count_strikes"] == 2
+            d["swinging"] = (etype == "swinging_strike")
+            d["new_count"] = str(state_after.count)
+
+        elif etype == "foul":
+            d["new_count"] = str(state_after.count)
+
+        elif etype == "ball_in_play":
+            outcome = event.get("outcome", {})
+            choice = event.get("choice", "run")
+            hit_type = outcome.get("hit_type", "")
+            batter_safe = outcome.get("batter_safe", True)
+            caught_fly = outcome.get("caught_fly", False)
+
+            # PRD §2.6: HR overrides stay → run.
+            if hit_type in ("hr", "home_run") and choice == "stay":
+                choice = "run"
+
+            d["choice"] = choice
+            d["hit_type"] = hit_type
+            d["batter_safe"] = batter_safe
+            d["new_bases"] = state_after.bases_summary()
+
+            if choice == "stay":
+                stay_out = (ctx["count_strikes"] == 2) or caught_fly
+                d["stay_batter_out"] = stay_out
+                d["stay_valid"] = not stay_out
+                if not stay_out:
+                    bases_before = ctx["bases_list"]
+                    bases_after = state_after.bases
+                    runner_advanced = runs_scored > 0 or any(
+                        bases_after[i] is not None
+                        and bases_after[i] != bases_before[i]
+                        for i in range(3)
+                    )
+                    d["stay_hit_credited"] = runner_advanced
+                    d["at_bat_hits"] = state_after.current_at_bat_hits
+
+        elif etype == "stolen_base_attempt":
+            base_idx = event.get("base_idx", 0)
+            success = event.get("success", True)
+            to_names = ["2B", "3B", "home"]
+            d["steal_success"] = success
+            d["steal_to"] = to_names[base_idx] if base_idx < 3 else "?"
+            d["steal_home"] = (base_idx == 2 and success)
+
+        elif etype == "pickoff_attempt":
+            base_idx = event.get("base_idx", 0)
+            success = event.get("success", False)
+            base_names = ["1B", "2B", "3B"]
+            d["pickoff_success"] = success
+            d["pickoff_base"] = base_names[base_idx] if base_idx < 3 else "?"
+
+        elif etype == "joker_insertion":
+            joker = event.get("joker")
+            d["joker_name"] = joker.name if joker else "?"
+
+        elif etype == "pitching_change":
+            new_p = event.get("new_pitcher")
+            d["new_pitcher_name"] = new_p.name if new_p else "?"
+
+        elif etype == "pinch_hit":
+            replacement = event.get("replacement")
+            d["replacement_name"] = replacement.name if replacement else "?"
+
+        return d
+
+    # -----------------------------------------------------------------------
+    # Internal: per-batter stats accumulation
+    # -----------------------------------------------------------------------
+
+    def _update_stats(self, event: dict, ctx: dict, state_after, disp: dict) -> None:
+        """Update BatterStats based on the rendered event display context."""
+        batter = ctx["batter"]
+        s = self._get_stats(batter)
+        etype = event["type"]
+        runs_scored = disp.get("runs_scored", 0)
+
+        if etype == "ball" and disp["is_walk"]:
+            s.bb += 1
+            s.rbi += runs_scored
+
+        elif etype == "foul_tip_caught":
+            s.ab += 1
+            s.k += 1
+
+        elif etype in ("called_strike", "swinging_strike") and disp["is_strikeout"]:
+            s.ab += 1
+            s.k += 1
+
+        elif etype == "hit_by_pitch":
+            s.hbp += 1
+            s.rbi += runs_scored
+
+        elif etype == "ball_in_play":
+            choice = disp.get("choice", "run")
+            hit_type = disp.get("hit_type", "")
+
+            if choice == "stay":
+                if disp.get("stay_valid"):
+                    s.sty += 1
+                    if disp.get("stay_hit_credited"):
+                        s.hits += 1
+                    s.rbi += runs_scored
+                elif disp.get("stay_batter_out"):
+                    s.ab += 1
+                    s.rbi += runs_scored
+            else:
+                s.ab += 1
+                if hit_type in ("single", "double", "triple", "hr", "home_run"):
+                    s.hits += 1
+                if hit_type == "double":
+                    s.doubles += 1
+                elif hit_type == "triple":
+                    s.triples += 1
+                elif hit_type in ("hr", "home_run"):
+                    s.hr += 1
+                s.rbi += runs_scored
+
+        # Credit runs-scored (R) to the players who left the bases.
+        if runs_scored > 0:
+            self._credit_runs(ctx, state_after, runs_scored, etype, disp)
+
+    def _credit_runs(self, ctx: dict, state_after, runs_scored: int,
+                     etype: str, disp: dict) -> None:
+        """
+        Approximately credit the 'R' stat to runners who scored.
+        Identifies player_ids that were on base before the event and are no
+        longer on base after (they either scored or were put out).  We prefer
+        runners furthest along (3B → 2B → 1B) since they're most likely to
+        have scored rather than been retired.
+        """
+        bases_before = ctx["bases_list"]
+        bases_after = list(state_after.bases)
+
+        # Collect player_ids that left the bases.
+        before_ids = [pid for pid in bases_before if pid is not None]
+        after_set = {pid for pid in bases_after if pid is not None}
+        # Preserve 3B→2B→1B order (index 2, 1, 0) so front-runners are credited.
+        left_ids: list[str] = []
+        for i in (2, 1, 0):
+            pid = bases_before[i]
+            if pid is not None and pid not in after_set:
+                left_ids.append(pid)
+
+        # If batter hit a HR, they score too (not a "base runner" who left).
+        hit_type = disp.get("hit_type", "")
+        if etype == "ball_in_play" and hit_type in ("hr", "home_run"):
+            batter_pid = ctx["batter"].player_id
+            if batter_pid not in left_ids:
+                left_ids.append(batter_pid)
+
+        # Credit the first `runs_scored` departing players with a run.
+        for pid in left_ids[:runs_scored]:
+            if pid in self._batter_stats:
+                self._batter_stats[pid].runs += 1
