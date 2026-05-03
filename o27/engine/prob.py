@@ -495,9 +495,16 @@ class ProbabilisticProvider:
     def _maybe_roll_form(self, state: GameState) -> None:
         """If the fielding pitcher changed, roll a new today_form for them.
 
-        Identity invariant: when TODAY_FORM_SIGMA is interpreted as the
-        spread, the mean is 1.0 — calls with sigma=0 would always produce
-        1.0 and recover the legacy behavior.
+        Identity invariant: at TODAY_FORM_SIGMA=0 + days_rest=99 +
+        pitch_debt=0 the form collapses to 1.0 and the engine reduces to
+        legacy behavior.
+
+        Also folds in a multi-game fatigue penalty: a pitcher who threw
+        recently has their effective form reduced proportional to their
+        rolling pitch debt minus their stamina-derived budget. This is
+        what makes a real workhorse different from a glass-arm reliever
+        AT THE GAME LEVEL — within an appearance, the existing FATIGUE_*
+        within-game model still applies.
         """
         pitcher = state.get_current_pitcher()
         if pitcher is None:
@@ -506,7 +513,22 @@ class ProbabilisticProvider:
             return
         self._last_pitcher_id = pitcher.player_id
         form = self.rng.gauss(cfg.TODAY_FORM_MU, cfg.TODAY_FORM_SIGMA)
-        pitcher.today_form = max(cfg.TODAY_FORM_MIN, min(cfg.TODAY_FORM_MAX, form))
+        form = max(cfg.TODAY_FORM_MIN, min(cfg.TODAY_FORM_MAX, form))
+
+        # Multi-game fatigue: scale form down by pitch-debt overrun.
+        debt = int(getattr(pitcher, "pitch_debt", 0) or 0)
+        if debt > 0:
+            # Stamina-relative budget: a 0.5-stamina pitcher absorbs ~50
+            # debt pitches over the rolling window before the penalty kicks
+            # in; an elite 0.85-stamina arm absorbs ~85.
+            budget = max(cfg.FATIGUE_DEBT_MIN_BUDGET,
+                         pitcher.stamina * cfg.FATIGUE_DEBT_BUDGET_SCALE)
+            excess = max(0, debt - budget)
+            penalty = min(cfg.FATIGUE_DEBT_MAX_PENALTY,
+                          excess * cfg.FATIGUE_DEBT_PER_PITCH)
+            form *= (1.0 - penalty)
+
+        pitcher.today_form = max(cfg.TODAY_FORM_MIN, form)
 
     def __call__(self, state: GameState) -> Optional[dict]:
         # Detect new batter (new PA or batter changed by joker insertion).

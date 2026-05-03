@@ -40,6 +40,7 @@ def _db_team_to_engine(
     team_role: str,
     rotation_index: int = 0,
     recently_used_pitcher_ids: set[int] | None = None,
+    workload: dict[int, dict[str, int]] | None = None,
 ) -> Team:
     """
     Convert a DB team row + player rows into an O27 engine Team object.
@@ -61,6 +62,7 @@ def _db_team_to_engine(
     """
     _ = rotation_index  # unused — kept for back-compat
     rest_excluded = recently_used_pitcher_ids or set()
+    workload = workload or {}
 
     engine_players: list[Player] = []
     fielders: list[Player] = []
@@ -107,6 +109,11 @@ def _db_team_to_engine(
             bats=str(p.get("bats") or ""),
             throws=str(p.get("throws") or ""),
         )
+        # Stamp workload state on every Player so the manager AI and the
+        # engine's tired-multiplier can read it without extra plumbing.
+        wl = workload.get(int(p["id"]), {}) if p.get("is_pitcher") else {}
+        player.days_rest  = int(wl.get("days_rest", 99))
+        player.pitch_debt = int(wl.get("pitch_debt", 0))
         engine_players.append(player)
         engine_to_db_id[player.player_id] = int(p["id"])
         if bool(p.get("is_joker")):
@@ -118,17 +125,32 @@ def _db_team_to_engine(
         else:
             fielders.append(player)
 
-    # ---- Pick today's SP: highest Stamina among rested active arms ----
+    # ---- Pick today's SP via rest-tiered, stamina-weighted selection ----
+    # Real rotations want 4 days rest between starts. We tier candidates by
+    # rest level and pick the highest-Stamina arm in the best non-empty tier.
+    # Critical: never just fall back to "anyone" — that produces a workhorse
+    # who throws every single day. If no arm has the ideal rest, we still
+    # pick the MOST-RESTED arm so the rotation keeps cycling.
     todays_sp: list[Player] = []
     if pitchers:
-        rested = [
-            p for p in pitchers
-            if engine_to_db_id.get(p.player_id) not in rest_excluded
-        ]
-        # Fall back to the full pitcher pool if every arm is "tired".
-        candidate_pool = rested or pitchers
-        sp = max(candidate_pool, key=lambda pl: pl.stamina)
-        todays_sp = [sp]
+        # Pre-rank: highest stamina first, with debt as a tiebreaker (less
+        # debt = fresher arm). Done once so each tier filter just slices it.
+        ranked = sorted(
+            pitchers,
+            key=lambda pl: (-pl.stamina, pl.pitch_debt),
+        )
+        # Tier the candidates by minimum days rest. Once a tier has any
+        # qualifying arm, take the top-stamina one in that tier.
+        for min_rest in (4, 3, 2, 1):
+            tier = [p for p in ranked if p.days_rest >= min_rest]
+            if tier:
+                todays_sp = [tier[0]]
+                break
+        # Last-resort: every arm pitched yesterday or today. Pick the one
+        # with the most rest (most rested) and lowest debt — emergency only.
+        if not todays_sp:
+            ranked.sort(key=lambda pl: (-pl.days_rest, pl.pitch_debt))
+            todays_sp = [ranked[0]]
 
     # Cap fielders at the canonical 8 starting positions; remaining ones
     # are bench depth that lives in the roster but does not bat. Cap DHs
@@ -138,6 +160,15 @@ def _db_team_to_engine(
     starting_dhs      = dhs[:3]
 
     lineup = list(starting_fielders) + todays_sp + list(starting_dhs)
+
+    # Reorder the roster so today's SP is the first pitcher. The engine's
+    # `_set_fielding_pitcher` picks the first is_pitcher in roster order,
+    # so without this swap the SP rotation would be cosmetic — game.py
+    # would pick whatever pitcher happened to come first in the DB query.
+    if todays_sp:
+        sp = todays_sp[0]
+        if sp in engine_players:
+            engine_players = [sp] + [p for p in engine_players if p is not sp]
 
     return Team(
         team_id=team_role,
@@ -342,6 +373,77 @@ def _recently_used_pitcher_ids(
     return {int(r["player_id"]) for r in rows}
 
 
+def _pitcher_workload_state(
+    team_id: int, game_date: str, lookback_days: int = 5
+) -> dict[int, dict[str, int]]:
+    """For every pitcher who's appeared for the team in the last
+    `lookback_days` sim days, return their workload state as of `game_date`.
+
+    Returns: { db_player_id: {
+        "days_rest":  int,      # days since most recent appearance
+        "pitch_debt": int,      # decayed sum of pitches over lookback window
+        "p_yesterday": int,     # raw pitches thrown yesterday
+        "p_5d":       int,      # raw pitches thrown over the 5-day window
+        "appearances_5d": int,
+    }}
+    Pitchers who haven't appeared inside the window are absent from the dict
+    — callers should treat them as fully rested (days_rest=99, debt=0).
+
+    Pitch-debt decays linearly over the window so an old appearance counts
+    less than yesterday's; this keeps a 4-days-ago start from looking as
+    fresh as a real workhorse would feel.
+    """
+    rows = db.fetchall(
+        """SELECT ps.player_id,
+                  g.game_date AS gdate,
+                  COALESCE(ps.pitches, 0) AS pitches,
+                  COALESCE(ps.outs_recorded, 0) AS outs
+             FROM game_pitcher_stats ps
+             JOIN games g ON g.id = ps.game_id
+            WHERE ps.team_id = ?
+              AND g.played = 1
+              AND g.game_date >= date(?, ?)
+              AND g.game_date <  ?
+            ORDER BY g.game_date DESC""",
+        (team_id, game_date, f"-{lookback_days} days", game_date),
+    )
+
+    if not rows:
+        return {}
+
+    from datetime import date
+    today = date.fromisoformat(game_date)
+
+    state: dict[int, dict[str, int]] = {}
+    for r in rows:
+        pid = int(r["player_id"])
+        try:
+            days_ago = (today - date.fromisoformat(r["gdate"])).days
+        except ValueError:
+            days_ago = lookback_days
+        # Linear decay: an appearance N days ago contributes
+        # pitches * (lookback_days - N) / lookback_days to the debt score.
+        # Yesterday (N=1) → pitches * 4/5 = 80%; 4 days ago → 20%.
+        decay = max(0.0, (lookback_days - days_ago) / lookback_days)
+
+        st = state.setdefault(pid, {
+            "days_rest": 99,
+            "pitch_debt": 0,
+            "p_yesterday": 0,
+            "p_5d": 0,
+            "appearances_5d": 0,
+        })
+        if days_ago < st["days_rest"]:
+            st["days_rest"] = days_ago
+        if days_ago == 1:
+            st["p_yesterday"] += int(r["pitches"])
+        st["p_5d"] += int(r["pitches"])
+        st["appearances_5d"] += 1
+        st["pitch_debt"] += int(round(int(r["pitches"]) * decay))
+
+    return state
+
+
 def _promote_pitcher_role(players: list[dict]) -> list[dict]:
     """Task #65: roles are derived live (no `pitcher_role` is read), so
     this helper only needs to guarantee at least one `is_pitcher` arm
@@ -402,14 +504,21 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     # rotation state we need is the set of arms that pitched recently.
     home_rest = _recently_used_pitcher_ids(home_team_id, game_date)
     away_rest = _recently_used_pitcher_ids(away_team_id, game_date)
+    # Workload-model state: per-pitcher rolling pitch debt + days rest.
+    # Drives both SP selection and the manager's relief picks (via fields
+    # stamped on Player.days_rest / pitch_debt inside _db_team_to_engine).
+    home_workload = _pitcher_workload_state(home_team_id, game_date)
+    away_workload = _pitcher_workload_state(away_team_id, game_date)
 
     visitors_team = _db_team_to_engine(
         away_row, away_players, "visitors",
         recently_used_pitcher_ids=away_rest,
+        workload=away_workload,
     )
     home_team = _db_team_to_engine(
         home_row, home_players, "home",
         recently_used_pitcher_ids=home_rest,
+        workload=home_workload,
     )
 
     state = GameState(visitors=visitors_team, home=home_team)

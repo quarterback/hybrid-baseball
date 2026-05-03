@@ -116,6 +116,12 @@ class Player:
     # a gem one start and a clunker the next. 1.0 = legacy parity.
     today_form: float = 1.0
 
+    # Workload-model state — populated per-game by sim.py from the live DB
+    # game_pitcher_stats history. Defaults preserve identity for legacy
+    # callers / fresh Players that don't have rest data yet.
+    days_rest: int = 99      # days since last appearance (99 = fully rested)
+    pitch_debt: int = 0      # rolling 5-day pitch count (recovery-decayed)
+
     def __hash__(self) -> int:
         return hash(self.player_id)
 

@@ -351,6 +351,20 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
 
     outs = getattr(state, "outs", 0) or 0
 
+    # Hard rest filter: pitchers who appeared in the last day or two are
+    # de-prioritized from relief eligibility. We use a tier system mirroring
+    # the SP picker — start with the most rested pool and broaden only when
+    # nobody qualifies. This is what stops a single arm from being the
+    # manager's "everyday closer" — the rotation has to cycle.
+    for min_rest in (3, 2, 1):
+        rested = [
+            p for p in pitcher_candidates
+            if int(getattr(p, "days_rest", 99) or 99) >= min_rest
+        ]
+        if rested:
+            pitcher_candidates = rested
+            break
+
     def _stuff(p: Player) -> float:
         return float(getattr(p, "pitcher_skill", 0.5) or 0.5)
 
@@ -360,16 +374,38 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         s = getattr(p, "stamina", None)
         return float(s if s is not None else _stuff(p))
 
+    def _rest_penalty(p: Player) -> float:
+        """Multiplicative penalty applied to a pitcher's score based on
+        recent workload. Pitched yesterday with a heavy load → strong
+        penalty; pitched 3+ days ago → no penalty. Identity at default
+        days_rest=99 / pitch_debt=0.
+        """
+        days_rest = int(getattr(p, "days_rest", 99) or 99)
+        pitch_debt = int(getattr(p, "pitch_debt", 0) or 0)
+        # Days-rest penalty: 0d → -0.30, 1d → -0.15, 2d → -0.05, 3d+ → 0.
+        if days_rest <= 0:
+            rp = 0.30
+        elif days_rest == 1:
+            rp = 0.15
+        elif days_rest == 2:
+            rp = 0.05
+        else:
+            rp = 0.0
+        # Heavy debt adds another 0.0–0.15 on top.
+        # 100+ pitches in last 5 days → -0.15.
+        rp += min(0.15, pitch_debt / 100.0 * 0.15)
+        return rp
+
     def _score(p: Player) -> float:
         if outs >= 19:
-            # Late / closer — pure Stuff.
-            return _stuff(p)
+            # Late / closer — pure Stuff. Tired arms get penalized.
+            return _stuff(p) - _rest_penalty(p)
         if outs >= 10:
             # Middle relief — Stuff dominates, but penalize the highest-
             # Stamina arms so they remain available for starts.
-            return _stuff(p) - 0.25 * max(0.0, _stamina(p) - 0.55)
-        # Long relief / spot start — pure Stamina.
-        return _stamina(p)
+            return _stuff(p) - 0.25 * max(0.0, _stamina(p) - 0.55) - _rest_penalty(p)
+        # Long relief / spot start — pure Stamina, rest-adjusted.
+        return _stamina(p) - _rest_penalty(p)
 
     if pitcher_candidates:
         return max(pitcher_candidates, key=_score)

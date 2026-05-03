@@ -321,6 +321,16 @@ TODAY_FORM_MU:    float = 1.00
 TODAY_FORM_SIGMA: float = 0.10
 TODAY_FORM_MIN:   float = 0.80
 TODAY_FORM_MAX:   float = 1.20
+
+# Multi-game fatigue (workload-debt) penalty applied on top of today_form.
+# Identity invariant: at pitch_debt = 0, all of these collapse to no penalty.
+# A pitcher's stamina-derived "budget" is `stamina * 100` pitches over the
+# rolling 5-day window. Excess pitches above that scale the form down by
+# `excess * FATIGUE_DEBT_PER_PITCH`, capped at FATIGUE_DEBT_MAX_PENALTY.
+FATIGUE_DEBT_MIN_BUDGET:    float = 30.0   # pitches; floor for low-stamina arms
+FATIGUE_DEBT_BUDGET_SCALE:  float = 100.0  # stamina (0-1) * this = budget pitches
+FATIGUE_DEBT_PER_PITCH:     float = 0.005  # form penalty per pitch over budget
+FATIGUE_DEBT_MAX_PENALTY:   float = 0.20   # cap on the form penalty
 # Shift toward strikes on top of the existing pitcher_dom term, scaled by
 # (today_form - 1.0). Magnitudes are deliberately small.
 FORM_BALL:     float = -0.04   # good day → fewer balls
