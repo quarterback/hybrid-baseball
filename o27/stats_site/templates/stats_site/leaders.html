@@ -1,0 +1,206 @@
+{% extends "stats_site/base.html" %}
+{% block title %}League Leaders — O27 Stats{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb"><div class="container wide">
+  <a href="/stats">Home</a><span class="sep">/</span>Leaders
+</div></div>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>LEAGUE LEADERS</h1>
+  <div class="subtitle">Batting and pitching stat leaders across all games</div>
+</div>
+
+{% if not any_data %}
+<div class="empty">No active simulations found.</div>
+{% else %}
+
+<div class="grid-2">
+
+<div>
+  <h2>Batting — AVG</h2>
+  {% if by_avg %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">AVG</th><th class="num">H</th><th class="num">AB</th></tr></thead>
+    <tbody>
+    {% for r in by_avg %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ "%.3f"|format(r.avg) }}</td>
+      <td class="num">{{ r.hits }}</td>
+      <td class="num" style="color:var(--fg-dim)">{{ r.ab }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
+<div>
+  <h2>Batting — Hits</h2>
+  {% if by_hits %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">H</th><th class="num">AVG</th></tr></thead>
+    <tbody>
+    {% for r in by_hits %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ r.hits }}</td>
+      <td class="num" style="color:var(--fg-dim)">{{ "%.3f"|format(r.avg) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
+<div>
+  <h2>Batting — RBI</h2>
+  {% if by_rbi %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">RBI</th></tr></thead>
+    <tbody>
+    {% for r in by_rbi %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ r.rbi }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
+<div>
+  <h2>Batting — Walks (BB)</h2>
+  {% if by_bb %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">BB</th></tr></thead>
+    <tbody>
+    {% for r in by_bb %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ r.bb }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
+<div>
+  <h2>Batting — Stays (STY)</h2>
+  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">Stay = batter chose to remain at home plate with runners on base; successful stay credits a hit and restarts the at-bat.</p>
+  {% if by_sty %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">STY</th></tr></thead>
+    <tbody>
+    {% for r in by_sty %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ r.stays }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
+<div>
+  <h2>Pitching — ERA</h2>
+  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">Min. 9 outs recorded.</p>
+  {% if by_pit_era %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Pitcher</th><th>Team</th><th class="num">ERA</th><th class="num">IP</th></tr></thead>
+    <tbody>
+    {% for r in by_pit_era %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ "%.2f"|format(r.era) }}</td>
+      <td class="num" style="color:var(--fg-dim)">{{ (r.outs // 3)|string + '.' + (r.outs % 3)|string }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
+<div>
+  <h2>Pitching — Wins (W)</h2>
+  {% if by_pit_w %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Pitcher</th><th>Team</th><th class="num">W</th><th class="num">G</th></tr></thead>
+    <tbody>
+    {% for r in by_pit_w %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ r.wins }}</td>
+      <td class="num" style="color:var(--fg-dim)">{{ r.g }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
+<div>
+  <h2>Pitching — Strikeouts (SO)</h2>
+  {% if by_pit_k %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Pitcher</th><th>Team</th><th class="num">SO</th><th class="num">G</th></tr></thead>
+    <tbody>
+    {% for r in by_pit_k %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ r.k }}</td>
+      <td class="num" style="color:var(--fg-dim)">{{ r.g }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
+<div>
+  <h2>Pitching — WHIP</h2>
+  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">Min. 9 outs recorded.</p>
+  {% if by_pit_whip %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Pitcher</th><th>Team</th><th class="num">WHIP</th></tr></thead>
+    <tbody>
+    {% for r in by_pit_whip %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ "%.2f"|format(r.whip) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
+</div>
+
+{% endif %}
+
+{% endblock %}

@@ -22,10 +22,19 @@ pnpm workspace monorepo using TypeScript + Python O27 baseball simulation.
 - `o27/engine/` — game engine: game.py, pa.py, state.py, stay.py, manager.py, prob.py
 - `o27/render/` — Jinja2 play-by-play renderer
 - `o27/stats/` — batter/pitcher/team stat accumulators
-- `o27/web/app.py` — Flask single-game viewer (port 5000)
+- `o27/web/app.py` — Flask operational GUI; registers stats Blueprint. Local dev: port 5000 (set by workflow or $PORT env var). Fly.io: port 8080 (set via fly.toml `[env] PORT = "8080"`).
+- `o27/stats_site/` — read-only stats-browsing Blueprint (mounted at `/stats`)
+  - `blueprint.py` — routes: /stats, /stats/standings, /stats/schedule, /stats/leaders, /stats/players, /stats/team/<abbrev>, /stats/player/<id>, /stats/game/<id>
+  - `templates/stats_site/` — base.html (14 themes, O27 wordmark, keyboard shortcuts), home/standings/schedule/game/team/player/players/leaders pages
+  - Theme stored in localStorage key `o27-theme`; 't' keyboard shortcut toggles theme panel; Bloomberg dark default
 - `o27/tests/test_rules.py` — 102 rule-verification tests
 - `o27/tune.py` — 500-game batch tuner
 - `o27/config.py` — all tunable parameters
+- `fly.toml` + `Dockerfile` — Fly.io deployment (app=o27, region=iad, port=8080, CMD python -m o27.web.app)
+
+### O27 Web route changes (Task 30)
+- Old `/stats` (batting/pitching leaders) is now at `/leaders` (also `/stats-leaders` alias still works)
+- `/stats` now mounts the full stats-browsing Blueprint (Viperball-inspired design)
 
 ### o27v2/ — Phase 6–9 fork: 30-team league + O27 rules engine (port 8080)
 - `o27v2/manage.py` — CLI: `runserver`, `initdb`, `resetdb`, `sim [N]`, `smoke`, `tune [N]`

@@ -9,8 +9,9 @@ Routes:
   GET       /random              Redirect to /game with random teams + seed
   GET       /standings           League standings
   GET       /schedule            Schedule / results (?team=ABB to filter)
-  GET       /stats               Batting + pitching leaders
-  GET       /stats-leaders       Alias → /stats
+  GET       /leaders             Batting + pitching leaders (operational view)
+  GET       /stats-leaders       Alias → /leaders
+  GET       /stats               O27 stats-browsing site (Blueprint)
   GET       /teams               Team list
   GET       /team/<abbrev>       Team page (Roster|Stats|Pitching|Schedule tabs)
   GET       /player/<team>/<slug> Player detail page
@@ -49,6 +50,9 @@ import o27.data as data
 
 app = Flask(__name__, template_folder="templates")
 app.secret_key = os.environ.get("SECRET_KEY", "o27-dev-secret-key")
+
+from o27.stats_site.blueprint import stats_bp
+app.register_blueprint(stats_bp)
 
 _SEASON_START = _dt.date(2026, 4, 1)
 
@@ -573,7 +577,7 @@ def schedule():
         games=games, team_filter=team_filter, all_teams=all_teams)
 
 
-@app.route("/stats")
+@app.route("/leaders")
 @app.route("/stats-leaders")
 def stats():
     any_data = bool(data._RECENT)
@@ -757,7 +761,7 @@ def manager():
 
 @app.route("/api/health")
 def health():
-    return jsonify({"status": "ok", "service": "o27-web", "games": len(data._RECENT)})
+    return jsonify({"status": "ok"})
 
 
 @app.route("/stats-site")

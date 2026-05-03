@@ -1,0 +1,222 @@
+{% extends "stats_site/base.html" %}
+{% block title %}{{ team.display }} — O27 Stats{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb"><div class="container wide">
+  <a href="/stats">Home</a><span class="sep">/</span>
+  <a href="/stats/standings">Standings</a><span class="sep">/</span>
+  {{ team.display }}
+</div></div>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <h1>{{ team.display|upper }}</h1>
+  <div class="subtitle">
+    {% if record.gp > 0 %}
+    {{ record.w }}-{{ record.l }} &middot; .{{ "%.3f"|format(record.pct)[2:] }} &middot;
+    {% if record.gb and record.gb != '—' %}{{ record.gb }} GB &middot; {% endif %}
+    Streak: <span class="{% if record.streak.startswith('W') %}w{% elif record.streak.startswith('L') %}l{% endif %}">{{ record.streak }}</span>
+    {% else %}
+    No games played yet
+    {% endif %}
+  </div>
+</div>
+
+<div class="tabs">
+  <a href="/stats/team/{{ team.abbrev }}{% if tab != 'roster' %}{% endif %}" {% if tab == 'roster' %}class="active"{% endif %}>Roster</a>
+  <a href="/stats/team/{{ team.abbrev }}?tab=batting" {% if tab == 'batting' %}class="active"{% endif %}>Batting</a>
+  <a href="/stats/team/{{ team.abbrev }}?tab=pitching" {% if tab == 'pitching' %}class="active"{% endif %}>Pitching</a>
+  <a href="/stats/team/{{ team.abbrev }}?tab=schedule" {% if tab == 'schedule' %}class="active"{% endif %}>Schedule</a>
+</div>
+
+{% if tab == 'roster' or not tab %}
+
+{% if record.gp > 0 %}
+<div class="grid-4" style="margin-bottom:16px">
+  <div class="metric">
+    <div class="label">Record</div>
+    <div class="value accent">{{ record.w }}-{{ record.l }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">Win %</div>
+    <div class="value">{{ "%.3f"|format(record.pct) }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">Runs Scored</div>
+    <div class="value">{{ record.r_for }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">Runs Allowed</div>
+    <div class="value">{{ record.r_against }}</div>
+  </div>
+</div>
+{% endif %}
+
+<h2>Roster</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Player</th>
+      <th>Pos</th>
+      <th class="num">Skill</th>
+      <th class="num">Speed</th>
+      <th class="num">P.Skill</th>
+      <th class="num">Stay Agg</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in team.players %}
+  <tr>
+    <td>
+      <a href="/stats/player/{{ team.abbrev }}_{{ p.name|replace(' ','_')|replace('.','') }}">{{ p.name }}</a>
+      {% if p.is_joker %}<span class="tag tag-joker">{{ p.joker_archetype }}</span>{% endif %}
+    </td>
+    <td><span class="tag tag-pos">{{ p.position }}</span></td>
+    <td class="num {% if p.skill >= 0.65 %}stat-elite{% elif p.skill >= 0.55 %}stat-good{% elif p.skill < 0.40 %}stat-bad{% endif %}">
+      {{ (p.skill * 60 + 20)|round|int }}
+    </td>
+    <td class="num {% if p.speed >= 0.65 %}stat-elite{% elif p.speed >= 0.55 %}stat-good{% elif p.speed < 0.40 %}stat-bad{% endif %}">
+      {{ (p.speed * 60 + 20)|round|int }}
+    </td>
+    <td class="num {% if p.pitcher_skill >= 0.60 %}stat-elite{% elif p.pitcher_skill >= 0.50 %}stat-good{% elif p.pitcher_skill < 0.35 %}stat-bad{% endif %}">
+      {{ (p.pitcher_skill * 60 + 20)|round|int }}
+    </td>
+    <td class="num">{{ (p.stay_aggressiveness * 100)|round|int }}%</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p style="font-size:10px;color:var(--fg-dim)">Skill ratings displayed on 20–80 scouting scale (50 = league average).</p>
+
+{% elif tab == 'batting' %}
+
+<h2>Team Batting</h2>
+{% if team_batting %}
+<table>
+  <thead>
+    <tr>
+      <th>Player</th>
+      <th>Pos</th>
+      <th class="num">GP</th>
+      <th class="num">PA</th>
+      <th class="num">AB</th>
+      <th class="num">R</th>
+      <th class="num">H</th>
+      <th class="num">HR</th>
+      <th class="num">RBI</th>
+      <th class="num">BB</th>
+      <th class="num">SO</th>
+      <th class="num">AVG</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in team_batting %}
+  <tr>
+    <td>
+      <a href="/stats/player/{{ team.abbrev }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a>
+      {% if r.is_joker %}<span class="tag tag-joker">JKR</span>{% endif %}
+    </td>
+    <td style="color:var(--fg-dim)">{{ r.pos }}</td>
+    <td class="num">{{ r.gp }}</td>
+    <td class="num">{{ r.pa }}</td>
+    <td class="num">{{ r.ab }}</td>
+    <td class="num">{{ r.runs }}</td>
+    <td class="num">{{ r.hits }}</td>
+    <td class="num">{{ r.hr }}</td>
+    <td class="num">{{ r.rbi }}</td>
+    <td class="num">{{ r.bb }}</td>
+    <td class="num">{{ r.k }}</td>
+    <td class="num {% if r.avg|float >= 0.300 %}stat-elite{% elif r.avg|float >= 0.250 %}stat-good{% elif r.avg|float < 0.180 %}stat-bad{% endif %}">{{ r.avg }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No batting stats yet.</div>
+{% endif %}
+
+{% elif tab == 'pitching' %}
+
+<h2>Team Pitching</h2>
+{% if team_pitching %}
+<table>
+  <thead>
+    <tr>
+      <th>Pitcher</th>
+      <th class="num">G</th>
+      <th class="num">IP</th>
+      <th class="num">H</th>
+      <th class="num">R</th>
+      <th class="num">ER</th>
+      <th class="num">BB</th>
+      <th class="num">SO</th>
+      <th class="num">ERA</th>
+      <th class="num">WHIP</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in team_pitching %}
+  <tr>
+    <td><a href="/stats/player/{{ team.abbrev }}_{{ p.name|replace(' ','_')|replace('.','') }}">{{ p.name }}</a></td>
+    <td class="num">{{ p.g }}</td>
+    <td class="num">{{ (p.outs // 3)|string + '.' + (p.outs % 3)|string }}</td>
+    <td class="num">{{ p.h }}</td>
+    <td class="num">{{ p.r }}</td>
+    <td class="num">{{ p.er }}</td>
+    <td class="num">{{ p.bb }}</td>
+    <td class="num">{{ p.k }}</td>
+    <td class="num {% if p.era != '—' and p.era|float < 5.0 %}stat-good{% elif p.era != '—' and p.era|float > 12.0 %}stat-bad{% endif %}">{{ p.era }}</td>
+    <td class="num">{{ p.whip }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No pitching stats yet.</div>
+{% endif %}
+
+{% elif tab == 'schedule' %}
+
+<h2>Recent Results</h2>
+{% if recent_games %}
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>Opponent</th>
+      <th class="num">R</th>
+      <th></th>
+      <th class="num">RA</th>
+      <th>Result</th>
+      <th>Box</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for g in recent_games %}
+  {% set is_home = g.home_abbrev == team.abbrev %}
+  {% set opp_abbrev = g.visitors_abbrev if is_home else g.home_abbrev %}
+  {% set opp_name = g.visitors_name if is_home else g.home_name %}
+  {% set my_score = g.h_score if is_home else g.v_score %}
+  {% set opp_score = g.v_score if is_home else g.h_score %}
+  {% set won = (is_home and g.winner_id == 'home') or (not is_home and g.winner_id == 'visitors') %}
+  <tr>
+    <td style="color:var(--fg-dim)">{{ 'vs' if is_home else '@' }}</td>
+    <td><a href="/stats/team/{{ opp_abbrev }}">{{ opp_name }}</a></td>
+    <td class="num {% if won %}score-win{% else %}score-loss{% endif %}">{{ my_score }}</td>
+    <td style="color:var(--fg-dim)">-</td>
+    <td class="num {% if not won %}score-win{% else %}score-loss{% endif %}">{{ opp_score }}</td>
+    <td><span class="{% if won %}w{% else %}l{% endif %} record">{{ 'W' if won else 'L' }}</span></td>
+    <td><a href="/stats/game/{{ g.game_id }}">Box</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No games played yet.</div>
+{% endif %}
+
+{% endif %}
+
+{% endblock %}

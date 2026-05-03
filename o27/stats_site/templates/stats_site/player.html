@@ -1,0 +1,220 @@
+{% extends "stats_site/base.html" %}
+{% block title %}{{ player.name }} — {{ team.display }} — O27 Stats{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb"><div class="container wide">
+  <a href="/stats">Home</a><span class="sep">/</span>
+  <a href="/stats/team/{{ team.abbrev }}">{{ team.display }}</a><span class="sep">/</span>
+  {{ player.name }}
+</div></div>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <h1>{{ player.name }}</h1>
+  <div class="subtitle">
+    <a href="/stats/team/{{ team.abbrev }}">{{ team.display }}</a>
+    &middot; <span class="tag tag-pos">{{ player.position }}</span>
+    {% if player.is_joker %}&middot; <span class="tag tag-joker">Joker &mdash; {{ player.joker_archetype }}</span>{% endif %}
+  </div>
+</div>
+
+<div class="grid-2">
+
+<div>
+  <h2>Attributes</h2>
+  <table class="no-sort">
+    <thead><tr><th>Attribute</th><th class="num">20-80</th><th>Bar</th></tr></thead>
+    <tbody>
+    {% set attrs = [
+      ('Skill (Bat)', player.skill),
+      ('Speed', player.speed),
+      ('Pitcher Skill', player.pitcher_skill),
+      ('Stay Aggressiveness', player.stay_aggressiveness),
+    ] %}
+    {% for name, val in attrs %}
+    {% set grade = (val * 60 + 20)|round|int %}
+    <tr>
+      <td>{{ name }}</td>
+      <td class="num {% if grade >= 70 %}stat-elite{% elif grade >= 55 %}stat-good{% elif grade < 35 %}stat-bad{% endif %}">{{ grade }}</td>
+      <td>
+        <div style="background:var(--border);height:8px;width:100px;display:inline-block;vertical-align:middle">
+          <div style="background:{% if grade >= 70 %}var(--yellow){% elif grade >= 55 %}var(--green){% elif grade < 35 %}var(--red){% else %}var(--fg-dim){% endif %};height:100%;width:{{ grade }}%"></div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div>
+  {% if stats %}
+  <h2>Season Stats</h2>
+  <div class="grid-4" style="margin-bottom:12px">
+    <div class="metric">
+      <div class="label">Games</div>
+      <div class="value">{{ stats.gp }}</div>
+    </div>
+    <div class="metric">
+      <div class="label">AVG</div>
+      <div class="value {% if stats.avg|float >= 0.300 %}stat-elite{% elif stats.avg|float >= 0.250 %}stat-good{% elif stats.avg|float < 0.180 %}stat-bad{% endif %}">{{ stats.avg }}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Hits</div>
+      <div class="value accent">{{ stats.hits }}</div>
+    </div>
+    <div class="metric">
+      <div class="label">RBI</div>
+      <div class="value">{{ stats.rbi }}</div>
+    </div>
+  </div>
+  <table class="no-sort">
+    <thead>
+      <tr>
+        <th class="num">PA</th>
+        <th class="num">AB</th>
+        <th class="num">R</th>
+        <th class="num">H</th>
+        <th class="num">HR</th>
+        <th class="num">RBI</th>
+        <th class="num">BB</th>
+        <th class="num">SO</th>
+        <th class="num">AVG</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="num">{{ stats.pa }}</td>
+        <td class="num">{{ stats.ab }}</td>
+        <td class="num">{{ stats.runs }}</td>
+        <td class="num">{{ stats.hits }}</td>
+        <td class="num">{{ stats.hr }}</td>
+        <td class="num">{{ stats.rbi }}</td>
+        <td class="num">{{ stats.bb }}</td>
+        <td class="num">{{ stats.k }}</td>
+        <td class="num {% if stats.avg|float >= 0.300 %}stat-elite{% elif stats.avg|float >= 0.250 %}stat-good{% elif stats.avg|float < 0.180 %}stat-bad{% endif %}">{{ stats.avg }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% else %}
+  <div class="notice">No game stats recorded yet for this player.</div>
+  {% endif %}
+</div>
+
+</div>
+
+{% if stats %}
+<h2>Career Stats</h2>
+<div style="overflow-x:auto">
+<table class="no-sort">
+  <thead>
+    <tr>
+      <th class="num">G</th>
+      <th class="num">PA</th>
+      <th class="num">AB</th>
+      <th class="num">R</th>
+      <th class="num">H</th>
+      <th class="num">HR</th>
+      <th class="num">RBI</th>
+      <th class="num">BB</th>
+      <th class="num">SO</th>
+      <th class="num">STY</th>
+      <th class="num">AVG</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="num">{{ stats.gp }}</td>
+      <td class="num">{{ stats.pa }}</td>
+      <td class="num">{{ stats.ab }}</td>
+      <td class="num">{{ stats.runs }}</td>
+      <td class="num {% if stats.hits > 0 %}stat-good{% endif %}">{{ stats.hits }}</td>
+      <td class="num">{{ stats.hr }}</td>
+      <td class="num">{{ stats.rbi }}</td>
+      <td class="num">{{ stats.bb }}</td>
+      <td class="num">{{ stats.k }}</td>
+      <td class="num {% if stats.stays is defined and stats.stays > 0 %}stat-elite{% endif %}">{{ stats.stays if stats.stays is defined else 0 }}</td>
+      <td class="num {% if stats.avg|float >= 0.300 %}stat-elite{% elif stats.avg|float >= 0.250 %}stat-good{% elif stats.avg|float < 0.180 %}stat-bad{% endif %}">{{ stats.avg }}</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% if game_log %}
+<h2>Last 10 Games</h2>
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>Opp</th>
+      <th class="num">AB</th>
+      <th class="num">R</th>
+      <th class="num">H</th>
+      <th class="num">RBI</th>
+      <th class="num">BB</th>
+      <th class="num">SO</th>
+      <th class="num">STY</th>
+      <th class="num">AVG</th>
+      <th>Box</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for g in game_log %}
+  <tr>
+    <td style="color:var(--fg-dim)">{{ g.ha }}</td>
+    <td><a href="/stats/team/{{ g.opp }}">{{ g.opp }}</a></td>
+    <td class="num">{{ g.ab }}</td>
+    <td class="num">{{ g.runs }}</td>
+    <td class="num {% if g.hits > 0 %}stat-good{% endif %}">{{ g.hits }}</td>
+    <td class="num">{{ g.rbi }}</td>
+    <td class="num">{{ g.bb }}</td>
+    <td class="num">{{ g.k }}</td>
+    <td class="num {% if g.get('stays',0) > 0 %}stat-elite{% endif %}">{{ g.get('stays',0) }}</td>
+    <td class="num">{{ g.avg }}</td>
+    <td><a href="/stats/game/{{ g.game_id }}">Box</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if pitcher_game_log %}
+<h2>Pitching — Last 10 Games</h2>
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>Opp</th>
+      <th class="num">IP</th>
+      <th class="num">H</th>
+      <th class="num">R</th>
+      <th class="num">ER</th>
+      <th class="num">BB</th>
+      <th class="num">SO</th>
+      <th class="num">ERA</th>
+      <th>Box</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for g in pitcher_game_log %}
+  <tr>
+    <td style="color:var(--fg-dim)">{{ g.ha }}</td>
+    <td><a href="/stats/team/{{ g.opp }}">{{ g.opp }}</a></td>
+    <td class="num">{{ (g.outs // 3)|string + '.' + (g.outs % 3)|string }}</td>
+    <td class="num">{{ g.h }}</td>
+    <td class="num">{{ g.r }}</td>
+    <td class="num">{{ g.er }}</td>
+    <td class="num">{{ g.bb }}</td>
+    <td class="num">{{ g.k }}</td>
+    <td class="num">{{ g.era }}</td>
+    <td><a href="/stats/game/{{ g.game_id }}">Box</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}

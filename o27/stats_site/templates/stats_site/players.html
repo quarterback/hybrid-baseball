@@ -1,0 +1,64 @@
+{% extends "stats_site/base.html" %}
+{% block title %}Players — O27 Stats{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb"><div class="container wide">
+  <a href="/stats">Home</a><span class="sep">/</span>Players
+</div></div>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>PLAYERS</h1>
+  <div class="subtitle">{{ total }} players across {{ team_count }} teams</div>
+</div>
+
+<div style="margin-bottom:12px">
+  <form method="get" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search name..." style="width:180px">
+    <select name="team" onchange="this.form.submit()">
+      <option value="">All Teams</option>
+      {% for t in all_teams %}
+      <option value="{{ t.abbrev }}" {% if t.abbrev == filter_team %}selected{% endif %}>{{ t.display }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Search</button>
+    {% if q or filter_team %}<a href="/stats/players" style="font-size:11px">Clear</a>{% endif %}
+  </form>
+</div>
+
+{% if players %}
+<table>
+  <thead>
+    <tr>
+      <th>Player</th>
+      <th>Team</th>
+      <th>Pos</th>
+      <th class="num">Skill</th>
+      <th class="num">Speed</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in players %}
+  <tr>
+    <td>
+      <a href="/stats/player/{{ row.team.abbrev }}_{{ row.player.name|replace(' ','_')|replace('.','') }}">{{ row.player.name }}</a>
+      {% if row.player.is_joker %}<span class="tag tag-joker">{{ row.player.joker_archetype }}</span>{% endif %}
+    </td>
+    <td><a href="/stats/team/{{ row.team.abbrev }}">{{ row.team.display }}</a></td>
+    <td><span class="tag tag-pos">{{ row.player.position }}</span></td>
+    <td class="num {% if (row.player.skill * 60 + 20)|round|int >= 70 %}stat-elite{% elif (row.player.skill * 60 + 20)|round|int >= 55 %}stat-good{% endif %}">
+      {{ (row.player.skill * 60 + 20)|round|int }}
+    </td>
+    <td class="num {% if (row.player.speed * 60 + 20)|round|int >= 70 %}stat-elite{% elif (row.player.speed * 60 + 20)|round|int >= 55 %}stat-good{% endif %}">
+      {{ (row.player.speed * 60 + 20)|round|int }}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No players found{% if q %} matching "{{ q }}"{% endif %}.</div>
+{% endif %}
+
+{% endblock %}

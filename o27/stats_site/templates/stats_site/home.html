@@ -1,0 +1,124 @@
+{% extends "stats_site/base.html" %}
+{% block title %}O27 Stats{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>O27 STATS</h1>
+  <div class="subtitle">Scores, standings, box scores, and player stats</div>
+</div>
+
+{% if any_data %}
+
+<div class="grid-4" style="margin-bottom:16px">
+  <div class="metric">
+    <div class="label">Games Played</div>
+    <div class="value accent">{{ total_games }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">Teams</div>
+    <div class="value">{{ team_count }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">Avg Score (V)</div>
+    <div class="value">{{ avg_v_score }}</div>
+  </div>
+  <div class="metric">
+    <div class="label">Avg Score (H)</div>
+    <div class="value">{{ avg_h_score }}</div>
+  </div>
+</div>
+
+{% if standings %}
+<h2>Standings</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Team</th>
+      <th class="num">W</th>
+      <th class="num">L</th>
+      <th class="num">PCT</th>
+      <th class="num">GB</th>
+      <th class="num">L10</th>
+      <th class="num">Streak</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in standings[:8] %}
+  <tr>
+    <td><a href="/stats/team/{{ r.abbrev }}">{{ r.name }}</a></td>
+    <td class="num">{{ r.w }}</td>
+    <td class="num">{{ r.l }}</td>
+    <td class="num">{{ "%.3f"|format(r.pct) }}</td>
+    <td class="num">{{ r.gb }}</td>
+    <td class="num">{{ r.l10_w }}-{{ r.l10_l }}</td>
+    <td class="num {% if r.streak.startswith('W') %}w{% elif r.streak.startswith('L') %}l{% endif %}">{{ r.streak }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p style="font-size:11px;color:var(--fg-dim)"><a href="/stats/standings">Full standings &rarr;</a></p>
+{% endif %}
+
+{% if recent_games %}
+<h2>Recent Results</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Visitors</th>
+      <th class="num">R</th>
+      <th></th>
+      <th class="num">R</th>
+      <th>Home</th>
+      <th>Box</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for g in recent_games[:10] %}
+  <tr>
+    <td>
+      <a href="/stats/team/{{ g.visitors_abbrev }}">{{ g.visitors_name }}</a>
+      {% if g.winner_id == 'visitors' %}<span class="stat-elite" style="font-size:9px">&#9670;</span>{% endif %}
+    </td>
+    <td class="num {% if g.winner_id == 'visitors' %}score-win{% else %}score-loss{% endif %}">{{ g.v_score }}</td>
+    <td style="color:var(--fg-dim)">@</td>
+    <td class="num {% if g.winner_id == 'home' %}score-win{% else %}score-loss{% endif %}">{{ g.h_score }}</td>
+    <td>
+      <a href="/stats/team/{{ g.home_abbrev }}">{{ g.home_name }}</a>
+      {% if g.winner_id == 'home' %}<span class="stat-elite" style="font-size:9px">&#9670;</span>{% endif %}
+    </td>
+    <td><a href="/stats/game/{{ g.game_id }}">Box</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p style="font-size:11px;color:var(--fg-dim)"><a href="/stats/schedule">Full schedule &rarr;</a></p>
+{% endif %}
+
+{% if bat_leaders %}
+<h2>Batting Leaders — Hits</h2>
+<table>
+  <thead>
+    <tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">H</th><th class="num">AVG</th></tr>
+  </thead>
+  <tbody>
+  {% for r in bat_leaders[:5] %}
+  <tr>
+    <td class="num rank">{{ loop.index }}</td>
+    <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+    <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+    <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ r.hits }}</td>
+    <td class="num">{{ "%.3f"|format(r.avg) }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p style="font-size:11px;color:var(--fg-dim)"><a href="/stats/leaders">Full leaderboards &rarr;</a></p>
+{% endif %}
+
+{% else %}
+<div class="empty">
+  <p>No active simulations found.</p>
+</div>
+{% endif %}
+
+{% endblock %}

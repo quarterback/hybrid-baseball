@@ -1,0 +1,258 @@
+{% extends "stats_site/base.html" %}
+{% block title %}Box Score — {{ visitors_name }} @ {{ home_name }} — O27 Stats{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb"><div class="container wide">
+  <a href="/stats">Home</a><span class="sep">/</span>
+  <a href="/stats/schedule">Schedule</a><span class="sep">/</span>
+  {{ visitors_abbrev }} @ {{ home_abbrev }}
+</div></div>
+{% endblock %}
+
+{% block content %}
+
+<div class="box-score-header">
+  <div class="box-team">
+    <div class="name"><a href="/stats/team/{{ visitors_abbrev }}">{{ visitors_name }}</a></div>
+    <div class="record">Visitors</div>
+    <div class="box-score-final {% if visitors_score > home_score %}score-win{% else %}score-loss{% endif %}">
+      {{ visitors_score }}
+    </div>
+  </div>
+  <div class="box-score-vs">
+    <div>FINAL{% if super_flag %} / SI{% endif %}</div>
+    <div style="margin-top:4px">Seed {{ seed }}</div>
+    {% if winner_pitcher %}
+    <div style="margin-top:4px;font-size:10px">WP: {{ winner_pitcher }}</div>
+    {% endif %}
+    {% if loser_pitcher %}
+    <div style="font-size:10px">LP: {{ loser_pitcher }}</div>
+    {% endif %}
+  </div>
+  <div class="box-team">
+    <div class="name"><a href="/stats/team/{{ home_abbrev }}">{{ home_name }}</a></div>
+    <div class="record">Home</div>
+    <div class="box-score-final {% if home_score > visitors_score %}score-win{% else %}score-loss{% endif %}">
+      {{ home_score }}
+    </div>
+  </div>
+</div>
+
+{# Line score table #}
+<h2>Line Score</h2>
+<table class="no-sort">
+  <thead>
+    <tr>
+      <th>Team</th>
+      <th class="num">R</th>
+      <th class="num">H</th>
+      <th class="num">E</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="/stats/team/{{ visitors_abbrev }}">{{ visitors_name }}</a></td>
+      <td class="num {% if visitors_score > home_score %}score-win{% else %}score-loss{% endif %}">{{ visitors_score }}</td>
+      <td class="num">{{ v_hits }}</td>
+      <td class="num" style="color:var(--fg-dim)">0</td>
+    </tr>
+    <tr>
+      <td><a href="/stats/team/{{ home_abbrev }}">{{ home_name }}</a></td>
+      <td class="num {% if home_score > visitors_score %}score-win{% else %}score-loss{% endif %}">{{ home_score }}</td>
+      <td class="num">{{ h_hits }}</td>
+      <td class="num" style="color:var(--fg-dim)">0</td>
+    </tr>
+  </tbody>
+</table>
+
+{% if super_flag %}
+<div class="notice">
+  <span style="color:var(--yellow)">&#9650; Super-Inning Tiebreaker</span> — 5 batters per side
+</div>
+{% endif %}
+
+{# ── Visitors Batting ── #}
+{% if v_batting %}
+<h2>{{ visitors_name }} — Batting</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Player</th>
+      <th>Pos</th>
+      <th class="num">AB</th>
+      <th class="num">R</th>
+      <th class="num">H</th>
+      <th class="num">RBI</th>
+      <th class="num">BB</th>
+      <th class="num">SO</th>
+      <th class="num"><span class="stat-tip" data-tip="Stay choices made — batter stayed at home plate with runners on base">STY</span></th>
+      <th class="num">AVG</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in v_batting %}
+  <tr>
+    <td>
+      <a href="/stats/player/{{ visitors_abbrev }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a>
+      {% if r.is_joker %}<span class="tag tag-joker">JKR</span>{% endif %}
+    </td>
+    <td style="color:var(--fg-dim)">{{ r.pos }}</td>
+    <td class="num">{{ r.ab }}</td>
+    <td class="num">{{ r.runs }}</td>
+    <td class="num {% if r.hits > 0 %}stat-good{% endif %}">{{ r.hits }}</td>
+    <td class="num">{{ r.rbi }}</td>
+    <td class="num">{{ r.bb }}</td>
+    <td class="num">{{ r.k }}</td>
+    <td class="num {% if r.get('stays',0) > 0 %}stat-elite{% endif %}">{{ r.get('stays', 0) }}</td>
+    <td class="num">{{ r.avg }}</td>
+  </tr>
+  {% endfor %}
+  <tr style="border-top:2px solid var(--border);font-weight:bold">
+    <td colspan="2" style="color:var(--fg-dim)">Totals</td>
+    <td class="num">{{ v_batting|sum(attribute='ab') }}</td>
+    <td class="num">{{ v_batting|sum(attribute='runs') }}</td>
+    <td class="num">{{ v_batting|sum(attribute='hits') }}</td>
+    <td class="num">{{ v_batting|sum(attribute='rbi') }}</td>
+    <td class="num">{{ v_batting|sum(attribute='bb') }}</td>
+    <td class="num">{{ v_batting|sum(attribute='k') }}</td>
+    <td class="num"></td>
+    <td class="num"></td>
+  </tr>
+  </tbody>
+</table>
+{% endif %}
+
+{# ── Home Batting ── #}
+{% if h_batting %}
+<h2>{{ home_name }} — Batting</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Player</th>
+      <th>Pos</th>
+      <th class="num">AB</th>
+      <th class="num">R</th>
+      <th class="num">H</th>
+      <th class="num">RBI</th>
+      <th class="num">BB</th>
+      <th class="num">SO</th>
+      <th class="num"><span class="stat-tip" data-tip="Stay choices made — batter stayed at home plate with runners on base">STY</span></th>
+      <th class="num">AVG</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in h_batting %}
+  <tr>
+    <td>
+      <a href="/stats/player/{{ home_abbrev }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a>
+      {% if r.is_joker %}<span class="tag tag-joker">JKR</span>{% endif %}
+    </td>
+    <td style="color:var(--fg-dim)">{{ r.pos }}</td>
+    <td class="num">{{ r.ab }}</td>
+    <td class="num">{{ r.runs }}</td>
+    <td class="num {% if r.hits > 0 %}stat-good{% endif %}">{{ r.hits }}</td>
+    <td class="num">{{ r.rbi }}</td>
+    <td class="num">{{ r.bb }}</td>
+    <td class="num">{{ r.k }}</td>
+    <td class="num {% if r.get('stays',0) > 0 %}stat-elite{% endif %}">{{ r.get('stays', 0) }}</td>
+    <td class="num">{{ r.avg }}</td>
+  </tr>
+  {% endfor %}
+  <tr style="border-top:2px solid var(--border);font-weight:bold">
+    <td colspan="2" style="color:var(--fg-dim)">Totals</td>
+    <td class="num">{{ h_batting|sum(attribute='ab') }}</td>
+    <td class="num">{{ h_batting|sum(attribute='runs') }}</td>
+    <td class="num">{{ h_batting|sum(attribute='hits') }}</td>
+    <td class="num">{{ h_batting|sum(attribute='rbi') }}</td>
+    <td class="num">{{ h_batting|sum(attribute='bb') }}</td>
+    <td class="num">{{ h_batting|sum(attribute='k') }}</td>
+    <td class="num"></td>
+    <td class="num"></td>
+  </tr>
+  </tbody>
+</table>
+{% endif %}
+
+{# ── Visitors Pitching ── #}
+{% if v_pitching %}
+<h2>{{ visitors_name }} — Pitching</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Pitcher</th>
+      <th class="num">IP</th>
+      <th class="num">H</th>
+      <th class="num">R</th>
+      <th class="num">ER</th>
+      <th class="num">BB</th>
+      <th class="num">SO</th>
+      <th class="num">ERA</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in v_pitching %}
+  <tr>
+    <td><a href="/stats/player/{{ visitors_abbrev }}_{{ p.name|replace(' ','_')|replace('.','') }}">{{ p.name }}</a></td>
+    <td class="num">{{ (p.outs // 3)|string + '.' + (p.outs % 3)|string }}</td>
+    <td class="num">{{ p.h }}</td>
+    <td class="num">{{ p.r }}</td>
+    <td class="num">{{ p.er }}</td>
+    <td class="num">{{ p.bb }}</td>
+    <td class="num">{{ p.k }}</td>
+    <td class="num {% if p.era != '—' and p.era|float < 5.0 %}stat-good{% elif p.era != '—' and p.era|float > 12.0 %}stat-bad{% endif %}">{{ p.era }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# ── Home Pitching ── #}
+{% if h_pitching %}
+<h2>{{ home_name }} — Pitching</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Pitcher</th>
+      <th class="num">IP</th>
+      <th class="num">H</th>
+      <th class="num">R</th>
+      <th class="num">ER</th>
+      <th class="num">BB</th>
+      <th class="num">SO</th>
+      <th class="num">ERA</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in h_pitching %}
+  <tr>
+    <td><a href="/stats/player/{{ home_abbrev }}_{{ p.name|replace(' ','_')|replace('.','') }}">{{ p.name }}</a></td>
+    <td class="num">{{ (p.outs // 3)|string + '.' + (p.outs % 3)|string }}</td>
+    <td class="num">{{ p.h }}</td>
+    <td class="num">{{ p.r }}</td>
+    <td class="num">{{ p.er }}</td>
+    <td class="num">{{ p.bb }}</td>
+    <td class="num">{{ p.k }}</td>
+    <td class="num {% if p.era != '—' and p.era|float < 5.0 %}stat-good{% elif p.era != '—' and p.era|float > 12.0 %}stat-bad{% endif %}">{{ p.era }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# ── Prev / Next navigation ── #}
+<div style="display:flex;justify-content:space-between;margin-top:16px;font-size:11px">
+  {% set prev_gid = prev_game_id %}
+  {% set next_gid = next_game_id %}
+  <div>
+    {% if prev_gid %}
+    <a href="/stats/game/{{ prev_gid }}">&larr; Previous game</a>
+    {% endif %}
+  </div>
+  <div>
+    {% if next_gid %}
+    <a href="/stats/game/{{ next_gid }}">Next game &rarr;</a>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

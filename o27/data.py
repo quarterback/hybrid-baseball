@@ -424,8 +424,11 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
 
     rows = list(agg.values())
     if stat == "era":
-        rows = [r for r in rows if r["outs"] >= 9]  # min 9 outs recorded
+        rows = [r for r in rows if r["outs"] >= 9]
         rows.sort(key=lambda x: x["era"])
+    elif stat == "whip":
+        rows = [r for r in rows if r["outs"] >= 9]
+        rows.sort(key=lambda x: x["whip"])
     elif stat == "outs":
         rows.sort(key=lambda x: -x["outs"])
     else:

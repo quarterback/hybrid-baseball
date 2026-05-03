@@ -1,0 +1,78 @@
+{% extends "stats_site/base.html" %}
+{% block title %}Schedule — O27 Stats{% endblock %}
+
+{% block breadcrumb %}
+<div class="breadcrumb"><div class="container wide">
+  <a href="/stats">Home</a><span class="sep">/</span>Schedule
+</div></div>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>SCHEDULE / RESULTS</h1>
+  {% if team_filter %}
+  <div class="subtitle">Filtered: {{ team_filter }} &mdash; <a href="/stats/schedule">Clear filter</a></div>
+  {% endif %}
+</div>
+
+{% if all_teams %}
+<div style="margin-bottom:12px">
+  <form method="get" style="display:inline-flex;gap:8px;align-items:center">
+    <label style="font-size:11px;color:var(--fg-dim)">Filter by team:</label>
+    <select name="team" onchange="this.form.submit()">
+      <option value="">All Teams</option>
+      {% for t in all_teams %}
+      <option value="{{ t.abbrev }}" {% if t.abbrev == team_filter %}selected{% endif %}>{{ t.display }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+{% endif %}
+
+{% if games %}
+<table>
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Visitors</th>
+      <th class="num">R</th>
+      <th></th>
+      <th class="num">R</th>
+      <th>Home</th>
+      <th class="num">H</th>
+      <th class="num">H</th>
+      <th>WP</th>
+      <th>Box</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for g in games %}
+  {% set v_hits = g.v_batting|sum(attribute='hits') if g.v_batting else 0 %}
+  {% set h_hits = g.h_batting|sum(attribute='hits') if g.h_batting else 0 %}
+  <tr>
+    <td style="color:var(--fg-dim);font-size:10px;white-space:nowrap">{{ g.get('date', '—') }}</td>
+    <td>
+      <a href="/stats/team/{{ g.visitors_abbrev }}">{{ g.visitors_name }}</a>
+      {% if g.winner_id == 'visitors' %}<span style="color:var(--green);font-size:9px">&#9670;</span>{% endif %}
+      {% if g.get('super_flag') %}<span class="tag" style="font-size:9px">SI</span>{% endif %}
+    </td>
+    <td class="num {% if g.winner_id == 'visitors' %}score-win{% else %}score-loss{% endif %}">{{ g.v_score }}</td>
+    <td style="color:var(--fg-dim)">@</td>
+    <td class="num {% if g.winner_id == 'home' %}score-win{% else %}score-loss{% endif %}">{{ g.h_score }}</td>
+    <td>
+      <a href="/stats/team/{{ g.home_abbrev }}">{{ g.home_name }}</a>
+      {% if g.winner_id == 'home' %}<span style="color:var(--green);font-size:9px">&#9670;</span>{% endif %}
+    </td>
+    <td class="num" style="color:var(--fg-dim)">{{ v_hits }}</td>
+    <td class="num" style="color:var(--fg-dim)">{{ h_hits }}</td>
+    <td style="color:var(--fg-dim);font-size:10px">{{ g.get('winner_pitcher','—') }}</td>
+    <td><a href="/stats/game/{{ g.game_id }}">Box</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No games found{% if team_filter %} for {{ team_filter }}{% endif %}.</div>
+{% endif %}
+
+{% endblock %}
