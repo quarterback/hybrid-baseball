@@ -205,12 +205,13 @@ def _tier_unit(rng: random.Random) -> float:
 
 
 # Roster shape — Task #65.
-ACTIVE_FIELDERS = 12   # 8 starting positions + 4 bench
-ACTIVE_DH       = 4    # 4 DH/utility bats (replaces the legacy 3 jokers slot)
-ACTIVE_PITCHERS = 19   # full active pitching staff (rotation + bullpen, no roles)
-RESERVE_HITTERS = 7    # reserve position-player pool (covers IL fill-ins)
-RESERVE_PITCHERS = 5   # reserve arms (top up the active pitching staff on IL)
-# Total = 12 + 4 + 19 + 7 + 5 = 47 players/team (active = 35, reserve = 12).
+ACTIVE_FIELDERS  = 12   # 8 starting positions + 4 bench
+ACTIVE_DH        = 3    # 3 DH/utility bats (matches the 3-DH batting lineup)
+ACTIVE_PITCHERS  = 19   # full active pitching staff (rotation + bullpen, no roles)
+RESERVE_HITTERS  = 8    # reserve position-player pool (covers IL fill-ins)
+RESERVE_PITCHERS = 5    # reserve arms (top up the active pitching staff on IL)
+# Active = 12 + 3 + 19 = 34. Total = 34 + 8 + 5 = 47 players/team.
+ACTIVE_POSITION_TOTAL = ACTIVE_FIELDERS + ACTIVE_DH  # 15 — fill target on IL
 
 
 def _make_hitter(

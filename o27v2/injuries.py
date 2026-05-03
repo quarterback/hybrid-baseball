@@ -366,16 +366,18 @@ def get_active_players(team_id: int, game_date: str) -> list[dict]:
 
     Task #65 model:
       - Pull the active roster (`is_active = 1`) minus anyone on the IL.
-      - If active pitchers fall below MIN_ACTIVE_PITCHERS, ephemerally
-        promote the highest-Stamina healthy reserve pitcher(s).
-      - If active position players fall below MIN_ACTIVE_FIELDERS, do
-        the same with reserve hitters (highest-skill first).
+      - One-for-one IL replacement: top the active pitcher count back up
+        to TARGET_ACTIVE_PITCHERS by ephemerally promoting the highest-
+        Stamina healthy reserve pitchers, and top position players back
+        to TARGET_ACTIVE_POSITION by promoting the highest-skill healthy
+        reserve hitters (preferring the same position when available).
       - Reserve promotion is in-memory only: the DB `is_active` flags are
         never flipped, so when the injured player returns the reserve
         falls back to the bench naturally.
     """
-    MIN_ACTIVE_PITCHERS = 12
-    MIN_ACTIVE_FIELDERS = 10
+    from o27v2.league import ACTIVE_PITCHERS, ACTIVE_POSITION_TOTAL
+    TARGET_ACTIVE_PITCHERS = ACTIVE_PITCHERS
+    TARGET_ACTIVE_POSITION = ACTIVE_POSITION_TOTAL
 
     active = db.fetchall(
         "SELECT * FROM players WHERE team_id = ? "
@@ -385,12 +387,12 @@ def get_active_players(team_id: int, game_date: str) -> list[dict]:
     )
 
     n_pitchers = sum(1 for p in active if p.get("is_pitcher"))
-    n_fielders = sum(1 for p in active
+    n_position = sum(1 for p in active
                      if not p.get("is_pitcher") and not p.get("is_joker"))
 
-    need_pitchers = max(0, MIN_ACTIVE_PITCHERS - n_pitchers)
-    need_fielders = max(0, MIN_ACTIVE_FIELDERS - n_fielders)
-    if need_pitchers == 0 and need_fielders == 0:
+    need_pitchers = max(0, TARGET_ACTIVE_PITCHERS - n_pitchers)
+    need_position = max(0, TARGET_ACTIVE_POSITION - n_position)
+    if need_pitchers == 0 and need_position == 0:
         return active
 
     reserves = db.fetchall(
@@ -406,11 +408,25 @@ def get_active_players(team_id: int, game_date: str) -> list[dict]:
                 reverse=True)
         active.extend(rp[:need_pitchers])
 
-    if need_fielders:
+    if need_position:
         rh = [r for r in reserves
               if not r.get("is_pitcher") and not r.get("is_joker")]
-        rh.sort(key=lambda p: float(p.get("skill") or 0), reverse=True)
-        active.extend(rh[:need_fielders])
+        # Prefer reserves that can cover the same position(s) currently
+        # short on the active roster — same-position fillers come first,
+        # then highest-skill bats fill any remaining holes.
+        injured_positions = {
+            r["position"] for r in db.fetchall(
+                "SELECT position FROM players WHERE team_id = ? "
+                "AND COALESCE(is_active, 1) = 1 AND is_pitcher = 0 "
+                "AND injured_until IS NOT NULL AND injured_until > ?",
+                (team_id, game_date),
+            )
+        }
+        def _fill_rank(p: dict) -> tuple[int, float]:
+            same_pos = 1 if p.get("position") in injured_positions else 0
+            return (same_pos, float(p.get("skill") or 0))
+        rh.sort(key=_fill_rank, reverse=True)
+        active.extend(rh[:need_position])
 
     return active
 
