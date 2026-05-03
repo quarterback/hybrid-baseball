@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Season History{% endblock %}
+{% block content %}
+<h2 class="mb-3">Season History</h2>
+<div class="dense">
+  <div class="panel-title">Archived Seasons</div>
+  {% if seasons %}
+  <table class="table table-sm dense-table mb-0 sortable">
+    <thead><tr>
+      <th class="num">#</th>
+      <th>Ended</th>
+      <th>Config</th>
+      <th class="num">Seed</th>
+      <th class="num">Teams</th>
+      <th class="num">G</th>
+      <th>Champion</th>
+      <th class="num">Record</th>
+      <th class="num">Invariants</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+    {% for s in seasons %}
+    <tr>
+      <td class="num">{{ s.season_number }}</td>
+      <td class="text-secondary small">{{ s.ended_at or '—' }}</td>
+      <td>{{ s.config_id or '—' }}</td>
+      <td class="num text-secondary">{{ s.rng_seed if s.rng_seed is not none else '—' }}</td>
+      <td class="num">{{ s.team_count or '—' }}</td>
+      <td class="num">{{ s.games_played or 0 }}</td>
+      <td><span class="team-abbrev">{{ s.champion_abbrev or '—' }}</span> {{ s.champion_team_name or '' }}</td>
+      <td class="num">{{ s.champion_w }}-{{ s.champion_l }}</td>
+      <td class="num">
+        {% if s.invariant_fail and s.invariant_fail > 0 %}
+          <span style="color:#f85149;font-weight:700">{{ s.invariant_pass }} pass / {{ s.invariant_fail }} FAIL</span>
+        {% else %}
+          <span style="color:#2ea043">{{ s.invariant_pass }} pass</span>
+        {% endif %}
+      </td>
+      <td><a href="{{ url_for('season_detail', season_id=s.id) }}" class="small">View →</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-4 text-center text-secondary">
+    No archived seasons yet. Use <strong>⟲ New Season</strong> on the dashboard to archive the current state, or run a <strong>Multi-Season Test</strong> to populate history.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

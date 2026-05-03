@@ -1237,6 +1237,130 @@ def api_sim_season():
     return jsonify(_sim_response(current, last, results))
 
 
+# ---------------------------------------------------------------------------
+# Task #62: season lifecycle (reset + multi-season + history)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/sim/multi-season", methods=["POST"])
+def api_sim_multi_season():
+    """Kick off a background N-season run. Returns immediately."""
+    from o27v2.season_archive import start_multi_season
+    data = request.get_json(silent=True) or {}
+    n         = int(data.get("n", 3))
+    base_seed = int(data.get("seed", 42))
+    config_id = (data.get("config_id") or "30teams").strip()
+    if config_id not in get_league_configs():
+        return jsonify({"ok": False, "error": f"unknown config: {config_id}"}), 400
+    started, msg = start_multi_season(n, base_seed=base_seed, config_id=config_id)
+    code = 202 if started else 409
+    return jsonify({"ok": started, "message": msg}), code
+
+
+@app.route("/api/sim/multi-season/status")
+def api_sim_multi_season_status():
+    from o27v2.season_archive import multi_season_status
+    return jsonify(multi_season_status())
+
+
+@app.route("/api/season/archive", methods=["POST"])
+def api_season_archive():
+    """Snapshot the current DB into the seasons history (no reset)."""
+    from o27v2.season_archive import archive_current_season
+    sid = archive_current_season(run_invariants=True)
+    if sid is None:
+        return jsonify({"ok": False, "message": "Nothing to archive (no played games)."}), 400
+    return jsonify({"ok": True, "season_id": sid})
+
+
+@app.route("/api/season/reset", methods=["POST"])
+def api_season_reset():
+    """One-click 'New season' — optionally archive first, then drop+reseed.
+
+    Body: {archive: bool, config_id: str, rng_seed: int}
+    """
+    from o27v2.league import seed_league
+    from o27v2.schedule import seed_schedule
+    from o27v2.season_archive import archive_current_season
+
+    data = request.get_json(silent=True) or {}
+    config_id  = (data.get("config_id") or "30teams").strip()
+    rng_seed   = int(data.get("rng_seed", 42))
+    do_archive = bool(data.get("archive", True))
+
+    if config_id not in get_league_configs():
+        return jsonify({"ok": False, "error": f"unknown config: {config_id}"}), 400
+
+    archived_id = None
+    if do_archive:
+        try:
+            archived_id = archive_current_season(
+                rng_seed=rng_seed, config_id=config_id, run_invariants=True
+            )
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"archive failed: {e}"}), 500
+
+    db.drop_all()
+    db.init_db()
+    seed_league(rng_seed=rng_seed, config_id=config_id)
+    seed_schedule(config_id=config_id, rng_seed=rng_seed)
+    resync_sim_clock()
+    return jsonify({"ok": True, "archived_season_id": archived_id})
+
+
+@app.route("/seasons")
+def seasons_index():
+    rows = db.fetchall(
+        "SELECT * FROM seasons ORDER BY season_number DESC"
+    )
+    return render_template("seasons.html", seasons=rows)
+
+
+@app.route("/seasons/<int:season_id>")
+def season_detail(season_id: int):
+    season = db.fetchone("SELECT * FROM seasons WHERE id = ?", (season_id,))
+    if not season:
+        abort(404)
+    standings = db.fetchall(
+        """SELECT * FROM season_standings
+            WHERE season_id = ?
+            ORDER BY league, division,
+                     (wins * 1.0 / NULLIF(wins+losses,0)) DESC,
+                     wins DESC""",
+        (season_id,),
+    )
+    bat = db.fetchall(
+        """SELECT * FROM season_batting_leaders
+            WHERE season_id = ? ORDER BY category, rank""",
+        (season_id,),
+    )
+    pit = db.fetchall(
+        """SELECT * FROM season_pitching_leaders
+            WHERE season_id = ? ORDER BY category, rank""",
+        (season_id,),
+    )
+    bat_by_cat: dict[str, list[dict]] = {}
+    for r in bat:
+        bat_by_cat.setdefault(r["category"], []).append(r)
+    pit_by_cat: dict[str, list[dict]] = {}
+    for r in pit:
+        pit_by_cat.setdefault(r["category"], []).append(r)
+
+    # Group standings by league/division
+    leagues: dict[str, dict[str, list[dict]]] = {}
+    for r in standings:
+        leagues.setdefault(r["league"] or "—", {}).setdefault(
+            r["division"] or "—", []
+        ).append(r)
+
+    return render_template(
+        "season_detail.html",
+        season=season,
+        leagues=leagues,
+        batting=bat_by_cat,
+        pitching=pit_by_cat,
+    )
+
+
 @app.route("/api/sim/<int:game_id>", methods=["POST"])
 def api_sim_game(game_id: int):
     data = request.get_json(silent=True) or {}

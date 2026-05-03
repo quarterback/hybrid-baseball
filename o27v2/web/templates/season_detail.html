@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Season {{ season.season_number }}{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h2 class="mb-1">Season {{ season.season_number }}</h2>
+    <div class="text-secondary small">
+      Config: <strong>{{ season.config_id or '—' }}</strong>
+      · Seed: <strong>{{ season.rng_seed if season.rng_seed is not none else '—' }}</strong>
+      · Games: <strong>{{ season.games_played or 0 }}</strong>
+      · Ended: <strong>{{ season.ended_at or '—' }}</strong>
+    </div>
+  </div>
+  <a href="{{ url_for('seasons_index') }}" class="btn btn-sm btn-secondary">← All seasons</a>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="dense">
+      <div class="panel-title">Champion</div>
+      <div class="p-3">
+        <div class="score-big">{{ season.champion_abbrev or '—' }}</div>
+        <div>{{ season.champion_team_name or '' }}</div>
+        <div class="text-secondary mt-1">Record: <strong>{{ season.champion_w }}-{{ season.champion_l }}</strong></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="dense">
+      <div class="panel-title">Stat Invariants</div>
+      <div class="p-3">
+        {% if season.invariant_fail and season.invariant_fail > 0 %}
+          <div style="color:#f85149;font-weight:700;font-size:1.1rem">
+            {{ season.invariant_pass }} pass · {{ season.invariant_fail }} FAIL
+          </div>
+        {% else %}
+          <div style="color:#2ea043;font-weight:700;font-size:1.1rem">
+            ✓ All {{ season.invariant_pass }} invariants passed
+          </div>
+        {% endif %}
+        {% if season.invariant_summary %}
+        <pre class="small mt-2 mb-0" style="background:#0d1117;color:#8b949e;padding:8px;max-height:200px;overflow:auto;border:1px solid #30363d;border-radius:4px">{{ season.invariant_summary }}</pre>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dense mb-3">
+  <div class="panel-title">Final Standings</div>
+  {% for league_name, divisions in leagues.items() %}
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th colspan="6" class="division-header" style="background:#161b22">{{ league_name }}</th>
+    </tr></thead>
+    {% for div_name, teams in divisions.items() %}
+    <thead><tr>
+      <th>{{ div_name }}</th>
+      <th class="num">W</th><th class="num">L</th>
+      <th class="num">PCT</th>
+      <th class="num">RS</th><th class="num">RA</th>
+    </tr></thead>
+    <tbody>
+    {% for t in teams %}
+    {% set tot = t.wins + t.losses %}
+    <tr>
+      <td><span class="team-abbrev">{{ t.team_abbrev }}</span> {{ t.team_name }}</td>
+      <td class="num">{{ t.wins }}</td>
+      <td class="num">{{ t.losses }}</td>
+      <td class="num">{% if tot %}.{{ '%03d' % (t.wins / tot * 1000) }}{% else %}—{% endif %}</td>
+      <td class="num">{{ t.rs }}</td>
+      <td class="num">{{ t.ra }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    {% endfor %}
+  </table>
+  {% endfor %}
+</div>
+
+{% macro bat_table(label, rows, key, fmt) %}
+<div class="dense mb-3">
+  <div class="panel-title">{{ label }} · Top 10</div>
+  {% if rows %}
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th class="num" style="width:24px">#</th><th>Player</th><th>Tm</th>
+      <th class="num">G</th><th class="num">PA</th><th class="num">AB</th>
+      <th class="num">H</th><th class="num">HR</th><th class="num">RBI</th>
+      <th class="num">{{ label }}</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="num text-secondary">{{ r.rank }}</td>
+      <td>{{ r.player_name }}</td>
+      <td><span class="team-abbrev">{{ r.team_abbrev }}</span></td>
+      <td class="num">{{ r.g }}</td>
+      <td class="num">{{ r.pa }}</td>
+      <td class="num">{{ r.ab }}</td>
+      <td class="num">{{ r.h }}</td>
+      <td class="num">{{ r.hr }}</td>
+      <td class="num">{{ r.rbi }}</td>
+      <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-3 text-center text-secondary small">No qualifiers.</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro pit_table(label, rows, key, fmt) %}
+<div class="dense mb-3">
+  <div class="panel-title">{{ label }} · Top 10</div>
+  {% if rows %}
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th class="num" style="width:24px">#</th><th>Player</th><th>Tm</th>
+      <th class="num">G</th><th class="num">W</th><th class="num">L</th>
+      <th class="num">IP</th><th class="num">K</th><th class="num">BB</th>
+      <th class="num">{{ label }}</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="num text-secondary">{{ r.rank }}</td>
+      <td>{{ r.player_name }}</td>
+      <td><span class="team-abbrev">{{ r.team_abbrev }}</span></td>
+      <td class="num">{{ r.g }}</td>
+      <td class="num">{{ r.w }}</td>
+      <td class="num">{{ r.l }}</td>
+      <td class="num">{{ '%.1f'|format((r.outs or 0) / 3.0) }}</td>
+      <td class="num">{{ r.k }}</td>
+      <td class="num">{{ r.bb }}</td>
+      <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-3 text-center text-secondary small">No qualifiers.</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <h5 class="text-secondary text-uppercase small">Batting Leaders</h5>
+    {{ bat_table('AVG', batting.get('avg', []), 'avg', '%.3f') }}
+    {{ bat_table('HR',  batting.get('hr',  []), 'hr',  '%d') }}
+    {{ bat_table('RBI', batting.get('rbi', []), 'rbi', '%d') }}
+    {{ bat_table('OPS', batting.get('ops', []), 'ops', '%.3f') }}
+  </div>
+  <div class="col-lg-6">
+    <h5 class="text-secondary text-uppercase small">Pitching Leaders</h5>
+    {{ pit_table('W',   pitching.get('w',   []), 'w',   '%d') }}
+    {{ pit_table('ERA', pitching.get('era', []), 'era', '%.2f') }}
+    {{ pit_table('FIP', pitching.get('fip', []), 'fip', '%.2f') }}
+    {{ pit_table('K',   pitching.get('k',   []), 'k',   '%d') }}
+  </div>
+</div>
+
+{% endblock %}

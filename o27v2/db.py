@@ -133,6 +133,79 @@ CREATE TABLE IF NOT EXISTS transactions (
     player_id  INTEGER REFERENCES players(id),
     detail     TEXT NOT NULL DEFAULT ''
 );
+
+-- Task #62: archived season history. These tables persist ACROSS
+-- the drop_all() / reseed cycle (drop_all() leaves them intact) so a
+-- multi-season test run can compare model output across seasons.
+CREATE TABLE IF NOT EXISTS seasons (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_number      INTEGER NOT NULL,
+    rng_seed           INTEGER,
+    config_id          TEXT,
+    team_count         INTEGER,
+    started_at         TEXT,
+    ended_at           TEXT,
+    champion_team_name TEXT,
+    champion_abbrev    TEXT,
+    champion_w         INTEGER,
+    champion_l         INTEGER,
+    games_played       INTEGER DEFAULT 0,
+    invariant_pass     INTEGER DEFAULT 0,
+    invariant_fail     INTEGER DEFAULT 0,
+    invariant_summary  TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS season_standings (
+    season_id   INTEGER NOT NULL REFERENCES seasons(id),
+    league      TEXT,
+    division    TEXT,
+    team_name   TEXT NOT NULL,
+    team_abbrev TEXT,
+    wins        INTEGER,
+    losses      INTEGER,
+    rs          INTEGER,
+    ra          INTEGER,
+    PRIMARY KEY (season_id, team_name)
+);
+
+CREATE TABLE IF NOT EXISTS season_batting_leaders (
+    season_id   INTEGER NOT NULL REFERENCES seasons(id),
+    category    TEXT NOT NULL,
+    rank        INTEGER NOT NULL,
+    player_name TEXT,
+    team_abbrev TEXT,
+    g           INTEGER,
+    pa          INTEGER,
+    ab          INTEGER,
+    h           INTEGER,
+    hr          INTEGER,
+    rbi         INTEGER,
+    bb          INTEGER,
+    avg         REAL,
+    obp         REAL,
+    slg         REAL,
+    ops         REAL,
+    PRIMARY KEY (season_id, category, rank)
+);
+
+CREATE TABLE IF NOT EXISTS season_pitching_leaders (
+    season_id   INTEGER NOT NULL REFERENCES seasons(id),
+    category    TEXT NOT NULL,
+    rank        INTEGER NOT NULL,
+    player_name TEXT,
+    team_abbrev TEXT,
+    g           INTEGER,
+    w           INTEGER,
+    l           INTEGER,
+    outs        INTEGER,
+    er          INTEGER,
+    k           INTEGER,
+    bb          INTEGER,
+    era         REAL,
+    fip         REAL,
+    whip        REAL,
+    PRIMARY KEY (season_id, category, rank)
+);
 """
 
 
