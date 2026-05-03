@@ -13,29 +13,19 @@
       <div class="card">
         <div class="card-head" style="color:var(--accent);">Visitors</div>
         <div class="card-body">
-          {% if has_db %}
           <select name="visitors" id="sel-visitors" class="team-select"
                   onchange="updateRoster('visitors', this.value)">
             {% for t in teams %}
             <option value="{{ t.abbrev }}"
               {% if t.abbrev == default_v %}selected{% endif %}>
-              {{ t.display }} ({{ t.abbrev }}){% if t.level != 'MLB' %} — {{ t.level }}{% endif %}
+              {{ t.display }} ({{ t.abbrev }}){% if t.level not in ('MLB', 'Classic') %} — {{ t.level }}{% endif %}
             </option>
             {% endfor %}
           </select>
-          {% else %}
-          <p class="fallback-note">Using Millbrook Foxes (no team database found)</p>
-          {% endif %}
         </div>
-        <div class="card-head" style="border-top:1px solid var(--border); padding-top:.5rem;">
-          Roster
-        </div>
-        <div id="roster-visitors" class="roster-wrap">
-          {% if has_db %}
+        <div class="card-head" style="border-top:1px solid var(--border);">Roster</div>
+        <div class="roster-wrap">
           <div id="roster-visitors-inner"></div>
-          {% else %}
-          {{ _foxes_table() }}
-          {% endif %}
         </div>
       </div>
     </div>
@@ -45,29 +35,19 @@
       <div class="card">
         <div class="card-head" style="color:var(--accent2);">Home</div>
         <div class="card-body">
-          {% if has_db %}
           <select name="home" id="sel-home" class="team-select"
                   onchange="updateRoster('home', this.value)">
             {% for t in teams %}
             <option value="{{ t.abbrev }}"
               {% if t.abbrev == default_h %}selected{% endif %}>
-              {{ t.display }} ({{ t.abbrev }}){% if t.level != 'MLB' %} — {{ t.level }}{% endif %}
+              {{ t.display }} ({{ t.abbrev }}){% if t.level not in ('MLB', 'Classic') %} — {{ t.level }}{% endif %}
             </option>
             {% endfor %}
           </select>
-          {% else %}
-          <p class="fallback-note">Using Ironvale Bears (no team database found)</p>
-          {% endif %}
         </div>
-        <div class="card-head" style="border-top:1px solid var(--border); padding-top:.5rem;">
-          Roster
-        </div>
-        <div id="roster-home" class="roster-wrap">
-          {% if has_db %}
+        <div class="card-head" style="border-top:1px solid var(--border);">Roster</div>
+        <div class="roster-wrap">
           <div id="roster-home-inner"></div>
-          {% else %}
-          {{ _bears_table() }}
-          {% endif %}
         </div>
       </div>
     </div>
@@ -130,26 +110,35 @@
 <script>
 const ROSTERS = {{ roster_map_json | safe }};
 
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function buildRosterTable(abbrev) {
   const team = ROSTERS[abbrev];
   if (!team) return '<p style="color:var(--muted);padding:.5rem 1rem;font-size:.8rem;">No roster data.</p>';
   let rows = '';
   for (const p of team.players) {
     const jokerBadge = p.is_joker
-      ? `<span class="arch-badge arch-${(p.archetype||'').toLowerCase()}">${p.archetype||'JKR'}</span>`
+      ? `<span class="arch-badge arch-${escHtml((p.archetype||'').toLowerCase())}">${escHtml(p.archetype||'JKR')}</span>`
       : '';
-    const posClass = p.is_joker ? ' class="joker-row"' : '';
-    rows += `<tr${posClass}>
-      <td>${p.name} ${jokerBadge}</td>
-      <td class="pos-cell">${p.pos}</td>
+    const rowClass = p.is_joker ? ' class="joker-row"' : '';
+    rows += `<tr${rowClass}>
+      <td>${escHtml(p.name)} ${jokerBadge}</td>
+      <td class="pos-cell">${escHtml(p.pos)}</td>
       <td class="num">${p.skill.toFixed(3)}</td>
       <td class="num">${p.speed.toFixed(3)}</td>
+      <td class="num">${(p.pitcher_skill||0).toFixed(3)}</td>
     </tr>`;
   }
   return `<table class="data-table roster-table">
     <thead><tr>
       <th>Player</th><th>Pos</th>
-      <th class="num">Skill</th><th class="num">Speed</th>
+      <th class="num">Skill</th><th class="num">Speed</th><th class="num">PSkl</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -159,7 +148,6 @@ function updateRoster(side, abbrev) {
   document.getElementById('roster-' + side + '-inner').innerHTML = buildRosterTable(abbrev);
 }
 
-// Initialise on load
 document.addEventListener('DOMContentLoaded', () => {
   const vSel = document.getElementById('sel-visitors');
   const hSel = document.getElementById('sel-home');

@@ -9,6 +9,7 @@ Routes:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import random
@@ -151,6 +152,50 @@ def _generate_roster(team_seed: int) -> list[dict]:
     return players
 
 
+def _player_to_dict(p: "Player", position: str = "") -> dict:
+    """Convert an engine Player to the team-dict player format."""
+    archetype = ""
+    pos_label = position
+    if p.is_joker:
+        archetype = "Power" if p.speed < 0.50 else ("Speed" if p.speed > 0.65 else "Contact")
+        pos_label = f"JKR-{archetype[:3]}"
+    elif p.is_pitcher:
+        pos_label = "P"
+    return {
+        "name": p.name,
+        "position": pos_label,
+        "is_pitcher": p.is_pitcher,
+        "is_joker": p.is_joker,
+        "joker_archetype": archetype,
+        "skill": round(p.skill, 3),
+        "speed": round(p.speed, 3),
+        "pitcher_skill": round(p.pitcher_skill, 3),
+        "stay_aggressiveness": round(p.stay_aggressiveness, 3),
+        "contact_quality_threshold": round(p.contact_quality_threshold, 3),
+    }
+
+
+def _team_to_dict(team: "Team", abbrev: str, city: str = "", level: str = "") -> dict:
+    """Convert an engine Team to the load_teams dict format."""
+    pos_labels = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C", "P"]
+    players = []
+    pos_idx = 0
+    for p in team.roster:
+        pos = pos_labels[pos_idx] if not p.is_joker and pos_idx < len(pos_labels) else ""
+        if not p.is_joker:
+            pos_idx += 1
+        players.append(_player_to_dict(p, pos))
+    full_name = f"{city} {team.name}".strip() if city else team.name
+    return {
+        "abbrev": abbrev,
+        "name": team.name,
+        "city": city,
+        "level": level or "Classic",
+        "display": full_name,
+        "players": players,
+    }
+
+
 def load_teams() -> list[dict]:
     """Load all teams with generated rosters. Cached after first call."""
     global _teams_cache
@@ -158,7 +203,12 @@ def load_teams() -> list[dict]:
         return _teams_cache
 
     if not os.path.exists(_TEAMS_DB_PATH):
-        _teams_cache = []
+        foxes = make_foxes()
+        bears = make_bears()
+        _teams_cache = [
+            _team_to_dict(foxes, "FOX", "", "Classic"),
+            _team_to_dict(bears, "BEA", "", "Classic"),
+        ]
         return _teams_cache
 
     with open(_TEAMS_DB_PATH) as fh:
@@ -167,7 +217,8 @@ def load_teams() -> list[dict]:
     teams = []
     for i, t in enumerate(raw):
         abbrev = t.get("abbreviation") or t.get("abbrev", f"T{i:02d}")
-        team_seed = hash(abbrev + t.get("name", "")) & 0xFFFFFFFF
+        key = (abbrev + t.get("name", "")).encode()
+        team_seed = int(hashlib.sha256(key).hexdigest(), 16) & 0xFFFFFFFF
         teams.append({
             "abbrev": abbrev,
             "name": t.get("name", abbrev),
@@ -326,12 +377,13 @@ def index():
             "display": t["display"],
             "players": [
                 {
-                    "name":     p["name"],
-                    "pos":      p["position"],
-                    "skill":    p["skill"],
-                    "speed":    p["speed"],
-                    "is_joker": p["is_joker"],
-                    "archetype": p.get("joker_archetype", ""),
+                    "name":         p["name"],
+                    "pos":          p["position"],
+                    "skill":        p["skill"],
+                    "speed":        p["speed"],
+                    "pitcher_skill": p["pitcher_skill"],
+                    "is_joker":     p["is_joker"],
+                    "archetype":    p.get("joker_archetype", ""),
                 }
                 for p in t["players"]
             ],
