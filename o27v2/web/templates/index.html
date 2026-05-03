@@ -1,6 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
+{% if sim.current_date or sim.all_star_date %}
+<div class="card mb-3 p-2 d-flex flex-row gap-3 align-items-center" style="background:#161b22">
+  {% if sim.season_complete %}
+    <span class="badge bg-success">Season complete</span>
+    <span class="text-secondary small">Final game: {{ sim.last_date }}</span>
+  {% else %}
+    <span class="text-secondary small">Current date</span>
+    <span class="fw-bold" style="color:#58a6ff">{{ sim.current_date }}</span>
+    {% if sim.all_star_date %}
+      <span class="text-secondary small ms-3">All-Star Break</span>
+      <span class="fw-bold" style="color:#f0883e">{{ sim.all_star_date }}</span>
+    {% endif %}
+    {% if sim.last_date %}
+      <span class="text-secondary small ms-3">Season ends</span>
+      <span class="fw-bold text-secondary">{{ sim.last_date }}</span>
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
 <div class="row g-3 mb-3">
   <div class="col-md-3">
     <div class="card text-center p-3">

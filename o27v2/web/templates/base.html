@@ -60,11 +60,30 @@
         <li class="nav-item"><a class="nav-link {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}"
             href="{{ url_for('new_league_get') }}" style="color:#f0883e !important">New League</a></li>
       </ul>
-      <form class="d-flex gap-2" id="sim-form">
-        <input type="number" class="form-control form-control-sm" id="sim-n" value="5" min="1" max="50"
-               style="width:70px; background:#21262d; border-color:#30363d; color:#e6edf3">
-        <button type="submit" class="btn btn-primary btn-sm">Sim Games</button>
-      </form>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-secondary" id="sim-date-badge"
+              title="Current sim date — earliest unplayed game">
+          {% if sim.season_complete %}Season complete{% else %}{{ sim.current_date }}{% endif %}
+        </span>
+        <div class="btn-group btn-group-sm" id="sim-controls">
+          <button type="button" class="btn btn-primary" data-sim="today"
+                  {% if sim.season_complete %}disabled{% endif %}>Sim Today</button>
+          <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split"
+                  data-bs-toggle="dropdown" aria-expanded="false"
+                  {% if sim.season_complete %}disabled{% endif %}>
+            <span class="visually-hidden">More sim options</span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end" style="background:#161b22;border:1px solid #30363d">
+            <li><a class="dropdown-item text-light" href="#" data-sim="week">Sim Week (7 days)</a></li>
+            <li><a class="dropdown-item text-light" href="#" data-sim="month">Sim to End of Month</a></li>
+            <li><a class="dropdown-item text-light" href="#" data-sim="all-star">
+              Sim to All-Star Break{% if sim.all_star_date %} ({{ sim.all_star_date }}){% endif %}
+            </a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item text-light" href="#" data-sim="season">Sim to End of Season</a></li>
+          </ul>
+        </div>
+      </div>
     </div>
   </div>
 </nav>
@@ -79,30 +98,55 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-document.getElementById('sim-form').addEventListener('submit', async function(e) {
-  e.preventDefault();
-  const n = document.getElementById('sim-n').value;
-  const btn = e.target.querySelector('button');
-  btn.disabled = true;
-  btn.textContent = 'Simulating…';
-  try {
-    const r = await fetch('/api/sim', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({n: parseInt(n)})
-    });
-    const data = await r.json();
-    if (data.simulated > 0) {
-      window.location.reload();
-    } else {
-      btn.disabled = false;
-      btn.textContent = 'No games left';
-    }
-  } catch(err) {
-    btn.disabled = false;
-    btn.textContent = 'Sim Games';
+(function () {
+  const ENDPOINTS = {
+    today:     '/api/sim/today',
+    week:      '/api/sim/week',
+    month:     '/api/sim/month',
+    'all-star':'/api/sim/all-star',
+    season:    '/api/sim/season',
+  };
+  const LABELS = {
+    today: 'today', week: 'this week', month: 'this month',
+    'all-star': 'to All-Star break', season: 'to end of season',
+  };
+  const badge = document.getElementById('sim-date-badge');
+  const group = document.getElementById('sim-controls');
+  if (!badge || !group) return;
+  const buttons = group.querySelectorAll('button');
+
+  function setBusy(busy, text) {
+    buttons.forEach(b => b.disabled = busy);
+    if (text) badge.textContent = text;
   }
-});
+
+  async function runSim(kind) {
+    const orig = badge.textContent;
+    setBusy(true, `Simulating ${LABELS[kind] || kind}…`);
+    try {
+      const r = await fetch(ENDPOINTS[kind], {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: '{}',
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      badge.textContent = orig;
+      setBusy(false);
+      alert('Simulation failed: ' + err.message);
+    }
+  }
+
+  group.querySelectorAll('[data-sim]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      if (el.disabled) return;
+      runSim(el.dataset.sim);
+    });
+  });
+})();
 </script>
 {% block scripts %}{% endblock %}
 </body>

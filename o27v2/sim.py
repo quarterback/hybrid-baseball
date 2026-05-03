@@ -385,3 +385,69 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
         except Exception as e:
             results.append({"game_id": g["id"], "error": str(e)})
     return results
+
+
+# ---------------------------------------------------------------------------
+# Date-based simulation helpers
+# ---------------------------------------------------------------------------
+
+import datetime as _dt
+
+
+def get_current_sim_date() -> str | None:
+    """Earliest unplayed game_date — the "today" of the simulator. None when season complete."""
+    row = db.fetchone("SELECT MIN(game_date) as d FROM games WHERE played = 0")
+    return row["d"] if row and row["d"] else None
+
+
+def get_first_scheduled_date() -> str | None:
+    row = db.fetchone("SELECT MIN(game_date) as d FROM games")
+    return row["d"] if row and row["d"] else None
+
+
+def get_last_scheduled_date() -> str | None:
+    row = db.fetchone("SELECT MAX(game_date) as d FROM games")
+    return row["d"] if row and row["d"] else None
+
+
+def get_all_star_date() -> str | None:
+    """Midpoint of the schedule (derived from the games table — no DB column needed)."""
+    first = get_first_scheduled_date()
+    last = get_last_scheduled_date()
+    if not first or not last:
+        return None
+    f = _dt.date.fromisoformat(first)
+    l = _dt.date.fromisoformat(last)
+    return (f + _dt.timedelta(days=(l - f).days // 2)).isoformat()
+
+
+def simulate_date(date: str, seed_base: int | None = None, max_games: int = 100) -> list[dict]:
+    """Simulate every unplayed game whose game_date == `date`."""
+    games = db.fetchall(
+        "SELECT id FROM games WHERE played = 0 AND game_date = ? ORDER BY id LIMIT ?",
+        (date, max_games),
+    )
+    results = []
+    for i, g in enumerate(games):
+        seed = None if seed_base is None else seed_base + i
+        try:
+            results.append(simulate_game(g["id"], seed=seed))
+        except Exception as e:
+            results.append({"game_id": g["id"], "error": str(e)})
+    return results
+
+
+def simulate_through(target_date: str, seed_base: int | None = None, max_games: int = 10000) -> list[dict]:
+    """Simulate every unplayed game with game_date <= `target_date`."""
+    games = db.fetchall(
+        "SELECT id FROM games WHERE played = 0 AND game_date <= ? ORDER BY game_date, id LIMIT ?",
+        (target_date, max_games),
+    )
+    results = []
+    for i, g in enumerate(games):
+        seed = None if seed_base is None else seed_base + i
+        try:
+            results.append(simulate_game(g["id"], seed=seed))
+        except Exception as e:
+            results.append({"game_id": g["id"], "error": str(e)})
+    return results

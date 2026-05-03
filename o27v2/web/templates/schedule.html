@@ -1,8 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Schedule{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <h2 class="fw-bold mb-0">Schedule</h2>
+  <div class="d-flex gap-3 small">
+    {% if sim.current_date %}
+      <span class="text-secondary">Current:</span>
+      <span class="fw-bold" style="color:#58a6ff">{{ sim.current_date }}</span>
+    {% endif %}
+    {% if sim.all_star_date %}
+      <span class="text-secondary">All-Star:</span>
+      <span class="fw-bold" style="color:#f0883e">{{ sim.all_star_date }}</span>
+    {% endif %}
+    {% if sim.last_date %}
+      <span class="text-secondary">Season ends:</span>
+      <span class="fw-bold text-secondary">{{ sim.last_date }}</span>
+    {% endif %}
+  </div>
 </div>
 
 <div class="card mb-3">

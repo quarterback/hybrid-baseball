@@ -24,11 +24,50 @@ if _workspace not in sys.path:
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort
 
 from o27v2 import db
-from o27v2.sim import simulate_game, simulate_next_n
+from o27v2.sim import (
+    simulate_game,
+    simulate_next_n,
+    simulate_date,
+    simulate_through,
+    get_current_sim_date,
+    get_last_scheduled_date,
+    get_all_star_date,
+)
 from o27v2.league import get_league_configs
+
+import datetime as _dt
 
 app = Flask(__name__, template_folder="templates")
 app.config["SECRET_KEY"] = "o27v2-dev-key"
+
+
+@app.context_processor
+def inject_sim_state():
+    """Make current sim date + All-Star date available to every template."""
+    current = get_current_sim_date()
+    return {"sim": {
+        "current_date":   current,
+        "all_star_date":  get_all_star_date(),
+        "last_date":      get_last_scheduled_date(),
+        "season_complete": current is None,
+    }}
+
+
+def _end_of_month(d: _dt.date) -> _dt.date:
+    if d.month == 12:
+        return _dt.date(d.year, 12, 31)
+    return _dt.date(d.year, d.month + 1, 1) - _dt.timedelta(days=1)
+
+
+def _sim_response(from_date: str | None, to_date: str | None, results: list) -> dict:
+    current = get_current_sim_date()
+    return {
+        "simulated":       len(results),
+        "from_date":       from_date,
+        "to_date":         to_date,
+        "current_date":    current,
+        "season_complete": current is None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -511,6 +550,63 @@ def api_sim():
     seed_base = data.get("seed_base")
     results   = simulate_next_n(n, seed_base=seed_base)
     return jsonify({"simulated": len(results), "results": results})
+
+
+@app.route("/api/sim/today", methods=["POST"])
+def api_sim_today():
+    """Simulate every game on the current sim date, then advance."""
+    current = get_current_sim_date()
+    if current is None:
+        return jsonify(_sim_response(None, None, []))
+    results = simulate_date(current)
+    return jsonify(_sim_response(current, current, results))
+
+
+@app.route("/api/sim/week", methods=["POST"])
+def api_sim_week():
+    """Sim every unplayed game in the next 7 calendar days (current + 6)."""
+    current = get_current_sim_date()
+    if current is None:
+        return jsonify(_sim_response(None, None, []))
+    target = (_dt.date.fromisoformat(current) + _dt.timedelta(days=6)).isoformat()
+    results = simulate_through(target)
+    return jsonify(_sim_response(current, target, results))
+
+
+@app.route("/api/sim/month", methods=["POST"])
+def api_sim_month():
+    """Sim through the end of the current calendar month."""
+    current = get_current_sim_date()
+    if current is None:
+        return jsonify(_sim_response(None, None, []))
+    target = _end_of_month(_dt.date.fromisoformat(current)).isoformat()
+    results = simulate_through(target)
+    return jsonify(_sim_response(current, target, results))
+
+
+@app.route("/api/sim/all-star", methods=["POST"])
+def api_sim_all_star():
+    """Sim through the All-Star break (schedule midpoint)."""
+    current = get_current_sim_date()
+    target  = get_all_star_date()
+    if current is None or target is None:
+        return jsonify(_sim_response(current, target, []))
+    if current > target:
+        # Already past the break — no-op.
+        return jsonify(_sim_response(current, target, []))
+    results = simulate_through(target)
+    return jsonify(_sim_response(current, target, results))
+
+
+@app.route("/api/sim/season", methods=["POST"])
+def api_sim_season():
+    """Sim every remaining unplayed game in the season."""
+    current = get_current_sim_date()
+    last    = get_last_scheduled_date()
+    if current is None or last is None:
+        return jsonify(_sim_response(current, last, []))
+    results = simulate_through(last)
+    return jsonify(_sim_response(current, last, results))
 
 
 @app.route("/api/sim/<int:game_id>", methods=["POST"])
