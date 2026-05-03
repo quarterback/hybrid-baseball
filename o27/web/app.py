@@ -260,6 +260,7 @@ def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list
                 "hbp":     s.hbp            if s else 0,
                 "or_":     s.outs_recorded  if s else 0,
                 "avg":     f"{hits/ab:.3f}" if ab > 0 else ".000",
+                "h_ab":    f"{hits/ab:.3f}" if ab > 0 else ".000",
             })
         return rows
 
@@ -270,16 +271,22 @@ def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list
         if pid not in pitcher_map:
             pitcher_map[pid] = {
                 "name": spell.pitcher_name,
-                "bf": 0, "outs": 0, "r": 0, "h": 0, "bb": 0, "k": 0, "hbp": 0,
+                "bf": 0, "outs": 0, "r": 0, "er": 0,
+                "h": 0, "bb": 0, "k": 0, "hbp": 0,
+                "hr": 0, "p": 0, "out": 0,
             }
         ps = pitcher_map[pid]
         ps["bf"]   += spell.batters_faced
         ps["outs"] += spell.outs_recorded
         ps["r"]    += spell.runs_allowed
+        ps["er"]   += spell.runs_allowed   # ER == R (no errors tracked in O27)
         ps["h"]    += spell.hits_allowed
         ps["bb"]   += spell.bb
         ps["k"]    += spell.k
         ps["hbp"]  += spell.hbp
+        ps["hr"]   += spell.hr_allowed
+        ps["p"]    += spell.pitches_thrown
+        ps["out"]   = spell.out_when_pulled  # last spell's out count for this pitcher
 
     # Add derived OS% / ERA / WHIP to each pitcher row
     for ps in pitcher_map.values():
@@ -579,6 +586,7 @@ def stats():
         by_rbi= data.get_leaders("rbi"),
         by_or=  data.get_leaders("or_"),
         by_k=   data.get_leaders("k"),
+        by_h_ab=data.get_leaders("h_ab"),
         by_pit_k=   data.get_pitching_leaders("k"),
         by_pit_era= data.get_pitching_leaders("era"),
         by_pit_os=  data.get_pitching_leaders("outs"),

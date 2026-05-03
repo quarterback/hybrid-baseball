@@ -1,0 +1,108 @@
+# Task #32 — Pitcher Stat Model + Box Score Pitching Display + Hitter Stat Refinements
+
+## What & Why
+
+Replace the current pitcher stat line with one that fits O27's structure (drop "innings pitched," use BF, add OUT and OS%). Replace the play-by-play tab with a pitching log. On the hitter side, add **H/AB** (hits per at-bat) — the cleanest way to surface multi-hit at-bats as a regular baseball stat without ever naming the stay mechanic. Add **RPG** at the team level.
+
+## Done looks like
+
+### Per-game box score — pitching table
+
+Columns, in this order: **BF · P · OS% · OUT · H · R · ER · BB · K · HR**
+
+- **BF** — batters faced.
+- **P** — pitches thrown.
+- **OS%** — outs share, percentage of the team's 27 outs this pitcher recorded. Whole percent (e.g. `33%`), not decimal.
+- **OUT** — out number when the pitcher's last batter's PA ended. For the final pitcher of a half, this is `27`. For a pitcher pulled mid-half, it's the team's out count when his last batter was retired or reached. If a pitching change occurs mid-PA, OUT is the team's out count at the moment of the change.
+- **H, R, ER, BB, K, HR** — standard counting stats.
+
+Header row labeled. Monospace numerics. Right-aligned numeric columns.
+
+### Per-game box score — batting table
+
+Add a new column: **H/AB**.
+
+Final column set: **PA · AB · R · H · H/AB · 2B · 3B · HR · RBI · BB · K · OR · AVG**
+
+- **H/AB** — hits divided by at-bats. Shown to three decimals (e.g. `1.250`). A batter who got two hits in one of his ABs via the stay mechanic will show H/AB above 1.000. The stay mechanic is invisible to the reader but its effect is visible in this column.
+- **OR** — outs recorded by the batter (from the previous spec).
+- AVG kept; H/AB is additive, not a replacement.
+
+Drop STY column entirely.
+
+### Pitching log replaces play-by-play tab
+
+The play-by-play tab is removed from the game results page. In its place, a "Pitching" tab (or section) shows the pitching tables for both teams in the format above. No prose narrative output anywhere in the game UI.
+
+The engine should stop emitting play-by-play strings to any output the UI consumes. Internal event tracking for stat aggregation stays — but strings like `Sean Norris STAYS at the plate / Hit credited (stay) / Stay — fresh 0-0 count` are no longer rendered, stored, or sent to the frontend.
+
+### Per-pitcher season totals (player page)
+
+Columns: **G · BF · P · OS% · ERA · WHIP · AOR · K · BB · HR · K/9 · BB/9**
+
+- **G** — games (appearances).
+- **AOR** — average out reached. Mean of OUT values across all appearances. Display as one decimal (e.g. `21.4`). Workhorses post AOR ~22, closers ~26, long relief ~14.
+- **ERA** — earned runs per 27 outs faced. Same name, different denominator. League average lands near 11.50 in O27. Add "(O27 league avg: ~11.50)" footnote on the pitcher leaderboard page.
+- **WHIP** — walks + hits per 27 outs faced.
+- **K/9, BB/9** — keep names. Math is per 27 outs faced.
+
+### Per-batter season totals (player page)
+
+Add columns: **H/AB · OR**.
+
+Column set: **G · PA · AB · R · H · H/AB · 2B · 3B · HR · RBI · BB · K · OR · AVG · OBP · SLG · OPS**
+
+H/AB also appears as a sortable leaderboard column on the batting leaders page — players who use the stay mechanic productively will float to the top.
+
+### Team-level totals (team page + standings)
+
+Add: **RPG · RAPG**.
+
+- **RPG** — runs per game scored.
+- **RAPG** — runs per game allowed.
+- Standings table includes both as columns alongside W, L, PCT, GB, L10, Streak.
+
+### FIP recalibration
+
+Re-derive the FIP constants against the O27 run environment. League-average FIP should equal league-average ERA (~11.50). Document the new constant in code so it can be retuned later.
+
+## Out of scope
+
+- Splits by 27-out arc (outs 1–9 / 10–18 / 19–27) — later task.
+- Joker leverage index — later task.
+- WAR / wOBA / wRC+ recalibration — later task.
+- Multi-hit AB rate as its own column or leaderboard — H/AB already captures it.
+
+## Steps
+
+1. Add `pitches_thrown` counter to `o27/engine/state.py` (per-pitcher per-game). Increment on every pitch event.
+2. Track `out_when_pulled` per pitcher per appearance. Set on pitching change or end of half.
+3. Remove play-by-play emission. Engine still tracks events internally for stat aggregation; stop populating any `play_by_play` field in the game output JSON; stop rendering it anywhere.
+4. Remove the play-by-play tab from `o27/web/templates/game.html` and stats site equivalents.
+5. Update box score pitching table template with the new column set and header row.
+6. Update box score batting table: add H/AB column, drop STY column entirely, keep OR column.
+7. Compute AOR in the season aggregator. Add to player page season totals.
+8. Add ERA, WHIP, K/9, BB/9 with O27 denominators (per 27 outs faced). Recalibrate FIP constant.
+9. Add H/AB to player page season totals and to batting leaderboard as a sortable column.
+10. Add RPG and RAPG to team page totals and standings table.
+11. Add "(O27 league avg: ~11.50)" footnote on pitcher leaderboard page.
+12. Verify `Yunel Florial exits (23 BF this spell)` style debug log lines are no longer emitted anywhere user-facing.
+
+## Relevant files
+
+- `o27/engine/state.py`
+- `o27/engine/pa.py` (pitch counter, out-when-pulled tracking)
+- `o27/engine/manager.py` (out-when-pulled on pitching change)
+- `o27/engine/game.py` (out-when-pulled at end of half)
+- `o27/engine/stats.py` (AOR, ERA, WHIP, K/9, BB/9, FIP, H/AB, RPG, RAPG)
+- `o27/web/templates/game.html`
+- `o27/web/templates/player.html`
+- `o27/web/templates/team.html`
+- `o27/web/templates/standings.html`
+- `o27/web/templates/leaders.html`
+- `o27/stats_site/templates/*` (mirror)
+- Sample roster / output JSON
+
+---
+
+Send it.

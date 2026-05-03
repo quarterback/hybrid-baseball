@@ -38,7 +38,7 @@
       <th class="r">H</th><th class="r">2B</th><th class="r">3B</th>
       <th class="r">HR</th><th class="r">RBI</th><th class="r">BB</th>
       <th class="r">SO</th><th class="r" title="Outs Recorded">OR</th>
-      <th class="r">AVG</th>
+      <th class="r">AVG</th><th class="r" title="Hits per At-Bat (can exceed 1.000 — multi-hit ABs)">H/AB</th>
     </tr>
   </thead>
   <tbody>
@@ -64,6 +64,7 @@
       <td class="r mono">{{ p.k }}</td>
       <td class="r mono dim">{{ p.or_ if p.or_ > 0 else "-" }}</td>
       <td class="r mono">{{ p.avg }}</td>
+      <td class="r mono dim">{{ p.h_ab if p.h_ab is defined else p.avg }}</td>
     </tr>
     {% endif %}
     {% endfor %}
@@ -96,6 +97,7 @@
       <td class="r mono">{{ tot.k }}</td>
       <td class="r mono dim">{{ tot.or_ }}</td>
       <td class="r mono">{{ "%.3f"|format(tot.hits/tot.ab) if tot.ab > 0 else ".000" }}</td>
+      <td class="r mono dim">{{ "%.3f"|format(tot.hits/tot.ab) if tot.ab > 0 else ".000" }}</td>
     </tr>
   </tbody>
 </table>
@@ -107,26 +109,32 @@
   <thead>
     <tr>
       <th>Pitcher</th>
+      <th class="r" title="Batters Faced">BF</th>
+      <th class="r" title="Pitches Thrown">P</th>
       <th class="r" title="Outs Share %">OS%</th>
+      <th class="r" title="Team out count when pulled (0–27)">OUT</th>
       <th class="r">H</th>
       <th class="r">R</th>
+      <th class="r" title="Earned Runs (== R; no errors tracked in O27)">ER</th>
       <th class="r">BB</th>
-      <th class="r">SO</th>
-      <th class="r">ERA</th>
-      <th class="r">WHIP</th>
+      <th class="r">K</th>
+      <th class="r">HR</th>
     </tr>
   </thead>
   <tbody>
     {% for p in rows %}
     <tr>
       <td>{{ p.name }}</td>
-      <td class="r mono">{{ p.os_pct if p.os_pct is defined else (p.outs // 3 ~ "." ~ (p.outs % 3)) }}</td>
+      <td class="r mono">{{ p.bf if p.bf is defined else "—" }}</td>
+      <td class="r mono">{{ p.p  if p.p  is defined else "—" }}</td>
+      <td class="r mono">{{ p.os_pct if p.os_pct is defined else "—" }}</td>
+      <td class="r mono dim">{{ p.out if p.out is defined else "—" }}</td>
       <td class="r mono">{{ p.h }}</td>
       <td class="r mono">{{ p.r }}</td>
+      <td class="r mono">{{ p.er if p.er is defined else p.r }}</td>
       <td class="r mono">{{ p.bb }}</td>
       <td class="r mono">{{ p.k }}</td>
-      <td class="r mono">{{ p.era if p.era is defined else "—" }}</td>
-      <td class="r mono">{{ p.whip if p.whip is defined else "—" }}</td>
+      <td class="r mono">{{ p.hr if p.hr is defined else 0 }}</td>
     </tr>
     {% endfor %}
   </tbody>

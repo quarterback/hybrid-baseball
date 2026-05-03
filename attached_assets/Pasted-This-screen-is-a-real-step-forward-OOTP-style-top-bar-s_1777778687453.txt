@@ -1,0 +1,95 @@
+This screen is a real step forward — OOTP-style top bar, sidebar nav with proper sections (League / Stats / Simulate / Manage), 20–80 attributes (CON / SPD / STF), team tickers. The chassis works. The agent just hasn't built season simulation yet, even though you've asked for it multiple times.
+
+Looking at the sidebar: under SIMULATE there's only "Sim Game" and "Random Game." That's the head-to-head simulator from earlier, redressed. There's no league, no schedule, no "Sim Today / Sim Week / Sim to End of Season" anywhere. The agent kept building the debug tool nicer instead of building the actual product.
+
+Given you have one day of paid Replit time, the framing for the agent should be sharp and short. Don't add features. Cut the head-to-head sim entirely from the primary surface and replace it with a league sim flow. Here's the brief:
+
+---
+
+# Task #33 — Season Simulation (PRIMARY USE CASE)
+
+## What & Why
+
+The current "Sim Game" head-to-head flow is a debug tool, not the product. The product is **league-and-season simulation** modeled on OOTP, Baseball Mogul, and Diamond Mind. The user creates a league, advances time day-by-day or week-by-week, and watches stats and standings evolve. Head-to-head game simulation is something that happens *inside* a season, not the entry point.
+
+This task is non-negotiable. Without it the tool has no testable use case.
+
+## Done looks like
+
+**On first run, the user creates a league:**
+- Number of teams (default 16, configurable 8–30).
+- Schedule length (default 81 games — half of MLB, scaled for the project).
+- Random team selection from the existing team database.
+- Random rosters generated for each team using the existing roster generator.
+- Schedule generated as a round-robin or balanced schedule across the season.
+
+**League landing page (the new home page):**
+- League name, current date, current week, season phase ("Regular Season" / "Playoffs" / "Offseason").
+- Standings snapshot at top.
+- Today's games with scores (or "scheduled" if not yet played).
+- Last 5 results across the league.
+- Big SIM button in the top bar advances time.
+
+**SIM button behavior:**
+- Default click: sim today (all of today's games run, stats update, date advances by one).
+- Dropdown next to SIM with: Sim Today, Sim Week (7 days), Sim to End of Month, Sim to All-Star Break, Sim to End of Season.
+- All games for human-controlled and AI-controlled teams sim through the same engine.
+- After simming, redirect to the league home page so the user sees updated standings.
+
+**Standings page:**
+- Full standings table for all teams (if no divisions, just one table; if divisions, group by division).
+- Columns: W L PCT GB L10 Streak RS RA DIFF.
+- Updates in real time as the season progresses.
+
+**Schedule page:**
+- Full season schedule, paginated by week or month.
+- Past games show final score linked to the box score.
+- Future games show "scheduled."
+
+**Box score page:**
+- Existing layout (from Task #32).
+- Prev/next navigation goes through the season schedule order, not seed numbers.
+
+**Stats and Leaders pages:**
+- Show season-to-date numbers, not single-game numbers.
+- Update after every sim action.
+
+**League state persists across simulations.** Saving to a JSON file in the working directory is fine — no database needed. On app start, load the existing league if one exists; otherwise prompt to create one.
+
+## Out of scope
+
+- Trades, free agency, drafts, injuries — stub pages stay stubbed.
+- Playoffs — schedule the regular season only for v1; "End of Season" just stops there.
+- Multiple leagues at once — one league file, replaceable via "New League" button.
+- Pretty league creation UI — a single form with team count + season length is enough.
+- Removing the "Sim Game" debug page entirely — keep it as a hidden/admin tool, but it's no longer the primary nav. Move it under a "Debug" or "Admin" section, or remove from sidebar entirely.
+
+## Steps
+
+1. Add league state model: `League` with teams list, schedule list, current_date, season_phase. Persist to `o27/data/league.json` on every sim action.
+2. Schedule generator: round-robin balanced schedule across N teams over the configured number of games. Distribute games across calendar dates (one game per team per date, with off-days as needed).
+3. League creation flow: if `league.json` doesn't exist, show a "Create League" form on the home page (team count, season length). On submit, generate teams, rosters, schedule. Save and redirect to league home.
+4. League home page replaces the current Sim Game page as the default route.
+5. Implement `sim_today()` in the engine: run all games scheduled for current_date through the existing game engine, append results, advance date by one.
+6. Implement `sim_until(target_date)`: loop sim_today() until date hits target.
+7. Wire SIM button to sim_today() by default. Add dropdown for Sim Week / Sim Month / Sim to End of Season.
+8. Standings calculator: aggregate W/L/RS/RA from played games.
+9. Update Standings, Schedule, Box Scores, Leaders, Players pages to show league-state data instead of head-to-head debug data.
+10. Move "Sim Game" out of the primary sidebar. Either hide it or put it under a small "Debug" section.
+
+## Relevant files
+
+- `o27/engine/league.py` (new)
+- `o27/engine/schedule.py` (new)
+- `o27/engine/state.py`
+- `o27/engine/game.py`
+- `o27/web/app.py`
+- `o27/web/templates/*` (most pages need league-aware data)
+
+---
+
+Send that to the agent. The brief is intentionally aggressive about what's in vs out: build the season loop, persist the league, advance time. Everything else can ship later.
+
+The reason the agent keeps missing this: every prior task asked for things *around* season simulation (visual chassis, stat columns, box score format) and the agent kept extending the debug tool. This brief makes the season loop the primary thing and demotes the head-to-head sim to "debug."
+
+If the agent only ships steps 1–7 today, you can test the core experience (create league, sim a few weeks, check standings). That's the v1 you need before any further polish.

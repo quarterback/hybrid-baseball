@@ -121,6 +121,9 @@ class SpellRecord:
     bb: int = 0
     k: int = 0
     hbp: int = 0
+    hr_allowed: int = 0
+    pitches_thrown: int = 0
+    out_when_pulled: int = 0    # team's out count at the moment this spell ended
     start_batter_num: int = 0   # ordinal PA number when this spell began
     half: str = "top"
     super_inning_number: int = 0
@@ -277,6 +280,8 @@ class GameState:
     pitcher_bb_this_spell: int = 0     # walks issued in current spell
     pitcher_k_this_spell: int = 0      # strikeouts in current spell
     pitcher_hbp_this_spell: int = 0    # hit batters in current spell
+    pitcher_hr_this_spell: int = 0     # HR allowed in current spell
+    pitcher_pitches_this_spell: int = 0  # pitches thrown in current spell
     pitcher_start_pa: int = 0          # total_pa_this_half when spell began
     total_pa_this_half: int = 0        # cumulative PA count this half (incremented on PA end)
     current_pitcher_id: Optional[str] = None

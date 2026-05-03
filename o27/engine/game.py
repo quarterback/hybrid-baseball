@@ -349,6 +349,9 @@ def _close_current_spell(state: GameState) -> None:
         bb=state.pitcher_bb_this_spell,
         k=state.pitcher_k_this_spell,
         hbp=state.pitcher_hbp_this_spell,
+        hr_allowed=state.pitcher_hr_this_spell,
+        pitches_thrown=state.pitcher_pitches_this_spell,
+        out_when_pulled=state.outs,
         start_batter_num=state.pitcher_start_pa + 1,
         half=state.half,
         super_inning_number=state.super_inning_number,
@@ -361,6 +364,8 @@ def _close_current_spell(state: GameState) -> None:
     state.pitcher_bb_this_spell = 0
     state.pitcher_k_this_spell = 0
     state.pitcher_hbp_this_spell = 0
+    state.pitcher_hr_this_spell = 0
+    state.pitcher_pitches_this_spell = 0
 
 
 def _set_fielding_pitcher(state: GameState) -> None:
@@ -377,6 +382,8 @@ def _set_fielding_pitcher(state: GameState) -> None:
         state.pitcher_bb_this_spell = 0
         state.pitcher_k_this_spell = 0
         state.pitcher_hbp_this_spell = 0
+        state.pitcher_hr_this_spell = 0
+        state.pitcher_pitches_this_spell = 0
         state.pitcher_start_pa = state.total_pa_this_half
 
     for player in fielding.roster:

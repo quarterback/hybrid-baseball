@@ -149,6 +149,14 @@ def apply_event(state: GameState, event: dict) -> list[str]:
            f"{etype.upper().replace('_', ' ')}"]
     state.events.append(event)
 
+    # Per-spell pitch counter (Task #32). Only true pitch events count.
+    _PITCH_EVENTS = (
+        "ball", "called_strike", "swinging_strike",
+        "foul", "foul_tip_caught", "ball_in_play", "hit_by_pitch",
+    )
+    if etype in _PITCH_EVENTS:
+        state.pitcher_pitches_this_spell += 1
+
     # ------------------------------------------------------------------
     # Pitch events
     # ------------------------------------------------------------------
@@ -322,6 +330,8 @@ def _resolve_contact(
         # Track hits allowed for the current pitcher's spell.
         if hit_type in ("single", "infield_single", "double", "triple", "hr", "home_run"):
             state.pitcher_h_this_spell += 1
+        if hit_type in ("hr", "home_run"):
+            state.pitcher_hr_this_spell += 1
         # Capture runner at runner_out_idx BEFORE advance_runners clears the slot.
         runner_out_idx = outcome.get("runner_out_idx")
         thrown_out_id = (state.bases[runner_out_idx]

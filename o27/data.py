@@ -278,6 +278,8 @@ def get_standings() -> list[dict]:
         r["gp"]  = gp
         r["pct"] = r["w"] / gp if gp else 0.0
         r["rd"]  = r["r_for"] - r["r_against"]
+        r["rpg"]  = (r["r_for"]     / gp) if gp else 0.0
+        r["rapg"] = (r["r_against"] / gp) if gp else 0.0
         hist     = team_hist.get(r["abbrev"], [])
         last10       = hist[-10:]
         r["l10_w"]   = sum(1 for x in last10 if x)
@@ -362,12 +364,16 @@ def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
                 r["or_"] += row.get("or_", 0)
 
     for r in agg.values():
-        r["avg"] = r["hits"] / r["ab"] if r["ab"] > 0 else 0.0
+        r["avg"]  = r["hits"] / r["ab"] if r["ab"] > 0 else 0.0
+        r["h_ab"] = r["hits"] / r["ab"] if r["ab"] > 0 else 0.0
 
     rows = list(agg.values())
     if stat == "avg":
         rows = [r for r in rows if r["ab"] >= 3]
         rows.sort(key=lambda x: -x["avg"])
+    elif stat == "h_ab":
+        rows = [r for r in rows if r["ab"] >= 3]
+        rows.sort(key=lambda x: -x["h_ab"])
     else:
         rows.sort(key=lambda x: -x.get(stat, 0))
     return rows[:limit]
@@ -392,12 +398,15 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
                     agg[key] = {
                         "name": row["name"], "team": abbrev,
                         "g": 0, "bf": 0, "outs": 0,
-                        "h": 0, "r": 0, "bb": 0, "k": 0,
+                        "h": 0, "r": 0, "er": 0, "bb": 0, "k": 0,
+                        "hr": 0, "p": 0, "out_sum": 0,
                     }
                 r = agg[key]
                 r["g"] += 1
-                for f in ("bf", "outs", "h", "r", "bb", "k"):
+                for f in ("bf", "outs", "h", "r", "bb", "k", "hr", "p"):
                     r[f] += row.get(f, 0)
+                r["er"] += row.get("er", row.get("r", 0))
+                r["out_sum"] += row.get("out", 0)
 
     for r in agg.values():
         outs = r["outs"]
@@ -405,6 +414,13 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
         r["os_pct"] = f"{round(outs / (g * 27) * 100)}%" if outs > 0 else "0%"
         r["era"]    = round(r["r"] / outs * 27, 2) if outs > 0 else 99.99
         r["whip"]   = round((r["bb"] + r["h"]) / outs * 27, 2) if outs > 0 else 99.99
+        r["aor"]    = round(r["out_sum"] / g, 1) if g > 0 else 0.0
+        r["k9"]     = round(r["k"]  / outs * 27, 2) if outs > 0 else 0.0
+        r["bb9"]    = round(r["bb"] / outs * 27, 2) if outs > 0 else 0.0
+        # FIP recalibrated to O27 baseline (~11.50 league ERA).
+        # FIP = (13*HR + 3*BB - 2*K) / IP + C, where IP = outs/3 and C ≈ 11.50.
+        ip = outs / 3.0
+        r["fip"] = round((13 * r["hr"] + 3 * r["bb"] - 2 * r["k"]) / ip + 11.50, 2) if ip > 0 else 0.0
 
     rows = list(agg.values())
     if stat == "era":
@@ -468,21 +484,29 @@ def get_team_pitching(abbrev: str) -> list[dict]:
                 if key not in agg:
                     agg[key] = {
                         "name": row["name"],
-                        "g": 0, "bf": 0, "outs": 0,
-                        "h": 0, "r": 0, "bb": 0, "k": 0,
+                        "g": 0, "bf": 0, "outs": 0, "p": 0,
+                        "h": 0, "r": 0, "er": 0, "bb": 0, "k": 0,
+                        "hr": 0, "out_sum": 0,
                     }
                 r = agg[key]
                 r["g"] += 1
-                for f in ("bf", "outs", "h", "r", "bb", "k"):
+                for f in ("bf", "outs", "h", "r", "bb", "k", "hr", "p"):
                     r[f] += row.get(f, 0)
+                r["er"] += row.get("er", row.get("r", 0))
+                r["out_sum"] += row.get("out", 0)
 
     rows = list(agg.values())
     for r in rows:
         outs = r["outs"]
         g    = max(r["g"], 1)
+        ip   = outs / 3.0
         r["os_pct"] = f"{round(outs / (g * 27) * 100)}%" if outs > 0 else "0%"
         r["era"]    = f"{r['r'] / outs * 27:.2f}" if outs > 0 else "—"
         r["whip"]   = f"{(r['bb'] + r['h']) / outs * 27:.2f}" if outs > 0 else "—"
+        r["aor"]    = f"{r['out_sum'] / g:.1f}" if g > 0 else "—"
+        r["k9"]     = f"{r['k']  / outs * 27:.2f}" if outs > 0 else "—"
+        r["bb9"]    = f"{r['bb'] / outs * 27:.2f}" if outs > 0 else "—"
+        r["fip"]    = f"{(13 * r['hr'] + 3 * r['bb'] - 2 * r['k']) / ip + 11.50:.2f}" if ip > 0 else "—"
     rows.sort(key=lambda x: (-x["outs"], x["name"]))
     return rows
 
@@ -541,10 +565,15 @@ def get_pitcher_game_log(team_abbrev: str, player_name: str,
                     "ha":       "@" if side == "v" else "vs",
                     "outs":     outs,
                     "os_pct":   round(outs / 27 * 100),
+                    "bf":       row.get("bf", 0),
+                    "p":        row.get("p", 0),
+                    "out":      row.get("out", 0),
                     "r":        row.get("r", 0),
+                    "er":       row.get("er", row.get("r", 0)),
                     "h":        row.get("h", 0),
                     "bb":       row.get("bb", 0),
                     "k":        row.get("k", 0),
+                    "hr":       row.get("hr", 0),
                     "era":      row.get("era", "—"),
                 })
                 break

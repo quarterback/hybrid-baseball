@@ -75,7 +75,6 @@
   <div class="card-hd" style="padding:0; border-bottom:none;">
     <div class="tabs" style="padding:0 .5rem;">
       <button class="tab-btn active" data-tg="main" data-ti="box"  onclick="switchTab('main','box')">Box Score</button>
-      <button class="tab-btn"        data-tg="main" data-ti="pbp"  onclick="switchTab('main','pbp')">Play-by-Play</button>
       {% if sections.spells %}
       <button class="tab-btn"        data-tg="main" data-ti="pit"  onclick="switchTab('main','pit')">Pitching Log</button>
       {% endif %}
@@ -110,22 +109,6 @@
     {% endif %}
     {% else %}
     <p class="dim small">No box score data available.</p>
-    {% endif %}
-  </div>
-
-  {# ── PLAY-BY-PLAY ── #}
-  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="main" data-pi="pbp">
-    {% if sections.halves %}
-      {% for half in sections.halves %}
-      <details {% if loop.index <= 2 %}open{% endif %}>
-        <summary>{{ half.header }}</summary>
-        <div class="pbp-wrap">{% for line in half.lines %}{{ line | e }}
-{% endfor %}</div>
-      </details>
-      {% endfor %}
-    {% else %}
-      <div class="pbp-wrap">{% for line in log_lines %}{{ line | e }}
-{% endfor %}</div>
     {% endif %}
   </div>
 

@@ -46,6 +46,32 @@
   </div>
 
   <div class="card">
+    <div class="card-hd">H/AB <span class="r dim small">hits per AB · min 3 AB · can exceed 1.000</span></div>
+    <table class="dt">
+      <thead>
+        <tr>
+          <th>#</th><th>Player</th><th>Team</th>
+          <th class="r sortable" onclick="sortTable(this)">H/AB</th>
+          <th class="r sortable" onclick="sortTable(this)">H</th>
+          <th class="r sortable" onclick="sortTable(this)">AB</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in by_h_ab %}
+        <tr>
+          <td class="dim mono">{{ loop.index }}</td>
+          <td><a href="/player/{{ p.team }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
+          <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
+          <td class="r mono">{{ "%.3f"|format(p.h_ab) }}</td>
+          <td class="r mono">{{ p.hits }}</td>
+          <td class="r mono dim">{{ p.ab }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
     <div class="card-hd">Batting Average <span class="r dim small">(min 3 AB)</span></div>
     <table class="dt">
       <thead>
@@ -203,7 +229,7 @@
   </div>
 
   <div class="card">
-    <div class="card-hd">ERA <span class="r dim small">(min 9 outs)</span></div>
+    <div class="card-hd">ERA <span class="r dim small">(min 9 outs · O27 league avg: ~11.50)</span></div>
     <table class="dt">
       <thead>
         <tr>

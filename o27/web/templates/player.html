@@ -43,23 +43,42 @@
       {% if player.is_pitcher %}
       <div class="card-hd">Season Pitching Totals</div>
       {% if pitcher_game_log %}
+      {% set pg_g    = pitcher_game_log | length %}
       {% set pg_outs = pitcher_game_log | sum(attribute='outs') %}
+      {% set pg_bf   = pitcher_game_log | sum(attribute='bf') %}
+      {% set pg_p    = pitcher_game_log | sum(attribute='p') %}
       {% set pg_r    = pitcher_game_log | sum(attribute='r') %}
       {% set pg_h    = pitcher_game_log | sum(attribute='h') %}
       {% set pg_bb   = pitcher_game_log | sum(attribute='bb') %}
       {% set pg_k    = pitcher_game_log | sum(attribute='k') %}
+      {% set pg_hr   = pitcher_game_log | sum(attribute='hr') %}
+      {% set pg_out_sum = pitcher_game_log | sum(attribute='out') %}
       <table class="dt">
-        <thead><tr><th>Stat</th><th class="r">Value</th></tr></thead>
+        <thead>
+          <tr>
+            <th class="r">G</th><th class="r">BF</th><th class="r" title="Pitches Thrown">P</th>
+            <th class="r" title="Outs Share % (avg/game)">OS%</th>
+            <th class="r">ERA</th><th class="r">WHIP</th>
+            <th class="r" title="Average Out Recorded when pulled">AOR</th>
+            <th class="r">K</th><th class="r">BB</th><th class="r">HR</th>
+            <th class="r">K/9</th><th class="r">BB/9</th>
+          </tr>
+        </thead>
         <tbody>
-          <tr><td>Games</td><td class="r mono">{{ pitcher_game_log | length }}</td></tr>
-          <tr><td>Outs Recorded</td><td class="r mono">{{ pg_outs }}</td></tr>
-          <tr><td>OS% (avg/game)</td><td class="r mono">{{ "%.0f"|format(pg_outs / (pitcher_game_log | length) / 27 * 100) if pitcher_game_log else "—" }}%</td></tr>
-          <tr><td>Runs Allowed</td><td class="r mono">{{ pg_r }}</td></tr>
-          <tr><td>Hits Allowed</td><td class="r mono">{{ pg_h }}</td></tr>
-          <tr><td>Walks</td><td class="r mono">{{ pg_bb }}</td></tr>
-          <tr><td>Strikeouts</td><td class="r mono">{{ pg_k }}</td></tr>
-          <tr><td class="w" style="font-weight:700;">ERA</td><td class="r mono w" style="font-weight:700;">{{ "%.2f"|format(pg_r / pg_outs * 27) if pg_outs > 0 else "—" }}</td></tr>
-          <tr><td class="w" style="font-weight:700;">WHIP</td><td class="r mono w" style="font-weight:700;">{{ "%.2f"|format((pg_bb + pg_h) / pg_outs * 27) if pg_outs > 0 else "—" }}</td></tr>
+          <tr>
+            <td class="r mono">{{ pg_g }}</td>
+            <td class="r mono">{{ pg_bf }}</td>
+            <td class="r mono">{{ pg_p }}</td>
+            <td class="r mono">{{ "%.0f"|format(pg_outs / pg_g / 27 * 100) }}%</td>
+            <td class="r mono w" style="font-weight:700;">{{ "%.2f"|format(pg_r / pg_outs * 27) if pg_outs > 0 else "—" }}</td>
+            <td class="r mono">{{ "%.2f"|format((pg_bb + pg_h) / pg_outs * 27) if pg_outs > 0 else "—" }}</td>
+            <td class="r mono">{{ "%.1f"|format(pg_out_sum / pg_g) }}</td>
+            <td class="r mono">{{ pg_k }}</td>
+            <td class="r mono">{{ pg_bb }}</td>
+            <td class="r mono">{{ pg_hr }}</td>
+            <td class="r mono">{{ "%.2f"|format(pg_k  / pg_outs * 27) if pg_outs > 0 else "—" }}</td>
+            <td class="r mono">{{ "%.2f"|format(pg_bb / pg_outs * 27) if pg_outs > 0 else "—" }}</td>
+          </tr>
         </tbody>
       </table>
       {% else %}
@@ -111,7 +130,9 @@
         <th class="r">2B</th><th class="r">3B</th><th class="r">HR</th>
         <th class="r">RBI</th><th class="r">BB</th>
         <th class="r">SO</th><th class="r" title="Outs Recorded">OR</th>
-        <th class="r">AVG</th><th class="r">OBP</th>
+        <th class="r">AVG</th>
+        <th class="r" title="Hits per At-Bat (can exceed 1.000 — multi-hit ABs)">H/AB</th>
+        <th class="r">OBP</th>
       </tr>
     </thead>
     <tbody>
@@ -131,6 +152,7 @@
         <td class="r mono">{{ stats.k }}</td>
         <td class="r mono dim">{{ stats.or_ }}</td>
         <td class="r mono w" style="font-weight:700;">{{ stats.avg }}</td>
+        <td class="r mono dim">{{ "%.3f"|format(stats.hits / stats.ab) if stats.ab > 0 else ".000" }}</td>
         <td class="r mono">{{ "%.3f"|format(obp_num / obp_den) if obp_den > 0 else ".000" }}</td>
       </tr>
     </tbody>

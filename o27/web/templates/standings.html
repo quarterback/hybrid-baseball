@@ -23,6 +23,8 @@
         <th class="r sortable" onclick="sortTable(this)">GB</th>
         <th class="r sortable" onclick="sortTable(this)">RS</th>
         <th class="r sortable" onclick="sortTable(this)">RA</th>
+        <th class="r sortable" onclick="sortTable(this)" title="Runs scored per game">RPG</th>
+        <th class="r sortable" onclick="sortTable(this)" title="Runs allowed per game">RAPG</th>
         <th class="r sortable" onclick="sortTable(this)">DIFF</th>
         <th class="r">L10</th>
         <th class="r">Streak</th>
@@ -42,6 +44,8 @@
         <td class="r mono dim">{{ s.gb }}</td>
         <td class="r mono">{{ s.r_for }}</td>
         <td class="r mono">{{ s.r_against }}</td>
+        <td class="r mono">{{ "%.2f"|format(s.rpg) }}</td>
+        <td class="r mono">{{ "%.2f"|format(s.rapg) }}</td>
         <td class="r mono">{{ "%+d"|format(s.rd) }}</td>
         <td class="r mono dim">{{ s.l10_w }}-{{ s.l10_l }}</td>
         <td class="r mono {% if s.streak.startswith('W') %}w{% elif s.streak.startswith('L') %}l{% endif %}">{{ s.streak }}</td>
