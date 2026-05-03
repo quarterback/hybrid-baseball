@@ -402,6 +402,7 @@ def _close_current_spell(state: GameState) -> None:
     state.pitcher_sb_allowed_this_spell = 0
     state.pitcher_cs_caught_this_spell = 0
     state.pitcher_fo_induced_this_spell = 0
+    state.pitcher_errors_this_spell = 0
     state.pitcher_hbp_this_spell = 0
     state.pitcher_hr_this_spell = 0
     state.pitcher_pitches_this_spell = 0
@@ -427,6 +428,7 @@ def _set_fielding_pitcher(state: GameState) -> None:
         state.pitcher_sb_allowed_this_spell = 0
         state.pitcher_cs_caught_this_spell = 0
         state.pitcher_fo_induced_this_spell = 0
+        state.pitcher_errors_this_spell = 0
         state.pitcher_start_pa = state.total_pa_this_half
 
     # Phase 10: pick a true starter (pitcher_role=="starter"/"workhorse")

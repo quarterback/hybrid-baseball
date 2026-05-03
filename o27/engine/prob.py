@@ -370,8 +370,46 @@ def resolve_contact(
 
     hit_type, batter_safe, caught_fly, _ = _pick_from_table(rng, table)
 
-    # Compute runner advances based on hit type and runner speeds.
-    runner_adv = runner_advances_for_hit(rng, hit_type, state.bases, state)
+    # ---- Defense layer ----------------------------------------------------
+    # The fielding team's `defense_rating` modulates whether borderline
+    # plays end as outs or hits, and whether would-be-outs become errors
+    # (batter reaches, possibly UER charged).
+    fielding = state.fielding_team
+    team_def = float(getattr(fielding, "defense_rating", 0.5) or 0.5)
+    def_dev = team_def - 0.5   # neutral 0; +0.35 for elite team; -0.35 for awful
+    is_error = False
+
+    # Range shift: probabilistically flip a single-or-out outcome.
+    # Better defense (def_dev > 0) → some "single" results flip to ground_out.
+    # Worse defense (def_dev < 0) → some "ground_out" / "fly_out" / "line_out"
+    # results flip to "single".
+    range_shift = abs(def_dev) * cfg.DEFENSE_RANGE_SHIFT_SCALE * 2
+    if range_shift > 0 and rng.random() < range_shift:
+        if def_dev > 0 and hit_type == "single":
+            hit_type = "ground_out"
+            batter_safe = False
+            caught_fly = False
+        elif def_dev < 0 and hit_type in ("ground_out", "fly_out", "line_out"):
+            hit_type = "single"
+            batter_safe = True
+            caught_fly = False
+
+    # Error chance — only on plays that resolved as an out. Worse defense =
+    # higher error rate. Caught flies don't generate errors at this layer
+    # (they're clean catches by the time we get here).
+    if not batter_safe and hit_type != "fielders_choice" and not caught_fly:
+        err_p = cfg.DEFENSE_ERROR_BASE - def_dev * cfg.DEFENSE_ERROR_SCALE
+        err_p = max(cfg.DEFENSE_ERROR_MIN, min(cfg.DEFENSE_ERROR_MAX, err_p))
+        if rng.random() < err_p:
+            is_error = True
+            hit_type = "error"      # synthetic outcome — pa.py + render handle
+            batter_safe = True
+            caught_fly = False
+
+    # Compute runner advances based on (possibly flipped) hit type.
+    # An "error" advances runners like a single — same conservative shape.
+    advance_type = "single" if hit_type == "error" else hit_type
+    runner_adv = runner_advances_for_hit(rng, advance_type, state.bases, state)
 
     # For fielder's choice: throw out the lead runner.
     runner_out_idx = None
@@ -384,6 +422,7 @@ def resolve_contact(
         "caught_fly": caught_fly,
         "runner_advances": runner_adv,
         "runner_out_idx": runner_out_idx,
+        "is_error": is_error,
     }
 
 
@@ -460,18 +499,24 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
         if speed < cfg.SB_ATTEMPT_SPEED_THRESHOLD:
             continue
         if rng.random() < cfg.SB_ATTEMPT_PROB_PER_PITCH:
-            # Probability of success: speed + tired-battery-aware.
+            # Probability of success: speed + tired-battery + catcher-arm aware.
             pitcher = state.get_current_pitcher()
             pitcher_skill = pitcher.pitcher_skill if pitcher else 0.5
             # Pitch debt = recent rolling pitches across last 5 days. A tired
             # battery has reduced arm strength on throws to second/third —
             # late-half / heavy-workload steals get noticeably easier.
             pitch_debt = float(getattr(pitcher, "pitch_debt", 0) or 0)
+            # Catcher arm — stamped on the fielding Team at game start.
+            # An elite-arm catcher (arm ≥ 0.85) shuts down the running game;
+            # a noodle-arm (≤ 0.30) is exploited mercilessly. Identity at
+            # arm = 0.5 → no shift on success_p.
+            cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
             success_p = (
                 cfg.SB_SUCCESS_BASE
                 + (speed - 0.5) * cfg.SB_SUCCESS_SPEED_SCALE
                 - pitcher_skill * cfg.SB_SUCCESS_PITCHER_SCALE
                 + pitch_debt * cfg.SB_SUCCESS_DEBT_SCALE
+                - (cat_arm - 0.5) * cfg.SB_SUCCESS_CATCHER_ARM_SCALE
             )
             success = rng.random() < max(cfg.SB_SUCCESS_MIN, min(cfg.SB_SUCCESS_MAX, success_p))
             return {

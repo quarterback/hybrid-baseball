@@ -91,11 +91,20 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
 
 
 def _score_run(state: GameState, n: int = 1) -> list[str]:
-    """Add n runs to the batting team's score."""
+    """Add n runs to the batting team's score.
+
+    UER tagging: if any defensive error has occurred this spell, the run
+    is charged as unearned. This is over-aggressive vs MLB scoring (real
+    scoring tries to determine what runs would have scored absent the
+    error), but it's stable and produces visible UER counts that rise
+    naturally with team error rate.
+    """
     team_id = state.batting_team.team_id
     state.score[team_id] += n
     state.partnership_runs += n
     state.pitcher_runs_this_spell += n
+    if getattr(state, "pitcher_errors_this_spell", 0) > 0:
+        state.pitcher_unearned_runs_this_spell += n
     return [f"  Run(s) scored: +{n} → {state.batting_team.name} {state.score[team_id]}"]
 
 
@@ -331,8 +340,15 @@ def _resolve_contact(
 
     # ---- RUN CHOSEN ----
     if choice == "run":
-        log.append(f"  {batter.name} runs → {hit_type}.")
+        # Errors are surfaced explicitly in the play-by-play log so
+        # broadcasters / box scores can call them out separately from hits.
+        if hit_type == "error" or outcome.get("is_error"):
+            log.append(f"  {batter.name} reached on ERROR.")
+            state.pitcher_errors_this_spell += 1
+        else:
+            log.append(f"  {batter.name} runs → {hit_type}.")
         # Track hits allowed for the current pitcher's spell.
+        # Errors are NOT hits — pitcher's H allowed does not increment.
         if hit_type in ("single", "infield_single", "double", "triple", "hr", "home_run"):
             state.pitcher_h_this_spell += 1
         if hit_type in ("hr", "home_run"):

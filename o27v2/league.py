@@ -284,6 +284,10 @@ def _make_hitter(
     contact_g  = _roll_tier_grade(rng)
     power_g    = _roll_tier_grade(rng)
     eye_g      = _roll_tier_grade(rng)
+    # Defense layer — independently tier-rolled. A great-glove no-bat
+    # archetype (low skill, elite defense) is a real type in this sport.
+    defense_g  = _roll_tier_grade(rng)
+    arm_g      = _roll_tier_grade(rng)
     # Pitcher_skill on a position player is only used in emergencies.
     pskill_g = _roll_tier_grade(rng) // 2 + 10  # cap fielder-pitching at low grades
     return {
@@ -311,6 +315,8 @@ def _make_hitter(
         "movement": 50,   # pitcher-only attr; neutral on hitters
         "bats":     _roll_bats(rng),
         "throws":   _roll_throws(rng, is_pitcher=False),
+        "defense":  defense_g,
+        "arm":      arm_g,
     }
 
 
@@ -334,6 +340,11 @@ def _make_pitcher(
     # = low BB regardless of Stuff; high Movement = ground-ball pitcher.
     command_g  = _roll_tier_grade(rng)
     movement_g = _roll_tier_grade(rng)
+    # Pitchers also get defense/arm — they field comebackers and bunts,
+    # and high-arm pitchers help suppress steals. Capped lower than
+    # position players since pitcher fielding matters less in O27.
+    defense_g  = max(20, _roll_tier_grade(rng) // 2 + 15)
+    arm_g      = max(20, _roll_tier_grade(rng) // 2 + 20)
     throws = _roll_throws(rng, is_pitcher=True)
     return {
         "name": name,
@@ -360,6 +371,8 @@ def _make_pitcher(
         "movement": movement_g,
         "bats":     throws,   # pitchers historically bat from their throwing side
         "throws":   throws,
+        "defense":  defense_g,
+        "arm":      arm_g,
     }
 
 
@@ -504,8 +517,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
                 pitcher_skill, stay_aggressiveness, contact_quality_threshold,
                 archetype, pitcher_role, hard_contact_delta, hr_weight_bonus,
                 age, stamina, is_active,
-                contact, power, eye, command, movement, bats, throws)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                contact, power, eye, command, movement, bats, throws,
+                defense, arm)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(team_id, p["name"], p["position"], p["is_pitcher"],
               p["skill"], p["speed"], p["pitcher_skill"],
               p["stay_aggressiveness"], p["contact_quality_threshold"],
@@ -516,6 +530,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
               p.get("is_active", 1),
               p.get("contact", 50), p.get("power", 50), p.get("eye", 50),
               p.get("command", 50), p.get("movement", 50),
-              p.get("bats", "R"), p.get("throws", "R"))
+              p.get("bats", "R"), p.get("throws", "R"),
+              p.get("defense", 50), p.get("arm", 50))
              for p in players],
         )

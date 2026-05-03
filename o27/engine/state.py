@@ -103,6 +103,9 @@ class Player:
     eye:      float = 0.5   # batter: more balls taken, fewer called strikes
     command:  float = 0.5   # pitcher: lower P(ball)
     movement: float = 0.5   # pitcher: bias contact toward weak/ground_out
+    # Defense layer — fielding ability + throwing arm.
+    defense:  float = 0.5   # range / glove / surehandedness (all positions)
+    arm:      float = 0.5   # throwing strength (matters most at C / OF / SS)
 
     # Handedness — drives platoon split. Default '' means "unknown handedness"
     # and bypasses the platoon adjustment, preserving the identity invariant
@@ -207,6 +210,14 @@ class Team:
     # 1.0 = neutral (legacy parity). Bounded by config.PARK_*_MIN/MAX at seed.
     park_hr:   float = 1.0   # multiplier on HR weight in HARD_CONTACT
     park_hits: float = 1.0   # multiplier on hit-vs-out balance
+
+    # Aggregate team defense rating (positional-value-weighted). Stamped
+    # at game start by sim.py:_db_team_to_engine. 0.5 = neutral; higher =
+    # better collective defense → fewer hits, fewer errors.
+    defense_rating: float = 0.5
+    # Catcher's arm rating, stamped at game start. Drives SB-success
+    # suppression. 0.5 = neutral.
+    catcher_arm:    float = 0.5
 
     # Joker compatibility shims — Phase 10 dropped jokers from v2, but the
     # engine manager and o27/main.py still reference these fields. Defaulting
@@ -319,6 +330,8 @@ class GameState:
     pitcher_sb_allowed_this_spell: int = 0  # stolen bases against current spell
     pitcher_cs_caught_this_spell: int = 0   # CS outs while current spell on mound
     pitcher_fo_induced_this_spell: int = 0  # foul-outs in current spell
+    pitcher_errors_this_spell: int = 0      # defensive errors during current spell
+                                            # (post-error runs in the spell charge UER)
     pitcher_start_pa: int = 0          # total_pa_this_half when spell began
     total_pa_this_half: int = 0        # cumulative PA count this half (incremented on PA end)
     current_pitcher_id: Optional[str] = None

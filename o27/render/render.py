@@ -839,6 +839,11 @@ class Renderer:
                 s.ab += 1
                 if is_safety_hit:
                     s.hits += 1
+                elif hit_type == "error":
+                    # Reached on error: AB credited, NO hit, NO out, ROE++.
+                    # Pitcher H allowed does NOT increment (errors aren't
+                    # hits in MLB scoring); pa.py already handled that.
+                    s.roe += 1
                 elif not disp.get("batter_safe", True):
                     # Batter retired (ground out, fly out, line out, DP etc.)
                     s.outs_recorded += 1
@@ -849,7 +854,8 @@ class Renderer:
                 elif hit_type in ("hr", "home_run"):
                     s.hr += 1
                 s.rbi += runs_scored
-                # Terminal running hit counts toward multi-hit AB.
+                # Terminal running hit counts toward multi-hit AB. Errors
+                # don't count toward multi-hit (they aren't hits).
                 _check_multi_hit(terminal_hit=is_safety_hit)
 
         # Task #49: universal leftover-out charge. Any out the engine recorded
@@ -953,7 +959,8 @@ class Renderer:
         prev_get = (lambda f: getattr(prev_s, f)) if prev_s else (lambda f: 0)
         for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
-                  "stay_rbi", "multi_hit_abs"):
+                  "stay_rbi", "multi_hit_abs",
+                  "sb", "cs", "fo", "roe"):
             setattr(d, f, getattr(end_s, f) - prev_get(f))
         return d
 

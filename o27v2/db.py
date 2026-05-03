@@ -64,7 +64,10 @@ CREATE TABLE IF NOT EXISTS players (
     command   INTEGER DEFAULT 50,
     movement  INTEGER DEFAULT 50,
     bats      TEXT DEFAULT 'R',
-    throws    TEXT DEFAULT 'R'
+    throws    TEXT DEFAULT 'R',
+    -- Defense layer (range / glove / arm).
+    defense   INTEGER DEFAULT 50,
+    arm       INTEGER DEFAULT 50
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -106,6 +109,7 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     fo         INTEGER DEFAULT 0,   -- foul-outs (3-foul rule; subset of outs_recorded)
     multi_hit_abs INTEGER DEFAULT 0,
     stay_rbi   INTEGER DEFAULT 0,
+    roe        INTEGER DEFAULT 0,   -- reached on error (NOT a hit; AB credited)
     UNIQUE(player_id, game_id, phase)
 );
 
@@ -335,6 +339,14 @@ def init_db() -> None:
             except Exception:
                 pass
 
+        # Defense layer columns. Defaults of 50 = neutral.
+        for col in ("defense", "arm"):
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT 50")
+                conn.commit()
+            except Exception:
+                pass
+
         # Counting-stat columns persisted post-realism (Stage 1 of stats expansion).
         # Defaults of 0 leave pre-existing rows neutral; new games populate fully.
         for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi"):
@@ -343,6 +355,14 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+        # Defense-event column: batter "reached on error" count (per-batter).
+        # Team errors-committed are derived as the sum of OPPOSING batters'
+        # ROE in a given game, so no separate team-level column is needed.
+        try:
+            conn.execute("ALTER TABLE game_batter_stats ADD COLUMN roe INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
         for col in ("hbp_allowed", "unearned_runs", "sb_allowed", "cs_caught", "fo_induced"):
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")

@@ -204,8 +204,27 @@ SB_SUCCESS_SPEED_SCALE: float     = 0.50   # (speed - 0.5) * this adds to succes
 SB_SUCCESS_PITCHER_SCALE: float   = 0.15   # pitcher_skill * this subtracts from success
 SB_SUCCESS_DEBT_SCALE: float      = 0.0008 # pitcher.pitch_debt * this ADDS to success
                                            # — tired battery = easier steal
+SB_SUCCESS_CATCHER_ARM_SCALE: float = 0.20 # catcher.arm * this SUBTRACTS from success
+                                           # — elite catcher arm shuts down the running game
 SB_SUCCESS_MIN: float             = 0.25   # floor on steal success
 SB_SUCCESS_MAX: float             = 0.92   # ceiling on steal success
+
+# ---------------------------------------------------------------------------
+# Defense model
+# ---------------------------------------------------------------------------
+# Identity: at team_defense_rating = 0.5 (neutral) every term collapses to 0.
+
+# Range modifier — better team defense converts more BIPs into outs.
+# Applied as a probabilistic flip: when an outcome resolves to an out OR a
+# single, a small fraction of cases flip in proportion to (defense - 0.5).
+DEFENSE_RANGE_SHIFT_SCALE: float = 0.10   # max ±10% out↔single conversion swing
+
+# Error rate — share of would-be-out plays that become a "reached on
+# error" instead. Scales inversely with team defense.
+DEFENSE_ERROR_BASE: float        = 0.018   # ~1.8% of would-be-outs at neutral D
+DEFENSE_ERROR_SCALE: float       = 0.025   # (0.5 - team_def) * this adds to E rate
+DEFENSE_ERROR_MIN: float         = 0.003
+DEFENSE_ERROR_MAX: float         = 0.045
 
 # ---------------------------------------------------------------------------
 # Wild pitch probability

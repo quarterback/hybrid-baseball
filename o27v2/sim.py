@@ -31,6 +31,57 @@ from o27v2 import scout as _scout
 
 
 # ---------------------------------------------------------------------------
+# Defensive positional values (Bill James style, scaled to O27).
+# These weights determine BOTH:
+#   - the team-defense-rating aggregation (high-value positions count more)
+#   - the per-player DRS positional adjustment (a +SS is worth more than +1B)
+# Centralised here so app.py and sim.py read the same numbers.
+# ---------------------------------------------------------------------------
+
+POSITIONAL_VALUE: dict[str, float] = {
+    "C":  +1.5,
+    "SS": +1.0,
+    "CF": +0.5,
+    "2B": +0.5,
+    "3B": +0.3,
+    "LF": -0.3,
+    "RF": -0.3,
+    "1B": -0.7,
+    "DH": -1.5,
+    "UT":  0.0,
+    "P":  -2.0,   # pitchers rarely field; their "defense" mostly reflects PFP
+}
+
+
+def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
+    """Compute a single 0..1 team defense rating as a positional-value-
+    weighted mean of fielders' defense ratings.
+
+    `lineup` is the engine-side Player list (8 fielders + SP + 3 DH).
+    `roster` is the original DB-side player rows so we can look up the
+    canonical position string by player_id (engine Players don't carry
+    position).
+
+    Identity: at all defaults (defense = 0.5 for everyone) → returns 0.5.
+    """
+    pos_by_id: dict[str, str] = {
+        str(r["id"]): str(r.get("position") or "") for r in roster
+    }
+    weighted_sum = 0.0
+    weight_sum   = 0.0
+    for player in lineup:
+        pos = pos_by_id.get(player.player_id, "")
+        if pos in ("DH", "P"):
+            continue   # DH and starting pitchers don't contribute to fielding
+        # Weight = max(0.5, 1.5 + positional_value) so even -bias positions
+        # contribute, but valuable positions count more.
+        w = max(0.5, 1.5 + POSITIONAL_VALUE.get(pos, 0.0))
+        weighted_sum += w * float(getattr(player, "defense", 0.5) or 0.5)
+        weight_sum   += w
+    return (weighted_sum / weight_sum) if weight_sum > 0 else 0.5
+
+
+# ---------------------------------------------------------------------------
 # DB ↔ engine type converters
 # ---------------------------------------------------------------------------
 
@@ -108,6 +159,8 @@ def _db_team_to_engine(
             # default; only treat seeded 'L'/'R'/'S' as platoon-applicable.
             bats=str(p.get("bats") or ""),
             throws=str(p.get("throws") or ""),
+            defense=_scout.to_unit(p.get("defense") or 50),
+            arm=_scout.to_unit(p.get("arm") or 50),
         )
         # Stamp workload state on every Player so the manager AI and the
         # engine's tired-multiplier can read it without extra plumbing.
@@ -170,7 +223,7 @@ def _db_team_to_engine(
         if sp in engine_players:
             engine_players = [sp] + [p for p in engine_players if p is not sp]
 
-    return Team(
+    team = Team(
         team_id=team_role,
         name=team_row["name"],
         roster=engine_players,
@@ -179,6 +232,17 @@ def _db_team_to_engine(
         park_hr=float(team_row.get("park_hr") or 1.0),
         park_hits=float(team_row.get("park_hits") or 1.0),
     )
+    # Compute aggregate defense rating from the lineup's fielding 8.
+    team.defense_rating = _team_defense_rating(lineup, players)
+    # Stamp the catcher's arm rating on the Team for SB-success scaling.
+    pos_by_id = {str(r["id"]): str(r.get("position") or "") for r in players}
+    catcher_arm = 0.5
+    for player in lineup:
+        if pos_by_id.get(player.player_id, "") == "C":
+            catcher_arm = float(getattr(player, "arm", 0.5) or 0.5)
+            break
+    team.catcher_arm = catcher_arm
+    return team
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +298,7 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict])
                 "fo": getattr(bstat, "fo", 0),
                 "multi_hit_abs": getattr(bstat, "multi_hit_abs", 0),
                 "stay_rbi": getattr(bstat, "stay_rbi", 0),
+                "roe": getattr(bstat, "roe", 0),
             })
     return rows
 
@@ -579,15 +644,15 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                 """INSERT INTO game_batter_stats
                    (game_id, team_id, player_id, phase, pa, ab, runs, hits,
                     doubles, triples, hr, rbi, bb, k, stays, outs_recorded,
-                    hbp, sb, cs, fo, multi_hit_abs, stay_rbi)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    hbp, sb, cs, fo, multi_hit_abs, stay_rbi, roe)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
                  r["stays"], r.get("outs_recorded", 0),
                  r.get("hbp", 0), r.get("sb", 0), r.get("cs", 0),
                  r.get("fo", 0), r.get("multi_hit_abs", 0),
-                 r.get("stay_rbi", 0)),
+                 r.get("stay_rbi", 0), r.get("roe", 0)),
             )
         for r in away_pstats + home_pstats:
             conn.execute(
@@ -699,14 +764,14 @@ def _insert_batter_stats(game_id: int, rows: list[dict]) -> None:
         """INSERT INTO game_batter_stats
            (game_id, team_id, player_id, pa, ab, runs, hits, doubles, triples,
             hr, rbi, bb, k, stays, outs_recorded,
-            hbp, sb, cs, fo, multi_hit_abs, stay_rbi)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            hbp, sb, cs, fo, multi_hit_abs, stay_rbi, roe)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["pa"], r["ab"], r["runs"],
           r["hits"], r["doubles"], r["triples"], r["hr"], r["rbi"],
           r["bb"], r["k"], r["stays"], r.get("outs_recorded", 0),
           r.get("hbp", 0), r.get("sb", 0), r.get("cs", 0),
           r.get("fo", 0), r.get("multi_hit_abs", 0),
-          r.get("stay_rbi", 0))
+          r.get("stay_rbi", 0), r.get("roe", 0))
          for r in rows],
     )
 

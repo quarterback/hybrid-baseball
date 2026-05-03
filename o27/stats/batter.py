@@ -28,3 +28,4 @@ class BatterStats:
     sb: int = 0     # Successful steals charged to this runner
     cs: int = 0     # Caught-stealing outs charged to this runner
     fo: int = 0     # Foul-outs (3-foul rule) — subset of outs_recorded
+    roe: int = 0    # Reached on error (NOT a hit; AB credited; defensive miscue)
