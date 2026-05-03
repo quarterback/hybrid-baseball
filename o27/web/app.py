@@ -434,7 +434,12 @@ def game():
         "visitors_abbrev": visitors_abbrev or "FOX",
         "home_abbrev": home_abbrev or "BEA",
     }
-    _RECENT[:] = [r for r in _RECENT if r["seed"] != seed]
+    _RECENT[:] = [
+        r for r in _RECENT
+        if not (r["seed"] == seed
+                and r["visitors_abbrev"] == (visitors_abbrev or "FOX")
+                and r["home_abbrev"] == (home_abbrev or "BEA"))
+    ]
     _RECENT.append(entry)
     if len(_RECENT) > _MAX_RECENT:
         _RECENT.pop(0)

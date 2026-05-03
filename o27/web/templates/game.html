@@ -2,10 +2,11 @@
 {% block title %}O27 — Seed {{ seed }}{% endblock %}
 {% block content %}
 
+{% set team_qs %}{% if visitors_abbrev %}&visitors={{ visitors_abbrev }}{% endif %}{% if home_abbrev %}&home={{ home_abbrev }}{% endif %}{% endset %}
 <div class="game-nav">
-  <a href="/game?seed={{ prev_seed }}" class="btn btn-outline">← Seed {{ prev_seed }}</a>
+  <a href="/game?seed={{ prev_seed }}{{ team_qs }}" class="btn btn-outline">← Seed {{ prev_seed }}</a>
   <a href="/" class="btn btn-outline">All games</a>
-  <a href="/game?seed={{ next_seed }}" class="btn btn-outline">Seed {{ next_seed }} →</a>
+  <a href="/game?seed={{ next_seed }}{{ team_qs }}" class="btn btn-outline">Seed {{ next_seed }} →</a>
 </div>
 
 {# ── SCOREBOARD ── #}
