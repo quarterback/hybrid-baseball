@@ -204,6 +204,7 @@ CREATE TABLE IF NOT EXISTS season_pitching_leaders (
     era         REAL,
     fip         REAL,
     whip        REAL,
+    oavg        REAL DEFAULT 0,   -- opponent batting average (H / (BF - BB))
     PRIMARY KEY (season_id, category, rank)
 );
 """
@@ -286,6 +287,13 @@ def init_db() -> None:
         # to responsible batter so OR column sums to 27 per half).
         try:
             conn.execute("ALTER TABLE game_batter_stats ADD COLUMN outs_recorded INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Task #62: add oavg column to existing season_pitching_leaders.
+        try:
+            conn.execute("ALTER TABLE season_pitching_leaders ADD COLUMN oavg REAL DEFAULT 0")
             conn.commit()
         except Exception:
             pass

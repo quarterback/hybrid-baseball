@@ -29,6 +29,48 @@
   </div>
 </div>
 
+{# ---- New Season dialog (hidden until activated) ---- #}
+<div id="ns-panel" class="dense mb-3" style="display:none">
+  <div class="panel-title d-flex justify-content-between align-items-center">
+    <span>Start a New Season</span>
+    <button id="ns-close" type="button" class="btn-close btn-close-white" style="filter:invert(1)" aria-label="Close"></button>
+  </div>
+  <div class="p-3" id="ns-form">
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small text-secondary mb-1">League size</label>
+        <select id="ns-config" class="form-select form-select-sm" style="background:#0d1117;color:#e6edf3;border-color:#30363d">
+          <option value="8teams">8 teams</option>
+          <option value="12teams">12 teams</option>
+          <option value="16teams">16 teams</option>
+          <option value="24teams">24 teams</option>
+          <option value="30teams" selected>30 teams</option>
+          <option value="36teams">36 teams</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small text-secondary mb-1">RNG seed</label>
+        <input type="number" id="ns-seed" value="42"
+               class="form-control form-control-sm" style="background:#0d1117;color:#e6edf3;border-color:#30363d;width:120px">
+      </div>
+      <div class="col-auto">
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" id="ns-archive" checked>
+          <label class="form-check-label small text-secondary" for="ns-archive">
+            Archive current league first
+          </label>
+        </div>
+      </div>
+      <div class="col-auto">
+        <button id="ns-go" type="button" class="btn btn-sm btn-warning">Reset &amp; Reseed</button>
+      </div>
+      <div class="col text-secondary small">
+        Drops the current database and reseeds a fresh league + schedule from your chosen config and seed.
+      </div>
+    </div>
+  </div>
+</div>
+
 {# ---- Multi-season runner panel (hidden until activated) ---- #}
 <div id="ms-panel" class="dense mb-3" style="display:none">
   <div class="panel-title d-flex justify-content-between align-items-center">
@@ -59,22 +101,21 @@
         </select>
       </div>
       <div class="col-auto">
-        <button id="ms-start" type="button" class="btn btn-sm btn-primary">Start Run</button>
+        <button id="ms-start" type="button" class="btn btn-sm btn-primary">Run Now</button>
       </div>
       <div class="col text-secondary small">
-        Each season: drop DB → reseed (seed = base + n) → simulate end-to-end → archive standings &amp; leaders → run invariant suite. Champion + invariant pass/fail are written to <a href="{{ url_for('seasons_index') }}">Season History</a>.
+        Each season: drop DB → reseed (seed = base + n) → simulate end-to-end → archive standings &amp; leaders → run invariant suite. The request blocks until all seasons complete (~15s/season for 8 teams, ~90s for 30).
       </div>
     </div>
   </div>
-  <div class="p-3 border-top" id="ms-progress" style="display:none;border-color:#30363d!important">
-    <div class="d-flex justify-content-between small mb-1">
-      <span id="ms-phase" class="text-secondary">Starting…</span>
-      <span id="ms-count" class="text-secondary"></span>
+  <div class="p-3 border-top" id="ms-status" style="display:none;border-color:#30363d!important">
+    <div id="ms-running" style="display:none">
+      <div class="d-flex align-items-center gap-2 small text-secondary">
+        <div class="spinner-border spinner-border-sm" style="color:#6f42c1" role="status"></div>
+        <span id="ms-running-text">Running…</span>
+      </div>
     </div>
-    <div class="progress mb-2" style="background:#0d1117;height:14px">
-      <div id="ms-bar" class="progress-bar" role="progressbar" style="width:0%;background:#6f42c1"></div>
-    </div>
-    <pre id="ms-log" class="small mb-0" style="background:#0d1117;color:#8b949e;padding:8px;max-height:180px;overflow:auto;border:1px solid #30363d;border-radius:4px"></pre>
+    <div id="ms-results" style="display:none"></div>
   </div>
 </div>
 {% endif %}
@@ -239,79 +280,109 @@
 (function () {
   const newSeasonBtn = document.getElementById('btn-new-season');
   const multiBtn     = document.getElementById('btn-multi-season');
-  const panel        = document.getElementById('ms-panel');
-  const closeBtn     = document.getElementById('ms-close');
-  const startBtn     = document.getElementById('ms-start');
-  const progressBox  = document.getElementById('ms-progress');
-  const phaseLbl     = document.getElementById('ms-phase');
-  const countLbl     = document.getElementById('ms-count');
-  const bar          = document.getElementById('ms-bar');
-  const logBox       = document.getElementById('ms-log');
+  const nsPanel      = document.getElementById('ns-panel');
+  const nsClose      = document.getElementById('ns-close');
+  const nsGo         = document.getElementById('ns-go');
+  const msPanel      = document.getElementById('ms-panel');
+  const msClose      = document.getElementById('ms-close');
+  const msStart      = document.getElementById('ms-start');
+  const msStatus     = document.getElementById('ms-status');
+  const msRunning    = document.getElementById('ms-running');
+  const msRunningTxt = document.getElementById('ms-running-text');
+  const msResults    = document.getElementById('ms-results');
 
   if (!newSeasonBtn || !multiBtn) return;
 
-  // ---- New Season (one-click reset, archives current state) ----
-  newSeasonBtn.addEventListener('click', async () => {
-    if (!confirm('Start a new season?\n\nThe current league will be ARCHIVED to Season History (champion, standings, leaders, invariants), then the database will be reset and reseeded.')) return;
-    newSeasonBtn.disabled = true;
-    newSeasonBtn.textContent = 'Resetting…';
+  // ---- New Season modal ----
+  newSeasonBtn.addEventListener('click', () => {
+    nsPanel.style.display = 'block';
+    msPanel.style.display = 'none';
+  });
+  nsClose.addEventListener('click', () => { nsPanel.style.display = 'none'; });
+
+  nsGo.addEventListener('click', async () => {
+    const config  = document.getElementById('ns-config').value || '30teams';
+    const seed    = parseInt(document.getElementById('ns-seed').value, 10) || 42;
+    const archive = document.getElementById('ns-archive').checked;
+    nsGo.disabled = true;
+    nsGo.textContent = 'Resetting…';
     try {
       const r = await fetch('/api/season/reset', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({archive: true, config_id: '30teams', rng_seed: Date.now() % 1000000}),
+        body: JSON.stringify({archive, config_id: config, rng_seed: seed}),
       });
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || 'reset failed');
       window.location.reload();
     } catch (err) {
       alert('Reset failed: ' + err.message);
-      newSeasonBtn.disabled = false;
-      newSeasonBtn.textContent = '⟲ New Season';
+      nsGo.disabled = false;
+      nsGo.textContent = 'Reset & Reseed';
     }
   });
 
-  // ---- Multi-Season Test panel ----
-  multiBtn.addEventListener('click', () => { panel.style.display = 'block'; });
-  closeBtn.addEventListener('click', () => { panel.style.display = 'none'; });
+  // ---- Multi-Season Test modal ----
+  multiBtn.addEventListener('click', () => {
+    msPanel.style.display = 'block';
+    nsPanel.style.display = 'none';
+  });
+  msClose.addEventListener('click', () => { msPanel.style.display = 'none'; });
 
-  let pollTimer = null;
-  function fmtPhase(p) {
-    return ({
-      idle: 'Idle', starting: 'Starting…', seeding: 'Seeding new league',
-      simulating: 'Simulating season', archiving: 'Archiving + invariants',
-      done: 'Done ✓', error: 'Error'
-    })[p] || p;
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
   }
 
-  async function pollStatus() {
-    try {
-      const r = await fetch('/api/sim/multi-season/status');
-      const s = await r.json();
-      progressBox.style.display = 'block';
-      phaseLbl.textContent = `Season ${s.current_season_number || '?'} — ${fmtPhase(s.current_phase)}`;
-      countLbl.textContent = `${s.completed_seasons || 0} / ${s.target_seasons || 0} complete`;
-      bar.style.width = (s.current_progress_pct || 0) + '%';
-      if (s.log && s.log.length) logBox.textContent = s.log.join('\n');
-      if (!s.running) {
-        clearInterval(pollTimer); pollTimer = null;
-        startBtn.disabled = false;
-        startBtn.textContent = 'Start Run';
-        if (s.current_phase === 'done') {
-          // Reload after a beat so the dashboard reflects the final season state.
-          setTimeout(() => window.location.reload(), 1500);
-        }
-      }
-    } catch (e) { /* ignore transient poll failure */ }
+  function renderResults(data) {
+    if (!data || !data.seasons) return '';
+    const totalGames = data.total_games_simmed || 0;
+    const rows = data.seasons.map(s => {
+      const invHtml = (s.invariant_fail > 0)
+        ? `<span style="color:#f85149;font-weight:700">${s.invariant_pass} pass / ${s.invariant_fail} FAIL</span>`
+        : `<span style="color:#2ea043">${s.invariant_pass} pass</span>`;
+      return `<tr>
+        <td class="num">${escapeHtml(s.season_number)}</td>
+        <td class="num text-secondary">${escapeHtml(s.seed)}</td>
+        <td class="num">${escapeHtml(s.games_simmed)}</td>
+        <td><span class="team-abbrev">${escapeHtml(s.champion_abbrev || '—')}</span> ${escapeHtml(s.champion_name || '')}</td>
+        <td class="num">${escapeHtml(s.champion_w)}-${escapeHtml(s.champion_l)}</td>
+        <td class="num">${invHtml}</td>
+        <td><a href="/seasons/${escapeHtml(s.season_id)}" class="small">View →</a></td>
+      </tr>`;
+    }).join('');
+    return `
+      <div class="small text-secondary mb-2">
+        ✓ Completed ${data.n_seasons} season(s) · ${totalGames} games simmed total ·
+        config <strong>${escapeHtml(data.config_id)}</strong> ·
+        base seed <strong>${escapeHtml(data.base_seed)}</strong>
+      </div>
+      <table class="table table-sm dense-table mb-2">
+        <thead><tr>
+          <th class="num">#</th><th class="num">Seed</th><th class="num">Games simmed</th>
+          <th>Champion</th><th class="num">Record</th><th class="num">Invariants</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <a href="/seasons" class="btn btn-sm btn-secondary">Open Season History</a>
+    `;
   }
 
-  startBtn.addEventListener('click', async () => {
+  msStart.addEventListener('click', async () => {
     const n      = parseInt(document.getElementById('ms-n').value, 10) || 3;
     const seed   = parseInt(document.getElementById('ms-seed').value, 10) || 42;
     const config = document.getElementById('ms-config').value || '30teams';
-    if (!confirm(`Run ${n} full season(s) end-to-end?\n\nThis will REPEATEDLY drop and reseed the database. The current league will be archived first.\nEstimated time: ~30-90s per season depending on config.`)) return;
-    startBtn.disabled = true;
-    startBtn.textContent = 'Starting…';
+    if (!confirm(`Run ${n} full season(s) end-to-end?\n\nThis blocks the page until done — keep this tab open.\nEstimated time: ~15s/season for 8 teams, ~90s for 30 teams.`)) return;
+
+    msStart.disabled = true;
+    msStart.textContent = 'Running…';
+    msStatus.style.display = 'block';
+    msResults.style.display = 'none';
+    msResults.innerHTML = '';
+    msRunning.style.display = 'block';
+    msRunningTxt.textContent = `Running ${n} season(s) on ${config} (base seed ${seed})… Each season drops the DB, reseeds, simulates every scheduled date, then archives standings + leaders + invariants.`;
+
     try {
       const r = await fetch('/api/sim/multi-season', {
         method: 'POST',
@@ -319,30 +390,19 @@
         body: JSON.stringify({n, seed, config_id: config}),
       });
       const data = await r.json();
-      if (!data.ok) throw new Error(data.message || 'failed to start');
-      progressBox.style.display = 'block';
-      logBox.textContent = '';
-      if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(pollStatus, 1500);
-      pollStatus();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'run failed');
+      msRunning.style.display = 'none';
+      msResults.style.display = 'block';
+      msResults.innerHTML = renderResults(data);
     } catch (err) {
-      alert('Failed to start: ' + err.message);
-      startBtn.disabled = false;
-      startBtn.textContent = 'Start Run';
+      msRunning.style.display = 'none';
+      msResults.style.display = 'block';
+      msResults.innerHTML = `<div style="color:#f85149">Run failed: ${escapeHtml(err.message)}</div>`;
+    } finally {
+      msStart.disabled = false;
+      msStart.textContent = 'Run Now';
     }
   });
-
-  // If a run is already in progress (e.g. user reloaded), resume polling.
-  fetch('/api/sim/multi-season/status').then(r => r.json()).then(s => {
-    if (s.running) {
-      panel.style.display = 'block';
-      startBtn.disabled = true;
-      startBtn.textContent = 'Running…';
-      progressBox.style.display = 'block';
-      pollTimer = setInterval(pollStatus, 1500);
-      pollStatus();
-    }
-  }).catch(() => {});
 })();
 </script>
 {% endblock %}

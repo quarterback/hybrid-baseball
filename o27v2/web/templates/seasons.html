@@ -2,6 +2,41 @@
 {% block title %}Season History{% endblock %}
 {% block content %}
 <h2 class="mb-3">Season History</h2>
+
+{% if live %}
+<div class="dense mb-3">
+  <div class="panel-title">Currently In Progress</div>
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th class="num">#</th>
+      <th>Status</th>
+      <th class="num">Teams</th>
+      <th class="num">Games</th>
+      <th>Standings Leader</th>
+      <th class="num">Record</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      <tr style="background:#1f2733">
+        <td class="num">{{ live.season_number }}</td>
+        <td><span style="color:#f0883e;font-weight:700">● LIVE</span>
+            {% if live.complete %}
+              <span class="text-secondary small">— complete, ready to archive</span>
+            {% else %}
+              <span class="text-secondary small">— in progress</span>
+            {% endif %}
+        </td>
+        <td class="num">{{ live.team_count }}</td>
+        <td class="num">{{ live.games_played }}{% if live.games_total %} / {{ live.games_total }}{% endif %}</td>
+        <td><span class="team-abbrev">{{ live.leader_abbrev or '—' }}</span> {{ live.leader_name or '' }}</td>
+        <td class="num">{{ live.leader_w }}-{{ live.leader_l }}</td>
+        <td><a href="{{ url_for('index') }}" class="small">Dashboard →</a></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <div class="dense">
   <div class="panel-title">Archived Seasons</div>
   {% if seasons %}

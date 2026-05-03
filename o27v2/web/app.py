@@ -1243,23 +1243,20 @@ def api_sim_season():
 
 @app.route("/api/sim/multi-season", methods=["POST"])
 def api_sim_multi_season():
-    """Kick off a background N-season run. Returns immediately."""
-    from o27v2.season_archive import start_multi_season
+    """Run N seasons end-to-end synchronously. Blocks until complete and
+    returns a per-season summary including games simmed and invariants."""
+    from o27v2.season_archive import run_multi_season
     data = request.get_json(silent=True) or {}
     n         = int(data.get("n", 3))
     base_seed = int(data.get("seed", 42))
     config_id = (data.get("config_id") or "30teams").strip()
     if config_id not in get_league_configs():
         return jsonify({"ok": False, "error": f"unknown config: {config_id}"}), 400
-    started, msg = start_multi_season(n, base_seed=base_seed, config_id=config_id)
-    code = 202 if started else 409
-    return jsonify({"ok": started, "message": msg}), code
-
-
-@app.route("/api/sim/multi-season/status")
-def api_sim_multi_season_status():
-    from o27v2.season_archive import multi_season_status
-    return jsonify(multi_season_status())
+    try:
+        result = run_multi_season(n, base_seed=base_seed, config_id=config_id)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    return jsonify(result)
 
 
 @app.route("/api/season/archive", methods=["POST"])
@@ -1309,10 +1306,12 @@ def api_season_reset():
 
 @app.route("/seasons")
 def seasons_index():
+    from o27v2.season_archive import compute_live_season
     rows = db.fetchall(
         "SELECT * FROM seasons ORDER BY season_number DESC"
     )
-    return render_template("seasons.html", seasons=rows)
+    live = compute_live_season()
+    return render_template("seasons.html", seasons=rows, live=live)
 
 
 @app.route("/seasons/<int:season_id>")
