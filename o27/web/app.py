@@ -240,10 +240,14 @@ def _find_team(abbrev: str) -> dict | None:
 
 
 def _team_obj(team_data: dict, team_id: str) -> Team:
-    """Convert a team dict (from load_teams) into a GameState Team object."""
+    """Convert a team dict (from load_teams) into a GameState Team object.
+
+    Player IDs are prefixed with team_id so same-team matchups produce unique
+    IDs across both sides, preventing stat/renderer collisions.
+    """
     roster: list[Player] = []
     for i, p in enumerate(team_data["players"]):
-        pid = f"{team_data['abbrev']}{i}"
+        pid = f"{team_id}_{team_data['abbrev']}{i}"
         roster.append(Player(
             player_id=pid,
             name=p["name"],
@@ -410,8 +414,16 @@ def game():
     except (TypeError, ValueError):
         seed = 0
 
-    visitors_abbrev = request.args.get("visitors") or None
-    home_abbrev = request.args.get("home") or None
+    visitors_abbrev = (
+        request.args.get("visitors")
+        or request.args.get("visitors_team")
+        or None
+    )
+    home_abbrev = (
+        request.args.get("home")
+        or request.args.get("home_team")
+        or None
+    )
 
     final_state, log_lines, renderer = _run(seed, visitors_abbrev, home_abbrev)
 
