@@ -57,6 +57,22 @@
   {% endfor %}
   </tbody>
 </table>
+{% if total_pages > 1 %}
+{% set qs %}{% if q %}q={{ q }}&amp;{% endif %}{% if filter_team %}team={{ filter_team }}&amp;{% endif %}{% endset %}
+<div class="pagination" style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;font-size:11px">
+  {% if page > 1 %}
+    <a href="?{{ qs }}page={{ page - 1 }}">&laquo; Prev</a>
+  {% else %}
+    <span style="color:var(--fg-dim)">&laquo; Prev</span>
+  {% endif %}
+  <span style="color:var(--fg-dim)">Page {{ page }} of {{ total_pages }} &mdash; {{ matched }} players</span>
+  {% if page < total_pages %}
+    <a href="?{{ qs }}page={{ page + 1 }}">Next &raquo;</a>
+  {% else %}
+    <span style="color:var(--fg-dim)">Next &raquo;</span>
+  {% endif %}
+</div>
+{% endif %}
 {% else %}
 <div class="empty">No players found{% if q %} matching "{{ q }}"{% endif %}.</div>
 {% endif %}

@@ -71,6 +71,21 @@
   {% endfor %}
   </tbody>
 </table>
+{% if total_pages > 1 %}
+<div class="pagination" style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;font-size:11px">
+  {% if page > 1 %}
+    <a href="?{% if team_filter %}team={{ team_filter }}&amp;{% endif %}page={{ page - 1 }}">&laquo; Prev</a>
+  {% else %}
+    <span style="color:var(--fg-dim)">&laquo; Prev</span>
+  {% endif %}
+  <span style="color:var(--fg-dim)">Page {{ page }} of {{ total_pages }} &mdash; {{ total }} games</span>
+  {% if page < total_pages %}
+    <a href="?{% if team_filter %}team={{ team_filter }}&amp;{% endif %}page={{ page + 1 }}">Next &raquo;</a>
+  {% else %}
+    <span style="color:var(--fg-dim)">Next &raquo;</span>
+  {% endif %}
+</div>
+{% endif %}
 {% else %}
 <div class="empty">No games found{% if team_filter %} for {{ team_filter }}{% endif %}.</div>
 {% endif %}

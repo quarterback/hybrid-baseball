@@ -77,13 +77,27 @@ def standings():
 def schedule():
     team_filter = request.args.get("team", "").strip().upper()
     all_teams = data.load_teams()
-    games = data.get_schedule(60, team=team_filter)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    page_size = 40
+    all_games = data.get_schedule(10_000, team=team_filter)
+    total = len(all_games)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+    start = (page - 1) * page_size
+    games = all_games[start:start + page_size]
     return render_template(
         "stats_site/schedule.html",
         section="boxscores",
         games=games,
         team_filter=team_filter,
         all_teams=all_teams,
+        page=page,
+        total_pages=total_pages,
+        total=total,
     )
 
 
@@ -229,6 +243,11 @@ def players():
     q = request.args.get("q", "").strip().lower()
     filter_team = request.args.get("team", "")
     all_teams = data.load_teams()
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    page_size = 50
 
     rows = []
     for t in all_teams:
@@ -239,21 +258,27 @@ def players():
                 continue
             slug = p["name"].lower().replace(" ", "_").replace(".", "")
             rows.append({"team": t, "player": p, "slug": slug})
-            if len(rows) >= 200:
-                break
-        if len(rows) >= 200:
-            break
+
+    matched = len(rows)
+    total_pages = max(1, (matched + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+    start = (page - 1) * page_size
+    paged_rows = rows[start:start + page_size]
 
     total = sum(len(t["players"]) for t in all_teams)
     return render_template(
         "stats_site/players.html",
         section="players",
-        players=rows,
+        players=paged_rows,
         total=total,
         team_count=len(all_teams),
         all_teams=all_teams,
         q=q,
         filter_team=filter_team,
+        page=page,
+        total_pages=total_pages,
+        matched=matched,
     )
 
 
