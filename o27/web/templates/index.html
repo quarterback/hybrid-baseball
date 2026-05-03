@@ -1,9 +1,15 @@
 {% extends "base.html" %}
+{% from "macros.html" import roster_table %}
 {% block title %}O27 — Game Setup{% endblock %}
 {% block content %}
 
 <h1>O27 GAME SETUP</h1>
 <p class="subtitle">Pick two teams, set a seed, and simulate.</p>
+
+{# Pass default team player lists to the macro for initial server-side render.
+   JS takes over for subsequent team swaps without a page reload. #}
+{% set v_team = teams | selectattr("abbrev", "equalto", default_v) | first %}
+{% set h_team = teams | selectattr("abbrev", "equalto", default_h) | first %}
 
 <form method="get" action="/game" id="setup-form">
   <div class="setup-grid">
@@ -25,7 +31,9 @@
         </div>
         <div class="card-head" style="border-top:1px solid var(--border);">Roster</div>
         <div class="roster-wrap">
-          <div id="roster-visitors-inner"></div>
+          <div id="roster-visitors-inner">
+            {% if v_team %}{{ roster_table(v_team.players) }}{% endif %}
+          </div>
         </div>
       </div>
     </div>
@@ -47,7 +55,9 @@
         </div>
         <div class="card-head" style="border-top:1px solid var(--border);">Roster</div>
         <div class="roster-wrap">
-          <div id="roster-home-inner"></div>
+          <div id="roster-home-inner">
+            {% if h_team %}{{ roster_table(h_team.players) }}{% endif %}
+          </div>
         </div>
       </div>
     </div>
@@ -106,7 +116,7 @@
 </div>
 {% endif %}
 
-{# Embed roster data for JS — no extra network round-trip #}
+{# Roster data embedded for JS swap on team-select change — no extra round-trip. #}
 <script>
 const ROSTERS = {{ roster_map_json | safe }};
 
@@ -147,13 +157,6 @@ function buildRosterTable(abbrev) {
 function updateRoster(side, abbrev) {
   document.getElementById('roster-' + side + '-inner').innerHTML = buildRosterTable(abbrev);
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-  const vSel = document.getElementById('sel-visitors');
-  const hSel = document.getElementById('sel-home');
-  if (vSel) updateRoster('visitors', vSel.value);
-  if (hSel) updateRoster('home', hSel.value);
-});
 </script>
 
 {% endblock %}

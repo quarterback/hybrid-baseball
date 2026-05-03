@@ -26,7 +26,6 @@ from o27.engine.game import run_game
 from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
 from o27.main import make_foxes, make_bears
-from o27 import config as cfg
 
 app = Flask(__name__, template_folder="templates")
 
@@ -67,7 +66,6 @@ def _name_pools() -> dict:
 
 _REGION_WEIGHTS = [("usa", 0.50), ("latin", 0.30), ("japan_korea", 0.10), ("other", 0.10)]
 _POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C", "P"]
-_JOKER_LABELS = ["Power", "Speed", "Contact"]
 
 
 def _weighted_region(rng: random.Random) -> str:
