@@ -880,7 +880,8 @@ def team_detail(team_id: int):
                        COUNT(game_id) AS gp,
                        SUM(outs_recorded) AS outs,
                        SUM(hits_allowed) AS h, SUM(runs_allowed) AS r, SUM(er) AS er,
-                       SUM(bb) AS bb, SUM(k) AS k
+                       SUM(bb) AS bb, SUM(k) AS k,
+                       SUM(hr_allowed) AS hr_allowed
                 FROM game_pitcher_stats
                 WHERE player_id IN ({ph}) GROUP BY player_id""",
             tuple(ids),
