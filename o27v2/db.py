@@ -46,7 +46,10 @@ CREATE TABLE IF NOT EXISTS players (
     archetype             TEXT DEFAULT '',
     pitcher_role          TEXT DEFAULT '',
     hard_contact_delta    REAL DEFAULT 0.0,
-    hr_weight_bonus       REAL DEFAULT 0.0
+    hr_weight_bonus       REAL DEFAULT 0.0,
+    age                   INTEGER DEFAULT 27,
+    injured_until         TEXT DEFAULT NULL,
+    il_tier               TEXT DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -93,6 +96,16 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     bb             INTEGER DEFAULT 0,
     k              INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    season     INTEGER DEFAULT 1,
+    game_date  TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    team_id    INTEGER REFERENCES teams(id),
+    player_id  INTEGER REFERENCES players(id),
+    detail     TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -122,40 +135,40 @@ def init_db() -> None:
     """
     Create tables and apply column migrations (idempotent).
 
-    Order matters — three steps must run in sequence:
-
-      1. ALTER TABLE — adds Phase-8 columns to *existing* pre-Phase-8 tables.
-         Fails silently when the table does not exist yet or columns are
-         already present, so this is safe as a first step in every case.
-
-      2. _wipe_if_stale() — pitcher_role column now exists (from step 1 or the
-         original SCHEMA), so SELECT safely queries it.  If pitcher rows have
-         blank pitcher_role the whole DB is pre-Phase-8; drop_all() wipes it.
-
-      3. executescript(SCHEMA) — CREATE TABLE IF NOT EXISTS creates tables that
-         are missing (fresh DB or post-wipe).  No-op when tables already exist.
-
-    Callers should invoke seed_league() after init_db() whenever teams are
-    absent, which is the normal pattern in manage.py and web/app.py.
+    Order:
+      1. ALTER TABLE — adds Phase-8 and Phase-9 columns to existing tables.
+      2. _wipe_if_stale() — wipe pre-Phase-8 data if found.
+      3. executescript(SCHEMA) — create missing tables.
     """
     # Step 1: column migrations (no-op if tables absent or columns present)
     with get_conn() as conn:
-        text_cols = [("archetype", "''"), ("pitcher_role", "''")]
-        real_cols = [("hard_contact_delta", "0.0"), ("hr_weight_bonus", "0.0")]
-        for col, defval in text_cols:
+        # Phase 8 columns
+        phase8_text = [("archetype", "''"), ("pitcher_role", "''")]
+        phase8_real = [("hard_contact_delta", "0.0"), ("hr_weight_bonus", "0.0")]
+        # Phase 9 columns
+        phase9_int  = [("age", "27")]
+        phase9_text = [("injured_until", "NULL"), ("il_tier", "NULL")]
+
+        for col, defval in phase8_text + phase9_text:
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} TEXT DEFAULT {defval}")
                 conn.commit()
             except Exception:
                 pass
-        for col, defval in real_cols:
+        for col, defval in phase8_real:
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} REAL DEFAULT {defval}")
                 conn.commit()
             except Exception:
                 pass
+        for col, defval in phase9_int:
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
 
-    # Step 2: wipe stale pre-Phase-8 data (pitcher_role now queryable)
+    # Step 2: wipe stale pre-Phase-8 data
     _wipe_if_stale()
 
     # Step 3: (re)create any missing tables
@@ -167,6 +180,7 @@ def drop_all() -> None:
     """Drop all tables (for re-seeding)."""
     with get_conn() as conn:
         conn.executescript("""
+            DROP TABLE IF EXISTS transactions;
             DROP TABLE IF EXISTS game_pitcher_stats;
             DROP TABLE IF EXISTS game_batter_stats;
             DROP TABLE IF EXISTS games;

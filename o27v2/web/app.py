@@ -8,6 +8,7 @@ Routes:
   GET  /game/<id>         Box score for a completed game
   GET  /teams             Team roster list
   GET  /team/<id>         Single team roster + season stats
+  GET  /transactions      League transaction log (filterable by team / type)
   GET  /new-league        League-creation screen (pick preset config)
   POST /new-league        Apply the chosen config (reset DB + reseed)
   POST /api/sim           Simulate the next N games (JSON response)
@@ -434,6 +435,37 @@ def team_detail(team_id: int):
                            players=players,
                            recent=recent,
                            win_pct=_win_pct)
+
+
+@app.route("/transactions")
+def transactions():
+    from o27v2.transactions import get_transactions
+    team_id    = request.args.get("team", type=int)
+    event_type = request.args.get("type")
+
+    txns  = get_transactions(team_id=team_id, event_type=event_type or None, limit=300)
+    teams = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
+
+    event_types = ["injury", "return", "promotion", "penalty", "deadline_trade", "inseason_trade", "waiver"]
+    selected_team = None
+    if team_id:
+        selected_team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
+
+    # Summary counts for the header
+    counts = {et: 0 for et in event_types}
+    all_txns = get_transactions(limit=50000)
+    for tx in all_txns:
+        et = tx.get("event_type", "")
+        if et in counts:
+            counts[et] += 1
+
+    return render_template("transactions.html",
+                           transactions=txns,
+                           teams=teams,
+                           selected_team=selected_team,
+                           event_type=event_type or "",
+                           event_types=event_types,
+                           counts=counts)
 
 
 @app.route("/new-league", methods=["GET"])

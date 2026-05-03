@@ -55,6 +55,8 @@
             href="{{ url_for('stats') }}">Stats</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint == 'teams' %}active{% endif %}"
             href="{{ url_for('teams') }}">Teams</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}"
+            href="{{ url_for('transactions') }}">Transactions</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}"
             href="{{ url_for('new_league_get') }}" style="color:#f0883e !important">New League</a></li>
       </ul>

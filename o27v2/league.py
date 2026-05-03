@@ -142,6 +142,15 @@ _JOKER_PA_MODIFIERS  = v2cfg.ARCHETYPE_PA_MODIFIERS
 _COMMITTEE_POSITIONS = v2cfg.COMMITTEE_POSITIONS
 
 
+def _player_age(rng: random.Random) -> int:
+    """
+    Draw a player age from a realistic bell curve peaking at 27-30.
+    Range: 22-38, mu=28, sigma=3.2 (clamped).
+    """
+    age = round(rng.gauss(28, 3.2))
+    return max(22, min(38, age))
+
+
 def generate_players(
     team_idx: int,
     rng: random.Random,
@@ -156,6 +165,9 @@ def generate_players(
         with boosted pitcher_skill to serve as relievers.
       - Nine jokers: JOKERS_PER_ARCHETYPE (3) copies of each archetype
         (power, speed, contact), shuffled into the roster.
+
+    Phase 9 addition:
+      - Each player receives an age drawn from a bell curve (22-38, peak 27-30).
 
     Names are sampled from regional pools with weighted distribution.
     team_idx influences the skill distribution to give each team personality.
@@ -217,6 +229,7 @@ def generate_players(
             "contact_quality_threshold": round(cqt, 3),
             "archetype": "",
             "pitcher_role": pitcher_role,
+            "age": _player_age(rng),
         })
 
     # JOKERS_PER_ARCHETYPE jokers per archetype per team (1 per archetype = 3 total).
@@ -252,6 +265,7 @@ def generate_players(
             "pitcher_role": "",
             "hard_contact_delta": pamod.get("hard_contact_delta", 0.0),
             "hr_weight_bonus":    pamod.get("hr_weight_bonus",    0.0),
+            "age": _player_age(rng),
         })
     return players
 
@@ -326,12 +340,13 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
             """INSERT INTO players
                (team_id, name, position, is_pitcher, is_joker, skill, speed,
                 pitcher_skill, stay_aggressiveness, contact_quality_threshold,
-                archetype, pitcher_role, hard_contact_delta, hr_weight_bonus)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                archetype, pitcher_role, hard_contact_delta, hr_weight_bonus, age)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(team_id, p["name"], p["position"], p["is_pitcher"], p["is_joker"],
               p["skill"], p["speed"], p["pitcher_skill"],
               p["stay_aggressiveness"], p["contact_quality_threshold"],
               p.get("archetype", ""), p.get("pitcher_role", ""),
-              p.get("hard_contact_delta", 0.0), p.get("hr_weight_bonus", 0.0))
+              p.get("hard_contact_delta", 0.0), p.get("hr_weight_bonus", 0.0),
+              p.get("age", 27))
              for p in players],
         )
