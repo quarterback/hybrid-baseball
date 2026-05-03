@@ -104,8 +104,16 @@ class Player:
     command:  float = 0.5   # pitcher: lower P(ball)
     movement: float = 0.5   # pitcher: bias contact toward weak/ground_out
     # Defense layer — fielding ability + throwing arm.
-    defense:  float = 0.5   # range / glove / surehandedness (all positions)
-    arm:      float = 0.5   # throwing strength (matters most at C / OF / SS)
+    # `defense` is the player's general glove rating. The three position-
+    # group sub-ratings let a player be elite at INF but weak at OF, etc.
+    # — utility players have decent ratings across groups, specialists
+    # have one elite group and replacement-level elsewhere. Identity at
+    # all = 0.5 means no defensive contribution.
+    defense:           float = 0.5   # general glove / surehandedness
+    arm:               float = 0.5   # throwing strength (C / OF / SS most)
+    defense_infield:   float = 0.5   # 1B / 2B / 3B / SS specific glove
+    defense_outfield:  float = 0.5   # LF / CF / RF specific glove
+    defense_catcher:   float = 0.5   # catcher-specific framing / blocking
 
     # Handedness — drives platoon split. Default '' means "unknown handedness"
     # and bypasses the platoon adjustment, preserving the identity invariant

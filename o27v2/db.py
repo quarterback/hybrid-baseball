@@ -65,9 +65,12 @@ CREATE TABLE IF NOT EXISTS players (
     movement  INTEGER DEFAULT 50,
     bats      TEXT DEFAULT 'R',
     throws    TEXT DEFAULT 'R',
-    -- Defense layer (range / glove / arm).
-    defense   INTEGER DEFAULT 50,
-    arm       INTEGER DEFAULT 50
+    -- Defense layer (range / glove / arm + per-position-group sub-ratings).
+    defense           INTEGER DEFAULT 50,
+    arm               INTEGER DEFAULT 50,
+    defense_infield   INTEGER DEFAULT 50,
+    defense_outfield  INTEGER DEFAULT 50,
+    defense_catcher   INTEGER DEFAULT 50
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -340,7 +343,11 @@ def init_db() -> None:
                 pass
 
         # Defense layer columns. Defaults of 50 = neutral.
-        for col in ("defense", "arm"):
+        # Per-position sub-ratings (infield / outfield / catcher) let a
+        # player be a true specialist (elite at one group, replacement
+        # elsewhere) or a legit utility guy (decent across groups).
+        for col in ("defense", "arm", "defense_infield",
+                    "defense_outfield", "defense_catcher"):
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT 50")
                 conn.commit()

@@ -162,6 +162,58 @@ _PSTATS_DEDUP_SQL = """(
 
 _SP_OUTS_THRESHOLD = 12  # MLB-style: 5 IP minimum scaled to O27 = 12 outs
 
+# Defensive position-value factors (approx. runs / 162 games range).
+# A player with elite defense at SS saves ~12 runs vs neutral over a full
+# season; at 1B that's ~4. Pure position value, used for DRS / dWAR.
+_POSITION_DRS_RANGE: dict[str, float] = {
+    "C":  15.0,
+    "SS": 12.0,
+    "2B":  8.0,
+    "CF":  8.0,
+    "3B":  7.0,
+    "LF":  5.0,
+    "RF":  5.0,
+    "1B":  4.0,
+    "DH":  0.0,
+    "UT":  6.0,    # utility — gets average-of-positions bump
+    "P":   2.0,    # pitchers field comebackers / cover bases — small effect
+}
+
+
+_INFIELD_POS_SET  = frozenset(("1B", "2B", "3B", "SS"))
+_OUTFIELD_POS_SET = frozenset(("LF", "CF", "RF"))
+
+
+def _position_defense_for_row(row: dict) -> float:
+    """Return the player's effective defense rating at their position
+    using a 60% sub-group + 40% general blend. All inputs come from the
+    SUM-aggregated row; ints (20-95 grade) and floats (0..1 unit) both
+    work via the scout-style 100-divide fallback.
+    """
+    pos = str(row.get("position") or "")
+
+    def _norm(v):
+        if v is None:
+            return 0.5
+        v = float(v)
+        if v <= 1.0:
+            return v
+        # 20-95 grade scale: extend past 0.85 for elite-plus.
+        if v <= 80.0:
+            return 0.15 + (v - 20.0) / 60.0 * 0.70
+        return 0.85 + (v - 80.0) / 15.0 * 0.15
+
+    general = _norm(row.get("defense"))
+    if pos == "C":
+        sub = _norm(row.get("defense_catcher"))
+    elif pos in _INFIELD_POS_SET:
+        sub = _norm(row.get("defense_infield"))
+    elif pos in _OUTFIELD_POS_SET:
+        sub = _norm(row.get("defense_outfield"))
+    else:
+        sub = general
+    return 0.6 * sub + 0.4 * general
+
 
 def _pitcher_wl_map() -> dict[int, dict[str, int]]:
     """Award W/L per MLB-style rules adapted to the O27 27-out-per-side
@@ -364,10 +416,23 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         repl_woba = baselines.get("replacement_woba") or 0
         woba_scale = 1.20
         b["vorp"] = ((b["woba"] - repl_woba) * pa / woba_scale) if (pa and league_woba) else 0.0
-        # bWAR — runs above replacement converted to wins via the
-        # league-fitted runs-per-win factor (~18 for O27).
+
+        # --- Defensive value ---
+        # DRS = (player_position_defense - 0.5) × 2 × games_played / 162
+        #       × position_drs_range. Scales linearly with games played.
+        # dWAR = DRS / runs_per_win.
         rpw = baselines.get("runs_per_win") or 10.0
-        b["war"] = b["vorp"] / rpw if rpw else 0.0
+        pos = str(b.get("position") or "")
+        games = b.get("g") or 0
+        pos_def = _position_defense_for_row(b)
+        b["pos_def"] = pos_def
+        drs_range = _POSITION_DRS_RANGE.get(pos, 4.0)
+        b["drs"] = (pos_def - 0.5) * 2.0 * (games / 162.0) * drs_range if games else 0.0
+        b["dwar"] = b["drs"] / rpw if rpw else 0.0
+        # bWAR — total batter value = batting WAR + defensive WAR.
+        bwar_off = b["vorp"] / rpw if rpw else 0.0
+        b["war_off"] = bwar_off
+        b["war"] = bwar_off + b["dwar"]
 
 
 def _league_fip_const() -> float:
@@ -1209,6 +1274,10 @@ def stats_browse():
             f"""SELECT p.id as player_id, p.name as player_name,
                        p.position as position, t.abbrev as team_abbrev, t.id as team_id,
                        p.is_pitcher as is_pitcher,
+                       p.defense as defense, p.arm as arm,
+                       p.defense_infield as defense_infield,
+                       p.defense_outfield as defense_outfield,
+                       p.defense_catcher as defense_catcher,
                        COUNT(bs.game_id) as g,
                        SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
                        SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
@@ -1219,7 +1288,8 @@ def stats_browse():
                        COALESCE(SUM(bs.cs),0)  as cs,
                        COALESCE(SUM(bs.fo),0)  as fo,
                        COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
-                       COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi
+                       COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                       COALESCE(SUM(bs.roe),0)          as roe
                 FROM game_batter_stats bs
                 JOIN players p ON bs.player_id = p.id
                 JOIN teams   t ON bs.team_id = t.id

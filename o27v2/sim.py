@@ -53,9 +53,32 @@ POSITIONAL_VALUE: dict[str, float] = {
 }
 
 
+_INFIELD_POSITIONS  = frozenset(("1B", "2B", "3B", "SS"))
+_OUTFIELD_POSITIONS = frozenset(("LF", "CF", "RF"))
+
+
+def _position_defense_rating(player, pos: str) -> float:
+    """Return the player's effective defense at the given position.
+
+    Blends general `defense` with the position-group sub-rating so a
+    specialist gets a real boost at their primary group and a real
+    penalty out of group. 60% sub-group, 40% general.
+    """
+    general = float(getattr(player, "defense", 0.5) or 0.5)
+    if pos == "C":
+        sub = float(getattr(player, "defense_catcher", 0.5) or 0.5)
+    elif pos in _INFIELD_POSITIONS:
+        sub = float(getattr(player, "defense_infield", 0.5) or 0.5)
+    elif pos in _OUTFIELD_POSITIONS:
+        sub = float(getattr(player, "defense_outfield", 0.5) or 0.5)
+    else:
+        sub = general
+    return 0.6 * sub + 0.4 * general
+
+
 def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
     """Compute a single 0..1 team defense rating as a positional-value-
-    weighted mean of fielders' defense ratings.
+    weighted mean of fielders' position-aware defense ratings.
 
     `lineup` is the engine-side Player list (8 fielders + SP + 3 DH).
     `roster` is the original DB-side player rows so we can look up the
@@ -76,7 +99,7 @@ def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
         # Weight = max(0.5, 1.5 + positional_value) so even -bias positions
         # contribute, but valuable positions count more.
         w = max(0.5, 1.5 + POSITIONAL_VALUE.get(pos, 0.0))
-        weighted_sum += w * float(getattr(player, "defense", 0.5) or 0.5)
+        weighted_sum += w * _position_defense_rating(player, pos)
         weight_sum   += w
     return (weighted_sum / weight_sum) if weight_sum > 0 else 0.5
 
@@ -161,6 +184,9 @@ def _db_team_to_engine(
             throws=str(p.get("throws") or ""),
             defense=_scout.to_unit(p.get("defense") or 50),
             arm=_scout.to_unit(p.get("arm") or 50),
+            defense_infield=_scout.to_unit(p.get("defense_infield") or 50),
+            defense_outfield=_scout.to_unit(p.get("defense_outfield") or 50),
+            defense_catcher=_scout.to_unit(p.get("defense_catcher") or 50),
         )
         # Stamp workload state on every Player so the manager AI and the
         # engine's tired-multiplier can read it without extra plumbing.

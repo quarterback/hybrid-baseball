@@ -284,10 +284,44 @@ def _make_hitter(
     contact_g  = _roll_tier_grade(rng)
     power_g    = _roll_tier_grade(rng)
     eye_g      = _roll_tier_grade(rng)
-    # Defense layer — independently tier-rolled. A great-glove no-bat
-    # archetype (low skill, elite defense) is a real type in this sport.
+    # Defense layer — general glove + arm independently tier-rolled.
+    # A great-glove no-bat archetype (low skill, elite defense) is a
+    # real type in this sport.
     defense_g  = _roll_tier_grade(rng)
     arm_g      = _roll_tier_grade(rng)
+
+    # Per-position sub-ratings. Strategy:
+    # - Roll one "primary specialty" group at full tier
+    # - Roll the other two groups at attenuated rolls (mean ~ general
+    #   defense - 5, with variance), so most players are visibly weaker
+    #   outside their group
+    # - With small probability (or for UT-slot players), roll all three
+    #   at full tier → utility player (Ben Zobrist style). UT slots are
+    #   ~10% of the active roster and are explicitly meant to be
+    #   multi-position contributors.
+    is_utility = (pos == "UT") or rng.random() < 0.10
+    if is_utility:
+        if_g  = _roll_tier_grade(rng)
+        of_g  = _roll_tier_grade(rng)
+        cat_g = _roll_tier_grade(rng)
+    else:
+        # Pick a primary specialty group based on the canonical position.
+        primary = "if"
+        if pos in ("LF", "CF", "RF"):
+            primary = "of"
+        elif pos == "C":
+            primary = "cat"
+        # Specialist: the primary group gets a full roll; others get a
+        # lower clamped roll (average grade 35-40, replacement-ish).
+        spec_high = _roll_tier_grade(rng)
+        spec_low_a = max(20, _roll_tier_grade(rng) // 2 + 10)
+        spec_low_b = max(20, _roll_tier_grade(rng) // 2 + 10)
+        if primary == "if":
+            if_g, of_g, cat_g = spec_high, spec_low_a, spec_low_b
+        elif primary == "of":
+            if_g, of_g, cat_g = spec_low_a, spec_high, spec_low_b
+        else:  # cat
+            if_g, of_g, cat_g = spec_low_a, spec_low_b, spec_high
     # Pitcher_skill on a position player is only used in emergencies.
     pskill_g = _roll_tier_grade(rng) // 2 + 10  # cap fielder-pitching at low grades
     return {
@@ -317,6 +351,9 @@ def _make_hitter(
         "throws":   _roll_throws(rng, is_pitcher=False),
         "defense":  defense_g,
         "arm":      arm_g,
+        "defense_infield":  if_g,
+        "defense_outfield": of_g,
+        "defense_catcher":  cat_g,
     }
 
 
@@ -373,6 +410,9 @@ def _make_pitcher(
         "throws":   throws,
         "defense":  defense_g,
         "arm":      arm_g,
+        "defense_infield":  50,   # pitchers field their own mound; sub-groups neutral
+        "defense_outfield": 50,
+        "defense_catcher":  50,
     }
 
 
@@ -518,8 +558,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
                 archetype, pitcher_role, hard_contact_delta, hr_weight_bonus,
                 age, stamina, is_active,
                 contact, power, eye, command, movement, bats, throws,
-                defense, arm)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                defense, arm,
+                defense_infield, defense_outfield, defense_catcher)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(team_id, p["name"], p["position"], p["is_pitcher"],
               p["skill"], p["speed"], p["pitcher_skill"],
               p["stay_aggressiveness"], p["contact_quality_threshold"],
@@ -531,6 +572,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
               p.get("contact", 50), p.get("power", 50), p.get("eye", 50),
               p.get("command", 50), p.get("movement", 50),
               p.get("bats", "R"), p.get("throws", "R"),
-              p.get("defense", 50), p.get("arm", 50))
+              p.get("defense", 50), p.get("arm", 50),
+              p.get("defense_infield", 50),
+              p.get("defense_outfield", 50),
+              p.get("defense_catcher", 50))
              for p in players],
         )

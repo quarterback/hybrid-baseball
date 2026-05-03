@@ -227,6 +227,22 @@ DEFENSE_ERROR_MIN: float         = 0.003
 DEFENSE_ERROR_MAX: float         = 0.045
 
 # ---------------------------------------------------------------------------
+# Emergency position-player pitcher (PP-pitching)
+# ---------------------------------------------------------------------------
+# In an absolute blowout, a strong-arm position player can come in to
+# preserve the bullpen — like real-life mop-up usage but tuned for O27.
+# These thresholds are intentionally tight: in O27 with continuous
+# 27-out halves, putting a position player on the mound EARLIER than
+# this would just compound the deficit. Per the user's framing:
+# "down 17+ with 6 outs to go or something."
+#
+# Identity: if either threshold is unmet, normal pitcher selection runs.
+
+PP_PITCH_DEFICIT_MIN: int = 17    # losing team must trail by >= this run gap
+PP_PITCH_OUTS_LEFT_MAX: int = 6   # AND have <= this many outs left to record
+PP_PITCH_ARM_MIN: float    = 0.55 # AND a position player with at least this arm
+
+# ---------------------------------------------------------------------------
 # Wild pitch probability
 # ---------------------------------------------------------------------------
 

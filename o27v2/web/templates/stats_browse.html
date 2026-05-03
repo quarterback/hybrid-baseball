@@ -95,8 +95,12 @@
       <th class="num" title="Weighted on-base average — O27-tuned linear weights">wOBA</th>
       <th class="num" title="OPS relative to league avg (100 = avg)">OPS+</th>
       <th class="num" title="wOBA relative to league avg (100 = avg)">wOBA+</th>
-      <th class="num" title="Runs above replacement (~85% of league wOBA)">VORP</th>
-      <th class="num" title="Wins above replacement; runs-per-win fitted live">WAR</th>
+      <th class="num" title="Offensive runs above replacement">oVORP</th>
+      <th class="num" title="Position-aware defense rating (0-1 unit, 0.5 = average)">Def</th>
+      <th class="num" title="Defensive Runs Saved — runs above average at this position">DRS</th>
+      <th class="num" title="Defensive WAR contribution">dWAR</th>
+      <th class="num" title="Total WAR (offense + defense)">WAR</th>
+      <th class="num" title="Times reached on error (defensive miscue against batter)">ROE</th>
       <th class="num" title="Stay rate — share of PAs the batter chose to stay (O27)">Stay%</th>
       <th class="num" title="Foul-out rate — share of PAs ending in 3-foul out">FO%</th>
     </tr></thead>
@@ -135,7 +139,11 @@
       <td class="num" data-sort-value="{{ '%.1f'|format(b.ops_plus) }}">{{ b.ops_plus|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.1f'|format(b.woba_plus) }}">{{ b.woba_plus|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(b.vorp) }}">{{ '%.1f'|format(b.vorp) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.pos_def) }}">{{ '%.3f'|format(b.pos_def) }}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(b.drs) }}">{{ '%+.1f'|format(b.drs) }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(b.dwar) }}">{{ '%+.2f'|format(b.dwar) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(b.war) }}">{{ '%.2f'|format(b.war) }}</td>
+      <td class="num">{{ b.roe or 0 }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_pct) }}">{{ '%.1f'|format(b.stay_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.fo_pct) }}">{{ '%.1f'|format(b.fo_pct * 100) }}%</td>
     </tr>

@@ -67,7 +67,15 @@ def _pitch_probs(
     # Multiplies effective Stuff so the same SP can throw a gem one start
     # and a clunker the next. today_form == 1.0 ⇒ identity.
     form = getattr(pitcher, "today_form", 1.0)
-    stuff_eff = max(0.0, min(1.0, pitcher.pitcher_skill * form))
+    raw_stuff = float(pitcher.pitcher_skill)
+    # Position-player pitching (extreme blowout fallback): blend in the
+    # player's arm rating so a strong-arm bench bat throws better than a
+    # noodle-arm one when forced into an emergency outing. Heavily scaled
+    # down — they're still amateurs on the mound.
+    if not getattr(pitcher, "is_pitcher", True):
+        arm = float(getattr(pitcher, "arm", 0.5) or 0.5)
+        raw_stuff = 0.55 * arm + 0.45 * raw_stuff
+    stuff_eff = max(0.0, min(1.0, raw_stuff * form))
 
     # Pitcher dominance: stuff_eff > 0.5 shifts probability toward strikes.
     p_dom = (stuff_eff - 0.5) * 2   # −1.0 to +1.0

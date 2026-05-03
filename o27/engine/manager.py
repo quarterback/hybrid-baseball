@@ -381,6 +381,31 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
 
     outs = getattr(state, "outs", 0) or 0
 
+    # Emergency PP-pitcher path: in a true blowout, a strong-arm position
+    # player can take the mound to absorb the last few outs and preserve
+    # the bullpen. Tight gating per user direction: late in the half AND
+    # massive deficit. Triggers only when the FIELDING team is down big
+    # (i.e. they're losing while their bullpen is getting torched).
+    fielding_id   = fielding.team_id
+    fielding_score = state.score.get(fielding_id, 0)
+    other_id   = "home" if fielding_id == "visitors" else "visitors"
+    batting_score = state.score.get(other_id, 0)
+    deficit = batting_score - fielding_score   # how much we trail by
+    outs_left = max(0, 27 - outs)
+    if (deficit >= cfg.PP_PITCH_DEFICIT_MIN
+            and outs_left <= cfg.PP_PITCH_OUTS_LEFT_MAX
+            and outs_left > 0):
+        # Find the position player with the highest arm rating who isn't
+        # already the current pitcher. Must clear the arm threshold.
+        pp_candidates = [
+            p for p in fielding.roster
+            if not p.is_pitcher
+            and p.player_id != current_id
+            and float(getattr(p, "arm", 0.5) or 0.5) >= cfg.PP_PITCH_ARM_MIN
+        ]
+        if pp_candidates:
+            return max(pp_candidates, key=lambda pl: float(getattr(pl, "arm", 0.5) or 0.5))
+
     # Hard rest filter: pitchers who appeared in the last day or two are
     # de-prioritized from relief eligibility. We use a tier system mirroring
     # the SP picker — start with the most rested pool and broaden only when
