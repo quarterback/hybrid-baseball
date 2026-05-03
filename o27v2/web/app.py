@@ -159,40 +159,88 @@ _PSTATS_DEDUP_SQL = """(
 )"""
 
 
-def _pitcher_wl_map() -> dict[int, dict[str, int]]:
-    """For each pitcher, count W/L in games where they were that team's
-    workhorse for the day (recorded the most outs of any pitcher on their
-    team for that game). This approximates a starter's decision.
+_SP_OUTS_THRESHOLD = 12  # MLB-style: 5 IP minimum scaled to O27 = 12 outs
 
-    Tie-breaker: when two pitchers on the same team tie on MAX(outs_recorded)
-    for a game, only the first one returned by the join (lowest game_pitcher_stats
-    rowid, i.e. earliest appearance) gets credit, via the (game_id, team_id)
-    `seen` set below."""
+
+def _pitcher_wl_map() -> dict[int, dict[str, int]]:
+    """Award W/L per MLB-style rules adapted to the O27 27-out-per-side
+    structure.
+
+    Winning team:
+      - Starting pitcher (earliest appearance, lowest game_pitcher_stats
+        rowid) gets the W if they recorded at least _SP_OUTS_THRESHOLD
+        (12) outs.
+      - Otherwise the W goes to the reliever on the winning team who
+        was most effective: max(outs - ER), with a tiebreaker on outs.
+        This is a reasonable approximation of the MLB scorer's "most
+        effective reliever" rule without modeling lead-state per inning.
+
+    Losing team:
+      - The pitcher with the most earned runs allowed gets the L. Ties
+        broken toward the pitcher who appeared earlier (took the lead
+        loss). This sidesteps the full "pitcher of record at lead change"
+        rule but produces stable, defensible attribution.
+
+    Saves are intentionally NOT computed — the user flagged this as
+    "hard to figure out how" and it requires lead-state tracking we
+    don't currently capture in game_pitcher_stats.
+    """
     rows = db.fetchall(
-        """SELECT ps.player_id, ps.team_id, ps.game_id, g.winner_id
-           FROM game_pitcher_stats ps
-           JOIN games g ON g.id = ps.game_id
-           JOIN (SELECT game_id, team_id, MAX(outs_recorded) AS mo
-                 FROM game_pitcher_stats
-                 GROUP BY game_id, team_id) m
-             ON m.game_id = ps.game_id
-            AND m.team_id = ps.team_id
-            AND m.mo = ps.outs_recorded
-           WHERE g.played = 1
-           ORDER BY ps.game_id, ps.team_id, ps.rowid"""
+        """SELECT ps.game_id, ps.team_id, ps.player_id,
+                  ps.outs_recorded AS outs,
+                  ps.runs_allowed  AS runs,
+                  ps.er            AS er,
+                  ps.rowid         AS rowid,
+                  g.winner_id
+             FROM game_pitcher_stats ps
+             JOIN games g ON g.id = ps.game_id
+            WHERE g.played = 1
+            ORDER BY ps.game_id, ps.team_id, ps.rowid"""
     )
-    out: dict[int, dict[str, int]] = {}
-    seen: set[tuple[int, int]] = set()  # (game_id, team_id) — only first ranked pitcher
+
+    # Group by (game_id, team_id) so we can apply the W/L decision logic
+    # on each team-game in isolation.
+    by_team_game: dict[tuple[int, int], list[dict]] = {}
+    winners: dict[int, int | None] = {}
     for r in rows:
         key = (r["game_id"], r["team_id"])
-        if key in seen:
-            continue
-        seen.add(key)
-        pid = r["player_id"]
-        rec = out.setdefault(pid, {"w": 0, "l": 0})
-        if r["winner_id"] == r["team_id"]:
-            rec["w"] += 1
-        elif r["winner_id"] is not None:
+        by_team_game.setdefault(key, []).append(r)
+        winners[r["game_id"]] = r["winner_id"]
+
+    out: dict[int, dict[str, int]] = {}
+    for (game_id, team_id), pitchers in by_team_game.items():
+        # rowid order = appearance order. First entry is the SP.
+        winner_id = winners.get(game_id)
+        if winner_id is None:
+            continue   # tied / unfinished game (shouldn't happen post-SI)
+
+        is_winner = winner_id == team_id
+        if is_winner:
+            sp = pitchers[0]
+            credited = None
+            if (sp["outs"] or 0) >= _SP_OUTS_THRESHOLD:
+                credited = sp["player_id"]
+            else:
+                # Most effective reliever: max(outs - ER), tiebreak on outs.
+                relievers = pitchers[1:] or pitchers   # fall back to SP if solo
+                relievers = sorted(
+                    relievers,
+                    key=lambda p: ((p["outs"] or 0) - (p["er"] or 0),
+                                   p["outs"] or 0),
+                    reverse=True,
+                )
+                credited = relievers[0]["player_id"]
+            if credited is not None:
+                rec = out.setdefault(credited, {"w": 0, "l": 0})
+                rec["w"] += 1
+        else:
+            # L: pitcher with most ER. Tiebreak: earliest appearance.
+            losers = sorted(
+                pitchers,
+                key=lambda p: (-(p["er"] or 0), p["rowid"]),
+            )
+            charged = losers[0]["player_id"]
+            rec = out.setdefault(charged, {"w": 0, "l": 0})
             rec["l"] += 1
     return out
 
