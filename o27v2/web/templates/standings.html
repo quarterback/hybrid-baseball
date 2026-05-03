@@ -13,12 +13,13 @@
       <th class="num">PCT</th><th class="num">GB</th>
       <th class="num">L10</th><th>Strk</th>
       <th class="num">RS</th><th class="num">RA</th><th class="num">DIFF</th>
+      <th class="num" title="Pythagorean expected W-L (RS² / (RS² + RA²))">PYTH</th>
       <th data-nosort>Last5</th>
     </tr></thead>
     <tbody>
     {% for div_name, div_teams in league_divs.items() %}
       {% set leader = div_teams[0] %}
-      <tr data-divider class="div-divider"><td colspan="11">{{ div_name }}</td></tr>
+      <tr data-divider class="div-divider"><td colspan="12">{{ div_name }}</td></tr>
       {% for t in div_teams %}
         {% set ex = extras.get(t.id, {}) %}
         <tr>
@@ -37,6 +38,7 @@
           <td class="num">{{ ex.rs if ex.rs is not none else '—' }}</td>
           <td class="num">{{ ex.ra if ex.ra is not none else '—' }}</td>
           <td class="num {% if ex.diff and ex.diff > 0 %}strk-w{% elif ex.diff and ex.diff < 0 %}strk-l{% endif %}" data-sort-value="{{ ex.diff if ex.diff is not none else 0 }}">{% if ex.diff is not none %}{% if ex.diff > 0 %}+{% endif %}{{ ex.diff }}{% else %}—{% endif %}</td>
+          <td class="num text-secondary" data-sort-value="{{ '%.4f'|format(ex.pyth_pct or 0) }}" title="Expected record from Pythagorean">{{ ex.pyth_wl or '—' }}</td>
           <td>
             {% for r in (ex.last5 or []) %}<span class="l5pill {{ r }}"></span>{% endfor %}
           </td>

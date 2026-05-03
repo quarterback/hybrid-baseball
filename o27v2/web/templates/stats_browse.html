@@ -92,6 +92,13 @@
       <th class="num">AVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
       <th class="num">ISO</th><th class="num">BABIP</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th><th class="num">BB/K</th>
+      <th class="num" title="Weighted on-base average — O27-tuned linear weights">wOBA</th>
+      <th class="num" title="OPS relative to league avg (100 = avg)">OPS+</th>
+      <th class="num" title="wOBA relative to league avg (100 = avg)">wOBA+</th>
+      <th class="num" title="Runs above replacement (~85% of league wOBA)">VORP</th>
+      <th class="num" title="Wins above replacement; runs-per-win fitted live">WAR</th>
+      <th class="num" title="Stay rate — share of PAs the batter chose to stay (O27)">Stay%</th>
+      <th class="num" title="Foul-out rate — share of PAs ending in 3-foul out">FO%</th>
     </tr></thead>
     <tbody>
     {% for b in batters %}
@@ -124,6 +131,13 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(b.bb_pct) }}">{{ '%.1f'|format(b.bb_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.hr_pct) }}">{{ '%.1f'|format(b.hr_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.3f'|format(b.bb_k) }}">{{ '%.2f'|format(b.bb_k) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.woba) }}">{{ '%.3f'|format(b.woba) }}</td>
+      <td class="num" data-sort-value="{{ '%.1f'|format(b.ops_plus) }}">{{ b.ops_plus|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.1f'|format(b.woba_plus) }}">{{ b.woba_plus|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(b.vorp) }}">{{ '%.1f'|format(b.vorp) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(b.war) }}">{{ '%.2f'|format(b.war) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_pct) }}">{{ '%.1f'|format(b.stay_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.fo_pct) }}">{{ '%.1f'|format(b.fo_pct * 100) }}%</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -153,6 +167,12 @@
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
       <th class="num">oAvg</th><th class="num">BABIP</th>
       <th class="num">K/BB</th>
+      <th class="num" title="ERA relative to league avg (100 = avg, higher = better)">ERA+</th>
+      <th class="num" title="Runs saved vs replacement-level pitcher">VORP</th>
+      <th class="num" title="Wins above replacement">WAR</th>
+      <th class="num" title="Outs recorded per pitch thrown — pitcher efficiency">O/P</th>
+      <th class="num" title="Pitches per batter faced">P/BF</th>
+      <th class="num" title="Foul-outs induced per BF">FO%</th>
     </tr></thead>
     <tbody>
     {% for p in pitchers %}
@@ -189,6 +209,12 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(p.oavg) }}">{{ '%.3f'|format(p.oavg) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.babip_allowed) }}">{{ '%.3f'|format(p.babip_allowed) }}</td>
       <td class="num" data-sort-value="{{ '%.3f'|format(p.so_bb) }}">{{ '%.2f'|format(p.so_bb) }}</td>
+      <td class="num" data-sort-value="{{ '%.1f'|format(p.era_plus) }}">{{ p.era_plus|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.vorp) }}">{{ '%.1f'|format(p.vorp) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.war) }}">{{ '%.2f'|format(p.war) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.outs_per_pitch) }}">{{ '%.3f'|format(p.outs_per_pitch) }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(p.p_per_bf) }}">{{ '%.2f'|format(p.p_per_bf) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.fo_pct_pit) }}">{{ '%.1f'|format(p.fo_pct_pit * 100) }}%</td>
     </tr>
     {% endfor %}
     </tbody>

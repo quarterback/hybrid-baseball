@@ -460,13 +460,18 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
         if speed < cfg.SB_ATTEMPT_SPEED_THRESHOLD:
             continue
         if rng.random() < cfg.SB_ATTEMPT_PROB_PER_PITCH:
-            # Probability of success: speed-based.
+            # Probability of success: speed + tired-battery-aware.
             pitcher = state.get_current_pitcher()
             pitcher_skill = pitcher.pitcher_skill if pitcher else 0.5
+            # Pitch debt = recent rolling pitches across last 5 days. A tired
+            # battery has reduced arm strength on throws to second/third —
+            # late-half / heavy-workload steals get noticeably easier.
+            pitch_debt = float(getattr(pitcher, "pitch_debt", 0) or 0)
             success_p = (
                 cfg.SB_SUCCESS_BASE
                 + (speed - 0.5) * cfg.SB_SUCCESS_SPEED_SCALE
                 - pitcher_skill * cfg.SB_SUCCESS_PITCHER_SCALE
+                + pitch_debt * cfg.SB_SUCCESS_DEBT_SCALE
             )
             success = rng.random() < max(cfg.SB_SUCCESS_MIN, min(cfg.SB_SUCCESS_MAX, success_p))
             return {

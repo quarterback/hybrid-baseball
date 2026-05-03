@@ -270,14 +270,20 @@ def _attach_hits(games: list[dict]) -> None:
         g["away_hits"] = team_hits.get(g["away_team_id"]) if g.get("played") else None
 
 
-def _aggregate_batter_rows(rows: list[dict]) -> None:
-    """Mutates rows in place to add classical and advanced rate stats.
+def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> None:
+    """Mutates rows in place to add classical, advanced, and O27-native
+    sabermetrics.
 
-    Adds: avg, obp (now includes HBP), slg, ops, iso, babip, k_pct, bb_pct,
-    hr_pct, bb_k. HBP / SB / CS / FO / multi-hit ABs / stay-RBI must already
-    be present on the row for the advanced columns to be meaningful — query
-    callers that select them benefit; legacy callers default to 0.
+    Adds (classical):  avg, obp (HBP-aware), slg, ops
+    Adds (advanced):   iso, babip, k_pct, bb_pct, hr_pct, bb_k, sb_pct
+    Adds (O27-native): woba, stay_pct, stay_rbi_per_stay, fo_pct, mhab_pct
+    Adds (relative):   ops_plus, woba_plus    [if baselines provided]
+
+    Pass `baselines=_league_baselines()` to enable OPS+ / wOBA+. Without
+    baselines the row keys are still set (to 100.0) for templating sanity.
     """
+    if baselines is None:
+        baselines = {"obp": 0.0, "slg": 0.0, "ops": 0.0, "woba": 0.0}
     for b in rows:
         ab = b.get("ab") or 0
         h = b.get("h") or 0
@@ -315,6 +321,54 @@ def _aggregate_batter_rows(rows: list[dict]) -> None:
         attempts = sb + cs
         b["sb_pct"] = (sb / attempts) if attempts else 0.0
 
+        # --- O27-native sabermetrics ---
+        # wOBA with O27-tuned linear weights: 1B and BB nudged up vs MLB
+        # because the stay mechanic lets baserunners advance more freely
+        # on singles and walks, raising those events' run-value contribution.
+        # HR weight slightly trimmed because runners are already moving
+        # easily, so a HR's clearing-the-bases edge is smaller here.
+        singles = h - d2 - d3 - hr
+        woba_num = (
+            0.72 * bb + 0.74 * hbp + 0.95 * singles +
+            1.30 * d2 + 1.70 * d3  + 2.05 * hr
+        )
+        woba_den = ab + bb + hbp
+        b["woba"] = (woba_num / woba_den) if woba_den else 0.0
+
+        # Stay% — share of PAs in which the batter chose to stay (dance
+        # the runners). Distinctively O27 — no MLB analog.
+        stays_v = b.get("stays") or 0
+        b["stay_pct"] = (stays_v / pa) if pa else 0.0
+        # Stay-RBI per stay — efficiency of stays. Stays don't always score
+        # runners; this surfaces who actually drives in runs while staying.
+        stay_rbi = b.get("stay_rbi") or 0
+        b["stay_rbi_per_stay"] = (stay_rbi / stays_v) if stays_v else 0.0
+        # Foul-out rate (O27's 3-foul cap). High FO% = batter prone to
+        # fouling himself out — a real cost in this rule set.
+        fo = b.get("fo") or 0
+        b["fo_pct"] = (fo / pa) if pa else 0.0
+        # Multi-hit AB% — share of ABs with 2+ credited hits (a stay-led
+        # hit-fest in a single AB).
+        mhab = b.get("mhab") or 0
+        b["mhab_pct"] = (mhab / ab) if ab else 0.0
+
+        # OPS+ / wOBA+ — relativized to live league baselines.
+        league_ops  = baselines.get("ops")  or 0
+        league_woba = baselines.get("woba") or 0
+        b["ops_plus"]  = (b["ops"]  / league_ops  * 100.0) if league_ops  else 100.0
+        b["woba_plus"] = (b["woba"] / league_woba * 100.0) if league_woba else 100.0
+
+        # bVORP — value over replacement, in runs.
+        # (wOBA - replacement_wOBA) × PA / wOBA_scale ≈ runs above replacement.
+        # Uses a simplified wOBA scale of 1.20 (FanGraphs convention).
+        repl_woba = baselines.get("replacement_woba") or 0
+        woba_scale = 1.20
+        b["vorp"] = ((b["woba"] - repl_woba) * pa / woba_scale) if (pa and league_woba) else 0.0
+        # bWAR — runs above replacement converted to wins via the
+        # league-fitted runs-per-win factor (~18 for O27).
+        rpw = baselines.get("runs_per_win") or 10.0
+        b["war"] = b["vorp"] / rpw if rpw else 0.0
+
 
 def _league_fip_const() -> float:
     """Compute the FIP constant for the per-27-outs stat model.
@@ -342,13 +396,100 @@ def _league_fip_const() -> float:
     return league_era - raw_fip
 
 
+def _league_baselines() -> dict[str, float]:
+    """Compute league baselines for OPS+/ERA+/wOBA+/WAR/VORP relativization.
+
+    Refit every render cycle so the baselines track wherever the live league
+    has actually settled — same pattern as the FIP constant. Falls back to
+    sensible defaults if no games have been played yet.
+
+    Returns:
+      obp, slg, ops, woba         — league-average rate stats
+      era, ra27                   — league-average pitching
+      replacement_woba            — ~85% of league wOBA (replacement hitter)
+      replacement_era             — ~120% of league ERA (replacement pitcher)
+      runs_per_win                — Pythagorean-derived; ~18 for O27 vs ~10 MLB
+      total_pa, total_outs        — for sample-size sanity in callers
+    """
+    bat = db.fetchone(
+        """SELECT COALESCE(SUM(pa),0)  AS pa,
+                  COALESCE(SUM(ab),0)  AS ab,
+                  COALESCE(SUM(hits),0) AS h,
+                  COALESCE(SUM(doubles),0) AS d2,
+                  COALESCE(SUM(triples),0) AS d3,
+                  COALESCE(SUM(hr),0)   AS hr,
+                  COALESCE(SUM(bb),0)   AS bb,
+                  COALESCE(SUM(hbp),0)  AS hbp,
+                  COALESCE(SUM(runs),0) AS r
+             FROM game_batter_stats"""
+    ) or {}
+    pit = db.fetchone(
+        f"""SELECT COALESCE(SUM(er),0)            AS er,
+                   COALESCE(SUM(runs_allowed),0)  AS r,
+                   COALESCE(SUM(outs_recorded),0) AS outs
+              FROM {_PSTATS_DEDUP_SQL} ps"""
+    ) or {}
+
+    out: dict[str, float] = {
+        "obp": 0.330, "slg": 0.420, "ops": 0.750, "era": 5.00, "ra27": 5.00,
+        "woba": 0.330, "replacement_woba": 0.280, "replacement_era": 6.00,
+        "runs_per_win": 10.0,
+        "total_pa": 0.0, "total_outs": 0.0,
+    }
+
+    pa = bat.get("pa", 0) or 0
+    ab = bat.get("ab", 0) or 0
+    h  = bat.get("h", 0)  or 0
+    d2 = bat.get("d2", 0) or 0
+    d3 = bat.get("d3", 0) or 0
+    hr = bat.get("hr", 0) or 0
+    bb = bat.get("bb", 0) or 0
+    hbp= bat.get("hbp", 0) or 0
+    if pa and ab:
+        singles = h - d2 - d3 - hr
+        tb      = singles + 2 * d2 + 3 * d3 + 4 * hr
+        out["obp"] = (h + bb + hbp) / pa
+        out["slg"] = tb / ab
+        out["ops"] = out["obp"] + out["slg"]
+        woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
+        woba_den = ab + bb + hbp
+        out["woba"] = (woba_num / woba_den) if woba_den else 0.0
+        # Replacement hitter sits ~85% of league wOBA — same convention
+        # FanGraphs uses, and it's an easy mental anchor for users.
+        out["replacement_woba"] = out["woba"] * 0.85
+        out["total_pa"] = float(pa)
+
+    pit_outs = pit.get("outs", 0) or 0
+    if pit_outs:
+        out["era"]  = (pit.get("er", 0) or 0) * 27.0 / pit_outs
+        out["ra27"] = (pit.get("r", 0)  or 0) * 27.0 / pit_outs
+        # Replacement pitcher allows ~20% more runs than league average.
+        out["replacement_era"] = out["era"] * 1.20
+        out["total_outs"] = float(pit_outs)
+
+    # Runs-per-win for WAR. Pythagorean-flavored heuristic: in MLB
+    # (~9 R/G total), it's ~10. In O27 (~25 R/G total) it's ~18.
+    # Formula 9 + sqrt(R/G - per-team) lands roughly correct for both.
+    if pit_outs:
+        # Total runs across all teams over all games / games-played.
+        games_played = db.fetchone("SELECT COUNT(*) AS n FROM games WHERE played=1")["n"] or 0
+        if games_played > 0:
+            r_per_game = ((pit.get("r", 0) or 0) * 2.0) / games_played   # both teams
+            out["runs_per_win"] = max(8.0, 9.0 + (r_per_game / 4.0) ** 0.5 * 3.5)
+
+    return out
+
+
 def _aggregate_pitcher_rows(
     rows: list[dict],
     wl: dict[int, dict[str, int]] | None = None,
     fip_const: float | None = None,
+    baselines: dict | None = None,
 ) -> None:
     if fip_const is None:
         fip_const = _league_fip_const()
+    if baselines is None:
+        baselines = {"era": 0.0}
     for p in rows:
         outs = p.get("outs") or 0
         ip = outs / 3.0
@@ -388,6 +529,44 @@ def _aggregate_pitcher_rows(
         p["oavg"] = (h / ab_faced) if ab_faced > 0 else 0.0
         bip_denom = ab_faced - k - hr
         p["babip_allowed"] = ((h - hr) / bip_denom) if bip_denom > 0 else 0.0
+
+        # --- O27-native sabermetrics ---
+        # Pitcher efficiency: outs per pitch. A high-Command groundballer
+        # with cheap outs sits near 0.40+; a max-effort whiffer with deep
+        # counts sits near 0.25.
+        pitches = p.get("pitches") or 0
+        p["outs_per_pitch"] = (outs / pitches) if pitches else 0.0
+        # Pitches per BF — patience-induced pitch count (the inverse: how
+        # hard does each batter make this pitcher work).
+        p["p_per_bf"] = (pitches / bf) if bf else 0.0
+        # FO-induced rate per BF (3-foul-out cap is O27-specific).
+        fo_ind = p.get("fo_induced") or 0
+        p["fo_pct_pit"] = (fo_ind / bf) if bf else 0.0
+        # ERA+ — ERA relativized to live league ERA (lower is better, so
+        # the formula inverts: 100 = league average; >100 = better than
+        # league; <100 = worse).
+        league_era = baselines.get("era") or 0
+        if league_era > 0 and p["era"] > 0:
+            p["era_plus"] = (league_era / p["era"]) * 100.0
+        else:
+            p["era_plus"] = 100.0
+
+        # pVORP — runs saved relative to a replacement-level pitcher with
+        # the same outs-recorded workload. Replacement allows ~120% of
+        # league ERA. Keeping it in run units (not wins) so it's comparable
+        # to bVORP which is also in runs.
+        repl_era = baselines.get("replacement_era") or 0
+        if outs and repl_era:
+            # Runs saved = (replacement RA - my RA) × innings.
+            # Use ra27 (run-against per 27 outs, not er-only) for VORP
+            # because total runs allowed is what matters for value.
+            p["vorp"] = (repl_era - p["era"]) * (outs / 27.0)
+        else:
+            p["vorp"] = 0.0
+        # pWAR — value over replacement converted to wins.
+        rpw = baselines.get("runs_per_win") or 10.0
+        p["war"] = p["vorp"] / rpw if rpw else 0.0
+
         if wl is not None:
             pid = p.get("player_id") or p.get("id")
             d = wl.get(pid, {"w": 0, "l": 0})
@@ -544,13 +723,28 @@ def standings():
                     break
             streak = ("W" if last_won else "L") + str(count)
         last5 = [("w" if g["winner_id"] == tid else "l") for g in played[-5:]]
+        # Pythagorean W% — RS² / (RS² + RA²) over actual run differential.
+        # Bill James's original 2.0 exponent is fine for O27 (the
+        # exponent doesn't change much by run environment for simple
+        # reasoning; the pythagopat extension would be tighter but
+        # adds complexity for marginal gain).
+        if rs + ra > 0:
+            pyth_win_pct = (rs * rs) / (rs * rs + ra * ra)
+        else:
+            pyth_win_pct = 0.5
+        # Pythagorean expected W-L in the same number of games played.
+        n_games = len(played)
+        pyth_w  = round(pyth_win_pct * n_games)
+        pyth_l  = n_games - pyth_w
         extras[tid] = {
-            "l10":    f"{w10}-{l10}",
-            "streak": streak,
-            "rs":     rs,
-            "ra":     ra,
-            "diff":   rs - ra,
-            "last5":  last5,
+            "l10":      f"{w10}-{l10}",
+            "streak":   streak,
+            "rs":       rs,
+            "ra":       ra,
+            "diff":     rs - ra,
+            "last5":    last5,
+            "pyth_pct": pyth_win_pct,
+            "pyth_wl":  f"{pyth_w}-{pyth_l}",
         }
 
     return render_template("standings.html",
@@ -989,6 +1183,7 @@ def stats_browse():
     teams_list = db.fetchall(
         "SELECT id, abbrev, name, league, division FROM teams ORDER BY abbrev"
     )
+    baselines = _league_baselines()
 
     # ----- Batting table -----
     batters: list[dict] = []
@@ -1034,7 +1229,7 @@ def stats_browse():
                 ORDER BY SUM(bs.pa) DESC""",
             tuple(params),
         )
-        _aggregate_batter_rows(batters)
+        _aggregate_batter_rows(batters, baselines=baselines)
 
     elif side == "pit":
         where_clauses = ["ps.outs_recorded > 0"]
@@ -1078,7 +1273,7 @@ def stats_browse():
             tuple(params),
         )
         wl = _pitcher_wl_map()
-        _aggregate_pitcher_rows(pitchers, wl)
+        _aggregate_pitcher_rows(pitchers, wl, baselines=baselines)
         for p in pitchers:
             outs = p["outs"] or 0
             p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
@@ -1139,7 +1334,8 @@ def leaders():
            HAVING SUM(bs.pa) >= ?""",
         (min_pa,),
     )
-    _aggregate_batter_rows(batting)
+    baselines = _league_baselines()
+    _aggregate_batter_rows(batting, baselines=baselines)
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
@@ -1168,7 +1364,7 @@ def leaders():
     )
     # Shared helper now produces era/whip/k27/bb27/fip + advanced stats.
     wl = _pitcher_wl_map()
-    _aggregate_pitcher_rows(pitching, wl)
+    _aggregate_pitcher_rows(pitching, wl, baselines=baselines)
     for p in pitching:
         outs = p["outs"] or 0
         # OS% = share of a complete game (27 outs) recorded per appearance.

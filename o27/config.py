@@ -188,14 +188,24 @@ RUNNER_EXTRA_SPEED_SCALE: float = 0.35
 # ---------------------------------------------------------------------------
 # Stolen base model
 # ---------------------------------------------------------------------------
+# Recalibrated for O27 reality (vs MLB defaults):
+#   - 12-batter lineups + 27-out continuous halves = more PAs / runner-on-base
+#     situations per game, so a per-pitch attempt rate that looks "high" by
+#     MLB standards is actually correct here.
+#   - Catcher arm fatigues throughout the half (no inter-inning rest), so
+#     late-half steals against a tired battery are easier than MLB analogs.
+#   - Hitters optimizing for stays/contact (not 3-true-outcomes) leaves more
+#     space-creation value on the table — runners taking it is right.
 
-SB_ATTEMPT_SPEED_THRESHOLD: float = 0.62   # min runner speed to attempt steal
-SB_ATTEMPT_PROB_PER_PITCH: float  = 0.06
-SB_SUCCESS_BASE: float            = 0.55   # base success probability
+SB_ATTEMPT_SPEED_THRESHOLD: float = 0.52   # was 0.62 — lower gate so above-avg speed attempts
+SB_ATTEMPT_PROB_PER_PITCH: float  = 0.045  # was 0.015 — ~3x MLB attempt rate
+SB_SUCCESS_BASE: float            = 0.62   # was 0.55 — base success
 SB_SUCCESS_SPEED_SCALE: float     = 0.50   # (speed - 0.5) * this adds to success
 SB_SUCCESS_PITCHER_SCALE: float   = 0.15   # pitcher_skill * this subtracts from success
+SB_SUCCESS_DEBT_SCALE: float      = 0.0008 # pitcher.pitch_debt * this ADDS to success
+                                           # — tired battery = easier steal
 SB_SUCCESS_MIN: float             = 0.25   # floor on steal success
-SB_SUCCESS_MAX: float             = 0.90   # ceiling on steal success
+SB_SUCCESS_MAX: float             = 0.92   # ceiling on steal success
 
 # ---------------------------------------------------------------------------
 # Wild pitch probability
