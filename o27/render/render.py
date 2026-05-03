@@ -484,8 +484,12 @@ class Renderer:
         return f"{prefix}{term}"
 
     def _on_new_pa(self, batter) -> None:
-        s = self._get_stats(batter)
-        s.pa += 1
+        # PA increment moved to per-event in _update_stats: each contact
+        # event (run-chosen, stay-chosen, foul-out, K, walk, HBP) is its
+        # own PA. A single AB can contain up to 3 PAs (max 3 stays from
+        # 0-0). This hook stays as a "first time we see this batter at
+        # the plate" marker — the actual stat increment happens elsewhere.
+        return
 
     def _get_stats(self, player) -> BatterStats:
         if player.player_id not in self._batter_stats:
@@ -760,19 +764,22 @@ class Renderer:
                 s.multi_hit_abs += 1
 
         if etype == "ball" and disp["is_walk"]:
-            # Walk is NOT an at-bat; no multi_hit_abs.
+            # Walk: 1 PA, NOT an at-bat. No multi_hit_abs.
+            s.pa += 1
             s.bb += 1
             s.rbi += runs_scored
 
         elif etype == "foul_tip_caught":
+            # Foul-tip K: 1 PA, 1 AB, 1 K, 1 out.
+            s.pa += 1
             s.ab += 1
             s.k += 1
             s.outs_recorded += 1
             _check_multi_hit()
 
         elif etype == "foul" and disp.get("is_foul_out"):
-            # O27 foul-out: charged as an AB and an out, but NOT a K
-            # (it's its own outcome category — "FO" in the box score).
+            # O27 foul-out: 1 PA, 1 AB, 1 out (FO label, not K).
+            s.pa += 1
             s.ab += 1
             s.fo += 1
             s.outs_recorded += 1
@@ -803,13 +810,16 @@ class Renderer:
             return
 
         elif etype in ("called_strike", "swinging_strike") and disp["is_strikeout"]:
+            # K: 1 PA, 1 AB, 1 K, 1 out.
+            s.pa += 1
             s.ab += 1
             s.k += 1
             s.outs_recorded += 1
             _check_multi_hit()
 
         elif etype == "hit_by_pitch":
-            # HBP is NOT an at-bat; no multi_hit_abs.
+            # HBP: 1 PA, NOT an at-bat. No multi_hit_abs.
+            s.pa += 1
             s.hbp += 1
             s.rbi += runs_scored
 
@@ -820,6 +830,11 @@ class Renderer:
 
             if choice == "stay":
                 if disp.get("stay_valid"):
+                    # Stay: 1 PA. At-bat MAY end if strikes hits 3 — engine
+                    # tracks that. The hit / RBI credit happens here. AB
+                    # increment only happens when the AB actually ends
+                    # (signaled by strikes == 3 in the post-event count).
+                    s.pa += 1
                     s.sty += 1
                     if disp.get("stay_hit_credited"):
                         s.hits += 1
@@ -827,15 +842,25 @@ class Renderer:
                     if runs_scored > 0:
                         s.stay_rbi += runs_scored
                     s.rbi += runs_scored
-                    # At-bat CONTINUES — do NOT check multi_hit_abs yet.
+                    # If the stay's strike-credit pushed the count to 3
+                    # strikes, the AB ends — count as an AB (max-hits stay
+                    # sequence terminates the AB without a batter-out).
+                    if state_after.count.strikes >= 3:
+                        s.ab += 1
+                        _check_multi_hit(terminal_hit=disp.get("stay_hit_credited", False))
+                    # Otherwise AB CONTINUES — do NOT check multi_hit_abs yet.
                 elif disp.get("stay_batter_out"):
-                    # Stay results in out → at-bat ends as an AB, no new hit.
+                    # Stay results in out → AB ends. The only path that
+                    # reaches here now is caught_fly (the rule was simplified
+                    # so 2-strike stays don't out the batter).
+                    s.pa += 1
                     s.ab += 1
                     s.rbi += runs_scored
                     s.outs_recorded += 1
                     _check_multi_hit(terminal_hit=False)
             else:
-                # Run chosen — at-bat ends.
+                # Run chosen — AB ends. 1 PA, 1 AB.
+                s.pa += 1
                 s.ab += 1
                 if is_safety_hit:
                     s.hits += 1

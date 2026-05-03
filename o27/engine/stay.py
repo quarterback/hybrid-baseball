@@ -37,12 +37,16 @@ def stay_results_in_out(state: GameState, caught_fly: bool = False) -> bool:
     Return True if choosing stay on this contact would result in the batter
     being retired (i.e., the stay produces an out on the batter).
 
-    This happens in two cases (§2.6):
-      1. Two-strike count at time of contact.
-      2. Fly ball caught in the air.
+    Per the corrected stay rule:
+      - A stay credits a hit AND uses one strike from the 3-strike budget.
+      - The count carries forward; the AB ends when strikes reach 3, but
+        ending on the strike count is NOT a batter-out — the hit is still
+        credited, the batter just goes back to the dugout. No team out.
+      - The ONLY thing that makes a stay produce a batter-out is a caught
+        fly: the ball was caught in the air, the batter was out on contact,
+        the stay decision is moot.
     """
-    two_strike = state.count.strikes == 2
-    return two_strike or caught_fly
+    return caught_fly
 
 
 # ---------------------------------------------------------------------------

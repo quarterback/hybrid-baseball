@@ -456,24 +456,30 @@ def should_stay_prob(
     # Hard rule: stay unavailable (no runners).
     if not state.runners_on_base:
         return False
-    # Hard rule: home run → always run.
+    # Hard rule: home run → always run (forfeiting 4 bases for a single
+    # is never worth a strike-and-hit credit).
     if is_hr:
         return False
-    # Hard rule: triple → run (too valuable to forfeit).
+    # Hard rule: triple → run (3 bases > 1 base of hit credit + a strike).
     if is_triple:
         return False
-    # Hard rule: hard contact → run.
+    # Hard rule: hard contact → run (likely XBH; same forfeit logic).
     if quality == "hard":
         return False
-    # Hard rule: 2 outs → run.
-    if state.outs == 2:
-        return False
-    # Hard rule: 2-strike count → batter out if stays; heuristic avoids.
-    if state.count.strikes == 2:
-        return False
-    # Hard rule: caught fly → batter out if stays; heuristic avoids.
+    # Hard rule: caught fly → batter is out on contact; stay decision moot.
     if caught_fly:
         return False
+    # NOTE: 2-strike and 2-out cases are NOT hard rules. Per the corrected
+    # stay rule:
+    #   - Stay credits a hit AND uses 1 strike. At 2 strikes, that 3rd-
+    #     strike-from-stay just ends the AB (with the hit credited, NOT
+    #     as a batter-out). So 2-strike stays are *good* on weak/medium
+    #     contact — you trade an AB-end for a free hit credit.
+    #   - 2 outs in the half: same logic. Stay never produces an out, so
+    #     it doesn't end the half. The runners advance, hit credited,
+    #     AB ends if strikes hit 3.
+    # Removing these hard rules lets the AI take the strategically right
+    # action in late-count / late-half situations.
 
     # Medium contact gate: only eligible to stay if RNG < contact_quality_threshold.
     if quality == "medium":

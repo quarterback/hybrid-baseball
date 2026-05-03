@@ -336,6 +336,14 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
     """
     if baselines is None:
         baselines = {"obp": 0.0, "slg": 0.0, "ops": 0.0, "woba": 0.0}
+    # O27 stat semantics:
+    #   AVG, SLG, ISO are PA-denominated (NOT AB-denominated). Stays inside
+    #   an AB make AB-denominated rates produce strange numbers (you can put
+    #   up huge total-base counts inside a small AB sample), so we use PA
+    #   throughout. AB is preserved and surfaced as H/AB — a stayer-vs-runner
+    #   profile metric — but the canonical batting average is H/PA.
+    #   Targets in this run environment: league AVG ~.350-.380, top hitters
+    #   .450+; league SLG ~.550-.600, top sluggers approach 1.000.
     for b in rows:
         ab = b.get("ab") or 0
         h = b.get("h") or 0
@@ -348,22 +356,39 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         hbp = b.get("hbp") or 0
         sb = b.get("sb") or 0
         cs = b.get("cs") or 0
-        b["avg"] = (h / ab) if ab else 0.0
-        # OBP now includes HBP in the numerator. Denominator stays PA
-        # (legacy O27 doesn't persist SF, so the standard
-        # (H+BB+HBP)/(AB+BB+HBP+SF) formula collapses to (H+BB+HBP)/PA).
+        # PAVG = H/PA — the headline batting average in O27. Bounded
+        # 0.000-1.000. League-wide. (The legacy "avg" key is kept as an
+        # alias for templates / leader queries that haven't migrated yet.)
+        b["pavg"] = (h / pa) if pa else 0.0
+        b["avg"]  = b["pavg"]
+        # OBP — already PA-denominated as in MLB.
         b["obp"] = ((h + bb + hbp) / pa) if pa else 0.0
+        # SLG = total bases / PA (O27 semantic). Per-PA reads cleanly across
+        # multi-hit ABs; bounded ~0..1 (a hitter averaging a base per PA is
+        # at the ceiling of slugging in this sport).
         singles = h - d2 - d3 - hr
         tb = singles + 2 * d2 + 3 * d3 + 4 * hr
-        b["slg"] = (tb / ab) if ab else 0.0
+        b["slg"] = (tb / pa) if pa else 0.0
         b["ops"] = b["obp"] + b["slg"]
-        # Advanced rate stats.
-        b["iso"]    = (b["slg"] - b["avg"]) if ab else 0.0
-        # BABIP: balls in play that fall for hits. Excludes HR (out of play),
-        # K (no contact), and HR-trail HRs from the AB denominator.
-        # Standard formula: (H - HR) / (AB - K - HR + SF). SF unavailable
-        # here, so we use (AB - K - HR) which is the closest stable proxy.
-        bip_denom = ab - k - hr
+        # BAVG = H/AB — the secondary "stayer profile" metric. Inherits
+        # MLB's batting-average semantics (per-AB rate). In O27 it can
+        # exceed 1.000 because multi-hit ABs are real (max 3 hits in 1 AB
+        # via stays). Read together with PAVG it diagnoses style:
+        #   high PAVG, BAVG ≈ 1.000  → slap-and-go contact hitter
+        #   high PAVG, BAVG > 1.0   → productive stayer
+        #   low PAVG,  BAVG > 1.0   → tries to stay but gets caught out
+        b["bavg"]     = (h / ab) if ab else 0.0
+        b["h_per_ab"] = b["bavg"]   # legacy alias
+        # Stay differential — how much of the BAVG comes from stays.
+        b["stay_diff"] = b["bavg"] - b["pavg"]
+        # ISO = SLG - AVG (still works; both PA-denominated).
+        b["iso"]    = b["slg"] - b["avg"]
+        # BABIP redefined for O27: hits-on-balls-in-play / balls-in-play,
+        # where a "ball in play" = any contact event (run-chosen and stay-
+        # chosen). Stays count as both numerator (the hit was credited)
+        # and denominator (a ball was put in play). The denominator is
+        # PA - K - BB - HBP - HR (subtract events that aren't BIPs).
+        bip_denom = pa - k - bb - hbp - hr
         b["babip"]  = ((h - hr) / bip_denom) if bip_denom > 0 else 0.0
         b["k_pct"]  = (k  / pa) if pa else 0.0
         b["bb_pct"] = (bb / pa) if pa else 0.0
@@ -374,18 +399,19 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         b["sb_pct"] = (sb / attempts) if attempts else 0.0
 
         # --- O27-native sabermetrics ---
-        # wOBA with O27-tuned linear weights: 1B and BB nudged up vs MLB
-        # because the stay mechanic lets baserunners advance more freely
-        # on singles and walks, raising those events' run-value contribution.
-        # HR weight slightly trimmed because runners are already moving
-        # easily, so a HR's clearing-the-bases edge is smaller here.
+        # wOBA with O27-tuned linear weights, PA-denominated. 1B and BB
+        # nudged up vs MLB because the stay mechanic lets baserunners
+        # advance more freely on singles and walks, raising those events'
+        # run-value contribution. HR weight slightly trimmed because
+        # runners are already moving easily under stays.
+        # Denominator is PA (NOT AB+BB+HBP) since each PA represents one
+        # opportunity; stays inside an AB are separate PAs.
         singles = h - d2 - d3 - hr
         woba_num = (
             0.72 * bb + 0.74 * hbp + 0.95 * singles +
             1.30 * d2 + 1.70 * d3  + 2.05 * hr
         )
-        woba_den = ab + bb + hbp
-        b["woba"] = (woba_num / woba_den) if woba_den else 0.0
+        b["woba"] = (woba_num / pa) if pa else 0.0
 
         # Stay% — share of PAs in which the batter chose to stay (dance
         # the runners). Distinctively O27 — no MLB analog.
@@ -511,13 +537,16 @@ def _league_baselines() -> dict[str, float]:
     bb = bat.get("bb", 0) or 0
     hbp= bat.get("hbp", 0) or 0
     if pa and ab:
+        # PA-denominated rate stats (O27 semantic — see _aggregate_batter_rows).
         singles = h - d2 - d3 - hr
         tb      = singles + 2 * d2 + 3 * d3 + 4 * hr
         out["obp"] = (h + bb + hbp) / pa
-        out["slg"] = tb / ab
+        out["slg"] = tb / pa
         out["ops"] = out["obp"] + out["slg"]
+        # wOBA stays PA-denominated as in MLB; weights tuned for O27 in the
+        # batter aggregator and mirrored here so league mean tracks.
         woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
-        woba_den = ab + bb + hbp
+        woba_den = pa   # NOT (AB + BB + HBP) — full PA-denominator in O27.
         out["woba"] = (woba_num / woba_den) if woba_den else 0.0
         # Replacement hitter sits ~85% of league wOBA — same convention
         # FanGraphs uses, and it's an easy mental anchor for users.

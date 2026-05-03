@@ -131,10 +131,19 @@ def _end_at_bat(state: GameState) -> list[str]:
     return log
 
 
-def _fresh_count(state: GameState) -> list[str]:
-    """Reset count to 0-0 for a stay continuation."""
-    state.count.reset()
-    return ["  Stay — fresh 0-0 count."]
+def _stay_credit_strike(state: GameState) -> list[str]:
+    """Stay continuation: spends one strike from the batter's 3-strike
+    budget and logs the new count.
+
+    Per O27 rules, every contact event uses one of the batter's 3 strikes,
+    whether they ran or stayed. A stay-chosen contact credits a hit AND
+    advances the strike counter; the count carries forward across stays
+    (no reset). At 3 strikes the AB ends. This is what makes multi-hit
+    ABs bounded (max 3 hits, only from a 0-0 start) and what makes
+    staying a real cost rather than a free runner-mover.
+    """
+    state.count.strikes += 1
+    return [f"  Stay — strike spent. Count: {state.count}."]
 
 
 # ---------------------------------------------------------------------------
@@ -440,9 +449,17 @@ def _resolve_contact(
         log.append(f"  Hit credited to {batter.name} (stay). "
                    f"Total this AB: {state.current_at_bat_hits}.")
 
-    # Fresh count — at-bat continues.
-    log += _fresh_count(state)
-    # Note: do NOT call _end_at_bat — the at-bat is still in progress.
+    # Spend one strike from the batter's 3-strike budget and check whether
+    # the AB has used all 3. If so, the AB ends — but NOT as a batter-out:
+    # the hits are credited, runners advanced, RBIs counted; the batter
+    # just doesn't get to bat again this trip.
+    log += _stay_credit_strike(state)
+    if state.count.strikes >= 3:
+        log.append(f"  At-bat ends — {batter.name} used all 3 strikes "
+                   f"(max-hits stay sequence; no batter-out).")
+        log += _end_at_bat(state)
+    # Note: when AB doesn't end, do NOT call _end_at_bat — the at-bat is
+    # still in progress with the new (carried-forward) count.
     return log
 
 

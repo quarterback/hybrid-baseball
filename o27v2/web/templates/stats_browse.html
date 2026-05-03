@@ -89,8 +89,14 @@
       <th class="num">HBP</th>
       <th class="num">SB</th><th class="num">CS</th>
       <th class="num">FO</th>
-      <th class="num">AVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
-      <th class="num">ISO</th><th class="num">BABIP</th>
+      <th class="num" title="Plate Average — Hits per Plate Appearance. The headline O27 batting average. League ~.350-.380, top hitters .450+.">PAVG</th>
+      <th class="num">OBP</th>
+      <th class="num" title="Slugging — Total Bases per Plate Appearance">SLG</th>
+      <th class="num">OPS</th>
+      <th class="num" title="Batting Average — Hits per At-Bat. Stayer profile metric: can exceed 1.000 thanks to multi-hit ABs.">BAVG</th>
+      <th class="num" title="Stay differential = BAVG - PAVG. Quantifies how much of a hitter's value comes from stays.">Δstay</th>
+      <th class="num">ISO</th>
+      <th class="num">BABIP</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th><th class="num">BB/K</th>
       <th class="num" title="Weighted on-base average — O27-tuned linear weights">wOBA</th>
       <th class="num" title="OPS relative to league avg (100 = avg)">OPS+</th>
@@ -125,10 +131,12 @@
       <td class="num">{{ b.sb or 0 }}</td>
       <td class="num">{{ b.cs or 0 }}</td>
       <td class="num">{{ b.fo or 0 }}</td>
-      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.avg) }}">{{ '%.3f'|format(b.avg) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.pavg) }}">{{ '%.3f'|format(b.pavg) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.obp) }}">{{ '%.3f'|format(b.obp) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.slg) }}">{{ '%.3f'|format(b.slg) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.ops) }}">{{ '%.3f'|format(b.ops) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.bavg) }}">{{ '%.3f'|format(b.bavg) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_diff) }}">{{ '%+.3f'|format(b.stay_diff) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.iso) }}">{{ '%.3f'|format(b.iso) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.babip) }}">{{ '%.3f'|format(b.babip) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.k_pct) }}">{{ '%.1f'|format(b.k_pct * 100) }}%</td>
