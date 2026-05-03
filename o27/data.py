@@ -213,12 +213,30 @@ def get_team(abbrev: str) -> Optional[dict]:
     return None
 
 
-def get_player(player_id: str) -> Optional[dict]:
+def player_id(team_abbrev: str, player_name: str) -> str:
+    """Canonical player ID: TEAM_Name_With_Underscores (dots removed)."""
+    return f"{team_abbrev}_{player_name.replace(' ', '_').replace('.', '')}"
+
+
+def get_player(pid: str) -> Optional[dict]:
+    """Look up a player by canonical player_id (e.g. 'NYY_Christopher_Almora')."""
     for t in load_teams():
         for p in t["players"]:
-            pid = f"{t['abbrev']}_{p['name'].replace(' ', '_')}"
-            if pid == player_id or p["name"] == player_id:
-                return {"team": t, "player": p, "player_id": pid}
+            if player_id(t["abbrev"], p["name"]) == pid:
+                return {"team": t, "player": p, "player_id": player_id(t["abbrev"], p["name"])}
+    return None
+
+
+def get_player_by_team_slug(team_abbrev: str, slug: str) -> Optional[dict]:
+    """Look up player by team abbrev + lowercase slug (backward-compat alias)."""
+    team = get_team(team_abbrev)
+    if not team:
+        return None
+    for p in team["players"]:
+        p_slug = p["name"].lower().replace(" ", "_").replace(".", "")
+        if p_slug == slug:
+            pid = player_id(team_abbrev, p["name"])
+            return {"team": team, "player": p, "player_id": pid}
     return None
 
 

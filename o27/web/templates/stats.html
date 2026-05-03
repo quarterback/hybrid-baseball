@@ -33,7 +33,7 @@
         {% for p in by_hits %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
+          <td><a href="/player/{{ p.team }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.hits }}</td>
           <td class="r mono dim">{{ p.pa }}</td>
@@ -61,7 +61,7 @@
         {% for p in by_avg %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
+          <td><a href="/player/{{ p.team }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ "%.3f"|format(p.avg) }}</td>
           <td class="r mono dim">{{ p.ab }}</td>
@@ -86,7 +86,7 @@
         {% for p in by_hr %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
+          <td><a href="/player/{{ p.team }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.hr }}</td>
           <td class="r mono dim">{{ p.rbi }}</td>
@@ -110,7 +110,7 @@
         {% for p in by_rbi %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
+          <td><a href="/player/{{ p.team }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.rbi }}</td>
           <td class="r mono dim">{{ p.hr }}</td>
@@ -134,7 +134,7 @@
         {% for p in by_sty %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
+          <td><a href="/player/{{ p.team }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.sty }}</td>
           <td class="r mono dim">{{ p.hits }}</td>
@@ -158,7 +158,7 @@
         {% for p in by_k %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
+          <td><a href="/player/{{ p.team }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.k }}</td>
           <td class="r mono dim">{{ p.pa }}</td>

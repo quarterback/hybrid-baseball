@@ -326,15 +326,50 @@ def sim():
         home_    = (request.form.get("home",     "") or "").strip() or None
         # Auto-pick teams if not specified (topbar quick-sim)
         if not visitors or not home_:
-            teams = data.load_teams()
-            if len(teams) >= 2:
-                pair = random.sample(teams, 2)
+            teams_list = data.load_teams()
+            if len(teams_list) >= 2:
+                pair = random.sample(teams_list, 2)
                 visitors = visitors or pair[0]["abbrev"]
                 home_    = home_    or pair[1]["abbrev"]
-        v_label = visitors or "?"
-        h_label = home_ or "?"
-        flash(f"▶ Simulating {v_label} @ {h_label} — seed {seed}", "info")
-        return redirect(url_for("game", seed=seed, visitors=visitors, home=home_))
+
+        # Run the game inline so we can flash the actual score
+        final_state, log_lines, renderer = _run(seed, visitors, home_)
+        v_score   = final_state.score.get("visitors", 0)
+        h_score   = final_state.score.get("home", 0)
+        winner_id = final_state.winner or ""
+        v_abbrev  = visitors or "FOX"
+        h_abbrev  = home_    or "BEA"
+        game_id   = data.make_game_id(seed, v_abbrev, h_abbrev)
+
+        v_batting, h_batting, v_pitching, h_pitching = _structured_stats(final_state, renderer)
+        v_hits = sum(r.get("hits", 0) for r in v_batting)
+        h_hits = sum(r.get("hits", 0) for r in h_batting)
+        wp, lp = _winner_loser_pitchers(winner_id, v_pitching, h_pitching)
+
+        data.store_game(game_id, {
+            "game_id":        game_id, "seed": seed,
+            "visitors_abbrev": v_abbrev, "home_abbrev": h_abbrev,
+            "visitors_name":  final_state.visitors.name,
+            "home_name":      final_state.home.name,
+            "v_score": v_score, "h_score": h_score,
+            "winner_id": winner_id,
+            "super_flag": final_state.super_inning_number > 0,
+            "v_batting": v_batting, "h_batting": h_batting,
+            "v_pitching": v_pitching, "h_pitching": h_pitching,
+            "winner_pitcher": wp, "loser_pitcher": lp,
+        })
+
+        flash(
+            f"▶ {v_abbrev} {v_score}–{h_score} {h_abbrev} "
+            f"(W: {wp}) — seed {seed}",
+            "info",
+        )
+
+        # Redirect back to the originating page if one was provided
+        next_url = (request.form.get("next", "") or "").strip()
+        if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+            return redirect(next_url)
+        return redirect(url_for("view_game", game_id=game_id))
 
     teams = data.load_teams()
     roster_map = {
@@ -567,29 +602,13 @@ def team_page(abbrev):
     )
 
 
-@app.route("/player/<team_abbrev>/<slug>")
-def player_page(team_abbrev, slug):
-    team = data.get_team(team_abbrev)
-    if not team:
-        return redirect(url_for("teams_page"))
-
-    player = None
-    for p in team["players"]:
-        p_slug = p["name"].lower().replace(" ", "_").replace(".", "")
-        if p_slug == slug:
-            player = p
-            break
-
-    if not player:
-        return redirect(url_for("team_page", abbrev=team_abbrev))
-
-    stats = data.get_player_stats(team_abbrev, player["name"])
-
+def _player_game_log(team_abbrev: str, player_name: str, limit: int = 10) -> list[dict]:
+    """Build a per-game batting log for one player."""
     game_log: list[dict] = []
     for g in data.get_schedule(100, team=team_abbrev):
         side = "v" if g.get("visitors_abbrev") == team_abbrev else "h"
         for row in g.get(f"{side}_batting", []):
-            if row["name"] == player["name"] and row.get("pa", 0) > 0:
+            if row["name"] == player_name and row.get("pa", 0) > 0:
                 game_log.append({
                     "game_id": g["game_id"],
                     "opp":     g["home_abbrev"] if side == "v" else g["visitors_abbrev"],
@@ -597,13 +616,32 @@ def player_page(team_abbrev, slug):
                     **row,
                 })
                 break
-        if len(game_log) >= 10:
+        if len(game_log) >= limit:
             break
+    return game_log
 
+
+@app.route("/player/<player_id>")
+def player_page(player_id):
+    """Primary player route — canonical ID e.g. NYY_Christopher_Almora."""
+    result = data.get_player(player_id)
+    if not result:
+        return redirect(url_for("teams_page"))
+    team   = result["team"]
+    player = result["player"]
+    stats    = data.get_player_stats(team["abbrev"], player["name"])
+    game_log = _player_game_log(team["abbrev"], player["name"])
     return render_template("player.html",
-        team=team, player=player,
-        stats=stats, game_log=game_log,
-    )
+        team=team, player=player, stats=stats, game_log=game_log)
+
+
+@app.route("/player/<team_abbrev>/<slug>")
+def player_page_alias(team_abbrev, slug):
+    """Backward-compat alias — redirects to canonical /player/<player_id>."""
+    result = data.get_player_by_team_slug(team_abbrev, slug)
+    if result:
+        return redirect(url_for("player_page", player_id=result["player_id"]))
+    return redirect(url_for("team_page", abbrev=team_abbrev))
 
 
 @app.route("/players")

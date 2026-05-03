@@ -294,8 +294,9 @@
     </span>
   </div>
   <div class="topbar-right">
-    {# POST form so the SIM button triggers a real sim action with flash #}
+    {# POST form — runs a game inline; `next` returns to the current page #}
     <form method="post" action="/sim" style="display:inline;">
+      <input type="hidden" name="next" value="{{ request.path }}">
       <button type="submit" class="btn-sim">▶ Sim Game</button>
     </form>
   </div>

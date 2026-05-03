@@ -64,7 +64,7 @@
         {% set slug = p.name.lower().replace(' ','_').replace('.','') %}
         <tr{% if p.is_joker %} class="jr"{% endif %}>
           <td>
-            <a href="/player/{{ team.abbrev }}/{{ slug }}" class="link">{{ p.name }}</a>
+            <a href="/player/{{ team.abbrev }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a>
             {% if p.is_joker and p.joker_archetype %}
             <span class="ab ab-{{ p.joker_archetype | lower }}">{{ p.joker_archetype }}</span>
             {% endif %}
@@ -94,7 +94,7 @@
         {% for p in team.players if not p.is_joker %}
         <tr>
           <td class="dim mono">{{ order_num.n }}</td>
-          <td><a href="/player/{{ team.abbrev }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
+          <td><a href="/player/{{ team.abbrev }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td class="pos">{{ p.position }}</td>
           <td class="r mono">{{ "%.3f"|format(p.skill) }}</td>
           <td class="r mono">{{ "%.3f"|format(p.speed) }}</td>
@@ -107,7 +107,7 @@
         <tr class="jr">
           <td class="dim mono">J{{ loop.index }}</td>
           <td>
-            <a href="/player/{{ team.abbrev }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a>
+            <a href="/player/{{ team.abbrev }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a>
             {% if p.joker_archetype %}<span class="ab ab-{{ p.joker_archetype | lower }}">{{ p.joker_archetype }}</span>{% endif %}
           </td>
           <td class="pos">{{ p.position }}</td>
@@ -145,8 +145,7 @@
         {% for p in team_batting %}
         <tr{% if p.is_joker %} class="jr"{% endif %}>
           <td>
-            {% set slug = p.name.lower().replace(' ','_').replace('.','') %}
-            <a href="/player/{{ team.abbrev }}/{{ slug }}" class="link">{{ p.name }}</a>
+            <a href="/player/{{ team.abbrev }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a>
             {% if p.is_joker and p.archetype %}<span class="ab ab-{{ p.archetype | lower }}">{{ p.archetype }}</span>{% endif %}
           </td>
           <td class="pos">{{ p.pos }}</td>
