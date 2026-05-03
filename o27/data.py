@@ -29,6 +29,30 @@ _GAMES: dict[str, dict] = {}        # game_id -> full game result dict
 _RECENT: list[str]      = []        # ordered list of game_ids (oldest first / newest last)
 _MAX_RECENT             = 200
 
+
+# ---------------------------------------------------------------------------
+# o27v2 bridge
+#
+# When the o27v2 SQLite DB is populated (i.e. the v2 league simulator is the
+# primary game source), all stats-site queries below transparently delegate to
+# o27/v2_bridge.py so /stats/standings, /stats/schedule, /stats/leaders,
+# /stats/game/<id>, /stats/team/<abbrev>, /stats/player/<id> all reflect live
+# v2 league data. The in-memory _RECENT/_GAMES paths remain the fallback for
+# the legacy operational GUI when v2 is not active.
+# ---------------------------------------------------------------------------
+
+def _v2():
+    """Lazy import to avoid a circular dependency at module load time."""
+    from o27 import v2_bridge
+    return v2_bridge
+
+
+def _v2_active() -> bool:
+    try:
+        return _v2().is_active()
+    except Exception:
+        return False
+
 _teams_cache:      list[dict] | None = None
 _name_pools_cache: dict       | None = None
 
@@ -137,6 +161,8 @@ def _generate_roster(team_seed: int) -> list[dict]:
 
 def load_teams() -> list[dict]:
     """Load all teams with generated rosters. Cached after first call."""
+    if _v2_active():
+        return _v2().load_teams()
     global _teams_cache
     if _teams_cache is not None:
         return _teams_cache
@@ -207,6 +233,8 @@ def _engine_team_to_dict(team, abbrev: str, city: str = "", level: str = "") -> 
 # ---------------------------------------------------------------------------
 
 def get_team(abbrev: str) -> Optional[dict]:
+    if _v2_active():
+        return _v2().get_team(abbrev)
     for t in load_teams():
         if t["abbrev"] == abbrev:
             return t
@@ -220,6 +248,8 @@ def player_id(team_abbrev: str, player_name: str) -> str:
 
 def get_player(pid: str) -> Optional[dict]:
     """Look up a player by canonical player_id (e.g. 'NYY_Christopher_Almora')."""
+    if _v2_active():
+        return _v2().get_player(pid)
     for t in load_teams():
         for p in t["players"]:
             if player_id(t["abbrev"], p["name"]) == pid:
@@ -229,6 +259,8 @@ def get_player(pid: str) -> Optional[dict]:
 
 def get_player_by_team_slug(team_abbrev: str, slug: str) -> Optional[dict]:
     """Look up player by team abbrev + lowercase slug (backward-compat alias)."""
+    if _v2_active():
+        return _v2().get_player_by_team_slug(team_abbrev, slug)
     team = get_team(team_abbrev)
     if not team:
         return None
@@ -242,6 +274,8 @@ def get_player_by_team_slug(team_abbrev: str, slug: str) -> Optional[dict]:
 
 def get_standings() -> list[dict]:
     """Compute win/loss standings with GB, L10, Streak."""
+    if _v2_active():
+        return _v2().get_standings()
     record: dict[str, dict] = {}
     team_hist: dict[str, list[bool]] = {}  # True=W, False=L, oldest→newest
 
@@ -308,6 +342,8 @@ def get_standings() -> list[dict]:
 
 def get_schedule(limit: int = 40, team: str = "") -> list[dict]:
     """Return recent games newest-first, optionally filtered by team abbrev."""
+    if _v2_active():
+        return _v2().get_schedule(limit, team)
     games = [_GAMES[gid] for gid in reversed(_RECENT) if gid in _GAMES]
     if team:
         games = [g for g in games
@@ -317,6 +353,8 @@ def get_schedule(limit: int = 40, team: str = "") -> list[dict]:
 
 def get_upcoming(n: int = 3) -> list[dict]:
     """Return n suggested upcoming matchups."""
+    if _v2_active():
+        return _v2().get_upcoming(n)
     teams = load_teams()
     if len(teams) < 2:
         return []
@@ -337,11 +375,15 @@ def get_upcoming(n: int = 3) -> list[dict]:
 
 
 def get_game(game_id: str) -> Optional[dict]:
+    if _v2_active():
+        return _v2().get_game(game_id)
     return _GAMES.get(game_id)
 
 
 def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
     """Aggregate batting stats across all stored games."""
+    if _v2_active():
+        return _v2().get_leaders(stat, limit)
     agg: dict[str, dict] = {}
     for gid in _RECENT:
         g = _GAMES.get(gid)
@@ -383,6 +425,8 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
     """Aggregate pitching stats across all stored games.
     stat: 'k' (strikeouts), 'outs' (outs share), 'era' (computed)
     """
+    if _v2_active():
+        return _v2().get_pitching_leaders(stat, limit)
     agg: dict[str, dict] = {}  # 'name|team' → dict
 
     for gid in _RECENT:
@@ -438,6 +482,8 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
 
 def get_team_batting(abbrev: str) -> list[dict]:
     """Aggregate batting stats for all players on a team."""
+    if _v2_active():
+        return _v2().get_team_batting(abbrev)
     agg: dict[str, dict] = {}
     for gid in _RECENT:
         g = _GAMES.get(gid)
@@ -474,6 +520,8 @@ def get_team_batting(abbrev: str) -> list[dict]:
 
 def get_team_pitching(abbrev: str) -> list[dict]:
     """Aggregate pitching stats for all pitchers on a team."""
+    if _v2_active():
+        return _v2().get_team_pitching(abbrev)
     agg: dict[str, dict] = {}
     for gid in _RECENT:
         g = _GAMES.get(gid)
@@ -516,6 +564,8 @@ def get_team_pitching(abbrev: str) -> list[dict]:
 
 def get_player_stats(team_abbrev: str, player_name: str) -> Optional[dict]:
     """Return accumulated batting stats for one player."""
+    if _v2_active():
+        return _v2().get_player_stats(team_abbrev, player_name)
     agg: dict = {}
     for gid in _RECENT:
         g = _GAMES.get(gid)
@@ -550,6 +600,8 @@ def get_player_stats(team_abbrev: str, player_name: str) -> Optional[dict]:
 def get_pitcher_game_log(team_abbrev: str, player_name: str,
                          limit: int = 15) -> list[dict]:
     """Return per-game pitching entries for one pitcher (newest first)."""
+    if _v2_active():
+        return _v2().get_pitcher_game_log(team_abbrev, player_name, limit)
     log: list[dict] = []
     for gid in reversed(_RECENT):
         g = _GAMES.get(gid)
@@ -588,6 +640,92 @@ def get_pitcher_game_log(team_abbrev: str, player_name: str,
 # ---------------------------------------------------------------------------
 # Game storage
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Neutral helpers — used by the stats site so it doesn't reach into
+# _RECENT / _GAMES directly. These dispatch to v2_bridge when active.
+# ---------------------------------------------------------------------------
+
+def has_data() -> bool:
+    """True iff at least one game (v2 or in-memory) is available for stats."""
+    if _v2_active():
+        return _v2().has_data()
+    return bool(_RECENT)
+
+
+def total_games() -> int:
+    if _v2_active():
+        return _v2().total_games()
+    return len(_RECENT)
+
+
+def recent_game_ids(limit: int = 200) -> list[str]:
+    """Return played game IDs newest → oldest, for prev/next navigation."""
+    if _v2_active():
+        return _v2().recent_game_ids(limit)
+    return list(reversed(_RECENT[-limit:]))
+
+
+def avg_scores() -> tuple[float, float]:
+    """Return (avg visitors score, avg home score) across played games."""
+    if _v2_active():
+        from o27v2 import db as _v2db
+        row = _v2db.fetchone(
+            "SELECT AVG(away_score) AS av, AVG(home_score) AS ah, "
+            "COUNT(*) AS n FROM games WHERE played = 1"
+        )
+        if not row or not row["n"]:
+            return 0.0, 0.0
+        return round(row["av"] or 0.0, 1), round(row["ah"] or 0.0, 1)
+    games = [_GAMES[gid] for gid in _RECENT if gid in _GAMES]
+    if not games:
+        return 0.0, 0.0
+    av = round(sum(g["v_score"] for g in games) / len(games), 1)
+    ah = round(sum(g["h_score"] for g in games) / len(games), 1)
+    return av, ah
+
+
+def get_stays_leaders(limit: int = 10) -> list[dict]:
+    if _v2_active():
+        return _v2().get_stays_leaders(limit)
+    agg: dict[str, dict] = {}
+    for gid in _RECENT:
+        g = _GAMES.get(gid)
+        if not g:
+            continue
+        for side in ("v", "h"):
+            batting = g.get(f"{side}_batting", [])
+            abbrev  = g.get("visitors_abbrev" if side == "v" else "home_abbrev", "")
+            for row in batting:
+                key = f"{row['name']}|{abbrev}"
+                if key not in agg:
+                    agg[key] = {"name": row["name"], "team": abbrev, "stays": 0}
+                agg[key]["stays"] += row.get("stays", 0)
+    return sorted(agg.values(), key=lambda x: -x["stays"])[:limit]
+
+
+def get_wins_leaders(limit: int = 10) -> list[dict]:
+    if _v2_active():
+        return _v2().get_wins_leaders(limit)
+    wins: dict[str, dict] = {}
+    for gid in _RECENT:
+        g = _GAMES.get(gid)
+        if not g:
+            continue
+        wp = g.get("winner_pitcher")
+        if not wp or wp == "—":
+            continue
+        winner_id = g.get("winner_id", "")
+        abbrev = g.get(
+            "visitors_abbrev" if winner_id == "visitors" else "home_abbrev", ""
+        )
+        key = f"{wp}|{abbrev}"
+        if key not in wins:
+            wins[key] = {"name": wp, "team": abbrev, "wins": 0, "g": 0}
+        wins[key]["wins"] += 1
+        wins[key]["g"] += 1
+    return sorted(wins.values(), key=lambda x: -x["wins"])[:limit]
+
 
 def store_game(game_id: str, result: dict) -> None:
     _GAMES[game_id] = result

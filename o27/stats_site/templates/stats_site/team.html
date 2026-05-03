@@ -15,7 +15,7 @@
   <h1>{{ team.display|upper }}</h1>
   <div class="subtitle">
     {% if record.gp > 0 %}
-    {{ record.w }}-{{ record.l }} &middot; .{{ "%.3f"|format(record.pct)[2:] }} &middot;
+    {{ record.w }}-{{ record.l }} &middot; .{{ ("%.3f"|format(record.pct))[2:] }} &middot;
     {% if record.gb and record.gb != '—' %}{{ record.gb }} GB &middot; {% endif %}
     Streak: <span class="{% if record.streak.startswith('W') %}w{% elif record.streak.startswith('L') %}l{% endif %}">{{ record.streak }}</span>
     {% else %}

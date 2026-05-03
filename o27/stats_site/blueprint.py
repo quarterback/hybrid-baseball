@@ -32,19 +32,13 @@ stats_bp = Blueprint(
 @stats_bp.route("")
 @stats_bp.route("/")
 def home():
-    any_data = bool(data._RECENT)
-    total_games = len(data._RECENT)
+    any_data = data.has_data()
+    total_games = data.total_games()
     standings = data.get_standings()[:8] if any_data else []
     recent_games = data.get_schedule(10) if any_data else []
     bat_leaders = data.get_leaders("hits", 5) if any_data else []
     teams = data.load_teams()
-
-    avg_v = avg_h = 0
-    if any_data:
-        games = [data._GAMES[gid] for gid in data._RECENT if gid in data._GAMES]
-        if games:
-            avg_v = round(sum(g["v_score"] for g in games) / len(games), 1)
-            avg_h = round(sum(g["h_score"] for g in games) / len(games), 1)
+    avg_v, avg_h = data.avg_scores() if any_data else (0, 0)
 
     return render_template(
         "stats_site/home.html",
@@ -71,7 +65,7 @@ def standings():
         "stats_site/standings.html",
         section="standings",
         rows=rows,
-        total_games=len(data._RECENT),
+        total_games=data.total_games(),
     )
 
 
@@ -110,14 +104,15 @@ def game(game_id):
     v_hits = sum(r.get("hits", 0) for r in v_batting)
     h_hits = sum(r.get("hits", 0) for r in h_batting)
 
-    # Prev / next game navigation from _RECENT list
-    recent = list(data._RECENT)
+    # Prev / next game navigation. recent_game_ids() returns newest → oldest,
+    # so "previous game" (older) is at idx+1 and "next game" (newer) is at idx-1.
+    recent = data.recent_game_ids()
     try:
         idx = recent.index(game_id)
     except ValueError:
         idx = -1
-    prev_game_id = recent[idx - 1] if idx > 0 else None
-    next_game_id = recent[idx + 1] if idx >= 0 and idx < len(recent) - 1 else None
+    prev_game_id = recent[idx + 1] if idx >= 0 and idx + 1 < len(recent) else None
+    next_game_id = recent[idx - 1] if idx > 0 else None
 
     return render_template(
         "stats_site/game.html",
@@ -266,49 +261,9 @@ def players():
 # League Leaders
 # ---------------------------------------------------------------------------
 
-def _get_stays_leaders(limit: int = 10) -> list[dict]:
-    """Aggregate STY (stays) across all games."""
-    agg: dict[str, dict] = {}
-    for gid in data._RECENT:
-        g = data._GAMES.get(gid)
-        if not g:
-            continue
-        for side in ("v", "h"):
-            batting = g.get(f"{side}_batting", [])
-            abbrev = g.get("visitors_abbrev" if side == "v" else "home_abbrev", "")
-            for row in batting:
-                key = f"{row['name']}|{abbrev}"
-                if key not in agg:
-                    agg[key] = {"name": row["name"], "team": abbrev, "stays": 0}
-                agg[key]["stays"] += row.get("stays", 0)
-    rows = sorted(agg.values(), key=lambda x: -x["stays"])
-    return rows[:limit]
-
-
-def _get_wins_leaders(limit: int = 10) -> list[dict]:
-    """Aggregate wins for pitchers (winning pitcher of each game)."""
-    wins: dict[str, dict] = {}
-    for gid in data._RECENT:
-        g = data._GAMES.get(gid)
-        if not g:
-            continue
-        wp = g.get("winner_pitcher")
-        if not wp or wp == "—":
-            continue
-        winner_id = g.get("winner_id", "")
-        abbrev = g.get("visitors_abbrev" if winner_id == "visitors" else "home_abbrev", "")
-        key = f"{wp}|{abbrev}"
-        if key not in wins:
-            wins[key] = {"name": wp, "team": abbrev, "wins": 0, "g": 0}
-        wins[key]["wins"] += 1
-        wins[key]["g"] += 1
-    rows = sorted(wins.values(), key=lambda x: -x["wins"])
-    return rows[:limit]
-
-
 @stats_bp.route("/leaders")
 def leaders():
-    any_data = bool(data._RECENT)
+    any_data = data.has_data()
     return render_template(
         "stats_site/leaders.html",
         section="leaders",
@@ -317,9 +272,9 @@ def leaders():
         by_hits=data.get_leaders("hits", 10),
         by_rbi=data.get_leaders("rbi", 10),
         by_bb=data.get_leaders("bb", 10),
-        by_sty=_get_stays_leaders(10),
+        by_sty=data.get_stays_leaders(10),
         by_pit_era=data.get_pitching_leaders("era", 10),
-        by_pit_w=_get_wins_leaders(10),
+        by_pit_w=data.get_wins_leaders(10),
         by_pit_k=data.get_pitching_leaders("k", 10),
         by_pit_whip=data.get_pitching_leaders("whip", 10),
     )
