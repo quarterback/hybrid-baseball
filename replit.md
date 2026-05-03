@@ -86,7 +86,7 @@ Tables: teams, players (with age, injured_until, il_tier), games, game_batter_st
 
 ### Quality gates
 - **Stat invariants** (`tests/test_stat_invariants.py`, run via `make test-invariants`): nine assertions that catch every mathematically-impossible-stat bug we've shipped before.
-  - Phase-outs cap (≤27 reg, ≤5 SI), OR reconciliation per phase, pitcher↔batter cross-check per game, OS% upper bound, W ≤ G per pitcher, PA ≥ AB+BB (HBP/SF/SH not stored), batter+pitcher row uniqueness per (player, game, phase), and league FIP within 0.05 of league ERA.
+  - Phase-outs cap (≤27 reg, ≤5 SI), OR reconciliation per phase, pitcher↔batter cross-check per game, OS% upper bound, W ≤ G per pitcher, PA == AB+BB (collapsed because HBP/SF/SH aren't persisted — see follow-up Task #61), batter+pitcher row uniqueness per (player, game, phase), and league FIP within 0.05 of league ERA.
   - DB target: `o27v2/o27v2.db` by default; override with `O27V2_DB_PATH=...`.
   - Subset target: `O27V2_INVARIANTS_GAMES=1391,1362 make test-invariants` scopes every assertion to those games — useful for verifying after a partial re-sim without re-simming the legacy backlog.
   - Run after every full-season simulation; failures should block releases.

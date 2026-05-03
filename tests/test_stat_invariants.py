@@ -379,14 +379,18 @@ def test_invariant_5_w_bound(played_game_ids):
 # ---------------------------------------------------------------------------
 
 def test_invariant_6_pa_identity(played_game_ids):
-    """pa >= ab + bb on every batter row.
+    """pa == ab + bb on every batter row.
 
-    The o27v2 schema does NOT persist HBP / SF / SH on game_batter_stats
-    even though the engine credits HBP as a plate appearance, so the
-    full identity `pa == ab + bb + hbp + sf + sh` collapses to a
-    one-sided bound here. The bound still catches the historically-
-    common bug where the engine inflated AB without bumping PA (which
-    showed up as `ab > pa` rows in pre-Task-#58 data).
+    The o27v2 schema does NOT persist HBP / SF / SH on
+    game_batter_stats, so the full identity
+    `pa == ab + bb + hbp + sf + sh` collapses to `pa == ab + bb`
+    per the Task #59 spec. Any deviation is either:
+      - a real engine bug (e.g. AB > PA), or
+      - an HBP/SF/SH being silently dropped on persistence; either way
+        a regression the harness should surface.
+
+    See follow-up Task #61 (track HBP/SF/SH on per-game batter rows)
+    to lift the invariant to the full identity once the columns exist.
     """
     extra, params = _game_filter_clause("bs")
     rows = db.fetchall(
@@ -399,11 +403,11 @@ def test_invariant_6_pa_identity(played_game_ids):
     )
     bad = [
         r for r in rows
-        if ((r["ab"] or 0) + (r["bb"] or 0)) > (r["pa"] or 0)
+        if (r["pa"] or 0) != ((r["ab"] or 0) + (r["bb"] or 0))
     ]
     assert not bad, (
-        f"AB+BB > PA on {len(bad)} batter rows (impossible — PA must "
-        f"include every AB and every BB); first 5: "
+        f"PA != AB+BB on {len(bad)} batter rows (HBP/SF/SH not stored "
+        f"on game_batter_stats — see follow-up Task #61); first 5: "
         + "; ".join(
             f"game={r['game_id']} pid={r['player_id']} phase={r['phase']} "
             f"PA={r['pa']} AB={r['ab']} BB={r['bb']}"
