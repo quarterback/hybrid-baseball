@@ -129,7 +129,7 @@
         <th class="r sortable" onclick="sortTable(this)">H</th>
         <th class="r sortable" onclick="sortTable(this)">HR</th>
         <th class="r sortable" onclick="sortTable(this)">RBI</th>
-        <th class="r sortable" onclick="sortTable(this)">STY</th>
+        <th class="r sortable" onclick="sortTable(this)" title="Outs Recorded">OR</th>
         <th class="r sortable" onclick="sortTable(this)">AVG</th>
       </tr>
     </thead>
@@ -142,7 +142,7 @@
         <td class="r mono">{{ p.hits }}</td>
         <td class="r mono">{{ p.hr }}</td>
         <td class="r mono">{{ p.rbi }}</td>
-        <td class="r mono">{% if p.sty > 0 %}{{ p.sty }}{% else %}-{% endif %}</td>
+        <td class="r mono">{% if p.or_ > 0 %}{{ p.or_ }}{% else %}-{% endif %}</td>
         <td class="r mono">{{ "%.3f"|format(p.avg) }}</td>
       </tr>
       {% endfor %}
