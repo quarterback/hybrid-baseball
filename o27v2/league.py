@@ -5,15 +5,17 @@ Supports configurable team counts (8–36) via league config JSON files.
 Player names are drawn from regional pools with weighted sampling:
   USA 50% | Latin 30% | Japan/Korea 10% | Other 10%
 
-Each team has 12 players:
+Each team has 18 players:
   - 9 position players (slot 9 = pitcher)
-  - 3 jokers
+  - 9 jokers (3 per archetype: power, speed, contact)
 """
 from __future__ import annotations
 import json
 import os
 import random
 from typing import Any
+
+from o27v2 import config as v2cfg
 
 _DATA_DIR     = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _NAMES_DIR    = os.path.join(_DATA_DIR, "names")
@@ -132,11 +134,34 @@ def _weighted_region(rng: random.Random) -> str:
     return "usa"
 
 
-def generate_players(team_idx: int, rng: random.Random) -> list[dict]:
+# Archetype profiles, PA modifiers, and committee positions are defined in
+# o27v2/config.py and imported here so that a single-file edit re-tunes the
+# full v2 pipeline.
+_JOKER_ARCHETYPES    = v2cfg.ARCHETYPE_PROFILES
+_JOKER_PA_MODIFIERS  = v2cfg.ARCHETYPE_PA_MODIFIERS
+_COMMITTEE_POSITIONS = v2cfg.COMMITTEE_POSITIONS
+
+
+def generate_players(
+    team_idx: int,
+    rng: random.Random,
+    home_bonus: float = 0.0,
+) -> list[dict]:
     """
-    Generate 12 players for a team (9 position + 3 jokers).
+    Generate 18 players for a team (9 position + 9 jokers).
+
+    Phase 8 additions:
+      - The starting pitcher (position "P") is tagged pitcher_role="workhorse".
+      - Three position players (CF, SS, 2B) are tagged pitcher_role="committee"
+        with boosted pitcher_skill to serve as relievers.
+      - Nine jokers: JOKERS_PER_ARCHETYPE (3) copies of each archetype
+        (power, speed, contact), shuffled into the roster.
+
     Names are sampled from regional pools with weighted distribution.
     team_idx influences the skill distribution to give each team personality.
+
+    home_bonus: small skill offset applied to position-player batting skill
+                to model home-field advantage and reduce tie/super-inning rate.
     """
     pools = _load_name_pools()
     used_names: set[str] = set()
@@ -154,18 +179,32 @@ def generate_players(team_idx: int, rng: random.Random) -> list[dict]:
         return f"Player {rng.randint(100, 999)}"
 
     profile      = team_idx % 5
-    skill_base   = [0.52, 0.50, 0.54, 0.48, 0.51][profile]
+    skill_base   = [0.52, 0.50, 0.54, 0.48, 0.51][profile] + home_bonus
     speed_base   = [0.52, 0.60, 0.48, 0.55, 0.50][profile]
     pitcher_base = [0.54, 0.48, 0.52, 0.56, 0.50][profile]
 
     players = []
     for pos in POSITIONS:
-        is_p   = (pos == "P")
-        skill  = _clamp(rng.gauss(skill_base,   0.10))
-        speed  = _clamp(rng.gauss(speed_base,   0.12))
-        pskill = _clamp(rng.gauss(pitcher_base, 0.12)) if is_p else _clamp(rng.gauss(0.35, 0.08))
-        stay_a = _clamp(rng.gauss(0.40, 0.12))
-        cqt    = _clamp(rng.gauss(0.45, 0.08))
+        is_p        = (pos == "P")
+        is_comm     = (pos in _COMMITTEE_POSITIONS)
+        skill       = _clamp(rng.gauss(skill_base,   0.10))
+        speed       = _clamp(rng.gauss(speed_base,   0.12))
+        if is_p:
+            pskill = _clamp(rng.gauss(pitcher_base, 0.12))
+        elif is_comm:
+            pskill = _clamp(rng.gauss(0.52, 0.09))
+        else:
+            pskill = _clamp(rng.gauss(0.35, 0.08))
+        stay_a = _clamp(rng.gauss(0.10, 0.05))   # v2 calibrated to 1.0–2.5 stays/game
+        cqt    = _clamp(rng.gauss(0.28, 0.06))
+
+        if is_p:
+            pitcher_role = "workhorse"
+        elif is_comm:
+            pitcher_role = "committee"
+        else:
+            pitcher_role = ""
+
         players.append({
             "name": _name(),
             "position": pos,
@@ -176,19 +215,29 @@ def generate_players(team_idx: int, rng: random.Random) -> list[dict]:
             "pitcher_skill": round(pskill, 3),
             "stay_aggressiveness": round(stay_a, 3),
             "contact_quality_threshold": round(cqt, 3),
+            "archetype": "",
+            "pitcher_role": pitcher_role,
         })
 
+    # JOKERS_PER_ARCHETYPE jokers per archetype per team (1 per archetype = 3 total).
+    archetypes = ["power", "speed", "contact"] * v2cfg.JOKERS_PER_ARCHETYPE
+    rng.shuffle(archetypes)
+
     joker_names_used: set[str] = set()
-    for _ in range(3):
+    for archetype in archetypes:
         jname = rng.choice(_JOKER_NAMES)
         while jname in joker_names_used:
             jname = rng.choice(_JOKER_NAMES)
         joker_names_used.add(jname)
-        skill  = _clamp(rng.gauss(0.62, 0.08))
-        speed  = _clamp(rng.gauss(0.60, 0.10))
-        pskill = _clamp(rng.gauss(0.40, 0.10))
-        stay_a = _clamp(rng.gauss(0.50, 0.12))
-        cqt    = _clamp(rng.gauss(0.40, 0.08))
+
+        ap     = _JOKER_ARCHETYPES[archetype]
+        pamod  = _JOKER_PA_MODIFIERS.get(archetype, {})
+        skill  = _clamp(rng.gauss(ap["skill_mu"],  ap["skill_sig"]))
+        speed  = _clamp(rng.gauss(ap["speed_mu"],  ap["speed_sig"]))
+        stay_a = _clamp(rng.gauss(ap["stay_a_mu"], ap["stay_a_sig"]))
+        cqt    = _clamp(rng.gauss(ap["cqt_mu"],    ap["cqt_sig"]))
+        pskill = _clamp(rng.gauss(0.38, 0.09))
+
         players.append({
             "name": jname,
             "position": "JKR",
@@ -199,6 +248,10 @@ def generate_players(team_idx: int, rng: random.Random) -> list[dict]:
             "pitcher_skill": round(pskill, 3),
             "stay_aggressiveness": round(stay_a, 3),
             "contact_quality_threshold": round(cqt, 3),
+            "archetype": archetype,
+            "pitcher_role": "",
+            "hard_contact_delta": pamod.get("hard_contact_delta", 0.0),
+            "hr_weight_bonus":    pamod.get("hr_weight_bonus",    0.0),
         })
     return players
 
@@ -272,10 +325,13 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
         db.executemany(
             """INSERT INTO players
                (team_id, name, position, is_pitcher, is_joker, skill, speed,
-                pitcher_skill, stay_aggressiveness, contact_quality_threshold)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                pitcher_skill, stay_aggressiveness, contact_quality_threshold,
+                archetype, pitcher_role, hard_contact_delta, hr_weight_bonus)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(team_id, p["name"], p["position"], p["is_pitcher"], p["is_joker"],
               p["skill"], p["speed"], p["pitcher_skill"],
-              p["stay_aggressiveness"], p["contact_quality_threshold"])
+              p["stay_aggressiveness"], p["contact_quality_threshold"],
+              p.get("archetype", ""), p.get("pitcher_role", ""),
+              p.get("hard_contact_delta", 0.0), p.get("hr_weight_bonus", 0.0))
              for p in players],
         )

@@ -18,7 +18,8 @@ Public state contract (convenience entry points):
   state.is_super_inning       → bool
 
 Active-lineup model:
-  Each Team stores a 12-player lineup (9 position + 3 jokers) in Team.lineup.
+  Each Team stores an active lineup (9 position players + jokers) in Team.lineup.
+  The v2 roster carries 9 jokers (3 per archetype); the v1 baseline uses 3 jokers.
   Jokers are part of the lineup from the start; once a joker bats they are
   added to Team.jokers_used_this_half and skipped by Team.advance_lineup().
   In super-innings Team.super_lineup (5 players) is used instead.
@@ -69,6 +70,21 @@ class Player:
     contact_quality_threshold: float = _cfg.PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD
     pitcher_skill: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL
 
+    # Phase 8: archetype and pitcher role fields.
+    # archetype:    joker identity — "power" | "speed" | "contact" | ""
+    # pitcher_role: pitcher usage role — "workhorse" | "committee" | ""
+    archetype: str = ""
+    pitcher_role: str = ""
+
+    # Phase 8: per-archetype plate-appearance probability modifiers.
+    # Populated by o27v2/league.py from o27v2.config.ARCHETYPE_PA_MODIFIERS.
+    # Non-joker players default to 0.0 (no modification).
+    # Applied by o27/engine/prob.py:
+    #   hard_contact_delta — shifts the hard/weak contact quality split
+    #   hr_weight_bonus    — adjusts the HR row weight within hard contact
+    hard_contact_delta: float = 0.0
+    hr_weight_bonus:    float = 0.0
+
     def __hash__(self) -> int:
         return hash(self.player_id)
 
@@ -81,6 +97,10 @@ class Player:
             tags.append("P")
         if self.is_joker:
             tags.append("JKR")
+        if self.archetype:
+            tags.append(self.archetype[:3].upper())
+        if self.pitcher_role:
+            tags.append(self.pitcher_role[:3].upper())
         tag_str = f"[{','.join(tags)}]" if tags else ""
         return f"Player({self.name}{tag_str})"
 

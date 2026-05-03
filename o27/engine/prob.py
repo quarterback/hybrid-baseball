@@ -101,12 +101,17 @@ def contact_quality(rng: random.Random, batter: Player, pitcher: Player) -> str:
 
     Base distribution from config.CONTACT_*_BASE.
     Adjusted by batter.skill vs pitcher.pitcher_skill matchup.
+    Phase 8: further shifted by batter.hard_contact_delta (joker archetype modifier).
+      Positive delta → more hard contact / fewer weak contacts.
+      Sourced from o27v2.config.ARCHETYPE_PA_MODIFIERS via Player.hard_contact_delta.
     """
     matchup = batter.skill - pitcher.pitcher_skill   # +ve → batter advantage
     shift = matchup * cfg.CONTACT_MATCHUP_SHIFT       # up to ±0.125 swing
 
-    weak_p   = max(0.05, cfg.CONTACT_WEAK_BASE   - shift)
-    hard_p   = max(0.05, cfg.CONTACT_HARD_BASE   + shift)
+    arch_delta = getattr(batter, "hard_contact_delta", 0.0)
+
+    weak_p   = max(0.05, cfg.CONTACT_WEAK_BASE   - shift - arch_delta)
+    hard_p   = max(0.05, cfg.CONTACT_HARD_BASE   + shift + arch_delta)
     medium_p = max(0.05, 1.0 - weak_p - hard_p)
 
     total = weak_p + medium_p + hard_p
@@ -228,8 +233,19 @@ def resolve_contact(
     Resolve a ball-in-play event into a full fielding outcome dict.
 
     Returns an outcome dict compatible with apply_event / advance_runners.
+    Phase 8: for hard-contact events, batter.hr_weight_bonus adjusts the HR
+    row weight in HARD_CONTACT (positive → more HR, negative → fewer HR /
+    more line drives / doubles).  Sourced from ARCHETYPE_PA_MODIFIERS.
     """
     table = _CONTACT_TABLES.get(quality, cfg.WEAK_CONTACT)
+
+    hr_bonus = getattr(batter, "hr_weight_bonus", 0.0)
+    if quality == "hard" and hr_bonus != 0.0:
+        table = [
+            (r[0], r[1], r[2], max(0.01, r[3] + (hr_bonus if r[0] == "hr" else 0.0)))
+            for r in table
+        ]
+
     hit_type, batter_safe, caught_fly, _ = _pick_from_table(rng, table)
 
     # Compute runner advances based on hit type and runner speeds.
@@ -373,8 +389,12 @@ class ProbabilisticProvider:
             if mgr_event:
                 event_type = mgr_event.get("type")
                 if event_type == "joker_insertion":
-                    # New batter incoming — reset so manager check re-runs.
-                    self._last_batter_id = None
+                    # Pin _last_batter_id to the incoming joker's ID so the
+                    # manager does NOT re-fire for the same lineup slot once the
+                    # joker steps up.  Without this guard the RISP contact trigger
+                    # would fire again for the new batter (who still has RISP),
+                    # burning additional jokers in the same PA.
+                    self._last_batter_id = mgr_event["joker"].player_id
                 elif event_type == "pitching_change":
                     # May need another check after the change.
                     self._manager_checked = False

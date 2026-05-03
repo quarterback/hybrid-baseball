@@ -38,7 +38,7 @@ def can_insert_joker(state: GameState, joker: Player) -> tuple[bool, str]:
     if state.is_super_inning:
         return False, "Joker insertion not available in super-inning."
     if joker.player_id not in {j.player_id for j in team.jokers_available}:
-        return False, f"{joker.name} is not an available joker."
+        return False, f"{joker.name} is not an available joker for this team."
     if joker.player_id in team.jokers_used_this_half:
         return False, f"{joker.name} has already batted this half-inning."
     return True, ""
@@ -58,11 +58,11 @@ def insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[
         return [f"[MANAGER ERROR] Joker insertion rejected: {reason}"]
 
     team = state.batting_team
-    log = [f"  JOKER: {team.name} inserts {joker.name} (joker) into lineup."]
+    log = [f"  JOKER: {team.name} inserts {joker.name} ({getattr(joker, 'archetype', 'joker')}) into lineup."]
 
-    # Mark joker as used this half.
+    # Mark joker as used this half so advance_lineup() skips their natural slot.
     team.jokers_used_this_half.add(joker.player_id)
-    # Remove from available pool.
+    # Remove from available pool so the same joker is not re-inserted this half.
     team.jokers_available = [j for j in team.jokers_available
                               if j.player_id != joker.player_id]
     # Move the joker to the desired slot within the existing 12-batter lineup.
@@ -74,7 +74,7 @@ def insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[
     team.lineup_position = lineup_position % len(team.lineup)
 
     state.events.append({
-        "type": "joker_insertion",
+        "type": "joker_inserted",   # distinct from the provider intent event "joker_insertion"
         "joker_id": joker.player_id,
         "joker_name": joker.name,
         "lineup_position": lineup_position,
@@ -176,88 +176,162 @@ def pitching_change(
 # Manager decision heuristics (Phase 2)
 # ---------------------------------------------------------------------------
 
+def _batting_deficit(state: GameState) -> int:
+    """
+    Return how many runs the batting team is trailing by (positive = behind).
+    Negative means the batting team leads.
+    """
+    v = state.score.get("visitors", 0)
+    h = state.score.get("home", 0)
+    if state.half in ("top", "super_top"):
+        return h - v
+    return v - h
+
+
+def _needed_archetype(state: GameState) -> Optional[str]:
+    """
+    Return the archetype called for by the current game situation, or None.
+
+    Evaluation order (§4.6):
+      1. power   — batting team down ≥ JOKER_POWER_DEFICIT with outs remaining.
+                   Dominates: fires even when RISP or corners are also present.
+      2. speed   — corners: 1B+3B occupied, 2B empty, exactly 1 out.
+      3. contact — runners in scoring position (2B or 3B occupied).
+    """
+    # Power dominates: checked first regardless of base state.
+    deficit = _batting_deficit(state)
+    if deficit >= cfg.JOKER_POWER_DEFICIT and state.outs < cfg.JOKER_POWER_OUTS_CEIL:
+        return "power"
+
+    # Speed: corners (1B+3B, 2B empty, exactly 1 out) — spec §4.6.
+    if (
+        state.bases[0] is not None
+        and state.bases[1] is None
+        and state.bases[2] is not None
+        and state.outs == 1
+    ):
+        return "speed"
+
+    # Contact: runners in scoring position.
+    if state.runners_in_scoring_position:
+        return "contact"
+
+    return None
+
+
 def should_insert_joker(state: GameState) -> Optional[Player]:
     """
-    Phase 2 §4.6 heuristic: insert highest-skill available joker when:
-      - Runners in scoring position, AND
-      - Current scheduled batter is a weak hitter
-        (skill < cfg.JOKER_WEAK_BATTER_THRESHOLD OR is_pitcher), AND
-      - Game leverage is high: score within cfg.JOKER_SCORE_DIFF_MAX AND
-        outs < cfg.JOKER_OUTS_CEILING.
+    Phase 8 §4.6 heuristic: select the joker whose archetype fits the situation.
 
-    Returns the joker Player to insert, or None.
+    Evaluation order (see _needed_archetype for details):
+      1. power   — batting team down ≥ JOKER_POWER_DEFICIT with outs remaining.
+      2. speed   — corners (1B+3B, 2B empty, exactly 1 out).
+      3. contact — runners in scoring position (2B or 3B occupied).
+
+    Eligibility (§2.3):
+      - Joker must be in jokers_available (removed after use each half).
+      - Each physical joker bats at most once per half (jokers_used_this_half).
+      - No cross-archetype fallback: if the required archetype joker is already
+        used, no other joker fires for that situation.
+
+    Returns the joker Player to insert, or None when no situation applies.
     """
     if state.is_super_inning:
         return None
     team = state.batting_team
     if not team.jokers_available:
         return None
-    # Only consider jokers not yet used this half.
+
+    # Filter to available (not-yet-used-this-half) jokers.
     available = [j for j in team.jokers_available
                  if j.player_id not in team.jokers_used_this_half]
     if not available:
         return None
 
-    # Condition 1: runners in scoring position.
-    if not state.runners_in_scoring_position:
+    # Cap: do not insert more than JOKER_MAX_PER_HALF jokers per team per half.
+    if len(team.jokers_used_this_half) >= cfg.JOKER_MAX_PER_HALF:
         return None
 
-    # Condition 2: current scheduled batter is weak.
-    batter = state.current_batter
-    batter_is_weak = batter.skill < cfg.JOKER_WEAK_BATTER_THRESHOLD or batter.is_pitcher
-    if not batter_is_weak:
+    archetype = _needed_archetype(state)
+    if archetype is None:
         return None
 
-    # Condition 3: high leverage — close game with outs remaining.
-    score_diff = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
-    high_leverage = score_diff <= cfg.JOKER_SCORE_DIFF_MAX and state.outs < cfg.JOKER_OUTS_CEILING
-    if not high_leverage:
+    typed = [j for j in available if getattr(j, "archetype", "") == archetype]
+    if not typed:
+        # Required archetype unavailable (already used this half) — skip.
         return None
-
-    # Insert the highest-skill available joker.
-    return max(available, key=lambda j: j.skill)
+    return max(typed, key=lambda j: j.skill)
 
 
 def should_change_pitcher(state: GameState) -> bool:
     """
-    Phase 2: trigger a pitching change when the pitcher's spell count exceeds
-    their fatigue threshold (skill-scaled: higher-skill pitchers go longer).
+    Phase 8: trigger a pitching change using role-aware fatigue thresholds.
 
-    Threshold = max(cfg.PITCHER_CHANGE_BASE,
-                    cfg.PITCHER_CHANGE_BASE + round(pitcher.pitcher_skill * cfg.PITCHER_CHANGE_SCALE))
+    Workhorse pitchers use WORKHORSE_CHANGE_BASE/SCALE (deeper stints).
+    Committee pitchers use COMMITTEE_CHANGE_BASE/SCALE (short stints).
+    All others fall back to the generic PITCHER_CHANGE_BASE/SCALE.
+
+    Threshold = max(base, base + round(pitcher_skill * scale))
     """
     if state.is_super_inning:
         return False
     pitcher = state.get_current_pitcher()
     if pitcher is None:
         return False
-    threshold = max(
-        cfg.PITCHER_CHANGE_BASE,
-        cfg.PITCHER_CHANGE_BASE + round(pitcher.pitcher_skill * cfg.PITCHER_CHANGE_SCALE),
-    )
+    role = getattr(pitcher, "pitcher_role", "")
+    if role == "workhorse":
+        base  = cfg.WORKHORSE_CHANGE_BASE
+        scale = cfg.WORKHORSE_CHANGE_SCALE
+    elif role == "committee":
+        base  = cfg.COMMITTEE_CHANGE_BASE
+        scale = cfg.COMMITTEE_CHANGE_SCALE
+    else:
+        base  = cfg.PITCHER_CHANGE_BASE
+        scale = cfg.PITCHER_CHANGE_SCALE
+    threshold = max(base, base + round(pitcher.pitcher_skill * scale))
     return state.pitcher_spell_count >= threshold
 
 
 def pick_new_pitcher(state: GameState) -> Optional[Player]:
     """
     Pick the best available non-restricted pitcher from the fielding team's
-    roster, excluding the current pitcher and fielding-restricted jokers.
+    roster, excluding:
+      - the current pitcher
+      - fielding-restricted jokers (batted jokers)
+      - any pitcher already pulled this half (they stay in the dugout)
+
+    Preference order: committee pitchers (role="committee") first, then
+    remaining non-joker players sorted by pitcher_skill.  The workhorse
+    (is_pitcher=True, role="workhorse") is treated as a last resort once
+    they have been pulled, so they do not crowd out committee relievers.
 
     Returns None if no other pitcher is available.
     """
-    fielding = state.fielding_team
+    fielding   = state.fielding_team
     current_id = state.current_pitcher_id
     restricted = fielding.joker_fielding_restricted
+
+    already_pitched = {
+        r.pitcher_id for r in state.spell_log if r.half == state.half
+    }
+
     candidates = [
         p for p in fielding.roster
         if p.player_id != current_id
         and p.player_id not in restricted
+        and p.player_id not in already_pitched
         and not p.is_joker
     ]
     if not candidates:
         return None
-    # Prefer is_pitcher=True players; among equals, highest pitcher_skill.
-    candidates.sort(key=lambda p: (p.is_pitcher, p.pitcher_skill), reverse=True)
+
+    candidates.sort(
+        key=lambda p: (
+            getattr(p, "pitcher_role", "") == "committee",
+            p.pitcher_skill,
+        ),
+        reverse=True,
+    )
     return candidates[0]
 
 

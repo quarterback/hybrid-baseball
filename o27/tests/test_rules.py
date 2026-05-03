@@ -57,13 +57,14 @@ def _make_player(pid: str, name: str, is_pitcher=False, is_joker=False) -> Playe
 
 
 def _make_team(team_id: str, name: str) -> Team:
-    """12-batter active lineup: 9 position players (slot 9 = pitcher) + 3 jokers.
+    """Active lineup: 9 position players (slot 9 = pitcher) + 3 jokers.
 
-    All 12 are in the lineup from the start (PRD §4.2 / task requirement).
+    All players are in the lineup from the start (PRD §4.2 / task requirement).
     Jokers are also in jokers_available so the manager can explicitly re-slot
-    them mid-inning (insert_joker moves them within the 12, does not grow it).
+    them mid-inning (insert_joker moves them within the lineup, does not grow it).
     Once a joker bats, they are added to jokers_used_this_half and are skipped
     by advance_lineup for the rest of that half.
+    Note: v2 rosters carry 9 jokers (3 per archetype); this v1 baseline uses 3.
     """
     prefix = team_id[0].upper()
     starters = []
@@ -74,7 +75,7 @@ def _make_team(team_id: str, name: str) -> Team:
     for j in range(1, 4):
         jk = _make_player(f"{prefix}J{j}", f"{name[:3]}J{j}", is_joker=True)
         jokers.append(jk)
-    roster = starters + jokers          # full 12-player roster
+    roster = starters + jokers          # 12-player roster for this v1 baseline test
     return Team(
         team_id=team_id,
         name=name,
@@ -121,7 +122,7 @@ def test_27_out_half():
 
     _assert("outs == 27", state.outs == 27, f"got {state.outs}")
     _assert("half is over", state.is_half_over(), "")
-    # Lineup is 12 batters (9 position + 3 jokers).  Each joker bats once in the
+    # Lineup is 12 players (9 position + 3 jokers for this baseline test).  Each joker bats once in the
     # first cycle then is skipped for the rest of the half:
     #   PA  1-12: all 12 bat → pos wraps to 0
     #   PA 13-21: positions 0-8 bat (jokers skipped) → pos wraps to 0
@@ -779,8 +780,8 @@ def test_pinch_hit_heuristic():
     from o27.engine.manager import should_pinch_hit
 
     # --- Build a state that satisfies all trigger conditions ---
-    # In O27, all 12 players are in the lineup from the start, so a valid
-    # pinch hitter must be a roster member who is NOT already in the lineup.
+    # In O27, all players are in the lineup from the start (v1 baseline: 12 players),
+    # so a valid pinch hitter must be a roster member who is NOT already in the lineup.
     # We add a bench player to the roster only (not the lineup) to model this.
     visitors = _make_team("visitors", "Red")
     home     = _make_team("home",     "Blue")

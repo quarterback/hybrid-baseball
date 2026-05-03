@@ -22,6 +22,7 @@ from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
 
 from o27v2 import db
+import o27v2.config as v2cfg
 
 
 # ---------------------------------------------------------------------------
@@ -38,16 +39,27 @@ def _db_team_to_engine(team_row: dict, players: list[dict], team_role: str) -> T
     jokers: list[Player] = []
 
     for p in players:
+        # Home-field advantage: all non-joker players on the home team receive a
+        # small batting skill bonus, consistent with batch.py / generate_players().
+        home_bonus = (
+            v2cfg.HOME_ADVANTAGE_SKILL
+            if team_role == "home" and not p.get("is_joker")
+            else 0.0
+        )
         player = Player(
             player_id=str(p["id"]),
             name=p["name"],
             is_pitcher=bool(p["is_pitcher"]),
             is_joker=bool(p["is_joker"]),
-            skill=float(p["skill"]),
+            skill=float(p["skill"]) + home_bonus,
             speed=float(p["speed"]),
             pitcher_skill=float(p["pitcher_skill"]),
             stay_aggressiveness=float(p["stay_aggressiveness"]),
             contact_quality_threshold=float(p["contact_quality_threshold"]),
+            archetype=str(p.get("archetype") or ""),
+            pitcher_role=str(p.get("pitcher_role") or ""),
+            hard_contact_delta=float(p.get("hard_contact_delta") or 0.0),
+            hr_weight_bonus=float(p.get("hr_weight_bonus") or 0.0),
         )
         roster.append(player)
         if player.is_joker:

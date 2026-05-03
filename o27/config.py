@@ -203,7 +203,7 @@ PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD: float = 0.45  # P(stay | medium contac
 # Manager heuristics — joker insertion (§4.6)
 # ---------------------------------------------------------------------------
 
-JOKER_WEAK_BATTER_THRESHOLD: float = 0.38   # batter.skill < this → weak hitter
+JOKER_WEAK_BATTER_THRESHOLD: float = 0.44   # batter.skill < this → weak hitter (contact trigger gate)
 JOKER_SCORE_DIFF_MAX: int          = 4      # |score_diff| ≤ this → high leverage
 JOKER_OUTS_CEILING: int            = 22     # state.outs < this → not too late
 
@@ -212,9 +212,31 @@ JOKER_OUTS_CEILING: int            = 22     # state.outs < this → not too late
 # ---------------------------------------------------------------------------
 # Threshold (BF) = max(PITCHER_CHANGE_BASE,
 #                      PITCHER_CHANGE_BASE + round(pitcher_skill * PITCHER_CHANGE_SCALE))
+# Phase 8: role-aware thresholds override the generic values.
+#   Workhorse: goes deeper into the game.
+#   Committee: shorter stints, replaced sooner.
 
 PITCHER_CHANGE_BASE: int  = 10
 PITCHER_CHANGE_SCALE: int = 20
+
+WORKHORSE_CHANGE_BASE: int   = 8    # workhorse starter goes longer than committee
+WORKHORSE_CHANGE_SCALE: int  = 8    # at skill 0.52 → threshold ~12 BF
+COMMITTEE_CHANGE_BASE: int   = 2    # committee relief enters for short stints
+COMMITTEE_CHANGE_SCALE: int  = 5    # at skill 0.52 → threshold ~5 BF
+
+# ---------------------------------------------------------------------------
+# Manager heuristics — situational joker insertion (Phase 8 archetype triggers)
+# ---------------------------------------------------------------------------
+# Evaluation order (power first — it dominates when down ≥ JOKER_POWER_DEFICIT):
+#   1. Power   — batting team down ≥ JOKER_POWER_DEFICIT and outs < JOKER_POWER_OUTS_CEIL.
+#   2. Speed   — corners: 1B+3B occupied, 2B empty, exactly 1 out (§4.6).
+#   3. Contact — runners in scoring position (2B or 3B occupied).
+# No cross-archetype fallback: if the required joker is unavailable, nothing fires.
+
+JOKER_POWER_DEFICIT: int    = 3     # power fires only when batting team is down ≥ 3 runs
+JOKER_POWER_OUTS_CEIL: int  = 22    # power trigger disabled at or after this out count
+JOKER_SPEED_OUTS: int       = 2     # retained for config compatibility; unused by engine
+JOKER_MAX_PER_HALF: int     = 9     # cap: JOKERS_PER_ARCHETYPE(3) × archetypes(3) per team per half
 
 # ---------------------------------------------------------------------------
 # Manager heuristics — pinch hit (fallback when jokers exhausted)

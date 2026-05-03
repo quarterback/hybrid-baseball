@@ -61,6 +61,8 @@ def _make_engine_team(team_def: dict, players: list[dict], role: str) -> Team:
             pitcher_skill=float(p["pitcher_skill"]),
             stay_aggressiveness=float(p["stay_aggressiveness"]),
             contact_quality_threshold=float(p["contact_quality_threshold"]),
+            archetype=str(p.get("archetype") or ""),
+            pitcher_role=str(p.get("pitcher_role") or ""),
         )
         roster.append(player)
         if player.is_joker:

@@ -42,7 +42,11 @@ CREATE TABLE IF NOT EXISTS players (
     speed         REAL DEFAULT 0.5,
     pitcher_skill REAL DEFAULT 0.5,
     stay_aggressiveness REAL DEFAULT 0.4,
-    contact_quality_threshold REAL DEFAULT 0.45
+    contact_quality_threshold REAL DEFAULT 0.45,
+    archetype             TEXT DEFAULT '',
+    pitcher_role          TEXT DEFAULT '',
+    hard_contact_delta    REAL DEFAULT 0.0,
+    hr_weight_bonus       REAL DEFAULT 0.0
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -92,8 +96,69 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
 """
 
 
+def _wipe_if_stale() -> None:
+    """
+    Detect a pre-Phase-8 database and wipe it so seed_league() can reseed.
+
+    Signal: any pitcher row (is_pitcher=1) with a blank pitcher_role is
+    guaranteed to be from before Phase 8 — generate_players() always sets
+    pitcher_role='workhorse' for pitchers.  If such rows exist, every player
+    in the DB lacks archetype/role/modifier data and the whole roster must be
+    regenerated.
+
+    A fresh empty DB (tables don't exist yet) is silently ignored.
+    """
+    try:
+        row = fetchone(
+            "SELECT COUNT(*) AS n FROM players WHERE is_pitcher = 1 AND pitcher_role = ''"
+        )
+        if row and row["n"] > 0:
+            drop_all()
+    except Exception:
+        pass  # tables don't exist yet — nothing to wipe
+
+
 def init_db() -> None:
-    """Create tables (idempotent)."""
+    """
+    Create tables and apply column migrations (idempotent).
+
+    Order matters — three steps must run in sequence:
+
+      1. ALTER TABLE — adds Phase-8 columns to *existing* pre-Phase-8 tables.
+         Fails silently when the table does not exist yet or columns are
+         already present, so this is safe as a first step in every case.
+
+      2. _wipe_if_stale() — pitcher_role column now exists (from step 1 or the
+         original SCHEMA), so SELECT safely queries it.  If pitcher rows have
+         blank pitcher_role the whole DB is pre-Phase-8; drop_all() wipes it.
+
+      3. executescript(SCHEMA) — CREATE TABLE IF NOT EXISTS creates tables that
+         are missing (fresh DB or post-wipe).  No-op when tables already exist.
+
+    Callers should invoke seed_league() after init_db() whenever teams are
+    absent, which is the normal pattern in manage.py and web/app.py.
+    """
+    # Step 1: column migrations (no-op if tables absent or columns present)
+    with get_conn() as conn:
+        text_cols = [("archetype", "''"), ("pitcher_role", "''")]
+        real_cols = [("hard_contact_delta", "0.0"), ("hr_weight_bonus", "0.0")]
+        for col, defval in text_cols:
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} TEXT DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+        for col, defval in real_cols:
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} REAL DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+    # Step 2: wipe stale pre-Phase-8 data (pitcher_role now queryable)
+    _wipe_if_stale()
+
+    # Step 3: (re)create any missing tables
     with get_conn() as conn:
         conn.executescript(SCHEMA)
 
