@@ -110,9 +110,13 @@ def _pitch_probs(
     base[4] += form_dev * cfg.FORM_CONTACT
 
     # Fatigue: spell_count > threshold degrades pitcher performance.
+    # Threshold is Stamina-driven (NOT Stuff): Stuff doesn't make a pitcher
+    # endure longer, Stamina does. This is what gives elite-Stamina arms
+    # the workhorse moat the user wants — they can grind 27 outs without
+    # noticeable late-half degradation.
     fatigue_threshold = max(
         cfg.FATIGUE_THRESHOLD_BASE,
-        cfg.FATIGUE_THRESHOLD_BASE + round(pitcher.pitcher_skill * cfg.FATIGUE_THRESHOLD_SCALE),
+        cfg.FATIGUE_THRESHOLD_BASE + round(pitcher.stamina * cfg.FATIGUE_THRESHOLD_SCALE),
     )
     if spell_count > fatigue_threshold:
         fatigue = min(cfg.FATIGUE_MAX, (spell_count - fatigue_threshold) / cfg.FATIGUE_SCALE)
@@ -180,9 +184,14 @@ def contact_quality(rng: random.Random, batter: Player, pitcher: Player) -> str:
     # Movement → weaker contact (collapses to 0 at movement=0.5).
     move_tilt  = (pitcher.movement - 0.5) * 2 * cfg.CONTACT_MOVEMENT_TILT
 
-    weak_p   = max(0.05, cfg.CONTACT_WEAK_BASE   - shift - arch_delta - power_tilt + move_tilt)
-    hard_p   = max(0.05, cfg.CONTACT_HARD_BASE   + shift + arch_delta + power_tilt - move_tilt)
-    medium_p = max(0.05, 1.0 - weak_p - hard_p)
+    # Floors at 0.01 (epsilon for probability sanity), NOT 0.05. The old
+    # 0.05 floor was a soft lever pushing the engine toward the middle —
+    # it artificially capped how much an elite pitcher could suppress hard
+    # contact, or how much an elite hitter could suppress weak contact.
+    # Removing it lets the .01% transcendent talents really transcend.
+    weak_p   = max(0.01, cfg.CONTACT_WEAK_BASE   - shift - arch_delta - power_tilt + move_tilt)
+    hard_p   = max(0.01, cfg.CONTACT_HARD_BASE   + shift + arch_delta + power_tilt - move_tilt)
+    medium_p = max(0.01, 1.0 - weak_p - hard_p)
 
     total = weak_p + medium_p + hard_p
     weak_p /= total

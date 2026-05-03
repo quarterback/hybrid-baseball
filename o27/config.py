@@ -91,11 +91,17 @@ PITCH_BASE: dict[tuple, tuple] = {
 # ---------------------------------------------------------------------------
 # Applied as:  p_dom = (pitcher_skill - 0.5) * 2   →  −1.0 to +1.0
 # Each constant scales how much p_dom shifts the corresponding probability.
+#
+# Strong-pitcher-tilt retune: magnitudes bumped ~50% over the legacy values
+# so an elite-Stuff pitcher facing an average batter swings the per-pitch
+# distribution hard toward strikes / weak contact. Combined with the
+# loosened 0.01 floors in contact_quality and the Elite+ talent tier,
+# this is what lets aces actually pitch like aces.
 
-PITCHER_DOM_BALL: float     = -0.04   # fewer balls when pitcher dominant
-PITCHER_DOM_CALLED: float   = +0.02   # more called strikes
-PITCHER_DOM_SWINGING: float = +0.02   # more swinging strikes
-PITCHER_DOM_CONTACT: float  = -0.03   # fewer contact events
+PITCHER_DOM_BALL: float     = -0.06   # fewer balls when pitcher dominant
+PITCHER_DOM_CALLED: float   = +0.03   # more called strikes
+PITCHER_DOM_SWINGING: float = +0.03   # more swinging strikes
+PITCHER_DOM_CONTACT: float  = -0.04   # fewer contact events
 
 # ---------------------------------------------------------------------------
 # Batter dominance adjustments
@@ -114,7 +120,12 @@ BATTER_DOM_CONTACT: float  = +0.03   # more contact events
 # Fatigue factor grows linearly beyond threshold, capped at FATIGUE_MAX.
 
 FATIGUE_THRESHOLD_BASE: int  = 24    # Phase 10: workhorses fatigue much later (was 10)
-FATIGUE_THRESHOLD_SCALE: int = 20    # higher-skill pitchers get longer spells
+# Bumped 20 → 40 so Stamina actually moats the workhorse archetype.
+# Math: an elite-Stamina (0.85) pitcher fatigues at 24 + round(0.85*40) = 58 BF
+# threshold — i.e. effectively never within a 27-out half. A sub-replacement
+# (0.25) Stamina pitcher fatigues at 24 + 10 = 34 BF, visibly tiring through
+# the order. This is what makes Stamina disproportionately valuable in O27.
+FATIGUE_THRESHOLD_SCALE: int = 40    # higher-skill pitchers get longer spells
 FATIGUE_MAX: float           = 0.60  # maximum fatigue multiplier
 FATIGUE_SCALE: float         = 20.0  # spell_count divisor for ramp-up
 
@@ -243,6 +254,19 @@ RELIEVER_CHANGE_BASE: int    = 12   # short-relief stints
 RELIEVER_CHANGE_SCALE: int   = 6
 RELIEVER_ENTRY_OUTS_MIN: int = 18   # do not pull SP for an RP before this
 
+# Emergent strategy thresholds — the manager AI derives an SP's role from
+# their CURRENT stamina rating (not a stored tag). This is what lets a
+# team naturally use "openers" when its rotation is short on stamina, and
+# stick with workhorses when it has the arms.
+WORKHORSE_STAMINA_THRESHOLD: float = 0.62  # >= this → workhorse pull threshold
+OPENER_STAMINA_THRESHOLD:    float = 0.40  # <= this → opener (pulled fast)
+
+# Opener-mode thresholds — pull the "starter" after a short stint and let
+# the bullpen-by-committee finish the half. Lets a stamina-poor staff be
+# strategically viable rather than just bad.
+OPENER_CHANGE_BASE:  int = 7
+OPENER_CHANGE_SCALE: int = 3
+
 # ---------------------------------------------------------------------------
 # Manager heuristics — situational joker insertion (Phase 8 archetype triggers)
 # ---------------------------------------------------------------------------
@@ -291,8 +315,10 @@ BATTER_CONTACT_CONTACT:  float = +0.02
 
 # --- Pitcher command ------------------------------------------------------
 # Higher command → fewer balls (Maddux). Independent of Stuff.
-PITCHER_COMMAND_BALL:   float = -0.05
-PITCHER_COMMAND_CALLED: float = +0.02
+# Magnitudes bumped along with the strong-pitcher-tilt retune above —
+# elite Command should produce visibly elite walk-rate suppression.
+PITCHER_COMMAND_BALL:   float = -0.07
+PITCHER_COMMAND_CALLED: float = +0.03
 
 # --- Contact-quality shifts -----------------------------------------------
 # Power tilts contact toward hard; movement (pitcher) tilts toward weak.

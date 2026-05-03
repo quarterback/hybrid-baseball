@@ -272,11 +272,22 @@ def _legacy_should_insert_joker(state: GameState) -> Optional[Player]:
 
 def should_change_pitcher(state: GameState) -> bool:
     """
-    Phase 8: trigger a pitching change using role-aware fatigue thresholds.
+    Trigger a pitching change using emergent role-aware fatigue thresholds.
 
-    Workhorse pitchers use WORKHORSE_CHANGE_BASE/SCALE (deeper stints).
-    Committee pitchers use COMMITTEE_CHANGE_BASE/SCALE (short stints).
-    All others fall back to the generic PITCHER_CHANGE_BASE/SCALE.
+    Roles are derived LIVE from the current pitcher's Stamina rating —
+    no stored `pitcher_role` tag is consulted. This is what lets a team
+    naturally adopt an opener-and-committee strategy when they're short
+    on stamina and a workhorse-ride strategy when they have the arms.
+
+    First-spell role mapping (the "starter"):
+      - stamina >= WORKHORSE_STAMINA_THRESHOLD (0.62)
+            → workhorse pull thresholds (deepest stints)
+      - stamina <= OPENER_STAMINA_THRESHOLD    (0.40)
+            → opener pull thresholds (pull fast, then committee)
+      - else → classical SP (moderate stints)
+
+    Subsequent spells (relief context) use RELIEVER_CHANGE_BASE/SCALE
+    regardless of stamina — the spell is already a relief appearance.
 
     Threshold = max(base, base + round(pitcher_skill * scale))
     """
@@ -285,33 +296,52 @@ def should_change_pitcher(state: GameState) -> bool:
     pitcher = state.get_current_pitcher()
     if pitcher is None:
         return False
-    role = getattr(pitcher, "pitcher_role", "")
-    if role in ("workhorse", "starter"):
+
+    # Detect "this is a relief appearance" by checking spell_log: if any
+    # previous spell exists in the current half, we're past the SP.
+    in_relief = any(
+        rec.half == state.half
+        for rec in state.spell_log
+    )
+
+    stamina = float(getattr(pitcher, "stamina", pitcher.pitcher_skill) or 0.5)
+
+    if in_relief:
+        # Relief appearance — short-burst thresholds.
+        base  = cfg.RELIEVER_CHANGE_BASE
+        scale = cfg.RELIEVER_CHANGE_SCALE
+        threshold = max(base, base + round(pitcher.pitcher_skill * scale))
+        return state.pitcher_spell_count >= threshold
+
+    # First-spell ("starter") — derive emergent role from stamina.
+    if stamina >= cfg.WORKHORSE_STAMINA_THRESHOLD:
+        # Workhorse: ride deep into the half.
         base  = cfg.WORKHORSE_CHANGE_BASE
         scale = cfg.WORKHORSE_CHANGE_SCALE
-        # Phase 10: do not yank a starter for a reliever before
-        # RELIEVER_ENTRY_OUTS_MIN unless they have already crossed the
-        # BF threshold themselves.
         threshold = max(base, base + round(pitcher.pitcher_skill * scale))
         if state.pitcher_spell_count < threshold:
             return False
         # Even past threshold, only change if a reliever can come in
         # (i.e. the half is "late enough"). Otherwise let the SP keep going.
         if state.outs < cfg.RELIEVER_ENTRY_OUTS_MIN:
-            # Past threshold but it's still early — extend the SP rather
-            # than burn an early reliever. Pull only if blown out (≥ 8 runs
+            # Past threshold but still early — extend the SP rather than
+            # burn an early reliever. Pull only if blown out (≥ 8 runs
             # this spell), which cuts off true disasters.
             return state.pitcher_runs_this_spell >= 8
         return True
-    elif role == "reliever":
-        base  = cfg.RELIEVER_CHANGE_BASE
-        scale = cfg.RELIEVER_CHANGE_SCALE
-    elif role == "committee":
-        base  = cfg.COMMITTEE_CHANGE_BASE
-        scale = cfg.COMMITTEE_CHANGE_SCALE
-    else:
-        base  = cfg.PITCHER_CHANGE_BASE
-        scale = cfg.PITCHER_CHANGE_SCALE
+
+    if stamina <= cfg.OPENER_STAMINA_THRESHOLD:
+        # Opener: pull after a short stint, let the committee take over.
+        # No "must wait until late" guard — that's exactly what makes
+        # this a viable strategy for stamina-poor staffs.
+        base  = cfg.OPENER_CHANGE_BASE
+        scale = cfg.OPENER_CHANGE_SCALE
+        threshold = max(base, base + round(pitcher.pitcher_skill * scale))
+        return state.pitcher_spell_count >= threshold
+
+    # Classical SP — moderate stint, no late-relief guard.
+    base  = cfg.PITCHER_CHANGE_BASE
+    scale = cfg.PITCHER_CHANGE_SCALE
     threshold = max(base, base + round(pitcher.pitcher_skill * scale))
     return state.pitcher_spell_count >= threshold
 

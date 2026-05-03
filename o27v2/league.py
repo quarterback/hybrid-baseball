@@ -170,15 +170,20 @@ def _player_age(rng: random.Random) -> int:
 # archetypes the league needs.
 _TALENT_TIERS: list[tuple[float, int, int]] = [
     # (probability, lo_grade, hi_grade)
-    (0.02, 75, 80),  # Elite
-    (0.05, 65, 74),  # Excellent
-    (0.10, 60, 64),  # Very Good
-    (0.15, 55, 59),  # Good
-    (0.18, 50, 54),  # Above Average
-    (0.20, 45, 49),  # Average
-    (0.15, 40, 44),  # Below Average
-    (0.10, 30, 39),  # Replacement
-    (0.05, 20, 29),  # Sub-Replacement
+    # Elite+: the once-in-a-generation talent. ~0.5% of attribute rolls
+    # land here, on grades 81-95 — beyond the canonical 20-80 ceiling.
+    # The user explicitly wants the .01% transcendent players to exist
+    # and not be capped by an artificial scale.
+    (0.005, 81, 95),  # Elite+ (transcendent)
+    (0.02,  75, 80),  # Elite
+    (0.05,  65, 74),  # Excellent
+    (0.10,  60, 64),  # Very Good
+    (0.15,  55, 59),  # Good
+    (0.18,  50, 54),  # Above Average
+    (0.195, 45, 49),  # Average        (was 0.20; trimmed to fit Elite+)
+    (0.15,  40, 44),  # Below Average
+    (0.10,  30, 39),  # Replacement
+    (0.05,  20, 29),  # Sub-Replacement
 ]
 
 
