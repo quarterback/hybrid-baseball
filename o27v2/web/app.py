@@ -205,6 +205,195 @@ def game_detail(game_id: int):
                            avg=_avg)
 
 
+@app.route("/stats")
+def stats():
+    """Season-to-date leaderboards — batting + pitching + team identity."""
+    games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
+    if games_played == 0:
+        return render_template("stats.html",
+                               games_played=0,
+                               batting=[], pitching=[],
+                               team_offense=[], team_defense=[])
+
+    min_pa   = max(20, games_played // 30 * 8)
+    min_outs = max(9, games_played // 30 * 5)
+
+    batting = db.fetchall(
+        """SELECT p.id   as player_id,
+                  p.name as player_name,
+                  p.position,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(bs.game_id) as g,
+                  SUM(bs.pa)      as pa,
+                  SUM(bs.ab)      as ab,
+                  SUM(bs.hits)    as h,
+                  SUM(bs.doubles) as d2,
+                  SUM(bs.triples) as d3,
+                  SUM(bs.hr)      as hr,
+                  SUM(bs.runs)    as r,
+                  SUM(bs.rbi)     as rbi,
+                  SUM(bs.bb)      as bb,
+                  SUM(bs.k)       as k,
+                  SUM(bs.stays)   as stays
+           FROM game_batter_stats bs
+           JOIN players p ON bs.player_id = p.id
+           JOIN teams   t ON bs.team_id   = t.id
+           GROUP BY p.id
+           HAVING SUM(bs.pa) >= ?
+           ORDER BY (CAST(SUM(bs.hits) AS REAL) / NULLIF(SUM(bs.ab), 0)) DESC""",
+        (min_pa,),
+    )
+    for b in batting:
+        b["avg"]    = (b["h"] / b["ab"]) if b["ab"] else 0.0
+        b["h_ab"]   = (b["h"] / b["ab"]) if b["ab"] else 0.0
+        b["obp"]    = ((b["h"] + b["bb"]) / b["pa"]) if b["pa"] else 0.0
+        tb          = b["h"] - b["d2"] - b["d3"] - b["hr"] + 2 * b["d2"] + 3 * b["d3"] + 4 * b["hr"]
+        b["slg"]    = (tb / b["ab"]) if b["ab"] else 0.0
+        b["ops"]    = b["obp"] + b["slg"]
+
+    pitching = db.fetchall(
+        """SELECT p.id   as player_id,
+                  p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(ps.game_id) as g,
+                  SUM(ps.batters_faced)  as bf,
+                  SUM(ps.outs_recorded)  as outs,
+                  SUM(ps.hits_allowed)   as h,
+                  SUM(ps.runs_allowed)   as r,
+                  SUM(ps.bb)             as bb,
+                  SUM(ps.k)              as k
+           FROM game_pitcher_stats ps
+           JOIN players p ON ps.player_id = p.id
+           JOIN teams   t ON ps.team_id   = t.id
+           GROUP BY p.id
+           HAVING SUM(ps.outs_recorded) >= ?
+           ORDER BY SUM(ps.outs_recorded) DESC""",
+        (min_outs,),
+    )
+    for p in pitching:
+        outs = p["outs"] or 0
+        p["ip"]   = outs / 3.0                      # baseball-style innings for /9 metrics
+        p["era"]  = (p["r"] * 27.0 / outs) if outs else 0.0
+        p["whip"] = ((p["bb"] + p["h"]) / p["ip"]) if p["ip"] else 0.0
+        p["k9"]   = (p["k"] * 9.0  / p["ip"]) if p["ip"] else 0.0
+        p["bb9"]  = (p["bb"] * 9.0 / p["ip"]) if p["ip"] else 0.0
+        p["k_pct"]  = (p["k"]  / p["bf"]) if p["bf"] else 0.0
+        p["bb_pct"] = (p["bb"] / p["bf"]) if p["bf"] else 0.0
+
+    team_offense = db.fetchall(
+        """SELECT t.id, t.abbrev, t.name,
+                  COUNT(DISTINCT g.id) as gp,
+                  SUM(CASE WHEN g.home_team_id = t.id THEN g.home_score ELSE g.away_score END) as runs,
+                  SUM(CASE WHEN g.home_team_id = t.id THEN g.away_score ELSE g.home_score END) as runs_against
+           FROM teams t
+           JOIN games g ON g.played = 1 AND (g.home_team_id = t.id OR g.away_team_id = t.id)
+           GROUP BY t.id
+           ORDER BY (CAST(SUM(CASE WHEN g.home_team_id = t.id THEN g.home_score ELSE g.away_score END) AS REAL)
+                     / NULLIF(COUNT(DISTINCT g.id), 0)) DESC"""
+    )
+    for to in team_offense:
+        to["rpg"]  = (to["runs"] / to["gp"]) if to["gp"] else 0.0
+        to["rapg"] = (to["runs_against"] / to["gp"]) if to["gp"] else 0.0
+        to["diff"] = to["rpg"] - to["rapg"]
+
+    team_defense = sorted(team_offense, key=lambda x: x["rapg"])
+
+    return render_template(
+        "stats.html",
+        games_played=games_played,
+        min_pa=min_pa,
+        min_outs=min_outs,
+        batting=batting,
+        pitching=pitching,
+        team_offense=team_offense,
+        team_defense=team_defense,
+    )
+
+
+@app.route("/player/<int:player_id>")
+def player_detail(player_id: int):
+    player = db.fetchone(
+        """SELECT p.*, t.abbrev as team_abbrev, t.name as team_name, t.id as team_id
+           FROM players p JOIN teams t ON p.team_id = t.id
+           WHERE p.id = ?""",
+        (player_id,),
+    )
+    if not player:
+        abort(404)
+
+    batting_log = db.fetchall(
+        """SELECT bs.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
+                  ht.abbrev as home_abbrev, at.abbrev as away_abbrev
+           FROM game_batter_stats bs
+           JOIN games g ON bs.game_id = g.id
+           JOIN teams ht ON g.home_team_id = ht.id
+           JOIN teams at ON g.away_team_id = at.id
+           WHERE bs.player_id = ?
+           ORDER BY g.game_date DESC, g.id DESC
+           LIMIT 50""",
+        (player_id,),
+    )
+    pitching_log = db.fetchall(
+        """SELECT ps.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
+                  ht.abbrev as home_abbrev, at.abbrev as away_abbrev
+           FROM game_pitcher_stats ps
+           JOIN games g ON ps.game_id = g.id
+           JOIN teams ht ON g.home_team_id = ht.id
+           JOIN teams at ON g.away_team_id = at.id
+           WHERE ps.player_id = ?
+           ORDER BY g.game_date DESC, g.id DESC
+           LIMIT 50""",
+        (player_id,),
+    )
+
+    bt = db.fetchone(
+        """SELECT COUNT(*) as g, SUM(pa) as pa, SUM(ab) as ab, SUM(hits) as h,
+                  SUM(doubles) as d2, SUM(triples) as d3, SUM(hr) as hr,
+                  SUM(runs) as r, SUM(rbi) as rbi, SUM(bb) as bb, SUM(k) as k,
+                  SUM(stays) as stays
+           FROM game_batter_stats WHERE player_id = ?""",
+        (player_id,),
+    )
+    pt = db.fetchone(
+        """SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
+                  SUM(hits_allowed) as h, SUM(runs_allowed) as r,
+                  SUM(bb) as bb, SUM(k) as k
+           FROM game_pitcher_stats WHERE player_id = ?""",
+        (player_id,),
+    )
+
+    bt_totals = None
+    if bt and bt["pa"]:
+        ab = bt["ab"] or 0
+        tb = (bt["h"] or 0) - (bt["d2"] or 0) - (bt["d3"] or 0) - (bt["hr"] or 0) \
+             + 2 * (bt["d2"] or 0) + 3 * (bt["d3"] or 0) + 4 * (bt["hr"] or 0)
+        bt_totals = dict(bt)
+        bt_totals["avg"] = (bt["h"] / ab) if ab else 0.0
+        bt_totals["obp"] = ((bt["h"] + bt["bb"]) / bt["pa"]) if bt["pa"] else 0.0
+        bt_totals["slg"] = (tb / ab) if ab else 0.0
+        bt_totals["ops"] = bt_totals["obp"] + bt_totals["slg"]
+
+    pt_totals = None
+    if pt and pt["outs"]:
+        outs = pt["outs"] or 0
+        ip = outs / 3.0
+        pt_totals = dict(pt)
+        pt_totals["ip"]   = ip
+        pt_totals["era"]  = (pt["r"] * 27.0 / outs) if outs else 0.0
+        pt_totals["whip"] = ((pt["bb"] + pt["h"]) / ip) if ip else 0.0
+        pt_totals["k9"]   = (pt["k"] * 9.0  / ip) if ip else 0.0
+        pt_totals["bb9"]  = (pt["bb"] * 9.0 / ip) if ip else 0.0
+
+    return render_template(
+        "player.html",
+        player=player,
+        batting_log=batting_log,
+        pitching_log=pitching_log,
+        bt_totals=bt_totals,
+        pt_totals=pt_totals,
+    )
+
+
 @app.route("/teams")
 def teams():
     teams_list = db.fetchall(
