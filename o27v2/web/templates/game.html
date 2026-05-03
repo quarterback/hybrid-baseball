@@ -295,107 +295,32 @@
    IA consistent across game types so a viewer never has to mentally
    add up Regulation + SI. #}
 {% set total_denom = 27 + 5 * si_rounds %}
-<h5 class="mt-4 mb-2 text-secondary">Game Totals</h5>
-<div class="row g-3 mb-3">
+<h5 class="mt-4 mb-2 text-secondary">Game Totals <small class="text-secondary">(consolidated across all phases)</small></h5>
+<div class="row g-3 mb-2">
   <div class="col-lg-6">
     <div class="dense">
-      <div class="panel-title">{{ game.away_name }} — Batting Totals</div>
-      <table class="table table-sm dense-table mb-0">
-        <thead><tr>
-          <th class="num">PA</th><th class="num">AB</th>
-          <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
-          <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">K</th>
-          <th class="num">STY</th><th class="num">OR</th>
-        </tr></thead>
-        <tbody><tr class="fw-bold">
-          <td class="num">{{ away_batting_total.pa }}</td>
-          <td class="num">{{ away_batting_total.ab }}</td>
-          <td class="num">{{ away_batting_total.hits }}</td>
-          <td class="num">{{ away_batting_total.doubles }}</td>
-          <td class="num">{{ away_batting_total.triples }}</td>
-          <td class="num">{{ away_batting_total.hr }}</td>
-          <td class="num">{{ away_batting_total.runs }}</td>
-          <td class="num">{{ away_batting_total.rbi }}</td>
-          <td class="num">{{ away_batting_total.bb }}</td>
-          <td class="num">{{ away_batting_total.k }}</td>
-          <td class="num">{{ away_batting_total.stays }}</td>
-          <td class="num">{{ away_batting_total.outs_recorded }}</td>
-        </tr></tbody>
-      </table>
+      <div class="panel-title">{{ game.away_name }} — Batting</div>
+      {{ batting_table(away_batting_consolidated, away_batting_total, -1, total_denom) }}
     </div>
   </div>
   <div class="col-lg-6">
     <div class="dense">
-      <div class="panel-title">{{ game.home_name }} — Batting Totals</div>
-      <table class="table table-sm dense-table mb-0">
-        <thead><tr>
-          <th class="num">PA</th><th class="num">AB</th>
-          <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
-          <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">K</th>
-          <th class="num">STY</th><th class="num">OR</th>
-        </tr></thead>
-        <tbody><tr class="fw-bold">
-          <td class="num">{{ home_batting_total.pa }}</td>
-          <td class="num">{{ home_batting_total.ab }}</td>
-          <td class="num">{{ home_batting_total.hits }}</td>
-          <td class="num">{{ home_batting_total.doubles }}</td>
-          <td class="num">{{ home_batting_total.triples }}</td>
-          <td class="num">{{ home_batting_total.hr }}</td>
-          <td class="num">{{ home_batting_total.runs }}</td>
-          <td class="num">{{ home_batting_total.rbi }}</td>
-          <td class="num">{{ home_batting_total.bb }}</td>
-          <td class="num">{{ home_batting_total.k }}</td>
-          <td class="num">{{ home_batting_total.stays }}</td>
-          <td class="num">{{ home_batting_total.outs_recorded }}</td>
-        </tr></tbody>
-      </table>
+      <div class="panel-title">{{ game.home_name }} — Batting</div>
+      {{ batting_table(home_batting_consolidated, home_batting_total, -1, total_denom) }}
     </div>
   </div>
 </div>
-
 <div class="row g-3 mb-3">
   <div class="col-lg-6">
     <div class="dense">
-      <div class="panel-title">{{ game.away_name }} — Pitching Totals</div>
-      <table class="table table-sm dense-table mb-0">
-        <thead><tr>
-          <th class="num">BF</th><th class="num">OS%</th><th class="num">OUT</th>
-          <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
-          <th class="num">BB</th><th class="num">K</th>
-        </tr></thead>
-        <tbody><tr class="fw-bold">
-          <td class="num">{{ away_pitching_total.batters_faced }}</td>
-          <td class="num text-secondary">{{ os_pct(away_pitching_total.outs_recorded, total_denom) }}</td>
-          <td class="num">{{ away_pitching_total.outs_recorded }}</td>
-          <td class="num">{{ away_pitching_total.hits_allowed }}</td>
-          <td class="num">{{ away_pitching_total.runs_allowed }}</td>
-          <td class="num">{{ away_pitching_total.er }}</td>
-          <td class="num">{{ away_pitching_total.bb }}</td>
-          <td class="num">{{ away_pitching_total.k }}</td>
-        </tr></tbody>
-      </table>
+      <div class="panel-title">{{ game.away_name }} — Pitching</div>
+      {{ pitching_table(away_pitching_consolidated, away_pitching_total, total_denom) }}
     </div>
   </div>
   <div class="col-lg-6">
     <div class="dense">
-      <div class="panel-title">{{ game.home_name }} — Pitching Totals</div>
-      <table class="table table-sm dense-table mb-0">
-        <thead><tr>
-          <th class="num">BF</th><th class="num">OS%</th><th class="num">OUT</th>
-          <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
-          <th class="num">BB</th><th class="num">K</th>
-        </tr></thead>
-        <tbody><tr class="fw-bold">
-          <td class="num">{{ home_pitching_total.batters_faced }}</td>
-          <td class="num text-secondary">{{ os_pct(home_pitching_total.outs_recorded, total_denom) }}</td>
-          <td class="num">{{ home_pitching_total.outs_recorded }}</td>
-          <td class="num">{{ home_pitching_total.hits_allowed }}</td>
-          <td class="num">{{ home_pitching_total.runs_allowed }}</td>
-          <td class="num">{{ home_pitching_total.er }}</td>
-          <td class="num">{{ home_pitching_total.bb }}</td>
-          <td class="num">{{ home_pitching_total.k }}</td>
-        </tr></tbody>
-      </table>
+      <div class="panel-title">{{ game.home_name }} — Pitching</div>
+      {{ pitching_table(home_pitching_consolidated, home_pitching_total, total_denom) }}
     </div>
   </div>
 </div>

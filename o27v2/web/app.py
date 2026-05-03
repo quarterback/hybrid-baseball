@@ -623,6 +623,31 @@ def game_detail(game_id: int):
     away_pitching_rows = _dedup_by_player_phase(away_pitching_rows, _PIT_NUM)
     home_pitching_rows = _dedup_by_player_phase(home_pitching_rows, _PIT_NUM)
 
+    # Per-player Game Totals (one row per player across all phases).
+    # Spec: "Game Totals — one consolidated row per player across all
+    # phases." Distinct from the team-totals row at the bottom of each
+    # per-phase table.
+    def _consolidate_per_player(rows: list, num_fields: tuple) -> list:
+        merged: dict[int, dict] = {}
+        order: list[int] = []
+        for r in rows:
+            pid = r["player_id"]
+            if pid not in merged:
+                base = dict(r)
+                base["phase"] = None  # consolidated row spans phases
+                merged[pid] = base
+                order.append(pid)
+            else:
+                acc = merged[pid]
+                for f in num_fields:
+                    acc[f] = (acc.get(f) or 0) + (r[f] or 0)
+        return [merged[k] for k in order]
+
+    away_batting_consolidated = _consolidate_per_player(away_batting_rows, _BAT_NUM)
+    home_batting_consolidated = _consolidate_per_player(home_batting_rows, _BAT_NUM)
+    away_pitching_consolidated = _consolidate_per_player(away_pitching_rows, _PIT_NUM)
+    home_pitching_consolidated = _consolidate_per_player(home_pitching_rows, _PIT_NUM)
+
     away_batting_by_phase = _group_by_phase(away_batting_rows)
     home_batting_by_phase = _group_by_phase(home_batting_rows)
     away_pitching_by_phase = _group_by_phase(away_pitching_rows)
@@ -684,6 +709,10 @@ def game_detail(game_id: int):
         home_batting_total=_aggregate_batting(home_batting_rows),
         away_pitching_total=_aggregate_pitching(away_pitching_rows),
         home_pitching_total=_aggregate_pitching(home_pitching_rows),
+        away_batting_consolidated=away_batting_consolidated,
+        home_batting_consolidated=home_batting_consolidated,
+        away_pitching_consolidated=away_pitching_consolidated,
+        home_pitching_consolidated=home_pitching_consolidated,
         away_line=away_line,
         home_line=home_line,
         game_notes=notes,
