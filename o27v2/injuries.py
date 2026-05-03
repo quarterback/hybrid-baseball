@@ -362,17 +362,57 @@ def process_post_game_injuries(
 
 def get_active_players(team_id: int, game_date: str) -> list[dict]:
     """
-    Return all healthy (non-injured) players for a team on the given game date.
+    Return today's playable roster for a team.
 
-    Never includes injured players.  If healthy count falls below
-    MIN_ROSTER_THRESHOLD the remaining healthy players are returned as-is —
-    the O27 engine handles small rosters gracefully.
+    Task #65 model:
+      - Pull the active roster (`is_active = 1`) minus anyone on the IL.
+      - If active pitchers fall below MIN_ACTIVE_PITCHERS, ephemerally
+        promote the highest-Stamina healthy reserve pitcher(s).
+      - If active position players fall below MIN_ACTIVE_FIELDERS, do
+        the same with reserve hitters (highest-skill first).
+      - Reserve promotion is in-memory only: the DB `is_active` flags are
+        never flipped, so when the injured player returns the reserve
+        falls back to the bench naturally.
     """
-    return db.fetchall(
+    MIN_ACTIVE_PITCHERS = 12
+    MIN_ACTIVE_FIELDERS = 10
+
+    active = db.fetchall(
         "SELECT * FROM players WHERE team_id = ? "
+        "AND COALESCE(is_active, 1) = 1 "
         "AND (injured_until IS NULL OR injured_until <= ?) ORDER BY id",
         (team_id, game_date),
     )
+
+    n_pitchers = sum(1 for p in active if p.get("is_pitcher"))
+    n_fielders = sum(1 for p in active
+                     if not p.get("is_pitcher") and not p.get("is_joker"))
+
+    need_pitchers = max(0, MIN_ACTIVE_PITCHERS - n_pitchers)
+    need_fielders = max(0, MIN_ACTIVE_FIELDERS - n_fielders)
+    if need_pitchers == 0 and need_fielders == 0:
+        return active
+
+    reserves = db.fetchall(
+        "SELECT * FROM players WHERE team_id = ? "
+        "AND COALESCE(is_active, 1) = 0 "
+        "AND (injured_until IS NULL OR injured_until <= ?)",
+        (team_id, game_date),
+    )
+
+    if need_pitchers:
+        rp = [r for r in reserves if r.get("is_pitcher")]
+        rp.sort(key=lambda p: float(p.get("stamina") or p.get("pitcher_skill") or 0),
+                reverse=True)
+        active.extend(rp[:need_pitchers])
+
+    if need_fielders:
+        rh = [r for r in reserves
+              if not r.get("is_pitcher") and not r.get("is_joker")]
+        rh.sort(key=lambda p: float(p.get("skill") or 0), reverse=True)
+        active.extend(rh[:need_fielders])
+
+    return active
 
 
 # ---------------------------------------------------------------------------

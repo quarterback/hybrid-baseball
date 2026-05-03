@@ -93,8 +93,12 @@ Tables: teams, players (with age, injured_until, il_tier), games, game_batter_st
 
 ### Architecture notes
 - o27v2 imports the O27 engine directly from `o27/engine/` (same workspace)
-- Active roster filtering in sim.py excludes injured players; falls back to full roster if below threshold
-- Pitcher role promotion: if workhorse is injured, best committee pitcher auto-promoted for that game (in-memory only)
+- Active roster filtering in `o27v2/injuries.py:get_active_players` returns the `is_active=1` healthy roster and ephemerally tops up from the reserve pool (`is_active=0`) when pitchers/fielders fall below the minimums — DB flags are never flipped.
+- **Task #65 (rosters + live pitcher roles):**
+  - Each team carries 47 players: 35 active (12 fielders + 4 DH + 19 pitchers) + 12 reserve (7 hitters + 5 pitchers).
+  - Every attribute on every player is rolled INDEPENDENTLY against a 9-tier talent ladder (`_TALENT_TIERS` in `o27v2/league.py`), so genuine elite stars (Stuff 75-80) coexist with replacement-level depth.
+  - Pitchers have separate `pitcher_skill` (Stuff) and `stamina` columns, both tier-rolled independently.
+  - **No `pitcher_role` is stored or read.** `o27v2/sim.py:_db_team_to_engine` picks today's SP as the highest-Stamina active arm that did NOT pitch in the last 4 sim days (`_recently_used_pitcher_ids`). `o27/engine/manager.py:pick_new_pitcher` derives each reliever's role at appearance time from current Stuff + Stamina (outs ≥19 → max Stuff / 10-18 → mid / <10 → max Stamina). Aging or attribute drift naturally re-casts roles without any persisted re-tagging.
 
 ## Key Node Commands
 

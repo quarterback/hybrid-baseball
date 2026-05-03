@@ -161,29 +161,155 @@ def _player_age(rng: random.Random) -> int:
     return max(22, min(38, age))
 
 
+# ---------------------------------------------------------------------------
+# Task #65: talent-tier attribute roller
+# ---------------------------------------------------------------------------
+# Each tier has a probability mass and a 20-80 scout grade range. Each
+# attribute on each player is rolled INDEPENDENTLY against this table, so
+# a player can be elite Power but average Eye, etc. — producing the spiky
+# archetypes the league needs.
+_TALENT_TIERS: list[tuple[float, int, int]] = [
+    # (probability, lo_grade, hi_grade)
+    (0.02, 75, 80),  # Elite
+    (0.05, 65, 74),  # Excellent
+    (0.10, 60, 64),  # Very Good
+    (0.15, 55, 59),  # Good
+    (0.18, 50, 54),  # Above Average
+    (0.20, 45, 49),  # Average
+    (0.15, 40, 44),  # Below Average
+    (0.10, 30, 39),  # Replacement
+    (0.05, 20, 29),  # Sub-Replacement
+]
+
+
+def _roll_tier_grade(rng: random.Random) -> int:
+    """Roll one attribute against the 9-tier league talent distribution.
+
+    Returns an integer 20-80 scout grade. Used independently for every
+    hitter and pitcher attribute on every player.
+    """
+    r = rng.random()
+    cumulative = 0.0
+    for prob, lo, hi in _TALENT_TIERS:
+        cumulative += prob
+        if r < cumulative:
+            return rng.randint(lo, hi)
+    # Floating-point safety net (probabilities sum to 1.0).
+    lo, hi = _TALENT_TIERS[-1][1], _TALENT_TIERS[-1][2]
+    return rng.randint(lo, hi)
+
+
+def _tier_unit(rng: random.Random) -> float:
+    """Tier-rolled grade converted to the [0,1] unit float the engine uses."""
+    return _scout.to_unit(_roll_tier_grade(rng))
+
+
+# Roster shape — Task #65.
+ACTIVE_FIELDERS = 12   # 8 starting positions + 4 bench
+ACTIVE_DH       = 4    # 4 DH/utility bats (replaces the legacy 3 jokers slot)
+ACTIVE_PITCHERS = 19   # full active pitching staff (rotation + bullpen, no roles)
+RESERVE_HITTERS = 7    # reserve position-player pool (covers IL fill-ins)
+RESERVE_PITCHERS = 5   # reserve arms (top up the active pitching staff on IL)
+# Total = 12 + 4 + 19 + 7 + 5 = 47 players/team (active = 35, reserve = 12).
+
+
+def _make_hitter(
+    rng: random.Random,
+    pos: str,
+    is_active: int,
+    name: str,
+) -> dict:
+    """Build one position-player dict with every attribute rolled
+    independently against the talent-tier distribution (Task #65).
+
+    `skill` is the engine's overall hitter rating; `speed` is its own
+    independent roll. Both come from the same 9-tier ladder so genuine
+    elite bats and burners exist alongside replacement-level players.
+    """
+    skill_g  = _roll_tier_grade(rng)
+    speed_g  = _roll_tier_grade(rng)
+    # Pitcher_skill on a position player is only used in emergencies.
+    pskill_g = _roll_tier_grade(rng) // 2 + 10  # cap fielder-pitching at low grades
+    return {
+        "name": name,
+        "position": pos,
+        "is_pitcher": 0,
+        "is_joker": 0,
+        "skill": skill_g,
+        "speed": speed_g,
+        "pitcher_skill": max(20, min(45, pskill_g)),
+        "stay_aggressiveness": round(_clamp(rng.gauss(0.10, 0.05)), 3),
+        "contact_quality_threshold": round(_clamp(rng.gauss(0.28, 0.06)), 3),
+        "archetype": "",
+        "pitcher_role": "",
+        "hard_contact_delta": 0.0,
+        "hr_weight_bonus":    0.0,
+        "age": _player_age(rng),
+        "stamina":   _roll_tier_grade(rng) // 2 + 10,  # irrelevant for hitters
+        "is_active": is_active,
+    }
+
+
+def _make_pitcher(
+    rng: random.Random,
+    is_active: int,
+    name: str,
+) -> dict:
+    """Build one pitcher dict with Stuff (`pitcher_skill`) and Stamina
+    rolled INDEPENDENTLY against the tier ladder.
+
+    No pitcher_role is set — the manager AI derives today's role at game
+    time from the live attribute values, so an aging arm with decayed
+    Stamina automatically slides from rotation into middle relief without
+    any persisted re-tagging.
+    """
+    stuff_g   = _roll_tier_grade(rng)
+    stamina_g = _roll_tier_grade(rng)
+    return {
+        "name": name,
+        "position": "P",
+        "is_pitcher": 1,
+        "is_joker": 0,
+        "skill":  max(20, _roll_tier_grade(rng) // 2 + 10),  # weak bat
+        "speed":  max(20, _roll_tier_grade(rng) // 2 + 15),
+        "pitcher_skill": stuff_g,
+        "stay_aggressiveness": round(_clamp(rng.gauss(0.05, 0.03)), 3),
+        "contact_quality_threshold": round(_clamp(rng.gauss(0.20, 0.05)), 3),
+        "archetype": "",
+        "pitcher_role": "",   # Task #65: live derivation only — never stored.
+        "hard_contact_delta": 0.0,
+        "hr_weight_bonus":    0.0,
+        "age": _player_age(rng),
+        "stamina":   stamina_g,
+        "is_active": is_active,
+    }
+
+
 def generate_players(
     team_idx: int,
     rng: random.Random,
     home_bonus: float = 0.0,
 ) -> list[dict]:
-    """
-    Generate 18 players for a team (9 position + 9 jokers).
+    """Generate ~47 players for a team (Task #65 expanded roster).
 
-    Phase 8 additions:
-      - The starting pitcher (position "P") is tagged pitcher_role="workhorse".
-      - Three position players (CF, SS, 2B) are tagged pitcher_role="committee"
-        with boosted pitcher_skill to serve as relievers.
-      - Nine jokers: JOKERS_PER_ARCHETYPE (3) copies of each archetype
-        (power, speed, contact), shuffled into the roster.
+    Composition (active = 35, reserve = 12, total = 47):
+      - 12 active position players (8 starters at canonical positions
+        CF/SS/2B/3B/RF/LF/1B/C plus 4 utility bench)
+      -  4 active DH/utility bats
+      - 19 active pitchers (no role buckets at generation time — every
+        pitcher is rolled independently against the tier ladder, so the
+        active staff naturally contains workhorses, short-burst arms, and
+        everything in between)
+      -  7 reserve position players (is_active=0)
+      -  5 reserve pitchers (is_active=0)
 
-    Phase 9 addition:
-      - Each player receives an age drawn from a bell curve (22-38, peak 27-30).
+    Every attribute is rolled independently against the talent-tier
+    distribution (`_TALENT_TIERS`), producing the spiky archetypes the
+    league needs to surface real stars on the leaderboards.
 
-    Names are sampled from regional pools with weighted distribution.
-    team_idx influences the skill distribution to give each team personality.
-
-    home_bonus: small skill offset applied to position-player batting skill
-                to model home-field advantage and reduce tie/super-inning rate.
+    `team_idx` and `home_bonus` are accepted for backward compatibility
+    but no longer skew the distribution — the league's variance now comes
+    from per-player tier rolls, not per-team gaussian centers.
     """
     pools = _load_name_pools()
     used_names: set[str] = set()
@@ -200,109 +326,29 @@ def generate_players(
                 return full
         return f"Player {rng.randint(100, 999)}"
 
-    profile      = team_idx % 5
-    skill_base   = [0.52, 0.50, 0.54, 0.48, 0.51][profile] + home_bonus
-    speed_base   = [0.52, 0.60, 0.48, 0.55, 0.50][profile]
-    pitcher_base = [0.54, 0.48, 0.52, 0.56, 0.50][profile]
+    players: list[dict] = []
 
-    players = []
-
-    # ---- 8 position players (no pitching) ----
+    # ---- Active position players: 8 starting positions + 4 bench ----
     for pos in FIELDER_POSITIONS:
-        skill  = _clamp(rng.gauss(skill_base, 0.10))
-        speed  = _clamp(rng.gauss(speed_base, 0.12))
-        pskill = _clamp(rng.gauss(0.30, 0.06))   # never used; non-pitcher
-        stay_a = _clamp(rng.gauss(0.10, 0.05))
-        cqt    = _clamp(rng.gauss(0.28, 0.06))
-        players.append({
-            "name": _name(),
-            "position": pos,
-            "is_pitcher": 0,
-            "is_joker": 0,
-            "skill": round(skill, 3),
-            "speed": round(speed, 3),
-            "pitcher_skill": round(pskill, 3),
-            "stay_aggressiveness": round(stay_a, 3),
-            "contact_quality_threshold": round(cqt, 3),
-            "archetype": "",
-            "pitcher_role": "",
-            "age": _player_age(rng),
-        })
+        players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
+    bench_positions = ["UT", "UT", "UT", "UT"]
+    for pos in bench_positions:
+        players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
 
-    # ---- Dedicated pitching staff ----
-    # All pitchers bat poorly (skill ~0.32) — they only step in if scheduled
-    # to hit. Starters use pitcher_role="starter", relievers="reliever".
-    # Generated alphabetically (SP1..SP4, RP1..RP4) to make rotation
-    # selection deterministic in sim.py.
-    n_starters  = v2cfg.STARTERS_PER_TEAM
-    n_relievers = v2cfg.RELIEVERS_PER_TEAM
+    # ---- Active DH/utility bats ----
+    for _ in range(ACTIVE_DH):
+        players.append(_make_hitter(rng, "DH", is_active=1, name=_name()))
 
-    for i in range(n_starters):
-        # Starters get a small bonus to pitcher_skill (workhorse arms)
-        pskill = _clamp(rng.gauss(pitcher_base + 0.02, 0.10))
-        skill  = _clamp(rng.gauss(0.32, 0.06))   # weak hitters
-        players.append({
-            "name": _name(),
-            "position": "P",
-            "is_pitcher": 1,
-            "is_joker": 0,
-            "skill": round(skill, 3),
-            "speed": round(rng.gauss(0.45, 0.08), 3),
-            "pitcher_skill": round(pskill, 3),
-            "stay_aggressiveness": round(rng.gauss(0.05, 0.03), 3),
-            "contact_quality_threshold": round(rng.gauss(0.20, 0.05), 3),
-            "archetype": "",
-            "pitcher_role": "starter",
-            "age": _player_age(rng),
-        })
+    # ---- Active pitching staff (no role buckets) ----
+    for _ in range(ACTIVE_PITCHERS):
+        players.append(_make_pitcher(rng, is_active=1, name=_name()))
 
-    for i in range(n_relievers):
-        # Relievers slightly less skilled than starters on average
-        pskill = _clamp(rng.gauss(pitcher_base - 0.02, 0.10))
-        skill  = _clamp(rng.gauss(0.30, 0.06))
-        players.append({
-            "name": _name(),
-            "position": "P",
-            "is_pitcher": 1,
-            "is_joker": 0,
-            "skill": round(skill, 3),
-            "speed": round(rng.gauss(0.45, 0.08), 3),
-            "pitcher_skill": round(pskill, 3),
-            "stay_aggressiveness": round(rng.gauss(0.05, 0.03), 3),
-            "contact_quality_threshold": round(rng.gauss(0.20, 0.05), 3),
-            "archetype": "",
-            "pitcher_role": "reliever",
-            "age": _player_age(rng),
-        })
+    # ---- Reserve pool: bench-level depth, promoted on injury ----
+    for _ in range(RESERVE_HITTERS):
+        players.append(_make_hitter(rng, "UT", is_active=0, name=_name()))
+    for _ in range(RESERVE_PITCHERS):
+        players.append(_make_pitcher(rng, is_active=0, name=_name()))
 
-    # Three Designated Hitters per team (Task #47: jokers → DH).
-    # DHs are normal lineup players — no joker engine branching, no archetype.
-    # They are slightly above-average bats with poor defensive tools.
-    # Names come from the same regional name pool as everyone else.
-    for _ in range(3):
-        jname  = _name()
-        skill  = _clamp(rng.gauss(skill_base + 0.06, 0.08))   # plus bat
-        speed  = _clamp(rng.gauss(0.42, 0.10))                # below-avg legs
-        stay_a = _clamp(rng.gauss(0.10, 0.05))
-        cqt    = _clamp(rng.gauss(0.30, 0.06))
-        pskill = _clamp(rng.gauss(0.30, 0.07))
-
-        players.append({
-            "name": jname,
-            "position": "DH",
-            "is_pitcher": 0,
-
-            "skill": _scout.to_grade(skill),
-            "speed": _scout.to_grade(speed),
-            "pitcher_skill": _scout.to_grade(pskill),
-            "stay_aggressiveness": round(stay_a, 3),
-            "contact_quality_threshold": round(cqt, 3),
-            "archetype": "",
-            "pitcher_role": "",
-            "hard_contact_delta": 0.0,
-            "hr_weight_bonus":    0.0,
-            "age": _player_age(rng),
-        })
     return players
 
 
@@ -376,13 +422,16 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
             """INSERT INTO players
                (team_id, name, position, is_pitcher, skill, speed,
                 pitcher_skill, stay_aggressiveness, contact_quality_threshold,
-                archetype, pitcher_role, hard_contact_delta, hr_weight_bonus, age)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                archetype, pitcher_role, hard_contact_delta, hr_weight_bonus,
+                age, stamina, is_active)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(team_id, p["name"], p["position"], p["is_pitcher"],
               p["skill"], p["speed"], p["pitcher_skill"],
               p["stay_aggressiveness"], p["contact_quality_threshold"],
               p.get("archetype", ""), p.get("pitcher_role", ""),
               p.get("hard_contact_delta", 0.0), p.get("hr_weight_bonus", 0.0),
-              p.get("age", 27))
+              p.get("age", 27),
+              p.get("stamina", p.get("pitcher_skill", 50)),
+              p.get("is_active", 1))
              for p in players],
         )

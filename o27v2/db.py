@@ -52,7 +52,9 @@ CREATE TABLE IF NOT EXISTS players (
     hr_weight_bonus       REAL DEFAULT 0.0,
     age                   INTEGER DEFAULT 27,
     injured_until         TEXT DEFAULT NULL,
-    il_tier               TEXT DEFAULT NULL
+    il_tier               TEXT DEFAULT NULL,
+    stamina               INTEGER DEFAULT 50,
+    is_active             INTEGER DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -255,6 +257,9 @@ def init_db() -> None:
         # Phase 9 columns
         phase9_int  = [("age", "27")]
         phase9_text = [("injured_until", "NULL"), ("il_tier", "NULL")]
+        # Task #65 columns: per-pitcher Stamina rolled independently from
+        # tier distribution, plus active/reserve roster split flag.
+        task65_int  = [("stamina", "50"), ("is_active", "1")]
 
         for col, defval in phase8_text + phase9_text:
             try:
@@ -268,7 +273,7 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        for col, defval in phase9_int:
+        for col, defval in phase9_int + task65_int:
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT {defval}")
                 conn.commit()

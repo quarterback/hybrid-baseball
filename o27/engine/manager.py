@@ -318,30 +318,29 @@ def should_change_pitcher(state: GameState) -> bool:
 
 def pick_new_pitcher(state: GameState) -> Optional[Player]:
     """
-    Pick the best available non-restricted pitcher from the fielding team's
-    roster, excluding:
-      - the current pitcher
-      - fielding-restricted jokers (batted jokers)
-      - any pitcher already pulled this half (they stay in the dugout)
+    Task #65: derive the next pitcher's role LIVE from each candidate's
+    current attributes (`stamina` and `pitcher_skill` aka Stuff) — no
+    stored role tag is read.
 
-    Preference order: committee pitchers (role="committee") first, then
-    remaining non-joker players sorted by pitcher_skill.  The workhorse
-    (is_pitcher=True, role="workhorse") is treated as a last resort once
-    they have been pulled, so they do not crowd out committee relievers.
+    Rule of thumb (per pitcher, evaluated each appearance):
+      - outs >= 19 (late innings / closer)   → max Stuff
+      - outs in 10..18 (middle relief)       → max Stuff, with mid-range
+                                               Stamina preferred so true
+                                               workhorses are saved for
+                                               starts
+      - outs <  10 (long relief / spot start)→ max Stamina
 
-    Returns None if no other pitcher is available.
+    Falls back to whatever pitcher is left when a bucket is thin. Position
+    players and jokers are never used as relievers.
     """
     fielding   = state.fielding_team
     current_id = state.current_pitcher_id
-    restricted: set = set()  # Jokers removed in Task #47.
+    restricted: set = set()
 
     already_pitched = {
         r.pitcher_id for r in state.spell_log if r.half == state.half
     }
 
-    # Phase 10: Only true pitchers (is_pitcher=1) may take the mound.
-    # Position players never relieve. Also exclude jokers and already-used
-    # pitchers this half.
     pitcher_candidates = [
         p for p in fielding.roster
         if p.is_pitcher
@@ -349,23 +348,34 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         and p.player_id not in restricted
         and p.player_id not in already_pitched
     ]
-    if pitcher_candidates:
-        # Prefer dedicated relievers over starters (other rotation SPs are
-        # last-resort emergency arms only). Within each role, take the
-        # highest pitcher_skill arm available.
-        pitcher_candidates.sort(
-            key=lambda p: (
-                getattr(p, "pitcher_role", "") == "reliever",
-                getattr(p, "pitcher_role", "") == "committee",  # legacy DBs
-                p.pitcher_skill,
-            ),
-            reverse=True,
-        )
-        return pitcher_candidates[0]
 
-    # No fresh dedicated pitcher available — re-allow any non-restricted
-    # pitcher (even one already pulled) before falling back to a position
-    # player. Position-player relief only fires in true emergencies.
+    outs = getattr(state, "outs", 0) or 0
+
+    def _stuff(p: Player) -> float:
+        return float(getattr(p, "pitcher_skill", 0.5) or 0.5)
+
+    def _stamina(p: Player) -> float:
+        # Fall back to pitcher_skill when stamina hasn't been hydrated
+        # (e.g. legacy DB rows pre-Task-#65).
+        s = getattr(p, "stamina", None)
+        return float(s if s is not None else _stuff(p))
+
+    def _score(p: Player) -> float:
+        if outs >= 19:
+            # Late / closer — pure Stuff.
+            return _stuff(p)
+        if outs >= 10:
+            # Middle relief — Stuff dominates, but penalize the highest-
+            # Stamina arms so they remain available for starts.
+            return _stuff(p) - 0.25 * max(0.0, _stamina(p) - 0.55)
+        # Long relief / spot start — pure Stamina.
+        return _stamina(p)
+
+    if pitcher_candidates:
+        return max(pitcher_candidates, key=_score)
+
+    # No fresh arm available — re-allow any non-restricted pitcher (even
+    # one already pulled this half) before falling back further.
     fallback_pitchers = [
         p for p in fielding.roster
         if p.is_pitcher
@@ -374,7 +384,7 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         and not getattr(p, "is_joker", False)
     ]
     if fallback_pitchers:
-        return max(fallback_pitchers, key=lambda p: p.pitcher_skill)
+        return max(fallback_pitchers, key=_score)
 
     return None
 

@@ -69,7 +69,16 @@ class Player:
     contact_quality_threshold: float = _cfg.PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD
     pitcher_skill: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL
 
-    # Pitcher usage role — "workhorse" | "committee" | "".
+    # Task #65: Stamina is rolled independently of Stuff (`pitcher_skill`)
+    # so the manager AI can derive today's role at game time without any
+    # persisted role tag. High-Stamina arms are preferred for starts and
+    # long relief; high-Stuff arms are preferred for late-inning leverage.
+    stamina: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL
+
+    # Pitcher usage role — legacy "workhorse" | "committee" | "starter" |
+    # "reliever" | "". Task #65 retired role-based usage; the field is
+    # left in place for back-compat with old DB rows but the manager AI
+    # no longer reads it.
     pitcher_role: str = ""
 
     # Legacy Phase-8 fields (kept zeroed for backward compatibility with the

@@ -39,26 +39,38 @@ def _db_team_to_engine(
     players: list[dict],
     team_role: str,
     rotation_index: int = 0,
+    recently_used_pitcher_ids: set[int] | None = None,
 ) -> Team:
     """
     Convert a DB team row + player rows into an O27 engine Team object.
 
-    Phase 10:
-      - roster:  ALL players (8 fielders + 4 SP + 4 RP + 3 jokers).
-      - lineup:  8 fielders + today's starting pitcher + 3 jokers (12 total).
-        Today's starter is chosen by `rotation_index % n_starters`. The other
-        3 SPs and all 4 RPs are bullpen-only and do NOT bat.
-      - jokers_available: the 3 jokers (joker insertion is engine-managed).
+    Task #65 changes:
+      - roster:  ALL active healthy players (~35: 12 fielders + 4 DH + 19 P).
+      - lineup:  9 starting fielders + today's SP + 3 DH = 13 batters.
+      - Today's SP is the highest-Stamina active arm that did NOT pitch in
+        the last few sim days (`recently_used_pitcher_ids`). No rotation
+        index is used — role is derived live from current attributes so
+        aging arms naturally drift out of the rotation.
 
-    team_role: "visitors" | "home"
-    rotation_index: integer used to pick today's SP from the rotation.
+    `recently_used_pitcher_ids` is a set of DB player_ids who appeared in
+    the previous ~4 sim days; supply via the caller. None / empty is
+    treated as "everyone is rested".
+
+    `rotation_index` is accepted for back-compat with older callers but
+    is no longer consulted.
     """
+    _ = rotation_index  # unused — kept for back-compat
+    rest_excluded = recently_used_pitcher_ids or set()
+
     engine_players: list[Player] = []
     fielders: list[Player] = []
-    starters: list[Player] = []
-    relievers: list[Player] = []
-    other_pitchers: list[Player] = []  # legacy "workhorse"/"committee" DBs
-    jokers: list[Player] = []
+    pitchers: list[Player] = []
+    dhs:      list[Player] = []
+    jokers:   list[Player] = []
+
+    # Map engine player_id (str) → original DB id (int) so we can apply
+    # the rest filter.
+    engine_to_db_id: dict[str, int] = {}
 
     for p in players:
         home_bonus = (
@@ -66,6 +78,9 @@ def _db_team_to_engine(
             if team_role == "home"
             else 0.0
         )
+        stamina_grade = p.get("stamina")
+        if stamina_grade is None or stamina_grade == 0:
+            stamina_grade = p.get("pitcher_skill", 50)
         player = Player(
             player_id=str(p["id"]),
             name=p["name"],
@@ -73,6 +88,7 @@ def _db_team_to_engine(
             skill=_scout.to_unit(p["skill"]) + home_bonus,
             speed=_scout.to_unit(p["speed"]),
             pitcher_skill=_scout.to_unit(p["pitcher_skill"]),
+            stamina=_scout.to_unit(stamina_grade),
             stay_aggressiveness=float(p["stay_aggressiveness"]),
             contact_quality_threshold=float(p["contact_quality_threshold"]),
             archetype=str(p.get("archetype") or ""),
@@ -81,34 +97,37 @@ def _db_team_to_engine(
             hr_weight_bonus=float(p.get("hr_weight_bonus") or 0.0),
         )
         engine_players.append(player)
-        # Engine Player has no is_joker field; consult the source dict instead.
-        # (v2 dropped jokers in Phase 10 — list stays empty in current builds.)
+        engine_to_db_id[player.player_id] = int(p["id"])
         if bool(p.get("is_joker")):
             jokers.append(player)
         elif player.is_pitcher:
-            role = player.pitcher_role
-            if role == "starter":
-                starters.append(player)
-            elif role == "reliever":
-                relievers.append(player)
-            else:
-                other_pitchers.append(player)
+            pitchers.append(player)
+        elif p.get("position") == "DH":
+            dhs.append(player)
         else:
             fielders.append(player)
 
-    # ---- Build the 12-player batting lineup ----
-    # 8 fielders (or however many exist) + today's SP + jokers.
+    # ---- Pick today's SP: highest Stamina among rested active arms ----
     todays_sp: list[Player] = []
-    if starters:
-        idx = rotation_index % len(starters)
-        todays_sp = [starters[idx]]
-    elif other_pitchers:
-        # Legacy DB fallback (workhorse/committee players)
-        todays_sp = [other_pitchers[0]]
+    if pitchers:
+        rested = [
+            p for p in pitchers
+            if engine_to_db_id.get(p.player_id) not in rest_excluded
+        ]
+        # Fall back to the full pitcher pool if every arm is "tired".
+        candidate_pool = rested or pitchers
+        sp = max(candidate_pool, key=lambda pl: pl.stamina)
+        todays_sp = [sp]
 
-    lineup = list(fielders) + todays_sp + list(jokers)
+    # Cap fielders at the canonical 8 starting positions; remaining ones
+    # are bench depth that lives in the roster but does not bat. Cap DHs
+    # at 3 batting slots so the lineup stays at 12 (8 fielders + SP + 3 DH)
+    # for engine compatibility.
+    starting_fielders = fielders[:8]
+    starting_dhs      = dhs[:3]
 
-    # Roster includes everyone (so pick_new_pitcher can see all relievers)
+    lineup = list(starting_fielders) + todays_sp + list(starting_dhs)
+
     return Team(
         team_id=team_role,
         name=team_row["name"],
@@ -268,49 +287,48 @@ def _compute_team_phase_outs(
 # ---------------------------------------------------------------------------
 
 def _get_active_players(team_id: int, game_date: str) -> list[dict]:
-    """Return healthy (non-injured) players; falls back to full roster if too few."""
+    """Return today's playable roster: healthy is_active=1 players, topped
+    up from the reserve pool (is_active=0) when injuries thin out a slot.
+
+    Reserve promotion is ephemeral — the DB flags are not flipped, the
+    reserves are only added to today's lineup pool.
+    """
     from o27v2.injuries import get_active_players
     return get_active_players(team_id, game_date)
 
 
-def _promote_pitcher_role(players: list[dict]) -> list[dict]:
-    """
-    Phase 10: ensure at least one usable starter exists.
-
-    Modern leagues seed dedicated starters/relievers, but legacy DBs may
-    still contain workhorse/committee or no pitcher at all (after injuries).
-    Falls back gracefully in that case so the engine never lacks a pitcher.
-    """
-    has_starter = any(
-        p.get("pitcher_role") in ("starter", "workhorse") and p.get("is_pitcher")
-        for p in players
+def _recently_used_pitcher_ids(
+    team_id: int, game_date: str, days_back: int = 4
+) -> set[int]:
+    """DB ids of pitchers who appeared for `team_id` in the last
+    `days_back` sim days (used to keep today's SP rested)."""
+    rows = db.fetchall(
+        """SELECT DISTINCT ps.player_id
+             FROM game_pitcher_stats ps
+             JOIN games g ON g.id = ps.game_id
+            WHERE ps.team_id = ?
+              AND g.played = 1
+              AND g.game_date >= date(?, ?)
+              AND g.game_date <  ?""",
+        (team_id, game_date, f"-{days_back} days", game_date),
     )
-    if has_starter:
+    return {int(r["player_id"]) for r in rows}
+
+
+def _promote_pitcher_role(players: list[dict]) -> list[dict]:
+    """Task #65: roles are derived live (no `pitcher_role` is read), so
+    this helper only needs to guarantee at least one `is_pitcher` arm
+    exists. If the active staff is somehow empty (legacy/edge case),
+    promote the highest-pitcher_skill non-joker as an emergency starter.
+    """
+    has_pitcher = any(p.get("is_pitcher") for p in players)
+    if has_pitcher:
         return players
-
-    # Try a reliever if no starter is healthy
-    relievers = [p for p in players
-                 if p.get("pitcher_role") == "reliever" and p.get("is_pitcher")]
-    if relievers:
-        best = max(relievers, key=lambda p: float(p.get("pitcher_skill", 0.0)))
-        return [dict(p, pitcher_role="starter") if p["id"] == best["id"] else p
-                for p in players]
-
-    # Legacy committee fallback (Phase 8 DBs)
-    committee = [p for p in players if p.get("pitcher_role") == "committee"]
-    if committee:
-        best = max(committee, key=lambda p: float(p.get("pitcher_skill", 0.0)))
-        return [dict(p, pitcher_role="starter", is_pitcher=1)
-                if p["id"] == best["id"] else p
-                for p in players]
-
-    # Last resort: promote the highest-pitcher_skill non-joker player.
     pool = [p for p in players if not p.get("is_joker")]
     if not pool:
         return players
     best = max(pool, key=lambda p: float(p.get("pitcher_skill", 0.0)))
-    return [dict(p, pitcher_role="starter", is_pitcher=1)
-            if p["id"] == best["id"] else p
+    return [dict(p, is_pitcher=1) if p["id"] == best["id"] else p
             for p in players]
 
 
@@ -353,11 +371,19 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     # Phase 10: rotate starting pitcher per game. Use game_id so the
     # rotation is deterministic and each SP gets a near-equal share of
     # the season's starts (162 / 4 ≈ 40 starts per SP per team).
-    home_rotation_idx = game_id
-    away_rotation_idx = game_id
+    # Task #65: today's SP is picked live by Stamina + rest, so the only
+    # rotation state we need is the set of arms that pitched recently.
+    home_rest = _recently_used_pitcher_ids(home_team_id, game_date)
+    away_rest = _recently_used_pitcher_ids(away_team_id, game_date)
 
-    visitors_team = _db_team_to_engine(away_row,  away_players,  "visitors", away_rotation_idx)
-    home_team     = _db_team_to_engine(home_row, home_players, "home",     home_rotation_idx)
+    visitors_team = _db_team_to_engine(
+        away_row, away_players, "visitors",
+        recently_used_pitcher_ids=away_rest,
+    )
+    home_team = _db_team_to_engine(
+        home_row, home_players, "home",
+        recently_used_pitcher_ids=home_rest,
+    )
 
     state = GameState(visitors=visitors_team, home=home_team)
     state.current_pitcher_id = _find_pitcher_id(home_team)
