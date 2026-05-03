@@ -9,13 +9,14 @@ Routes:
   GET       /random              Redirect to /game with random teams + seed
   GET       /standings           League standings
   GET       /schedule            Schedule / results (?team=ABB to filter)
-  GET       /stats               Batting leaders
+  GET       /stats               Batting + pitching leaders
   GET       /stats-leaders       Alias → /stats
   GET       /teams               Team list
-  GET       /team/<abbrev>       Team page + tabbed roster/stats/schedule
+  GET       /team/<abbrev>       Team page (Roster|Stats|Pitching|Schedule tabs)
   GET       /player/<team>/<slug> Player detail page
   GET       /players             Player browser
   GET       /my-team             My Team placeholder
+  GET       /roster              Roster placeholder
   GET       /lineups             Lineups placeholder
   GET       /trade               Trade placeholder
   GET       /manager             Manager placeholder
@@ -24,6 +25,7 @@ Routes:
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 import random
@@ -48,6 +50,8 @@ import o27.data as data
 app = Flask(__name__, template_folder="templates")
 app.secret_key = os.environ.get("SECRET_KEY", "o27-dev-secret-key")
 
+_SEASON_START = _dt.date(2026, 4, 1)
+
 
 # ---------------------------------------------------------------------------
 # Context processor — inject globals into every template
@@ -56,9 +60,15 @@ app.secret_key = os.environ.get("SECRET_KEY", "o27-dev-secret-key")
 @app.context_processor
 def inject_globals():
     total = len(data._RECENT)
+    # Advance season calendar: 2 games per day
+    day_offset = total // 2
+    season_date = _SEASON_START + _dt.timedelta(days=day_offset)
+    week = (day_offset // 7) + 1
     return {
-        "g_total": total,
-        "g_flashes": get_flashed_messages(with_categories=True),
+        "g_total":    total,
+        "g_date":     season_date.strftime("%b %d"),
+        "g_week":     week,
+        "g_flashes":  get_flashed_messages(with_categories=True),
     }
 
 
@@ -193,6 +203,17 @@ def _split_log(lines: list[str]) -> dict:
 # Build structured batting / pitching rows for HTML tables
 # ---------------------------------------------------------------------------
 
+def _fmt_ip(outs: int) -> str:
+    """Format outs-recorded as innings-pitched string (e.g. 7 outs → '2.1')."""
+    return f"{outs // 3}.{outs % 3}"
+
+
+def _fmt_era(r: int, outs: int) -> str:
+    if outs <= 0:
+        return "—" if r == 0 else "∞"
+    return f"{r / outs * 27:.2f}"
+
+
 def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list, list]:
     """Return (v_batting, h_batting, v_pitching, h_pitching) as plain dicts."""
     bs = renderer.batter_stats      # dict player_id → BatterStats
@@ -251,6 +272,11 @@ def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list
         ps["k"]    += spell.k
         ps["hbp"]  += spell.hbp
 
+    # Add derived IP / ERA to each pitcher row
+    for ps in pitcher_map.values():
+        ps["ip"]  = _fmt_ip(ps["outs"])
+        ps["era"] = _fmt_era(ps["r"], ps["outs"])
+
     v_pids = {p.player_id for p in final_state.visitors.roster}
     h_pids = {p.player_id for p in final_state.home.roster}
 
@@ -259,6 +285,15 @@ def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list
     v_pitching = [v for pid, v in pitcher_map.items() if pid in v_pids]
     h_pitching = [v for pid, v in pitcher_map.items() if pid in h_pids]
     return v_batting, h_batting, v_pitching, h_pitching
+
+
+def _winner_loser_pitchers(winner_id: str, v_pitching: list, h_pitching: list) -> tuple[str, str]:
+    """Return (winner_pitcher_name, loser_pitcher_name)."""
+    w_pit = v_pitching if winner_id == "visitors" else h_pitching
+    l_pit = h_pitching if winner_id == "visitors" else v_pitching
+    wp = max(w_pit, key=lambda x: x["outs"])["name"] if w_pit else "—"
+    lp = max(l_pit, key=lambda x: x["r"])["name"]    if l_pit else "—"
+    return wp, lp
 
 
 # ---------------------------------------------------------------------------
@@ -284,12 +319,21 @@ def index():
 def sim():
     if request.method == "POST":
         try:
-            seed = int(request.form.get("seed", 0) or 0)
+            seed = int(request.form.get("seed", "") or random.randint(0, 9999))
         except (TypeError, ValueError):
-            seed = 0
-        visitors = request.form.get("visitors", "")
-        home_    = request.form.get("home", "")
-        flash(f"▶ Simulating {visitors} @ {home_} (seed {seed})", "info")
+            seed = random.randint(0, 9999)
+        visitors = (request.form.get("visitors", "") or "").strip() or None
+        home_    = (request.form.get("home",     "") or "").strip() or None
+        # Auto-pick teams if not specified (topbar quick-sim)
+        if not visitors or not home_:
+            teams = data.load_teams()
+            if len(teams) >= 2:
+                pair = random.sample(teams, 2)
+                visitors = visitors or pair[0]["abbrev"]
+                home_    = home_    or pair[1]["abbrev"]
+        v_label = visitors or "?"
+        h_label = home_ or "?"
+        flash(f"▶ Simulating {v_label} @ {h_label} — seed {seed}", "info")
         return redirect(url_for("game", seed=seed, visitors=visitors, home=home_))
 
     teams = data.load_teams()
@@ -343,11 +387,10 @@ def game():
 
     v_batting, h_batting, v_pitching, h_pitching = _structured_stats(final_state, renderer)
 
-    # Compute R/H for line score
-    v_runs = sum(r.get("runs", 0) for r in v_batting)
-    h_runs = sum(r.get("runs", 0) for r in h_batting)
     v_hits = sum(r.get("hits", 0) for r in v_batting)
     h_hits = sum(r.get("hits", 0) for r in h_batting)
+
+    wp, lp = _winner_loser_pitchers(winner_id, v_pitching, h_pitching)
 
     data.store_game(game_id, {
         "game_id":           game_id,
@@ -364,6 +407,8 @@ def game():
         "h_batting":         h_batting,
         "v_pitching":        v_pitching,
         "h_pitching":        h_pitching,
+        "winner_pitcher":    wp,
+        "loser_pitcher":     lp,
     })
 
     sections = _split_log(log_lines)
@@ -481,6 +526,9 @@ def stats():
         by_rbi= data.get_leaders("rbi"),
         by_sty= data.get_leaders("sty"),
         by_k=   data.get_leaders("k"),
+        by_pit_k=   data.get_pitching_leaders("k"),
+        by_pit_era= data.get_pitching_leaders("era"),
+        by_pit_ip=  data.get_pitching_leaders("outs"),
     )
 
 
@@ -507,12 +555,14 @@ def team_page(abbrev):
 
     recent_games   = data.get_schedule(40, team=abbrev)[:10]
     team_batting   = data.get_team_batting(abbrev)
+    team_pitching  = data.get_team_pitching(abbrev)
     tab = request.args.get("tab", "roster")
 
     return render_template("team.html",
         team=team, record=rec,
         recent_games=recent_games,
         team_batting=team_batting,
+        team_pitching=team_pitching,
         tab=tab,
     )
 
@@ -535,7 +585,6 @@ def player_page(team_abbrev, slug):
 
     stats = data.get_player_stats(team_abbrev, player["name"])
 
-    # Last 10 games this player appeared in
     game_log: list[dict] = []
     for g in data.get_schedule(100, team=team_abbrev):
         side = "v" if g.get("visitors_abbrev") == team_abbrev else "h"
@@ -544,7 +593,7 @@ def player_page(team_abbrev, slug):
                 game_log.append({
                     "game_id": g["game_id"],
                     "opp":     g["home_abbrev"] if side == "v" else g["visitors_abbrev"],
-                    "ha":      "vs" if side == "h" else "@",
+                    "ha":      "@" if side == "v" else "vs",
                     **row,
                 })
                 break
@@ -595,6 +644,13 @@ def my_team():
     return render_template("placeholder.html",
         title="My Team", icon="🏟",
         blurb="Full team management — lineups, depth charts, and stats — coming soon.")
+
+
+@app.route("/roster")
+def roster():
+    return render_template("placeholder.html",
+        title="Roster", icon="📋",
+        blurb="View and manage your full team roster, assign positions, and review player attributes.")
 
 
 @app.route("/lineups")

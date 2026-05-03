@@ -41,14 +41,16 @@
 <div class="card">
   <div class="card-hd" style="padding:0; border-bottom:none;">
     <div class="tabs" style="padding:0 .5rem;">
-      <button class="tab-btn {% if tab=='roster' %}active{% endif %}" data-tg="tm" data-ti="roster"  onclick="switchTab('tm','roster')">Roster</button>
-      <button class="tab-btn {% if tab=='stats'  %}active{% endif %}" data-tg="tm" data-ti="stats"   onclick="switchTab('tm','stats')">Batting Stats</button>
-      <button class="tab-btn {% if tab=='log'    %}active{% endif %}" data-tg="tm" data-ti="log"     onclick="switchTab('tm','log')">Game Log</button>
+      <button class="tab-btn" data-tg="tm" data-ti="roster"  onclick="switchTab('tm','roster')">Roster</button>
+      <button class="tab-btn" data-tg="tm" data-ti="lineup"  onclick="switchTab('tm','lineup')">Lineup</button>
+      <button class="tab-btn" data-tg="tm" data-ti="batting" onclick="switchTab('tm','batting')">Batting Stats</button>
+      <button class="tab-btn" data-tg="tm" data-ti="pitching" onclick="switchTab('tm','pitching')">Pitching Stats</button>
+      <button class="tab-btn" data-tg="tm" data-ti="schedule" onclick="switchTab('tm','schedule')">Schedule</button>
     </div>
   </div>
 
   {# ── ROSTER ── #}
-  <div class="tab-panel {% if tab=='roster' or not tab %}active{% endif %} card-bd" style="padding:.65rem;" data-pg="tm" data-pi="roster">
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="tm" data-pi="roster">
     <table class="dt">
       <thead>
         <tr>
@@ -78,8 +80,48 @@
     </table>
   </div>
 
+  {# ── LINEUP (non-jokers in field order) ── #}
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="tm" data-pi="lineup">
+    <table class="dt">
+      <thead>
+        <tr>
+          <th>#</th><th>Player</th><th>Pos</th>
+          <th class="r">Skill</th><th class="r">Speed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set order_num = namespace(n=1) %}
+        {% for p in team.players if not p.is_joker %}
+        <tr>
+          <td class="dim mono">{{ order_num.n }}</td>
+          <td><a href="/player/{{ team.abbrev }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
+          <td class="pos">{{ p.position }}</td>
+          <td class="r mono">{{ "%.3f"|format(p.skill) }}</td>
+          <td class="r mono">{{ "%.3f"|format(p.speed) }}</td>
+        </tr>
+        {% set order_num.n = order_num.n + 1 %}
+        {% endfor %}
+        {% if team.players | selectattr('is_joker') | list %}
+        <tr><td colspan="5" class="dim small" style="padding:.5rem .5rem .2rem; font-size:.65rem; text-transform:uppercase; letter-spacing:.07em;">Jokers available</td></tr>
+        {% for p in team.players if p.is_joker %}
+        <tr class="jr">
+          <td class="dim mono">J{{ loop.index }}</td>
+          <td>
+            <a href="/player/{{ team.abbrev }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a>
+            {% if p.joker_archetype %}<span class="ab ab-{{ p.joker_archetype | lower }}">{{ p.joker_archetype }}</span>{% endif %}
+          </td>
+          <td class="pos">{{ p.position }}</td>
+          <td class="r mono">{{ "%.3f"|format(p.skill) }}</td>
+          <td class="r mono">{{ "%.3f"|format(p.speed) }}</td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
   {# ── BATTING STATS ── #}
-  <div class="tab-panel {% if tab=='stats' %}active{% endif %} card-bd" style="padding:.65rem;" data-pg="tm" data-pi="stats">
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="tm" data-pi="batting">
     {% if team_batting %}
     <table class="dt">
       <thead>
@@ -91,11 +133,10 @@
           <th class="r sortable" onclick="sortTable(this)">R</th>
           <th class="r sortable" onclick="sortTable(this)">H</th>
           <th class="r sortable" onclick="sortTable(this)">2B</th>
-          <th class="r sortable" onclick="sortTable(this)">3B</th>
           <th class="r sortable" onclick="sortTable(this)">HR</th>
           <th class="r sortable" onclick="sortTable(this)">RBI</th>
           <th class="r sortable" onclick="sortTable(this)">BB</th>
-          <th class="r sortable" onclick="sortTable(this)">K</th>
+          <th class="r sortable" onclick="sortTable(this)">SO</th>
           <th class="r sortable" onclick="sortTable(this)">STY</th>
           <th class="r sortable" onclick="sortTable(this)">AVG</th>
         </tr>
@@ -106,9 +147,7 @@
           <td>
             {% set slug = p.name.lower().replace(' ','_').replace('.','') %}
             <a href="/player/{{ team.abbrev }}/{{ slug }}" class="link">{{ p.name }}</a>
-            {% if p.is_joker and p.archetype %}
-            <span class="ab ab-{{ p.archetype | lower }}">{{ p.archetype }}</span>
-            {% endif %}
+            {% if p.is_joker and p.archetype %}<span class="ab ab-{{ p.archetype | lower }}">{{ p.archetype }}</span>{% endif %}
           </td>
           <td class="pos">{{ p.pos }}</td>
           <td class="r mono dim">{{ p.gp }}</td>
@@ -117,7 +156,6 @@
           <td class="r mono">{{ p.runs }}</td>
           <td class="r mono">{{ p.hits }}</td>
           <td class="r mono">{{ p.doubles }}</td>
-          <td class="r mono">{{ p.triples }}</td>
           <td class="r mono">{{ p.hr }}</td>
           <td class="r mono">{{ p.rbi }}</td>
           <td class="r mono">{{ p.bb }}</td>
@@ -129,12 +167,50 @@
       </tbody>
     </table>
     {% else %}
-    <div class="empty">No batting data yet. <a href="/game?visitors={{ team.abbrev }}&home={{ team.abbrev }}&seed=0" class="link">Sim a game →</a></div>
+    <div class="empty">No batting data yet. <a href="/sim" class="link">Sim a game featuring {{ team.abbrev }} →</a></div>
     {% endif %}
   </div>
 
-  {# ── GAME LOG ── #}
-  <div class="tab-panel {% if tab=='log' %}active{% endif %} card-bd" style="padding:.65rem;" data-pg="tm" data-pi="log">
+  {# ── PITCHING STATS ── #}
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="tm" data-pi="pitching">
+    {% if team_pitching %}
+    <table class="dt">
+      <thead>
+        <tr>
+          <th>Pitcher</th>
+          <th class="r sortable" onclick="sortTable(this)">G</th>
+          <th class="r sortable" onclick="sortTable(this)">IP</th>
+          <th class="r sortable" onclick="sortTable(this)">H</th>
+          <th class="r sortable" onclick="sortTable(this)">R</th>
+          <th class="r sortable" onclick="sortTable(this)">ER</th>
+          <th class="r sortable" onclick="sortTable(this)">BB</th>
+          <th class="r sortable" onclick="sortTable(this)">SO</th>
+          <th class="r sortable" onclick="sortTable(this)">ERA</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in team_pitching %}
+        <tr>
+          <td>{{ p.name }}</td>
+          <td class="r mono dim">{{ p.g }}</td>
+          <td class="r mono">{{ p.ip }}</td>
+          <td class="r mono">{{ p.h }}</td>
+          <td class="r mono">{{ p.r }}</td>
+          <td class="r mono">{{ p.r }}</td>
+          <td class="r mono">{{ p.bb }}</td>
+          <td class="r mono">{{ p.k }}</td>
+          <td class="r mono">{{ p.era }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No pitching data yet. <a href="/sim" class="link">Sim a game →</a></div>
+    {% endif %}
+  </div>
+
+  {# ── SCHEDULE ── #}
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="tm" data-pi="schedule">
     {% if recent_games %}
     <table class="dt">
       <thead>
@@ -168,7 +244,6 @@
 
 {% endblock %}
 {% block scripts %}
-// Open correct tab based on URL param
 (function() {
   const tab = new URLSearchParams(location.search).get('tab') || 'roster';
   switchTab('tm', tab);

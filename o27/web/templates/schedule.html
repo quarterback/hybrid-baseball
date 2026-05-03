@@ -10,7 +10,7 @@
 
 <div class="card">
   <div class="card-hd">
-    Filter
+    Filter by Team
     <span class="r">
       <form method="get" action="/schedule" style="display:inline-flex; gap:.4rem; align-items:center;">
         <select name="team" style="font-size:.75rem; padding:.22rem .45rem;">
@@ -36,7 +36,9 @@
       <tr>
         <th>Seed</th>
         <th>Visitors</th><th class="r">Score</th><th>Home</th>
-        <th class="c">SI</th><th>Winner</th>
+        <th class="c">SI</th>
+        <th>W Pitcher</th>
+        <th>L Pitcher</th>
       </tr>
     </thead>
     <tbody>
@@ -53,13 +55,8 @@
           <span class="dim small"> {{ g.home_name }}</span>
         </td>
         <td class="c dim small">{% if g.super_flag %}SI{% endif %}</td>
-        <td>
-          {% if g.winner_id == 'visitors' %}
-          <a href="/team/{{ g.visitors_abbrev }}" class="w small link">{{ g.visitors_abbrev }}</a>
-          {% else %}
-          <a href="/team/{{ g.home_abbrev }}" class="w small link">{{ g.home_abbrev }}</a>
-          {% endif %}
-        </td>
+        <td class="small w">{{ g.get('winner_pitcher', '—') }}</td>
+        <td class="small l">{{ g.get('loser_pitcher',  '—') }}</td>
       </tr>
       {% endfor %}
     </tbody>

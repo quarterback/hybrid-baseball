@@ -21,7 +21,7 @@
       --mono:    "Courier New", Courier, monospace;
       --sans:    system-ui, -apple-system, "Segoe UI", sans-serif;
       --top-h:   44px;
-      --side-w:  172px;
+      --side-w:  176px;
     }
 
     html, body { height: 100%; overflow: hidden; }
@@ -51,31 +51,34 @@
       white-space: nowrap;
     }
     .topbar-sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
-    .topbar-meta {
-      display: flex; align-items: center; gap: .55rem;
+    .topbar-state {
+      display: flex; align-items: baseline; gap: .4rem; flex-shrink: 0;
     }
-    .topbar-chip {
+    .topbar-date {
+      font-family: var(--mono); font-size: .78rem; font-weight: 700;
+      color: var(--text); letter-spacing: .04em;
+    }
+    .topbar-season {
       font-size: .68rem; color: var(--muted);
-      letter-spacing: .05em; white-space: nowrap;
     }
-    .topbar-chip strong { color: var(--text); }
     .topbar-right { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
 
-    /* SIM button — POST form so it's a real action, not a plain link */
+    /* SIM button — POST form so it's a real action every time */
     .btn-sim {
       background: var(--accent); color: #fff; border: none; border-radius: 3px;
       padding: .3rem .85rem; font-size: .75rem; font-weight: 700;
       letter-spacing: .07em; text-transform: uppercase;
-      cursor: pointer; text-decoration: none; display: inline-block; white-space: nowrap;
+      cursor: pointer; white-space: nowrap;
     }
     .btn-sim:hover { background: #9c3c15; }
 
     /* ══ FLASH BANNER ══ */
     .flash-bar {
-      grid-column: 1 / -1;
-      background: #fff8e8; border-bottom: 1px solid #e8d090;
-      padding: .3rem 1.1rem; font-size: .76rem; color: #7a5a10;
+      grid-column: 2;
+      background: #fff8e8; border-bottom: 1px solid #e8d090; border-left: 3px solid var(--amber);
+      padding: .28rem 1.1rem; font-size: .75rem; color: #7a5a10;
       display: flex; align-items: center; gap: .5rem;
+      position: sticky; top: 0; z-index: 50;
     }
 
     /* ══ SIDEBAR ══ */
@@ -97,7 +100,7 @@
     }
     .nav-a:hover { color: var(--text); background: var(--bg); }
     .nav-a.active { color: var(--text); font-weight: 600; border-left-color: var(--accent); background: var(--bg); }
-    .nav-a.dim-link { opacity: .55; font-style: italic; }
+    .nav-a.dim-link { opacity: .6; font-style: italic; }
 
     /* ══ MAIN ══ */
     .main {
@@ -191,7 +194,7 @@
     .line-score .bold { font-weight: 700; }
 
     /* ══ TABS ══ */
-    .tabs { display: flex; border-bottom: 1px solid var(--border); }
+    .tabs { display: flex; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
     .tab-btn {
       background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
       padding: .42rem .85rem; font-size: .72rem; font-weight: 600;
@@ -250,14 +253,8 @@
     /* ══ GAME NAV ══ */
     .game-nav { display: flex; justify-content: space-between; margin-bottom: .9rem; }
 
-    /* ══ LEADERS ══ */
-    .leaders-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .9rem; }
-
     /* ══ PLACEHOLDER ══ */
-    .placeholder-box {
-      text-align: center; padding: 3rem 2rem;
-      color: var(--muted);
-    }
+    .placeholder-box { text-align: center; padding: 3rem 2rem; color: var(--muted); }
     .placeholder-box .ph-icon { font-size: 3rem; margin-bottom: .75rem; line-height: 1; }
     .placeholder-box h2 { font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: .5rem; }
     .placeholder-box p  { font-size: .83rem; max-width: 360px; margin: 0 auto .9rem; }
@@ -286,22 +283,26 @@
 <header class="topbar">
   <a class="topbar-logo" href="/">O27</a>
   <div class="topbar-sep"></div>
-  <div class="topbar-meta">
-    <span class="topbar-chip">
-      {% if g_total == 0 %}
-        Exhibition Mode
-      {% else %}
-        <strong>{{ g_total }}</strong> game{% if g_total != 1 %}s{% endif %} simulated
-      {% endif %}
+  <div class="topbar-state">
+    <span class="topbar-date">{{ g_date }}</span>
+    <span class="topbar-season">
+      {%- if g_total == 0 -%}
+        Spring Training
+      {%- else -%}
+        Season 1 · Wk {{ g_week }} · {{ g_total }} G
+      {%- endif -%}
     </span>
   </div>
   <div class="topbar-right">
-    <a href="/sim" class="btn-sim">▶ Sim Game</a>
+    {# POST form so the SIM button triggers a real sim action with flash #}
+    <form method="post" action="/sim" style="display:inline;">
+      <button type="submit" class="btn-sim">▶ Sim Game</button>
+    </form>
   </div>
 </header>
 
 {% for cat, msg in g_flashes %}
-<div class="flash-bar">{{ msg }}</div>
+<div class="flash-bar" style="grid-row:2; grid-column:2;">{{ msg }}</div>
 {% endfor %}
 
 <nav class="sidebar">
@@ -312,19 +313,20 @@
   <a href="/schedule"  class="nav-a {% if active=='boxscores'  %}active{% endif %}">Box Scores</a>
 
   <div class="nav-sec">Stats</div>
-  <a href="/stats"    class="nav-a {% if active=='stats'    %}active{% endif %}">Batting Leaders</a>
-  <a href="/teams"    class="nav-a {% if active=='teams'    %}active{% endif %}">Teams</a>
-  <a href="/players"  class="nav-a {% if active=='players'  %}active{% endif %}">Players</a>
+  <a href="/stats"     class="nav-a {% if active=='stats'    %}active{% endif %}">Leaders</a>
+  <a href="/teams"     class="nav-a {% if active=='teams'    %}active{% endif %}">Teams</a>
+  <a href="/players"   class="nav-a {% if active=='players'  %}active{% endif %}">Players</a>
 
   <div class="nav-sec">Simulate</div>
-  <a href="/sim"      class="nav-a {% if active=='sim'      %}active{% endif %}">Sim Game</a>
-  <a href="/random"   class="nav-a">Random Game</a>
+  <a href="/sim"       class="nav-a {% if active=='sim'      %}active{% endif %}">Sim Game</a>
+  <a href="/random"    class="nav-a">Random Game</a>
 
   <div class="nav-sec">Manage</div>
-  <a href="/my-team"  class="nav-a dim-link {% if active=='my-team'  %}active{% endif %}">My Team</a>
-  <a href="/lineups"  class="nav-a dim-link {% if active=='lineups'  %}active{% endif %}">Lineups</a>
-  <a href="/trade"    class="nav-a dim-link {% if active=='trade'    %}active{% endif %}">Trade Center</a>
-  <a href="/manager"  class="nav-a dim-link {% if active=='manager'  %}active{% endif %}">Manager</a>
+  <a href="/my-team"   class="nav-a dim-link {% if active=='my-team'  %}active{% endif %}">My Team</a>
+  <a href="/roster"    class="nav-a dim-link {% if active=='roster'   %}active{% endif %}">Roster</a>
+  <a href="/lineups"   class="nav-a dim-link {% if active=='lineups'  %}active{% endif %}">Lineups</a>
+  <a href="/trade"     class="nav-a dim-link {% if active=='trade'    %}active{% endif %}">Trade Center</a>
+  <a href="/manager"   class="nav-a dim-link {% if active=='manager'  %}active{% endif %}">Manager</a>
 </nav>
 
 <main class="main">
@@ -341,7 +343,6 @@ function switchTab(group, id) {
   });
 }
 
-/* Column-click table sort */
 function sortTable(th) {
   const table = th.closest('table');
   const tbody = table.querySelector('tbody');
@@ -360,8 +361,6 @@ function sortTable(th) {
     return asc ? av.localeCompare(bv) : bv.localeCompare(av);
   });
   rows.forEach(r => tbody.appendChild(r));
-
-  // keep totals row last
   const tot = tbody.querySelector('tr.tot');
   if (tot) tbody.appendChild(tot);
 }

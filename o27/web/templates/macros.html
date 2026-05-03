@@ -37,8 +37,7 @@
       <th class="r">PA</th><th class="r">AB</th><th class="r">R</th>
       <th class="r">H</th><th class="r">2B</th><th class="r">3B</th>
       <th class="r">HR</th><th class="r">RBI</th><th class="r">BB</th>
-      <th class="r">K</th><th class="r">HBP</th>
-      <th class="r" title="Stay choices">STY</th>
+      <th class="r">SO</th><th class="r" title="Stay choices">STY</th>
       <th class="r">AVG</th>
     </tr>
   </thead>
@@ -63,14 +62,13 @@
       <td class="r mono">{{ p.rbi }}</td>
       <td class="r mono">{{ p.bb }}</td>
       <td class="r mono">{{ p.k }}</td>
-      <td class="r mono">{{ p.hbp }}</td>
       <td class="r mono">{% if p.sty > 0 %}{{ p.sty }}{% else %}-{% endif %}</td>
       <td class="r mono">{{ p.avg }}</td>
     </tr>
     {% endif %}
     {% endfor %}
     {# totals row #}
-    {% set tot = namespace(pa=0,ab=0,runs=0,hits=0,d=0,t=0,hr=0,rbi=0,bb=0,k=0,hbp=0,sty=0) %}
+    {% set tot = namespace(pa=0,ab=0,runs=0,hits=0,d=0,t=0,hr=0,rbi=0,bb=0,k=0,sty=0) %}
     {% for p in rows %}
       {% set tot.pa  = tot.pa  + p.pa  %}
       {% set tot.ab  = tot.ab  + p.ab  %}
@@ -82,7 +80,6 @@
       {% set tot.rbi = tot.rbi + p.rbi %}
       {% set tot.bb  = tot.bb  + p.bb  %}
       {% set tot.k   = tot.k   + p.k   %}
-      {% set tot.hbp = tot.hbp + p.hbp %}
       {% set tot.sty = tot.sty + p.sty %}
     {% endfor %}
     <tr class="tot">
@@ -97,7 +94,6 @@
       <td class="r mono">{{ tot.rbi }}</td>
       <td class="r mono">{{ tot.bb }}</td>
       <td class="r mono">{{ tot.k }}</td>
-      <td class="r mono">{{ tot.hbp }}</td>
       <td class="r mono">{{ tot.sty }}</td>
       <td class="r mono">{{ "%.3f"|format(tot.hits/tot.ab) if tot.ab > 0 else ".000" }}</td>
     </tr>
@@ -111,21 +107,26 @@
   <thead>
     <tr>
       <th>Pitcher</th>
-      <th class="r">BF</th><th class="r">Outs</th><th class="r">R</th>
-      <th class="r">H</th><th class="r">BB</th><th class="r">K</th><th class="r">HBP</th>
+      <th class="r">IP</th>
+      <th class="r">H</th>
+      <th class="r">R</th>
+      <th class="r">ER</th>
+      <th class="r">BB</th>
+      <th class="r">SO</th>
+      <th class="r">ERA</th>
     </tr>
   </thead>
   <tbody>
     {% for p in rows %}
     <tr>
       <td>{{ p.name }}</td>
-      <td class="r mono">{{ p.bf }}</td>
-      <td class="r mono">{{ p.outs }}</td>
-      <td class="r mono">{{ p.r }}</td>
+      <td class="r mono">{{ p.ip if p.ip is defined else (p.outs // 3 ~ "." ~ (p.outs % 3)) }}</td>
       <td class="r mono">{{ p.h }}</td>
+      <td class="r mono">{{ p.r }}</td>
+      <td class="r mono">{{ p.r }}</td>
       <td class="r mono">{{ p.bb }}</td>
       <td class="r mono">{{ p.k }}</td>
-      <td class="r mono">{{ p.hbp }}</td>
+      <td class="r mono">{{ p.era if p.era is defined else "—" }}</td>
     </tr>
     {% endfor %}
   </tbody>
