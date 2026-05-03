@@ -42,7 +42,7 @@ That question turns out to have a *lot* of cascading consequences.
 The base rules:
 
 - **One innings per side, of 27 outs.** Visitors bat first until they're retired 27 times. Home team bats second to the same target. Pitchers don't get a between-innings break — they're on the mound until they're pulled, and once pulled they're done.
-- **12-batter lineup**, not 9. Eight defensive positions plus the starting pitcher plus three DH-style hitters who don't take the field. So the lineup gets 12 slots per cycle through the order, not 9.
+- **9-batter base lineup + 3 tactical jokers.** The base lineup has eight defensive positions plus the starting pitcher — same 9 as a no-DH MLB lineup. On top of that, each team has **three jokers** available per game: tactical pinch-hitters who can be inserted into any rotation through the order, but each one only ONCE per cycle. Jokers don't take a roster spot, don't take a field position, and don't replace anyone permanently — they bat one PA, then return to the bench. The manager decides whether and when to use them. (More on this below — it's the load-bearing strategic mechanic.)
 - **The "stay" rule** (this is the load-bearing one, and it's the most pesäpallo-influenced thing in the engine — see below). When the batter puts a ball into the field of play and runners are on, the batter chooses *run* or *stay*. Run resolves the AB normally. Stay credits the batter with a hit, lets the runners advance per the fielding play, and uses one strike from the batter's three-strike budget. The count carries forward. The batter waits for another pitch.
 - **The 3-foul-out rule.** Three fouls in a single AB ends the AB as an out. Not three foul *strikes*; three fouls total, anywhere in the count. Caps the infinite-foul wars that are theoretically possible in MLB.
 - **Super-innings tiebreaker.** If the game is tied after regulation, each team picks five batters from their lineup and gets a sudden-death five-out half. Roughly inspired by cricket's super-over but with O27's own scoring shape.
@@ -81,17 +81,34 @@ This is the part that was nagging me about earlier versions of the simulator: a 
 
 **Pitcher fatigue becomes the dominant question.** In MLB a starter throws 6 innings = 18 outs spread across 6 sessions, with full rest between each. In O27 a starter throws 27 outs *consecutively*. There is no break. Stuff doesn't determine endurance — *Stamina* does. A high-Stuff/low-Stamina arm is a one-inning closer in any league; in O27 they get pasted in the 24th out. A high-Stamina/medium-Stuff arm is a workhorse who can grind a complete game. The *Maddux archetype* — soft contact, surgical command, eats outs — is disproportionately valuable. So is the pure stamina horse who'd be a #5 starter in MLB but is an ace here.
 
-**Lineups have to be longer to keep the offense viable.** With pitchers fatiguing across continuous outs, by the third time through the order the bowler is meaningfully degraded. But there's no inter-inning rest for hitters either — they're cycling against the same arm continuously. A 9-batter lineup cycling through 80+ PAs would mean each hitter goes 9-10 times — way too much exposure. So the lineup expands to 12. Eight fielders plus the starting pitcher plus three DH slots. Each batter goes 6-7 times instead of 9-10. Math works.
+**Lineups don't get longer — they get supplemented tactically.** This is the biggest single design decision and it's where O27 diverges most clearly from MLB. The base lineup is the same 9 batters MLB uses (8 fielders + SP). What changes is what sits on the bench: three **jokers** per game, available for the manager to insert into any rotation through the order, each one once per cycle.
 
-**The 3-DH structure unlocks lineup-archetype diversity that MLB doesn't have.** With three DH slots instead of one, you can carry simultaneously:
+A joker is **not** a fourth-DH or a 10th-batter slot. Three properties make them distinct:
 
-- A Rickey Henderson / Lou Brock / Tim Raines speed-specialist bat-runner
-- A traditional Bonds / Ortiz power DH
+1. **They don't take a roster position.** Jokers come from the bench — DH-positioned bats, utility infielders, anyone the manager wants to designate as today's joker pool. They don't displace a fielder.
+2. **They don't take a field position.** A joker bats; that's it. They never take the field. The fielding 8 is unchanged.
+3. **They're optional per insertion AND once per cycle.** A manager can insert all three jokers in one cycle, none, or somewhere in between. The same joker can't be inserted twice in the same cycle through the order, but they can be inserted again next cycle.
+
+Functionally: each joker is a **pinch-hitter with no cost** — three of them, deployable per the manager's read of the situation, available again next cycle. Pinch hits in the traditional MLB sense still exist as a separate mechanic (you can permanently swap a struggling regular for a fresh bat, who then takes the lineup spot AND a field position), but jokers are the cheaper, repeatable version.
+
+The strategic depth this adds is enormous. A manager who never inserts his jokers is leaving offense on the table; a manager who burns all three in the first cycle has nothing left for the late half. The decision tree at every PA is real:
+
+- Insert the **power joker** (Bonds-tier slugger) when there are men on — multi-run HR is the highest-EV play
+- Insert the **contact joker** (Molitor-tier high-OBP) or the **speed joker** (Henderson-tier) with no one on — start a rally, get the leadoff guy on, set up the heart of the order
+- Save jokers entirely in a blowout where the leverage doesn't justify the cycle-cost
+- Burn all three in one cycle when the leverage is genuinely peak (tied game, 22nd out, runners in scoring position)
+
+This is closer to how a cricket captain manages his bowling rotation than how an MLB manager manages a bullpen. Cricket captains have a finite number of overs from each bowler; they choose which bowler to use against which batter, holding their best for the matchup that matters most. O27 managers do the same with their jokers, but on the offensive side. **Manager AI quality becomes a real differentiator** — a "joker leverage index" measuring the share of insertions that landed in genuinely high-leverage spots is itself a stat. Over a 162-game season the differential between a good O27 manager and a bad one is measurable.
+
+The joker pool itself is flexible per game. The same 3 names don't have to play every day:
+
+- A Rickey Henderson / Lou Brock / Tim Raines speed-specialist
+- A traditional Bonds / Ortiz power bat
 - A Paul Molitor-style high-OBP technician
 
-These three coexist in the same lineup. Or you skip the speed/OBP guys entirely and run three power DHs. Or you use one of the slots to *rest a regular fielder* — your starting catcher takes a DH day to keep his legs fresh. None of this is reachable from MLB's single-DH model. And the DH spots aren't "bottom of the order" by default — they're tactical, used in scoring situations or to anchor the heart of the order, depending on what the matchup needs that day. Every rotation through the lineup is its own decision.
+…can all be in the joker pool together. Or the manager can use one of the slots to **rest a regular fielder** — your starting catcher gets a "joker day" where he bats but doesn't squat, while a backup catches the field. None of this is reachable from MLB's fixed lineup-position model. And because jokers aren't pinned to any slot, they can land anywhere in the rotation the manager calls for.
 
-**Run environments inflate.** With no inter-inning rest, more PAs per game (~85 vs MLB's ~75 — and those extra PAs come from stays, where a single AB can produce up to three PAs), and the stay mechanic letting baserunners advance more freely, you get *more offense*. The simulator's tuned baseline runs at ~25 R/G total, about 2.5x MLB. This is structural. Pushing it back down toward MLB's 9 R/G would be modeling something else, not O27.
+**Run environments inflate.** With no inter-inning rest, more PAs per game (~84 vs MLB's ~75 — coming from stays, which can put a single AB at up to 3 PAs, plus joker insertions adding tactical PAs at high-leverage moments), and the stay mechanic letting baserunners advance more freely, you get *more offense*. The simulator's baseline runs at ~25 R/G total, about 2.5x MLB. This is structural. Pushing it back down toward MLB's 9 R/G would be modeling something else, not O27.
 
 **Workhorse pitchers become more valuable than aces.** This is the biggest design surprise. In MLB, an elite-Stuff arm is the most valuable type because they neutralize "third time through the order." In O27 the third time through the order is just *the order*; everyone faces it. So Stamina dominates. The pitchers who'd be ace closers in MLB are short-burst arms in O27 who eat 6-9 outs. The pitchers who'd be workhorse #2 starters in MLB are the ace tier in O27.
 
@@ -99,7 +116,7 @@ These three coexist in the same lineup. Or you skip the speed/OBP guys entirely 
 
 Once stays exist, the basic stat machinery has to evolve. An at-bat can produce up to 3 plate appearances; PAs and ABs decouple in a way they don't in MLB.
 
-**PAVG (Plate Average) = H / PA.** This is the headline batting average in O27. Bounded 0.000–1.000. PA is the natural denominator because every contact event is one PA, whether the AB ends or extends — and it makes the math read cleanly across multi-hit ABs. The exact league mean is whatever the talent distribution and rule set produce; the structural argument is that with 12-batter lineups (vs MLB's 9), more PAs per game (~85 vs ~75), and stays converting would-be-outs into hits, hits-per-game in O27 should naturally be above MLB's per-game total even at a modestly higher PAVG. That's what the simulator produces.
+**PAVG (Plate Average) = H / PA.** This is the headline batting average in O27. Bounded 0.000–1.000. PA is the natural denominator because every contact event is one PA, whether the AB ends or extends — and it makes the math read cleanly across multi-hit ABs. The exact league mean is whatever the talent distribution and rule set produce; the structural argument is that with stays converting would-be-outs into hits, joker insertions adding tactical PAs in high-leverage spots, and 27-out continuous halves keeping hitters cycling, hits-per-game in O27 should naturally be above MLB's per-game total even at a modestly higher PAVG. That's what the simulator produces.
 
 **BAVG (Batting Average) = H / AB.** This is the secondary "stayer profile" metric — inherits MLB's batting-average semantics (per-AB rate). In O27 it can exceed 1.000, because multi-hit ABs are real (max 3 hits in 1 AB via stays). Read together with PAVG, it diagnoses style:
 
@@ -131,10 +148,13 @@ A new stat the engine surfaces — **Δstay = BAVG - PAVG** — quantifies how m
 | | 5-inning ball | MLB | O27 |
 |---|---|---|---|
 | Outs per game | 30 | 54 | 54 |
-| PAs per game (est) | ~45 | ~75 | ~85 (stays) |
+| Base lineup size | 9 | 9 | 9 |
+| Joker pool | none | none | 3 (per-cycle reusable) |
+| PAs per game (est) | ~45 | ~75 | ~84 (stays + jokers) |
 | Runs per game (avg) | ~5 | ~9 | ~25 |
 | Game length | ~1h45 | ~3h | ~2h |
 | Within-AB tactics | MLB-standard | baseline | stay + foul-out |
+| Per-rotation tactics | none | pinch-hit / sub | joker insertions |
 | Max hits per AB | 1 | 1 | 3 |
 | PA / AB ratio | 1.0 | ~1.0 | up to 3.0 |
 | Rotation depth | 8–10 SPs | 5 SPs | 4–5 SPs (workhorse) |
@@ -142,13 +162,13 @@ A new stat the engine surfaces — **Δstay = BAVG - PAVG** — quantifies how m
 | Within-game variance | very high | medium | medium-low |
 | Strategic depth | less than MLB | baseline | more than MLB |
 
-5-inning ball compresses MLB; O27 *re-architects* it. Look at the strategic-depth row — that's the load-bearing distinction. 5-inning baseball *removes* decisions (no bullpen, no late-inning chess). O27 *adds* them (stay or run, foul-out tactics, workhorse rotation, dance-the-runners with the count).
+5-inning ball compresses MLB; O27 *re-architects* it. Look at the strategic-depth row — that's the load-bearing distinction. 5-inning baseball *removes* decisions (no bullpen, no late-inning chess). O27 *adds* them (stay or run, foul-out tactics, workhorse rotation, joker insertions per rotation, dance-the-runners with the count).
 
 ## What I learned by building the simulator
 
 I didn't set out to write a sport. I set out to test if the idea would work. The simulator is the experiment — it lets me sample seasons, look at stat distributions, see whether elite players actually look elite, see whether mediocre teams actually lose more, see whether the rule set produces a coherent game.
 
-Three things stood out:
+Four things stood out:
 
 **The Pedro line emerged.** In a recent test season, the simulated league produced a pitcher (Kazuomi Ahn, fictional, Stuff 92 / Command 79 — Elite+ tier) with a 4.38 ERA, 10.4 K/27, and a .167 opponent batting average across 86 batters faced. That last number — .167 oAvg — is *exactly* Pedro Martinez's 2000 BAA. It happened by accident, and that's when I knew the engine was producing real stat shapes, not just numbers. An elite pitcher in O27 should look unmistakably like an elite pitcher: Pedro-tier suppression of contact, Maddux-tier walk rates, Cy Young-tier ERA+. They do.
 
@@ -158,15 +178,17 @@ Three things stood out:
 
 **Defense matters in O27 the way it matters in cricket.** With more BIPs per game and more late-half tired-pitcher contact, the value of an actually-good fielder shows up more starkly. The simulator now has per-position defense ratings (infield / outfield / catcher sub-groups, on top of general glove and arm), errors that fire as ROE events charging UER, catcher arm reducing SB success, and DRS / dWAR computed against a positional-value table. The +SS at the top of those leaderboards is genuinely worth a couple wins per season above replacement, the same way Andrelton Simmons used to be in real life.
 
+**The first joker model was wrong, and the corrected version surfaced manager-AI as a real lever.** I built jokers as fixed bottom-of-order DH slots first — the manager had no decision to make, the lineup was set, the jokers just batted when their slot came up. That collapsed the entire tactical layer. The corrected model — three jokers in a separate pool, available for per-PA insertion subject to once-per-cycle, with the manager AI deciding whether and when based on leverage — is much harder to build right but produces a genuinely interesting strategic surface. The cleanest sign that the rule is working: a "joker leverage index" emerged as a real differentiator. Two managers with similar rosters can end up several wins apart over a season based purely on joker timing — like a cricket captain holding his death-overs bowler for the right matchup, or burning his best closer in a non-save situation. Manager AI quality goes from a flavor consideration to a measurable stat.
+
 ## Why O27 ended up more interesting than the 5-inning version
 
 Three reasons, in increasing order of importance:
 
 **1. It forces position redesign.** 5-inning baseball doesn't change what a starter or closer is — it just shifts the proportions. O27 destroys the closer position outright (the bowler stays in until pulled), turns the SP role into a workhorse-stamina premium, makes the catcher's arm a *team-defense input* via SB suppression, and makes Power and Eye independently valuable instead of correlated through "good hitter."
 
-**2. It produces archetypes that don't exist in MLB.** The dance-the-runners contact specialist is an O27-native type. The free-swinger who fouls himself into the dugout is an O27-native type. The high-PAVG / high-BAVG productive stayer who takes ABs and turns them into 3-hit innings is an O27-native type. None of them are reachable from the 5-inning rule set.
+**2. It produces archetypes that don't exist in MLB.** The dance-the-runners contact specialist is an O27-native type. The free-swinger who fouls himself into the dugout is an O27-native type. The high-PAVG / high-BAVG productive stayer who takes ABs and turns them into 3-hit innings is an O27-native type. The pure-tactical "joker" — a Bonds or a Henderson kept on the bench specifically to be deployed in high-leverage rotations — is an O27-native type that has no MLB analog (the closest is "elite pinch-hitter," but pinch-hitters in MLB are usually one-shot deals, not three-times-a-game tactical assets). None of these are reachable from the 5-inning rule set.
 
-**3. It asks a real question about cricket's contribution to baseball.** The question 5-inning baseball asks is "what if you played less baseball?" That's a sample-size question. The question O27 asks is "what does cricket's *concentration* — and pesäpallo's *contact-budget* layered on top — do to baseball's *structure*?" That's a sport-design question. The first one has a known-shape answer (less variance per game, more variance per series, all the rate stats stay the same). The second one had no clear answer when I started — the stay mechanic, the foul-out cap, the workhorse premium, the inflated run environment, the per-position-defense importance, the PAVG/BAVG distinction, all emerged from working through consequences. *That's* the part that's worth modeling.
+**3. It asks a real question about what makes baseball *baseball*.** The question 5-inning baseball asks is "what if you played less baseball?" That's a sample-size question. The question O27 asks is "what does cricket's *concentration* — and pesäpallo's *contact-budget* layered on top — do to baseball's *structure*?" That's a sport-design question. The first one has a known-shape answer (less variance per game, more variance per series, all the rate stats stay the same). The second one had no clear answer when I started — the stay mechanic, the foul-out cap, the workhorse premium, the inflated run environment, the per-position-defense importance, the PAVG/BAVG distinction, the joker tactical layer with manager-AI as a measurable differentiator, all emerged from working through consequences. *That's* the part that's worth modeling.
 
 ## Where this goes
 
@@ -176,7 +198,7 @@ The honest counter-argument is that O27 is *less* viewable than 5-inning basebal
 
 Both ideas survive contact with reality. They live at opposite ends of the same design axis. 5-inning baseball maximizes statistical truth across a long season; O27 maximizes per-game density and forces the sport itself to be different. They're answering opposite questions about what makes baseball worth watching. I find the second question more interesting, and the simulator I've been building has convinced me that the answer to it is genuinely a sport rather than a gimmick.
 
-Cricket gave baseball one specific thing here: the *innings as concentrated event*. Pesäpallo gave it a second: the *contact-as-budget* tactical layer that makes the long innings strategically rich rather than just longer. If I'd taken the schedule instead of the structure, I'd have a slightly faster MLB. Taking the concentration plus the budget gave me something that needed its own probability tables, its own value-stat constants, its own rotation philosophy, its own player archetypes — and that's what made it worth building.
+Cricket gave baseball one specific thing here: the *innings as concentrated event*. Pesäpallo gave it a second: the *contact-as-budget* tactical layer that makes the long innings strategically rich rather than just longer. The joker mechanic is the third thing — three pinch-hitters-with-no-cost as a *recurring tactical resource*, with the manager calling on them like a cricket captain calling on his strike bowler — and it's the piece that ties the rest together by making manager AI quality a real variable. If I'd taken the schedule instead of the structure, I'd have a slightly faster MLB. Taking the concentration plus the contact budget plus the joker rotation gave me something that needed its own probability tables, its own value-stat constants, its own rotation philosophy, its own player archetypes, and its own definition of what a good manager looks like — and that's what made it worth building.
 
 ---
 

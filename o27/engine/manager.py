@@ -280,9 +280,14 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     team = state.batting_team
     if not team.jokers_available:
         return None
+    # A joker can't be inserted if (a) already used this cycle, or (b)
+    # currently on base from a prior PA. Without (b), Bonds could be at
+    # 2B and "also" inserted to bat again — physically impossible.
+    on_base_ids = {pid for pid in state.bases if pid is not None}
     eligible = [
         j for j in team.jokers_available
         if j.player_id not in team.jokers_used_this_cycle
+        and j.player_id not in on_base_ids
     ]
     if not eligible:
         return None
