@@ -451,7 +451,7 @@ def game():
     sections = _split_log(log_lines)
 
     return render_template("game.html",
-        active="schedule",
+        active="boxscores",
         seed=seed,
         game_id=game_id,
         visitors_name=final_state.visitors.name,
@@ -500,7 +500,7 @@ def view_game(game_id):
     h_hits = sum(r.get("hits", 0) for r in h_batting)
 
     return render_template("game.html",
-        active="schedule",
+        active="boxscores",
         seed=g["seed"],
         game_id=game_id,
         visitors_name=g["visitors_name"],
