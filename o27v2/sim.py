@@ -45,8 +45,8 @@ def _db_team_to_engine(
     Convert a DB team row + player rows into an O27 engine Team object.
 
     Task #65 changes:
-      - roster:  ALL active healthy players (~35: 12 fielders + 4 DH + 19 P).
-      - lineup:  9 starting fielders + today's SP + 3 DH = 13 batters.
+      - roster:  ALL active healthy players (34: 12 fielders + 3 DH + 19 P).
+      - lineup:  8 starting fielders + today's SP + 3 DH = 12 batters.
       - Today's SP is the highest-Stamina active arm that did NOT pitch in
         the last few sim days (`recently_used_pitcher_ids`). No rotation
         index is used — role is derived live from current attributes so

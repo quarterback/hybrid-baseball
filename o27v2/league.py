@@ -293,15 +293,15 @@ def generate_players(
 ) -> list[dict]:
     """Generate ~47 players for a team (Task #65 expanded roster).
 
-    Composition (active = 35, reserve = 12, total = 47):
+    Composition (active = 34, reserve = 13, total = 47):
       - 12 active position players (8 starters at canonical positions
         CF/SS/2B/3B/RF/LF/1B/C plus 4 utility bench)
-      -  4 active DH/utility bats
+      -  3 active DH/utility bats
       - 19 active pitchers (no role buckets at generation time — every
         pitcher is rolled independently against the tier ladder, so the
         active staff naturally contains workhorses, short-burst arms, and
         everything in between)
-      -  7 reserve position players (is_active=0)
+      -  8 reserve position players (is_active=0)
       -  5 reserve pitchers (is_active=0)
 
     Every attribute is rolled independently against the talent-tier
