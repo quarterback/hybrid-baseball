@@ -35,13 +35,31 @@ from o27v2 import db
 # Invariant harness — run the Task #59 suite in-process.
 # ---------------------------------------------------------------------------
 
+def _locate_invariant_test_file() -> str:
+    """Find the Task #59 invariant suite. The file lives at
+    <repo>/tests/test_stat_invariants.py. We search a list of candidates
+    (relative to this module) and raise loudly if none exist so a missing
+    suite never silently archives 0/0."""
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))           # .../o27v2
+    repo = os.path.dirname(here)                                # .../<repo>
+    candidates = [
+        os.path.join(repo, "tests", "test_stat_invariants.py"),  # actual location
+        os.path.join(here, "tests", "test_stat_invariants.py"),  # fallback if moved
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    raise FileNotFoundError(
+        "Invariant suite not found. Looked in:\n  " + "\n  ".join(candidates)
+    )
+
+
 def run_invariant_harness() -> tuple[int, int, str]:
     import importlib.util
-    import os
     import sys
 
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    test_path = os.path.join(here, "tests", "test_stat_invariants.py")
+    test_path = _locate_invariant_test_file()
     spec = importlib.util.spec_from_file_location("o27_inv_tests", test_path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules["o27_inv_tests"] = mod
