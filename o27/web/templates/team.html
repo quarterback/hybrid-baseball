@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}O27 — {{ team.display }}{% endblock %}
+{% block content %}
+{% set active = "teams" %}
+
+<div class="ph">
+  <h1>{{ team.display }}</h1>
+  <p class="sub">{{ team.level }} · {{ team.abbrev }} · {{ team.players | length }} players</p>
+</div>
+
+<div class="two-col">
+
+  <div>
+    <div class="card">
+      <div class="card-hd">Record</div>
+      <table class="dt">
+        <thead>
+          <tr><th>GP</th><th class="r">W</th><th class="r">L</th><th class="r">PCT</th><th class="r">RF</th><th class="r">RA</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">{{ record.gp }}</td>
+            <td class="r mono w">{{ record.w }}</td>
+            <td class="r mono l">{{ record.l }}</td>
+            <td class="r mono">{{ "%.3f"|format(record.pct) if record.gp > 0 else "—" }}</td>
+            <td class="r mono">{{ record.r_for }}</td>
+            <td class="r mono">{{ record.r_against }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    {% if recent_games %}
+    <div class="card">
+      <div class="card-hd">Recent Games</div>
+      <table class="dt">
+        <thead>
+          <tr><th>Opp</th><th class="r">Score</th><th>Result</th></tr>
+        </thead>
+        <tbody>
+          {% for g in recent_games %}
+          <tr>
+            <td>
+              <a href="/game/{{ g.game_id }}" class="link">
+                {% if g.visitors_abbrev == team.abbrev %}
+                  vs {{ g.home_abbrev }}
+                {% else %}
+                  @ {{ g.visitors_abbrev }}
+                {% endif %}
+              </a>
+            </td>
+            <td class="r mono">
+              {% if g.visitors_abbrev == team.abbrev %}
+                {{ g.v_score }}–{{ g.h_score }}
+              {% else %}
+                {{ g.h_score }}–{{ g.v_score }}
+              {% endif %}
+            </td>
+            <td>
+              {% set team_won = (g.visitors_abbrev == team.abbrev and g.winner_id == 'visitors') or (g.home_abbrev == team.abbrev and g.winner_id == 'home') %}
+              <span class="{% if team_won %}w{% else %}l{% endif %} small">{% if team_won %}W{% else %}L{% endif %}</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-hd">Roster</div>
+      <table class="dt">
+        <thead>
+          <tr>
+            <th>Player</th><th>Pos</th>
+            <th class="r">Skill</th><th class="r">Speed</th><th class="r">PSkl</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in team.players %}
+          <tr{% if p.is_joker %} class="jr"{% endif %}>
+            <td>
+              {{ p.name }}
+              {% if p.is_joker and p.joker_archetype %}
+              <span class="ab ab-{{ p.joker_archetype | lower }}">{{ p.joker_archetype }}</span>
+              {% endif %}
+            </td>
+            <td class="pos">{{ p.position }}</td>
+            <td class="r mono">{{ "%.3f"|format(p.skill) }}</td>
+            <td class="r mono">{{ "%.3f"|format(p.speed) }}</td>
+            <td class="r mono">{{ "%.3f"|format(p.pitcher_skill) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

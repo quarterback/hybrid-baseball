@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}O27 — Teams{% endblock %}
+{% block content %}
+{% set active = "teams" %}
+
+<div class="ph">
+  <h1>Teams</h1>
+  <p class="sub">{{ teams | length }} teams in the database</p>
+</div>
+
+<div class="card">
+  <div class="card-hd">All Teams</div>
+  <table class="dt">
+    <thead>
+      <tr>
+        <th>Abbrev</th><th>Name</th><th>Level</th>
+        <th class="r">W</th><th class="r">L</th><th class="r">PCT</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in teams %}
+      <tr>
+        <td class="mono accent"><a href="/team/{{ t.abbrev }}" class="link">{{ t.abbrev }}</a></td>
+        <td>{{ t.display }}</td>
+        <td class="dim small">{{ t.level }}</td>
+        <td class="r mono w">{{ records.get(t.abbrev, {}).get('w', 0) }}</td>
+        <td class="r mono l">{{ records.get(t.abbrev, {}).get('l', 0) }}</td>
+        <td class="r mono">
+          {% set w = records.get(t.abbrev, {}).get('w', 0) %}
+          {% set l = records.get(t.abbrev, {}).get('l', 0) %}
+          {% set gp = w + l %}
+          {{ "%.3f"|format(w/gp) if gp > 0 else "—" }}
+        </td>
+        <td><a href="/team/{{ t.abbrev }}" class="link small">Roster →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

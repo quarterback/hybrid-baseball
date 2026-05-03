@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}O27 — Players{% endblock %}
+{% block content %}
+{% set active = "players" %}
+
+<div class="ph">
+  <h1>Player Browser</h1>
+  <p class="sub">{{ total }} players across {{ team_count }} teams</p>
+</div>
+
+<div class="card">
+  <div class="card-hd">
+    All Players
+    <span class="r">
+      <form method="get" action="/players" style="display:inline-flex; gap:.4rem; align-items:center;">
+        <input type="text" name="q" value="{{ q }}" placeholder="Filter name…" style="width:140px; font-size:.75rem; padding:.22rem .45rem;">
+        <select name="team" style="font-size:.75rem; padding:.22rem .45rem;">
+          <option value="">All teams</option>
+          {% for t in all_teams %}
+          <option value="{{ t.abbrev }}" {% if t.abbrev == filter_team %}selected{% endif %}>{{ t.abbrev }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-outline btn-sm">Filter</button>
+      </form>
+    </span>
+  </div>
+  {% if players %}
+  <table class="dt">
+    <thead>
+      <tr>
+        <th>Player</th><th>Team</th><th>Pos</th>
+        <th class="r">Skill</th><th class="r">Speed</th><th class="r">PSkl</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in players %}
+      <tr{% if row.player.is_joker %} class="jr"{% endif %}>
+        <td>
+          {{ row.player.name }}
+          {% if row.player.is_joker and row.player.joker_archetype %}
+          <span class="ab ab-{{ row.player.joker_archetype | lower }}">{{ row.player.joker_archetype }}</span>
+          {% endif %}
+        </td>
+        <td><a href="/team/{{ row.team.abbrev }}" class="link">{{ row.team.abbrev }}</a></td>
+        <td class="pos">{{ row.player.position }}</td>
+        <td class="r mono">{{ "%.3f"|format(row.player.skill) }}</td>
+        <td class="r mono">{{ "%.3f"|format(row.player.speed) }}</td>
+        <td class="r mono">{{ "%.3f"|format(row.player.pitcher_skill) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if total > players | length %}
+  <div class="card-bd dim small">Showing {{ players | length }} of {{ total }} — refine your filter.</div>
+  {% endif %}
+  {% else %}
+  <div class="empty">No players match your filter.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

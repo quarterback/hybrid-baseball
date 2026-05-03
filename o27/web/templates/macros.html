@@ -1,27 +1,131 @@
 {% macro roster_table(players) %}
-<table class="data-table roster-table">
+<table class="dt">
   <thead>
     <tr>
       <th>Player</th>
       <th>Pos</th>
-      <th class="num">Skill</th>
-      <th class="num">Speed</th>
-      <th class="num">PSkl</th>
+      <th class="r">Skill</th>
+      <th class="r">Speed</th>
+      <th class="r">PSkl</th>
     </tr>
   </thead>
   <tbody>
     {% for p in players %}
-    <tr{% if p.is_joker %} class="joker-row"{% endif %}>
+    <tr{% if p.is_joker %} class="jr"{% endif %}>
       <td>
         {{ p.name }}
         {% if p.is_joker %}
-        <span class="arch-badge arch-{{ p.get('joker_archetype', '') | lower }}">{{ p.get('joker_archetype', 'JKR') }}</span>
+        <span class="ab ab-{{ p.get('joker_archetype', '') | lower }}">{{ p.get('joker_archetype', 'JKR') }}</span>
         {% endif %}
       </td>
-      <td class="pos-cell">{{ p.position }}</td>
-      <td class="num">{{ "%.3f" | format(p.skill) }}</td>
-      <td class="num">{{ "%.3f" | format(p.speed) }}</td>
-      <td class="num">{{ "%.3f" | format(p.pitcher_skill) }}</td>
+      <td class="pos">{{ p.position }}</td>
+      <td class="r mono">{{ "%.3f" | format(p.skill) }}</td>
+      <td class="r mono">{{ "%.3f" | format(p.speed) }}</td>
+      <td class="r mono">{{ "%.3f" | format(p.pitcher_skill) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% macro batting_table(rows, team_name) %}
+<div class="card-hd">{{ team_name }} — Batting</div>
+<table class="dt">
+  <thead>
+    <tr>
+      <th>Player</th><th>Pos</th>
+      <th class="r">PA</th><th class="r">AB</th><th class="r">R</th>
+      <th class="r">H</th><th class="r">2B</th><th class="r">3B</th>
+      <th class="r">HR</th><th class="r">RBI</th><th class="r">BB</th>
+      <th class="r">K</th><th class="r">HBP</th>
+      <th class="r" title="Stay choices">STY</th>
+      <th class="r">AVG</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in rows %}
+    {% if p.pa > 0 or p.is_joker %}
+    <tr{% if p.is_joker %} class="jr"{% endif %}>
+      <td>
+        {{ p.name }}
+        {% if p.is_joker and p.archetype %}
+        <span class="ab ab-{{ p.archetype | lower }}">{{ p.archetype }}</span>
+        {% endif %}
+      </td>
+      <td class="pos">{{ p.pos }}</td>
+      <td class="r mono">{{ p.pa }}</td>
+      <td class="r mono">{{ p.ab }}</td>
+      <td class="r mono">{{ p.runs }}</td>
+      <td class="r mono">{{ p.hits }}</td>
+      <td class="r mono">{{ p.doubles }}</td>
+      <td class="r mono">{{ p.triples }}</td>
+      <td class="r mono">{{ p.hr }}</td>
+      <td class="r mono">{{ p.rbi }}</td>
+      <td class="r mono">{{ p.bb }}</td>
+      <td class="r mono">{{ p.k }}</td>
+      <td class="r mono">{{ p.hbp }}</td>
+      <td class="r mono">{% if p.sty > 0 %}{{ p.sty }}{% else %}-{% endif %}</td>
+      <td class="r mono">{{ p.avg }}</td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+    {# totals row #}
+    {% set tot = namespace(pa=0,ab=0,runs=0,hits=0,d=0,t=0,hr=0,rbi=0,bb=0,k=0,hbp=0,sty=0) %}
+    {% for p in rows %}
+      {% set tot.pa  = tot.pa  + p.pa  %}
+      {% set tot.ab  = tot.ab  + p.ab  %}
+      {% set tot.runs= tot.runs+ p.runs %}
+      {% set tot.hits= tot.hits+ p.hits %}
+      {% set tot.d   = tot.d   + p.doubles %}
+      {% set tot.t   = tot.t   + p.triples %}
+      {% set tot.hr  = tot.hr  + p.hr  %}
+      {% set tot.rbi = tot.rbi + p.rbi %}
+      {% set tot.bb  = tot.bb  + p.bb  %}
+      {% set tot.k   = tot.k   + p.k   %}
+      {% set tot.hbp = tot.hbp + p.hbp %}
+      {% set tot.sty = tot.sty + p.sty %}
+    {% endfor %}
+    <tr class="tot">
+      <td colspan="2">Totals</td>
+      <td class="r mono">{{ tot.pa }}</td>
+      <td class="r mono">{{ tot.ab }}</td>
+      <td class="r mono">{{ tot.runs }}</td>
+      <td class="r mono">{{ tot.hits }}</td>
+      <td class="r mono">{{ tot.d }}</td>
+      <td class="r mono">{{ tot.t }}</td>
+      <td class="r mono">{{ tot.hr }}</td>
+      <td class="r mono">{{ tot.rbi }}</td>
+      <td class="r mono">{{ tot.bb }}</td>
+      <td class="r mono">{{ tot.k }}</td>
+      <td class="r mono">{{ tot.hbp }}</td>
+      <td class="r mono">{{ tot.sty }}</td>
+      <td class="r mono">{{ "%.3f"|format(tot.hits/tot.ab) if tot.ab > 0 else ".000" }}</td>
+    </tr>
+  </tbody>
+</table>
+{% endmacro %}
+
+{% macro pitching_table(rows, team_name) %}
+<div class="card-hd" style="border-top:1px solid var(--border); margin-top:.5rem;">{{ team_name }} — Pitching</div>
+<table class="dt">
+  <thead>
+    <tr>
+      <th>Pitcher</th>
+      <th class="r">BF</th><th class="r">Outs</th><th class="r">R</th>
+      <th class="r">H</th><th class="r">BB</th><th class="r">K</th><th class="r">HBP</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in rows %}
+    <tr>
+      <td>{{ p.name }}</td>
+      <td class="r mono">{{ p.bf }}</td>
+      <td class="r mono">{{ p.outs }}</td>
+      <td class="r mono">{{ p.r }}</td>
+      <td class="r mono">{{ p.h }}</td>
+      <td class="r mono">{{ p.bb }}</td>
+      <td class="r mono">{{ p.k }}</td>
+      <td class="r mono">{{ p.hbp }}</td>
     </tr>
     {% endfor %}
   </tbody>

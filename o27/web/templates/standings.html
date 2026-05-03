@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}O27 — Standings{% endblock %}
+{% block content %}
+{% set active = "standings" %}
+
+<div class="ph">
+  <h1>Standings</h1>
+  <p class="sub">Based on {{ total_games }} simulated game{% if total_games != 1 %}s{% endif %}</p>
+</div>
+
+{% if rows %}
+<div class="card">
+  <div class="card-hd">Overall</div>
+  <table class="dt">
+    <thead>
+      <tr>
+        <th>#</th><th>Team</th><th>Lvl</th>
+        <th class="r">GP</th><th class="r">W</th><th class="r">L</th>
+        <th class="r">PCT</th><th class="r">RF</th><th class="r">RA</th><th class="r">RD</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in rows %}
+      <tr>
+        <td class="dim mono">{{ loop.index }}</td>
+        <td><a href="/team/{{ s.abbrev }}" class="link">{{ s.abbrev }}</a> <span class="dim small">{{ s.name }}</span></td>
+        <td class="dim small">{{ s.level }}</td>
+        <td class="r mono">{{ s.gp }}</td>
+        <td class="r mono w">{{ s.w }}</td>
+        <td class="r mono l">{{ s.l }}</td>
+        <td class="r mono">{{ "%.3f"|format(s.pct) }}</td>
+        <td class="r mono">{{ s.r_for }}</td>
+        <td class="r mono">{{ s.r_against }}</td>
+        <td class="r mono">{{ "%+d"|format(s.rd) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty">No games simulated yet. <a href="/sim" class="link">Sim one →</a></div>
+</div>
+{% endif %}
+
+{% endblock %}

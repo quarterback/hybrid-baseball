@@ -1,162 +1,118 @@
 {% extends "base.html" %}
-{% from "macros.html" import roster_table %}
-{% block title %}O27 — Game Setup{% endblock %}
+{% block title %}O27 — Home{% endblock %}
 {% block content %}
+{% set active = "home" %}
 
-<h1>O27 GAME SETUP</h1>
-<p class="subtitle">Pick two teams, set a seed, and simulate.</p>
+<div class="ph">
+  <h1>O27 League Home</h1>
+  <p class="sub">baseball · cricket · pesäpallo simulation</p>
+</div>
 
-{# Pass default team player lists to the macro for initial server-side render.
-   JS takes over for subsequent team swaps without a page reload. #}
-{% set v_team = teams | selectattr("abbrev", "equalto", default_v) | first %}
-{% set h_team = teams | selectattr("abbrev", "equalto", default_h) | first %}
+<div class="two-col">
 
-<form method="get" action="/game" id="setup-form">
-  <div class="setup-grid">
-
-    {# ── VISITORS ── #}
-    <div class="setup-col">
-      <div class="card">
-        <div class="card-head" style="color:var(--accent);">Visitors</div>
-        <div class="card-body">
-          <select name="visitors" id="sel-visitors" class="team-select"
-                  onchange="updateRoster('visitors', this.value)">
-            {% for t in teams %}
-            <option value="{{ t.abbrev }}"
-              {% if t.abbrev == default_v %}selected{% endif %}>
-              {{ t.display }} ({{ t.abbrev }}){% if t.level not in ('MLB', 'Classic') %} — {{ t.level }}{% endif %}
-            </option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="card-head" style="border-top:1px solid var(--border);">Roster</div>
-        <div class="roster-wrap">
-          <div id="roster-visitors-inner">
-            {% if v_team %}{{ roster_table(v_team.players) }}{% endif %}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {# ── HOME ── #}
-    <div class="setup-col">
-      <div class="card">
-        <div class="card-head" style="color:var(--accent2);">Home</div>
-        <div class="card-body">
-          <select name="home" id="sel-home" class="team-select"
-                  onchange="updateRoster('home', this.value)">
-            {% for t in teams %}
-            <option value="{{ t.abbrev }}"
-              {% if t.abbrev == default_h %}selected{% endif %}>
-              {{ t.display }} ({{ t.abbrev }}){% if t.level not in ('MLB', 'Classic') %} — {{ t.level }}{% endif %}
-            </option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="card-head" style="border-top:1px solid var(--border);">Roster</div>
-        <div class="roster-wrap">
-          <div id="roster-home-inner">
-            {% if h_team %}{{ roster_table(h_team.players) }}{% endif %}
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>{# /setup-grid #}
-
-  {# ── SEED + SUBMIT ── #}
-  <div class="card">
-    <div class="card-body">
-      <div class="seed-form">
-        <label for="seed">Seed</label>
-        <input type="number" id="seed" name="seed" value="0" min="0">
-        <button type="submit" class="btn btn-primary">Simulate</button>
-        <a href="/random" class="btn btn-outline">Random matchup</a>
-      </div>
-      <p style="margin-top:.6rem; font-size:.78rem; color:var(--muted);">
-        Same seed + same teams always produces the same game.
-      </p>
+  {# ── RECENT RESULTS ── #}
+  <div>
+    <div class="card">
+      <div class="card-hd">Recent Results <span class="r"><a href="/schedule" class="link small">All →</a></span></div>
+      {% if recent %}
+      <table class="dt">
+        <thead>
+          <tr>
+            <th>Visitors</th><th class="r">Score</th><th>Home</th><th class="r">SI</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in recent %}
+          <tr>
+            <td>
+              <a href="/game/{{ g.game_id }}" class="link{% if g.winner_id == 'visitors' %} w{% endif %}">{{ g.visitors_abbrev }}</a>
+              <span class="dim small"> {{ g.visitors_name }}</span>
+            </td>
+            <td class="r mono">{{ g.v_score }}–{{ g.h_score }}</td>
+            <td>
+              <a href="/game/{{ g.game_id }}" class="link{% if g.winner_id == 'home' %} w{% endif %}">{{ g.home_abbrev }}</a>
+              <span class="dim small"> {{ g.home_name }}</span>
+            </td>
+            <td class="r dim small">{% if g.super_flag %}SI{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">No games simulated yet. <a href="/sim" class="link">Sim one →</a></div>
+      {% endif %}
     </div>
   </div>
 
-</form>
+  {# ── STANDINGS + QUICK SIM ── #}
+  <div>
+    <div class="card">
+      <div class="card-hd">Standings <span class="r"><a href="/standings" class="link small">Full →</a></span></div>
+      {% if standings %}
+      <table class="dt">
+        <thead>
+          <tr><th>Team</th><th class="r">W</th><th class="r">L</th><th class="r">PCT</th><th class="r">RD</th></tr>
+        </thead>
+        <tbody>
+          {% for s in standings[:8] %}
+          <tr>
+            <td><a href="/team/{{ s.abbrev }}" class="link">{{ s.abbrev }}</a> <span class="dim small">{{ s.name }}</span></td>
+            <td class="r mono w">{{ s.w }}</td>
+            <td class="r mono l">{{ s.l }}</td>
+            <td class="r mono">{{ "%.3f"|format(s.pct) }}</td>
+            <td class="r mono">{{ "%+d"|format(s.rd) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">Simulate games to build standings.</div>
+      {% endif %}
+    </div>
 
-{% if recent %}
+    <div class="card">
+      <div class="card-hd">Quick Sim</div>
+      <div class="card-bd">
+        <form method="get" action="/game">
+          <div class="seed-row">
+            <label>Seed</label>
+            <input type="number" name="seed" value="0" min="0" style="width:80px;">
+            <input type="hidden" name="visitors" value="{{ quick_v }}">
+            <input type="hidden" name="home"     value="{{ quick_h }}">
+            <button type="submit" class="btn btn-primary btn-sm">Simulate</button>
+            <a href="/random" class="btn btn-outline btn-sm">Random</a>
+          </div>
+          <p class="small dim mt1">{{ quick_v }} vs {{ quick_h }} — <a href="/sim" class="link">change teams</a></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% if leaders %}
 <div class="card">
-  <div class="card-head">Recent games</div>
-  <div class="card-body" style="padding:.5rem 1rem;">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Seed</th>
-          <th>Visitors</th>
-          <th class="num">Score</th>
-          <th>Home</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in recent %}
-        <tr>
-          <td>
-            <a href="/game?seed={{ r.seed }}&visitors={{ r.visitors_abbrev }}&home={{ r.home_abbrev }}"
-               style="font-family:var(--mono); color:var(--accent); text-decoration:none;">
-              {{ r.seed }}
-            </a>
-          </td>
-          <td>{{ r.visitors }}</td>
-          <td class="num" style="font-family:var(--mono);">
-            {{ r.v_score }}–{{ r.h_score }}
-          </td>
-          <td>{{ r.home }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  <div class="card-hd">Batting Leaders — Hits <span class="r"><a href="/stats" class="link small">All Stats →</a></span></div>
+  <table class="dt">
+    <thead>
+      <tr><th>#</th><th>Player</th><th>Team</th><th class="r">H</th><th class="r">HR</th><th class="r">RBI</th><th class="r">STY</th><th class="r">AVG</th></tr>
+    </thead>
+    <tbody>
+      {% for p in leaders %}
+      <tr>
+        <td class="dim mono">{{ loop.index }}</td>
+        <td>{{ p.name }}</td>
+        <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
+        <td class="r mono">{{ p.hits }}</td>
+        <td class="r mono">{{ p.hr }}</td>
+        <td class="r mono">{{ p.rbi }}</td>
+        <td class="r mono">{% if p.sty > 0 %}{{ p.sty }}{% else %}-{% endif %}</td>
+        <td class="r mono">{{ "%.3f"|format(p.avg) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% endif %}
-
-{# Roster data embedded for JS swap on team-select change — no extra round-trip. #}
-<script>
-const ROSTERS = {{ roster_map_json | safe }};
-
-function escHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function buildRosterTable(abbrev) {
-  const team = ROSTERS[abbrev];
-  if (!team) return '<p style="color:var(--muted);padding:.5rem 1rem;font-size:.8rem;">No roster data.</p>';
-  let rows = '';
-  for (const p of team.players) {
-    const jokerBadge = p.is_joker
-      ? `<span class="arch-badge arch-${escHtml((p.archetype||'').toLowerCase())}">${escHtml(p.archetype||'JKR')}</span>`
-      : '';
-    const rowClass = p.is_joker ? ' class="joker-row"' : '';
-    rows += `<tr${rowClass}>
-      <td>${escHtml(p.name)} ${jokerBadge}</td>
-      <td class="pos-cell">${escHtml(p.pos)}</td>
-      <td class="num">${p.skill.toFixed(3)}</td>
-      <td class="num">${p.speed.toFixed(3)}</td>
-      <td class="num">${(p.pitcher_skill||0).toFixed(3)}</td>
-    </tr>`;
-  }
-  return `<table class="data-table roster-table">
-    <thead><tr>
-      <th>Player</th><th>Pos</th>
-      <th class="num">Skill</th><th class="num">Speed</th><th class="num">PSkl</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
-}
-
-function updateRoster(side, abbrev) {
-  document.getElementById('roster-' + side + '-inner').innerHTML = buildRosterTable(abbrev);
-}
-</script>
 
 {% endblock %}

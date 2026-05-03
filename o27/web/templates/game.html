@@ -1,64 +1,62 @@
 {% extends "base.html" %}
-{% block title %}O27 — Seed {{ seed }}{% endblock %}
+{% from "macros.html" import batting_table, pitching_table %}
+{% block title %}O27 — {{ visitors_abbrev }} {{ visitors_score }}–{{ home_score }} {{ home_abbrev }}{% endblock %}
 {% block content %}
+{% set active = "schedule" %}
 
 {% set team_qs %}{% if visitors_abbrev %}&visitors={{ visitors_abbrev }}{% endif %}{% if home_abbrev %}&home={{ home_abbrev }}{% endif %}{% endset %}
 <div class="game-nav">
-  <a href="/game?seed={{ prev_seed }}{{ team_qs }}" class="btn btn-outline">← Seed {{ prev_seed }}</a>
-  <a href="/" class="btn btn-outline">All games</a>
-  <a href="/game?seed={{ next_seed }}{{ team_qs }}" class="btn btn-outline">Seed {{ next_seed }} →</a>
+  <a href="/game?seed={{ prev_seed }}{{ team_qs }}" class="btn btn-outline btn-sm">← Seed {{ prev_seed }}</a>
+  <a href="/schedule" class="btn btn-outline btn-sm">All Results</a>
+  <a href="/game?seed={{ next_seed }}{{ team_qs }}" class="btn btn-outline btn-sm">Seed {{ next_seed }} →</a>
 </div>
 
 {# ── SCOREBOARD ── #}
-<div class="card" style="margin-bottom:1.5rem;">
-  <div class="card-head">
+<div class="card" style="margin-bottom:.9rem;">
+  <div class="card-hd">
     Final Score — Seed {{ seed }}
     {% if super_flag %}<span class="super-badge">Super-inning</span>{% endif %}
+    <span class="r dim small">
+      <a href="/team/{{ visitors_abbrev }}" class="link">{{ visitors_abbrev }}</a>
+      vs
+      <a href="/team/{{ home_abbrev }}" class="link">{{ home_abbrev }}</a>
+    </span>
   </div>
   <div class="scoreboard">
-    <div class="team-block visitors">
-      <span class="team-label">Visitors</span>
-      <span class="team-name visitors">{{ visitors_name }}</span>
-      {% if winner_name == visitors_name %}<span class="winner-badge">Winner</span>{% endif %}
+    <div class="tb">
+      <span class="tb-lbl">Visitors</span>
+      <span class="tb-nm vis">{{ visitors_name }}</span>
+      {% if winner_id == 'visitors' %}<span class="win-badge">Winner</span>{% endif %}
     </div>
-    <div class="score-middle">
-      <div class="score-line">{{ visitors_score }}&ndash;{{ home_score }}</div>
-      <div class="score-label">Final</div>
+    <div class="sc-mid">
+      <div class="sc-big">{{ visitors_score }}&ndash;{{ home_score }}</div>
+      <div class="sc-sub">Final</div>
     </div>
-    <div class="team-block home">
-      <span class="team-label">Home</span>
-      <span class="team-name home">{{ home_name }}</span>
-      {% if winner_name == home_name %}<span class="winner-badge">Winner</span>{% endif %}
+    <div class="tb r">
+      <span class="tb-lbl">Home</span>
+      <span class="tb-nm hme">{{ home_name }}</span>
+      {% if winner_id == 'home' %}<span class="win-badge">Winner</span>{% endif %}
     </div>
   </div>
 </div>
 
 {# ── TABS ── #}
 <div class="card">
-  <div class="card-head" style="padding:0;">
-    <div class="tabs" style="margin-bottom:0; border-bottom:none;">
-      <button class="tab-btn active"
-              data-tab-group="main" data-tab-id="pbp"
-              onclick="switchTab('main','pbp')">Play-by-play</button>
-      <button class="tab-btn"
-              data-tab-group="main" data-tab-id="box"
-              onclick="switchTab('main','box')">Box score</button>
+  <div class="card-hd" style="padding:0; border-bottom:none;">
+    <div class="tabs" style="padding:0 .5rem;">
+      <button class="tab-btn active" data-tg="main" data-ti="pbp"  onclick="switchTab('main','pbp')">Play-by-Play</button>
+      <button class="tab-btn"        data-tg="main" data-ti="box"  onclick="switchTab('main','box')">Box Score</button>
       {% if sections.spells %}
-      <button class="tab-btn"
-              data-tab-group="main" data-tab-id="spells"
-              onclick="switchTab('main','spells')">Pitching</button>
+      <button class="tab-btn"        data-tg="main" data-ti="pit"  onclick="switchTab('main','pit')">Pitching</button>
       {% endif %}
       {% if sections.super %}
-      <button class="tab-btn"
-              data-tab-group="main" data-tab-id="super"
-              onclick="switchTab('main','super')">Super-inning</button>
+      <button class="tab-btn"        data-tg="main" data-ti="si"   onclick="switchTab('main','si')">Super-Inning</button>
       {% endif %}
     </div>
   </div>
 
-  {# ── PLAY-BY-PLAY PANEL ── #}
-  <div class="tab-panel active card-body" style="padding:.75rem;"
-       data-panel-group="main" data-panel-id="pbp">
+  {# ── PLAY-BY-PLAY ── #}
+  <div class="tab-panel active card-bd" style="padding:.65rem;" data-pg="main" data-pi="pbp">
     {% if sections.halves %}
       {% for half in sections.halves %}
       <details {% if loop.index <= 2 %}open{% endif %}>
@@ -73,42 +71,50 @@
     {% endif %}
   </div>
 
-  {# ── BOX SCORE PANEL ── #}
-  <div class="tab-panel card-body" style="padding:.75rem;"
-       data-panel-group="main" data-panel-id="box">
-    {% if sections.box_score %}
-    <div class="pbp-wrap" style="max-height:500px; font-size:0.78rem;">{% for line in sections.box_score %}{{ line | e }}
+  {# ── BOX SCORE (structured HTML tables) ── #}
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="main" data-pi="box">
+    {% if v_batting %}
+    {{ batting_table(v_batting, visitors_name) }}
+    <div class="mt2">
+    {{ batting_table(h_batting, home_name) }}
+    </div>
+    {% if v_pitching or h_pitching %}
+    <div class="mt2">
+    {{ pitching_table(v_pitching, visitors_name) }}
+    {{ pitching_table(h_pitching, home_name) }}
+    </div>
+    {% endif %}
+    {% elif sections.box_score %}
+    <div class="pbp-wrap" style="max-height:480px; font-size:.76rem;">{% for line in sections.box_score %}{{ line | e }}
 {% endfor %}</div>
     {% if sections.partnerships %}
-    <div style="margin-top:1rem;">
-      <div style="font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin-bottom:.4rem;">Partnership Log</div>
-      <div class="pbp-wrap" style="max-height:220px; font-size:0.78rem;">{% for line in sections.partnerships %}{{ line | e }}
+    <div class="mt2">
+      <div class="card-hd">Partnership Log</div>
+      <div class="pbp-wrap" style="max-height:200px; font-size:.76rem;">{% for line in sections.partnerships %}{{ line | e }}
 {% endfor %}</div>
     </div>
     {% endif %}
     {% else %}
-    <p style="color:var(--muted); font-size:.85rem;">No box score data available.</p>
+    <p class="dim small">No box score data available.</p>
     {% endif %}
   </div>
 
-  {# ── PITCHING PANEL ── #}
+  {# ── PITCHING ── #}
   {% if sections.spells %}
-  <div class="tab-panel card-body" style="padding:.75rem;"
-       data-panel-group="main" data-panel-id="spells">
-    <div class="pbp-wrap" style="max-height:400px; font-size:0.78rem;">{% for line in sections.spells %}{{ line | e }}
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="main" data-pi="pit">
+    <div class="pbp-wrap" style="max-height:380px; font-size:.76rem;">{% for line in sections.spells %}{{ line | e }}
 {% endfor %}</div>
   </div>
   {% endif %}
 
-  {# ── SUPER-INNING PANEL ── #}
+  {# ── SUPER-INNING ── #}
   {% if sections.super %}
-  <div class="tab-panel card-body" style="padding:.75rem;"
-       data-panel-group="main" data-panel-id="super">
-    <div class="pbp-wrap" style="max-height:400px; font-size:0.78rem;">{% for line in sections.super %}{{ line | e }}
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="main" data-pi="si">
+    <div class="pbp-wrap" style="max-height:380px; font-size:.76rem;">{% for line in sections.super %}{{ line | e }}
 {% endfor %}</div>
   </div>
   {% endif %}
 
-</div>{# /card #}
+</div>
 
 {% endblock %}

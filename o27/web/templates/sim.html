@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% from "macros.html" import roster_table %}
+{% block title %}O27 — Sim Game{% endblock %}
+{% block content %}
+{% set active = "sim" %}
+
+<div class="ph">
+  <h1>Simulate a Game</h1>
+  <p class="sub">Pick two teams, set a seed, and run the simulation.</p>
+</div>
+
+{% set v_team = teams | selectattr("abbrev", "equalto", default_v) | first %}
+{% set h_team = teams | selectattr("abbrev", "equalto", default_h) | first %}
+
+<form method="get" action="/game" id="setup-form">
+  <div class="setup-grid">
+
+    {# ── VISITORS ── #}
+    <div class="setup-col">
+      <div class="card">
+        <div class="card-hd" style="color:var(--accent);">Visitors</div>
+        <div class="card-bd">
+          <select name="visitors" id="sel-visitors" class="team-select"
+                  onchange="updateRoster('visitors', this.value)">
+            {% for t in teams %}
+            <option value="{{ t.abbrev }}" {% if t.abbrev == default_v %}selected{% endif %}>
+              {{ t.display }} ({{ t.abbrev }}){% if t.level not in ('MLB','Classic') %} — {{ t.level }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="card-hd" style="border-top:1px solid var(--border);">Roster</div>
+        <div class="roster-wrap">
+          <div id="roster-visitors-inner">
+            {% if v_team %}{{ roster_table(v_team.players) }}{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── HOME ── #}
+    <div class="setup-col">
+      <div class="card">
+        <div class="card-hd" style="color:var(--accent2);">Home</div>
+        <div class="card-bd">
+          <select name="home" id="sel-home" class="team-select"
+                  onchange="updateRoster('home', this.value)">
+            {% for t in teams %}
+            <option value="{{ t.abbrev }}" {% if t.abbrev == default_h %}selected{% endif %}>
+              {{ t.display }} ({{ t.abbrev }}){% if t.level not in ('MLB','Classic') %} — {{ t.level }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="card-hd" style="border-top:1px solid var(--border);">Roster</div>
+        <div class="roster-wrap">
+          <div id="roster-home-inner">
+            {% if h_team %}{{ roster_table(h_team.players) }}{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="card">
+    <div class="card-bd">
+      <div class="seed-row">
+        <label for="seed">Seed</label>
+        <input type="number" id="seed" name="seed" value="0" min="0" style="width:90px;">
+        <button type="submit" class="btn btn-primary">Simulate</button>
+        <a href="/random" class="btn btn-outline">Random matchup</a>
+      </div>
+      <p class="small dim mt1">Same seed + same teams always produces the same game.</p>
+    </div>
+  </div>
+</form>
+
+{% endblock %}
+{% block scripts %}
+const ROSTERS = {{ roster_map_json | safe }};
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function buildRosterTable(abbrev) {
+  const team = ROSTERS[abbrev];
+  if (!team) return '<p class="dim" style="padding:.5rem .85rem;font-size:.78rem;">No roster data.</p>';
+  let rows = '';
+  for (const p of team.players) {
+    const badge = p.is_joker
+      ? `<span class="ab ab-${escHtml((p.archetype||'').toLowerCase())}">${escHtml(p.archetype||'JKR')}</span>`
+      : '';
+    const cls = p.is_joker ? ' class="jr"' : '';
+    rows += `<tr${cls}>
+      <td>${escHtml(p.name)}${badge}</td>
+      <td class="pos">${escHtml(p.pos)}</td>
+      <td class="r mono">${p.skill.toFixed(3)}</td>
+      <td class="r mono">${p.speed.toFixed(3)}</td>
+      <td class="r mono">${(p.pitcher_skill||0).toFixed(3)}</td>
+    </tr>`;
+  }
+  return `<table class="dt"><thead><tr>
+    <th>Player</th><th>Pos</th>
+    <th class="r">Skill</th><th class="r">Speed</th><th class="r">PSkl</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function updateRoster(side, abbrev) {
+  document.getElementById('roster-' + side + '-inner').innerHTML = buildRosterTable(abbrev);
+}
+{% endblock %}

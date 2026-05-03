@@ -841,3 +841,12 @@ class Renderer:
         for pid in left_ids[:runs_scored]:
             if pid in self._batter_stats:
                 self._batter_stats[pid].runs += 1
+
+    # -----------------------------------------------------------------------
+    # Public accessor — structured stats for web display
+    # -----------------------------------------------------------------------
+
+    @property
+    def batter_stats(self) -> dict:
+        """Expose internal BatterStats dict (player_id → BatterStats)."""
+        return self._batter_stats

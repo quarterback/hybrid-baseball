@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}O27 — Schedule / Results{% endblock %}
+{% block content %}
+{% set active = "schedule" %}
+
+<div class="ph">
+  <h1>Schedule / Results</h1>
+  <p class="sub">{{ games | length }} result{% if games|length != 1 %}s{% endif %} stored</p>
+</div>
+
+{% if games %}
+<div class="card">
+  <div class="card-hd">Results (newest first)</div>
+  <table class="dt">
+    <thead>
+      <tr>
+        <th>Seed</th>
+        <th>Visitors</th><th class="r">Score</th><th>Home</th>
+        <th class="c">SI</th><th>Result</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in games %}
+      <tr>
+        <td><a href="/game/{{ g.game_id }}" class="link mono">{{ g.seed }}</a></td>
+        <td>
+          <a href="/team/{{ g.visitors_abbrev }}" class="link">{{ g.visitors_abbrev }}</a>
+          <span class="dim small"> {{ g.visitors_name }}</span>
+        </td>
+        <td class="r mono">{{ g.v_score }}–{{ g.h_score }}</td>
+        <td>
+          <a href="/team/{{ g.home_abbrev }}" class="link">{{ g.home_abbrev }}</a>
+          <span class="dim small"> {{ g.home_name }}</span>
+        </td>
+        <td class="c dim small">{% if g.super_flag %}SI{% endif %}</td>
+        <td>
+          {% if g.winner_id == 'visitors' %}
+          <span class="w small">{{ g.visitors_abbrev }} win</span>
+          {% else %}
+          <span class="w small">{{ g.home_abbrev }} win</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty">No results yet. <a href="/sim" class="link">Sim a game →</a></div>
+</div>
+{% endif %}
+
+{% endblock %}
