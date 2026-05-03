@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Stats — {{ 'Pitching' if side == 'pit' else 'Batting' }}{% endblock %}
+{% block content %}
+<h2 class="mb-3 fw-bold">Stats — {{ 'Pitching' if side == 'pit' else 'Batting' }}</h2>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item">
+    <a class="nav-link {% if side == 'bat' %}active{% endif %}"
+       href="{{ url_for('stats_browse', side='bat', team=team_arg, pos=pos_arg, qualified='1' if qualified else '0', q=name_query, min_pa=min_pa or '') }}">
+      Batting
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if side == 'pit' %}active{% endif %}"
+       href="{{ url_for('stats_browse', side='pit', team=team_arg, qualified='1' if qualified else '0', q=name_query, min_outs=min_outs or '') }}">
+      Pitching
+    </a>
+  </li>
+</ul>
+
+<form method="get" class="filter-bar d-flex flex-wrap gap-2 align-items-end mb-3">
+  <input type="hidden" name="side" value="{{ side }}">
+  <div>
+    <label class="form-label small text-secondary mb-1">Team</label>
+    <select name="team" class="form-select form-select-sm">
+      <option value="all" {% if team_arg == 'all' %}selected{% endif %}>All teams</option>
+      {% for t in teams_list %}
+      <option value="{{ t.id }}" {% if team_arg == (t.id|string) %}selected{% endif %}>{{ t.abbrev }} — {{ t.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if side == 'bat' %}
+  <div>
+    <label class="form-label small text-secondary mb-1">Position</label>
+    <select name="pos" class="form-select form-select-sm">
+      <option value="all"     {% if pos_arg == 'all' %}selected{% endif %}>All</option>
+      <option value="hitter"  {% if pos_arg in ('hitter','non_pitcher') %}selected{% endif %}>Position players</option>
+      <option value="pitcher" {% if pos_arg in ('p','pitcher') %}selected{% endif %}>Pitchers</option>
+    </select>
+  </div>
+  {% endif %}
+  <div>
+    <label class="form-label small text-secondary mb-1">Search name</label>
+    <input type="text" name="q" value="{{ name_query }}" class="form-control form-control-sm" placeholder="e.g. Smith">
+  </div>
+  {% if side == 'bat' %}
+  <div>
+    <label class="form-label small text-secondary mb-1">Min PA</label>
+    <input type="number" name="min_pa" value="{{ min_pa or '' }}" class="form-control form-control-sm" min="0" style="width:7rem">
+  </div>
+  {% else %}
+  <div>
+    <label class="form-label small text-secondary mb-1">Min outs</label>
+    <input type="number" name="min_outs" value="{{ min_outs or '' }}" class="form-control form-control-sm" min="0" style="width:7rem">
+  </div>
+  {% endif %}
+  <div class="form-check align-self-center">
+    <input class="form-check-input" type="checkbox" id="qualified" name="qualified" value="1" {% if qualified %}checked{% endif %}>
+    <label class="form-check-label small" for="qualified">
+      Qualified only
+      <span class="text-secondary">(≥ {{ qual_pa if side == 'bat' else qual_outs }} {{ 'PA' if side == 'bat' else 'outs' }})</span>
+    </label>
+  </div>
+  <div>
+    <button class="btn btn-secondary btn-sm">Apply</button>
+    <a href="{{ url_for('stats_browse', side=side) }}" class="btn btn-secondary btn-sm">Reset</a>
+  </div>
+  <div class="ms-auto text-secondary small align-self-end">
+    {% if side == 'bat' %}{{ batters|length }} batter{{ '' if batters|length == 1 else 's' }}
+    {% else %}{{ pitchers|length }} pitcher{{ '' if pitchers|length == 1 else 's' }}{% endif %}
+    · {{ games_played }} games played
+  </div>
+</form>
+
+{% if side == 'bat' %}
+<div class="dense mb-3">
+  <div class="panel-title">Batting — counting + advanced</div>
+  {% if batters %}
+  <div class="table-responsive">
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Name</th><th>Tm</th><th>Pos</th>
+      <th class="num">G</th>
+      <th class="num">PA</th><th class="num">AB</th>
+      <th class="num">H</th>
+      <th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
+      <th class="num">R</th><th class="num">RBI</th>
+      <th class="num">BB</th><th class="num">SO</th>
+      <th class="num">HBP</th>
+      <th class="num">SB</th><th class="num">CS</th>
+      <th class="num">FO</th>
+      <th class="num">AVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
+      <th class="num">ISO</th><th class="num">BABIP</th>
+      <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th><th class="num">BB/K</th>
+    </tr></thead>
+    <tbody>
+    {% for b in batters %}
+    <tr>
+      <td><a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
+      <td><a href="{{ url_for('team_detail', team_id=b.team_id) }}" class="team-abbrev">{{ b.team_abbrev }}</a></td>
+      <td class="text-secondary">{{ b.position }}</td>
+      <td class="num">{{ b.g or 0 }}</td>
+      <td class="num">{{ b.pa or 0 }}</td>
+      <td class="num">{{ b.ab or 0 }}</td>
+      <td class="num fw-bold">{{ b.h or 0 }}</td>
+      <td class="num">{{ b.d2 or 0 }}</td>
+      <td class="num">{{ b.d3 or 0 }}</td>
+      <td class="num">{{ b.hr or 0 }}</td>
+      <td class="num">{{ b.r or 0 }}</td>
+      <td class="num">{{ b.rbi or 0 }}</td>
+      <td class="num">{{ b.bb or 0 }}</td>
+      <td class="num">{{ b.k or 0 }}</td>
+      <td class="num">{{ b.hbp or 0 }}</td>
+      <td class="num">{{ b.sb or 0 }}</td>
+      <td class="num">{{ b.cs or 0 }}</td>
+      <td class="num">{{ b.fo or 0 }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.avg) }}">{{ '%.3f'|format(b.avg) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.obp) }}">{{ '%.3f'|format(b.obp) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.slg) }}">{{ '%.3f'|format(b.slg) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.ops) }}">{{ '%.3f'|format(b.ops) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.iso) }}">{{ '%.3f'|format(b.iso) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.babip) }}">{{ '%.3f'|format(b.babip) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.k_pct) }}">{{ '%.1f'|format(b.k_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.bb_pct) }}">{{ '%.1f'|format(b.bb_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.hr_pct) }}">{{ '%.1f'|format(b.hr_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(b.bb_k) }}">{{ '%.2f'|format(b.bb_k) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="p-3 text-center text-secondary small">No batters match this filter.</div>
+  {% endif %}
+</div>
+{% else %}
+<div class="dense mb-3">
+  <div class="panel-title">Pitching — counting + advanced</div>
+  {% if pitchers %}
+  <div class="table-responsive">
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Name</th><th>Tm</th>
+      <th class="num">G</th><th class="num">W</th><th class="num">L</th>
+      <th class="num">BF</th><th class="num">Outs</th><th class="num">IP</th>
+      <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+      <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
+      <th class="num">HBP</th><th class="num">UER</th>
+      <th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
+      <th class="num">P</th>
+      <th class="num">ERA</th><th class="num">FIP</th><th class="num">WHIP</th>
+      <th class="num">K/27</th><th class="num">BB/27</th><th class="num">HR/27</th>
+      <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
+      <th class="num">oAvg</th><th class="num">BABIP</th>
+      <th class="num">K/BB</th>
+    </tr></thead>
+    <tbody>
+    {% for p in pitchers %}
+    <tr>
+      <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
+      <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
+      <td class="num">{{ p.g or 0 }}</td>
+      <td class="num">{{ p.w or 0 }}</td>
+      <td class="num">{{ p.l or 0 }}</td>
+      <td class="num">{{ p.bf or 0 }}</td>
+      <td class="num">{{ p.outs or 0 }}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.ip) }}">{{ '%.1f'|format(p.ip) }}</td>
+      <td class="num">{{ p.h or 0 }}</td>
+      <td class="num">{{ p.r or 0 }}</td>
+      <td class="num">{{ p.er or 0 }}</td>
+      <td class="num">{{ p.bb or 0 }}</td>
+      <td class="num fw-bold">{{ p.k or 0 }}</td>
+      <td class="num">{{ p.hr_allowed or 0 }}</td>
+      <td class="num">{{ p.hbp_allowed or 0 }}</td>
+      <td class="num">{{ p.uer or 0 }}</td>
+      <td class="num">{{ p.sb_allowed or 0 }}</td>
+      <td class="num">{{ p.cs_caught or 0 }}</td>
+      <td class="num">{{ p.fo_induced or 0 }}</td>
+      <td class="num">{{ p.pitches or 0 }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.era) }}">{{ '%.2f'|format(p.era) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.fip) }}">{{ '%.2f'|format(p.fip) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.whip) }}">{{ '%.2f'|format(p.whip) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.k27) }}">{{ '%.2f'|format(p.k27) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.bb27) }}">{{ '%.2f'|format(p.bb27) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.hr27) }}">{{ '%.2f'|format(p.hr27) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.k_pct) }}">{{ '%.1f'|format(p.k_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.bb_pct) }}">{{ '%.1f'|format(p.bb_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.hr_pct) }}">{{ '%.1f'|format(p.hr_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.oavg) }}">{{ '%.3f'|format(p.oavg) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.babip_allowed) }}">{{ '%.3f'|format(p.babip_allowed) }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(p.so_bb) }}">{{ '%.2f'|format(p.so_bb) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="p-3 text-center text-secondary small">No pitchers match this filter.</div>
+  {% endif %}
+</div>
+{% endif %}
+
+<p class="text-secondary small mt-3 mb-0">
+  Click any column header to sort. Per-27-outs rates are the canonical O27 stat axis;
+  see the <a href="{{ url_for('leaders') }}">Leaders</a> page for top-25 cards.
+</p>
+{% endblock %}

@@ -146,7 +146,8 @@ def _gb(leader: dict, team: dict) -> str:
 # constraint on (player_id, game_id, phase) so this subquery becomes a no-op.
 _PSTATS_DEDUP_SQL = """(
     SELECT game_id, player_id, team_id, batters_faced, outs_recorded,
-           hits_allowed, runs_allowed, er, bb, k, hr_allowed
+           hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches,
+           hbp_allowed, unearned_runs, sb_allowed, cs_caught, fo_induced
     FROM (
         SELECT *,
                ROW_NUMBER() OVER (
@@ -941,8 +942,163 @@ def players():
 
 
 @app.route("/stats")
-def stats_redirect():
-    return redirect(url_for("leaders"), code=302)
+def stats_browse():
+    """Full sortable, filterable batting + pitching tables.
+
+    Query params:
+      side=bat|pit         — which table to show (default: bat)
+      team=<id|all>        — restrict to one team
+      pos=<P|hitter|all>   — restrict by position class
+      min_pa=<int>         — minimum PA gate for batting
+      min_outs=<int>       — minimum outs gate for pitching
+      qualified=1|0        — convenience: ~3.1 PA per team-game / 1 out per team-game
+    """
+    side       = (request.args.get("side") or "bat").lower()
+    team_arg   = request.args.get("team")  or "all"
+    pos_arg    = (request.args.get("pos") or "all").lower()
+    qualified  = request.args.get("qualified") == "1"
+    name_query = (request.args.get("q") or "").strip()
+
+    games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"] or 0
+    teams_total  = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 30
+    games_per_team = (games_played * 2) // max(1, teams_total)   # both teams play in each game
+
+    # Qualified-only thresholds, MLB-equivalent scaled to O27.
+    # Batting: ~3.1 PA per team-game (MLB uses 3.1 PA/G).
+    # Pitching: ~1 out per team-game (rough O27 analog of 1 IP/G).
+    qual_pa   = max(1, int(round(games_per_team * 3.1))) if games_per_team else 1
+    qual_outs = max(1, games_per_team) if games_per_team else 1
+
+    try:
+        min_pa = int(request.args.get("min_pa", "0") or 0)
+    except ValueError:
+        min_pa = 0
+    try:
+        min_outs = int(request.args.get("min_outs", "0") or 0)
+    except ValueError:
+        min_outs = 0
+    if qualified:
+        min_pa   = max(min_pa, qual_pa)
+        min_outs = max(min_outs, qual_outs)
+
+    # Team filter param resolution.
+    team_filter_id = None
+    if team_arg.isdigit():
+        team_filter_id = int(team_arg)
+
+    teams_list = db.fetchall(
+        "SELECT id, abbrev, name, league, division FROM teams ORDER BY abbrev"
+    )
+
+    # ----- Batting table -----
+    batters: list[dict] = []
+    pitchers: list[dict] = []
+
+    if side == "bat":
+        where_clauses = ["bs.pa > 0"]
+        params: list = []
+        if team_filter_id is not None:
+            where_clauses.append("bs.team_id = ?")
+            params.append(team_filter_id)
+        if pos_arg in ("hitter", "non_pitcher"):
+            where_clauses.append("p.is_pitcher = 0")
+        elif pos_arg in ("p", "pitcher"):
+            where_clauses.append("p.is_pitcher = 1")
+        if name_query:
+            where_clauses.append("p.name LIKE ?")
+            params.append(f"%{name_query}%")
+        where_sql = " AND ".join(where_clauses)
+        params.append(min_pa)
+
+        batters = db.fetchall(
+            f"""SELECT p.id as player_id, p.name as player_name,
+                       p.position as position, t.abbrev as team_abbrev, t.id as team_id,
+                       p.is_pitcher as is_pitcher,
+                       COUNT(bs.game_id) as g,
+                       SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                       SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                       SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                       SUM(bs.bb) as bb, SUM(bs.k) as k, SUM(bs.stays) as stays,
+                       COALESCE(SUM(bs.hbp),0) as hbp,
+                       COALESCE(SUM(bs.sb),0)  as sb,
+                       COALESCE(SUM(bs.cs),0)  as cs,
+                       COALESCE(SUM(bs.fo),0)  as fo,
+                       COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
+                       COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi
+                FROM game_batter_stats bs
+                JOIN players p ON bs.player_id = p.id
+                JOIN teams   t ON bs.team_id = t.id
+                WHERE {where_sql}
+                GROUP BY p.id
+                HAVING SUM(bs.pa) >= ?
+                ORDER BY SUM(bs.pa) DESC""",
+            tuple(params),
+        )
+        _aggregate_batter_rows(batters)
+
+    elif side == "pit":
+        where_clauses = ["ps.outs_recorded > 0"]
+        params = []
+        if team_filter_id is not None:
+            where_clauses.append("ps.team_id = ?")
+            params.append(team_filter_id)
+        # Pitching always implies pitchers.
+        where_clauses.append("p.is_pitcher = 1")
+        if name_query:
+            where_clauses.append("p.name LIKE ?")
+            params.append(f"%{name_query}%")
+        where_sql = " AND ".join(where_clauses)
+        params.append(min_outs)
+
+        pitchers = db.fetchall(
+            f"""SELECT p.id as player_id, p.name as player_name,
+                       p.position as position, t.abbrev as team_abbrev, t.id as team_id,
+                       COUNT(ps.game_id) as g,
+                       SUM(ps.batters_faced)  as bf,
+                       SUM(ps.outs_recorded)  as outs,
+                       SUM(ps.hits_allowed)   as h,
+                       SUM(ps.runs_allowed)   as r,
+                       SUM(ps.er)             as er,
+                       SUM(ps.bb)             as bb,
+                       SUM(ps.k)              as k,
+                       SUM(ps.hr_allowed)     as hr_allowed,
+                       COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
+                       COALESCE(SUM(ps.unearned_runs),0) as uer,
+                       COALESCE(SUM(ps.sb_allowed),0)    as sb_allowed,
+                       COALESCE(SUM(ps.cs_caught),0)     as cs_caught,
+                       COALESCE(SUM(ps.fo_induced),0)    as fo_induced,
+                       COALESCE(SUM(ps.pitches),0)       as pitches
+                FROM {_PSTATS_DEDUP_SQL} ps
+                JOIN players p ON ps.player_id = p.id
+                JOIN teams   t ON ps.team_id = t.id
+                WHERE {where_sql}
+                GROUP BY p.id
+                HAVING SUM(ps.outs_recorded) >= ?
+                ORDER BY SUM(ps.outs_recorded) DESC""",
+            tuple(params),
+        )
+        wl = _pitcher_wl_map()
+        _aggregate_pitcher_rows(pitchers, wl)
+        for p in pitchers:
+            outs = p["outs"] or 0
+            p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
+
+    return render_template(
+        "stats_browse.html",
+        side=side,
+        team_arg=team_arg,
+        pos_arg=pos_arg,
+        min_pa=min_pa,
+        min_outs=min_outs,
+        qualified=qualified,
+        qual_pa=qual_pa,
+        qual_outs=qual_outs,
+        name_query=name_query,
+        teams_list=teams_list,
+        batters=batters,
+        pitchers=pitchers,
+        games_played=games_played,
+    )
 
 
 @app.route("/leaders")

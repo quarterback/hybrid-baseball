@@ -77,6 +77,8 @@
             href="{{ url_for('teams') }}">Teams</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint == 'leaders' %}active{% endif %}"
             href="{{ url_for('leaders') }}">Leaders</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'stats_browse' %}active{% endif %}"
+            href="{{ url_for('stats_browse') }}">Stats</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}"
             href="{{ url_for('transactions') }}">Transactions</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}"
