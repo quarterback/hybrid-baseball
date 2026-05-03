@@ -93,6 +93,7 @@ class Renderer:
             "outs": state.outs,
             "count_balls": state.count.balls,
             "count_strikes": state.count.strikes,
+            "count_fouls": state.count.fouls,
             "count": str(state.count),
             "bases": state.bases_summary(),
             "bases_list": list(state.bases),          # copy — safe after mutation
@@ -616,6 +617,7 @@ class Renderer:
             # Flags (event-specific; default False)
             "is_walk": False,
             "is_strikeout": False,
+            "is_foul_out": False,
             "swinging": False,
             "stay_valid": False,
             "stay_batter_out": False,
@@ -658,7 +660,13 @@ class Renderer:
             d["new_count"] = str(state_after.count)
 
         elif etype == "foul":
+            # O27 foul-out rule: 3 fouls in an at-bat = OUT (FO).
+            # ctx["count_fouls"] is the foul count BEFORE this foul, so 2
+            # means this foul makes it 3 → foul-out.
+            d["is_foul_out"] = ctx.get("count_fouls", 0) >= 2
             d["new_count"] = str(state_after.count)
+            if d["is_foul_out"]:
+                d["display_type"] = "FOUL OUT"
 
         elif etype == "ball_in_play":
             outcome = event.get("outcome", {})
@@ -759,6 +767,13 @@ class Renderer:
         elif etype == "foul_tip_caught":
             s.ab += 1
             s.k += 1
+            s.outs_recorded += 1
+            _check_multi_hit()
+
+        elif etype == "foul" and disp.get("is_foul_out"):
+            # O27 foul-out: charged as an AB and an out, but NOT a K
+            # (it's its own outcome category — "FO" in the box score).
+            s.ab += 1
             s.outs_recorded += 1
             _check_multi_hit()
 

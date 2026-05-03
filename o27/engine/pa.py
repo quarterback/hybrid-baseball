@@ -170,10 +170,20 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         return _strike(state, log, swinging=True)
 
     if etype == "foul":
-        # Foul cannot increase strike count past 2 (except foul tip caught).
+        # O27 foul-out rule: 3 fouls in an at-bat = OUT (FO). The foul
+        # counter is independent of the strike counter — at strikes==2
+        # the strike count freezes (no MLB-style infinite fouls), but
+        # the foul counter keeps climbing toward 3.
+        state.count.fouls += 1
+        if state.count.fouls >= 3:
+            log.append(f"  Foul #{state.count.fouls} — FOUL OUT.")
+            batter_id = state.current_batter.player_id
+            log += _record_out(state, batter_id)
+            log += _end_at_bat(state)
+            return log
         if state.count.strikes < 2:
             state.count.strikes += 1
-        log.append(f"  Foul ball. Count: {state.count}.")
+        log.append(f"  Foul ball (#{state.count.fouls}). Count: {state.count}.")
         return log
 
     if etype == "foul_tip_caught":

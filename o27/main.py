@@ -43,9 +43,11 @@ def _player(
     stay_aggressiveness: float = _cfg.PLAYER_DEFAULT_STAY_AGGRESSIVENESS,
     contact_quality_threshold: float = _cfg.PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD,
     is_pitcher: bool = False,
-    is_joker: bool = False,
+    is_joker: bool = False,   # Phase 10 retired jokers; flag is accepted
+                              # for back-compat with the foxes/bears rosters
+                              # below but no longer surfaces as a Player attr.
 ) -> Player:
-    return Player(
+    p = Player(
         player_id=pid,
         name=name,
         skill=skill,
@@ -54,8 +56,11 @@ def _player(
         stay_aggressiveness=stay_aggressiveness,
         contact_quality_threshold=contact_quality_threshold,
         is_pitcher=is_pitcher,
-        is_joker=is_joker,
     )
+    # Stash legacy joker tag on the instance so the roster filter below
+    # still works (main.py is the only caller that consults it).
+    p.is_joker = is_joker
+    return p
 
 
 def make_foxes() -> Team:

@@ -38,13 +38,20 @@ from o27 import config as _cfg
 
 @dataclass
 class Count:
-    """Ball-strike count for the current plate appearance."""
+    """Ball-strike count for the current plate appearance.
+
+    O27 also tracks total fouls per AB: 3 fouls = foul-out (FO).
+    Distinct from `strikes` because once strikes==2 a foul no longer
+    advances the count, but the foul tally keeps climbing toward 3.
+    """
     balls: int = 0
     strikes: int = 0
+    fouls: int = 0
 
     def reset(self) -> None:
         self.balls = 0
         self.strikes = 0
+        self.fouls = 0
 
     def __str__(self) -> str:
         return f"{self.balls}-{self.strikes}"
@@ -86,6 +93,28 @@ class Player:
     archetype: str = ""
     hard_contact_delta: float = 0.0
     hr_weight_bonus:    float = 0.0
+
+    # Realism layer — multi-dimensional ratings (0.0–1.0).
+    # All default to 0.5 so legacy callers that don't set them produce
+    # numerically identical output to the pre-realism engine (identity
+    # invariant: every (x - 0.5) * 2 term collapses to 0).
+    contact:  float = 0.5   # batter: lower whiff rate, more fouls/in-play
+    power:    float = 0.5   # batter: shifts contact toward hard, boosts HR weight
+    eye:      float = 0.5   # batter: more balls taken, fewer called strikes
+    command:  float = 0.5   # pitcher: lower P(ball)
+    movement: float = 0.5   # pitcher: bias contact toward weak/ground_out
+
+    # Handedness — drives platoon split. Default '' means "unknown handedness"
+    # and bypasses the platoon adjustment, preserving the identity invariant
+    # for legacy callers that don't set these fields. League-generated rosters
+    # always populate explicit 'L' / 'R' / 'S'.
+    bats:   str = ""   # '' | 'L' | 'R' | 'S'
+    throws: str = ""   # '' | 'L' | 'R'
+
+    # Per-spell daily form multiplier on effective Stuff. Re-rolled by the
+    # game loop on every `_set_fielding_pitcher` so the same SP can pitch
+    # a gem one start and a clunker the next. 1.0 = legacy parity.
+    today_form: float = 1.0
 
     def __hash__(self) -> int:
         return hash(self.player_id)
@@ -163,6 +192,11 @@ class Team:
     roster: list = field(default_factory=list)          # All Player objects (12)
     lineup: list = field(default_factory=list)          # Active batting order (12)
     lineup_position: int = 0
+
+    # Realism layer — ballpark factors applied when this team is at home.
+    # 1.0 = neutral (legacy parity). Bounded by config.PARK_*_MIN/MAX at seed.
+    park_hr:   float = 1.0   # multiplier on HR weight in HARD_CONTACT
+    park_hits: float = 1.0   # multiplier on hit-vs-out balance
 
     # Joker compatibility shims — Phase 10 dropped jokers from v2, but the
     # engine manager and o27/main.py still reference these fields. Defaulting
