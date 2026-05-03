@@ -310,6 +310,7 @@ def index():
     quick_v  = teams[0]["abbrev"] if teams else "FOX"
     quick_h  = teams[1]["abbrev"] if len(teams) > 1 else "BEA"
     return render_template("index.html",
+        active="home",
         recent=recent, standings=stgs, leaders=leaders,
         upcoming=upcoming, quick_v=quick_v, quick_h=quick_h,
     )
@@ -393,6 +394,7 @@ def sim():
     default_v = teams[0]["abbrev"] if teams else "FOX"
     default_h = teams[1]["abbrev"] if len(teams) > 1 else "BEA"
     return render_template("sim.html",
+        active="sim",
         teams=teams,
         roster_map_json=json.dumps(roster_map),
         default_v=default_v,
@@ -449,6 +451,7 @@ def game():
     sections = _split_log(log_lines)
 
     return render_template("game.html",
+        active="schedule",
         seed=seed,
         game_id=game_id,
         visitors_name=final_state.visitors.name,
@@ -497,6 +500,7 @@ def view_game(game_id):
     h_hits = sum(r.get("hits", 0) for r in h_batting)
 
     return render_template("game.html",
+        active="schedule",
         seed=g["seed"],
         game_id=game_id,
         visitors_name=g["visitors_name"],
@@ -537,6 +541,7 @@ def random_game():
 def standings():
     rows = data.get_standings()
     return render_template("standings.html",
+        active="standings",
         rows=rows, total_games=len(data._RECENT))
 
 
@@ -546,6 +551,7 @@ def schedule():
     all_teams   = data.load_teams()
     games = data.get_schedule(60, team=team_filter)
     return render_template("schedule.html",
+        active="schedule",
         games=games, team_filter=team_filter, all_teams=all_teams)
 
 
@@ -554,6 +560,7 @@ def schedule():
 def stats():
     any_data = bool(data._RECENT)
     return render_template("stats.html",
+        active="stats",
         any_data=any_data,
         by_hits=data.get_leaders("hits"),
         by_avg= data.get_leaders("avg"),
@@ -572,7 +579,7 @@ def teams_page():
     teams    = data.load_teams()
     standings_ = data.get_standings()
     records  = {s["abbrev"]: s for s in standings_}
-    return render_template("teams.html", teams=teams, records=records)
+    return render_template("teams.html", active="teams", teams=teams, records=records)
 
 
 @app.route("/team/<abbrev>")
@@ -594,6 +601,7 @@ def team_page(abbrev):
     tab = request.args.get("tab", "roster")
 
     return render_template("team.html",
+        active="teams",
         team=team, record=rec,
         recent_games=recent_games,
         team_batting=team_batting,
@@ -632,6 +640,7 @@ def player_page(player_id):
     stats    = data.get_player_stats(team["abbrev"], player["name"])
     game_log = _player_game_log(team["abbrev"], player["name"])
     return render_template("player.html",
+        active="players",
         team=team, player=player, stats=stats, game_log=game_log)
 
 
@@ -666,6 +675,7 @@ def players():
 
     total = sum(len(t["players"]) for t in all_teams)
     return render_template("players.html",
+        active="players",
         players=rows, total=total,
         team_count=len(all_teams),
         all_teams=all_teams,
@@ -680,6 +690,7 @@ def players():
 @app.route("/my-team")
 def my_team():
     return render_template("placeholder.html",
+        active="my-team",
         title="My Team", icon="🏟",
         blurb="Full team management — lineups, depth charts, and stats — coming soon.")
 
@@ -687,6 +698,7 @@ def my_team():
 @app.route("/roster")
 def roster():
     return render_template("placeholder.html",
+        active="roster",
         title="Roster", icon="📋",
         blurb="View and manage your full team roster, assign positions, and review player attributes.")
 
@@ -694,6 +706,7 @@ def roster():
 @app.route("/lineups")
 def lineups():
     return render_template("placeholder.html",
+        active="lineups",
         title="Lineups", icon="📋",
         blurb="Set your batting order, define joker deployment rules, and save lineup presets.")
 
@@ -701,6 +714,7 @@ def lineups():
 @app.route("/trade")
 def trade():
     return render_template("placeholder.html",
+        active="trade",
         title="Trade Center", icon="🔄",
         blurb="Propose and evaluate trades with AI-driven value analysis.")
 
@@ -708,6 +722,7 @@ def trade():
 @app.route("/manager")
 def manager():
     return render_template("placeholder.html",
+        active="manager",
         title="Manager Settings", icon="⚙",
         blurb="Configure in-game AI strategy: aggression, joker timing, and pitching decisions.")
 
