@@ -1,0 +1,89 @@
+Good instinct. Right now the agent is generating attributes in a way that produces a flat distribution — everyone clusters around 50, nobody really stands out. That’s why doubles and triples are sparse: there’s no real top-end power or speed, just a sea of average. Real baseball has a long tail.
+Here’s a clean spec to send.
+
+Task — Talent Distribution Tiers
+What & Why
+The current player-generation logic produces a too-flat attribute distribution. Every team’s roster looks roughly identical, doubles and triples are sparse, and there are no genuine standout players. Real baseball talent is sharply tiered — a small number of elite players carry outsized impact, and a long tail of replacement-level players keeps the league functional.
+Generate players against a defined talent distribution, applied per attribute, with the percentages below. The 20–80 scout scale is the unit; tier boundaries map to scout-scale ranges.
+Tier definitions
+
+
+
+|Tier           |% of league|Scout scale range|Real-baseball comp          |
+|---------------|-----------|-----------------|----------------------------|
+|Elite          |2%         |75–80            |MVP / Cy Young candidates   |
+|Excellent      |5%         |65–74            |All-Stars                   |
+|Very Good      |10%        |60–64            |Above-average regulars      |
+|Good           |15%        |55–59            |Solid regulars              |
+|Above Average  |18%        |50–54            |League-average starters     |
+|Average        |20%        |45–49            |Bench / spot starters       |
+|Below Average  |15%        |40–44            |Marginal big leaguers       |
+|Replacement    |10%        |30–39            |AAAA / fringe               |
+|Sub-Replacement|5%         |20–29            |Wouldn’t be on a real roster|
+
+Total: 100%.
+Application
+The distribution applies per attribute, not per player. A player can be Elite in Power but Below Average in Speed. Real players are spiky. Generating each attribute independently against this distribution produces realistic player archetypes naturally:
+	•	A player who rolls Elite Contact + Below Average Power = Tony Gwynn-type
+	•	Elite Power + Below Average Contact = Adam Dunn-type
+	•	Elite Speed + Average Contact = Billy Hamilton-type
+	•	Elite across the board = once-in-a-generation player (will be vanishingly rare given the multiplication of probabilities)
+For a 30-team league with 17-player rosters (510 players), the expected counts per attribute:
+	•	~10 Elite
+	•	~26 Excellent
+	•	~51 Very Good
+	•	~77 Good
+	•	~92 Above Average
+	•	~102 Average
+	•	~77 Below Average
+	•	~51 Replacement
+	•	~26 Sub-Replacement
+Pitcher attributes
+Same distribution applies to: Stuff, Control, Movement, Stamina.
+A pitcher with Elite Stamina is a true workhorse — these are the pitchers whose AOR should average 24–26 across the season. Elite Stuff produces high K rates. The combination of the two = ace.
+Hitter attributes
+Same distribution applies to: Contact, Power, Eye, Speed, Defense, Arm.
+Power is the attribute that drives doubles, triples, and home runs. Right now those are sparse because Power is too uniform. With ~10 Elite Power hitters across the league, you’ll see HR leaders posting 30+ HR seasons and doubles leaders pushing 50+. Speed drives triples specifically — Elite Speed + average Power produces triple specialists.
+Implementation
+In the player generator (probably o27v2/league.py or similar), replace whatever current attribute generation looks like with:
+
+TALENT_TIERS = [
+    (0.02, (75, 80)),   # Elite
+    (0.05, (65, 74)),   # Excellent
+    (0.10, (60, 64)),   # Very Good
+    (0.15, (55, 59)),   # Good
+    (0.18, (50, 54)),   # Above Average
+    (0.20, (45, 49)),   # Average
+    (0.15, (40, 44)),   # Below Average
+    (0.10, (30, 39)),   # Replacement
+    (0.05, (20, 29)),   # Sub-Replacement
+]
+
+def roll_attribute(rng):
+    r = rng.random()
+    cumulative = 0
+    for prob, (lo, hi) in TALENT_TIERS:
+        cumulative += prob
+        if r < cumulative:
+            return rng.randint(lo, hi)
+    return rng.randint(20, 29)  # safety
+
+
+Roll each attribute independently for each player.
+Verification
+After regenerating the league, the leaderboard should produce:
+	•	HR leader posting 30+ HR (top ~5–10 hitters in the 25–35 range)
+	•	Doubles leader posting 45+ 2B
+	•	Triples leader posting 12+ 3B (still rare but visible)
+	•	Top batting average around .380–.420 (Elite Contact)
+	•	Top OPS over 1.100
+	•	ERA leader well below league average (~6.50–7.50 vs league ~11.50)
+	•	K leader posting genuinely high totals
+	•	A clear separation between top-of-leaderboard and middle-of-leaderboard
+Sanity check: spot-check 10 random players. Some should look genuinely bad (multiple sub-replacement attributes), some should look genuinely great. If every roll-up looks similar, the distribution isn’t being applied correctly.
+Out of scope
+	•	Position-specific distributions (catchers usually have lower speed in real baseball, etc.) — keep it uniform across positions for v1.
+	•	Age curves or attribute drift across seasons — players are static for now.
+	•	Generating “famous player” archetypes by name — keep generation procedural.
+
+Send this. The flat-attribute problem is the root cause of the sparse extra-base hits and the lack of identifiable star players. Tier-based generation fixes both at once and gives the league actual texture — leaderboards become meaningful when there are real outliers to lead them.​​​​​​​​​​​​​​​​
