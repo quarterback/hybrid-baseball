@@ -45,12 +45,15 @@ app.config["SECRET_KEY"] = "o27v2-dev-key"
 
 
 def _scout(val) -> int:
-    """Map a 0.0–1.0 attribute to the 20–80 scout grade (50 = league avg).
-    0.50 → 50, 0.85 → 80, 0.15 → 20.  Clamped to [20, 80]."""
+    """Render a stored attribute as a 20–80 scout grade.
+    Task #47 stores grades natively as ints in [20, 80]; legacy float values
+    in [0.0, 1.0] are converted on the fly via the 0.15 / 0.50 / 0.85 anchors."""
     try:
         v = float(val)
     except (TypeError, ValueError):
         return 50
+    if v > 1.0:  # already a grade (int storage from Task #47)
+        return max(20, min(80, int(round(v))))
     grade = 20 + (v - 0.15) / 0.70 * 60
     return max(20, min(80, int(round(grade))))
 
@@ -577,7 +580,7 @@ def team_detail(team_id: int):
     if not team:
         abort(404)
     players = db.fetchall(
-        "SELECT * FROM players WHERE team_id = ? ORDER BY is_joker, is_pitcher, id",
+        "SELECT * FROM players WHERE team_id = ? ORDER BY is_pitcher, id",
         (team_id,)
     )
     recent = db.fetchall(

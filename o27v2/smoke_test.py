@@ -21,6 +21,7 @@ if _workspace not in sys.path:
     sys.path.insert(0, _workspace)
 
 from o27.engine.state import GameState, Team, Player
+from o27v2 import scout as _scout
 from o27.engine.game import run_game
 from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
@@ -49,30 +50,25 @@ _TEAM_DEFS = _get_team_defs()
 
 def _make_engine_team(team_def: dict, players: list[dict], role: str) -> Team:
     roster: list[Player] = []
-    jokers: list[Player] = []
     for p in players:
         player = Player(
             player_id=f"{role}_{p['name']}",
             name=p["name"],
             is_pitcher=bool(p["is_pitcher"]),
-            is_joker=bool(p["is_joker"]),
-            skill=float(p["skill"]),
-            speed=float(p["speed"]),
-            pitcher_skill=float(p["pitcher_skill"]),
+            skill=_scout.to_unit(p["skill"]),
+            speed=_scout.to_unit(p["speed"]),
+            pitcher_skill=_scout.to_unit(p["pitcher_skill"]),
             stay_aggressiveness=float(p["stay_aggressiveness"]),
             contact_quality_threshold=float(p["contact_quality_threshold"]),
             archetype=str(p.get("archetype") or ""),
             pitcher_role=str(p.get("pitcher_role") or ""),
         )
         roster.append(player)
-        if player.is_joker:
-            jokers.append(player)
     return Team(
         team_id=role,
         name=team_def["name"],
         roster=roster,
         lineup=list(roster),
-        jokers_available=list(jokers),
     )
 
 

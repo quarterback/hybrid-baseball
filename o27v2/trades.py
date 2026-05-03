@@ -34,10 +34,11 @@ def trade_value(player: dict) -> float:
     role = player.get("pitcher_role", "")
     arch = player.get("archetype", "")
 
-    # Skill component
-    batting  = float(player.get("skill", 0.5))
-    pitching = float(player.get("pitcher_skill", 0.5))
-    speed    = float(player.get("speed", 0.5))
+    # Skill component (DB stores 20-80 grades; convert to 0-1 units).
+    from o27v2 import scout as _scout
+    batting  = _scout.to_unit(player.get("skill", 50))
+    pitching = _scout.to_unit(player.get("pitcher_skill", 50))
+    speed    = _scout.to_unit(player.get("speed", 50))
 
     if role == "workhorse":
         skill_score = pitching * 0.65 + batting * 0.20 + speed * 0.15
@@ -133,7 +134,7 @@ def _classify_teams(standings: list[dict]) -> tuple[list[dict], list[dict]]:
 def _get_tradeable_players(team_id: int, game_date: str) -> list[dict]:
     """Return healthy, non-joker players sorted by trade value descending."""
     players = db.fetchall(
-        "SELECT * FROM players WHERE team_id = ? AND is_joker = 0 "
+        "SELECT * FROM players WHERE team_id = ? "
         "AND (injured_until IS NULL OR injured_until <= ?)",
         (team_id, game_date),
     )

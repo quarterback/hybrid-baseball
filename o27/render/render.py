@@ -490,11 +490,7 @@ class Renderer:
         return self._batter_stats[player.player_id]
 
     def _batter_intro(self, batter) -> str:
-        tag = ""
-        if batter.is_joker:
-            tag = " [JOKER]"
-        elif batter.is_pitcher:
-            tag = " [P]"
+        tag = " [P]" if batter.is_pitcher else ""
         return f"--- Now batting: {batter.name}{tag} ---"
 
     # -----------------------------------------------------------------------
@@ -605,7 +601,7 @@ class Renderer:
             "count": ctx["count"],
             "bases": ctx["bases"],
             "batter_name": batter.name,
-            "batter_is_joker": batter.is_joker,
+            "batter_is_joker": False,
             "batter_is_pitcher": batter.is_pitcher,
             "pitcher_name": pitcher.name if pitcher else "—",
             "visitors_name": ctx["visitors_name"],
@@ -708,10 +704,6 @@ class Renderer:
             base_names = ["1B", "2B", "3B"]
             d["pickoff_success"] = success
             d["pickoff_base"] = base_names[base_idx] if base_idx < 3 else "?"
-
-        elif etype == "joker_insertion":
-            joker = event.get("joker")
-            d["joker_name"] = joker.name if joker else "?"
 
         elif etype == "pitching_change":
             new_p = event.get("new_pitcher")

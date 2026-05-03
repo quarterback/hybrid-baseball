@@ -369,7 +369,7 @@ def _close_current_spell(state: GameState) -> None:
 def _set_fielding_pitcher(state: GameState) -> None:
     """Point current_pitcher_id at the fielding team's pitcher and reset counters."""
     fielding = state.fielding_team
-    restricted = fielding.joker_fielding_restricted
+    restricted: set = set()  # Jokers removed in Task #47 — no fielding restrictions.
 
     def _assign(player: Player) -> None:
         state.current_pitcher_id = player.player_id

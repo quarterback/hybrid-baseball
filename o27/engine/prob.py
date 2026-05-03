@@ -388,14 +388,7 @@ class ProbabilisticProvider:
             mgr_event = self._try_manager_action(state)
             if mgr_event:
                 event_type = mgr_event.get("type")
-                if event_type == "joker_insertion":
-                    # Pin _last_batter_id to the incoming joker's ID so the
-                    # manager does NOT re-fire for the same lineup slot once the
-                    # joker steps up.  Without this guard the RISP contact trigger
-                    # would fire again for the new batter (who still has RISP),
-                    # burning additional jokers in the same PA.
-                    self._last_batter_id = mgr_event["joker"].player_id
-                elif event_type == "pitching_change":
+                if event_type == "pitching_change":
                     # May need another check after the change.
                     self._manager_checked = False
                 return mgr_event
@@ -427,11 +420,7 @@ class ProbabilisticProvider:
             if new_p is not None:
                 return {"type": "pitching_change", "new_pitcher": new_p}
 
-        # Joker insertion check (preferred over pinch hit).
-        joker = mgr.should_insert_joker(state)
-        if joker is not None:
-            pos = state.batting_team.lineup_position
-            return {"type": "joker_insertion", "joker": joker, "lineup_position": pos}
+        # Joker insertion was removed in Task #47.
 
         # Pinch hit check (fallback when jokers are exhausted).
         replacement = mgr.should_pinch_hit(state)

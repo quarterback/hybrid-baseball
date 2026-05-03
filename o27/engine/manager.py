@@ -24,27 +24,22 @@ from o27 import config as cfg
 # ---------------------------------------------------------------------------
 
 def can_insert_joker(state: GameState, joker: Player) -> tuple[bool, str]:
-    """
-    Check whether a joker can be inserted right now.
+    """No-op stub: jokers were removed in Task #47.
 
-    Returns (ok, reason). If ok is False, reason explains why.
-
-    Constraints (§2.3):
-      - The joker must be in jokers_available for the batting team.
-      - Each joker may bat only once per half-inning.
-      - Cannot be used in a super-inning lineup (no jokers in super).
+    Always returns False. Kept for legacy import compatibility.
     """
-    team = state.batting_team
-    if state.is_super_inning:
-        return False, "Joker insertion not available in super-inning."
-    if joker.player_id not in {j.player_id for j in team.jokers_available}:
-        return False, f"{joker.name} is not an available joker for this team."
-    if joker.player_id in team.jokers_used_this_half:
-        return False, f"{joker.name} has already batted this half-inning."
-    return True, ""
+    return False, "Jokers were removed in Task #47."
 
 
 def insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[str]:
+    """No-op stub: jokers were removed in Task #47.
+
+    Always returns an empty log. Kept for legacy import compatibility.
+    """
+    return []
+
+
+def _legacy_insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[str]:
     """
     Insert a joker at the given lineup position for the current batting team.
 
@@ -225,6 +220,11 @@ def _needed_archetype(state: GameState) -> Optional[str]:
 
 
 def should_insert_joker(state: GameState) -> Optional[Player]:
+    """No-op stub: jokers were removed in Task #47. Always returns None."""
+    return None
+
+
+def _legacy_should_insert_joker(state: GameState) -> Optional[Player]:
     """
     Phase 8 §4.6 heuristic: select the joker whose archetype fits the situation.
 
@@ -314,7 +314,7 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
     """
     fielding   = state.fielding_team
     current_id = state.current_pitcher_id
-    restricted = fielding.joker_fielding_restricted
+    restricted: set = set()  # Jokers removed in Task #47.
 
     already_pitched = {
         r.pitcher_id for r in state.spell_log if r.half == state.half
@@ -325,7 +325,6 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         if p.player_id != current_id
         and p.player_id not in restricted
         and p.player_id not in already_pitched
-        and not p.is_joker
     ]
     if not candidates:
         return None
@@ -361,12 +360,8 @@ def should_pinch_hit(state: GameState) -> Optional[Player]:
     if not batter.is_pitcher:
         return None
 
-    # Prefer joker insertion when jokers are still available this half.
+    # Jokers removed in Task #47 — proceed straight to pinch-hit eligibility.
     team = state.batting_team
-    jokers_left = [j for j in team.jokers_available
-                   if j.player_id not in team.jokers_used_this_half]
-    if jokers_left:
-        return None
 
     if not state.runners_in_scoring_position:
         return None
@@ -384,7 +379,6 @@ def should_pinch_hit(state: GameState) -> Optional[Player]:
     candidates = [
         p for p in team.roster
         if not p.is_pitcher
-        and not p.is_joker
         and p.player_id not in lineup_ids
     ]
     if not candidates:

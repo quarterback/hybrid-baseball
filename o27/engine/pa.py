@@ -113,12 +113,7 @@ def _end_at_bat(state: GameState) -> list[str]:
     hits = state.current_at_bat_hits
     if hits > 1:
         log.append(f"  Multi-hit at-bat: {hits} credited hits.")
-    # PRD §2.3: joker may bat once per half-inning and cannot field afterwards.
-    batter = state.current_batter
-    if batter.is_joker:
-        team = state.batting_team
-        team.jokers_used_this_half.add(batter.player_id)
-        team.joker_fielding_restricted.add(batter.player_id)
+    # Jokers removed in Task #47 — no per-half eligibility tracking needed.
     state.count.reset()
     state.current_at_bat_hits = 0
     state.batting_team.advance_lineup()
@@ -281,12 +276,6 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     # ------------------------------------------------------------------
     # Manager events
     # ------------------------------------------------------------------
-
-    if etype == "joker_insertion":
-        joker = event["joker"]
-        pos = event.get("lineup_position", state.batting_team.lineup_position)
-        log += mgr.insert_joker(state, joker, pos)
-        return log
 
     if etype == "pinch_hit":
         replacement = event["replacement"]

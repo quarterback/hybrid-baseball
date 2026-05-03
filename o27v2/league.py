@@ -16,6 +16,7 @@ import random
 from typing import Any
 
 from o27v2 import config as v2cfg
+from o27v2 import scout as _scout
 
 _DATA_DIR     = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _NAMES_DIR    = os.path.join(_DATA_DIR, "names")
@@ -221,10 +222,10 @@ def generate_players(
             "name": _name(),
             "position": pos,
             "is_pitcher": int(is_p),
-            "is_joker": 0,
-            "skill": round(skill, 3),
-            "speed": round(speed, 3),
-            "pitcher_skill": round(pskill, 3),
+
+            "skill": _scout.to_grade(skill),
+            "speed": _scout.to_grade(speed),
+            "pitcher_skill": _scout.to_grade(pskill),
             "stay_aggressiveness": round(stay_a, 3),
             "contact_quality_threshold": round(cqt, 3),
             "archetype": "",
@@ -248,10 +249,10 @@ def generate_players(
             "name": jname,
             "position": "DH",
             "is_pitcher": 0,
-            "is_joker": 0,
-            "skill": round(skill, 3),
-            "speed": round(speed, 3),
-            "pitcher_skill": round(pskill, 3),
+
+            "skill": _scout.to_grade(skill),
+            "speed": _scout.to_grade(speed),
+            "pitcher_skill": _scout.to_grade(pskill),
             "stay_aggressiveness": round(stay_a, 3),
             "contact_quality_threshold": round(cqt, 3),
             "archetype": "",
@@ -331,11 +332,11 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
         players = generate_players(idx, rng2)
         db.executemany(
             """INSERT INTO players
-               (team_id, name, position, is_pitcher, is_joker, skill, speed,
+               (team_id, name, position, is_pitcher, skill, speed,
                 pitcher_skill, stay_aggressiveness, contact_quality_threshold,
                 archetype, pitcher_role, hard_contact_delta, hr_weight_bonus, age)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            [(team_id, p["name"], p["position"], p["is_pitcher"], p["is_joker"],
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            [(team_id, p["name"], p["position"], p["is_pitcher"],
               p["skill"], p["speed"], p["pitcher_skill"],
               p["stay_aggressiveness"], p["contact_quality_threshold"],
               p.get("archetype", ""), p.get("pitcher_role", ""),

@@ -60,7 +60,6 @@ class Player:
     player_id: str
     name: str
     is_pitcher: bool = False
-    is_joker: bool = False
 
     # Skill attributes — used by Phase 2 probability models.
     # Defaults come from o27.config so all tunables are in one place.
@@ -70,18 +69,12 @@ class Player:
     contact_quality_threshold: float = _cfg.PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD
     pitcher_skill: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL
 
-    # Phase 8: archetype and pitcher role fields.
-    # archetype:    joker identity — "power" | "speed" | "contact" | ""
-    # pitcher_role: pitcher usage role — "workhorse" | "committee" | ""
-    archetype: str = ""
+    # Pitcher usage role — "workhorse" | "committee" | "".
     pitcher_role: str = ""
 
-    # Phase 8: per-archetype plate-appearance probability modifiers.
-    # Populated by o27v2/league.py from o27v2.config.ARCHETYPE_PA_MODIFIERS.
-    # Non-joker players default to 0.0 (no modification).
-    # Applied by o27/engine/prob.py:
-    #   hard_contact_delta — shifts the hard/weak contact quality split
-    #   hr_weight_bonus    — adjusts the HR row weight within hard contact
+    # Legacy Phase-8 fields (kept zeroed for backward compatibility with the
+    # probability code that still references them; jokers/archetypes are gone).
+    archetype: str = ""
     hard_contact_delta: float = 0.0
     hr_weight_bonus:    float = 0.0
 
@@ -95,10 +88,6 @@ class Player:
         tags = []
         if self.is_pitcher:
             tags.append("P")
-        if self.is_joker:
-            tags.append("JKR")
-        if self.archetype:
-            tags.append(self.archetype[:3].upper())
         if self.pitcher_role:
             tags.append(self.pitcher_role[:3].upper())
         tag_str = f"[{','.join(tags)}]" if tags else ""
@@ -164,9 +153,6 @@ class Team:
     roster: list = field(default_factory=list)          # All Player objects (12)
     lineup: list = field(default_factory=list)          # Active batting order (12)
     lineup_position: int = 0
-    jokers_available: list = field(default_factory=list)       # jokers not yet explicitly slot-moved this half
-    jokers_used_this_half: set = field(default_factory=set)    # player_ids that have batted this half
-    joker_fielding_restricted: set = field(default_factory=set) # PRD §2.3: jokers who've batted (cannot field)
 
     # Super-inning
     super_lineup: list = field(default_factory=list)        # 5 selected Player objects
@@ -202,29 +188,15 @@ class Team:
         else:
             n = len(self.lineup)
             self.lineup_position = (self.lineup_position + 1) % n
-            # PRD §2.3: jokers who have already batted this half cannot bat again.
-            for _ in range(n):
-                batter = self.lineup[self.lineup_position]
-                if batter.is_joker and batter.player_id in self.jokers_used_this_half:
-                    self.lineup_position = (self.lineup_position + 1) % n
-                else:
-                    break
 
     def reset_half(self) -> None:
         """Reset intra-half tracking at the start of a new half.
 
-        PRD §2.3: each joker may bat once *per half-inning*.
-        - jokers_used_this_half is cleared (all jokers eligible again).
-        - jokers_available is restored (all roster jokers back in the pool).
-        - joker_fielding_restricted persists: once a joker has batted during
-          the game they remain restricted from fielding for the whole game.
+        Jokers were removed in Task #47 — DH-only roster has no per-half
+        eligibility tracking, so this is now a no-op kept for call-site
+        compatibility with the engine.
         """
-        self.jokers_used_this_half = set()
-        # Re-admit all roster jokers into the available pool for the new half.
-        current_available_ids = {j.player_id for j in self.jokers_available}
-        for player in self.roster:
-            if player.is_joker and player.player_id not in current_available_ids:
-                self.jokers_available.append(player)
+        return
 
     def reset_super(self) -> None:
         """Reset super-inning tracking for a new round."""

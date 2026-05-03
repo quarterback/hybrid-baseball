@@ -23,6 +23,8 @@ import argparse
 import random
 import statistics
 import sys
+
+from o27v2 import scout as _scout
 import os
 
 _workspace = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -92,16 +94,14 @@ def _make_team(team_idx: int, role: str) -> Team:
     bonus    = v2cfg.HOME_ADVANTAGE_SKILL if role == "home" else 0.0
     players  = generate_players(team_idx, random.Random(team_idx * 31 + 7), home_bonus=bonus)
     roster: list[Player] = []
-    jokers: list[Player] = []
     for p in players:
         pl = Player(
             player_id=f"{role}_{team_idx}_{p['name']}",
             name=p["name"],
             is_pitcher=bool(p["is_pitcher"]),
-            is_joker=bool(p["is_joker"]),
-            skill=float(p["skill"]),
-            speed=float(p["speed"]),
-            pitcher_skill=float(p["pitcher_skill"]),
+            skill=_scout.to_unit(p["skill"]),
+            speed=_scout.to_unit(p["speed"]),
+            pitcher_skill=_scout.to_unit(p["pitcher_skill"]),
             stay_aggressiveness=float(p["stay_aggressiveness"]),
             contact_quality_threshold=float(p["contact_quality_threshold"]),
             archetype=str(p.get("archetype") or ""),
@@ -110,14 +110,11 @@ def _make_team(team_idx: int, role: str) -> Team:
             hr_weight_bonus=float(p.get("hr_weight_bonus") or 0.0),
         )
         roster.append(pl)
-        if pl.is_joker:
-            jokers.append(pl)
     return Team(
         team_id=role,
         name=team_def["name"],
         roster=roster,
         lineup=list(roster),
-        jokers_available=list(jokers),
     )
 
 

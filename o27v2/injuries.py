@@ -31,6 +31,7 @@ import datetime
 import random
 
 from o27v2 import db
+from o27v2 import scout as _scout
 
 INJURY_BASE_RATE     = 0.015   # 1.5%/player/game — spec-mandated base for all players
 CATCHER_BONUS        = 0.005   # catcher total ~2.0%
@@ -107,7 +108,7 @@ def _depth_chart_events(
 
     # Current healthy roster after this injury has been recorded
     healthy = db.fetchall(
-        "SELECT * FROM players WHERE team_id = ? AND is_joker = 0 "
+        "SELECT * FROM players WHERE team_id = ? "
         "AND (injured_until IS NULL OR injured_until <= ?) ORDER BY id",
         (team_id, game_date),
     )
@@ -133,7 +134,7 @@ def _depth_chart_events(
                 ),
             })
             # Performance penalty if best committee pitcher is below starter threshold
-            if float(best.get("pitcher_skill", 0.0)) < 0.48:
+            if _scout.to_unit(best.get("pitcher_skill", 0)) < 0.48:
                 events.append({
                     "event_type": "penalty",
                     "team_id": team_id,
@@ -298,7 +299,7 @@ def process_post_game_injuries(
 
     for team_id in [home_team_id, away_team_id]:
         players = db.fetchall(
-            "SELECT * FROM players WHERE team_id = ? AND is_joker = 0 "
+            "SELECT * FROM players WHERE team_id = ? "
             "AND (injured_until IS NULL OR injured_until <= ?) ORDER BY id",
             (team_id, game_date),
         )
@@ -401,11 +402,12 @@ def check_waiver_claims(game_date: str) -> list[dict]:
 
         player_id = db.execute(
             """INSERT INTO players
-               (team_id, name, position, is_pitcher, is_joker, skill, speed,
+               (team_id, name, position, is_pitcher, skill, speed,
                 pitcher_skill, stay_aggressiveness, contact_quality_threshold,
                 archetype, pitcher_role, hard_contact_delta, hr_weight_bonus, age)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (team["id"], wname, "RP", 1, 0, skill, speed, pskill,
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (team["id"], wname, "RP", 1,
+             _scout.to_grade(skill), _scout.to_grade(speed), _scout.to_grade(pskill),
              stay_a, cqt, "", "committee", 0.0, 0.0, age),
         )
         events.append({
