@@ -252,7 +252,9 @@ def get_active_league_meta() -> tuple[int | None, str | None]:
 
 def set_active_league_meta(rng_seed: int, config_id: str) -> None:
     """Persist the seed/config used to build the live league so future
-    archives can attribute the season to the correct setup."""
+    archives can attribute the season to the correct setup. Also clears
+    the 'already archived' marker since a fresh league has nothing
+    archived yet."""
     db.execute(
         "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('league_seed', ?)",
         (str(int(rng_seed)),),
@@ -260,6 +262,29 @@ def set_active_league_meta(rng_seed: int, config_id: str) -> None:
     db.execute(
         "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('league_config', ?)",
         (str(config_id),),
+    )
+    db.execute("DELETE FROM sim_meta WHERE key = 'current_season_archived_id'")
+
+
+def get_current_archived_season_id() -> int | None:
+    """Returns the seasons.id for the live league if it's already been
+    archived, else None. Used to prevent duplicate archive rows."""
+    row = db.fetchone(
+        "SELECT value FROM sim_meta WHERE key = 'current_season_archived_id'"
+    )
+    if row and row.get("value"):
+        try:
+            return int(row["value"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _mark_current_season_archived(season_id: int) -> None:
+    db.execute(
+        "INSERT OR REPLACE INTO sim_meta (key, value) "
+        "VALUES ('current_season_archived_id', ?)",
+        (str(int(season_id)),),
     )
 
 
@@ -269,6 +294,16 @@ def archive_current_season(
     started_at: str | None = None,
     run_invariants: bool = True,
 ) -> int | None:
+    # Guard against duplicate archive rows for the same live league. If the
+    # current season has already been archived, return that existing id
+    # instead of writing a second snapshot.
+    existing = get_current_archived_season_id()
+    if existing is not None:
+        row = db.fetchone("SELECT id FROM seasons WHERE id = ?", (existing,))
+        if row:
+            return existing
+        # Stale marker (row was deleted) — fall through and re-archive.
+
     games_played = db.fetchone(
         "SELECT COUNT(*) as n FROM games WHERE played = 1"
     )
@@ -321,6 +356,7 @@ def archive_current_season(
     )
     _snapshot_standings(new_id)
     _snapshot_leaders(new_id)
+    _mark_current_season_archived(new_id)
     return new_id
 
 
