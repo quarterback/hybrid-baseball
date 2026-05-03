@@ -137,6 +137,8 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "runs_allowed": ps.runs_allowed,
             "bb": ps.bb,
             "k": ps.k,
+            "hr_allowed": ps.hr_allowed,
+            "pitches": ps.pitches_thrown,
         })
     return rows
 
@@ -356,11 +358,12 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
     db.executemany(
         """INSERT INTO game_pitcher_stats
            (game_id, team_id, player_id, batters_faced, outs_recorded,
-            hits_allowed, runs_allowed, bb, k)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+            hits_allowed, runs_allowed, bb, k, hr_allowed, pitches)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["batters_faced"],
           r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
-          r["bb"], r["k"]) for r in rows],
+          r["bb"], r["k"], r.get("hr_allowed", 0), r.get("pitches", 0))
+         for r in rows],
     )
 
 

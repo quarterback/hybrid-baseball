@@ -49,27 +49,21 @@
       <div class="card-body p-0">
         <table class="table table-sm mb-0">
           <thead><tr>
-            <th>Name</th><th>Pos</th><th>Skill</th><th>Spd</th><th>Ptch</th>
+            <th>Name</th><th>Pos</th><th class="text-end">Hit</th>
+            <th class="text-end">Run</th><th class="text-end">Arm</th>
           </tr></thead>
           <tbody>
           {% for p in players %}
-          <tr {% if p.is_joker %}style="color:#f0883e"{% elif p.is_pitcher %}style="color:#79c0ff"{% endif %}>
+          <tr {% if p.position == 'DH' %}style="color:#f0883e"{% elif p.is_pitcher %}style="color:#79c0ff"{% endif %}>
             <td>
-              {{ p.name }}
-              {% if p.is_joker %}<span class="si-badge">JKR</span>{% endif %}
+              <a href="{{ url_for('player_detail', player_id=p.id) }}" class="text-decoration-none">{{ p.name }}</a>
+              {% if p.position == 'DH' %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem">DH</span>{% endif %}
               {% if p.is_pitcher %}<span class="badge bg-info text-dark ms-1" style="font-size:.65rem">P</span>{% endif %}
             </td>
             <td class="text-secondary">{{ p.position }}</td>
-            <td>
-              <div class="d-flex align-items-center gap-1">
-                <div style="background:#30363d;border-radius:3px;width:50px;height:6px">
-                  <div class="progress-bar-skill" style="width:{{ (p.skill * 100)|int }}%"></div>
-                </div>
-                <small class="text-secondary">{{ '%.2f'|format(p.skill) }}</small>
-              </div>
-            </td>
-            <td class="text-secondary small">{{ '%.2f'|format(p.speed) }}</td>
-            <td class="text-secondary small">{{ '%.2f'|format(p.pitcher_skill) }}</td>
+            <td class="text-end fw-bold">{{ p.skill | scout }}</td>
+            <td class="text-end text-secondary">{{ p.speed | scout }}</td>
+            <td class="text-end text-secondary">{{ p.pitcher_skill | scout }}</td>
           </tr>
           {% endfor %}
           </tbody>

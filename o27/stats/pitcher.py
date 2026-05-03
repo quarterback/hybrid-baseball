@@ -20,6 +20,8 @@ class PitcherStats:
     bb: int = 0
     k: int = 0
     hbp: int = 0
+    hr_allowed: int = 0
+    pitches_thrown: int = 0
     spell_count: int = 0        # number of separate spells pitched
     max_spell: int = 0          # longest single spell (consecutive BF)
 
@@ -29,14 +31,16 @@ class PitcherStats:
         s = cls(player_id=pitcher_id, name=name)
         for rec in spell_log:
             if rec.pitcher_id == pitcher_id:
-                s.batters_faced += rec.batters_faced
-                s.outs_recorded += rec.outs_recorded
-                s.runs_allowed  += rec.runs_allowed
-                s.hits_allowed  += rec.hits_allowed
-                s.bb            += rec.bb
-                s.k             += rec.k
-                s.hbp           += rec.hbp
-                s.spell_count   += 1
+                s.batters_faced  += rec.batters_faced
+                s.outs_recorded  += rec.outs_recorded
+                s.runs_allowed   += rec.runs_allowed
+                s.hits_allowed   += rec.hits_allowed
+                s.bb             += rec.bb
+                s.k              += rec.k
+                s.hbp            += rec.hbp
+                s.hr_allowed     += getattr(rec, "hr_allowed", 0)
+                s.pitches_thrown += getattr(rec, "pitches_thrown", 0)
+                s.spell_count    += 1
                 if rec.batters_faced > s.max_spell:
                     s.max_spell = rec.batters_faced
         return s

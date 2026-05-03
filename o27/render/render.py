@@ -188,7 +188,7 @@ class Renderer:
             (
                 f"End of {half_label} half — {team.name}: "
                 f"{runs} run(s), {hits} hit(s), {outs} out(s) | "
-                f"Run rate: {rr:.3f} R/out | Stays: {stays}"
+                f"Run rate: {rr:.3f}"
             ),
         ]
 

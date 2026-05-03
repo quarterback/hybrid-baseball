@@ -97,7 +97,9 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     hits_allowed   INTEGER DEFAULT 0,
     runs_allowed   INTEGER DEFAULT 0,
     bb             INTEGER DEFAULT 0,
-    k              INTEGER DEFAULT 0
+    k              INTEGER DEFAULT 0,
+    hr_allowed     INTEGER DEFAULT 0,
+    pitches        INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sim_meta (
@@ -177,6 +179,14 @@ def init_db() -> None:
         for col, defval in phase9_int:
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Task #47/#32 game_pitcher_stats columns: HR allowed + Pitches thrown
+        for col in ("hr_allowed", "pitches"):
+            try:
+                conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()
             except Exception:
                 pass

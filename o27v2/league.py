@@ -232,39 +232,32 @@ def generate_players(
             "age": _player_age(rng),
         })
 
-    # JOKERS_PER_ARCHETYPE jokers per archetype per team (1 per archetype = 3 total).
-    archetypes = ["power", "speed", "contact"] * v2cfg.JOKERS_PER_ARCHETYPE
-    rng.shuffle(archetypes)
-
-    joker_names_used: set[str] = set()
-    for archetype in archetypes:
-        jname = rng.choice(_JOKER_NAMES)
-        while jname in joker_names_used:
-            jname = rng.choice(_JOKER_NAMES)
-        joker_names_used.add(jname)
-
-        ap     = _JOKER_ARCHETYPES[archetype]
-        pamod  = _JOKER_PA_MODIFIERS.get(archetype, {})
-        skill  = _clamp(rng.gauss(ap["skill_mu"],  ap["skill_sig"]))
-        speed  = _clamp(rng.gauss(ap["speed_mu"],  ap["speed_sig"]))
-        stay_a = _clamp(rng.gauss(ap["stay_a_mu"], ap["stay_a_sig"]))
-        cqt    = _clamp(rng.gauss(ap["cqt_mu"],    ap["cqt_sig"]))
-        pskill = _clamp(rng.gauss(0.38, 0.09))
+    # Three Designated Hitters per team (Task #47: jokers → DH).
+    # DHs are normal lineup players — no joker engine branching, no archetype.
+    # They are slightly above-average bats with poor defensive tools.
+    # Names come from the same regional name pool as everyone else.
+    for _ in range(3):
+        jname  = _name()
+        skill  = _clamp(rng.gauss(skill_base + 0.06, 0.08))   # plus bat
+        speed  = _clamp(rng.gauss(0.42, 0.10))                # below-avg legs
+        stay_a = _clamp(rng.gauss(0.10, 0.05))
+        cqt    = _clamp(rng.gauss(0.30, 0.06))
+        pskill = _clamp(rng.gauss(0.30, 0.07))
 
         players.append({
             "name": jname,
-            "position": "JKR",
+            "position": "DH",
             "is_pitcher": 0,
-            "is_joker": 1,
+            "is_joker": 0,
             "skill": round(skill, 3),
             "speed": round(speed, 3),
             "pitcher_skill": round(pskill, 3),
             "stay_aggressiveness": round(stay_a, 3),
             "contact_quality_threshold": round(cqt, 3),
-            "archetype": archetype,
+            "archetype": "",
             "pitcher_role": "",
-            "hard_contact_delta": pamod.get("hard_contact_delta", 0.0),
-            "hr_weight_bonus":    pamod.get("hr_weight_bonus",    0.0),
+            "hard_contact_delta": 0.0,
+            "hr_weight_bonus":    0.0,
             "age": _player_age(rng),
         })
     return players

@@ -262,7 +262,6 @@ def halftime(state: GameState, renderer=None) -> list[str]:
     v_score = state.score["visitors"]
     state.target_score = v_score
     target_runs = v_score + 1
-    required_rr = target_runs / 27 if 27 > 0 else 0.0
 
     if renderer:
         return renderer.render_halftime(state)
@@ -272,8 +271,7 @@ def halftime(state: GameState, renderer=None) -> list[str]:
         "=" * 60,
         "HALFTIME",
         f"  {state.visitors.name}: {v_score} run(s)",
-        f"  {state.home.name} need {target_runs} run(s) to win "
-        f"(required run rate: {required_rr:.3f} R/out)",
+        f"  {state.home.name} need {target_runs} run(s) to win",
         "=" * 60,
         "",
     ]

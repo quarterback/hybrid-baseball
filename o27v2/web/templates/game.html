@@ -68,9 +68,12 @@
 
 <!-- Batting -->
 <div class="row g-3 mb-3">
-  {% for team_label, batting, team_name in [
-      ('Away', away_batting, game.away_name),
-      ('Home', home_batting, game.home_name)] %}
+  {% for team_label, batting, team_name, opp_pitching in [
+      ('Away', away_batting, game.away_name, home_pitching),
+      ('Home', home_batting, game.home_name, away_pitching)] %}
+  {% set sum_or = (batting | sum(attribute='ab')) - (batting | sum(attribute='hits')) %}
+  {% set team_outs = opp_pitching | sum(attribute='outs_recorded') %}
+  {% set gap = team_outs - sum_or %}
   <div class="col-lg-6">
     <div class="card">
       <div class="card-header fw-bold">{{ team_name }} — Batting</div>
@@ -78,17 +81,19 @@
         <table class="table table-sm mb-0">
           <thead><tr>
             <th>Player</th><th>Pos</th><th>PA</th><th>AB</th>
-            <th>H</th><th>2B</th><th>3B</th><th>HR</th>
-            <th>R</th><th>RBI</th><th>BB</th><th>K</th><th>STY</th>
+            <th>H</th><th class="text-end">H/AB</th>
+            <th>2B</th><th>3B</th><th>HR</th>
+            <th>R</th><th>RBI</th><th>BB</th><th>K</th><th>OR</th>
           </tr></thead>
           <tbody>
           {% for b in batting %}
           <tr>
-            <td>{{ b.player_name }}{% if b.stays > 0 %} <span class="si-badge">S</span>{% endif %}</td>
+            <td>{{ b.player_name }}</td>
             <td class="text-secondary">{{ b.position }}</td>
             <td>{{ b.pa }}</td>
             <td>{{ b.ab }}</td>
             <td class="fw-bold">{{ b.hits }}</td>
+            <td class="text-end text-secondary">{{ '%.3f'|format((b.hits / b.ab) if b.ab else 0) }}</td>
             <td>{{ b.doubles }}</td>
             <td>{{ b.triples }}</td>
             <td>{{ b.hr }}</td>
@@ -96,15 +101,24 @@
             <td>{{ b.rbi }}</td>
             <td>{{ b.bb }}</td>
             <td>{{ b.k }}</td>
-            <td>{{ b.stays }}</td>
+            <td>{{ (b.ab or 0) - (b.hits or 0) }}</td>
           </tr>
           {% endfor %}
+          {% if batting and gap > 0 %}
+          <tr class="text-secondary" style="background:#111827">
+            <td colspan="13">Team (CS / FC / non-batter outs)</td>
+            <td>{{ gap }}</td>
+          </tr>
+          {% endif %}
           {% if batting %}
+          {% set tot_ab = batting | sum(attribute='ab') %}
+          {% set tot_h  = batting | sum(attribute='hits') %}
           <tr class="fw-bold" style="background:#1f2937">
             <td colspan="2">Totals</td>
             <td>{{ batting | sum(attribute='pa') }}</td>
-            <td>{{ batting | sum(attribute='ab') }}</td>
-            <td>{{ batting | sum(attribute='hits') }}</td>
+            <td>{{ tot_ab }}</td>
+            <td>{{ tot_h }}</td>
+            <td class="text-end">{{ '%.3f'|format((tot_h / tot_ab) if tot_ab else 0) }}</td>
             <td>{{ batting | sum(attribute='doubles') }}</td>
             <td>{{ batting | sum(attribute='triples') }}</td>
             <td>{{ batting | sum(attribute='hr') }}</td>
@@ -112,7 +126,7 @@
             <td>{{ batting | sum(attribute='rbi') }}</td>
             <td>{{ batting | sum(attribute='bb') }}</td>
             <td>{{ batting | sum(attribute='k') }}</td>
-            <td>{{ batting | sum(attribute='stays') }}</td>
+            <td>{{ team_outs if team_outs else sum_or }}</td>
           </tr>
           {% endif %}
           </tbody>
@@ -123,7 +137,7 @@
   {% endfor %}
 </div>
 
-<!-- Pitching -->
+<!-- Pitching: BF · P · OS% · OUT · H · R · ER · BB · K · HR -->
 <div class="row g-3">
   {% for team_label, pitching, team_name in [
       ('Away', away_pitching, game.away_name),
@@ -134,20 +148,42 @@
       <div class="card-body p-0">
         <table class="table table-sm mb-0">
           <thead><tr>
-            <th>Pitcher</th><th>BF</th><th>OUT</th><th>H</th><th>R</th><th>BB</th><th>K</th>
+            <th>Pitcher</th><th>BF</th><th>P</th>
+            <th class="text-end">OS%</th><th>OUT</th>
+            <th>H</th><th>R</th><th>ER</th>
+            <th>BB</th><th>K</th><th>HR</th>
           </tr></thead>
           <tbody>
           {% for p in pitching %}
           <tr>
             <td>{{ p.player_name }}</td>
             <td>{{ p.batters_faced }}</td>
+            <td>{{ p.pitches or 0 }}</td>
+            <td class="text-end text-secondary">{{ '%.0f'|format((p.outs_recorded or 0) / 27.0 * 100) }}%</td>
             <td>{{ p.outs_recorded }}</td>
             <td>{{ p.hits_allowed }}</td>
             <td>{{ p.runs_allowed }}</td>
+            <td>{{ p.runs_allowed }}</td>
             <td>{{ p.bb }}</td>
             <td>{{ p.k }}</td>
+            <td>{{ p.hr_allowed or 0 }}</td>
           </tr>
           {% endfor %}
+          {% if pitching %}
+          <tr class="fw-bold" style="background:#1f2937">
+            <td>Totals</td>
+            <td>{{ pitching | sum(attribute='batters_faced') }}</td>
+            <td>{{ pitching | sum(attribute='pitches') }}</td>
+            <td class="text-end text-secondary">{{ '%.0f'|format((pitching | sum(attribute='outs_recorded')) / 27.0 * 100) }}%</td>
+            <td>{{ pitching | sum(attribute='outs_recorded') }}</td>
+            <td>{{ pitching | sum(attribute='hits_allowed') }}</td>
+            <td>{{ pitching | sum(attribute='runs_allowed') }}</td>
+            <td>{{ pitching | sum(attribute='runs_allowed') }}</td>
+            <td>{{ pitching | sum(attribute='bb') }}</td>
+            <td>{{ pitching | sum(attribute='k') }}</td>
+            <td>{{ pitching | sum(attribute='hr_allowed') }}</td>
+          </tr>
+          {% endif %}
           </tbody>
         </table>
       </div>

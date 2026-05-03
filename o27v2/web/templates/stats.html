@@ -31,7 +31,7 @@
     ('H',   'h',   '%d',   'Hits'),
     ('BB',  'bb',  '%d',   'Walks'),
     ('OPS', 'ops', '%.3f', 'On-base + slugging'),
-    ('Stays','stays','%d', 'Pesäpallo-style stays on base'),
+    ('K',   'k',   '%d',   'Strikeouts (lowest is best)'),
   ] %}
   {% for label, key, fmt, hint in batting_cards %}
   <div class="col-lg-3 col-md-4 col-sm-6">
@@ -67,14 +67,14 @@
 <h4 class="mb-3 mt-4" style="color:#58a6ff">Pitching Leaders</h4>
 <div class="row g-3 mb-4">
   {% set era_cards = [
-    ('ERA',  'era',  '%.2f', 'Earned runs per 27 outs · O27 league avg ~11.50', false),
-    ('K',    'k',    '%d',   'Strikeouts',                                       true),
-    ('BF',   'bf',   '%d',   'Workhorse · batters faced',                        true),
-    ('IP',   'ip',   '%.1f', 'Workhorse · innings (outs/3)',                     true),
-    ('WHIP', 'whip', '%.2f', 'Walks + hits per inning',                          false),
-    ('K/9',  'k9',   '%.2f', 'Strikeouts per 9 IP',                              true),
-    ('BB/9', 'bb9',  '%.2f', 'Walks per 9 IP · lower is better',                 false),
-    ('K%',   'k_pct','%.1f%%', 'K rate · K / BF',                                true),
+    ('ERA',   'era',   '%.2f', 'Runs per 27 outs',                          false),
+    ('K',     'k',     '%d',   'Strikeouts',                                true),
+    ('BF',    'bf',    '%d',   'Batters faced',                             true),
+    ('OUT',   'outs',  '%d',   'Outs recorded',                             true),
+    ('OS%',   'os_pct','%.0f%%','Outs share — outs / (27 × games)',          true),
+    ('WHIP',  'whip',  '%.2f', 'Walks + hits per 27 outs',                  false),
+    ('K/27',  'k27',   '%.2f', 'Strikeouts per 27 outs',                    true),
+    ('BB/27', 'bb27',  '%.2f', 'Walks per 27 outs · lower is better',       false),
   ] %}
   {% for label, key, fmt, hint, desc in era_cards %}
   <div class="col-lg-3 col-md-4 col-sm-6">
@@ -97,6 +97,7 @@
               <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev text-decoration-none">{{ p.team_abbrev }}</a></td>
               <td class="text-end fw-bold">
                 {% if key == 'k_pct' %}{{ '%.1f%%'|format(p[key]*100) }}
+                {% elif key == 'os_pct' %}{{ '%.0f%%'|format(p[key]*100) }}
                 {% else %}{{ fmt|format(p[key]) }}{% endif %}
               </td>
             </tr>

@@ -44,6 +44,20 @@ app = Flask(__name__, template_folder="templates")
 app.config["SECRET_KEY"] = "o27v2-dev-key"
 
 
+def _scout(val) -> int:
+    """Map a 0.0–1.0 attribute to the 20–80 scout grade (50 = league avg).
+    0.50 → 50, 0.85 → 80, 0.15 → 20.  Clamped to [20, 80]."""
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return 50
+    grade = 20 + (v - 0.15) / 0.70 * 60
+    return max(20, min(80, int(round(grade))))
+
+
+app.jinja_env.filters["scout"] = _scout
+
+
 @app.context_processor
 def inject_sim_state():
     """Make current sim date + All-Star date available to every template.
@@ -358,8 +372,14 @@ def stats():
                                batting=[], pitching=[],
                                team_offense=[], team_defense=[])
 
-    min_pa   = max(20, games_played // 30 * 8)
-    min_outs = max(9, games_played // 30 * 5)
+    # Scale qualifying minimums by games-per-team, not by total league games.
+    # MLB rule of thumb: 3.1 PA/team-game qualifies for batting title; here we
+    # use ~1× games/team for batting and ~1× games/team in outs for pitching,
+    # so leaders are visible from week one and grow naturally with the season.
+    num_teams = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
+    min_pa   = max(3, games_per_team)        # ~1 PA/team-game
+    min_outs = max(3, games_per_team)        # ~1 out/team-game (very lenient)
 
     batting = db.fetchall(
         """SELECT p.id   as player_id,
@@ -415,13 +435,15 @@ def stats():
     )
     for p in pitching:
         outs = p["outs"] or 0
-        p["ip"]   = outs / 3.0                      # baseball-style innings for /9 metrics
-        p["era"]  = (p["r"] * 27.0 / outs) if outs else 0.0
-        p["whip"] = ((p["bb"] + p["h"]) / p["ip"]) if p["ip"] else 0.0
-        p["k9"]   = (p["k"] * 9.0  / p["ip"]) if p["ip"] else 0.0
-        p["bb9"]  = (p["bb"] * 9.0 / p["ip"]) if p["ip"] else 0.0
+        # O27 stats: per-27-outs ("per game") rather than per-9-IP.
+        p["era"]    = (p["r"]  * 27.0 / outs) if outs else 0.0
+        p["whip"]   = ((p["bb"] + p["h"]) * 27.0 / outs) if outs else 0.0
+        p["k27"]    = (p["k"]  * 27.0 / outs) if outs else 0.0
+        p["bb27"]   = (p["bb"] * 27.0 / outs) if outs else 0.0
         p["k_pct"]  = (p["k"]  / p["bf"]) if p["bf"] else 0.0
         p["bb_pct"] = (p["bb"] / p["bf"]) if p["bf"] else 0.0
+        # OS% = share of a complete game (27 outs) recorded per appearance.
+        p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
 
     team_offense = db.fetchall(
         """SELECT t.id, t.abbrev, t.name,
@@ -519,13 +541,12 @@ def player_detail(player_id: int):
     pt_totals = None
     if pt and pt["outs"]:
         outs = pt["outs"] or 0
-        ip = outs / 3.0
         pt_totals = dict(pt)
-        pt_totals["ip"]   = ip
-        pt_totals["era"]  = (pt["r"] * 27.0 / outs) if outs else 0.0
-        pt_totals["whip"] = ((pt["bb"] + pt["h"]) / ip) if ip else 0.0
-        pt_totals["k9"]   = (pt["k"] * 9.0  / ip) if ip else 0.0
-        pt_totals["bb9"]  = (pt["bb"] * 9.0 / ip) if ip else 0.0
+        pt_totals["era"]    = (pt["r"]  * 27.0 / outs) if outs else 0.0
+        pt_totals["whip"]   = ((pt["bb"] + pt["h"]) * 27.0 / outs) if outs else 0.0
+        pt_totals["k27"]    = (pt["k"]  * 27.0 / outs) if outs else 0.0
+        pt_totals["bb27"]   = (pt["bb"] * 27.0 / outs) if outs else 0.0
+        pt_totals["os_pct"] = (outs / (27.0 * pt["g"])) if pt["g"] else 0.0
 
     return render_template(
         "player.html",

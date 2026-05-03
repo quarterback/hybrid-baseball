@@ -15,7 +15,7 @@
     <div>
       <h3 class="fw-bold mb-1">
         {{ player.name }}
-        {% if player.is_joker %}<span class="si-badge ms-2">JOKER</span>{% endif %}
+        {% if player.position == 'DH' %}<span class="badge bg-warning text-dark ms-2">DH</span>{% endif %}
         {% if player.is_pitcher %}<span class="badge bg-info text-dark ms-1">PITCHER</span>{% endif %}
       </h3>
       <div class="text-secondary">
@@ -27,17 +27,17 @@
     </div>
     <div class="d-flex gap-3">
       <div class="text-center">
-        <div class="score-label">Skill</div>
-        <div class="fw-bold fs-5">{{ '%.2f'|format(player.skill) }}</div>
+        <div class="score-label">Hit</div>
+        <div class="fw-bold fs-5">{{ player.skill | scout }}</div>
       </div>
       <div class="text-center">
-        <div class="score-label">Speed</div>
-        <div class="fw-bold fs-5">{{ '%.2f'|format(player.speed) }}</div>
+        <div class="score-label">Run</div>
+        <div class="fw-bold fs-5">{{ player.speed | scout }}</div>
       </div>
       {% if player.is_pitcher %}
       <div class="text-center">
-        <div class="score-label">Pitch</div>
-        <div class="fw-bold fs-5">{{ '%.2f'|format(player.pitcher_skill) }}</div>
+        <div class="score-label">Arm</div>
+        <div class="fw-bold fs-5">{{ player.pitcher_skill | scout }}</div>
       </div>
       {% endif %}
     </div>
@@ -51,7 +51,7 @@
     <table class="table table-sm mb-0">
       <thead><tr>
         <th>G</th><th>PA</th><th>AB</th><th>H</th><th>2B</th><th>3B</th><th>HR</th>
-        <th>R</th><th>RBI</th><th>BB</th><th>K</th><th>Stays</th>
+        <th>R</th><th>RBI</th><th>BB</th><th>K</th><th>OR</th>
         <th class="text-end">AVG</th><th class="text-end">OBP</th>
         <th class="text-end">SLG</th><th class="text-end">OPS</th>
       </tr></thead>
@@ -61,7 +61,8 @@
           <td class="fw-bold">{{ bt_totals.h }}</td>
           <td>{{ bt_totals.d2 }}</td><td>{{ bt_totals.d3 }}</td><td>{{ bt_totals.hr }}</td>
           <td>{{ bt_totals.r }}</td><td>{{ bt_totals.rbi }}</td>
-          <td>{{ bt_totals.bb }}</td><td>{{ bt_totals.k }}</td><td>{{ bt_totals.stays }}</td>
+          <td>{{ bt_totals.bb }}</td><td>{{ bt_totals.k }}</td>
+          <td>{{ (bt_totals.ab or 0) - (bt_totals.h or 0) }}</td>
           <td class="text-end fw-bold">{{ '%.3f'|format(bt_totals.avg) }}</td>
           <td class="text-end">{{ '%.3f'|format(bt_totals.obp) }}</td>
           <td class="text-end">{{ '%.3f'|format(bt_totals.slg) }}</td>
@@ -79,21 +80,22 @@
   <div class="card-body p-0">
     <table class="table table-sm mb-0">
       <thead><tr>
-        <th>G</th><th>BF</th><th>OUT</th><th>IP</th>
+        <th>G</th><th>BF</th><th>OUT</th><th class="text-end">OS%</th>
         <th>H</th><th>R</th><th>BB</th><th>K</th>
         <th class="text-end">ERA</th><th class="text-end">WHIP</th>
-        <th class="text-end">K/9</th><th class="text-end">BB/9</th>
+        <th class="text-end">K/27</th><th class="text-end">BB/27</th>
       </tr></thead>
       <tbody>
         <tr>
           <td>{{ pt_totals.g }}</td><td>{{ pt_totals.bf }}</td>
-          <td>{{ pt_totals.outs }}</td><td>{{ '%.1f'|format(pt_totals.ip) }}</td>
+          <td>{{ pt_totals.outs }}</td>
+          <td class="text-end">{{ '%.0f'|format(pt_totals.os_pct * 100) }}%</td>
           <td>{{ pt_totals.h }}</td><td>{{ pt_totals.r }}</td>
           <td>{{ pt_totals.bb }}</td><td class="fw-bold">{{ pt_totals.k }}</td>
           <td class="text-end fw-bold">{{ '%.2f'|format(pt_totals.era) }}</td>
           <td class="text-end">{{ '%.2f'|format(pt_totals.whip) }}</td>
-          <td class="text-end">{{ '%.2f'|format(pt_totals.k9) }}</td>
-          <td class="text-end">{{ '%.2f'|format(pt_totals.bb9) }}</td>
+          <td class="text-end">{{ '%.2f'|format(pt_totals.k27) }}</td>
+          <td class="text-end">{{ '%.2f'|format(pt_totals.bb27) }}</td>
         </tr>
       </tbody>
     </table>
@@ -109,7 +111,7 @@
       <thead><tr>
         <th>Date</th><th>Opp</th>
         <th>PA</th><th>AB</th><th>H</th><th>HR</th>
-        <th>R</th><th>RBI</th><th>BB</th><th>K</th><th>Stays</th><th></th>
+        <th>R</th><th>RBI</th><th>BB</th><th>K</th><th>OR</th><th></th>
       </tr></thead>
       <tbody>
         {% for g in batting_log %}
@@ -121,7 +123,8 @@
           <td>{{ g.pa }}</td><td>{{ g.ab }}</td>
           <td class="fw-bold">{{ g.hits }}</td><td>{{ g.hr }}</td>
           <td>{{ g.runs }}</td><td>{{ g.rbi }}</td>
-          <td>{{ g.bb }}</td><td>{{ g.k }}</td><td>{{ g.stays }}</td>
+          <td>{{ g.bb }}</td><td>{{ g.k }}</td>
+          <td>{{ (g.ab or 0) - (g.hits or 0) }}</td>
           <td><a href="{{ url_for('game_detail', game_id=g.game_id) }}" class="small">Box</a></td>
         </tr>
         {% endfor %}
