@@ -17,6 +17,7 @@ class PitcherStats:
     outs_recorded: int = 0
     hits_allowed: int = 0
     runs_allowed: int = 0
+    unearned_runs: int = 0
     bb: int = 0
     k: int = 0
     hbp: int = 0
@@ -34,6 +35,7 @@ class PitcherStats:
                 s.batters_faced  += rec.batters_faced
                 s.outs_recorded  += rec.outs_recorded
                 s.runs_allowed   += rec.runs_allowed
+                s.unearned_runs  += getattr(rec, "unearned_runs", 0)
                 s.hits_allowed   += rec.hits_allowed
                 s.bb             += rec.bb
                 s.k              += rec.k

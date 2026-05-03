@@ -106,6 +106,7 @@ class SpellRecord:
     batters_faced: int = 0
     outs_recorded: int = 0
     runs_allowed: int = 0
+    unearned_runs: int = 0      # subset of runs_allowed scored on a passed_ball
     hits_allowed: int = 0
     bb: int = 0
     k: int = 0
@@ -248,6 +249,7 @@ class GameState:
     pitcher_spell_count: int = 0       # batters faced in current spell
     pitcher_outs_this_spell: int = 0   # outs recorded in current spell
     pitcher_runs_this_spell: int = 0   # runs allowed in current spell
+    pitcher_unearned_runs_this_spell: int = 0  # unearned subset (passed-ball runs)
     pitcher_h_this_spell: int = 0      # hits allowed in current spell
     pitcher_bb_this_spell: int = 0     # walks issued in current spell
     pitcher_k_this_spell: int = 0      # strikeouts in current spell

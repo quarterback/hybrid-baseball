@@ -210,6 +210,9 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         state.bases = new_bases
         log.append("  Passed ball — runners advance.")
         if runs:
+            # Passed-ball runs are charged to the pitcher's record but flagged
+            # unearned (no errors exist in O27, so PB is the lone UER source).
+            state.pitcher_unearned_runs_this_spell += runs
             log += _score_run(state, runs)
         return log
 

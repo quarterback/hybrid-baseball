@@ -135,6 +135,7 @@ def pitching_change(
             batters_faced=state.pitcher_spell_count,
             outs_recorded=state.pitcher_outs_this_spell,
             runs_allowed=state.pitcher_runs_this_spell,
+            unearned_runs=state.pitcher_unearned_runs_this_spell,
             hits_allowed=state.pitcher_h_this_spell,
             bb=state.pitcher_bb_this_spell,
             k=state.pitcher_k_this_spell,
@@ -154,6 +155,7 @@ def pitching_change(
     state.pitcher_spell_count = 0
     state.pitcher_outs_this_spell = 0
     state.pitcher_runs_this_spell = 0
+    state.pitcher_unearned_runs_this_spell = 0
     state.pitcher_h_this_spell = 0
     state.pitcher_bb_this_spell = 0
     state.pitcher_k_this_spell = 0

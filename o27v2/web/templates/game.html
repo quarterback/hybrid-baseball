@@ -163,7 +163,7 @@
             <td>{{ p.outs_recorded }}</td>
             <td>{{ p.hits_allowed }}</td>
             <td>{{ p.runs_allowed }}</td>
-            <td>{{ p.runs_allowed }}</td>
+            <td>{{ p.er if p.er is not none else p.runs_allowed }}</td>
             <td>{{ p.bb }}</td>
             <td>{{ p.k }}</td>
             <td>{{ p.hr_allowed or 0 }}</td>
@@ -178,7 +178,7 @@
             <td>{{ pitching | sum(attribute='outs_recorded') }}</td>
             <td>{{ pitching | sum(attribute='hits_allowed') }}</td>
             <td>{{ pitching | sum(attribute='runs_allowed') }}</td>
-            <td>{{ pitching | sum(attribute='runs_allowed') }}</td>
+            <td>{{ pitching | map(attribute='er') | map('default', 0, true) | sum }}</td>
             <td>{{ pitching | sum(attribute='bb') }}</td>
             <td>{{ pitching | sum(attribute='k') }}</td>
             <td>{{ pitching | sum(attribute='hr_allowed') }}</td>

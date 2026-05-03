@@ -426,6 +426,7 @@ def stats():
                   SUM(ps.outs_recorded)  as outs,
                   SUM(ps.hits_allowed)   as h,
                   SUM(ps.runs_allowed)   as r,
+                  SUM(ps.er)             as er,
                   SUM(ps.bb)             as bb,
                   SUM(ps.k)              as k
            FROM game_pitcher_stats ps
@@ -439,7 +440,9 @@ def stats():
     for p in pitching:
         outs = p["outs"] or 0
         # O27 stats: per-27-outs ("per game") rather than per-9-IP.
-        p["era"]    = (p["r"]  * 27.0 / outs) if outs else 0.0
+        # ERA uses earned runs only (Task #48); RA is per-27-outs of all runs.
+        p["era"]    = ((p["er"] or 0) * 27.0 / outs) if outs else 0.0
+        p["ra27"]   = (p["r"]  * 27.0 / outs) if outs else 0.0
         p["whip"]   = ((p["bb"] + p["h"]) * 27.0 / outs) if outs else 0.0
         p["k27"]    = (p["k"]  * 27.0 / outs) if outs else 0.0
         p["bb27"]   = (p["bb"] * 27.0 / outs) if outs else 0.0

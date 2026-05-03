@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     outs_recorded  INTEGER DEFAULT 0,
     hits_allowed   INTEGER DEFAULT 0,
     runs_allowed   INTEGER DEFAULT 0,
+    er             INTEGER DEFAULT 0,
     bb             INTEGER DEFAULT 0,
     k              INTEGER DEFAULT 0,
     hr_allowed     INTEGER DEFAULT 0,
@@ -184,7 +185,8 @@ def init_db() -> None:
                 pass
 
         # Task #47/#32 game_pitcher_stats columns: HR allowed + Pitches thrown
-        for col in ("hr_allowed", "pitches"):
+        # Task #48: ER (earned runs, distinct from runs_allowed)
+        for col in ("hr_allowed", "pitches", "er"):
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()
