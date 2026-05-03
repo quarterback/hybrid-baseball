@@ -30,7 +30,6 @@
     ('R',   'r',   '%d',   true),
     ('H',   'h',   '%d',   true),
     ('BB',  'bb',  '%d',   true),
-    ('Stays','stays','%d', true),
   ] %}
   {% for label, key, fmt, desc in batting_cards %}
   <div class="col-lg-3 col-md-4 col-sm-6">
@@ -86,6 +85,17 @@
     </div>
   </div>
   {% endfor %}
+</div>
+
+<div class="text-secondary small mt-2 mb-3" style="line-height:1.4">
+  <strong>Methodology.</strong>
+  ERA = ER × 27 / outs (per-27-out denominator, one full O27 game).
+  FIP is recalibrated each request so that <em>league FIP equals league ERA</em>;
+  individual FIP values are anchored to the live run environment, so a 4.50 FIP
+  in a 12.00-ERA league is well above league average.
+  WHIP / K / BB are also per-27-outs.
+  Win/loss is credited to the team's workhorse (most outs recorded) for the day;
+  ties on outs go to the first such pitcher in appearance order.
 </div>
 
 {% endif %}

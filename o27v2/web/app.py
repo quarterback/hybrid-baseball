@@ -136,10 +136,38 @@ def _gb(leader: dict, team: dict) -> str:
     return f"{diff:.1f}"
 
 
+# Dedup subquery: collapse duplicate (player_id, game_id) rows in
+# game_pitcher_stats (Task #57 audit — pre-#58 the engine could re-insert a
+# pitcher's line if they appeared in multiple half-innings, inflating BF/K/G).
+# We pick ONE real row per (game_id, player_id) — the row with the most outs,
+# breaking ties by lowest rowid (earliest appearance). This avoids the
+# "Frankenstein" totals you get from MAX-per-column, which can mix maxima from
+# different duplicate rows and overstate stats. Task #58 will add a UNIQUE
+# constraint on (player_id, game_id, phase) so this subquery becomes a no-op.
+_PSTATS_DEDUP_SQL = """(
+    SELECT game_id, player_id, team_id, batters_faced, outs_recorded,
+           hits_allowed, runs_allowed, er, bb, k, hr_allowed
+    FROM (
+        SELECT *,
+               ROW_NUMBER() OVER (
+                   PARTITION BY game_id, player_id
+                   ORDER BY outs_recorded DESC, rowid ASC
+               ) AS _rn
+        FROM game_pitcher_stats
+    )
+    WHERE _rn = 1
+)"""
+
+
 def _pitcher_wl_map() -> dict[int, dict[str, int]]:
     """For each pitcher, count W/L in games where they were that team's
     workhorse for the day (recorded the most outs of any pitcher on their
-    team for that game). This approximates a starter's decision."""
+    team for that game). This approximates a starter's decision.
+
+    Tie-breaker: when two pitchers on the same team tie on MAX(outs_recorded)
+    for a game, only the first one returned by the join (lowest game_pitcher_stats
+    rowid, i.e. earliest appearance) gets credit, via the (game_id, team_id)
+    `seen` set below."""
     rows = db.fetchall(
         """SELECT ps.player_id, ps.team_id, ps.game_id, g.winner_id
            FROM game_pitcher_stats ps
@@ -150,7 +178,8 @@ def _pitcher_wl_map() -> dict[int, dict[str, int]]:
              ON m.game_id = ps.game_id
             AND m.team_id = ps.team_id
             AND m.mo = ps.outs_recorded
-           WHERE g.played = 1"""
+           WHERE g.played = 1
+           ORDER BY ps.game_id, ps.team_id, ps.rowid"""
     )
     out: dict[int, dict[str, int]] = {}
     seen: set[tuple[int, int]] = set()  # (game_id, team_id) — only first ranked pitcher
@@ -221,12 +250,12 @@ def _league_fip_const() -> float:
     Falls back to 3.10 (a reasonable per-game baseline) if no games yet.
     """
     row = db.fetchone(
-        """SELECT COALESCE(SUM(hr_allowed),0) as hr,
-                  COALESCE(SUM(bb),0)         as bb,
-                  COALESCE(SUM(k),0)          as k,
-                  COALESCE(SUM(er),0)         as er,
-                  COALESCE(SUM(outs_recorded),0) as outs
-           FROM game_pitcher_stats"""
+        f"""SELECT COALESCE(SUM(hr_allowed),0) as hr,
+                   COALESCE(SUM(bb),0)         as bb,
+                   COALESCE(SUM(k),0)          as k,
+                   COALESCE(SUM(er),0)         as er,
+                   COALESCE(SUM(outs_recorded),0) as outs
+            FROM {_PSTATS_DEDUP_SQL} ps"""
     )
     outs = (row or {}).get("outs") or 0
     if not outs:
@@ -353,14 +382,14 @@ def index():
         top["rbi"] = sorted(batting, key=lambda x: x["rbi"] or 0, reverse=True)[:5]
 
         pitching = db.fetchall(
-            """SELECT p.id as player_id, p.name as player_name,
+            f"""SELECT p.id as player_id, p.name as player_name,
                       t.id as team_id, t.abbrev as team_abbrev,
                       SUM(ps.outs_recorded) as outs,
                       SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
                       SUM(ps.er) as er,
                       SUM(ps.bb) as bb, SUM(ps.k) as k,
                       SUM(ps.hr_allowed) as hr_allowed
-               FROM game_pitcher_stats ps
+               FROM {_PSTATS_DEDUP_SQL} ps
                JOIN players p ON ps.player_id = p.id
                JOIN teams   t ON ps.team_id = t.id
                GROUP BY p.id
@@ -644,7 +673,7 @@ def players():
                            SUM(ps.er) AS er,
                            SUM(ps.bb) AS bb, SUM(ps.k) AS k,
                            SUM(ps.hr_allowed) AS hr_allowed
-                    FROM game_pitcher_stats ps
+                    FROM {_PSTATS_DEDUP_SQL} ps
                     WHERE ps.player_id IN ({ph})
                     GROUP BY ps.player_id""",
                 tuple(page_ids),
@@ -717,7 +746,7 @@ def leaders():
         b.setdefault("sb", 0)
 
     pitching = db.fetchall(
-        """SELECT p.id as player_id, p.name as player_name,
+        f"""SELECT p.id as player_id, p.name as player_name,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(ps.game_id) as g,
                   SUM(ps.batters_faced)  as bf,
@@ -728,7 +757,7 @@ def leaders():
                   SUM(ps.bb)             as bb,
                   SUM(ps.k)              as k,
                   SUM(ps.hr_allowed)     as hr_allowed
-           FROM game_pitcher_stats ps
+           FROM {_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
            GROUP BY p.id
@@ -777,10 +806,11 @@ def player_detail(player_id: int):
            ORDER BY g.game_date DESC, g.id DESC LIMIT 50""",
         (player_id,),
     )
+    # Dedup pitching log to one row per game appearance (Task #57 audit).
     pitching_log = db.fetchall(
-        """SELECT ps.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
+        f"""SELECT ps.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
                   ht.abbrev as home_abbrev, at.abbrev as away_abbrev
-           FROM game_pitcher_stats ps
+           FROM {_PSTATS_DEDUP_SQL} ps
            JOIN games g ON ps.game_id = g.id
            JOIN teams ht ON g.home_team_id = ht.id
            JOIN teams at ON g.away_team_id = at.id
@@ -798,12 +828,12 @@ def player_detail(player_id: int):
         (player_id,),
     )
     pt = db.fetchone(
-        """SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
-                  SUM(hits_allowed) as h, SUM(runs_allowed) as r,
-                  SUM(er) as er,
-                  SUM(bb) as bb, SUM(k) as k,
-                  SUM(hr_allowed) as hr_allowed
-           FROM game_pitcher_stats WHERE player_id = ?""",
+        f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
+                   SUM(hits_allowed) as h, SUM(runs_allowed) as r,
+                   SUM(er) as er,
+                   SUM(bb) as bb, SUM(k) as k,
+                   SUM(hr_allowed) as hr_allowed
+            FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
         (player_id,),
     )
 
@@ -876,14 +906,14 @@ def team_detail(team_id: int):
         ):
             bstats[r["player_id"]] = r
         for r in db.fetchall(
-            f"""SELECT player_id,
-                       COUNT(game_id) AS gp,
-                       SUM(outs_recorded) AS outs,
-                       SUM(hits_allowed) AS h, SUM(runs_allowed) AS r, SUM(er) AS er,
-                       SUM(bb) AS bb, SUM(k) AS k,
-                       SUM(hr_allowed) AS hr_allowed
-                FROM game_pitcher_stats
-                WHERE player_id IN ({ph}) GROUP BY player_id""",
+            f"""SELECT ps.player_id,
+                       COUNT(ps.game_id) AS gp,
+                       SUM(ps.outs_recorded) AS outs,
+                       SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r, SUM(ps.er) AS er,
+                       SUM(ps.bb) AS bb, SUM(ps.k) AS k,
+                       SUM(ps.hr_allowed) AS hr_allowed
+                FROM {_PSTATS_DEDUP_SQL} ps
+                WHERE ps.player_id IN ({ph}) GROUP BY ps.player_id""",
             tuple(ids),
         ):
             pstats[r["player_id"]] = r

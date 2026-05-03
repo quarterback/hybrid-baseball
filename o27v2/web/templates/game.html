@@ -73,7 +73,7 @@
         <tbody>
         {% for b in batting %}
         <tr>
-          <td>{{ b.player_name }}{% if b.stays > 0 %} <span class="si-badge">S</span>{% endif %}</td>
+          <td>{{ b.player_name }}</td>
           <td class="text-secondary">{{ b.position }}</td>
           <td class="num">{{ b.pa }}</td><td class="num">{{ b.ab }}</td>
           <td class="num fw-bold">{{ b.hits }}</td>
