@@ -651,3 +651,10 @@ def api_sim_game(game_id: int):
 def api_league_configs():
     """Return all available league configs as JSON."""
     return jsonify(list(get_league_configs().values()))
+
+
+@app.route("/api/health")
+def api_health():
+    """Lightweight health probe for fly.io / load balancers. Cheap on purpose —
+    no DB query so it can't fail during transient lock contention."""
+    return jsonify({"status": "ok"})
