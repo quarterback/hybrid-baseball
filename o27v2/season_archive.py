@@ -7,10 +7,12 @@ Provides:
                                      `seasons` / `season_*` tables.
   * run_invariant_harness()       — execute the Task #59 invariant suite
                                      in-process and return (pass, fail, summary).
-  * run_multi_season(...)         — synchronously loop N seasons end-to-end
-                                     (drop → reseed → simulate → archive)
-                                     and return a list of per-season summaries
-                                     (games simmed, champion, invariants).
+  * start_multi_season(...)       — start a background N-season run; the
+                                     POST endpoint returns immediately and
+                                     the dashboard polls multi_season_status()
+                                     for progress (current season, games
+                                     simmed) and a final redirect.
+  * multi_season_status()         — snapshot of the runner state.
   * compute_live_season(...)      — peek at the current (in-progress) DB
                                      state so Season History can show it
                                      alongside archived seasons.
@@ -22,6 +24,8 @@ DROP list so multi-season history persists across each in-loop reset.
 from __future__ import annotations
 
 import datetime as _dt
+import threading
+import traceback
 from typing import Any
 
 from o27v2 import db
@@ -191,9 +195,9 @@ def _snapshot_leaders(season_id: int) -> None:
     wl = _pitcher_wl_map()
     _aggregate_pitcher_rows(pitching, wl)
 
-    # Compute opponent batting average (AVG-against): H / (BF - BB).
+    # Opponent batting average (AVG-against): H / (BF − BB).
     # Approximate batters faced as outs + hits + walks (HBP/SF unavailable
-    # on game_pitcher_stats — see follow-up task #61); thus BF - BB ≈ outs + H.
+    # on game_pitcher_stats — see follow-up #61); thus BF − BB ≈ outs + H.
     for r in pitching:
         h    = float(r.get("h")    or 0)
         outs = float(r.get("outs") or 0)
@@ -222,6 +226,20 @@ def _snapshot_leaders(season_id: int) -> None:
     _save_pitching("oavg", sorted(pitching, key=lambda x: x["oavg"]))
 
 
+def _derive_year() -> int | None:
+    """Pull the calendar year from the latest played game's date.
+    Falls back to today's year if no games or unparseable."""
+    row = db.fetchone(
+        "SELECT MAX(game_date) AS d FROM games WHERE played = 1"
+    )
+    if row and row.get("d"):
+        try:
+            return int(str(row["d"])[:4])
+        except Exception:
+            pass
+    return _dt.date.today().year
+
+
 def archive_current_season(
     rng_seed: int | None = None,
     config_id: str | None = None,
@@ -244,6 +262,7 @@ def archive_current_season(
 
     last = db.fetchone("SELECT MAX(season_number) AS n FROM seasons")
     season_number = ((last and last["n"]) or 0) + 1
+    year = _derive_year()
 
     inv_pass = inv_fail = 0
     inv_summary = ""
@@ -255,12 +274,12 @@ def archive_current_season(
 
     new_id = db.execute(
         """INSERT INTO seasons
-           (season_number, rng_seed, config_id, team_count,
+           (season_number, year, rng_seed, config_id, team_count,
             started_at, ended_at,
             champion_team_name, champion_abbrev, champion_w, champion_l,
             games_played, invariant_pass, invariant_fail, invariant_summary)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (season_number, rng_seed, config_id, team_count,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (season_number, year, rng_seed, config_id, team_count,
          started_at, _dt.datetime.utcnow().isoformat(timespec="seconds"),
          (champ["name"]   if champ else None),
          (champ["abbrev"] if champ else None),
@@ -297,6 +316,7 @@ def compute_live_season() -> dict[str, Any] | None:
     leader = teams[0]
     return {
         "season_number": next_number,
+        "year": _derive_year(),
         "team_count": len(teams),
         "games_played": games_played,
         "games_total": games_total,
@@ -309,73 +329,173 @@ def compute_live_season() -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
-# Multi-season runner — synchronous; blocks the calling request.
+# Multi-season runner — background thread + polled status endpoint.
 # ---------------------------------------------------------------------------
 
-def run_multi_season(
+_MULTI_LOCK = threading.Lock()
+_MULTI_STATE: dict[str, Any] = {
+    "running": False,
+    "started_at": None,
+    "finished_at": None,
+    "target_seasons": 0,
+    "completed_seasons": 0,
+    "current_season_index": 0,           # 1-based index of season being run
+    "current_season_number": None,
+    "current_phase": "idle",             # idle|seeding|simulating|archiving|done|error
+    "current_seed": None,
+    "config_id": None,
+    "games_simmed_current": 0,           # games played so far in the active season
+    "games_simmed_total": 0,             # cumulative across whole run
+    "seasons": [],                       # per-season summaries (appended on archive)
+    "error": None,
+}
+
+
+def multi_season_status() -> dict[str, Any]:
+    with _MULTI_LOCK:
+        return {k: (list(v) if isinstance(v, list) else v)
+                for k, v in _MULTI_STATE.items()}
+
+
+def _state_update(**kw) -> None:
+    with _MULTI_LOCK:
+        _MULTI_STATE.update(kw)
+
+
+def _tick_games_simmed() -> None:
+    """Refresh games_simmed_current by querying the DB. Cheap: COUNT(*)."""
+    n = db.fetchone(
+        "SELECT COUNT(*) as n FROM games WHERE played = 1"
+    )["n"] or 0
+    with _MULTI_LOCK:
+        _MULTI_STATE["games_simmed_current"] = n
+
+
+def _run_multi_season_thread(
     n_seasons: int,
-    base_seed: int = 42,
-    config_id: str = "30teams",
-) -> dict[str, Any]:
+    base_seed: int,
+    config_id: str,
+) -> None:
+    """Loop body — never raises out of the thread."""
     from o27v2.league import seed_league
     from o27v2.schedule import seed_schedule
     from o27v2.sim import (
-        simulate_through, get_last_scheduled_date, resync_sim_clock,
+        simulate_through, get_last_scheduled_date,
+        get_current_sim_date, resync_sim_clock,
     )
 
-    n_seasons = max(1, min(int(n_seasons), 20))
-    started_run = _dt.datetime.utcnow().isoformat(timespec="seconds")
-    seasons_summary: list[dict[str, Any]] = []
+    try:
+        for i in range(n_seasons):
+            seed = base_seed + i
+            started_season = _dt.datetime.utcnow().isoformat(timespec="seconds")
+            _state_update(
+                current_season_index=i + 1,
+                current_seed=seed,
+                current_phase="seeding",
+                games_simmed_current=0,
+            )
 
-    for i in range(n_seasons):
-        seed = base_seed + i
-        started_season = _dt.datetime.utcnow().isoformat(timespec="seconds")
+            db.drop_all()
+            db.init_db()
+            seed_league(rng_seed=seed, config_id=config_id)
+            seed_schedule(config_id=config_id, rng_seed=seed)
+            resync_sim_clock()
 
-        db.drop_all()
-        db.init_db()
-        seed_league(rng_seed=seed, config_id=config_id)
-        seed_schedule(config_id=config_id, rng_seed=seed)
-        resync_sim_clock()
+            last_date = get_last_scheduled_date()
+            if last_date is None:
+                raise RuntimeError("seed_schedule produced no games")
 
-        last_date = get_last_scheduled_date()
-        if last_date is None:
-            raise RuntimeError("seed_schedule produced no games")
-        simulate_through(last_date)
+            _state_update(current_phase="simulating")
 
-        games_simmed = db.fetchone(
-            "SELECT COUNT(*) as n FROM games WHERE played = 1"
-        )["n"] or 0
+            # Sim in 14-day chunks so the dashboard can show progress.
+            start_clk = get_current_sim_date() or last_date
+            start_date = _dt.date.fromisoformat(start_clk)
+            end_date   = _dt.date.fromisoformat(last_date)
+            cur = start_date
+            while cur <= end_date:
+                step_to = min(end_date, cur + _dt.timedelta(days=14))
+                simulate_through(step_to.isoformat())
+                _tick_games_simmed()
+                cur = step_to + _dt.timedelta(days=1)
 
-        sid = archive_current_season(
-            rng_seed=seed,
-            config_id=config_id,
-            started_at=started_season,
-            run_invariants=True,
+            _state_update(current_phase="archiving")
+            sid = archive_current_season(
+                rng_seed=seed,
+                config_id=config_id,
+                started_at=started_season,
+                run_invariants=True,
+            )
+            row = db.fetchone(
+                "SELECT season_number, year, champion_team_name, champion_abbrev, "
+                "champion_w, champion_l, invariant_pass, invariant_fail "
+                "FROM seasons WHERE id = ?", (sid,))
+            games_simmed = db.fetchone(
+                "SELECT COUNT(*) as n FROM games WHERE played = 1"
+            )["n"] or 0
+            summary = {
+                "season_id": sid,
+                "season_number": (row or {}).get("season_number"),
+                "year":          (row or {}).get("year"),
+                "seed": seed,
+                "games_simmed": games_simmed,
+                "champion_name":   (row or {}).get("champion_team_name"),
+                "champion_abbrev": (row or {}).get("champion_abbrev"),
+                "champion_w":      (row or {}).get("champion_w") or 0,
+                "champion_l":      (row or {}).get("champion_l") or 0,
+                "invariant_pass":  (row or {}).get("invariant_pass") or 0,
+                "invariant_fail":  (row or {}).get("invariant_fail") or 0,
+            }
+            with _MULTI_LOCK:
+                _MULTI_STATE["seasons"].append(summary)
+                _MULTI_STATE["completed_seasons"] = i + 1
+                _MULTI_STATE["games_simmed_total"] += games_simmed
+                _MULTI_STATE["current_season_number"] = summary["season_number"]
+
+        _state_update(
+            running=False,
+            current_phase="done",
+            finished_at=_dt.datetime.utcnow().isoformat(timespec="seconds"),
         )
-        row = db.fetchone(
-            "SELECT season_number, champion_team_name, champion_abbrev, "
-            "champion_w, champion_l, invariant_pass, invariant_fail "
-            "FROM seasons WHERE id = ?", (sid,))
-        seasons_summary.append({
-            "season_id": sid,
-            "season_number": (row or {}).get("season_number"),
-            "seed": seed,
-            "games_simmed": games_simmed,
-            "champion_name":   (row or {}).get("champion_team_name"),
-            "champion_abbrev": (row or {}).get("champion_abbrev"),
-            "champion_w":      (row or {}).get("champion_w") or 0,
-            "champion_l":      (row or {}).get("champion_l") or 0,
-            "invariant_pass":  (row or {}).get("invariant_pass") or 0,
-            "invariant_fail":  (row or {}).get("invariant_fail") or 0,
-        })
+    except Exception as e:
+        tb = traceback.format_exc(limit=4)
+        _state_update(
+            running=False,
+            current_phase="error",
+            error=f"{type(e).__name__}: {e}\n{tb}",
+            finished_at=_dt.datetime.utcnow().isoformat(timespec="seconds"),
+        )
 
-    return {
-        "ok": True,
-        "started_at": started_run,
-        "finished_at": _dt.datetime.utcnow().isoformat(timespec="seconds"),
-        "config_id": config_id,
-        "base_seed": base_seed,
-        "n_seasons": n_seasons,
-        "total_games_simmed": sum(s["games_simmed"] for s in seasons_summary),
-        "seasons": seasons_summary,
-    }
+
+def start_multi_season(
+    n_seasons: int,
+    base_seed: int = 42,
+    config_id: str = "30teams",
+) -> tuple[bool, str]:
+    """Spawn the runner thread. Returns (started, message). N is clamped 1-10."""
+    n_seasons = max(1, min(int(n_seasons), 10))
+    with _MULTI_LOCK:
+        if _MULTI_STATE.get("running"):
+            return False, "A multi-season run is already in progress."
+        _MULTI_STATE.update({
+            "running": True,
+            "started_at": _dt.datetime.utcnow().isoformat(timespec="seconds"),
+            "finished_at": None,
+            "target_seasons": n_seasons,
+            "completed_seasons": 0,
+            "current_season_index": 0,
+            "current_season_number": None,
+            "current_phase": "starting",
+            "current_seed": None,
+            "config_id": config_id,
+            "games_simmed_current": 0,
+            "games_simmed_total": 0,
+            "seasons": [],
+            "error": None,
+        })
+    t = threading.Thread(
+        target=_run_multi_season_thread,
+        args=(n_seasons, base_seed, config_id),
+        daemon=True,
+    )
+    t.start()
+    return True, f"Started multi-season run for {n_seasons} season(s)."

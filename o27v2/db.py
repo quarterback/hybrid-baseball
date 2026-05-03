@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS seasons (
     champion_w         INTEGER,
     champion_l         INTEGER,
     games_played       INTEGER DEFAULT 0,
+    year               INTEGER,
     invariant_pass     INTEGER DEFAULT 0,
     invariant_fail     INTEGER DEFAULT 0,
     invariant_summary  TEXT DEFAULT ''
@@ -294,6 +295,12 @@ def init_db() -> None:
         # Task #62: add oavg column to existing season_pitching_leaders.
         try:
             conn.execute("ALTER TABLE season_pitching_leaders ADD COLUMN oavg REAL DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+        # Task #62: add year column to existing seasons table.
+        try:
+            conn.execute("ALTER TABLE seasons ADD COLUMN year INTEGER")
             conn.commit()
         except Exception:
             pass

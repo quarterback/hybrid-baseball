@@ -81,7 +81,7 @@
     <div class="row g-2 align-items-end">
       <div class="col-auto">
         <label class="form-label small text-secondary mb-1">Seasons</label>
-        <input type="number" id="ms-n" value="3" min="1" max="20"
+        <input type="number" id="ms-n" value="3" min="1" max="10"
                class="form-control form-control-sm" style="background:#0d1117;color:#e6edf3;border-color:#30363d;width:90px">
       </div>
       <div class="col-auto">
@@ -104,18 +104,20 @@
         <button id="ms-start" type="button" class="btn btn-sm btn-primary">Run Now</button>
       </div>
       <div class="col text-secondary small">
-        Each season: drop DB → reseed (seed = base + n) → simulate end-to-end → archive standings &amp; leaders → run invariant suite. The request blocks until all seasons complete (~15s/season for 8 teams, ~90s for 30).
+        1–10 seasons. Each season: drop DB → reseed (seed = base + n) → simulate end-to-end → archive standings &amp; leaders → run invariant suite. Runs in the background; this panel polls progress and redirects you to Season History when done.
       </div>
     </div>
   </div>
   <div class="p-3 border-top" id="ms-status" style="display:none;border-color:#30363d!important">
-    <div id="ms-running" style="display:none">
-      <div class="d-flex align-items-center gap-2 small text-secondary">
-        <div class="spinner-border spinner-border-sm" style="color:#6f42c1" role="status"></div>
-        <span id="ms-running-text">Running…</span>
-      </div>
+    <div class="d-flex justify-content-between small mb-1">
+      <span id="ms-phase" class="text-secondary">Starting…</span>
+      <span id="ms-count" class="text-secondary"></span>
     </div>
-    <div id="ms-results" style="display:none"></div>
+    <div class="progress mb-2" style="background:#0d1117;height:14px">
+      <div id="ms-bar" class="progress-bar" role="progressbar" style="width:0%;background:#6f42c1"></div>
+    </div>
+    <div id="ms-detail" class="small text-secondary mb-2"></div>
+    <div id="ms-results"></div>
   </div>
 </div>
 {% endif %}
@@ -287,8 +289,10 @@
   const msClose      = document.getElementById('ms-close');
   const msStart      = document.getElementById('ms-start');
   const msStatus     = document.getElementById('ms-status');
-  const msRunning    = document.getElementById('ms-running');
-  const msRunningTxt = document.getElementById('ms-running-text');
+  const msPhase      = document.getElementById('ms-phase');
+  const msCount      = document.getElementById('ms-count');
+  const msBar        = document.getElementById('ms-bar');
+  const msDetail     = document.getElementById('ms-detail');
   const msResults    = document.getElementById('ms-results');
 
   if (!newSeasonBtn || !multiBtn) return;
@@ -369,19 +373,82 @@
     `;
   }
 
+  function fmtPhase(p) {
+    return ({
+      idle: 'Idle', starting: 'Starting…',
+      seeding: 'Seeding new league',
+      simulating: 'Simulating season',
+      archiving: 'Archiving + invariants',
+      done: 'Done ✓', error: 'Error',
+    })[p] || p;
+  }
+
+  function renderRunningSummary(s) {
+    if (!s.seasons || !s.seasons.length) return '';
+    const rows = s.seasons.map(x => {
+      const inv = (x.invariant_fail > 0)
+        ? `<span style="color:#f85149">${x.invariant_pass}p / ${x.invariant_fail}F</span>`
+        : `<span style="color:#2ea043">${x.invariant_pass} pass</span>`;
+      return `<tr>
+        <td class="num">${escapeHtml(x.season_number)}</td>
+        <td class="num text-secondary">${escapeHtml(x.year || '—')}</td>
+        <td class="num text-secondary">${escapeHtml(x.seed)}</td>
+        <td class="num">${escapeHtml(x.games_simmed)}</td>
+        <td><span class="team-abbrev">${escapeHtml(x.champion_abbrev || '—')}</span> ${escapeHtml(x.champion_name || '')}</td>
+        <td class="num">${escapeHtml(x.champion_w)}-${escapeHtml(x.champion_l)}</td>
+        <td class="num">${inv}</td>
+      </tr>`;
+    }).join('');
+    return `<table class="table table-sm dense-table mb-0"><thead><tr>
+      <th class="num">#</th><th class="num">Year</th><th class="num">Seed</th>
+      <th class="num">Games</th><th>Champion</th><th class="num">Record</th><th class="num">Inv</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  let pollTimer = null;
+  async function pollStatus() {
+    try {
+      const r = await fetch('/api/sim/multi-season/status');
+      const s = await r.json();
+      msStatus.style.display = 'block';
+      const idx = s.current_season_index || 0;
+      const tgt = s.target_seasons || 0;
+      msPhase.textContent = `Season ${idx || '?'} / ${tgt} — ${fmtPhase(s.current_phase)}`;
+      msCount.textContent = `${s.completed_seasons || 0} archived · ${s.games_simmed_total || 0} games simmed total`;
+      const seasonPct = (s.current_phase === 'archiving' || s.current_phase === 'done') ? 1
+                      : (s.current_phase === 'simulating' || s.current_phase === 'seeding') ? 0.5
+                      : 0;
+      const overall = tgt ? Math.min(100, Math.round((((s.completed_seasons || 0) + seasonPct) / tgt) * 100)) : 0;
+      msBar.style.width = overall + '%';
+      msDetail.textContent =
+        `Current season: ${s.games_simmed_current || 0} games simmed (config ${s.config_id || '—'}, seed ${s.current_seed ?? '—'}).`;
+      msResults.innerHTML = renderRunningSummary(s);
+
+      if (!s.running) {
+        clearInterval(pollTimer); pollTimer = null;
+        msStart.disabled = false;
+        msStart.textContent = 'Run Now';
+        if (s.current_phase === 'done') {
+          msPhase.innerHTML = '<span style="color:#2ea043;font-weight:700">Done ✓ — redirecting to Season History…</span>';
+          setTimeout(() => { window.location.href = '/seasons'; }, 1200);
+        } else if (s.current_phase === 'error') {
+          msResults.innerHTML += `<div style="color:#f85149" class="mt-2 small">Run failed: ${escapeHtml(s.error || 'unknown error')}</div>`;
+        }
+      }
+    } catch (e) { /* ignore transient poll failure */ }
+  }
+
   msStart.addEventListener('click', async () => {
-    const n      = parseInt(document.getElementById('ms-n').value, 10) || 3;
+    let n        = parseInt(document.getElementById('ms-n').value, 10) || 3;
+    n = Math.max(1, Math.min(10, n));
     const seed   = parseInt(document.getElementById('ms-seed').value, 10) || 42;
     const config = document.getElementById('ms-config').value || '30teams';
-    if (!confirm(`Run ${n} full season(s) end-to-end?\n\nThis blocks the page until done — keep this tab open.\nEstimated time: ~15s/season for 8 teams, ~90s for 30 teams.`)) return;
+    if (!confirm(`Run ${n} full season(s) end-to-end?\n\nThis runs in the background. Progress polls every 1.5s and the page redirects to Season History when done.`)) return;
 
     msStart.disabled = true;
-    msStart.textContent = 'Running…';
+    msStart.textContent = 'Starting…';
     msStatus.style.display = 'block';
-    msResults.style.display = 'none';
     msResults.innerHTML = '';
-    msRunning.style.display = 'block';
-    msRunningTxt.textContent = `Running ${n} season(s) on ${config} (base seed ${seed})… Each season drops the DB, reseeds, simulates every scheduled date, then archives standings + leaders + invariants.`;
 
     try {
       const r = await fetch('/api/sim/multi-season', {
@@ -390,19 +457,28 @@
         body: JSON.stringify({n, seed, config_id: config}),
       });
       const data = await r.json();
-      if (!r.ok || !data.ok) throw new Error(data.error || 'run failed');
-      msRunning.style.display = 'none';
-      msResults.style.display = 'block';
-      msResults.innerHTML = renderResults(data);
+      if (!data.ok) throw new Error(data.message || data.error || 'failed to start');
+      msStart.textContent = 'Running…';
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(pollStatus, 1500);
+      pollStatus();
     } catch (err) {
-      msRunning.style.display = 'none';
-      msResults.style.display = 'block';
-      msResults.innerHTML = `<div style="color:#f85149">Run failed: ${escapeHtml(err.message)}</div>`;
-    } finally {
+      alert('Failed to start: ' + err.message);
       msStart.disabled = false;
       msStart.textContent = 'Run Now';
     }
   });
+
+  // Resume polling if a run is already in flight (e.g. user reloaded).
+  fetch('/api/sim/multi-season/status').then(r => r.json()).then(s => {
+    if (s.running) {
+      msPanel.style.display = 'block';
+      msStart.disabled = true;
+      msStart.textContent = 'Running…';
+      pollTimer = setInterval(pollStatus, 1500);
+      pollStatus();
+    }
+  }).catch(() => {});
 })();
 </script>
 {% endblock %}

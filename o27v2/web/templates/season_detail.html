@@ -4,9 +4,10 @@
 
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div>
-    <h2 class="mb-1">Season {{ season.season_number }}</h2>
+    <h2 class="mb-1">Season {{ season.season_number }}{% if season.year %} <span class="text-secondary">· Year {{ season.year }}</span>{% endif %}</h2>
     <div class="text-secondary small">
-      Config: <strong>{{ season.config_id or '—' }}</strong>
+      Year: <strong>{{ season.year if season.year is not none else '—' }}</strong>
+      · Config: <strong>{{ season.config_id or '—' }}</strong>
       · Seed: <strong>{{ season.rng_seed if season.rng_seed is not none else '—' }}</strong>
       · Games: <strong>{{ season.games_played or 0 }}</strong>
       · Ended: <strong>{{ season.ended_at or '—' }}</strong>
