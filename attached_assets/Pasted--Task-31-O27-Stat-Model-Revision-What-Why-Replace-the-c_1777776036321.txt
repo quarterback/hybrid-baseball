@@ -1,0 +1,62 @@
+# Task #31 — O27 Stat Model Revision
+
+## What & Why
+
+Replace the current stat model with one that fits O27's structure and reads like a real baseball sim. Drop placeholder stats, add the two O27-specific workload metrics, recalibrate the rate stats for O27's run environment, and convert player attributes from 0.0–1.0 percentages to standard 20–80 scout scale.
+
+## Done looks like
+
+**Player attributes (engine + UI):**
+- All player attributes converted from 0.0–1.0 floats to a 20–80 integer scale, matching standard baseball-sim convention.
+- Hitter attributes: Contact, Power, Eye, Speed, Defense, Arm.
+- Pitcher attributes: Stuff, Control, Movement, Stamina.
+- 50 = league average, 80 = elite, 20 = replacement-level. Internal probability calculations in the engine still use normalized values, but every attribute exposed to roster files, JSON output, and UI surfaces uses the 20–80 scale.
+
+**Box score and player stats:**
+- STY column removed from all batting tables. A batter with two hits in an at-bat shows two hits in the box score; the mechanic is invisible in stats.
+- New batter column: **OR** (Outs Recorded) — count of outs a batter generated across their PAs in the game. Helps surface batters who are killing rallies.
+- New pitcher column: **OS%** (Outs Share) — percentage of the team's 27 outs the pitcher recorded, displayed as a whole percent (e.g. `67%` not `0.667`). Replaces innings pitched as the primary workload stat.
+- "Innings pitched" as a column is removed everywhere. Pitcher lines lead with OS%, then BF, then standard counting stats.
+
+**Rate stat recalibration:**
+- ERA recalculated as runs allowed per 27 outs faced (the O27 equivalent of "runs per 9 innings"). Same name, different baseline.
+- FIP coefficients re-derived for O27's run environment (~22–26 R/G league average vs MLB's ~9). Constants need fresh tuning; the formula structure stays.
+- WHIP stays as is — walks + hits per 27 outs faced rather than per inning.
+
+**Season-level workload:**
+- Per-pitcher season totals show **Total Outs Share** (sum of outs share across all appearances, expressed as outs recorded — e.g. "1,247 outs"). This replaces innings pitched as the cumulative workload stat. A pitcher who recorded 1,247 outs is the workhorse equivalent of MLB's 200-IP pitcher.
+- Outs share distribution chart on the player page shows per-game outs share as a histogram — surfaces workhorse vs committee usage at a glance without any narrative copy.
+
+## Out of scope
+
+- Play-by-play log (not building it).
+- Any reintroduction of STY as a column.
+- Narrative commentary, classical-music-inspired language, or any flavor copy in the UI. Keep all surfaces stat-table-utilitarian.
+- Changes to the stay mechanic in the engine — it still exists internally, just not surfaced as its own column.
+- Recalibrating wOBA / wRC+ / WAR. Those wait for a later task once the basic stat model is settled.
+
+## Steps
+
+1. **Convert attributes to 20–80 scale.** Update the Player dataclass in `o27/engine/state.py`. Add a normalization layer so the engine's existing probability math (which expects 0.0–1.0) keeps working — internal `_skill_norm()` helper that divides by 100 or maps 20–80 to 0.20–0.80, whatever fits cleanest. Update roster JSON loaders to read the new scale. Update sample roster files.
+2. **Strip STY everywhere.** Remove the column from every box score template, batting table, season totals, leaderboard. Remove STY from the BatterStats dataclass display surface (keep the underlying stay-tracking field for engine debugging, just don't render it).
+3. **Add OR (Outs Recorded) for batters.** New column in batting tables. Counted on every PA where the batter's PA results in one or more outs (strikeout, ground out, fly out, lineout, GIDP, caught stealing as result of his AB, etc.). Includes the secondary out on a GIDP or stay-with-runner-thrown-out situation.
+4. **Add OS% (Outs Share) for pitchers.** New column in pitching tables. Calculated per-game as `outs_recorded / 27` rendered as whole percent. Display format: `67%`, not `.667` or `0.67`. Add to game box score and to season totals.
+5. **Replace innings pitched.** Remove IP from every pitcher table. Add Total Outs (cumulative outs recorded across the season) as the season-level workload stat. The mental model: 1,247 outs is the new "1,247 outs over the year" — same shape as IP totals, different unit.
+6. **Recalibrate ERA.** Engine output: runs allowed per 27 outs faced. Math: `runs_allowed / outs_recorded * 27`. Same column name in the UI; don't rename to "RA27" or similar.
+7. **Recalibrate FIP.** Re-derive the constants against the O27 run environment. Run a 500-game batch script, compute league-average FIP that produces ~league-average ERA, set the FIP constant to match. Document the new constant in code so it can be retuned later.
+8. **WHIP stays.** Display is `walks + hits per 27 outs faced` (compute via `(BB + H) / outs_recorded * 27`).
+9. **Outs share distribution on player page.** For pitchers, render a small histogram of per-game OS% across the season. No labels needed beyond axis ticks. Surfaces workhorse vs committee usage visually.
+
+## Relevant files
+
+- `o27/engine/state.py` (Player attributes)
+- `o27/engine/stats.py` or wherever stat aggregation lives (OR, OS%, ERA, FIP, WHIP)
+- `o27/web/templates/game.html` (box score)
+- `o27/web/templates/player.html` (player page)
+- `o27/web/templates/standings.html` (season totals)
+- `o27/stats_site/templates/*` (mirror everything)
+- Sample roster JSON files (rescale attributes to 20–80)
+
+---
+
+Send that. The agent has clear scope, no narrative drift, and the OS% display format is locked at "67%" so it doesn't ship "0.67" by accident.
