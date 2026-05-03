@@ -1,0 +1,55 @@
+Good filters. Let me go through what you actually want kept vs cut, and answer the ERA question.
+
+## Confirmed in
+
+- **OR** (outs recorded) for batters
+- **OS%** (outs share) for pitchers
+- **Outs 1–9 / 10–18 / 19–27 splits** for both batters and pitchers — this is the O27-distinctive lens
+- **NRR and RR** as backstage projection stats (not live scorebug)
+- **Joker leverage index** as a manager-page stat — and your point that teams would develop their own joker tendencies is right; this becomes an interesting team identity metric
+- **Pitcher endurance metric** — but reframed per your correction: not a "fatigue curve," just **how deep into the arc a pitcher goes**. Out number of last batter faced, distribution across appearances. A pitcher who consistently records his last out at out #22 is a different animal than one who taps out at out #14.
+
+## Confirmed out
+
+- Partnership runs — agreed, not a 1:1 with cricket and not meaningful here
+- Stay efficiency — you're right that I was reaching. Stay just replaces the sacrifice hit. You don't track "sacrifice hit efficiency" in baseball; you don't need to track stay efficiency in O27.
+- Multi-hit at-bats as a leaderboard — actually let me push back gently. A guy with 12 multi-hit ABs in a season is doing something other guys aren't. But it's marginal and could just live as a stat on the player page rather than a league leaderboard.
+
+## On ERA
+
+Two real options, both defensible:
+
+**Option A: Keep the name "ERA," redefine the math.** Earned runs allowed per 27 outs faced. Same denominator swap as everything else. League-average ERA in O27 will land somewhere around 11.50 given the ~24 R/G environment, which is a wildly different number from MLB's 4.00 — but the *shape* of the stat is identical. A pitcher with an ERA below league average is still good; one above is still bad. Sortable, comparable across pitchers, instantly readable to anyone with a baseball brain.
+
+The downside: a 9.20 ERA looks horrific to anyone seeing it without context. They'll think every pitcher is bad. The "ERA league average is ~11.50" disclaimer has to live somewhere, probably on the leaderboard page or as a footnote.
+
+**Option B: Rename it to RA27 (Runs Allowed per 27).** Same math as Option A, different name. Removes the cognitive trap of seeing "9.20 ERA" and reading it through MLB instincts. Honest about the fact that O27 is a different sport with a different scale.
+
+The downside: it's a new term to learn, and "ERA" is so deeply baseball-coded that breaking from it feels precious. Strat-O-Matic and OOTP both keep ERA even when simulating very different run environments.
+
+**My recommendation:** keep **ERA**, redefine the math. Add a small "(O27 league avg: 11.50)" reference somewhere on the pitcher leaderboard page so the number has context. The familiarity wins. Same logic for **WHIP** (walks + hits per 27 outs faced) and **K/9, BB/9, HR/9** — keep the names, swap the denominator. The "/9" is a baseball idiom by now, not a literal "per 9 innings" claim.
+
+The one place to be careful: when comparing O27 stats to MLB stats, the numbers are not interchangeable. A 4.00 ERA in O27 is a Hall of Fame season; a 4.00 ERA in MLB is a journeyman. Anyone porting their baseball intuition needs to recalibrate. The leaderboard page footnote does that work.
+
+## What this means for FIP, WHIP, OPS, etc.
+
+- **FIP** — keep the name, recalibrate the constants. Same trick.
+- **WHIP** — keep the name, swap denominator.
+- **OPS, OBP, SLG** — these don't have a denominator-swap problem. They're rate stats based on PAs. They work in O27 unchanged.
+- **AVG** — works unchanged.
+- **K/9, BB/9, HR/9** — keep, swap denominator silently.
+- **WAR** — recalibrate replacement level for the O27 environment, keep the name.
+
+## On the pitcher endurance metric
+
+Want to call this something. Options:
+
+- **AVG OUT REACHED** — average out number of the pitcher's last batter. A workhorse averages 22; a committee piece averages 8.
+- **DEEPEST OUT** — single-game best (highest out number reached in a game).
+- **OS% per appearance** — already on the table, rolled up at the season level becomes a workload total.
+
+I'd surface **average out reached** as a sortable column. It tells the workhorse-vs-committee story directly without needing a curve. Pair it with appearances and total outs recorded for the season-level workload picture.
+
+So the pitcher line becomes: `BF · OS% · AOR (avg out reached) · ERA · WHIP · K · BB · HR · K/9 · BB/9`. Nine columns, all baseball-coded except OS% and AOR, both of which describe O27's actual structure.
+
+Want me to fold this into a cleaner stat-model spec for the agent?
