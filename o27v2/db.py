@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     rbi        INTEGER DEFAULT 0,
     bb         INTEGER DEFAULT 0,
     k          INTEGER DEFAULT 0,
-    stays      INTEGER DEFAULT 0
+    stays      INTEGER DEFAULT 0,
+    outs_recorded INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS game_pitcher_stats (
@@ -192,6 +193,14 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+
+        # Task #49: per-batter outs_recorded (CS / FC / pickoffs charged
+        # to responsible batter so OR column sums to 27 per half).
+        try:
+            conn.execute("ALTER TABLE game_batter_stats ADD COLUMN outs_recorded INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
 
     # Step 2: wipe stale pre-Phase-8 data
     _wipe_if_stale()

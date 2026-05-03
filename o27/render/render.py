@@ -726,6 +726,10 @@ class Renderer:
         etype = event["type"]
         runs_scored = disp.get("runs_scored", 0)
         ab_hits_before = ctx.get("at_bat_hits_before", 0)
+        # Task #49: snapshot OR before per-event credits so we can charge the
+        # responsible batter for any leftover engine-recorded outs (CS, FC,
+        # pickoffs, runner thrown out on a ground out / stay, etc.).
+        _or_before = s.outs_recorded
 
         # O27 multi-hit AB: at-bats (not walks/HBP) with 2+ credited hits.
         # Credited hits = stay hits accumulated prior to this event (ab_hits_before)
@@ -793,7 +797,6 @@ class Renderer:
                     s.hits += 1
                 elif not disp.get("batter_safe", True):
                     # Batter retired (ground out, fly out, line out, DP etc.)
-                    # Errors and fielder's choice leave batter_safe=True → no OR.
                     s.outs_recorded += 1
                 if hit_type == "double":
                     s.doubles += 1
@@ -804,6 +807,17 @@ class Renderer:
                 s.rbi += runs_scored
                 # Terminal running hit counts toward multi-hit AB.
                 _check_multi_hit(terminal_hit=is_safety_hit)
+
+        # Task #49: universal leftover-out charge. Any out the engine recorded
+        # for this event that the per-event branches above didn't already
+        # credit (CS, successful pickoff, FC runner out, DP runner-trail out,
+        # runner thrown out on a stay, etc.) is charged to the current batter
+        # so the per-batter OR column sums to 27 per half.
+        engine_outs_delta = (state_after.outs or 0) - (ctx.get("outs") or 0)
+        already_charged = s.outs_recorded - _or_before
+        leftover = engine_outs_delta - already_charged
+        if leftover > 0:
+            s.outs_recorded += leftover
 
         # Credit runs-scored (R) to the players who left the bases.
         if runs_scored > 0:

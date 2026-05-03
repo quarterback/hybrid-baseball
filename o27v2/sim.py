@@ -101,6 +101,7 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict])
             "bb": bstat.bb,
             "k": bstat.k,
             "stays": bstat.sty,
+            "outs_recorded": bstat.outs_recorded,
         })
     return rows
 
@@ -342,11 +343,12 @@ def _insert_batter_stats(game_id: int, rows: list[dict]) -> None:
     db.executemany(
         """INSERT INTO game_batter_stats
            (game_id, team_id, player_id, pa, ab, runs, hits, doubles, triples,
-            hr, rbi, bb, k, stays)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            hr, rbi, bb, k, stays, outs_recorded)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["pa"], r["ab"], r["runs"],
           r["hits"], r["doubles"], r["triples"], r["hr"], r["rbi"],
-          r["bb"], r["k"], r["stays"]) for r in rows],
+          r["bb"], r["k"], r["stays"], r.get("outs_recorded", 0))
+         for r in rows],
     )
 
 

@@ -71,7 +71,12 @@
   {% for team_label, batting, team_name, opp_pitching in [
       ('Away', away_batting, game.away_name, home_pitching),
       ('Home', home_batting, game.home_name, away_pitching)] %}
-  {% set sum_or = (batting | sum(attribute='ab')) - (batting | sum(attribute='hits')) %}
+  {# Task #49: OR is now the per-batter outs_recorded column (CS/FC/PO charged
+     to responsible batter). Fall back to AB-H for legacy rows where the column
+     is NULL/0 and the gap shows pre-migration data. #}
+  {% set sum_or_legacy = (batting | sum(attribute='ab')) - (batting | sum(attribute='hits')) %}
+  {% set sum_or = batting | map(attribute='outs_recorded') | map('default', 0, true) | sum %}
+  {% if sum_or == 0 %}{% set sum_or = sum_or_legacy %}{% endif %}
   {% set team_outs = opp_pitching | sum(attribute='outs_recorded') %}
   {% set gap = team_outs - sum_or %}
   <div class="col-lg-6">
@@ -101,12 +106,14 @@
             <td>{{ b.rbi }}</td>
             <td>{{ b.bb }}</td>
             <td>{{ b.k }}</td>
-            <td>{{ (b.ab or 0) - (b.hits or 0) }}</td>
+            <td>{{ b.outs_recorded if b.outs_recorded else ((b.ab or 0) - (b.hits or 0)) }}</td>
           </tr>
           {% endfor %}
           {% if batting and gap > 0 %}
+          {# Legacy reconciliation row — only renders for pre-Task-#49 rows
+             where per-batter OR doesn't yet sum to team outs. #}
           <tr class="text-secondary" style="background:#111827">
-            <td colspan="13">Team (CS / FC / non-batter outs)</td>
+            <td colspan="13">Team (legacy CS / FC / non-batter outs)</td>
             <td>{{ gap }}</td>
           </tr>
           {% endif %}
@@ -126,7 +133,7 @@
             <td>{{ batting | sum(attribute='rbi') }}</td>
             <td>{{ batting | sum(attribute='bb') }}</td>
             <td>{{ batting | sum(attribute='k') }}</td>
-            <td>{{ team_outs if team_outs else sum_or }}</td>
+            <td>{{ sum_or }}</td>
           </tr>
           {% endif %}
           </tbody>
