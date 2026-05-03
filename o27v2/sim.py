@@ -108,6 +108,53 @@ def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
 # DB ↔ engine type converters
 # ---------------------------------------------------------------------------
 
+def _ordered_lineup(
+    starting_fielders: list,
+    todays_sp: list,
+    starting_dhs: list,
+) -> list:
+    """Order the 12-batter lineup by hitting talent.
+
+    Lou Brock / Rickey Henderson speed-specialist DHs, Bonds-tier power
+    DHs, and Molitor-tier high-OBP DHs all coexist in O27's 3-DH slot
+    structure — they should bat in the right place in the order, not
+    default to slots 10-11-12 just because they're DH-positioned. The
+    same logic applies for traditional fielders who'd be elite bats:
+    a +SS who hits .400 should bat leadoff, not 8th.
+
+    Pitchers almost always hit 12th. Exception: a pitcher whose hitting
+    `skill` clears `_PITCHER_HIT_LINEUP_THRESHOLD` (top 5-10% of arms in
+    a fresh seed, where pitcher hitting is capped low) gets slotted in
+    by talent like everyone else.
+
+    Composite bat score blends overall skill with the realism layer:
+    skill weighted heaviest, power/contact moderate, eye light.
+    """
+    def _bat_score(p) -> float:
+        return (
+            float(p.skill)        * 0.55
+            + float(p.power)      * 0.15
+            + float(p.contact)    * 0.20
+            + float(p.eye)        * 0.10
+        )
+
+    non_pitchers = list(starting_fielders) + list(starting_dhs)
+    non_pitchers.sort(key=_bat_score, reverse=True)
+
+    sp = todays_sp[0] if todays_sp else None
+    if sp is None:
+        return non_pitchers
+
+    # Pitchers ≥ this hitting `skill` slot in by talent like a non-pitcher.
+    # Default 0.50 catches the top ~5-10% of pitchers per the tier ladder
+    # — the semi-average-hitting arm exception per O27 lineup convention.
+    if float(sp.skill) >= 0.50:
+        combined = non_pitchers + [sp]
+        combined.sort(key=_bat_score, reverse=True)
+        return combined
+    return non_pitchers + [sp]   # default: SP bats 12th
+
+
 def _db_team_to_engine(
     team_row: dict,
     players: list[dict],
@@ -238,7 +285,10 @@ def _db_team_to_engine(
     starting_fielders = fielders[:8]
     starting_dhs      = dhs[:3]
 
-    lineup = list(starting_fielders) + todays_sp + list(starting_dhs)
+    # Order the 12-batter lineup by hitting talent (DHs aren't pinned to
+    # the bottom of the order; pitcher hits 12th unless they're rare
+    # semi-average-hitting arm).
+    lineup = _ordered_lineup(starting_fielders, todays_sp, starting_dhs)
 
     # Reorder the roster so today's SP is the first pitcher. The engine's
     # `_set_fielding_pitcher` picks the first is_pitcher in roster order,

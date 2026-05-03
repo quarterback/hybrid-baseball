@@ -81,7 +81,15 @@ This is the part that was nagging me about earlier versions of the simulator: a 
 
 **Pitcher fatigue becomes the dominant question.** In MLB a starter throws 6 innings = 18 outs spread across 6 sessions, with full rest between each. In O27 a starter throws 27 outs *consecutively*. There is no break. Stuff doesn't determine endurance — *Stamina* does. A high-Stuff/low-Stamina arm is a one-inning closer in any league; in O27 they get pasted in the 24th out. A high-Stamina/medium-Stuff arm is a workhorse who can grind a complete game. The *Maddux archetype* — soft contact, surgical command, eats outs — is disproportionately valuable. So is the pure stamina horse who'd be a #5 starter in MLB but is an ace here.
 
-**Lineups have to be longer to keep the offense viable.** With pitchers fatiguing across continuous outs, by the third time through the order the bowler is meaningfully degraded. But there's no inter-inning rest for hitters either — they're cycling against the same arm continuously. A 9-batter lineup cycling through 80 PAs would mean each hitter goes 9-10 times — way too much exposure. So the lineup expands to 12. Eight fielders plus the starting pitcher plus three DH slots. Each batter goes 6-7 times instead of 9-10. Math works.
+**Lineups have to be longer to keep the offense viable.** With pitchers fatiguing across continuous outs, by the third time through the order the bowler is meaningfully degraded. But there's no inter-inning rest for hitters either — they're cycling against the same arm continuously. A 9-batter lineup cycling through 80+ PAs would mean each hitter goes 9-10 times — way too much exposure. So the lineup expands to 12. Eight fielders plus the starting pitcher plus three DH slots. Each batter goes 6-7 times instead of 9-10. Math works.
+
+**The 3-DH structure unlocks lineup-archetype diversity that MLB doesn't have.** With three DH slots instead of one, you can carry simultaneously:
+
+- A Rickey Henderson / Lou Brock / Tim Raines speed-specialist bat-runner
+- A traditional Bonds / Ortiz power DH
+- A Paul Molitor-style high-OBP technician
+
+These three coexist in the same lineup. Or you skip the speed/OBP guys entirely and run three power DHs. Or you use one of the slots to *rest a regular fielder* — your starting catcher takes a DH day to keep his legs fresh. None of this is reachable from MLB's single-DH model. And the DH spots aren't "bottom of the order" by default — they're tactical, used in scoring situations or to anchor the heart of the order, depending on what the matchup needs that day. Every rotation through the lineup is its own decision.
 
 **Run environments inflate.** With no inter-inning rest, more PAs per game (~85 vs MLB's ~75 — and those extra PAs come from stays, where a single AB can produce up to three PAs), and the stay mechanic letting baserunners advance more freely, you get *more offense*. The simulator's tuned baseline runs at ~25 R/G total, about 2.5x MLB. This is structural. Pushing it back down toward MLB's 9 R/G would be modeling something else, not O27.
 
@@ -91,7 +99,7 @@ This is the part that was nagging me about earlier versions of the simulator: a 
 
 Once stays exist, the basic stat machinery has to evolve. An at-bat can produce up to 3 plate appearances; PAs and ABs decouple in a way they don't in MLB.
 
-**PAVG (Plate Average) = H / PA.** This is the headline batting average in O27. Bounded 0.000–1.000. League average lands around .350–.380; top hitters .450+. PA is the natural denominator because every contact event is one PA, whether the AB ends or extends.
+**PAVG (Plate Average) = H / PA.** This is the headline batting average in O27. Bounded 0.000–1.000. PA is the natural denominator because every contact event is one PA, whether the AB ends or extends — and it makes the math read cleanly across multi-hit ABs. The exact league mean is whatever the talent distribution and rule set produce; the structural argument is that with 12-batter lineups (vs MLB's 9), more PAs per game (~85 vs ~75), and stays converting would-be-outs into hits, hits-per-game in O27 should naturally be above MLB's per-game total even at a modestly higher PAVG. That's what the simulator produces.
 
 **BAVG (Batting Average) = H / AB.** This is the secondary "stayer profile" metric — inherits MLB's batting-average semantics (per-AB rate). In O27 it can exceed 1.000, because multi-hit ABs are real (max 3 hits in 1 AB via stays). Read together with PAVG, it diagnoses style:
 
