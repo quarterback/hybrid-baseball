@@ -1,36 +1,171 @@
 {% extends "base.html" %}
-{% block title %}O27 Stats{% endblock %}
+{% block title %}O27 — Game Setup{% endblock %}
 {% block content %}
 
-<h1>O27 STATS</h1>
-<p class="subtitle">Scores, box scores, play-by-play — Millbrook Foxes vs Ironvale Bears</p>
+<h1>O27 GAME SETUP</h1>
+<p class="subtitle">Pick two teams, set a seed, and simulate.</p>
 
-<div class="card">
-  <div class="card-head">Run a game</div>
-  <div class="card-body">
-    <form class="seed-form" method="get" action="/game">
-      <label for="seed">Seed</label>
-      <input type="number" id="seed" name="seed" value="0" min="0">
-      <button type="submit" class="btn btn-primary">Simulate</button>
-      <a href="/random" class="btn btn-outline">Random</a>
-    </form>
-    <p style="margin-top:.75rem; font-size:.8rem; color:var(--muted);">
-      Same seed always produces the same game. Try seeds 0–999 for variety.
-    </p>
+<form method="get" action="/game" id="setup-form">
+  <div class="setup-grid">
+
+    {# ── VISITORS ── #}
+    <div class="setup-col">
+      <div class="card">
+        <div class="card-head" style="color:var(--accent);">Visitors</div>
+        <div class="card-body">
+          {% if has_db %}
+          <select name="visitors" id="sel-visitors" class="team-select"
+                  onchange="updateRoster('visitors', this.value)">
+            {% for t in teams %}
+            <option value="{{ t.abbrev }}"
+              {% if t.abbrev == default_v %}selected{% endif %}>
+              {{ t.display }} ({{ t.abbrev }}){% if t.level != 'MLB' %} — {{ t.level }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <p class="fallback-note">Using Millbrook Foxes (no team database found)</p>
+          {% endif %}
+        </div>
+        <div class="card-head" style="border-top:1px solid var(--border); padding-top:.5rem;">
+          Roster
+        </div>
+        <div id="roster-visitors" class="roster-wrap">
+          {% if has_db %}
+          <div id="roster-visitors-inner"></div>
+          {% else %}
+          {{ _foxes_table() }}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# ── HOME ── #}
+    <div class="setup-col">
+      <div class="card">
+        <div class="card-head" style="color:var(--accent2);">Home</div>
+        <div class="card-body">
+          {% if has_db %}
+          <select name="home" id="sel-home" class="team-select"
+                  onchange="updateRoster('home', this.value)">
+            {% for t in teams %}
+            <option value="{{ t.abbrev }}"
+              {% if t.abbrev == default_h %}selected{% endif %}>
+              {{ t.display }} ({{ t.abbrev }}){% if t.level != 'MLB' %} — {{ t.level }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <p class="fallback-note">Using Ironvale Bears (no team database found)</p>
+          {% endif %}
+        </div>
+        <div class="card-head" style="border-top:1px solid var(--border); padding-top:.5rem;">
+          Roster
+        </div>
+        <div id="roster-home" class="roster-wrap">
+          {% if has_db %}
+          <div id="roster-home-inner"></div>
+          {% else %}
+          {{ _bears_table() }}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>{# /setup-grid #}
+
+  {# ── SEED + SUBMIT ── #}
+  <div class="card">
+    <div class="card-body">
+      <div class="seed-form">
+        <label for="seed">Seed</label>
+        <input type="number" id="seed" name="seed" value="0" min="0">
+        <button type="submit" class="btn btn-primary">Simulate</button>
+        <a href="/random" class="btn btn-outline">Random matchup</a>
+      </div>
+      <p style="margin-top:.6rem; font-size:.78rem; color:var(--muted);">
+        Same seed + same teams always produces the same game.
+      </p>
+    </div>
   </div>
-</div>
+
+</form>
 
 {% if recent %}
 <div class="card">
   <div class="card-head">Recent games</div>
-  <div class="card-body" style="padding:.75rem 1rem;">
-    <ul class="recent-list">
-      {% for s in recent %}
-      <li><a href="/game?seed={{ s }}">Seed {{ s }}</a></li>
-      {% endfor %}
-    </ul>
+  <div class="card-body" style="padding:.5rem 1rem;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Seed</th>
+          <th>Visitors</th>
+          <th class="num">Score</th>
+          <th>Home</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recent %}
+        <tr>
+          <td>
+            <a href="/game?seed={{ r.seed }}&visitors={{ r.visitors_abbrev }}&home={{ r.home_abbrev }}"
+               style="font-family:var(--mono); color:var(--accent); text-decoration:none;">
+              {{ r.seed }}
+            </a>
+          </td>
+          <td>{{ r.visitors }}</td>
+          <td class="num" style="font-family:var(--mono);">
+            {{ r.v_score }}–{{ r.h_score }}
+          </td>
+          <td>{{ r.home }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endif %}
+
+{# Embed roster data for JS — no extra network round-trip #}
+<script>
+const ROSTERS = {{ roster_map_json | safe }};
+
+function buildRosterTable(abbrev) {
+  const team = ROSTERS[abbrev];
+  if (!team) return '<p style="color:var(--muted);padding:.5rem 1rem;font-size:.8rem;">No roster data.</p>';
+  let rows = '';
+  for (const p of team.players) {
+    const jokerBadge = p.is_joker
+      ? `<span class="arch-badge arch-${(p.archetype||'').toLowerCase()}">${p.archetype||'JKR'}</span>`
+      : '';
+    const posClass = p.is_joker ? ' class="joker-row"' : '';
+    rows += `<tr${posClass}>
+      <td>${p.name} ${jokerBadge}</td>
+      <td class="pos-cell">${p.pos}</td>
+      <td class="num">${p.skill.toFixed(3)}</td>
+      <td class="num">${p.speed.toFixed(3)}</td>
+    </tr>`;
+  }
+  return `<table class="data-table roster-table">
+    <thead><tr>
+      <th>Player</th><th>Pos</th>
+      <th class="num">Skill</th><th class="num">Speed</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function updateRoster(side, abbrev) {
+  document.getElementById('roster-' + side + '-inner').innerHTML = buildRosterTable(abbrev);
+}
+
+// Initialise on load
+document.addEventListener('DOMContentLoaded', () => {
+  const vSel = document.getElementById('sel-visitors');
+  const hSel = document.getElementById('sel-home');
+  if (vSel) updateRoster('visitors', vSel.value);
+  if (hSel) updateRoster('home', hSel.value);
+});
+</script>
 
 {% endblock %}

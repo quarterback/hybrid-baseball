@@ -1,0 +1,29 @@
+{% macro roster_table(players, team_color_class="") %}
+<table class="data-table roster-table">
+  <thead>
+    <tr>
+      <th>Player</th>
+      <th>Pos</th>
+      <th class="num">Skill</th>
+      <th class="num">Speed</th>
+      <th class="num">PSkl</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in players %}
+    <tr class="{% if p.is_joker %}joker-row{% endif %}">
+      <td>
+        {{ p.name }}
+        {% if p.is_joker %}
+        <span class="arch-badge arch-{{ p.get('joker_archetype','').lower() }}">{{ p.get('joker_archetype', 'JKR') }}</span>
+        {% endif %}
+      </td>
+      <td class="pos-cell">{{ p.position }}</td>
+      <td class="num">{{ "%.3f"|format(p.skill) }}</td>
+      <td class="num">{{ "%.3f"|format(p.speed) }}</td>
+      <td class="num">{{ "%.3f"|format(p.pitcher_skill) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
