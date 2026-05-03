@@ -1,0 +1,43 @@
+Good — that simplifies things, and it changes the architecture for O27.
+
+Viperball isn't two Fly apps with one calling another's API. It's **one Fly app, one NiceGUI process**, with `/stats` as a route within that app. The stats surface and the operational surface are served by the same Python process. The "API" is just the internal data access — same module imported by both views.
+
+That's a much cleaner pattern than what I drafted. No CORS, no env-var-pointing-at-other-app, no two Fly apps to keep in sync. One process, two route trees.
+
+Updated addendum:
+
+---
+
+**Revised addendum to #29 and #30 — single Flask app, two surfaces**
+
+Architecture follows Viperball: **one Flask app, one Fly app, two surfaces served from the same process.**
+
+- Operational GUI mounted at `/` (or `/app`).
+- Stats site mounted at `/stats`.
+- Both surfaces import the same internal data module — no HTTP roundtrip between them.
+- One `fly.toml`, one Dockerfile, one deploy.
+
+**#29 change:** the operational GUI is the Flask app. Routes under `/`, `/standings`, `/schedule`, `/game/<id>`, etc. Internal data layer in `o27/data.py` (or similar) provides query functions used by both surfaces.
+
+**#30 change:** the stats site is a Flask blueprint mounted at `/stats` on the same app. Templates live in `o27/stats_site/templates/`, static assets in `o27/stats_site/static/`. The blueprint imports the same `o27/data.py` module the operational routes use. No API client, no env vars, no separate process.
+
+**Theme/visual separation is via templates, not via separate apps.** The operational surface uses OOTP-style cream/utilitarian templates; `/stats` uses the cloned Viperball Bloomberg-terminal templates. Both are served by the same Flask process. Each surface has its own `base.html`.
+
+**Deployment (Fly.io):**
+
+- One `fly.toml` at repo root. App name something like `o27`. Pick a region (Viperball uses `ams`; pick whatever's closest to you, `iad` or `sjc` are sensible US defaults).
+- One Dockerfile, modeled on Viperball's.
+- App listens on port 8080 with `/api/health` as the health check, matching the Viperball pattern.
+- Custom domain optional later (`o27.fly.dev` is fine until you want a real domain).
+
+**Local dev:** one command — `flask run` or `python -m o27.web.app` — boots both surfaces. Operational at `http://localhost:8080/`, stats at `http://localhost:8080/stats`.
+
+**Order of work:**
+
+1. #29 builds the operational GUI as the main Flask app, with the shared data module.
+2. #30 mounts the stats site as a `/stats` blueprint on the same app, importing the same data module.
+3. Add `fly.toml`, Dockerfile, `/api/health` route. Deploy as a single Fly app.
+
+---
+
+That's everything. Strip out the two-app stuff from what I sent before — Viperball doesn't work that way, and O27 shouldn't either. One process, two surfaces, one deploy.

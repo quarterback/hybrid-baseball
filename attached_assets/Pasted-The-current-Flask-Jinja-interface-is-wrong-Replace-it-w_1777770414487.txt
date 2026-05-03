@@ -1,0 +1,14 @@
+The current Flask + Jinja interface is wrong. Replace it with two separate surfaces.
+1. Operational GUI — built in NiceGUI. This is the daily driver. Model it on OOTP / Baseball Mogul / Diamond Mind, not on a SaaS dashboard. Patterns to follow:
+
+Persistent top bar on every page: league name on the left, current date / season state in the middle, a prominent Sim button on the right (always visible — this is the primary action).
+Left sidebar nav: League · Standings · Schedule · Box Scores · Stats · Players · My Team · Roster · Lineups · Trade · Manager. Same nav on every page.
+Team pages: team header (record, division standing, last 10, streak, run differential), then tabs for Roster / Lineup / Pitching / Stats / Schedule.
+Player pages: full career view — header with bio, current season stats, career totals, game logs, splits.
+Box score page: line score, batting tables, pitching tables, game notes, prev/next navigation.
+Visual register: dense tables, monospace numerics for all stats, condensed sans for headers, off-white/cream background, subtle row striping, team-color accent stripes. No cards, no gradients, no rounded SaaS boxes. Aggressively utilitarian.
+Reference any OOTP screenshot for layout.
+
+2. Stats site — cloned from Viperball. Copy github.com/quarterback/viperball/stats_site/ into o27/stats_site/ as a separate top-level surface. Don't redesign. Preserve theme system, keyboard shortcuts (?, j/k, /, Esc, h), top nav pattern, empty-state language, monospace numerics, all visual decisions. Rebind data layer from Viperball game data to O27 game data. Adapt page set for baseball: standings, box score (with STY column for stays), team page, player page, league leaders. Use Baseball Reference column conventions for box scores. Reference: viperball.xyz/stats — the O27 stats site should be visually indistinguishable except for the data shown.
+The two surfaces share the same underlying data files but are served as separate apps. Operational GUI = clicking buttons, running the league. Stats site = analyzing results. Don't merge them.
+The current Flask app should be deleted, not extended.

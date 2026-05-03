@@ -1,0 +1,34 @@
+Good — that confirms the deployment pattern and resolves the port question. Drafting the addendum.
+
+Addendum to send to agent:
+
+Architecture clarification — applies to #29 and #30
+The two apps are separately deployed services. Pattern matches Viperball:
+
+Operational Flask app → deployed to Fly.io (e.g., o27.fly.dev).
+Stats site Flask app → deployed to Netlify or Vercel (e.g., o27.xyz or similar).
+
+They are not co-located. They communicate over the public internet via JSON API.
+#29 addition: JSON API
+Add an /api/* blueprint to the operational Flask app exposing the same data the HTML pages render. Endpoints:
+
+GET /api/standings — current standings
+GET /api/schedule — full season schedule
+GET /api/games/<id> — single box score
+GET /api/teams/<abbrev> — team page data (record, roster, recent games)
+GET /api/players/<id> — player bio, current stats, career totals, last-10 game log
+GET /api/leaders — league leaders (batting + pitching)
+
+All responses are JSON. The internal data layer is shared between HTML and JSON routes — same query helpers, two output formats. Add CORS headers permitting requests from the stats-site domain.
+#30 changes: API client instead of file reads
+Replace "reads from the same files the operational GUI uses; no duplicate data store" with:
+
+Stats site fetches from the operational app's /api/* endpoints.
+Configure the operational app's base URL via environment variable (e.g., O27_API_BASE) so the same code works for local development (http://localhost:5000) and production (https://o27.fly.dev).
+On any API error or unreachable endpoint, render the Viperball empty-state language (No active simulations found.).
+No shared filesystem assumption between the two apps.
+
+Local development
+When running both apps locally, use distinct ports (operational on 5000, stats on 5001 or similar). Document the local dev startup in a README or replit.md.
+Why this matters
+Separation lets the stats site reflect near-real-time state of the operational app without a manual export step — same pattern as Viperball's NiceGUI/stats relationship. As you sim through games on the operational app, the stats site reflects the current state on its next page load
