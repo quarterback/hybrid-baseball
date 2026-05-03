@@ -145,6 +145,10 @@
       </div>
       {% if rows %}
       <table class="table table-sm dense-table mb-0">
+        <thead><tr>
+          <th class="num" style="width:24px">#</th>
+          <th>Player</th><th>Tm</th><th class="num">{{ label.split(' ·')[0] }}</th>
+        </tr></thead>
         <tbody>
         {% for r in rows %}
         <tr>

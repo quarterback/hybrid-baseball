@@ -36,6 +36,10 @@
     <div class="dense">
       <div class="panel-title">{{ label }}</div>
       <table class="table table-sm dense-table mb-0">
+        <thead><tr>
+          <th class="num" style="width:24px">#</th>
+          <th>Player</th><th>Tm</th><th class="num">{{ label }}</th>
+        </tr></thead>
         <tbody>
           {% set sorted = batting | sort(attribute=key, reverse=desc) %}
           {% for b in sorted[:25] %}
@@ -70,6 +74,10 @@
     <div class="dense">
       <div class="panel-title">{{ label }}</div>
       <table class="table table-sm dense-table mb-0">
+        <thead><tr>
+          <th class="num" style="width:24px">#</th>
+          <th>Player</th><th>Tm</th><th class="num">{{ label }}</th>
+        </tr></thead>
         <tbody>
           {% set sorted = pitching | sort(attribute=key, reverse=desc) %}
           {% for p in sorted[:25] %}
