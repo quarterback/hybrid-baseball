@@ -103,6 +103,17 @@ class Player:
     eye:      float = 0.5   # batter: more balls taken, fewer called strikes
     command:  float = 0.5   # pitcher: lower P(ball)
     movement: float = 0.5   # pitcher: bias contact toward weak/ground_out
+    # Defense layer — fielding ability + throwing arm.
+    # `defense` is the player's general glove rating. The three position-
+    # group sub-ratings let a player be elite at INF but weak at OF, etc.
+    # — utility players have decent ratings across groups, specialists
+    # have one elite group and replacement-level elsewhere. Identity at
+    # all = 0.5 means no defensive contribution.
+    defense:           float = 0.5   # general glove / surehandedness
+    arm:               float = 0.5   # throwing strength (C / OF / SS most)
+    defense_infield:   float = 0.5   # 1B / 2B / 3B / SS specific glove
+    defense_outfield:  float = 0.5   # LF / CF / RF specific glove
+    defense_catcher:   float = 0.5   # catcher-specific framing / blocking
 
     # Handedness — drives platoon split. Default '' means "unknown handedness"
     # and bypasses the platoon adjustment, preserving the identity invariant
@@ -115,6 +126,12 @@ class Player:
     # game loop on every `_set_fielding_pitcher` so the same SP can pitch
     # a gem one start and a clunker the next. 1.0 = legacy parity.
     today_form: float = 1.0
+
+    # Workload-model state — populated per-game by sim.py from the live DB
+    # game_pitcher_stats history. Defaults preserve identity for legacy
+    # callers / fresh Players that don't have rest data yet.
+    days_rest: int = 99      # days since last appearance (99 = fully rested)
+    pitch_debt: int = 0      # rolling 5-day pitch count (recovery-decayed)
 
     def __hash__(self) -> int:
         return hash(self.player_id)
@@ -155,6 +172,10 @@ class SpellRecord:
     start_batter_num: int = 0   # ordinal PA number when this spell began
     half: str = "top"
     super_inning_number: int = 0
+    # Persisted counting stats for advanced rate-stat aggregation.
+    sb_allowed: int = 0   # successful stolen bases against this pitcher
+    cs_caught:  int = 0   # caught-stealing outs while this pitcher was on
+    fo_induced: int = 0   # foul-outs (3-foul rule) ending an AB on this pitcher
 
 
 @dataclass
@@ -198,12 +219,24 @@ class Team:
     park_hr:   float = 1.0   # multiplier on HR weight in HARD_CONTACT
     park_hits: float = 1.0   # multiplier on hit-vs-out balance
 
-    # Joker compatibility shims — Phase 10 dropped jokers from v2, but the
-    # engine manager and o27/main.py still reference these fields. Defaulting
-    # to empty / empty-set keeps both legacy v1 paths and the v2 caller (which
-    # passes an empty list) working without per-call attribute checks.
+    # Aggregate team defense rating (positional-value-weighted). Stamped
+    # at game start by sim.py:_db_team_to_engine. 0.5 = neutral; higher =
+    # better collective defense → fewer hits, fewer errors.
+    defense_rating: float = 0.5
+    # Catcher's arm rating, stamped at game start. Drives SB-success
+    # suppression. 0.5 = neutral.
+    catcher_arm:    float = 0.5
+
+    # Joker pool — 3 tactical pinch-hitters available per game. They are
+    # NOT in the base lineup; the manager AI inserts them per-rotation
+    # subject to "each joker can only be inserted once per cycle through
+    # the order." Insertions add an extra PA to the rotation; the joker
+    # bats then returns to the bench without taking a roster slot or a
+    # field position.
     jokers_available: list = field(default_factory=list)
-    jokers_used_this_half: set = field(default_factory=set)
+    jokers_used_this_cycle: set = field(default_factory=set)
+    jokers_used_this_half: set = field(default_factory=set)   # legacy alias
+    lineup_cycle_number: int = 0   # increments when lineup_position wraps
 
     # Super-inning
     super_lineup: list = field(default_factory=list)        # 5 selected Player objects
@@ -238,7 +271,13 @@ class Team:
             self.super_lineup_position = pos
         else:
             n = len(self.lineup)
-            self.lineup_position = (self.lineup_position + 1) % n
+            new_pos = (self.lineup_position + 1) % n
+            if new_pos == 0 and n > 0:
+                # Lineup wrapped to top of order — start of a new cycle.
+                # Each joker is once-per-cycle, so clear the used set.
+                self.lineup_cycle_number += 1
+                self.jokers_used_this_cycle = set()
+            self.lineup_position = new_pos
 
     def reset_half(self) -> None:
         """Reset intra-half tracking at the start of a new half.
@@ -306,6 +345,11 @@ class GameState:
     pitcher_hbp_this_spell: int = 0    # hit batters in current spell
     pitcher_hr_this_spell: int = 0     # HR allowed in current spell
     pitcher_pitches_this_spell: int = 0  # pitches thrown in current spell
+    pitcher_sb_allowed_this_spell: int = 0  # stolen bases against current spell
+    pitcher_cs_caught_this_spell: int = 0   # CS outs while current spell on mound
+    pitcher_fo_induced_this_spell: int = 0  # foul-outs in current spell
+    pitcher_errors_this_spell: int = 0      # defensive errors during current spell
+                                            # (post-error runs in the spell charge UER)
     pitcher_start_pa: int = 0          # total_pa_this_half when spell began
     total_pa_this_half: int = 0        # cumulative PA count this half (incremented on PA end)
     current_pitcher_id: Optional[str] = None
@@ -313,6 +357,14 @@ class GameState:
 
     # --- Multi-hit tracking (within one at-bat) ---
     current_at_bat_hits: int = 0
+
+    # --- Joker insertion override ---
+    # When the manager inserts a joker, this field holds the joker Player
+    # for one PA. The current_batter property checks this first, so the
+    # joker bats instead of the base-lineup batter. After the joker AB
+    # ends, _end_at_bat clears this and does NOT call advance_lineup
+    # (the joker insertion is EXTRA — base lineup position is unchanged).
+    batter_override: Optional[Player] = None
 
     # --- Halftime target ---
     target_score: Optional[int] = None         # visitors' score; set at halftime
@@ -344,6 +396,11 @@ class GameState:
 
     @property
     def current_batter(self) -> Player:
+        # Joker insertion override takes precedence — when the manager has
+        # called in a joker for the next PA, that joker bats instead of
+        # the base lineup batter.
+        if self.batter_override is not None:
+            return self.batter_override
         return self.batting_team.current_batter()
 
     @property

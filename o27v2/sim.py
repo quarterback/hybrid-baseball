@@ -31,8 +31,135 @@ from o27v2 import scout as _scout
 
 
 # ---------------------------------------------------------------------------
+# Defensive positional values (Bill James style, scaled to O27).
+# These weights determine BOTH:
+#   - the team-defense-rating aggregation (high-value positions count more)
+#   - the per-player DRS positional adjustment (a +SS is worth more than +1B)
+# Centralised here so app.py and sim.py read the same numbers.
+# ---------------------------------------------------------------------------
+
+POSITIONAL_VALUE: dict[str, float] = {
+    "C":  +1.5,
+    "SS": +1.0,
+    "CF": +0.5,
+    "2B": +0.5,
+    "3B": +0.3,
+    "LF": -0.3,
+    "RF": -0.3,
+    "1B": -0.7,
+    "DH": -1.5,
+    "UT":  0.0,
+    "P":  -2.0,   # pitchers rarely field; their "defense" mostly reflects PFP
+}
+
+
+_INFIELD_POSITIONS  = frozenset(("1B", "2B", "3B", "SS"))
+_OUTFIELD_POSITIONS = frozenset(("LF", "CF", "RF"))
+
+
+def _position_defense_rating(player, pos: str) -> float:
+    """Return the player's effective defense at the given position.
+
+    Blends general `defense` with the position-group sub-rating so a
+    specialist gets a real boost at their primary group and a real
+    penalty out of group. 60% sub-group, 40% general.
+    """
+    general = float(getattr(player, "defense", 0.5) or 0.5)
+    if pos == "C":
+        sub = float(getattr(player, "defense_catcher", 0.5) or 0.5)
+    elif pos in _INFIELD_POSITIONS:
+        sub = float(getattr(player, "defense_infield", 0.5) or 0.5)
+    elif pos in _OUTFIELD_POSITIONS:
+        sub = float(getattr(player, "defense_outfield", 0.5) or 0.5)
+    else:
+        sub = general
+    return 0.6 * sub + 0.4 * general
+
+
+def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
+    """Compute a single 0..1 team defense rating as a positional-value-
+    weighted mean of fielders' position-aware defense ratings.
+
+    `lineup` is the engine-side Player list (8 fielders + SP + 3 DH).
+    `roster` is the original DB-side player rows so we can look up the
+    canonical position string by player_id (engine Players don't carry
+    position).
+
+    Identity: at all defaults (defense = 0.5 for everyone) → returns 0.5.
+    """
+    pos_by_id: dict[str, str] = {
+        str(r["id"]): str(r.get("position") or "") for r in roster
+    }
+    weighted_sum = 0.0
+    weight_sum   = 0.0
+    for player in lineup:
+        pos = pos_by_id.get(player.player_id, "")
+        if pos in ("DH", "P"):
+            continue   # DH and starting pitchers don't contribute to fielding
+        # Weight = max(0.5, 1.5 + positional_value) so even -bias positions
+        # contribute, but valuable positions count more.
+        w = max(0.5, 1.5 + POSITIONAL_VALUE.get(pos, 0.0))
+        weighted_sum += w * _position_defense_rating(player, pos)
+        weight_sum   += w
+    return (weighted_sum / weight_sum) if weight_sum > 0 else 0.5
+
+
+# ---------------------------------------------------------------------------
 # DB ↔ engine type converters
 # ---------------------------------------------------------------------------
+
+def _bat_score(p) -> float:
+    """Composite hitting talent score used for lineup ordering and joker
+    pool selection."""
+    return (
+        float(p.skill)        * 0.55
+        + float(p.power)      * 0.15
+        + float(p.contact)    * 0.20
+        + float(p.eye)        * 0.10
+    )
+
+
+def _ordered_lineup(
+    starting_fielders: list,
+    todays_sp: list,
+) -> list:
+    """Order the 9-batter base lineup by hitting talent.
+
+    Base lineup = 8 fielders + SP. DHs are NOT in the base lineup — they
+    live in the joker pool (jokers_available) and are inserted tactically
+    by the manager AI per PA, subject to once-per-cycle.
+
+    Pitchers almost always hit 9th. Exception: a pitcher whose hitting
+    `skill` clears 0.50 (top ~5-10% of arms in a fresh seed) slots in by
+    talent like everyone else.
+    """
+    non_pitchers = list(starting_fielders)
+    non_pitchers.sort(key=_bat_score, reverse=True)
+
+    sp = todays_sp[0] if todays_sp else None
+    if sp is None:
+        return non_pitchers
+
+    # Pitchers ≥ this hitting `skill` slot in by talent like a non-pitcher.
+    # Default 0.50 catches the top ~5-10% of pitchers per the tier ladder.
+    if float(sp.skill) >= 0.50:
+        combined = non_pitchers + [sp]
+        combined.sort(key=_bat_score, reverse=True)
+        return combined
+    return non_pitchers + [sp]   # default: SP bats 9th
+
+
+def _pick_jokers(non_starter_bats: list, n: int = 3) -> list:
+    """Pick the top-n bats from the non-starter pool (DH + UT bench)
+    as today's joker pool. Sorted by composite hitting talent.
+
+    These are the manager's tactical pinch-hitters — three pinch-hits-
+    with-no-cost, each available once per cycle. They are NOT in the
+    base lineup; they enter via per-PA insertion when leverage warrants.
+    """
+    sorted_bats = sorted(non_starter_bats, key=_bat_score, reverse=True)
+    return sorted_bats[:n]
+
 
 def _db_team_to_engine(
     team_row: dict,
@@ -40,6 +167,7 @@ def _db_team_to_engine(
     team_role: str,
     rotation_index: int = 0,
     recently_used_pitcher_ids: set[int] | None = None,
+    workload: dict[int, dict[str, int]] | None = None,
 ) -> Team:
     """
     Convert a DB team row + player rows into an O27 engine Team object.
@@ -61,6 +189,7 @@ def _db_team_to_engine(
     """
     _ = rotation_index  # unused — kept for back-compat
     rest_excluded = recently_used_pitcher_ids or set()
+    workload = workload or {}
 
     engine_players: list[Player] = []
     fielders: list[Player] = []
@@ -106,7 +235,17 @@ def _db_team_to_engine(
             # default; only treat seeded 'L'/'R'/'S' as platoon-applicable.
             bats=str(p.get("bats") or ""),
             throws=str(p.get("throws") or ""),
+            defense=_scout.to_unit(p.get("defense") or 50),
+            arm=_scout.to_unit(p.get("arm") or 50),
+            defense_infield=_scout.to_unit(p.get("defense_infield") or 50),
+            defense_outfield=_scout.to_unit(p.get("defense_outfield") or 50),
+            defense_catcher=_scout.to_unit(p.get("defense_catcher") or 50),
         )
+        # Stamp workload state on every Player so the manager AI and the
+        # engine's tired-multiplier can read it without extra plumbing.
+        wl = workload.get(int(p["id"]), {}) if p.get("is_pitcher") else {}
+        player.days_rest  = int(wl.get("days_rest", 99))
+        player.pitch_debt = int(wl.get("pitch_debt", 0))
         engine_players.append(player)
         engine_to_db_id[player.player_id] = int(p["id"])
         if bool(p.get("is_joker")):
@@ -118,28 +257,59 @@ def _db_team_to_engine(
         else:
             fielders.append(player)
 
-    # ---- Pick today's SP: highest Stamina among rested active arms ----
+    # ---- Pick today's SP via rest-tiered, stamina-weighted selection ----
+    # Real rotations want 4 days rest between starts. We tier candidates by
+    # rest level and pick the highest-Stamina arm in the best non-empty tier.
+    # Critical: never just fall back to "anyone" — that produces a workhorse
+    # who throws every single day. If no arm has the ideal rest, we still
+    # pick the MOST-RESTED arm so the rotation keeps cycling.
     todays_sp: list[Player] = []
     if pitchers:
-        rested = [
-            p for p in pitchers
-            if engine_to_db_id.get(p.player_id) not in rest_excluded
-        ]
-        # Fall back to the full pitcher pool if every arm is "tired".
-        candidate_pool = rested or pitchers
-        sp = max(candidate_pool, key=lambda pl: pl.stamina)
-        todays_sp = [sp]
+        # Pre-rank: highest stamina first, with debt as a tiebreaker (less
+        # debt = fresher arm). Done once so each tier filter just slices it.
+        ranked = sorted(
+            pitchers,
+            key=lambda pl: (-pl.stamina, pl.pitch_debt),
+        )
+        # Tier the candidates by minimum days rest. Once a tier has any
+        # qualifying arm, take the top-stamina one in that tier.
+        for min_rest in (4, 3, 2, 1):
+            tier = [p for p in ranked if p.days_rest >= min_rest]
+            if tier:
+                todays_sp = [tier[0]]
+                break
+        # Last-resort: every arm pitched yesterday or today. Pick the one
+        # with the most rest (most rested) and lowest debt — emergency only.
+        if not todays_sp:
+            ranked.sort(key=lambda pl: (-pl.days_rest, pl.pitch_debt))
+            todays_sp = [ranked[0]]
 
     # Cap fielders at the canonical 8 starting positions; remaining ones
     # are bench depth that lives in the roster but does not bat. Cap DHs
     # at 3 batting slots so the lineup stays at 12 (8 fielders + SP + 3 DH)
     # for engine compatibility.
     starting_fielders = fielders[:8]
-    starting_dhs      = dhs[:3]
 
-    lineup = list(starting_fielders) + todays_sp + list(starting_dhs)
+    # Build the 9-batter base lineup: 8 fielders + SP, ordered by talent.
+    lineup = _ordered_lineup(starting_fielders, todays_sp)
 
-    return Team(
+    # Pick today's 3 jokers from the non-starter bat pool (all DHs + any
+    # bench fielders not in the starting 8). These are tactical pinch-
+    # hitters — manager AI inserts them per PA based on leverage, each
+    # at most once per cycle through the order.
+    bench_pool = list(dhs) + list(fielders[8:])
+    jokers     = _pick_jokers(bench_pool, n=3)
+
+    # Reorder the roster so today's SP is the first pitcher. The engine's
+    # `_set_fielding_pitcher` picks the first is_pitcher in roster order,
+    # so without this swap the SP rotation would be cosmetic — game.py
+    # would pick whatever pitcher happened to come first in the DB query.
+    if todays_sp:
+        sp = todays_sp[0]
+        if sp in engine_players:
+            engine_players = [sp] + [p for p in engine_players if p is not sp]
+
+    team = Team(
         team_id=team_role,
         name=team_row["name"],
         roster=engine_players,
@@ -148,6 +318,17 @@ def _db_team_to_engine(
         park_hr=float(team_row.get("park_hr") or 1.0),
         park_hits=float(team_row.get("park_hits") or 1.0),
     )
+    # Compute aggregate defense rating from the lineup's fielding 8.
+    team.defense_rating = _team_defense_rating(lineup, players)
+    # Stamp the catcher's arm rating on the Team for SB-success scaling.
+    pos_by_id = {str(r["id"]): str(r.get("position") or "") for r in players}
+    catcher_arm = 0.5
+    for player in lineup:
+        if pos_by_id.get(player.player_id, "") == "C":
+            catcher_arm = float(getattr(player, "arm", 0.5) or 0.5)
+            break
+    team.catcher_arm = catcher_arm
+    return team
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +378,13 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict])
                 "k": bstat.k,
                 "stays": bstat.sty,
                 "outs_recorded": bstat.outs_recorded,
+                "hbp": getattr(bstat, "hbp", 0),
+                "sb": getattr(bstat, "sb", 0),
+                "cs": getattr(bstat, "cs", 0),
+                "fo": getattr(bstat, "fo", 0),
+                "multi_hit_abs": getattr(bstat, "multi_hit_abs", 0),
+                "stay_rbi": getattr(bstat, "stay_rbi", 0),
+                "roe": getattr(bstat, "roe", 0),
             })
     return rows
 
@@ -230,6 +418,9 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
         if player is None:
             continue
         ps = PitcherStats.from_spell_log(spells, pid_str, player.name)
+        sb_allowed = sum(getattr(rec, "sb_allowed", 0) for rec in spells)
+        cs_caught  = sum(getattr(rec, "cs_caught",  0) for rec in spells)
+        fo_induced = sum(getattr(rec, "fo_induced", 0) for rec in spells)
         rows.append({
             "team_id": team_id,
             "player_id": db_pid,
@@ -244,6 +435,11 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "k": ps.k,
             "hr_allowed": ps.hr_allowed,
             "pitches": ps.pitches_thrown,
+            "hbp_allowed":   getattr(ps, "hbp", 0),
+            "unearned_runs": getattr(ps, "unearned_runs", 0),
+            "sb_allowed":    sb_allowed,
+            "cs_caught":     cs_caught,
+            "fo_induced":    fo_induced,
         })
     return rows
 
@@ -328,6 +524,77 @@ def _recently_used_pitcher_ids(
     return {int(r["player_id"]) for r in rows}
 
 
+def _pitcher_workload_state(
+    team_id: int, game_date: str, lookback_days: int = 5
+) -> dict[int, dict[str, int]]:
+    """For every pitcher who's appeared for the team in the last
+    `lookback_days` sim days, return their workload state as of `game_date`.
+
+    Returns: { db_player_id: {
+        "days_rest":  int,      # days since most recent appearance
+        "pitch_debt": int,      # decayed sum of pitches over lookback window
+        "p_yesterday": int,     # raw pitches thrown yesterday
+        "p_5d":       int,      # raw pitches thrown over the 5-day window
+        "appearances_5d": int,
+    }}
+    Pitchers who haven't appeared inside the window are absent from the dict
+    — callers should treat them as fully rested (days_rest=99, debt=0).
+
+    Pitch-debt decays linearly over the window so an old appearance counts
+    less than yesterday's; this keeps a 4-days-ago start from looking as
+    fresh as a real workhorse would feel.
+    """
+    rows = db.fetchall(
+        """SELECT ps.player_id,
+                  g.game_date AS gdate,
+                  COALESCE(ps.pitches, 0) AS pitches,
+                  COALESCE(ps.outs_recorded, 0) AS outs
+             FROM game_pitcher_stats ps
+             JOIN games g ON g.id = ps.game_id
+            WHERE ps.team_id = ?
+              AND g.played = 1
+              AND g.game_date >= date(?, ?)
+              AND g.game_date <  ?
+            ORDER BY g.game_date DESC""",
+        (team_id, game_date, f"-{lookback_days} days", game_date),
+    )
+
+    if not rows:
+        return {}
+
+    from datetime import date
+    today = date.fromisoformat(game_date)
+
+    state: dict[int, dict[str, int]] = {}
+    for r in rows:
+        pid = int(r["player_id"])
+        try:
+            days_ago = (today - date.fromisoformat(r["gdate"])).days
+        except ValueError:
+            days_ago = lookback_days
+        # Linear decay: an appearance N days ago contributes
+        # pitches * (lookback_days - N) / lookback_days to the debt score.
+        # Yesterday (N=1) → pitches * 4/5 = 80%; 4 days ago → 20%.
+        decay = max(0.0, (lookback_days - days_ago) / lookback_days)
+
+        st = state.setdefault(pid, {
+            "days_rest": 99,
+            "pitch_debt": 0,
+            "p_yesterday": 0,
+            "p_5d": 0,
+            "appearances_5d": 0,
+        })
+        if days_ago < st["days_rest"]:
+            st["days_rest"] = days_ago
+        if days_ago == 1:
+            st["p_yesterday"] += int(r["pitches"])
+        st["p_5d"] += int(r["pitches"])
+        st["appearances_5d"] += 1
+        st["pitch_debt"] += int(round(int(r["pitches"]) * decay))
+
+    return state
+
+
 def _promote_pitcher_role(players: list[dict]) -> list[dict]:
     """Task #65: roles are derived live (no `pitcher_role` is read), so
     this helper only needs to guarantee at least one `is_pitcher` arm
@@ -388,14 +655,21 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     # rotation state we need is the set of arms that pitched recently.
     home_rest = _recently_used_pitcher_ids(home_team_id, game_date)
     away_rest = _recently_used_pitcher_ids(away_team_id, game_date)
+    # Workload-model state: per-pitcher rolling pitch debt + days rest.
+    # Drives both SP selection and the manager's relief picks (via fields
+    # stamped on Player.days_rest / pitch_debt inside _db_team_to_engine).
+    home_workload = _pitcher_workload_state(home_team_id, game_date)
+    away_workload = _pitcher_workload_state(away_team_id, game_date)
 
     visitors_team = _db_team_to_engine(
         away_row, away_players, "visitors",
         recently_used_pitcher_ids=away_rest,
+        workload=away_workload,
     )
     home_team = _db_team_to_engine(
         home_row, home_players, "home",
         recently_used_pitcher_ids=home_rest,
+        workload=home_workload,
     )
 
     state = GameState(visitors=visitors_team, home=home_team)
@@ -455,25 +729,33 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
             conn.execute(
                 """INSERT INTO game_batter_stats
                    (game_id, team_id, player_id, phase, pa, ab, runs, hits,
-                    doubles, triples, hr, rbi, bb, k, stays, outs_recorded)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    doubles, triples, hr, rbi, bb, k, stays, outs_recorded,
+                    hbp, sb, cs, fo, multi_hit_abs, stay_rbi, roe)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
-                 r["stays"], r.get("outs_recorded", 0)),
+                 r["stays"], r.get("outs_recorded", 0),
+                 r.get("hbp", 0), r.get("sb", 0), r.get("cs", 0),
+                 r.get("fo", 0), r.get("multi_hit_abs", 0),
+                 r.get("stay_rbi", 0), r.get("roe", 0)),
             )
         for r in away_pstats + home_pstats:
             conn.execute(
                 """INSERT INTO game_pitcher_stats
                    (game_id, team_id, player_id, phase, batters_faced,
                     outs_recorded, hits_allowed, runs_allowed, er, bb, k,
-                    hr_allowed, pitches)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    hr_allowed, pitches, hbp_allowed, unearned_runs,
+                    sb_allowed, cs_caught, fo_induced)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
                  r["runs_allowed"], r.get("er", r["runs_allowed"]),
                  r["bb"], r["k"],
-                 r.get("hr_allowed", 0), r.get("pitches", 0)),
+                 r.get("hr_allowed", 0), r.get("pitches", 0),
+                 r.get("hbp_allowed", 0), r.get("unearned_runs", 0),
+                 r.get("sb_allowed", 0), r.get("cs_caught", 0),
+                 r.get("fo_induced", 0)),
             )
         for r in team_phase_outs:
             conn.execute(
@@ -567,11 +849,15 @@ def _insert_batter_stats(game_id: int, rows: list[dict]) -> None:
     db.executemany(
         """INSERT INTO game_batter_stats
            (game_id, team_id, player_id, pa, ab, runs, hits, doubles, triples,
-            hr, rbi, bb, k, stays, outs_recorded)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            hr, rbi, bb, k, stays, outs_recorded,
+            hbp, sb, cs, fo, multi_hit_abs, stay_rbi, roe)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["pa"], r["ab"], r["runs"],
           r["hits"], r["doubles"], r["triples"], r["hr"], r["rbi"],
-          r["bb"], r["k"], r["stays"], r.get("outs_recorded", 0))
+          r["bb"], r["k"], r["stays"], r.get("outs_recorded", 0),
+          r.get("hbp", 0), r.get("sb", 0), r.get("cs", 0),
+          r.get("fo", 0), r.get("multi_hit_abs", 0),
+          r.get("stay_rbi", 0), r.get("roe", 0))
          for r in rows],
     )
 
@@ -582,12 +868,16 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
     db.executemany(
         """INSERT INTO game_pitcher_stats
            (game_id, team_id, player_id, batters_faced, outs_recorded,
-            hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches,
+            hbp_allowed, unearned_runs, sb_allowed, cs_caught, fo_induced)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["batters_faced"],
           r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
           r.get("er", r["runs_allowed"]),
-          r["bb"], r["k"], r.get("hr_allowed", 0), r.get("pitches", 0))
+          r["bb"], r["k"], r.get("hr_allowed", 0), r.get("pitches", 0),
+          r.get("hbp_allowed", 0), r.get("unearned_runs", 0),
+          r.get("sb_allowed", 0), r.get("cs_caught", 0),
+          r.get("fo_induced", 0))
          for r in rows],
     )
 

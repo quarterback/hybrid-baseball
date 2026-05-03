@@ -91,11 +91,17 @@ PITCH_BASE: dict[tuple, tuple] = {
 # ---------------------------------------------------------------------------
 # Applied as:  p_dom = (pitcher_skill - 0.5) * 2   →  −1.0 to +1.0
 # Each constant scales how much p_dom shifts the corresponding probability.
+#
+# Strong-pitcher-tilt retune: magnitudes bumped ~50% over the legacy values
+# so an elite-Stuff pitcher facing an average batter swings the per-pitch
+# distribution hard toward strikes / weak contact. Combined with the
+# loosened 0.01 floors in contact_quality and the Elite+ talent tier,
+# this is what lets aces actually pitch like aces.
 
-PITCHER_DOM_BALL: float     = -0.04   # fewer balls when pitcher dominant
-PITCHER_DOM_CALLED: float   = +0.02   # more called strikes
-PITCHER_DOM_SWINGING: float = +0.02   # more swinging strikes
-PITCHER_DOM_CONTACT: float  = -0.03   # fewer contact events
+PITCHER_DOM_BALL: float     = -0.06   # fewer balls when pitcher dominant
+PITCHER_DOM_CALLED: float   = +0.03   # more called strikes
+PITCHER_DOM_SWINGING: float = +0.03   # more swinging strikes
+PITCHER_DOM_CONTACT: float  = -0.04   # fewer contact events
 
 # ---------------------------------------------------------------------------
 # Batter dominance adjustments
@@ -114,7 +120,12 @@ BATTER_DOM_CONTACT: float  = +0.03   # more contact events
 # Fatigue factor grows linearly beyond threshold, capped at FATIGUE_MAX.
 
 FATIGUE_THRESHOLD_BASE: int  = 24    # Phase 10: workhorses fatigue much later (was 10)
-FATIGUE_THRESHOLD_SCALE: int = 20    # higher-skill pitchers get longer spells
+# Bumped 20 → 40 so Stamina actually moats the workhorse archetype.
+# Math: an elite-Stamina (0.85) pitcher fatigues at 24 + round(0.85*40) = 58 BF
+# threshold — i.e. effectively never within a 27-out half. A sub-replacement
+# (0.25) Stamina pitcher fatigues at 24 + 10 = 34 BF, visibly tiring through
+# the order. This is what makes Stamina disproportionately valuable in O27.
+FATIGUE_THRESHOLD_SCALE: int = 40    # higher-skill pitchers get longer spells
 FATIGUE_MAX: float           = 0.60  # maximum fatigue multiplier
 FATIGUE_SCALE: float         = 20.0  # spell_count divisor for ramp-up
 
@@ -177,14 +188,59 @@ RUNNER_EXTRA_SPEED_SCALE: float = 0.35
 # ---------------------------------------------------------------------------
 # Stolen base model
 # ---------------------------------------------------------------------------
+# Recalibrated for O27 reality (vs MLB defaults):
+#   - 12-batter lineups + 27-out continuous halves = more PAs / runner-on-base
+#     situations per game, so a per-pitch attempt rate that looks "high" by
+#     MLB standards is actually correct here.
+#   - Catcher arm fatigues throughout the half (no inter-inning rest), so
+#     late-half steals against a tired battery are easier than MLB analogs.
+#   - Hitters optimizing for stays/contact (not 3-true-outcomes) leaves more
+#     space-creation value on the table — runners taking it is right.
 
-SB_ATTEMPT_SPEED_THRESHOLD: float = 0.62   # min runner speed to attempt steal
-SB_ATTEMPT_PROB_PER_PITCH: float  = 0.06
-SB_SUCCESS_BASE: float            = 0.55   # base success probability
+SB_ATTEMPT_SPEED_THRESHOLD: float = 0.52   # was 0.62 — lower gate so above-avg speed attempts
+SB_ATTEMPT_PROB_PER_PITCH: float  = 0.045  # was 0.015 — ~3x MLB attempt rate
+SB_SUCCESS_BASE: float            = 0.62   # was 0.55 — base success
 SB_SUCCESS_SPEED_SCALE: float     = 0.50   # (speed - 0.5) * this adds to success
 SB_SUCCESS_PITCHER_SCALE: float   = 0.15   # pitcher_skill * this subtracts from success
+SB_SUCCESS_DEBT_SCALE: float      = 0.0008 # pitcher.pitch_debt * this ADDS to success
+                                           # — tired battery = easier steal
+SB_SUCCESS_CATCHER_ARM_SCALE: float = 0.20 # catcher.arm * this SUBTRACTS from success
+                                           # — elite catcher arm shuts down the running game
 SB_SUCCESS_MIN: float             = 0.25   # floor on steal success
-SB_SUCCESS_MAX: float             = 0.90   # ceiling on steal success
+SB_SUCCESS_MAX: float             = 0.92   # ceiling on steal success
+
+# ---------------------------------------------------------------------------
+# Defense model
+# ---------------------------------------------------------------------------
+# Identity: at team_defense_rating = 0.5 (neutral) every term collapses to 0.
+
+# Range modifier — better team defense converts more BIPs into outs.
+# Applied as a probabilistic flip: when an outcome resolves to an out OR a
+# single, a small fraction of cases flip in proportion to (defense - 0.5).
+DEFENSE_RANGE_SHIFT_SCALE: float = 0.10   # max ±10% out↔single conversion swing
+
+# Error rate — share of would-be-out plays that become a "reached on
+# error" instead. Scales inversely with team defense.
+DEFENSE_ERROR_BASE: float        = 0.018   # ~1.8% of would-be-outs at neutral D
+DEFENSE_ERROR_SCALE: float       = 0.025   # (0.5 - team_def) * this adds to E rate
+DEFENSE_ERROR_MIN: float         = 0.003
+DEFENSE_ERROR_MAX: float         = 0.045
+
+# ---------------------------------------------------------------------------
+# Emergency position-player pitcher (PP-pitching)
+# ---------------------------------------------------------------------------
+# In an absolute blowout, a strong-arm position player can come in to
+# preserve the bullpen — like real-life mop-up usage but tuned for O27.
+# These thresholds are intentionally tight: in O27 with continuous
+# 27-out halves, putting a position player on the mound EARLIER than
+# this would just compound the deficit. Per the user's framing:
+# "down 17+ with 6 outs to go or something."
+#
+# Identity: if either threshold is unmet, normal pitcher selection runs.
+
+PP_PITCH_DEFICIT_MIN: int = 17    # losing team must trail by >= this run gap
+PP_PITCH_OUTS_LEFT_MAX: int = 6   # AND have <= this many outs left to record
+PP_PITCH_ARM_MIN: float    = 0.55 # AND a position player with at least this arm
 
 # ---------------------------------------------------------------------------
 # Wild pitch probability
@@ -243,6 +299,19 @@ RELIEVER_CHANGE_BASE: int    = 12   # short-relief stints
 RELIEVER_CHANGE_SCALE: int   = 6
 RELIEVER_ENTRY_OUTS_MIN: int = 18   # do not pull SP for an RP before this
 
+# Emergent strategy thresholds — the manager AI derives an SP's role from
+# their CURRENT stamina rating (not a stored tag). This is what lets a
+# team naturally use "openers" when its rotation is short on stamina, and
+# stick with workhorses when it has the arms.
+WORKHORSE_STAMINA_THRESHOLD: float = 0.62  # >= this → workhorse pull threshold
+OPENER_STAMINA_THRESHOLD:    float = 0.40  # <= this → opener (pulled fast)
+
+# Opener-mode thresholds — pull the "starter" after a short stint and let
+# the bullpen-by-committee finish the half. Lets a stamina-poor staff be
+# strategically viable rather than just bad.
+OPENER_CHANGE_BASE:  int = 7
+OPENER_CHANGE_SCALE: int = 3
+
 # ---------------------------------------------------------------------------
 # Manager heuristics — situational joker insertion (Phase 8 archetype triggers)
 # ---------------------------------------------------------------------------
@@ -291,8 +360,10 @@ BATTER_CONTACT_CONTACT:  float = +0.02
 
 # --- Pitcher command ------------------------------------------------------
 # Higher command → fewer balls (Maddux). Independent of Stuff.
-PITCHER_COMMAND_BALL:   float = -0.05
-PITCHER_COMMAND_CALLED: float = +0.02
+# Magnitudes bumped along with the strong-pitcher-tilt retune above —
+# elite Command should produce visibly elite walk-rate suppression.
+PITCHER_COMMAND_BALL:   float = -0.07
+PITCHER_COMMAND_CALLED: float = +0.03
 
 # --- Contact-quality shifts -----------------------------------------------
 # Power tilts contact toward hard; movement (pitcher) tilts toward weak.
@@ -321,6 +392,16 @@ TODAY_FORM_MU:    float = 1.00
 TODAY_FORM_SIGMA: float = 0.10
 TODAY_FORM_MIN:   float = 0.80
 TODAY_FORM_MAX:   float = 1.20
+
+# Multi-game fatigue (workload-debt) penalty applied on top of today_form.
+# Identity invariant: at pitch_debt = 0, all of these collapse to no penalty.
+# A pitcher's stamina-derived "budget" is `stamina * 100` pitches over the
+# rolling 5-day window. Excess pitches above that scale the form down by
+# `excess * FATIGUE_DEBT_PER_PITCH`, capped at FATIGUE_DEBT_MAX_PENALTY.
+FATIGUE_DEBT_MIN_BUDGET:    float = 30.0   # pitches; floor for low-stamina arms
+FATIGUE_DEBT_BUDGET_SCALE:  float = 100.0  # stamina (0-1) * this = budget pitches
+FATIGUE_DEBT_PER_PITCH:     float = 0.005  # form penalty per pitch over budget
+FATIGUE_DEBT_MAX_PENALTY:   float = 0.20   # cap on the form penalty
 # Shift toward strikes on top of the existing pitcher_dom term, scaled by
 # (today_form - 1.0). Magnitudes are deliberately small.
 FORM_BALL:     float = -0.04   # good day → fewer balls

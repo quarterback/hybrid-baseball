@@ -24,19 +24,51 @@ from o27 import config as cfg
 # ---------------------------------------------------------------------------
 
 def can_insert_joker(state: GameState, joker: Player) -> tuple[bool, str]:
-    """No-op stub: jokers were removed in Task #47.
+    """Check whether a joker can be inserted right now.
 
-    Always returns False. Kept for legacy import compatibility.
+    Per the corrected joker rule:
+      - Joker must be in team.jokers_available (game-time pool of 3).
+      - Joker must NOT have already been inserted this cycle through
+        the order (tracked via Team.jokers_used_this_cycle, which
+        advance_lineup resets when the lineup wraps).
+      - Super-innings disable joker insertion (the 5-batter format
+        has its own selection mechanic).
     """
-    return False, "Jokers were removed in Task #47."
+    if state.is_super_inning:
+        return False, "Joker insertion not allowed in super-innings."
+    team = state.batting_team
+    if joker.player_id not in {j.player_id for j in team.jokers_available}:
+        return False, "Joker not in available pool."
+    if joker.player_id in team.jokers_used_this_cycle:
+        return False, "Joker already used this cycle."
+    return True, ""
 
 
-def insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[str]:
-    """No-op stub: jokers were removed in Task #47.
+def insert_joker(state: GameState, joker: Player, lineup_position: int = -1) -> list[str]:
+    """Insert a joker for the next PA via state.batter_override.
 
-    Always returns an empty log. Kept for legacy import compatibility.
+    The joker bats in place of the base-lineup batter for ONE plate
+    appearance, then returns to the bench. The base lineup position is
+    NOT advanced by the joker AB (handled in pa._end_at_bat). Insertion
+    is marked on team.jokers_used_this_cycle so the same joker can't be
+    inserted twice in the same cycle through the order.
+
+    `lineup_position` is accepted for back-compat but ignored — the
+    joker insertion is always "before the next scheduled batter."
     """
-    return []
+    _ = lineup_position
+    ok, reason = can_insert_joker(state, joker)
+    if not ok:
+        return [f"  [Joker insert rejected: {reason}]"]
+    team = state.batting_team
+    state.batter_override = joker
+    team.jokers_used_this_cycle.add(joker.player_id)
+    state.events.append({
+        "type": "joker_inserted",
+        "joker_id": joker.player_id,
+        "joker_name": joker.name,
+    })
+    return [f"  JOKER: {team.name} sends in {joker.name} for the next PA."]
 
 
 def _legacy_insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[str]:
@@ -221,9 +253,71 @@ def _needed_archetype(state: GameState) -> Optional[str]:
     return None
 
 
-def should_insert_joker(state: GameState) -> Optional[Player]:
-    """No-op stub: jokers were removed in Task #47. Always returns None."""
-    return None
+def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
+    """Leverage-aware joker insertion decision.
+
+    Per-PA call: returns a Player from the team's joker pool to insert,
+    or None to let the base lineup proceed normally. Constraints:
+      - Each joker can be inserted at most ONCE PER CYCLE through the
+        lineup (tracked on Team.jokers_used_this_cycle, reset by
+        advance_lineup when the lineup wraps).
+      - Insertion is always optional. A manager who never inserts is
+        leaving offense on the table but not breaking any rule.
+
+    Decision logic: probability of insertion scales with leverage —
+    score-gap-tightness × outs-remaining × runners-on. At max leverage
+    (close game, late, runners-on) the per-PA insert probability tops
+    out around 35%. At low leverage (blowout, early, bases empty) it's
+    near zero. Manager AI quality is then a real differentiator: a
+    league-leading manager's joker leverage index — share of insertions
+    that landed in high-leverage spots — is itself a stat.
+    """
+    if state.is_super_inning:
+        return None
+    # Don't insert a joker while another joker is already mid-AB.
+    if getattr(state, "batter_override", None) is not None:
+        return None
+    team = state.batting_team
+    if not team.jokers_available:
+        return None
+    # A joker can't be inserted if (a) already used this cycle, or (b)
+    # currently on base from a prior PA. Without (b), Bonds could be at
+    # 2B and "also" inserted to bat again — physically impossible.
+    on_base_ids = {pid for pid in state.bases if pid is not None}
+    eligible = [
+        j for j in team.jokers_available
+        if j.player_id not in team.jokers_used_this_cycle
+        and j.player_id not in on_base_ids
+    ]
+    if not eligible:
+        return None
+
+    # Leverage components.
+    score_gap = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
+    outs_left = max(1, 27 - state.outs)
+    runners   = state.runner_count
+
+    # Tighter games + later innings + runners on = high leverage.
+    gap_factor    = max(0.0, 1.0 - score_gap / 10.0)   # tied = 1.0; 10+ gap = 0
+    late_factor   = state.outs / 27.0                  # 0..1, late half = high
+    runner_factor = (runners + 1) / 4.0                # 0.25..1.0
+    leverage = gap_factor * late_factor * runner_factor
+
+    # Per-PA insertion probability. Cap at 35% even in peak leverage —
+    # manager shouldn't burn all 3 jokers on the first eligible PA.
+    insert_p = min(0.35, leverage * 0.5)
+    if rng is None:
+        import random as _r
+        roll = _r.random()
+    else:
+        roll = rng.random()
+    if roll >= insert_p:
+        return None
+
+    # Pick the joker best-fit for the spot. Simple v1: best by hitting
+    # skill. Future: archetype-aware (speed joker with runners on 1B,
+    # power joker with bases empty in scoring spots, etc.).
+    return max(eligible, key=lambda j: float(getattr(j, "skill", 0.5) or 0.5))
 
 
 def _legacy_should_insert_joker(state: GameState) -> Optional[Player]:
@@ -272,11 +366,22 @@ def _legacy_should_insert_joker(state: GameState) -> Optional[Player]:
 
 def should_change_pitcher(state: GameState) -> bool:
     """
-    Phase 8: trigger a pitching change using role-aware fatigue thresholds.
+    Trigger a pitching change using emergent role-aware fatigue thresholds.
 
-    Workhorse pitchers use WORKHORSE_CHANGE_BASE/SCALE (deeper stints).
-    Committee pitchers use COMMITTEE_CHANGE_BASE/SCALE (short stints).
-    All others fall back to the generic PITCHER_CHANGE_BASE/SCALE.
+    Roles are derived LIVE from the current pitcher's Stamina rating —
+    no stored `pitcher_role` tag is consulted. This is what lets a team
+    naturally adopt an opener-and-committee strategy when they're short
+    on stamina and a workhorse-ride strategy when they have the arms.
+
+    First-spell role mapping (the "starter"):
+      - stamina >= WORKHORSE_STAMINA_THRESHOLD (0.62)
+            → workhorse pull thresholds (deepest stints)
+      - stamina <= OPENER_STAMINA_THRESHOLD    (0.40)
+            → opener pull thresholds (pull fast, then committee)
+      - else → classical SP (moderate stints)
+
+    Subsequent spells (relief context) use RELIEVER_CHANGE_BASE/SCALE
+    regardless of stamina — the spell is already a relief appearance.
 
     Threshold = max(base, base + round(pitcher_skill * scale))
     """
@@ -285,33 +390,52 @@ def should_change_pitcher(state: GameState) -> bool:
     pitcher = state.get_current_pitcher()
     if pitcher is None:
         return False
-    role = getattr(pitcher, "pitcher_role", "")
-    if role in ("workhorse", "starter"):
+
+    # Detect "this is a relief appearance" by checking spell_log: if any
+    # previous spell exists in the current half, we're past the SP.
+    in_relief = any(
+        rec.half == state.half
+        for rec in state.spell_log
+    )
+
+    stamina = float(getattr(pitcher, "stamina", pitcher.pitcher_skill) or 0.5)
+
+    if in_relief:
+        # Relief appearance — short-burst thresholds.
+        base  = cfg.RELIEVER_CHANGE_BASE
+        scale = cfg.RELIEVER_CHANGE_SCALE
+        threshold = max(base, base + round(pitcher.pitcher_skill * scale))
+        return state.pitcher_spell_count >= threshold
+
+    # First-spell ("starter") — derive emergent role from stamina.
+    if stamina >= cfg.WORKHORSE_STAMINA_THRESHOLD:
+        # Workhorse: ride deep into the half.
         base  = cfg.WORKHORSE_CHANGE_BASE
         scale = cfg.WORKHORSE_CHANGE_SCALE
-        # Phase 10: do not yank a starter for a reliever before
-        # RELIEVER_ENTRY_OUTS_MIN unless they have already crossed the
-        # BF threshold themselves.
         threshold = max(base, base + round(pitcher.pitcher_skill * scale))
         if state.pitcher_spell_count < threshold:
             return False
         # Even past threshold, only change if a reliever can come in
         # (i.e. the half is "late enough"). Otherwise let the SP keep going.
         if state.outs < cfg.RELIEVER_ENTRY_OUTS_MIN:
-            # Past threshold but it's still early — extend the SP rather
-            # than burn an early reliever. Pull only if blown out (≥ 8 runs
+            # Past threshold but still early — extend the SP rather than
+            # burn an early reliever. Pull only if blown out (≥ 8 runs
             # this spell), which cuts off true disasters.
             return state.pitcher_runs_this_spell >= 8
         return True
-    elif role == "reliever":
-        base  = cfg.RELIEVER_CHANGE_BASE
-        scale = cfg.RELIEVER_CHANGE_SCALE
-    elif role == "committee":
-        base  = cfg.COMMITTEE_CHANGE_BASE
-        scale = cfg.COMMITTEE_CHANGE_SCALE
-    else:
-        base  = cfg.PITCHER_CHANGE_BASE
-        scale = cfg.PITCHER_CHANGE_SCALE
+
+    if stamina <= cfg.OPENER_STAMINA_THRESHOLD:
+        # Opener: pull after a short stint, let the committee take over.
+        # No "must wait until late" guard — that's exactly what makes
+        # this a viable strategy for stamina-poor staffs.
+        base  = cfg.OPENER_CHANGE_BASE
+        scale = cfg.OPENER_CHANGE_SCALE
+        threshold = max(base, base + round(pitcher.pitcher_skill * scale))
+        return state.pitcher_spell_count >= threshold
+
+    # Classical SP — moderate stint, no late-relief guard.
+    base  = cfg.PITCHER_CHANGE_BASE
+    scale = cfg.PITCHER_CHANGE_SCALE
     threshold = max(base, base + round(pitcher.pitcher_skill * scale))
     return state.pitcher_spell_count >= threshold
 
@@ -351,6 +475,45 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
 
     outs = getattr(state, "outs", 0) or 0
 
+    # Emergency PP-pitcher path: in a true blowout, a strong-arm position
+    # player can take the mound to absorb the last few outs and preserve
+    # the bullpen. Tight gating per user direction: late in the half AND
+    # massive deficit. Triggers only when the FIELDING team is down big
+    # (i.e. they're losing while their bullpen is getting torched).
+    fielding_id   = fielding.team_id
+    fielding_score = state.score.get(fielding_id, 0)
+    other_id   = "home" if fielding_id == "visitors" else "visitors"
+    batting_score = state.score.get(other_id, 0)
+    deficit = batting_score - fielding_score   # how much we trail by
+    outs_left = max(0, 27 - outs)
+    if (deficit >= cfg.PP_PITCH_DEFICIT_MIN
+            and outs_left <= cfg.PP_PITCH_OUTS_LEFT_MAX
+            and outs_left > 0):
+        # Find the position player with the highest arm rating who isn't
+        # already the current pitcher. Must clear the arm threshold.
+        pp_candidates = [
+            p for p in fielding.roster
+            if not p.is_pitcher
+            and p.player_id != current_id
+            and float(getattr(p, "arm", 0.5) or 0.5) >= cfg.PP_PITCH_ARM_MIN
+        ]
+        if pp_candidates:
+            return max(pp_candidates, key=lambda pl: float(getattr(pl, "arm", 0.5) or 0.5))
+
+    # Hard rest filter: pitchers who appeared in the last day or two are
+    # de-prioritized from relief eligibility. We use a tier system mirroring
+    # the SP picker — start with the most rested pool and broaden only when
+    # nobody qualifies. This is what stops a single arm from being the
+    # manager's "everyday closer" — the rotation has to cycle.
+    for min_rest in (3, 2, 1):
+        rested = [
+            p for p in pitcher_candidates
+            if int(getattr(p, "days_rest", 99) or 99) >= min_rest
+        ]
+        if rested:
+            pitcher_candidates = rested
+            break
+
     def _stuff(p: Player) -> float:
         return float(getattr(p, "pitcher_skill", 0.5) or 0.5)
 
@@ -360,16 +523,38 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         s = getattr(p, "stamina", None)
         return float(s if s is not None else _stuff(p))
 
+    def _rest_penalty(p: Player) -> float:
+        """Multiplicative penalty applied to a pitcher's score based on
+        recent workload. Pitched yesterday with a heavy load → strong
+        penalty; pitched 3+ days ago → no penalty. Identity at default
+        days_rest=99 / pitch_debt=0.
+        """
+        days_rest = int(getattr(p, "days_rest", 99) or 99)
+        pitch_debt = int(getattr(p, "pitch_debt", 0) or 0)
+        # Days-rest penalty: 0d → -0.30, 1d → -0.15, 2d → -0.05, 3d+ → 0.
+        if days_rest <= 0:
+            rp = 0.30
+        elif days_rest == 1:
+            rp = 0.15
+        elif days_rest == 2:
+            rp = 0.05
+        else:
+            rp = 0.0
+        # Heavy debt adds another 0.0–0.15 on top.
+        # 100+ pitches in last 5 days → -0.15.
+        rp += min(0.15, pitch_debt / 100.0 * 0.15)
+        return rp
+
     def _score(p: Player) -> float:
         if outs >= 19:
-            # Late / closer — pure Stuff.
-            return _stuff(p)
+            # Late / closer — pure Stuff. Tired arms get penalized.
+            return _stuff(p) - _rest_penalty(p)
         if outs >= 10:
             # Middle relief — Stuff dominates, but penalize the highest-
             # Stamina arms so they remain available for starts.
-            return _stuff(p) - 0.25 * max(0.0, _stamina(p) - 0.55)
-        # Long relief / spot start — pure Stamina.
-        return _stamina(p)
+            return _stuff(p) - 0.25 * max(0.0, _stamina(p) - 0.55) - _rest_penalty(p)
+        # Long relief / spot start — pure Stamina, rest-adjusted.
+        return _stamina(p) - _rest_penalty(p)
 
     if pitcher_candidates:
         return max(pitcher_candidates, key=_score)

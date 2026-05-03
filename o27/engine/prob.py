@@ -67,7 +67,15 @@ def _pitch_probs(
     # Multiplies effective Stuff so the same SP can throw a gem one start
     # and a clunker the next. today_form == 1.0 ⇒ identity.
     form = getattr(pitcher, "today_form", 1.0)
-    stuff_eff = max(0.0, min(1.0, pitcher.pitcher_skill * form))
+    raw_stuff = float(pitcher.pitcher_skill)
+    # Position-player pitching (extreme blowout fallback): blend in the
+    # player's arm rating so a strong-arm bench bat throws better than a
+    # noodle-arm one when forced into an emergency outing. Heavily scaled
+    # down — they're still amateurs on the mound.
+    if not getattr(pitcher, "is_pitcher", True):
+        arm = float(getattr(pitcher, "arm", 0.5) or 0.5)
+        raw_stuff = 0.55 * arm + 0.45 * raw_stuff
+    stuff_eff = max(0.0, min(1.0, raw_stuff * form))
 
     # Pitcher dominance: stuff_eff > 0.5 shifts probability toward strikes.
     p_dom = (stuff_eff - 0.5) * 2   # −1.0 to +1.0
@@ -110,9 +118,13 @@ def _pitch_probs(
     base[4] += form_dev * cfg.FORM_CONTACT
 
     # Fatigue: spell_count > threshold degrades pitcher performance.
+    # Threshold is Stamina-driven (NOT Stuff): Stuff doesn't make a pitcher
+    # endure longer, Stamina does. This is what gives elite-Stamina arms
+    # the workhorse moat the user wants — they can grind 27 outs without
+    # noticeable late-half degradation.
     fatigue_threshold = max(
         cfg.FATIGUE_THRESHOLD_BASE,
-        cfg.FATIGUE_THRESHOLD_BASE + round(pitcher.pitcher_skill * cfg.FATIGUE_THRESHOLD_SCALE),
+        cfg.FATIGUE_THRESHOLD_BASE + round(pitcher.stamina * cfg.FATIGUE_THRESHOLD_SCALE),
     )
     if spell_count > fatigue_threshold:
         fatigue = min(cfg.FATIGUE_MAX, (spell_count - fatigue_threshold) / cfg.FATIGUE_SCALE)
@@ -180,9 +192,14 @@ def contact_quality(rng: random.Random, batter: Player, pitcher: Player) -> str:
     # Movement → weaker contact (collapses to 0 at movement=0.5).
     move_tilt  = (pitcher.movement - 0.5) * 2 * cfg.CONTACT_MOVEMENT_TILT
 
-    weak_p   = max(0.05, cfg.CONTACT_WEAK_BASE   - shift - arch_delta - power_tilt + move_tilt)
-    hard_p   = max(0.05, cfg.CONTACT_HARD_BASE   + shift + arch_delta + power_tilt - move_tilt)
-    medium_p = max(0.05, 1.0 - weak_p - hard_p)
+    # Floors at 0.01 (epsilon for probability sanity), NOT 0.05. The old
+    # 0.05 floor was a soft lever pushing the engine toward the middle —
+    # it artificially capped how much an elite pitcher could suppress hard
+    # contact, or how much an elite hitter could suppress weak contact.
+    # Removing it lets the .01% transcendent talents really transcend.
+    weak_p   = max(0.01, cfg.CONTACT_WEAK_BASE   - shift - arch_delta - power_tilt + move_tilt)
+    hard_p   = max(0.01, cfg.CONTACT_HARD_BASE   + shift + arch_delta + power_tilt - move_tilt)
+    medium_p = max(0.01, 1.0 - weak_p - hard_p)
 
     total = weak_p + medium_p + hard_p
     weak_p /= total
@@ -361,8 +378,46 @@ def resolve_contact(
 
     hit_type, batter_safe, caught_fly, _ = _pick_from_table(rng, table)
 
-    # Compute runner advances based on hit type and runner speeds.
-    runner_adv = runner_advances_for_hit(rng, hit_type, state.bases, state)
+    # ---- Defense layer ----------------------------------------------------
+    # The fielding team's `defense_rating` modulates whether borderline
+    # plays end as outs or hits, and whether would-be-outs become errors
+    # (batter reaches, possibly UER charged).
+    fielding = state.fielding_team
+    team_def = float(getattr(fielding, "defense_rating", 0.5) or 0.5)
+    def_dev = team_def - 0.5   # neutral 0; +0.35 for elite team; -0.35 for awful
+    is_error = False
+
+    # Range shift: probabilistically flip a single-or-out outcome.
+    # Better defense (def_dev > 0) → some "single" results flip to ground_out.
+    # Worse defense (def_dev < 0) → some "ground_out" / "fly_out" / "line_out"
+    # results flip to "single".
+    range_shift = abs(def_dev) * cfg.DEFENSE_RANGE_SHIFT_SCALE * 2
+    if range_shift > 0 and rng.random() < range_shift:
+        if def_dev > 0 and hit_type == "single":
+            hit_type = "ground_out"
+            batter_safe = False
+            caught_fly = False
+        elif def_dev < 0 and hit_type in ("ground_out", "fly_out", "line_out"):
+            hit_type = "single"
+            batter_safe = True
+            caught_fly = False
+
+    # Error chance — only on plays that resolved as an out. Worse defense =
+    # higher error rate. Caught flies don't generate errors at this layer
+    # (they're clean catches by the time we get here).
+    if not batter_safe and hit_type != "fielders_choice" and not caught_fly:
+        err_p = cfg.DEFENSE_ERROR_BASE - def_dev * cfg.DEFENSE_ERROR_SCALE
+        err_p = max(cfg.DEFENSE_ERROR_MIN, min(cfg.DEFENSE_ERROR_MAX, err_p))
+        if rng.random() < err_p:
+            is_error = True
+            hit_type = "error"      # synthetic outcome — pa.py + render handle
+            batter_safe = True
+            caught_fly = False
+
+    # Compute runner advances based on (possibly flipped) hit type.
+    # An "error" advances runners like a single — same conservative shape.
+    advance_type = "single" if hit_type == "error" else hit_type
+    runner_adv = runner_advances_for_hit(rng, advance_type, state.bases, state)
 
     # For fielder's choice: throw out the lead runner.
     runner_out_idx = None
@@ -375,6 +430,7 @@ def resolve_contact(
         "caught_fly": caught_fly,
         "runner_advances": runner_adv,
         "runner_out_idx": runner_out_idx,
+        "is_error": is_error,
     }
 
 
@@ -400,24 +456,30 @@ def should_stay_prob(
     # Hard rule: stay unavailable (no runners).
     if not state.runners_on_base:
         return False
-    # Hard rule: home run → always run.
+    # Hard rule: home run → always run (forfeiting 4 bases for a single
+    # is never worth a strike-and-hit credit).
     if is_hr:
         return False
-    # Hard rule: triple → run (too valuable to forfeit).
+    # Hard rule: triple → run (3 bases > 1 base of hit credit + a strike).
     if is_triple:
         return False
-    # Hard rule: hard contact → run.
+    # Hard rule: hard contact → run (likely XBH; same forfeit logic).
     if quality == "hard":
         return False
-    # Hard rule: 2 outs → run.
-    if state.outs == 2:
-        return False
-    # Hard rule: 2-strike count → batter out if stays; heuristic avoids.
-    if state.count.strikes == 2:
-        return False
-    # Hard rule: caught fly → batter out if stays; heuristic avoids.
+    # Hard rule: caught fly → batter is out on contact; stay decision moot.
     if caught_fly:
         return False
+    # NOTE: 2-strike and 2-out cases are NOT hard rules. Per the corrected
+    # stay rule:
+    #   - Stay credits a hit AND uses 1 strike. At 2 strikes, that 3rd-
+    #     strike-from-stay just ends the AB (with the hit credited, NOT
+    #     as a batter-out). So 2-strike stays are *good* on weak/medium
+    #     contact — you trade an AB-end for a free hit credit.
+    #   - 2 outs in the half: same logic. Stay never produces an out, so
+    #     it doesn't end the half. The runners advance, hit credited,
+    #     AB ends if strikes hit 3.
+    # Removing these hard rules lets the AI take the strategically right
+    # action in late-count / late-half situations.
 
     # Medium contact gate: only eligible to stay if RNG < contact_quality_threshold.
     if quality == "medium":
@@ -451,13 +513,24 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
         if speed < cfg.SB_ATTEMPT_SPEED_THRESHOLD:
             continue
         if rng.random() < cfg.SB_ATTEMPT_PROB_PER_PITCH:
-            # Probability of success: speed-based.
+            # Probability of success: speed + tired-battery + catcher-arm aware.
             pitcher = state.get_current_pitcher()
             pitcher_skill = pitcher.pitcher_skill if pitcher else 0.5
+            # Pitch debt = recent rolling pitches across last 5 days. A tired
+            # battery has reduced arm strength on throws to second/third —
+            # late-half / heavy-workload steals get noticeably easier.
+            pitch_debt = float(getattr(pitcher, "pitch_debt", 0) or 0)
+            # Catcher arm — stamped on the fielding Team at game start.
+            # An elite-arm catcher (arm ≥ 0.85) shuts down the running game;
+            # a noodle-arm (≤ 0.30) is exploited mercilessly. Identity at
+            # arm = 0.5 → no shift on success_p.
+            cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
             success_p = (
                 cfg.SB_SUCCESS_BASE
                 + (speed - 0.5) * cfg.SB_SUCCESS_SPEED_SCALE
                 - pitcher_skill * cfg.SB_SUCCESS_PITCHER_SCALE
+                + pitch_debt * cfg.SB_SUCCESS_DEBT_SCALE
+                - (cat_arm - 0.5) * cfg.SB_SUCCESS_CATCHER_ARM_SCALE
             )
             success = rng.random() < max(cfg.SB_SUCCESS_MIN, min(cfg.SB_SUCCESS_MAX, success_p))
             return {
@@ -495,9 +568,16 @@ class ProbabilisticProvider:
     def _maybe_roll_form(self, state: GameState) -> None:
         """If the fielding pitcher changed, roll a new today_form for them.
 
-        Identity invariant: when TODAY_FORM_SIGMA is interpreted as the
-        spread, the mean is 1.0 — calls with sigma=0 would always produce
-        1.0 and recover the legacy behavior.
+        Identity invariant: at TODAY_FORM_SIGMA=0 + days_rest=99 +
+        pitch_debt=0 the form collapses to 1.0 and the engine reduces to
+        legacy behavior.
+
+        Also folds in a multi-game fatigue penalty: a pitcher who threw
+        recently has their effective form reduced proportional to their
+        rolling pitch debt minus their stamina-derived budget. This is
+        what makes a real workhorse different from a glass-arm reliever
+        AT THE GAME LEVEL — within an appearance, the existing FATIGUE_*
+        within-game model still applies.
         """
         pitcher = state.get_current_pitcher()
         if pitcher is None:
@@ -506,7 +586,22 @@ class ProbabilisticProvider:
             return
         self._last_pitcher_id = pitcher.player_id
         form = self.rng.gauss(cfg.TODAY_FORM_MU, cfg.TODAY_FORM_SIGMA)
-        pitcher.today_form = max(cfg.TODAY_FORM_MIN, min(cfg.TODAY_FORM_MAX, form))
+        form = max(cfg.TODAY_FORM_MIN, min(cfg.TODAY_FORM_MAX, form))
+
+        # Multi-game fatigue: scale form down by pitch-debt overrun.
+        debt = int(getattr(pitcher, "pitch_debt", 0) or 0)
+        if debt > 0:
+            # Stamina-relative budget: a 0.5-stamina pitcher absorbs ~50
+            # debt pitches over the rolling window before the penalty kicks
+            # in; an elite 0.85-stamina arm absorbs ~85.
+            budget = max(cfg.FATIGUE_DEBT_MIN_BUDGET,
+                         pitcher.stamina * cfg.FATIGUE_DEBT_BUDGET_SCALE)
+            excess = max(0, debt - budget)
+            penalty = min(cfg.FATIGUE_DEBT_MAX_PENALTY,
+                          excess * cfg.FATIGUE_DEBT_PER_PITCH)
+            form *= (1.0 - penalty)
+
+        pitcher.today_form = max(cfg.TODAY_FORM_MIN, form)
 
     def __call__(self, state: GameState) -> Optional[dict]:
         # Detect new batter (new PA or batter changed by joker insertion).
@@ -557,9 +652,15 @@ class ProbabilisticProvider:
             if new_p is not None:
                 return {"type": "pitching_change", "new_pitcher": new_p}
 
-        # Joker insertion was removed in Task #47.
+        # Joker insertion — leverage-aware, optional. Returns None most
+        # of the time; fires only when the situational value is high
+        # enough to justify burning one of the cycle's joker uses.
+        joker = mgr.should_insert_joker(state, rng=self.rng)
+        if joker is not None:
+            return {"type": "joker_insertion", "joker": joker}
 
-        # Pinch hit check (fallback when jokers are exhausted).
+        # Pinch hit check (separate mechanic; permanently replaces a
+        # regular hitter — survives joker insertions).
         replacement = mgr.should_pinch_hit(state)
         if replacement is not None:
             return {"type": "pinch_hit", "replacement": replacement}

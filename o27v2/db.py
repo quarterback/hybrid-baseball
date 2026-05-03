@@ -64,7 +64,13 @@ CREATE TABLE IF NOT EXISTS players (
     command   INTEGER DEFAULT 50,
     movement  INTEGER DEFAULT 50,
     bats      TEXT DEFAULT 'R',
-    throws    TEXT DEFAULT 'R'
+    throws    TEXT DEFAULT 'R',
+    -- Defense layer (range / glove / arm + per-position-group sub-ratings).
+    defense           INTEGER DEFAULT 50,
+    arm               INTEGER DEFAULT 50,
+    defense_infield   INTEGER DEFAULT 50,
+    defense_outfield  INTEGER DEFAULT 50,
+    defense_catcher   INTEGER DEFAULT 50
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -99,6 +105,14 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     k          INTEGER DEFAULT 0,
     stays      INTEGER DEFAULT 0,
     outs_recorded INTEGER DEFAULT 0,
+    -- Counting stats persisted post-realism layer.
+    hbp        INTEGER DEFAULT 0,   -- hit by pitch (NOT a PA-AB; OBP numerator)
+    sb         INTEGER DEFAULT 0,   -- successful steals
+    cs         INTEGER DEFAULT 0,   -- caught stealing (subset of outs_recorded)
+    fo         INTEGER DEFAULT 0,   -- foul-outs (3-foul rule; subset of outs_recorded)
+    multi_hit_abs INTEGER DEFAULT 0,
+    stay_rbi   INTEGER DEFAULT 0,
+    roe        INTEGER DEFAULT 0,   -- reached on error (NOT a hit; AB credited)
     UNIQUE(player_id, game_id, phase)
 );
 
@@ -117,6 +131,12 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     k              INTEGER DEFAULT 0,
     hr_allowed     INTEGER DEFAULT 0,
     pitches        INTEGER DEFAULT 0,
+    -- Counting stats persisted post-realism layer.
+    hbp_allowed    INTEGER DEFAULT 0,   -- HBP charged against this pitcher
+    unearned_runs  INTEGER DEFAULT 0,   -- subset of runs_allowed (passed-ball)
+    sb_allowed     INTEGER DEFAULT 0,   -- successful steals while on the mound
+    cs_caught      INTEGER DEFAULT 0,   -- runners caught stealing
+    fo_induced     INTEGER DEFAULT 0,   -- foul-out outs ending an AB on this pitcher
     UNIQUE(player_id, game_id, phase)
 );
 
@@ -318,6 +338,41 @@ def init_db() -> None:
         for col, defval in [("park_hr", "1.0"), ("park_hits", "1.0")]:
             try:
                 conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Defense layer columns. Defaults of 50 = neutral.
+        # Per-position sub-ratings (infield / outfield / catcher) let a
+        # player be a true specialist (elite at one group, replacement
+        # elsewhere) or a legit utility guy (decent across groups).
+        for col in ("defense", "arm", "defense_infield",
+                    "defense_outfield", "defense_catcher"):
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT 50")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Counting-stat columns persisted post-realism (Stage 1 of stats expansion).
+        # Defaults of 0 leave pre-existing rows neutral; new games populate fully.
+        for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi"):
+            try:
+                conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+        # Defense-event column: batter "reached on error" count (per-batter).
+        # Team errors-committed are derived as the sum of OPPOSING batters'
+        # ROE in a given game, so no separate team-level column is needed.
+        try:
+            conn.execute("ALTER TABLE game_batter_stats ADD COLUMN roe INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+        for col in ("hbp_allowed", "unearned_runs", "sb_allowed", "cs_caught", "fo_induced"):
+            try:
+                conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()
             except Exception:
                 pass

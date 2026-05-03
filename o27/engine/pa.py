@@ -91,11 +91,20 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
 
 
 def _score_run(state: GameState, n: int = 1) -> list[str]:
-    """Add n runs to the batting team's score."""
+    """Add n runs to the batting team's score.
+
+    UER tagging: if any defensive error has occurred this spell, the run
+    is charged as unearned. This is over-aggressive vs MLB scoring (real
+    scoring tries to determine what runs would have scored absent the
+    error), but it's stable and produces visible UER counts that rise
+    naturally with team error rate.
+    """
     team_id = state.batting_team.team_id
     state.score[team_id] += n
     state.partnership_runs += n
     state.pitcher_runs_this_spell += n
+    if getattr(state, "pitcher_errors_this_spell", 0) > 0:
+        state.pitcher_unearned_runs_this_spell += n
     return [f"  Run(s) scored: +{n} → {state.batting_team.name} {state.score[team_id]}"]
 
 
@@ -113,19 +122,34 @@ def _end_at_bat(state: GameState) -> list[str]:
     hits = state.current_at_bat_hits
     if hits > 1:
         log.append(f"  Multi-hit at-bat: {hits} credited hits.")
-    # Jokers removed in Task #47 — no per-half eligibility tracking needed.
     state.count.reset()
     state.current_at_bat_hits = 0
-    state.batting_team.advance_lineup()
+    # Joker AB: clear the override and DO NOT advance the base lineup.
+    # The joker insertion was an EXTRA PA — the base lineup position
+    # stays the same so the originally-scheduled batter takes the next
+    # turn.
+    if state.batter_override is not None:
+        state.batter_override = None
+    else:
+        state.batting_team.advance_lineup()
     state.pitcher_spell_count += 1
     state.total_pa_this_half += 1
     return log
 
 
-def _fresh_count(state: GameState) -> list[str]:
-    """Reset count to 0-0 for a stay continuation."""
-    state.count.reset()
-    return ["  Stay — fresh 0-0 count."]
+def _stay_credit_strike(state: GameState) -> list[str]:
+    """Stay continuation: spends one strike from the batter's 3-strike
+    budget and logs the new count.
+
+    Per O27 rules, every contact event uses one of the batter's 3 strikes,
+    whether they ran or stayed. A stay-chosen contact credits a hit AND
+    advances the strike counter; the count carries forward across stays
+    (no reset). At 3 strikes the AB ends. This is what makes multi-hit
+    ABs bounded (max 3 hits, only from a 0-0 start) and what makes
+    staying a real cost rather than a free runner-mover.
+    """
+    state.count.strikes += 1
+    return [f"  Stay — strike spent. Count: {state.count}."]
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +201,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         state.count.fouls += 1
         if state.count.fouls >= 3:
             log.append(f"  Foul #{state.count.fouls} — FOUL OUT.")
+            state.pitcher_fo_induced_this_spell += 1
             batter_id = state.current_batter.player_id
             log += _record_out(state, batter_id)
             log += _end_at_bat(state)
@@ -248,6 +273,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
             return log
         if success:
             state.bases[base_idx] = None
+            state.pitcher_sb_allowed_this_spell += 1
             if base_idx + 1 <= 2:
                 state.bases[base_idx + 1] = runner_id
                 log.append(f"  Stolen base — runner advances to "
@@ -257,6 +283,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
                 log.append("  Steal of home — runner scores!")
         else:
             state.bases[base_idx] = None
+            state.pitcher_cs_caught_this_spell += 1
             log.append(f"  Runner caught stealing at "
                        f"{'2B 3B Home'.split()[base_idx]}.")
             log += _record_out(state, runner_id)
@@ -289,6 +316,11 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     # ------------------------------------------------------------------
     # Manager events
     # ------------------------------------------------------------------
+
+    if etype == "joker_insertion":
+        joker = event["joker"]
+        log += mgr.insert_joker(state, joker)
+        return log
 
     if etype == "pinch_hit":
         replacement = event["replacement"]
@@ -328,8 +360,15 @@ def _resolve_contact(
 
     # ---- RUN CHOSEN ----
     if choice == "run":
-        log.append(f"  {batter.name} runs → {hit_type}.")
+        # Errors are surfaced explicitly in the play-by-play log so
+        # broadcasters / box scores can call them out separately from hits.
+        if hit_type == "error" or outcome.get("is_error"):
+            log.append(f"  {batter.name} reached on ERROR.")
+            state.pitcher_errors_this_spell += 1
+        else:
+            log.append(f"  {batter.name} runs → {hit_type}.")
         # Track hits allowed for the current pitcher's spell.
+        # Errors are NOT hits — pitcher's H allowed does not increment.
         if hit_type in ("single", "infield_single", "double", "triple", "hr", "home_run"):
             state.pitcher_h_this_spell += 1
         if hit_type in ("hr", "home_run"):
@@ -421,9 +460,17 @@ def _resolve_contact(
         log.append(f"  Hit credited to {batter.name} (stay). "
                    f"Total this AB: {state.current_at_bat_hits}.")
 
-    # Fresh count — at-bat continues.
-    log += _fresh_count(state)
-    # Note: do NOT call _end_at_bat — the at-bat is still in progress.
+    # Spend one strike from the batter's 3-strike budget and check whether
+    # the AB has used all 3. If so, the AB ends — but NOT as a batter-out:
+    # the hits are credited, runners advanced, RBIs counted; the batter
+    # just doesn't get to bat again this trip.
+    log += _stay_credit_strike(state)
+    if state.count.strikes >= 3:
+        log.append(f"  At-bat ends — {batter.name} used all 3 strikes "
+                   f"(max-hits stay sequence; no batter-out).")
+        log += _end_at_bat(state)
+    # Note: when AB doesn't end, do NOT call _end_at_bat — the at-bat is
+    # still in progress with the new (carried-forward) count.
     return log
 
 
