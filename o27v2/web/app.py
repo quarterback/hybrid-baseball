@@ -47,8 +47,9 @@ app.config["SECRET_KEY"] = "o27v2-dev-key"
 @app.context_processor
 def inject_sim_state():
     """Make current sim date + All-Star date available to every template.
-    Resyncs the clock on every page render so legacy sim paths can't leave it stale."""
-    resync_sim_clock()
+    Note: we do NOT resync on render — that would skip past off-days the user
+    intentionally landed on via Sim Today. Resync is invoked explicitly after
+    legacy /api/sim and single-game sim endpoints instead."""
     return {"sim": {
         "current_date":   get_current_sim_date(),
         "all_star_date":  get_all_star_date(),
