@@ -11,6 +11,12 @@
 
 {% block content %}
 
+<div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+  <button type="button" class="copy-boxscore-btn" id="copy-share-link" aria-label="Copy link to this box score">
+    <span class="copy-share-label">Copy link</span>
+  </button>
+</div>
+
 <div class="box-score-header">
   <div class="box-team">
     <div class="name"><a href="/stats/team/{{ visitors_abbrev }}">{{ visitors_name }}</a></div>
@@ -254,5 +260,48 @@
     {% endif %}
   </div>
 </div>
+
+<script>
+(function(){
+  var btn = document.getElementById('copy-share-link');
+  if (!btn) return;
+  var label = btn.querySelector('.copy-share-label');
+  var defaultText = label ? label.textContent : 'Copy link';
+  var resetTimer = null;
+  function done(ok){
+    if (label) label.textContent = ok ? 'Copied!' : 'Copy failed';
+    btn.classList.toggle('copied', ok);
+    if (resetTimer) clearTimeout(resetTimer);
+    resetTimer = setTimeout(function(){
+      if (label) label.textContent = defaultText;
+      btn.classList.remove('copied');
+    }, 2000);
+  }
+  function fallback(url){
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = url;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      done(ok);
+    } catch (e) {
+      done(false);
+    }
+  }
+  btn.addEventListener('click', function(){
+    var url = window.location.href;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function(){ done(true); }, function(){ fallback(url); });
+    } else {
+      fallback(url);
+    }
+  });
+})();
+</script>
 
 {% endblock %}
