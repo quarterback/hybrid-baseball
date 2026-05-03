@@ -488,7 +488,10 @@ def get_all_star_date() -> str | None:
     return (f + _dt.timedelta(days=(l - f).days // 2)).isoformat()
 
 
-def simulate_date(date: str, seed_base: int | None = None, max_games: int = 100) -> list[dict]:
+SIM_PER_REQUEST_GAME_CAP = 3000
+
+
+def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_PER_REQUEST_GAME_CAP) -> list[dict]:
     """Simulate every unplayed game whose game_date == `date`. Does NOT touch the clock."""
     games = db.fetchall(
         "SELECT id FROM games WHERE played = 0 AND game_date = ? ORDER BY id LIMIT ?",
@@ -504,7 +507,7 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = 100)
     return results
 
 
-def simulate_through(target_date: str, seed_base: int | None = None, max_games: int = 10000) -> list[dict]:
+def simulate_through(target_date: str, seed_base: int | None = None, max_games: int = SIM_PER_REQUEST_GAME_CAP) -> list[dict]:
     """Simulate every unplayed game with game_date <= `target_date`. Does NOT touch the clock."""
     games = db.fetchall(
         "SELECT id FROM games WHERE played = 0 AND game_date <= ? ORDER BY game_date, id LIMIT ?",
