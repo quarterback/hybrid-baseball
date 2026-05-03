@@ -404,21 +404,45 @@ def get_last_scheduled_date() -> str | None:
     return row["d"] if row and row["d"] else None
 
 
+def get_earliest_unplayed_date() -> str | None:
+    row = db.fetchone("SELECT MIN(game_date) as d FROM games WHERE played = 0")
+    return row["d"] if row and row["d"] else None
+
+
 def get_current_sim_date() -> str | None:
-    """The simulator's calendar clock. Persists in sim_meta so it can sit on off-days
-    independently of the next unplayed game_date."""
+    """The simulator's calendar clock. Persists in sim_meta so the user can step through
+    off-days via Sim Today, while staying anchored to the next unplayed game by default."""
     row = db.fetchone("SELECT value FROM sim_meta WHERE key = 'sim_date'")
-    if row and row["value"]:
-        return row["value"]
-    # Lazy-init to first scheduled date.
-    first = get_first_scheduled_date()
-    if first is None:
-        return None
-    db.execute(
-        "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('sim_date', ?)",
-        (first,),
-    )
-    return first
+    stored = row["value"] if row and row["value"] else None
+    if stored is None:
+        # Lazy-init: prefer the next unplayed date so existing leagues with progress
+        # show the right date, falling back to the schedule's first day.
+        seed = get_earliest_unplayed_date() or get_first_scheduled_date()
+        if seed is None:
+            return None
+        db.execute(
+            "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('sim_date', ?)",
+            (seed,),
+        )
+        return seed
+    return stored
+
+
+def resync_sim_clock() -> str | None:
+    """Bump the clock forward to the earliest unplayed date if it has fallen behind
+    (e.g. games were simulated via legacy /api/sim or single-game endpoints).
+    Never moves the clock backward, and never moves it past last_scheduled_date+1."""
+    current = get_current_sim_date()
+    earliest = get_earliest_unplayed_date()
+    if earliest is None:
+        # Season complete — push clock past the last game so is_season_complete() is true.
+        last = get_last_scheduled_date()
+        if last is not None:
+            advance_sim_clock((_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat())
+        return get_current_sim_date()
+    if current is None or earliest > current:
+        set_sim_date(earliest)
+    return get_current_sim_date()
 
 
 def set_sim_date(date: str | None) -> None:

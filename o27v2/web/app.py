@@ -34,6 +34,7 @@ from o27v2.sim import (
     get_all_star_date,
     is_season_complete,
     advance_sim_clock,
+    resync_sim_clock,
 )
 from o27v2.league import get_league_configs
 
@@ -558,6 +559,7 @@ def api_sim():
     n         = max(1, min(n, 50))
     seed_base = data.get("seed_base")
     results   = simulate_next_n(n, seed_base=seed_base)
+    resync_sim_clock()
     return jsonify({"simulated": len(results), "results": results})
 
 
@@ -636,6 +638,7 @@ def api_sim_game(game_id: int):
     seed = data.get("seed")
     try:
         result = simulate_game(game_id, seed=seed)
+        resync_sim_clock()
         return jsonify(result)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
