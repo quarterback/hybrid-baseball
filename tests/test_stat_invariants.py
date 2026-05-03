@@ -116,19 +116,20 @@ def test_invariant_1_phase_outs_cap(played_game_ids):
 # ---------------------------------------------------------------------------
 
 def test_invariant_2_or_reconciliation(played_game_ids):
-    """Σ batter.outs_recorded + unattributed_outs == team total outs
-    (= Σ opponent pitcher.outs_recorded) per (game, team, phase).
+    """Per (game, team, phase): batter_outs + unattributed_outs == phase
+    cap (27 reg / 5 SI), with one allowed exception — a walk-off half
+    by the winning home team in the game's last phase, where the cap
+    can fall short because the half ends the moment the home team
+    retakes the lead.
 
-    A walk-off SI half ends the moment the batting team takes the
-    lead, so sums below the phase cap are legitimate; the assertion
-    only checks identity, not equality with the cap.
+    Also asserts the opposing-pitcher cross-check
+    (batter_outs + unattr == opponent.pitcher_outs) so a paired
+    under-count on both sides can't slip through.
     """
     extra, params = _game_filter_clause("ps")
-    # Opposing pitcher outs by (game, batting_team, phase). To find the
-    # batting team for a pitcher row we need the game's two team ids.
     pitcher_rows = db.fetchall(
         f"""SELECT ps.game_id, ps.team_id AS pitcher_team_id, ps.phase,
-                   g.home_team_id, g.away_team_id,
+                   g.home_team_id, g.away_team_id, g.winner_id,
                    SUM(ps.outs_recorded) AS outs
               FROM game_pitcher_stats ps
               JOIN games g ON g.id = ps.game_id
@@ -150,32 +151,67 @@ def test_invariant_2_or_reconciliation(played_game_ids):
         "SELECT game_id, team_id, phase, unattributed_outs FROM team_phase_outs"
     )
 
-    team_outs: dict[tuple, int] = {}
+    # Build helpers
+    home_id: dict[int, int] = {}
+    winner: dict[int, int | None] = {}
+    last_phase: dict[int, int] = {}
+    opp_outs: dict[tuple, int] = {}
     for r in pitcher_rows:
-        batting_team = (
-            r["away_team_id"]
-            if r["pitcher_team_id"] == r["home_team_id"]
-            else r["home_team_id"]
-        )
-        team_outs[(r["game_id"], batting_team, r["phase"])] = r["outs"] or 0
+        gid = r["game_id"]
+        home_id[gid] = r["home_team_id"]
+        winner[gid] = r["winner_id"]
+        ph = r["phase"]
+        last_phase[gid] = max(last_phase.get(gid, 0), ph or 0)
+        batting_team = (r["away_team_id"]
+                        if r["pitcher_team_id"] == r["home_team_id"]
+                        else r["home_team_id"])
+        opp_outs[(gid, batting_team, ph)] = r["outs"] or 0
 
     batter_outs = {(r["game_id"], r["team_id"], r["phase"]): (r["outs"] or 0)
                    for r in batter_rows}
-    unattr_outs = {(r["game_id"], r["team_id"], r["phase"]):
-                   (r["unattributed_outs"] or 0) for r in unattr_rows}
+    unattr = {(r["game_id"], r["team_id"], r["phase"]):
+              (r["unattributed_outs"] or 0) for r in unattr_rows}
 
     bad: list[str] = []
-    for key, total in team_outs.items():
-        b = batter_outs.get(key, 0)
-        u = unattr_outs.get(key, 0)
-        if b + u != total:
-            gid, tid, ph = key
+    # Iterate every batting half we have any record of.
+    keys = set(opp_outs) | set(batter_outs)
+    for (gid, tid, ph) in keys:
+        b = batter_outs.get((gid, tid, ph), 0)
+        u = unattr.get((gid, tid, ph), 0)
+        opp = opp_outs.get((gid, tid, ph), 0)
+        cap = _phase_cap(ph or 0)
+        total = b + u
+
+        # (a) Cross-check with opposing pitcher outs (rules out paired
+        #     undercounts on both sides).
+        if total != opp:
             bad.append(
                 f"game={gid} team={tid} phase={ph}: batter_outs={b} "
-                f"+ unattributed={u} ({b + u}) != team_total={total}"
+                f"+ unattr={u} ({total}) != opp_pitcher_outs={opp}"
+            )
+            continue
+
+        # (b) Cap reconciliation. A walk-off home half in the game's
+        #     last phase is the only legitimate undershoot.
+        is_walkoff = (
+            tid == home_id.get(gid)
+            and winner.get(gid) == tid
+            and (ph or 0) == last_phase.get(gid, 0)
+        )
+        if total > cap:
+            bad.append(
+                f"game={gid} team={tid} phase={ph}: total_outs={total} "
+                f"exceeds cap={cap}"
+            )
+        elif total < cap and not is_walkoff:
+            bad.append(
+                f"game={gid} team={tid} phase={ph}: total_outs={total} "
+                f"< cap={cap} and not a walk-off home half "
+                f"(winner={winner.get(gid)} home={home_id.get(gid)} "
+                f"last_phase={last_phase.get(gid, 0)})"
             )
     assert not bad, (
-        f"OR reconciliation failed for {len(bad)} (game, team, phase) "
+        f"OR reconciliation failed on {len(bad)} (game, team, phase) "
         f"groups; first 5: " + "; ".join(bad[:5])
     )
 
