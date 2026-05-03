@@ -37,7 +37,7 @@ if _root not in sys.path:
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    jsonify, flash, get_flashed_messages,
+    jsonify, flash, get_flashed_messages, send_from_directory,
 )
 
 from o27.engine.state import GameState, Team, Player
@@ -739,6 +739,24 @@ def health():
 @app.route("/stats-site")
 def stats_site_redirect():
     return redirect("/stats")
+
+
+_STATIC = os.path.join(os.path.dirname(__file__), "static")
+
+
+@app.route("/manifest.json")
+def pwa_manifest():
+    return send_from_directory(_STATIC, "manifest.json",
+                               mimetype="application/manifest+json")
+
+
+@app.route("/sw.js")
+def service_worker():
+    resp = send_from_directory(_STATIC, "sw.js",
+                               mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 if __name__ == "__main__":
