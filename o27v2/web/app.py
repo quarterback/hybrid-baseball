@@ -222,7 +222,13 @@ def _attach_hits(games: list[dict]) -> None:
 
 
 def _aggregate_batter_rows(rows: list[dict]) -> None:
-    """Mutates rows in place to add avg/obp/slg/ops keys."""
+    """Mutates rows in place to add classical and advanced rate stats.
+
+    Adds: avg, obp (now includes HBP), slg, ops, iso, babip, k_pct, bb_pct,
+    hr_pct, bb_k. HBP / SB / CS / FO / multi-hit ABs / stay-RBI must already
+    be present on the row for the advanced columns to be meaningful — query
+    callers that select them benefit; legacy callers default to 0.
+    """
     for b in rows:
         ab = b.get("ab") or 0
         h = b.get("h") or 0
@@ -231,12 +237,34 @@ def _aggregate_batter_rows(rows: list[dict]) -> None:
         d2 = b.get("d2") or 0
         d3 = b.get("d3") or 0
         hr = b.get("hr") or 0
+        k = b.get("k") or 0
+        hbp = b.get("hbp") or 0
+        sb = b.get("sb") or 0
+        cs = b.get("cs") or 0
         b["avg"] = (h / ab) if ab else 0.0
-        b["obp"] = ((h + bb) / pa) if pa else 0.0
+        # OBP now includes HBP in the numerator. Denominator stays PA
+        # (legacy O27 doesn't persist SF, so the standard
+        # (H+BB+HBP)/(AB+BB+HBP+SF) formula collapses to (H+BB+HBP)/PA).
+        b["obp"] = ((h + bb + hbp) / pa) if pa else 0.0
         singles = h - d2 - d3 - hr
         tb = singles + 2 * d2 + 3 * d3 + 4 * hr
         b["slg"] = (tb / ab) if ab else 0.0
         b["ops"] = b["obp"] + b["slg"]
+        # Advanced rate stats.
+        b["iso"]    = (b["slg"] - b["avg"]) if ab else 0.0
+        # BABIP: balls in play that fall for hits. Excludes HR (out of play),
+        # K (no contact), and HR-trail HRs from the AB denominator.
+        # Standard formula: (H - HR) / (AB - K - HR + SF). SF unavailable
+        # here, so we use (AB - K - HR) which is the closest stable proxy.
+        bip_denom = ab - k - hr
+        b["babip"]  = ((h - hr) / bip_denom) if bip_denom > 0 else 0.0
+        b["k_pct"]  = (k  / pa) if pa else 0.0
+        b["bb_pct"] = (bb / pa) if pa else 0.0
+        b["hr_pct"] = (hr / pa) if pa else 0.0
+        b["bb_k"]   = (bb / k)  if k  else (bb * 1.0)
+        # Stolen-base success rate on attempts.
+        attempts = sb + cs
+        b["sb_pct"] = (sb / attempts) if attempts else 0.0
 
 
 def _league_fip_const() -> float:
@@ -281,6 +309,8 @@ def _aggregate_pitcher_rows(
         er = p.get("er") or 0
         k = p.get("k") or 0
         hr = p.get("hr_allowed") or p.get("hra") or 0
+        bf = p.get("bf") or p.get("batters_faced") or 0
+        hbp_a = p.get("hbp_allowed") or 0
         p["ip"] = ip
         # ERA uses earned runs and the per-27-outs denominator (Task #48).
         p["era"]   = (er * 27.0 / outs) if outs else 0.0
@@ -288,6 +318,8 @@ def _aggregate_pitcher_rows(
         p["whip"]  = ((bb + h) * 27.0 / outs) if outs else 0.0
         p["k27"]   = (k  * 27.0 / outs) if outs else 0.0
         p["bb27"]  = (bb * 27.0 / outs) if outs else 0.0
+        p["hr27"]  = (hr * 27.0 / outs) if outs else 0.0
+        p["ra27"]  = (r  * 27.0 / outs) if outs else 0.0
         # Kept under the legacy keys so older templates still render sensibly.
         p["k9"]    = p["k27"]
         p["bb9"]   = p["bb27"]
@@ -297,6 +329,16 @@ def _aggregate_pitcher_rows(
             p["fip"] = ((13 * hr) + (3 * bb) - (2 * k)) * 27.0 / outs + fip_const
         else:
             p["fip"] = 0.0
+        # Per-BF rate stats (independent of outs — make small samples meaningful).
+        p["k_pct"]  = (k  / bf) if bf else 0.0
+        p["bb_pct"] = (bb / bf) if bf else 0.0
+        p["hr_pct"] = (hr / bf) if bf else 0.0
+        # Opponent batting average + BABIP allowed.
+        # AB faced = BF - BB - HBP. (SF, IBB unavailable in O27.)
+        ab_faced = max(0, bf - bb - hbp_a)
+        p["oavg"] = (h / ab_faced) if ab_faced > 0 else 0.0
+        bip_denom = ab_faced - k - hr
+        p["babip_allowed"] = ((h - hr) / bip_denom) if bip_denom > 0 else 0.0
         if wl is not None:
             pid = p.get("player_id") or p.get("id")
             d = wl.get(pid, {"w": 0, "l": 0})
@@ -879,7 +921,13 @@ def leaders():
                   SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
                   SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
                   SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
-                  SUM(bs.bb) as bb, SUM(bs.k) as k, SUM(bs.stays) as stays
+                  SUM(bs.bb) as bb, SUM(bs.k) as k, SUM(bs.stays) as stays,
+                  COALESCE(SUM(bs.hbp),0) as hbp,
+                  COALESCE(SUM(bs.sb),0)  as sb,
+                  COALESCE(SUM(bs.cs),0)  as cs,
+                  COALESCE(SUM(bs.fo),0)  as fo,
+                  COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
@@ -888,9 +936,6 @@ def leaders():
         (min_pa,),
     )
     _aggregate_batter_rows(batting)
-    # SB doesn't exist in schema — set to 0 so leaders.html can list it without errors.
-    for b in batting:
-        b.setdefault("sb", 0)
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
@@ -903,7 +948,13 @@ def leaders():
                   SUM(ps.er)             as er,
                   SUM(ps.bb)             as bb,
                   SUM(ps.k)              as k,
-                  SUM(ps.hr_allowed)     as hr_allowed
+                  SUM(ps.hr_allowed)     as hr_allowed,
+                  COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
+                  COALESCE(SUM(ps.unearned_runs),0) as uer,
+                  COALESCE(SUM(ps.sb_allowed),0)    as sb_allowed,
+                  COALESCE(SUM(ps.cs_caught),0)     as cs_caught,
+                  COALESCE(SUM(ps.fo_induced),0)    as fo_induced,
+                  COALESCE(SUM(ps.pitches),0)       as pitches
            FROM {_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
@@ -911,15 +962,11 @@ def leaders():
            HAVING SUM(ps.outs_recorded) >= ?""",
         (min_outs,),
     )
-    # Shared helper now produces era/whip/k27/bb27/fip directly (Task #50).
+    # Shared helper now produces era/whip/k27/bb27/fip + advanced stats.
     wl = _pitcher_wl_map()
     _aggregate_pitcher_rows(pitching, wl)
     for p in pitching:
         outs = p["outs"] or 0
-        # Extra rate stats only the leaders page surfaces.
-        p["ra27"]   = (p["r"]  * 27.0 / outs) if outs else 0.0
-        p["k_pct"]  = (p["k"]  / p["bf"]) if p["bf"] else 0.0
-        p["bb_pct"] = (p["bb"] / p["bf"]) if p["bf"] else 0.0
         # OS% = share of a complete game (27 outs) recorded per appearance.
         p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
 
@@ -970,7 +1017,13 @@ def player_detail(player_id: int):
         """SELECT COUNT(*) as g, SUM(pa) as pa, SUM(ab) as ab, SUM(hits) as h,
                   SUM(doubles) as d2, SUM(triples) as d3, SUM(hr) as hr,
                   SUM(runs) as r, SUM(rbi) as rbi, SUM(bb) as bb, SUM(k) as k,
-                  SUM(stays) as stays
+                  SUM(stays) as stays,
+                  COALESCE(SUM(hbp),0) as hbp,
+                  COALESCE(SUM(sb),0)  as sb,
+                  COALESCE(SUM(cs),0)  as cs,
+                  COALESCE(SUM(fo),0)  as fo,
+                  COALESCE(SUM(multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
     )
@@ -979,21 +1032,24 @@ def player_detail(player_id: int):
                    SUM(hits_allowed) as h, SUM(runs_allowed) as r,
                    SUM(er) as er,
                    SUM(bb) as bb, SUM(k) as k,
-                   SUM(hr_allowed) as hr_allowed
+                   SUM(hr_allowed) as hr_allowed,
+                   COALESCE(SUM(hbp_allowed),0)   as hbp_allowed,
+                   COALESCE(SUM(unearned_runs),0) as uer,
+                   COALESCE(SUM(sb_allowed),0)    as sb_allowed,
+                   COALESCE(SUM(cs_caught),0)     as cs_caught,
+                   COALESCE(SUM(fo_induced),0)    as fo_induced,
+                   COALESCE(SUM(pitches),0)       as pitches
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
         (player_id,),
     )
 
     bt_totals = None
     if bt and bt["pa"]:
-        ab = bt["ab"] or 0
-        tb = (bt["h"] or 0) - (bt["d2"] or 0) - (bt["d3"] or 0) - (bt["hr"] or 0) \
-             + 2 * (bt["d2"] or 0) + 3 * (bt["d3"] or 0) + 4 * (bt["hr"] or 0)
+        # Run through the shared helper so AVG/OBP/SLG/OPS + advanced rate
+        # stats (ISO/BABIP/K%/BB%/HR%/BB/K) are all consistent with the
+        # leaders page math.
         bt_totals = dict(bt)
-        bt_totals["avg"] = (bt["h"] / ab) if ab else 0.0
-        bt_totals["obp"] = ((bt["h"] + bt["bb"]) / bt["pa"]) if bt["pa"] else 0.0
-        bt_totals["slg"] = (tb / ab) if ab else 0.0
-        bt_totals["ops"] = bt_totals["obp"] + bt_totals["slg"]
+        _aggregate_batter_rows([bt_totals])
 
     pt_totals = None
     if pt and pt["outs"]:
@@ -1046,7 +1102,12 @@ def team_detail(team_id: int):
                        SUM(pa) AS pa, SUM(ab) AS ab, SUM(hits) AS h,
                        SUM(doubles) AS d2, SUM(triples) AS d3, SUM(hr) AS hr,
                        SUM(runs) AS r, SUM(rbi) AS rbi,
-                       SUM(bb) AS bb, SUM(k) AS k
+                       SUM(bb) AS bb, SUM(k) AS k,
+                       COALESCE(SUM(hbp),0) AS hbp,
+                       COALESCE(SUM(sb),0)  AS sb,
+                       COALESCE(SUM(cs),0)  AS cs,
+                       COALESCE(SUM(fo),0)  AS fo,
+                       COALESCE(SUM(multi_hit_abs),0) AS mhab
                 FROM game_batter_stats
                 WHERE player_id IN ({ph}) GROUP BY player_id""",
             tuple(ids),
@@ -1055,10 +1116,16 @@ def team_detail(team_id: int):
         for r in db.fetchall(
             f"""SELECT ps.player_id,
                        COUNT(ps.game_id) AS gp,
+                       SUM(ps.batters_faced) AS bf,
                        SUM(ps.outs_recorded) AS outs,
                        SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r, SUM(ps.er) AS er,
                        SUM(ps.bb) AS bb, SUM(ps.k) AS k,
-                       SUM(ps.hr_allowed) AS hr_allowed
+                       SUM(ps.hr_allowed) AS hr_allowed,
+                       COALESCE(SUM(ps.hbp_allowed),0)   AS hbp_allowed,
+                       COALESCE(SUM(ps.unearned_runs),0) AS uer,
+                       COALESCE(SUM(ps.sb_allowed),0)    AS sb_allowed,
+                       COALESCE(SUM(ps.cs_caught),0)     AS cs_caught,
+                       COALESCE(SUM(ps.fo_induced),0)    AS fo_induced
                 FROM {_PSTATS_DEDUP_SQL} ps
                 WHERE ps.player_id IN ({ph}) GROUP BY ps.player_id""",
             tuple(ids),
