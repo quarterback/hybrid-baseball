@@ -122,10 +122,16 @@ def _end_at_bat(state: GameState) -> list[str]:
     hits = state.current_at_bat_hits
     if hits > 1:
         log.append(f"  Multi-hit at-bat: {hits} credited hits.")
-    # Jokers removed in Task #47 — no per-half eligibility tracking needed.
     state.count.reset()
     state.current_at_bat_hits = 0
-    state.batting_team.advance_lineup()
+    # Joker AB: clear the override and DO NOT advance the base lineup.
+    # The joker insertion was an EXTRA PA — the base lineup position
+    # stays the same so the originally-scheduled batter takes the next
+    # turn.
+    if state.batter_override is not None:
+        state.batter_override = None
+    else:
+        state.batting_team.advance_lineup()
     state.pitcher_spell_count += 1
     state.total_pa_this_half += 1
     return log
@@ -310,6 +316,11 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     # ------------------------------------------------------------------
     # Manager events
     # ------------------------------------------------------------------
+
+    if etype == "joker_insertion":
+        joker = event["joker"]
+        log += mgr.insert_joker(state, joker)
+        return log
 
     if etype == "pinch_hit":
         replacement = event["replacement"]

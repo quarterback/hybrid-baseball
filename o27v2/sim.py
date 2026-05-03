@@ -108,37 +108,32 @@ def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
 # DB ↔ engine type converters
 # ---------------------------------------------------------------------------
 
+def _bat_score(p) -> float:
+    """Composite hitting talent score used for lineup ordering and joker
+    pool selection."""
+    return (
+        float(p.skill)        * 0.55
+        + float(p.power)      * 0.15
+        + float(p.contact)    * 0.20
+        + float(p.eye)        * 0.10
+    )
+
+
 def _ordered_lineup(
     starting_fielders: list,
     todays_sp: list,
-    starting_dhs: list,
 ) -> list:
-    """Order the 12-batter lineup by hitting talent.
+    """Order the 9-batter base lineup by hitting talent.
 
-    Lou Brock / Rickey Henderson speed-specialist DHs, Bonds-tier power
-    DHs, and Molitor-tier high-OBP DHs all coexist in O27's 3-DH slot
-    structure — they should bat in the right place in the order, not
-    default to slots 10-11-12 just because they're DH-positioned. The
-    same logic applies for traditional fielders who'd be elite bats:
-    a +SS who hits .400 should bat leadoff, not 8th.
+    Base lineup = 8 fielders + SP. DHs are NOT in the base lineup — they
+    live in the joker pool (jokers_available) and are inserted tactically
+    by the manager AI per PA, subject to once-per-cycle.
 
-    Pitchers almost always hit 12th. Exception: a pitcher whose hitting
-    `skill` clears `_PITCHER_HIT_LINEUP_THRESHOLD` (top 5-10% of arms in
-    a fresh seed, where pitcher hitting is capped low) gets slotted in
-    by talent like everyone else.
-
-    Composite bat score blends overall skill with the realism layer:
-    skill weighted heaviest, power/contact moderate, eye light.
+    Pitchers almost always hit 9th. Exception: a pitcher whose hitting
+    `skill` clears 0.50 (top ~5-10% of arms in a fresh seed) slots in by
+    talent like everyone else.
     """
-    def _bat_score(p) -> float:
-        return (
-            float(p.skill)        * 0.55
-            + float(p.power)      * 0.15
-            + float(p.contact)    * 0.20
-            + float(p.eye)        * 0.10
-        )
-
-    non_pitchers = list(starting_fielders) + list(starting_dhs)
+    non_pitchers = list(starting_fielders)
     non_pitchers.sort(key=_bat_score, reverse=True)
 
     sp = todays_sp[0] if todays_sp else None
@@ -146,13 +141,24 @@ def _ordered_lineup(
         return non_pitchers
 
     # Pitchers ≥ this hitting `skill` slot in by talent like a non-pitcher.
-    # Default 0.50 catches the top ~5-10% of pitchers per the tier ladder
-    # — the semi-average-hitting arm exception per O27 lineup convention.
+    # Default 0.50 catches the top ~5-10% of pitchers per the tier ladder.
     if float(sp.skill) >= 0.50:
         combined = non_pitchers + [sp]
         combined.sort(key=_bat_score, reverse=True)
         return combined
-    return non_pitchers + [sp]   # default: SP bats 12th
+    return non_pitchers + [sp]   # default: SP bats 9th
+
+
+def _pick_jokers(non_starter_bats: list, n: int = 3) -> list:
+    """Pick the top-n bats from the non-starter pool (DH + UT bench)
+    as today's joker pool. Sorted by composite hitting talent.
+
+    These are the manager's tactical pinch-hitters — three pinch-hits-
+    with-no-cost, each available once per cycle. They are NOT in the
+    base lineup; they enter via per-PA insertion when leverage warrants.
+    """
+    sorted_bats = sorted(non_starter_bats, key=_bat_score, reverse=True)
+    return sorted_bats[:n]
 
 
 def _db_team_to_engine(
@@ -283,12 +289,16 @@ def _db_team_to_engine(
     # at 3 batting slots so the lineup stays at 12 (8 fielders + SP + 3 DH)
     # for engine compatibility.
     starting_fielders = fielders[:8]
-    starting_dhs      = dhs[:3]
 
-    # Order the 12-batter lineup by hitting talent (DHs aren't pinned to
-    # the bottom of the order; pitcher hits 12th unless they're rare
-    # semi-average-hitting arm).
-    lineup = _ordered_lineup(starting_fielders, todays_sp, starting_dhs)
+    # Build the 9-batter base lineup: 8 fielders + SP, ordered by talent.
+    lineup = _ordered_lineup(starting_fielders, todays_sp)
+
+    # Pick today's 3 jokers from the non-starter bat pool (all DHs + any
+    # bench fielders not in the starting 8). These are tactical pinch-
+    # hitters — manager AI inserts them per PA based on leverage, each
+    # at most once per cycle through the order.
+    bench_pool = list(dhs) + list(fielders[8:])
+    jokers     = _pick_jokers(bench_pool, n=3)
 
     # Reorder the roster so today's SP is the first pitcher. The engine's
     # `_set_fielding_pitcher` picks the first is_pitcher in roster order,

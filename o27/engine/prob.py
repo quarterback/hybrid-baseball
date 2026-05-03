@@ -652,9 +652,15 @@ class ProbabilisticProvider:
             if new_p is not None:
                 return {"type": "pitching_change", "new_pitcher": new_p}
 
-        # Joker insertion was removed in Task #47.
+        # Joker insertion — leverage-aware, optional. Returns None most
+        # of the time; fires only when the situational value is high
+        # enough to justify burning one of the cycle's joker uses.
+        joker = mgr.should_insert_joker(state, rng=self.rng)
+        if joker is not None:
+            return {"type": "joker_insertion", "joker": joker}
 
-        # Pinch hit check (fallback when jokers are exhausted).
+        # Pinch hit check (separate mechanic; permanently replaces a
+        # regular hitter — survives joker insertions).
         replacement = mgr.should_pinch_hit(state)
         if replacement is not None:
             return {"type": "pinch_hit", "replacement": replacement}

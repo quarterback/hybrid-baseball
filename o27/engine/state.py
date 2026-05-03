@@ -227,12 +227,16 @@ class Team:
     # suppression. 0.5 = neutral.
     catcher_arm:    float = 0.5
 
-    # Joker compatibility shims — Phase 10 dropped jokers from v2, but the
-    # engine manager and o27/main.py still reference these fields. Defaulting
-    # to empty / empty-set keeps both legacy v1 paths and the v2 caller (which
-    # passes an empty list) working without per-call attribute checks.
+    # Joker pool — 3 tactical pinch-hitters available per game. They are
+    # NOT in the base lineup; the manager AI inserts them per-rotation
+    # subject to "each joker can only be inserted once per cycle through
+    # the order." Insertions add an extra PA to the rotation; the joker
+    # bats then returns to the bench without taking a roster slot or a
+    # field position.
     jokers_available: list = field(default_factory=list)
-    jokers_used_this_half: set = field(default_factory=set)
+    jokers_used_this_cycle: set = field(default_factory=set)
+    jokers_used_this_half: set = field(default_factory=set)   # legacy alias
+    lineup_cycle_number: int = 0   # increments when lineup_position wraps
 
     # Super-inning
     super_lineup: list = field(default_factory=list)        # 5 selected Player objects
@@ -267,7 +271,13 @@ class Team:
             self.super_lineup_position = pos
         else:
             n = len(self.lineup)
-            self.lineup_position = (self.lineup_position + 1) % n
+            new_pos = (self.lineup_position + 1) % n
+            if new_pos == 0 and n > 0:
+                # Lineup wrapped to top of order — start of a new cycle.
+                # Each joker is once-per-cycle, so clear the used set.
+                self.lineup_cycle_number += 1
+                self.jokers_used_this_cycle = set()
+            self.lineup_position = new_pos
 
     def reset_half(self) -> None:
         """Reset intra-half tracking at the start of a new half.
@@ -348,6 +358,14 @@ class GameState:
     # --- Multi-hit tracking (within one at-bat) ---
     current_at_bat_hits: int = 0
 
+    # --- Joker insertion override ---
+    # When the manager inserts a joker, this field holds the joker Player
+    # for one PA. The current_batter property checks this first, so the
+    # joker bats instead of the base-lineup batter. After the joker AB
+    # ends, _end_at_bat clears this and does NOT call advance_lineup
+    # (the joker insertion is EXTRA — base lineup position is unchanged).
+    batter_override: Optional[Player] = None
+
     # --- Halftime target ---
     target_score: Optional[int] = None         # visitors' score; set at halftime
 
@@ -378,6 +396,11 @@ class GameState:
 
     @property
     def current_batter(self) -> Player:
+        # Joker insertion override takes precedence — when the manager has
+        # called in a joker for the next PA, that joker bats instead of
+        # the base lineup batter.
+        if self.batter_override is not None:
+            return self.batter_override
         return self.batting_team.current_batter()
 
     @property

@@ -24,19 +24,51 @@ from o27 import config as cfg
 # ---------------------------------------------------------------------------
 
 def can_insert_joker(state: GameState, joker: Player) -> tuple[bool, str]:
-    """No-op stub: jokers were removed in Task #47.
+    """Check whether a joker can be inserted right now.
 
-    Always returns False. Kept for legacy import compatibility.
+    Per the corrected joker rule:
+      - Joker must be in team.jokers_available (game-time pool of 3).
+      - Joker must NOT have already been inserted this cycle through
+        the order (tracked via Team.jokers_used_this_cycle, which
+        advance_lineup resets when the lineup wraps).
+      - Super-innings disable joker insertion (the 5-batter format
+        has its own selection mechanic).
     """
-    return False, "Jokers were removed in Task #47."
+    if state.is_super_inning:
+        return False, "Joker insertion not allowed in super-innings."
+    team = state.batting_team
+    if joker.player_id not in {j.player_id for j in team.jokers_available}:
+        return False, "Joker not in available pool."
+    if joker.player_id in team.jokers_used_this_cycle:
+        return False, "Joker already used this cycle."
+    return True, ""
 
 
-def insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[str]:
-    """No-op stub: jokers were removed in Task #47.
+def insert_joker(state: GameState, joker: Player, lineup_position: int = -1) -> list[str]:
+    """Insert a joker for the next PA via state.batter_override.
 
-    Always returns an empty log. Kept for legacy import compatibility.
+    The joker bats in place of the base-lineup batter for ONE plate
+    appearance, then returns to the bench. The base lineup position is
+    NOT advanced by the joker AB (handled in pa._end_at_bat). Insertion
+    is marked on team.jokers_used_this_cycle so the same joker can't be
+    inserted twice in the same cycle through the order.
+
+    `lineup_position` is accepted for back-compat but ignored — the
+    joker insertion is always "before the next scheduled batter."
     """
-    return []
+    _ = lineup_position
+    ok, reason = can_insert_joker(state, joker)
+    if not ok:
+        return [f"  [Joker insert rejected: {reason}]"]
+    team = state.batting_team
+    state.batter_override = joker
+    team.jokers_used_this_cycle.add(joker.player_id)
+    state.events.append({
+        "type": "joker_inserted",
+        "joker_id": joker.player_id,
+        "joker_name": joker.name,
+    })
+    return [f"  JOKER: {team.name} sends in {joker.name} for the next PA."]
 
 
 def _legacy_insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[str]:
@@ -221,9 +253,66 @@ def _needed_archetype(state: GameState) -> Optional[str]:
     return None
 
 
-def should_insert_joker(state: GameState) -> Optional[Player]:
-    """No-op stub: jokers were removed in Task #47. Always returns None."""
-    return None
+def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
+    """Leverage-aware joker insertion decision.
+
+    Per-PA call: returns a Player from the team's joker pool to insert,
+    or None to let the base lineup proceed normally. Constraints:
+      - Each joker can be inserted at most ONCE PER CYCLE through the
+        lineup (tracked on Team.jokers_used_this_cycle, reset by
+        advance_lineup when the lineup wraps).
+      - Insertion is always optional. A manager who never inserts is
+        leaving offense on the table but not breaking any rule.
+
+    Decision logic: probability of insertion scales with leverage —
+    score-gap-tightness × outs-remaining × runners-on. At max leverage
+    (close game, late, runners-on) the per-PA insert probability tops
+    out around 35%. At low leverage (blowout, early, bases empty) it's
+    near zero. Manager AI quality is then a real differentiator: a
+    league-leading manager's joker leverage index — share of insertions
+    that landed in high-leverage spots — is itself a stat.
+    """
+    if state.is_super_inning:
+        return None
+    # Don't insert a joker while another joker is already mid-AB.
+    if getattr(state, "batter_override", None) is not None:
+        return None
+    team = state.batting_team
+    if not team.jokers_available:
+        return None
+    eligible = [
+        j for j in team.jokers_available
+        if j.player_id not in team.jokers_used_this_cycle
+    ]
+    if not eligible:
+        return None
+
+    # Leverage components.
+    score_gap = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
+    outs_left = max(1, 27 - state.outs)
+    runners   = state.runner_count
+
+    # Tighter games + later innings + runners on = high leverage.
+    gap_factor    = max(0.0, 1.0 - score_gap / 10.0)   # tied = 1.0; 10+ gap = 0
+    late_factor   = state.outs / 27.0                  # 0..1, late half = high
+    runner_factor = (runners + 1) / 4.0                # 0.25..1.0
+    leverage = gap_factor * late_factor * runner_factor
+
+    # Per-PA insertion probability. Cap at 35% even in peak leverage —
+    # manager shouldn't burn all 3 jokers on the first eligible PA.
+    insert_p = min(0.35, leverage * 0.5)
+    if rng is None:
+        import random as _r
+        roll = _r.random()
+    else:
+        roll = rng.random()
+    if roll >= insert_p:
+        return None
+
+    # Pick the joker best-fit for the spot. Simple v1: best by hitting
+    # skill. Future: archetype-aware (speed joker with runners on 1B,
+    # power joker with bases empty in scoring spots, etc.).
+    return max(eligible, key=lambda j: float(getattr(j, "skill", 0.5) or 0.5))
 
 
 def _legacy_should_insert_joker(state: GameState) -> Optional[Player]:
