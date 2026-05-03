@@ -197,6 +197,12 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict])
                 "k": bstat.k,
                 "stays": bstat.sty,
                 "outs_recorded": bstat.outs_recorded,
+                "hbp": getattr(bstat, "hbp", 0),
+                "sb": getattr(bstat, "sb", 0),
+                "cs": getattr(bstat, "cs", 0),
+                "fo": getattr(bstat, "fo", 0),
+                "multi_hit_abs": getattr(bstat, "multi_hit_abs", 0),
+                "stay_rbi": getattr(bstat, "stay_rbi", 0),
             })
     return rows
 
@@ -230,6 +236,9 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
         if player is None:
             continue
         ps = PitcherStats.from_spell_log(spells, pid_str, player.name)
+        sb_allowed = sum(getattr(rec, "sb_allowed", 0) for rec in spells)
+        cs_caught  = sum(getattr(rec, "cs_caught",  0) for rec in spells)
+        fo_induced = sum(getattr(rec, "fo_induced", 0) for rec in spells)
         rows.append({
             "team_id": team_id,
             "player_id": db_pid,
@@ -244,6 +253,11 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "k": ps.k,
             "hr_allowed": ps.hr_allowed,
             "pitches": ps.pitches_thrown,
+            "hbp_allowed":   getattr(ps, "hbp", 0),
+            "unearned_runs": getattr(ps, "unearned_runs", 0),
+            "sb_allowed":    sb_allowed,
+            "cs_caught":     cs_caught,
+            "fo_induced":    fo_induced,
         })
     return rows
 
@@ -455,25 +469,33 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
             conn.execute(
                 """INSERT INTO game_batter_stats
                    (game_id, team_id, player_id, phase, pa, ab, runs, hits,
-                    doubles, triples, hr, rbi, bb, k, stays, outs_recorded)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    doubles, triples, hr, rbi, bb, k, stays, outs_recorded,
+                    hbp, sb, cs, fo, multi_hit_abs, stay_rbi)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
-                 r["stays"], r.get("outs_recorded", 0)),
+                 r["stays"], r.get("outs_recorded", 0),
+                 r.get("hbp", 0), r.get("sb", 0), r.get("cs", 0),
+                 r.get("fo", 0), r.get("multi_hit_abs", 0),
+                 r.get("stay_rbi", 0)),
             )
         for r in away_pstats + home_pstats:
             conn.execute(
                 """INSERT INTO game_pitcher_stats
                    (game_id, team_id, player_id, phase, batters_faced,
                     outs_recorded, hits_allowed, runs_allowed, er, bb, k,
-                    hr_allowed, pitches)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    hr_allowed, pitches, hbp_allowed, unearned_runs,
+                    sb_allowed, cs_caught, fo_induced)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
                  r["runs_allowed"], r.get("er", r["runs_allowed"]),
                  r["bb"], r["k"],
-                 r.get("hr_allowed", 0), r.get("pitches", 0)),
+                 r.get("hr_allowed", 0), r.get("pitches", 0),
+                 r.get("hbp_allowed", 0), r.get("unearned_runs", 0),
+                 r.get("sb_allowed", 0), r.get("cs_caught", 0),
+                 r.get("fo_induced", 0)),
             )
         for r in team_phase_outs:
             conn.execute(
@@ -567,11 +589,15 @@ def _insert_batter_stats(game_id: int, rows: list[dict]) -> None:
     db.executemany(
         """INSERT INTO game_batter_stats
            (game_id, team_id, player_id, pa, ab, runs, hits, doubles, triples,
-            hr, rbi, bb, k, stays, outs_recorded)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            hr, rbi, bb, k, stays, outs_recorded,
+            hbp, sb, cs, fo, multi_hit_abs, stay_rbi)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["pa"], r["ab"], r["runs"],
           r["hits"], r["doubles"], r["triples"], r["hr"], r["rbi"],
-          r["bb"], r["k"], r["stays"], r.get("outs_recorded", 0))
+          r["bb"], r["k"], r["stays"], r.get("outs_recorded", 0),
+          r.get("hbp", 0), r.get("sb", 0), r.get("cs", 0),
+          r.get("fo", 0), r.get("multi_hit_abs", 0),
+          r.get("stay_rbi", 0))
          for r in rows],
     )
 
@@ -582,12 +608,16 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
     db.executemany(
         """INSERT INTO game_pitcher_stats
            (game_id, team_id, player_id, batters_faced, outs_recorded,
-            hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches,
+            hbp_allowed, unearned_runs, sb_allowed, cs_caught, fo_induced)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["batters_faced"],
           r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
           r.get("er", r["runs_allowed"]),
-          r["bb"], r["k"], r.get("hr_allowed", 0), r.get("pitches", 0))
+          r["bb"], r["k"], r.get("hr_allowed", 0), r.get("pitches", 0),
+          r.get("hbp_allowed", 0), r.get("unearned_runs", 0),
+          r.get("sb_allowed", 0), r.get("cs_caught", 0),
+          r.get("fo_induced", 0))
          for r in rows],
     )
 

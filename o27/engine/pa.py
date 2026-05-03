@@ -177,6 +177,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         state.count.fouls += 1
         if state.count.fouls >= 3:
             log.append(f"  Foul #{state.count.fouls} — FOUL OUT.")
+            state.pitcher_fo_induced_this_spell += 1
             batter_id = state.current_batter.player_id
             log += _record_out(state, batter_id)
             log += _end_at_bat(state)
@@ -248,6 +249,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
             return log
         if success:
             state.bases[base_idx] = None
+            state.pitcher_sb_allowed_this_spell += 1
             if base_idx + 1 <= 2:
                 state.bases[base_idx + 1] = runner_id
                 log.append(f"  Stolen base — runner advances to "
@@ -257,6 +259,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
                 log.append("  Steal of home — runner scores!")
         else:
             state.bases[base_idx] = None
+            state.pitcher_cs_caught_this_spell += 1
             log.append(f"  Runner caught stealing at "
                        f"{'2B 3B Home'.split()[base_idx]}.")
             log += _record_out(state, runner_id)

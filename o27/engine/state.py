@@ -155,6 +155,10 @@ class SpellRecord:
     start_batter_num: int = 0   # ordinal PA number when this spell began
     half: str = "top"
     super_inning_number: int = 0
+    # Persisted counting stats for advanced rate-stat aggregation.
+    sb_allowed: int = 0   # successful stolen bases against this pitcher
+    cs_caught:  int = 0   # caught-stealing outs while this pitcher was on
+    fo_induced: int = 0   # foul-outs (3-foul rule) ending an AB on this pitcher
 
 
 @dataclass
@@ -306,6 +310,9 @@ class GameState:
     pitcher_hbp_this_spell: int = 0    # hit batters in current spell
     pitcher_hr_this_spell: int = 0     # HR allowed in current spell
     pitcher_pitches_this_spell: int = 0  # pitches thrown in current spell
+    pitcher_sb_allowed_this_spell: int = 0  # stolen bases against current spell
+    pitcher_cs_caught_this_spell: int = 0   # CS outs while current spell on mound
+    pitcher_fo_induced_this_spell: int = 0  # foul-outs in current spell
     pitcher_start_pa: int = 0          # total_pa_this_half when spell began
     total_pa_this_half: int = 0        # cumulative PA count this half (incremented on PA end)
     current_pitcher_id: Optional[str] = None

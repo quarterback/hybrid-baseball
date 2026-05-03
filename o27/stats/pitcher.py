@@ -25,6 +25,10 @@ class PitcherStats:
     pitches_thrown: int = 0
     spell_count: int = 0        # number of separate spells pitched
     max_spell: int = 0          # longest single spell (consecutive BF)
+    # Counting stats persisted post-realism layer.
+    sb_allowed: int = 0  # Stolen bases successful against this pitcher
+    cs_caught: int = 0   # Runners caught stealing while this pitcher was on
+    fo_induced: int = 0  # Foul-outs charged against this pitcher
 
     @classmethod
     def from_spell_log(cls, spell_log: list, pitcher_id: str, name: str) -> "PitcherStats":

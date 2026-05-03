@@ -774,8 +774,33 @@ class Renderer:
             # O27 foul-out: charged as an AB and an out, but NOT a K
             # (it's its own outcome category — "FO" in the box score).
             s.ab += 1
+            s.fo += 1
             s.outs_recorded += 1
             _check_multi_hit()
+
+        elif etype == "stolen_base_attempt":
+            # Credit the RUNNER (not the current batter) with SB or CS.
+            # ctx["bases_list"] holds pre-event base state so we can recover
+            # the runner ID. The runner already has a BatterStats entry from
+            # whatever PA put them on base.
+            base_idx = event.get("base_idx", 0)
+            bases_before = ctx.get("bases_list") or [None, None, None]
+            runner_id = bases_before[base_idx] if 0 <= base_idx < 3 else None
+            success = bool(event.get("success", False))
+            if runner_id is not None and runner_id in self._batter_stats:
+                rs = self._batter_stats[runner_id]
+                if success:
+                    rs.sb += 1
+                else:
+                    rs.cs += 1
+                    rs.outs_recorded += 1
+            # Don't fall through to the leftover-out reconciliation below —
+            # the at-bat is still in progress and the only out (if any) was
+            # already charged to the runner above. Falling through would
+            # double-charge the current batter for the runner's CS out.
+            if runs_scored > 0:
+                self._credit_runs(ctx, state_after, runs_scored, etype, disp)
+            return
 
         elif etype in ("called_strike", "swinging_strike") and disp["is_strikeout"]:
             s.ab += 1

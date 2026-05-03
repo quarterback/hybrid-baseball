@@ -24,3 +24,7 @@ class BatterStats:
     outs_recorded: int = 0  # OR — times this batter was retired
     stay_rbi: int = 0
     multi_hit_abs: int = 0  # At-bats with 2+ credited hits
+    # Counting stats persisted post-realism layer.
+    sb: int = 0     # Successful steals charged to this runner
+    cs: int = 0     # Caught-stealing outs charged to this runner
+    fo: int = 0     # Foul-outs (3-foul rule) — subset of outs_recorded
