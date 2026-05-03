@@ -543,35 +543,153 @@ def game_detail(game_id: int):
         (game["game_date"], game["game_date"], game_id),
     )
 
-    away_batting = db.fetchall(
+    # Task #58: pull per-phase rows and group them. Phase 0 = regulation;
+    # phase N>=1 = super-inning round N. We also build per-phase totals
+    # rows (suitable for the Game Totals section in the template).
+    away_batting_rows = db.fetchall(
         """SELECT bs.*, p.name as player_name, p.position
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
-           WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.id""",
+           WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["away_team_id"]))
-    home_batting = db.fetchall(
+    home_batting_rows = db.fetchall(
         """SELECT bs.*, p.name as player_name, p.position
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
-           WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.id""",
+           WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["home_team_id"]))
-    away_pitching = db.fetchall(
+    away_pitching_rows = db.fetchall(
         """SELECT ps.*, p.name as player_name
            FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
-           WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.id""",
+           WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.phase, ps.id""",
         (game_id, game["away_team_id"]))
-    home_pitching = db.fetchall(
+    home_pitching_rows = db.fetchall(
         """SELECT ps.*, p.name as player_name
            FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
-           WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.id""",
+           WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.phase, ps.id""",
         (game_id, game["home_team_id"]))
 
-    return render_template("game.html",
-                           game=game,
-                           away_batting=away_batting,
-                           home_batting=home_batting,
-                           away_pitching=away_pitching,
-                           home_pitching=home_pitching,
-                           prev_game_id=(prev_game["id"] if prev_game else None),
-                           next_game_id=(next_game["id"] if next_game else None))
+    team_phase_outs_rows = db.fetchall(
+        """SELECT team_id, phase, unattributed_outs FROM team_phase_outs
+           WHERE game_id = ?""", (game_id,))
+
+    # Legacy data (pre-Task-#58) often has duplicate rows for the same
+    # (player_id, game_id) because the schema lacked a UNIQUE constraint
+    # and re-sims of the same game inserted parallel copies. New rows
+    # are unique on (player_id, game_id, phase). Aggregate duplicates
+    # here so the box score never shows the same player twice in one
+    # phase or double-counts totals.
+    _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples",
+                "hr", "rbi", "bb", "k", "stays", "outs_recorded")
+    _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
+                "runs_allowed", "er", "bb", "k")
+
+    def _dedup_by_player_phase(rows: list, num_fields: tuple) -> list:
+        merged: dict[tuple, dict] = {}
+        order: list[tuple] = []
+        for r in rows:
+            key = (r["phase"] or 0, r["player_id"])
+            if key not in merged:
+                merged[key] = dict(r)
+                order.append(key)
+            else:
+                acc = merged[key]
+                for f in num_fields:
+                    acc[f] = (acc.get(f) or 0) + (r[f] or 0)
+        return [merged[k] for k in order]
+
+    def _group_by_phase(rows: list) -> dict:
+        out: dict[int, list] = {}
+        for r in rows:
+            out.setdefault(r["phase"] or 0, []).append(r)
+        return out
+
+    def _aggregate_batting(rows: list) -> dict:
+        agg = {f: 0 for f in ("pa", "ab", "runs", "hits", "doubles", "triples",
+                              "hr", "rbi", "bb", "k", "stays", "outs_recorded")}
+        for r in rows:
+            for f in agg:
+                agg[f] += (r[f] or 0)
+        return agg
+
+    def _aggregate_pitching(rows: list) -> dict:
+        agg = {f: 0 for f in ("batters_faced", "outs_recorded", "hits_allowed",
+                              "runs_allowed", "er", "bb", "k")}
+        for r in rows:
+            for f in agg:
+                agg[f] += (r[f] or 0)
+        return agg
+
+    away_batting_rows = _dedup_by_player_phase(away_batting_rows, _BAT_NUM)
+    home_batting_rows = _dedup_by_player_phase(home_batting_rows, _BAT_NUM)
+    away_pitching_rows = _dedup_by_player_phase(away_pitching_rows, _PIT_NUM)
+    home_pitching_rows = _dedup_by_player_phase(home_pitching_rows, _PIT_NUM)
+
+    away_batting_by_phase = _group_by_phase(away_batting_rows)
+    home_batting_by_phase = _group_by_phase(home_batting_rows)
+    away_pitching_by_phase = _group_by_phase(away_pitching_rows)
+    home_pitching_by_phase = _group_by_phase(home_pitching_rows)
+
+    # Determine which phases to render. Always include 0; include N>=1
+    # only if any side actually played that phase (super-inning round).
+    all_phases: set[int] = {0}
+    for d in (away_batting_by_phase, home_batting_by_phase,
+              away_pitching_by_phase, home_pitching_by_phase):
+        all_phases.update(d.keys())
+    phases = sorted(all_phases)
+    si_rounds = max(0, max(phases) if phases else 0)
+
+    # Line score: runs per phase, plus H and "team errors" placeholder.
+    def _line_score(b_by_phase: dict) -> dict:
+        runs_per = {ph: sum(r["runs"] or 0 for r in rows)
+                    for ph, rows in b_by_phase.items()}
+        hits_per = {ph: sum(r["hits"] or 0 for r in rows)
+                    for ph, rows in b_by_phase.items()}
+        return {
+            "runs":  runs_per,
+            "hits":  hits_per,
+            "total_r": sum(runs_per.values()),
+            "total_h": sum(hits_per.values()),
+        }
+
+    away_line = _line_score(away_batting_by_phase)
+    home_line = _line_score(home_batting_by_phase)
+
+    # Game Notes: per-side unattributed outs by phase (CS / FC / pickoff
+    # outs the engine couldn't charge to a specific batter).
+    notes: list[dict] = []
+    team_name_by_id = {
+        game["away_team_id"]: game["away_name"],
+        game["home_team_id"]: game["home_name"],
+    }
+    for r in team_phase_outs_rows:
+        if (r["unattributed_outs"] or 0) <= 0:
+            continue
+        phase_label = "Regulation" if r["phase"] == 0 else f"SI Round {r['phase']}"
+        notes.append({
+            "team":  team_name_by_id.get(r["team_id"], "?"),
+            "phase": r["phase"],
+            "phase_label": phase_label,
+            "outs":  r["unattributed_outs"],
+        })
+
+    return render_template(
+        "game.html",
+        game=game,
+        phases=phases,
+        si_rounds=si_rounds,
+        away_batting_by_phase=away_batting_by_phase,
+        home_batting_by_phase=home_batting_by_phase,
+        away_pitching_by_phase=away_pitching_by_phase,
+        home_pitching_by_phase=home_pitching_by_phase,
+        away_batting_total=_aggregate_batting(away_batting_rows),
+        home_batting_total=_aggregate_batting(home_batting_rows),
+        away_pitching_total=_aggregate_pitching(away_pitching_rows),
+        home_pitching_total=_aggregate_pitching(home_pitching_rows),
+        away_line=away_line,
+        home_line=home_line,
+        game_notes=notes,
+        prev_game_id=(prev_game["id"] if prev_game else None),
+        next_game_id=(next_game["id"] if next_game else None),
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -371,7 +371,7 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         if p.is_pitcher
         and p.player_id != current_id
         and p.player_id not in restricted
-        and not p.is_joker
+        and not getattr(p, "is_joker", False)
     ]
     if fallback_pitchers:
         return max(fallback_pitchers, key=lambda p: p.pitcher_skill)

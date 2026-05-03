@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     game_id    INTEGER NOT NULL REFERENCES games(id),
     team_id    INTEGER NOT NULL REFERENCES teams(id),
     player_id  INTEGER NOT NULL REFERENCES players(id),
+    phase      INTEGER NOT NULL DEFAULT 0,
     pa         INTEGER DEFAULT 0,
     ab         INTEGER DEFAULT 0,
     runs       INTEGER DEFAULT 0,
@@ -85,7 +86,8 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     bb         INTEGER DEFAULT 0,
     k          INTEGER DEFAULT 0,
     stays      INTEGER DEFAULT 0,
-    outs_recorded INTEGER DEFAULT 0
+    outs_recorded INTEGER DEFAULT 0,
+    UNIQUE(player_id, game_id, phase)
 );
 
 CREATE TABLE IF NOT EXISTS game_pitcher_stats (
@@ -93,6 +95,7 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     game_id        INTEGER NOT NULL REFERENCES games(id),
     team_id        INTEGER NOT NULL REFERENCES teams(id),
     player_id      INTEGER NOT NULL REFERENCES players(id),
+    phase          INTEGER NOT NULL DEFAULT 0,
     batters_faced  INTEGER DEFAULT 0,
     outs_recorded  INTEGER DEFAULT 0,
     hits_allowed   INTEGER DEFAULT 0,
@@ -101,7 +104,19 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     bb             INTEGER DEFAULT 0,
     k              INTEGER DEFAULT 0,
     hr_allowed     INTEGER DEFAULT 0,
-    pitches        INTEGER DEFAULT 0
+    pitches        INTEGER DEFAULT 0,
+    UNIQUE(player_id, game_id, phase)
+);
+
+-- Task #58: per-team unattributed outs per phase (CS / FC / pickoffs that
+-- the engine couldn't charge to a specific batter). Powers the Game Notes
+-- section in the box score; replaces the legacy CS/FC patch row entirely.
+CREATE TABLE IF NOT EXISTS team_phase_outs (
+    game_id           INTEGER NOT NULL REFERENCES games(id),
+    team_id           INTEGER NOT NULL REFERENCES teams(id),
+    phase             INTEGER NOT NULL DEFAULT 0,
+    unattributed_outs INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (game_id, team_id, phase)
 );
 
 CREATE TABLE IF NOT EXISTS sim_meta (
@@ -202,6 +217,28 @@ def init_db() -> None:
         except Exception:
             pass
 
+        # Task #58: phase column on both stat tables (0 = regulation,
+        # N>=1 = super-inning round N). Existing rows are backfilled to
+        # phase=0 (historical super-inning games stay structurally
+        # unsplit, per the agreed migration policy).
+        for tbl in ("game_batter_stats", "game_pitcher_stats"):
+            try:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN phase INTEGER NOT NULL DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+            # Try to add the UNIQUE invariant. If legacy duplicates exist
+            # the index creation fails — that's acceptable; the constraint
+            # then guards only fresh DBs (via the inline UNIQUE in SCHEMA).
+            try:
+                conn.execute(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS "
+                    f"idx_{tbl}_unique ON {tbl}(player_id, game_id, phase)"
+                )
+                conn.commit()
+            except Exception:
+                pass
+
     # Step 2: wipe stale pre-Phase-8 data
     _wipe_if_stale()
 
@@ -213,10 +250,16 @@ def init_db() -> None:
 def drop_all() -> None:
     """Drop all tables (for re-seeding)."""
     with get_conn() as conn:
+        # Drop child tables before parents to avoid FK constraint failures.
+        # team_phase_outs and sim_meta were added in Task #58; if they hold
+        # rows when we try to drop `games` they raise FOREIGN KEY constraint
+        # failed and the whole reset aborts.
         conn.executescript("""
             DROP TABLE IF EXISTS transactions;
             DROP TABLE IF EXISTS game_pitcher_stats;
             DROP TABLE IF EXISTS game_batter_stats;
+            DROP TABLE IF EXISTS team_phase_outs;
+            DROP TABLE IF EXISTS sim_meta;
             DROP TABLE IF EXISTS games;
             DROP TABLE IF EXISTS players;
             DROP TABLE IF EXISTS teams;

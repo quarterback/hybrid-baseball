@@ -69,6 +69,10 @@ class Renderer:
         )
         self._batter_stats: dict[str, BatterStats] = {}
         self._current_pa_batter_id: Optional[str] = None
+        # Task #58: end-of-phase cumulative snapshots used to derive
+        # per-phase batter rows after the game finishes. game.py calls
+        # end_phase(N) after each phase (regulation = 0, SI round N >= 1).
+        self._phase_end_snapshots: dict[int, dict[str, BatterStats]] = {}
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -863,3 +867,58 @@ class Renderer:
     def batter_stats(self) -> dict:
         """Expose internal BatterStats dict (player_id → BatterStats)."""
         return self._batter_stats
+
+    # -----------------------------------------------------------------------
+    # Task #58: per-phase snapshots and delta extraction
+    # -----------------------------------------------------------------------
+
+    def end_phase(self, phase: int) -> None:
+        """Snapshot cumulative batter stats at the end of a phase.
+
+        Called by the game loop after each phase finishes:
+          - phase 0 = end of regulation (after both halves)
+          - phase N >= 1 = end of super-inning round N (after both halves)
+
+        Per-phase delta rows are derived later by batter_stats_for_phase().
+        """
+        from dataclasses import replace
+        self._phase_end_snapshots[phase] = {
+            pid: replace(s) for pid, s in self._batter_stats.items()
+        }
+
+    def batter_stats_for_phase(self, phase: int) -> dict:
+        """Per-phase BatterStats delta dict (player_id -> BatterStats).
+
+        Computed as snapshot[phase] - snapshot[phase-1]. Phase 0's
+        baseline is empty (game start). Players with zero activity in
+        the phase are omitted.
+        """
+        end = self._phase_end_snapshots.get(phase, {})
+        prev = self._phase_end_snapshots.get(phase - 1, {}) if phase > 0 else {}
+        out: dict[str, BatterStats] = {}
+        for pid, end_s in end.items():
+            prev_s = prev.get(pid)
+            d = self._stat_delta(end_s, prev_s)
+            if self._has_activity(d):
+                out[pid] = d
+        return out
+
+    def phases_seen(self) -> list[int]:
+        """Sorted list of phases for which end_phase() was called."""
+        return sorted(self._phase_end_snapshots.keys())
+
+    @staticmethod
+    def _stat_delta(end_s: BatterStats, prev_s: Optional[BatterStats]) -> BatterStats:
+        d = BatterStats(player_id=end_s.player_id, name=end_s.name)
+        prev_get = (lambda f: getattr(prev_s, f)) if prev_s else (lambda f: 0)
+        for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
+                  "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
+                  "stay_rbi", "multi_hit_abs"):
+            setattr(d, f, getattr(end_s, f) - prev_get(f))
+        return d
+
+    @staticmethod
+    def _has_activity(d: BatterStats) -> bool:
+        return any(getattr(d, f) for f in (
+            "pa", "ab", "runs", "hits", "bb", "k", "hbp", "sty", "outs_recorded"
+        ))

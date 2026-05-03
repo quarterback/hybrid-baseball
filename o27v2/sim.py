@@ -123,43 +123,70 @@ def _db_team_to_engine(
 # ---------------------------------------------------------------------------
 
 def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict]) -> list[dict]:
-    """Extract per-batter stats from Renderer._batter_stats for DB insertion."""
+    """Extract per-phase batter stats from the Renderer's per-phase snapshots.
+
+    Task #58: yields one row per (player, phase) tuple, where phase 0 is
+    regulation and phase N >= 1 is super-inning round N. Players with no
+    activity in a phase are omitted.
+    """
     team_player_ids: set[int] = {p["id"] for p in players}
     rows: list[dict] = []
-    for engine_pid, bstat in renderer._batter_stats.items():
-        try:
-            db_pid = int(engine_pid)
-        except (ValueError, TypeError):
-            continue
-        if db_pid not in team_player_ids:
-            continue
-        rows.append({
-            "team_id": team_id,
-            "player_id": db_pid,
-            "pa": bstat.pa,
-            "ab": bstat.ab,
-            "runs": bstat.runs,
-            "hits": bstat.hits,
-            "doubles": bstat.doubles,
-            "triples": bstat.triples,
-            "hr": bstat.hr,
-            "rbi": bstat.rbi,
-            "bb": bstat.bb,
-            "k": bstat.k,
-            "stays": bstat.sty,
-            "outs_recorded": bstat.outs_recorded,
-        })
+    phases = renderer.phases_seen()
+    if not phases:
+        # Engine never called end_phase (legacy code path) — fall back to
+        # writing the cumulative stats as a single phase-0 row so older
+        # tests / callers still get something.
+        phases = [0]
+        per_phase = {0: dict(renderer._batter_stats)}
+    else:
+        per_phase = {p: renderer.batter_stats_for_phase(p) for p in phases}
+
+    for phase in phases:
+        for engine_pid, bstat in per_phase.get(phase, {}).items():
+            try:
+                db_pid = int(engine_pid)
+            except (ValueError, TypeError):
+                continue
+            if db_pid not in team_player_ids:
+                continue
+            rows.append({
+                "team_id": team_id,
+                "player_id": db_pid,
+                "phase": phase,
+                "pa": bstat.pa,
+                "ab": bstat.ab,
+                "runs": bstat.runs,
+                "hits": bstat.hits,
+                "doubles": bstat.doubles,
+                "triples": bstat.triples,
+                "hr": bstat.hr,
+                "rbi": bstat.rbi,
+                "bb": bstat.bb,
+                "k": bstat.k,
+                "stays": bstat.sty,
+                "outs_recorded": bstat.outs_recorded,
+            })
     return rows
 
 
 def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) -> list[dict]:
-    """Extract pitcher stats from spell_log for DB insertion."""
+    """Extract per-phase pitcher stats from state.spell_log for DB insertion.
+
+    Task #58: each SpellRecord already carries super_inning_number, so a
+    pitcher who pitched in regulation AND in SI round 1 produces TWO
+    rows (phase=0 and phase=1) instead of one combined row.
+    """
     from o27.stats.pitcher import PitcherStats
     team_player_ids: set[int] = {p["id"] for p in players}
 
-    pitcher_engine_ids: set[str] = {rec.pitcher_id for rec in state.spell_log}
+    # Group spells by (pitcher_id, phase).
+    by_phase_pid: dict[tuple[str, int], list] = {}
+    for rec in state.spell_log:
+        phase = int(getattr(rec, "super_inning_number", 0) or 0)
+        by_phase_pid.setdefault((rec.pitcher_id, phase), []).append(rec)
+
     rows: list[dict] = []
-    for pid_str in pitcher_engine_ids:
+    for (pid_str, phase), spells in by_phase_pid.items():
         try:
             db_pid = int(pid_str)
         except (ValueError, TypeError):
@@ -170,10 +197,11 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
                   state.home.get_player(pid_str))
         if player is None:
             continue
-        ps = PitcherStats.from_spell_log(state.spell_log, pid_str, player.name)
+        ps = PitcherStats.from_spell_log(spells, pid_str, player.name)
         rows.append({
             "team_id": team_id,
             "player_id": db_pid,
+            "phase": phase,
             "batters_faced": ps.batters_faced,
             "outs_recorded": ps.outs_recorded,
             "hits_allowed": ps.hits_allowed,
@@ -185,6 +213,53 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "hr_allowed": ps.hr_allowed,
             "pitches": ps.pitches_thrown,
         })
+    return rows
+
+
+def _compute_team_phase_outs(
+    away_bstats: list[dict],
+    home_bstats: list[dict],
+    away_pstats: list[dict],
+    home_pstats: list[dict],
+    home_team_id: int,
+    away_team_id: int,
+) -> list[dict]:
+    """Per (team, phase): unattributed outs = team_outs - sum(batter_outs).
+
+    team_outs come from the OPPOSING side's pitcher rows (a pitcher's
+    outs_recorded counts the outs the batting team made against him).
+    The batter side's outs_recorded reflects only outs the engine could
+    charge to a specific batter (CS / FC / pickoff handled). The
+    difference is logged so the box-score Game Notes section can show
+    "X outs unattributed" instead of silently dropping rows or padding
+    a fake "[Caught Stealing/FC]" patch row.
+    """
+    def _per_phase_outs(rows: list[dict], key: str = "outs_recorded") -> dict[int, int]:
+        out: dict[int, int] = {}
+        for r in rows:
+            out[r["phase"]] = out.get(r["phase"], 0) + (r[key] or 0)
+        return out
+
+    away_batter_outs  = _per_phase_outs(away_bstats)
+    home_batter_outs  = _per_phase_outs(home_bstats)
+    away_pitcher_outs = _per_phase_outs(away_pstats)  # outs vs HOME
+    home_pitcher_outs = _per_phase_outs(home_pstats)  # outs vs AWAY
+
+    rows: list[dict] = []
+    all_phases = set(away_batter_outs) | set(home_batter_outs) | \
+                 set(away_pitcher_outs) | set(home_pitcher_outs)
+    for phase in sorted(all_phases):
+        # Outs by the AWAY team's batters = total outs HOME's pitchers recorded.
+        away_team_total_outs = home_pitcher_outs.get(phase, 0)
+        home_team_total_outs = away_pitcher_outs.get(phase, 0)
+        away_unattr = max(0, away_team_total_outs - away_batter_outs.get(phase, 0))
+        home_unattr = max(0, home_team_total_outs - home_batter_outs.get(phase, 0))
+        if away_unattr:
+            rows.append({"team_id": away_team_id, "phase": phase,
+                         "unattributed_outs": away_unattr})
+        if home_unattr:
+            rows.append({"team_id": home_team_id, "phase": phase,
+                         "unattributed_outs": home_unattr})
     return rows
 
 
@@ -316,6 +391,10 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     home_bstats = _extract_batter_stats(renderer, home_team_id, all_home_players)
     away_pstats = _extract_pitcher_stats(final_state, away_team_id, all_away_players)
     home_pstats = _extract_pitcher_stats(final_state, home_team_id, all_home_players)
+    team_phase_outs = _compute_team_phase_outs(
+        away_bstats, home_bstats, away_pstats, home_pstats,
+        home_team_id, away_team_id,
+    )
 
     # Atomic write: game row + team W/L + per-player stats in one txn.
     with db.get_conn() as conn:
@@ -330,27 +409,39 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
             conn.execute("UPDATE teams SET wins = wins + 1 WHERE id = ?", (winner_team_id,))
             conn.execute("UPDATE teams SET losses = losses + 1 WHERE id = ?", (loser_id,))
         # Inline inserts inside the same connection so it's all one txn.
+        # Task #58: writes per-phase rows; outs_recorded is now included
+        # for batters (the prior inline INSERT silently dropped it, which
+        # is why every historical batter row has OR=0).
         for r in away_bstats + home_bstats:
             conn.execute(
                 """INSERT INTO game_batter_stats
-                   (game_id, team_id, player_id, pa, ab, runs, hits, doubles,
-                    triples, hr, rbi, bb, k, stays)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (game_id, r["team_id"], r["player_id"], r["pa"], r["ab"],
-                 r["runs"], r["hits"], r["doubles"], r["triples"], r["hr"],
-                 r["rbi"], r["bb"], r["k"], r["stays"]),
+                   (game_id, team_id, player_id, phase, pa, ab, runs, hits,
+                    doubles, triples, hr, rbi, bb, k, stays, outs_recorded)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (game_id, r["team_id"], r["player_id"], r["phase"],
+                 r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
+                 r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
+                 r["stays"], r.get("outs_recorded", 0)),
             )
         for r in away_pstats + home_pstats:
             conn.execute(
                 """INSERT INTO game_pitcher_stats
-                   (game_id, team_id, player_id, batters_faced, outs_recorded,
-                    hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (game_id, r["team_id"], r["player_id"], r["batters_faced"],
-                 r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
-                 r.get("er", r["runs_allowed"]),
+                   (game_id, team_id, player_id, phase, batters_faced,
+                    outs_recorded, hits_allowed, runs_allowed, er, bb, k,
+                    hr_allowed, pitches)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (game_id, r["team_id"], r["player_id"], r["phase"],
+                 r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
+                 r["runs_allowed"], r.get("er", r["runs_allowed"]),
                  r["bb"], r["k"],
                  r.get("hr_allowed", 0), r.get("pitches", 0)),
+            )
+        for r in team_phase_outs:
+            conn.execute(
+                """INSERT OR REPLACE INTO team_phase_outs
+                   (game_id, team_id, phase, unattributed_outs)
+                   VALUES (?,?,?,?)""",
+                (game_id, r["team_id"], r["phase"], r["unattributed_outs"]),
             )
         conn.commit()
 

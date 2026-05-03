@@ -2,6 +2,129 @@
 {% block title %}Box Score — {{ game.away_abbrev }} @ {{ game.home_abbrev }}{% endblock %}
 {% block content %}
 
+{# ------------------------------------------------------------------
+   Task #58 box-score template.
+
+   Layout (top to bottom):
+     1. Header (away vs. home, final score, date, SI badge)
+     2. Line score across phases (Reg / SI1 / SI2 / ... / Total + H/E)
+     3. For each phase:
+          • Away — Batting + Home — Batting (side-by-side)
+          • Away — Pitching + Home — Pitching (side-by-side)
+     4. Game Notes (per-team unattributed outs by phase, replaces the
+        legacy "[Team CS / FC]" patch row entirely)
+     5. Game Totals (consolidated batting + pitching totals across all
+        phases, so a viewer never has to mentally add Regulation + SI)
+
+   OS% denominator:
+     • Phase 0 (regulation): 27 outs
+     • Phase N >= 1 (SI round): 5 outs
+     • Game totals: 27 + 5 * (number of SI rounds played)
+   Always clamped to [0, 100]%.
+   ------------------------------------------------------------------ #}
+
+{% macro phase_label(p) -%}
+  {%- if p == 0 -%}Regulation{%- else -%}SI Round {{ p }}{%- endif -%}
+{%- endmacro %}
+
+{% macro short_phase_label(p) -%}
+  {%- if p == 0 -%}Reg{%- else -%}SI{{ p }}{%- endif -%}
+{%- endmacro %}
+
+{% macro phase_outs_denom(p) -%}{%- if p == 0 -%}27{%- else -%}5{%- endif -%}{%- endmacro %}
+
+{% macro os_pct(outs, denom) -%}
+  {%- set pct = ((outs or 0) / (denom or 1) * 100) -%}
+  {%- if pct > 100 -%}100{%- else -%}{{ '%.0f'|format(pct) }}{%- endif -%}%
+{%- endmacro %}
+
+{% macro batting_table(rows, totals, phase, denom_outs) %}
+<table class="table table-sm dense-table mb-0">
+  <thead><tr>
+    <th>Player</th><th>Pos</th>
+    <th class="num">PA</th><th class="num">AB</th>
+    <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
+    <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">K</th>
+    <th class="num">STY</th><th class="num">OR</th>
+  </tr></thead>
+  <tbody>
+  {% for b in rows %}
+  <tr>
+    <td>{{ b.player_name }}</td>
+    <td class="text-secondary">{{ b.position }}</td>
+    <td class="num">{{ b.pa }}</td><td class="num">{{ b.ab }}</td>
+    <td class="num fw-bold">{{ b.hits }}</td>
+    <td class="num">{{ b.doubles }}</td><td class="num">{{ b.triples }}</td><td class="num">{{ b.hr }}</td>
+    <td class="num">{{ b.runs }}</td><td class="num">{{ b.rbi }}</td>
+    <td class="num">{{ b.bb }}</td><td class="num">{{ b.k }}</td>
+    <td class="num">{{ b.stays }}</td>
+    <td class="num">{{ b.outs_recorded or 0 }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="14" class="text-secondary text-center">No batters in this phase.</td></tr>
+  {% endfor %}
+  {% if rows %}
+  <tr class="fw-bold" style="background:#1f2937">
+    <td colspan="2">Totals</td>
+    <td class="num">{{ totals.pa }}</td>
+    <td class="num">{{ totals.ab }}</td>
+    <td class="num">{{ totals.hits }}</td>
+    <td class="num">{{ totals.doubles }}</td>
+    <td class="num">{{ totals.triples }}</td>
+    <td class="num">{{ totals.hr }}</td>
+    <td class="num">{{ totals.runs }}</td>
+    <td class="num">{{ totals.rbi }}</td>
+    <td class="num">{{ totals.bb }}</td>
+    <td class="num">{{ totals.k }}</td>
+    <td class="num">{{ totals.stays }}</td>
+    <td class="num">{{ totals.outs_recorded }}</td>
+  </tr>
+  {% endif %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% macro pitching_table(rows, totals, denom_outs) %}
+<table class="table table-sm dense-table mb-0">
+  <thead><tr>
+    <th>Pitcher</th>
+    <th class="num">BF</th><th class="num">OS%</th><th class="num">OUT</th>
+    <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+    <th class="num">BB</th><th class="num">K</th>
+  </tr></thead>
+  <tbody>
+  {% for p in rows %}
+  <tr>
+    <td>{{ p.player_name }}</td>
+    <td class="num">{{ p.batters_faced }}</td>
+    <td class="num text-secondary">{{ os_pct(p.outs_recorded or 0, denom_outs) }}</td>
+    <td class="num">{{ p.outs_recorded }}</td>
+    <td class="num">{{ p.hits_allowed }}</td>
+    <td class="num">{{ p.runs_allowed }}</td>
+    <td class="num">{{ p.er if p.er is not none else p.runs_allowed }}</td>
+    <td class="num">{{ p.bb }}</td>
+    <td class="num">{{ p.k }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="9" class="text-secondary text-center">No pitchers in this phase.</td></tr>
+  {% endfor %}
+  {% if rows %}
+  <tr class="fw-bold" style="background:#1f2937">
+    <td>Totals</td>
+    <td class="num">{{ totals.batters_faced }}</td>
+    <td class="num text-secondary">{{ os_pct(totals.outs_recorded, denom_outs) }}</td>
+    <td class="num">{{ totals.outs_recorded }}</td>
+    <td class="num">{{ totals.hits_allowed }}</td>
+    <td class="num">{{ totals.runs_allowed }}</td>
+    <td class="num">{{ totals.er }}</td>
+    <td class="num">{{ totals.bb }}</td>
+    <td class="num">{{ totals.k }}</td>
+  </tr>
+  {% endif %}
+  </tbody>
+</table>
+{% endmacro %}
+
 <nav aria-label="breadcrumb" class="mb-2 d-flex justify-content-between align-items-center">
   <ol class="breadcrumb small mb-0">
     <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Scores</a></li>
@@ -47,116 +170,233 @@
   </div>
 </div>
 
-<div class="row g-3 mb-3">
-  {% for batting, team_name, opp_pitching in [
-      (away_batting, game.away_name, home_pitching),
-      (home_batting, game.home_name, away_pitching)] %}
-  {# Task #49: OR is the per-batter outs_recorded column (CS/FC/PO charged to
-     the responsible batter). Falls back to AB-H for legacy rows where the
-     column is NULL/0; the gap is shown as a reconciliation line below. #}
-  {% set sum_or_legacy = (batting | sum(attribute='ab')) - (batting | sum(attribute='hits')) %}
-  {% set sum_or = batting | map(attribute='outs_recorded') | map('default', 0, true) | sum %}
-  {% if sum_or == 0 %}{% set sum_or = sum_or_legacy %}{% endif %}
-  {% set team_outs = opp_pitching | sum(attribute='outs_recorded') %}
-  {% set gap = team_outs - sum_or %}
+{# ---------------- Line Score ---------------- #}
+<div class="dense mb-3">
+  <div class="panel-title">Line Score</div>
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th>Team</th>
+      {% for p in phases %}<th class="num">{{ short_phase_label(p) }}</th>{% endfor %}
+      <th class="num">R</th><th class="num">H</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td>{{ game.away_name }}</td>
+        {% for p in phases %}<td class="num">{{ away_line.runs.get(p, 0) }}</td>{% endfor %}
+        <td class="num fw-bold">{{ away_line.total_r }}</td>
+        <td class="num">{{ away_line.total_h }}</td>
+      </tr>
+      <tr>
+        <td>{{ game.home_name }}</td>
+        {% for p in phases %}<td class="num">{{ home_line.runs.get(p, 0) }}</td>{% endfor %}
+        <td class="num fw-bold">{{ home_line.total_r }}</td>
+        <td class="num">{{ home_line.total_h }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{# ---------------- Per-phase batting + pitching ---------------- #}
+{% for p in phases %}
+{% set denom_outs = 27 if p == 0 else 5 %}
+<h5 class="mt-4 mb-2 text-secondary">{{ phase_label(p) }}</h5>
+
+<div class="row g-3 mb-2">
   <div class="col-lg-6">
     <div class="dense">
-      <div class="panel-title">{{ team_name }} — Batting</div>
+      <div class="panel-title">{{ game.away_name }} — Batting</div>
+      {% set rows = away_batting_by_phase.get(p, []) %}
+      {% set totals = {'pa': rows | sum(attribute='pa'),
+                       'ab': rows | sum(attribute='ab'),
+                       'runs': rows | sum(attribute='runs'),
+                       'hits': rows | sum(attribute='hits'),
+                       'doubles': rows | sum(attribute='doubles'),
+                       'triples': rows | sum(attribute='triples'),
+                       'hr': rows | sum(attribute='hr'),
+                       'rbi': rows | sum(attribute='rbi'),
+                       'bb': rows | sum(attribute='bb'),
+                       'k': rows | sum(attribute='k'),
+                       'stays': rows | sum(attribute='stays'),
+                       'outs_recorded': rows | map(attribute='outs_recorded') | map('default', 0, true) | sum} %}
+      {{ batting_table(rows, totals, p, denom_outs) }}
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="dense">
+      <div class="panel-title">{{ game.home_name }} — Batting</div>
+      {% set rows = home_batting_by_phase.get(p, []) %}
+      {% set totals = {'pa': rows | sum(attribute='pa'),
+                       'ab': rows | sum(attribute='ab'),
+                       'runs': rows | sum(attribute='runs'),
+                       'hits': rows | sum(attribute='hits'),
+                       'doubles': rows | sum(attribute='doubles'),
+                       'triples': rows | sum(attribute='triples'),
+                       'hr': rows | sum(attribute='hr'),
+                       'rbi': rows | sum(attribute='rbi'),
+                       'bb': rows | sum(attribute='bb'),
+                       'k': rows | sum(attribute='k'),
+                       'stays': rows | sum(attribute='stays'),
+                       'outs_recorded': rows | map(attribute='outs_recorded') | map('default', 0, true) | sum} %}
+      {{ batting_table(rows, totals, p, denom_outs) }}
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-2">
+  <div class="col-lg-6">
+    <div class="dense">
+      <div class="panel-title">{{ game.away_name }} — Pitching</div>
+      {% set rows = away_pitching_by_phase.get(p, []) %}
+      {% set totals = {'batters_faced': rows | sum(attribute='batters_faced'),
+                       'outs_recorded': rows | sum(attribute='outs_recorded'),
+                       'hits_allowed': rows | sum(attribute='hits_allowed'),
+                       'runs_allowed': rows | sum(attribute='runs_allowed'),
+                       'er': rows | map(attribute='er') | map('default', 0, true) | sum,
+                       'bb': rows | sum(attribute='bb'),
+                       'k': rows | sum(attribute='k')} %}
+      {{ pitching_table(rows, totals, denom_outs) }}
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="dense">
+      <div class="panel-title">{{ game.home_name }} — Pitching</div>
+      {% set rows = home_pitching_by_phase.get(p, []) %}
+      {% set totals = {'batters_faced': rows | sum(attribute='batters_faced'),
+                       'outs_recorded': rows | sum(attribute='outs_recorded'),
+                       'hits_allowed': rows | sum(attribute='hits_allowed'),
+                       'runs_allowed': rows | sum(attribute='runs_allowed'),
+                       'er': rows | map(attribute='er') | map('default', 0, true) | sum,
+                       'bb': rows | sum(attribute='bb'),
+                       'k': rows | sum(attribute='k')} %}
+      {{ pitching_table(rows, totals, denom_outs) }}
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{# ---------------- Game Notes ---------------- #}
+{% if game_notes %}
+<div class="dense mt-4 mb-3">
+  <div class="panel-title">Game Notes</div>
+  <ul class="small mb-0 ps-4 py-2">
+    {% for n in game_notes %}
+    <li class="text-secondary">
+      {{ n.team }} — {{ n.phase_label }}: {{ n.outs }} unattributed out{{ '' if n.outs == 1 else 's' }}
+      <span class="text-secondary" style="opacity:.7">(caught stealing / fielder's choice / pickoff)</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# ---------------- Game Totals (across all phases) ---------------- #}
+{% if si_rounds > 0 %}
+{% set total_denom = 27 + 5 * si_rounds %}
+<h5 class="mt-4 mb-2 text-secondary">Game Totals</h5>
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="dense">
+      <div class="panel-title">{{ game.away_name }} — Batting Totals</div>
       <table class="table table-sm dense-table mb-0">
         <thead><tr>
-          <th>Player</th><th>Pos</th>
           <th class="num">PA</th><th class="num">AB</th>
           <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
           <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">K</th>
           <th class="num">STY</th><th class="num">OR</th>
         </tr></thead>
-        <tbody>
-        {% for b in batting %}
-        <tr>
-          <td>{{ b.player_name }}</td>
-          <td class="text-secondary">{{ b.position }}</td>
-          <td class="num">{{ b.pa }}</td><td class="num">{{ b.ab }}</td>
-          <td class="num fw-bold">{{ b.hits }}</td>
-          <td class="num">{{ b.doubles }}</td><td class="num">{{ b.triples }}</td><td class="num">{{ b.hr }}</td>
-          <td class="num">{{ b.runs }}</td><td class="num">{{ b.rbi }}</td>
-          <td class="num">{{ b.bb }}</td><td class="num">{{ b.k }}</td>
-          <td class="num">{{ b.stays }}</td>
-          <td class="num">{{ b.outs_recorded if b.outs_recorded else ((b.ab or 0) - (b.hits or 0)) }}</td>
-        </tr>
-        {% endfor %}
-        {% if batting and gap > 0 %}
-        {# Legacy reconciliation row — only renders for pre-Task-#49 rows
-           where per-batter OR doesn't yet sum to team outs. #}
-        <tr class="text-secondary" style="background:#111827">
-          <td colspan="13">Team (legacy CS / FC / non-batter outs)</td>
-          <td class="num">{{ gap }}</td>
-        </tr>
-        {% endif %}
-        {% if batting %}
-        <tr class="fw-bold" style="background:#1f2937">
-          <td colspan="2">Totals</td>
-          <td class="num">{{ batting | sum(attribute='pa') }}</td>
-          <td class="num">{{ batting | sum(attribute='ab') }}</td>
-          <td class="num">{{ batting | sum(attribute='hits') }}</td>
-          <td class="num">{{ batting | sum(attribute='doubles') }}</td>
-          <td class="num">{{ batting | sum(attribute='triples') }}</td>
-          <td class="num">{{ batting | sum(attribute='hr') }}</td>
-          <td class="num">{{ batting | sum(attribute='runs') }}</td>
-          <td class="num">{{ batting | sum(attribute='rbi') }}</td>
-          <td class="num">{{ batting | sum(attribute='bb') }}</td>
-          <td class="num">{{ batting | sum(attribute='k') }}</td>
-          <td class="num">{{ batting | sum(attribute='stays') }}</td>
-          <td class="num">{{ sum_or }}</td>
-        </tr>
-        {% endif %}
-        </tbody>
+        <tbody><tr class="fw-bold">
+          <td class="num">{{ away_batting_total.pa }}</td>
+          <td class="num">{{ away_batting_total.ab }}</td>
+          <td class="num">{{ away_batting_total.hits }}</td>
+          <td class="num">{{ away_batting_total.doubles }}</td>
+          <td class="num">{{ away_batting_total.triples }}</td>
+          <td class="num">{{ away_batting_total.hr }}</td>
+          <td class="num">{{ away_batting_total.runs }}</td>
+          <td class="num">{{ away_batting_total.rbi }}</td>
+          <td class="num">{{ away_batting_total.bb }}</td>
+          <td class="num">{{ away_batting_total.k }}</td>
+          <td class="num">{{ away_batting_total.stays }}</td>
+          <td class="num">{{ away_batting_total.outs_recorded }}</td>
+        </tr></tbody>
       </table>
     </div>
   </div>
-  {% endfor %}
-</div>
-
-<div class="row g-3">
-  {% for pitching, team_name in [(away_pitching, game.away_name), (home_pitching, game.home_name)] %}
   <div class="col-lg-6">
     <div class="dense">
-      <div class="panel-title">{{ team_name }} — Pitching</div>
+      <div class="panel-title">{{ game.home_name }} — Batting Totals</div>
       <table class="table table-sm dense-table mb-0">
         <thead><tr>
-          <th>Pitcher</th>
-          <th class="num">BF</th><th class="num">OS%</th><th class="num">OUT</th><th class="num">H</th><th class="num">ER</th><th class="num">BB</th><th class="num">K</th>
+          <th class="num">PA</th><th class="num">AB</th>
+          <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
+          <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">K</th>
+          <th class="num">STY</th><th class="num">OR</th>
         </tr></thead>
-        <tbody>
-        {% for p in pitching %}
-        <tr>
-          <td>{{ p.player_name }}</td>
-          <td class="num">{{ p.batters_faced }}</td>
-          <td class="num text-secondary">{{ '%.0f'|format((p.outs_recorded or 0) / 27.0 * 100) }}%</td>
-          <td class="num">{{ p.outs_recorded }}</td>
-          <td class="num">{{ p.hits_allowed }}</td>
-          <td class="num">{{ p.er if p.er is not none else p.runs_allowed }}</td>
-          <td class="num">{{ p.bb }}</td>
-          <td class="num">{{ p.k }}</td>
-        </tr>
-        {% endfor %}
-        {% if pitching %}
-        <tr class="fw-bold" style="background:#1f2937">
-          <td>Totals</td>
-          <td class="num">{{ pitching | sum(attribute='batters_faced') }}</td>
-          <td class="num text-secondary">{{ '%.0f'|format((pitching | sum(attribute='outs_recorded')) / 27.0 * 100) }}%</td>
-          <td class="num">{{ pitching | sum(attribute='outs_recorded') }}</td>
-          <td class="num">{{ pitching | sum(attribute='hits_allowed') }}</td>
-          <td class="num">{{ pitching | map(attribute='er') | map('default', 0, true) | sum }}</td>
-          <td class="num">{{ pitching | sum(attribute='bb') }}</td>
-          <td class="num">{{ pitching | sum(attribute='k') }}</td>
-        </tr>
-        {% endif %}
-        </tbody>
+        <tbody><tr class="fw-bold">
+          <td class="num">{{ home_batting_total.pa }}</td>
+          <td class="num">{{ home_batting_total.ab }}</td>
+          <td class="num">{{ home_batting_total.hits }}</td>
+          <td class="num">{{ home_batting_total.doubles }}</td>
+          <td class="num">{{ home_batting_total.triples }}</td>
+          <td class="num">{{ home_batting_total.hr }}</td>
+          <td class="num">{{ home_batting_total.runs }}</td>
+          <td class="num">{{ home_batting_total.rbi }}</td>
+          <td class="num">{{ home_batting_total.bb }}</td>
+          <td class="num">{{ home_batting_total.k }}</td>
+          <td class="num">{{ home_batting_total.stays }}</td>
+          <td class="num">{{ home_batting_total.outs_recorded }}</td>
+        </tr></tbody>
       </table>
     </div>
   </div>
-  {% endfor %}
 </div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="dense">
+      <div class="panel-title">{{ game.away_name }} — Pitching Totals</div>
+      <table class="table table-sm dense-table mb-0">
+        <thead><tr>
+          <th class="num">BF</th><th class="num">OS%</th><th class="num">OUT</th>
+          <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+          <th class="num">BB</th><th class="num">K</th>
+        </tr></thead>
+        <tbody><tr class="fw-bold">
+          <td class="num">{{ away_pitching_total.batters_faced }}</td>
+          <td class="num text-secondary">{{ os_pct(away_pitching_total.outs_recorded, total_denom) }}</td>
+          <td class="num">{{ away_pitching_total.outs_recorded }}</td>
+          <td class="num">{{ away_pitching_total.hits_allowed }}</td>
+          <td class="num">{{ away_pitching_total.runs_allowed }}</td>
+          <td class="num">{{ away_pitching_total.er }}</td>
+          <td class="num">{{ away_pitching_total.bb }}</td>
+          <td class="num">{{ away_pitching_total.k }}</td>
+        </tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="dense">
+      <div class="panel-title">{{ game.home_name }} — Pitching Totals</div>
+      <table class="table table-sm dense-table mb-0">
+        <thead><tr>
+          <th class="num">BF</th><th class="num">OS%</th><th class="num">OUT</th>
+          <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+          <th class="num">BB</th><th class="num">K</th>
+        </tr></thead>
+        <tbody><tr class="fw-bold">
+          <td class="num">{{ home_pitching_total.batters_faced }}</td>
+          <td class="num text-secondary">{{ os_pct(home_pitching_total.outs_recorded, total_denom) }}</td>
+          <td class="num">{{ home_pitching_total.outs_recorded }}</td>
+          <td class="num">{{ home_pitching_total.hits_allowed }}</td>
+          <td class="num">{{ home_pitching_total.runs_allowed }}</td>
+          <td class="num">{{ home_pitching_total.er }}</td>
+          <td class="num">{{ home_pitching_total.bb }}</td>
+          <td class="num">{{ home_pitching_total.k }}</td>
+        </tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% endif %}
 {% endblock %}
