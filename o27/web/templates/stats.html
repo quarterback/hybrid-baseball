@@ -120,23 +120,23 @@
   </div>
 
   <div class="card">
-    <div class="card-hd">Stays <span class="r dim small" title="Stay choices made">STY</span></div>
+    <div class="card-hd">Outs Recorded <span class="r dim small" title="Times batter was retired">OR</span></div>
     <table class="dt">
       <thead>
         <tr>
           <th>#</th><th>Player</th><th>Team</th>
-          <th class="r sortable" onclick="sortTable(this)">STY</th>
-          <th class="r sortable" onclick="sortTable(this)">H</th>
+          <th class="r sortable" onclick="sortTable(this)">OR</th>
+          <th class="r sortable" onclick="sortTable(this)">AB</th>
         </tr>
       </thead>
       <tbody>
-        {% for p in by_sty %}
+        {% for p in by_or %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
           <td><a href="/player/{{ p.team }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
-          <td class="r mono">{{ p.sty }}</td>
-          <td class="r mono dim">{{ p.hits }}</td>
+          <td class="r mono">{{ p.or_ }}</td>
+          <td class="r mono dim">{{ p.ab }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -170,7 +170,7 @@
 </div>
 
 {# ── PITCHING LEADERS ── #}
-{% if by_pit_k or by_pit_era or by_pit_ip %}
+{% if by_pit_k or by_pit_era or by_pit_os %}
 <div class="card-hd" style="background:var(--surface); border:1px solid var(--border); border-radius:3px 3px 0 0; margin-bottom:0; border-bottom:none; font-size:.7rem; padding:.45rem .85rem;">
   Pitching Leaders
 </div>
@@ -184,7 +184,7 @@
           <th>#</th><th>Pitcher</th><th>Team</th>
           <th class="r sortable" onclick="sortTable(this)">SO</th>
           <th class="r sortable" onclick="sortTable(this)">G</th>
-          <th class="r sortable" onclick="sortTable(this)">IP</th>
+          <th class="r sortable" onclick="sortTable(this)">OS%</th>
         </tr>
       </thead>
       <tbody>
@@ -195,7 +195,7 @@
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.k }}</td>
           <td class="r mono dim">{{ p.g }}</td>
-          <td class="r mono dim">{{ p.ip }}</td>
+          <td class="r mono dim">{{ p.os_pct }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -203,13 +203,14 @@
   </div>
 
   <div class="card">
-    <div class="card-hd">ERA <span class="r dim small">(min 3 IP)</span></div>
+    <div class="card-hd">ERA <span class="r dim small">(min 9 outs)</span></div>
     <table class="dt">
       <thead>
         <tr>
           <th>#</th><th>Pitcher</th><th>Team</th>
           <th class="r sortable" onclick="sortTable(this)">ERA</th>
-          <th class="r sortable" onclick="sortTable(this)">IP</th>
+          <th class="r sortable" onclick="sortTable(this)">WHIP</th>
+          <th class="r sortable" onclick="sortTable(this)">OS%</th>
           <th class="r sortable" onclick="sortTable(this)">R</th>
         </tr>
       </thead>
@@ -220,7 +221,8 @@
           <td>{{ p.name }}</td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ "%.2f"|format(p.era) if p.era != 99.99 else "—" }}</td>
-          <td class="r mono dim">{{ p.ip }}</td>
+          <td class="r mono dim">{{ "%.2f"|format(p.whip) if p.whip != 99.99 else "—" }}</td>
+          <td class="r mono dim">{{ p.os_pct }}</td>
           <td class="r mono dim">{{ p.r }}</td>
         </tr>
         {% endfor %}
@@ -229,23 +231,23 @@
   </div>
 
   <div class="card">
-    <div class="card-hd">Innings Pitched</div>
+    <div class="card-hd">Outs Share</div>
     <table class="dt">
       <thead>
         <tr>
           <th>#</th><th>Pitcher</th><th>Team</th>
-          <th class="r sortable" onclick="sortTable(this)">IP</th>
+          <th class="r sortable" onclick="sortTable(this)">OS%</th>
           <th class="r sortable" onclick="sortTable(this)">G</th>
           <th class="r sortable" onclick="sortTable(this)">SO</th>
         </tr>
       </thead>
       <tbody>
-        {% for p in by_pit_ip %}
+        {% for p in by_pit_os %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
           <td>{{ p.name }}</td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
-          <td class="r mono">{{ p.ip }}</td>
+          <td class="r mono">{{ p.os_pct }}</td>
           <td class="r mono dim">{{ p.g }}</td>
           <td class="r mono dim">{{ p.k }}</td>
         </tr>

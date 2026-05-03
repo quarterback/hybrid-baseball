@@ -53,6 +53,15 @@ app.secret_key = os.environ.get("SECRET_KEY", "o27-dev-secret-key")
 _SEASON_START = _dt.date(2026, 4, 1)
 
 
+@app.template_filter("to_grade")
+def to_grade(v: float) -> int:
+    """Convert 0.0–1.0 float attribute to 20–80 scouting integer (50 = avg)."""
+    try:
+        return max(20, min(80, round(20 + float(v) * 60)))
+    except (TypeError, ValueError):
+        return 50
+
+
 # ---------------------------------------------------------------------------
 # Context processor — inject globals into every template
 # ---------------------------------------------------------------------------
@@ -238,18 +247,18 @@ def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list
             rows.append({
                 "name": p.name, "pos": pos,
                 "is_joker": p.is_joker, "archetype": archetype,
-                "pa":      s.pa      if s else 0,
+                "pa":      s.pa             if s else 0,
                 "ab":      ab,
-                "runs":    s.runs    if s else 0,
+                "runs":    s.runs           if s else 0,
                 "hits":    hits,
-                "doubles": s.doubles if s else 0,
-                "triples": s.triples if s else 0,
-                "hr":      s.hr      if s else 0,
-                "rbi":     s.rbi     if s else 0,
-                "bb":      s.bb      if s else 0,
-                "k":       s.k       if s else 0,
-                "hbp":     s.hbp     if s else 0,
-                "sty":     s.sty     if s else 0,
+                "doubles": s.doubles        if s else 0,
+                "triples": s.triples        if s else 0,
+                "hr":      s.hr             if s else 0,
+                "rbi":     s.rbi            if s else 0,
+                "bb":      s.bb             if s else 0,
+                "k":       s.k              if s else 0,
+                "hbp":     s.hbp            if s else 0,
+                "or_":     s.outs_recorded  if s else 0,
                 "avg":     f"{hits/ab:.3f}" if ab > 0 else ".000",
             })
         return rows
@@ -272,10 +281,12 @@ def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list
         ps["k"]    += spell.k
         ps["hbp"]  += spell.hbp
 
-    # Add derived IP / ERA to each pitcher row
+    # Add derived OS% / ERA / WHIP to each pitcher row
     for ps in pitcher_map.values():
-        ps["ip"]  = _fmt_ip(ps["outs"])
-        ps["era"] = _fmt_era(ps["r"], ps["outs"])
+        outs = ps["outs"]
+        ps["os_pct"] = f"{round(outs / 27 * 100)}%" if outs > 0 else "0%"
+        ps["era"]    = _fmt_era(ps["r"], outs)
+        ps["whip"]   = f"{(ps['bb'] + ps['h']) / outs * 27:.2f}" if outs > 0 else "—"
 
     v_pids = {p.player_id for p in final_state.visitors.roster}
     h_pids = {p.player_id for p in final_state.home.roster}
@@ -566,11 +577,11 @@ def stats():
         by_avg= data.get_leaders("avg"),
         by_hr=  data.get_leaders("hr"),
         by_rbi= data.get_leaders("rbi"),
-        by_sty= data.get_leaders("sty"),
+        by_or=  data.get_leaders("or_"),
         by_k=   data.get_leaders("k"),
         by_pit_k=   data.get_pitching_leaders("k"),
         by_pit_era= data.get_pitching_leaders("era"),
-        by_pit_ip=  data.get_pitching_leaders("outs"),
+        by_pit_os=  data.get_pitching_leaders("outs"),
     )
 
 
@@ -637,11 +648,16 @@ def player_page(player_id):
         return redirect(url_for("teams_page"))
     team   = result["team"]
     player = result["player"]
-    stats    = data.get_player_stats(team["abbrev"], player["name"])
-    game_log = _player_game_log(team["abbrev"], player["name"])
+    stats            = data.get_player_stats(team["abbrev"], player["name"])
+    game_log         = _player_game_log(team["abbrev"], player["name"])
+    pitcher_game_log = (
+        data.get_pitcher_game_log(team["abbrev"], player["name"])
+        if player.get("is_pitcher") else []
+    )
     return render_template("player.html",
         active="players",
-        team=team, player=player, stats=stats, game_log=game_log)
+        team=team, player=player, stats=stats,
+        game_log=game_log, pitcher_game_log=pitcher_game_log)
 
 
 @app.route("/player/<team_abbrev>/<slug>")

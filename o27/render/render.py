@@ -759,11 +759,13 @@ class Renderer:
         elif etype == "foul_tip_caught":
             s.ab += 1
             s.k += 1
+            s.outs_recorded += 1
             _check_multi_hit()
 
         elif etype in ("called_strike", "swinging_strike") and disp["is_strikeout"]:
             s.ab += 1
             s.k += 1
+            s.outs_recorded += 1
             _check_multi_hit()
 
         elif etype == "hit_by_pitch":
@@ -790,12 +792,17 @@ class Renderer:
                     # Stay results in out → at-bat ends as an AB, no new hit.
                     s.ab += 1
                     s.rbi += runs_scored
+                    s.outs_recorded += 1
                     _check_multi_hit(terminal_hit=False)
             else:
                 # Run chosen — at-bat ends.
                 s.ab += 1
                 if is_safety_hit:
                     s.hits += 1
+                elif not disp.get("batter_safe", True):
+                    # Batter retired (ground out, fly out, line out, DP etc.)
+                    # Errors and fielder's choice leave batter_safe=True → no OR.
+                    s.outs_recorded += 1
                 if hit_type == "double":
                     s.doubles += 1
                 elif hit_type == "triple":

@@ -17,14 +17,20 @@
   {# ── ATTRIBUTES ── #}
   <div>
     <div class="card">
-      <div class="card-hd">Attributes</div>
+      <div class="card-hd">Scouting Grades <span class="r dim small">20–80 scale</span></div>
       <table class="dt">
         <tbody>
-          <tr><td>Skill</td><td class="r mono">{{ "%.3f"|format(player.skill) }}</td></tr>
-          <tr><td>Speed</td><td class="r mono">{{ "%.3f"|format(player.speed) }}</td></tr>
-          <tr><td>Pitcher Skill</td><td class="r mono">{{ "%.3f"|format(player.pitcher_skill) }}</td></tr>
-          <tr><td>Stay Aggr.</td><td class="r mono">{{ "%.3f"|format(player.stay_aggressiveness) }}</td></tr>
-          <tr><td>Contact QT</td><td class="r mono">{{ "%.3f"|format(player.contact_quality_threshold) }}</td></tr>
+          {% if player.is_pitcher %}
+          <tr><td>Stuff</td><td class="r mono">{{ player.pitcher_skill | to_grade }}</td></tr>
+          <tr><td>Control</td><td class="r mono">{{ player.skill | to_grade }}</td></tr>
+          <tr><td>Movement</td><td class="r mono">{{ player.speed | to_grade }}</td></tr>
+          <tr><td>Stamina</td><td class="r mono">{{ (1.0 - player.stay_aggressiveness) | to_grade }}</td></tr>
+          {% else %}
+          <tr><td>Contact</td><td class="r mono">{{ player.skill | to_grade }}</td></tr>
+          <tr><td>Eye</td><td class="r mono">{{ player.contact_quality_threshold | to_grade }}</td></tr>
+          <tr><td>Speed</td><td class="r mono">{{ player.speed | to_grade }}</td></tr>
+          <tr><td>Arm</td><td class="r mono">{{ player.pitcher_skill | to_grade }}</td></tr>
+          {% endif %}
           <tr><td>Role</td><td class="r">{% if player.is_joker %}Joker{% elif player.is_pitcher %}Pitcher{% else %}Fielder{% endif %}</td></tr>
         </tbody>
       </table>
@@ -34,6 +40,32 @@
   {# ── SEASON STATS ── #}
   <div>
     <div class="card">
+      {% if player.is_pitcher %}
+      <div class="card-hd">Season Pitching Totals</div>
+      {% if pitcher_game_log %}
+      {% set pg_outs = pitcher_game_log | sum(attribute='outs') %}
+      {% set pg_r    = pitcher_game_log | sum(attribute='r') %}
+      {% set pg_h    = pitcher_game_log | sum(attribute='h') %}
+      {% set pg_bb   = pitcher_game_log | sum(attribute='bb') %}
+      {% set pg_k    = pitcher_game_log | sum(attribute='k') %}
+      <table class="dt">
+        <thead><tr><th>Stat</th><th class="r">Value</th></tr></thead>
+        <tbody>
+          <tr><td>Games</td><td class="r mono">{{ pitcher_game_log | length }}</td></tr>
+          <tr><td>Outs Recorded</td><td class="r mono">{{ pg_outs }}</td></tr>
+          <tr><td>OS% (avg/game)</td><td class="r mono">{{ "%.0f"|format(pg_outs / (pitcher_game_log | length) / 27 * 100) if pitcher_game_log else "—" }}%</td></tr>
+          <tr><td>Runs Allowed</td><td class="r mono">{{ pg_r }}</td></tr>
+          <tr><td>Hits Allowed</td><td class="r mono">{{ pg_h }}</td></tr>
+          <tr><td>Walks</td><td class="r mono">{{ pg_bb }}</td></tr>
+          <tr><td>Strikeouts</td><td class="r mono">{{ pg_k }}</td></tr>
+          <tr><td class="w" style="font-weight:700;">ERA</td><td class="r mono w" style="font-weight:700;">{{ "%.2f"|format(pg_r / pg_outs * 27) if pg_outs > 0 else "—" }}</td></tr>
+          <tr><td class="w" style="font-weight:700;">WHIP</td><td class="r mono w" style="font-weight:700;">{{ "%.2f"|format((pg_bb + pg_h) / pg_outs * 27) if pg_outs > 0 else "—" }}</td></tr>
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">No pitching data yet — this pitcher hasn't appeared in any simmed game.</div>
+      {% endif %}
+      {% else %}
       <div class="card-hd">Season Batting Totals</div>
       {% if stats %}
       <table class="dt">
@@ -53,19 +85,21 @@
           <tr><td>Walks</td><td class="r mono">{{ stats.bb }}</td></tr>
           <tr><td>Strikeouts</td><td class="r mono">{{ stats.k }}</td></tr>
           <tr><td>HBP</td><td class="r mono">{{ stats.hbp }}</td></tr>
-          <tr><td>Stays (STY)</td><td class="r mono">{{ stats.sty }}</td></tr>
+          <tr><td>Outs Recorded</td><td class="r mono">{{ stats.or_ }}</td></tr>
           <tr><td class="w" style="font-weight:700;">AVG</td><td class="r mono w" style="font-weight:700;">{{ stats.avg }}</td></tr>
         </tbody>
       </table>
       {% else %}
       <div class="empty">No batting data yet — this player hasn't appeared in any simmed game.</div>
       {% endif %}
+      {% endif %}
     </div>
   </div>
 
 </div>
 
-{# ── CAREER TOTALS ── #}
+{# ── CAREER TOTALS (batters) ── #}
+{% if not player.is_pitcher %}
 <div class="card">
   <div class="card-hd">Career Totals <span class="r dim small">cumulative across all simulated games this session</span></div>
   {% if stats %}
@@ -76,7 +110,7 @@
         <th class="r">R</th><th class="r">H</th>
         <th class="r">2B</th><th class="r">3B</th><th class="r">HR</th>
         <th class="r">RBI</th><th class="r">BB</th>
-        <th class="r">SO</th><th class="r" title="Stay choices">STY</th>
+        <th class="r">SO</th><th class="r" title="Outs Recorded">OR</th>
         <th class="r">AVG</th><th class="r">OBP</th>
       </tr>
     </thead>
@@ -95,7 +129,7 @@
         <td class="r mono">{{ stats.rbi }}</td>
         <td class="r mono">{{ stats.bb }}</td>
         <td class="r mono">{{ stats.k }}</td>
-        <td class="r mono">{{ stats.sty }}</td>
+        <td class="r mono dim">{{ stats.or_ }}</td>
         <td class="r mono w" style="font-weight:700;">{{ stats.avg }}</td>
         <td class="r mono">{{ "%.3f"|format(obp_num / obp_den) if obp_den > 0 else ".000" }}</td>
       </tr>
@@ -105,9 +139,86 @@
   <div class="empty">No career data — this player hasn't been in a simulated game yet.</div>
   {% endif %}
 </div>
+{% endif %}
 
-{# ── GAME LOG ── #}
-{% if game_log %}
+{# ── PITCHER OUTS-SHARE HISTOGRAM ── #}
+{% if player.is_pitcher and pitcher_game_log %}
+<div class="card">
+  <div class="card-hd">Outs Share per Game <span class="r dim small">OS% — outs recorded / 27</span></div>
+  <div style="padding:.65rem;">
+    {# SVG bar chart — each bar = one game appearance #}
+    {% set bar_w = 24 %}
+    {% set bar_gap = 4 %}
+    {% set chart_h = 100 %}
+    {% set n = pitcher_game_log | length %}
+    {% set svg_w = (bar_w + bar_gap) * n + bar_gap %}
+    <svg width="{{ svg_w }}" height="{{ chart_h + 28 }}" style="display:block; overflow:visible;">
+      {# axis line #}
+      <line x1="0" y1="{{ chart_h }}" x2="{{ svg_w }}" y2="{{ chart_h }}" stroke="var(--border)" stroke-width="1"/>
+      {# 100% reference line #}
+      <line x1="0" y1="0" x2="{{ svg_w }}" y2="0" stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3"/>
+      <text x="{{ svg_w - 2 }}" y="9" font-size="8" fill="var(--dim)" text-anchor="end">100%</text>
+      {% for g in pitcher_game_log %}
+        {% set x = loop.index0 * (bar_w + bar_gap) + bar_gap %}
+        {% set pct = g.os_pct %}
+        {% set bar_h = (pct / 100 * chart_h) | round | int %}
+        {% set y = chart_h - bar_h %}
+        {% set col = "#4caf50" if pct >= 67 else ("#ff9800" if pct >= 37 else "#f44336") %}
+        <rect x="{{ x }}" y="{{ y }}" width="{{ bar_w }}" height="{{ bar_h }}"
+              fill="{{ col }}" rx="2" opacity="0.85">
+          <title>{{ g.opp }} ({{ g.ha }}): {{ pct }}% OS — {{ g.r }}R {{ g.k }}K</title>
+        </rect>
+        <text x="{{ x + bar_w // 2 }}" y="{{ chart_h + 14 }}" font-size="8"
+              fill="var(--dim)" text-anchor="middle">{{ g.opp }}</text>
+        <text x="{{ x + bar_w // 2 }}" y="{{ y - 3 }}" font-size="8"
+              fill="var(--text)" text-anchor="middle">{{ pct }}%</text>
+      {% endfor %}
+    </svg>
+    <p class="dim small" style="margin-top:.4rem;">
+      Green ≥ 67% · Orange 37–66% · Red &lt; 37% · Hover bars for details
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{# ── PITCHER GAME LOG ── #}
+{% if player.is_pitcher and pitcher_game_log %}
+<div class="card">
+  <div class="card-hd">Pitching Game Log <span class="r dim small">last {{ pitcher_game_log | length }}</span></div>
+  <table class="dt">
+    <thead>
+      <tr>
+        <th>Opp</th><th class="c">H/A</th>
+        <th class="r" title="Outs Share %">OS%</th>
+        <th class="r">OR</th>
+        <th class="r">R</th><th class="r">H</th>
+        <th class="r">BB</th><th class="r">K</th>
+        <th class="r">ERA</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in pitcher_game_log %}
+      <tr>
+        <td><a href="/team/{{ g.opp }}" class="link">{{ g.opp }}</a></td>
+        <td class="c dim small">{{ g.ha }}</td>
+        <td class="r mono">{{ g.os_pct }}%</td>
+        <td class="r mono dim">{{ g.outs }}</td>
+        <td class="r mono">{{ g.r }}</td>
+        <td class="r mono">{{ g.h }}</td>
+        <td class="r mono">{{ g.bb }}</td>
+        <td class="r mono">{{ g.k }}</td>
+        <td class="r mono">{{ g.era }}</td>
+        <td><a href="/game/{{ g.game_id }}" class="link dim small">Box →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{# ── BATTER GAME LOG ── #}
+{% if not player.is_pitcher and game_log %}
 <div class="card">
   <div class="card-hd">Recent Game Log <span class="r dim small">last {{ game_log | length }}</span></div>
   <table class="dt">
@@ -117,7 +228,7 @@
         <th class="r">PA</th><th class="r">AB</th><th class="r">R</th>
         <th class="r">H</th><th class="r">HR</th><th class="r">RBI</th>
         <th class="r">BB</th><th class="r">K</th>
-        <th class="r" title="Stay choices">STY</th>
+        <th class="r" title="Outs Recorded">OR</th>
         <th class="r">AVG</th>
         <th></th>
       </tr>
@@ -135,7 +246,7 @@
         <td class="r mono">{{ g.rbi }}</td>
         <td class="r mono">{{ g.bb }}</td>
         <td class="r mono">{{ g.k }}</td>
-        <td class="r mono">{% if g.sty > 0 %}{{ g.sty }}{% else %}-{% endif %}</td>
+        <td class="r mono dim">{{ g.or_ if g.get('or_', 0) > 0 else "-" }}</td>
         <td class="r mono">{{ g.avg }}</td>
         <td><a href="/game/{{ g.game_id }}" class="link dim small">Box →</a></td>
       </tr>

@@ -54,8 +54,9 @@
       <thead>
         <tr>
           <th>Player</th><th>Pos</th>
-          <th class="r">Skill</th><th class="r">Speed</th><th class="r">PSkl</th>
-          <th class="r">Stay</th>
+          <th class="r" title="Contact / Stuff">CON</th>
+          <th class="r" title="Speed / Movement">SPD</th>
+          <th class="r" title="Arm / Pitcher Skill">ARM</th>
         </tr>
       </thead>
       <tbody>
@@ -69,10 +70,9 @@
             {% endif %}
           </td>
           <td class="pos">{{ p.position }}</td>
-          <td class="r mono">{{ "%.3f"|format(p.skill) }}</td>
-          <td class="r mono">{{ "%.3f"|format(p.speed) }}</td>
-          <td class="r mono">{{ "%.3f"|format(p.pitcher_skill) }}</td>
-          <td class="r mono dim">{{ "%.2f"|format(p.stay_aggressiveness) }}</td>
+          <td class="r mono">{{ p.skill | to_grade }}</td>
+          <td class="r mono">{{ p.speed | to_grade }}</td>
+          <td class="r mono">{{ p.pitcher_skill | to_grade }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -85,7 +85,7 @@
       <thead>
         <tr>
           <th>#</th><th>Player</th><th>Pos</th>
-          <th class="r">Skill</th><th class="r">Speed</th>
+          <th class="r" title="Contact">CON</th><th class="r" title="Speed">SPD</th>
         </tr>
       </thead>
       <tbody>
@@ -95,8 +95,8 @@
           <td class="dim mono">{{ order_num.n }}</td>
           <td><a href="/player/{{ team.abbrev }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td class="pos">{{ p.position }}</td>
-          <td class="r mono">{{ "%.3f"|format(p.skill) }}</td>
-          <td class="r mono">{{ "%.3f"|format(p.speed) }}</td>
+          <td class="r mono">{{ p.skill | to_grade }}</td>
+          <td class="r mono">{{ p.speed | to_grade }}</td>
         </tr>
         {% set order_num.n = order_num.n + 1 %}
         {% endfor %}
@@ -136,7 +136,7 @@
           <th class="r sortable" onclick="sortTable(this)">RBI</th>
           <th class="r sortable" onclick="sortTable(this)">BB</th>
           <th class="r sortable" onclick="sortTable(this)">SO</th>
-          <th class="r sortable" onclick="sortTable(this)">STY</th>
+          <th class="r sortable" onclick="sortTable(this)" title="Outs Recorded">OR</th>
           <th class="r sortable" onclick="sortTable(this)">AVG</th>
         </tr>
       </thead>
@@ -158,7 +158,7 @@
           <td class="r mono">{{ p.rbi }}</td>
           <td class="r mono">{{ p.bb }}</td>
           <td class="r mono">{{ p.k }}</td>
-          <td class="r mono">{% if p.sty > 0 %}{{ p.sty }}{% else %}-{% endif %}</td>
+          <td class="r mono dim">{% if p.or_ > 0 %}{{ p.or_ }}{% else %}-{% endif %}</td>
           <td class="r mono">{{ p.avg }}</td>
         </tr>
         {% endfor %}
@@ -177,13 +177,13 @@
         <tr>
           <th>Pitcher</th>
           <th class="r sortable" onclick="sortTable(this)">G</th>
-          <th class="r sortable" onclick="sortTable(this)">IP</th>
+          <th class="r sortable" onclick="sortTable(this)" title="Outs Share %">OS%</th>
           <th class="r sortable" onclick="sortTable(this)">H</th>
           <th class="r sortable" onclick="sortTable(this)">R</th>
-          <th class="r sortable" onclick="sortTable(this)">ER</th>
           <th class="r sortable" onclick="sortTable(this)">BB</th>
           <th class="r sortable" onclick="sortTable(this)">SO</th>
           <th class="r sortable" onclick="sortTable(this)">ERA</th>
+          <th class="r sortable" onclick="sortTable(this)">WHIP</th>
         </tr>
       </thead>
       <tbody>
@@ -191,13 +191,13 @@
         <tr>
           <td>{{ p.name }}</td>
           <td class="r mono dim">{{ p.g }}</td>
-          <td class="r mono">{{ p.ip }}</td>
+          <td class="r mono">{{ p.os_pct }}</td>
           <td class="r mono">{{ p.h }}</td>
-          <td class="r mono">{{ p.r }}</td>
           <td class="r mono">{{ p.r }}</td>
           <td class="r mono">{{ p.bb }}</td>
           <td class="r mono">{{ p.k }}</td>
           <td class="r mono">{{ p.era }}</td>
+          <td class="r mono">{{ p.whip }}</td>
         </tr>
         {% endfor %}
       </tbody>

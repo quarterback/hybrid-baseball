@@ -354,11 +354,12 @@ def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
                     agg[key] = {
                         "name": row["name"], "team": abbrev,
                         "pa": 0, "ab": 0, "hits": 0, "hr": 0,
-                        "rbi": 0, "bb": 0, "k": 0, "sty": 0, "runs": 0,
+                        "rbi": 0, "bb": 0, "k": 0, "or_": 0, "runs": 0,
                     }
                 r = agg[key]
-                for f in ("pa", "ab", "hits", "hr", "rbi", "bb", "k", "sty", "runs"):
+                for f in ("pa", "ab", "hits", "hr", "rbi", "bb", "k", "runs"):
                     r[f] += row.get(f, 0)
+                r["or_"] += row.get("or_", 0)
 
     for r in agg.values():
         r["avg"] = r["hits"] / r["ab"] if r["ab"] > 0 else 0.0
@@ -374,7 +375,7 @@ def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
 
 def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
     """Aggregate pitching stats across all stored games.
-    stat: 'k' (strikeouts), 'outs' (IP proxy), 'era' (computed)
+    stat: 'k' (strikeouts), 'outs' (outs share), 'era' (computed)
     """
     agg: dict[str, dict] = {}  # 'name|team' → dict
 
@@ -399,12 +400,15 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
                     r[f] += row.get(f, 0)
 
     for r in agg.values():
-        r["ip"]  = f"{r['outs'] // 3}.{r['outs'] % 3}"
-        r["era"] = round(r["r"] / r["outs"] * 27, 2) if r["outs"] > 0 else 99.99
+        outs = r["outs"]
+        g    = max(r["g"], 1)
+        r["os_pct"] = f"{round(outs / (g * 27) * 100)}%" if outs > 0 else "0%"
+        r["era"]    = round(r["r"] / outs * 27, 2) if outs > 0 else 99.99
+        r["whip"]   = round((r["bb"] + r["h"]) / outs * 27, 2) if outs > 0 else 99.99
 
     rows = list(agg.values())
     if stat == "era":
-        rows = [r for r in rows if r["outs"] >= 9]  # min 3 IP
+        rows = [r for r in rows if r["outs"] >= 9]  # min 9 outs recorded
         rows.sort(key=lambda x: x["era"])
     elif stat == "outs":
         rows.sort(key=lambda x: -x["outs"])
@@ -432,14 +436,15 @@ def get_team_batting(abbrev: str) -> list[dict]:
                         "archetype": row.get("archetype", ""),
                         "gp": 0, "pa": 0, "ab": 0, "runs": 0, "hits": 0,
                         "doubles": 0, "triples": 0, "hr": 0,
-                        "rbi": 0, "bb": 0, "k": 0, "hbp": 0, "sty": 0,
+                        "rbi": 0, "bb": 0, "k": 0, "hbp": 0, "or_": 0,
                     }
                 r = agg[key]
                 if row.get("pa", 0) > 0:
                     r["gp"] += 1
                 for f in ("pa", "ab", "runs", "hits", "doubles", "triples",
-                          "hr", "rbi", "bb", "k", "hbp", "sty"):
+                          "hr", "rbi", "bb", "k", "hbp"):
                     r[f] += row.get(f, 0)
+                r["or_"] += row.get("or_", 0)
 
     rows = list(agg.values())
     for r in rows:
@@ -473,8 +478,11 @@ def get_team_pitching(abbrev: str) -> list[dict]:
 
     rows = list(agg.values())
     for r in rows:
-        r["ip"]  = f"{r['outs'] // 3}.{r['outs'] % 3}"
-        r["era"] = f"{r['r'] / r['outs'] * 27:.2f}" if r["outs"] > 0 else "—"
+        outs = r["outs"]
+        g    = max(r["g"], 1)
+        r["os_pct"] = f"{round(outs / (g * 27) * 100)}%" if outs > 0 else "0%"
+        r["era"]    = f"{r['r'] / outs * 27:.2f}" if outs > 0 else "—"
+        r["whip"]   = f"{(r['bb'] + r['h']) / outs * 27:.2f}" if outs > 0 else "—"
     rows.sort(key=lambda x: (-x["outs"], x["name"]))
     return rows
 
@@ -499,16 +507,50 @@ def get_player_stats(team_abbrev: str, player_name: str) -> Optional[dict]:
                         "archetype": row.get("archetype", ""),
                         "gp": 0, "pa": 0, "ab": 0, "runs": 0, "hits": 0,
                         "doubles": 0, "triples": 0, "hr": 0,
-                        "rbi": 0, "bb": 0, "k": 0, "hbp": 0, "sty": 0,
+                        "rbi": 0, "bb": 0, "k": 0, "hbp": 0, "or_": 0,
                     }
                 if row.get("pa", 0) > 0:
                     agg["gp"] += 1
                 for f in ("pa", "ab", "runs", "hits", "doubles", "triples",
-                          "hr", "rbi", "bb", "k", "hbp", "sty"):
+                          "hr", "rbi", "bb", "k", "hbp"):
                     agg[f] += row.get(f, 0)
+                agg["or_"] += row.get("or_", 0)
     if agg:
         agg["avg"] = f"{agg['hits']/agg['ab']:.3f}" if agg["ab"] > 0 else ".000"
     return agg or None
+
+
+def get_pitcher_game_log(team_abbrev: str, player_name: str,
+                         limit: int = 15) -> list[dict]:
+    """Return per-game pitching entries for one pitcher (newest first)."""
+    log: list[dict] = []
+    for gid in reversed(_RECENT):
+        g = _GAMES.get(gid)
+        if not g:
+            continue
+        for side in ("v", "h"):
+            if g.get("visitors_abbrev" if side == "v" else "home_abbrev") != team_abbrev:
+                continue
+            for row in g.get(f"{side}_pitching", []):
+                if row["name"] != player_name:
+                    continue
+                outs = row.get("outs", 0)
+                log.append({
+                    "game_id":  g["game_id"],
+                    "opp":      g["home_abbrev"] if side == "v" else g["visitors_abbrev"],
+                    "ha":       "@" if side == "v" else "vs",
+                    "outs":     outs,
+                    "os_pct":   round(outs / 27 * 100),
+                    "r":        row.get("r", 0),
+                    "h":        row.get("h", 0),
+                    "bb":       row.get("bb", 0),
+                    "k":        row.get("k", 0),
+                    "era":      row.get("era", "—"),
+                })
+                break
+        if len(log) >= limit:
+            break
+    return log
 
 
 # ---------------------------------------------------------------------------

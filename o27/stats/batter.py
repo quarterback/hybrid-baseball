@@ -20,6 +20,7 @@ class BatterStats:
     bb: int = 0
     k: int = 0
     hbp: int = 0
-    sty: int = 0           # Stays
+    sty: int = 0           # Stays (internal only — not displayed in UI)
+    outs_recorded: int = 0  # OR — times this batter was retired
     stay_rbi: int = 0
     multi_hit_abs: int = 0  # At-bats with 2+ credited hits
