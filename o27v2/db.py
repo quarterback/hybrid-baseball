@@ -97,6 +97,11 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     k              INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS sim_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     season     INTEGER DEFAULT 1,

@@ -394,12 +394,6 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
 import datetime as _dt
 
 
-def get_current_sim_date() -> str | None:
-    """Earliest unplayed game_date — the "today" of the simulator. None when season complete."""
-    row = db.fetchone("SELECT MIN(game_date) as d FROM games WHERE played = 0")
-    return row["d"] if row and row["d"] else None
-
-
 def get_first_scheduled_date() -> str | None:
     row = db.fetchone("SELECT MIN(game_date) as d FROM games")
     return row["d"] if row and row["d"] else None
@@ -408,6 +402,41 @@ def get_first_scheduled_date() -> str | None:
 def get_last_scheduled_date() -> str | None:
     row = db.fetchone("SELECT MAX(game_date) as d FROM games")
     return row["d"] if row and row["d"] else None
+
+
+def get_current_sim_date() -> str | None:
+    """The simulator's calendar clock. Persists in sim_meta so it can sit on off-days
+    independently of the next unplayed game_date."""
+    row = db.fetchone("SELECT value FROM sim_meta WHERE key = 'sim_date'")
+    if row and row["value"]:
+        return row["value"]
+    # Lazy-init to first scheduled date.
+    first = get_first_scheduled_date()
+    if first is None:
+        return None
+    db.execute(
+        "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('sim_date', ?)",
+        (first,),
+    )
+    return first
+
+
+def set_sim_date(date: str | None) -> None:
+    if date is None:
+        db.execute("DELETE FROM sim_meta WHERE key = 'sim_date'")
+    else:
+        db.execute(
+            "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('sim_date', ?)",
+            (date,),
+        )
+
+
+def is_season_complete() -> bool:
+    current = get_current_sim_date()
+    last = get_last_scheduled_date()
+    if current is None or last is None:
+        return True
+    return current > last
 
 
 def get_all_star_date() -> str | None:
@@ -422,7 +451,7 @@ def get_all_star_date() -> str | None:
 
 
 def simulate_date(date: str, seed_base: int | None = None, max_games: int = 100) -> list[dict]:
-    """Simulate every unplayed game whose game_date == `date`."""
+    """Simulate every unplayed game whose game_date == `date`. Does NOT touch the clock."""
     games = db.fetchall(
         "SELECT id FROM games WHERE played = 0 AND game_date = ? ORDER BY id LIMIT ?",
         (date, max_games),
@@ -438,7 +467,7 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = 100)
 
 
 def simulate_through(target_date: str, seed_base: int | None = None, max_games: int = 10000) -> list[dict]:
-    """Simulate every unplayed game with game_date <= `target_date`."""
+    """Simulate every unplayed game with game_date <= `target_date`. Does NOT touch the clock."""
     games = db.fetchall(
         "SELECT id FROM games WHERE played = 0 AND game_date <= ? ORDER BY game_date, id LIMIT ?",
         (target_date, max_games),
@@ -451,3 +480,10 @@ def simulate_through(target_date: str, seed_base: int | None = None, max_games: 
         except Exception as e:
             results.append({"game_id": g["id"], "error": str(e)})
     return results
+
+
+def advance_sim_clock(new_date: str) -> None:
+    """Move the sim clock forward to `new_date` (never backward). Caller computes target."""
+    current = get_current_sim_date()
+    if current is None or new_date > current:
+        set_sim_date(new_date)

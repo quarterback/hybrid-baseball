@@ -32,6 +32,8 @@ from o27v2.sim import (
     get_current_sim_date,
     get_last_scheduled_date,
     get_all_star_date,
+    is_season_complete,
+    advance_sim_clock,
 )
 from o27v2.league import get_league_configs
 
@@ -44,12 +46,11 @@ app.config["SECRET_KEY"] = "o27v2-dev-key"
 @app.context_processor
 def inject_sim_state():
     """Make current sim date + All-Star date available to every template."""
-    current = get_current_sim_date()
     return {"sim": {
-        "current_date":   current,
+        "current_date":   get_current_sim_date(),
         "all_star_date":  get_all_star_date(),
         "last_date":      get_last_scheduled_date(),
-        "season_complete": current is None,
+        "season_complete": is_season_complete(),
     }}
 
 
@@ -60,14 +61,22 @@ def _end_of_month(d: _dt.date) -> _dt.date:
 
 
 def _sim_response(from_date: str | None, to_date: str | None, results: list) -> dict:
-    current = get_current_sim_date()
     return {
         "simulated":       len(results),
         "from_date":       from_date,
         "to_date":         to_date,
-        "current_date":    current,
-        "season_complete": current is None,
+        "current_date":    get_current_sim_date(),
+        "season_complete": is_season_complete(),
     }
+
+
+def _clamp_to_last(date_str: str) -> str:
+    """Don't let the clock run past last_scheduled_date + 1 day."""
+    last = get_last_scheduled_date()
+    if last is None:
+        return date_str
+    last_plus_one = (_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat()
+    return min(date_str, last_plus_one)
 
 
 # ---------------------------------------------------------------------------
@@ -554,58 +563,69 @@ def api_sim():
 
 @app.route("/api/sim/today", methods=["POST"])
 def api_sim_today():
-    """Simulate every game on the current sim date, then advance."""
-    current = get_current_sim_date()
-    if current is None:
+    """Sim every game scheduled on the current sim date, then advance the clock by 1 day.
+    On an off-day (no games), the clock still advances by 1 day so users can click through gaps."""
+    if is_season_complete():
         return jsonify(_sim_response(None, None, []))
+    current = get_current_sim_date()
     results = simulate_date(current)
+    next_day = (_dt.date.fromisoformat(current) + _dt.timedelta(days=1)).isoformat()
+    advance_sim_clock(_clamp_to_last(next_day))
     return jsonify(_sim_response(current, current, results))
 
 
 @app.route("/api/sim/week", methods=["POST"])
 def api_sim_week():
-    """Sim every unplayed game in the next 7 calendar days (current + 6)."""
-    current = get_current_sim_date()
-    if current is None:
+    """Sim every unplayed game over the next 7 calendar days (current..current+6),
+    then advance the clock to the day after."""
+    if is_season_complete():
         return jsonify(_sim_response(None, None, []))
-    target = (_dt.date.fromisoformat(current) + _dt.timedelta(days=6)).isoformat()
+    current = get_current_sim_date()
+    target  = (_dt.date.fromisoformat(current) + _dt.timedelta(days=6)).isoformat()
     results = simulate_through(target)
+    next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+    advance_sim_clock(_clamp_to_last(next_day))
     return jsonify(_sim_response(current, target, results))
 
 
 @app.route("/api/sim/month", methods=["POST"])
 def api_sim_month():
-    """Sim through the end of the current calendar month."""
-    current = get_current_sim_date()
-    if current is None:
+    """Sim through the end of the current calendar month, then advance the clock past it."""
+    if is_season_complete():
         return jsonify(_sim_response(None, None, []))
-    target = _end_of_month(_dt.date.fromisoformat(current)).isoformat()
+    current = get_current_sim_date()
+    target  = _end_of_month(_dt.date.fromisoformat(current)).isoformat()
     results = simulate_through(target)
+    next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+    advance_sim_clock(_clamp_to_last(next_day))
     return jsonify(_sim_response(current, target, results))
 
 
 @app.route("/api/sim/all-star", methods=["POST"])
 def api_sim_all_star():
     """Sim through the All-Star break (schedule midpoint)."""
+    if is_season_complete():
+        return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
     target  = get_all_star_date()
-    if current is None or target is None:
-        return jsonify(_sim_response(current, target, []))
-    if current > target:
-        # Already past the break — no-op.
+    if target is None or current > target:
         return jsonify(_sim_response(current, target, []))
     results = simulate_through(target)
+    next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+    advance_sim_clock(_clamp_to_last(next_day))
     return jsonify(_sim_response(current, target, results))
 
 
 @app.route("/api/sim/season", methods=["POST"])
 def api_sim_season():
     """Sim every remaining unplayed game in the season."""
+    if is_season_complete():
+        return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
     last    = get_last_scheduled_date()
-    if current is None or last is None:
-        return jsonify(_sim_response(current, last, []))
     results = simulate_through(last)
+    next_day = (_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat()
+    advance_sim_clock(next_day)
     return jsonify(_sim_response(current, last, results))
 
 
