@@ -290,7 +290,10 @@
 {% endif %}
 
 {# ---------------- Game Totals (across all phases) ---------------- #}
-{% if si_rounds > 0 %}
+{# Always rendered, even for regulation-only games. For pure regulation
+   games this duplicates the per-phase Regulation block but keeps the
+   IA consistent across game types so a viewer never has to mentally
+   add up Regulation + SI. #}
 {% set total_denom = 27 + 5 * si_rounds %}
 <h5 class="mt-4 mb-2 text-secondary">Game Totals</h5>
 <div class="row g-3 mb-3">
@@ -396,7 +399,6 @@
     </div>
   </div>
 </div>
-{% endif %}
 
 {% endif %}
 {% endblock %}
