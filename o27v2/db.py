@@ -24,14 +24,16 @@ def get_conn() -> sqlite3.Connection:
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS teams (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    name     TEXT NOT NULL,
-    abbrev   TEXT NOT NULL,
-    city     TEXT NOT NULL,
-    division TEXT NOT NULL,
-    league   TEXT NOT NULL,
-    wins     INTEGER DEFAULT 0,
-    losses   INTEGER DEFAULT 0
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT NOT NULL,
+    abbrev    TEXT NOT NULL,
+    city      TEXT NOT NULL,
+    division  TEXT NOT NULL,
+    league    TEXT NOT NULL,
+    wins      INTEGER DEFAULT 0,
+    losses    INTEGER DEFAULT 0,
+    park_hr   REAL DEFAULT 1.0,
+    park_hits REAL DEFAULT 1.0
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -54,7 +56,15 @@ CREATE TABLE IF NOT EXISTS players (
     injured_until         TEXT DEFAULT NULL,
     il_tier               TEXT DEFAULT NULL,
     stamina               INTEGER DEFAULT 50,
-    is_active             INTEGER DEFAULT 1
+    is_active             INTEGER DEFAULT 1,
+    -- Realism layer (multi-dimensional 20-80 ratings + handedness).
+    contact   INTEGER DEFAULT 50,
+    power     INTEGER DEFAULT 50,
+    eye       INTEGER DEFAULT 50,
+    command   INTEGER DEFAULT 50,
+    movement  INTEGER DEFAULT 50,
+    bats      TEXT DEFAULT 'R',
+    throws    TEXT DEFAULT 'R'
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -276,6 +286,38 @@ def init_db() -> None:
         for col, defval in phase9_int + task65_int:
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Realism layer columns (multi-dimensional ratings + handedness).
+        # Defaults of 50 / 'R' make pre-realism rows score-neutral so the
+        # engine produces identical output until a fresh seed populates them.
+        realism_int  = [
+            ("contact",  "50"),
+            ("power",    "50"),
+            ("eye",      "50"),
+            ("command",  "50"),
+            ("movement", "50"),
+        ]
+        realism_text = [("bats", "'R'"), ("throws", "'R'")]
+        for col, defval in realism_int:
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+        for col, defval in realism_text:
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} TEXT DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Realism layer team columns (ballpark factors).
+        for col, defval in [("park_hr", "1.0"), ("park_hits", "1.0")]:
+            try:
+                conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL DEFAULT {defval}")
                 conn.commit()
             except Exception:
                 pass

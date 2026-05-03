@@ -67,18 +67,23 @@ from __future__ import annotations
 # Must sum to 1.0; engine normalises after adjustments.
 
 PITCH_BASE: dict[tuple, tuple] = {
-    (0, 0): (0.32, 0.18, 0.13, 0.14, 0.23),
-    (1, 0): (0.36, 0.16, 0.11, 0.14, 0.23),
-    (2, 0): (0.40, 0.14, 0.09, 0.14, 0.23),
-    (3, 0): (0.44, 0.13, 0.07, 0.13, 0.23),
-    (0, 1): (0.29, 0.15, 0.18, 0.16, 0.22),
-    (1, 1): (0.32, 0.13, 0.17, 0.17, 0.21),
-    (2, 1): (0.36, 0.11, 0.14, 0.18, 0.21),
-    (3, 1): (0.40, 0.09, 0.12, 0.18, 0.21),
-    (0, 2): (0.22, 0.10, 0.26, 0.22, 0.20),
-    (1, 2): (0.25, 0.08, 0.26, 0.21, 0.20),
-    (2, 2): (0.29, 0.07, 0.23, 0.21, 0.20),
-    (3, 2): (0.33, 0.05, 0.21, 0.21, 0.20),
+    # Pass 5 (Realism): another nudge on top of Pass 4 — 2-strike swinging
+    # rates trimmed further, with the displaced weight going to fouls so
+    # at-bats stay alive longer (contact-era feel). 0-strike ball rates
+    # nudged up ~0.01 to lift walks toward the 9-10% band.
+    # Format: (p_ball, p_called_strike, p_swinging_strike, p_foul, p_contact)
+    (0, 0): (0.34, 0.18, 0.11, 0.14, 0.23),
+    (1, 0): (0.38, 0.16, 0.09, 0.14, 0.23),
+    (2, 0): (0.43, 0.14, 0.06, 0.14, 0.23),
+    (3, 0): (0.47, 0.13, 0.04, 0.13, 0.23),
+    (0, 1): (0.31, 0.15, 0.14, 0.18, 0.22),
+    (1, 1): (0.34, 0.13, 0.13, 0.19, 0.21),
+    (2, 1): (0.38, 0.11, 0.10, 0.20, 0.21),
+    (3, 1): (0.42, 0.09, 0.08, 0.20, 0.21),
+    (0, 2): (0.25, 0.10, 0.16, 0.29, 0.20),
+    (1, 2): (0.28, 0.08, 0.16, 0.28, 0.20),
+    (2, 2): (0.32, 0.07, 0.14, 0.27, 0.20),
+    (3, 2): (0.36, 0.05, 0.12, 0.27, 0.20),
 }
 
 # ---------------------------------------------------------------------------
@@ -258,3 +263,84 @@ JOKER_MAX_PER_HALF: int     = 9     # cap: JOKERS_PER_ARCHETYPE(3) × archetypes
 
 PINCH_HIT_SCORE_DIFF_MAX: int  = 1     # only PH in very tight games
 PINCH_HIT_SKILL_EDGE: float    = 0.05  # replacement must be this much better
+
+# ===========================================================================
+# Realism layer (1990s–2000s O27 flavor)
+# ===========================================================================
+# All constants in this block follow the identity invariant:
+#   when every realism input lands at its neutral value (rating = 0.5,
+#   handedness same/opposite cancels, today_form = 1.0, park = 1.0)
+#   each `(x - 0.5) * 2` term is 0 and `(today_form - 1.0)` is 0, so the
+#   engine collapses back to its pre-realism behavior bit-for-bit.
+#
+# Keep magnitudes small (≤ 0.05 each) so the realism layer adds texture
+# rather than overwhelming the calibrated `PITCHER_DOM_*` / `BATTER_DOM_*`
+# scaffolding above. The tuning loop should adjust THESE knobs first
+# (cheap) before retouching the legacy probability tables.
+
+# --- Batter eye: discipline -----------------------------------------------
+# Higher eye → more balls taken, fewer called strikes (deeper counts, more BB).
+BATTER_EYE_BALL:    float = +0.04   # added to p_ball
+BATTER_EYE_CALLED:  float = -0.03   # subtracted from p_called_strike
+
+# --- Batter contact: bat-on-ball ability ----------------------------------
+# Higher contact → fewer swinging strikes, more fouls / balls in play.
+BATTER_CONTACT_SWINGING: float = -0.05
+BATTER_CONTACT_FOUL:     float = +0.02
+BATTER_CONTACT_CONTACT:  float = +0.02
+
+# --- Pitcher command ------------------------------------------------------
+# Higher command → fewer balls (Maddux). Independent of Stuff.
+PITCHER_COMMAND_BALL:   float = -0.05
+PITCHER_COMMAND_CALLED: float = +0.02
+
+# --- Contact-quality shifts -----------------------------------------------
+# Power tilts contact toward hard; movement (pitcher) tilts toward weak.
+CONTACT_POWER_TILT:    float = 0.10
+CONTACT_MOVEMENT_TILT: float = 0.06
+
+# --- Power → HARD_CONTACT HR weight bonus ---------------------------------
+# Slugger archetype: an elite-power batter sees a meaningfully boosted HR
+# row inside the HARD_CONTACT table. (power - 0.5) * 2 ∈ [-1, +1] times this.
+POWER_HR_WEIGHT_SCALE: float = 0.08
+
+# --- Movement → HARD_CONTACT GB bias --------------------------------------
+# Groundball pitcher: shifts hard-contact weight from XBH toward fly_out.
+MOVEMENT_GB_WEIGHT_SCALE: float = 0.04
+
+# --- Platoon split ---------------------------------------------------------
+# Same-handedness penalty applied as multiplicative factor on (b_dom + new
+# batter terms). MLB observed split is ~10–15 wOBA pts; 0.06 here lands in
+# range without overpowering the rest of the model.
+PLATOON_PENALTY:        float = 0.06
+PLATOON_BONUS_SWITCH:   float = 0.0   # switch hitters always face advantage
+
+# --- Daily pitcher form ---------------------------------------------------
+# Per-spell N(mu, sigma) clipped roll. today_form = 1.0 ⇒ legacy parity.
+TODAY_FORM_MU:    float = 1.00
+TODAY_FORM_SIGMA: float = 0.10
+TODAY_FORM_MIN:   float = 0.80
+TODAY_FORM_MAX:   float = 1.20
+# Shift toward strikes on top of the existing pitcher_dom term, scaled by
+# (today_form - 1.0). Magnitudes are deliberately small.
+FORM_BALL:     float = -0.04   # good day → fewer balls
+FORM_CALLED:   float = +0.02
+FORM_SWINGING: float = +0.02
+FORM_CONTACT:  float = -0.03
+
+# --- Park factors ---------------------------------------------------------
+# Multipliers on relevant rows of HARD_CONTACT (HR) and the contact tables
+# (singles/doubles for park_hits). Bounded so even a Coors-like park doesn't
+# create cartoon stat lines.
+PARK_HR_MIN:    float = 0.85
+PARK_HR_MAX:    float = 1.20
+PARK_HITS_MIN:  float = 0.93
+PARK_HITS_MAX:  float = 1.08
+
+# --- Attribute blend weights ----------------------------------------------
+# When folding the new multi-D ratings into the existing probability code,
+# we blend them with the legacy single-skill / single-stuff terms so that
+# new rolls don't overwhelm the calibrated dominance scaffolding above.
+# Set to 0.0 to disable a new attribute entirely.
+BLEND_BATTER_CONTACT_VS_SKILL: float = 0.6   # contact-quality matchup blend
+BLEND_PITCHER_STUFF_VS_FORM:   float = 1.0   # today_form already a multiplier

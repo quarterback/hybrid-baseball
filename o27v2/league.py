@@ -204,6 +204,51 @@ def _tier_unit(rng: random.Random) -> float:
     return _scout.to_unit(_roll_tier_grade(rng))
 
 
+# ---------------------------------------------------------------------------
+# Realism layer — handedness + park factor rolls
+# ---------------------------------------------------------------------------
+# Realistic 1990s-2000s ratios for MLB-shaped lineups. Lefties are slightly
+# over-represented vs population because they get pulled into the game.
+
+_BATS_WEIGHTS  = [("R", 0.55), ("L", 0.33), ("S", 0.12)]
+_THROWS_WEIGHTS_HITTER  = [("R", 0.78), ("L", 0.22)]
+# Pitchers skew slightly more left than the position-player population.
+_THROWS_WEIGHTS_PITCHER = [("R", 0.70), ("L", 0.30)]
+
+
+def _weighted_pick(rng: random.Random, weights: list[tuple[str, float]]) -> str:
+    """Pick from (label, weight) tuples; weights need not sum to 1.0."""
+    total = sum(w for _, w in weights)
+    r = rng.random() * total
+    cumulative = 0.0
+    for label, w in weights:
+        cumulative += w
+        if r < cumulative:
+            return label
+    return weights[-1][0]
+
+
+def _roll_bats(rng: random.Random) -> str:
+    return _weighted_pick(rng, _BATS_WEIGHTS)
+
+
+def _roll_throws(rng: random.Random, is_pitcher: bool) -> str:
+    return _weighted_pick(
+        rng, _THROWS_WEIGHTS_PITCHER if is_pitcher else _THROWS_WEIGHTS_HITTER
+    )
+
+
+def _roll_park_factors(rng: random.Random) -> tuple[float, float]:
+    """Per-team park HR and hits multipliers.
+
+    Most parks are roughly neutral; a handful land at the extremes
+    (Coors-likes, pitcher's parks). HR variance is wider than overall hits.
+    """
+    hr   = round(max(0.85, min(1.20, rng.gauss(1.00, 0.07))), 3)
+    hits = round(max(0.93, min(1.08, rng.gauss(1.00, 0.04))), 3)
+    return hr, hits
+
+
 # Roster shape — Task #65.
 ACTIVE_FIELDERS  = 12   # 8 starting positions + 4 bench
 ACTIVE_DH        = 3    # 3 DH/utility bats (matches the 3-DH batting lineup)
@@ -229,6 +274,11 @@ def _make_hitter(
     """
     skill_g  = _roll_tier_grade(rng)
     speed_g  = _roll_tier_grade(rng)
+    # Realism layer — independently tier-rolled so a hitter can be elite
+    # power but average eye, etc. Drives distinct stat-line shapes.
+    contact_g  = _roll_tier_grade(rng)
+    power_g    = _roll_tier_grade(rng)
+    eye_g      = _roll_tier_grade(rng)
     # Pitcher_skill on a position player is only used in emergencies.
     pskill_g = _roll_tier_grade(rng) // 2 + 10  # cap fielder-pitching at low grades
     return {
@@ -248,6 +298,14 @@ def _make_hitter(
         "age": _player_age(rng),
         "stamina":   _roll_tier_grade(rng) // 2 + 10,  # irrelevant for hitters
         "is_active": is_active,
+        # Realism layer
+        "contact":  contact_g,
+        "power":    power_g,
+        "eye":      eye_g,
+        "command":  50,   # pitcher-only attr; neutral on hitters
+        "movement": 50,   # pitcher-only attr; neutral on hitters
+        "bats":     _roll_bats(rng),
+        "throws":   _roll_throws(rng, is_pitcher=False),
     }
 
 
@@ -266,6 +324,12 @@ def _make_pitcher(
     """
     stuff_g   = _roll_tier_grade(rng)
     stamina_g = _roll_tier_grade(rng)
+    # Realism layer — pitcher Command + Movement rolled INDEPENDENTLY of
+    # Stuff. Drives the Maddux-vs-Ryan stat-shape spectrum: high Command
+    # = low BB regardless of Stuff; high Movement = ground-ball pitcher.
+    command_g  = _roll_tier_grade(rng)
+    movement_g = _roll_tier_grade(rng)
+    throws = _roll_throws(rng, is_pitcher=True)
     return {
         "name": name,
         "position": "P",
@@ -283,6 +347,14 @@ def _make_pitcher(
         "age": _player_age(rng),
         "stamina":   stamina_g,
         "is_active": is_active,
+        # Realism layer
+        "contact":  50,   # hitter-only attr; neutral on pitchers' weak bats
+        "power":    50,
+        "eye":      50,
+        "command":  command_g,
+        "movement": movement_g,
+        "bats":     throws,   # pitchers historically bat from their throwing side
+        "throws":   throws,
     }
 
 
@@ -414,9 +486,11 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
         city   = team_def.get("city", "")
         name   = team_def.get("name", "Team")
 
+        park_hr, park_hits = _roll_park_factors(rng2)
         team_id = db.execute(
-            "INSERT INTO teams (name, abbrev, city, division, league) VALUES (?,?,?,?,?)",
-            (name, abbrev, city, division, league_name),
+            "INSERT INTO teams (name, abbrev, city, division, league, park_hr, park_hits)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (name, abbrev, city, division, league_name, park_hr, park_hits),
         )
         players = generate_players(idx, rng2)
         db.executemany(
@@ -424,8 +498,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
                (team_id, name, position, is_pitcher, skill, speed,
                 pitcher_skill, stay_aggressiveness, contact_quality_threshold,
                 archetype, pitcher_role, hard_contact_delta, hr_weight_bonus,
-                age, stamina, is_active)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                age, stamina, is_active,
+                contact, power, eye, command, movement, bats, throws)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(team_id, p["name"], p["position"], p["is_pitcher"],
               p["skill"], p["speed"], p["pitcher_skill"],
               p["stay_aggressiveness"], p["contact_quality_threshold"],
@@ -433,6 +508,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
               p.get("hard_contact_delta", 0.0), p.get("hr_weight_bonus", 0.0),
               p.get("age", 27),
               p.get("stamina", p.get("pitcher_skill", 50)),
-              p.get("is_active", 1))
+              p.get("is_active", 1),
+              p.get("contact", 50), p.get("power", 50), p.get("eye", 50),
+              p.get("command", 50), p.get("movement", 50),
+              p.get("bats", "R"), p.get("throws", "R"))
              for p in players],
         )

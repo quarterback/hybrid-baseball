@@ -31,6 +31,28 @@ from o27 import config as cfg
 _PITCH_NAMES = ("ball", "called_strike", "swinging_strike", "foul", "contact")
 
 
+def _platoon_factor(batter: Player, pitcher: Player) -> float:
+    """Return the multiplier to apply to batter-side probability shifts.
+
+    Identity invariant: returns 1.0 whenever either side has unknown
+    handedness ('' sentinel), so legacy callers that don't populate
+    bats/throws are unaffected.
+
+    - Switch hitters always get the platoon advantage (factor > 1.0 by
+      a small bonus, configurable via PLATOON_BONUS_SWITCH).
+    - Same-handed matchups (RHB vs RHP, LHB vs LHP) eat the penalty.
+    - Opposite-handed matchups are neutral.
+    """
+    b, p = batter.bats, pitcher.throws
+    if not b or not p:
+        return 1.0
+    if b == "S":
+        return 1.0 + cfg.PLATOON_BONUS_SWITCH
+    if b == p:
+        return 1.0 - cfg.PLATOON_PENALTY
+    return 1.0
+
+
 def _pitch_probs(
     pitcher: Player,
     batter: Player,
@@ -41,17 +63,51 @@ def _pitch_probs(
     """Return adjusted pitch-outcome probability tuple (sums to 1.0)."""
     base = list(cfg.PITCH_BASE.get((balls, strikes), cfg.PITCH_BASE[(0, 0)]))
 
-    # Pitcher dominance: pitcher_skill > 0.5 shifts probability toward strikes.
-    p_dom = (pitcher.pitcher_skill - 0.5) * 2   # −1.0 to +1.0
+    # Daily pitcher form — stored on Player for the duration of the spell.
+    # Multiplies effective Stuff so the same SP can throw a gem one start
+    # and a clunker the next. today_form == 1.0 ⇒ identity.
+    form = getattr(pitcher, "today_form", 1.0)
+    stuff_eff = max(0.0, min(1.0, pitcher.pitcher_skill * form))
+
+    # Pitcher dominance: stuff_eff > 0.5 shifts probability toward strikes.
+    p_dom = (stuff_eff - 0.5) * 2   # −1.0 to +1.0
     base[0] += p_dom * cfg.PITCHER_DOM_BALL
     base[1] += p_dom * cfg.PITCHER_DOM_CALLED
     base[2] += p_dom * cfg.PITCHER_DOM_SWINGING
     base[4] += p_dom * cfg.PITCHER_DOM_CONTACT
 
     # Batter dominance: skill > 0.5 shifts probability toward contact.
-    b_dom = (batter.skill - 0.5) * 2            # −1.0 to +1.0
+    plat = _platoon_factor(batter, pitcher)
+    b_dom = (batter.skill - 0.5) * 2 * plat        # −1.0 to +1.0
     base[2] += b_dom * cfg.BATTER_DOM_SWINGING
     base[4] += b_dom * cfg.BATTER_DOM_CONTACT
+
+    # --- Realism layer ----------------------------------------------------
+    # Each contribution collapses to 0 when the rating == 0.5, preserving
+    # the identity invariant against the legacy probability surface.
+
+    # Eye: discipline → more balls taken, fewer called strikes.
+    eye_dev = (batter.eye - 0.5) * 2 * plat
+    base[0] += eye_dev * cfg.BATTER_EYE_BALL
+    base[1] += eye_dev * cfg.BATTER_EYE_CALLED
+
+    # Contact (batter): bat-on-ball ability → fewer whiffs, more fouls/in-play.
+    con_dev = (batter.contact - 0.5) * 2 * plat
+    base[2] += con_dev * cfg.BATTER_CONTACT_SWINGING
+    base[3] += con_dev * cfg.BATTER_CONTACT_FOUL
+    base[4] += con_dev * cfg.BATTER_CONTACT_CONTACT
+
+    # Command (pitcher): independent of Stuff → control pitchers walk fewer.
+    cmd_dev = (pitcher.command - 0.5) * 2
+    base[0] += cmd_dev * cfg.PITCHER_COMMAND_BALL
+    base[1] += cmd_dev * cfg.PITCHER_COMMAND_CALLED
+
+    # Form: signed deviation from 1.0; same shape as p_dom.
+    form_dev = form - 1.0   # 0 when neutral
+    base[0] += form_dev * cfg.FORM_BALL
+    base[1] += form_dev * cfg.FORM_CALLED
+    base[2] += form_dev * cfg.FORM_SWINGING
+    base[4] += form_dev * cfg.FORM_CONTACT
 
     # Fatigue: spell_count > threshold degrades pitcher performance.
     fatigue_threshold = max(
@@ -104,14 +160,28 @@ def contact_quality(rng: random.Random, batter: Player, pitcher: Player) -> str:
     Phase 8: further shifted by batter.hard_contact_delta (joker archetype modifier).
       Positive delta → more hard contact / fewer weak contacts.
       Sourced from o27v2.config.ARCHETYPE_PA_MODIFIERS via Player.hard_contact_delta.
+
+    Realism layer:
+      - Today's form multiplies effective Stuff for the matchup term.
+      - Power tilts toward hard contact; movement (pitcher) tilts toward weak.
+      - Platoon penalty applied to batter-side terms.
     """
-    matchup = batter.skill - pitcher.pitcher_skill   # +ve → batter advantage
-    shift = matchup * cfg.CONTACT_MATCHUP_SHIFT       # up to ±0.125 swing
+    plat = _platoon_factor(batter, pitcher)
+    form = getattr(pitcher, "today_form", 1.0)
+    stuff_eff = max(0.0, min(1.0, pitcher.pitcher_skill * form))
+
+    matchup = (batter.skill * plat) - stuff_eff   # +ve → batter advantage
+    shift = matchup * cfg.CONTACT_MATCHUP_SHIFT    # up to ±0.125 swing
 
     arch_delta = getattr(batter, "hard_contact_delta", 0.0)
 
-    weak_p   = max(0.05, cfg.CONTACT_WEAK_BASE   - shift - arch_delta)
-    hard_p   = max(0.05, cfg.CONTACT_HARD_BASE   + shift + arch_delta)
+    # Power → harder contact (collapses to 0 at power=0.5).
+    power_tilt = (batter.power - 0.5) * 2 * plat * cfg.CONTACT_POWER_TILT
+    # Movement → weaker contact (collapses to 0 at movement=0.5).
+    move_tilt  = (pitcher.movement - 0.5) * 2 * cfg.CONTACT_MOVEMENT_TILT
+
+    weak_p   = max(0.05, cfg.CONTACT_WEAK_BASE   - shift - arch_delta - power_tilt + move_tilt)
+    hard_p   = max(0.05, cfg.CONTACT_HARD_BASE   + shift + arch_delta + power_tilt - move_tilt)
     medium_p = max(0.05, 1.0 - weak_p - hard_p)
 
     total = weak_p + medium_p + hard_p
@@ -203,6 +273,28 @@ _CONTACT_TABLES = {
 }
 
 
+def _scale_hard_row(
+    row: tuple,
+    hr_bonus: float,
+    park_hr: float,
+    park_hits: float,
+) -> tuple:
+    """Apply HR weight bonus + park factors to one HARD_CONTACT row.
+
+    `hr_bonus` is additive (legacy archetype + new power-derived bump).
+    `park_hr` multiplies the HR row only.
+    `park_hits` multiplies single / double rows. Other rows pass through.
+
+    Identity: hr_bonus=0, park_hr=1.0, park_hits=1.0 ⇒ row unchanged.
+    """
+    name, batter_safe, caught_fly, weight = row
+    if name == "hr":
+        weight = (weight + hr_bonus) * park_hr
+    elif name in ("single", "double"):
+        weight *= park_hits
+    return (name, batter_safe, caught_fly, max(0.01, weight))
+
+
 def _pick_from_table(rng: random.Random, table: list) -> tuple:
     """Pick a row from a (name, batter_safe, caught_fly, weight) table."""
     total = sum(row[3] for row in table)
@@ -236,13 +328,34 @@ def resolve_contact(
     Phase 8: for hard-contact events, batter.hr_weight_bonus adjusts the HR
     row weight in HARD_CONTACT (positive → more HR, negative → fewer HR /
     more line drives / doubles).  Sourced from ARCHETYPE_PA_MODIFIERS.
+
+    Realism layer:
+      - batter.power adds an extra HR-weight bump on top of hr_weight_bonus
+        (collapses to 0 at power=0.5).
+      - The home team's park_hr multiplies the HR row weight (1.0 = identity);
+        park_hits multiplies single/double weights for hit-vs-out feel.
     """
     table = _CONTACT_TABLES.get(quality, cfg.WEAK_CONTACT)
 
-    hr_bonus = getattr(batter, "hr_weight_bonus", 0.0)
-    if quality == "hard" and hr_bonus != 0.0:
+    # Power-driven HR weight bonus, additive with the legacy archetype field.
+    legacy_bonus = getattr(batter, "hr_weight_bonus", 0.0)
+    power_bonus  = (batter.power - 0.5) * 2 * cfg.POWER_HR_WEIGHT_SCALE
+    hr_bonus = legacy_bonus + power_bonus
+
+    # Park factors from the home team (applied symmetrically — both lineups
+    # play in the home park). state.home is the host regardless of half.
+    park_hr   = getattr(state.home, "park_hr", 1.0) if state.home else 1.0
+    park_hits = getattr(state.home, "park_hits", 1.0) if state.home else 1.0
+
+    if quality == "hard" and (hr_bonus != 0.0 or park_hr != 1.0 or park_hits != 1.0):
         table = [
-            (r[0], r[1], r[2], max(0.01, r[3] + (hr_bonus if r[0] == "hr" else 0.0)))
+            _scale_hard_row(r, hr_bonus, park_hr, park_hits)
+            for r in table
+        ]
+    elif quality == "medium" and park_hits != 1.0:
+        table = [
+            (r[0], r[1], r[2],
+             max(0.01, r[3] * (park_hits if r[0] in ("single", "double") else 1.0)))
             for r in table
         ]
 
@@ -374,6 +487,26 @@ class ProbabilisticProvider:
         self.rng = rng
         self._last_batter_id: Optional[str] = None
         self._manager_checked: bool = False
+        # Daily form tracking — every time a fresh pitcher takes the mound
+        # (half start or pitching change) we re-roll their today_form so
+        # the same SP can throw a gem one start and a clunker the next.
+        self._last_pitcher_id: Optional[str] = None
+
+    def _maybe_roll_form(self, state: GameState) -> None:
+        """If the fielding pitcher changed, roll a new today_form for them.
+
+        Identity invariant: when TODAY_FORM_SIGMA is interpreted as the
+        spread, the mean is 1.0 — calls with sigma=0 would always produce
+        1.0 and recover the legacy behavior.
+        """
+        pitcher = state.get_current_pitcher()
+        if pitcher is None:
+            return
+        if pitcher.player_id == self._last_pitcher_id:
+            return
+        self._last_pitcher_id = pitcher.player_id
+        form = self.rng.gauss(cfg.TODAY_FORM_MU, cfg.TODAY_FORM_SIGMA)
+        pitcher.today_form = max(cfg.TODAY_FORM_MIN, min(cfg.TODAY_FORM_MAX, form))
 
     def __call__(self, state: GameState) -> Optional[dict]:
         # Detect new batter (new PA or batter changed by joker insertion).
@@ -381,6 +514,10 @@ class ProbabilisticProvider:
         if current_batter_id != self._last_batter_id:
             self._last_batter_id = current_batter_id
             self._manager_checked = False
+
+        # Refresh today_form whenever the pitcher changes (half start or
+        # mid-game change). Cheap; a single deterministic gauss draw.
+        self._maybe_roll_form(state)
 
         # Manager decisions fire once at the start of each batter's PA.
         if not self._manager_checked:

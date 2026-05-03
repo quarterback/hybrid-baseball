@@ -152,6 +152,18 @@ def _collect_game_metrics(state: GameState, renderer: FastRenderer) -> dict:
     # Multi-hit ABs from FastRenderer.
     multi_hit_abs = renderer.total_multi_hit_abs()
 
+    # Realism rate-stat aggregates from FastRenderer (sum across both teams).
+    pa_total  = sum(s.pa     for s in renderer._batter_stats.values())
+    ab_total  = sum(s.ab     for s in renderer._batter_stats.values())
+    k_total   = sum(s.k      for s in renderer._batter_stats.values())
+    bb_total  = sum(s.bb     for s in renderer._batter_stats.values())
+    h_total   = sum(s.hits   for s in renderer._batter_stats.values())
+    db_total  = sum(s.doubles for s in renderer._batter_stats.values())
+    tr_total  = sum(s.triples for s in renderer._batter_stats.values())
+    hr_total  = sum(s.hr     for s in renderer._batter_stats.values())
+    # Total bases = singles + 2*doubles + 3*triples + 4*hr; singles = h - 2b - 3b - hr.
+    tb_total  = h_total + db_total + 2 * tr_total + 3 * hr_total
+
     # Super-inning triggered?
     had_super = state.super_inning_number > 0
 
@@ -170,6 +182,14 @@ def _collect_game_metrics(state: GameState, renderer: FastRenderer) -> dict:
         "had_super": had_super,
         "joker_insertions": joker_insertions,
         "spell_lengths": spell_lengths,
+        # Realism rate-stat aggregates.
+        "pa_total":  pa_total,
+        "ab_total":  ab_total,
+        "k_total":   k_total,
+        "bb_total":  bb_total,
+        "h_total":   h_total,
+        "hr_total":  hr_total,
+        "tb_total":  tb_total,
     }
 
 
@@ -211,6 +231,23 @@ def aggregate_metrics(game_metrics: list[dict]) -> dict:
     super_count  = sum(1 for m in game_metrics if m["had_super"])
     all_spells   = [sl for m in game_metrics for sl in m["spell_lengths"]]
 
+    # Realism rate-stat totals across the whole batch.
+    pa_sum = sum(m["pa_total"] for m in game_metrics)
+    ab_sum = sum(m["ab_total"] for m in game_metrics)
+    k_sum  = sum(m["k_total"]  for m in game_metrics)
+    bb_sum = sum(m["bb_total"] for m in game_metrics)
+    h_sum  = sum(m["h_total"]  for m in game_metrics)
+    hr_sum = sum(m["hr_total"] for m in game_metrics)
+    tb_sum = sum(m["tb_total"] for m in game_metrics)
+
+    rate_stats = {
+        "k_pct":   k_sum  / pa_sum if pa_sum else 0.0,
+        "bb_pct":  bb_sum / pa_sum if pa_sum else 0.0,
+        "ba":      h_sum  / ab_sum if ab_sum else 0.0,
+        "slg":     tb_sum / ab_sum if ab_sum else 0.0,
+        "hr_pct":  hr_sum / pa_sum if pa_sum else 0.0,
+    }
+
     return {
         "n_games":          n,
         "runs":             _agg(total_runs),
@@ -228,6 +265,7 @@ def aggregate_metrics(game_metrics: list[dict]) -> dict:
         "spell_lengths":    _agg(all_spells),
         "super_inning_pct": super_count / n * 100.0,
         "super_count":      super_count,
+        "rate_stats":       rate_stats,
     }
 
 
@@ -335,6 +373,37 @@ def print_metrics(agg: dict) -> None:
                f"{si_pct:.2f}%  ({agg['super_count']}/{n})",
                "target <5%",
                flag))
+
+    # --- Rate stats (realism layer) ---
+    rs = agg.get("rate_stats", {})
+    if rs:
+        print(f"\n  {'RATE STATS (1990s–2000s flavor)':}")
+        print(_hr())
+        # Targets: contact-era K%, walks that reflect Eye discipline,
+        # peak-offense BA / SLG. Run environment is intentionally NOT
+        # constrained — it's structural to O27's 12-batter / 27-out rules.
+        k_pct = rs["k_pct"] * 100
+        bb_pct = rs["bb_pct"] * 100
+        ba = rs["ba"]
+        slg = rs["slg"]
+        hr_pct = rs["hr_pct"] * 100
+        print(_row("League K%",
+                   f"{k_pct:.2f}%",
+                   "target 17–19%",
+                   _flag(k_pct, 17.0, 19.0)))
+        print(_row("League BB%",
+                   f"{bb_pct:.2f}%",
+                   "target 9–10%",
+                   _flag(bb_pct, 9.0, 10.0)))
+        print(_row("League BA",
+                   f".{int(round(ba * 1000)):03d}",
+                   "target .280–.305"))
+        print(_row("League SLG",
+                   f".{int(round(slg * 1000)):03d}",
+                   "target .440–.480"))
+        print(_row("League HR/PA",
+                   f"{hr_pct:.2f}%",
+                   "target 2.0–2.6%"))
 
     # --- Manager activity ---
     print(f"\n  {'MANAGER ACTIVITY':}")

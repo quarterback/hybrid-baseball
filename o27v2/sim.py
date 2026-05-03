@@ -95,6 +95,17 @@ def _db_team_to_engine(
             pitcher_role=str(p.get("pitcher_role") or ""),
             hard_contact_delta=float(p.get("hard_contact_delta") or 0.0),
             hr_weight_bonus=float(p.get("hr_weight_bonus") or 0.0),
+            # Realism layer — defaults of 50 / 'R' produce engine-identical
+            # behavior on legacy DB rows that predate these columns.
+            contact=_scout.to_unit(p.get("contact") or 50),
+            power=_scout.to_unit(p.get("power") or 50),
+            eye=_scout.to_unit(p.get("eye") or 50),
+            command=_scout.to_unit(p.get("command") or 50),
+            movement=_scout.to_unit(p.get("movement") or 50),
+            # Legacy DB rows pre-realism return '' / 'R' from the column
+            # default; only treat seeded 'L'/'R'/'S' as platoon-applicable.
+            bats=str(p.get("bats") or ""),
+            throws=str(p.get("throws") or ""),
         )
         engine_players.append(player)
         engine_to_db_id[player.player_id] = int(p["id"])
@@ -134,6 +145,8 @@ def _db_team_to_engine(
         roster=engine_players,
         lineup=lineup,
         jokers_available=list(jokers),
+        park_hr=float(team_row.get("park_hr") or 1.0),
+        park_hits=float(team_row.get("park_hits") or 1.0),
     )
 
 
