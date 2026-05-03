@@ -416,10 +416,21 @@ def get_current_sim_date() -> str | None:
     stored = row["value"] if row and row["value"] else None
     if stored is None:
         # Lazy-init: prefer the next unplayed date so existing leagues with progress
-        # show the right date, falling back to the schedule's first day.
-        seed = get_earliest_unplayed_date() or get_first_scheduled_date()
-        if seed is None:
-            return None
+        # show the right date. If the league is already fully played, seed to
+        # last_scheduled_date + 1 so is_season_complete() returns true. Final fallback
+        # is the schedule's first day for a brand-new (unplayed) schedule.
+        earliest = get_earliest_unplayed_date()
+        if earliest is not None:
+            seed = earliest
+        else:
+            last = get_last_scheduled_date()
+            if last is not None:
+                seed = (_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat()
+            else:
+                first = get_first_scheduled_date()
+                if first is None:
+                    return None
+                seed = first
         db.execute(
             "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('sim_date', ?)",
             (seed,),
@@ -456,6 +467,9 @@ def set_sim_date(date: str | None) -> None:
 
 
 def is_season_complete() -> bool:
+    # Authoritative: no unplayed games left.
+    if get_earliest_unplayed_date() is None:
+        return True
     current = get_current_sim_date()
     last = get_last_scheduled_date()
     if current is None or last is None:
