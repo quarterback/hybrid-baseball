@@ -1,0 +1,62 @@
+Game #1353 surfaces super-inning rendering bugs. Six things:
+
+1. SUPER-INNING ROUNDS NOT LABELED. Tae-Hoon Nakamura appears 3 
+   times as separate rows. Beau Finn appears 3 times. No row 
+   indicates which is regulation, which is SI Round 1, etc. 
+   Either:
+   (a) Group rows by section with headers: "Regulation", 
+       "Super-Inning 1", "Super-Inning 2", "Super-Inning 3"
+   (b) Add a column to each row indicating the phase
+   (c) Aggregate per-player across all rounds with a single 
+       totals row per player, and show round-by-round breakdown 
+       only on click/expand
+
+2. OS% IS BROKEN ONCE SUPER-INNINGS HAPPEN. Beau Finn's middle 
+   row shows 104% OS%. Totals row shows 337%. Outs share is a 
+   percentage of 27 only during regulation. In super-innings, 
+   the denominator is the round's out cap (5 dismissals). 
+   Either:
+   (a) Compute OS% per phase (regulation OS% out of 27, SI 
+       round OS% out of 5)
+   (b) Use a unified denominator: total team outs across all 
+       phases (regulation 27 + SI rounds) and compute OS% 
+       against that
+   
+   Whichever, the displayed value can never exceed 100%. 
+   A 337% value is mathematical nonsense.
+
+3. PITCHER OUTS TOTAL 91. Three super-innings of 5-dismissal 
+   rounds + 27 regulation = 42 max. 91 is impossible. Investigate:
+   (a) Are super-innings actually stopping after a winner is 
+       determined, or are they running indefinitely?
+   (b) Is the "out" counter accumulating correctly across phases?
+   (c) Are dismissals being counted as outs correctly?
+
+4. STAY INDICATOR "S" SUFFIX IS BACK ON PLAYER NAMES. Tyler 
+   Larsen S, Dawel Cedillo S. Spec was clear: player names 
+   are clean, stays don't surface in name display. Fix.
+
+5. "Team (legacy CS / FC / non-batter outs)" PATCH ROW IS BACK 
+   in totals. Same fix as before — attribute outs correctly in 
+   the engine, don't patch the totals row.
+
+6. SUPER-INNING SHOULD BE A SEPARATE BOX SCORE SECTION, not 
+   appended rows in the regulation batting/pitching tables. 
+   Suggested layout:
+   
+   - Regulation Batting (12 rows per team)
+   - Regulation Pitching (3-5 rows per team)
+   - Super-Inning Round 1 (5 batters per team + pitchers used)
+   - Super-Inning Round 2 (only if needed)
+   - Super-Inning Round 3 (only if needed)
+   - Game Totals (regulation + super-innings, one row per player)
+   
+   This is how cricket renders Super Overs and how MLB renders 
+   extra-inning totals. Don't smash all phases into one table.
+
+CONFIRM before next sim:
+- Super-innings are stopping after a winner is determined per 
+  spec (each side fields 5 batters, bats until 5 dismissals or 
+  team is ahead at end of round, repeat until winner).
+- Regulation outs cap at 27 per side and never accumulate further 
+  in the regulation totals.

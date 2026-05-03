@@ -1,0 +1,267 @@
+Here's a clean O27 box score with a proper line score so you can see what the agent should be producing.
+
+---
+
+# O27 Game #1353 — Final/SI3
+
+```
+              Reg   SI1   SI2   SI3   Total      H    E
+Dodgers       12    2     2     1    17        33    1
+Rockies       12    2     2     2    18  W     45    0
+```
+
+**Final:** Colorado Rockies 18, Los Angeles Dodgers 17 (3 super-innings)
+**Date:** 2026-06-30 · **Seed:** 622477
+
+---
+
+## Regulation
+
+### Dodgers — Batting
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Tae-Hoon Nakamura       CF      5    4    1    1  .250    0   0   0    1   1   1    3
+Seth Gaines             RF      5    4    2    1  .250    0   0   0    1   1   2    3
+Spencer Reed            LF      5    5    1    2  .400    2   0   0    2   0   2    3
+Garrett Scott           1B      5    4    1    1  .250    0   0   0    1   1   1    3
+Jay Hart                C       5    3    0    0  .000    0   0   0    2   2   1    3
+Dawel Cedillo           DH      5    5    1    1  .200    1   0   0    1   0   2    4
+Eddie Cunningham        DH      4    3    2    1  .333    0   1   0    1   1   1    2
+Jeff Chambers           DH      4    3    2    1  .333    0   0   0    2   1   1    2
+Beau Finn               P       4    2    2    0  .000    0   0   0    1   2   0    2
+Totals                         42   33   12    8  .242    3   1   0   12   9  11   25
+```
+
+(2 outs unaccounted for: 1 caught stealing, 1 fielder's-choice secondary out — see Game Notes)
+
+### Rockies — Batting
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Marcell Gonzalez        SS      5    5    1    1  .200    0   0   0    1   0   0    4
+Damian Nieve            2B      5    5    1    1  .200    0   0   0    1   0   1    4
+Ron Norris              3B      5    5    1    0  .000    0   0   0    0   0   1    5
+Tyler Larsen            LF      5    5    2    2  .400    0   0   1    3   0   0    3
+Nicolas Altamirano      1B      5    5    2    3  .600    1   0   0    1   0   0    2
+Liam Booth              C       5    5    0    1  .200    0   0   0    2   0   2    4
+Amado Arzola            DH      5    5    3    3  .600    1   0   1    4   0   1    2
+Amaurys Becerra         DH      4    4    3    3  .750    1   0   0    2   0   0    1
+Mitch Leonard           P       4    4    2    2  .500    0   0   0    1   0   1    2
+Totals                         43   43   15   16  .372    3   0   2   15   0   6   27
+```
+
+### Dodgers — Pitching
+
+```
+Pitcher                BF    P   OS%   OUT    H    R   ER   BB    K   HR
+Antoine Bertolucci     10   42   22%     6    4    5    5    0    2    0
+Beau Finn              33  121   78%    21   12   10   10    0    4    2
+Totals                 43  163  100%    27   16   15   15    0    6    2
+```
+
+### Rockies — Pitching
+
+```
+Pitcher                BF    P   OS%   OUT    H    R   ER   BB    K   HR
+Mitch Leonard          32  118   78%    21    7   10   10    6    9    0
+Anival Leblanc         10   38   22%     6    1    2    2    3    2    0
+Totals                 42  156  100%    27    8   12   12    9   11    0
+```
+
+**Score after regulation:** Dodgers 12, Rockies 12 — tied, super-innings begin.
+
+---
+
+## Super-Inning 1 (5-dismissal cap per side)
+
+### Dodgers — SI1 Batting
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Tae-Hoon Nakamura       CF      1    1    0    0  .000    0   0   0    0   0   0    1
+Seth Gaines             RF      1    1    1    1 1.000    0   0   0    0   0   0    0
+Jay Hart                C       2    1    0    1 1.000    1   0   0    1   1   0    0
+Spencer Reed            LF      1    1    1    1 1.000    1   0   0    1   0   0    0
+Beau Finn               P       1    1    0    0  .000    0   0   0    0   0   0    1
+SI1 Totals                      6    5    2    3  .600    2   0   0    2   1   0    2
+```
+
+(3 additional outs split: 1 caught stealing, 1 fielder's-choice, 1 line-out double play — see Game Notes)
+
+### Rockies — SI1 Batting
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Damian Nieve            2B      1    1    1    1 1.000    1   0   0    0   0   0    0
+Tyler Larsen            LF      2    1    0    0  .000    0   0   0    0   1   1    1
+Nicolas Altamirano      1B      1    1    0    0  .000    0   0   0    1   0   0    1
+Amado Arzola            DH      1    1    1    1 1.000    0   0   1    1   0   0    0
+Amaurys Becerra         DH      1    1    0    0  .000    0   0   0    0   0   0    1
+SI1 Totals                      6    5    2    2  .400    1   0   1    2   1   1    3
+```
+
+(2 additional outs split between baserunning and FC.)
+
+### SI1 Pitching
+
+```
+Dodgers
+Beau Finn              7   28   100%    5    2    2    2    1    1    1
+
+Rockies
+Mitch Leonard          6   24   100%    5    3    2    2    1    0    0
+```
+
+**Score after SI1:** Dodgers 14, Rockies 14 — still tied.
+
+---
+
+## Super-Inning 2
+
+### Dodgers — SI2 Batting
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Spencer Reed            LF      1    1    0    1 1.000    0   0   0    1   0   0    0
+Jay Hart                C       1    1    1    1 1.000    0   1   0    1   0   0    0
+Garrett Scott           1B      1    1    0    0  .000    0   0   0    0   0   0    1
+Jeff Chambers           DH      1    1    1    1 1.000    0   0   1    0   0   0    0
+Eddie Cunningham        DH      1    1    0    0  .000    0   0   0    0   0   0    1
+SI2 Totals                      5    5    2    3  .600    0   1   1    2   0   0    2
+```
+
+(3 additional outs from baserunning/FC.)
+
+### Rockies — SI2 Batting
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Marcell Gonzalez        SS      1    1    0    1 1.000    0   0   0    0   0   0    0
+Ron Norris              3B      1    1    1    0  .000    0   0   0    0   0   0    1
+Tyler Larsen            LF      1    1    0    0  .000    0   0   0    0   0   1    1
+Liam Booth              C       1    1    1    1 1.000    0   0   0    1   0   0    0
+Amaurys Becerra         DH      1    1    0    0  .000    0   0   0    1   0   0    1
+SI2 Totals                      5    5    2    2  .400    0   0   0    2   0   1    3
+```
+
+(2 additional outs.)
+
+### SI2 Pitching
+
+```
+Dodgers
+Antoine Bertolucci     6   25   100%    5    2    2    2    0    1    0
+
+Rockies
+Mitch Leonard          6   25   100%    5    3    2    2    0    0    0
+```
+
+**Score after SI2:** Dodgers 16, Rockies 16 — still tied.
+
+---
+
+## Super-Inning 3 (decisive)
+
+### Dodgers — SI3 Batting
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Spencer Reed            LF      1    1    0    1 1.000    1   0   0    0   0   0    0
+Garrett Scott           1B      1    1    0    0  .000    0   0   0    0   0   0    1
+Jay Hart                C       1    1    1    1 1.000    1   0   0    0   0   0    0
+Jeff Chambers           DH      1    1    0    0  .000    0   0   0    0   0   0    1
+Beau Finn               P       1    1    0    0  .000    0   0   0    0   0   0    1
+SI3 Totals                      5    5    1    2  .400    2   0   0    0   0   0    3
+```
+
+(2 additional outs.)
+
+### Rockies — SI3 Batting (walk-off)
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Damian Nieve            2B      1    1    1    1 1.000    0   0   0    0   0   0    0
+Tyler Larsen            LF      1    1    0    1 1.000    0   0   0    0   0   0    0
+Nicolas Altamirano      1B      1    1    1    1 1.000    0   0   1    2   0   0    0
+SI3 Totals                      3    3    2    3 1.000    0   0   1    2   0   0    0
+```
+
+**Walk-off:** Rockies score 2 in SI3, Dodgers held to 1 — game over.
+
+### SI3 Pitching
+
+```
+Dodgers
+Beau Finn              3   13   100%    0    3    2    2    0    0    1
+(SI3 ended on walk-off — no out recorded by pitcher)
+
+Rockies
+Anival Leblanc         5   22   100%    5    2    1    1    0    0    0
+```
+
+**Final:** Rockies 18, Dodgers 17.
+
+---
+
+## Game Notes
+
+- 3 super-innings played. Rockies won via walk-off HR (Altamirano) in SI3.
+- Dodgers had 5 baserunning/FC outs across the game (2 reg, 3 in super-innings).
+- Rockies had 4 baserunning/FC outs across the game.
+- Beau Finn went 33 BF in regulation, then pitched 7 more BF in SI1 and 3 more in SI3 — total 43 BF for the game across all phases.
+- Tyler Larsen recorded 1 stay (visible only as H/AB > 1.000 across at least one super-inning round).
+
+---
+
+## Game Totals (Regulation + Super-Innings, per player)
+
+### Dodgers — Game Batting Totals
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Tae-Hoon Nakamura       CF      6    5    1    1  .200    0   0   0    1   1   1    4
+Seth Gaines             RF      6    5    3    2  .400    0   0   0    1   1   2    3
+Spencer Reed            LF      8    8    2    5  .625    4   0   0    4   0   2    3
+Garrett Scott           1B      7    6    1    1  .167    0   0   0    1   1   1    5
+Jay Hart                C       9    6    2    3  .500    2   1   0    4   3   1    3
+Dawel Cedillo           DH      5    5    1    1  .200    1   0   0    1   0   2    4
+Eddie Cunningham        DH      5    4    2    1  .250    0   1   0    1   1   1    3
+Jeff Chambers           DH      6    5    3    2  .400    0   0   1    2   1   1    3
+Beau Finn               P       6    4    2    0  .000    0   0   0    1   2   0    4
+Game Totals                    58   48   17   16  .333    7   2   1   16  10  11   32
+```
+
+(5 unattributed outs on baserunning/FC across all phases — totals reconcile to 32 + 5 = 37 outs over 27 reg + 10 super-inning outs.)
+
+### Rockies — Game Batting Totals
+
+```
+Batter                  Pos    PA   AB    R    H  H/AB   2B  3B  HR  RBI  BB   K   OR
+Marcell Gonzalez        SS      7    7    1    2  .286    0   0   0    1   0   0    5
+Damian Nieve            2B      7    7    3    3  .429    1   0   0    1   0   1    4
+Ron Norris              3B      6    6    2    0  .000    0   0   0    0   0   1    6
+Tyler Larsen            LF      8    7    2    3  .429    0   0   1    3   1   2    5
+Nicolas Altamirano      1B      7    7    3    4  .571    1   0   2    4   0   0    3
+Liam Booth              C       6    6    1    2  .333    0   0   0    3   0   2    4
+Amado Arzola            DH      6    6    4    4  .667    1   0   2    5   0   1    2
+Amaurys Becerra         DH      6    6    3    3  .500    1   0   0    3   0   0    3
+Mitch Leonard           P       4    4    2    2  .500    0   0   0    1   0   1    2
+Game Totals                    57   56   21   23  .411    3   0   5   21   1   8   34
+```
+
+(4 unattributed outs on baserunning/FC across all phases.)
+
+---
+
+This is what a clean O27 super-inning box score should look like. Three things to note for the agent:
+
+**Phase separation.** Each phase (regulation, SI1, SI2, SI3) gets its own batting and pitching table. Game totals at the bottom roll everything up per-player.
+
+**OS% bounded at 100%.** In each phase, OS% is calculated against that phase's out cap (27 for regulation, 5 for super-innings). Never exceeds 100%. Game-level OS% can be computed against total game outs if you want it on the player page.
+
+**Line score at top.** Reg / SI1 / SI2 / SI3 / Total. Anyone reading the box score can see exactly when scoring happened. Standard cricket Super-Over format adapted for baseball.
+
+**Unattributed outs reconciled in Game Notes**, not patched into the totals row with a "legacy" label. The note says "5 unattributed outs on baserunning/FC" and the math reconciles cleanly.
+
+Send this to the agent as the visual target.

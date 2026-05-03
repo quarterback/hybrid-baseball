@@ -1,0 +1,63 @@
+This is a clean, well-scoped plan. The agent did good investigative work — surfaced two real underlying problems (duplicate `game_pitcher_stats` rows, W-credit tie-breaking by row order rather than leverage) that we hadn't called out.
+
+Three reactions before you send my super-inning mock:
+
+**The plan is right about scope.** This task is web/SQL-layer cleanup. The engine bugs (OS%>100%, 91 outs in super-inning, legacy CS/FC patch row, super-inning rendering) are explicitly out of scope here and "handled in the parallel engine task." That's the correct split — don't conflate display fixes with engine fixes.
+
+**The FIP decision is reasonable.** Raising the qualifying threshold + adding a methodology note is the right call. The math is correct; what's misleading is the visual impression for users seeing single-digit FIP next to ~11.50 ERA. A footnote like "FIP recalibrated for O27 run environment; league-average FIP equals league-average ERA" gives readers the context without changing the underlying calculation.
+
+**The W audit is the most important finding.** Duplicate rows in `game_pitcher_stats` for the same `(player_id, game_id)` is a real database integrity issue. The agent flagged that the W-credit dedupe is safe at `(game_id, team_id)`, but appearances/BF/K totals are double-counting. That means **Il-Ho Park's 89 appearances might really be 50-something**, his BF total might be inflated, his K total might be inflated. This is worth fixing as a database constraint (UNIQUE on `(player_id, game_id)`) plus the dedup pass, not just a query-time workaround.
+
+The duplicate-row issue is almost certainly what caused the implausible appearance counts and the 56-BF single-game outliers we saw earlier. Worth surfacing that connection — fixing the duplication will also fix some of what looked like schedule-bug symptoms.
+
+**One addition worth proposing:** add an automated invariant test. The kinds of bugs the user catches (OS% > 100%, W > G, totals not reconciling to 27, FIP nonsense) all have simple invariants:
+
+- `pitcher.OS%_per_phase ≤ 100%` (per phase, not aggregated)
+- `pitcher.W ≤ pitcher.G`
+- `team.outs_per_phase = phase_cap` (27 for regulation, 5 for super-inning)
+- `batter.PA = batter.AB + batter.BB + batter.HBP + batter.SF + batter.SH`
+- `team.batting_outs ≥ Σ(player.OR)` (team outs equals or exceeds sum of attributed outs; the difference is unattributed CS/FC)
+- `count(game_pitcher_stats per (player_id, game_id)) = 1`
+
+A test suite that runs after every full season sim and asserts these would catch the things you've been catching by eye. Worth adding to the parallel engine task as Task #58.
+
+**Now about my super-inning mock.** Send it. The plan #57 explicitly says super-inning rendering is out of scope, but the mock is the *visual target* for the parallel engine task. The agent doing the engine work needs to know what the output should look like. The mock has:
+
+- Line score with phase columns (Reg / SI1 / SI2 / SI3 / Total)
+- Phase-separated batting and pitching tables
+- OS% bounded at 100% per phase
+- Game-level totals as a separate roll-up
+- Game Notes for unattributed outs (no "legacy" patch row)
+- Clear walk-off labeling
+
+That's the spec for the engine team. Send it as a companion document to whatever the parallel engine task is, framed as "here's what a properly-rendered super-inning game should look like — match this layout."
+
+What I'd send back to the agent on #57:
+
+```
+Plan looks good. Two additions:
+
+1. The duplicate game_pitcher_stats rows are likely also inflating 
+   appearances, BF, K totals across the leaderboards (not just W). 
+   Add a UNIQUE constraint on (player_id, game_id) at the DB level 
+   so duplicates can't be inserted going forward, plus the dedup 
+   pass for existing data. This will also explain the 56-BF 
+   single-game outliers we saw earlier — those are probably 
+   merged duplicate rows.
+
+2. Add a Task #58 alongside this: automated invariant tests that 
+   run after every full season sim. At minimum:
+   - OS% per phase ≤ 100%
+   - W ≤ G per pitcher
+   - Phase outs = phase cap (27 reg, 5 SI)
+   - PA = AB + BB + HBP + SF + SH per batter
+   - Exactly one row per (player_id, game_id) in game_pitcher_stats
+   
+   These are the invariants users keep finding by eye. Failing 
+   these in CI catches them before they ship.
+
+Otherwise: ship #57 as written. The FIP threshold + footnote 
+combination is the right call.
+```
+
+Then send my super-inning mock as the visual target for whatever is fixing the engine-side rendering.

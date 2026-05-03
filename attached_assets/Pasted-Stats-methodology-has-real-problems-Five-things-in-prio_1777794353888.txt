@@ -1,0 +1,43 @@
+Stats methodology has real problems. Five things, in priority order:
+
+1. FIP IS BROKEN. League-average FIP should equal league-average 
+   ERA (~11.50). The leaderboard shows FIP of 0.54, 1.35, 3.04 at 
+   the top — these would imply pitchers 10+ runs better than league 
+   average, which is impossible. The FIP recalibration from Task #32 
+   either wasn't done or produced wrong constants. Re-derive the 
+   FIP constant against the actual O27 run environment so 
+   league-average FIP = league-average ERA.
+
+2. WIN COUNT IS IMPOSSIBLE. Il-Ho Park leads with 41 wins. He has 
+   59 pitching appearances. A pitcher cannot win more games than 
+   he appeared in. Either wins are being double-counted, or "W" 
+   means something other than pitching wins (team record when he 
+   played?). Audit the W calculation. Real wins are awarded to 
+   one pitcher per game per the standard rule.
+
+3. STAYS IS A LEADERBOARD CATEGORY AGAIN. Task #32 said drop STY 
+   everywhere. Remove the "Stays" leaderboard. The H/AB column 
+   surfaces the same information as a real baseball stat.
+
+4. PILOTS BATTING ROW HAS A "Team (legacy CS / FC / non-batter outs)" 
+   PATCH ROW. Outs from caught stealing, fielder's choice secondary 
+   outs, and other non-batter-attributed outs should be properly 
+   attributed in the engine — either to the batter whose PA caused 
+   them, to the runner thrown out, or to a team-level "other outs" 
+   that shows up cleanly in the totals. The "legacy" patch is a 
+   hack. Fix the attribution logic in the engine, not the totals row.
+
+5. PITCHER GAME LOG SHOWS APPEARANCES OF 46, 48, 56 BF in single 
+   games. A workhorse facing 56 batters in one game is implausible. 
+   These are likely doubleheaders being merged from the schedule 
+   bug, or super-innings being appended to regulation lines. 
+   Investigate.
+
+ALSO: every stat table needs column headers. The Il-Ho Park player 
+page shows "59 2004 1387 535 87% 518 535 133 531 10.41 7.93 12.67 
+10.34 2.59" with no header row. Two adjacent numbers (518 and 535) 
+that I can't even identify as H or K. Same problem on batting totals. 
+Headers on every table.
+
+Confirm fixes 1-3 are done before the next sim run. Fix 4 and 5 
+require engine work — flag any complications.
