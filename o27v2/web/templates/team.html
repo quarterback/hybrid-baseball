@@ -2,115 +2,127 @@
 {% block title %}{{ team.name }}{% endblock %}
 {% block content %}
 
-<nav aria-label="breadcrumb" class="mb-3">
-  <ol class="breadcrumb">
+<nav aria-label="breadcrumb" class="mb-2">
+  <ol class="breadcrumb small mb-0">
     <li class="breadcrumb-item"><a href="{{ url_for('teams') }}">Teams</a></li>
     <li class="breadcrumb-item active">{{ team.name }}</li>
   </ol>
 </nav>
 
-<div class="row g-3 mb-4">
-  <div class="col-auto">
-    <div class="card p-4 text-center" style="min-width:160px">
-      <div class="team-abbrev" style="font-size:3rem">{{ team.abbrev }}</div>
-      <div class="fw-bold fs-5">{{ team.name }}</div>
-      <div class="text-secondary small">{{ team.city }}</div>
-      <div class="text-secondary small">{{ team.division }} · {{ team.league }}</div>
+{# ---- Compact header strip ---- #}
+<div class="dense p-2 mb-3 d-flex flex-wrap align-items-center gap-3">
+  <span class="team-abbrev" style="font-size:1.6rem">{{ team.abbrev }}</span>
+  <span class="fw-bold fs-5">{{ team.name }}</span>
+  <span class="text-secondary">{{ team.city }}</span>
+  <span class="text-secondary">·</span>
+  <span class="text-secondary">{{ team.division }}</span>
+  <span class="text-secondary">·</span>
+  <span class="fw-bold num" style="font-size:1.05rem">{{ team.wins }}-{{ team.losses }}</span>
+  <span class="text-secondary num">({{ win_pct(team) }})</span>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="dense">
+      <div class="panel-title">Batting</div>
+      {% if batters %}
+      <table class="table table-sm dense-table sortable mb-0">
+        <thead><tr>
+          <th>Name</th><th>Pos</th>
+          <th class="num">Age</th>
+          <th class="num">GP</th><th class="num">PA</th><th class="num">AB</th>
+          <th class="num">H</th><th class="num">HR</th><th class="num">RBI</th><th class="num">R</th><th class="num">BB</th><th class="num">SO</th>
+          <th class="num">AVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
+        </tr></thead>
+        <tbody>
+        {% for p in batters %}
+        <tr {% if p.is_joker %}style="color:#f0883e"{% endif %}>
+          <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.is_joker %} <span class="si-badge">JKR</span>{% endif %}</td>
+          <td class="text-secondary">{{ p.position }}</td>
+          <td class="num text-secondary">{{ p.age }}</td>
+          <td class="num">{{ p.gp or 0 }}</td>
+          <td class="num">{{ p.pa or 0 }}</td>
+          <td class="num">{{ p.ab or 0 }}</td>
+          <td class="num fw-bold">{{ p.h or 0 }}</td>
+          <td class="num">{{ p.hr or 0 }}</td>
+          <td class="num">{{ p.rbi or 0 }}</td>
+          <td class="num">{{ p.r or 0 }}</td>
+          <td class="num">{{ p.bb or 0 }}</td>
+          <td class="num">{{ p.k or 0 }}</td>
+          <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.avg) }}">{{ '%.3f'|format(p.avg) }}</td>
+          <td class="num" data-sort-value="{{ '%.4f'|format(p.obp) }}">{{ '%.3f'|format(p.obp) }}</td>
+          <td class="num" data-sort-value="{{ '%.4f'|format(p.slg) }}">{{ '%.3f'|format(p.slg) }}</td>
+          <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.ops) }}">{{ '%.3f'|format(p.ops) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="p-3 text-center text-secondary small">No batters on roster.</div>
+      {% endif %}
     </div>
   </div>
-  <div class="col">
-    <div class="row g-2">
-      <div class="col-auto">
-        <div class="card p-3 text-center">
-          <div class="score-big" style="color:#2ea043">{{ team.wins }}</div>
-          <div class="score-label">Wins</div>
-        </div>
-      </div>
-      <div class="col-auto">
-        <div class="card p-3 text-center">
-          <div class="score-big text-danger">{{ team.losses }}</div>
-          <div class="score-label">Losses</div>
-        </div>
-      </div>
-      <div class="col-auto">
-        <div class="card p-3 text-center">
-          <div class="score-big">{{ win_pct(team) }}</div>
-          <div class="score-label">Win Pct</div>
-        </div>
-      </div>
+
+  <div class="col-lg-5">
+    <div class="dense">
+      <div class="panel-title">Pitching</div>
+      {% if pitchers %}
+      <table class="table table-sm dense-table sortable mb-0">
+        <thead><tr>
+          <th>Name</th>
+          <th class="num">Age</th>
+          <th class="num">GP</th><th class="num">W</th><th class="num">L</th>
+          <th class="num">ERA</th><th class="num">ER</th><th class="num">IP</th><th class="num">K</th><th class="num">WHIP</th>
+        </tr></thead>
+        <tbody>
+        {% for p in pitchers %}
+        <tr style="color:#79c0ff">
+          <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.pitcher_role %} <span class="text-secondary small">· {{ p.pitcher_role }}</span>{% endif %}</td>
+          <td class="num text-secondary">{{ p.age }}</td>
+          <td class="num">{{ p.gp or 0 }}</td>
+          <td class="num">{{ p.w or 0 }}</td>
+          <td class="num">{{ p.l or 0 }}</td>
+          <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.era) }}">{{ '%.2f'|format(p.era) }}</td>
+          <td class="num">{{ p.er or 0 }}</td>
+          <td class="num" data-sort-value="{{ '%.2f'|format(p.ip) }}">{{ '%.1f'|format(p.ip) }}</td>
+          <td class="num">{{ p.k or 0 }}</td>
+          <td class="num" data-sort-value="{{ '%.3f'|format(p.whip) }}">{{ '%.2f'|format(p.whip) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="p-3 text-center text-secondary small">No pitchers on roster.</div>
+      {% endif %}
     </div>
   </div>
 </div>
 
-<div class="row g-3">
-  <div class="col-lg-6">
-    <div class="card">
-      <div class="card-header fw-bold">Roster</div>
-      <div class="card-body p-0">
-        <table class="table table-sm mb-0">
-          <thead><tr>
-            <th>Name</th><th>Pos</th><th class="text-end">Hit</th>
-            <th class="text-end">Run</th><th class="text-end">Arm</th>
-          </tr></thead>
-          <tbody>
-          {% for p in players %}
-          <tr {% if p.position == 'DH' %}style="color:#f0883e"{% elif p.is_pitcher %}style="color:#79c0ff"{% endif %}>
-            <td>
-              <a href="{{ url_for('player_detail', player_id=p.id) }}" class="text-decoration-none">{{ p.name }}</a>
-              {% if p.position == 'DH' %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65rem">DH</span>{% endif %}
-              {% if p.is_pitcher %}<span class="badge bg-info text-dark ms-1" style="font-size:.65rem">P</span>{% endif %}
-            </td>
-            <td class="text-secondary">{{ p.position }}</td>
-            <td class="text-end fw-bold">{{ p.skill | scout }}</td>
-            <td class="text-end text-secondary">{{ p.speed | scout }}</td>
-            <td class="text-end text-secondary">{{ p.pitcher_skill | scout }}</td>
-          </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-lg-6">
-    <div class="card">
-      <div class="card-header fw-bold">Recent Games</div>
-      <div class="card-body p-0">
-        {% if recent %}
-        <table class="table table-sm mb-0">
-          <thead><tr><th>Date</th><th>Opp</th><th>Score</th><th>W/L</th><th></th></tr></thead>
-          <tbody>
-          {% for g in recent %}
-          {% set is_home = (g.home_team_id == team.id) %}
-          {% set our_score = g.home_score if is_home else g.away_score %}
-          {% set their_score = g.away_score if is_home else g.home_score %}
-          {% set opp_abbrev = g.away_abbrev if is_home else g.home_abbrev %}
-          {% set opp_id = g.away_team_id if is_home else g.home_team_id %}
-          {% set won = (g.winner_id == team.id) %}
-          <tr>
-            <td class="text-secondary small">{{ g.game_date }}</td>
-            <td>
-              {% if is_home %}vs{% else %}@{% endif %}
-              <a href="{{ url_for('team_detail', team_id=opp_id) }}" class="team-abbrev text-decoration-none">
-                {{ opp_abbrev }}
-              </a>
-            </td>
-            <td class="fw-bold">{{ our_score }}–{{ their_score }}</td>
-            <td>
-              {% if won %}<span class="text-success fw-bold">W</span>
-              {% else %}<span class="text-danger fw-bold">L</span>{% endif %}
-              {% if g.super_inning %}<span class="si-badge ms-1">SI</span>{% endif %}
-            </td>
-            <td><a href="{{ url_for('game_detail', game_id=g.id) }}" class="small">Box</a></td>
-          </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-        {% else %}
-        <div class="p-4 text-center text-secondary">No games played yet.</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+<div class="dense mt-3">
+  <div class="panel-title">Last 10 Games</div>
+  {% if recent %}
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr><th>Date</th><th>Opp</th><th class="num">Score</th><th>W/L</th><th></th></tr></thead>
+    <tbody>
+    {% for g in recent %}
+    {% set is_home = (g.home_team_id == team.id) %}
+    {% set our_score = g.home_score if is_home else g.away_score %}
+    {% set their_score = g.away_score if is_home else g.home_score %}
+    {% set opp_abbrev = g.away_abbrev if is_home else g.home_abbrev %}
+    {% set opp_id = g.away_team_id if is_home else g.home_team_id %}
+    {% set won = (g.winner_id == team.id) %}
+    <tr>
+      <td class="text-secondary small">{{ g.game_date }}</td>
+      <td>{% if is_home %}vs{% else %}@{% endif %} <a href="{{ url_for('team_detail', team_id=opp_id) }}" class="team-abbrev">{{ opp_abbrev }}</a></td>
+      <td class="num fw-bold">{{ our_score }}–{{ their_score }}</td>
+      <td>{% if won %}<span class="strk-w">W</span>{% else %}<span class="strk-l">L</span>{% endif %}{% if g.super_inning %}<span class="si-badge ms-1">SI</span>{% endif %}</td>
+      <td><a href="{{ url_for('game_detail', game_id=g.id) }}" class="small">Box</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-3 text-center text-secondary small">No games played yet.</div>
+  {% endif %}
 </div>
 {% endblock %}

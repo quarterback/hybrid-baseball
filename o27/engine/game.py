@@ -387,10 +387,21 @@ def _set_fielding_pitcher(state: GameState) -> None:
         state.pitcher_pitches_this_spell = 0
         state.pitcher_start_pa = state.total_pa_this_half
 
+    # Phase 10: pick a true starter (pitcher_role=="starter"/"workhorse")
+    # before any other pitcher; never fall back to a position player unless
+    # the roster has zero pitchers.
+    for role in ("starter", "workhorse"):
+        for player in fielding.roster:
+            if (player.is_pitcher
+                    and getattr(player, "pitcher_role", "") == role
+                    and player.player_id not in restricted):
+                _assign(player)
+                return
     for player in fielding.roster:
         if player.is_pitcher and player.player_id not in restricted:
             _assign(player)
             return
+    # Emergency fallback only — should not happen with Phase 10 league setup.
     for player in fielding.roster:
         if player.player_id not in restricted:
             _assign(player)

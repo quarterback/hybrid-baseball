@@ -1,31 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Teams{% endblock %}
 {% block content %}
-<h2 class="mb-4 fw-bold">All Teams</h2>
+<h2 class="mb-3 fw-bold">Teams</h2>
 
 {% set leagues = ['AL', 'NL'] %}
 {% for league in leagues %}
-<h4 class="mt-4 mb-2" style="color:#58a6ff">{{ league }}</h4>
-<div class="row g-2">
-{% for t in teams if t.league == league %}
-<div class="col-lg-4 col-md-6">
-  <a href="{{ url_for('team_detail', team_id=t.id) }}" class="text-decoration-none">
-    <div class="card p-3 h-100">
-      <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <div class="team-abbrev fs-5">{{ t.abbrev }}</div>
-          <div class="fw-bold">{{ t.name }}</div>
-          <div class="text-secondary small">{{ t.city }} · {{ t.division }}</div>
-        </div>
-        <div class="text-end">
-          <div class="fw-bold fs-5">{{ t.wins }}–{{ t.losses }}</div>
-          <div class="text-secondary small">{{ win_pct(t) }}</div>
-        </div>
-      </div>
-    </div>
-  </a>
-</div>
-{% endfor %}
+<div class="dense mb-3">
+  <div class="panel-title">{{ league }}</div>
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Team</th><th>City</th><th>Division</th>
+      <th class="num">W</th><th class="num">L</th><th class="num">PCT</th>
+      <th class="num">Players</th>
+    </tr></thead>
+    <tbody>
+    {% for t in teams if t.league == league %}
+    <tr>
+      <td><a href="{{ url_for('team_detail', team_id=t.id) }}"><span class="team-abbrev">{{ t.abbrev }}</span> <span class="ms-1">{{ t.name }}</span></a></td>
+      <td class="text-secondary">{{ t.city }}</td>
+      <td class="text-secondary small">{{ t.division }}</td>
+      <td class="num fw-bold">{{ t.wins }}</td>
+      <td class="num text-secondary">{{ t.losses }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format((t.wins / (t.wins + t.losses)) if (t.wins + t.losses) else 0) }}">{{ win_pct(t) }}</td>
+      <td class="num text-secondary">{{ t.player_count }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% endfor %}
 {% endblock %}

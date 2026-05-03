@@ -1,0 +1,52 @@
+Two corrections to your previous answer.
+
+1. Position players pitching: I never asked for this. Strip the 
+   "committee" tag from CF/SS/2B in league.py. Every team gets a 
+   pitching staff of dedicated pitchers only. Roster construction:
+   
+   - 9 position players (the 8 fielders plus the starting pitcher 
+     who must bat per O27 rules)
+   - 3 jokers (already correct)
+   - A pitching staff of dedicated pitchers — multiple starters 
+     plus relievers, all flagged is_pitcher=1
+   
+   Two-way players exist in real baseball but they're a rounding 
+   error. Do not seed three of them per team. If you want one 
+   genuine two-way player league-wide, that's interesting flavor; 
+   thirty of them is broken.
+
+2. The actual O27 pitcher design intent: starting pitchers in O27 
+   should resemble pre-1980s MLB or modern Japanese baseball — 
+   high stamina, long outings, complete games common. A workhorse 
+   starter might go 22-25 outs regularly. Relievers exist for the 
+   late stretch (outs 19-27) when the starter tires. The AOR 
+   distribution should reflect this: workhorse starters AOR ~22, 
+   relievers AOR ~26 (only come in late). Bullpen size should be 
+   smaller than modern MLB because starters absorb more of the 
+   workload.
+
+   This is a usage/stamina model. It is NOT a "use position players 
+   as pitchers" model. There is a difference.
+
+3. Keep 162 games. That's fine.
+
+Action items in order:
+
+A. Fix schedule.py date assignment (one game per team per calendar 
+   date, off-days as needed across 162-game season).
+
+B. Fix pitcher stat coverage bug (_extract_pitcher_stats dropping 
+   outs).
+
+C. Strip committee tagging from position players in league.py. 
+   Re-seed every team with dedicated pitchers only. Aim for staff 
+   composition like 4-5 starters + 3-5 relievers, all is_pitcher=1.
+
+D. Tune pitcher usage logic so workhorses absorb most of the outs 
+   per game (target AOR ~22 for starters), relievers come in for 
+   the closing third of the half-inning when the starter tires or 
+   the situation calls for it.
+
+After these four, re-sim a full season and show me a starting 
+pitcher's page. Should look like a real ace — 30+ starts, AOR 
+in the low 20s, maybe 700-800 outs recorded across the season.

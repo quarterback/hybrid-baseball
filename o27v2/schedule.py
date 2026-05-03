@@ -226,19 +226,64 @@ def generate_schedule(
             f"(expected {games_per_team} each)"
         )
 
-    # Shuffle and spread across season calendar
+    # ----------------------------------------------------------------
+    # Date assignment — round-robin by day (no team plays twice per date)
+    #
+    # Walks calendar days; on each day greedily picks unscheduled games
+    # whose home and away teams haven't been used yet that day. Spreads
+    # the season across `season_days` calendar days; off-days fall out
+    # naturally when the daily match limit (n // 2) can't be reached or
+    # we want to pace the season.
+    # ----------------------------------------------------------------
     rng.shuffle(directed)
+    pending: list[tuple[int, int]] = list(directed)
     total = len(directed)
+    games_per_day_target = max(1, total // season_days + (1 if total % season_days else 0))
+    max_games_per_day = n // 2  # absolute physical cap
+
     games: list[dict] = []
-    for idx, (home, away) in enumerate(directed):
-        day_offset = int(idx * season_days / max(total, 1))
-        game_date  = (_SEASON_START + datetime.timedelta(days=day_offset)).isoformat()
-        games.append({
-            "season": 1,
-            "game_date": game_date,
-            "home_team_id": home,
-            "away_team_id": away,
-        })
+    day_offset = 0
+    while pending:
+        # Hard cap: never schedule past season_days + 30 (safety net for edge cases)
+        if day_offset > season_days + 30:
+            raise RuntimeError(
+                f"Schedule could not fit into {season_days + 30} days "
+                f"({len(pending)} games remain)"
+            )
+        used_today: set[int] = set()
+        scheduled_today = 0
+        # Greedy pick: walk pending in order, take any game with both teams free
+        # today, until we hit the day's target (or physical cap).
+        i = 0
+        cap = min(max_games_per_day, games_per_day_target)
+        while i < len(pending) and scheduled_today < cap:
+            home, away = pending[i]
+            if home not in used_today and away not in used_today:
+                game_date = (_SEASON_START + datetime.timedelta(days=day_offset)).isoformat()
+                games.append({
+                    "season": 1,
+                    "game_date": game_date,
+                    "home_team_id": home,
+                    "away_team_id": away,
+                })
+                used_today.add(home)
+                used_today.add(away)
+                pending.pop(i)
+                scheduled_today += 1
+            else:
+                i += 1
+        day_offset += 1
+
+    # Verify: no team has two games on the same calendar date.
+    by_date: dict[str, list[int]] = defaultdict(list)
+    for g in games:
+        by_date[g["game_date"]].extend([g["home_team_id"], g["away_team_id"]])
+    for date, ids in by_date.items():
+        if len(ids) != len(set(ids)):
+            from collections import Counter as _C
+            dup = [tid for tid, c in _C(ids).items() if c > 1]
+            raise RuntimeError(f"Date {date} double-booked teams: {dup}")
+
     return games
 
 

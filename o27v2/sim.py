@@ -34,13 +34,31 @@ from o27v2 import scout as _scout
 # DB ↔ engine type converters
 # ---------------------------------------------------------------------------
 
-def _db_team_to_engine(team_row: dict, players: list[dict], team_role: str) -> Team:
+def _db_team_to_engine(
+    team_row: dict,
+    players: list[dict],
+    team_role: str,
+    rotation_index: int = 0,
+) -> Team:
     """
     Convert a DB team row + player rows into an O27 engine Team object.
 
+    Phase 10:
+      - roster:  ALL players (8 fielders + 4 SP + 4 RP + 3 jokers).
+      - lineup:  8 fielders + today's starting pitcher + 3 jokers (12 total).
+        Today's starter is chosen by `rotation_index % n_starters`. The other
+        3 SPs and all 4 RPs are bullpen-only and do NOT bat.
+      - jokers_available: the 3 jokers (joker insertion is engine-managed).
+
     team_role: "visitors" | "home"
+    rotation_index: integer used to pick today's SP from the rotation.
     """
-    roster: list[Player] = []
+    engine_players: list[Player] = []
+    fielders: list[Player] = []
+    starters: list[Player] = []
+    relievers: list[Player] = []
+    other_pitchers: list[Player] = []  # legacy "workhorse"/"committee" DBs
+    jokers: list[Player] = []
 
     for p in players:
         home_bonus = (
@@ -62,13 +80,39 @@ def _db_team_to_engine(team_row: dict, players: list[dict], team_role: str) -> T
             hard_contact_delta=float(p.get("hard_contact_delta") or 0.0),
             hr_weight_bonus=float(p.get("hr_weight_bonus") or 0.0),
         )
-        roster.append(player)
+        engine_players.append(player)
+        if player.is_joker:
+            jokers.append(player)
+        elif player.is_pitcher:
+            role = player.pitcher_role
+            if role == "starter":
+                starters.append(player)
+            elif role == "reliever":
+                relievers.append(player)
+            else:
+                other_pitchers.append(player)
+        else:
+            fielders.append(player)
 
+    # ---- Build the 12-player batting lineup ----
+    # 8 fielders (or however many exist) + today's SP + jokers.
+    todays_sp: list[Player] = []
+    if starters:
+        idx = rotation_index % len(starters)
+        todays_sp = [starters[idx]]
+    elif other_pitchers:
+        # Legacy DB fallback (workhorse/committee players)
+        todays_sp = [other_pitchers[0]]
+
+    lineup = list(fielders) + todays_sp + list(jokers)
+
+    # Roster includes everyone (so pick_new_pitcher can see all relievers)
     return Team(
         team_id=team_role,
         name=team_row["name"],
-        roster=roster,
-        lineup=list(roster),
+        roster=engine_players,
+        lineup=lineup,
+        jokers_available=list(jokers),
     )
 
 
@@ -154,28 +198,43 @@ def _get_active_players(team_id: int, game_date: str) -> list[dict]:
 
 def _promote_pitcher_role(players: list[dict]) -> list[dict]:
     """
-    If no workhorse pitcher is available, promote the best committee pitcher
-    to the workhorse role (in-memory only, not written to DB).
+    Phase 10: ensure at least one usable starter exists.
+
+    Modern leagues seed dedicated starters/relievers, but legacy DBs may
+    still contain workhorse/committee or no pitcher at all (after injuries).
+    Falls back gracefully in that case so the engine never lacks a pitcher.
     """
-    has_workhorse = any(p.get("pitcher_role") == "workhorse" for p in players)
-    if has_workhorse:
+    has_starter = any(
+        p.get("pitcher_role") in ("starter", "workhorse") and p.get("is_pitcher")
+        for p in players
+    )
+    if has_starter:
         return players
 
-    # Promote the highest pitcher_skill committee pitcher
+    # Try a reliever if no starter is healthy
+    relievers = [p for p in players
+                 if p.get("pitcher_role") == "reliever" and p.get("is_pitcher")]
+    if relievers:
+        best = max(relievers, key=lambda p: float(p.get("pitcher_skill", 0.0)))
+        return [dict(p, pitcher_role="starter") if p["id"] == best["id"] else p
+                for p in players]
+
+    # Legacy committee fallback (Phase 8 DBs)
     committee = [p for p in players if p.get("pitcher_role") == "committee"]
-    if not committee:
-        return players
+    if committee:
+        best = max(committee, key=lambda p: float(p.get("pitcher_skill", 0.0)))
+        return [dict(p, pitcher_role="starter", is_pitcher=1)
+                if p["id"] == best["id"] else p
+                for p in players]
 
-    best = max(committee, key=lambda p: float(p.get("pitcher_skill", 0.0)))
-    # Return a patched copy so we don't mutate the original DB dict
-    promoted = []
-    for p in players:
-        if p["id"] == best["id"]:
-            p = dict(p)
-            p["pitcher_role"] = "workhorse"
-            p["is_pitcher"]   = 1
-        promoted.append(p)
-    return promoted
+    # Last resort: promote the highest-pitcher_skill non-joker player.
+    pool = [p for p in players if not p.get("is_joker")]
+    if not pool:
+        return players
+    best = max(pool, key=lambda p: float(p.get("pitcher_skill", 0.0)))
+    return [dict(p, pitcher_role="starter", is_pitcher=1)
+            if p["id"] == best["id"] else p
+            for p in players]
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +273,14 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
 
     rng = random.Random(seed)
 
-    visitors_team = _db_team_to_engine(away_row,  away_players,  "visitors")
-    home_team     = _db_team_to_engine(home_row, home_players, "home")
+    # Phase 10: rotate starting pitcher per game. Use game_id so the
+    # rotation is deterministic and each SP gets a near-equal share of
+    # the season's starts (162 / 4 ≈ 40 starts per SP per team).
+    home_rotation_idx = game_id
+    away_rotation_idx = game_id
+
+    visitors_team = _db_team_to_engine(away_row,  away_players,  "visitors", away_rotation_idx)
+    home_team     = _db_team_to_engine(home_row, home_players, "home",     home_rotation_idx)
 
     state = GameState(visitors=visitors_team, home=home_team)
     state.current_pitcher_id = _find_pitcher_id(home_team)
@@ -233,7 +298,24 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     elif final_state.winner == "home":
         winner_team_id = home_team_id
 
-    # Update game row
+    # ----------------------------------------------------------------
+    # Phase 10: extract stats BEFORE marking the game played, so a
+    # mid-flow exception leaves the game retryable instead of orphaning
+    # it as played-with-no-stats. This was the root cause of the ~1108
+    # missing-stats games observed in the previous full sim.
+    # ----------------------------------------------------------------
+    all_home_players = db.fetchall(
+        "SELECT * FROM players WHERE team_id = ? ORDER BY id", (home_team_id,)
+    )
+    all_away_players = db.fetchall(
+        "SELECT * FROM players WHERE team_id = ? ORDER BY id", (away_team_id,)
+    )
+    away_bstats = _extract_batter_stats(renderer, away_team_id, all_away_players)
+    home_bstats = _extract_batter_stats(renderer, home_team_id, all_home_players)
+    away_pstats = _extract_pitcher_stats(final_state, away_team_id, all_away_players)
+    home_pstats = _extract_pitcher_stats(final_state, home_team_id, all_home_players)
+
+    # Atomic write: game row + team W/L + per-player stats in one txn.
     with db.get_conn() as conn:
         conn.execute(
             """UPDATE games SET home_score=?, away_score=?, winner_id=?,
@@ -241,30 +323,34 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
             (home_score, away_score, winner_team_id,
              final_state.super_inning_number, seed, game_id),
         )
+        if winner_team_id is not None:
+            loser_id = away_team_id if winner_team_id == home_team_id else home_team_id
+            conn.execute("UPDATE teams SET wins = wins + 1 WHERE id = ?", (winner_team_id,))
+            conn.execute("UPDATE teams SET losses = losses + 1 WHERE id = ?", (loser_id,))
+        # Inline inserts inside the same connection so it's all one txn.
+        for r in away_bstats + home_bstats:
+            conn.execute(
+                """INSERT INTO game_batter_stats
+                   (game_id, team_id, player_id, pa, ab, runs, hits, doubles,
+                    triples, hr, rbi, bb, k, stays)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (game_id, r["team_id"], r["player_id"], r["pa"], r["ab"],
+                 r["runs"], r["hits"], r["doubles"], r["triples"], r["hr"],
+                 r["rbi"], r["bb"], r["k"], r["stays"]),
+            )
+        for r in away_pstats + home_pstats:
+            conn.execute(
+                """INSERT INTO game_pitcher_stats
+                   (game_id, team_id, player_id, batters_faced, outs_recorded,
+                    hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (game_id, r["team_id"], r["player_id"], r["batters_faced"],
+                 r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
+                 r.get("er", r["runs_allowed"]),
+                 r["bb"], r["k"],
+                 r.get("hr_allowed", 0), r.get("pitches", 0)),
+            )
         conn.commit()
-
-    # Update team wins/losses
-    if winner_team_id == home_team_id:
-        loser_id = away_team_id
-    else:
-        loser_id = home_team_id
-
-    with db.get_conn() as conn:
-        conn.execute("UPDATE teams SET wins = wins + 1 WHERE id = ?", (winner_team_id,))
-        conn.execute("UPDATE teams SET losses = losses + 1 WHERE id = ?", (loser_id,))
-        conn.commit()
-
-    # Store batter stats (use all players for stat lookup, not just active ones)
-    all_home_players = db.fetchall("SELECT * FROM players WHERE team_id = ? ORDER BY id", (home_team_id,))
-    all_away_players = db.fetchall("SELECT * FROM players WHERE team_id = ? ORDER BY id", (away_team_id,))
-
-    away_bstats = _extract_batter_stats(renderer, away_team_id, all_away_players)
-    home_bstats = _extract_batter_stats(renderer, home_team_id, all_home_players)
-    _insert_batter_stats(game_id, away_bstats + home_bstats)
-
-    away_pstats = _extract_pitcher_stats(final_state, away_team_id, all_away_players)
-    home_pstats = _extract_pitcher_stats(final_state, home_team_id, all_home_players)
-    _insert_pitcher_stats(game_id, away_pstats + home_pstats)
 
     # -----------------------------------------------------------------------
     # Phase 9: Post-game injury draws + transaction logging
@@ -328,11 +414,17 @@ def _post_game_roster_processing(
 
 
 def _find_pitcher_id(team: Team) -> str | None:
-    for p in team.roster:
+    """Phase 10: return the player_id of today's starter (in the lineup)."""
+    # Today's SP is the lone pitcher in the batting lineup (slot 9).
+    for p in team.lineup:
+        if p.is_pitcher and p.pitcher_role in ("starter", "workhorse"):
+            return p.player_id
+    for p in team.lineup:
         if p.is_pitcher:
             return p.player_id
+    # Fallback to roster (should not happen with Phase 10 setup)
     for p in team.roster:
-        if p.pitcher_role in ("workhorse", "committee"):
+        if p.is_pitcher:
             return p.player_id
     return team.roster[0].player_id if team.roster else None
 

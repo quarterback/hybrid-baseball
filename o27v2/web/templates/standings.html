@@ -1,46 +1,50 @@
 {% extends "base.html" %}
 {% block title %}Standings{% endblock %}
 {% block content %}
-<h2 class="mb-4 fw-bold">League Standings</h2>
+<h2 class="mb-3 fw-bold">Standings</h2>
 
-<div class="row g-3">
-{% for div_name, div_teams in divisions.items() %}
-{% set leader = div_teams[0] %}
-<div class="col-lg-4 col-md-6">
-  <div class="card">
-    <div class="card-header division-header">{{ div_name }}</div>
-    <div class="card-body p-0">
-      <table class="table table-sm mb-0">
-        <thead><tr>
-          <th>Team</th><th>W</th><th>L</th><th>PCT</th><th>GB</th>
-          <th>L10</th><th>Strk</th><th>RS</th><th>RA</th><th>DIFF</th>
-        </tr></thead>
-        <tbody>
-        {% for t in div_teams %}
+{% for league_name, league_divs in leagues.items() %}
+<div class="dense mb-4">
+  <div class="panel-title">{{ league_name }}</div>
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Team</th>
+      <th class="num">W</th><th class="num">L</th>
+      <th class="num">PCT</th><th class="num">GB</th>
+      <th class="num">L10</th><th>Strk</th>
+      <th class="num">RS</th><th class="num">RA</th><th class="num">DIFF</th>
+      <th data-nosort>Last5</th>
+    </tr></thead>
+    <tbody>
+    {% for div_name, div_teams in league_divs.items() %}
+      {% set leader = div_teams[0] %}
+      <tr data-divider class="div-divider"><td colspan="11">{{ div_name }}</td></tr>
+      {% for t in div_teams %}
         {% set ex = extras.get(t.id, {}) %}
         <tr>
           <td>
-            <a href="{{ url_for('team_detail', team_id=t.id) }}" class="text-decoration-none">
+            <a href="{{ url_for('team_detail', team_id=t.id) }}">
               <span class="team-abbrev">{{ t.abbrev }}</span>
-              <span class="text-secondary small"> {{ t.city }}</span>
+              <span class="text-secondary small ms-1">{{ t.city }}</span>
             </a>
           </td>
-          <td class="fw-bold">{{ t.wins }}</td>
-          <td class="text-secondary">{{ t.losses }}</td>
-          <td>{{ win_pct(t) }}</td>
-          <td class="text-secondary">{{ gb(leader, t) }}</td>
-          <td class="text-secondary">{{ ex.l10 or '—' }}</td>
-          <td class="{% if ex.streak and ex.streak.startswith('W') %}text-success{% elif ex.streak %}text-danger{% else %}text-secondary{% endif %}">{{ ex.streak or '—' }}</td>
-          <td>{{ ex.rs if ex.rs is not none else '—' }}</td>
-          <td>{{ ex.ra if ex.ra is not none else '—' }}</td>
-          <td class="{% if ex.diff and ex.diff > 0 %}text-success{% elif ex.diff and ex.diff < 0 %}text-danger{% else %}text-secondary{% endif %}">{% if ex.diff is not none %}{% if ex.diff > 0 %}+{% endif %}{{ ex.diff }}{% else %}—{% endif %}</td>
+          <td class="num fw-bold">{{ t.wins }}</td>
+          <td class="num text-secondary">{{ t.losses }}</td>
+          <td class="num" data-sort-value="{{ '%.4f'|format((t.wins / (t.wins + t.losses)) if (t.wins + t.losses) else 0) }}">{{ win_pct(t) }}</td>
+          <td class="num text-secondary" data-sort-value="{{ ((leader.wins - t.wins + t.losses - leader.losses) / 2) }}">{{ gb(leader, t) }}</td>
+          <td class="num text-secondary">{{ ex.l10 or '—' }}</td>
+          <td class="{% if ex.streak and ex.streak.startswith('W') %}strk-w{% elif ex.streak %}strk-l{% else %}text-secondary{% endif %}">{{ ex.streak or '—' }}</td>
+          <td class="num">{{ ex.rs if ex.rs is not none else '—' }}</td>
+          <td class="num">{{ ex.ra if ex.ra is not none else '—' }}</td>
+          <td class="num {% if ex.diff and ex.diff > 0 %}strk-w{% elif ex.diff and ex.diff < 0 %}strk-l{% endif %}" data-sort-value="{{ ex.diff if ex.diff is not none else 0 }}">{% if ex.diff is not none %}{% if ex.diff > 0 %}+{% endif %}{{ ex.diff }}{% else %}—{% endif %}</td>
+          <td>
+            {% for r in (ex.last5 or []) %}<span class="l5pill {{ r }}"></span>{% endfor %}
+          </td>
         </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% endfor %}
-</div>
 {% endblock %}

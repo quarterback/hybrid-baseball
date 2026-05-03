@@ -286,9 +286,26 @@ def should_change_pitcher(state: GameState) -> bool:
     if pitcher is None:
         return False
     role = getattr(pitcher, "pitcher_role", "")
-    if role == "workhorse":
+    if role in ("workhorse", "starter"):
         base  = cfg.WORKHORSE_CHANGE_BASE
         scale = cfg.WORKHORSE_CHANGE_SCALE
+        # Phase 10: do not yank a starter for a reliever before
+        # RELIEVER_ENTRY_OUTS_MIN unless they have already crossed the
+        # BF threshold themselves.
+        threshold = max(base, base + round(pitcher.pitcher_skill * scale))
+        if state.pitcher_spell_count < threshold:
+            return False
+        # Even past threshold, only change if a reliever can come in
+        # (i.e. the half is "late enough"). Otherwise let the SP keep going.
+        if state.outs < cfg.RELIEVER_ENTRY_OUTS_MIN:
+            # Past threshold but it's still early — extend the SP rather
+            # than burn an early reliever. Pull only if blown out (≥ 8 runs
+            # this spell), which cuts off true disasters.
+            return state.pitcher_runs_this_spell >= 8
+        return True
+    elif role == "reliever":
+        base  = cfg.RELIEVER_CHANGE_BASE
+        scale = cfg.RELIEVER_CHANGE_SCALE
     elif role == "committee":
         base  = cfg.COMMITTEE_CHANGE_BASE
         scale = cfg.COMMITTEE_CHANGE_SCALE
@@ -322,23 +339,44 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         r.pitcher_id for r in state.spell_log if r.half == state.half
     }
 
-    candidates = [
+    # Phase 10: Only true pitchers (is_pitcher=1) may take the mound.
+    # Position players never relieve. Also exclude jokers and already-used
+    # pitchers this half.
+    pitcher_candidates = [
         p for p in fielding.roster
-        if p.player_id != current_id
+        if p.is_pitcher
+        and p.player_id != current_id
         and p.player_id not in restricted
         and p.player_id not in already_pitched
     ]
-    if not candidates:
-        return None
+    if pitcher_candidates:
+        # Prefer dedicated relievers over starters (other rotation SPs are
+        # last-resort emergency arms only). Within each role, take the
+        # highest pitcher_skill arm available.
+        pitcher_candidates.sort(
+            key=lambda p: (
+                getattr(p, "pitcher_role", "") == "reliever",
+                getattr(p, "pitcher_role", "") == "committee",  # legacy DBs
+                p.pitcher_skill,
+            ),
+            reverse=True,
+        )
+        return pitcher_candidates[0]
 
-    candidates.sort(
-        key=lambda p: (
-            getattr(p, "pitcher_role", "") == "committee",
-            p.pitcher_skill,
-        ),
-        reverse=True,
-    )
-    return candidates[0]
+    # No fresh dedicated pitcher available — re-allow any non-restricted
+    # pitcher (even one already pulled) before falling back to a position
+    # player. Position-player relief only fires in true emergencies.
+    fallback_pitchers = [
+        p for p in fielding.roster
+        if p.is_pitcher
+        and p.player_id != current_id
+        and p.player_id not in restricted
+        and not p.is_joker
+    ]
+    if fallback_pitchers:
+        return max(fallback_pitchers, key=lambda p: p.pitcher_skill)
+
+    return None
 
 
 def should_pinch_hit(state: GameState) -> Optional[Player]:

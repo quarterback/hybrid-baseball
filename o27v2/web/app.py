@@ -2,18 +2,22 @@
 O27v2 Flask web application.
 
 Routes:
-  GET  /                  Dashboard — recent games, quick standings
-  GET  /standings         Full division standings
-  GET  /schedule          Full schedule (filter: team, unplayed/played)
+  GET  /                  Scores dashboard — today's games, recent finals, division leaders, top-5 leaders
+  GET  /standings         Full standings — one wide table per league, sortable
+  GET  /schedule          Full schedule (filter: team, status)
   GET  /game/<id>         Box score for a completed game
-  GET  /teams             Team roster list
-  GET  /team/<id>         Single team roster + season stats
+  GET  /players           Browseable player index (server-paginated, sortable, filterable)
+  GET  /player/<id>       Single player season + game log
+  GET  /teams             Team list
+  GET  /team/<id>         Team header + batting roster + pitching roster + last 10 games
+  GET  /leaders           Season-to-date leaderboards (replaces /stats; /stats redirects here)
   GET  /transactions      League transaction log (filterable by team / type)
-  GET  /new-league        League-creation screen (pick preset config)
+  GET  /new-league        League-creation screen
   POST /new-league        Apply the chosen config (reset DB + reseed)
   POST /api/sim           Simulate the next N games (JSON response)
 """
 from __future__ import annotations
+import math
 import os
 import sys
 
@@ -63,10 +67,6 @@ app.jinja_env.filters["scout"] = _scout
 
 @app.context_processor
 def inject_sim_state():
-    """Make current sim date + All-Star date available to every template.
-    Note: we do NOT resync on render — that would skip past off-days the user
-    intentionally landed on via Sim Today. Resync is invoked explicitly after
-    legacy /api/sim and single-game sim endpoints instead."""
     return {"sim": {
         "current_date":   get_current_sim_date(),
         "all_star_date":  get_all_star_date(),
@@ -92,7 +92,6 @@ def _sim_response(from_date: str | None, to_date: str | None, results: list) -> 
 
 
 def _clamp_to_last(date_str: str) -> str:
-    """Don't let the clock run past last_scheduled_date + 1 day."""
     last = get_last_scheduled_date()
     if last is None:
         return date_str
@@ -101,16 +100,26 @@ def _clamp_to_last(date_str: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Context helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _divisions() -> dict[str, list[dict]]:
-    """Return teams grouped by division, sorted by win pct."""
     teams = db.fetchall("SELECT * FROM teams ORDER BY division, wins DESC, losses ASC")
     divs: dict[str, list[dict]] = {}
     for t in teams:
         divs.setdefault(t["division"], []).append(t)
     return divs
+
+
+def _leagues_with_divisions() -> dict[str, dict[str, list[dict]]]:
+    """Return {league_name: {division_name: [team, ...]}} sorted by win pct."""
+    teams = db.fetchall(
+        "SELECT * FROM teams ORDER BY league, division, wins DESC, losses ASC"
+    )
+    out: dict[str, dict[str, list[dict]]] = {}
+    for t in teams:
+        out.setdefault(t["league"], {}).setdefault(t["division"], []).append(t)
+    return out
 
 
 def _win_pct(t: dict) -> str:
@@ -127,6 +136,102 @@ def _gb(leader: dict, team: dict) -> str:
     return f"{diff:.1f}"
 
 
+def _pitcher_wl_map() -> dict[int, dict[str, int]]:
+    """For each pitcher, count W/L in games where they were that team's
+    workhorse for the day (recorded the most outs of any pitcher on their
+    team for that game). This approximates a starter's decision."""
+    rows = db.fetchall(
+        """SELECT ps.player_id, ps.team_id, ps.game_id, g.winner_id
+           FROM game_pitcher_stats ps
+           JOIN games g ON g.id = ps.game_id
+           JOIN (SELECT game_id, team_id, MAX(outs_recorded) AS mo
+                 FROM game_pitcher_stats
+                 GROUP BY game_id, team_id) m
+             ON m.game_id = ps.game_id
+            AND m.team_id = ps.team_id
+            AND m.mo = ps.outs_recorded
+           WHERE g.played = 1"""
+    )
+    out: dict[int, dict[str, int]] = {}
+    seen: set[tuple[int, int]] = set()  # (game_id, team_id) — only first ranked pitcher
+    for r in rows:
+        key = (r["game_id"], r["team_id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        pid = r["player_id"]
+        rec = out.setdefault(pid, {"w": 0, "l": 0})
+        if r["winner_id"] == r["team_id"]:
+            rec["w"] += 1
+        elif r["winner_id"] is not None:
+            rec["l"] += 1
+    return out
+
+
+def _attach_hits(games: list[dict]) -> None:
+    """Sum hits per (game_id, team_id) from game_batter_stats and attach
+    home_hits / away_hits to each game row. Pure roll-up of sim output —
+    nothing is invented; if a game wasn't played, both hit totals are None."""
+    if not games:
+        return
+    ids = [g["id"] for g in games]
+    ph = ",".join("?" * len(ids))
+    rows = db.fetchall(
+        f"""SELECT game_id, team_id, SUM(hits) AS h
+            FROM game_batter_stats
+            WHERE game_id IN ({ph})
+            GROUP BY game_id, team_id""",
+        tuple(ids),
+    )
+    by_game: dict[int, dict[int, int]] = {}
+    for r in rows:
+        by_game.setdefault(r["game_id"], {})[r["team_id"]] = r["h"] or 0
+    for g in games:
+        team_hits = by_game.get(g["id"], {})
+        g["home_hits"] = team_hits.get(g["home_team_id"]) if g.get("played") else None
+        g["away_hits"] = team_hits.get(g["away_team_id"]) if g.get("played") else None
+
+
+def _aggregate_batter_rows(rows: list[dict]) -> None:
+    """Mutates rows in place to add avg/obp/slg/ops keys."""
+    for b in rows:
+        ab = b.get("ab") or 0
+        h = b.get("h") or 0
+        bb = b.get("bb") or 0
+        pa = b.get("pa") or 0
+        d2 = b.get("d2") or 0
+        d3 = b.get("d3") or 0
+        hr = b.get("hr") or 0
+        b["avg"] = (h / ab) if ab else 0.0
+        b["obp"] = ((h + bb) / pa) if pa else 0.0
+        singles = h - d2 - d3 - hr
+        tb = singles + 2 * d2 + 3 * d3 + 4 * hr
+        b["slg"] = (tb / ab) if ab else 0.0
+        b["ops"] = b["obp"] + b["slg"]
+
+
+def _aggregate_pitcher_rows(rows: list[dict], wl: dict[int, dict[str, int]] | None = None) -> None:
+    for p in rows:
+        outs = p.get("outs") or 0
+        ip = outs / 3.0
+        h = p.get("h") or 0
+        bb = p.get("bb") or 0
+        r = p.get("r") or 0
+        er = p.get("er") or 0
+        k = p.get("k") or 0
+        p["ip"] = ip
+        p["era"] = (er * 27.0 / outs) if outs else 0.0
+        p["whip"] = ((bb + h) / ip) if ip else 0.0
+        p["k9"] = (k * 9.0 / ip) if ip else 0.0
+        p["bb9"] = (bb * 9.0 / ip) if ip else 0.0
+        p["so_bb"] = (k / bb) if bb else (k * 1.0)
+        if wl is not None:
+            pid = p.get("player_id") or p.get("id")
+            d = wl.get(pid, {"w": 0, "l": 0})
+            p["w"] = d["w"]
+            p["l"] = d["l"]
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -137,61 +242,111 @@ def index():
     if not team_count or team_count["n"] == 0:
         return redirect(url_for("new_league_get"))
 
-    recent = db.fetchall(
-        """SELECT g.*,
-                  ht.name as home_name, ht.abbrev as home_abbrev,
-                  at.name as away_name, at.abbrev as away_abbrev,
-                  wt.abbrev as winner_abbrev
-           FROM games g
-           JOIN teams ht ON g.home_team_id = ht.id
-           JOIN teams at ON g.away_team_id = at.id
-           LEFT JOIN teams wt ON g.winner_id = wt.id
-           WHERE g.played = 1
-           ORDER BY g.game_date DESC, g.id DESC
-           LIMIT 10"""
-    )
-    divs = _divisions()
-    # Lean snapshot — only the division leaders.
-    snapshot = {div_name: [teams_[0]] for div_name, teams_ in divs.items() if teams_}
-    stats = db.fetchone(
-        "SELECT COUNT(*) as total, SUM(played) as played FROM games"
-    )
     today = get_current_sim_date()
     today_games = []
     if today:
         today_games = db.fetchall(
             """SELECT g.*,
                       ht.name as home_name, ht.abbrev as home_abbrev,
-                      at.name as away_name, at.abbrev as away_abbrev,
-                      wt.abbrev as winner_abbrev
+                      at.name as away_name, at.abbrev as away_abbrev
                FROM games g
                JOIN teams ht ON g.home_team_id = ht.id
                JOIN teams at ON g.away_team_id = at.id
-               LEFT JOIN teams wt ON g.winner_id = wt.id
                WHERE g.game_date = ?
                ORDER BY g.id""",
             (today,),
         )
+        _attach_hits(today_games)
+
+    # Yesterday's finals = the most recent date < today with played=1 games.
+    yesterday = None
+    yesterday_games: list[dict] = []
+    last_played = db.fetchone(
+        "SELECT MAX(game_date) AS d FROM games WHERE played = 1"
+        + (" AND game_date < ?" if today else ""),
+        (today,) if today else (),
+    )
+    if last_played and last_played["d"]:
+        yesterday = last_played["d"]
+        yesterday_games = db.fetchall(
+            """SELECT g.*,
+                      ht.name as home_name, ht.abbrev as home_abbrev,
+                      at.name as away_name, at.abbrev as away_abbrev
+               FROM games g
+               JOIN teams ht ON g.home_team_id = ht.id
+               JOIN teams at ON g.away_team_id = at.id
+               WHERE g.played = 1 AND g.game_date = ?
+               ORDER BY g.id""",
+            (yesterday,),
+        )
+        _attach_hits(yesterday_games)
+
+    divs = _divisions()
+
+    # Top-5 leaders for AVG / HR / RBI / W / ERA / K
+    games_played_row = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")
+    games_played = games_played_row["n"] if games_played_row else 0
+    min_pa = max(20, games_played // 30 * 8)
+    min_outs = max(9, games_played // 30 * 5)
+
+    top = {"avg": [], "hr": [], "rbi": [], "w": [], "era": [], "k": []}
+    if games_played > 0:
+        batting = db.fetchall(
+            """SELECT p.id as player_id, p.name as player_name,
+                      t.id as team_id, t.abbrev as team_abbrev,
+                      SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                      SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                      SUM(bs.rbi) as rbi, SUM(bs.bb) as bb
+               FROM game_batter_stats bs
+               JOIN players p ON bs.player_id = p.id
+               JOIN teams   t ON bs.team_id = t.id
+               GROUP BY p.id
+               HAVING SUM(bs.pa) >= ?""",
+            (min_pa,),
+        )
+        _aggregate_batter_rows(batting)
+        top["avg"] = sorted(batting, key=lambda x: x["avg"], reverse=True)[:5]
+        top["hr"]  = sorted(batting, key=lambda x: x["hr"] or 0, reverse=True)[:5]
+        top["rbi"] = sorted(batting, key=lambda x: x["rbi"] or 0, reverse=True)[:5]
+
+        pitching = db.fetchall(
+            """SELECT p.id as player_id, p.name as player_name,
+                      t.id as team_id, t.abbrev as team_abbrev,
+                      SUM(ps.outs_recorded) as outs,
+                      SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
+                      SUM(ps.bb) as bb, SUM(ps.k) as k
+               FROM game_pitcher_stats ps
+               JOIN players p ON ps.player_id = p.id
+               JOIN teams   t ON ps.team_id = t.id
+               GROUP BY p.id
+               HAVING SUM(ps.outs_recorded) >= ?""",
+            (min_outs,),
+        )
+        wl = _pitcher_wl_map()
+        _aggregate_pitcher_rows(pitching, wl)
+        top["w"]   = sorted(pitching, key=lambda x: x["w"], reverse=True)[:5]
+        top["era"] = sorted(pitching, key=lambda x: x["era"])[:5]
+        top["k"]   = sorted(pitching, key=lambda x: x["k"] or 0, reverse=True)[:5]
+
     return render_template("index.html",
-                           recent=recent,
-                           divisions=snapshot,
-                           today_games=today_games,
                            today=today,
-                           stats=stats,
+                           today_games=today_games,
+                           yesterday=yesterday,
+                           yesterday_games=yesterday_games,
+                           divisions=divs,
+                           top=top,
                            win_pct=_win_pct,
                            gb=_gb)
 
 
 @app.route("/standings")
 def standings():
-    divs = _divisions()
+    leagues = _leagues_with_divisions()
 
-    # Per-team last-10 record, current streak, runs scored / allowed, diff.
     extras: dict[int, dict] = {}
     teams = db.fetchall("SELECT id FROM teams")
     for t in teams:
         tid = t["id"]
-        # All played games for this team in chronological order.
         played = db.fetchall(
             """SELECT g.id, g.game_date, g.home_team_id, g.away_team_id,
                       g.home_score, g.away_score, g.winner_id
@@ -213,7 +368,6 @@ def standings():
                 w10 += 1
             else:
                 l10 += 1
-        # Streak: walk backwards.
         streak = ""
         if played:
             last_won = (played[-1]["winner_id"] == tid)
@@ -224,16 +378,18 @@ def standings():
                 else:
                     break
             streak = ("W" if last_won else "L") + str(count)
+        last5 = [("w" if g["winner_id"] == tid else "l") for g in played[-5:]]
         extras[tid] = {
             "l10":    f"{w10}-{l10}",
             "streak": streak,
             "rs":     rs,
             "ra":     ra,
             "diff":   rs - ra,
+            "last5":  last5,
         }
 
     return render_template("standings.html",
-                           divisions=divs,
+                           leagues=leagues,
                            extras=extras,
                            win_pct=_win_pct,
                            gb=_gb)
@@ -298,7 +454,6 @@ def game_detail(game_id: int):
     if not game:
         abort(404)
 
-    # Prev/Next played games in (game_date, id) order.
     prev_game = db.fetchone(
         """SELECT id FROM games
            WHERE played = 1
@@ -316,43 +471,24 @@ def game_detail(game_id: int):
 
     away_batting = db.fetchall(
         """SELECT bs.*, p.name as player_name, p.position
-           FROM game_batter_stats bs
-           JOIN players p ON bs.player_id = p.id
-           WHERE bs.game_id = ? AND bs.team_id = ?
-           ORDER BY bs.id""",
-        (game_id, game["away_team_id"])
-    )
+           FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
+           WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.id""",
+        (game_id, game["away_team_id"]))
     home_batting = db.fetchall(
         """SELECT bs.*, p.name as player_name, p.position
-           FROM game_batter_stats bs
-           JOIN players p ON bs.player_id = p.id
-           WHERE bs.game_id = ? AND bs.team_id = ?
-           ORDER BY bs.id""",
-        (game_id, game["home_team_id"])
-    )
+           FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
+           WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.id""",
+        (game_id, game["home_team_id"]))
     away_pitching = db.fetchall(
         """SELECT ps.*, p.name as player_name
-           FROM game_pitcher_stats ps
-           JOIN players p ON ps.player_id = p.id
-           WHERE ps.game_id = ? AND ps.team_id = ?
-           ORDER BY ps.id""",
-        (game_id, game["away_team_id"])
-    )
+           FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
+           WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.id""",
+        (game_id, game["away_team_id"]))
     home_pitching = db.fetchall(
         """SELECT ps.*, p.name as player_name
-           FROM game_pitcher_stats ps
-           JOIN players p ON ps.player_id = p.id
-           WHERE ps.game_id = ? AND ps.team_id = ?
-           ORDER BY ps.id""",
-        (game_id, game["home_team_id"])
-    )
-
-    def _avg(bs: list[dict]) -> str:
-        hits = sum(r["hits"] for r in bs)
-        ab   = sum(r["ab"]   for r in bs)
-        if ab == 0:
-            return ".000"
-        return f".{int(hits / ab * 1000):03d}"
+           FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
+           WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.id""",
+        (game_id, game["home_team_id"]))
 
     return render_template("game.html",
                            game=game,
@@ -361,19 +497,148 @@ def game_detail(game_id: int):
                            away_pitching=away_pitching,
                            home_pitching=home_pitching,
                            prev_game_id=(prev_game["id"] if prev_game else None),
-                           next_game_id=(next_game["id"] if next_game else None),
-                           avg=_avg)
+                           next_game_id=(next_game["id"] if next_game else None))
+
+
+# ---------------------------------------------------------------------------
+# Players index (NEW) + leaders (renamed from /stats)
+# ---------------------------------------------------------------------------
+
+@app.route("/players")
+def players():
+    kind = request.args.get("kind", "batters")
+    if kind not in ("batters", "pitchers", "both"):
+        kind = "batters"
+    selected_team_id = request.args.get("team", type=int)
+    selected_pos = request.args.get("pos", "") or ""
+    q = (request.args.get("q") or "").strip()
+    page = max(1, request.args.get("page", 1, type=int))
+    per_page = 50
+
+    where = []
+    params: list = []
+    if selected_team_id:
+        where.append("p.team_id = ?")
+        params.append(selected_team_id)
+    if selected_pos:
+        where.append("p.position = ?")
+        params.append(selected_pos)
+    if q:
+        where.append("LOWER(p.name) LIKE ?")
+        params.append(f"%{q.lower()}%")
+    if kind == "batters":
+        where.append("p.is_pitcher = 0")
+    elif kind == "pitchers":
+        where.append("p.is_pitcher = 1")
+
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
+    total_row = db.fetchone(f"SELECT COUNT(*) AS n FROM players p{where_sql}", tuple(params))
+    total = total_row["n"] if total_row else 0
+    pages = max(1, math.ceil(total / per_page))
+    if page > pages:
+        page = pages
+    offset = (page - 1) * per_page
+
+    base = db.fetchall(
+        f"""SELECT p.id, p.name, p.team_id, p.position, p.age, p.is_pitcher, p.is_joker, p.pitcher_role,
+                   t.abbrev AS team_abbrev
+            FROM players p JOIN teams t ON p.team_id = t.id
+            {where_sql}
+            ORDER BY p.name
+            LIMIT ? OFFSET ?""",
+        tuple(params) + (per_page, offset),
+    )
+    page_ids = [p["id"] for p in base]
+    if not page_ids:
+        return render_template(
+            "players.html",
+            kind=kind, batters=[], pitchers=[],
+            all_teams=db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name"),
+            all_positions=[r["position"] for r in db.fetchall("SELECT DISTINCT position FROM players ORDER BY position")],
+            selected_team_id=selected_team_id, selected_pos=selected_pos, q=q,
+            total=total, page=page, pages=pages,
+        )
+
+    ph = ",".join("?" * len(page_ids))
+
+    batter_rows = []
+    pitcher_rows = []
+
+    if kind in ("batters", "both"):
+        bstats = {
+            r["player_id"]: r for r in db.fetchall(
+                f"""SELECT bs.player_id,
+                           COUNT(bs.game_id) AS gp,
+                           SUM(bs.pa) AS pa, SUM(bs.ab) AS ab, SUM(bs.hits) AS h,
+                           SUM(bs.doubles) AS d2, SUM(bs.triples) AS d3, SUM(bs.hr) AS hr,
+                           SUM(bs.runs) AS r, SUM(bs.rbi) AS rbi,
+                           SUM(bs.bb) AS bb, SUM(bs.k) AS k
+                    FROM game_batter_stats bs
+                    WHERE bs.player_id IN ({ph})
+                    GROUP BY bs.player_id""",
+                tuple(page_ids),
+            )
+        }
+        for p in base:
+            if p["is_pitcher"] and kind == "both":
+                continue
+            row = dict(p)
+            s = bstats.get(p["id"], {})
+            row.update(s)
+            _aggregate_batter_rows([row])
+            batter_rows.append(row)
+
+    if kind in ("pitchers", "both"):
+        pstats = {
+            r["player_id"]: r for r in db.fetchall(
+                f"""SELECT ps.player_id,
+                           COUNT(ps.game_id) AS gp,
+                           SUM(ps.outs_recorded) AS outs,
+                           SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r,
+                           SUM(ps.bb) AS bb, SUM(ps.k) AS k
+                    FROM game_pitcher_stats ps
+                    WHERE ps.player_id IN ({ph})
+                    GROUP BY ps.player_id""",
+                tuple(page_ids),
+            )
+        }
+        wl = _pitcher_wl_map()
+        for p in base:
+            if not p["is_pitcher"] and kind == "both":
+                continue
+            row = dict(p)
+            s = pstats.get(p["id"], {})
+            row.update(s)
+            _aggregate_pitcher_rows([row], wl)
+            pitcher_rows.append(row)
+
+    return render_template(
+        "players.html",
+        kind=kind,
+        batters=batter_rows,
+        pitchers=pitcher_rows,
+        all_teams=db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name"),
+        all_positions=[r["position"] for r in db.fetchall("SELECT DISTINCT position FROM players ORDER BY position")],
+        selected_team_id=selected_team_id,
+        selected_pos=selected_pos,
+        q=q,
+        total=total, page=page, pages=pages,
+    )
 
 
 @app.route("/stats")
-def stats():
-    """Season-to-date leaderboards — batting + pitching + team identity."""
+def stats_redirect():
+    return redirect(url_for("leaders"), code=302)
+
+
+@app.route("/leaders")
+def leaders():
     games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
     if games_played == 0:
-        return render_template("stats.html",
-                               games_played=0,
-                               batting=[], pitching=[],
-                               team_offense=[], team_defense=[])
+        return render_template("leaders.html",
+                               games_played=0, batting=[], pitching=[],
+                               min_pa=0, min_outs=0)
 
     # Scale qualifying minimums by games-per-team, not by total league games.
     # MLB rule of thumb: 3.1 PA/team-game qualifies for batting title; here we
@@ -385,41 +650,27 @@ def stats():
     min_outs = max(3, games_per_team)        # ~1 out/team-game (very lenient)
 
     batting = db.fetchall(
-        """SELECT p.id   as player_id,
-                  p.name as player_name,
-                  p.position,
+        """SELECT p.id as player_id, p.name as player_name, p.position,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(bs.game_id) as g,
-                  SUM(bs.pa)      as pa,
-                  SUM(bs.ab)      as ab,
-                  SUM(bs.hits)    as h,
-                  SUM(bs.doubles) as d2,
-                  SUM(bs.triples) as d3,
-                  SUM(bs.hr)      as hr,
-                  SUM(bs.runs)    as r,
-                  SUM(bs.rbi)     as rbi,
-                  SUM(bs.bb)      as bb,
-                  SUM(bs.k)       as k,
-                  SUM(bs.stays)   as stays
+                  SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                  SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                  SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                  SUM(bs.bb) as bb, SUM(bs.k) as k, SUM(bs.stays) as stays
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
-           JOIN teams   t ON bs.team_id   = t.id
+           JOIN teams   t ON bs.team_id = t.id
            GROUP BY p.id
-           HAVING SUM(bs.pa) >= ?
-           ORDER BY (CAST(SUM(bs.hits) AS REAL) / NULLIF(SUM(bs.ab), 0)) DESC""",
+           HAVING SUM(bs.pa) >= ?""",
         (min_pa,),
     )
+    _aggregate_batter_rows(batting)
+    # SB doesn't exist in schema — set to 0 so leaders.html can list it without errors.
     for b in batting:
-        b["avg"]    = (b["h"] / b["ab"]) if b["ab"] else 0.0
-        b["h_ab"]   = (b["h"] / b["ab"]) if b["ab"] else 0.0
-        b["obp"]    = ((b["h"] + b["bb"]) / b["pa"]) if b["pa"] else 0.0
-        tb          = b["h"] - b["d2"] - b["d3"] - b["hr"] + 2 * b["d2"] + 3 * b["d3"] + 4 * b["hr"]
-        b["slg"]    = (tb / b["ab"]) if b["ab"] else 0.0
-        b["ops"]    = b["obp"] + b["slg"]
+        b.setdefault("sb", 0)
 
     pitching = db.fetchall(
-        """SELECT p.id   as player_id,
-                  p.name as player_name,
+        """SELECT p.id as player_id, p.name as player_name,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(ps.game_id) as g,
                   SUM(ps.batters_faced)  as bf,
@@ -431,12 +682,16 @@ def stats():
                   SUM(ps.k)              as k
            FROM game_pitcher_stats ps
            JOIN players p ON ps.player_id = p.id
-           JOIN teams   t ON ps.team_id   = t.id
+           JOIN teams   t ON ps.team_id = t.id
            GROUP BY p.id
-           HAVING SUM(ps.outs_recorded) >= ?
-           ORDER BY SUM(ps.outs_recorded) DESC""",
+           HAVING SUM(ps.outs_recorded) >= ?""",
         (min_outs,),
     )
+    # Shared helper: fills ip/era/whip/k9/bb9/so_bb + W/L. We then layer on
+    # the O27 per-27-outs ("per game") metrics and ER-based ERA on top, since
+    # the leaderboard SELECT is the only one that pulls SUM(ps.er).
+    wl = _pitcher_wl_map()
+    _aggregate_pitcher_rows(pitching, wl)
     for p in pitching:
         outs = p["outs"] or 0
         # O27 stats: per-27-outs ("per game") rather than per-9-IP.
@@ -451,33 +706,11 @@ def stats():
         # OS% = share of a complete game (27 outs) recorded per appearance.
         p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
 
-    team_offense = db.fetchall(
-        """SELECT t.id, t.abbrev, t.name,
-                  COUNT(DISTINCT g.id) as gp,
-                  SUM(CASE WHEN g.home_team_id = t.id THEN g.home_score ELSE g.away_score END) as runs,
-                  SUM(CASE WHEN g.home_team_id = t.id THEN g.away_score ELSE g.home_score END) as runs_against
-           FROM teams t
-           JOIN games g ON g.played = 1 AND (g.home_team_id = t.id OR g.away_team_id = t.id)
-           GROUP BY t.id
-           ORDER BY (CAST(SUM(CASE WHEN g.home_team_id = t.id THEN g.home_score ELSE g.away_score END) AS REAL)
-                     / NULLIF(COUNT(DISTINCT g.id), 0)) DESC"""
-    )
-    for to in team_offense:
-        to["rpg"]  = (to["runs"] / to["gp"]) if to["gp"] else 0.0
-        to["rapg"] = (to["runs_against"] / to["gp"]) if to["gp"] else 0.0
-        to["diff"] = to["rpg"] - to["rapg"]
-
-    team_defense = sorted(team_offense, key=lambda x: x["rapg"])
-
     return render_template(
-        "stats.html",
+        "leaders.html",
         games_played=games_played,
-        min_pa=min_pa,
-        min_outs=min_outs,
-        batting=batting,
-        pitching=pitching,
-        team_offense=team_offense,
-        team_defense=team_defense,
+        min_pa=min_pa, min_outs=min_outs,
+        batting=batting, pitching=pitching,
     )
 
 
@@ -500,8 +733,7 @@ def player_detail(player_id: int):
            JOIN teams ht ON g.home_team_id = ht.id
            JOIN teams at ON g.away_team_id = at.id
            WHERE bs.player_id = ?
-           ORDER BY g.game_date DESC, g.id DESC
-           LIMIT 50""",
+           ORDER BY g.game_date DESC, g.id DESC LIMIT 50""",
         (player_id,),
     )
     pitching_log = db.fetchall(
@@ -512,8 +744,7 @@ def player_detail(player_id: int):
            JOIN teams ht ON g.home_team_id = ht.id
            JOIN teams at ON g.away_team_id = at.id
            WHERE ps.player_id = ?
-           ORDER BY g.game_date DESC, g.id DESC
-           LIMIT 50""",
+           ORDER BY g.game_date DESC, g.id DESC LIMIT 50""",
         (player_id,),
     )
 
@@ -567,10 +798,8 @@ def player_detail(player_id: int):
 @app.route("/teams")
 def teams():
     teams_list = db.fetchall(
-        """SELECT t.*,
-                  COUNT(p.id) as player_count
-           FROM teams t
-           LEFT JOIN players p ON p.team_id = t.id
+        """SELECT t.*, COUNT(p.id) as player_count
+           FROM teams t LEFT JOIN players p ON p.team_id = t.id
            GROUP BY t.id
            ORDER BY t.league, t.division, t.name"""
     )
@@ -582,10 +811,55 @@ def team_detail(team_id: int):
     team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
     if not team:
         abort(404)
-    players = db.fetchall(
-        "SELECT * FROM players WHERE team_id = ? ORDER BY is_pitcher, id",
-        (team_id,)
+
+    roster = db.fetchall(
+        "SELECT * FROM players WHERE team_id = ? ORDER BY is_pitcher, position, id",
+        (team_id,),
     )
+    ids = [p["id"] for p in roster]
+    bstats: dict[int, dict] = {}
+    pstats: dict[int, dict] = {}
+    if ids:
+        ph = ",".join("?" * len(ids))
+        for r in db.fetchall(
+            f"""SELECT player_id,
+                       COUNT(game_id) AS gp,
+                       SUM(pa) AS pa, SUM(ab) AS ab, SUM(hits) AS h,
+                       SUM(doubles) AS d2, SUM(triples) AS d3, SUM(hr) AS hr,
+                       SUM(runs) AS r, SUM(rbi) AS rbi,
+                       SUM(bb) AS bb, SUM(k) AS k
+                FROM game_batter_stats
+                WHERE player_id IN ({ph}) GROUP BY player_id""",
+            tuple(ids),
+        ):
+            bstats[r["player_id"]] = r
+        for r in db.fetchall(
+            f"""SELECT player_id,
+                       COUNT(game_id) AS gp,
+                       SUM(outs_recorded) AS outs,
+                       SUM(hits_allowed) AS h, SUM(runs_allowed) AS r, SUM(er) AS er,
+                       SUM(bb) AS bb, SUM(k) AS k
+                FROM game_pitcher_stats
+                WHERE player_id IN ({ph}) GROUP BY player_id""",
+            tuple(ids),
+        ):
+            pstats[r["player_id"]] = r
+
+    wl = _pitcher_wl_map()
+    batters: list[dict] = []
+    pitchers: list[dict] = []
+    for p in roster:
+        if p["is_pitcher"]:
+            row = dict(p)
+            row.update(pstats.get(p["id"], {}))
+            _aggregate_pitcher_rows([row], wl)
+            pitchers.append(row)
+        else:
+            row = dict(p)
+            row.update(bstats.get(p["id"], {}))
+            _aggregate_batter_rows([row])
+            batters.append(row)
+
     recent = db.fetchall(
         """SELECT g.*,
                   ht.name as home_name, ht.abbrev as home_abbrev,
@@ -597,11 +871,12 @@ def team_detail(team_id: int):
            LEFT JOIN teams wt ON g.winner_id = wt.id
            WHERE g.played = 1 AND (g.home_team_id = ? OR g.away_team_id = ?)
            ORDER BY g.game_date DESC LIMIT 10""",
-        (team_id, team_id)
+        (team_id, team_id),
     )
     return render_template("team.html",
                            team=team,
-                           players=players,
+                           batters=batters,
+                           pitchers=pitchers,
                            recent=recent,
                            win_pct=_win_pct)
 
@@ -620,7 +895,6 @@ def transactions():
     if team_id:
         selected_team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
 
-    # Summary counts for the header
     counts = {et: 0 for et in event_types}
     all_txns = get_transactions(limit=50000)
     for tx in all_txns:
@@ -673,7 +947,6 @@ def new_league_post():
 
 @app.route("/api/sim", methods=["POST"])
 def api_sim():
-    """Simulate the next N unplayed games. POST body: {n: int, seed_base: int|null}"""
     data      = request.get_json(silent=True) or {}
     n         = int(data.get("n", 5))
     n         = max(1, min(n, 50))
@@ -685,8 +958,6 @@ def api_sim():
 
 @app.route("/api/sim/today", methods=["POST"])
 def api_sim_today():
-    """Sim every game scheduled on the current sim date, then advance the clock by 1 day.
-    On an off-day (no games), the clock still advances by 1 day so users can click through gaps."""
     if is_season_complete():
         return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
@@ -698,8 +969,6 @@ def api_sim_today():
 
 @app.route("/api/sim/week", methods=["POST"])
 def api_sim_week():
-    """Sim every unplayed game over the next 7 calendar days (current..current+6),
-    then advance the clock to the day after."""
     if is_season_complete():
         return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
@@ -712,7 +981,6 @@ def api_sim_week():
 
 @app.route("/api/sim/month", methods=["POST"])
 def api_sim_month():
-    """Sim through the end of the current calendar month, then advance the clock past it."""
     if is_season_complete():
         return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
@@ -725,7 +993,6 @@ def api_sim_month():
 
 @app.route("/api/sim/all-star", methods=["POST"])
 def api_sim_all_star():
-    """Sim through the All-Star break (schedule midpoint)."""
     if is_season_complete():
         return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
@@ -740,7 +1007,6 @@ def api_sim_all_star():
 
 @app.route("/api/sim/season", methods=["POST"])
 def api_sim_season():
-    """Sim every remaining unplayed game in the season."""
     if is_season_complete():
         return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
@@ -753,7 +1019,6 @@ def api_sim_season():
 
 @app.route("/api/sim/<int:game_id>", methods=["POST"])
 def api_sim_game(game_id: int):
-    """Simulate a specific game by ID."""
     data = request.get_json(silent=True) or {}
     seed = data.get("seed")
     try:
@@ -766,12 +1031,9 @@ def api_sim_game(game_id: int):
 
 @app.route("/api/league-configs")
 def api_league_configs():
-    """Return all available league configs as JSON."""
     return jsonify(list(get_league_configs().values()))
 
 
 @app.route("/api/health")
 def api_health():
-    """Lightweight health probe for fly.io / load balancers. Cheap on purpose —
-    no DB query so it can't fail during transient lock contention."""
     return jsonify({"status": "ok"})

@@ -15,8 +15,8 @@
     .card { background: #161b22; border: 1px solid #30363d; }
     .card-header { background: #1f2937; border-bottom: 1px solid #30363d; }
     .table { color: #e6edf3; }
-    .table thead th { background: #1f2937; color: #8b949e; border-color: #30363d; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
-    .table tbody td { border-color: #30363d; font-size: .88rem; }
+    .table thead th { background: #1f2937; color: #8b949e; border-color: #30363d; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+    .table tbody td { border-color: #30363d; font-size: .85rem; }
     .table tbody tr:hover { background: #1f2937; }
     .badge-division { font-size: .7rem; padding: .25rem .5rem; }
     .score-big { font-size: 2.2rem; font-weight: 800; }
@@ -25,15 +25,35 @@
     .team-abbrev { font-weight: 700; color: #58a6ff; }
     .winner-badge { background: #238636; color: #fff; border-radius: 3px; padding: 1px 6px; font-size: .72rem; }
     footer { background: #161b22; border-top: 1px solid #30363d; color: #8b949e; font-size: .8rem; }
-    a { color: #58a6ff; }
+    a { color: #58a6ff; text-decoration: none; }
     a:hover { color: #79c0ff; }
     .btn-primary { background: #238636; border-color: #238636; }
     .btn-primary:hover { background: #2ea043; border-color: #2ea043; }
     .btn-secondary { background: #21262d; border-color: #30363d; color: #e6edf3; }
     .btn-secondary:hover { background: #30363d; }
     .progress-bar-skill { height: 6px; border-radius: 3px; background: #58a6ff; }
-    .division-header { color: #f0883e; font-weight: 700; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; }
+    .division-header { color: #f0883e; font-weight: 700; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
     .si-badge { background: #6f42c1; color: #fff; border-radius: 3px; padding: 1px 5px; font-size: .7rem; }
+
+    /* ---- Dense b-ref table aesthetic ---- */
+    .dense { border: 1px solid #30363d; border-radius: 4px; overflow: hidden; background: #0d1117; }
+    .dense-table { margin: 0; }
+    .dense-table thead th { padding: 4px 8px; white-space: nowrap; user-select: none; position: sticky; top: 0; z-index: 2; }
+    .dense-table tbody td { padding: 3px 8px; line-height: 1.3; }
+    .dense-table tbody tr.div-divider td { background: #161b22; color: #f0883e; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-top: 2px solid #30363d; }
+    .num { font-family: "SF Mono", "Menlo", "Consolas", monospace; font-size: .82rem; text-align: right; font-variant-numeric: tabular-nums; }
+    th.num { text-align: right; }
+    .sortable thead th { cursor: pointer; }
+    .sortable thead th:hover { color: #e6edf3; }
+    .sortable thead th .sort-arrow { color: #58a6ff; margin-left: 3px; font-size: .7rem; }
+    .l5pill { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin: 0 1px; }
+    .l5pill.w { background: #238636; }
+    .l5pill.l { background: #b22222; }
+    .strk-w { color: #2ea043; font-weight: 600; }
+    .strk-l { color: #f85149; font-weight: 600; }
+    .panel-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: #8b949e; padding: 6px 8px; background: #161b22; border-bottom: 1px solid #30363d; font-weight: 700; }
+    .filter-bar { background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; }
+    .filter-bar select, .filter-bar input { background: #0d1117 !important; color: #e6edf3 !important; border-color: #30363d !important; }
   </style>
 </head>
 <body>
@@ -46,15 +66,17 @@
     <div class="collapse navbar-collapse" id="nav">
       <ul class="navbar-nav me-auto">
         <li class="nav-item"><a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}"
-            href="{{ url_for('index') }}">Dashboard</a></li>
+            href="{{ url_for('index') }}">Scores</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint == 'standings' %}active{% endif %}"
             href="{{ url_for('standings') }}">Standings</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint == 'schedule' %}active{% endif %}"
             href="{{ url_for('schedule') }}">Schedule</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint in ('stats','player_detail') %}active{% endif %}"
-            href="{{ url_for('stats') }}">Stats</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'teams' %}active{% endif %}"
+        <li class="nav-item"><a class="nav-link {% if request.endpoint in ('players','player_detail') %}active{% endif %}"
+            href="{{ url_for('players') }}">Players</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint in ('teams','team_detail') %}active{% endif %}"
             href="{{ url_for('teams') }}">Teams</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'leaders' %}active{% endif %}"
+            href="{{ url_for('leaders') }}">Leaders</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}"
             href="{{ url_for('transactions') }}">Transactions</a></li>
         <li class="nav-item"><a class="nav-link {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}"
@@ -147,6 +169,70 @@
       e.preventDefault();
       if (el.disabled || el.classList.contains('disabled')) return;
       runSim(el.dataset.sim);
+    });
+  });
+})();
+
+/* -- Tiny vanilla sortable-table helper -- */
+(function () {
+  function rowKey(row, idx) {
+    const c = row.children[idx];
+    if (!c) return '';
+    const dv = c.getAttribute('data-sort-value');
+    if (dv !== null) return dv;
+    return c.textContent.trim();
+  }
+  function cmpStr(a, b) { return a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'}); }
+  function sortBy(table, idx, dir) {
+    const tbody = table.tBodies[0];
+    if (!tbody) return;
+    // Group rows around any "section divider" rows (data-divider) so dividers stay anchored.
+    const all = Array.from(tbody.rows);
+    const groups = []; let cur = {divider: null, rows: []};
+    all.forEach(r => {
+      if (r.dataset.divider !== undefined) {
+        if (cur.rows.length || cur.divider) groups.push(cur);
+        cur = {divider: r, rows: []};
+      } else { cur.rows.push(r); }
+    });
+    if (cur.rows.length || cur.divider) groups.push(cur);
+    groups.forEach(g => {
+      g.rows.sort((ra, rb) => {
+        const a = rowKey(ra, idx), b = rowKey(rb, idx);
+        const fa = parseFloat(a), fb = parseFloat(b);
+        let res;
+        if (!isNaN(fa) && !isNaN(fb) && /^-?\d/.test(a) && /^-?\d/.test(b)) res = fa - fb;
+        else res = cmpStr(a, b);
+        return dir === 'desc' ? -res : res;
+      });
+    });
+    const frag = document.createDocumentFragment();
+    groups.forEach(g => {
+      if (g.divider) frag.appendChild(g.divider);
+      g.rows.forEach(r => frag.appendChild(r));
+    });
+    tbody.appendChild(frag);
+  }
+  document.querySelectorAll('table.sortable').forEach(table => {
+    const ths = table.tHead ? table.tHead.rows[0].cells : [];
+    Array.from(ths).forEach((th, idx) => {
+      if (th.dataset.nosort !== undefined) return;
+      th.style.cursor = 'pointer';
+      const arrow = document.createElement('span');
+      arrow.className = 'sort-arrow';
+      arrow.textContent = '';
+      th.appendChild(arrow);
+      th.addEventListener('click', () => {
+        const cur = table.dataset.sortIdx;
+        const curDir = table.dataset.sortDir || 'asc';
+        let dir = 'asc';
+        if (cur === String(idx)) dir = curDir === 'asc' ? 'desc' : 'asc';
+        Array.from(ths).forEach(h => { const a = h.querySelector('.sort-arrow'); if (a) a.textContent = ''; });
+        arrow.textContent = dir === 'asc' ? '▲' : '▼';
+        table.dataset.sortIdx = idx;
+        table.dataset.sortDir = dir;
+        sortBy(table, idx, dir);
+      });
     });
   });
 })();

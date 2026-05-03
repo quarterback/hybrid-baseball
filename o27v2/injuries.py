@@ -117,43 +117,54 @@ def _depth_chart_events(
     pos  = injured_player.get("position", "")
     name = injured_player.get("name", "?")
 
-    # -- Pitcher (workhorse) position --
-    if role == "workhorse" or pos == "P":
-        committee = [
-            p for p in healthy if p.get("pitcher_role") == "committee"
+    # -- Pitcher position --
+    # Phase 10: pitcher depth = remaining healthy SPs first, then RPs.
+    if role in ("workhorse", "starter", "reliever") or pos == "P":
+        backups = [
+            p for p in healthy
+            if p.get("is_pitcher") and p["id"] != injured_player["id"]
         ]
-        if committee:
-            best = max(committee, key=lambda p: float(p.get("pitcher_skill", 0.0)))
+        # Prefer fellow starters as fill-in, then relievers, then anyone else.
+        backups.sort(
+            key=lambda p: (
+                p.get("pitcher_role") in ("starter", "workhorse"),
+                p.get("pitcher_role") == "reliever",
+                float(p.get("pitcher_skill", 0.0)),
+            ),
+            reverse=True,
+        )
+        if backups:
+            best = backups[0]
             events.append({
                 "event_type": "promotion",
                 "team_id": team_id,
                 "player_id": best["id"],
                 "detail": (
                     f"{team_name}: {best['name']} ({best['position']}) promoted to "
-                    f"starting pitcher role while {name} is on IL"
+                    f"cover pitching role while {name} is on IL"
                 ),
             })
-            # Performance penalty if best committee pitcher is below starter threshold
-            if _scout.to_unit(best.get("pitcher_skill", 0)) < 0.48:
+            # Performance penalty if best replacement is below starter threshold.
+            # Phase 10 stores skills as raw floats, so no scout conversion needed.
+            if float(best.get("pitcher_skill", 0.0)) < 0.48:
                 events.append({
                     "event_type": "penalty",
                     "team_id": team_id,
                     "player_id": best["id"],
                     "detail": (
-                        f"COVERAGE PENALTY: {team_name} starter {name} on IL; "
+                        f"COVERAGE PENALTY: {team_name} pitcher {name} on IL; "
                         f"replacement {best['name']} pitcher_skill={best['pitcher_skill']:.3f} "
                         f"(below starter threshold 0.48)"
                     ),
                 })
         else:
-            # No committee pitchers available at all
             events.append({
                 "event_type": "penalty",
                 "team_id": team_id,
                 "player_id": None,
                 "detail": (
                     f"CRITICAL SHORTAGE: {team_name} has no available pitchers after "
-                    f"{name} placed on IL; waiver relief expected"
+                    f"{name} placed on IL"
                 ),
             })
 
@@ -370,10 +381,15 @@ def get_active_players(team_id: int, game_date: str) -> list[dict]:
 
 def check_waiver_claims(game_date: str) -> list[dict]:
     """
-    Trigger a waiver claim for any team whose bullpen drops below 2 healthy
-    committee pitchers.  Generates a replacement-level committee pitcher.
-    Returns a list of transaction dicts.  Max 1 claim per team per check.
+    Phase 10: dedicated rotation+bullpen replaces the Phase-8 "committee"
+    bullpen model. Teams now carry 4 SP + 4 RP from day one, so the
+    legacy waiver-claim logic (which spawned `committee` reliever
+    call-ups) no longer applies and would just pollute rosters with
+    role='committee' players. Disabled.
     """
+    return []
+
+    # ----- legacy Phase-8 logic kept below for reference, unreachable -----
     MIN_BULLPEN = 2
     teams  = db.fetchall("SELECT id, name FROM teams")
     events: list[dict] = []

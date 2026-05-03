@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Players{% endblock %}
+{% block content %}
+<h2 class="mb-3 fw-bold">Players</h2>
+
+<form method="get" class="filter-bar d-flex flex-wrap gap-2 align-items-end">
+  <div>
+    <label class="form-label small text-secondary mb-1">Type</label>
+    <select name="kind" class="form-select form-select-sm">
+      <option value="batters"  {% if kind == 'batters'  %}selected{% endif %}>Batters</option>
+      <option value="pitchers" {% if kind == 'pitchers' %}selected{% endif %}>Pitchers</option>
+      <option value="both"     {% if kind == 'both'     %}selected{% endif %}>Both</option>
+    </select>
+  </div>
+  <div>
+    <label class="form-label small text-secondary mb-1">Team</label>
+    <select name="team" class="form-select form-select-sm">
+      <option value="">All</option>
+      {% for t in all_teams %}
+      <option value="{{ t.id }}" {% if selected_team_id == t.id %}selected{% endif %}>{{ t.abbrev }} — {{ t.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label small text-secondary mb-1">Position</label>
+    <select name="pos" class="form-select form-select-sm">
+      <option value="">All</option>
+      {% for p in all_positions %}
+      <option value="{{ p }}" {% if selected_pos == p %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label small text-secondary mb-1">Search name</label>
+    <input type="text" name="q" value="{{ q or '' }}" class="form-control form-control-sm" placeholder="e.g. Smith">
+  </div>
+  <div>
+    <button class="btn btn-secondary btn-sm">Apply</button>
+    <a href="{{ url_for('players') }}" class="btn btn-secondary btn-sm">Reset</a>
+  </div>
+  <div class="ms-auto text-secondary small align-self-end">
+    {{ total }} player{{ '' if total == 1 else 's' }} · page {{ page }} / {{ pages }}
+  </div>
+</form>
+
+{% if kind in ('batters', 'both') %}
+<div class="dense mb-3">
+  <div class="panel-title">Batting</div>
+  {% if batters %}
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Name</th><th>Tm</th><th>Pos</th>
+      <th class="num">Age</th>
+      <th class="num">GP</th><th class="num">PA</th><th class="num">AB</th>
+      <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
+      <th class="num">RBI</th><th class="num">R</th><th class="num">BB</th><th class="num">SO</th>
+      <th class="num">AVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
+    </tr></thead>
+    <tbody>
+    {% for p in batters %}
+    <tr>
+      <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.is_joker %} <span class="si-badge">JKR</span>{% endif %}</td>
+      <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
+      <td class="text-secondary">{{ p.position }}</td>
+      <td class="num text-secondary">{{ p.age }}</td>
+      <td class="num">{{ p.gp or 0 }}</td><td class="num">{{ p.pa or 0 }}</td><td class="num">{{ p.ab or 0 }}</td>
+      <td class="num fw-bold">{{ p.h or 0 }}</td><td class="num">{{ p.d2 or 0 }}</td><td class="num">{{ p.d3 or 0 }}</td><td class="num">{{ p.hr or 0 }}</td>
+      <td class="num">{{ p.rbi or 0 }}</td><td class="num">{{ p.r or 0 }}</td><td class="num">{{ p.bb or 0 }}</td><td class="num">{{ p.k or 0 }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.avg) }}">{{ '%.3f'|format(p.avg) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.obp) }}">{{ '%.3f'|format(p.obp) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.slg) }}">{{ '%.3f'|format(p.slg) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.ops) }}">{{ '%.3f'|format(p.ops) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-3 text-center text-secondary small">No batters match this filter.</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if kind in ('pitchers', 'both') %}
+<div class="dense mb-3">
+  <div class="panel-title">Pitching</div>
+  {% if pitchers %}
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Name</th><th>Tm</th>
+      <th class="num">Age</th>
+      <th class="num">GP</th><th class="num">W</th><th class="num">L</th>
+      <th class="num">ERA</th><th class="num">IP</th>
+      <th class="num">H</th><th class="num">BB</th><th class="num">K</th><th class="num">WHIP</th>
+    </tr></thead>
+    <tbody>
+    {% for p in pitchers %}
+    <tr>
+      <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a></td>
+      <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
+      <td class="num text-secondary">{{ p.age }}</td>
+      <td class="num">{{ p.gp or 0 }}</td>
+      <td class="num">{{ p.w or 0 }}</td>
+      <td class="num">{{ p.l or 0 }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.era) }}">{{ '%.2f'|format(p.era) }}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.ip) }}">{{ '%.1f'|format(p.ip) }}</td>
+      <td class="num">{{ p.h or 0 }}</td>
+      <td class="num">{{ p.bb or 0 }}</td>
+      <td class="num fw-bold">{{ p.k or 0 }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(p.whip) }}">{{ '%.2f'|format(p.whip) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-3 text-center text-secondary small">No pitchers match this filter.</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if pages > 1 %}
+<nav class="d-flex justify-content-center mt-3">
+  <ul class="pagination pagination-sm mb-0">
+    {% set qs = request.args.to_dict() %}
+    {% macro plink(p, label) -%}
+      {% set _ = qs.update({'page': p}) %}
+      <li class="page-item {% if p == page %}active{% endif %}"><a class="page-link" style="background:#161b22;border-color:#30363d;color:#58a6ff" href="?{{ qs|urlencode }}">{{ label }}</a></li>
+    {%- endmacro %}
+    {% if page > 1 %}{{ plink(page-1, '‹') }}{% endif %}
+    {% set start = [1, page - 3]|max %}
+    {% set end = [pages, page + 3]|min %}
+    {% if start > 1 %}{{ plink(1, '1') }}{% if start > 2 %}<li class="page-item disabled"><span class="page-link" style="background:#161b22;border-color:#30363d;color:#8b949e">…</span></li>{% endif %}{% endif %}
+    {% for p in range(start, end + 1) %}{{ plink(p, p) }}{% endfor %}
+    {% if end < pages %}{% if end < pages - 1 %}<li class="page-item disabled"><span class="page-link" style="background:#161b22;border-color:#30363d;color:#8b949e">…</span></li>{% endif %}{{ plink(pages, pages) }}{% endif %}
+    {% if page < pages %}{{ plink(page+1, '›') }}{% endif %}
+  </ul>
+</nav>
+{% endif %}
+{% endblock %}

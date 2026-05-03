@@ -46,8 +46,8 @@ pnpm workspace monorepo using TypeScript + Python O27 baseball simulation.
 - `o27v2/trades.py` — Phase 9: trade value model, deadline engine, waiver claims
 - `o27v2/transactions.py` — Phase 9: transaction log helpers (injury, return, trade, waiver)
 - `o27v2/smoke_test.py` — 10-seed smoke test (no DB required)
-- `o27v2/web/app.py` — Flask routes: /, /standings, /schedule, /game/<id>, /teams, /transactions
-- `o27v2/web/templates/` — Bootstrap 5 HTML templates (dark theme)
+- `o27v2/web/app.py` — Flask routes (Baseball-Reference-style IA): /, /standings, /schedule, /players, /player/<id>, /teams, /team/<id>, /leaders (replaces /stats; /stats 302→/leaders), /game/<id>, /transactions
+- `o27v2/web/templates/` — Bootstrap 5 HTML templates (dark theme); dense b-ref-style tables (`.dense`, `.dense-table`, `.num` monospace numerics, `.sortable` vanilla-JS click-sort headers in `base.html`). Scores dashboard surfaces today's line scores + last-played finals + division leaders + top-5 leaders (no stat cards). Standings is one wide sortable table per league with inline division dividers and Last5 pill column. Players is a server-paginated 50/page index filterable by team/position/kind/name. Leaders is top-25 per stat in dense card-per-stat layout.
 
 ### Key O27v2 Commands
 - `python o27v2/manage.py runserver` — start web app (default port from $PORT)

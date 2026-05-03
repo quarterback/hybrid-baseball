@@ -135,7 +135,17 @@ ARCHETYPE_PA_MODIFIERS: dict[str, dict] = {
 # Live source of truth — imported by o27v2/league.py generate_players().
 # ---------------------------------------------------------------------------
 
-COMMITTEE_POSITIONS: frozenset[str] = frozenset({"CF", "SS", "2B"})
+COMMITTEE_POSITIONS: frozenset[str] = frozenset()  # deprecated — kept empty for backwards compat
+
+# ---------------------------------------------------------------------------
+# Phase 10: Dedicated pitching staff (per team)
+# ---------------------------------------------------------------------------
+# 4 starting pitchers (rotation) + 4 relievers, all flagged is_pitcher=1.
+# One of the starters is selected per game and bats in the #9 lineup slot
+# (O27 §2.3: pitcher must bat). The other 3 SPs and all 4 RPs are bullpen
+# only (do not bat).
+STARTERS_PER_TEAM:  int = 4
+RELIEVERS_PER_TEAM: int = 4
 
 # ---------------------------------------------------------------------------
 # Phase 8: Joker roster size
@@ -146,7 +156,7 @@ COMMITTEE_POSITIONS: frozenset[str] = frozenset({"CF", "SS", "2B"})
 # cap never prematurely blocks a valid insertion.
 # ---------------------------------------------------------------------------
 
-JOKERS_PER_ARCHETYPE: int = 3
+JOKERS_PER_ARCHETYPE: int = 1   # Phase 10: 3 jokers per team total (one per archetype)
 
 # ---------------------------------------------------------------------------
 # Phase 8: Home-field advantage
@@ -171,8 +181,11 @@ from o27.config import (          # noqa: E402
     JOKER_MAX_PER_HALF,           # cap: at most this many joker insertions per team per half
     WORKHORSE_CHANGE_BASE,        # workhorse BF threshold base
     WORKHORSE_CHANGE_SCALE,       # workhorse BF threshold scale factor
-    COMMITTEE_CHANGE_BASE,        # committee BF threshold base
-    COMMITTEE_CHANGE_SCALE,       # committee BF threshold scale factor
+    COMMITTEE_CHANGE_BASE,        # committee BF threshold base (legacy)
+    COMMITTEE_CHANGE_SCALE,       # committee BF threshold scale factor (legacy)
+    RELIEVER_CHANGE_BASE,         # reliever BF threshold base
+    RELIEVER_CHANGE_SCALE,        # reliever BF threshold scale factor
+    RELIEVER_ENTRY_OUTS_MIN,      # earliest out count at which a reliever may enter
 )
 
 # ---------------------------------------------------------------------------

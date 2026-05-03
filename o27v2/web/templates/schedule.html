@@ -1,96 +1,72 @@
 {% extends "base.html" %}
 {% block title %}Schedule{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
   <h2 class="fw-bold mb-0">Schedule</h2>
   <div class="d-flex gap-3 small">
-    {% if sim.current_date %}
-      <span class="text-secondary">Current:</span>
-      <span class="fw-bold" style="color:#58a6ff">{{ sim.current_date }}</span>
-    {% endif %}
-    {% if sim.all_star_date %}
-      <span class="text-secondary">All-Star:</span>
-      <span class="fw-bold" style="color:#f0883e">{{ sim.all_star_date }}</span>
-    {% endif %}
-    {% if sim.last_date %}
-      <span class="text-secondary">Season ends:</span>
-      <span class="fw-bold text-secondary">{{ sim.last_date }}</span>
-    {% endif %}
+    {% if sim.current_date %}<span class="text-secondary">Current:</span><span class="fw-bold" style="color:#58a6ff">{{ sim.current_date }}</span>{% endif %}
+    {% if sim.all_star_date %}<span class="text-secondary">All-Star:</span><span class="fw-bold" style="color:#f0883e">{{ sim.all_star_date }}</span>{% endif %}
+    {% if sim.last_date %}<span class="text-secondary">Season ends:</span><span class="fw-bold text-secondary">{{ sim.last_date }}</span>{% endif %}
   </div>
 </div>
 
-<div class="card mb-3">
-  <div class="card-body py-2">
-    <form class="row g-2 align-items-end" method="get">
-      <div class="col-auto">
-        <select name="team" class="form-select form-select-sm"
-                style="background:#21262d; border-color:#30363d; color:#e6edf3">
-          <option value="">All Teams</option>
-          {% for t in teams %}
-          <option value="{{ t.id }}" {% if selected_team and selected_team.id == t.id %}selected{% endif %}>
-            {{ t.abbrev }} — {{ t.name }}
-          </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-auto">
-        <select name="status" class="form-select form-select-sm"
-                style="background:#21262d; border-color:#30363d; color:#e6edf3">
-          <option value="all" {% if status == 'all' %}selected{% endif %}>All Games</option>
-          <option value="played" {% if status == 'played' %}selected{% endif %}>Played</option>
-          <option value="unplayed" {% if status == 'unplayed' %}selected{% endif %}>Upcoming</option>
-        </select>
-      </div>
-      <div class="col-auto">
-        <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-body p-0">
-    {% if games %}
-    <table class="table table-sm mb-0">
-      <thead><tr>
-        <th>Date</th><th>Away</th><th></th><th>Home</th><th>Score</th><th>Status</th>
-      </tr></thead>
-      <tbody>
-      {% for g in games %}
-      <tr>
-        <td class="text-secondary small">{{ g.game_date }}</td>
-        <td>
-          <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}"
-             class="team-abbrev text-decoration-none">{{ g.away_abbrev }}</a>
-          <span class="text-secondary small"> {{ g.away_name }}</span>
-          {% if g.winner_id == g.away_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
-        </td>
-        <td class="text-secondary">@</td>
-        <td>
-          <a href="{{ url_for('team_detail', team_id=g.home_team_id) }}"
-             class="team-abbrev text-decoration-none">{{ g.home_abbrev }}</a>
-          <span class="text-secondary small"> {{ g.home_name }}</span>
-          {% if g.winner_id == g.home_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
-        </td>
-        <td class="fw-bold">
-          {% if g.played %}{{ g.away_score }}–{{ g.home_score }}{% else %}<span class="text-secondary">—</span>{% endif %}
-          {% if g.super_inning %}<span class="si-badge ms-1">SI</span>{% endif %}
-        </td>
-        <td>
-          {% if g.played %}
-          <a href="{{ url_for('game_detail', game_id=g.id) }}" class="small">Box Score</a>
-          {% else %}
-          <button class="btn btn-primary btn-sm py-0 sim-one-btn" data-game-id="{{ g.id }}">Sim</button>
-          {% endif %}
-        </td>
-      </tr>
+<form class="filter-bar d-flex flex-wrap gap-2 align-items-end" method="get">
+  <div>
+    <label class="form-label small text-secondary mb-1">Team</label>
+    <select name="team" class="form-select form-select-sm">
+      <option value="">All Teams</option>
+      {% for t in teams %}
+      <option value="{{ t.id }}" {% if selected_team and selected_team.id == t.id %}selected{% endif %}>{{ t.abbrev }} — {{ t.name }}</option>
       {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="p-4 text-center text-secondary">No games match the current filter.</div>
-    {% endif %}
+    </select>
   </div>
+  <div>
+    <label class="form-label small text-secondary mb-1">Status</label>
+    <select name="status" class="form-select form-select-sm">
+      <option value="all" {% if status == 'all' %}selected{% endif %}>All Games</option>
+      <option value="played" {% if status == 'played' %}selected{% endif %}>Played</option>
+      <option value="unplayed" {% if status == 'unplayed' %}selected{% endif %}>Upcoming</option>
+    </select>
+  </div>
+  <div><button type="submit" class="btn btn-secondary btn-sm">Filter</button></div>
+</form>
+
+<div class="dense">
+  {% if games %}
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th>Date</th><th>Away</th><th></th><th>Home</th><th class="num">Score</th><th>Status</th>
+    </tr></thead>
+    <tbody>
+    {% for g in games %}
+    <tr>
+      <td class="text-secondary small">{{ g.game_date }}</td>
+      <td>
+        <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}" class="team-abbrev">{{ g.away_abbrev }}</a>
+        <span class="text-secondary small ms-1">{{ g.away_name }}</span>
+        {% if g.winner_id == g.away_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
+      </td>
+      <td class="text-secondary">@</td>
+      <td>
+        <a href="{{ url_for('team_detail', team_id=g.home_team_id) }}" class="team-abbrev">{{ g.home_abbrev }}</a>
+        <span class="text-secondary small ms-1">{{ g.home_name }}</span>
+        {% if g.winner_id == g.home_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
+      </td>
+      <td class="num fw-bold">
+        {% if g.played %}{{ g.away_score }}–{{ g.home_score }}{% else %}<span class="text-secondary">—</span>{% endif %}
+        {% if g.super_inning %}<span class="si-badge ms-1">SI</span>{% endif %}
+      </td>
+      <td>
+        {% if g.played %}<a href="{{ url_for('game_detail', game_id=g.id) }}" class="small">Box Score</a>
+        {% else %}<button class="btn btn-primary btn-sm py-0 sim-one-btn" data-game-id="{{ g.id }}">Sim</button>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-4 text-center text-secondary">No games match the current filter.</div>
+  {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}

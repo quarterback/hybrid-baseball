@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Leaders{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3">
+  <div>
+    <h2 class="fw-bold mb-1">Leaders</h2>
+    <div class="text-secondary small">
+      Season-to-date · {{ games_played }} game{{ '' if games_played == 1 else 's' }} played
+      {% if games_played %}
+        · batting min {{ min_pa }} PA · pitching min {{ min_outs }} outs
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if games_played == 0 %}
+<div class="dense p-4 text-center"><div class="text-secondary">No games played yet. Use <span class="badge bg-success">Sim Today</span> in the top bar.</div></div>
+{% else %}
+
+<h5 class="mt-2 mb-2" style="color:#58a6ff">Batting</h5>
+<div class="row g-3 mb-4">
+  {% set batting_cards = [
+    ('AVG', 'avg', '%.3f', true),
+    ('OBP', 'obp', '%.3f', true),
+    ('SLG', 'slg', '%.3f', true),
+    ('OPS', 'ops', '%.3f', true),
+    ('HR',  'hr',  '%d',   true),
+    ('RBI', 'rbi', '%d',   true),
+    ('R',   'r',   '%d',   true),
+    ('H',   'h',   '%d',   true),
+    ('BB',  'bb',  '%d',   true),
+    ('Stays','stays','%d', true),
+  ] %}
+  {% for label, key, fmt, desc in batting_cards %}
+  <div class="col-lg-3 col-md-4 col-sm-6">
+    <div class="dense">
+      <div class="panel-title">{{ label }}</div>
+      <table class="table table-sm dense-table mb-0">
+        <tbody>
+          {% set sorted = batting | sort(attribute=key, reverse=desc) %}
+          {% for b in sorted[:25] %}
+          <tr>
+            <td class="text-secondary num" style="width:24px">{{ loop.index }}</td>
+            <td><a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
+            <td><a href="{{ url_for('team_detail', team_id=b.team_id) }}" class="team-abbrev">{{ b.team_abbrev }}</a></td>
+            <td class="num fw-bold">{{ fmt|format(b[key]) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<h5 class="mt-2 mb-2" style="color:#58a6ff">Pitching</h5>
+<div class="row g-3 mb-4">
+  {% set p_cards = [
+    ('W',    'w',    '%d',   true),
+    ('ERA',  'era',  '%.2f', false),
+    ('WHIP', 'whip', '%.2f', false),
+    ('K',    'k',    '%d',   true),
+    ('IP',   'ip',   '%.1f', true),
+    ('K/9',  'k9',   '%.2f', true),
+    ('BB/9', 'bb9',  '%.2f', false),
+    ('SO/BB','so_bb','%.2f', true),
+  ] %}
+  {% for label, key, fmt, desc in p_cards %}
+  <div class="col-lg-3 col-md-4 col-sm-6">
+    <div class="dense">
+      <div class="panel-title">{{ label }}</div>
+      <table class="table table-sm dense-table mb-0">
+        <tbody>
+          {% set sorted = pitching | sort(attribute=key, reverse=desc) %}
+          {% for p in sorted[:25] %}
+          <tr>
+            <td class="text-secondary num" style="width:24px">{{ loop.index }}</td>
+            <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
+            <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
+            <td class="num fw-bold">{{ fmt|format(p[key]) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endif %}
+{% endblock %}

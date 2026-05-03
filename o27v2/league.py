@@ -5,9 +5,14 @@ Supports configurable team counts (8–36) via league config JSON files.
 Player names are drawn from regional pools with weighted sampling:
   USA 50% | Latin 30% | Japan/Korea 10% | Other 10%
 
-Each team has 18 players:
-  - 9 position players (slot 9 = pitcher)
-  - 9 jokers (3 per archetype: power, speed, contact)
+Phase 10 roster (per team, 19 players total):
+  - 8 position players (CF, SS, 2B, 3B, RF, LF, 1B, C — all is_pitcher=0)
+  - 4 starting pitchers (rotation; one bats #9 each game, all is_pitcher=1)
+  - 4 relievers (bullpen-only; never bat in regulation; all is_pitcher=1)
+  - 3 jokers (1 per archetype: power, speed, contact)
+
+The "committee" role from Phase 8 is gone: CF/SS/2B no longer pitch.
+Starters cycle through the rotation game-by-game (see sim.py).
 """
 from __future__ import annotations
 import json
@@ -103,6 +108,10 @@ def _build_division_map(config: dict) -> list[tuple[str, str]]:
 
 POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C", "P"]
 
+# Phase 10: position players only — pitchers are generated separately as
+# a dedicated rotation + bullpen (see generate_players()).
+FIELDER_POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
+
 _JOKER_NAMES = [
     "The Ace", "The Blaze", "The Clutch", "The Dart", "The Edge",
     "The Flame", "The Ghost", "The Hawk", "The Ice", "The Joker",
@@ -197,39 +206,72 @@ def generate_players(
     pitcher_base = [0.54, 0.48, 0.52, 0.56, 0.50][profile]
 
     players = []
-    for pos in POSITIONS:
-        is_p        = (pos == "P")
-        is_comm     = (pos in _COMMITTEE_POSITIONS)
-        skill       = _clamp(rng.gauss(skill_base,   0.10))
-        speed       = _clamp(rng.gauss(speed_base,   0.12))
-        if is_p:
-            pskill = _clamp(rng.gauss(pitcher_base, 0.12))
-        elif is_comm:
-            pskill = _clamp(rng.gauss(0.52, 0.09))
-        else:
-            pskill = _clamp(rng.gauss(0.35, 0.08))
-        stay_a = _clamp(rng.gauss(0.10, 0.05))   # v2 calibrated to 1.0–2.5 stays/game
+
+    # ---- 8 position players (no pitching) ----
+    for pos in FIELDER_POSITIONS:
+        skill  = _clamp(rng.gauss(skill_base, 0.10))
+        speed  = _clamp(rng.gauss(speed_base, 0.12))
+        pskill = _clamp(rng.gauss(0.30, 0.06))   # never used; non-pitcher
+        stay_a = _clamp(rng.gauss(0.10, 0.05))
         cqt    = _clamp(rng.gauss(0.28, 0.06))
-
-        if is_p:
-            pitcher_role = "workhorse"
-        elif is_comm:
-            pitcher_role = "committee"
-        else:
-            pitcher_role = ""
-
         players.append({
             "name": _name(),
             "position": pos,
-            "is_pitcher": int(is_p),
-
-            "skill": _scout.to_grade(skill),
-            "speed": _scout.to_grade(speed),
-            "pitcher_skill": _scout.to_grade(pskill),
+            "is_pitcher": 0,
+            "is_joker": 0,
+            "skill": round(skill, 3),
+            "speed": round(speed, 3),
+            "pitcher_skill": round(pskill, 3),
             "stay_aggressiveness": round(stay_a, 3),
             "contact_quality_threshold": round(cqt, 3),
             "archetype": "",
-            "pitcher_role": pitcher_role,
+            "pitcher_role": "",
+            "age": _player_age(rng),
+        })
+
+    # ---- Dedicated pitching staff ----
+    # All pitchers bat poorly (skill ~0.32) — they only step in if scheduled
+    # to hit. Starters use pitcher_role="starter", relievers="reliever".
+    # Generated alphabetically (SP1..SP4, RP1..RP4) to make rotation
+    # selection deterministic in sim.py.
+    n_starters  = v2cfg.STARTERS_PER_TEAM
+    n_relievers = v2cfg.RELIEVERS_PER_TEAM
+
+    for i in range(n_starters):
+        # Starters get a small bonus to pitcher_skill (workhorse arms)
+        pskill = _clamp(rng.gauss(pitcher_base + 0.02, 0.10))
+        skill  = _clamp(rng.gauss(0.32, 0.06))   # weak hitters
+        players.append({
+            "name": _name(),
+            "position": "P",
+            "is_pitcher": 1,
+            "is_joker": 0,
+            "skill": round(skill, 3),
+            "speed": round(rng.gauss(0.45, 0.08), 3),
+            "pitcher_skill": round(pskill, 3),
+            "stay_aggressiveness": round(rng.gauss(0.05, 0.03), 3),
+            "contact_quality_threshold": round(rng.gauss(0.20, 0.05), 3),
+            "archetype": "",
+            "pitcher_role": "starter",
+            "age": _player_age(rng),
+        })
+
+    for i in range(n_relievers):
+        # Relievers slightly less skilled than starters on average
+        pskill = _clamp(rng.gauss(pitcher_base - 0.02, 0.10))
+        skill  = _clamp(rng.gauss(0.30, 0.06))
+        players.append({
+            "name": _name(),
+            "position": "P",
+            "is_pitcher": 1,
+            "is_joker": 0,
+            "skill": round(skill, 3),
+            "speed": round(rng.gauss(0.45, 0.08), 3),
+            "pitcher_skill": round(pskill, 3),
+            "stay_aggressiveness": round(rng.gauss(0.05, 0.03), 3),
+            "contact_quality_threshold": round(rng.gauss(0.20, 0.05), 3),
+            "archetype": "",
+            "pitcher_role": "reliever",
             "age": _player_age(rng),
         })
 
