@@ -58,7 +58,7 @@
     <thead><tr>
       <th class="num">G</th><th class="num">BF</th><th class="num">OUT</th><th class="num">ER</th><th class="num">OS%</th>
       <th class="num">H</th><th class="num">R</th><th class="num">BB</th><th class="num">K</th>
-      <th class="num">ERA</th><th class="num">WHIP</th><th class="num">K/27</th><th class="num">BB/27</th>
+      <th class="num">ERA</th><th class="num">FIP</th><th class="num">WHIP</th><th class="num">K/27</th><th class="num">BB/27</th>
     </tr></thead>
     <tbody>
       <tr>
@@ -68,6 +68,7 @@
         <td class="num">{{ pt_totals.h }}</td><td class="num">{{ pt_totals.r }}</td>
         <td class="num">{{ pt_totals.bb }}</td><td class="num fw-bold">{{ pt_totals.k }}</td>
         <td class="num fw-bold">{{ '%.2f'|format(pt_totals.era) }}</td>
+        <td class="num">{{ '%.2f'|format(pt_totals.fip) }}</td>
         <td class="num">{{ '%.2f'|format(pt_totals.whip) }}</td>
         <td class="num">{{ '%.2f'|format(pt_totals.k27) }}</td>
         <td class="num">{{ '%.2f'|format(pt_totals.bb27) }}</td>

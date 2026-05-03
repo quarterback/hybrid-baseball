@@ -59,11 +59,11 @@
   {% set p_cards = [
     ('W',    'w',    '%d',   true),
     ('ERA',  'era',  '%.2f', false),
+    ('FIP',  'fip',  '%.2f', false),
     ('WHIP', 'whip', '%.2f', false),
     ('K',    'k',    '%d',   true),
-    ('IP',   'ip',   '%.1f', true),
-    ('K/9',  'k9',   '%.2f', true),
-    ('BB/9', 'bb9',  '%.2f', false),
+    ('K/27', 'k27',  '%.2f', true),
+    ('BB/27','bb27', '%.2f', false),
     ('SO/BB','so_bb','%.2f', true),
   ] %}
   {% for label, key, fmt, desc in p_cards %}

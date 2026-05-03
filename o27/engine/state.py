@@ -155,6 +155,13 @@ class Team:
     lineup: list = field(default_factory=list)          # Active batting order (12)
     lineup_position: int = 0
 
+    # Joker compatibility shims — Phase 10 dropped jokers from v2, but the
+    # engine manager and o27/main.py still reference these fields. Defaulting
+    # to empty / empty-set keeps both legacy v1 paths and the v2 caller (which
+    # passes an empty list) working without per-call attribute checks.
+    jokers_available: list = field(default_factory=list)
+    jokers_used_this_half: set = field(default_factory=set)
+
     # Super-inning
     super_lineup: list = field(default_factory=list)        # 5 selected Player objects
     super_dismissed: set = field(default_factory=set)       # player_ids dismissed in current super round

@@ -210,7 +210,39 @@ def _aggregate_batter_rows(rows: list[dict]) -> None:
         b["ops"] = b["obp"] + b["slg"]
 
 
-def _aggregate_pitcher_rows(rows: list[dict], wl: dict[int, dict[str, int]] | None = None) -> None:
+def _league_fip_const() -> float:
+    """Compute the FIP constant for the per-27-outs stat model.
+
+    Standard MLB FIP = (13*HR + 3*BB - 2*K) / IP * 9 + C, where C is set so
+    that league FIP equals league ERA. In the O27 per-27-outs model we use
+    27/outs in place of 9/IP, and C is re-fit each time against the live
+    league totals so FIP stays anchored to ERA across calibration cycles.
+
+    Falls back to 3.10 (a reasonable per-game baseline) if no games yet.
+    """
+    row = db.fetchone(
+        """SELECT COALESCE(SUM(hr_allowed),0) as hr,
+                  COALESCE(SUM(bb),0)         as bb,
+                  COALESCE(SUM(k),0)          as k,
+                  COALESCE(SUM(er),0)         as er,
+                  COALESCE(SUM(outs_recorded),0) as outs
+           FROM game_pitcher_stats"""
+    )
+    outs = (row or {}).get("outs") or 0
+    if not outs:
+        return 3.10
+    league_era = (row["er"] * 27.0) / outs
+    raw_fip    = ((13 * row["hr"]) + (3 * row["bb"]) - (2 * row["k"])) * 27.0 / outs
+    return league_era - raw_fip
+
+
+def _aggregate_pitcher_rows(
+    rows: list[dict],
+    wl: dict[int, dict[str, int]] | None = None,
+    fip_const: float | None = None,
+) -> None:
+    if fip_const is None:
+        fip_const = _league_fip_const()
     for p in rows:
         outs = p.get("outs") or 0
         ip = outs / 3.0
@@ -219,12 +251,23 @@ def _aggregate_pitcher_rows(rows: list[dict], wl: dict[int, dict[str, int]] | No
         r = p.get("r") or 0
         er = p.get("er") or 0
         k = p.get("k") or 0
+        hr = p.get("hr_allowed") or p.get("hra") or 0
         p["ip"] = ip
-        p["era"] = (er * 27.0 / outs) if outs else 0.0
-        p["whip"] = ((bb + h) / ip) if ip else 0.0
-        p["k9"] = (k * 9.0 / ip) if ip else 0.0
-        p["bb9"] = (bb * 9.0 / ip) if ip else 0.0
+        # ERA uses earned runs and the per-27-outs denominator (Task #48).
+        p["era"]   = (er * 27.0 / outs) if outs else 0.0
+        # WHIP / K / BB are now per-27 outs (one full O27 game) instead of per-9 IP.
+        p["whip"]  = ((bb + h) * 27.0 / outs) if outs else 0.0
+        p["k27"]   = (k  * 27.0 / outs) if outs else 0.0
+        p["bb27"]  = (bb * 27.0 / outs) if outs else 0.0
+        # Kept under the legacy keys so older templates still render sensibly.
+        p["k9"]    = p["k27"]
+        p["bb9"]   = p["bb27"]
         p["so_bb"] = (k / bb) if bb else (k * 1.0)
+        # FIP, fit against league ERA each batch (Task #50 calibration).
+        if outs:
+            p["fip"] = ((13 * hr) + (3 * bb) - (2 * k)) * 27.0 / outs + fip_const
+        else:
+            p["fip"] = 0.0
         if wl is not None:
             pid = p.get("player_id") or p.get("id")
             d = wl.get(pid, {"w": 0, "l": 0})
@@ -314,7 +357,9 @@ def index():
                       t.id as team_id, t.abbrev as team_abbrev,
                       SUM(ps.outs_recorded) as outs,
                       SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
-                      SUM(ps.bb) as bb, SUM(ps.k) as k
+                      SUM(ps.er) as er,
+                      SUM(ps.bb) as bb, SUM(ps.k) as k,
+                      SUM(ps.hr_allowed) as hr_allowed
                FROM game_pitcher_stats ps
                JOIN players p ON ps.player_id = p.id
                JOIN teams   t ON ps.team_id = t.id
@@ -596,7 +641,9 @@ def players():
                            COUNT(ps.game_id) AS gp,
                            SUM(ps.outs_recorded) AS outs,
                            SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r,
-                           SUM(ps.bb) AS bb, SUM(ps.k) AS k
+                           SUM(ps.er) AS er,
+                           SUM(ps.bb) AS bb, SUM(ps.k) AS k,
+                           SUM(ps.hr_allowed) AS hr_allowed
                     FROM game_pitcher_stats ps
                     WHERE ps.player_id IN ({ph})
                     GROUP BY ps.player_id""",
@@ -679,7 +726,8 @@ def leaders():
                   SUM(ps.runs_allowed)   as r,
                   SUM(ps.er)             as er,
                   SUM(ps.bb)             as bb,
-                  SUM(ps.k)              as k
+                  SUM(ps.k)              as k,
+                  SUM(ps.hr_allowed)     as hr_allowed
            FROM game_pitcher_stats ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
@@ -687,20 +735,13 @@ def leaders():
            HAVING SUM(ps.outs_recorded) >= ?""",
         (min_outs,),
     )
-    # Shared helper: fills ip/era/whip/k9/bb9/so_bb + W/L. We then layer on
-    # the O27 per-27-outs ("per game") metrics and ER-based ERA on top, since
-    # the leaderboard SELECT is the only one that pulls SUM(ps.er).
+    # Shared helper now produces era/whip/k27/bb27/fip directly (Task #50).
     wl = _pitcher_wl_map()
     _aggregate_pitcher_rows(pitching, wl)
     for p in pitching:
         outs = p["outs"] or 0
-        # O27 stats: per-27-outs ("per game") rather than per-9-IP.
-        # ERA uses earned runs only (Task #48); RA is per-27-outs of all runs.
-        p["era"]    = ((p["er"] or 0) * 27.0 / outs) if outs else 0.0
+        # Extra rate stats only the leaders page surfaces.
         p["ra27"]   = (p["r"]  * 27.0 / outs) if outs else 0.0
-        p["whip"]   = ((p["bb"] + p["h"]) * 27.0 / outs) if outs else 0.0
-        p["k27"]    = (p["k"]  * 27.0 / outs) if outs else 0.0
-        p["bb27"]   = (p["bb"] * 27.0 / outs) if outs else 0.0
         p["k_pct"]  = (p["k"]  / p["bf"]) if p["bf"] else 0.0
         p["bb_pct"] = (p["bb"] / p["bf"]) if p["bf"] else 0.0
         # OS% = share of a complete game (27 outs) recorded per appearance.
@@ -759,7 +800,9 @@ def player_detail(player_id: int):
     pt = db.fetchone(
         """SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
                   SUM(hits_allowed) as h, SUM(runs_allowed) as r,
-                  SUM(bb) as bb, SUM(k) as k
+                  SUM(er) as er,
+                  SUM(bb) as bb, SUM(k) as k,
+                  SUM(hr_allowed) as hr_allowed
            FROM game_pitcher_stats WHERE player_id = ?""",
         (player_id,),
     )
@@ -779,10 +822,9 @@ def player_detail(player_id: int):
     if pt and pt["outs"]:
         outs = pt["outs"] or 0
         pt_totals = dict(pt)
-        pt_totals["era"]    = (pt["r"]  * 27.0 / outs) if outs else 0.0
-        pt_totals["whip"]   = ((pt["bb"] + pt["h"]) * 27.0 / outs) if outs else 0.0
-        pt_totals["k27"]    = (pt["k"]  * 27.0 / outs) if outs else 0.0
-        pt_totals["bb27"]   = (pt["bb"] * 27.0 / outs) if outs else 0.0
+        # Run through the shared helper so ERA/WHIP/K27/BB27/FIP all use the
+        # same per-27-outs definitions (and the freshly-fit FIP constant).
+        _aggregate_pitcher_rows([pt_totals])
         pt_totals["os_pct"] = (outs / (27.0 * pt["g"])) if pt["g"] else 0.0
 
     return render_template(

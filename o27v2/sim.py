@@ -81,7 +81,9 @@ def _db_team_to_engine(
             hr_weight_bonus=float(p.get("hr_weight_bonus") or 0.0),
         )
         engine_players.append(player)
-        if player.is_joker:
+        # Engine Player has no is_joker field; consult the source dict instead.
+        # (v2 dropped jokers in Phase 10 — list stays empty in current builds.)
+        if bool(p.get("is_joker")):
             jokers.append(player)
         elif player.is_pitcher:
             role = player.pitcher_role

@@ -72,7 +72,7 @@
           <th>Name</th>
           <th class="num">Age</th>
           <th class="num">GP</th><th class="num">W</th><th class="num">L</th>
-          <th class="num">ERA</th><th class="num">ER</th><th class="num">IP</th><th class="num">K</th><th class="num">WHIP</th>
+          <th class="num">ERA</th><th class="num">FIP</th><th class="num">ER</th><th class="num">OUT</th><th class="num">K</th><th class="num">WHIP</th>
         </tr></thead>
         <tbody>
         {% for p in pitchers %}
@@ -83,8 +83,9 @@
           <td class="num">{{ p.w or 0 }}</td>
           <td class="num">{{ p.l or 0 }}</td>
           <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.era) }}">{{ '%.2f'|format(p.era) }}</td>
+          <td class="num" data-sort-value="{{ '%.3f'|format(p.fip) }}">{{ '%.2f'|format(p.fip) }}</td>
           <td class="num">{{ p.er or 0 }}</td>
-          <td class="num" data-sort-value="{{ '%.2f'|format(p.ip) }}">{{ '%.1f'|format(p.ip) }}</td>
+          <td class="num" data-sort-value="{{ p.outs or 0 }}">{{ p.outs or 0 }}</td>
           <td class="num">{{ p.k or 0 }}</td>
           <td class="num" data-sort-value="{{ '%.3f'|format(p.whip) }}">{{ '%.2f'|format(p.whip) }}</td>
         </tr>
