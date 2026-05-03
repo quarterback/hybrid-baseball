@@ -1153,10 +1153,12 @@ def new_league_post():
     if config_id not in configs:
         abort(400, f"Unknown config: {config_id}")
 
+    from o27v2.season_archive import set_active_league_meta
     db.drop_all()
     db.init_db()
     seed_league(rng_seed=rng_seed, config_id=config_id)
     seed_schedule(config_id=config_id, rng_seed=rng_seed)
+    set_active_league_meta(rng_seed, config_id)
 
     return redirect(url_for("index"))
 
@@ -1227,14 +1229,30 @@ def api_sim_all_star():
 
 @app.route("/api/sim/season", methods=["POST"])
 def api_sim_season():
+    from o27v2.season_archive import archive_current_season
     if is_season_complete():
-        return jsonify(_sim_response(None, None, []))
+        # Already complete — archive if we haven't snapshotted this season yet.
+        sid = archive_current_season(run_invariants=True)
+        resp = _sim_response(None, None, [])
+        resp["archived_season_id"] = sid
+        return jsonify(resp)
     current = get_current_sim_date()
     last    = get_last_scheduled_date()
     results = simulate_through(last)
     next_day = (_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat()
     advance_sim_clock(next_day)
-    return jsonify(_sim_response(current, last, results))
+    # Auto-archive on completion: simulating through the last scheduled date
+    # finishes the season, so snapshot leaders/standings/invariants now.
+    archived_id = None
+    if is_season_complete():
+        try:
+            archived_id = archive_current_season(run_invariants=True)
+        except Exception as e:
+            archived_id = None
+            app.logger.exception("auto-archive after /api/sim/season failed: %s", e)
+    resp = _sim_response(current, last, results)
+    resp["archived_season_id"] = archived_id
+    return jsonify(resp)
 
 
 # ---------------------------------------------------------------------------
@@ -1281,29 +1299,33 @@ def api_season_reset():
     """
     from o27v2.league import seed_league
     from o27v2.schedule import seed_schedule
-    from o27v2.season_archive import archive_current_season
+    from o27v2.season_archive import archive_current_season, set_active_league_meta
 
     data = request.get_json(silent=True) or {}
-    config_id  = (data.get("config_id") or "30teams").strip()
-    rng_seed   = int(data.get("rng_seed", 42))
-    do_archive = bool(data.get("archive", True))
+    new_config_id = (data.get("config_id") or "30teams").strip()
+    new_rng_seed  = int(data.get("rng_seed", 42))
+    do_archive    = bool(data.get("archive", True))
 
-    if config_id not in get_league_configs():
-        return jsonify({"ok": False, "error": f"unknown config: {config_id}"}), 400
+    if new_config_id not in get_league_configs():
+        return jsonify({"ok": False, "error": f"unknown config: {new_config_id}"}), 400
 
+    # Archive the *current* season FIRST, attributed to the seed/config that
+    # actually produced it (read from sim_meta inside archive_current_season).
+    # Do not pass the new seed/config — that would mislabel the archived row.
     archived_id = None
     if do_archive:
         try:
-            archived_id = archive_current_season(
-                rng_seed=rng_seed, config_id=config_id, run_invariants=True
-            )
+            archived_id = archive_current_season(run_invariants=True)
         except Exception as e:
             return jsonify({"ok": False, "error": f"archive failed: {e}"}), 500
 
+    # Now drop + reseed for the new season, and record the new meta so the
+    # *next* archive will be attributed correctly.
     db.drop_all()
     db.init_db()
-    seed_league(rng_seed=rng_seed, config_id=config_id)
-    seed_schedule(config_id=config_id, rng_seed=rng_seed)
+    seed_league(rng_seed=new_rng_seed, config_id=new_config_id)
+    seed_schedule(config_id=new_config_id, rng_seed=new_rng_seed)
+    set_active_league_meta(new_rng_seed, new_config_id)
     resync_sim_clock()
     return jsonify({"ok": True, "archived_season_id": archived_id})
 

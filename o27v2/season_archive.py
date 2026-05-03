@@ -240,6 +240,29 @@ def _derive_year() -> int | None:
     return _dt.date.today().year
 
 
+def get_active_league_meta() -> tuple[int | None, str | None]:
+    """Read the rng_seed/config_id used to build the *current* live league
+    from sim_meta. Returns (None, None) if not recorded."""
+    s = db.fetchone("SELECT value FROM sim_meta WHERE key = 'league_seed'")
+    c = db.fetchone("SELECT value FROM sim_meta WHERE key = 'league_config'")
+    seed = int(s["value"]) if s and s.get("value") is not None else None
+    cfg  = c["value"] if c else None
+    return seed, cfg
+
+
+def set_active_league_meta(rng_seed: int, config_id: str) -> None:
+    """Persist the seed/config used to build the live league so future
+    archives can attribute the season to the correct setup."""
+    db.execute(
+        "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('league_seed', ?)",
+        (str(int(rng_seed)),),
+    )
+    db.execute(
+        "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('league_config', ?)",
+        (str(config_id),),
+    )
+
+
 def archive_current_season(
     rng_seed: int | None = None,
     config_id: str | None = None,
@@ -251,6 +274,14 @@ def archive_current_season(
     )
     if not games_played or not games_played["n"]:
         return None
+
+    # Default to the seed/config that produced the *current* league so the
+    # archived row reflects the season we're closing — not whatever new seed
+    # the caller is about to seed next.
+    if rng_seed is None or config_id is None:
+        meta_seed, meta_cfg = get_active_league_meta()
+        if rng_seed   is None: rng_seed   = meta_seed
+        if config_id  is None: config_id  = meta_cfg
 
     teams = db.fetchall(
         "SELECT name, abbrev, wins, losses FROM teams "
@@ -399,6 +430,7 @@ def _run_multi_season_thread(
             db.init_db()
             seed_league(rng_seed=seed, config_id=config_id)
             seed_schedule(config_id=config_id, rng_seed=seed)
+            set_active_league_meta(seed, config_id)
             resync_sim_clock()
 
             last_date = get_last_scheduled_date()
