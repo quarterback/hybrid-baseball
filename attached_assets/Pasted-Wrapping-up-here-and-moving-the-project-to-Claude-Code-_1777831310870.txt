@@ -1,0 +1,47 @@
+Wrapping up here and moving the project to Claude Code. Before I go, 
+I need a clean handoff document, not another patch attempt. Produce 
+a HANDOFF.md at the repo root with these sections:
+
+1. CURRENT STATE
+   - What works end-to-end (engine produces real games, schema 
+     persists stats, both web surfaces render, etc.)
+   - What's confirmed broken with evidence (FIP < 0, K > OUTS, 
+     duplicate game_pitcher_stats rows, schedule index-bucketing, 
+     bstat.outs_recorded never incremented, super-inning rendering, 
+     run environment too low for O27 structural rules, etc.)
+   - What was changed recently and what the change set was 
+     (Task #65 roster/talent work, etc.)
+
+2. KNOWN BUGS WITH FILE/LINE REFERENCES
+   For each bug, give: symptom, root cause, file path, and line 
+   number range. No prose theories — just where the code is that 
+   needs to change.
+
+3. DATABASE STATE
+   - Current schema for game_batter_stats, game_pitcher_stats, 
+     players, teams, games
+   - Which tables have integrity issues (duplicate rows, NULL fields 
+     that should be populated, etc.)
+   - Whether existing seasons in the DB are salvageable or whether 
+     a fresh re-sim is required after fixes
+
+4. WHAT NOT TO TOUCH
+   - Working pieces that don't need attention
+   - Decisions that have been settled and shouldn't be relitigated 
+     (roster size 33-36, 12-batter lineups with jokers, stay mechanic 
+     rules, dedicated pitchers with rare two-way exceptions, single 
+     Flask app with /stats blueprint, deploys to Fly.io as one app)
+
+5. OUTSTANDING DESIGN QUESTIONS
+   - Things I've asked about that don't have a final answer yet
+   - Tuning decisions that need real-data verification before 
+     committing
+
+Be direct. Don't soften known bugs. Don't claim things work that 
+don't. The next agent (Claude Code) will read this as ground truth 
+and proceed from there. If I find later that this document hid 
+problems, the work resumes with a worse starting position than 
+necessary.
+
+After you produce HANDOFF.md, commit it and stop. Don't write any 
+more code.
