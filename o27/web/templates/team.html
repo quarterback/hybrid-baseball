@@ -8,96 +8,169 @@
   <p class="sub">{{ team.level }} · {{ team.abbrev }} · {{ team.players | length }} players</p>
 </div>
 
-<div class="two-col">
+{# ── RECORD BAR ── #}
+<div class="card" style="margin-bottom:.9rem;">
+  <div class="card-hd">Season Record</div>
+  <table class="dt">
+    <thead>
+      <tr>
+        <th class="r">GP</th><th class="r">W</th><th class="r">L</th>
+        <th class="r">PCT</th><th class="r">GB</th>
+        <th class="r">RS</th><th class="r">RA</th><th class="r">DIFF</th>
+        <th class="r">L10</th><th class="r">Streak</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="r mono">{{ record.gp }}</td>
+        <td class="r mono w">{{ record.w }}</td>
+        <td class="r mono l">{{ record.l }}</td>
+        <td class="r mono">{{ "%.3f"|format(record.pct) if record.gp > 0 else "—" }}</td>
+        <td class="r mono dim">{{ record.gb }}</td>
+        <td class="r mono">{{ record.r_for }}</td>
+        <td class="r mono">{{ record.r_against }}</td>
+        <td class="r mono">{{ "%+d"|format(record.r_for - record.r_against) if record.gp > 0 else "—" }}</td>
+        <td class="r mono dim">{{ record.l10_w }}-{{ record.l10_l }}</td>
+        <td class="r mono {% if record.streak.startswith('W') %}w{% elif record.streak.startswith('L') %}l{% endif %}">{{ record.streak }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 
-  <div>
-    <div class="card">
-      <div class="card-hd">Record</div>
-      <table class="dt">
-        <thead>
-          <tr><th>GP</th><th class="r">W</th><th class="r">L</th><th class="r">PCT</th><th class="r">RF</th><th class="r">RA</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="mono">{{ record.gp }}</td>
-            <td class="r mono w">{{ record.w }}</td>
-            <td class="r mono l">{{ record.l }}</td>
-            <td class="r mono">{{ "%.3f"|format(record.pct) if record.gp > 0 else "—" }}</td>
-            <td class="r mono">{{ record.r_for }}</td>
-            <td class="r mono">{{ record.r_against }}</td>
-          </tr>
-        </tbody>
-      </table>
+{# ── TABBED CONTENT ── #}
+<div class="card">
+  <div class="card-hd" style="padding:0; border-bottom:none;">
+    <div class="tabs" style="padding:0 .5rem;">
+      <button class="tab-btn {% if tab=='roster' %}active{% endif %}" data-tg="tm" data-ti="roster"  onclick="switchTab('tm','roster')">Roster</button>
+      <button class="tab-btn {% if tab=='stats'  %}active{% endif %}" data-tg="tm" data-ti="stats"   onclick="switchTab('tm','stats')">Batting Stats</button>
+      <button class="tab-btn {% if tab=='log'    %}active{% endif %}" data-tg="tm" data-ti="log"     onclick="switchTab('tm','log')">Game Log</button>
     </div>
+  </div>
 
-    {% if recent_games %}
-    <div class="card">
-      <div class="card-hd">Recent Games</div>
-      <table class="dt">
-        <thead>
-          <tr><th>Opp</th><th class="r">Score</th><th>Result</th></tr>
-        </thead>
-        <tbody>
-          {% for g in recent_games %}
-          <tr>
-            <td>
-              <a href="/game/{{ g.game_id }}" class="link">
-                {% if g.visitors_abbrev == team.abbrev %}
-                  vs {{ g.home_abbrev }}
-                {% else %}
-                  @ {{ g.visitors_abbrev }}
-                {% endif %}
-              </a>
-            </td>
-            <td class="r mono">
-              {% if g.visitors_abbrev == team.abbrev %}
-                {{ g.v_score }}–{{ g.h_score }}
-              {% else %}
-                {{ g.h_score }}–{{ g.v_score }}
-              {% endif %}
-            </td>
-            <td>
-              {% set team_won = (g.visitors_abbrev == team.abbrev and g.winner_id == 'visitors') or (g.home_abbrev == team.abbrev and g.winner_id == 'home') %}
-              <span class="{% if team_won %}w{% else %}l{% endif %} small">{% if team_won %}W{% else %}L{% endif %}</span>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+  {# ── ROSTER ── #}
+  <div class="tab-panel {% if tab=='roster' or not tab %}active{% endif %} card-bd" style="padding:.65rem;" data-pg="tm" data-pi="roster">
+    <table class="dt">
+      <thead>
+        <tr>
+          <th>Player</th><th>Pos</th>
+          <th class="r">Skill</th><th class="r">Speed</th><th class="r">PSkl</th>
+          <th class="r">Stay</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in team.players %}
+        {% set slug = p.name.lower().replace(' ','_').replace('.','') %}
+        <tr{% if p.is_joker %} class="jr"{% endif %}>
+          <td>
+            <a href="/player/{{ team.abbrev }}/{{ slug }}" class="link">{{ p.name }}</a>
+            {% if p.is_joker and p.joker_archetype %}
+            <span class="ab ab-{{ p.joker_archetype | lower }}">{{ p.joker_archetype }}</span>
+            {% endif %}
+          </td>
+          <td class="pos">{{ p.position }}</td>
+          <td class="r mono">{{ "%.3f"|format(p.skill) }}</td>
+          <td class="r mono">{{ "%.3f"|format(p.speed) }}</td>
+          <td class="r mono">{{ "%.3f"|format(p.pitcher_skill) }}</td>
+          <td class="r mono dim">{{ "%.2f"|format(p.stay_aggressiveness) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── BATTING STATS ── #}
+  <div class="tab-panel {% if tab=='stats' %}active{% endif %} card-bd" style="padding:.65rem;" data-pg="tm" data-pi="stats">
+    {% if team_batting %}
+    <table class="dt">
+      <thead>
+        <tr>
+          <th>Player</th><th>Pos</th>
+          <th class="r sortable" onclick="sortTable(this)">GP</th>
+          <th class="r sortable" onclick="sortTable(this)">PA</th>
+          <th class="r sortable" onclick="sortTable(this)">AB</th>
+          <th class="r sortable" onclick="sortTable(this)">R</th>
+          <th class="r sortable" onclick="sortTable(this)">H</th>
+          <th class="r sortable" onclick="sortTable(this)">2B</th>
+          <th class="r sortable" onclick="sortTable(this)">3B</th>
+          <th class="r sortable" onclick="sortTable(this)">HR</th>
+          <th class="r sortable" onclick="sortTable(this)">RBI</th>
+          <th class="r sortable" onclick="sortTable(this)">BB</th>
+          <th class="r sortable" onclick="sortTable(this)">K</th>
+          <th class="r sortable" onclick="sortTable(this)">STY</th>
+          <th class="r sortable" onclick="sortTable(this)">AVG</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in team_batting %}
+        <tr{% if p.is_joker %} class="jr"{% endif %}>
+          <td>
+            {% set slug = p.name.lower().replace(' ','_').replace('.','') %}
+            <a href="/player/{{ team.abbrev }}/{{ slug }}" class="link">{{ p.name }}</a>
+            {% if p.is_joker and p.archetype %}
+            <span class="ab ab-{{ p.archetype | lower }}">{{ p.archetype }}</span>
+            {% endif %}
+          </td>
+          <td class="pos">{{ p.pos }}</td>
+          <td class="r mono dim">{{ p.gp }}</td>
+          <td class="r mono">{{ p.pa }}</td>
+          <td class="r mono">{{ p.ab }}</td>
+          <td class="r mono">{{ p.runs }}</td>
+          <td class="r mono">{{ p.hits }}</td>
+          <td class="r mono">{{ p.doubles }}</td>
+          <td class="r mono">{{ p.triples }}</td>
+          <td class="r mono">{{ p.hr }}</td>
+          <td class="r mono">{{ p.rbi }}</td>
+          <td class="r mono">{{ p.bb }}</td>
+          <td class="r mono">{{ p.k }}</td>
+          <td class="r mono">{% if p.sty > 0 %}{{ p.sty }}{% else %}-{% endif %}</td>
+          <td class="r mono">{{ p.avg }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No batting data yet. <a href="/game?visitors={{ team.abbrev }}&home={{ team.abbrev }}&seed=0" class="link">Sim a game →</a></div>
     {% endif %}
   </div>
 
-  <div>
-    <div class="card">
-      <div class="card-hd">Roster</div>
-      <table class="dt">
-        <thead>
-          <tr>
-            <th>Player</th><th>Pos</th>
-            <th class="r">Skill</th><th class="r">Speed</th><th class="r">PSkl</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for p in team.players %}
-          <tr{% if p.is_joker %} class="jr"{% endif %}>
-            <td>
-              {{ p.name }}
-              {% if p.is_joker and p.joker_archetype %}
-              <span class="ab ab-{{ p.joker_archetype | lower }}">{{ p.joker_archetype }}</span>
-              {% endif %}
-            </td>
-            <td class="pos">{{ p.position }}</td>
-            <td class="r mono">{{ "%.3f"|format(p.skill) }}</td>
-            <td class="r mono">{{ "%.3f"|format(p.speed) }}</td>
-            <td class="r mono">{{ "%.3f"|format(p.pitcher_skill) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+  {# ── GAME LOG ── #}
+  <div class="tab-panel {% if tab=='log' %}active{% endif %} card-bd" style="padding:.65rem;" data-pg="tm" data-pi="log">
+    {% if recent_games %}
+    <table class="dt">
+      <thead>
+        <tr>
+          <th>Opp</th><th class="c">H/A</th><th class="r">Score</th><th>Result</th><th>Box</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in recent_games %}
+        {% set is_home = g.home_abbrev == team.abbrev %}
+        {% set team_score = g.h_score if is_home else g.v_score %}
+        {% set opp_score  = g.v_score if is_home else g.h_score %}
+        {% set opp_abbrev = g.visitors_abbrev if is_home else g.home_abbrev %}
+        {% set won = (is_home and g.winner_id == 'home') or (not is_home and g.winner_id == 'visitors') %}
+        <tr>
+          <td><a href="/team/{{ opp_abbrev }}" class="link">{{ opp_abbrev }}</a></td>
+          <td class="c dim small">{% if is_home %}vs{% else %}@{% endif %}</td>
+          <td class="r mono">{{ team_score }}–{{ opp_score }}</td>
+          <td><span class="{% if won %}w{% else %}l{% endif %} small">{% if won %}W{% else %}L{% endif %}</span></td>
+          <td><a href="/game/{{ g.game_id }}" class="link dim small">Box →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No games yet involving {{ team.abbrev }}.</div>
+    {% endif %}
   </div>
 
 </div>
 
+{% endblock %}
+{% block scripts %}
+// Open correct tab based on URL param
+(function() {
+  const tab = new URLSearchParams(location.search).get('tab') || 'roster';
+  switchTab('tm', tab);
+})();
 {% endblock %}

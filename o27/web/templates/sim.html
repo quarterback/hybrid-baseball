@@ -12,7 +12,7 @@
 {% set v_team = teams | selectattr("abbrev", "equalto", default_v) | first %}
 {% set h_team = teams | selectattr("abbrev", "equalto", default_h) | first %}
 
-<form method="get" action="/game" id="setup-form">
+<form method="post" action="/sim" id="setup-form">
   <div class="setup-grid">
 
     {# ── VISITORS ── #}
@@ -68,7 +68,7 @@
       <div class="seed-row">
         <label for="seed">Seed</label>
         <input type="number" id="seed" name="seed" value="0" min="0" style="width:90px;">
-        <button type="submit" class="btn btn-primary">Simulate</button>
+        <button type="submit" class="btn btn-primary">▶ Simulate</button>
         <a href="/random" class="btn btn-outline">Random matchup</a>
       </div>
       <p class="small dim mt1">Same seed + same teams always produces the same game.</p>

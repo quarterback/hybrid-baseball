@@ -5,7 +5,7 @@
 
 <div class="ph">
   <h1>Batting Leaders</h1>
-  <p class="sub">Aggregated across all simulated games</p>
+  <p class="sub">Aggregated across all simulated games — click any column header to sort</p>
 </div>
 
 {% if any_data %}
@@ -14,15 +14,29 @@
   <div class="card">
     <div class="card-hd">Hits</div>
     <table class="dt">
-      <thead><tr><th>#</th><th>Player</th><th>Team</th><th class="r">H</th><th class="r">PA</th></tr></thead>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Team</th>
+          <th class="r sortable" onclick="sortTable(this)">H</th>
+          <th class="r sortable" onclick="sortTable(this)">PA</th>
+          <th class="r sortable" onclick="sortTable(this)">HR</th>
+          <th class="r sortable" onclick="sortTable(this)">RBI</th>
+          <th class="r sortable" onclick="sortTable(this)">AVG</th>
+        </tr>
+      </thead>
       <tbody>
         {% for p in by_hits %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td>{{ p.name }}</td>
+          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.hits }}</td>
           <td class="r mono dim">{{ p.pa }}</td>
+          <td class="r mono">{{ p.hr }}</td>
+          <td class="r mono">{{ p.rbi }}</td>
+          <td class="r mono">{{ "%.3f"|format(p.avg) }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -32,15 +46,25 @@
   <div class="card">
     <div class="card-hd">Batting Average <span class="r dim small">(min 3 AB)</span></div>
     <table class="dt">
-      <thead><tr><th>#</th><th>Player</th><th>Team</th><th class="r">AVG</th><th class="r">AB</th></tr></thead>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Team</th>
+          <th class="r sortable" onclick="sortTable(this)">AVG</th>
+          <th class="r sortable" onclick="sortTable(this)">AB</th>
+          <th class="r sortable" onclick="sortTable(this)">H</th>
+        </tr>
+      </thead>
       <tbody>
         {% for p in by_avg %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td>{{ p.name }}</td>
+          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ "%.3f"|format(p.avg) }}</td>
           <td class="r mono dim">{{ p.ab }}</td>
+          <td class="r mono">{{ p.hits }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -50,14 +74,23 @@
   <div class="card">
     <div class="card-hd">Home Runs</div>
     <table class="dt">
-      <thead><tr><th>#</th><th>Player</th><th>Team</th><th class="r">HR</th></tr></thead>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Team</th>
+          <th class="r sortable" onclick="sortTable(this)">HR</th>
+          <th class="r sortable" onclick="sortTable(this)">RBI</th>
+        </tr>
+      </thead>
       <tbody>
         {% for p in by_hr %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td>{{ p.name }}</td>
+          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.hr }}</td>
+          <td class="r mono dim">{{ p.rbi }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -67,14 +100,23 @@
   <div class="card">
     <div class="card-hd">RBI</div>
     <table class="dt">
-      <thead><tr><th>#</th><th>Player</th><th>Team</th><th class="r">RBI</th></tr></thead>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Team</th>
+          <th class="r sortable" onclick="sortTable(this)">RBI</th>
+          <th class="r sortable" onclick="sortTable(this)">HR</th>
+        </tr>
+      </thead>
       <tbody>
         {% for p in by_rbi %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td>{{ p.name }}</td>
+          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.rbi }}</td>
+          <td class="r mono dim">{{ p.hr }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -84,12 +126,20 @@
   <div class="card">
     <div class="card-hd">Stays <span class="r dim small" title="Stay choices made">STY</span></div>
     <table class="dt">
-      <thead><tr><th>#</th><th>Player</th><th>Team</th><th class="r">STY</th><th class="r">H</th></tr></thead>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Team</th>
+          <th class="r sortable" onclick="sortTable(this)">STY</th>
+          <th class="r sortable" onclick="sortTable(this)">H</th>
+        </tr>
+      </thead>
       <tbody>
         {% for p in by_sty %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td>{{ p.name }}</td>
+          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.sty }}</td>
           <td class="r mono dim">{{ p.hits }}</td>
@@ -102,14 +152,23 @@
   <div class="card">
     <div class="card-hd">Strikeouts (batters)</div>
     <table class="dt">
-      <thead><tr><th>#</th><th>Player</th><th>Team</th><th class="r">K</th></tr></thead>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Team</th>
+          <th class="r sortable" onclick="sortTable(this)">K</th>
+          <th class="r sortable" onclick="sortTable(this)">PA</th>
+        </tr>
+      </thead>
       <tbody>
         {% for p in by_k %}
         <tr>
           <td class="dim mono">{{ loop.index }}</td>
-          <td>{{ p.name }}</td>
+          <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
           <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
           <td class="r mono">{{ p.k }}</td>
+          <td class="r mono dim">{{ p.pa }}</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -26,8 +26,8 @@ _POSITIONS      = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C", "P"]
 # ---------------------------------------------------------------------------
 
 _GAMES: dict[str, dict] = {}        # game_id -> full game result dict
-_RECENT: list[str]      = []        # ordered list of game_ids (newest last)
-_MAX_RECENT             = 20
+_RECENT: list[str]      = []        # ordered list of game_ids (oldest first / newest last)
+_MAX_RECENT             = 200
 
 _teams_cache:      list[dict] | None = None
 _name_pools_cache: dict       | None = None
@@ -225,52 +225,111 @@ def get_player(player_id: str) -> Optional[dict]:
 
 
 def get_standings() -> list[dict]:
-    """Compute win/loss standings from stored recent games, grouped by level."""
+    """Compute win/loss standings from stored recent games.
+    Returns rows with: abbrev, name, level, gp, w, l, pct, r_for, r_against,
+    rd, gb, l10_w, l10_l, streak.
+    """
     record: dict[str, dict] = {}
+    team_hist: dict[str, list[bool]] = {}  # True=W, False=L, oldest→newest
+
     for gid in _RECENT:
         g = _GAMES.get(gid)
         if not g:
             continue
-        for side in ("visitors", "home"):
-            abbrev = g[f"{side}_abbrev"]
+        v_won = g["winner_id"] == "visitors"
+        for side, abbrev, won, rf, ra in [
+            ("v", g["visitors_abbrev"], v_won,     g["v_score"], g["h_score"]),
+            ("h", g["home_abbrev"],     not v_won,  g["h_score"], g["v_score"]),
+        ]:
             if abbrev not in record:
                 t = get_team(abbrev)
                 record[abbrev] = {
                     "abbrev": abbrev,
-                    "name": t["display"] if t else abbrev,
-                    "level": t["level"] if t else "—",
+                    "name":   t["display"] if t else abbrev,
+                    "level":  t["level"]   if t else "—",
                     "w": 0, "l": 0, "r_for": 0, "r_against": 0,
                 }
+                team_hist[abbrev] = []
             rec = record[abbrev]
-            if side == "visitors":
-                rec["r_for"]     += g["v_score"]
-                rec["r_against"] += g["h_score"]
-                if g["winner_id"] == "visitors":
-                    rec["w"] += 1
-                else:
-                    rec["l"] += 1
+            rec["r_for"]     += rf
+            rec["r_against"] += ra
+            if won:
+                rec["w"] += 1
             else:
-                rec["r_for"]     += g["h_score"]
-                rec["r_against"] += g["v_score"]
-                if g["winner_id"] == "home":
-                    rec["w"] += 1
-                else:
-                    rec["l"] += 1
+                rec["l"] += 1
+            team_hist[abbrev].append(won)
 
     rows = list(record.values())
     for r in rows:
-        gp = r["w"] + r["l"]
-        r["gp"] = gp
+        gp  = r["w"] + r["l"]
+        r["gp"]  = gp
         r["pct"] = r["w"] / gp if gp else 0.0
-        r["rd"] = r["r_for"] - r["r_against"]
+        r["rd"]  = r["r_for"] - r["r_against"]
+        hist     = team_hist.get(r["abbrev"], [])
+        # L10
+        last10       = hist[-10:]
+        r["l10_w"]   = sum(1 for x in last10 if x)
+        r["l10_l"]   = len(last10) - r["l10_w"]
+        # Streak (consecutive same result from most recent)
+        streak_n = 0
+        if hist:
+            cur = hist[-1]
+            for result in reversed(hist):
+                if result == cur:
+                    streak_n += 1
+                else:
+                    break
+        if streak_n > 0:
+            r["streak"] = f"W{streak_n}" if (hist and hist[-1]) else f"L{streak_n}"
+        else:
+            r["streak"] = "—"
+
     rows.sort(key=lambda x: (-x["pct"], -x["rd"]))
+
+    # GB (games behind leader, 0 shown as "—")
+    if rows:
+        lw = rows[0]["w"]
+        ll = rows[0]["l"]
+        for r in rows:
+            gb = ((lw - r["w"]) + (r["l"] - ll)) / 2
+            if gb <= 0:
+                r["gb"] = "—"
+            elif gb == int(gb):
+                r["gb"] = str(int(gb))
+            else:
+                r["gb"] = f"{gb:.1f}"
+
     return rows
 
 
-def get_schedule(limit: int = 20) -> list[dict]:
-    """Return recent games, newest first."""
-    recent = list(reversed(_RECENT[-limit:]))
-    return [_GAMES[gid] for gid in recent if gid in _GAMES]
+def get_schedule(limit: int = 40, team: str = "") -> list[dict]:
+    """Return recent games, newest first.  If team is set, filter to that abbrev."""
+    games = [_GAMES[gid] for gid in reversed(_RECENT) if gid in _GAMES]
+    if team:
+        games = [g for g in games
+                 if g.get("visitors_abbrev") == team or g.get("home_abbrev") == team]
+    return games[:limit]
+
+
+def get_upcoming(n: int = 3) -> list[dict]:
+    """Return n suggested upcoming matchups from the team list."""
+    teams = load_teams()
+    if len(teams) < 2:
+        return []
+    rng = random.Random(len(_RECENT) // 3)
+    sampled = list(teams)
+    rng.shuffle(sampled)
+    pairs: list[dict] = []
+    for i in range(0, len(sampled) - 1, 2):
+        pairs.append({
+            "visitors_abbrev": sampled[i]["abbrev"],
+            "visitors_name":   sampled[i]["display"],
+            "home_abbrev":     sampled[i + 1]["abbrev"],
+            "home_name":       sampled[i + 1]["display"],
+        })
+        if len(pairs) >= n:
+            break
+    return pairs[:n]
 
 
 def get_game(game_id: str) -> Optional[dict]:
@@ -283,7 +342,7 @@ def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
     Aggregate batting stats across all stored games.
     stat: one of 'hits','hr','rbi','sty','bb','k','avg'
     """
-    agg: dict[str, dict] = {}  # player_name_team -> dict
+    agg: dict[str, dict] = {}
     for gid in _RECENT:
         g = _GAMES.get(gid)
         if not g:
@@ -300,14 +359,14 @@ def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
                         "rbi": 0, "bb": 0, "k": 0, "sty": 0, "runs": 0,
                     }
                 r = agg[key]
-                r["pa"]   += row.get("pa", 0)
-                r["ab"]   += row.get("ab", 0)
+                r["pa"]   += row.get("pa",   0)
+                r["ab"]   += row.get("ab",   0)
                 r["hits"] += row.get("hits", 0)
-                r["hr"]   += row.get("hr", 0)
-                r["rbi"]  += row.get("rbi", 0)
-                r["bb"]   += row.get("bb", 0)
-                r["k"]    += row.get("k", 0)
-                r["sty"]  += row.get("sty", 0)
+                r["hr"]   += row.get("hr",   0)
+                r["rbi"]  += row.get("rbi",  0)
+                r["bb"]   += row.get("bb",   0)
+                r["k"]    += row.get("k",    0)
+                r["sty"]  += row.get("sty",  0)
                 r["runs"] += row.get("runs", 0)
 
     for r in agg.values():
@@ -322,6 +381,79 @@ def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
     return rows[:limit]
 
 
+def get_team_batting(abbrev: str) -> list[dict]:
+    """Aggregate batting stats for all players on a team across all stored games."""
+    agg: dict[str, dict] = {}
+    for gid in _RECENT:
+        g = _GAMES.get(gid)
+        if not g:
+            continue
+        for side in ("v", "h"):
+            game_abbrev = g.get("visitors_abbrev" if side == "v" else "home_abbrev", "")
+            if game_abbrev != abbrev:
+                continue
+            for row in g.get(f"{side}_batting", []):
+                key = row["name"]
+                if key not in agg:
+                    agg[key] = {
+                        "name": row["name"],
+                        "pos":  row.get("pos", ""),
+                        "is_joker":  row.get("is_joker",  False),
+                        "archetype": row.get("archetype", ""),
+                        "gp": 0,
+                        "pa": 0, "ab": 0, "runs": 0, "hits": 0,
+                        "doubles": 0, "triples": 0, "hr": 0,
+                        "rbi": 0, "bb": 0, "k": 0, "hbp": 0, "sty": 0,
+                    }
+                r = agg[key]
+                if row.get("pa", 0) > 0:
+                    r["gp"] += 1
+                for f in ("pa", "ab", "runs", "hits", "doubles", "triples",
+                          "hr", "rbi", "bb", "k", "hbp", "sty"):
+                    r[f] += row.get(f, 0)
+
+    rows = list(agg.values())
+    for r in rows:
+        r["avg"] = f"{r['hits']/r['ab']:.3f}" if r["ab"] > 0 else ".000"
+    rows.sort(key=lambda x: (-x["pa"], x["name"]))
+    return rows
+
+
+def get_player_stats(team_abbrev: str, player_name: str) -> Optional[dict]:
+    """Return accumulated batting stats for one player across all stored games."""
+    agg: dict = {}
+    for gid in _RECENT:
+        g = _GAMES.get(gid)
+        if not g:
+            continue
+        for side in ("v", "h"):
+            game_abbrev = g.get("visitors_abbrev" if side == "v" else "home_abbrev", "")
+            if game_abbrev != team_abbrev:
+                continue
+            for row in g.get(f"{side}_batting", []):
+                if row["name"] != player_name:
+                    continue
+                if not agg:
+                    agg = {
+                        "name": row["name"],
+                        "pos":  row.get("pos", ""),
+                        "is_joker":  row.get("is_joker",  False),
+                        "archetype": row.get("archetype", ""),
+                        "gp": 0,
+                        "pa": 0, "ab": 0, "runs": 0, "hits": 0,
+                        "doubles": 0, "triples": 0, "hr": 0,
+                        "rbi": 0, "bb": 0, "k": 0, "hbp": 0, "sty": 0,
+                    }
+                if row.get("pa", 0) > 0:
+                    agg["gp"] += 1
+                for f in ("pa", "ab", "runs", "hits", "doubles", "triples",
+                          "hr", "rbi", "bb", "k", "hbp", "sty"):
+                    agg[f] += row.get(f, 0)
+    if agg:
+        agg["avg"] = f"{agg['hits']/agg['ab']:.3f}" if agg["ab"] > 0 else ".000"
+    return agg or None
+
+
 # ---------------------------------------------------------------------------
 # Game storage (called by app.py after each sim)
 # ---------------------------------------------------------------------------
@@ -332,7 +464,6 @@ def store_game(game_id: str, result: dict) -> None:
     if game_id in _RECENT:
         _RECENT.remove(game_id)
     _RECENT.append(game_id)
-    # evict oldest beyond cap
     while len(_RECENT) > _MAX_RECENT:
         old = _RECENT.pop(0)
         _GAMES.pop(old, None)

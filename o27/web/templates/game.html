@@ -2,7 +2,7 @@
 {% from "macros.html" import batting_table, pitching_table %}
 {% block title %}O27 — {{ visitors_abbrev }} {{ visitors_score }}–{{ home_score }} {{ home_abbrev }}{% endblock %}
 {% block content %}
-{% set active = "schedule" %}
+{% set active = "boxscores" %}
 
 {% set team_qs %}{% if visitors_abbrev %}&visitors={{ visitors_abbrev }}{% endif %}{% if home_abbrev %}&home={{ home_abbrev }}{% endif %}{% endset %}
 <div class="game-nav">
@@ -38,16 +38,46 @@
       {% if winner_id == 'home' %}<span class="win-badge">Winner</span>{% endif %}
     </div>
   </div>
+
+  {# ── LINE SCORE R / H / E ── #}
+  {% set v_h = v_hits if v_hits is defined else (v_batting | sum(attribute='hits') if v_batting else 0) %}
+  {% set h_h = h_hits if h_hits is defined else (h_batting | sum(attribute='hits') if h_batting else 0) %}
+  <div style="padding:.5rem 1.2rem .85rem; overflow-x:auto;">
+    <table class="line-score">
+      <thead>
+        <tr>
+          <th class="team-col">Team</th>
+          <th>R</th>
+          <th>H</th>
+          <th>E</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr {% if winner_id == 'visitors' %}style="background:#f4fbf5"{% endif %}>
+          <td class="team-col"><a href="/team/{{ visitors_abbrev }}" class="link">{{ visitors_abbrev }}</a></td>
+          <td class="bold">{{ visitors_score }}</td>
+          <td>{{ v_h }}</td>
+          <td class="dim">0</td>
+        </tr>
+        <tr {% if winner_id == 'home' %}style="background:#f4fbf5"{% endif %}>
+          <td class="team-col"><a href="/team/{{ home_abbrev }}" class="link">{{ home_abbrev }}</a></td>
+          <td class="bold">{{ home_score }}</td>
+          <td>{{ h_h }}</td>
+          <td class="dim">0</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 
 {# ── TABS ── #}
 <div class="card">
   <div class="card-hd" style="padding:0; border-bottom:none;">
     <div class="tabs" style="padding:0 .5rem;">
-      <button class="tab-btn active" data-tg="main" data-ti="pbp"  onclick="switchTab('main','pbp')">Play-by-Play</button>
-      <button class="tab-btn"        data-tg="main" data-ti="box"  onclick="switchTab('main','box')">Box Score</button>
+      <button class="tab-btn active" data-tg="main" data-ti="box"  onclick="switchTab('main','box')">Box Score</button>
+      <button class="tab-btn"        data-tg="main" data-ti="pbp"  onclick="switchTab('main','pbp')">Play-by-Play</button>
       {% if sections.spells %}
-      <button class="tab-btn"        data-tg="main" data-ti="pit"  onclick="switchTab('main','pit')">Pitching</button>
+      <button class="tab-btn"        data-tg="main" data-ti="pit"  onclick="switchTab('main','pit')">Pitching Log</button>
       {% endif %}
       {% if sections.super %}
       <button class="tab-btn"        data-tg="main" data-ti="si"   onclick="switchTab('main','si')">Super-Inning</button>
@@ -55,24 +85,8 @@
     </div>
   </div>
 
-  {# ── PLAY-BY-PLAY ── #}
-  <div class="tab-panel active card-bd" style="padding:.65rem;" data-pg="main" data-pi="pbp">
-    {% if sections.halves %}
-      {% for half in sections.halves %}
-      <details {% if loop.index <= 2 %}open{% endif %}>
-        <summary>{{ half.header }}</summary>
-        <div class="pbp-wrap">{% for line in half.lines %}{{ line | e }}
-{% endfor %}</div>
-      </details>
-      {% endfor %}
-    {% else %}
-      <div class="pbp-wrap">{% for line in log_lines %}{{ line | e }}
-{% endfor %}</div>
-    {% endif %}
-  </div>
-
-  {# ── BOX SCORE (structured HTML tables) ── #}
-  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="main" data-pi="box">
+  {# ── BOX SCORE (structured HTML tables) — default tab ── #}
+  <div class="tab-panel active card-bd" style="padding:.65rem;" data-pg="main" data-pi="box">
     {% if v_batting %}
     {{ batting_table(v_batting, visitors_name) }}
     <div class="mt2">
@@ -99,7 +113,23 @@
     {% endif %}
   </div>
 
-  {# ── PITCHING ── #}
+  {# ── PLAY-BY-PLAY ── #}
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="main" data-pi="pbp">
+    {% if sections.halves %}
+      {% for half in sections.halves %}
+      <details {% if loop.index <= 2 %}open{% endif %}>
+        <summary>{{ half.header }}</summary>
+        <div class="pbp-wrap">{% for line in half.lines %}{{ line | e }}
+{% endfor %}</div>
+      </details>
+      {% endfor %}
+    {% else %}
+      <div class="pbp-wrap">{% for line in log_lines %}{{ line | e }}
+{% endfor %}</div>
+    {% endif %}
+  </div>
+
+  {# ── PITCHING LOG ── #}
   {% if sections.spells %}
   <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="main" data-pi="pit">
     <div class="pbp-wrap" style="max-height:380px; font-size:.76rem;">{% for line in sections.spells %}{{ line | e }}

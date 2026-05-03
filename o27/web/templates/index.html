@@ -18,7 +18,7 @@
       <table class="dt">
         <thead>
           <tr>
-            <th>Visitors</th><th class="r">Score</th><th>Home</th><th class="r">SI</th>
+            <th>Visitors</th><th class="r">Score</th><th>Home</th><th class="c">SI</th>
           </tr>
         </thead>
         <tbody>
@@ -33,7 +33,7 @@
               <a href="/game/{{ g.game_id }}" class="link{% if g.winner_id == 'home' %} w{% endif %}">{{ g.home_abbrev }}</a>
               <span class="dim small"> {{ g.home_name }}</span>
             </td>
-            <td class="r dim small">{% if g.super_flag %}SI{% endif %}</td>
+            <td class="c dim small">{% if g.super_flag %}SI{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -42,6 +42,29 @@
       <div class="empty">No games simulated yet. <a href="/sim" class="link">Sim one →</a></div>
       {% endif %}
     </div>
+
+    {# ── UPCOMING / NEXT UP ── #}
+    {% if upcoming %}
+    <div class="card">
+      <div class="card-hd">Next Up <span class="r dim small">suggested matchups</span></div>
+      <table class="dt">
+        <thead>
+          <tr><th>Visitors</th><th>Home</th><th class="r"></th></tr>
+        </thead>
+        <tbody>
+          {% for m in upcoming %}
+          <tr>
+            <td><a href="/team/{{ m.visitors_abbrev }}" class="link">{{ m.visitors_abbrev }}</a> <span class="dim small">{{ m.visitors_name }}</span></td>
+            <td><a href="/team/{{ m.home_abbrev }}" class="link">{{ m.home_abbrev }}</a> <span class="dim small">{{ m.home_name }}</span></td>
+            <td class="r">
+              <a href="/sim" class="btn btn-outline btn-sm" style="font-size:.68rem;">Sim →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </div>
 
   {# ── STANDINGS + QUICK SIM ── #}
@@ -51,15 +74,21 @@
       {% if standings %}
       <table class="dt">
         <thead>
-          <tr><th>Team</th><th class="r">W</th><th class="r">L</th><th class="r">PCT</th><th class="r">RD</th></tr>
+          <tr>
+            <th>Team</th>
+            <th class="r">W</th><th class="r">L</th>
+            <th class="r">PCT</th><th class="r">GB</th><th class="r">DIFF</th>
+          </tr>
         </thead>
         <tbody>
           {% for s in standings[:8] %}
-          <tr>
+          {% set hue = (loop.index0 * 41 + 13) % 360 %}
+          <tr style="border-left: 3px solid hsl({{ hue }}, 60%, 40%);">
             <td><a href="/team/{{ s.abbrev }}" class="link">{{ s.abbrev }}</a> <span class="dim small">{{ s.name }}</span></td>
             <td class="r mono w">{{ s.w }}</td>
             <td class="r mono l">{{ s.l }}</td>
             <td class="r mono">{{ "%.3f"|format(s.pct) }}</td>
+            <td class="r mono dim">{{ s.gb }}</td>
             <td class="r mono">{{ "%+d"|format(s.rd) }}</td>
           </tr>
           {% endfor %}
@@ -73,13 +102,13 @@
     <div class="card">
       <div class="card-hd">Quick Sim</div>
       <div class="card-bd">
-        <form method="get" action="/game">
+        <form method="post" action="/sim">
           <div class="seed-row">
             <label>Seed</label>
             <input type="number" name="seed" value="0" min="0" style="width:80px;">
             <input type="hidden" name="visitors" value="{{ quick_v }}">
             <input type="hidden" name="home"     value="{{ quick_h }}">
-            <button type="submit" class="btn btn-primary btn-sm">Simulate</button>
+            <button type="submit" class="btn btn-primary btn-sm">▶ Simulate</button>
             <a href="/random" class="btn btn-outline btn-sm">Random</a>
           </div>
           <p class="small dim mt1">{{ quick_v }} vs {{ quick_h }} — <a href="/sim" class="link">change teams</a></p>
@@ -95,13 +124,20 @@
   <div class="card-hd">Batting Leaders — Hits <span class="r"><a href="/stats" class="link small">All Stats →</a></span></div>
   <table class="dt">
     <thead>
-      <tr><th>#</th><th>Player</th><th>Team</th><th class="r">H</th><th class="r">HR</th><th class="r">RBI</th><th class="r">STY</th><th class="r">AVG</th></tr>
+      <tr>
+        <th>#</th><th>Player</th><th>Team</th>
+        <th class="r sortable" onclick="sortTable(this)">H</th>
+        <th class="r sortable" onclick="sortTable(this)">HR</th>
+        <th class="r sortable" onclick="sortTable(this)">RBI</th>
+        <th class="r sortable" onclick="sortTable(this)">STY</th>
+        <th class="r sortable" onclick="sortTable(this)">AVG</th>
+      </tr>
     </thead>
     <tbody>
       {% for p in leaders %}
       <tr>
         <td class="dim mono">{{ loop.index }}</td>
-        <td>{{ p.name }}</td>
+        <td><a href="/player/{{ p.team }}/{{ p.name.lower().replace(' ','_').replace('.','') }}" class="link">{{ p.name }}</a></td>
         <td><a href="/team/{{ p.team }}" class="link">{{ p.team }}</a></td>
         <td class="r mono">{{ p.hits }}</td>
         <td class="r mono">{{ p.hr }}</td>

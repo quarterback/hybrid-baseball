@@ -5,39 +5,59 @@
 
 <div class="ph">
   <h1>Schedule / Results</h1>
-  <p class="sub">{{ games | length }} result{% if games|length != 1 %}s{% endif %} stored</p>
+  <p class="sub">{{ games | length }} result{% if games|length != 1 %}s{% endif %}{% if team_filter %} for {{ team_filter }}{% endif %}</p>
+</div>
+
+<div class="card">
+  <div class="card-hd">
+    Filter
+    <span class="r">
+      <form method="get" action="/schedule" style="display:inline-flex; gap:.4rem; align-items:center;">
+        <select name="team" style="font-size:.75rem; padding:.22rem .45rem;">
+          <option value="">All teams</option>
+          {% for t in all_teams %}
+          <option value="{{ t.abbrev }}" {% if t.abbrev == team_filter %}selected{% endif %}>{{ t.abbrev }} — {{ t.display }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-outline btn-sm">Filter</button>
+        {% if team_filter %}
+        <a href="/schedule" class="btn btn-outline btn-sm">Clear</a>
+        {% endif %}
+      </form>
+    </span>
+  </div>
 </div>
 
 {% if games %}
 <div class="card">
-  <div class="card-hd">Results (newest first)</div>
+  <div class="card-hd">Results — newest first</div>
   <table class="dt">
     <thead>
       <tr>
         <th>Seed</th>
         <th>Visitors</th><th class="r">Score</th><th>Home</th>
-        <th class="c">SI</th><th>Result</th>
+        <th class="c">SI</th><th>Winner</th>
       </tr>
     </thead>
     <tbody>
       {% for g in games %}
       <tr>
-        <td><a href="/game/{{ g.game_id }}" class="link mono">{{ g.seed }}</a></td>
+        <td><a href="/game/{{ g.game_id }}" class="link mono dim">{{ g.seed }}</a></td>
         <td>
-          <a href="/team/{{ g.visitors_abbrev }}" class="link">{{ g.visitors_abbrev }}</a>
+          <a href="/team/{{ g.visitors_abbrev }}" class="link {% if g.winner_id=='visitors' %}w{% endif %}">{{ g.visitors_abbrev }}</a>
           <span class="dim small"> {{ g.visitors_name }}</span>
         </td>
         <td class="r mono">{{ g.v_score }}–{{ g.h_score }}</td>
         <td>
-          <a href="/team/{{ g.home_abbrev }}" class="link">{{ g.home_abbrev }}</a>
+          <a href="/team/{{ g.home_abbrev }}" class="link {% if g.winner_id=='home' %}w{% endif %}">{{ g.home_abbrev }}</a>
           <span class="dim small"> {{ g.home_name }}</span>
         </td>
         <td class="c dim small">{% if g.super_flag %}SI{% endif %}</td>
         <td>
           {% if g.winner_id == 'visitors' %}
-          <span class="w small">{{ g.visitors_abbrev }} win</span>
+          <a href="/team/{{ g.visitors_abbrev }}" class="w small link">{{ g.visitors_abbrev }}</a>
           {% else %}
-          <span class="w small">{{ g.home_abbrev }} win</span>
+          <a href="/team/{{ g.home_abbrev }}" class="w small link">{{ g.home_abbrev }}</a>
           {% endif %}
         </td>
       </tr>

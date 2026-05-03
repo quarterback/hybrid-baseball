@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}O27 — {{ title }}{% endblock %}
+{% block content %}
+{% set active = title | lower | replace(' ','_') | replace(' ','_') %}
+
+<div class="ph">
+  <h1>{{ title }}</h1>
+  <p class="sub">Coming soon</p>
+</div>
+
+<div class="card">
+  <div class="placeholder-box">
+    <div class="ph-icon">{{ icon }}</div>
+    <h2>{{ title }}</h2>
+    <p>{{ blurb }}</p>
+    <a href="/" class="btn btn-outline">← Back to Home</a>
+  </div>
+</div>
+
+{% endblock %}

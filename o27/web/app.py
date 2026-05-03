@@ -2,18 +2,24 @@
 O27 Web Interface — Flask + Jinja2.
 
 Routes:
-  GET  /                  Home dashboard
-  GET  /sim               Game setup + simulate
-  GET  /game              Run game (?seed=N&visitors=ABB&home=ABB) → results
-  GET  /game/<game_id>    View stored game result
-  GET  /random            Redirect to /game with random teams + seed
-  GET  /standings         League standings
-  GET  /schedule          Schedule / results
-  GET  /stats             Batting leaders
-  GET  /teams             Team list
-  GET  /team/<abbrev>     Team page + roster
-  GET  /players           Player browser
-  GET  /api/health        Health check
+  GET       /                    Home dashboard
+  GET/POST  /sim                 Game setup (GET) + redirect (POST)
+  GET       /game                Run game (?seed=N&visitors=ABB&home=ABB)
+  GET       /game/<game_id>      View stored game result
+  GET       /random              Redirect to /game with random teams + seed
+  GET       /standings           League standings
+  GET       /schedule            Schedule / results (?team=ABB to filter)
+  GET       /stats               Batting leaders
+  GET       /stats-leaders       Alias → /stats
+  GET       /teams               Team list
+  GET       /team/<abbrev>       Team page + tabbed roster/stats/schedule
+  GET       /player/<team>/<slug> Player detail page
+  GET       /players             Player browser
+  GET       /my-team             My Team placeholder
+  GET       /lineups             Lineups placeholder
+  GET       /trade               Trade placeholder
+  GET       /manager             Manager placeholder
+  GET       /api/health          Health check
 """
 
 from __future__ import annotations
@@ -27,7 +33,10 @@ _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import (
+    Flask, render_template, request, redirect, url_for,
+    jsonify, flash, get_flashed_messages,
+)
 
 from o27.engine.state import GameState, Team, Player
 from o27.engine.game import run_game
@@ -37,6 +46,20 @@ from o27.main import make_foxes, make_bears
 import o27.data as data
 
 app = Flask(__name__, template_folder="templates")
+app.secret_key = os.environ.get("SECRET_KEY", "o27-dev-secret-key")
+
+
+# ---------------------------------------------------------------------------
+# Context processor — inject globals into every template
+# ---------------------------------------------------------------------------
+
+@app.context_processor
+def inject_globals():
+    total = len(data._RECENT)
+    return {
+        "g_total": total,
+        "g_flashes": get_flashed_messages(with_categories=True),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -244,20 +267,31 @@ def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list
 
 @app.route("/")
 def index():
-    teams   = data.load_teams()
-    recent  = list(reversed(data.get_schedule(10)))
-    stgs    = data.get_standings()
-    leaders = data.get_leaders("hits", 5)
-    quick_v = teams[0]["abbrev"] if teams else "FOX"
-    quick_h = teams[1]["abbrev"] if len(teams) > 1 else "BEA"
+    teams    = data.load_teams()
+    recent   = data.get_schedule(10)
+    stgs     = data.get_standings()
+    leaders  = data.get_leaders("hits", 5)
+    upcoming = data.get_upcoming(3)
+    quick_v  = teams[0]["abbrev"] if teams else "FOX"
+    quick_h  = teams[1]["abbrev"] if len(teams) > 1 else "BEA"
     return render_template("index.html",
         recent=recent, standings=stgs, leaders=leaders,
-        quick_v=quick_v, quick_h=quick_h,
+        upcoming=upcoming, quick_v=quick_v, quick_h=quick_h,
     )
 
 
-@app.route("/sim")
+@app.route("/sim", methods=["GET", "POST"])
 def sim():
+    if request.method == "POST":
+        try:
+            seed = int(request.form.get("seed", 0) or 0)
+        except (TypeError, ValueError):
+            seed = 0
+        visitors = request.form.get("visitors", "")
+        home_    = request.form.get("home", "")
+        flash(f"▶ Simulating {visitors} @ {home_} (seed {seed})", "info")
+        return redirect(url_for("game", seed=seed, visitors=visitors, home=home_))
+
     teams = data.load_teams()
     roster_map = {
         t["abbrev"]: {
@@ -307,25 +341,29 @@ def game():
 
     game_id = data.make_game_id(seed, v_abbrev, h_abbrev)
 
-    # Structured batting / pitching data for HTML tables
     v_batting, h_batting, v_pitching, h_pitching = _structured_stats(final_state, renderer)
 
-    # Store result
+    # Compute R/H for line score
+    v_runs = sum(r.get("runs", 0) for r in v_batting)
+    h_runs = sum(r.get("runs", 0) for r in h_batting)
+    v_hits = sum(r.get("hits", 0) for r in v_batting)
+    h_hits = sum(r.get("hits", 0) for r in h_batting)
+
     data.store_game(game_id, {
-        "game_id":       game_id,
-        "seed":          seed,
-        "visitors_abbrev": v_abbrev,
-        "home_abbrev":     h_abbrev,
-        "visitors_name": final_state.visitors.name,
-        "home_name":     final_state.home.name,
-        "v_score":       v_score,
-        "h_score":       h_score,
-        "winner_id":     winner_id,
-        "super_flag":    final_state.super_inning_number > 0,
-        "v_batting":     v_batting,
-        "h_batting":     h_batting,
-        "v_pitching":    v_pitching,
-        "h_pitching":    h_pitching,
+        "game_id":           game_id,
+        "seed":              seed,
+        "visitors_abbrev":   v_abbrev,
+        "home_abbrev":       h_abbrev,
+        "visitors_name":     final_state.visitors.name,
+        "home_name":         final_state.home.name,
+        "v_score":           v_score,
+        "h_score":           h_score,
+        "winner_id":         winner_id,
+        "super_flag":        final_state.super_inning_number > 0,
+        "v_batting":         v_batting,
+        "h_batting":         h_batting,
+        "v_pitching":        v_pitching,
+        "h_pitching":        h_pitching,
     })
 
     sections = _split_log(log_lines)
@@ -350,6 +388,8 @@ def game():
         h_batting=h_batting,
         v_pitching=v_pitching,
         h_pitching=h_pitching,
+        v_hits=v_hits,
+        h_hits=h_hits,
     )
 
 
@@ -357,7 +397,6 @@ def game():
 def view_game(game_id):
     g = data.get_game(game_id)
     if not g:
-        # Try to parse game_id as seed_VABB_HABB and re-run
         parts = game_id.split("_", 2)
         if len(parts) == 3:
             try:
@@ -367,13 +406,15 @@ def view_game(game_id):
                 pass
         return redirect(url_for("index"))
 
-    # Re-run the game to get fresh log (renderer state is ephemeral)
     final_state, log_lines, renderer = _run(g["seed"], g["visitors_abbrev"], g["home_abbrev"])
-    sections = _split_log(log_lines)
+    sections   = _split_log(log_lines)
     v_batting  = g.get("v_batting",  [])
     h_batting  = g.get("h_batting",  [])
     v_pitching = g.get("v_pitching", [])
     h_pitching = g.get("h_pitching", [])
+
+    v_hits = sum(r.get("hits", 0) for r in v_batting)
+    h_hits = sum(r.get("hits", 0) for r in h_batting)
 
     return render_template("game.html",
         seed=g["seed"],
@@ -395,6 +436,8 @@ def view_game(game_id):
         h_batting=h_batting,
         v_pitching=v_pitching,
         h_pitching=h_pitching,
+        v_hits=v_hits,
+        h_hits=h_hits,
     )
 
 
@@ -419,11 +462,15 @@ def standings():
 
 @app.route("/schedule")
 def schedule():
-    games = data.get_schedule(40)
-    return render_template("schedule.html", games=games)
+    team_filter = request.args.get("team", "").strip().upper()
+    all_teams   = data.load_teams()
+    games = data.get_schedule(60, team=team_filter)
+    return render_template("schedule.html",
+        games=games, team_filter=team_filter, all_teams=all_teams)
 
 
 @app.route("/stats")
+@app.route("/stats-leaders")
 def stats():
     any_data = bool(data._RECENT)
     return render_template("stats.html",
@@ -439,10 +486,9 @@ def stats():
 
 @app.route("/teams")
 def teams_page():
-    teams = data.load_teams()
-    # Build per-team W/L from standings
-    standings = data.get_standings()
-    records = {s["abbrev"]: s for s in standings}
+    teams    = data.load_teams()
+    standings_ = data.get_standings()
+    records  = {s["abbrev"]: s for s in standings_}
     return render_template("teams.html", teams=teams, records=records)
 
 
@@ -452,16 +498,63 @@ def team_page(abbrev):
     if not team:
         return redirect(url_for("teams_page"))
 
-    standings = {s["abbrev"]: s for s in data.get_standings()}
-    rec = standings.get(abbrev, {"w": 0, "l": 0, "gp": 0, "pct": 0.0, "r_for": 0, "r_against": 0})
+    standings_ = {s["abbrev"]: s for s in data.get_standings()}
+    rec = standings_.get(abbrev, {
+        "w": 0, "l": 0, "gp": 0, "pct": 0.0,
+        "r_for": 0, "r_against": 0, "gb": "—",
+        "streak": "—", "l10_w": 0, "l10_l": 0,
+    })
 
-    # Recent games involving this team
-    all_games = data.get_schedule(40)
-    recent_games = [g for g in all_games
-                    if g["visitors_abbrev"] == abbrev or g["home_abbrev"] == abbrev][:8]
+    recent_games   = data.get_schedule(40, team=abbrev)[:10]
+    team_batting   = data.get_team_batting(abbrev)
+    tab = request.args.get("tab", "roster")
 
     return render_template("team.html",
-        team=team, record=rec, recent_games=recent_games)
+        team=team, record=rec,
+        recent_games=recent_games,
+        team_batting=team_batting,
+        tab=tab,
+    )
+
+
+@app.route("/player/<team_abbrev>/<slug>")
+def player_page(team_abbrev, slug):
+    team = data.get_team(team_abbrev)
+    if not team:
+        return redirect(url_for("teams_page"))
+
+    player = None
+    for p in team["players"]:
+        p_slug = p["name"].lower().replace(" ", "_").replace(".", "")
+        if p_slug == slug:
+            player = p
+            break
+
+    if not player:
+        return redirect(url_for("team_page", abbrev=team_abbrev))
+
+    stats = data.get_player_stats(team_abbrev, player["name"])
+
+    # Last 10 games this player appeared in
+    game_log: list[dict] = []
+    for g in data.get_schedule(100, team=team_abbrev):
+        side = "v" if g.get("visitors_abbrev") == team_abbrev else "h"
+        for row in g.get(f"{side}_batting", []):
+            if row["name"] == player["name"] and row.get("pa", 0) > 0:
+                game_log.append({
+                    "game_id": g["game_id"],
+                    "opp":     g["home_abbrev"] if side == "v" else g["visitors_abbrev"],
+                    "ha":      "vs" if side == "h" else "@",
+                    **row,
+                })
+                break
+        if len(game_log) >= 10:
+            break
+
+    return render_template("player.html",
+        team=team, player=player,
+        stats=stats, game_log=game_log,
+    )
 
 
 @app.route("/players")
@@ -477,7 +570,8 @@ def players():
         for p in t["players"]:
             if q and q not in p["name"].lower():
                 continue
-            rows.append({"team": t, "player": p})
+            slug = p["name"].lower().replace(" ", "_").replace(".", "")
+            rows.append({"team": t, "player": p, "slug": slug})
             if len(rows) >= 200:
                 break
         if len(rows) >= 200:
@@ -492,9 +586,45 @@ def players():
     )
 
 
+# ---------------------------------------------------------------------------
+# Placeholder manage pages
+# ---------------------------------------------------------------------------
+
+@app.route("/my-team")
+def my_team():
+    return render_template("placeholder.html",
+        title="My Team", icon="🏟",
+        blurb="Full team management — lineups, depth charts, and stats — coming soon.")
+
+
+@app.route("/lineups")
+def lineups():
+    return render_template("placeholder.html",
+        title="Lineups", icon="📋",
+        blurb="Set your batting order, define joker deployment rules, and save lineup presets.")
+
+
+@app.route("/trade")
+def trade():
+    return render_template("placeholder.html",
+        title="Trade Center", icon="🔄",
+        blurb="Propose and evaluate trades with AI-driven value analysis.")
+
+
+@app.route("/manager")
+def manager():
+    return render_template("placeholder.html",
+        title="Manager Settings", icon="⚙",
+        blurb="Configure in-game AI strategy: aggression, joker timing, and pitching decisions.")
+
+
+# ---------------------------------------------------------------------------
+# API + misc
+# ---------------------------------------------------------------------------
+
 @app.route("/api/health")
 def health():
-    return jsonify({"status": "ok", "service": "o27-web"})
+    return jsonify({"status": "ok", "service": "o27-web", "games": len(data._RECENT)})
 
 
 @app.route("/stats-site")

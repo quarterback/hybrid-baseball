@@ -17,10 +17,11 @@
       --accent2: #1e5fa8;
       --green:   #2a7a3b;
       --purple:  #7c4db0;
+      --amber:   #b87a1e;
       --mono:    "Courier New", Courier, monospace;
       --sans:    system-ui, -apple-system, "Segoe UI", sans-serif;
       --top-h:   44px;
-      --side-w:  168px;
+      --side-w:  172px;
     }
 
     html, body { height: 100%; overflow: hidden; }
@@ -50,11 +51,17 @@
       white-space: nowrap;
     }
     .topbar-sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
-    .topbar-mode {
-      font-size: .72rem; color: var(--muted);
-      letter-spacing: .06em; text-transform: uppercase;
+    .topbar-meta {
+      display: flex; align-items: center; gap: .55rem;
     }
+    .topbar-chip {
+      font-size: .68rem; color: var(--muted);
+      letter-spacing: .05em; white-space: nowrap;
+    }
+    .topbar-chip strong { color: var(--text); }
     .topbar-right { margin-left: auto; display: flex; align-items: center; gap: .5rem; }
+
+    /* SIM button — POST form so it's a real action, not a plain link */
     .btn-sim {
       background: var(--accent); color: #fff; border: none; border-radius: 3px;
       padding: .3rem .85rem; font-size: .75rem; font-weight: 700;
@@ -62,6 +69,14 @@
       cursor: pointer; text-decoration: none; display: inline-block; white-space: nowrap;
     }
     .btn-sim:hover { background: #9c3c15; }
+
+    /* ══ FLASH BANNER ══ */
+    .flash-bar {
+      grid-column: 1 / -1;
+      background: #fff8e8; border-bottom: 1px solid #e8d090;
+      padding: .3rem 1.1rem; font-size: .76rem; color: #7a5a10;
+      display: flex; align-items: center; gap: .5rem;
+    }
 
     /* ══ SIDEBAR ══ */
     .sidebar {
@@ -82,7 +97,7 @@
     }
     .nav-a:hover { color: var(--text); background: var(--bg); }
     .nav-a.active { color: var(--text); font-weight: 600; border-left-color: var(--accent); background: var(--bg); }
-    .nav-stub { display: block; padding: .27rem .9rem; font-size: .78rem; color: var(--border); user-select: none; }
+    .nav-a.dim-link { opacity: .55; font-style: italic; }
 
     /* ══ MAIN ══ */
     .main {
@@ -114,6 +129,10 @@
       letter-spacing: .07em; color: var(--muted);
       border-bottom: 2px solid var(--border); white-space: nowrap;
     }
+    .dt th.sortable { cursor: pointer; user-select: none; }
+    .dt th.sortable:hover { color: var(--text); }
+    .dt th.sort-asc::after  { content: " ▲"; font-size: .55rem; }
+    .dt th.sort-desc::after { content: " ▼"; font-size: .55rem; }
     .dt td { padding: .23rem .5rem; border-bottom: 1px solid #eceae4; }
     .dt tr:last-child td { border-bottom: none; }
     .dt tr.tot td { font-weight: 700; border-top: 2px solid var(--border); border-bottom: none; }
@@ -162,6 +181,14 @@
       letter-spacing: .06em; padding: .1rem .38rem; border-radius: 2px;
       background: var(--purple); color: #fff; margin-left: .3rem; vertical-align: middle;
     }
+
+    /* ══ LINE SCORE ══ */
+    .line-score { border-collapse: collapse; font-family: var(--mono); font-size: .77rem; }
+    .line-score th, .line-score td { padding: .22rem .55rem; border: 1px solid var(--border); }
+    .line-score th { background: var(--bg); font-size: .62rem; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); text-align: center; }
+    .line-score td { text-align: center; }
+    .line-score .team-col { text-align: left; font-weight: 600; min-width: 90px; }
+    .line-score .bold { font-weight: 700; }
 
     /* ══ TABS ══ */
     .tabs { display: flex; border-bottom: 1px solid var(--border); }
@@ -226,6 +253,15 @@
     /* ══ LEADERS ══ */
     .leaders-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .9rem; }
 
+    /* ══ PLACEHOLDER ══ */
+    .placeholder-box {
+      text-align: center; padding: 3rem 2rem;
+      color: var(--muted);
+    }
+    .placeholder-box .ph-icon { font-size: 3rem; margin-bottom: .75rem; line-height: 1; }
+    .placeholder-box h2 { font-size: 1.1rem; font-weight: 700; color: var(--text); margin-bottom: .5rem; }
+    .placeholder-box p  { font-size: .83rem; max-width: 360px; margin: 0 auto .9rem; }
+
     /* ══ UTIL ══ */
     .mt1 { margin-top: .5rem; }
     .mt2 { margin-top: 1rem; }
@@ -240,6 +276,9 @@
     .empty { padding: 1.5rem 1rem; text-align: center; color: var(--muted); font-size: .83rem; }
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
     @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
+    .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: .9rem; }
+    @media (max-width: 900px) { .three-col { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 600px) { .three-col { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -247,29 +286,45 @@
 <header class="topbar">
   <a class="topbar-logo" href="/">O27</a>
   <div class="topbar-sep"></div>
-  <span class="topbar-mode">Exhibition Mode</span>
+  <div class="topbar-meta">
+    <span class="topbar-chip">
+      {% if g_total == 0 %}
+        Exhibition Mode
+      {% else %}
+        <strong>{{ g_total }}</strong> game{% if g_total != 1 %}s{% endif %} simulated
+      {% endif %}
+    </span>
+  </div>
   <div class="topbar-right">
-    <a class="btn-sim" href="/sim">▶ Sim Game</a>
+    <a href="/sim" class="btn-sim">▶ Sim Game</a>
   </div>
 </header>
+
+{% for cat, msg in g_flashes %}
+<div class="flash-bar">{{ msg }}</div>
+{% endfor %}
 
 <nav class="sidebar">
   <div class="nav-sec">League</div>
   <a href="/"          class="nav-a {% if active=='home'       %}active{% endif %}">Home</a>
   <a href="/standings" class="nav-a {% if active=='standings'  %}active{% endif %}">Standings</a>
-  <a href="/schedule"  class="nav-a {% if active=='schedule'   %}active{% endif %}">Schedule / Results</a>
+  <a href="/schedule"  class="nav-a {% if active=='schedule'   %}active{% endif %}">Schedule</a>
+  <a href="/schedule"  class="nav-a {% if active=='boxscores'  %}active{% endif %}">Box Scores</a>
 
   <div class="nav-sec">Stats</div>
   <a href="/stats"    class="nav-a {% if active=='stats'    %}active{% endif %}">Batting Leaders</a>
   <a href="/teams"    class="nav-a {% if active=='teams'    %}active{% endif %}">Teams</a>
   <a href="/players"  class="nav-a {% if active=='players'  %}active{% endif %}">Players</a>
 
+  <div class="nav-sec">Simulate</div>
+  <a href="/sim"      class="nav-a {% if active=='sim'      %}active{% endif %}">Sim Game</a>
+  <a href="/random"   class="nav-a">Random Game</a>
+
   <div class="nav-sec">Manage</div>
-  <a href="/sim" class="nav-a {% if active=='sim' %}active{% endif %}">Sim Game</a>
-  <span class="nav-stub">My Team</span>
-  <span class="nav-stub">Lineups</span>
-  <span class="nav-stub">Trade</span>
-  <span class="nav-stub">Manager</span>
+  <a href="/my-team"  class="nav-a dim-link {% if active=='my-team'  %}active{% endif %}">My Team</a>
+  <a href="/lineups"  class="nav-a dim-link {% if active=='lineups'  %}active{% endif %}">Lineups</a>
+  <a href="/trade"    class="nav-a dim-link {% if active=='trade'    %}active{% endif %}">Trade Center</a>
+  <a href="/manager"  class="nav-a dim-link {% if active=='manager'  %}active{% endif %}">Manager</a>
 </nav>
 
 <main class="main">
@@ -284,6 +339,31 @@ function switchTab(group, id) {
   document.querySelectorAll('[data-pg="'+group+'"]').forEach(el => {
     el.classList.toggle('active', el.dataset.pi === id);
   });
+}
+
+/* Column-click table sort */
+function sortTable(th) {
+  const table = th.closest('table');
+  const tbody = table.querySelector('tbody');
+  const col   = th.cellIndex;
+  const asc   = !th.classList.contains('sort-asc');
+
+  table.querySelectorAll('th').forEach(t => t.classList.remove('sort-asc','sort-desc'));
+  th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+
+  const rows = Array.from(tbody.querySelectorAll('tr:not(.tot)'));
+  rows.sort((a, b) => {
+    const av = a.cells[col]?.textContent.trim().replace(/[^0-9.\-]/g,'') || '';
+    const bv = b.cells[col]?.textContent.trim().replace(/[^0-9.\-]/g,'') || '';
+    const an = parseFloat(av), bn = parseFloat(bv);
+    if (!isNaN(an) && !isNaN(bn)) return asc ? an-bn : bn-an;
+    return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+  rows.forEach(r => tbody.appendChild(r));
+
+  // keep totals row last
+  const tot = tbody.querySelector('tr.tot');
+  if (tot) tbody.appendChild(tot);
 }
 {% block scripts %}{% endblock %}
 </script>

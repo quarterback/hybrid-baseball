@@ -11,17 +11,28 @@
 {% if rows %}
 <div class="card">
   <div class="card-hd">Overall</div>
-  <table class="dt">
+  <table class="dt" id="standings-tbl">
     <thead>
       <tr>
-        <th>#</th><th>Team</th><th>Lvl</th>
-        <th class="r">GP</th><th class="r">W</th><th class="r">L</th>
-        <th class="r">PCT</th><th class="r">RF</th><th class="r">RA</th><th class="r">RD</th>
+        <th>#</th>
+        <th>Team</th>
+        <th>Lvl</th>
+        <th class="r sortable" onclick="sortTable(this)">GP</th>
+        <th class="r sortable" onclick="sortTable(this)">W</th>
+        <th class="r sortable" onclick="sortTable(this)">L</th>
+        <th class="r sortable" onclick="sortTable(this)">PCT</th>
+        <th class="r sortable" onclick="sortTable(this)">GB</th>
+        <th class="r sortable" onclick="sortTable(this)">RS</th>
+        <th class="r sortable" onclick="sortTable(this)">RA</th>
+        <th class="r sortable" onclick="sortTable(this)">DIFF</th>
+        <th class="r">L10</th>
+        <th class="r">Streak</th>
       </tr>
     </thead>
     <tbody>
       {% for s in rows %}
-      <tr>
+      {% set hue = (loop.index0 * 41 + 13) % 360 %}
+      <tr style="border-left: 3px solid hsl({{ hue }}, 60%, 40%);">
         <td class="dim mono">{{ loop.index }}</td>
         <td><a href="/team/{{ s.abbrev }}" class="link">{{ s.abbrev }}</a> <span class="dim small">{{ s.name }}</span></td>
         <td class="dim small">{{ s.level }}</td>
@@ -29,9 +40,12 @@
         <td class="r mono w">{{ s.w }}</td>
         <td class="r mono l">{{ s.l }}</td>
         <td class="r mono">{{ "%.3f"|format(s.pct) }}</td>
+        <td class="r mono dim">{{ s.gb }}</td>
         <td class="r mono">{{ s.r_for }}</td>
         <td class="r mono">{{ s.r_against }}</td>
         <td class="r mono">{{ "%+d"|format(s.rd) }}</td>
+        <td class="r mono dim">{{ s.l10_w }}-{{ s.l10_l }}</td>
+        <td class="r mono {% if s.streak.startswith('W') %}w{% elif s.streak.startswith('L') %}l{% endif %}">{{ s.streak }}</td>
       </tr>
       {% endfor %}
     </tbody>
