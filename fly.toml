@@ -6,6 +6,11 @@ primary_region = "iad"
 
 [env]
   PORT = "8080"
+  O27V2_DB_PATH = "/data/o27v2.db"
+
+[[mounts]]
+  source = "o27v2_data"
+  destination = "/data"
 
 [http_service]
   internal_port = 8080

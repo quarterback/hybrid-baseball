@@ -12,4 +12,4 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8080
 
-CMD ["python", "-m", "o27.web.app"]
+CMD ["python", "o27v2/manage.py", "runserver"]

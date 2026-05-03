@@ -201,8 +201,12 @@ def cmd_tune(n_games: int | None = None, config_id: str = "30teams"):
 def cmd_runserver(config_id: str = "30teams"):
     from o27v2.web.app import app
     db.init_db()
-    seed_league(config_id=config_id)
-    seed_schedule(config_id=config_id)
+    existing = db.fetchone("SELECT COUNT(*) as n FROM teams")
+    if not existing or existing["n"] == 0:
+        seed_league(config_id=config_id)
+        seed_schedule(config_id=config_id)
+    else:
+        print(f"Existing league found ({existing['n']} teams) — skipping seed.")
 
     port = int(os.environ.get("PORT", 5001))
     print(f"Starting O27v2 web app on port {port}…")

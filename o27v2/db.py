@@ -9,7 +9,10 @@ import os
 import sqlite3
 from typing import Any
 
-_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "o27v2.db")
+_DB_PATH = os.environ.get(
+    "O27V2_DB_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "o27v2.db"),
+)
 
 
 def get_conn() -> sqlite3.Connection:
@@ -145,6 +148,11 @@ def init_db() -> None:
       2. _wipe_if_stale() — wipe pre-Phase-8 data if found.
       3. executescript(SCHEMA) — create missing tables.
     """
+    # Step 0: ensure parent directory exists (e.g. /data on fly volumes)
+    db_dir = os.path.dirname(_DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
     # Step 1: column migrations (no-op if tables absent or columns present)
     with get_conn() as conn:
         # Phase 8 columns

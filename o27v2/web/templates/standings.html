@@ -13,9 +13,11 @@
       <table class="table table-sm mb-0">
         <thead><tr>
           <th>Team</th><th>W</th><th>L</th><th>PCT</th><th>GB</th>
+          <th>L10</th><th>Strk</th><th>RS</th><th>RA</th><th>DIFF</th>
         </tr></thead>
         <tbody>
         {% for t in div_teams %}
+        {% set ex = extras.get(t.id, {}) %}
         <tr>
           <td>
             <a href="{{ url_for('team_detail', team_id=t.id) }}" class="text-decoration-none">
@@ -27,6 +29,11 @@
           <td class="text-secondary">{{ t.losses }}</td>
           <td>{{ win_pct(t) }}</td>
           <td class="text-secondary">{{ gb(leader, t) }}</td>
+          <td class="text-secondary">{{ ex.l10 or '—' }}</td>
+          <td class="{% if ex.streak and ex.streak.startswith('W') %}text-success{% elif ex.streak %}text-danger{% else %}text-secondary{% endif %}">{{ ex.streak or '—' }}</td>
+          <td>{{ ex.rs if ex.rs is not none else '—' }}</td>
+          <td>{{ ex.ra if ex.ra is not none else '—' }}</td>
+          <td class="{% if ex.diff and ex.diff > 0 %}text-success{% elif ex.diff and ex.diff < 0 %}text-danger{% else %}text-secondary{% endif %}">{% if ex.diff is not none %}{% if ex.diff > 0 %}+{% endif %}{{ ex.diff }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>

@@ -18,23 +18,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "O27 Web"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "O27v2 Web"
-
-[[workflows.workflow]]
-name = "O27 Web"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python3 -m o27.web.app"
-waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[workflows.workflow]]
 name = "O27v2 Web"

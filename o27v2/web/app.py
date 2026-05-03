@@ -116,6 +116,10 @@ def _gb(leader: dict, team: dict) -> str:
 
 @app.route("/")
 def index():
+    team_count = db.fetchone("SELECT COUNT(*) as n FROM teams")
+    if not team_count or team_count["n"] == 0:
+        return redirect(url_for("new_league_get"))
+
     recent = db.fetchall(
         """SELECT g.*,
                   ht.name as home_name, ht.abbrev as home_abbrev,
@@ -130,12 +134,32 @@ def index():
            LIMIT 10"""
     )
     divs = _divisions()
+    # Lean snapshot — only the division leaders.
+    snapshot = {div_name: [teams_[0]] for div_name, teams_ in divs.items() if teams_}
     stats = db.fetchone(
         "SELECT COUNT(*) as total, SUM(played) as played FROM games"
     )
+    today = get_current_sim_date()
+    today_games = []
+    if today:
+        today_games = db.fetchall(
+            """SELECT g.*,
+                      ht.name as home_name, ht.abbrev as home_abbrev,
+                      at.name as away_name, at.abbrev as away_abbrev,
+                      wt.abbrev as winner_abbrev
+               FROM games g
+               JOIN teams ht ON g.home_team_id = ht.id
+               JOIN teams at ON g.away_team_id = at.id
+               LEFT JOIN teams wt ON g.winner_id = wt.id
+               WHERE g.game_date = ?
+               ORDER BY g.id""",
+            (today,),
+        )
     return render_template("index.html",
                            recent=recent,
-                           divisions=divs,
+                           divisions=snapshot,
+                           today_games=today_games,
+                           today=today,
                            stats=stats,
                            win_pct=_win_pct,
                            gb=_gb)
@@ -144,8 +168,56 @@ def index():
 @app.route("/standings")
 def standings():
     divs = _divisions()
+
+    # Per-team last-10 record, current streak, runs scored / allowed, diff.
+    extras: dict[int, dict] = {}
+    teams = db.fetchall("SELECT id FROM teams")
+    for t in teams:
+        tid = t["id"]
+        # All played games for this team in chronological order.
+        played = db.fetchall(
+            """SELECT g.id, g.game_date, g.home_team_id, g.away_team_id,
+                      g.home_score, g.away_score, g.winner_id
+               FROM games g
+               WHERE g.played = 1 AND (g.home_team_id = ? OR g.away_team_id = ?)
+               ORDER BY g.game_date, g.id""",
+            (tid, tid),
+        )
+        rs = ra = w10 = l10 = 0
+        for g in played:
+            if g["home_team_id"] == tid:
+                rs += g["home_score"] or 0
+                ra += g["away_score"] or 0
+            else:
+                rs += g["away_score"] or 0
+                ra += g["home_score"] or 0
+        for g in played[-10:]:
+            if g["winner_id"] == tid:
+                w10 += 1
+            else:
+                l10 += 1
+        # Streak: walk backwards.
+        streak = ""
+        if played:
+            last_won = (played[-1]["winner_id"] == tid)
+            count = 0
+            for g in reversed(played):
+                if (g["winner_id"] == tid) == last_won:
+                    count += 1
+                else:
+                    break
+            streak = ("W" if last_won else "L") + str(count)
+        extras[tid] = {
+            "l10":    f"{w10}-{l10}",
+            "streak": streak,
+            "rs":     rs,
+            "ra":     ra,
+            "diff":   rs - ra,
+        }
+
     return render_template("standings.html",
                            divisions=divs,
+                           extras=extras,
                            win_pct=_win_pct,
                            gb=_gb)
 
@@ -209,6 +281,22 @@ def game_detail(game_id: int):
     if not game:
         abort(404)
 
+    # Prev/Next played games in (game_date, id) order.
+    prev_game = db.fetchone(
+        """SELECT id FROM games
+           WHERE played = 1
+             AND (game_date < ? OR (game_date = ? AND id < ?))
+           ORDER BY game_date DESC, id DESC LIMIT 1""",
+        (game["game_date"], game["game_date"], game_id),
+    )
+    next_game = db.fetchone(
+        """SELECT id FROM games
+           WHERE played = 1
+             AND (game_date > ? OR (game_date = ? AND id > ?))
+           ORDER BY game_date ASC, id ASC LIMIT 1""",
+        (game["game_date"], game["game_date"], game_id),
+    )
+
     away_batting = db.fetchall(
         """SELECT bs.*, p.name as player_name, p.position
            FROM game_batter_stats bs
@@ -255,6 +343,8 @@ def game_detail(game_id: int):
                            home_batting=home_batting,
                            away_pitching=away_pitching,
                            home_pitching=home_pitching,
+                           prev_game_id=(prev_game["id"] if prev_game else None),
+                           next_game_id=(next_game["id"] if next_game else None),
                            avg=_avg)
 
 
