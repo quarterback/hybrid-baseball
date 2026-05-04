@@ -893,6 +893,18 @@ class ProbabilisticProvider:
         if replacement is not None:
             return {"type": "pinch_hit", "replacement": replacement}
 
+        # Defensive substitution by the FIELDING team. O27-specific
+        # tactic: swap a bench glove in once the team has banked some
+        # defensive workload, locking in better range for the rest of
+        # the fielding half. Capped at one sub per team per game.
+        def_sub = mgr.should_defensive_sub(state, rng=self.rng)
+        if def_sub is not None:
+            return {
+                "type": "defensive_sub",
+                "player_out": def_sub["player_out"],
+                "player_in":  def_sub["player_in"],
+            }
+
         # Sac-bunt check. Trades an out for a base; old-school / small-ball /
         # high-run-game managers will call it in the right spots, modern /
         # sabermetric skippers basically never. Resolves directly to an

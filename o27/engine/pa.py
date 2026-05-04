@@ -343,6 +343,12 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         log += mgr.pitching_change(state, new_pitcher)
         return log
 
+    if etype == "defensive_sub":
+        out_p = event["player_out"]
+        in_p  = event["player_in"]
+        log += mgr.defensive_sub(state, out_p, in_p)
+        return log
+
     if etype == "sac_bunt":
         # Manager-called sacrifice bunt. Three resolved outcomes — see
         # manager.should_bunt for the rolling logic. We synthesize the
