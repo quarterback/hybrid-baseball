@@ -573,15 +573,24 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
     if state.runners_on_base and rng.random() < cfg.WILD_PITCH_PROB:
         return {"type": "wild_pitch"}
 
-    # Stolen base attempt: check 1B and 2B runners.
+    # Stolen base attempt: check 1B and 2B runners. The batting team's
+    # manager run_game tendency scales the per-pitch attempt probability
+    # AND the speed threshold — an aggressive run-game manager will run
+    # with average speed, a passive one waits for elite speed only.
+    batting_team = state.batting_team
+    run_game = float(getattr(batting_team, "mgr_run_game", 0.5))
+    # Threshold: lerps from speed_threshold * 1.30 (passive) to * 0.65 (aggressive).
+    speed_thresh = cfg.SB_ATTEMPT_SPEED_THRESHOLD * (1.30 - 0.65 * run_game)
+    # Per-pitch attempt prob: lerps from base * 0.4 (passive) to * 1.8 (aggressive).
+    attempt_prob = cfg.SB_ATTEMPT_PROB_PER_PITCH * (0.4 + 1.4 * run_game)
     for base_idx in (0, 1):
         pid = state.bases[base_idx]
         if pid is None:
             continue
         speed = _get_speed(pid, state)
-        if speed < cfg.SB_ATTEMPT_SPEED_THRESHOLD:
+        if speed < speed_thresh:
             continue
-        if rng.random() < cfg.SB_ATTEMPT_PROB_PER_PITCH:
+        if rng.random() < attempt_prob:
             # Probability of success: speed + tired-battery + catcher-arm aware.
             pitcher = state.get_current_pitcher()
             pitcher_skill = pitcher.pitcher_skill if pitcher else 0.5
@@ -730,7 +739,7 @@ class ProbabilisticProvider:
 
         # Pinch hit check (separate mechanic; permanently replaces a
         # regular hitter — survives joker insertions).
-        replacement = mgr.should_pinch_hit(state)
+        replacement = mgr.should_pinch_hit(state, rng=self.rng)
         if replacement is not None:
             return {"type": "pinch_hit", "replacement": replacement}
 

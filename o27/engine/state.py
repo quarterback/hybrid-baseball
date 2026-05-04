@@ -232,6 +232,19 @@ class Team:
     # suppression. 0.5 = neutral.
     catcher_arm:    float = 0.5
 
+    # Manager persona — stamped at game start from the team row. 0.5 = neutral.
+    # Re-rolled per league seed (see o27v2/managers.py). The engine's
+    # manager.py reads these to bias situational decisions; prob.py reads
+    # mgr_run_game to scale stolen-base attempt rates.
+    manager_archetype:        str   = ""
+    mgr_quick_hook:           float = 0.5
+    mgr_bullpen_aggression:   float = 0.5
+    mgr_leverage_aware:       float = 0.5
+    mgr_joker_aggression:     float = 0.5
+    mgr_pinch_hit_aggression: float = 0.5
+    mgr_platoon_aggression:   float = 0.5
+    mgr_run_game:             float = 0.5
+
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-rotation
     # subject to "each joker can only be inserted once per cycle through

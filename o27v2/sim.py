@@ -57,12 +57,27 @@ _INFIELD_POSITIONS  = frozenset(("1B", "2B", "3B", "SS"))
 _OUTFIELD_POSITIONS = frozenset(("LF", "CF", "RF"))
 
 
+_SPEED_RANGE_POSITIONS = {
+    # Position → fraction of the rating that's driven by foot speed
+    # (closing range, first-step quickness, taking the extra base on
+    # cutoffs). Speed = 0.5 is neutral (zero contribution); deviations
+    # from neutral push the position-defense rating up or down.
+    "CF":  0.30, "LF":  0.22, "RF":  0.22,
+    "SS":  0.18, "2B":  0.18,
+    "3B":  0.08, "1B":  0.04,
+    "C":   0.00,
+}
+
+
 def _position_defense_rating(player, pos: str) -> float:
     """Return the player's effective defense at the given position.
 
     Blends general `defense` with the position-group sub-rating so a
     specialist gets a real boost at their primary group and a real
-    penalty out of group. 60% sub-group, 40% general.
+    penalty out of group. 60% sub-group, 40% general. A speed adjustment
+    is then layered on top for positions where foot speed translates to
+    range — heavily weighted for CF, moderate for corner OF and middle
+    IF, and basically nil at 1B / C. Identity preserved at speed = 0.5.
     """
     general = float(getattr(player, "defense", 0.5) or 0.5)
     if pos == "C":
@@ -73,7 +88,10 @@ def _position_defense_rating(player, pos: str) -> float:
         sub = float(getattr(player, "defense_outfield", 0.5) or 0.5)
     else:
         sub = general
-    return 0.6 * sub + 0.4 * general
+    base = 0.6 * sub + 0.4 * general
+    speed = float(getattr(player, "speed", 0.5) or 0.5)
+    speed_w = _SPEED_RANGE_POSITIONS.get(pos, 0.0)
+    return base + speed_w * (speed - 0.5)
 
 
 def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
@@ -321,6 +339,15 @@ def _db_team_to_engine(
     )
     # Compute aggregate defense rating from the lineup's fielding 8.
     team.defense_rating = _team_defense_rating(lineup, players)
+    # Stamp manager persona — bias hook/joker/PH/run-game decisions.
+    team.manager_archetype        = str(team_row.get("manager_archetype") or "")
+    team.mgr_quick_hook           = float(team_row.get("mgr_quick_hook") or 0.5)
+    team.mgr_bullpen_aggression   = float(team_row.get("mgr_bullpen_aggression") or 0.5)
+    team.mgr_leverage_aware       = float(team_row.get("mgr_leverage_aware") or 0.5)
+    team.mgr_joker_aggression     = float(team_row.get("mgr_joker_aggression") or 0.5)
+    team.mgr_pinch_hit_aggression = float(team_row.get("mgr_pinch_hit_aggression") or 0.5)
+    team.mgr_platoon_aggression   = float(team_row.get("mgr_platoon_aggression") or 0.5)
+    team.mgr_run_game             = float(team_row.get("mgr_run_game") or 0.5)
     # Stamp the catcher's arm rating on the Team for SB-success scaling.
     pos_by_id = {str(r["id"]): str(r.get("position") or "") for r in players}
     catcher_arm = 0.5
@@ -1001,11 +1028,38 @@ def is_season_complete() -> bool:
 
 
 def get_all_star_date() -> str | None:
-    """Midpoint of the schedule (derived from the games table — no DB column needed)."""
+    """The day games resume *after* the All-Star break — i.e. the simulator's
+    target when the user clicks "Sim to All-Star Break".
+
+    The schedule generator carves out a 4-day no-games gap mid-season (see
+    o27v2/schedule.py). We detect that gap by scanning consecutive game
+    dates: the largest gap inside the season is the ASB. The returned date
+    is the last day BEFORE the gap — sim_through(this) plays everything up
+    to the break, and the next-day clock advance lands on the resume day.
+
+    Falls back to the calendar midpoint if no gap is detected (e.g. legacy
+    schedules that predate the series-aware generator)."""
     first = get_first_scheduled_date()
     last = get_last_scheduled_date()
     if not first or not last:
         return None
+
+    # Distinct game dates in order. A gap > 1 day means the schedule
+    # carved out a break; the largest such gap is the ASB.
+    rows = db.fetchall(
+        "SELECT DISTINCT game_date FROM games ORDER BY game_date"
+    )
+    dates = [_dt.date.fromisoformat(r["game_date"]) for r in rows]
+    largest_gap = 0
+    pre_break: _dt.date | None = None
+    for i in range(1, len(dates)):
+        delta = (dates[i] - dates[i - 1]).days
+        if delta > largest_gap:
+            largest_gap = delta
+            pre_break = dates[i - 1]
+    if pre_break is not None and largest_gap >= 3:
+        return pre_break.isoformat()
+
     f = _dt.date.fromisoformat(first)
     l = _dt.date.fromisoformat(last)
     return (f + _dt.timedelta(days=(l - f).days // 2)).isoformat()

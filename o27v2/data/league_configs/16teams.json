@@ -4,10 +4,16 @@
   "team_count": 16,
   "level": "AA",
   "games_per_team": 90,
-  "season_days": 140,
+  "season_days": 155,
   "leagues": ["AL", "NL"],
   "divisions_per_league": 2,
   "teams_per_division": 4,
   "intra_division_weight": 0.42,
-  "inter_division_weight": 0.58
+  "inter_division_weight": 0.58,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
 }

@@ -4,10 +4,16 @@
   "team_count": 30,
   "level": "MLB",
   "games_per_team": 162,
-  "season_days": 162,
+  "season_days": 186,
   "leagues": ["AL", "NL"],
   "divisions_per_league": 3,
   "teams_per_division": 5,
   "intra_division_weight": 0.46,
-  "inter_division_weight": 0.54
+  "inter_division_weight": 0.54,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
 }

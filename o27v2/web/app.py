@@ -926,12 +926,14 @@ def game_detail(game_id: int):
     # phase N>=1 = super-inning round N. We also build per-phase totals
     # rows (suitable for the Game Totals section in the template).
     away_batting_rows = db.fetchall(
-        """SELECT bs.*, p.name as player_name, p.position
+        """SELECT bs.*, p.name as player_name,
+                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["away_team_id"]))
     home_batting_rows = db.fetchall(
-        """SELECT bs.*, p.name as player_name, p.position
+        """SELECT bs.*, p.name as player_name,
+                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["home_team_id"]))
@@ -1073,17 +1075,23 @@ def game_detail(game_id: int):
     phases = sorted(all_phases)
     si_rounds = max(0, max(phases) if phases else 0)
 
-    # Line score: runs per phase, plus H and "team errors" placeholder.
+    # Line score: runs/hits per phase, plus team errors-committed.
+    # Errors are stored per-player in game_batter_stats.e (player as a
+    # fielder), so the team's E = sum of `e` across that team's batter rows.
     def _line_score(b_by_phase: dict) -> dict:
         runs_per = {ph: sum(r["runs"] or 0 for r in rows)
                     for ph, rows in b_by_phase.items()}
         hits_per = {ph: sum(r["hits"] or 0 for r in rows)
                     for ph, rows in b_by_phase.items()}
+        errs_per = {ph: sum((r["e"] or 0) for r in rows)
+                    for ph, rows in b_by_phase.items()}
         return {
-            "runs":  runs_per,
-            "hits":  hits_per,
+            "runs":   runs_per,
+            "hits":   hits_per,
+            "errors": errs_per,
             "total_r": sum(runs_per.values()),
             "total_h": sum(hits_per.values()),
+            "total_e": sum(errs_per.values()),
         }
 
     away_line = _line_score(away_batting_by_phase)
