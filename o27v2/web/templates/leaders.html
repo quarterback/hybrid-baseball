@@ -129,17 +129,20 @@
 
 <div class="text-secondary small mt-2 mb-3" style="line-height:1.4">
   <strong>Methodology.</strong>
-  All rate stats are PA- or 27-outs-denominated to fit the O27 structure
-  (one continuous 27-out half per side). PAVG = H/PA is the headline batting
-  average; BAVG = H/AB is the secondary "stayer profile" metric and can
-  exceed 1.000 thanks to multi-hit ABs via stays. ERA, WHIP, K/27, BB/27
-  are per 27 outs. FIP is recalibrated each render so league FIP = league
-  ERA — a 4.50 FIP in a 12.00-ERA league is well above league average.
-  OPS+ / wOBA+ / ERA+ are all relativized to live league baselines (100 =
-  avg, higher = better — note ERA+ inverts since lower raw ERA is better).
-  WAR uses an O27-fitted runs-per-win factor (~21 vs MLB's ~10) so the
-  scale reads correctly. Win/loss credits an SP with ≥ 12 outs and the
-  lead, otherwise the most-effective reliever.
+  Batting rates are PA-denominated. PAVG = H/PA; BAVG = H/AB is the
+  secondary stayer-profile metric (can exceed 1.000 thanks to multi-hit
+  ABs via stays). OPS+ / wOBA+ are league-relativized (100 = avg, higher
+  = better). Pitcher metrics are O27-native: <strong>wERA</strong>
+  weights earned runs by arc position (outs 1-9 ×0.85, 10-18 ×1.00, 19-27
+  ×1.20) and league-anchors to raw ER/27. <strong>xFIP</strong> is
+  defense-independent — (13·HR + 3·BB - 2·(K + foul-outs)) per 27 outs,
+  then re-fit each render so league xFIP = league wERA. <strong>Decay</strong>
+  measures late-arc fade (K%_arc1 - K%_arc3 in points; lower is better).
+  <strong>GSc</strong> is a per-appearance Game Score (50 = neutral, 100 =
+  perfection). <strong>OS+</strong> is league-relative outs per appearance
+  (100 = avg). PA-rate K% counts foul-outs as Ks. WAR uses an O27-fitted
+  runs-per-win factor (~21 vs MLB's ~10). W/L credits an SP with ≥ 12 outs
+  and the lead, otherwise the most-effective reliever.
 </div>
 
 {% endif %}
