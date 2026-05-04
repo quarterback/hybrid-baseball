@@ -893,6 +893,28 @@ class ProbabilisticProvider:
         if replacement is not None:
             return {"type": "pinch_hit", "replacement": replacement}
 
+        # Defensive substitution by the FIELDING team. O27-specific
+        # tactic: swap a bench glove in once the team has banked some
+        # defensive workload, locking in better range for the rest of
+        # the fielding half. Capped at one sub per team per game.
+        def_sub = mgr.should_defensive_sub(state, rng=self.rng)
+        if def_sub is not None:
+            return {
+                "type": "defensive_sub",
+                "player_out": def_sub["player_out"],
+                "player_in":  def_sub["player_in"],
+            }
+
+        # Mid-batting-half offensive→defensive swap. Road team only
+        # (state.half == "top"), once the lineup has cycled at least
+        # once. Pulls a slugger and brings in a defensive specialist
+        # who'll cover the field for the team's fielding half.
+        # Symmetric to should_defensive_sub but operates on the
+        # BATTING team — they're banking defense for later.
+        off_to_def = mgr.should_swap_offensive_for_defense(state, rng=self.rng)
+        if off_to_def is not None:
+            return {"type": "tactical_def_swap", "replacement": off_to_def}
+
         # Sac-bunt check. Trades an out for a base; old-school / small-ball /
         # high-run-game managers will call it in the right spots, modern /
         # sabermetric skippers basically never. Resolves directly to an
@@ -919,6 +941,16 @@ class ProbabilisticProvider:
         spell   = state.pitcher_spell_count
 
         outcome = pitch_outcome(rng, pitcher, batter, balls, strikes, spell)
+
+        # HBP: a fraction of balls become hit-by-pitches, scaled by pitcher
+        # command. Converting after pitch_outcome instead of teaching
+        # _pitch_probs about HBP keeps the realism identity invariant on
+        # the underlying probability surface intact.
+        if outcome == "ball":
+            cmd = float(getattr(pitcher, "command", 0.5) or 0.5)
+            hbp_p = cfg.HBP_FROM_BALL_BASE + (0.5 - cmd) * cfg.HBP_COMMAND_SCALE
+            if hbp_p > 0 and rng.random() < hbp_p:
+                outcome = "hit_by_pitch"
 
         # Hit-and-run protection: when the runner has already gone on
         # an h&r, the batter is swinging at most pitches to put the

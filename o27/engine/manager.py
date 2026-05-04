@@ -759,6 +759,188 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     return skill_best
 
 
+def defensive_sub(
+    state: GameState,
+    player_out: Player,
+    player_in: Player,
+) -> list:
+    """O27-specific tactical sub: replace a lineup player with a bench
+    bat for defensive upgrade reasons. Unlike `pinch_hit` (which
+    replaces the current scheduled batter for offense), this can target
+    ANY lineup slot and is called by the FIELDING team's manager.
+
+    The swap-in takes the lineup slot, so when their slot comes up to
+    bat in the team's offensive half (or in super-innings), they're the
+    one batting. Frees the manager to "spend" a slugger after they've
+    already banked PAs and lock in defensive specialists for the rest
+    of the fielding half.
+    """
+    if state.is_super_inning:
+        return ["[MANAGER ERROR] No defensive sub during super-inning."]
+    fielding = state.fielding_team
+    if player_out not in fielding.lineup:
+        return [f"  [MANAGER ERROR] {player_out.name} not in fielding lineup."]
+    idx = fielding.lineup.index(player_out)
+    fielding.lineup[idx] = player_in
+    log = [
+        f"  DEFENSIVE SUB: {player_in.name} replaces {player_out.name} "
+        f"in the field (and takes their lineup slot)."
+    ]
+    state.events.append({
+        "type": "defensive_sub",
+        "team_id": fielding.team_id,
+        "out_id":  player_out.player_id,
+        "in_id":   player_in.player_id,
+    })
+    return log
+
+
+def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
+    """Tactical defensive substitution by the FIELDING team's manager.
+
+    O27's structure (one 27-out half per team) lets a manager bank
+    offense early, then swap weak-defense bats out for defensive
+    specialists who'll cover the rest of the fielding half. The road
+    team's classic version: bat power up top, then load the field
+    with glove-first guys for the bottom half — those guys won't bat
+    again unless the game goes to a super-inning.
+
+    Conditions:
+      - Regulation half, not super-inning.
+      - We've banked some defense already (state.outs >= 6) so this
+        isn't a first-batter overreaction.
+      - The fielding team has a meaningfully-better-defense bench bat
+        available (not in the current lineup).
+
+    No hard cap on subs per game — real teams cycle through the bench,
+    and O27's continuous-half structure creates more spots, not fewer.
+    The mechanic naturally throttles itself: each successful sub
+    removes a bench bat from the candidate pool, and the worst-defense
+    starter changes dynamically as the lineup shifts.
+
+    Probability scales with mgr_bench_usage. A 0.5 manager fires this
+    around 1.5% per opportunity check; a 0.9 manager around 4%. Over
+    a 27-out half that's roughly 0.5–2 subs per team per game for
+    average managers, more for aggressive ones.
+    """
+    if state.is_super_inning:
+        return None
+    if state.outs < 6:
+        return None
+
+    fielding = state.fielding_team
+
+    bench_usage = float(getattr(fielding, "mgr_bench_usage", 0.5))
+    p = 0.005 + 0.040 * bench_usage   # 0.5% .. 4.5%
+    if rng is None:
+        import random as _r
+        roll = _r.random()
+    else:
+        roll = rng.random()
+    if roll >= p:
+        return None
+
+    # Find the worst-defense lineup player (excluding pitcher and catcher;
+    # catcher swaps need different handling because the catcher arm rating
+    # is stamped on the team).
+    lineup = list(fielding.lineup)
+    candidates_out = [
+        pl for pl in lineup
+        if not pl.is_pitcher
+        and (getattr(pl, "position", "") not in ("C", "DH"))
+    ]
+    if not candidates_out:
+        return None
+    worst = min(
+        candidates_out,
+        key=lambda pl: float(getattr(pl, "defense", 0.5) or 0.5),
+    )
+
+    # Bench candidates: roster non-pitchers not currently in the lineup.
+    lineup_ids = {pl.player_id for pl in lineup}
+    bench = [
+        pl for pl in fielding.roster
+        if not pl.is_pitcher and pl.player_id not in lineup_ids
+    ]
+    if not bench:
+        return None
+    best = max(bench, key=lambda pl: float(getattr(pl, "defense", 0.5) or 0.5))
+
+    # Only swap if best is meaningfully better. 0.05 is the same edge
+    # the pinch-hit logic uses for skill upgrades.
+    edge = (float(getattr(best,  "defense", 0.5) or 0.5)
+          - float(getattr(worst, "defense", 0.5) or 0.5))
+    if edge < 0.05:
+        return None
+
+    return {"player_out": worst, "player_in": best}
+
+
+def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Player]:
+    """Mid-batting-half tactical swap: pull the current scheduled batter
+    after they've banked a PA, bring in a defensive specialist who'll
+    cover the rest of the team's fielding half.
+
+    O27-specific tactic — only meaningful for the road team in the top
+    half, since they bat first and then field. The home team bats last
+    so their fielding half is already done by the time they're at the
+    plate, and there's no defense to lock in.
+
+    Conditions:
+      - Regulation half (no super-innings).
+      - state.half == "top" — visitors batting, will field next.
+      - Lineup has cycled at least once (cycle_number >= 1) so the
+        slugger has already had at least one AB to bank.
+      - Current batter has notably worse defense than the best bench bat.
+
+    No hard cap — the candidate pool naturally depletes as bench bats
+    enter the lineup. Probability scales 0.5% .. 4.5% with
+    mgr_bench_usage. Sluggish skippers basically never do this;
+    aggressive ones cycle multiple gloves in across the back half of
+    their batting block.
+
+    Returns the replacement Player or None. Caller wraps in a
+    tactical_def_swap event (logged separately from leverage-driven
+    pinch hits for stat-tracking purposes).
+    """
+    if state.is_super_inning:
+        return None
+    if state.half != "top":
+        return None
+
+    team = state.batting_team
+    if team.lineup_cycle_number < 1:
+        return None
+
+    bench_usage = float(getattr(team, "mgr_bench_usage", 0.5))
+    p = 0.005 + 0.040 * bench_usage   # 0.5% .. 4.5% per PA past first cycle
+    if rng is None:
+        import random as _r
+        roll = _r.random()
+    else:
+        roll = rng.random()
+    if roll >= p:
+        return None
+
+    batter = state.current_batter
+    if batter.is_pitcher:
+        return None
+
+    lineup_ids = {pl.player_id for pl in team.lineup}
+    bench = [
+        pl for pl in team.roster
+        if not pl.is_pitcher and pl.player_id not in lineup_ids
+    ]
+    if not bench:
+        return None
+    best = max(bench, key=lambda pl: float(getattr(pl, "defense", 0.5) or 0.5))
+    edge = (float(getattr(best,   "defense", 0.5) or 0.5)
+          - float(getattr(batter, "defense", 0.5) or 0.5))
+    if edge < 0.05:
+        return None
+    return best
+
+
 def should_bunt(state: GameState, rng=None) -> Optional[dict]:
     """Manager-driven sacrifice bunt decision.
 

@@ -343,6 +343,27 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         log += mgr.pitching_change(state, new_pitcher)
         return log
 
+    if etype == "defensive_sub":
+        out_p = event["player_out"]
+        in_p  = event["player_in"]
+        log += mgr.defensive_sub(state, out_p, in_p)
+        return log
+
+    if etype == "tactical_def_swap":
+        # Mid-batting-half offensive→defensive swap. Reuse pinch_hit
+        # semantics (replace current scheduled batter, take the slot)
+        # but record our own event tag so the once-per-team cap is
+        # separate from leverage-driven pinch hits.
+        replacement = event["replacement"]
+        log += mgr.pinch_hit(state, replacement)
+        log[-1] = log[-1].replace("PINCH HIT", "DEF SWAP")
+        state.events.append({
+            "type": "tactical_def_swap",
+            "team_id": state.batting_team.team_id,
+            "replacement_id": replacement.player_id,
+        })
+        return log
+
     if etype == "sac_bunt":
         # Manager-called sacrifice bunt. Three resolved outcomes — see
         # manager.should_bunt for the rolling logic. We synthesize the
