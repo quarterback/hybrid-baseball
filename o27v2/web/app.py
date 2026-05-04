@@ -957,9 +957,13 @@ def game_detail(game_id: int):
     # here so the box score never shows the same player twice in one
     # phase or double-counts totals.
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples",
-                "hr", "rbi", "bb", "k", "stays", "outs_recorded")
+                "hr", "rbi", "bb", "k", "stays", "outs_recorded",
+                "hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi",
+                "roe", "po", "e")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
-                "runs_allowed", "er", "bb", "k")
+                "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
+                "hbp_allowed", "unearned_runs",
+                "sb_allowed", "cs_caught", "fo_induced")
 
     def _dedup_by_player_phase(rows: list, num_fields: tuple) -> list:
         merged: dict[tuple, dict] = {}
@@ -982,16 +986,14 @@ def game_detail(game_id: int):
         return out
 
     def _aggregate_batting(rows: list) -> dict:
-        agg = {f: 0 for f in ("pa", "ab", "runs", "hits", "doubles", "triples",
-                              "hr", "rbi", "bb", "k", "stays", "outs_recorded")}
+        agg = {f: 0 for f in _BAT_NUM}
         for r in rows:
             for f in agg:
                 agg[f] += (r[f] or 0)
         return agg
 
     def _aggregate_pitching(rows: list) -> dict:
-        agg = {f: 0 for f in ("batters_faced", "outs_recorded", "hits_allowed",
-                              "runs_allowed", "er", "bb", "k")}
+        agg = {f: 0 for f in _PIT_NUM}
         for r in rows:
             for f in agg:
                 agg[f] += (r[f] or 0)
@@ -1026,6 +1028,36 @@ def game_detail(game_id: int):
     home_batting_consolidated = _consolidate_per_player(home_batting_rows, _BAT_NUM)
     away_pitching_consolidated = _consolidate_per_player(away_pitching_rows, _PIT_NUM)
     home_pitching_consolidated = _consolidate_per_player(home_pitching_rows, _PIT_NUM)
+
+    # Run consolidated rows through the shared aggregator helpers so the
+    # box score gets the full sabermetric suite (PAVG/OBP/SLG/OPS/wOBA
+    # for batters; ERA/FIP/WHIP/K-27 for pitchers). The aggregators expect
+    # short-form keys (h, d2, d3, hr_allowed) — map from the SQL column
+    # names in-place before calling them.
+    baselines = _league_baselines()
+    wl = _pitcher_wl_map()
+
+    def _decorate_batters(rows: list) -> None:
+        for r in rows:
+            r["h"]  = r.get("hits", 0)
+            r["d2"] = r.get("doubles", 0)
+            r["d3"] = r.get("triples", 0)
+            r["g"]  = 1   # one game; aggregator divides by g for some rates
+        _aggregate_batter_rows(rows, baselines=baselines)
+
+    def _decorate_pitchers(rows: list) -> None:
+        for r in rows:
+            r["bf"]   = r.get("batters_faced", 0)
+            r["outs"] = r.get("outs_recorded", 0)
+            r["h"]    = r.get("hits_allowed", 0)
+            r["r"]    = r.get("runs_allowed", 0)
+            r["g"]    = 1
+        _aggregate_pitcher_rows(rows, wl=wl, baselines=baselines)
+
+    _decorate_batters(away_batting_consolidated)
+    _decorate_batters(home_batting_consolidated)
+    _decorate_pitchers(away_pitching_consolidated)
+    _decorate_pitchers(home_pitching_consolidated)
 
     away_batting_by_phase = _group_by_phase(away_batting_rows)
     home_batting_by_phase = _group_by_phase(home_batting_rows)
@@ -1414,6 +1446,10 @@ def leaders():
 
     batting = db.fetchall(
         """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.defense as defense, p.arm as arm,
+                  p.defense_infield as defense_infield,
+                  p.defense_outfield as defense_outfield,
+                  p.defense_catcher as defense_catcher,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(bs.game_id) as g,
                   SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
@@ -1425,7 +1461,10 @@ def leaders():
                   COALESCE(SUM(bs.cs),0)  as cs,
                   COALESCE(SUM(bs.fo),0)  as fo,
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
-                  COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi
+                  COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.roe),0)          as roe,
+                  COALESCE(SUM(bs.po),0)           as po,
+                  COALESCE(SUM(bs.e),0)            as e
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
@@ -1526,6 +1565,12 @@ def player_detail(player_id: int):
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
     )
+    fld = db.fetchone(
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+           FROM game_batter_stats WHERE player_id = ?""",
+        (player_id,),
+    ) or {"po": 0, "e": 0}
+
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
                    SUM(hits_allowed) as h, SUM(runs_allowed) as r,
@@ -1542,21 +1587,41 @@ def player_detail(player_id: int):
         (player_id,),
     )
 
+    baselines = _league_baselines()
+    wl = _pitcher_wl_map()
+
     bt_totals = None
     if bt and bt["pa"]:
-        # Run through the shared helper so AVG/OBP/SLG/OPS + advanced rate
-        # stats (ISO/BABIP/K%/BB%/HR%/BB/K) are all consistent with the
-        # leaders page math.
+        # Player-detail batter row needs `position` + the defense ratings
+        # for DRS/dWAR; pull them from the player record so the aggregator
+        # can compute the full sabermetric suite consistently.
         bt_totals = dict(bt)
-        _aggregate_batter_rows([bt_totals])
+        bt_totals["position"]         = player.get("position")
+        bt_totals["defense"]          = player.get("defense")
+        bt_totals["defense_infield"]  = player.get("defense_infield")
+        bt_totals["defense_outfield"] = player.get("defense_outfield")
+        bt_totals["defense_catcher"]  = player.get("defense_catcher")
+        _aggregate_batter_rows([bt_totals], baselines=baselines)
+
+    # Per-fielder defense totals (PO + E from any game where the player
+    # was credited with a play). Fielding% derives naturally; A is not
+    # tracked separately since the engine doesn't model the throw-vs-catch
+    # split (PO is awarded to whoever the play was attributed to).
+    po = fld["po"] or 0
+    e  = fld["e"] or 0
+    fld_totals = {
+        "po": po,
+        "e":  e,
+        "chances": po + e,
+        "fld_pct": (po / (po + e)) if (po + e) > 0 else None,
+    }
 
     pt_totals = None
     if pt and pt["outs"]:
         outs = pt["outs"] or 0
         pt_totals = dict(pt)
-        # Run through the shared helper so ERA/WHIP/K27/BB27/FIP all use the
-        # same per-27-outs definitions (and the freshly-fit FIP constant).
-        _aggregate_pitcher_rows([pt_totals])
+        pt_totals["player_id"] = player_id
+        _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
         pt_totals["os_pct"] = (outs / (27.0 * pt["g"])) if pt["g"] else 0.0
 
     return render_template(
@@ -1566,6 +1631,8 @@ def player_detail(player_id: int):
         pitching_log=pitching_log,
         bt_totals=bt_totals,
         pt_totals=pt_totals,
+        fld_totals=fld_totals,
+        baselines=baselines,
     )
 
 

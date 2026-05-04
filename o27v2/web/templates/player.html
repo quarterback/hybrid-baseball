@@ -2,6 +2,30 @@
 {% block title %}{{ player.name }}{% endblock %}
 {% block content %}
 
+{% macro grade_chip(grade) -%}
+  {% set g = grade or 50 %}
+  {% if g >= 81 %}{% set cls = "bg-warning text-dark" %}{% set lbl = "Elite+" %}
+  {% elif g >= 75 %}{% set cls = "bg-warning text-dark" %}{% set lbl = "Elite" %}
+  {% elif g >= 65 %}{% set cls = "bg-success" %}{% set lbl = "Excellent" %}
+  {% elif g >= 60 %}{% set cls = "bg-success" %}{% set lbl = "Very Good" %}
+  {% elif g >= 55 %}{% set cls = "bg-primary" %}{% set lbl = "Good" %}
+  {% elif g >= 50 %}{% set cls = "bg-primary" %}{% set lbl = "Above Avg" %}
+  {% elif g >= 45 %}{% set cls = "bg-secondary" %}{% set lbl = "Average" %}
+  {% elif g >= 40 %}{% set cls = "bg-secondary" %}{% set lbl = "Below Avg" %}
+  {% elif g >= 30 %}{% set cls = "bg-danger" %}{% set lbl = "Replacement" %}
+  {% else %}{% set cls = "bg-danger" %}{% set lbl = "Sub-Repl" %}{% endif %}
+  <span class="badge {{ cls }}" style="min-width:2.4rem">{{ g }}</span>
+  <span class="text-secondary small ms-1">{{ lbl }}</span>
+{%- endmacro %}
+
+{% macro rating_row(label, grade, hint='') -%}
+  <tr>
+    <td class="text-secondary">{{ label }}</td>
+    <td>{{ grade_chip(grade) }}</td>
+    {% if hint %}<td class="text-secondary small">{{ hint }}</td>{% else %}<td></td>{% endif %}
+  </tr>
+{%- endmacro %}
+
 <nav aria-label="breadcrumb" class="mb-2">
   <ol class="breadcrumb small mb-0">
     <li class="breadcrumb-item"><a href="{{ url_for('players') }}">Players</a></li>
@@ -10,130 +34,507 @@
   </ol>
 </nav>
 
-<div class="dense p-2 mb-3 d-flex flex-wrap align-items-center gap-3">
-  <span class="fw-bold fs-5">{{ player.name }}</span>
-  {% if player.is_joker %}<span class="si-badge">JOKER</span>{% endif %}
-  {% if player.is_pitcher %}<span class="badge bg-info text-dark">PITCHER</span>{% endif %}
-  <span class="text-secondary">·</span>
-  <span class="text-secondary">{{ player.position }}</span>
-  <span class="text-secondary">·</span>
-  <a href="{{ url_for('team_detail', team_id=player.team_id) }}" class="team-abbrev">{{ player.team_abbrev }}</a>
-  <span class="text-secondary">·</span>
-  <span class="text-secondary">Age {{ player.age }}</span>
-  {% if player.archetype %}<span class="text-secondary">·</span><span class="text-warning small">{{ player.archetype }}</span>{% endif %}
-  {% if player.pitcher_role %}<span class="text-secondary">·</span><span class="text-info small">{{ player.pitcher_role }}</span>{% endif %}
+{# ======================== HEADER ======================== #}
+<div class="dense p-3 mb-3">
+  <div class="d-flex flex-wrap align-items-center gap-3">
+    <span class="fw-bold fs-4">{{ player.name }}</span>
+    {% if player.is_pitcher %}<span class="badge bg-info text-dark">PITCHER</span>{% endif %}
+    <span class="text-secondary">·</span>
+    <span class="text-secondary">{{ player.position }}</span>
+    <span class="text-secondary">·</span>
+    <a href="{{ url_for('team_detail', team_id=player.team_id) }}" class="team-abbrev fs-6">{{ player.team_abbrev }}</a>
+    <span class="text-secondary">·</span>
+    <span class="text-secondary">Age {{ player.age }}</span>
+    <span class="text-secondary">·</span>
+    <span class="text-secondary small">Bats: <strong>{{ player.bats or '—' }}</strong> &nbsp; Throws: <strong>{{ player.throws or '—' }}</strong></span>
+  </div>
+  {# Quick-glance summary line #}
+  <div class="mt-2 d-flex flex-wrap gap-3 small">
+    {% if bt_totals %}
+      <span><span class="text-secondary">PAVG</span> <strong>{{ '%.3f'|format(bt_totals.pavg) }}</strong></span>
+      <span><span class="text-secondary">OPS+</span> <strong>{{ bt_totals.ops_plus|round|int }}</strong></span>
+      <span><span class="text-secondary">HR</span> <strong>{{ bt_totals.hr }}</strong></span>
+      <span><span class="text-secondary">RBI</span> <strong>{{ bt_totals.rbi }}</strong></span>
+      <span><span class="text-secondary">bWAR</span> <strong>{{ '%.2f'|format(bt_totals.war) }}</strong></span>
+    {% endif %}
+    {% if pt_totals %}
+      {% if bt_totals %}<span class="text-secondary">|</span>{% endif %}
+      <span><span class="text-secondary">W-L</span> <strong>{{ pt_totals.w or 0 }}-{{ pt_totals.l or 0 }}</strong></span>
+      <span><span class="text-secondary">ERA</span> <strong>{{ '%.2f'|format(pt_totals.era) }}</strong></span>
+      <span><span class="text-secondary">ERA+</span> <strong>{{ pt_totals.era_plus|round|int }}</strong></span>
+      <span><span class="text-secondary">K</span> <strong>{{ pt_totals.k }}</strong></span>
+      <span><span class="text-secondary">pWAR</span> <strong>{{ '%.2f'|format(pt_totals.war) }}</strong></span>
+    {% endif %}
+    {% if not bt_totals and not pt_totals %}
+      <span class="text-secondary">No game stats yet for this player.</span>
+    {% endif %}
+  </div>
 </div>
 
+{# ======================== TABS ======================== #}
+{% set default_tab = 'pitching' if (pt_totals and not bt_totals) else 'batting' %}
+<ul class="nav nav-tabs mb-3" role="tablist">
+  {% if bt_totals %}
+  <li class="nav-item"><button class="nav-link {% if default_tab == 'batting' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tab-batting">Batting</button></li>
+  {% endif %}
+  {% if pt_totals %}
+  <li class="nav-item"><button class="nav-link {% if default_tab == 'pitching' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tab-pitching">Pitching</button></li>
+  {% endif %}
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-fielding">Fielding</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ratings">Ratings</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-gamelog">Game Log</button></li>
+</ul>
+
+<div class="tab-content">
+
+{# ======================== BATTING TAB ======================== #}
 {% if bt_totals %}
-<div class="dense mb-3">
-  <div class="panel-title">Season Batting</div>
-  <table class="table table-sm dense-table mb-0">
-    <thead><tr>
-      <th class="num">G</th><th class="num">PA</th><th class="num">AB</th><th class="num">H</th>
-      <th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
-      <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">K</th><th class="num">Stays</th>
-      <th class="num">AVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
-    </tr></thead>
-    <tbody>
-      <tr>
-        <td class="num">{{ bt_totals.g }}</td><td class="num">{{ bt_totals.pa }}</td><td class="num">{{ bt_totals.ab }}</td>
+<div class="tab-pane fade {% if default_tab == 'batting' %}show active{% endif %}" id="tab-batting">
+
+  <div class="dense mb-3">
+    <div class="panel-title">Standard Batting</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num">G</th><th class="num">PA</th><th class="num">AB</th>
+        <th class="num">R</th><th class="num">H</th>
+        <th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
+        <th class="num">RBI</th><th class="num">BB</th><th class="num">SO</th>
+        <th class="num">HBP</th><th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
+        <th class="num" title="Plate Average — H/PA">PAVG</th>
+        <th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num">{{ bt_totals.g }}</td>
+        <td class="num">{{ bt_totals.pa }}</td>
+        <td class="num">{{ bt_totals.ab }}</td>
+        <td class="num">{{ bt_totals.r }}</td>
         <td class="num fw-bold">{{ bt_totals.h }}</td>
-        <td class="num">{{ bt_totals.d2 }}</td><td class="num">{{ bt_totals.d3 }}</td><td class="num">{{ bt_totals.hr }}</td>
-        <td class="num">{{ bt_totals.r }}</td><td class="num">{{ bt_totals.rbi }}</td>
-        <td class="num">{{ bt_totals.bb }}</td><td class="num">{{ bt_totals.k }}</td><td class="num">{{ bt_totals.stays }}</td>
-        <td class="num fw-bold">{{ '%.3f'|format(bt_totals.avg) }}</td>
+        <td class="num">{{ bt_totals.d2 }}</td>
+        <td class="num">{{ bt_totals.d3 }}</td>
+        <td class="num">{{ bt_totals.hr }}</td>
+        <td class="num">{{ bt_totals.rbi }}</td>
+        <td class="num">{{ bt_totals.bb }}</td>
+        <td class="num">{{ bt_totals.k }}</td>
+        <td class="num">{{ bt_totals.hbp }}</td>
+        <td class="num">{{ bt_totals.sb }}</td>
+        <td class="num">{{ bt_totals.cs }}</td>
+        <td class="num">{{ bt_totals.fo }}</td>
+        <td class="num fw-bold">{{ '%.3f'|format(bt_totals.pavg) }}</td>
         <td class="num">{{ '%.3f'|format(bt_totals.obp) }}</td>
         <td class="num">{{ '%.3f'|format(bt_totals.slg) }}</td>
         <td class="num fw-bold">{{ '%.3f'|format(bt_totals.ops) }}</td>
-      </tr>
-    </tbody>
-  </table>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="dense mb-3">
+    <div class="panel-title">Advanced Batting</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num" title="H/AB — secondary stayer-profile metric, can exceed 1.000">BAVG</th>
+        <th class="num" title="BAVG - PAVG; quantifies stay-driven hit value">Δstay</th>
+        <th class="num">ISO</th>
+        <th class="num">BABIP</th>
+        <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
+        <th class="num">BB/K</th>
+        <th class="num">wOBA</th>
+        <th class="num" title="OPS relative to league avg (100 = avg)">OPS+</th>
+        <th class="num" title="wOBA relative to league avg (100 = avg)">wOBA+</th>
+        <th class="num" title="Stay rate — share of PAs the batter stayed">Stay%</th>
+        <th class="num" title="Foul-out rate — share of PAs ending in 3-foul out">FO%</th>
+        <th class="num" title="Multi-hit AB rate — share of ABs with 2+ credited hits">MhAB%</th>
+        <th class="num" title="SB success rate on attempts">SB%</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num fw-bold">{{ '%.3f'|format(bt_totals.bavg) }}</td>
+        <td class="num">{{ '%+.3f'|format(bt_totals.stay_diff) }}</td>
+        <td class="num">{{ '%.3f'|format(bt_totals.iso) }}</td>
+        <td class="num">{{ '%.3f'|format(bt_totals.babip) }}</td>
+        <td class="num">{{ '%.1f'|format(bt_totals.k_pct * 100) }}%</td>
+        <td class="num">{{ '%.1f'|format(bt_totals.bb_pct * 100) }}%</td>
+        <td class="num">{{ '%.1f'|format(bt_totals.hr_pct * 100) }}%</td>
+        <td class="num">{{ '%.2f'|format(bt_totals.bb_k) }}</td>
+        <td class="num fw-bold">{{ '%.3f'|format(bt_totals.woba) }}</td>
+        <td class="num">{{ bt_totals.ops_plus|round|int }}</td>
+        <td class="num">{{ bt_totals.woba_plus|round|int }}</td>
+        <td class="num">{{ '%.1f'|format(bt_totals.stay_pct * 100) }}%</td>
+        <td class="num">{{ '%.1f'|format(bt_totals.fo_pct * 100) }}%</td>
+        <td class="num">{{ '%.1f'|format(bt_totals.mhab_pct * 100) }}%</td>
+        <td class="num">{% if (bt_totals.sb + bt_totals.cs) > 0 %}{{ '%.1f'|format(bt_totals.sb_pct * 100) }}%{% else %}—{% endif %}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="dense mb-3">
+    <div class="panel-title">Value (Batting)</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num" title="Offensive runs above replacement">oVORP</th>
+        <th class="num" title="Offensive WAR">oWAR</th>
+        <th class="num" title="Position-aware defense rating (0-1)">Def</th>
+        <th class="num" title="Defensive Runs Saved (extrapolated to position-value baseline)">DRS</th>
+        <th class="num" title="Defensive WAR contribution">dWAR</th>
+        <th class="num" title="Total WAR (offense + defense)">WAR</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num">{{ '%.1f'|format(bt_totals.vorp) }}</td>
+        <td class="num">{{ '%.2f'|format(bt_totals.war_off) }}</td>
+        <td class="num">{{ '%.3f'|format(bt_totals.pos_def) }}</td>
+        <td class="num">{{ '%+.1f'|format(bt_totals.drs) }}</td>
+        <td class="num">{{ '%+.2f'|format(bt_totals.dwar) }}</td>
+        <td class="num fw-bold">{{ '%.2f'|format(bt_totals.war) }}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
 </div>
 {% endif %}
 
+{# ======================== PITCHING TAB ======================== #}
 {% if pt_totals %}
-<div class="dense mb-3">
-  <div class="panel-title">Season Pitching</div>
-  <table class="table table-sm dense-table mb-0">
-    <thead><tr>
-      <th class="num">G</th><th class="num">BF</th><th class="num">OUT</th><th class="num">ER</th><th class="num">OS%</th>
-      <th class="num">H</th><th class="num">R</th><th class="num">BB</th><th class="num">K</th>
-      <th class="num">ERA</th><th class="num">FIP</th><th class="num">WHIP</th><th class="num">K/27</th><th class="num">BB/27</th>
-    </tr></thead>
-    <tbody>
-      <tr>
-        <td class="num">{{ pt_totals.g }}</td><td class="num">{{ pt_totals.bf }}</td>
-        <td class="num">{{ pt_totals.outs }}</td><td class="num">{{ pt_totals.er }}</td>
+<div class="tab-pane fade {% if default_tab == 'pitching' %}show active{% endif %}" id="tab-pitching">
+
+  <div class="dense mb-3">
+    <div class="panel-title">Standard Pitching</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num">G</th><th class="num">W</th><th class="num">L</th>
+        <th class="num">BF</th><th class="num">Outs</th><th class="num">IP</th>
+        <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+        <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
+        <th class="num">HBP</th><th class="num">UER</th>
+        <th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
+        <th class="num" title="Pitches thrown">P</th>
+        <th class="num" title="Outs as share of complete-game (27 outs) per appearance">OS%</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num">{{ pt_totals.g }}</td>
+        <td class="num">{{ pt_totals.w or 0 }}</td>
+        <td class="num">{{ pt_totals.l or 0 }}</td>
+        <td class="num">{{ pt_totals.bf }}</td>
+        <td class="num">{{ pt_totals.outs }}</td>
+        <td class="num">{{ '%.1f'|format(pt_totals.ip) }}</td>
+        <td class="num">{{ pt_totals.h }}</td>
+        <td class="num">{{ pt_totals.r }}</td>
+        <td class="num">{{ pt_totals.er }}</td>
+        <td class="num">{{ pt_totals.bb }}</td>
+        <td class="num fw-bold">{{ pt_totals.k }}</td>
+        <td class="num">{{ pt_totals.hr_allowed }}</td>
+        <td class="num">{{ pt_totals.hbp_allowed }}</td>
+        <td class="num">{{ pt_totals.uer }}</td>
+        <td class="num">{{ pt_totals.sb_allowed }}</td>
+        <td class="num">{{ pt_totals.cs_caught }}</td>
+        <td class="num">{{ pt_totals.fo_induced }}</td>
+        <td class="num">{{ pt_totals.pitches }}</td>
         <td class="num">{{ '%.0f'|format(pt_totals.os_pct * 100) }}%</td>
-        <td class="num">{{ pt_totals.h }}</td><td class="num">{{ pt_totals.r }}</td>
-        <td class="num">{{ pt_totals.bb }}</td><td class="num fw-bold">{{ pt_totals.k }}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="dense mb-3">
+    <div class="panel-title">Rate Stats (per-27-outs)</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num">ERA</th>
+        <th class="num">FIP</th>
+        <th class="num">WHIP</th>
+        <th class="num">K/27</th>
+        <th class="num">BB/27</th>
+        <th class="num">HR/27</th>
+        <th class="num" title="Runs against per 27 outs (R, not ER)">RA/27</th>
+        <th class="num" title="K to BB ratio">K/BB</th>
+      </tr></thead>
+      <tbody><tr>
         <td class="num fw-bold">{{ '%.2f'|format(pt_totals.era) }}</td>
         <td class="num">{{ '%.2f'|format(pt_totals.fip) }}</td>
         <td class="num">{{ '%.2f'|format(pt_totals.whip) }}</td>
-        <td class="num">{{ '%.2f'|format(pt_totals.k27) }}</td>
+        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.k27) }}</td>
         <td class="num">{{ '%.2f'|format(pt_totals.bb27) }}</td>
-      </tr>
-    </tbody>
-  </table>
+        <td class="num">{{ '%.2f'|format(pt_totals.hr27) }}</td>
+        <td class="num">{{ '%.2f'|format(pt_totals.ra27) }}</td>
+        <td class="num">{{ '%.2f'|format(pt_totals.so_bb) }}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="dense mb-3">
+    <div class="panel-title">Per-Batter Rates &amp; Opponent Profile</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num">K%</th>
+        <th class="num">BB%</th>
+        <th class="num">HR%</th>
+        <th class="num" title="Opponent batting average — H / (BF - BB - HBP)">oAVG</th>
+        <th class="num" title="BABIP allowed — (H-HR) / (AB_faced - K - HR)">BABIP</th>
+        <th class="num" title="Outs per pitch — efficiency">O/P</th>
+        <th class="num" title="Pitches per BF — patience-induced workload">P/BF</th>
+        <th class="num" title="Foul-outs induced per BF (3-foul rule)">FO%</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num">{{ '%.1f'|format(pt_totals.k_pct * 100) }}%</td>
+        <td class="num">{{ '%.1f'|format(pt_totals.bb_pct * 100) }}%</td>
+        <td class="num">{{ '%.1f'|format(pt_totals.hr_pct * 100) }}%</td>
+        <td class="num">{{ '%.3f'|format(pt_totals.oavg) }}</td>
+        <td class="num">{{ '%.3f'|format(pt_totals.babip_allowed) }}</td>
+        <td class="num">{{ '%.3f'|format(pt_totals.outs_per_pitch) }}</td>
+        <td class="num">{{ '%.2f'|format(pt_totals.p_per_bf) }}</td>
+        <td class="num">{{ '%.1f'|format(pt_totals.fo_pct_pit * 100) }}%</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="dense mb-3">
+    <div class="panel-title">Value (Pitching)</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num" title="ERA relative to league avg (100 = avg, higher = better)">ERA+</th>
+        <th class="num" title="Runs saved vs replacement-level pitcher">VORP</th>
+        <th class="num" title="Wins above replacement">WAR</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num">{{ pt_totals.era_plus|round|int }}</td>
+        <td class="num">{{ '%.1f'|format(pt_totals.vorp) }}</td>
+        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.war) }}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
 </div>
 {% endif %}
 
-{% if batting_log %}
-<div class="dense mb-3">
-  <div class="panel-title">Game Log — Batting (last {{ batting_log|length }})</div>
-  <table class="table table-sm dense-table sortable mb-0">
-    <thead><tr>
-      <th>Date</th><th>Opp</th>
-      <th class="num">PA</th><th class="num">AB</th><th class="num">H</th><th class="num">HR</th>
-      <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">K</th><th class="num">Stays</th><th data-nosort></th>
-    </tr></thead>
-    <tbody>
-      {% for g in batting_log %}
-      {% set is_home = (g.home_team_id == player.team_id) %}
-      {% set opp = g.away_abbrev if is_home else g.home_abbrev %}
-      <tr>
-        <td class="text-secondary small">{{ g.game_date }}</td>
-        <td>{% if is_home %}vs{% else %}@{% endif %} <span class="team-abbrev">{{ opp }}</span></td>
-        <td class="num">{{ g.pa }}</td><td class="num">{{ g.ab }}</td>
-        <td class="num fw-bold">{{ g.hits }}</td><td class="num">{{ g.hr }}</td>
-        <td class="num">{{ g.runs }}</td><td class="num">{{ g.rbi }}</td>
-        <td class="num">{{ g.bb }}</td><td class="num">{{ g.k }}</td><td class="num">{{ g.stays }}</td>
-        <td><a href="{{ url_for('game_detail', game_id=g.game_id) }}" class="small">Box</a></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
+{# ======================== FIELDING TAB ======================== #}
+<div class="tab-pane fade" id="tab-fielding">
 
-{% if pitching_log %}
-<div class="dense mb-3">
-  <div class="panel-title">Game Log — Pitching (last {{ pitching_log|length }})</div>
-  <table class="table table-sm dense-table sortable mb-0">
-    <thead><tr>
-      <th>Date</th><th>Opp</th>
-      <th class="num">BF</th><th class="num">OUT</th><th class="num">H</th><th class="num">R</th><th class="num">BB</th><th class="num">K</th><th data-nosort></th>
-    </tr></thead>
-    <tbody>
-      {% for g in pitching_log %}
-      {% set is_home = (g.home_team_id == player.team_id) %}
-      {% set opp = g.away_abbrev if is_home else g.home_abbrev %}
-      <tr>
-        <td class="text-secondary small">{{ g.game_date }}</td>
-        <td>{% if is_home %}vs{% else %}@{% endif %} <span class="team-abbrev">{{ opp }}</span></td>
-        <td class="num">{{ g.batters_faced }}</td><td class="num">{{ g.outs_recorded }}</td>
-        <td class="num">{{ g.hits_allowed }}</td><td class="num">{{ g.runs_allowed }}</td>
-        <td class="num">{{ g.bb }}</td><td class="num fw-bold">{{ g.k }}</td>
-        <td><a href="{{ url_for('game_detail', game_id=g.game_id) }}" class="small">Box</a></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
+  <div class="dense mb-3">
+    <div class="panel-title">Standard Fielding</div>
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th>Pos</th>
+        <th class="num" title="Putouts — outs recorded as the primary fielder on a play">PO</th>
+        <th class="num" title="Errors committed">E</th>
+        <th class="num" title="Total chances (PO + E)">TC</th>
+        <th class="num" title="Fielding percentage = PO / (PO + E)">FldPct</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>{{ player.position }}</td>
+          <td class="num fw-bold">{{ fld_totals.po }}</td>
+          <td class="num">{{ fld_totals.e }}</td>
+          <td class="num">{{ fld_totals.chances }}</td>
+          <td class="num">{% if fld_totals.fld_pct is not none %}{{ '%.3f'|format(fld_totals.fld_pct) }}{% else %}—{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
-{% if not batting_log and not pitching_log %}
-<div class="dense p-4 text-center"><div class="text-secondary">No game stats yet for this player.</div></div>
-{% endif %}
+  <div class="dense mb-3">
+    <div class="panel-title">Defensive Profile (rated)</div>
+    <table class="table table-sm dense-table mb-0">
+      <tbody>
+        {{ rating_row("General defense", player.defense, "Glove / surehandedness — applied at any position") }}
+        {{ rating_row("Arm",             player.arm,     "Throwing strength — matters most at C / OF / SS") }}
+        {{ rating_row("Infield (1B/2B/3B/SS)", player.defense_infield, "Position-group sub-rating") }}
+        {{ rating_row("Outfield (LF/CF/RF)",   player.defense_outfield, "Position-group sub-rating") }}
+        {{ rating_row("Catcher",         player.defense_catcher, "Position-group sub-rating") }}
+      </tbody>
+    </table>
+  </div>
+  {% if bt_totals %}
+  <div class="dense mb-3">
+    <div class="panel-title">Defensive Value</div>
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num">Pos</th>
+        <th class="num" title="Position-aware defense rating (60% sub-group + 40% general)">Def rating</th>
+        <th class="num" title="Defensive Runs Saved scaled by games played and position value">DRS</th>
+        <th class="num" title="Defensive WAR contribution">dWAR</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="num">{{ player.position }}</td>
+          <td class="num">{{ '%.3f'|format(bt_totals.pos_def) }}</td>
+          <td class="num">{{ '%+.1f'|format(bt_totals.drs) }}</td>
+          <td class="num fw-bold">{{ '%+.2f'|format(bt_totals.dwar) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <p class="text-secondary small">Plays are attributed to a fielder by position-weighted probability per BIP type (grounders cluster at SS/2B; flies at CF; etc.). Errors get charged to the responsible position. Assists and double plays aren't yet tracked separately — only PO and E.</p>
+</div>
+
+{# ======================== RATINGS TAB ======================== #}
+<div class="tab-pane fade" id="tab-ratings">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="dense">
+        <div class="panel-title">Hitting</div>
+        <table class="table table-sm dense-table mb-0">
+          <tbody>
+            {{ rating_row("Skill (overall)", player.skill, "Generalized hitter rating") }}
+            {{ rating_row("Power",           player.power, "Bias contact toward hard / boost HR weight") }}
+            {{ rating_row("Contact",         player.contact, "Lower whiff rate; more fouls / in-play") }}
+            {{ rating_row("Eye",             player.eye, "Discipline — more balls taken, fewer called Ks") }}
+            {{ rating_row("Speed",           player.speed, "Base-running and stolen-base ability") }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="dense">
+        <div class="panel-title">Pitching</div>
+        <table class="table table-sm dense-table mb-0">
+          <tbody>
+            {{ rating_row("Stuff (pitcher_skill)", player.pitcher_skill, "Whiffs / swinging strikes") }}
+            {{ rating_row("Command",               player.command, "Lower P(ball) — Maddux archetype") }}
+            {{ rating_row("Movement",              player.movement, "Bias contact toward weak / ground-out") }}
+            {{ rating_row("Stamina",               player.stamina, "Within-game fatigue threshold; workhorse moat") }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="dense">
+        <div class="panel-title">Defense</div>
+        <table class="table table-sm dense-table mb-0">
+          <tbody>
+            {{ rating_row("General defense", player.defense, "Range / glove") }}
+            {{ rating_row("Arm",             player.arm) }}
+            {{ rating_row("Infield",         player.defense_infield) }}
+            {{ rating_row("Outfield",        player.defense_outfield) }}
+            {{ rating_row("Catcher",         player.defense_catcher) }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="dense">
+        <div class="panel-title">Bio &amp; Tactics</div>
+        <table class="table table-sm dense-table mb-0">
+          <tbody>
+            <tr><td class="text-secondary">Position</td><td><strong>{{ player.position }}</strong></td><td></td></tr>
+            <tr><td class="text-secondary">Bats</td><td><strong>{{ player.bats or '—' }}</strong></td><td class="text-secondary small">L / R / S</td></tr>
+            <tr><td class="text-secondary">Throws</td><td><strong>{{ player.throws or '—' }}</strong></td><td class="text-secondary small">L / R</td></tr>
+            <tr><td class="text-secondary">Age</td><td><strong>{{ player.age }}</strong></td><td></td></tr>
+            <tr><td class="text-secondary">Stay aggressiveness</td><td><strong>{{ '%.2f'|format(player.stay_aggressiveness or 0) }}</strong></td><td class="text-secondary small">Probability of staying when eligible</td></tr>
+            <tr><td class="text-secondary">Contact-quality threshold</td><td><strong>{{ '%.2f'|format(player.contact_quality_threshold or 0) }}</strong></td><td class="text-secondary small">Stay-eligibility on medium contact</td></tr>
+            {% if player.injured_until %}
+            <tr><td class="text-secondary">IL status</td><td><strong class="text-warning">{{ player.il_tier or 'IL' }}</strong></td><td class="text-secondary small">Out until {{ player.injured_until }}</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <p class="text-secondary small mt-3">All ratings are on the 20–80 scout scale: 50 = league average, 80 = top of the league, 81–95 = elite-plus (.01% transcendent talents). Independent rolls per attribute, drawn from a 9-tier talent ladder.</p>
+</div>
+
+{# ======================== GAME LOG TAB ======================== #}
+<div class="tab-pane fade" id="tab-gamelog">
+  {% if batting_log %}
+  <div class="dense mb-3">
+    <div class="panel-title">Batting — last {{ batting_log|length }} games</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table sortable mb-0">
+      <thead><tr>
+        <th>Date</th><th>Opp</th>
+        <th class="num">PA</th><th class="num">AB</th><th class="num">H</th>
+        <th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
+        <th class="num">R</th><th class="num">RBI</th>
+        <th class="num">BB</th><th class="num">SO</th>
+        <th class="num">HBP</th><th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
+        <th class="num" title="Stays">STY</th>
+        <th class="num" title="Reached on error">ROE</th>
+        <th data-nosort></th>
+      </tr></thead>
+      <tbody>
+        {% for g in batting_log %}
+        {% set is_home = (g.home_team_id == player.team_id) %}
+        {% set opp = g.away_abbrev if is_home else g.home_abbrev %}
+        <tr>
+          <td class="text-secondary small">{{ g.game_date }}</td>
+          <td>{% if is_home %}vs{% else %}@{% endif %} <span class="team-abbrev">{{ opp }}</span></td>
+          <td class="num">{{ g.pa }}</td>
+          <td class="num">{{ g.ab }}</td>
+          <td class="num fw-bold">{{ g.hits }}</td>
+          <td class="num">{{ g.doubles }}</td>
+          <td class="num">{{ g.triples }}</td>
+          <td class="num">{{ g.hr }}</td>
+          <td class="num">{{ g.runs }}</td>
+          <td class="num">{{ g.rbi }}</td>
+          <td class="num">{{ g.bb }}</td>
+          <td class="num">{{ g.k }}</td>
+          <td class="num">{{ g.hbp or 0 }}</td>
+          <td class="num">{{ g.sb or 0 }}</td>
+          <td class="num">{{ g.cs or 0 }}</td>
+          <td class="num">{{ g.fo or 0 }}</td>
+          <td class="num">{{ g.stays }}</td>
+          <td class="num">{{ g.roe or 0 }}</td>
+          <td><a href="{{ url_for('game_detail', game_id=g.game_id) }}" class="small">Box</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pitching_log %}
+  <div class="dense mb-3">
+    <div class="panel-title">Pitching — last {{ pitching_log|length }} appearances</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table sortable mb-0">
+      <thead><tr>
+        <th>Date</th><th>Opp</th>
+        <th class="num">BF</th><th class="num">Outs</th>
+        <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+        <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
+        <th class="num">P</th>
+        <th data-nosort></th>
+      </tr></thead>
+      <tbody>
+        {% for g in pitching_log %}
+        {% set is_home = (g.home_team_id == player.team_id) %}
+        {% set opp = g.away_abbrev if is_home else g.home_abbrev %}
+        <tr>
+          <td class="text-secondary small">{{ g.game_date }}</td>
+          <td>{% if is_home %}vs{% else %}@{% endif %} <span class="team-abbrev">{{ opp }}</span></td>
+          <td class="num">{{ g.batters_faced }}</td>
+          <td class="num">{{ g.outs_recorded }}</td>
+          <td class="num">{{ g.hits_allowed }}</td>
+          <td class="num">{{ g.runs_allowed }}</td>
+          <td class="num">{{ g.er }}</td>
+          <td class="num">{{ g.bb }}</td>
+          <td class="num fw-bold">{{ g.k }}</td>
+          <td class="num">{{ g.hr_allowed or 0 }}</td>
+          <td class="num">{{ g.pitches or 0 }}</td>
+          <td><a href="{{ url_for('game_detail', game_id=g.game_id) }}" class="small">Box</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not batting_log and not pitching_log %}
+  <div class="dense p-4 text-center"><div class="text-secondary">No game stats yet for this player.</div></div>
+  {% endif %}
+</div>
+
+</div> {# /tab-content #}
 
 {% endblock %}

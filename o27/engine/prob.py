@@ -290,6 +290,69 @@ _CONTACT_TABLES = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Per-fielder play attribution
+# ---------------------------------------------------------------------------
+# When a BIP becomes an out (or an error), we pick the fielder responsible
+# for the play using position-weighted probability tables. The picked
+# fielder's player_id is stamped on the outcome dict so the renderer can
+# credit them with PO (or E for errors). Spray-angle / handedness aren't
+# yet tracked per-pitch, so the distributions are coarse — they just
+# match the rough per-position frequencies of where balls in play land.
+
+_FIELDER_WEIGHTS_BY_HIT: dict[str, dict[str, float]] = {
+    # Grounders cluster at SS / 2B; corners + pitcher get fewer.
+    "ground_out":      {"SS": 0.30, "2B": 0.25, "3B": 0.20, "1B": 0.18, "P": 0.04, "C": 0.03},
+    "fielders_choice": {"SS": 0.28, "2B": 0.27, "3B": 0.20, "1B": 0.16, "P": 0.05, "C": 0.04},
+    # Fly balls go to outfielders, CF most often.
+    "fly_out":         {"CF": 0.50, "LF": 0.25, "RF": 0.25},
+    # Liners split roughly between OF and corner IF.
+    "line_out":        {"CF": 0.20, "LF": 0.18, "RF": 0.18, "1B": 0.12, "3B": 0.12, "SS": 0.10, "2B": 0.10},
+    # Errors follow the same distribution as the play would have — whoever
+    # was supposed to make the play muffed it. Default to ground-ball weights
+    # since most errors are infield miscues.
+    "error":           {"SS": 0.30, "2B": 0.25, "3B": 0.20, "1B": 0.18, "P": 0.04, "C": 0.03},
+}
+
+
+def _select_fielder(rng: random.Random, hit_type: str, fielding_team) -> Optional[str]:
+    """Return the player_id of the fielder credited with the play, or None
+    if no per-fielder attribution is meaningful (hits, walks, K's, etc.).
+
+    Looks up the fielding team's lineup to find a player at the chosen
+    position; falls back to None silently if no such position exists in
+    the lineup (e.g. a roster missing a SS).
+    """
+    weights = _FIELDER_WEIGHTS_BY_HIT.get(hit_type)
+    if not weights:
+        return None
+    # Sample a position by weight.
+    total = sum(weights.values())
+    r = rng.random() * total
+    cumulative = 0.0
+    chosen_pos: Optional[str] = None
+    for pos, w in weights.items():
+        cumulative += w
+        if r < cumulative:
+            chosen_pos = pos
+            break
+    if chosen_pos is None:
+        return None
+    # Find a player in the fielding lineup with that canonical position.
+    # Position is stamped on the Player as `position` (currently only
+    # set on engine players via legacy paths) — so we look at the lineup
+    # in roster order. The engine doesn't carry position on Player today;
+    # we use the lineup index as a proxy: with the standard 8-fielders +
+    # SP layout, slots correspond loosely to positions. Until per-Player
+    # position is plumbed, return the lineup member whose stored
+    # `position` matches (Player has no .position currently — fall back
+    # to roster lookup via attribute on Team if available).
+    for p in fielding_team.roster:
+        if getattr(p, "position", "") == chosen_pos:
+            return p.player_id
+    return None
+
+
 def _scale_hard_row(
     row: tuple,
     hr_bonus: float,
@@ -424,6 +487,11 @@ def resolve_contact(
     if hit_type == "fielders_choice" and state.runners_on_base:
         runner_out_idx = _lead_runner_idx(state.bases)
 
+    # Per-fielder play attribution. Stamps the fielder_id of the player
+    # credited with this play (PO for outs, E for errors). Returns None
+    # for hits — those don't get a fielder credit.
+    fielder_id = _select_fielder(rng, hit_type, fielding)
+
     return {
         "hit_type": hit_type,
         "batter_safe": batter_safe,
@@ -431,6 +499,7 @@ def resolve_contact(
         "runner_advances": runner_adv,
         "runner_out_idx": runner_out_idx,
         "is_error": is_error,
+        "fielder_id": fielder_id,
     }
 
 

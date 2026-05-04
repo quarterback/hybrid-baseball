@@ -122,6 +122,11 @@ class Player:
     bats:   str = ""   # '' | 'L' | 'R' | 'S'
     throws: str = ""   # '' | 'L' | 'R'
 
+    # Canonical defensive position (CF / SS / 2B / 3B / RF / LF / 1B / C /
+    # P / DH / UT). Used by per-fielder play attribution to credit PO/A/E
+    # to the right player.
+    position: str = ""
+
     # Per-spell daily form multiplier on effective Stuff. Re-rolled by the
     # game loop on every `_set_fielding_pitcher` so the same SP can pitch
     # a gem one start and a clunker the next. 1.0 = legacy parity.
