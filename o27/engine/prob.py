@@ -222,10 +222,29 @@ def _runner_advance(
     base_advance: int,
     speed: float,
     extra_chance: float = 0.0,
+    baserunning: float = 0.5,
+    aggressiveness: float = 0.5,
 ) -> int:
-    """Compute bases advanced by one runner; may take an extra base if fast."""
+    """Compute bases advanced by one runner; may take an extra base.
+
+    Three player levers contribute to the extra-base probability:
+      - speed         — raw foot speed (kept for back-compat)
+      - baserunning   — read-off-bat / route / slide skill
+      - aggressiveness — willingness to risk the extra base
+
+    Identity: speed = baserunning = aggressiveness = 0.5 → exactly the
+    pre-baserunning-attribute behavior.
+    """
+    p = extra_chance
+    p += max(0.0, (speed - 0.5) * cfg.RUNNER_EXTRA_SPEED_SCALE)
+    # Baserunning skill carries roughly the same weight as speed — a smart
+    # average-speed runner is just as valuable as a fast raw one.
+    p += max(0.0, (baserunning - 0.5) * cfg.RUNNER_EXTRA_SPEED_SCALE)
+    # Aggressiveness is asymmetric: it can ADD attempts on top of skill,
+    # but a passive runner doesn't subtract attempts below the base read.
+    p += max(0.0, (aggressiveness - 0.5) * 0.5 * cfg.RUNNER_EXTRA_SPEED_SCALE)
     advance = base_advance
-    if rng.random() < extra_chance + max(0.0, (speed - 0.5) * cfg.RUNNER_EXTRA_SPEED_SCALE):
+    if rng.random() < p:
         advance += 1
     return advance
 
@@ -235,6 +254,19 @@ def _get_speed(pid: Optional[str], state: GameState) -> float:
         return 0.5
     p = state.batting_team.get_player(pid) or state.fielding_team.get_player(pid)
     return p.speed if p else 0.5
+
+
+def _get_baserunning(pid: Optional[str], state: GameState) -> tuple[float, float]:
+    """Return (baserunning_skill, run_aggressiveness) for the runner at pid."""
+    if pid is None:
+        return 0.5, 0.5
+    p = state.batting_team.get_player(pid) or state.fielding_team.get_player(pid)
+    if p is None:
+        return 0.5, 0.5
+    return (
+        float(getattr(p, "baserunning", 0.5) or 0.5),
+        float(getattr(p, "run_aggressiveness", 0.5) or 0.5),
+    )
 
 
 def runner_advances_for_hit(
@@ -247,10 +279,15 @@ def runner_advances_for_hit(
     s1 = _get_speed(bases[0], state)
     s2 = _get_speed(bases[1], state)
     s3 = _get_speed(bases[2], state)   # noqa: F841  (3B runner always scores on single+)
+    br1, ag1 = _get_baserunning(bases[0], state)
+    br2, ag2 = _get_baserunning(bases[1], state)
+    br3, ag3 = _get_baserunning(bases[2], state)  # noqa: F841
 
     if hit_type == "single":
-        adv1 = _runner_advance(rng, 1, s1, extra_chance=0.10)
-        adv2 = _runner_advance(rng, 2, s2, extra_chance=0.0)   # usually scores
+        adv1 = _runner_advance(rng, 1, s1, extra_chance=0.10,
+                               baserunning=br1, aggressiveness=ag1)
+        adv2 = _runner_advance(rng, 2, s2, extra_chance=0.0,
+                               baserunning=br2, aggressiveness=ag2)
         adv3 = 1   # 3B always scores on a single
         return [adv1, adv2, adv3]
 
@@ -262,14 +299,18 @@ def runner_advances_for_hit(
 
     elif hit_type in ("ground_out", "fielders_choice"):
         adv1 = 1   # 1B runner always forced to 2B on ground ball
-        adv2 = _runner_advance(rng, 0, s2, extra_chance=0.25)
-        adv3 = _runner_advance(rng, 0, s3, extra_chance=0.35)
+        adv2 = _runner_advance(rng, 0, s2, extra_chance=0.25,
+                               baserunning=br2, aggressiveness=ag2)
+        adv3 = _runner_advance(rng, 0, s3, extra_chance=0.35,
+                               baserunning=br3, aggressiveness=ag3)
         return [adv1, adv2, adv3]
 
     elif hit_type == "fly_out":
         adv1 = 0
         adv2 = 0
-        adv3 = _runner_advance(rng, 0, s3, extra_chance=0.55)  # sac fly
+        # Sac fly: skill matters as much as speed (timing the tag-up).
+        adv3 = _runner_advance(rng, 0, s3, extra_chance=0.55,
+                               baserunning=br3, aggressiveness=ag3)
         return [adv1, adv2, adv3]
 
     elif hit_type == "line_out":

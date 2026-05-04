@@ -72,6 +72,15 @@ class Player:
     # Defaults come from o27.config so all tunables are in one place.
     skill: float = _cfg.PLAYER_DEFAULT_SKILL
     speed: float = _cfg.PLAYER_DEFAULT_SPEED
+    # Baserunning skill — separate from foot speed. Reads off the bat,
+    # turn radius, slide technique, picking up the third-base coach. A
+    # smart-but-slow runner can still take the extra base; a fast-but-
+    # raw runner runs into outs. 0.5 = neutral (identity).
+    baserunning: float = 0.5
+    # Run aggressiveness — willingness to risk the extra base. High
+    # aggressiveness boosts attempt rate but pushes more close plays
+    # toward the cutoff/throw outcome. 0.5 = neutral.
+    run_aggressiveness: float = 0.5
     stay_aggressiveness: float = _cfg.PLAYER_DEFAULT_STAY_AGGRESSIVENESS
     contact_quality_threshold: float = _cfg.PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD
     pitcher_skill: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL
