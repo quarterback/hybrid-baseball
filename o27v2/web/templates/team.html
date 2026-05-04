@@ -71,23 +71,27 @@
         <thead><tr>
           <th>Name</th>
           <th class="num">Age</th>
-          <th class="num">GP</th><th class="num">W</th><th class="num">L</th>
-          <th class="num">ERA</th><th class="num">FIP</th><th class="num">ER</th><th class="num">OUT</th><th class="num">K</th><th class="num">WHIP</th>
+          <th class="num">G</th><th class="num">GS</th><th class="num">W</th><th class="num">L</th>
+          <th class="num" title="Weighted ERA">wERA</th>
+          <th class="num" title="Expected FIP (O27)">xFIP</th>
+          <th class="num">ER</th><th class="num">OUT</th><th class="num">K</th>
+          <th class="num" title="(K + foul-outs) / BF">K%</th>
         </tr></thead>
         <tbody>
         {% for p in pitchers %}
         <tr style="color:#79c0ff">
           <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.pitcher_role %} <span class="text-secondary small">· {{ p.pitcher_role }}</span>{% endif %}</td>
           <td class="num text-secondary">{{ p.age }}</td>
-          <td class="num">{{ p.gp or 0 }}</td>
+          <td class="num">{{ p.gp or p.g or 0 }}</td>
+          <td class="num">{{ p.gs or 0 }}</td>
           <td class="num">{{ p.w or 0 }}</td>
           <td class="num">{{ p.l or 0 }}</td>
-          <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.era) }}">{{ '%.2f'|format(p.era) }}</td>
-          <td class="num" data-sort-value="{{ '%.3f'|format(p.fip) }}">{{ '%.2f'|format(p.fip) }}</td>
+          <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
+          <td class="num" data-sort-value="{{ '%.3f'|format(p.xfip or 0) }}">{{ '%.2f'|format(p.xfip or 0) }}</td>
           <td class="num">{{ p.er or 0 }}</td>
           <td class="num" data-sort-value="{{ p.outs or 0 }}">{{ p.outs or 0 }}</td>
           <td class="num">{{ p.k or 0 }}</td>
-          <td class="num" data-sort-value="{{ '%.3f'|format(p.whip) }}">{{ '%.2f'|format(p.whip) }}</td>
+          <td class="num" data-sort-value="{{ '%.4f'|format(p.k_pct or 0) }}">{{ '%.1f'|format((p.k_pct or 0) * 100) }}%</td>
         </tr>
         {% endfor %}
         </tbody>

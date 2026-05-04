@@ -129,79 +129,57 @@
 {% endmacro %}
 
 {% macro pitching_table(rows, totals, denom_outs, consolidated=False) %}
+{# Box score row (locked spec): G | GSc | OUT | BF | P | OS% | H | R | ER | BB | K | HR | FO #}
 <div class="table-responsive">
 <table class="table table-sm dense-table mb-0">
   <thead><tr>
     <th>Pitcher</th>
-    <th class="num">BF</th><th class="num">OS%</th><th class="num">OUT</th>
+    <th class="num" title="Games — 1 per row in box score; sums in Totals">G</th>
+    <th class="num" title="Per-appearance Game Score (50 = league avg)">GSc</th>
+    <th class="num">OUT</th><th class="num">BF</th>
+    <th class="num" title="Pitches thrown">P</th>
+    <th class="num" title="Outs share — % of a 27-out half">OS%</th>
     <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
     <th class="num">BB</th><th class="num">K</th><th class="num">HR</th>
-    <th class="num">HBP</th><th class="num">UER</th>
-    <th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
-    <th class="num" title="Pitches thrown">P</th>
-    {% if consolidated %}
-    <th class="num">ERA</th><th class="num">WHIP</th><th class="num">K/27</th>
-    {% endif %}
+    <th class="num" title="Foul-outs induced (3-foul rule)">FO</th>
   </tr></thead>
   <tbody>
   {% for p in rows %}
   <tr>
     <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
-    <td class="num">{{ p.batters_faced }}</td>
-    <td class="num text-secondary">{{ os_pct(p.outs_recorded or 0, denom_outs) }}</td>
+    <td class="num">1</td>
+    <td class="num fw-bold">{{ '%.0f'|format(p.gsc_avg or 0) }}</td>
     <td class="num">{{ p.outs_recorded }}</td>
+    <td class="num">{{ p.batters_faced }}</td>
+    <td class="num">{{ p.pitches or 0 }}</td>
+    <td class="num text-secondary">{{ os_pct(p.outs_recorded or 0, denom_outs) }}</td>
     <td class="num">{{ p.hits_allowed }}</td>
     <td class="num">{{ p.runs_allowed }}</td>
     <td class="num">{{ p.er if p.er is not none else p.runs_allowed }}</td>
     <td class="num">{{ p.bb }}</td>
     <td class="num fw-bold">{{ p.k }}</td>
     <td class="num">{{ p.hr_allowed or 0 }}</td>
-    <td class="num">{{ p.hbp_allowed or 0 }}</td>
-    <td class="num">{{ p.unearned_runs or 0 }}</td>
-    <td class="num">{{ p.sb_allowed or 0 }}</td>
-    <td class="num">{{ p.cs_caught or 0 }}</td>
     <td class="num">{{ p.fo_induced or 0 }}</td>
-    <td class="num">{{ p.pitches or 0 }}</td>
-    {% if consolidated %}
-    <td class="num fw-bold">{{ '%.2f'|format(p.era or 0) }}</td>
-    <td class="num">{{ '%.2f'|format(p.whip or 0) }}</td>
-    <td class="num">{{ '%.2f'|format(p.k27 or 0) }}</td>
-    {% endif %}
   </tr>
   {% else %}
-  <tr><td colspan="{{ 19 if consolidated else 16 }}" class="text-secondary text-center">No pitchers in this phase.</td></tr>
+  <tr><td colspan="14" class="text-secondary text-center">No pitchers in this phase.</td></tr>
   {% endfor %}
   {% if rows %}
-  <tr class="fw-bold" style="background:#1f2937">
+  <tr class="fw-bold" style="background:var(--bg-alt)">
     <td>Totals</td>
-    <td class="num">{{ totals.batters_faced }}</td>
-    <td class="num text-secondary">{{ os_pct(totals.outs_recorded, denom_outs) }}</td>
+    <td class="num">{{ rows|length }}</td>
+    <td class="num">{{ '%.0f'|format(totals.gsc_avg or 0) }}</td>
     <td class="num">{{ totals.outs_recorded }}</td>
+    <td class="num">{{ totals.batters_faced }}</td>
+    <td class="num">{{ totals.pitches or 0 }}</td>
+    <td class="num text-secondary">{{ os_pct(totals.outs_recorded, denom_outs) }}</td>
     <td class="num">{{ totals.hits_allowed }}</td>
     <td class="num">{{ totals.runs_allowed }}</td>
     <td class="num">{{ totals.er }}</td>
     <td class="num">{{ totals.bb }}</td>
     <td class="num">{{ totals.k }}</td>
     <td class="num">{{ totals.hr_allowed or 0 }}</td>
-    <td class="num">{{ totals.hbp_allowed or 0 }}</td>
-    <td class="num">{{ totals.unearned_runs or 0 }}</td>
-    <td class="num">{{ totals.sb_allowed or 0 }}</td>
-    <td class="num">{{ totals.cs_caught or 0 }}</td>
     <td class="num">{{ totals.fo_induced or 0 }}</td>
-    <td class="num">{{ totals.pitches or 0 }}</td>
-    {% if consolidated %}
-    {% set t_outs = totals.outs_recorded or 0 %}
-    {% set t_h    = totals.hits_allowed or 0 %}
-    {% set t_bb   = totals.bb or 0 %}
-    {% set t_er   = totals.er or 0 %}
-    {% set t_k    = totals.k or 0 %}
-    {% set t_era  = (t_er * 27 / t_outs) if t_outs else 0 %}
-    {% set t_whip = ((t_h + t_bb) * 27 / t_outs) if t_outs else 0 %}
-    {% set t_k27  = (t_k * 27 / t_outs) if t_outs else 0 %}
-    <td class="num">{{ '%.2f'|format(t_era) }}</td>
-    <td class="num">{{ '%.2f'|format(t_whip) }}</td>
-    <td class="num">{{ '%.2f'|format(t_k27) }}</td>
-    {% endif %}
   </tr>
   {% endif %}
   </tbody>
@@ -339,7 +317,11 @@
                        'runs_allowed': rows | sum(attribute='runs_allowed'),
                        'er': rows | map(attribute='er') | map('default', 0, true) | sum,
                        'bb': rows | sum(attribute='bb'),
-                       'k': rows | sum(attribute='k')} %}
+                       'k': rows | sum(attribute='k'),
+                       'hr_allowed': rows | map(attribute='hr_allowed') | map('default', 0, true) | sum,
+                       'pitches':    rows | map(attribute='pitches')    | map('default', 0, true) | sum,
+                       'fo_induced': rows | map(attribute='fo_induced') | map('default', 0, true) | sum,
+                       'gsc_avg':    (rows | map(attribute='gsc_avg')   | map('default', 0, true) | sum / (rows|length)) if rows else 0} %}
       {{ pitching_table(rows, totals, denom_outs) }}
     </div>
   </div>
@@ -353,7 +335,11 @@
                        'runs_allowed': rows | sum(attribute='runs_allowed'),
                        'er': rows | map(attribute='er') | map('default', 0, true) | sum,
                        'bb': rows | sum(attribute='bb'),
-                       'k': rows | sum(attribute='k')} %}
+                       'k': rows | sum(attribute='k'),
+                       'hr_allowed': rows | map(attribute='hr_allowed') | map('default', 0, true) | sum,
+                       'pitches':    rows | map(attribute='pitches')    | map('default', 0, true) | sum,
+                       'fo_induced': rows | map(attribute='fo_induced') | map('default', 0, true) | sum,
+                       'gsc_avg':    (rows | map(attribute='gsc_avg')   | map('default', 0, true) | sum / (rows|length)) if rows else 0} %}
       {{ pitching_table(rows, totals, denom_outs) }}
     </div>
   </div>

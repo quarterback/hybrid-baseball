@@ -190,6 +190,13 @@ class SpellRecord:
     sb_allowed: int = 0   # successful stolen bases against this pitcher
     cs_caught:  int = 0   # caught-stealing outs while this pitcher was on
     fo_induced: int = 0   # foul-outs (3-foul rule) ending an AB on this pitcher
+    # Arc-bucketed counters for wERA / xFIP / Decay. Indices 0/1/2 cover
+    # outs 1-9 / 10-18 / 19-27 of the defending team's running 27-out half.
+    # Super-innings outs roll into arc 3 (treat as continuation).
+    er_arc:  list = field(default_factory=lambda: [0, 0, 0])
+    k_arc:   list = field(default_factory=lambda: [0, 0, 0])
+    fo_arc:  list = field(default_factory=lambda: [0, 0, 0])
+    bf_arc:  list = field(default_factory=lambda: [0, 0, 0])
 
 
 @dataclass
@@ -378,6 +385,16 @@ class GameState:
     pitcher_fo_induced_this_spell: int = 0  # foul-outs in current spell
     pitcher_errors_this_spell: int = 0      # defensive errors during current spell
                                             # (post-error runs in the spell charge UER)
+    # Arc-bucketed per-spell counters (indices 0/1/2 → arc 1/2/3 of the
+    # defending team's 27-out running half). Reset at spell start.
+    pitcher_er_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
+    pitcher_k_arc_this_spell:  list = field(default_factory=lambda: [0, 0, 0])
+    pitcher_fo_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
+    pitcher_bf_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
+    # Outs at the start of the current PA — used to bucket BF/K/BB/FO so
+    # an out-producing AB charges its event to the arc the AB began in,
+    # not the arc the resulting out crossed into.
+    pa_start_outs: int = 0
     pitcher_start_pa: int = 0          # total_pa_this_half when spell began
     total_pa_this_half: int = 0        # cumulative PA count this half (incremented on PA end)
     current_pitcher_id: Optional[str] = None

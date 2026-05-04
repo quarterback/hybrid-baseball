@@ -577,6 +577,32 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
         sb_allowed = sum(getattr(rec, "sb_allowed", 0) for rec in spells)
         cs_caught  = sum(getattr(rec, "cs_caught",  0) for rec in spells)
         fo_induced = sum(getattr(rec, "fo_induced", 0) for rec in spells)
+
+        # Sum arc-bucketed counters across spells (a pitcher may pitch
+        # discontiguous spells if the manager pulls and re-uses them).
+        def _sum_arc(attr: str) -> tuple[int, int, int]:
+            a1 = a2 = a3 = 0
+            for rec in spells:
+                arc = getattr(rec, attr, [0, 0, 0]) or [0, 0, 0]
+                a1 += arc[0] if len(arc) > 0 else 0
+                a2 += arc[1] if len(arc) > 1 else 0
+                a3 += arc[2] if len(arc) > 2 else 0
+            return a1, a2, a3
+
+        er_a1, er_a2, er_a3 = _sum_arc("er_arc")
+        k_a1,  k_a2,  k_a3  = _sum_arc("k_arc")
+        fo_a1, fo_a2, fo_a3 = _sum_arc("fo_arc")
+        bf_a1, bf_a2, bf_a3 = _sum_arc("bf_arc")
+
+        # is_starter: this pitcher began the game on the mound for this
+        # team. Detect via the first spell's start_batter_num == 1 AND
+        # phase == 0 (regulation half).
+        is_starter = 0
+        if phase == 0 and spells:
+            first = min(spells, key=lambda r: getattr(r, "start_batter_num", 0))
+            if getattr(first, "start_batter_num", 0) == 1:
+                is_starter = 1
+
         rows.append({
             "team_id": team_id,
             "player_id": db_pid,
@@ -596,6 +622,11 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "sb_allowed":    sb_allowed,
             "cs_caught":     cs_caught,
             "fo_induced":    fo_induced,
+            "er_arc1": er_a1, "er_arc2": er_a2, "er_arc3": er_a3,
+            "k_arc1":  k_a1,  "k_arc2":  k_a2,  "k_arc3":  k_a3,
+            "fo_arc1": fo_a1, "fo_arc2": fo_a2, "fo_arc3": fo_a3,
+            "bf_arc1": bf_a1, "bf_arc2": bf_a2, "bf_arc3": bf_a3,
+            "is_starter": is_starter,
         })
     return rows
 
@@ -915,8 +946,13 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                    (game_id, team_id, player_id, phase, batters_faced,
                     outs_recorded, hits_allowed, runs_allowed, er, bb, k,
                     hr_allowed, pitches, hbp_allowed, unearned_runs,
-                    sb_allowed, cs_caught, fo_induced)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    sb_allowed, cs_caught, fo_induced,
+                    er_arc1, er_arc2, er_arc3,
+                    k_arc1,  k_arc2,  k_arc3,
+                    fo_arc1, fo_arc2, fo_arc3,
+                    bf_arc1, bf_arc2, bf_arc3,
+                    is_starter)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
                  r["runs_allowed"], r.get("er", r["runs_allowed"]),
@@ -924,7 +960,12 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                  r.get("hr_allowed", 0), r.get("pitches", 0),
                  r.get("hbp_allowed", 0), r.get("unearned_runs", 0),
                  r.get("sb_allowed", 0), r.get("cs_caught", 0),
-                 r.get("fo_induced", 0)),
+                 r.get("fo_induced", 0),
+                 r.get("er_arc1", 0), r.get("er_arc2", 0), r.get("er_arc3", 0),
+                 r.get("k_arc1",  0), r.get("k_arc2",  0), r.get("k_arc3",  0),
+                 r.get("fo_arc1", 0), r.get("fo_arc2", 0), r.get("fo_arc3", 0),
+                 r.get("bf_arc1", 0), r.get("bf_arc2", 0), r.get("bf_arc3", 0),
+                 r.get("is_starter", 0)),
             )
         for r in team_phase_outs:
             conn.execute(
@@ -1048,15 +1089,25 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
         """INSERT INTO game_pitcher_stats
            (game_id, team_id, player_id, batters_faced, outs_recorded,
             hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches,
-            hbp_allowed, unearned_runs, sb_allowed, cs_caught, fo_induced)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            hbp_allowed, unearned_runs, sb_allowed, cs_caught, fo_induced,
+            er_arc1, er_arc2, er_arc3,
+            k_arc1,  k_arc2,  k_arc3,
+            fo_arc1, fo_arc2, fo_arc3,
+            bf_arc1, bf_arc2, bf_arc3,
+            is_starter)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["batters_faced"],
           r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
           r.get("er", r["runs_allowed"]),
           r["bb"], r["k"], r.get("hr_allowed", 0), r.get("pitches", 0),
           r.get("hbp_allowed", 0), r.get("unearned_runs", 0),
           r.get("sb_allowed", 0), r.get("cs_caught", 0),
-          r.get("fo_induced", 0))
+          r.get("fo_induced", 0),
+          r.get("er_arc1", 0), r.get("er_arc2", 0), r.get("er_arc3", 0),
+          r.get("k_arc1",  0), r.get("k_arc2",  0), r.get("k_arc3",  0),
+          r.get("fo_arc1", 0), r.get("fo_arc2", 0), r.get("fo_arc3", 0),
+          r.get("bf_arc1", 0), r.get("bf_arc2", 0), r.get("bf_arc3", 0),
+          r.get("is_starter", 0))
          for r in rows],
     )
 

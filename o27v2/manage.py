@@ -6,6 +6,7 @@ Usage:
     python o27v2/manage.py initdb   [--config CONFIG_ID]
     python o27v2/manage.py resetdb  [--config CONFIG_ID]
     python o27v2/manage.py sim [N]
+    python o27v2/manage.py backfill_arc          — replay played games via stored seeds to populate arc-bucketed pitcher stats
     python o27v2/manage.py smoke
     python o27v2/manage.py configs              — list available league configs
     python o27v2/manage.py tune [SEASON_GAMES]  — sim a full season, verify Phase 9 targets
@@ -80,6 +81,77 @@ def cmd_sim(n: int = 10):
             print(f"  Game {r['game_id']:4d}: {r['away_team'][:12]:12s} "
                   f"{r['away_score']} – {r['home_score']} {r['home_team'][:12]:12s}{si}")
     print(f"  {len([r for r in results if 'error' not in r])} game(s) simulated.")
+
+
+def cmd_backfill_arc():
+    """Replay every played game with its persisted seed so the new
+    arc-bucketed counters (er_arc1/2/3, k_arc1/2/3, fo_arc1/2/3,
+    bf_arc1/2/3, is_starter) get populated for the historical season.
+
+    Engine output is fully seed-deterministic given roster state, and
+    the games table persists each game's seed (db.py:102, stamped at
+    sim.py:884), so we can reset played=0, wipe per-game stats, and
+    re-run simulate_next_n which will pull the stored seed back via
+    simulate_game's read of `games.seed`.
+
+    NOTE: Trades / injuries / waivers fire deterministically too, but
+    only off the post-game state; resetting per-game stats and clearing
+    the transactions log between replays keeps the reproducibility
+    contract intact.
+    """
+    from o27v2 import db, sim
+    import time
+
+    n_played = db.fetchone("SELECT COUNT(*) AS n FROM games WHERE played=1")
+    n = (n_played or {}).get("n") or 0
+    if n == 0:
+        print("No played games to backfill — nothing to do.")
+        return
+
+    print(f"Backfilling {n} played games (replay via stored seeds)…")
+    print("  Wiping per-game stats and resetting played flags…")
+    db.execute("DELETE FROM game_pitcher_stats")
+    db.execute("DELETE FROM game_batter_stats")
+    db.execute("DELETE FROM team_phase_outs")
+    db.execute("DELETE FROM transactions")
+    db.execute(
+        "UPDATE games SET played=0, home_score=NULL, away_score=NULL, "
+        "winner_id=NULL, super_inning=0 WHERE played=1"
+    )
+    # Restore active rosters for any IL'd players so the replay
+    # starts from the same baseline state seed_league() produced.
+    db.execute("UPDATE players SET injured_until=NULL, il_tier=NULL")
+
+    # Re-set the sim clock to the league's start date so simulate_next_n
+    # walks games in chronological order from day 1.
+    first_game = db.fetchone("SELECT MIN(game_date) AS d FROM games")
+    if first_game and first_game.get("d"):
+        from o27v2.sim import set_sim_date
+        set_sim_date(first_game["d"])
+
+    print("  Re-running games with persisted seeds…")
+    t0 = time.time()
+    completed = 0
+    while True:
+        results = sim.simulate_next_n(50)
+        if not results:
+            break
+        completed += len(results)
+        if completed % 200 == 0 or len(results) < 50:
+            elapsed = time.time() - t0
+            rate = completed / elapsed if elapsed > 0 else 0
+            print(f"    {completed}/{n} games  ({rate:.1f} games/s)")
+    elapsed = time.time() - t0
+    print(f"  Done: {completed} games in {elapsed:.1f}s "
+          f"({completed/elapsed:.1f} games/s).")
+    # Spot-check arc-coverage on what we just stamped.
+    cov = db.fetchone(
+        """SELECT COUNT(*) AS rows,
+                  SUM(CASE WHEN bf_arc1+bf_arc2+bf_arc3 > 0 THEN 1 ELSE 0 END) AS arc_rows
+           FROM game_pitcher_stats"""
+    ) or {}
+    print(f"  Arc coverage: {cov.get('arc_rows', 0)}/{cov.get('rows', 0)} "
+          f"pitcher rows have arc data populated.")
 
 
 def cmd_smoke():
@@ -233,6 +305,8 @@ def main():
         cmd_sim(n)
     elif args[0] == "smoke":
         cmd_smoke()
+    elif args[0] == "backfill_arc":
+        cmd_backfill_arc()
     elif args[0] == "configs":
         cmd_configs()
     elif args[0] == "tune":

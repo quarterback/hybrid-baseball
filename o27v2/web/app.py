@@ -147,7 +147,12 @@ def _gb(leader: dict, team: dict) -> str:
 _PSTATS_DEDUP_SQL = """(
     SELECT game_id, player_id, team_id, batters_faced, outs_recorded,
            hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches,
-           hbp_allowed, unearned_runs, sb_allowed, cs_caught, fo_induced
+           hbp_allowed, unearned_runs, sb_allowed, cs_caught, fo_induced,
+           er_arc1, er_arc2, er_arc3,
+           k_arc1,  k_arc2,  k_arc3,
+           fo_arc1, fo_arc2, fo_arc3,
+           bf_arc1, bf_arc2, bf_arc3,
+           is_starter
     FROM (
         SELECT *,
                ROW_NUMBER() OVER (
@@ -461,30 +466,80 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         b["war"] = bwar_off + b["dwar"]
 
 
-def _league_fip_const() -> float:
-    """Compute the FIP constant for the per-27-outs stat model.
+def _pitcher_game_score(
+    outs: int, k: int, h: int, er: int, uer: int, bb: int, hr: int, fo: int,
+) -> float:
+    """Per-appearance Game Score for an O27 pitcher row.
 
-    Standard MLB FIP = (13*HR + 3*BB - 2*K) / IP * 9 + C, where C is set so
-    that league FIP equals league ERA. In the O27 per-27-outs model we use
-    27/outs in place of 9/IP, and C is re-fit each time against the live
-    league totals so FIP stays anchored to ERA across calibration cycles.
+    Locked formula (with FO bonus):
+        50 + outs + 2·max(0, K - 3) - 2H - 4ER - 2UER - BB - 4HR + 1·fo_induced
+    Clamped to [0, 100]. Foul-outs are O27-cheap outs (the 3-foul rule)
+    and earn their own bonus on top of the implicit +outs credit.
+    """
+    score = (
+        50
+        + outs
+        + 2 * max(0, k - 3)
+        - 2 * h
+        - 4 * er
+        - 2 * uer
+        - bb
+        - 4 * hr
+        + fo
+    )
+    if score < 0:
+        return 0.0
+    if score > 100:
+        return 100.0
+    return float(score)
 
-    Falls back to 3.10 (a reasonable per-game baseline) if no games yet.
+
+def _league_werra_consts() -> tuple[float, float, float]:
+    """Refit (C_w, C_x, league_outs_per_g) per call.
+
+    - C_w anchors league wERA to league raw ER per 27 outs so wERA reads
+      on the same scale as the old ERA: a pitcher whose ER are spread
+      proportionally to the league sees wERA ≈ raw-ER/27, while late-arc
+      damage pulls the metric up and early-arc damage pulls it down.
+    - C_x anchors league xFIP to league wERA so xFIP-vs-wERA gaps
+      isolate batted-ball luck the same way classic FIP-vs-ERA gaps do.
+    - league_outs_per_g feeds OS+ (league-relative outs share).
+
+    Falls back to neutral constants (1.0, 0.0, 5.0) on an empty DB.
     """
     row = db.fetchone(
-        f"""SELECT COALESCE(SUM(hr_allowed),0) as hr,
-                   COALESCE(SUM(bb),0)         as bb,
-                   COALESCE(SUM(k),0)          as k,
-                   COALESCE(SUM(er),0)         as er,
-                   COALESCE(SUM(outs_recorded),0) as outs
+        f"""SELECT COALESCE(SUM(hr_allowed),0)    AS hr,
+                   COALESCE(SUM(bb),0)            AS bb,
+                   COALESCE(SUM(k),0)             AS k,
+                   COALESCE(SUM(fo_induced),0)    AS fo,
+                   COALESCE(SUM(er),0)            AS er,
+                   COALESCE(SUM(outs_recorded),0) AS outs,
+                   COALESCE(SUM(er_arc1),0)       AS era1,
+                   COALESCE(SUM(er_arc2),0)       AS era2,
+                   COALESCE(SUM(er_arc3),0)       AS era3,
+                   COUNT(*)                       AS g
             FROM {_PSTATS_DEDUP_SQL} ps"""
-    )
-    outs = (row or {}).get("outs") or 0
+    ) or {}
+    outs = row.get("outs") or 0
+    g    = row.get("g")    or 0
     if not outs:
-        return 3.10
+        return 1.0, 0.0, 5.0
     league_era = (row["er"] * 27.0) / outs
-    raw_fip    = ((13 * row["hr"]) + (3 * row["bb"]) - (2 * row["k"])) * 27.0 / outs
-    return league_era - raw_fip
+    league_w_raw = (
+        (0.85 * row["era1"] + 1.00 * row["era2"] + 1.20 * row["era3"])
+        * 27.0
+        / outs
+    )
+    c_w = (league_era / league_w_raw) if league_w_raw > 0 else 1.0
+    league_werra = league_w_raw * c_w  # by construction == league_era
+    raw_xfip = (
+        (13 * row["hr"] + 3 * row["bb"] - 2 * (row["k"] + row["fo"]))
+        * 27.0
+        / outs
+    )
+    c_x = league_werra - raw_xfip
+    league_outs_per_g = (outs / g) if g else 5.0
+    return c_w, c_x, league_outs_per_g
 
 
 def _league_baselines() -> dict[str, float]:
@@ -517,7 +572,18 @@ def _league_baselines() -> dict[str, float]:
     pit = db.fetchone(
         f"""SELECT COALESCE(SUM(er),0)            AS er,
                    COALESCE(SUM(runs_allowed),0)  AS r,
-                   COALESCE(SUM(outs_recorded),0) AS outs
+                   COALESCE(SUM(outs_recorded),0) AS outs,
+                   COALESCE(SUM(batters_faced),0) AS bf,
+                   COALESCE(SUM(hits_allowed),0)  AS h,
+                   COALESCE(SUM(bb),0)            AS bb,
+                   COALESCE(SUM(k),0)             AS k,
+                   COALESCE(SUM(hr_allowed),0)    AS hr,
+                   COALESCE(SUM(fo_induced),0)    AS fo,
+                   COALESCE(SUM(unearned_runs),0) AS uer,
+                   COALESCE(SUM(er_arc1),0)       AS era1,
+                   COALESCE(SUM(er_arc2),0)       AS era2,
+                   COALESCE(SUM(er_arc3),0)       AS era3,
+                   COUNT(*)                       AS g
               FROM {_PSTATS_DEDUP_SQL} ps"""
     ) or {}
 
@@ -526,6 +592,8 @@ def _league_baselines() -> dict[str, float]:
         "woba": 0.330, "replacement_woba": 0.280, "replacement_era": 6.00,
         "runs_per_win": 10.0,
         "total_pa": 0.0, "total_outs": 0.0,
+        # New league-level baselines for the wERA / xFIP / GSc+ stack.
+        "league_werra": 5.00, "league_xfip": 5.00, "gsc_avg": 50.0,
     }
 
     pa = bat.get("pa", 0) or 0
@@ -561,6 +629,36 @@ def _league_baselines() -> dict[str, float]:
         out["replacement_era"] = out["era"] * 1.20
         out["total_outs"] = float(pit_outs)
 
+        # league_werra is anchored to league_era by construction (see
+        # _league_werra_consts()); we surface it as its own baseline so
+        # the aggregator can read it without re-fitting.
+        out["league_werra"] = out["era"]
+
+        # league_xfip = league_werra by C_x construction, but we store
+        # the raw value before C_x for diagnostics.
+        league_xfip_raw = (
+            (13 * pit.get("hr", 0) + 3 * pit.get("bb", 0)
+             - 2 * (pit.get("k", 0) + pit.get("fo", 0)))
+            * 27.0 / pit_outs
+        )
+        out["league_xfip"] = out["league_werra"]  # by C_x construction
+
+        # League-average per-appearance Game Score, computed from
+        # per-game means (linear in counts so this matches mean(GSc) for
+        # un-clamped outings).
+        g = pit.get("g") or 0
+        if g:
+            out["gsc_avg"] = _pitcher_game_score(
+                pit_outs / g,
+                (pit.get("k") or 0)  / g,
+                (pit.get("h") or 0)  / g,
+                (pit.get("er") or 0) / g,
+                (pit.get("uer") or 0) / g,
+                (pit.get("bb") or 0) / g,
+                (pit.get("hr") or 0) / g,
+                (pit.get("fo") or 0) / g,
+            )
+
     # Runs-per-win for WAR. Pythagorean-flavored heuristic: in MLB
     # (~9 R/G total), it's ~10. In O27 (~25 R/G total) it's ~18.
     # Formula 9 + sqrt(R/G - per-team) lands roughly correct for both.
@@ -577,87 +675,138 @@ def _league_baselines() -> dict[str, float]:
 def _aggregate_pitcher_rows(
     rows: list[dict],
     wl: dict[int, dict[str, int]] | None = None,
-    fip_const: float | None = None,
+    werra_consts: tuple[float, float, float] | None = None,
     baselines: dict | None = None,
 ) -> None:
-    if fip_const is None:
-        fip_const = _league_fip_const()
+    """Compute the O27 pitcher-stat suite onto each row in place.
+
+    Keys produced:
+      werra, xfip, decay  — three result-tier metrics
+      gsc_avg             — mean Game Score (linear approx from aggregates)
+      os_pct              — outs share per appearance (outs/g/27)
+      os_plus             — league-relative outs share (100 = league avg)
+      aor                 — avg outs per appearance
+      ws_pct              — Workhorse Start % (outs ≥ 18 AND ER ≤ 6 in starts)
+                            -- approximated; precise computation requires
+                            -- per-row data and is done by the player-page
+                            -- aggregator separately.
+      gsc_plus            — league-relative GSc (100 = league avg, higher = better)
+      k_pct, bb_pct, hr_pct (PA-rate; K% includes foul-outs)
+      oavg, babip_allowed, outs_per_pitch, p_per_bf, fo_pct_pit
+      vorp, war           — rebased to wERA
+      w, l                — from the wl map if provided
+    """
+    if werra_consts is None:
+        werra_consts = _league_werra_consts()
+    c_w, c_x, league_outs_per_g = werra_consts
     if baselines is None:
         baselines = {"era": 0.0}
     for p in rows:
         outs = p.get("outs") or 0
-        ip = outs / 3.0
         h = p.get("h") or 0
         bb = p.get("bb") or 0
-        r = p.get("r") or 0
         er = p.get("er") or 0
         k = p.get("k") or 0
         hr = p.get("hr_allowed") or p.get("hra") or 0
         bf = p.get("bf") or p.get("batters_faced") or 0
         hbp_a = p.get("hbp_allowed") or 0
-        p["ip"] = ip
-        # ERA uses earned runs and the per-27-outs denominator (Task #48).
-        p["era"]   = (er * 27.0 / outs) if outs else 0.0
-        # WHIP / K / BB are now per-27 outs (one full O27 game) instead of per-9 IP.
-        p["whip"]  = ((bb + h) * 27.0 / outs) if outs else 0.0
-        p["k27"]   = (k  * 27.0 / outs) if outs else 0.0
-        p["bb27"]  = (bb * 27.0 / outs) if outs else 0.0
-        p["hr27"]  = (hr * 27.0 / outs) if outs else 0.0
-        p["ra27"]  = (r  * 27.0 / outs) if outs else 0.0
-        # Kept under the legacy keys so older templates still render sensibly.
-        p["k9"]    = p["k27"]
-        p["bb9"]   = p["bb27"]
-        p["so_bb"] = (k / bb) if bb else (k * 1.0)
-        # FIP, fit against league ERA each batch (Task #50 calibration).
-        if outs:
-            p["fip"] = ((13 * hr) + (3 * bb) - (2 * k)) * 27.0 / outs + fip_const
+        uer = p.get("unearned_runs") or p.get("uer") or 0
+        fo = p.get("fo_induced") or 0
+        g  = p.get("g") or 0
+
+        er1, er2, er3 = (p.get("er_arc1") or 0,
+                         p.get("er_arc2") or 0,
+                         p.get("er_arc3") or 0)
+        k1, k2, k3    = (p.get("k_arc1") or 0,
+                         p.get("k_arc2") or 0,
+                         p.get("k_arc3") or 0)
+        fo1, fo2, fo3 = (p.get("fo_arc1") or 0,
+                         p.get("fo_arc2") or 0,
+                         p.get("fo_arc3") or 0)
+        bf1, bf2, bf3 = (p.get("bf_arc1") or 0,
+                         p.get("bf_arc2") or 0,
+                         p.get("bf_arc3") or 0)
+        gs = p.get("gs") or p.get("starts") or 0
+
+        # --- Result-tier: wERA / xFIP / Decay ---
+        weighted_er = 0.85 * er1 + 1.00 * er2 + 1.20 * er3
+        p["werra"] = (weighted_er * 27.0 / outs) * c_w if outs else 0.0
+        p["xfip"]  = (
+            (13 * hr + 3 * bb - 2 * (k + fo)) * 27.0 / outs + c_x
+        ) if outs else 0.0
+        # Decay: K%_arc1 - K%_arc3 (× 100). K% here counts foul-outs as Ks.
+        if bf1 > 0 and bf3 > 0:
+            kp1 = (k1 + fo1) / bf1
+            kp3 = (k3 + fo3) / bf3
+            p["decay"] = (kp1 - kp3) * 100.0
+            p["decay_known"] = True
         else:
-            p["fip"] = 0.0
-        # Per-BF rate stats (independent of outs — make small samples meaningful).
-        p["k_pct"]  = (k  / bf) if bf else 0.0
+            # Sentinel that sorts to the worst end of "low is better"
+            # leaderboards but doesn't break Jinja sort. Templates check
+            # `decay_known` to decide whether to render the value.
+            p["decay"] = 999.9
+            p["decay_known"] = False
+
+        # --- Workload ---
+        p["aor"]    = (outs / g) if g else 0.0
+        p["os_pct"] = (p["aor"] / 27.0) if g else 0.0  # avg per appearance
+        p["os_plus"] = (
+            (p["aor"] / league_outs_per_g) * 100.0
+        ) if (g and league_outs_per_g) else 100.0
+        # Approx GSc avg from per-game means. Linear in counts so the
+        # aggregate equals mean-GSc when no individual outing is clamped.
+        if g:
+            p["gsc_avg"] = _pitcher_game_score(
+                outs / g, k / g, h / g, er / g, uer / g, bb / g, hr / g, fo / g
+            )
+        else:
+            p["gsc_avg"] = 0.0
+        # ws_pct: Workhorse Start % among starts. The precise per-game
+        # check (outs >= 18 AND er <= 6) needs per-row data; an aggregator
+        # caller that has it will overwrite this. As a placeholder, leave 0.
+        p.setdefault("ws_pct", 0.0)
+
+        # --- PA-rate stats (K% includes foul-outs as locked in spec) ---
+        p["k_pct"]  = ((k + fo) / bf) if bf else 0.0
         p["bb_pct"] = (bb / bf) if bf else 0.0
         p["hr_pct"] = (hr / bf) if bf else 0.0
-        # Opponent batting average + BABIP allowed.
-        # AB faced = BF - BB - HBP. (SF, IBB unavailable in O27.)
+        # K-BB% — composite for box-score row.
+        p["k_minus_bb_pct"] = p["k_pct"] - p["bb_pct"]
+
+        # --- Opponent profile (kept) ---
         ab_faced = max(0, bf - bb - hbp_a)
         p["oavg"] = (h / ab_faced) if ab_faced > 0 else 0.0
         bip_denom = ab_faced - k - hr
         p["babip_allowed"] = ((h - hr) / bip_denom) if bip_denom > 0 else 0.0
+        # oOPS — opponent OPS. oOBP = (H+BB+HBP)/BF; oSLG approx via
+        # (H + 3·HR) / AB_faced because doubles/triples allowed aren't
+        # persisted on the pitcher row. Read as "approximate slug."
+        p["oobp"] = ((h + bb + hbp_a) / bf) if bf else 0.0
+        p["oslg"] = ((h + 3 * hr) / ab_faced) if ab_faced > 0 else 0.0
+        p["oops"] = p["oobp"] + p["oslg"]
 
-        # --- O27-native sabermetrics ---
-        # Pitcher efficiency: outs per pitch. A high-Command groundballer
-        # with cheap outs sits near 0.40+; a max-effort whiffer with deep
-        # counts sits near 0.25.
+        # --- Per-pitch ---
         pitches = p.get("pitches") or 0
         p["outs_per_pitch"] = (outs / pitches) if pitches else 0.0
-        # Pitches per BF — patience-induced pitch count (the inverse: how
-        # hard does each batter make this pitcher work).
         p["p_per_bf"] = (pitches / bf) if bf else 0.0
-        # FO-induced rate per BF (3-foul-out cap is O27-specific).
-        fo_ind = p.get("fo_induced") or 0
-        p["fo_pct_pit"] = (fo_ind / bf) if bf else 0.0
-        # ERA+ — ERA relativized to live league ERA (lower is better, so
-        # the formula inverts: 100 = league average; >100 = better than
-        # league; <100 = worse).
-        league_era = baselines.get("era") or 0
-        if league_era > 0 and p["era"] > 0:
-            p["era_plus"] = (league_era / p["era"]) * 100.0
-        else:
-            p["era_plus"] = 100.0
+        p["fo_pct_pit"] = (fo / bf) if bf else 0.0
 
-        # pVORP — runs saved relative to a replacement-level pitcher with
-        # the same outs-recorded workload. Replacement allows ~120% of
-        # league ERA. Keeping it in run units (not wins) so it's comparable
-        # to bVORP which is also in runs.
-        repl_era = baselines.get("replacement_era") or 0
-        if outs and repl_era:
-            # Runs saved = (replacement RA - my RA) × innings.
-            # Use ra27 (run-against per 27 outs, not er-only) for VORP
-            # because total runs allowed is what matters for value.
-            p["vorp"] = (repl_era - p["era"]) * (outs / 27.0)
+        # --- GSc+ (league-relative; replaces ERA+ as headline index) ---
+        league_gsc = baselines.get("gsc_avg") or 0.0
+        if league_gsc > 0 and p["gsc_avg"] > 0:
+            p["gsc_plus"] = (p["gsc_avg"] / league_gsc) * 100.0
+        else:
+            p["gsc_plus"] = 100.0
+
+        # --- VORP / WAR rebased to wERA ---
+        # Replacement wERA = league_werra × 1.2 (carries the existing
+        # 120% replacement-anchor convention).
+        league_werra_baseline = baselines.get("league_werra") or baselines.get("era") or 0.0
+        repl_werra = league_werra_baseline * 1.20
+        if outs and repl_werra:
+            p["vorp"] = (repl_werra - p["werra"]) * (outs / 27.0)
         else:
             p["vorp"] = 0.0
-        # pWAR — value over replacement converted to wins.
         rpw = baselines.get("runs_per_win") or 10.0
         p["war"] = p["vorp"] / rpw if rpw else 0.0
 
@@ -725,7 +874,8 @@ def index():
     min_pa = max(20, games_played // 30 * 8)
     min_outs = max(9, games_played // 30 * 5)
 
-    top = {"avg": [], "hr": [], "rbi": [], "w": [], "era": [], "k": []}
+    top = {"avg": [], "hr": [], "rbi": [], "w": [], "werra": [], "k": []}
+    baselines = _league_baselines()
     if games_played > 0:
         batting = db.fetchall(
             """SELECT p.id as player_id, p.name as player_name,
@@ -749,10 +899,21 @@ def index():
             f"""SELECT p.id as player_id, p.name as player_name,
                       t.id as team_id, t.abbrev as team_abbrev,
                       SUM(ps.outs_recorded) as outs,
+                      SUM(ps.batters_faced) as bf,
                       SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
                       SUM(ps.er) as er,
                       SUM(ps.bb) as bb, SUM(ps.k) as k,
-                      SUM(ps.hr_allowed) as hr_allowed
+                      SUM(ps.hr_allowed) as hr_allowed,
+                      SUM(ps.pitches) as pitches,
+                      SUM(ps.hbp_allowed) as hbp_allowed,
+                      SUM(ps.unearned_runs) as unearned_runs,
+                      SUM(ps.fo_induced) as fo_induced,
+                      SUM(ps.er_arc1) as er_arc1, SUM(ps.er_arc2) as er_arc2, SUM(ps.er_arc3) as er_arc3,
+                      SUM(ps.k_arc1)  as k_arc1,  SUM(ps.k_arc2)  as k_arc2,  SUM(ps.k_arc3)  as k_arc3,
+                      SUM(ps.fo_arc1) as fo_arc1, SUM(ps.fo_arc2) as fo_arc2, SUM(ps.fo_arc3) as fo_arc3,
+                      SUM(ps.bf_arc1) as bf_arc1, SUM(ps.bf_arc2) as bf_arc2, SUM(ps.bf_arc3) as bf_arc3,
+                      SUM(ps.is_starter) as gs,
+                      COUNT(*) as g
                FROM {_PSTATS_DEDUP_SQL} ps
                JOIN players p ON ps.player_id = p.id
                JOIN teams   t ON ps.team_id = t.id
@@ -761,10 +922,10 @@ def index():
             (min_outs,),
         )
         wl = _pitcher_wl_map()
-        _aggregate_pitcher_rows(pitching, wl)
-        top["w"]   = sorted(pitching, key=lambda x: x["w"], reverse=True)[:5]
-        top["era"] = sorted(pitching, key=lambda x: x["era"])[:5]
-        top["k"]   = sorted(pitching, key=lambda x: x["k"] or 0, reverse=True)[:5]
+        _aggregate_pitcher_rows(pitching, wl, baselines=baselines)
+        top["w"]     = sorted(pitching, key=lambda x: x["w"], reverse=True)[:5]
+        top["werra"] = sorted(pitching, key=lambda x: x["werra"])[:5]
+        top["k"]     = sorted(pitching, key=lambda x: x["k"] or 0, reverse=True)[:5]
 
     return render_template("index.html",
                            today=today,
@@ -965,7 +1126,12 @@ def game_detail(game_id: int):
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs",
-                "sb_allowed", "cs_caught", "fo_induced")
+                "sb_allowed", "cs_caught", "fo_induced",
+                "er_arc1", "er_arc2", "er_arc3",
+                "k_arc1",  "k_arc2",  "k_arc3",
+                "fo_arc1", "fo_arc2", "fo_arc3",
+                "bf_arc1", "bf_arc2", "bf_arc3",
+                "is_starter")
 
     def _dedup_by_player_phase(rows: list, num_fields: tuple) -> list:
         merged: dict[tuple, dict] = {}
@@ -1060,6 +1226,27 @@ def game_detail(game_id: int):
     _decorate_batters(home_batting_consolidated)
     _decorate_pitchers(away_pitching_consolidated)
     _decorate_pitchers(home_pitching_consolidated)
+    # Decorate per-phase rows too so each row in the box score carries
+    # GSc / K-BB% / oOPS for the new column set.
+    _decorate_pitchers(away_pitching_rows)
+    _decorate_pitchers(home_pitching_rows)
+
+    def _decorate_team_totals(rows: list) -> dict:
+        """Build the per-team Totals row used in the pitching macro and
+        run it through the aggregator so it carries gsc_avg / werra etc."""
+        agg = _aggregate_pitching(rows)
+        # _aggregate_pitching only sums the _PIT_NUM fields. Stamp the
+        # short keys the aggregator expects, then decorate.
+        agg["bf"]   = agg.get("batters_faced", 0)
+        agg["outs"] = agg.get("outs_recorded", 0)
+        agg["h"]    = agg.get("hits_allowed", 0)
+        agg["r"]    = agg.get("runs_allowed", 0)
+        agg["g"]    = max(1, len(rows))
+        _aggregate_pitcher_rows([agg], wl=wl, baselines=baselines)
+        return agg
+
+    away_pitching_total = _decorate_team_totals(away_pitching_rows)
+    home_pitching_total = _decorate_team_totals(home_pitching_rows)
 
     away_batting_by_phase = _group_by_phase(away_batting_rows)
     home_batting_by_phase = _group_by_phase(home_batting_rows)
@@ -1126,8 +1313,8 @@ def game_detail(game_id: int):
         home_pitching_by_phase=home_pitching_by_phase,
         away_batting_total=_aggregate_batting(away_batting_rows),
         home_batting_total=_aggregate_batting(home_batting_rows),
-        away_pitching_total=_aggregate_pitching(away_pitching_rows),
-        home_pitching_total=_aggregate_pitching(home_pitching_rows),
+        away_pitching_total=away_pitching_total,
+        home_pitching_total=home_pitching_total,
         away_batting_consolidated=away_batting_consolidated,
         home_batting_consolidated=home_batting_consolidated,
         away_pitching_consolidated=away_pitching_consolidated,
@@ -1234,11 +1421,22 @@ def players():
             r["player_id"]: r for r in db.fetchall(
                 f"""SELECT ps.player_id,
                            COUNT(ps.game_id) AS gp,
+                           COUNT(ps.game_id) AS g,
+                           SUM(ps.batters_faced) AS bf,
                            SUM(ps.outs_recorded) AS outs,
                            SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r,
                            SUM(ps.er) AS er,
                            SUM(ps.bb) AS bb, SUM(ps.k) AS k,
-                           SUM(ps.hr_allowed) AS hr_allowed
+                           SUM(ps.hr_allowed) AS hr_allowed,
+                           SUM(ps.pitches) AS pitches,
+                           SUM(ps.hbp_allowed) AS hbp_allowed,
+                           SUM(ps.unearned_runs) AS unearned_runs,
+                           SUM(ps.fo_induced) AS fo_induced,
+                           SUM(ps.er_arc1) AS er_arc1, SUM(ps.er_arc2) AS er_arc2, SUM(ps.er_arc3) AS er_arc3,
+                           SUM(ps.k_arc1)  AS k_arc1,  SUM(ps.k_arc2)  AS k_arc2,  SUM(ps.k_arc3)  AS k_arc3,
+                           SUM(ps.fo_arc1) AS fo_arc1, SUM(ps.fo_arc2) AS fo_arc2, SUM(ps.fo_arc3) AS fo_arc3,
+                           SUM(ps.bf_arc1) AS bf_arc1, SUM(ps.bf_arc2) AS bf_arc2, SUM(ps.bf_arc3) AS bf_arc3,
+                           SUM(ps.is_starter) AS gs
                     FROM {_PSTATS_DEDUP_SQL} ps
                     WHERE ps.player_id IN ({ph})
                     GROUP BY ps.player_id""",
@@ -1246,13 +1444,14 @@ def players():
             )
         }
         wl = _pitcher_wl_map()
+        baselines = _league_baselines()
         for p in base:
             if not p["is_pitcher"] and kind == "both":
                 continue
             row = dict(p)
             s = pstats.get(p["id"], {})
             row.update(s)
-            _aggregate_pitcher_rows([row], wl)
+            _aggregate_pitcher_rows([row], wl, baselines=baselines)
             pitcher_rows.append(row)
 
     return render_template(
@@ -1397,11 +1596,17 @@ def stats_browse():
                        SUM(ps.k)              as k,
                        SUM(ps.hr_allowed)     as hr_allowed,
                        COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
+                       COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                        COALESCE(SUM(ps.unearned_runs),0) as uer,
                        COALESCE(SUM(ps.sb_allowed),0)    as sb_allowed,
                        COALESCE(SUM(ps.cs_caught),0)     as cs_caught,
                        COALESCE(SUM(ps.fo_induced),0)    as fo_induced,
-                       COALESCE(SUM(ps.pitches),0)       as pitches
+                       COALESCE(SUM(ps.pitches),0)       as pitches,
+                       COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                       COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
+                       COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                       COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                       COALESCE(SUM(ps.is_starter),0) as gs
                 FROM {_PSTATS_DEDUP_SQL} ps
                 JOIN players p ON ps.player_id = p.id
                 JOIN teams   t ON ps.team_id = t.id
@@ -1496,11 +1701,17 @@ def leaders():
                   SUM(ps.k)              as k,
                   SUM(ps.hr_allowed)     as hr_allowed,
                   COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
+                  COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                   COALESCE(SUM(ps.unearned_runs),0) as uer,
                   COALESCE(SUM(ps.sb_allowed),0)    as sb_allowed,
                   COALESCE(SUM(ps.cs_caught),0)     as cs_caught,
                   COALESCE(SUM(ps.fo_induced),0)    as fo_induced,
-                  COALESCE(SUM(ps.pitches),0)       as pitches
+                  COALESCE(SUM(ps.pitches),0)       as pitches,
+                  COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                  COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
+                  COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                  COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                  COALESCE(SUM(ps.is_starter),0) as gs
            FROM {_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
@@ -1508,7 +1719,7 @@ def leaders():
            HAVING SUM(ps.outs_recorded) >= ?""",
         (min_outs,),
     )
-    # Shared helper now produces era/whip/k27/bb27/fip + advanced stats.
+    # Shared helper now produces wERA / xFIP / Decay / GSc / OS+ / AOR / etc.
     wl = _pitcher_wl_map()
     _aggregate_pitcher_rows(pitching, wl, baselines=baselines)
     for p in pitching:
@@ -1586,11 +1797,17 @@ def player_detail(player_id: int):
                    SUM(bb) as bb, SUM(k) as k,
                    SUM(hr_allowed) as hr_allowed,
                    COALESCE(SUM(hbp_allowed),0)   as hbp_allowed,
+                   COALESCE(SUM(unearned_runs),0) as unearned_runs,
                    COALESCE(SUM(unearned_runs),0) as uer,
                    COALESCE(SUM(sb_allowed),0)    as sb_allowed,
                    COALESCE(SUM(cs_caught),0)     as cs_caught,
                    COALESCE(SUM(fo_induced),0)    as fo_induced,
-                   COALESCE(SUM(pitches),0)       as pitches
+                   COALESCE(SUM(pitches),0)       as pitches,
+                   COALESCE(SUM(er_arc1),0) as er_arc1, COALESCE(SUM(er_arc2),0) as er_arc2, COALESCE(SUM(er_arc3),0) as er_arc3,
+                   COALESCE(SUM(k_arc1),0)  as k_arc1,  COALESCE(SUM(k_arc2),0)  as k_arc2,  COALESCE(SUM(k_arc3),0)  as k_arc3,
+                   COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
+                   COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
+                   COALESCE(SUM(is_starter),0) as gs
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
         (player_id,),
     )
@@ -1631,6 +1848,24 @@ def player_detail(player_id: int):
         pt_totals["player_id"] = player_id
         _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
         pt_totals["os_pct"] = (outs / (27.0 * pt["g"])) if pt["g"] else 0.0
+        # Workhorse Start %: count of starts (is_starter=1, phase=0) where
+        # outs >= 18 AND er <= 6, over total starts. Per-row data is the
+        # only honest way to compute this — aggregate counts can't tell
+        # us per-game distribution.
+        ws_row = db.fetchone(
+            f"""SELECT
+                  COALESCE(SUM(CASE WHEN is_starter=1 THEN 1 ELSE 0 END),0) AS gs,
+                  COALESCE(SUM(CASE WHEN is_starter=1
+                                     AND outs_recorded >= 18
+                                     AND er <= 6
+                                THEN 1 ELSE 0 END),0) AS ws
+                FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
+            (player_id,),
+        ) or {}
+        ws_starts = ws_row.get("gs") or 0
+        ws_qual   = ws_row.get("ws") or 0
+        pt_totals["ws_pct"] = (ws_qual / ws_starts) if ws_starts else 0.0
+        pt_totals["gs"]     = ws_starts
 
     return render_template(
         "player.html",
@@ -1695,11 +1930,19 @@ def team_detail(team_id: int):
                        SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r, SUM(ps.er) AS er,
                        SUM(ps.bb) AS bb, SUM(ps.k) AS k,
                        SUM(ps.hr_allowed) AS hr_allowed,
+                       SUM(ps.pitches) AS pitches,
+                       COUNT(*) AS g,
                        COALESCE(SUM(ps.hbp_allowed),0)   AS hbp_allowed,
+                       COALESCE(SUM(ps.unearned_runs),0) AS unearned_runs,
                        COALESCE(SUM(ps.unearned_runs),0) AS uer,
                        COALESCE(SUM(ps.sb_allowed),0)    AS sb_allowed,
                        COALESCE(SUM(ps.cs_caught),0)     AS cs_caught,
-                       COALESCE(SUM(ps.fo_induced),0)    AS fo_induced
+                       COALESCE(SUM(ps.fo_induced),0)    AS fo_induced,
+                       COALESCE(SUM(ps.er_arc1),0) AS er_arc1, COALESCE(SUM(ps.er_arc2),0) AS er_arc2, COALESCE(SUM(ps.er_arc3),0) AS er_arc3,
+                       COALESCE(SUM(ps.k_arc1),0)  AS k_arc1,  COALESCE(SUM(ps.k_arc2),0)  AS k_arc2,  COALESCE(SUM(ps.k_arc3),0)  AS k_arc3,
+                       COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1, COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2, COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
+                       COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1, COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2, COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
+                       COALESCE(SUM(ps.is_starter),0) AS gs
                 FROM {_PSTATS_DEDUP_SQL} ps
                 WHERE ps.player_id IN ({ph}) GROUP BY ps.player_id""",
             tuple(ids),
@@ -1707,18 +1950,19 @@ def team_detail(team_id: int):
             pstats[r["player_id"]] = r
 
     wl = _pitcher_wl_map()
+    baselines = _league_baselines()
     batters: list[dict] = []
     pitchers: list[dict] = []
     for p in roster:
         if p["is_pitcher"]:
             row = dict(p)
             row.update(pstats.get(p["id"], {}))
-            _aggregate_pitcher_rows([row], wl)
+            _aggregate_pitcher_rows([row], wl, baselines=baselines)
             pitchers.append(row)
         else:
             row = dict(p)
             row.update(bstats.get(p["id"], {}))
-            _aggregate_batter_rows([row])
+            _aggregate_batter_rows([row], baselines=baselines)
             batters.append(row)
 
     recent = db.fetchall(

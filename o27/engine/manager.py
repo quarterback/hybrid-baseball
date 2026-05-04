@@ -178,6 +178,13 @@ def pitching_change(
             start_batter_num=state.pitcher_start_pa + 1,
             half=state.half,
             super_inning_number=state.super_inning_number,
+            sb_allowed=state.pitcher_sb_allowed_this_spell,
+            cs_caught=state.pitcher_cs_caught_this_spell,
+            fo_induced=state.pitcher_fo_induced_this_spell,
+            er_arc=list(state.pitcher_er_arc_this_spell),
+            k_arc=list(state.pitcher_k_arc_this_spell),
+            fo_arc=list(state.pitcher_fo_arc_this_spell),
+            bf_arc=list(state.pitcher_bf_arc_this_spell),
         )
         state.spell_log.append(spell)
         log.append(f"  PITCHING CHANGE: {old_pitcher.name} exits "
@@ -194,6 +201,14 @@ def pitching_change(
     state.pitcher_hbp_this_spell = 0
     state.pitcher_hr_this_spell = 0
     state.pitcher_pitches_this_spell = 0
+    state.pitcher_sb_allowed_this_spell = 0
+    state.pitcher_cs_caught_this_spell = 0
+    state.pitcher_fo_induced_this_spell = 0
+    state.pitcher_errors_this_spell = 0
+    state.pitcher_er_arc_this_spell = [0, 0, 0]
+    state.pitcher_k_arc_this_spell  = [0, 0, 0]
+    state.pitcher_fo_arc_this_spell = [0, 0, 0]
+    state.pitcher_bf_arc_this_spell = [0, 0, 0]
     state.pitcher_start_pa = state.total_pa_this_half
     log.append(f"  {new_pitcher.name} takes the mound.")
 

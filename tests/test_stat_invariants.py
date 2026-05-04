@@ -500,35 +500,45 @@ def test_invariant_7b_pitcher_row_uniqueness(played_game_ids):
 # ---------------------------------------------------------------------------
 
 def test_invariant_8_fip_anchored_to_era(played_game_ids):
-    """Outs-weighted league FIP (computed by the production
-    `_aggregate_pitcher_rows`) within 0.05 of league ERA.
-
-    Calling the production functions directly — `_league_fip_const()`
-    and `_aggregate_pitcher_rows()` — means a regression in either
-    (formula change, dedup view change, constant-fitting bug) trips
-    this invariant rather than being masked by re-deriving everything
-    from the same raw aggregate. The architect-flagged tautology of
-    "fit-then-check the same formula" is gone: the test now consumes
-    the SAME numbers a user would see on /leaders.
+    """league wERA within 0.05 of league raw ER per 27 outs, AND league
+    xFIP within 0.05 of league wERA. Replaces the legacy FIP-vs-ERA
+    invariant; the wERA / xFIP constants are refit per call so a
+    drift in either should trip this immediately.
 
     Plus an independent ER ≤ R sanity check: per (game, team), the
     sum of pitcher earned-runs cannot exceed the team's actual runs
-    allowed (= the OPPONENT's score in `games`). This catches the
-    bug class where ER calculation drifts above raw runs.
+    allowed (= the OPPONENT's score in `games`).
     """
     from o27v2.web.app import _aggregate_pitcher_rows, _PSTATS_DEDUP_SQL
 
-    # ---- (a) Production-FIP outs-weighted average == league ERA. ----
     extra_a, params_a = _game_filter_clause("ps")
     rows = db.fetchall(
         f"""SELECT ps.player_id,
                    SUM(ps.outs_recorded) AS outs,
+                   SUM(ps.batters_faced) AS bf,
                    SUM(ps.hits_allowed)  AS h,
                    SUM(ps.runs_allowed)  AS r,
                    SUM(ps.er)            AS er,
                    SUM(ps.bb)            AS bb,
                    SUM(ps.k)             AS k,
-                   SUM(ps.hr_allowed)    AS hr_allowed
+                   SUM(ps.hr_allowed)    AS hr_allowed,
+                   COALESCE(SUM(ps.hbp_allowed),0) AS hbp_allowed,
+                   COALESCE(SUM(ps.unearned_runs),0) AS unearned_runs,
+                   COALESCE(SUM(ps.fo_induced),0) AS fo_induced,
+                   COALESCE(SUM(ps.pitches),0) AS pitches,
+                   COALESCE(SUM(ps.er_arc1),0) AS er_arc1,
+                   COALESCE(SUM(ps.er_arc2),0) AS er_arc2,
+                   COALESCE(SUM(ps.er_arc3),0) AS er_arc3,
+                   COALESCE(SUM(ps.k_arc1),0) AS k_arc1,
+                   COALESCE(SUM(ps.k_arc2),0) AS k_arc2,
+                   COALESCE(SUM(ps.k_arc3),0) AS k_arc3,
+                   COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1,
+                   COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2,
+                   COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
+                   COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1,
+                   COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2,
+                   COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
+                   COUNT(*) AS g
               FROM {_PSTATS_DEDUP_SQL} ps
               JOIN games gm ON gm.id = ps.game_id
              WHERE gm.played = 1{extra_a}
@@ -538,38 +548,29 @@ def test_invariant_8_fip_anchored_to_era(played_game_ids):
     if not rows:
         pytest.skip("no pitcher rows in the target DB scope")
 
-    # Use a scope-consistent FIP constant when scoped: re-fit it from the
-    # filtered aggregate so the test compares like-with-like instead of
-    # using the production constant fit against the FULL DB.
-    if _scoped_game_ids() is None:
-        _aggregate_pitcher_rows(rows)
-    else:
-        total_outs_pre = sum(r["outs"] or 0 for r in rows)
-        total_er_pre   = sum(r["er"]   or 0 for r in rows)
-        total_hr       = sum(r["hr_allowed"] or 0 for r in rows)
-        total_bb       = sum(r["bb"]   or 0 for r in rows)
-        total_k        = sum(r["k"]    or 0 for r in rows)
-        if total_outs_pre == 0:
-            pytest.skip("no pitcher outs in scoped subset")
-        scope_era = (total_er_pre * 27.0) / total_outs_pre
-        raw_fip = (
-            (13 * total_hr + 3 * total_bb - 2 * total_k) * 27.0 / total_outs_pre
-        )
-        _aggregate_pitcher_rows(rows, fip_const=scope_era - raw_fip)
+    rows = [dict(r) for r in rows]
+    _aggregate_pitcher_rows(rows)
 
     total_outs = sum(r["outs"] or 0 for r in rows)
     total_er   = sum(r["er"]   or 0 for r in rows)
     if total_outs == 0:
         pytest.skip("no pitcher outs recorded")
-    league_era = (total_er * 27.0) / total_outs
-    league_fip_weighted = (
-        sum((r.get("fip") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
+    league_raw_era = (total_er * 27.0) / total_outs
+    league_werra_weighted = (
+        sum((r.get("werra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
     )
-    assert abs(league_fip_weighted - league_era) < 0.05, (
-        f"outs-weighted league FIP {league_fip_weighted:.4f} not within "
-        f"0.05 of league ERA {league_era:.4f} "
-        f"(delta={league_fip_weighted - league_era:+.4f}); the production "
-        f"`_league_fip_const` / `_aggregate_pitcher_rows` no longer agree"
+    league_xfip_weighted = (
+        sum((r.get("xfip") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
+    )
+    assert abs(league_werra_weighted - league_raw_era) < 0.05, (
+        f"outs-weighted league wERA {league_werra_weighted:.4f} not within "
+        f"0.05 of league raw ER/27 {league_raw_era:.4f}; the production "
+        f"`_league_werra_consts` / `_aggregate_pitcher_rows` no longer agree"
+    )
+    assert abs(league_xfip_weighted - league_werra_weighted) < 0.05, (
+        f"outs-weighted league xFIP {league_xfip_weighted:.4f} not within "
+        f"0.05 of league wERA {league_werra_weighted:.4f}; xFIP constant "
+        f"is no longer anchored to wERA"
     )
 
     # ---- (b) ER <= R per (game, team) ----------------------------------

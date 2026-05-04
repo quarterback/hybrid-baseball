@@ -50,6 +50,19 @@ from typing import Optional
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
+def _arc_index(outs: int) -> int:
+    """Bucket an outs-count into arc 0 (1-9) / arc 1 (10-18) / arc 2 (19-27).
+
+    Super-innings outs (>=27 or in a fresh super-innings half) roll into
+    arc 2 (treat as continuation per the wERA/Decay design).
+    """
+    if outs < 9:
+        return 0
+    if outs < 18:
+        return 1
+    return 2
+
 def _record_out(state: GameState, batter_id: str) -> list[str]:
     """
     Record one out. Handles partnership tracking and super-inning dismissals.
@@ -105,6 +118,11 @@ def _score_run(state: GameState, n: int = 1) -> list[str]:
     state.pitcher_runs_this_spell += n
     if getattr(state, "pitcher_errors_this_spell", 0) > 0:
         state.pitcher_unearned_runs_this_spell += n
+    else:
+        # Earned runs are arc-bucketed at SCORE time (not at reach time)
+        # so wERA's late-arc weighting captures when damage actually
+        # happens in the 27-out continuous innings.
+        state.pitcher_er_arc_this_spell[_arc_index(state.outs)] += n
     return [f"  Run(s) scored: +{n} → {state.batting_team.name} {state.score[team_id]}"]
 
 
@@ -136,6 +154,11 @@ def _end_at_bat(state: GameState) -> list[str]:
         state.batting_team.advance_lineup()
     state.pitcher_spell_count += 1
     state.total_pa_this_half += 1
+    # BF arc anchored to the OUTS the AB started in (not the outs the
+    # AB ends at), so K/BB/FO and BF for the same AB share an arc.
+    state.pitcher_bf_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+    # Snapshot start-of-PA outs for the upcoming PA.
+    state.pa_start_outs = state.outs
     return log
 
 
@@ -204,6 +227,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         if state.count.fouls >= 3:
             log.append(f"  Foul #{state.count.fouls} — FOUL OUT.")
             state.pitcher_fo_induced_this_spell += 1
+            state.pitcher_fo_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
             batter_id = state.current_batter.player_id
             log += _record_out(state, batter_id)
             log += _end_at_bat(state)
@@ -217,6 +241,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         # Foul tip caught = strikeout (§2.4).
         log.append("  Foul tip caught — STRIKEOUT.")
         state.pitcher_k_this_spell += 1
+        state.pitcher_k_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
         batter_id = state.current_batter.player_id
         log += _record_out(state, batter_id)
         log += _end_at_bat(state)
@@ -570,6 +595,10 @@ def _walk(state: GameState) -> list[str]:
     batter = state.current_batter
     log = [f"  WALK — {batter.name} awarded 1B."]
     state.pitcher_bb_this_spell += 1
+    # No bb_arc tracking yet — current spec uses BB only as a per-pitcher
+    # season counter (xFIP / K%-BB%); arc-bucketing it would add cost
+    # without serving the trio. Revisit if a per-arc walk-rate metric
+    # earns a slot.
     state.bases, runs, adv_log = _force_advance_for_walk(state.bases, batter.player_id)
     log += adv_log
     if runs:
@@ -613,6 +642,7 @@ def _strike(state: GameState, log: list, swinging: bool) -> list[str]:
         batter_id = state.current_batter.player_id
         log.append(f"  STRIKEOUT.")
         state.pitcher_k_this_spell += 1
+        state.pitcher_k_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
         log += _record_out(state, batter_id)
         log += _end_at_bat(state)
     return log

@@ -88,9 +88,13 @@
     <thead><tr>
       <th>Name</th><th>Tm</th>
       <th class="num">Age</th>
-      <th class="num">GP</th><th class="num">W</th><th class="num">L</th>
-      <th class="num">ERA</th><th class="num">Outs</th>
-      <th class="num">H</th><th class="num">BB</th><th class="num">K</th><th class="num">WHIP</th>
+      <th class="num">G</th><th class="num">GS</th><th class="num">W</th><th class="num">L</th>
+      <th class="num">Outs</th>
+      <th class="num" title="Weighted ERA">wERA</th>
+      <th class="num" title="Expected FIP (O27)">xFIP</th>
+      <th class="num" title="(K + foul-outs) / BF">K%</th>
+      <th class="num">BB%</th>
+      <th class="num" title="Outs Share Plus (100 = league avg)">OS+</th>
     </tr></thead>
     <tbody>
     {% for p in pitchers %}
@@ -98,15 +102,16 @@
       <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a></td>
       <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
       <td class="num text-secondary">{{ p.age }}</td>
-      <td class="num">{{ p.gp or 0 }}</td>
+      <td class="num">{{ p.gp or p.g or 0 }}</td>
+      <td class="num">{{ p.gs or 0 }}</td>
       <td class="num">{{ p.w or 0 }}</td>
       <td class="num">{{ p.l or 0 }}</td>
-      <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.era) }}">{{ '%.2f'|format(p.era) }}</td>
       <td class="num">{{ p.outs or 0 }}</td>
-      <td class="num">{{ p.h or 0 }}</td>
-      <td class="num">{{ p.bb or 0 }}</td>
-      <td class="num fw-bold">{{ p.k or 0 }}</td>
-      <td class="num" data-sort-value="{{ '%.3f'|format(p.whip) }}">{{ '%.2f'|format(p.whip) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(p.xfip or 0) }}">{{ '%.2f'|format(p.xfip or 0) }}</td>
+      <td class="num">{{ '%.1f'|format((p.k_pct or 0) * 100) }}%</td>
+      <td class="num">{{ '%.1f'|format((p.bb_pct or 0) * 100) }}%</td>
+      <td class="num">{{ (p.os_plus or 100)|round|int }}</td>
     </tr>
     {% endfor %}
     </tbody>
