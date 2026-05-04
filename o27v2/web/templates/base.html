@@ -4,81 +4,382 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}O27 League{% endblock %} — O27 Baseball</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
-    /* Baseball-Reference-inspired light theme: cream background, navy
-       links, thin tan rules, monospace tabular numerics. */
+    /* ============================================================
+       O27 League — design system
+       Baseball-Reference influence: dense, monospace numerics,
+       quiet chrome, navy + red accents on a cream sheet.
+       ============================================================ */
     :root {
-      --bg:        #f5f1e8;   /* page cream */
-      --bg-alt:    #ebe5d4;   /* card header / striped band */
+      --bg:        #f4efe2;   /* page (cream) */
+      --bg-alt:    #ece5d1;   /* card header / striped row */
       --bg-card:   #ffffff;   /* table & card body */
-      --border:    #c8c1ad;   /* tan rule */
-      --border-strong: #8a8676;
+      --bg-soft:   #faf6ea;   /* alt-row stripe */
+      --bg-warm:   #fff7d6;   /* row hover */
+      --border:    #c9c0a6;
+      --border-soft:  #e1d9bf;
+      --border-strong:#7a7250;
       --text:      #1a1a1a;
-      --text-dim:  #5a5a5a;
-      --text-muted:#7a7670;
-      --link:      #002d72;   /* b-ref deep navy */
-      --link-hov:  #c8102e;   /* b-ref red hover */
-      --accent:    #c8102e;   /* red accent (e.g. New League) */
-      --accent-2:  #6b3f00;   /* warm brown for div headers */
-      --good:      #196c2e;
-      --bad:       #b22234;
-    }
-    body { background: var(--bg); color: var(--text); font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
-    .navbar { background: var(--bg-alt) !important; border-bottom: 2px solid var(--border-strong); }
-    .navbar-brand { font-weight: 800; color: var(--link) !important; letter-spacing: .04em; }
-    .nav-link { color: var(--text) !important; font-weight: 500; }
-    .nav-link:hover, .nav-link.active { color: var(--link-hov) !important; }
-    .card { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); }
-    .card-header { background: var(--bg-alt); border-bottom: 1px solid var(--border); color: var(--text); }
-    .table { color: var(--text); --bs-table-bg: transparent; }
-    .table thead th { background: var(--bg-alt); color: var(--text); border-color: var(--border); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
-    .table tbody td { border-color: var(--border); font-size: .85rem; }
-    .table tbody tr:hover { background: #fff7d6; }
-    .table-striped > tbody > tr:nth-of-type(odd) > * { --bs-table-bg-type: #faf6ea; color: var(--text); }
-    .badge-division { font-size: .7rem; padding: .25rem .5rem; }
-    .score-big { font-size: 2.2rem; font-weight: 800; color: var(--text); }
-    .score-label { font-size: .75rem; color: var(--text-dim); text-transform: uppercase; }
-    .stat-pill { display: inline-block; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 3px; padding: 2px 8px; font-size: .78rem; margin: 2px; }
-    .team-abbrev { font-weight: 700; color: var(--link); }
-    .winner-badge { background: var(--good); color: #fff; border-radius: 2px; padding: 1px 6px; font-size: .72rem; }
-    footer { background: var(--bg-alt); border-top: 1px solid var(--border); color: var(--text-dim); font-size: .8rem; }
-    a { color: var(--link); text-decoration: none; }
-    a:hover { color: var(--link-hov); text-decoration: underline; }
-    .btn-primary { background: var(--link); border-color: var(--link); color: #fff; }
-    .btn-primary:hover { background: #003a96; border-color: #003a96; color: #fff; }
-    .btn-secondary { background: var(--bg-alt); border-color: var(--border); color: var(--text); }
-    .btn-secondary:hover { background: #ddd5bb; color: var(--text); }
-    .progress-bar-skill { height: 6px; border-radius: 3px; background: var(--link); }
-    .division-header { color: var(--accent-2); font-weight: 700; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
-    .si-badge { background: #6b3f00; color: #fff; border-radius: 2px; padding: 1px 5px; font-size: .7rem; }
-    .text-secondary { color: var(--text-dim) !important; }
-    .badge.bg-secondary { background-color: #d8d2bf !important; color: var(--text) !important; }
+      --text-dim:  #5b5b5b;
+      --text-muted:#8a826a;
+      --link:      #0a3a73;
+      --link-hov:  #b3162e;
+      --accent:    #b3162e;   /* red accent */
+      --accent-2:  #7a4a00;   /* warm brown for div headers */
+      --good:      #14692c;
+      --bad:       #b3162e;
+      --warn:      #b35d00;
 
-    /* ---- Dense b-ref table aesthetic ---- */
-    .dense { border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--bg-card); }
-    .dense-table { margin: 0; }
-    .dense-table thead th { padding: 4px 8px; white-space: nowrap; user-select: none; position: sticky; top: 0; z-index: 2; background: var(--bg-alt); }
-    .dense-table tbody td { padding: 3px 8px; line-height: 1.3; }
-    .dense-table tbody tr.div-divider td { background: var(--bg-alt); color: var(--accent-2); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-top: 2px solid var(--border-strong); }
-    .num { font-family: "SF Mono", "Menlo", "Consolas", monospace; font-size: .82rem; text-align: right; font-variant-numeric: tabular-nums; }
+      --radius:    3px;
+      --shadow-sm: 0 1px 0 rgba(0,0,0,.04);
+    }
+
+    * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    html, body { background: var(--bg); color: var(--text); }
+    body {
+      font-family: "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
+      font-feature-settings: "ss01", "cv11";
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    h1, h2, h3, h4, h5, h6 { color: var(--text); font-weight: 700; letter-spacing: -.005em; }
+    h1 { font-size: 1.55rem; }
+    h2 { font-size: 1.30rem; }
+    h3 { font-size: 1.10rem; }
+    h4 { font-size: .95rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); margin-bottom: .5rem; }
+
+    /* ---- Links ---- */
+    a { color: var(--link); text-decoration: none; }
+    a:hover { color: var(--link-hov); text-decoration: underline; text-underline-offset: 2px; }
+
+    /* ---- Top bar ---- */
+    .topbar {
+      background: var(--bg-alt);
+      border-bottom: 2px solid var(--border-strong);
+      padding: 8px 18px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .topbar .brand {
+      font-weight: 800;
+      font-size: 1.05rem;
+      color: var(--link) !important;
+      letter-spacing: .04em;
+      white-space: nowrap;
+    }
+    .topbar .brand:hover { color: var(--link-hov) !important; text-decoration: none; }
+    .topbar .nav-link {
+      color: var(--text) !important;
+      font-weight: 500;
+      font-size: .92rem;
+      padding: 4px 10px !important;
+      border-radius: var(--radius);
+    }
+    .topbar .nav-link:hover { color: var(--link) !important; background: rgba(10, 58, 115, .08); }
+    .topbar .nav-link.active { color: var(--accent) !important; font-weight: 700; background: transparent; }
+    .topbar .nav-link.accent { color: var(--accent) !important; }
+    .topbar-spacer { flex: 1; }
+
+    /* ---- Sim widget in topbar ---- */
+    .sim-widget { display: flex; align-items: center; gap: 8px; }
+    .sim-date {
+      font-family: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+      font-size: .82rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 3px 8px;
+      color: var(--text);
+    }
+    .sim-btn {
+      font-size: .85rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: var(--radius);
+      background: var(--good);
+      color: #fff;
+      border: 1px solid #0e5320;
+    }
+    .sim-btn:hover { background: #0e5320; color: #fff; }
+    .sim-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+    /* ---- Cards / panels ---- */
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .panel-head {
+      background: var(--bg-alt);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 10px;
+      font-size: .73rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-head .sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-dim); font-size: .78rem; }
+    .panel-body { padding: 10px 12px; }
+    .panel-body.tight { padding: 0; }
+
+    /* legacy aliases */
+    .dense { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); }
+    .panel-title {
+      background: var(--bg-alt);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 10px;
+      font-size: .73rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* ---- Tables ---- */
+    .table { color: var(--text); --bs-table-bg: transparent; margin: 0; }
+    .table thead th {
+      background: var(--bg-alt);
+      color: var(--text);
+      border: 0;
+      border-bottom: 2px solid var(--border-strong);
+      font-size: .68rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-weight: 700;
+      padding: 6px 8px;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .table tbody td {
+      border: 0;
+      border-top: 1px solid var(--border-soft);
+      padding: 4px 8px;
+      font-size: .86rem;
+      vertical-align: middle;
+    }
+    .table tbody tr:hover { background: var(--bg-warm); }
+    .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: var(--bg-soft); color: var(--text); }
+    .table tbody tr.div-divider td {
+      background: var(--bg-alt);
+      color: var(--accent-2);
+      font-size: .70rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: 5px 8px;
+      border-top: 2px solid var(--border-strong);
+    }
+
+    /* numerics */
+    .num {
+      font-family: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+      font-size: .82rem;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
     th.num { text-align: right; }
-    .sortable thead th { cursor: pointer; }
+    .num.fw-bold { font-weight: 600; }
+
+    /* sortable */
+    .sortable thead th { cursor: pointer; user-select: none; }
     .sortable thead th:hover { color: var(--link); }
-    .sortable thead th .sort-arrow { color: var(--link-hov); margin-left: 3px; font-size: .7rem; }
-    .l5pill { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin: 0 1px; }
+    .sortable thead th .sort-arrow { color: var(--accent); margin-left: 3px; font-size: .7rem; }
+
+    /* compact dense table aliases */
+    .dense-table { margin: 0; }
+    .dense-table thead th { padding: 5px 8px; }
+    .dense-table tbody td { padding: 3px 8px; line-height: 1.3; font-size: .82rem; }
+
+    /* ---- Buttons ---- */
+    .btn {
+      font-size: .85rem;
+      font-weight: 500;
+      border-radius: var(--radius);
+      padding: 4px 12px;
+    }
+    .btn-primary { background: var(--link); border-color: var(--link); color: #fff; }
+    .btn-primary:hover { background: #042c5b; border-color: #042c5b; color: #fff; }
+    .btn-secondary { background: var(--bg-alt); border-color: var(--border); color: var(--text); }
+    .btn-secondary:hover { background: #ddd5bb; border-color: var(--border-strong); color: var(--text); }
+    .btn-warning { background: #d49d3a; border-color: #b6822a; color: #1a1a1a; }
+    .btn-warning:hover { background: #b6822a; color: #1a1a1a; }
+    .btn-success { background: var(--good); border-color: var(--good); color: #fff; }
+    .btn-success:hover { background: #0e5320; color: #fff; }
+    .btn-outline-secondary { background: transparent; border-color: var(--border); color: var(--text); }
+    .btn-outline-secondary:hover { background: var(--bg-alt); border-color: var(--border-strong); color: var(--text); }
+    .btn-link {
+      color: var(--link);
+      text-decoration: none;
+      font-weight: 500;
+      padding: 0;
+      background: transparent;
+      border: 0;
+    }
+    .btn-link:hover { color: var(--link-hov); text-decoration: underline; }
+    .btn-pill {
+      font-size: .75rem;
+      padding: 2px 10px;
+      border-radius: 99px;
+      font-weight: 600;
+    }
+
+    /* ---- Forms ---- */
+    .form-control, .form-select {
+      background: var(--bg-card) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text) !important;
+      font-size: .85rem;
+      border-radius: var(--radius);
+    }
+    .form-control:focus, .form-select:focus {
+      border-color: var(--link) !important;
+      box-shadow: 0 0 0 .2rem rgba(10, 58, 115, .15) !important;
+    }
+    .form-label {
+      color: var(--text-dim);
+      font-size: .75rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    /* ---- Badges ---- */
+    .badge {
+      font-weight: 600;
+      font-size: .7rem;
+      letter-spacing: .03em;
+      padding: 3px 7px;
+      border-radius: 2px;
+    }
+    .badge.bg-secondary { background-color: var(--bg-alt) !important; color: var(--text) !important; border: 1px solid var(--border); }
+    .badge.bg-success   { background-color: var(--good) !important; color: #fff !important; }
+    .badge.bg-danger    { background-color: var(--bad) !important; color: #fff !important; }
+    .badge.bg-warning   { background-color: #d49d3a !important; color: #1a1a1a !important; }
+    .badge.bg-info      { background-color: #0c5074 !important; color: #fff !important; }
+    .badge.bg-primary   { background-color: var(--link) !important; color: #fff !important; }
+
+    /* ---- Specialty visuals ---- */
+    .team-abbrev { font-weight: 700; color: var(--link); letter-spacing: .02em; }
+    a.team-abbrev:hover { color: var(--link-hov); text-decoration: none; }
+    .winner-badge {
+      background: var(--good);
+      color: #fff;
+      border-radius: 2px;
+      padding: 1px 6px;
+      font-size: .7rem;
+      font-weight: 600;
+      letter-spacing: .04em;
+    }
+    .si-badge { background: #6b3f00; color: #fff; border-radius: 2px; padding: 1px 5px; font-size: .7rem; font-weight: 600; }
+
+    .score-big { font-size: 2rem; font-weight: 800; color: var(--text); font-family: "JetBrains Mono", monospace; }
+    .score-label { font-size: .7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; }
+    .stat-pill { display: inline-block; background: var(--bg-soft); border: 1px solid var(--border-soft); border-radius: 2px; padding: 1px 7px; font-size: .76rem; margin: 1px; }
+
+    /* W/L pill bars */
+    .l5pill { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin: 0 1px; vertical-align: middle; }
     .l5pill.w { background: var(--good); }
     .l5pill.l { background: var(--bad); }
     .strk-w { color: var(--good); font-weight: 600; }
     .strk-l { color: var(--bad); font-weight: 600; }
-    .panel-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text); padding: 6px 8px; background: var(--bg-alt); border-bottom: 1px solid var(--border); font-weight: 700; }
-    .filter-bar { background: var(--bg-card); border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px; margin-bottom: 10px; }
-    .filter-bar select, .filter-bar input { background: #fff !important; color: var(--text) !important; border-color: var(--border) !important; }
-    .breadcrumb { --bs-breadcrumb-divider-color: var(--text-dim); }
-    .breadcrumb-item.active { color: var(--text); }
 
-    /* ---- Map dark-theme inline color hexes onto light-theme palette ---- */
+    /* division header in tables */
+    .division-header { color: var(--accent-2); font-weight: 700; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; }
+
+    /* ---- Filter / toolbar ---- */
+    .filter-bar {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      margin-bottom: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 10px;
+    }
+    .filter-bar .form-control, .filter-bar .form-select { font-size: .82rem; padding: 3px 8px; height: auto; }
+
+    /* ---- Footer ---- */
+    footer {
+      background: var(--bg-alt);
+      border-top: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: .76rem;
+      text-align: center;
+      padding: 12px;
+      margin-top: 20px;
+    }
+
+    /* ---- Breadcrumb ---- */
+    .breadcrumb { background: transparent; padding: 0; margin-bottom: 8px; font-size: .82rem; }
+    .breadcrumb-item.active { color: var(--text-dim); }
+
+    /* ---- Tabs ---- */
+    .nav-tabs {
+      border-bottom: 2px solid var(--border-strong);
+      gap: 0;
+    }
+    .nav-tabs .nav-link {
+      color: var(--text-dim);
+      font-weight: 600;
+      font-size: .85rem;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      padding: 8px 14px;
+      border-radius: 0;
+      background: transparent;
+    }
+    .nav-tabs .nav-link:hover { color: var(--text); border-bottom-color: var(--border); background: transparent; }
+    .nav-tabs .nav-link.active { color: var(--accent); border-bottom-color: var(--accent); background: transparent; }
+
+    /* ---- Dropdown ---- */
+    .dropdown-menu {
+      background: var(--bg-card) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius);
+      box-shadow: 0 4px 12px rgba(0,0,0,.08);
+      font-size: .85rem;
+    }
+    .dropdown-item { color: var(--text) !important; padding: 5px 14px; }
+    .dropdown-item:hover { background: var(--bg-alt) !important; color: var(--link) !important; }
+
+    /* ---- Progress bar ---- */
+    .progress { background: var(--bg-soft) !important; border: 1px solid var(--border-soft); border-radius: 2px; }
+
+    /* ---- Modal-ish action card ---- */
+    .action-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+    .action-card .head { font-weight: 700; font-size: .9rem; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+    .action-card .head .close-btn { background: transparent; border: 0; color: var(--text-dim); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 4px; }
+    .action-card .head .close-btn:hover { color: var(--accent); }
+    .action-card .row { row-gap: 8px; }
+
+    /* ---- Map old inline-style hexes onto new palette (defensive) ---- */
     [style*="color:#58a6ff"], [style*="color: #58a6ff"] { color: var(--link) !important; }
     [style*="color:#79c0ff"], [style*="color: #79c0ff"] { color: var(--link-hov) !important; }
     [style*="color:#f0883e"], [style*="color: #f0883e"] { color: var(--accent) !important; }
@@ -88,84 +389,70 @@
     [style*="color:#f85149"], [style*="color: #f85149"] { color: var(--bad) !important; }
     [style*="color:#2ea043"], [style*="color: #2ea043"] { color: var(--good) !important; }
     [style*="color:#e85d5d"], [style*="color: #e85d5d"] { color: var(--bad) !important; }
-    /* Inline backgrounds and borders carrying the old dark palette */
     [style*="background:#0d1117"], [style*="background: #0d1117"] { background: var(--bg-card) !important; }
     [style*="background:#161b22"], [style*="background: #161b22"] { background: var(--bg-alt) !important; }
     [style*="background:#1f2937"], [style*="background: #1f2937"] { background: var(--bg-alt) !important; }
     [style*="background:#21262d"], [style*="background: #21262d"] { background: var(--bg-alt) !important; }
     [style*="background:#f0883e"], [style*="background: #f0883e"] { background: var(--accent) !important; color: #fff !important; }
+    [style*="background:#6f42c1"], [style*="background: #6f42c1"] { background: #5a3aa5 !important; color: #fff !important; }
     [style*="border-color:#30363d"], [style*="border-color: #30363d"] { border-color: var(--border) !important; }
-    [style*="border:1px solid #30363d"], [style*="border: 1px solid #30363d"] { border-color: var(--border) !important; }
-    /* Dropdown menu (b-ref-styled) */
-    .dropdown-menu { background: var(--bg-card) !important; border: 1px solid var(--border) !important; }
-    .dropdown-item { color: var(--text) !important; }
-    .dropdown-item:hover { background: var(--bg-alt) !important; color: var(--link) !important; }
+
+    .text-secondary { color: var(--text-dim) !important; }
+    .text-muted { color: var(--text-muted) !important; }
+
+    /* close button in dark theme — neutralize the invert filter */
+    .btn-close[style*="filter:invert"] { filter: none !important; }
   </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-light">
-  <div class="container-fluid px-4">
-    <a class="navbar-brand" href="{{ url_for('index') }}">⚾ O27 League</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="nav">
-      <ul class="navbar-nav me-auto">
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}"
-            href="{{ url_for('index') }}">Scores</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'standings' %}active{% endif %}"
-            href="{{ url_for('standings') }}">Standings</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'schedule' %}active{% endif %}"
-            href="{{ url_for('schedule') }}">Schedule</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint in ('players','player_detail') %}active{% endif %}"
-            href="{{ url_for('players') }}">Players</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint in ('teams','team_detail') %}active{% endif %}"
-            href="{{ url_for('teams') }}">Teams</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'leaders' %}active{% endif %}"
-            href="{{ url_for('leaders') }}">Leaders</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'stats_browse' %}active{% endif %}"
-            href="{{ url_for('stats_browse') }}">Stats</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}"
-            href="{{ url_for('transactions') }}">Transactions</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}"
-            href="{{ url_for('seasons_index') }}">Seasons</a></li>
-        <li class="nav-item"><a class="nav-link {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}"
-            href="{{ url_for('new_league_get') }}" style="color:#f0883e !important">New League</a></li>
+
+<nav class="topbar">
+  <a class="brand" href="{{ url_for('index') }}">⚾ O27</a>
+  <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}"     href="{{ url_for('index') }}">Scores</a>
+  <a class="nav-link {% if request.endpoint == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a>
+  <a class="nav-link {% if request.endpoint == 'schedule' %}active{% endif %}"  href="{{ url_for('schedule') }}">Schedule</a>
+  <a class="nav-link {% if request.endpoint in ('players','player_detail') %}active{% endif %}" href="{{ url_for('players') }}">Players</a>
+  <a class="nav-link {% if request.endpoint in ('teams','team_detail') %}active{% endif %}"     href="{{ url_for('teams') }}">Teams</a>
+  <a class="nav-link {% if request.endpoint == 'leaders' %}active{% endif %}"   href="{{ url_for('leaders') }}">Leaders</a>
+  <a class="nav-link {% if request.endpoint == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stats</a>
+  <a class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}" href="{{ url_for('transactions') }}">Transactions</a>
+  <a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a>
+  <a class="nav-link accent {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">New League</a>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="sim-widget">
+    <span class="sim-date" id="sim-date-badge"
+          title="Current sim date — earliest unplayed game">
+      {% if sim.season_complete %}Season complete{% else %}{{ sim.current_date }}{% endif %}
+    </span>
+    <div class="btn-group btn-group-sm" id="sim-controls">
+      <button type="button" class="sim-btn" data-sim="today"
+              {% if sim.season_complete %}disabled{% endif %}>Sim Today</button>
+      <button type="button" class="sim-btn dropdown-toggle dropdown-toggle-split"
+              data-bs-toggle="dropdown" aria-expanded="false"
+              {% if sim.season_complete %}disabled{% endif %}>
+        <span class="visually-hidden">More sim options</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="week">Sim Week (7 days)</a></li>
+        <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="month">Sim to End of Month</a></li>
+        <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="all-star">
+          Sim to All-Star Break{% if sim.all_star_date %} ({{ sim.all_star_date }}){% endif %}
+        </a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="season">Sim to End of Season</a></li>
       </ul>
-      <div class="d-flex align-items-center gap-2">
-        <span class="badge bg-secondary" id="sim-date-badge"
-              title="Current sim date — earliest unplayed game">
-          {% if sim.season_complete %}Season complete{% else %}{{ sim.current_date }}{% endif %}
-        </span>
-        <div class="btn-group btn-group-sm" id="sim-controls">
-          <button type="button" class="btn btn-primary" data-sim="today"
-                  {% if sim.season_complete %}disabled{% endif %}>Sim Today</button>
-          <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split"
-                  data-bs-toggle="dropdown" aria-expanded="false"
-                  {% if sim.season_complete %}disabled{% endif %}>
-            <span class="visually-hidden">More sim options</span>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end">
-            <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="week">Sim Week (7 days)</a></li>
-            <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="month">Sim to End of Month</a></li>
-            <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="all-star">
-              Sim to All-Star Break{% if sim.all_star_date %} ({{ sim.all_star_date }}){% endif %}
-            </a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="season">Sim to End of Season</a></li>
-          </ul>
-        </div>
-      </div>
     </div>
   </div>
 </nav>
 
-<div class="container-fluid px-4 py-3">
+<div class="container-fluid px-4 py-3" style="max-width:1500px;margin:0 auto">
   {% block content %}{% endblock %}
 </div>
 
-<footer class="text-center py-3 mt-4">
-  O27 League Simulator — powered by the O27 rules engine (1-inning / 27-out structure)
+<footer>
+  O27 League — single 27-out innings · pesäpallo-influenced stay rule · 3-foul out cap
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -236,7 +523,6 @@
   function sortBy(table, idx, dir) {
     const tbody = table.tBodies[0];
     if (!tbody) return;
-    // Group rows around any "section divider" rows (data-divider) so dividers stay anchored.
     const all = Array.from(tbody.rows);
     const groups = []; let cur = {divider: null, rows: []};
     all.forEach(r => {

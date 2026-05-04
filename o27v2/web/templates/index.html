@@ -1,120 +1,101 @@
 {% extends "base.html" %}
 {% block title %}Scores{% endblock %}
 {% block content %}
+
+{# ============================================================
+   Season-context strip + admin actions
+   ============================================================ #}
 {% if sim.current_date or sim.all_star_date %}
-<div class="card mb-3 p-2 d-flex flex-row gap-3 align-items-center flex-wrap" style="background:#161b22">
+<div class="d-flex flex-wrap align-items-center gap-3 mb-3" style="font-size:.86rem">
   {% if sim.season_complete %}
     <span class="badge bg-success">Season complete</span>
-    <span class="text-secondary small">Final game: {{ sim.last_date }}</span>
+    {% if sim.last_date %}<span class="text-secondary">Final game: <strong class="text-dark">{{ sim.last_date }}</strong></span>{% endif %}
   {% else %}
-    <span class="text-secondary small">Current date</span>
-    <span class="fw-bold" style="color:#58a6ff">{{ sim.current_date }}</span>
-    {% if sim.all_star_date %}
-      <span class="text-secondary small ms-3">All-Star Break</span>
-      <span class="fw-bold" style="color:#f0883e">{{ sim.all_star_date }}</span>
-    {% endif %}
-    {% if sim.last_date %}
-      <span class="text-secondary small ms-3">Season ends</span>
-      <span class="fw-bold text-secondary">{{ sim.last_date }}</span>
-    {% endif %}
+    {% if sim.all_star_date %}<span class="text-secondary">All-Star Break <strong style="color:var(--accent)">{{ sim.all_star_date }}</strong></span>{% endif %}
+    {% if sim.last_date %}<span class="text-secondary">Season ends <strong class="text-dark">{{ sim.last_date }}</strong></span>{% endif %}
   {% endif %}
   <div class="ms-auto d-flex gap-2">
-    <a href="{{ url_for('seasons_index') }}" class="btn btn-sm btn-secondary">Season History</a>
-    <button id="btn-new-season" class="btn btn-sm" style="background:#f0883e;border-color:#f0883e;color:#0d1117;font-weight:700">
-      ⟲ New Season
-    </button>
-    <button id="btn-multi-season" class="btn btn-sm" style="background:#6f42c1;border-color:#6f42c1;color:#fff;font-weight:700">
-      ⚙ Multi-Season Test…
-    </button>
+    <a href="{{ url_for('seasons_index') }}" class="btn btn-sm btn-outline-secondary">Season History</a>
+    <button id="btn-new-season" type="button" class="btn btn-sm btn-warning">⟲ New Season</button>
+    <button id="btn-multi-season" type="button" class="btn btn-sm btn-secondary">⚙ Multi-Season Test</button>
   </div>
 </div>
 
-{# ---- New Season dialog (hidden until activated) ---- #}
-<div id="ns-panel" class="dense mb-3" style="display:none">
-  <div class="panel-title d-flex justify-content-between align-items-center">
+<div id="ns-panel" class="action-card" style="display:none">
+  <div class="head">
     <span>Start a New Season</span>
-    <button id="ns-close" type="button" class="btn-close btn-close-white" style="filter:invert(1)" aria-label="Close"></button>
+    <button type="button" class="close-btn" id="ns-close" aria-label="Close">&times;</button>
   </div>
-  <div class="p-3" id="ns-form">
-    <div class="row g-2 align-items-end">
-      <div class="col-auto">
-        <label class="form-label small text-secondary mb-1">League size</label>
-        <select id="ns-config" class="form-select form-select-sm" style="background:#0d1117;color:#e6edf3;border-color:#30363d">
-          <option value="8teams">8 teams</option>
-          <option value="12teams">12 teams</option>
-          <option value="16teams">16 teams</option>
-          <option value="24teams">24 teams</option>
-          <option value="30teams" selected>30 teams</option>
-          <option value="36teams">36 teams</option>
-        </select>
+  <div class="row g-3 align-items-end">
+    <div class="col-auto">
+      <label class="form-label" for="ns-config">League size</label>
+      <select id="ns-config" class="form-select form-select-sm">
+        <option value="8teams">8 teams</option>
+        <option value="12teams">12 teams</option>
+        <option value="16teams">16 teams</option>
+        <option value="24teams">24 teams</option>
+        <option value="30teams" selected>30 teams</option>
+        <option value="36teams">36 teams</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <label class="form-label" for="ns-seed">RNG seed</label>
+      <input type="number" id="ns-seed" value="42" class="form-control form-control-sm" style="width:110px">
+    </div>
+    <div class="col-auto pb-1">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="ns-archive" checked>
+        <label class="form-check-label small" for="ns-archive" style="text-transform:none;letter-spacing:0">Archive current league first</label>
       </div>
-      <div class="col-auto">
-        <label class="form-label small text-secondary mb-1">RNG seed</label>
-        <input type="number" id="ns-seed" value="42"
-               class="form-control form-control-sm" style="background:#0d1117;color:#e6edf3;border-color:#30363d;width:120px">
-      </div>
-      <div class="col-auto">
-        <div class="form-check mb-1">
-          <input class="form-check-input" type="checkbox" id="ns-archive" checked>
-          <label class="form-check-label small text-secondary" for="ns-archive">
-            Archive current league first
-          </label>
-        </div>
-      </div>
-      <div class="col-auto">
-        <button id="ns-go" type="button" class="btn btn-sm btn-warning">Reset &amp; Reseed</button>
-      </div>
-      <div class="col text-secondary small">
-        Drops the current database and reseeds a fresh league + schedule from your chosen config and seed.
-      </div>
+    </div>
+    <div class="col-auto">
+      <button id="ns-go" type="button" class="btn btn-sm btn-warning">Reset &amp; Reseed</button>
+    </div>
+    <div class="col text-secondary small" style="line-height:1.4">
+      Drops the current database and reseeds a fresh league + schedule from your chosen config and seed.
     </div>
   </div>
 </div>
 
-{# ---- Multi-season runner panel (hidden until activated) ---- #}
-<div id="ms-panel" class="dense mb-3" style="display:none">
-  <div class="panel-title d-flex justify-content-between align-items-center">
+<div id="ms-panel" class="action-card" style="display:none">
+  <div class="head">
     <span>Multi-Season Test Run</span>
-    <button id="ms-close" type="button" class="btn-close btn-close-white" style="filter:invert(1)" aria-label="Close"></button>
+    <button type="button" class="close-btn" id="ms-close" aria-label="Close">&times;</button>
   </div>
-  <div class="p-3" id="ms-form">
-    <div class="row g-2 align-items-end">
-      <div class="col-auto">
-        <label class="form-label small text-secondary mb-1">Seasons</label>
-        <input type="number" id="ms-n" value="3" min="1" max="10"
-               class="form-control form-control-sm" style="background:#0d1117;color:#e6edf3;border-color:#30363d;width:90px">
-      </div>
-      <div class="col-auto">
-        <label class="form-label small text-secondary mb-1">Base seed</label>
-        <input type="number" id="ms-seed" value="42"
-               class="form-control form-control-sm" style="background:#0d1117;color:#e6edf3;border-color:#30363d;width:120px">
-      </div>
-      <div class="col-auto">
-        <label class="form-label small text-secondary mb-1">Config</label>
-        <select id="ms-config" class="form-select form-select-sm" style="background:#0d1117;color:#e6edf3;border-color:#30363d">
-          <option value="8teams">8 teams</option>
-          <option value="12teams">12 teams</option>
-          <option value="16teams">16 teams</option>
-          <option value="24teams">24 teams</option>
-          <option value="30teams" selected>30 teams</option>
-          <option value="36teams">36 teams</option>
-        </select>
-      </div>
-      <div class="col-auto">
-        <button id="ms-start" type="button" class="btn btn-sm btn-primary">Run Now</button>
-      </div>
-      <div class="col text-secondary small">
-        1–10 seasons. Each season: drop DB → reseed (seed = base + n) → simulate end-to-end → archive standings &amp; leaders → run invariant suite. Runs in the background; this panel polls progress and redirects you to Season History when done.
-      </div>
+  <div class="row g-3 align-items-end">
+    <div class="col-auto">
+      <label class="form-label" for="ms-n">Seasons</label>
+      <input type="number" id="ms-n" value="3" min="1" max="10" class="form-control form-control-sm" style="width:80px">
+    </div>
+    <div class="col-auto">
+      <label class="form-label" for="ms-seed">Base seed</label>
+      <input type="number" id="ms-seed" value="42" class="form-control form-control-sm" style="width:110px">
+    </div>
+    <div class="col-auto">
+      <label class="form-label" for="ms-config">Config</label>
+      <select id="ms-config" class="form-select form-select-sm">
+        <option value="8teams">8 teams</option>
+        <option value="12teams">12 teams</option>
+        <option value="16teams">16 teams</option>
+        <option value="24teams">24 teams</option>
+        <option value="30teams" selected>30 teams</option>
+        <option value="36teams">36 teams</option>
+      </select>
+    </div>
+    <div class="col-auto">
+      <button id="ms-start" type="button" class="btn btn-sm btn-primary">Run Now</button>
+    </div>
+    <div class="col text-secondary small" style="line-height:1.4">
+      1–10 seasons. Each: drop DB → reseed (seed = base + n) → simulate → archive standings &amp; leaders → run invariant suite. Background job; redirects to Season History when done.
     </div>
   </div>
-  <div class="p-3 border-top" id="ms-status" style="display:none;border-color:#30363d!important">
+  <div id="ms-status" class="mt-3 pt-3" style="display:none;border-top:1px solid var(--border-soft)">
     <div class="d-flex justify-content-between small mb-1">
       <span id="ms-phase" class="text-secondary">Starting…</span>
       <span id="ms-count" class="text-secondary"></span>
     </div>
-    <div class="progress mb-2" style="background:#0d1117;height:14px">
-      <div id="ms-bar" class="progress-bar" role="progressbar" style="width:0%;background:#6f42c1"></div>
+    <div class="progress mb-2" style="height:12px">
+      <div id="ms-bar" class="progress-bar" role="progressbar" style="width:0%;background:var(--link)"></div>
     </div>
     <div id="ms-detail" class="small text-secondary mb-2"></div>
     <div id="ms-results"></div>
@@ -122,17 +103,22 @@
 </div>
 {% endif %}
 
+{# ============================================================
+   Main grid: scoreboard column + leaders sidebar
+   ============================================================ #}
 <div class="row g-3">
 
   <div class="col-lg-8">
-    {# ---- Today's line scores ---- #}
-    <div class="dense mb-3">
-      <div class="panel-title d-flex justify-content-between align-items-center">
-        <span>Today's Games {% if today %}<span class="text-secondary ms-1" style="font-weight:400">· {{ today }}</span>{% endif %}</span>
-        <a href="{{ url_for('schedule') }}" class="small" style="text-transform:none;letter-spacing:0">Full schedule →</a>
+
+    {# ---- Today ---- #}
+    <div class="panel">
+      <div class="panel-head">
+        <span>Today's Games</span>
+        {% if today %}<span class="sub">· {{ today }}</span>{% endif %}
+        <span class="ms-auto"><a href="{{ url_for('schedule') }}" class="btn-link" style="font-size:.78rem">Full schedule →</a></span>
       </div>
       {% if today_games %}
-      <table class="table table-sm dense-table mb-0">
+      <table class="table dense-table mb-0">
         <thead><tr>
           <th>Away</th><th class="num">R</th><th class="num">H</th>
           <th>Home</th><th class="num">R</th><th class="num">H</th>
@@ -152,28 +138,29 @@
             {% if g.played and g.winner_id == g.home_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
           </td>
           <td class="num fw-bold">{% if g.played %}{{ g.home_score }}{% else %}—{% endif %}</td>
-          <td class="num text-secondary">—</td>
+          <td class="num">{% if g.home_hits is not none %}{{ g.home_hits }}{% else %}—{% endif %}</td>
           <td class="text-secondary small">
             {% if g.played %}Final{% if g.super_inning %} <span class="si-badge ms-1">SI</span>{% endif %}{% else %}Scheduled{% endif %}
           </td>
-          <td>{% if g.played %}<a href="{{ url_for('game_detail', game_id=g.id) }}" class="small">Box</a>{% endif %}</td>
+          <td>{% if g.played %}<a href="{{ url_for('game_detail', game_id=g.id) }}" class="btn-link" style="font-size:.78rem">Box</a>{% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>
       </table>
       {% else %}
-      <div class="p-3 text-center text-secondary small">No games scheduled for today.</div>
+      <div class="panel-body text-center text-secondary small">No games scheduled for today.</div>
       {% endif %}
     </div>
 
-    {# ---- Yesterday's / last played day finals ---- #}
-    <div class="dense mb-3">
-      <div class="panel-title d-flex justify-content-between align-items-center">
-        <span>{% if yesterday %}Last Played · {{ yesterday }}{% else %}Recent Finals{% endif %}</span>
-        <a href="{{ url_for('schedule', status='played') }}" class="small" style="text-transform:none;letter-spacing:0">All results →</a>
+    {# ---- Last played ---- #}
+    <div class="panel">
+      <div class="panel-head">
+        <span>{% if yesterday %}Last Played{% else %}Recent Finals{% endif %}</span>
+        {% if yesterday %}<span class="sub">· {{ yesterday }}</span>{% endif %}
+        <span class="ms-auto"><a href="{{ url_for('schedule', status='played') }}" class="btn-link" style="font-size:.78rem">All results →</a></span>
       </div>
       {% if yesterday_games %}
-      <table class="table table-sm dense-table mb-0">
+      <table class="table dense-table mb-0">
         <thead><tr>
           <th>Away</th><th class="num">R</th>
           <th>Home</th><th class="num">R</th>
@@ -192,23 +179,23 @@
             {% if g.winner_id == g.home_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
           </td>
           <td class="num fw-bold">{{ g.home_score }}</td>
-          <td><a href="{{ url_for('game_detail', game_id=g.id) }}" class="small">Box</a>{% if g.super_inning %}<span class="si-badge ms-1">SI</span>{% endif %}</td>
+          <td><a href="{{ url_for('game_detail', game_id=g.id) }}" class="btn-link" style="font-size:.78rem">Box</a>{% if g.super_inning %} <span class="si-badge ms-1">SI</span>{% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>
       </table>
       {% else %}
-      <div class="p-3 text-center text-secondary small">No games played yet.</div>
+      <div class="panel-body text-center text-secondary small">No games played yet.</div>
       {% endif %}
     </div>
 
-    {# ---- Standings strip ---- #}
-    <div class="dense">
-      <div class="panel-title d-flex justify-content-between align-items-center">
+    {# ---- Division leaders ---- #}
+    <div class="panel">
+      <div class="panel-head">
         <span>Division Leaders</span>
-        <a href="{{ url_for('standings') }}" class="small" style="text-transform:none;letter-spacing:0">Full standings →</a>
+        <span class="ms-auto"><a href="{{ url_for('standings') }}" class="btn-link" style="font-size:.78rem">Full standings →</a></span>
       </div>
-      <table class="table table-sm dense-table mb-0">
+      <table class="table dense-table mb-0">
         <thead><tr>
           <th>Division</th>
           <th>Leader</th><th class="num">W-L</th>
@@ -234,26 +221,23 @@
         </tbody>
       </table>
     </div>
+
   </div>
 
+  {# ---- Top-5 leaders sidebar ---- #}
   <div class="col-lg-4">
-    {# ---- Top-5 leaders mini-tables ---- #}
-    {% macro mini_card(label, rows, val_fmt, val_key, kind) -%}
-    <div class="dense mb-3">
-      <div class="panel-title d-flex justify-content-between align-items-center">
-        <span>{{ label }}</span>
-        <a href="{{ url_for('leaders') }}" class="small" style="text-transform:none;letter-spacing:0">More →</a>
+    {% macro mini_card(label, rows, val_fmt, val_key) -%}
+    <div class="mb-3">
+      <div class="d-flex justify-content-between align-items-baseline mb-1">
+        <strong style="font-size:.78rem;text-transform:uppercase;letter-spacing:.06em">{{ label }}</strong>
+        <a href="{{ url_for('leaders') }}" class="btn-link" style="font-size:.74rem">More →</a>
       </div>
       {% if rows %}
-      <table class="table table-sm dense-table mb-0">
-        <thead><tr>
-          <th class="num" style="width:24px">#</th>
-          <th>Player</th><th>Tm</th><th class="num">{{ label.split(' ·')[0] }}</th>
-        </tr></thead>
+      <table class="table dense-table mb-0" style="border:1px solid var(--border-soft);border-radius:var(--radius)">
         <tbody>
         {% for r in rows %}
         <tr>
-          <td class="text-secondary num" style="width:24px">{{ loop.index }}</td>
+          <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
           <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
           <td><a href="{{ url_for('team_detail', team_id=r.team_id) }}" class="team-abbrev">{{ r.team_abbrev }}</a></td>
           <td class="num fw-bold">{{ val_fmt|format(r[val_key]) }}</td>
@@ -262,19 +246,31 @@
         </tbody>
       </table>
       {% else %}
-      <div class="p-2 text-center text-secondary small">No qualifiers yet.</div>
+      <div class="text-center text-secondary small p-2" style="border:1px solid var(--border-soft);border-radius:var(--radius)">No qualifiers yet.</div>
       {% endif %}
     </div>
     {%- endmacro %}
 
-    {{ mini_card('AVG · Top 5', top.avg, '%.3f', 'avg', 'b') }}
-    {{ mini_card('HR · Top 5',  top.hr,  '%d',   'hr',  'b') }}
-    {{ mini_card('RBI · Top 5', top.rbi, '%d',   'rbi', 'b') }}
-    {{ mini_card('W · Top 5',   top.w,   '%d',   'w',   'p') }}
-    {{ mini_card('wERA · Top 5', top.werra, '%.2f', 'werra', 'p') }}
-    {{ mini_card('K · Top 5',   top.k,   '%d',   'k',   'p') }}
+    <div class="panel">
+      <div class="panel-head"><span>Batting Leaders</span></div>
+      <div class="panel-body">
+        {{ mini_card('AVG · Top 5', top.avg, '%.3f', 'avg') }}
+        {{ mini_card('HR · Top 5',  top.hr,  '%d',   'hr') }}
+        {{ mini_card('RBI · Top 5', top.rbi, '%d',   'rbi') }}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span>Pitching Leaders</span></div>
+      <div class="panel-body">
+        {{ mini_card('W · Top 5',    top.w,     '%d',   'w') }}
+        {{ mini_card('wERA · Top 5', top.werra, '%.2f', 'werra') }}
+        {{ mini_card('K · Top 5',    top.k,     '%d',   'k') }}
+      </div>
+    </div>
   </div>
 </div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -297,7 +293,6 @@
 
   if (!newSeasonBtn || !multiBtn) return;
 
-  // ---- New Season modal ----
   newSeasonBtn.addEventListener('click', () => {
     nsPanel.style.display = 'block';
     msPanel.style.display = 'none';
@@ -326,7 +321,6 @@
     }
   });
 
-  // ---- Multi-Season Test modal ----
   multiBtn.addEventListener('click', () => {
     msPanel.style.display = 'block';
     nsPanel.style.display = 'none';
@@ -337,40 +331,6 @@
     return String(s || '').replace(/[&<>"']/g, c => ({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     }[c]));
-  }
-
-  function renderResults(data) {
-    if (!data || !data.seasons) return '';
-    const totalGames = data.total_games_simmed || 0;
-    const rows = data.seasons.map(s => {
-      const invHtml = (s.invariant_fail > 0)
-        ? `<span style="color:#f85149;font-weight:700">${s.invariant_pass} pass / ${s.invariant_fail} FAIL</span>`
-        : `<span style="color:#2ea043">${s.invariant_pass} pass</span>`;
-      return `<tr>
-        <td class="num">${escapeHtml(s.season_number)}</td>
-        <td class="num text-secondary">${escapeHtml(s.seed)}</td>
-        <td class="num">${escapeHtml(s.games_simmed)}</td>
-        <td><span class="team-abbrev">${escapeHtml(s.champion_abbrev || '—')}</span> ${escapeHtml(s.champion_name || '')}</td>
-        <td class="num">${escapeHtml(s.champion_w)}-${escapeHtml(s.champion_l)}</td>
-        <td class="num">${invHtml}</td>
-        <td><a href="/seasons/${escapeHtml(s.season_id)}" class="small">View →</a></td>
-      </tr>`;
-    }).join('');
-    return `
-      <div class="small text-secondary mb-2">
-        ✓ Completed ${data.n_seasons} season(s) · ${totalGames} games simmed total ·
-        config <strong>${escapeHtml(data.config_id)}</strong> ·
-        base seed <strong>${escapeHtml(data.base_seed)}</strong>
-      </div>
-      <table class="table table-sm dense-table mb-2">
-        <thead><tr>
-          <th class="num">#</th><th class="num">Seed</th><th class="num">Games simmed</th>
-          <th>Champion</th><th class="num">Record</th><th class="num">Invariants</th><th></th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <a href="/seasons" class="btn btn-sm btn-secondary">Open Season History</a>
-    `;
   }
 
   function fmtPhase(p) {
@@ -387,8 +347,8 @@
     if (!s.seasons || !s.seasons.length) return '';
     const rows = s.seasons.map(x => {
       const inv = (x.invariant_fail > 0)
-        ? `<span style="color:#f85149">${x.invariant_pass}p / ${x.invariant_fail}F</span>`
-        : `<span style="color:#2ea043">${x.invariant_pass} pass</span>`;
+        ? `<span class="strk-l">${x.invariant_pass}p / ${x.invariant_fail}F</span>`
+        : `<span class="strk-w">${x.invariant_pass} pass</span>`;
       return `<tr>
         <td class="num">${escapeHtml(x.season_number)}</td>
         <td class="num text-secondary">${escapeHtml(x.year || '—')}</td>
@@ -399,7 +359,7 @@
         <td class="num">${inv}</td>
       </tr>`;
     }).join('');
-    return `<table class="table table-sm dense-table mb-0"><thead><tr>
+    return `<table class="table dense-table mb-0"><thead><tr>
       <th class="num">#</th><th class="num">Year</th><th class="num">Seed</th>
       <th class="num">Games</th><th>Champion</th><th class="num">Record</th><th class="num">Inv</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
@@ -429,10 +389,10 @@
         msStart.disabled = false;
         msStart.textContent = 'Run Now';
         if (s.current_phase === 'done') {
-          msPhase.innerHTML = '<span style="color:#2ea043;font-weight:700">Done ✓ — redirecting to Season History…</span>';
+          msPhase.innerHTML = '<span class="strk-w">Done ✓ — redirecting to Season History…</span>';
           setTimeout(() => { window.location.href = '/seasons'; }, 1200);
         } else if (s.current_phase === 'error') {
-          msResults.innerHTML += `<div style="color:#f85149" class="mt-2 small">Run failed: ${escapeHtml(s.error || 'unknown error')}</div>`;
+          msResults.innerHTML += `<div class="strk-l mt-2 small">Run failed: ${escapeHtml(s.error || 'unknown error')}</div>`;
         }
       }
     } catch (e) { /* ignore transient poll failure */ }
@@ -469,7 +429,6 @@
     }
   });
 
-  // Resume polling if a run is already in flight (e.g. user reloaded).
   fetch('/api/sim/multi-season/status').then(r => r.json()).then(s => {
     if (s.running) {
       msPanel.style.display = 'block';
