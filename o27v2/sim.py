@@ -258,6 +258,8 @@ def _db_team_to_engine(
             defense_infield=_scout.to_unit(p.get("defense_infield") or 50),
             defense_outfield=_scout.to_unit(p.get("defense_outfield") or 50),
             defense_catcher=_scout.to_unit(p.get("defense_catcher") or 50),
+            baserunning=_scout.to_unit(p.get("baserunning") or 50),
+            run_aggressiveness=_scout.to_unit(p.get("run_aggressiveness") or 50),
             position=str(p.get("position") or ""),
         )
         # Stamp workload state on every Player so the manager AI and the

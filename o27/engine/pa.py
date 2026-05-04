@@ -124,6 +124,8 @@ def _end_at_bat(state: GameState) -> list[str]:
         log.append(f"  Multi-hit at-bat: {hits} credited hits.")
     state.count.reset()
     state.current_at_bat_hits = 0
+    # Hit-and-run protection clears at PA boundary — the play is over.
+    state.hit_and_run_active = False
     # Joker AB: clear the override and DO NOT advance the base lineup.
     # The joker insertion was an EXTRA PA — the base lineup position
     # stays the same so the originally-scheduled batter takes the next
@@ -267,6 +269,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     if etype == "stolen_base_attempt":
         base_idx = event["base_idx"]
         success = event.get("success", True)    # Phase 1: explicit; Phase 2: probabilistic
+        is_hit_and_run = bool(event.get("hit_and_run", False))
         runner_id = state.bases[base_idx]
         if runner_id is None:
             log.append("  No runner to steal.")
@@ -276,15 +279,23 @@ def apply_event(state: GameState, event: dict) -> list[str]:
             state.pitcher_sb_allowed_this_spell += 1
             if base_idx + 1 <= 2:
                 state.bases[base_idx + 1] = runner_id
-                log.append(f"  Stolen base — runner advances to "
+                tag = " (hit-and-run)" if is_hit_and_run else ""
+                log.append(f"  Stolen base{tag} — runner advances to "
                             f"{'2B 3B Home'.split()[base_idx]}.")
             else:
                 log += _score_run(state)
                 log.append("  Steal of home — runner scores!")
+            # Flag the rest of this PA for the contact-side bonus when
+            # hit-and-run successfully puts the runner in motion. The
+            # batter is now swinging at most pitches to protect, so K
+            # weight drops. State helper resets the flag at PA boundaries.
+            if is_hit_and_run:
+                state.hit_and_run_active = True
         else:
             state.bases[base_idx] = None
             state.pitcher_cs_caught_this_spell += 1
-            log.append(f"  Runner caught stealing at "
+            tag = " (hit-and-run)" if is_hit_and_run else ""
+            log.append(f"  Runner caught stealing{tag} at "
                        f"{'2B 3B Home'.split()[base_idx]}.")
             log += _record_out(state, runner_id)
         return log
@@ -330,6 +341,61 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     if etype == "pitching_change":
         new_pitcher = event["new_pitcher"]
         log += mgr.pitching_change(state, new_pitcher)
+        return log
+
+    if etype == "sac_bunt":
+        # Manager-called sacrifice bunt. Three resolved outcomes — see
+        # manager.should_bunt for the rolling logic. We synthesize the
+        # base-state changes here without going through the full contact
+        # pipeline (no fielder credit, no error roll — the bunt itself
+        # is the play).
+        outcome = event.get("outcome", "sacrifice")
+        batter = state.current_batter
+        batter_id = batter.player_id
+        log.append(f"  Sacrifice bunt called by manager.")
+        if outcome == "hit":
+            # Bunt for hit — advance every runner one base; batter safe at 1B.
+            new_bases = [None, None, None]
+            runs = 0
+            for idx in (2, 1, 0):
+                pid = state.bases[idx]
+                if pid is None:
+                    continue
+                np = idx + 1
+                if np >= 3:
+                    runs += 1
+                else:
+                    new_bases[np] = pid
+            new_bases[0] = batter_id
+            state.bases = new_bases
+            if runs:
+                log += _score_run(state, runs)
+            log.append(f"  Bunt single — {batter.name} reaches 1B.")
+            # Batter recorded as a hit; the existing _resolve_contact path
+            # logs h/ab — but this synthetic event needs to advance the
+            # at-bat-cycle state itself.
+            state.batting_team.advance_lineup()
+            state.count.reset()
+            state.total_pa_this_half += 1
+        elif outcome == "fail":
+            # Failed bunt — batter out, no advancement (popup or lead-runner
+            # force; we model as runner stays). 10% of bunt calls.
+            log.append(f"  Bunt fails — {batter.name} out, runners hold.")
+            log += _record_out(state, batter_id)
+            state.batting_team.advance_lineup()
+            state.count.reset()
+            state.total_pa_this_half += 1
+        else:
+            # Canonical sacrifice — batter out at 1B, runners advance one.
+            new_bases, runs = wild_pitch_advance(state.bases)
+            state.bases = new_bases
+            if runs:
+                log += _score_run(state, runs)
+            log.append(f"  Sacrifice — {batter.name} out, runners advance.")
+            log += _record_out(state, batter_id)
+            state.batting_team.advance_lineup()
+            state.count.reset()
+            state.total_pa_this_half += 1
         return log
 
     raise ValueError(f"Unknown event type: {etype!r}")

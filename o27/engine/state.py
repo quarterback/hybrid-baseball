@@ -72,6 +72,15 @@ class Player:
     # Defaults come from o27.config so all tunables are in one place.
     skill: float = _cfg.PLAYER_DEFAULT_SKILL
     speed: float = _cfg.PLAYER_DEFAULT_SPEED
+    # Baserunning skill — separate from foot speed. Reads off the bat,
+    # turn radius, slide technique, picking up the third-base coach. A
+    # smart-but-slow runner can still take the extra base; a fast-but-
+    # raw runner runs into outs. 0.5 = neutral (identity).
+    baserunning: float = 0.5
+    # Run aggressiveness — willingness to risk the extra base. High
+    # aggressiveness boosts attempt rate but pushes more close plays
+    # toward the cutoff/throw outcome. 0.5 = neutral.
+    run_aggressiveness: float = 0.5
     stay_aggressiveness: float = _cfg.PLAYER_DEFAULT_STAY_AGGRESSIVENESS
     contact_quality_threshold: float = _cfg.PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD
     pitcher_skill: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL
@@ -371,6 +380,10 @@ class GameState:
     pitcher_start_pa: int = 0          # total_pa_this_half when spell began
     total_pa_this_half: int = 0        # cumulative PA count this half (incremented on PA end)
     current_pitcher_id: Optional[str] = None
+    # Hit-and-run flag — set True when an h&r SB attempt succeeds; the
+    # next pitch resolution applies a multiplicative K-weight reduction
+    # (batter is swinging to protect). Cleared at PA boundaries.
+    hit_and_run_active: bool = False
     spell_log: list = field(default_factory=list)
 
     # --- Multi-hit tracking (within one at-bat) ---

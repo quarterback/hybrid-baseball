@@ -354,6 +354,11 @@ def _make_hitter(
         "defense_infield":  if_g,
         "defense_outfield": of_g,
         "defense_catcher":  cat_g,
+        # Baserunning skill + aggressiveness, independent rolls. A smart
+        # average-speed runner (high baserunning, mid speed) is just as
+        # useful on the bases as a pure burner.
+        "baserunning":        _roll_tier_grade(rng),
+        "run_aggressiveness": _roll_tier_grade(rng),
     }
 
 
@@ -413,6 +418,9 @@ def _make_pitcher(
         "defense_infield":  50,   # pitchers field their own mound; sub-groups neutral
         "defense_outfield": 50,
         "defense_catcher":  50,
+        # Pitchers don't bat in O27 → baserunning is academic. Neutral.
+        "baserunning":        50,
+        "run_aggressiveness": 50,
     }
 
 
@@ -569,8 +577,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
                 age, stamina, is_active,
                 contact, power, eye, command, movement, bats, throws,
                 defense, arm,
-                defense_infield, defense_outfield, defense_catcher)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                defense_infield, defense_outfield, defense_catcher,
+                baserunning, run_aggressiveness)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(team_id, p["name"], p["position"], p["is_pitcher"],
               p["skill"], p["speed"], p["pitcher_skill"],
               p["stay_aggressiveness"], p["contact_quality_threshold"],
@@ -585,6 +594,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
               p.get("defense", 50), p.get("arm", 50),
               p.get("defense_infield", 50),
               p.get("defense_outfield", 50),
-              p.get("defense_catcher", 50))
+              p.get("defense_catcher", 50),
+              p.get("baserunning", 50),
+              p.get("run_aggressiveness", 50))
              for p in players],
         )

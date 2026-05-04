@@ -80,7 +80,11 @@ CREATE TABLE IF NOT EXISTS players (
     arm               INTEGER DEFAULT 50,
     defense_infield   INTEGER DEFAULT 50,
     defense_outfield  INTEGER DEFAULT 50,
-    defense_catcher   INTEGER DEFAULT 50
+    defense_catcher   INTEGER DEFAULT 50,
+    -- Baserunning skill (reads, routes, slides) and aggressiveness
+    -- (willingness to risk extra base). Independent of foot speed.
+    baserunning         INTEGER DEFAULT 50,
+    run_aggressiveness  INTEGER DEFAULT 50
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -367,6 +371,14 @@ def init_db() -> None:
                     "mgr_run_game"):
             try:
                 conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL DEFAULT 0.5")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Baserunning skill + aggressiveness (independent of speed).
+        for col in ("baserunning", "run_aggressiveness"):
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT 50")
                 conn.commit()
             except Exception:
                 pass

@@ -222,12 +222,47 @@ def _runner_advance(
     base_advance: int,
     speed: float,
     extra_chance: float = 0.0,
-) -> int:
-    """Compute bases advanced by one runner; may take an extra base if fast."""
-    advance = base_advance
-    if rng.random() < extra_chance + max(0.0, (speed - 0.5) * cfg.RUNNER_EXTRA_SPEED_SCALE):
-        advance += 1
-    return advance
+    baserunning: float = 0.5,
+    aggressiveness: float = 0.5,
+) -> tuple[int, bool]:
+    """Compute bases advanced by one runner; may take an extra base.
+
+    Three player levers contribute to the extra-base probability:
+      - speed         — raw foot speed (kept for back-compat)
+      - baserunning   — read-off-bat / route / slide skill
+      - aggressiveness — willingness to risk the extra base
+
+    Returns (advance, thrown_out). If thrown_out is True the runner is
+    OUT (TOOTBLAN). The base case — runner advances `base_advance` and is
+    safe — returns (base_advance, False).
+
+    Identity: speed = baserunning = aggressiveness = 0.5 → exactly the
+    pre-baserunning-attribute behavior (no extra-base attempts beyond
+    the explicit `extra_chance` baseline; no outs on the bases).
+    """
+    p_attempt = extra_chance
+    p_attempt += max(0.0, (speed - 0.5) * cfg.RUNNER_EXTRA_SPEED_SCALE)
+    p_attempt += max(0.0, (baserunning - 0.5) * cfg.RUNNER_EXTRA_SPEED_SCALE)
+    p_attempt += max(0.0, (aggressiveness - 0.5) * 0.5 * cfg.RUNNER_EXTRA_SPEED_SCALE)
+
+    if rng.random() >= p_attempt:
+        return base_advance, False
+
+    # Attempt fired. Resolve safe vs out (TOOTBLAN). Safe probability
+    # scales with baserunning skill and modestly with speed; aggressive
+    # runners attempt MORE often (above) but each individual attempt
+    # has the same skill-driven safe rate, so the asymmetry reads as
+    # "aggressive guys run into outs more than passive guys do".
+    safe_p = (
+        cfg.TOOTBLAN_SAFE_BASE
+        + (baserunning - 0.5) * cfg.TOOTBLAN_SKILL_SCALE
+        + (speed       - 0.5) * cfg.TOOTBLAN_SPEED_SCALE
+    )
+    safe_p = max(cfg.TOOTBLAN_SAFE_MIN, min(cfg.TOOTBLAN_SAFE_MAX, safe_p))
+    if rng.random() < safe_p:
+        return base_advance + 1, False
+    # Thrown out trying for the extra base.
+    return base_advance, True
 
 
 def _get_speed(pid: Optional[str], state: GameState) -> float:
@@ -237,46 +272,78 @@ def _get_speed(pid: Optional[str], state: GameState) -> float:
     return p.speed if p else 0.5
 
 
+def _get_baserunning(pid: Optional[str], state: GameState) -> tuple[float, float]:
+    """Return (baserunning_skill, run_aggressiveness) for the runner at pid."""
+    if pid is None:
+        return 0.5, 0.5
+    p = state.batting_team.get_player(pid) or state.fielding_team.get_player(pid)
+    if p is None:
+        return 0.5, 0.5
+    return (
+        float(getattr(p, "baserunning", 0.5) or 0.5),
+        float(getattr(p, "run_aggressiveness", 0.5) or 0.5),
+    )
+
+
 def runner_advances_for_hit(
     rng: random.Random,
     hit_type: str,
     bases: list,
     state: GameState,
-) -> list:
-    """Return [adv_1B, adv_2B, adv_3B] for each occupied base (0 = no runner)."""
+) -> tuple[list, Optional[int]]:
+    """Return ([adv_1B, adv_2B, adv_3B], runner_out_idx).
+
+    runner_out_idx is the base index (0=1B, 1=2B, 2=3B) of a runner who
+    was thrown out trying for the extra base, or None if all advancements
+    were clean.
+    """
     s1 = _get_speed(bases[0], state)
     s2 = _get_speed(bases[1], state)
-    s3 = _get_speed(bases[2], state)   # noqa: F841  (3B runner always scores on single+)
+    s3 = _get_speed(bases[2], state)
+    br1, ag1 = _get_baserunning(bases[0], state)
+    br2, ag2 = _get_baserunning(bases[1], state)
+    br3, ag3 = _get_baserunning(bases[2], state)
+
+    out_idx: Optional[int] = None
+
+    def _resolve(idx: int, base: int, speed: float, extra: float, br: float, ag: float) -> int:
+        nonlocal out_idx
+        adv, thrown_out = _runner_advance(rng, base, speed, extra_chance=extra,
+                                          baserunning=br, aggressiveness=ag)
+        if thrown_out and out_idx is None and bases[idx] is not None:
+            out_idx = idx
+        return adv
 
     if hit_type == "single":
-        adv1 = _runner_advance(rng, 1, s1, extra_chance=0.10)
-        adv2 = _runner_advance(rng, 2, s2, extra_chance=0.0)   # usually scores
+        adv1 = _resolve(0, 1, s1, 0.10, br1, ag1)
+        adv2 = _resolve(1, 2, s2, 0.0,  br2, ag2)
         adv3 = 1   # 3B always scores on a single
-        return [adv1, adv2, adv3]
+        return [adv1, adv2, adv3], out_idx
 
     elif hit_type == "double":
-        return [2, 2, 1]   # runners advance 2; 3B scores
+        return [2, 2, 1], None   # routine — 3B scores
 
     elif hit_type in ("triple", "hr"):
-        return [3, 3, 3]   # everyone scores
+        return [3, 3, 3], None
 
     elif hit_type in ("ground_out", "fielders_choice"):
         adv1 = 1   # 1B runner always forced to 2B on ground ball
-        adv2 = _runner_advance(rng, 0, s2, extra_chance=0.25)
-        adv3 = _runner_advance(rng, 0, s3, extra_chance=0.35)
-        return [adv1, adv2, adv3]
+        adv2 = _resolve(1, 0, s2, 0.25, br2, ag2)
+        adv3 = _resolve(2, 0, s3, 0.35, br3, ag3)
+        return [adv1, adv2, adv3], out_idx
 
     elif hit_type == "fly_out":
         adv1 = 0
         adv2 = 0
-        adv3 = _runner_advance(rng, 0, s3, extra_chance=0.55)  # sac fly
-        return [adv1, adv2, adv3]
+        # Sac fly: skill matters as much as speed (timing the tag-up).
+        adv3 = _resolve(2, 0, s3, 0.55, br3, ag3)
+        return [adv1, adv2, adv3], out_idx
 
     elif hit_type == "line_out":
-        return [0, 0, 0]   # runners freeze
+        return [0, 0, 0], None   # runners freeze
 
     else:
-        return [1, 1, 1]   # default
+        return [1, 1, 1], None   # default
 
 
 # ---------------------------------------------------------------------------
@@ -480,12 +547,17 @@ def resolve_contact(
     # Compute runner advances based on (possibly flipped) hit type.
     # An "error" advances runners like a single — same conservative shape.
     advance_type = "single" if hit_type == "error" else hit_type
-    runner_adv = runner_advances_for_hit(rng, advance_type, state.bases, state)
+    runner_adv, br_out_idx = runner_advances_for_hit(rng, advance_type, state.bases, state)
 
-    # For fielder's choice: throw out the lead runner.
+    # For fielder's choice: throw out the lead runner. TOOTBLAN
+    # (thrown-out-on-bases from the runner_advances roll) shows up via
+    # br_out_idx and takes precedence on plays that wouldn't otherwise
+    # produce a runner out.
     runner_out_idx = None
     if hit_type == "fielders_choice" and state.runners_on_base:
         runner_out_idx = _lead_runner_idx(state.bases)
+    elif br_out_idx is not None:
+        runner_out_idx = br_out_idx
 
     # Per-fielder play attribution. Stamps the fielder_id of the player
     # credited with this play (PO for outs, E for errors). Returns None
@@ -565,20 +637,98 @@ def should_stay_prob(
 
 def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
     """
-    Optionally return a between-pitch event (stolen base attempt or wild pitch).
+    Optionally return a between-pitch event (pickoff, stolen-base, wild pitch).
 
     Called before each pitch draw; returns None if no event fires.
+    Resolution order: pickoff → wild pitch → stolen base → hit-and-run.
+    Pickoff fires first because in real ball it's the pitcher's first
+    chance to act after seeing the runner's lead.
     """
+    pitcher = state.get_current_pitcher()
+    p_throws = (getattr(pitcher, "throws", "") or "") if pitcher else ""
+    p_stuff  = float(getattr(pitcher, "pitcher_skill", 0.5) or 0.5) if pitcher else 0.5
+
+    # Pickoff attempt: only meaningful with a runner on 1B (idx=0) or 2B.
+    # 3B pickoffs do exist but are rare; we ignore them.
+    for base_idx in (0, 1):
+        pid = state.bases[base_idx]
+        if pid is None:
+            continue
+        br_skill, aggression = _get_baserunning(pid, state)
+        attempt_p = (
+            cfg.PICKOFF_ATTEMPT_BASE
+            + (aggression - 0.5) * cfg.PICKOFF_AGGRESSION_SCALE
+        )
+        if base_idx == 0 and p_throws == "L":
+            attempt_p += cfg.PICKOFF_LHP_1B_BONUS
+        if base_idx == 1:
+            attempt_p *= cfg.PICKOFF_2B_DAMPENER
+        if attempt_p <= 0:
+            continue
+        if rng.random() >= attempt_p:
+            continue
+        # Move fires — does it pick the runner off?
+        success_p = (
+            cfg.PICKOFF_SUCCESS_BASE
+            + p_stuff * cfg.PICKOFF_SUCCESS_PITCHER_SCALE
+            + (aggression - 0.5) * cfg.PICKOFF_SUCCESS_AGGRESSION_SCALE
+            - (br_skill   - 0.5) * cfg.PICKOFF_SUCCESS_BR_SCALE
+        )
+        success_p = max(cfg.PICKOFF_SUCCESS_MIN,
+                        min(cfg.PICKOFF_SUCCESS_MAX, success_p))
+        success = rng.random() < success_p
+        return {
+            "type": "pickoff_attempt",
+            "base_idx": base_idx,
+            "success": success,
+        }
+
     # Wild pitch: small chance per pitch with runners on base.
     if state.runners_on_base and rng.random() < cfg.WILD_PITCH_PROB:
         return {"type": "wild_pitch"}
+
+    batting_team = state.batting_team
+    run_game = float(getattr(batting_team, "mgr_run_game", 0.5))
+
+    # Hit-and-run: manager-called play where the runner goes and the batter
+    # protects. We model it as a flagged SB attempt that bypasses the speed
+    # gate AND gets a small success bonus (catcher's eyes on the batter).
+    # Real managers concentrate hit-and-run in specific counts — a 0-2 hole
+    # is the worst possible spot, while 1-0 / 2-1 / 3-1 are canonical. Skip
+    # entirely with two strikes (batter can't protect a borderline pitch).
+    if state.bases[0] is not None and state.count.strikes < 2:
+        count_tup = (state.count.balls, state.count.strikes)
+        h_and_r_p = (
+            cfg.HIT_AND_RUN_BASE_PROB
+            + (run_game - 0.5) * cfg.HIT_AND_RUN_RUNGAME_SCALE
+        )
+        if count_tup not in cfg.HIT_AND_RUN_FAVORED_COUNTS:
+            h_and_r_p *= cfg.HIT_AND_RUN_OFF_COUNT_DAMPENER
+        if h_and_r_p > 0 and rng.random() < h_and_r_p:
+            pid = state.bases[0]
+            speed = _get_speed(pid, state)
+            pitcher_skill = pitcher.pitcher_skill if pitcher else 0.5
+            cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
+            success_p = (
+                cfg.SB_SUCCESS_BASE
+                + (speed - 0.5) * cfg.SB_SUCCESS_SPEED_SCALE
+                - pitcher_skill * cfg.SB_SUCCESS_PITCHER_SCALE
+                - (cat_arm - 0.5) * cfg.SB_SUCCESS_CATCHER_ARM_SCALE
+                + cfg.HIT_AND_RUN_SUCCESS_BONUS
+            )
+            success = rng.random() < max(cfg.SB_SUCCESS_MIN,
+                                         min(cfg.SB_SUCCESS_MAX, success_p))
+            return {
+                "type": "stolen_base_attempt",
+                "base_idx": 0,
+                "success": success,
+                "hit_and_run": True,
+            }
 
     # Stolen base attempt: check 1B and 2B runners. The batting team's
     # manager run_game tendency scales the per-pitch attempt probability
     # AND the speed threshold — an aggressive run-game manager will run
     # with average speed, a passive one waits for elite speed only.
-    batting_team = state.batting_team
-    run_game = float(getattr(batting_team, "mgr_run_game", 0.5))
     # Threshold: lerps from speed_threshold * 1.30 (passive) to * 0.65 (aggressive).
     speed_thresh = cfg.SB_ATTEMPT_SPEED_THRESHOLD * (1.30 - 0.65 * run_game)
     # Per-pitch attempt prob: lerps from base * 0.4 (passive) to * 1.8 (aggressive).
@@ -743,6 +893,15 @@ class ProbabilisticProvider:
         if replacement is not None:
             return {"type": "pinch_hit", "replacement": replacement}
 
+        # Sac-bunt check. Trades an out for a base; old-school / small-ball /
+        # high-run-game managers will call it in the right spots, modern /
+        # sabermetric skippers basically never. Resolves directly to an
+        # outcome (bunt out, bunt for hit, or popup) — pa.py treats it
+        # like a contact event with a synthetic outcome dict.
+        bunt = mgr.should_bunt(state, rng=self.rng)
+        if bunt is not None:
+            return bunt
+
         return None
 
     def _generate_pitch(self, state: GameState) -> dict:
@@ -760,6 +919,24 @@ class ProbabilisticProvider:
         spell   = state.pitcher_spell_count
 
         outcome = pitch_outcome(rng, pitcher, batter, balls, strikes, spell)
+
+        # Hit-and-run protection: when the runner has already gone on
+        # an h&r, the batter is swinging at most pitches to put the
+        # ball in play. We approximate by re-rolling a swinging strike
+        # against a contact-bias probability — a non-trivial fraction
+        # of would-be Ks become fouls or weak contact instead. Only
+        # consumes the flag (one shot per success).
+        if state.hit_and_run_active:
+            if outcome == "swinging_strike" and rng.random() < cfg.HIT_AND_RUN_CONTACT_K_REDUCTION:
+                # Batter fouls it off to stay alive.
+                outcome = "foul"
+            elif outcome == "ball" and rng.random() < cfg.HIT_AND_RUN_CONTACT_K_REDUCTION:
+                # Batter swings at a borderline pitch to protect.
+                outcome = "foul"
+            # Flag persists until contact (single h&r call only protects
+            # the runner once the play resolves).
+            if outcome in ("contact", "swinging_strike"):
+                state.hit_and_run_active = False
 
         if outcome != "contact":
             return {"type": outcome}
