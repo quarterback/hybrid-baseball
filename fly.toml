@@ -1,4 +1,4 @@
-app = "o27"
+app = "hybrid-baseball"
 primary_region = "iad"
 
 [build]
