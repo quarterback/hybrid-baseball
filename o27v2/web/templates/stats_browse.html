@@ -172,7 +172,7 @@
     <thead><tr>
       <th>Name</th><th>Tm</th>
       <th class="num">G</th><th class="num">W</th><th class="num">L</th>
-      <th class="num">BF</th><th class="num">Outs</th><th class="num">IP</th>
+      <th class="num">BF</th><th class="num">Outs</th>
       <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
       <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
       <th class="num">HBP</th><th class="num">UER</th>
@@ -200,7 +200,6 @@
       <td class="num">{{ p.l or 0 }}</td>
       <td class="num">{{ p.bf or 0 }}</td>
       <td class="num">{{ p.outs or 0 }}</td>
-      <td class="num" data-sort-value="{{ '%.2f'|format(p.ip) }}">{{ '%.1f'|format(p.ip) }}</td>
       <td class="num">{{ p.h or 0 }}</td>
       <td class="num">{{ p.r or 0 }}</td>
       <td class="num">{{ p.er or 0 }}</td>

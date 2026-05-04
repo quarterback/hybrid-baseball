@@ -7,57 +7,93 @@
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
-    body { background: #0d1117; color: #e6edf3; }
-    .navbar { background: #161b22 !important; border-bottom: 1px solid #30363d; }
-    .navbar-brand { font-weight: 800; color: #58a6ff !important; letter-spacing: .05em; }
-    .nav-link { color: #8b949e !important; }
-    .nav-link:hover, .nav-link.active { color: #58a6ff !important; }
-    .card { background: #161b22; border: 1px solid #30363d; }
-    .card-header { background: #1f2937; border-bottom: 1px solid #30363d; }
-    .table { color: #e6edf3; }
-    .table thead th { background: #1f2937; color: #8b949e; border-color: #30363d; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
-    .table tbody td { border-color: #30363d; font-size: .85rem; }
-    .table tbody tr:hover { background: #1f2937; }
+    /* Baseball-Reference-inspired light theme: cream background, navy
+       links, thin tan rules, monospace tabular numerics. */
+    :root {
+      --bg:        #f5f1e8;   /* page cream */
+      --bg-alt:    #ebe5d4;   /* card header / striped band */
+      --bg-card:   #ffffff;   /* table & card body */
+      --border:    #c8c1ad;   /* tan rule */
+      --border-strong: #8a8676;
+      --text:      #1a1a1a;
+      --text-dim:  #5a5a5a;
+      --text-muted:#7a7670;
+      --link:      #002d72;   /* b-ref deep navy */
+      --link-hov:  #c8102e;   /* b-ref red hover */
+      --accent:    #c8102e;   /* red accent (e.g. New League) */
+      --accent-2:  #6b3f00;   /* warm brown for div headers */
+      --good:      #196c2e;
+      --bad:       #b22234;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
+    .navbar { background: var(--bg-alt) !important; border-bottom: 2px solid var(--border-strong); }
+    .navbar-brand { font-weight: 800; color: var(--link) !important; letter-spacing: .04em; }
+    .nav-link { color: var(--text) !important; font-weight: 500; }
+    .nav-link:hover, .nav-link.active { color: var(--link-hov) !important; }
+    .card { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); }
+    .card-header { background: var(--bg-alt); border-bottom: 1px solid var(--border); color: var(--text); }
+    .table { color: var(--text); --bs-table-bg: transparent; }
+    .table thead th { background: var(--bg-alt); color: var(--text); border-color: var(--border); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+    .table tbody td { border-color: var(--border); font-size: .85rem; }
+    .table tbody tr:hover { background: #fff7d6; }
+    .table-striped > tbody > tr:nth-of-type(odd) > * { --bs-table-bg-type: #faf6ea; color: var(--text); }
     .badge-division { font-size: .7rem; padding: .25rem .5rem; }
-    .score-big { font-size: 2.2rem; font-weight: 800; }
-    .score-label { font-size: .75rem; color: #8b949e; text-transform: uppercase; }
-    .stat-pill { display: inline-block; background: #21262d; border-radius: 4px; padding: 2px 8px; font-size: .78rem; margin: 2px; }
-    .team-abbrev { font-weight: 700; color: #58a6ff; }
-    .winner-badge { background: #238636; color: #fff; border-radius: 3px; padding: 1px 6px; font-size: .72rem; }
-    footer { background: #161b22; border-top: 1px solid #30363d; color: #8b949e; font-size: .8rem; }
-    a { color: #58a6ff; text-decoration: none; }
-    a:hover { color: #79c0ff; }
-    .btn-primary { background: #238636; border-color: #238636; }
-    .btn-primary:hover { background: #2ea043; border-color: #2ea043; }
-    .btn-secondary { background: #21262d; border-color: #30363d; color: #e6edf3; }
-    .btn-secondary:hover { background: #30363d; }
-    .progress-bar-skill { height: 6px; border-radius: 3px; background: #58a6ff; }
-    .division-header { color: #f0883e; font-weight: 700; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
-    .si-badge { background: #6f42c1; color: #fff; border-radius: 3px; padding: 1px 5px; font-size: .7rem; }
+    .score-big { font-size: 2.2rem; font-weight: 800; color: var(--text); }
+    .score-label { font-size: .75rem; color: var(--text-dim); text-transform: uppercase; }
+    .stat-pill { display: inline-block; background: var(--bg-alt); border: 1px solid var(--border); border-radius: 3px; padding: 2px 8px; font-size: .78rem; margin: 2px; }
+    .team-abbrev { font-weight: 700; color: var(--link); }
+    .winner-badge { background: var(--good); color: #fff; border-radius: 2px; padding: 1px 6px; font-size: .72rem; }
+    footer { background: var(--bg-alt); border-top: 1px solid var(--border); color: var(--text-dim); font-size: .8rem; }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { color: var(--link-hov); text-decoration: underline; }
+    .btn-primary { background: var(--link); border-color: var(--link); color: #fff; }
+    .btn-primary:hover { background: #003a96; border-color: #003a96; color: #fff; }
+    .btn-secondary { background: var(--bg-alt); border-color: var(--border); color: var(--text); }
+    .btn-secondary:hover { background: #ddd5bb; color: var(--text); }
+    .progress-bar-skill { height: 6px; border-radius: 3px; background: var(--link); }
+    .division-header { color: var(--accent-2); font-weight: 700; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
+    .si-badge { background: #6b3f00; color: #fff; border-radius: 2px; padding: 1px 5px; font-size: .7rem; }
+    .text-secondary { color: var(--text-dim) !important; }
+    .badge.bg-secondary { background-color: #d8d2bf !important; color: var(--text) !important; }
 
     /* ---- Dense b-ref table aesthetic ---- */
-    .dense { border: 1px solid #30363d; border-radius: 4px; overflow: hidden; background: #0d1117; }
+    .dense { border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--bg-card); }
     .dense-table { margin: 0; }
-    .dense-table thead th { padding: 4px 8px; white-space: nowrap; user-select: none; position: sticky; top: 0; z-index: 2; }
+    .dense-table thead th { padding: 4px 8px; white-space: nowrap; user-select: none; position: sticky; top: 0; z-index: 2; background: var(--bg-alt); }
     .dense-table tbody td { padding: 3px 8px; line-height: 1.3; }
-    .dense-table tbody tr.div-divider td { background: #161b22; color: #f0883e; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-top: 2px solid #30363d; }
+    .dense-table tbody tr.div-divider td { background: var(--bg-alt); color: var(--accent-2); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 6px 8px; border-top: 2px solid var(--border-strong); }
     .num { font-family: "SF Mono", "Menlo", "Consolas", monospace; font-size: .82rem; text-align: right; font-variant-numeric: tabular-nums; }
     th.num { text-align: right; }
     .sortable thead th { cursor: pointer; }
-    .sortable thead th:hover { color: #e6edf3; }
-    .sortable thead th .sort-arrow { color: #58a6ff; margin-left: 3px; font-size: .7rem; }
+    .sortable thead th:hover { color: var(--link); }
+    .sortable thead th .sort-arrow { color: var(--link-hov); margin-left: 3px; font-size: .7rem; }
     .l5pill { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin: 0 1px; }
-    .l5pill.w { background: #238636; }
-    .l5pill.l { background: #b22222; }
-    .strk-w { color: #2ea043; font-weight: 600; }
-    .strk-l { color: #f85149; font-weight: 600; }
-    .panel-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: #8b949e; padding: 6px 8px; background: #161b22; border-bottom: 1px solid #30363d; font-weight: 700; }
-    .filter-bar { background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; }
-    .filter-bar select, .filter-bar input { background: #0d1117 !important; color: #e6edf3 !important; border-color: #30363d !important; }
+    .l5pill.w { background: var(--good); }
+    .l5pill.l { background: var(--bad); }
+    .strk-w { color: var(--good); font-weight: 600; }
+    .strk-l { color: var(--bad); font-weight: 600; }
+    .panel-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text); padding: 6px 8px; background: var(--bg-alt); border-bottom: 1px solid var(--border); font-weight: 700; }
+    .filter-bar { background: var(--bg-card); border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px; margin-bottom: 10px; }
+    .filter-bar select, .filter-bar input { background: #fff !important; color: var(--text) !important; border-color: var(--border) !important; }
+    .breadcrumb { --bs-breadcrumb-divider-color: var(--text-dim); }
+    .breadcrumb-item.active { color: var(--text); }
+
+    /* ---- Map dark-theme inline color hexes onto light-theme palette ---- */
+    [style*="color:#58a6ff"], [style*="color: #58a6ff"] { color: var(--link) !important; }
+    [style*="color:#79c0ff"], [style*="color: #79c0ff"] { color: var(--link-hov) !important; }
+    [style*="color:#f0883e"], [style*="color: #f0883e"] { color: var(--accent) !important; }
+    [style*="color:#e6edf3"], [style*="color: #e6edf3"] { color: var(--text) !important; }
+    [style*="color:#f85149"], [style*="color: #f85149"] { color: var(--bad) !important; }
+    [style*="color:#2ea043"], [style*="color: #2ea043"] { color: var(--good) !important; }
+    [style*="color:#e85d5d"], [style*="color: #e85d5d"] { color: var(--bad) !important; }
+    /* Dropdown menu (b-ref-styled) */
+    .dropdown-menu { background: var(--bg-card) !important; border: 1px solid var(--border) !important; }
+    .dropdown-item { color: var(--text) !important; }
+    .dropdown-item:hover { background: var(--bg-alt) !important; color: var(--link) !important; }
   </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark">
+<nav class="navbar navbar-expand-lg navbar-light">
   <div class="container-fluid px-4">
     <a class="navbar-brand" href="{{ url_for('index') }}">⚾ O27 League</a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
@@ -99,14 +135,14 @@
                   {% if sim.season_complete %}disabled{% endif %}>
             <span class="visually-hidden">More sim options</span>
           </button>
-          <ul class="dropdown-menu dropdown-menu-end" style="background:#161b22;border:1px solid #30363d">
-            <li><a class="dropdown-item text-light{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="week">Sim Week (7 days)</a></li>
-            <li><a class="dropdown-item text-light{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="month">Sim to End of Month</a></li>
-            <li><a class="dropdown-item text-light{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="all-star">
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="week">Sim Week (7 days)</a></li>
+            <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="month">Sim to End of Month</a></li>
+            <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="all-star">
               Sim to All-Star Break{% if sim.all_star_date %} ({{ sim.all_star_date }}){% endif %}
             </a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item text-light{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="season">Sim to End of Season</a></li>
+            <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="season">Sim to End of Season</a></li>
           </ul>
         </div>
       </div>

@@ -89,7 +89,7 @@
       <th>Name</th><th>Tm</th>
       <th class="num">Age</th>
       <th class="num">GP</th><th class="num">W</th><th class="num">L</th>
-      <th class="num">ERA</th><th class="num">IP</th>
+      <th class="num">ERA</th><th class="num">Outs</th>
       <th class="num">H</th><th class="num">BB</th><th class="num">K</th><th class="num">WHIP</th>
     </tr></thead>
     <tbody>
@@ -102,7 +102,7 @@
       <td class="num">{{ p.w or 0 }}</td>
       <td class="num">{{ p.l or 0 }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.era) }}">{{ '%.2f'|format(p.era) }}</td>
-      <td class="num" data-sort-value="{{ '%.2f'|format(p.ip) }}">{{ '%.1f'|format(p.ip) }}</td>
+      <td class="num">{{ p.outs or 0 }}</td>
       <td class="num">{{ p.h or 0 }}</td>
       <td class="num">{{ p.bb or 0 }}</td>
       <td class="num fw-bold">{{ p.k or 0 }}</td>
