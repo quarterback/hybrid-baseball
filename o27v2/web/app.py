@@ -1542,21 +1542,28 @@ def player_detail(player_id: int):
         (player_id,),
     )
 
+    baselines = _league_baselines()
+    wl = _pitcher_wl_map()
+
     bt_totals = None
     if bt and bt["pa"]:
-        # Run through the shared helper so AVG/OBP/SLG/OPS + advanced rate
-        # stats (ISO/BABIP/K%/BB%/HR%/BB/K) are all consistent with the
-        # leaders page math.
+        # Player-detail batter row needs `position` + the defense ratings
+        # for DRS/dWAR; pull them from the player record so the aggregator
+        # can compute the full sabermetric suite consistently.
         bt_totals = dict(bt)
-        _aggregate_batter_rows([bt_totals])
+        bt_totals["position"]         = player.get("position")
+        bt_totals["defense"]          = player.get("defense")
+        bt_totals["defense_infield"]  = player.get("defense_infield")
+        bt_totals["defense_outfield"] = player.get("defense_outfield")
+        bt_totals["defense_catcher"]  = player.get("defense_catcher")
+        _aggregate_batter_rows([bt_totals], baselines=baselines)
 
     pt_totals = None
     if pt and pt["outs"]:
         outs = pt["outs"] or 0
         pt_totals = dict(pt)
-        # Run through the shared helper so ERA/WHIP/K27/BB27/FIP all use the
-        # same per-27-outs definitions (and the freshly-fit FIP constant).
-        _aggregate_pitcher_rows([pt_totals])
+        pt_totals["player_id"] = player_id
+        _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
         pt_totals["os_pct"] = (outs / (27.0 * pt["g"])) if pt["g"] else 0.0
 
     return render_template(
@@ -1566,6 +1573,7 @@ def player_detail(player_id: int):
         pitching_log=pitching_log,
         bt_totals=bt_totals,
         pt_totals=pt_totals,
+        baselines=baselines,
     )
 
 
