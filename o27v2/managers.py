@@ -9,9 +9,12 @@ A baker's-dozen archetypes span eras and styles, from 1900s dead-ball
 purists who'd let a starter throw 180 pitches, through 1970s iron managers,
 mid-2000s LaRussa-style bullpen specialists, and modern Rays-coded
 analytics shops that open with a reliever and never platoon the same way
-twice. Two managers in the same archetype still feel different because per-
-axis noise is rolled per manager (with wider noise for the unorthodox
-archetypes).
+twice. The intra-archetype noise band is intentionally wide (0.22 by
+default, 0.30+ for the unorthodox personas) so two managers nominally
+sharing the same key still routinely diverge enough that the league
+produces visibly weird seasons -- a "set-and-forget" who happens to roll
+high on run_game, an old-school skipper with surprising bullpen aggression,
+and so on.
 
 Tendencies are floats in [0.0, 1.0]:
   quick_hook            propensity to pull a pitcher who's getting tagged
@@ -60,10 +63,12 @@ class Archetype:
     pinch_hit_aggression: float
     platoon_aggression: float
     run_game: float
-    # Per-archetype noise scale. Most archetypes use 0.12; "unorthodox"
-    # personas (mad_scientist, gambler) use a wider band so two of them
-    # diverge meaningfully from each other.
-    noise: float = 0.12
+    # Per-archetype noise band. Wide by design — we WANT visible
+    # within-archetype variation so two old-school skippers don't feel
+    # like the same guy. Default 0.22 covers a ~0.45-wide window per
+    # axis; unorthodox personas push wider so mad scientists and
+    # gamblers regularly produce truly weird seasons.
+    noise: float = 0.22
 
 
 # Archetype catalogue. Centre values were calibrated so the four-axis vector
@@ -150,19 +155,19 @@ ARCHETYPES: dict[str, Archetype] = {
         platoon_aggression=0.90, run_game=0.40,
     ),
     "mad_scientist": Archetype(
-        # Maddon-coded / Rays-coded chaos. Wide noise so two mad scientists
-        # really do feel different from each other.
+        # Maddon-coded / Rays-coded chaos. Even wider noise so two mad
+        # scientists routinely diverge enough to read as different teams.
         key="mad_scientist", label="Mad Scientist",
         quick_hook=0.65, bullpen_aggression=0.72, leverage_aware=0.70,
         joker_aggression=0.92, pinch_hit_aggression=0.85,
-        platoon_aggression=0.82, run_game=0.65, noise=0.22,
+        platoon_aggression=0.82, run_game=0.65, noise=0.32,
     ),
     "gambler": Archetype(
-        # Roll-the-dice aggressive on every axis — high variance run.
+        # Roll-the-dice aggressive on every axis — extremely high variance.
         key="gambler", label="Gambler",
         quick_hook=0.80, bullpen_aggression=0.78, leverage_aware=0.65,
         joker_aggression=0.88, pinch_hit_aggression=0.80,
-        platoon_aggression=0.55, run_game=0.85, noise=0.20,
+        platoon_aggression=0.55, run_game=0.85, noise=0.30,
     ),
 }
 

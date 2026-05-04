@@ -57,12 +57,27 @@ _INFIELD_POSITIONS  = frozenset(("1B", "2B", "3B", "SS"))
 _OUTFIELD_POSITIONS = frozenset(("LF", "CF", "RF"))
 
 
+_SPEED_RANGE_POSITIONS = {
+    # Position → fraction of the rating that's driven by foot speed
+    # (closing range, first-step quickness, taking the extra base on
+    # cutoffs). Speed = 0.5 is neutral (zero contribution); deviations
+    # from neutral push the position-defense rating up or down.
+    "CF":  0.30, "LF":  0.22, "RF":  0.22,
+    "SS":  0.18, "2B":  0.18,
+    "3B":  0.08, "1B":  0.04,
+    "C":   0.00,
+}
+
+
 def _position_defense_rating(player, pos: str) -> float:
     """Return the player's effective defense at the given position.
 
     Blends general `defense` with the position-group sub-rating so a
     specialist gets a real boost at their primary group and a real
-    penalty out of group. 60% sub-group, 40% general.
+    penalty out of group. 60% sub-group, 40% general. A speed adjustment
+    is then layered on top for positions where foot speed translates to
+    range — heavily weighted for CF, moderate for corner OF and middle
+    IF, and basically nil at 1B / C. Identity preserved at speed = 0.5.
     """
     general = float(getattr(player, "defense", 0.5) or 0.5)
     if pos == "C":
@@ -73,7 +88,10 @@ def _position_defense_rating(player, pos: str) -> float:
         sub = float(getattr(player, "defense_outfield", 0.5) or 0.5)
     else:
         sub = general
-    return 0.6 * sub + 0.4 * general
+    base = 0.6 * sub + 0.4 * general
+    speed = float(getattr(player, "speed", 0.5) or 0.5)
+    speed_w = _SPEED_RANGE_POSITIONS.get(pos, 0.0)
+    return base + speed_w * (speed - 0.5)
 
 
 def _team_defense_rating(lineup: list, roster: list[dict]) -> float:

@@ -926,12 +926,14 @@ def game_detail(game_id: int):
     # phase N>=1 = super-inning round N. We also build per-phase totals
     # rows (suitable for the Game Totals section in the template).
     away_batting_rows = db.fetchall(
-        """SELECT bs.*, p.name as player_name, p.position
+        """SELECT bs.*, p.name as player_name,
+                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["away_team_id"]))
     home_batting_rows = db.fetchall(
-        """SELECT bs.*, p.name as player_name, p.position
+        """SELECT bs.*, p.name as player_name,
+                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["home_team_id"]))
