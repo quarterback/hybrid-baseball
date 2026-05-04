@@ -880,6 +880,78 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     return {"player_out": worst, "player_in": best}
 
 
+def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Player]:
+    """Mid-batting-half tactical swap: pull the current scheduled batter
+    after they've banked a PA, bring in a defensive specialist who'll
+    cover the rest of the team's fielding half.
+
+    O27-specific tactic — only meaningful for the road team in the top
+    half, since they bat first and then field. The home team bats last
+    so their fielding half is already done by the time they're at the
+    plate, and there's no defense to lock in.
+
+    Conditions:
+      - Regulation half (no super-innings).
+      - state.half == "top" — visitors batting, will field next.
+      - Lineup has cycled at least once (cycle_number >= 1) so the
+        slugger has already had at least one AB to bank.
+      - Current batter has notably worse defense than the best bench bat.
+      - Once per team per game (tracked via state.events).
+
+    Probability scales 0.5% .. 4.5% with mgr_bench_usage. Sluggish
+    skippers basically never do this; aggressive ones land the swap
+    around 30-40% of games over the cycle-2 window.
+
+    Returns the replacement Player or None. Caller wraps in a
+    tactical_def_swap event so the cap is tracked separately from
+    leverage-driven pinch hits.
+    """
+    if state.is_super_inning:
+        return None
+    if state.half != "top":
+        return None
+
+    team = state.batting_team
+    if team.lineup_cycle_number < 1:
+        return None
+
+    # Once per team per game.
+    already = any(
+        ev.get("type") == "tactical_def_swap" and ev.get("team_id") == team.team_id
+        for ev in state.events
+    )
+    if already:
+        return None
+
+    bench_usage = float(getattr(team, "mgr_bench_usage", 0.5))
+    p = 0.005 + 0.040 * bench_usage   # 0.5% .. 4.5% per PA past first cycle
+    if rng is None:
+        import random as _r
+        roll = _r.random()
+    else:
+        roll = rng.random()
+    if roll >= p:
+        return None
+
+    batter = state.current_batter
+    if batter.is_pitcher:
+        return None
+
+    lineup_ids = {pl.player_id for pl in team.lineup}
+    bench = [
+        pl for pl in team.roster
+        if not pl.is_pitcher and pl.player_id not in lineup_ids
+    ]
+    if not bench:
+        return None
+    best = max(bench, key=lambda pl: float(getattr(pl, "defense", 0.5) or 0.5))
+    edge = (float(getattr(best,   "defense", 0.5) or 0.5)
+          - float(getattr(batter, "defense", 0.5) or 0.5))
+    if edge < 0.05:
+        return None
+    return best
+
+
 def should_bunt(state: GameState, rng=None) -> Optional[dict]:
     """Manager-driven sacrifice bunt decision.
 

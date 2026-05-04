@@ -905,6 +905,16 @@ class ProbabilisticProvider:
                 "player_in":  def_sub["player_in"],
             }
 
+        # Mid-batting-half offensive→defensive swap. Road team only
+        # (state.half == "top"), once the lineup has cycled at least
+        # once. Pulls a slugger and brings in a defensive specialist
+        # who'll cover the field for the team's fielding half.
+        # Symmetric to should_defensive_sub but operates on the
+        # BATTING team — they're banking defense for later.
+        off_to_def = mgr.should_swap_offensive_for_defense(state, rng=self.rng)
+        if off_to_def is not None:
+            return {"type": "tactical_def_swap", "replacement": off_to_def}
+
         # Sac-bunt check. Trades an out for a base; old-school / small-ball /
         # high-run-game managers will call it in the right spots, modern /
         # sabermetric skippers basically never. Resolves directly to an
