@@ -321,12 +321,15 @@ def _db_team_to_engine(
     )
     # Compute aggregate defense rating from the lineup's fielding 8.
     team.defense_rating = _team_defense_rating(lineup, players)
-    # Stamp manager persona — bias hook/joker decisions during the game.
-    team.manager_archetype      = str(team_row.get("manager_archetype") or "")
-    team.mgr_quick_hook         = float(team_row.get("mgr_quick_hook") or 0.5)
-    team.mgr_bullpen_aggression = float(team_row.get("mgr_bullpen_aggression") or 0.5)
-    team.mgr_leverage_aware     = float(team_row.get("mgr_leverage_aware") or 0.5)
-    team.mgr_joker_aggression   = float(team_row.get("mgr_joker_aggression") or 0.5)
+    # Stamp manager persona — bias hook/joker/PH/run-game decisions.
+    team.manager_archetype        = str(team_row.get("manager_archetype") or "")
+    team.mgr_quick_hook           = float(team_row.get("mgr_quick_hook") or 0.5)
+    team.mgr_bullpen_aggression   = float(team_row.get("mgr_bullpen_aggression") or 0.5)
+    team.mgr_leverage_aware       = float(team_row.get("mgr_leverage_aware") or 0.5)
+    team.mgr_joker_aggression     = float(team_row.get("mgr_joker_aggression") or 0.5)
+    team.mgr_pinch_hit_aggression = float(team_row.get("mgr_pinch_hit_aggression") or 0.5)
+    team.mgr_platoon_aggression   = float(team_row.get("mgr_platoon_aggression") or 0.5)
+    team.mgr_run_game             = float(team_row.get("mgr_run_game") or 0.5)
     # Stamp the catcher's arm rating on the Team for SB-success scaling.
     pos_by_id = {str(r["id"]): str(r.get("position") or "") for r in players}
     catcher_arm = 0.5

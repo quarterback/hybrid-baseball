@@ -642,54 +642,118 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
     return None
 
 
-def should_pinch_hit(state: GameState) -> Optional[Player]:
-    """
-    Phase 2 heuristic: send up a pinch hitter for the pitcher when:
-      - Current scheduled batter is the pitcher (is_pitcher=True), AND
-      - Runners in scoring position (2B or 3B occupied), AND
-      - No jokers remain available to bat this half (joker insertion preferred
-        when jokers exist; pinch hit is the fallback), AND
-      - Game is in a high-leverage tie-or-close situation
-        (score within cfg.PINCH_HIT_SCORE_DIFF_MAX).
+def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
+    """Manager-tendency-driven pinch hit decision.
 
-    The replacement is the highest-skill non-pitcher non-joker roster member
-    who is distinct from the current batter.  Returns None when conditions are
-    not met or no improvement is available.
+    Sends up a permanent replacement for the scheduled batter when the
+    situation is high-leverage AND the replacement materially upgrades the
+    spot. Two upgrade paths:
+
+      * Skill upgrade — bench bat is meaningfully better than the scheduled
+        hitter (covers the classic "weak hitter, big spot" case).
+      * Platoon upgrade — bench bat has the platoon advantage vs the current
+        pitcher and the scheduled batter does not. Gated by the manager's
+        platoon_aggression so a dead-ball traditionalist won't swap for
+        platoon reasons but a bullpen-innovator-coded skipper will.
+
+    The decision is also gated by mgr_pinch_hit_aggression: a passive
+    skipper barely uses the bench; an aggressive one will spend bench bats
+    in the middle of close games.
     """
     if state.is_super_inning:
         return None
 
     batter = state.current_batter
-    if not batter.is_pitcher:
-        return None
+    team   = state.batting_team
 
-    # Jokers removed in Task #47 — proceed straight to pinch-hit eligibility.
-    team = state.batting_team
-
-    if not state.runners_in_scoring_position:
-        return None
-
-    # Only pinch hit in very tight, high-leverage situations.
+    # Only consider a pinch hit when the spot is non-trivial — the manager
+    # shouldn't burn a bench bat in a 9-run blowout. "Meaningful spot"
+    # means runners on, OR a tie/one-run game with outs remaining, OR the
+    # late half of the at-bat-cycle when leverage compounds.
     score_diff = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
-    if score_diff > cfg.PINCH_HIT_SCORE_DIFF_MAX:
+    runners_on = bool(state.runners_on_base)
+    late       = state.outs >= 18           # last third of the half
+    tight      = score_diff <= cfg.PINCH_HIT_SCORE_DIFF_MAX
+    if not (runners_on or (tight and late)):
+        return None
+    if score_diff > cfg.PINCH_HIT_SCORE_DIFF_MAX + 2 and not late:
         return None
 
-    # In O27, all 12 active players are in the lineup from the start, so
-    # candidates must come from roster members NOT currently in the lineup
-    # (i.e., genuine "bench" players added before the game for this purpose).
-    # Selecting an active lineup player would duplicate them in the batting order.
+    # Tendency gates. mgr_pinch_hit_aggression scales the per-spot trigger
+    # probability; mgr_leverage_aware sharpens the response when the score
+    # is close. A neutral manager (0.5) fires in maybe 20% of qualifying
+    # spots; an aggressive one (0.9) fires in ~50%.
+    ph_agg  = float(getattr(team, "mgr_pinch_hit_aggression", 0.5))
+    lev_aw  = float(getattr(team, "mgr_leverage_aware", 0.5))
+    plat_ag = float(getattr(team, "mgr_platoon_aggression", 0.5))
+    base_p  = 0.10 + 0.50 * ph_agg
+    if tight:
+        base_p += 0.15 * lev_aw
+    if late and tight:
+        base_p += 0.10
+    base_p = max(0.0, min(0.7, base_p))
+
+    # Candidate pool: non-pitchers on the roster who aren't already in the
+    # lineup (true bench bats; lineup players would otherwise duplicate).
     lineup_ids = {p.player_id for p in team.lineup}
     candidates = [
         p for p in team.roster
-        if not p.is_pitcher
-        and p.player_id not in lineup_ids
+        if not p.is_pitcher and p.player_id not in lineup_ids
     ]
     if not candidates:
         return None
 
-    best = max(candidates, key=lambda p: p.skill)
-    # Only substitute if the replacement offers a meaningful skill upgrade.
-    if best.skill <= batter.skill + cfg.PINCH_HIT_SKILL_EDGE:
+    pitcher = state.get_current_pitcher()
+    p_throws = (getattr(pitcher, "throws", "") or "") if pitcher else ""
+
+    def _has_platoon_edge(player) -> bool:
+        if not p_throws:
+            return False
+        b = (getattr(player, "bats", "") or "")
+        if not b:
+            return False
+        # Switch hitters always have the platoon advantage.
+        if b == "S":
+            return True
+        # Opposite-handed batter vs pitcher = platoon edge.
+        return b != p_throws
+
+    # Skill upgrade pick.
+    skill_best = max(candidates, key=lambda p: p.skill)
+    skill_edge = skill_best.skill - batter.skill
+
+    # Platoon upgrade pick: best bench bat with the edge, when the current
+    # batter doesn't already have it.
+    cur_has_edge = _has_platoon_edge(batter)
+    platoon_pool = [c for c in candidates if _has_platoon_edge(c)]
+    platoon_best = (
+        max(platoon_pool, key=lambda p: p.skill) if platoon_pool else None
+    )
+
+    # Decide which upgrade path (if any) clears the bar.
+    use_skill   = skill_edge >= cfg.PINCH_HIT_SKILL_EDGE
+    use_platoon = (
+        platoon_best is not None
+        and not cur_has_edge
+        and plat_ag >= 0.45
+        and (platoon_best.skill + 0.05) >= batter.skill - cfg.PINCH_HIT_SKILL_EDGE
+    )
+    if not (use_skill or use_platoon):
         return None
 
-    return best
+    # Roll against the tendency-scaled probability. Falls through silently
+    # most of the time even when an upgrade exists, so a single bench bat
+    # isn't burned on the first eligible spot.
+    if rng is None:
+        import random as _r
+        roll = _r.random()
+    else:
+        roll = rng.random()
+    if roll >= base_p:
+        return None
+
+    # Prefer the platoon edge for a platoon-aggressive skipper, otherwise
+    # the skill upgrade.
+    if use_platoon and (not use_skill or plat_ag >= 0.7):
+        return platoon_best
+    return skill_best
