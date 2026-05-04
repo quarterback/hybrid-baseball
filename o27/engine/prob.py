@@ -920,6 +920,16 @@ class ProbabilisticProvider:
 
         outcome = pitch_outcome(rng, pitcher, batter, balls, strikes, spell)
 
+        # HBP: a fraction of balls become hit-by-pitches, scaled by pitcher
+        # command. Converting after pitch_outcome instead of teaching
+        # _pitch_probs about HBP keeps the realism identity invariant on
+        # the underlying probability surface intact.
+        if outcome == "ball":
+            cmd = float(getattr(pitcher, "command", 0.5) or 0.5)
+            hbp_p = cfg.HBP_FROM_BALL_BASE + (0.5 - cmd) * cfg.HBP_COMMAND_SCALE
+            if hbp_p > 0 and rng.random() < hbp_p:
+                outcome = "hit_by_pitch"
+
         # Hit-and-run protection: when the runner has already gone on
         # an h&r, the batter is swinging at most pitches to put the
         # ball in play. We approximate by re-rolling a swinging strike

@@ -33,6 +33,11 @@ Tendencies are floats in [0.0, 1.0]:
   run_game              SB attempt rate, hit-and-run aggression. High
                         managers will run with average speed; low managers
                         only run with elite speed.
+  bench_usage           propensity to rest a regular and start a UT bench
+                        bat. Old-school skippers run the same 8 every day;
+                        modern / sabermetric ones rotate aggressively
+                        (catcher every 4-5 days, vets vs tough lefties,
+                        etc.). High here means starters miss more games.
 
 The first four ship live as decision biases today. pinch_hit_aggression,
 platoon_aggression, and run_game have schema/seed/stamp wired and are
@@ -63,6 +68,7 @@ class Archetype:
     pinch_hit_aggression: float
     platoon_aggression: float
     run_game: float
+    bench_usage: float
     # Per-archetype noise band. Wide by design — we WANT visible
     # within-archetype variation so two old-school skippers don't feel
     # like the same guy. Default 0.22 covers a ~0.45-wide window per
@@ -80,37 +86,37 @@ ARCHETYPES: dict[str, Archetype] = {
         key="dead_ball", label="Dead-Ball Traditionalist",
         quick_hook=0.08, bullpen_aggression=0.10, leverage_aware=0.20,
         joker_aggression=0.10, pinch_hit_aggression=0.08,
-        platoon_aggression=0.05, run_game=0.55,
+        platoon_aggression=0.05, run_game=0.55, bench_usage=0.05,
     ),
     "iron_manager": Archetype(
         key="iron_manager", label="Iron Manager",
         quick_hook=0.18, bullpen_aggression=0.20, leverage_aware=0.30,
         joker_aggression=0.20, pinch_hit_aggression=0.18,
-        platoon_aggression=0.15, run_game=0.50,
+        platoon_aggression=0.15, run_game=0.50, bench_usage=0.12,
     ),
     "old_school": Archetype(
         key="old_school", label="Old-School Skipper",
         quick_hook=0.28, bullpen_aggression=0.32, leverage_aware=0.42,
         joker_aggression=0.30, pinch_hit_aggression=0.30,
-        platoon_aggression=0.25, run_game=0.45,
+        platoon_aggression=0.25, run_game=0.45, bench_usage=0.22,
     ),
     "small_ball": Archetype(
         key="small_ball", label="Small-Ball Tactician",
         quick_hook=0.40, bullpen_aggression=0.45, leverage_aware=0.55,
         joker_aggression=0.55, pinch_hit_aggression=0.55,
-        platoon_aggression=0.50, run_game=0.85,
+        platoon_aggression=0.50, run_game=0.85, bench_usage=0.45,
     ),
     "players_manager": Archetype(
         key="players_manager", label="Players' Manager",
         quick_hook=0.32, bullpen_aggression=0.40, leverage_aware=0.50,
         joker_aggression=0.42, pinch_hit_aggression=0.35,
-        platoon_aggression=0.35, run_game=0.45,
+        platoon_aggression=0.35, run_game=0.45, bench_usage=0.40,
     ),
     "set_and_forget": Archetype(
         key="set_and_forget", label="Set-It-and-Forget-It",
         quick_hook=0.30, bullpen_aggression=0.25, leverage_aware=0.20,
         joker_aggression=0.18, pinch_hit_aggression=0.20,
-        platoon_aggression=0.20, run_game=0.40,
+        platoon_aggression=0.20, run_game=0.40, bench_usage=0.10,
     ),
 
     # ----- balanced middle -----
@@ -118,13 +124,13 @@ ARCHETYPES: dict[str, Archetype] = {
         key="balanced", label="Balanced Skipper",
         quick_hook=0.50, bullpen_aggression=0.50, leverage_aware=0.55,
         joker_aggression=0.50, pinch_hit_aggression=0.50,
-        platoon_aggression=0.50, run_game=0.50,
+        platoon_aggression=0.50, run_game=0.50, bench_usage=0.50,
     ),
     "fiery": Archetype(
         key="fiery", label="Fiery Competitor",
         quick_hook=0.70, bullpen_aggression=0.60, leverage_aware=0.55,
         joker_aggression=0.80, pinch_hit_aggression=0.70,
-        platoon_aggression=0.45, run_game=0.65,
+        platoon_aggression=0.45, run_game=0.65, bench_usage=0.55,
     ),
 
     # ----- modern / aggressive end -----
@@ -132,19 +138,19 @@ ARCHETYPES: dict[str, Archetype] = {
         key="hot_hand", label="Hot-Hand Hunter",
         quick_hook=0.85, bullpen_aggression=0.55, leverage_aware=0.45,
         joker_aggression=0.60, pinch_hit_aggression=0.65,
-        platoon_aggression=0.40, run_game=0.55,
+        platoon_aggression=0.40, run_game=0.55, bench_usage=0.65,
     ),
     "bullpen_innovator": Archetype(
         key="bullpen_innovator", label="Bullpen Innovator",
         quick_hook=0.78, bullpen_aggression=0.88, leverage_aware=0.92,
         joker_aggression=0.55, pinch_hit_aggression=0.65,
-        platoon_aggression=0.78, run_game=0.45,
+        platoon_aggression=0.78, run_game=0.45, bench_usage=0.65,
     ),
     "modern": Archetype(
         key="modern", label="Modern Tactician",
         quick_hook=0.80, bullpen_aggression=0.80, leverage_aware=0.85,
         joker_aggression=0.65, pinch_hit_aggression=0.70,
-        platoon_aggression=0.70, run_game=0.50,
+        platoon_aggression=0.70, run_game=0.50, bench_usage=0.70,
     ),
 
     # ----- unorthodox / high-variance personas -----
@@ -152,7 +158,7 @@ ARCHETYPES: dict[str, Archetype] = {
         key="sabermetric_max", label="Sabermetric Maximalist",
         quick_hook=0.92, bullpen_aggression=0.95, leverage_aware=0.95,
         joker_aggression=0.75, pinch_hit_aggression=0.85,
-        platoon_aggression=0.90, run_game=0.40,
+        platoon_aggression=0.90, run_game=0.40, bench_usage=0.85,
     ),
     "mad_scientist": Archetype(
         # Maddon-coded / Rays-coded chaos. Even wider noise so two mad
@@ -160,14 +166,14 @@ ARCHETYPES: dict[str, Archetype] = {
         key="mad_scientist", label="Mad Scientist",
         quick_hook=0.65, bullpen_aggression=0.72, leverage_aware=0.70,
         joker_aggression=0.92, pinch_hit_aggression=0.85,
-        platoon_aggression=0.82, run_game=0.65, noise=0.32,
+        platoon_aggression=0.82, run_game=0.65, bench_usage=0.80, noise=0.32,
     ),
     "gambler": Archetype(
         # Roll-the-dice aggressive on every axis — extremely high variance.
         key="gambler", label="Gambler",
         quick_hook=0.80, bullpen_aggression=0.78, leverage_aware=0.65,
         joker_aggression=0.88, pinch_hit_aggression=0.80,
-        platoon_aggression=0.55, run_game=0.85, noise=0.30,
+        platoon_aggression=0.55, run_game=0.85, bench_usage=0.60, noise=0.30,
     ),
 }
 
@@ -200,6 +206,7 @@ def roll_manager(rng: random.Random) -> dict:
         "mgr_pinch_hit_aggression": _clamp(arch.pinch_hit_aggression + rng.uniform(-n, n)),
         "mgr_platoon_aggression": _clamp(arch.platoon_aggression   + rng.uniform(-n, n)),
         "mgr_run_game":           _clamp(arch.run_game             + rng.uniform(-n, n)),
+        "mgr_bench_usage":        _clamp(arch.bench_usage          + rng.uniform(-n, n)),
     }
 
 

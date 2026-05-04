@@ -179,6 +179,64 @@ def _pick_jokers(non_starter_bats: list, n: int = 3) -> list:
     return sorted_bats[:n]
 
 
+def _position_player_workload(
+    team_id: int, game_date: str, lookback_days: int = 12
+) -> dict[int, dict]:
+    """Consecutive-starts state for each position player on the team.
+
+    Walks backward through the team's actual played dates (skipping off-days
+    so the All-Star break doesn't reset the streak) and counts how many of
+    the most-recent-N games the player started (PA > 0 in regulation).
+
+    Returns: { db_player_id: {"consecutive_starts": int, "last_start": str} }
+    Players who haven't started in the lookback window are absent from the
+    dict — callers should treat them as fully rested.
+    """
+    team_date_rows = db.fetchall(
+        """SELECT DISTINCT g.game_date
+             FROM games g
+            WHERE g.played = 1
+              AND (g.home_team_id = ? OR g.away_team_id = ?)
+              AND g.game_date >= date(?, ?)
+              AND g.game_date <  ?
+            ORDER BY g.game_date DESC""",
+        (team_id, team_id, game_date, f"-{lookback_days} days", game_date),
+    )
+    team_dates = [r["game_date"] for r in team_date_rows]
+    if not team_dates:
+        return {}
+
+    placeholders = ",".join("?" * len(team_dates))
+    starts_rows = db.fetchall(
+        f"""SELECT g.game_date, bs.player_id
+              FROM game_batter_stats bs
+              JOIN games g ON g.id = bs.game_id
+             WHERE bs.team_id = ?
+               AND g.played = 1
+               AND g.game_date IN ({placeholders})
+               AND bs.pa > 0
+               AND bs.phase = 0""",
+        (team_id, *team_dates),
+    )
+    player_starts: dict[int, set[str]] = {}
+    for r in starts_rows:
+        player_starts.setdefault(r["player_id"], set()).add(r["game_date"])
+
+    out: dict[int, dict] = {}
+    for pid, started_dates in player_starts.items():
+        consecutive = 0
+        for td in team_dates:
+            if td in started_dates:
+                consecutive += 1
+            else:
+                break
+        out[pid] = {
+            "consecutive_starts": consecutive,
+            "last_start": max(started_dates),
+        }
+    return out
+
+
 def _db_team_to_engine(
     team_row: dict,
     players: list[dict],
@@ -186,6 +244,8 @@ def _db_team_to_engine(
     rotation_index: int = 0,
     recently_used_pitcher_ids: set[int] | None = None,
     workload: dict[int, dict[str, int]] | None = None,
+    position_workload: dict[int, dict] | None = None,
+    game_date: str | None = None,
 ) -> Team:
     """
     Convert a DB team row + player rows into an O27 engine Team object.
@@ -309,7 +369,70 @@ def _db_team_to_engine(
     # are bench depth that lives in the roster but does not bat. Cap DHs
     # at 3 batting slots so the lineup stays at 12 (8 fielders + SP + 3 DH)
     # for engine compatibility.
-    starting_fielders = fielders[:8]
+    starting_fielders = list(fielders[:8])
+    bench_fielders = list(fielders[8:])
+
+    # Rest-day pass: rotate UT bench bats in for regulars based on the
+    # manager's bench_usage tendency, age, position (catchers rest more),
+    # and consecutive starts (compounds after 5 days). Capped at 2 rests
+    # per game so we don't get a half-bench lineup. RNG is seeded from
+    # game_date + team_id so the decision is reproducible game-to-game
+    # and doesn't depend on the sim-time clock.
+    if game_date and bench_fielders and position_workload is not None:
+        import random as _r
+        seed_key = hash((game_date, str(team_role), team_row.get("id", 0))) & 0x7FFFFFFF
+        rest_rng = _r.Random(seed_key)
+        bench_usage = float(team_row.get("mgr_bench_usage") or 0.5)
+
+        # Score each starter's rest probability and roll independently.
+        rest_rolls: list[tuple] = []
+        for sf in starting_fielders:
+            db_id = engine_to_db_id.get(sf.player_id)
+            wl = position_workload.get(db_id, {}) if db_id is not None else {}
+            consecutive = int(wl.get("consecutive_starts", 0))
+            # Pull the underlying DB row to read age + position. We have
+            # them indirectly via the original players list.
+            db_row = next((p for p in players if int(p["id"]) == db_id), None) if db_id else None
+            age = int((db_row or {}).get("age") or 27)
+            pos = (db_row or {}).get("position") or ""
+
+            # Base rate is heavily damped by manager bench_usage so an
+            # old-school skipper effectively never rests anyone.
+            rest_p = 0.06 * (0.20 + 1.40 * bench_usage)
+            if age >= 30:
+                rest_p += (age - 30) * 0.005
+            if pos == "C":
+                rest_p += 0.04
+                if consecutive >= 4:
+                    rest_p += 0.10
+            if consecutive >= 5:
+                rest_p += min(0.15, (consecutive - 4) * 0.04)
+            rest_p = max(0.0, min(0.40, rest_p))
+
+            rest_rolls.append((sf, rest_p))
+
+        # Roll, cap at 2 rests per game (resort by highest rest_p first
+        # so the most-deserving rests get applied if more than 2 fire).
+        will_rest: list = []
+        for sf, p in sorted(rest_rolls, key=lambda x: -x[1]):
+            if len(will_rest) >= min(2, len(bench_fielders)):
+                break
+            if rest_rng.random() < p:
+                will_rest.append(sf)
+
+        if will_rest:
+            # Pull bench bats by skill (highest first); position-specific
+            # backup is a follow-up — for now we trust the UT pool to be
+            # generally usable across the board.
+            bench_sorted = sorted(
+                bench_fielders,
+                key=lambda pl: -float(getattr(pl, "skill", 0.5) or 0.5),
+            )
+            for i, rested in enumerate(will_rest):
+                if i >= len(bench_sorted):
+                    break
+                idx = starting_fielders.index(rested)
+                starting_fielders[idx] = bench_sorted[i]
 
     # Build the 9-batter base lineup: 8 fielders + SP, ordered by talent.
     lineup = _ordered_lineup(starting_fielders, todays_sp)
@@ -350,6 +473,7 @@ def _db_team_to_engine(
     team.mgr_pinch_hit_aggression = float(team_row.get("mgr_pinch_hit_aggression") or 0.5)
     team.mgr_platoon_aggression   = float(team_row.get("mgr_platoon_aggression") or 0.5)
     team.mgr_run_game             = float(team_row.get("mgr_run_game") or 0.5)
+    team.mgr_bench_usage          = float(team_row.get("mgr_bench_usage") or 0.5)
     # Stamp the catcher's arm rating on the Team for SB-success scaling.
     pos_by_id = {str(r["id"]): str(r.get("position") or "") for r in players}
     catcher_arm = 0.5
@@ -692,16 +816,28 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     # stamped on Player.days_rest / pitch_debt inside _db_team_to_engine).
     home_workload = _pitcher_workload_state(home_team_id, game_date)
     away_workload = _pitcher_workload_state(away_team_id, game_date)
+    # Position-player workload (consecutive starts) — drives the
+    # manager's rest-day decision in _db_team_to_engine.
+    home_pos_wl = _position_player_workload(home_team_id, game_date)
+    away_pos_wl = _position_player_workload(away_team_id, game_date)
+
+    # Stamp the team_row with id so the rest-day RNG seed is stable.
+    away_row_id = dict(away_row); away_row_id["id"] = away_team_id
+    home_row_id = dict(home_row); home_row_id["id"] = home_team_id
 
     visitors_team = _db_team_to_engine(
-        away_row, away_players, "visitors",
+        away_row_id, away_players, "visitors",
         recently_used_pitcher_ids=away_rest,
         workload=away_workload,
+        position_workload=away_pos_wl,
+        game_date=game_date,
     )
     home_team = _db_team_to_engine(
-        home_row, home_players, "home",
+        home_row_id, home_players, "home",
         recently_used_pitcher_ids=home_rest,
         workload=home_workload,
+        position_workload=home_pos_wl,
+        game_date=game_date,
     )
 
     state = GameState(visitors=visitors_team, home=home_team)

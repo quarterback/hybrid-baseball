@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS teams (
     mgr_joker_aggression     REAL  DEFAULT 0.5,
     mgr_pinch_hit_aggression REAL  DEFAULT 0.5,
     mgr_platoon_aggression   REAL  DEFAULT 0.5,
-    mgr_run_game             REAL  DEFAULT 0.5
+    mgr_run_game             REAL  DEFAULT 0.5,
+    mgr_bench_usage          REAL  DEFAULT 0.5
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -368,7 +369,7 @@ def init_db() -> None:
         for col in ("mgr_quick_hook", "mgr_bullpen_aggression",
                     "mgr_leverage_aware", "mgr_joker_aggression",
                     "mgr_pinch_hit_aggression", "mgr_platoon_aggression",
-                    "mgr_run_game"):
+                    "mgr_run_game", "mgr_bench_usage"):
             try:
                 conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL DEFAULT 0.5")
                 conn.commit()

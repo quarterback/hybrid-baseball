@@ -559,14 +559,16 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
             "INSERT INTO teams (name, abbrev, city, division, league, "
             "park_hr, park_hits, manager_archetype, mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
-            "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
+            "mgr_bench_usage)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, division, league_name,
              park_hr, park_hits,
              mgr["manager_archetype"], mgr["mgr_quick_hook"],
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
              mgr["mgr_joker_aggression"], mgr["mgr_pinch_hit_aggression"],
-             mgr["mgr_platoon_aggression"], mgr["mgr_run_game"]),
+             mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
+             mgr["mgr_bench_usage"]),
         )
         players = generate_players(idx, rng2)
         db.executemany(

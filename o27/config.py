@@ -220,6 +220,16 @@ PICKOFF_SUCCESS_MIN: float         = 0.03
 PICKOFF_SUCCESS_MAX: float         = 0.40
 
 # ---------------------------------------------------------------------------
+# Hit-by-pitch — wildness converts a fraction of "ball" outcomes into HBP.
+# Pre-this-config the engine never produced HBP outside scripted tests
+# (pitch_outcome's _PITCH_NAMES list didn't include it). We layer HBP on
+# in _generate_pitch as a post-pitch-outcome conversion so the realism
+# identity invariant on _pitch_probs stays intact. Lower command -> more
+# HBP; identity at command = 0.5 yields the base rate.
+HBP_FROM_BALL_BASE: float          = 0.018  # fraction of balls converted to HBP at neutral cmd
+HBP_COMMAND_SCALE: float           = 0.030  # +(0.5 - command) * this
+
+# ---------------------------------------------------------------------------
 # Hit-and-run — a manager-called SB attempt where the batter is asked to
 # swing at any pitch to protect the runner. Bypasses the SB speed gate
 # (the runner goes regardless) and gives a small success bump because

@@ -253,6 +253,7 @@ class Team:
     mgr_pinch_hit_aggression: float = 0.5
     mgr_platoon_aggression:   float = 0.5
     mgr_run_game:             float = 0.5
+    mgr_bench_usage:          float = 0.5
 
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-rotation
