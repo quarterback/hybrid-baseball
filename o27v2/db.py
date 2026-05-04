@@ -113,6 +113,9 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     multi_hit_abs INTEGER DEFAULT 0,
     stay_rbi   INTEGER DEFAULT 0,
     roe        INTEGER DEFAULT 0,   -- reached on error (NOT a hit; AB credited)
+    -- Per-fielder defensive events (the player as a FIELDER, not as a batter).
+    po         INTEGER DEFAULT 0,   -- putouts as primary fielder
+    e          INTEGER DEFAULT 0,   -- errors committed
     UNIQUE(player_id, game_id, phase)
 );
 
@@ -370,6 +373,17 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+
+        # Per-fielder defensive events: PO and E credited to the player
+        # who actually made (or muffed) the play, NOT the batter at the
+        # plate. The renderer credits these via _select_fielder picking
+        # a position-weighted fielder per BIP outcome.
+        for col in ("po", "e"):
+            try:
+                conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
         for col in ("hbp_allowed", "unearned_runs", "sb_allowed", "cs_caught", "fo_induced"):
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")

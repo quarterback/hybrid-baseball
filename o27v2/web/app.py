@@ -1526,6 +1526,12 @@ def player_detail(player_id: int):
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
     )
+    fld = db.fetchone(
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+           FROM game_batter_stats WHERE player_id = ?""",
+        (player_id,),
+    ) or {"po": 0, "e": 0}
+
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
                    SUM(hits_allowed) as h, SUM(runs_allowed) as r,
@@ -1558,6 +1564,19 @@ def player_detail(player_id: int):
         bt_totals["defense_catcher"]  = player.get("defense_catcher")
         _aggregate_batter_rows([bt_totals], baselines=baselines)
 
+    # Per-fielder defense totals (PO + E from any game where the player
+    # was credited with a play). Fielding% derives naturally; A is not
+    # tracked separately since the engine doesn't model the throw-vs-catch
+    # split (PO is awarded to whoever the play was attributed to).
+    po = fld["po"] or 0
+    e  = fld["e"] or 0
+    fld_totals = {
+        "po": po,
+        "e":  e,
+        "chances": po + e,
+        "fld_pct": (po / (po + e)) if (po + e) > 0 else None,
+    }
+
     pt_totals = None
     if pt and pt["outs"]:
         outs = pt["outs"] or 0
@@ -1573,6 +1592,7 @@ def player_detail(player_id: int):
         pitching_log=pitching_log,
         bt_totals=bt_totals,
         pt_totals=pt_totals,
+        fld_totals=fld_totals,
         baselines=baselines,
     )
 

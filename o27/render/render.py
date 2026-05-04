@@ -491,6 +491,29 @@ class Renderer:
         # the plate" marker — the actual stat increment happens elsewhere.
         return
 
+    def _credit_fielder(self, fielder_id, state_after, attr: str) -> None:
+        """Increment a per-fielder stat (po / e) for the player who made
+        the play. Creates a BatterStats entry if one doesn't exist yet —
+        defensive players need stat rows even if they haven't batted yet
+        in the half.
+        """
+        if not fielder_id:
+            return
+        if fielder_id not in self._batter_stats:
+            # Look the player up in the fielding team's roster to grab
+            # their name; fall back to the id if absent.
+            name = fielder_id
+            for team in (state_after.fielding_team, state_after.batting_team):
+                p = team.get_player(fielder_id)
+                if p is not None:
+                    name = p.name
+                    break
+            self._batter_stats[fielder_id] = BatterStats(
+                player_id=fielder_id, name=name
+            )
+        setattr(self._batter_stats[fielder_id], attr,
+                getattr(self._batter_stats[fielder_id], attr) + 1)
+
     def _get_stats(self, player) -> BatterStats:
         if player.player_id not in self._batter_stats:
             self._batter_stats[player.player_id] = BatterStats(
@@ -869,9 +892,20 @@ class Renderer:
                     # Pitcher H allowed does NOT increment (errors aren't
                     # hits in MLB scoring); pa.py already handled that.
                     s.roe += 1
+                    # Charge the error to the responsible fielder (E++).
+                    self._credit_fielder(
+                        (event.get("outcome") or {}).get("fielder_id"),
+                        state_after, "e",
+                    )
                 elif not disp.get("batter_safe", True):
                     # Batter retired (ground out, fly out, line out, DP etc.)
                     s.outs_recorded += 1
+                    # Credit the putout to the responsible fielder (PO++).
+                    # Caught flies still credit a PO (the fielder caught it).
+                    self._credit_fielder(
+                        (event.get("outcome") or {}).get("fielder_id"),
+                        state_after, "po",
+                    )
                 if hit_type == "double":
                     s.doubles += 1
                 elif hit_type == "triple":
@@ -985,7 +1019,8 @@ class Renderer:
         for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
                   "stay_rbi", "multi_hit_abs",
-                  "sb", "cs", "fo", "roe"):
+                  "sb", "cs", "fo", "roe",
+                  "po", "e"):
             setattr(d, f, getattr(end_s, f) - prev_get(f))
         return d
 

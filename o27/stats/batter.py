@@ -29,3 +29,8 @@ class BatterStats:
     cs: int = 0     # Caught-stealing outs charged to this runner
     fo: int = 0     # Foul-outs (3-foul rule) — subset of outs_recorded
     roe: int = 0    # Reached on error (NOT a hit; AB credited; defensive miscue)
+    # Per-fielder defense events (credited to the player who fielded the
+    # play, NOT to the batter at the plate). Stored on BatterStats since
+    # every fielder is also a batter.
+    po: int = 0     # Putouts — outs recorded as the primary fielder on a play
+    e:  int = 0     # Errors committed

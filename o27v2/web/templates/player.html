@@ -317,6 +317,29 @@
 
 {# ======================== FIELDING TAB ======================== #}
 <div class="tab-pane fade" id="tab-fielding">
+
+  <div class="dense mb-3">
+    <div class="panel-title">Standard Fielding</div>
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th>Pos</th>
+        <th class="num" title="Putouts — outs recorded as the primary fielder on a play">PO</th>
+        <th class="num" title="Errors committed">E</th>
+        <th class="num" title="Total chances (PO + E)">TC</th>
+        <th class="num" title="Fielding percentage = PO / (PO + E)">FldPct</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>{{ player.position }}</td>
+          <td class="num fw-bold">{{ fld_totals.po }}</td>
+          <td class="num">{{ fld_totals.e }}</td>
+          <td class="num">{{ fld_totals.chances }}</td>
+          <td class="num">{% if fld_totals.fld_pct is not none %}{{ '%.3f'|format(fld_totals.fld_pct) }}{% else %}—{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
   <div class="dense mb-3">
     <div class="panel-title">Defensive Profile (rated)</div>
     <table class="table table-sm dense-table mb-0">
@@ -331,7 +354,7 @@
   </div>
   {% if bt_totals %}
   <div class="dense mb-3">
-    <div class="panel-title">Defensive Value (in current games played)</div>
+    <div class="panel-title">Defensive Value</div>
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
         <th class="num">Pos</th>
@@ -350,7 +373,7 @@
     </table>
   </div>
   {% endif %}
-  <p class="text-secondary small">Per-fielder defensive event tracking (PO / A / E / DP) isn't yet recorded by the engine — errors are charged to the team rather than to specific fielders. The ratings above drive how often this player turns batted balls into outs vs hits.</p>
+  <p class="text-secondary small">Plays are attributed to a fielder by position-weighted probability per BIP type (grounders cluster at SS/2B; flies at CF; etc.). Errors get charged to the responsible position. Assists and double plays aren't yet tracked separately — only PO and E.</p>
 </div>
 
 {# ======================== RATINGS TAB ======================== #}
