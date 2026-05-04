@@ -545,10 +545,18 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
         name   = team_def.get("name", "Team")
 
         park_hr, park_hits = _roll_park_factors(rng2)
+        from o27v2.managers import roll_manager
+        mgr = roll_manager(rng2)
         team_id = db.execute(
-            "INSERT INTO teams (name, abbrev, city, division, league, park_hr, park_hits)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (name, abbrev, city, division, league_name, park_hr, park_hits),
+            "INSERT INTO teams (name, abbrev, city, division, league, "
+            "park_hr, park_hits, manager_archetype, mgr_quick_hook, "
+            "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (name, abbrev, city, division, league_name,
+             park_hr, park_hits,
+             mgr["manager_archetype"], mgr["mgr_quick_hook"],
+             mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
+             mgr["mgr_joker_aggression"]),
         )
         players = generate_players(idx, rng2)
         db.executemany(

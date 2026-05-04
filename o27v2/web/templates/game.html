@@ -261,7 +261,7 @@
     <thead><tr>
       <th>Team</th>
       {% for p in phases %}<th class="num">{{ short_phase_label(p) }}</th>{% endfor %}
-      <th class="num">R</th><th class="num">H</th>
+      <th class="num">R</th><th class="num">H</th><th class="num">E</th>
     </tr></thead>
     <tbody>
       <tr>
@@ -269,12 +269,14 @@
         {% for p in phases %}<td class="num">{{ away_line.runs.get(p, 0) }}</td>{% endfor %}
         <td class="num fw-bold">{{ away_line.total_r }}</td>
         <td class="num">{{ away_line.total_h }}</td>
+        <td class="num">{{ away_line.total_e }}</td>
       </tr>
       <tr>
         <td>{{ game.home_name }}</td>
         {% for p in phases %}<td class="num">{{ home_line.runs.get(p, 0) }}</td>{% endfor %}
         <td class="num fw-bold">{{ home_line.total_r }}</td>
         <td class="num">{{ home_line.total_h }}</td>
+        <td class="num">{{ home_line.total_e }}</td>
       </tr>
     </tbody>
   </table>

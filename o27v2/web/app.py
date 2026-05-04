@@ -1073,17 +1073,23 @@ def game_detail(game_id: int):
     phases = sorted(all_phases)
     si_rounds = max(0, max(phases) if phases else 0)
 
-    # Line score: runs per phase, plus H and "team errors" placeholder.
+    # Line score: runs/hits per phase, plus team errors-committed.
+    # Errors are stored per-player in game_batter_stats.e (player as a
+    # fielder), so the team's E = sum of `e` across that team's batter rows.
     def _line_score(b_by_phase: dict) -> dict:
         runs_per = {ph: sum(r["runs"] or 0 for r in rows)
                     for ph, rows in b_by_phase.items()}
         hits_per = {ph: sum(r["hits"] or 0 for r in rows)
                     for ph, rows in b_by_phase.items()}
+        errs_per = {ph: sum((r["e"] or 0) for r in rows)
+                    for ph, rows in b_by_phase.items()}
         return {
-            "runs":  runs_per,
-            "hits":  hits_per,
+            "runs":   runs_per,
+            "hits":   hits_per,
+            "errors": errs_per,
             "total_r": sum(runs_per.values()),
             "total_h": sum(hits_per.values()),
+            "total_e": sum(errs_per.values()),
         }
 
     away_line = _line_score(away_batting_by_phase)

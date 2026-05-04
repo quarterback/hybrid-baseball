@@ -33,7 +33,13 @@ CREATE TABLE IF NOT EXISTS teams (
     wins      INTEGER DEFAULT 0,
     losses    INTEGER DEFAULT 0,
     park_hr   REAL DEFAULT 1.0,
-    park_hits REAL DEFAULT 1.0
+    park_hits REAL DEFAULT 1.0,
+    -- Manager (re-rolled per league seed; not hard-wired to franchise).
+    manager_archetype      TEXT    DEFAULT '',
+    mgr_quick_hook         REAL    DEFAULT 0.5,
+    mgr_bullpen_aggression REAL    DEFAULT 0.5,
+    mgr_leverage_aware     REAL    DEFAULT 0.5,
+    mgr_joker_aggression   REAL    DEFAULT 0.5
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -341,6 +347,20 @@ def init_db() -> None:
         for col, defval in [("park_hr", "1.0"), ("park_hits", "1.0")]:
             try:
                 conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Manager persona columns (re-rolled on every reseed; see managers.py).
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN manager_archetype TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        for col in ("mgr_quick_hook", "mgr_bullpen_aggression",
+                    "mgr_leverage_aware", "mgr_joker_aggression"):
+            try:
+                conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL DEFAULT 0.5")
                 conn.commit()
             except Exception:
                 pass

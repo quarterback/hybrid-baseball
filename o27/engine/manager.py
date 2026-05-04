@@ -305,7 +305,11 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
 
     # Per-PA insertion probability. Cap at 35% even in peak leverage —
     # manager shouldn't burn all 3 jokers on the first eligible PA.
-    insert_p = min(0.35, leverage * 0.5)
+    # Manager persona scales the willingness: a "fiery" skipper with
+    # high joker_aggression shoots earlier; a patient one waits for
+    # near-peak leverage before spending a joker.
+    joker_agg = float(getattr(team, "mgr_joker_aggression", 0.5))
+    insert_p = min(0.35, leverage * (0.25 + 0.5 * joker_agg))
     if rng is None:
         import random as _r
         roll = _r.random()
@@ -364,14 +368,73 @@ def _legacy_should_insert_joker(state: GameState) -> Optional[Player]:
     return max(typed, key=lambda j: j.skill)
 
 
+def _manager_hook_check(state: GameState) -> bool:
+    """Manager-discretion early hook: pull a pitcher who's getting tagged.
+
+    Checked BEFORE fatigue thresholds. Returns True only when the spell is
+    going badly enough that even a workhorse manager would consider a change.
+    The decision scales with the fielding team's manager persona:
+
+      - quick_hook (0..1) — lower run threshold for pulling.
+      - leverage_aware  — extra pull pressure when the game is close.
+      - bullpen_aggression — willingness to pull early in the half.
+
+    A neutral manager (0.5 across the board) hooks at ~5 runs in spell.
+    A high-quick_hook manager hooks at ~3. A patient one waits for ~7.
+    """
+    spell_runs = int(getattr(state, "pitcher_runs_this_spell", 0) or 0)
+    spell_hits = int(getattr(state, "pitcher_h_this_spell", 0) or 0)
+    bf         = int(getattr(state, "pitcher_spell_count", 0) or 0)
+    # Need a meaningful sample before considering a hook. Two batters into
+    # a spell isn't a "blow up" yet — give the pitcher a chance.
+    if bf < 4:
+        return False
+
+    fielding = state.fielding_team
+    quick   = float(getattr(fielding, "mgr_quick_hook", 0.5))
+    bullpen = float(getattr(fielding, "mgr_bullpen_aggression", 0.5))
+    lev_aw  = float(getattr(fielding, "mgr_leverage_aware", 0.5))
+
+    # Base run threshold: 8 (very patient) → 2 (very quick).
+    run_threshold = max(2, round(8 - 6 * quick))
+
+    # Leverage-aware managers hook earlier when the game is still close.
+    # _batting_deficit returns runs the BATTING team trails by — i.e. positive
+    # means the fielding team leads. We want to hook earlier in close/tied
+    # games and hold longer in blowouts.
+    margin = -_batting_deficit(state)        # +ve = fielding team leads
+    if abs(margin) <= 3:
+        run_threshold -= round(2 * lev_aw)   # close game → quicker
+    elif abs(margin) >= 8:
+        run_threshold += 2                   # blowout → leave him in
+    run_threshold = max(2, run_threshold)
+
+    # Bullpen-aggressive managers also pull on a baserunner pile-up
+    # (lots of hits this spell, even if runs haven't all scored yet).
+    hit_threshold = max(4, round(10 - 6 * bullpen))
+
+    # The actual call: blew up by runs, OR is bleeding hits and the manager
+    # is willing to use the pen.
+    if spell_runs >= run_threshold:
+        return True
+    if spell_hits >= hit_threshold and bullpen >= 0.5:
+        return True
+    return False
+
+
 def should_change_pitcher(state: GameState) -> bool:
     """
-    Trigger a pitching change using emergent role-aware fatigue thresholds.
+    Trigger a pitching change.
+
+    Two layers, evaluated in order:
+      1. Manager-discretion early hook (`_manager_hook_check`) — pulls a
+         pitcher who's getting tagged, gated by the fielding team's manager
+         persona (quick_hook / leverage_aware / bullpen_aggression).
+      2. Fatigue thresholds (the original logic) — emergent role-aware
+         pulls based on pitcher stamina + spell length.
 
     Roles are derived LIVE from the current pitcher's Stamina rating —
-    no stored `pitcher_role` tag is consulted. This is what lets a team
-    naturally adopt an opener-and-committee strategy when they're short
-    on stamina and a workhorse-ride strategy when they have the arms.
+    no stored `pitcher_role` tag is consulted.
 
     First-spell role mapping (the "starter"):
       - stamina >= WORKHORSE_STAMINA_THRESHOLD (0.62)
@@ -390,6 +453,11 @@ def should_change_pitcher(state: GameState) -> bool:
     pitcher = state.get_current_pitcher()
     if pitcher is None:
         return False
+
+    # Layer 1: manager discretion. A skipper with a quick hook will pull a
+    # starter getting torched well before fatigue would force the change.
+    if _manager_hook_check(state):
+        return True
 
     # Detect "this is a relief appearance" by checking spell_log: if any
     # previous spell exists in the current half, we're past the SP.
