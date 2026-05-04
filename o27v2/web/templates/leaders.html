@@ -18,92 +18,126 @@
 <div class="dense p-4 text-center"><div class="text-secondary">No games played yet. Use <span class="badge bg-success">Sim Today</span> in the top bar.</div></div>
 {% else %}
 
-<h5 class="mt-2 mb-2" style="color:#58a6ff">Batting</h5>
-<div class="row g-3 mb-4">
-  {% set batting_cards = [
-    ('AVG', 'avg', '%.3f', true),
-    ('OBP', 'obp', '%.3f', true),
-    ('SLG', 'slg', '%.3f', true),
-    ('OPS', 'ops', '%.3f', true),
-    ('HR',  'hr',  '%d',   true),
-    ('RBI', 'rbi', '%d',   true),
-    ('R',   'r',   '%d',   true),
-    ('H',   'h',   '%d',   true),
-    ('BB',  'bb',  '%d',   true),
-  ] %}
-  {% for label, key, fmt, desc in batting_cards %}
+{# Card macro — used everywhere below. desc=True means "higher is better"
+   (sort descending); desc=False sorts ascending (better for ERA / WHIP). #}
+{% macro card(label, key, fmt, desc, dataset, link_route='player_detail', team_route='team_detail', tooltip='') %}
   <div class="col-lg-3 col-md-4 col-sm-6">
     <div class="dense">
-      <div class="panel-title">{{ label }}</div>
+      <div class="panel-title" {% if tooltip %}title="{{ tooltip }}"{% endif %}>{{ label }}</div>
       <table class="table table-sm dense-table mb-0">
         <thead><tr>
           <th class="num" style="width:24px">#</th>
           <th>Player</th><th>Tm</th><th class="num">{{ label }}</th>
         </tr></thead>
         <tbody>
-          {% set sorted = batting | sort(attribute=key, reverse=desc) %}
-          {% for b in sorted[:25] %}
+          {% set sorted = dataset | sort(attribute=key, reverse=desc) %}
+          {% for r in sorted[:10] %}
           <tr>
             <td class="text-secondary num" style="width:24px">{{ loop.index }}</td>
-            <td><a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
-            <td><a href="{{ url_for('team_detail', team_id=b.team_id) }}" class="team-abbrev">{{ b.team_abbrev }}</a></td>
-            <td class="num fw-bold">{{ fmt|format(b[key]) }}</td>
+            <td><a href="{{ url_for(link_route, player_id=r.player_id) }}">{{ r.player_name }}</a></td>
+            <td><a href="{{ url_for(team_route, team_id=r.team_id) }}" class="team-abbrev">{{ r.team_abbrev }}</a></td>
+            <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
-  {% endfor %}
+{% endmacro %}
+
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Batting — Headline / Slash</h4>
+<div class="row g-3 mb-4">
+  {{ card('PAVG',  'pavg',      '%.3f', true,  batting, tooltip='H/PA — headline batting average') }}
+  {{ card('OBP',   'obp',       '%.3f', true,  batting) }}
+  {{ card('SLG',   'slg',       '%.3f', true,  batting, tooltip='Total bases / PA') }}
+  {{ card('OPS',   'ops',       '%.3f', true,  batting) }}
+  {{ card('OPS+',  'ops_plus',  '%d',   true,  batting, tooltip='OPS relative to league avg (100 = avg)') }}
+  {{ card('wOBA',  'woba',      '%.3f', true,  batting, tooltip='O27-tuned linear weights, PA-denominated') }}
+  {{ card('wOBA+', 'woba_plus', '%d',   true,  batting) }}
+  {{ card('BAVG',  'bavg',      '%.3f', true,  batting, tooltip='H/AB — stayer profile metric, can exceed 1.000') }}
 </div>
 
-<h5 class="mt-2 mb-2" style="color:#58a6ff">Pitching</h5>
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Batting — Counting</h4>
 <div class="row g-3 mb-4">
-  {% set p_cards = [
-    ('W',    'w',    '%d',   true),
-    ('ERA',  'era',  '%.2f', false),
-    ('FIP',  'fip',  '%.2f', false),
-    ('WHIP', 'whip', '%.2f', false),
-    ('K',    'k',    '%d',   true),
-    ('K/27', 'k27',  '%.2f', true),
-    ('BB/27','bb27', '%.2f', false),
-    ('SO/BB','so_bb','%.2f', true),
-  ] %}
-  {% for label, key, fmt, desc in p_cards %}
-  <div class="col-lg-3 col-md-4 col-sm-6">
-    <div class="dense">
-      <div class="panel-title">{{ label }}</div>
-      <table class="table table-sm dense-table mb-0">
-        <thead><tr>
-          <th class="num" style="width:24px">#</th>
-          <th>Player</th><th>Tm</th><th class="num">{{ label }}</th>
-        </tr></thead>
-        <tbody>
-          {% set sorted = pitching | sort(attribute=key, reverse=desc) %}
-          {% for p in sorted[:25] %}
-          <tr>
-            <td class="text-secondary num" style="width:24px">{{ loop.index }}</td>
-            <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
-            <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
-            <td class="num fw-bold">{{ fmt|format(p[key]) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endfor %}
+  {{ card('H',   'h',   '%d', true, batting) }}
+  {{ card('HR',  'hr',  '%d', true, batting) }}
+  {{ card('RBI', 'rbi', '%d', true, batting) }}
+  {{ card('R',   'r',   '%d', true, batting) }}
+  {{ card('BB',  'bb',  '%d', true, batting) }}
+  {{ card('HBP', 'hbp', '%d', true, batting) }}
+  {{ card('SB',  'sb',  '%d', true, batting) }}
+  {{ card('ROE', 'roe', '%d', true, batting, tooltip='Reached on error') }}
+</div>
+
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Batting — Advanced &amp; O27-Native</h4>
+<div class="row g-3 mb-4">
+  {{ card('ISO',     'iso',       '%.3f', true,  batting, tooltip='Isolated power = SLG - PAVG') }}
+  {{ card('BABIP',   'babip',     '%.3f', true,  batting) }}
+  {{ card('BB%',     'bb_pct',    '%.3f', true,  batting) }}
+  {{ card('K% (low)','k_pct',     '%.3f', false, batting, tooltip='Strikeout rate (lower is better)') }}
+  {{ card('Δstay',   'stay_diff', '%+.3f',true,  batting, tooltip='BAVG - PAVG; quantifies stay-driven hit value') }}
+  {{ card('Stay%',   'stay_pct',  '%.3f', true,  batting, tooltip='Share of PAs the batter chose to stay') }}
+  {{ card('FO%',     'fo_pct',    '%.3f', false, batting, tooltip='Foul-out rate (lower is better)') }}
+  {{ card('SB%',     'sb_pct',    '%.3f', true,  batting, tooltip='Stolen-base success rate on attempts') }}
+</div>
+
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Batting — Value</h4>
+<div class="row g-3 mb-4">
+  {{ card('WAR',   'war',     '%.2f', true, batting, tooltip='Total WAR (offense + defense)') }}
+  {{ card('oVORP', 'vorp',    '%.1f', true, batting, tooltip='Offensive runs above replacement') }}
+  {{ card('DRS',   'drs',     '%+.1f',true, batting, tooltip='Defensive runs saved') }}
+  {{ card('dWAR',  'dwar',    '%+.2f',true, batting, tooltip='Defensive WAR contribution') }}
+</div>
+
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Headline / Rate</h4>
+<div class="row g-3 mb-4">
+  {{ card('W',     'w',     '%d',   true,  pitching) }}
+  {{ card('ERA',   'era',   '%.2f', false, pitching) }}
+  {{ card('ERA+',  'era_plus', '%d', true, pitching, tooltip='ERA relative to league avg (higher = better)') }}
+  {{ card('FIP',   'fip',   '%.2f', false, pitching, tooltip='Recalibrated so league FIP = league ERA') }}
+  {{ card('WHIP',  'whip',  '%.2f', false, pitching) }}
+  {{ card('K/27',  'k27',   '%.2f', true,  pitching) }}
+  {{ card('BB/27', 'bb27',  '%.2f', false, pitching) }}
+  {{ card('K/BB',  'so_bb', '%.2f', true,  pitching) }}
+</div>
+
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Counting</h4>
+<div class="row g-3 mb-4">
+  {{ card('K',         'k',           '%d', true,  pitching) }}
+  {{ card('Outs',      'outs',        '%d', true,  pitching, tooltip='Outs recorded — IP-equivalent') }}
+  {{ card('HR allowed','hr_allowed',  '%d', false, pitching) }}
+  {{ card('BB allowed','bb',          '%d', false, pitching) }}
+</div>
+
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Advanced &amp; Opponent</h4>
+<div class="row g-3 mb-4">
+  {{ card('K% (high)', 'k_pct',         '%.3f', true,  pitching) }}
+  {{ card('BB%',       'bb_pct',        '%.3f', false, pitching) }}
+  {{ card('HR%',       'hr_pct',        '%.3f', false, pitching) }}
+  {{ card('oAVG',      'oavg',          '%.3f', false, pitching, tooltip='Opponent batting average — H / (BF - BB - HBP)') }}
+  {{ card('BABIP-a',   'babip_allowed', '%.3f', false, pitching, tooltip='BABIP allowed') }}
+  {{ card('HR/27',     'hr27',          '%.2f', false, pitching) }}
+</div>
+
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Value</h4>
+<div class="row g-3 mb-4">
+  {{ card('WAR',  'war',  '%.2f', true, pitching) }}
+  {{ card('VORP', 'vorp', '%.1f', true, pitching, tooltip='Runs saved vs replacement-level pitcher') }}
 </div>
 
 <div class="text-secondary small mt-2 mb-3" style="line-height:1.4">
   <strong>Methodology.</strong>
-  ERA = ER × 27 / outs (per-27-out denominator, one full O27 game).
-  FIP is recalibrated each request so that <em>league FIP equals league ERA</em>;
-  individual FIP values are anchored to the live run environment, so a 4.50 FIP
-  in a 12.00-ERA league is well above league average.
-  WHIP / K / BB are also per-27-outs.
-  Win/loss is credited to the team's workhorse (most outs recorded) for the day;
-  ties on outs go to the first such pitcher in appearance order.
+  All rate stats are PA- or 27-outs-denominated to fit the O27 structure
+  (one continuous 27-out half per side). PAVG = H/PA is the headline batting
+  average; BAVG = H/AB is the secondary "stayer profile" metric and can
+  exceed 1.000 thanks to multi-hit ABs via stays. ERA, WHIP, K/27, BB/27
+  are per 27 outs. FIP is recalibrated each render so league FIP = league
+  ERA — a 4.50 FIP in a 12.00-ERA league is well above league average.
+  OPS+ / wOBA+ / ERA+ are all relativized to live league baselines (100 =
+  avg, higher = better — note ERA+ inverts since lower raw ERA is better).
+  WAR uses an O27-fitted runs-per-win factor (~21 vs MLB's ~10) so the
+  scale reads correctly. Win/loss credits an SP with ≥ 12 outs and the
+  lead, otherwise the most-effective reliever.
 </div>
 
 {% endif %}

@@ -38,62 +38,115 @@
   {%- if pct > 100 -%}100{%- else -%}{{ '%.0f'|format(pct) }}{%- endif -%}%
 {%- endmacro %}
 
-{% macro batting_table(rows, totals, phase, denom_outs) %}
+{# Batting table macro.
+     consolidated=True adds PAVG/OBP/SLG/OPS columns (only meaningful on the
+     per-game game-totals row, where the aggregator has been run). #}
+{% macro batting_table(rows, totals, phase, denom_outs, consolidated=False) %}
+<div class="table-responsive">
 <table class="table table-sm dense-table mb-0">
   <thead><tr>
     <th>Player</th><th>Pos</th>
     <th class="num">PA</th><th class="num">AB</th>
+    <th class="num">R</th>
     <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
-    <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">K</th>
-    <th class="num" title="Outs recorded — times this batter was retired (CS, FC, K, ground out, etc.)">OR</th>
+    <th class="num">RBI</th><th class="num">BB</th><th class="num">K</th>
+    <th class="num">HBP</th><th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
+    <th class="num" title="Outs recorded — times this batter was retired">OR</th>
+    <th class="num" title="Putouts">PO</th>
+    <th class="num" title="Errors">E</th>
+    {% if consolidated %}
+    <th class="num">PAVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
+    {% endif %}
   </tr></thead>
   <tbody>
   {% for b in rows %}
   <tr>
-    <td>{{ b.player_name }}</td>
+    <td><a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
     <td class="text-secondary">{{ b.position }}</td>
     <td class="num">{{ b.pa }}</td><td class="num">{{ b.ab }}</td>
+    <td class="num">{{ b.runs }}</td>
     <td class="num fw-bold">{{ b.hits }}</td>
     <td class="num">{{ b.doubles }}</td><td class="num">{{ b.triples }}</td><td class="num">{{ b.hr }}</td>
-    <td class="num">{{ b.runs }}</td><td class="num">{{ b.rbi }}</td>
+    <td class="num">{{ b.rbi }}</td>
     <td class="num">{{ b.bb }}</td><td class="num">{{ b.k }}</td>
+    <td class="num">{{ b.hbp or 0 }}</td>
+    <td class="num">{{ b.sb or 0 }}</td>
+    <td class="num">{{ b.cs or 0 }}</td>
+    <td class="num">{{ b.fo or 0 }}</td>
     <td class="num">{{ b.outs_recorded or 0 }}</td>
+    <td class="num">{{ b.po or 0 }}</td>
+    <td class="num">{{ b.e or 0 }}</td>
+    {% if consolidated %}
+    <td class="num fw-bold">{{ '%.3f'|format(b.pavg or 0) }}</td>
+    <td class="num">{{ '%.3f'|format(b.obp or 0) }}</td>
+    <td class="num">{{ '%.3f'|format(b.slg or 0) }}</td>
+    <td class="num fw-bold">{{ '%.3f'|format(b.ops or 0) }}</td>
+    {% endif %}
   </tr>
   {% else %}
-  <tr><td colspan="13" class="text-secondary text-center">No batters in this phase.</td></tr>
+  <tr><td colspan="{{ 23 if consolidated else 19 }}" class="text-secondary text-center">No batters in this phase.</td></tr>
   {% endfor %}
   {% if rows %}
   <tr class="fw-bold" style="background:#1f2937">
     <td colspan="2">Totals</td>
     <td class="num">{{ totals.pa }}</td>
     <td class="num">{{ totals.ab }}</td>
+    <td class="num">{{ totals.runs }}</td>
     <td class="num">{{ totals.hits }}</td>
     <td class="num">{{ totals.doubles }}</td>
     <td class="num">{{ totals.triples }}</td>
     <td class="num">{{ totals.hr }}</td>
-    <td class="num">{{ totals.runs }}</td>
     <td class="num">{{ totals.rbi }}</td>
     <td class="num">{{ totals.bb }}</td>
     <td class="num">{{ totals.k }}</td>
+    <td class="num">{{ totals.hbp or 0 }}</td>
+    <td class="num">{{ totals.sb or 0 }}</td>
+    <td class="num">{{ totals.cs or 0 }}</td>
+    <td class="num">{{ totals.fo or 0 }}</td>
     <td class="num">{{ totals.outs_recorded }}</td>
+    <td class="num">{{ totals.po or 0 }}</td>
+    <td class="num">{{ totals.e or 0 }}</td>
+    {% if consolidated %}
+    {# Team rate stats: AVG = totals.hits / totals.pa, etc. #}
+    {% set tot_pa = totals.pa or 0 %}
+    {% set tot_ab = totals.ab or 0 %}
+    {% set tot_h  = totals.hits or 0 %}
+    {% set tot_singles = tot_h - (totals.doubles or 0) - (totals.triples or 0) - (totals.hr or 0) %}
+    {% set tot_tb = tot_singles + 2*(totals.doubles or 0) + 3*(totals.triples or 0) + 4*(totals.hr or 0) %}
+    {% set t_pavg = (tot_h / tot_pa) if tot_pa else 0 %}
+    {% set t_obp  = ((tot_h + (totals.bb or 0) + (totals.hbp or 0)) / tot_pa) if tot_pa else 0 %}
+    {% set t_slg  = (tot_tb / tot_pa) if tot_pa else 0 %}
+    <td class="num">{{ '%.3f'|format(t_pavg) }}</td>
+    <td class="num">{{ '%.3f'|format(t_obp) }}</td>
+    <td class="num">{{ '%.3f'|format(t_slg) }}</td>
+    <td class="num">{{ '%.3f'|format(t_obp + t_slg) }}</td>
+    {% endif %}
   </tr>
   {% endif %}
   </tbody>
 </table>
+</div>
 {% endmacro %}
 
-{% macro pitching_table(rows, totals, denom_outs) %}
+{% macro pitching_table(rows, totals, denom_outs, consolidated=False) %}
+<div class="table-responsive">
 <table class="table table-sm dense-table mb-0">
   <thead><tr>
     <th>Pitcher</th>
     <th class="num">BF</th><th class="num">OS%</th><th class="num">OUT</th>
     <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
-    <th class="num">BB</th><th class="num">K</th>
+    <th class="num">BB</th><th class="num">K</th><th class="num">HR</th>
+    <th class="num">HBP</th><th class="num">UER</th>
+    <th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
+    <th class="num" title="Pitches thrown">P</th>
+    {% if consolidated %}
+    <th class="num">ERA</th><th class="num">WHIP</th><th class="num">K/27</th>
+    {% endif %}
   </tr></thead>
   <tbody>
   {% for p in rows %}
   <tr>
-    <td>{{ p.player_name }}</td>
+    <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
     <td class="num">{{ p.batters_faced }}</td>
     <td class="num text-secondary">{{ os_pct(p.outs_recorded or 0, denom_outs) }}</td>
     <td class="num">{{ p.outs_recorded }}</td>
@@ -101,10 +154,22 @@
     <td class="num">{{ p.runs_allowed }}</td>
     <td class="num">{{ p.er if p.er is not none else p.runs_allowed }}</td>
     <td class="num">{{ p.bb }}</td>
-    <td class="num">{{ p.k }}</td>
+    <td class="num fw-bold">{{ p.k }}</td>
+    <td class="num">{{ p.hr_allowed or 0 }}</td>
+    <td class="num">{{ p.hbp_allowed or 0 }}</td>
+    <td class="num">{{ p.unearned_runs or 0 }}</td>
+    <td class="num">{{ p.sb_allowed or 0 }}</td>
+    <td class="num">{{ p.cs_caught or 0 }}</td>
+    <td class="num">{{ p.fo_induced or 0 }}</td>
+    <td class="num">{{ p.pitches or 0 }}</td>
+    {% if consolidated %}
+    <td class="num fw-bold">{{ '%.2f'|format(p.era or 0) }}</td>
+    <td class="num">{{ '%.2f'|format(p.whip or 0) }}</td>
+    <td class="num">{{ '%.2f'|format(p.k27 or 0) }}</td>
+    {% endif %}
   </tr>
   {% else %}
-  <tr><td colspan="9" class="text-secondary text-center">No pitchers in this phase.</td></tr>
+  <tr><td colspan="{{ 19 if consolidated else 16 }}" class="text-secondary text-center">No pitchers in this phase.</td></tr>
   {% endfor %}
   {% if rows %}
   <tr class="fw-bold" style="background:#1f2937">
@@ -117,10 +182,31 @@
     <td class="num">{{ totals.er }}</td>
     <td class="num">{{ totals.bb }}</td>
     <td class="num">{{ totals.k }}</td>
+    <td class="num">{{ totals.hr_allowed or 0 }}</td>
+    <td class="num">{{ totals.hbp_allowed or 0 }}</td>
+    <td class="num">{{ totals.unearned_runs or 0 }}</td>
+    <td class="num">{{ totals.sb_allowed or 0 }}</td>
+    <td class="num">{{ totals.cs_caught or 0 }}</td>
+    <td class="num">{{ totals.fo_induced or 0 }}</td>
+    <td class="num">{{ totals.pitches or 0 }}</td>
+    {% if consolidated %}
+    {% set t_outs = totals.outs_recorded or 0 %}
+    {% set t_h    = totals.hits_allowed or 0 %}
+    {% set t_bb   = totals.bb or 0 %}
+    {% set t_er   = totals.er or 0 %}
+    {% set t_k    = totals.k or 0 %}
+    {% set t_era  = (t_er * 27 / t_outs) if t_outs else 0 %}
+    {% set t_whip = ((t_h + t_bb) * 27 / t_outs) if t_outs else 0 %}
+    {% set t_k27  = (t_k * 27 / t_outs) if t_outs else 0 %}
+    <td class="num">{{ '%.2f'|format(t_era) }}</td>
+    <td class="num">{{ '%.2f'|format(t_whip) }}</td>
+    <td class="num">{{ '%.2f'|format(t_k27) }}</td>
+    {% endif %}
   </tr>
   {% endif %}
   </tbody>
 </table>
+</div>
 {% endmacro %}
 
 <nav aria-label="breadcrumb" class="mb-2 d-flex justify-content-between align-items-center">
@@ -293,35 +379,89 @@
    IA consistent across game types so a viewer never has to mentally
    add up Regulation + SI. #}
 {% set total_denom = 27 + 5 * si_rounds %}
-<h5 class="mt-4 mb-2 text-secondary">Game Totals <small class="text-secondary">(consolidated across all phases)</small></h5>
+<h5 class="mt-4 mb-2 text-secondary">Game Totals <small class="text-secondary">(consolidated across all phases, with rate stats)</small></h5>
 <div class="row g-3 mb-2">
-  <div class="col-lg-6">
+  <div class="col-12">
     <div class="dense">
       <div class="panel-title">{{ game.away_name }} — Batting</div>
-      {{ batting_table(away_batting_consolidated, away_batting_total, -1, total_denom) }}
+      {{ batting_table(away_batting_consolidated, away_batting_total, -1, total_denom, consolidated=True) }}
     </div>
   </div>
-  <div class="col-lg-6">
+  <div class="col-12">
     <div class="dense">
       <div class="panel-title">{{ game.home_name }} — Batting</div>
-      {{ batting_table(home_batting_consolidated, home_batting_total, -1, total_denom) }}
+      {{ batting_table(home_batting_consolidated, home_batting_total, -1, total_denom, consolidated=True) }}
     </div>
   </div>
 </div>
 <div class="row g-3 mb-3">
-  <div class="col-lg-6">
+  <div class="col-12">
     <div class="dense">
       <div class="panel-title">{{ game.away_name }} — Pitching</div>
-      {{ pitching_table(away_pitching_consolidated, away_pitching_total, total_denom) }}
+      {{ pitching_table(away_pitching_consolidated, away_pitching_total, total_denom, consolidated=True) }}
     </div>
   </div>
-  <div class="col-lg-6">
+  <div class="col-12">
     <div class="dense">
       <div class="panel-title">{{ game.home_name }} — Pitching</div>
-      {{ pitching_table(home_pitching_consolidated, home_pitching_total, total_denom) }}
+      {{ pitching_table(home_pitching_consolidated, home_pitching_total, total_denom, consolidated=True) }}
     </div>
   </div>
 </div>
+
+{# ---------------- Notable Plays ---------------- #}
+{% set away_hr_hitters = away_batting_consolidated | selectattr('hr', 'gt', 0) | list %}
+{% set home_hr_hitters = home_batting_consolidated | selectattr('hr', 'gt', 0) | list %}
+{% set away_errors    = away_batting_consolidated | selectattr('e',  'gt', 0) | list %}
+{% set home_errors    = home_batting_consolidated | selectattr('e',  'gt', 0) | list %}
+{% set away_multi_hit = away_batting_consolidated | selectattr('hits', 'ge', 3) | list %}
+{% set home_multi_hit = home_batting_consolidated | selectattr('hits', 'ge', 3) | list %}
+{% if away_hr_hitters or home_hr_hitters or away_errors or home_errors or away_multi_hit or home_multi_hit %}
+<div class="dense mt-4 mb-3">
+  <div class="panel-title">Notable Plays</div>
+  <div class="p-3 small">
+    {% if away_hr_hitters or home_hr_hitters %}
+    <div class="mb-2">
+      <strong>Home runs:</strong>
+      {% for b in away_hr_hitters %}
+        <a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a>
+        ({{ game.away_abbrev }}) ×{{ b.hr }}{% if not loop.last or home_hr_hitters %};{% endif %}
+      {% endfor %}
+      {% for b in home_hr_hitters %}
+        <a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a>
+        ({{ game.home_abbrev }}) ×{{ b.hr }}{% if not loop.last %};{% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if away_multi_hit or home_multi_hit %}
+    <div class="mb-2">
+      <strong>3+ hit games:</strong>
+      {% for b in away_multi_hit %}
+        <a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a>
+        ({{ game.away_abbrev }}) {{ b.hits }}-for-{{ b.ab }}{% if not loop.last or home_multi_hit %};{% endif %}
+      {% endfor %}
+      {% for b in home_multi_hit %}
+        <a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a>
+        ({{ game.home_abbrev }}) {{ b.hits }}-for-{{ b.ab }}{% if not loop.last %};{% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if away_errors or home_errors %}
+    <div class="mb-2">
+      <strong>Errors:</strong>
+      {% for b in away_errors %}
+        <a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a>
+        ({{ game.away_abbrev }} {{ b.position }}) ×{{ b.e }}{% if not loop.last or home_errors %};{% endif %}
+      {% endfor %}
+      {% for b in home_errors %}
+        <a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a>
+        ({{ game.home_abbrev }} {{ b.position }}) ×{{ b.e }}{% if not loop.last %};{% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 
 {% endif %}
 {% endblock %}
