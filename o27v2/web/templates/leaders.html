@@ -89,40 +89,42 @@
   {{ card('dWAR',  'dwar',    '%+.2f',true, batting, tooltip='Defensive WAR contribution') }}
 </div>
 
-<h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Headline / Rate</h4>
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Result-Tier (wERA / xFIP / Decay)</h4>
 <div class="row g-3 mb-4">
-  {{ card('W',     'w',     '%d',   true,  pitching) }}
-  {{ card('ERA',   'era',   '%.2f', false, pitching) }}
-  {{ card('ERA+',  'era_plus', '%d', true, pitching, tooltip='ERA relative to league avg (higher = better)') }}
-  {{ card('FIP',   'fip',   '%.2f', false, pitching, tooltip='Recalibrated so league FIP = league ERA') }}
-  {{ card('WHIP',  'whip',  '%.2f', false, pitching) }}
-  {{ card('K/27',  'k27',   '%.2f', true,  pitching) }}
-  {{ card('BB/27', 'bb27',  '%.2f', false, pitching) }}
-  {{ card('K/BB',  'so_bb', '%.2f', true,  pitching) }}
+  {{ card('wERA',  'werra', '%.2f', false, pitching, tooltip='Weighted ERA — runs allowed weighted by arc position (outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20)') }}
+  {{ card('xFIP',  'xfip',  '%.2f', false, pitching, tooltip='Expected FIP (O27): defense-independent talent isolation; league-anchored to wERA') }}
+  {{ card('Decay (low)', 'decay', '%+.1f', false, pitching, tooltip='K%_arc1 - K%_arc3 (in points). 0 = perfectly durable, 30+ = significant late-arc fade') }}
+  {{ card('GSc+',  'gsc_plus', '%d', true, pitching, tooltip='League-relative Game Score (100 = league avg, higher = better)') }}
+</div>
+
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Workload</h4>
+<div class="row g-3 mb-4">
+  {{ card('GSc avg', 'gsc_avg', '%.1f', true, pitching, tooltip='Avg per-appearance Game Score (50 = league avg)') }}
+  {{ card('OS+',     'os_plus', '%d',   true, pitching, tooltip='Outs Share Plus — league-relative outs/appearance (100 = league avg)') }}
+  {{ card('AOR',     'aor',     '%.1f', true, pitching, tooltip='Average Outs Reached (outs / G)') }}
+  {{ card('W',       'w',       '%d',   true, pitching) }}
+</div>
+
+<h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — PA Rates</h4>
+<div class="row g-3 mb-4">
+  {{ card('K% (high)', 'k_pct',  '%.3f', true,  pitching, tooltip='(K + foul-outs) / BF — O27 K% includes foul-outs') }}
+  {{ card('BB% (low)', 'bb_pct', '%.3f', false, pitching) }}
+  {{ card('HR% (low)', 'hr_pct', '%.3f', false, pitching) }}
+  {{ card('oAVG',      'oavg',   '%.3f', false, pitching, tooltip='Opponent batting average — H / (BF - BB - HBP)') }}
 </div>
 
 <h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Counting</h4>
 <div class="row g-3 mb-4">
-  {{ card('K',         'k',           '%d', true,  pitching) }}
-  {{ card('Outs',      'outs',        '%d', true,  pitching, tooltip='Outs recorded — IP-equivalent') }}
-  {{ card('HR allowed','hr_allowed',  '%d', false, pitching) }}
-  {{ card('BB allowed','bb',          '%d', false, pitching) }}
-</div>
-
-<h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Advanced &amp; Opponent</h4>
-<div class="row g-3 mb-4">
-  {{ card('K% (high)', 'k_pct',         '%.3f', true,  pitching) }}
-  {{ card('BB%',       'bb_pct',        '%.3f', false, pitching) }}
-  {{ card('HR%',       'hr_pct',        '%.3f', false, pitching) }}
-  {{ card('oAVG',      'oavg',          '%.3f', false, pitching, tooltip='Opponent batting average — H / (BF - BB - HBP)') }}
-  {{ card('BABIP-a',   'babip_allowed', '%.3f', false, pitching, tooltip='BABIP allowed') }}
-  {{ card('HR/27',     'hr27',          '%.2f', false, pitching) }}
+  {{ card('K',          'k',          '%d', true,  pitching) }}
+  {{ card('Outs',       'outs',       '%d', true,  pitching, tooltip='Outs recorded — pitcher workload (one full O27 game = 27)') }}
+  {{ card('HR allowed', 'hr_allowed', '%d', false, pitching) }}
+  {{ card('BB allowed', 'bb',         '%d', false, pitching) }}
 </div>
 
 <h4 class="mt-2 mb-2" style="color:#58a6ff">Pitching — Value</h4>
 <div class="row g-3 mb-4">
   {{ card('WAR',  'war',  '%.2f', true, pitching) }}
-  {{ card('VORP', 'vorp', '%.1f', true, pitching, tooltip='Runs saved vs replacement-level pitcher') }}
+  {{ card('VORP', 'vorp', '%.1f', true, pitching, tooltip='Runs saved vs replacement-level pitcher (rebased to wERA)') }}
 </div>
 
 <div class="text-secondary small mt-2 mb-3" style="line-height:1.4">

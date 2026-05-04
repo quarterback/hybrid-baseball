@@ -155,6 +155,22 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     sb_allowed     INTEGER DEFAULT 0,   -- successful steals while on the mound
     cs_caught      INTEGER DEFAULT 0,   -- runners caught stealing
     fo_induced     INTEGER DEFAULT 0,   -- foul-out outs ending an AB on this pitcher
+    -- Arc-bucketed counters (1-9 outs / 10-18 outs / 19-27 outs of the
+    -- defending team's 27-out half). Powers wERA / xFIP / Decay; super-
+    -- innings outs roll into arc 3.
+    er_arc1        INTEGER DEFAULT 0,
+    er_arc2        INTEGER DEFAULT 0,
+    er_arc3        INTEGER DEFAULT 0,
+    k_arc1         INTEGER DEFAULT 0,
+    k_arc2         INTEGER DEFAULT 0,
+    k_arc3         INTEGER DEFAULT 0,
+    fo_arc1        INTEGER DEFAULT 0,
+    fo_arc2        INTEGER DEFAULT 0,
+    fo_arc3        INTEGER DEFAULT 0,
+    bf_arc1        INTEGER DEFAULT 0,
+    bf_arc2        INTEGER DEFAULT 0,
+    bf_arc3        INTEGER DEFAULT 0,
+    is_starter     INTEGER DEFAULT 0,   -- 1 if this pitcher started the game
     UNIQUE(player_id, game_id, phase)
 );
 
@@ -433,6 +449,23 @@ def init_db() -> None:
         # Task #47/#32 game_pitcher_stats columns: HR allowed + Pitches thrown
         # Task #48: ER (earned runs, distinct from runs_allowed)
         for col in ("hr_allowed", "pitches", "er"):
+            try:
+                conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+
+        # wERA / xFIP / Decay: arc-bucketed counters keyed off the
+        # defending team's running 27-out count (1-9 / 10-18 / 19-27).
+        # Plus is_starter for GS / WS%.
+        _arc_cols = (
+            "er_arc1", "er_arc2", "er_arc3",
+            "k_arc1",  "k_arc2",  "k_arc3",
+            "fo_arc1", "fo_arc2", "fo_arc3",
+            "bf_arc1", "bf_arc2", "bf_arc3",
+            "is_starter",
+        )
+        for col in _arc_cols:
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()

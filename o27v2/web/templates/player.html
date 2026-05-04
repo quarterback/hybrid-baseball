@@ -60,8 +60,8 @@
     {% if pt_totals %}
       {% if bt_totals %}<span class="text-secondary">|</span>{% endif %}
       <span><span class="text-secondary">W-L</span> <strong>{{ pt_totals.w or 0 }}-{{ pt_totals.l or 0 }}</strong></span>
-      <span><span class="text-secondary">ERA</span> <strong>{{ '%.2f'|format(pt_totals.era) }}</strong></span>
-      <span><span class="text-secondary">ERA+</span> <strong>{{ pt_totals.era_plus|round|int }}</strong></span>
+      <span title="Weighted ERA — runs allowed weighted by arc position"><span class="text-secondary">wERA</span> <strong>{{ '%.2f'|format(pt_totals.werra) }}</strong></span>
+      <span title="Expected FIP (O27): defense-independent talent isolation"><span class="text-secondary">xFIP</span> <strong>{{ '%.2f'|format(pt_totals.xfip) }}</strong></span>
       <span><span class="text-secondary">K</span> <strong>{{ pt_totals.k }}</strong></span>
       <span><span class="text-secondary">pWAR</span> <strong>{{ '%.2f'|format(pt_totals.war) }}</strong></span>
     {% endif %}
@@ -204,22 +204,22 @@
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
-        <th class="num">G</th><th class="num">W</th><th class="num">L</th>
-        <th class="num">BF</th><th class="num">Outs</th><th class="num">IP</th>
+        <th class="num">G</th><th class="num" title="Games started">GS</th>
+        <th class="num">W</th><th class="num">L</th>
+        <th class="num">BF</th><th class="num">Outs</th>
         <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
         <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
         <th class="num">HBP</th><th class="num">UER</th>
         <th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
         <th class="num" title="Pitches thrown">P</th>
-        <th class="num" title="Outs as share of complete-game (27 outs) per appearance">OS%</th>
       </tr></thead>
       <tbody><tr>
         <td class="num">{{ pt_totals.g }}</td>
+        <td class="num">{{ pt_totals.gs or 0 }}</td>
         <td class="num">{{ pt_totals.w or 0 }}</td>
         <td class="num">{{ pt_totals.l or 0 }}</td>
         <td class="num">{{ pt_totals.bf }}</td>
         <td class="num">{{ pt_totals.outs }}</td>
-        <td class="num">{{ '%.1f'|format(pt_totals.ip) }}</td>
         <td class="num">{{ pt_totals.h }}</td>
         <td class="num">{{ pt_totals.r }}</td>
         <td class="num">{{ pt_totals.er }}</td>
@@ -232,35 +232,46 @@
         <td class="num">{{ pt_totals.cs_caught }}</td>
         <td class="num">{{ pt_totals.fo_induced }}</td>
         <td class="num">{{ pt_totals.pitches }}</td>
-        <td class="num">{{ '%.0f'|format(pt_totals.os_pct * 100) }}%</td>
       </tr></tbody>
     </table>
     </div>
   </div>
 
   <div class="dense mb-3">
-    <div class="panel-title">Rate Stats (per-27-outs)</div>
+    <div class="panel-title">Result-Tier (wERA / xFIP / Decay)</div>
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
-        <th class="num">ERA</th>
-        <th class="num">FIP</th>
-        <th class="num">WHIP</th>
-        <th class="num">K/27</th>
-        <th class="num">BB/27</th>
-        <th class="num">HR/27</th>
-        <th class="num" title="Runs against per 27 outs (R, not ER)">RA/27</th>
-        <th class="num" title="K to BB ratio">K/BB</th>
+        <th class="num" title="Weighted ERA — outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20. Lower better.">wERA</th>
+        <th class="num" title="Expected FIP (O27): (13·HR + 3·BB - 2·(K+FO)) per 27 outs, league-anchored. Lower better.">xFIP</th>
+        <th class="num" title="K%_arc1 - K%_arc3 in points. 0 = perfectly durable; 30+ = significant late-arc fade.">Decay</th>
       </tr></thead>
       <tbody><tr>
-        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.era) }}</td>
-        <td class="num">{{ '%.2f'|format(pt_totals.fip) }}</td>
-        <td class="num">{{ '%.2f'|format(pt_totals.whip) }}</td>
-        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.k27) }}</td>
-        <td class="num">{{ '%.2f'|format(pt_totals.bb27) }}</td>
-        <td class="num">{{ '%.2f'|format(pt_totals.hr27) }}</td>
-        <td class="num">{{ '%.2f'|format(pt_totals.ra27) }}</td>
-        <td class="num">{{ '%.2f'|format(pt_totals.so_bb) }}</td>
+        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.werra) }}</td>
+        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.xfip) }}</td>
+        <td class="num">{% if pt_totals.decay_known %}{{ '%+.1f'|format(pt_totals.decay) }}{% else %}—{% endif %}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="dense mb-3">
+    <div class="panel-title">Workload</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num" title="Average per-appearance Game Score (50 = league avg)">GSc avg</th>
+        <th class="num" title="Outs Share — average per appearance, % of a 27-out half">OS%</th>
+        <th class="num" title="Outs Share Plus — league-relative (100 = league avg)">OS+</th>
+        <th class="num" title="Average Outs Reached — outs / G">AOR</th>
+        <th class="num" title="Workhorse Start % — share of starts with outs ≥ 18 AND ER ≤ 6">WS%</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num fw-bold">{{ '%.1f'|format(pt_totals.gsc_avg or 0) }}</td>
+        <td class="num">{{ '%.0f'|format((pt_totals.os_pct or 0) * 100) }}%</td>
+        <td class="num">{{ (pt_totals.os_plus or 100)|round|int }}</td>
+        <td class="num">{{ '%.1f'|format(pt_totals.aor or 0) }}</td>
+        <td class="num">{{ '%.0f'|format((pt_totals.ws_pct or 0) * 100) }}%</td>
       </tr></tbody>
     </table>
     </div>
@@ -271,7 +282,7 @@
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
-        <th class="num">K%</th>
+        <th class="num" title="(K + foul-outs) / BF — O27 K% includes foul-outs">K%</th>
         <th class="num">BB%</th>
         <th class="num">HR%</th>
         <th class="num" title="Opponent batting average — H / (BF - BB - HBP)">oAVG</th>
@@ -299,12 +310,12 @@
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
-        <th class="num" title="ERA relative to league avg (100 = avg, higher = better)">ERA+</th>
-        <th class="num" title="Runs saved vs replacement-level pitcher">VORP</th>
+        <th class="num" title="GSc relative to league average (100 = avg, higher = better)">GSc+</th>
+        <th class="num" title="Runs saved vs replacement-level pitcher (rebased to wERA)">VORP</th>
         <th class="num" title="Wins above replacement">WAR</th>
       </tr></thead>
       <tbody><tr>
-        <td class="num">{{ pt_totals.era_plus|round|int }}</td>
+        <td class="num">{{ (pt_totals.gsc_plus or 100)|round|int }}</td>
         <td class="num">{{ '%.1f'|format(pt_totals.vorp) }}</td>
         <td class="num fw-bold">{{ '%.2f'|format(pt_totals.war) }}</td>
       </tr></tbody>
@@ -499,9 +510,11 @@
     <table class="table table-sm dense-table sortable mb-0">
       <thead><tr>
         <th>Date</th><th>Opp</th>
-        <th class="num">BF</th><th class="num">Outs</th>
+        <th class="num" title="Per-appearance Game Score">GSc</th>
+        <th class="num">Outs</th><th class="num">BF</th>
         <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
         <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
+        <th class="num">FO</th>
         <th class="num">P</th>
         <th data-nosort></th>
       </tr></thead>
@@ -509,17 +522,29 @@
         {% for g in pitching_log %}
         {% set is_home = (g.home_team_id == player.team_id) %}
         {% set opp = g.away_abbrev if is_home else g.home_abbrev %}
+        {# inline per-row GSc using the locked formula (clamped 0..100) #}
+        {% set gsc_raw = 50 + (g.outs_recorded or 0)
+                         + 2 * ((g.k or 0) - 3 if (g.k or 0) > 3 else 0)
+                         - 2 * (g.hits_allowed or 0)
+                         - 4 * (g.er or 0)
+                         - 2 * (g.unearned_runs or 0)
+                         - (g.bb or 0)
+                         - 4 * (g.hr_allowed or 0)
+                         + (g.fo_induced or 0) %}
+        {% set gsc = (0 if gsc_raw < 0 else (100 if gsc_raw > 100 else gsc_raw)) %}
         <tr>
           <td class="text-secondary small">{{ g.game_date }}</td>
           <td>{% if is_home %}vs{% else %}@{% endif %} <span class="team-abbrev">{{ opp }}</span></td>
-          <td class="num">{{ g.batters_faced }}</td>
+          <td class="num fw-bold">{{ '%.0f'|format(gsc) }}</td>
           <td class="num">{{ g.outs_recorded }}</td>
+          <td class="num">{{ g.batters_faced }}</td>
           <td class="num">{{ g.hits_allowed }}</td>
           <td class="num">{{ g.runs_allowed }}</td>
           <td class="num">{{ g.er }}</td>
           <td class="num">{{ g.bb }}</td>
           <td class="num fw-bold">{{ g.k }}</td>
           <td class="num">{{ g.hr_allowed or 0 }}</td>
+          <td class="num">{{ g.fo_induced or 0 }}</td>
           <td class="num">{{ g.pitches or 0 }}</td>
           <td><a href="{{ url_for('game_detail', game_id=g.game_id) }}" class="small">Box</a></td>
         </tr>

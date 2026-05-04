@@ -171,22 +171,28 @@
   <table class="table table-sm dense-table sortable mb-0">
     <thead><tr>
       <th>Name</th><th>Tm</th>
-      <th class="num">G</th><th class="num">W</th><th class="num">L</th>
-      <th class="num">BF</th><th class="num">Outs</th><th class="num">IP</th>
+      <th class="num">G</th><th class="num">GS</th>
+      <th class="num">W</th><th class="num">L</th>
+      <th class="num">BF</th><th class="num">Outs</th>
+      <th class="num" title="Weighted ERA — runs allowed weighted by arc position">wERA</th>
+      <th class="num" title="Expected FIP (O27) — defense-independent talent">xFIP</th>
+      <th class="num" title="K%_arc1 - K%_arc3 (in points). 0 = durable; 30+ = significant late-arc fade">Decay</th>
+      <th class="num" title="Average per-appearance Game Score">GSc</th>
+      <th class="num" title="GSc relative to league avg (100 = avg)">GSc+</th>
+      <th class="num" title="Outs Share Plus — league-relative outs per appearance">OS+</th>
+      <th class="num" title="Average Outs Reached">AOR</th>
       <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
       <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
       <th class="num">HBP</th><th class="num">UER</th>
       <th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
       <th class="num">P</th>
-      <th class="num">ERA</th><th class="num">FIP</th><th class="num">WHIP</th>
-      <th class="num">K/27</th><th class="num">BB/27</th><th class="num">HR/27</th>
-      <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
+      <th class="num" title="(K + foul-outs) / BF">K%</th>
+      <th class="num">BB%</th>
+      <th class="num">HR%</th>
       <th class="num">oAvg</th><th class="num">BABIP</th>
-      <th class="num">K/BB</th>
-      <th class="num" title="ERA relative to league avg (100 = avg, higher = better)">ERA+</th>
       <th class="num" title="Runs saved vs replacement-level pitcher">VORP</th>
       <th class="num" title="Wins above replacement">WAR</th>
-      <th class="num" title="Outs recorded per pitch thrown — pitcher efficiency">O/P</th>
+      <th class="num" title="Outs recorded per pitch — efficiency">O/P</th>
       <th class="num" title="Pitches per batter faced">P/BF</th>
       <th class="num" title="Foul-outs induced per BF">FO%</th>
     </tr></thead>
@@ -196,11 +202,18 @@
       <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
       <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
       <td class="num">{{ p.g or 0 }}</td>
+      <td class="num">{{ p.gs or 0 }}</td>
       <td class="num">{{ p.w or 0 }}</td>
       <td class="num">{{ p.l or 0 }}</td>
       <td class="num">{{ p.bf or 0 }}</td>
       <td class="num">{{ p.outs or 0 }}</td>
-      <td class="num" data-sort-value="{{ '%.2f'|format(p.ip) }}">{{ '%.1f'|format(p.ip) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xfip or 0) }}">{{ '%.2f'|format(p.xfip or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.decay) }}">{% if p.decay_known %}{{ '%+.1f'|format(p.decay) }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.gsc_avg or 0) }}">{{ '%.1f'|format(p.gsc_avg or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.0f'|format(p.gsc_plus or 100) }}">{{ (p.gsc_plus or 100)|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.0f'|format(p.os_plus or 100) }}">{{ (p.os_plus or 100)|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.aor or 0) }}">{{ '%.1f'|format(p.aor or 0) }}</td>
       <td class="num">{{ p.h or 0 }}</td>
       <td class="num">{{ p.r or 0 }}</td>
       <td class="num">{{ p.er or 0 }}</td>
@@ -213,19 +226,11 @@
       <td class="num">{{ p.cs_caught or 0 }}</td>
       <td class="num">{{ p.fo_induced or 0 }}</td>
       <td class="num">{{ p.pitches or 0 }}</td>
-      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.era) }}">{{ '%.2f'|format(p.era) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.fip) }}">{{ '%.2f'|format(p.fip) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.whip) }}">{{ '%.2f'|format(p.whip) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.k27) }}">{{ '%.2f'|format(p.k27) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.bb27) }}">{{ '%.2f'|format(p.bb27) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.hr27) }}">{{ '%.2f'|format(p.hr27) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.k_pct) }}">{{ '%.1f'|format(p.k_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.bb_pct) }}">{{ '%.1f'|format(p.bb_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.hr_pct) }}">{{ '%.1f'|format(p.hr_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.oavg) }}">{{ '%.3f'|format(p.oavg) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.babip_allowed) }}">{{ '%.3f'|format(p.babip_allowed) }}</td>
-      <td class="num" data-sort-value="{{ '%.3f'|format(p.so_bb) }}">{{ '%.2f'|format(p.so_bb) }}</td>
-      <td class="num" data-sort-value="{{ '%.1f'|format(p.era_plus) }}">{{ p.era_plus|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.vorp) }}">{{ '%.1f'|format(p.vorp) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.war) }}">{{ '%.2f'|format(p.war) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.outs_per_pitch) }}">{{ '%.3f'|format(p.outs_per_pitch) }}</td>
