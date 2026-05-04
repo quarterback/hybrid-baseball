@@ -45,7 +45,7 @@
     <th class="num">PA</th><th class="num">AB</th>
     <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
     <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">K</th>
-    <th class="num">STY</th><th class="num">OR</th>
+    <th class="num" title="Outs recorded — times this batter was retired (CS, FC, K, ground out, etc.)">OR</th>
   </tr></thead>
   <tbody>
   {% for b in rows %}
@@ -57,11 +57,10 @@
     <td class="num">{{ b.doubles }}</td><td class="num">{{ b.triples }}</td><td class="num">{{ b.hr }}</td>
     <td class="num">{{ b.runs }}</td><td class="num">{{ b.rbi }}</td>
     <td class="num">{{ b.bb }}</td><td class="num">{{ b.k }}</td>
-    <td class="num">{{ b.stays }}</td>
     <td class="num">{{ b.outs_recorded or 0 }}</td>
   </tr>
   {% else %}
-  <tr><td colspan="14" class="text-secondary text-center">No batters in this phase.</td></tr>
+  <tr><td colspan="13" class="text-secondary text-center">No batters in this phase.</td></tr>
   {% endfor %}
   {% if rows %}
   <tr class="fw-bold" style="background:#1f2937">
@@ -76,7 +75,6 @@
     <td class="num">{{ totals.rbi }}</td>
     <td class="num">{{ totals.bb }}</td>
     <td class="num">{{ totals.k }}</td>
-    <td class="num">{{ totals.stays }}</td>
     <td class="num">{{ totals.outs_recorded }}</td>
   </tr>
   {% endif %}
