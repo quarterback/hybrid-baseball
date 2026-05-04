@@ -805,19 +805,23 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     with glove-first guys for the bottom half — those guys won't bat
     again unless the game goes to a super-inning.
 
-    Conditions for the call:
+    Conditions:
       - Regulation half, not super-inning.
       - We've banked some defense already (state.outs >= 6) so this
         isn't a first-batter overreaction.
       - The fielding team has a meaningfully-better-defense bench bat
         available (not in the current lineup).
-      - At most one defensive sub per team per game (tracked via
-        state.events history).
+
+    No hard cap on subs per game — real teams cycle through the bench,
+    and O27's continuous-half structure creates more spots, not fewer.
+    The mechanic naturally throttles itself: each successful sub
+    removes a bench bat from the candidate pool, and the worst-defense
+    starter changes dynamically as the lineup shifts.
 
     Probability scales with mgr_bench_usage. A 0.5 manager fires this
     around 1.5% per opportunity check; a 0.9 manager around 4%. Over
-    a 27-out half that's roughly half a sub per game for an aggressive
-    skipper, much less for old-school.
+    a 27-out half that's roughly 0.5–2 subs per team per game for
+    average managers, more for aggressive ones.
     """
     if state.is_super_inning:
         return None
@@ -825,14 +829,6 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
         return None
 
     fielding = state.fielding_team
-
-    # One defensive sub per team per game.
-    already_subbed = any(
-        ev.get("type") == "defensive_sub" and ev.get("team_id") == fielding.team_id
-        for ev in state.events
-    )
-    if already_subbed:
-        return None
 
     bench_usage = float(getattr(fielding, "mgr_bench_usage", 0.5))
     p = 0.005 + 0.040 * bench_usage   # 0.5% .. 4.5%
@@ -896,15 +892,16 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
       - Lineup has cycled at least once (cycle_number >= 1) so the
         slugger has already had at least one AB to bank.
       - Current batter has notably worse defense than the best bench bat.
-      - Once per team per game (tracked via state.events).
 
-    Probability scales 0.5% .. 4.5% with mgr_bench_usage. Sluggish
-    skippers basically never do this; aggressive ones land the swap
-    around 30-40% of games over the cycle-2 window.
+    No hard cap — the candidate pool naturally depletes as bench bats
+    enter the lineup. Probability scales 0.5% .. 4.5% with
+    mgr_bench_usage. Sluggish skippers basically never do this;
+    aggressive ones cycle multiple gloves in across the back half of
+    their batting block.
 
     Returns the replacement Player or None. Caller wraps in a
-    tactical_def_swap event so the cap is tracked separately from
-    leverage-driven pinch hits.
+    tactical_def_swap event (logged separately from leverage-driven
+    pinch hits for stat-tracking purposes).
     """
     if state.is_super_inning:
         return None
@@ -913,14 +910,6 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
 
     team = state.batting_team
     if team.lineup_cycle_number < 1:
-        return None
-
-    # Once per team per game.
-    already = any(
-        ev.get("type") == "tactical_def_swap" and ev.get("team_id") == team.team_id
-        for ev in state.events
-    )
-    if already:
         return None
 
     bench_usage = float(getattr(team, "mgr_bench_usage", 0.5))
