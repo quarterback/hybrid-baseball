@@ -124,6 +124,8 @@ def _end_at_bat(state: GameState) -> list[str]:
         log.append(f"  Multi-hit at-bat: {hits} credited hits.")
     state.count.reset()
     state.current_at_bat_hits = 0
+    # Hit-and-run protection clears at PA boundary — the play is over.
+    state.hit_and_run_active = False
     # Joker AB: clear the override and DO NOT advance the base lineup.
     # The joker insertion was an EXTRA PA — the base lineup position
     # stays the same so the originally-scheduled batter takes the next
@@ -267,6 +269,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     if etype == "stolen_base_attempt":
         base_idx = event["base_idx"]
         success = event.get("success", True)    # Phase 1: explicit; Phase 2: probabilistic
+        is_hit_and_run = bool(event.get("hit_and_run", False))
         runner_id = state.bases[base_idx]
         if runner_id is None:
             log.append("  No runner to steal.")
@@ -276,15 +279,23 @@ def apply_event(state: GameState, event: dict) -> list[str]:
             state.pitcher_sb_allowed_this_spell += 1
             if base_idx + 1 <= 2:
                 state.bases[base_idx + 1] = runner_id
-                log.append(f"  Stolen base — runner advances to "
+                tag = " (hit-and-run)" if is_hit_and_run else ""
+                log.append(f"  Stolen base{tag} — runner advances to "
                             f"{'2B 3B Home'.split()[base_idx]}.")
             else:
                 log += _score_run(state)
                 log.append("  Steal of home — runner scores!")
+            # Flag the rest of this PA for the contact-side bonus when
+            # hit-and-run successfully puts the runner in motion. The
+            # batter is now swinging at most pitches to protect, so K
+            # weight drops. State helper resets the flag at PA boundaries.
+            if is_hit_and_run:
+                state.hit_and_run_active = True
         else:
             state.bases[base_idx] = None
             state.pitcher_cs_caught_this_spell += 1
-            log.append(f"  Runner caught stealing at "
+            tag = " (hit-and-run)" if is_hit_and_run else ""
+            log.append(f"  Runner caught stealing{tag} at "
                        f"{'2B 3B Home'.split()[base_idx]}.")
             log += _record_out(state, runner_id)
         return log

@@ -380,6 +380,10 @@ class GameState:
     pitcher_start_pa: int = 0          # total_pa_this_half when spell began
     total_pa_this_half: int = 0        # cumulative PA count this half (incremented on PA end)
     current_pitcher_id: Optional[str] = None
+    # Hit-and-run flag — set True when an h&r SB attempt succeeds; the
+    # next pitch resolution applies a multiplicative K-weight reduction
+    # (batter is swinging to protect). Cleared at PA boundaries.
+    hit_and_run_active: bool = False
     spell_log: list = field(default_factory=list)
 
     # --- Multi-hit tracking (within one at-bat) ---

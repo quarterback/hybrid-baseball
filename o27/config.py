@@ -205,26 +205,45 @@ TOOTBLAN_SAFE_MAX: float    = 0.96  # ceiling — even elite runners aren't auto
 # runner is exploitable), inversely with baserunning (smart runners
 # don't get caught), and with pitcher Stuff (good moves matter). LHP
 # adds a structural bonus vs runners on 1B (better look-back angle).
-PICKOFF_ATTEMPT_BASE: float        = 0.010  # per pitch, 1B with avg-aggression runner
-PICKOFF_AGGRESSION_SCALE: float    = 0.020  # +(run_aggressiveness - 0.5) * this
-PICKOFF_LHP_1B_BONUS: float        = 0.010  # absolute boost vs 1B runner from LHP
+# Tuning note: real-MLB pickoff outs are rare (~0.05/game per side).
+# Keep attempt rate low and success rate modest so they're a flavor
+# event, not a CS-rate inflator.
+PICKOFF_ATTEMPT_BASE: float        = 0.004  # per pitch, 1B with avg-aggression runner
+PICKOFF_AGGRESSION_SCALE: float    = 0.012  # +(run_aggressiveness - 0.5) * this
+PICKOFF_LHP_1B_BONUS: float        = 0.005  # absolute boost vs 1B runner from LHP
 PICKOFF_2B_DAMPENER: float         = 0.40   # 2B pickoffs much rarer than 1B
-PICKOFF_SUCCESS_BASE: float        = 0.20   # baseline catch rate when a move fires
-PICKOFF_SUCCESS_PITCHER_SCALE: float = 0.30 # +pitcher.pitcher_skill * this
-PICKOFF_SUCCESS_AGGRESSION_SCALE: float = 0.35  # +(aggression - 0.5) * this
+PICKOFF_SUCCESS_BASE: float        = 0.10   # baseline catch rate when a move fires
+PICKOFF_SUCCESS_PITCHER_SCALE: float = 0.25 # +pitcher.pitcher_skill * this
+PICKOFF_SUCCESS_AGGRESSION_SCALE: float = 0.30  # +(aggression - 0.5) * this
 PICKOFF_SUCCESS_BR_SCALE: float    = 0.30   # -(baserunning - 0.5) * this
-PICKOFF_SUCCESS_MIN: float         = 0.05
-PICKOFF_SUCCESS_MAX: float         = 0.55
+PICKOFF_SUCCESS_MIN: float         = 0.03
+PICKOFF_SUCCESS_MAX: float         = 0.40
 
 # ---------------------------------------------------------------------------
 # Hit-and-run — a manager-called SB attempt where the batter is asked to
 # swing at any pitch to protect the runner. Bypasses the SB speed gate
 # (the runner goes regardless) and gives a small success bump because
 # the catcher's read is on the batter, not the runner. Probability of
-# being called scales with the batting team's mgr_run_game tendency.
-HIT_AND_RUN_BASE_PROB: float       = 0.012  # per pitch with a 1B runner
+# being called scales with the batting team's mgr_run_game tendency
+# AND count-awareness — managers don't call hit-and-run in 0-2 holes
+# or 3-0 take counts; the canonical spots are 1-0 / 2-0 / 2-1 / 3-1
+# (hitter's counts where the pitcher wants a strike and the runner can
+# safely commit).
+HIT_AND_RUN_BASE_PROB: float       = 0.012  # per pitch with a 1B runner in a favorable count
 HIT_AND_RUN_RUNGAME_SCALE: float   = 0.030  # +(mgr_run_game - 0.5) * this
 HIT_AND_RUN_SUCCESS_BONUS: float   = 0.08   # added to SB success_p
+# Counts where hit-and-run is realistic (balls, strikes). Other counts
+# get a heavy dampener (still possible but rare) so the call rate
+# concentrates in the right situations.
+HIT_AND_RUN_FAVORED_COUNTS: tuple  = ((1, 0), (2, 0), (2, 1), (3, 1))
+HIT_AND_RUN_OFF_COUNT_DAMPENER: float = 0.20  # multiplies prob in non-favored counts
+# Contact-side benefit: when a hit-and-run successfully puts the runner
+# in motion (SB succeeded), the next contact event gets a small bonus.
+# Specifically, the batter is more likely to make contact (lower K rate)
+# because they're swinging at most pitches. We model this by setting
+# state.hit_and_run_active = True on success; prob.py reduces K weight
+# for the rest of this PA.
+HIT_AND_RUN_CONTACT_K_REDUCTION: float = 0.25  # multiplicative on K probability
 
 # ---------------------------------------------------------------------------
 # Sacrifice bunt — manager pre-PA decision. Trades an out for a base,
@@ -253,7 +272,7 @@ SAC_BUNT_FAIL_RATE: float          = 0.10   # popups / runner forced at lead
 
 SB_ATTEMPT_SPEED_THRESHOLD: float = 0.52   # was 0.62 — lower gate so above-avg speed attempts
 SB_ATTEMPT_PROB_PER_PITCH: float  = 0.045  # was 0.015 — ~3x MLB attempt rate
-SB_SUCCESS_BASE: float            = 0.62   # was 0.55 — base success
+SB_SUCCESS_BASE: float            = 0.72   # was 0.62 — pulled up to match MLB ~75% success
 SB_SUCCESS_SPEED_SCALE: float     = 0.50   # (speed - 0.5) * this adds to success
 SB_SUCCESS_PITCHER_SCALE: float   = 0.15   # pitcher_skill * this subtracts from success
 SB_SUCCESS_DEBT_SCALE: float      = 0.0008 # pitcher.pitch_debt * this ADDS to success

@@ -693,12 +693,17 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
     # Hit-and-run: manager-called play where the runner goes and the batter
     # protects. We model it as a flagged SB attempt that bypasses the speed
     # gate AND gets a small success bonus (catcher's eyes on the batter).
-    # Only meaningful with a 1B runner (the standard hit-and-run setup).
-    if state.bases[0] is not None:
+    # Real managers concentrate hit-and-run in specific counts — a 0-2 hole
+    # is the worst possible spot, while 1-0 / 2-1 / 3-1 are canonical. Skip
+    # entirely with two strikes (batter can't protect a borderline pitch).
+    if state.bases[0] is not None and state.count.strikes < 2:
+        count_tup = (state.count.balls, state.count.strikes)
         h_and_r_p = (
             cfg.HIT_AND_RUN_BASE_PROB
             + (run_game - 0.5) * cfg.HIT_AND_RUN_RUNGAME_SCALE
         )
+        if count_tup not in cfg.HIT_AND_RUN_FAVORED_COUNTS:
+            h_and_r_p *= cfg.HIT_AND_RUN_OFF_COUNT_DAMPENER
         if h_and_r_p > 0 and rng.random() < h_and_r_p:
             pid = state.bases[0]
             speed = _get_speed(pid, state)
@@ -914,6 +919,24 @@ class ProbabilisticProvider:
         spell   = state.pitcher_spell_count
 
         outcome = pitch_outcome(rng, pitcher, batter, balls, strikes, spell)
+
+        # Hit-and-run protection: when the runner has already gone on
+        # an h&r, the batter is swinging at most pitches to put the
+        # ball in play. We approximate by re-rolling a swinging strike
+        # against a contact-bias probability — a non-trivial fraction
+        # of would-be Ks become fouls or weak contact instead. Only
+        # consumes the flag (one shot per success).
+        if state.hit_and_run_active:
+            if outcome == "swinging_strike" and rng.random() < cfg.HIT_AND_RUN_CONTACT_K_REDUCTION:
+                # Batter fouls it off to stay alive.
+                outcome = "foul"
+            elif outcome == "ball" and rng.random() < cfg.HIT_AND_RUN_CONTACT_K_REDUCTION:
+                # Batter swings at a borderline pitch to protect.
+                outcome = "foul"
+            # Flag persists until contact (single h&r call only protects
+            # the runner once the play resolves).
+            if outcome in ("contact", "swinging_strike"):
+                state.hit_and_run_active = False
 
         if outcome != "contact":
             return {"type": outcome}
