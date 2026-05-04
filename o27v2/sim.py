@@ -965,7 +965,9 @@ def _post_game_roster_processing(
       1. Process player returns (expired injuries).
       2. Draw new injuries for players in this game.
       3. Check for waiver claims (depleted bullpen).
-      4. Check deadline / in-season trade triggers.
+      4. Check deadline / in-season trade triggers — DEFERRED until the
+         last game of the calendar date so a player traded between games
+         can't appear on two teams' box scores in the same day.
     All events are logged to the transactions table.
     """
     from o27v2.injuries import process_returns, process_post_game_injuries, check_waiver_claims
@@ -990,8 +992,15 @@ def _post_game_roster_processing(
     # Waiver claims
     all_events.extend(check_waiver_claims(game_date))
 
-    # Trades (deadline or in-season)
-    all_events.extend(check_deadline_and_trades(game_date, n_played))
+    # Trades — only fire once per calendar date, after the last game on
+    # that date is in the books. Otherwise a player traded mid-day ends
+    # up batting for two teams on the same date.
+    remaining = db.fetchone(
+        "SELECT COUNT(*) as n FROM games WHERE played = 0 AND game_date = ?",
+        (game_date,),
+    )
+    if (remaining["n"] if remaining else 0) == 0:
+        all_events.extend(check_deadline_and_trades(game_date, n_played))
 
     log_many(season, game_date, all_events)
 
