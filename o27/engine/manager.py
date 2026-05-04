@@ -757,3 +757,84 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     if use_platoon and (not use_skill or plat_ag >= 0.7):
         return platoon_best
     return skill_best
+
+
+def should_bunt(state: GameState, rng=None) -> Optional[dict]:
+    """Manager-driven sacrifice bunt decision.
+
+    Returns a synthetic event dict {"type": "sac_bunt", "outcome": ...}
+    when the manager calls a bunt, otherwise None. The outcome is rolled
+    here (rather than during a normal at-bat) so the engine can apply it
+    directly without re-running the contact pipeline.
+
+    Conditions for considering a bunt:
+      - regulation half (no super-innings)
+      - runner on 1B (or 1B + 2B); 2B-only is rare and skipped here
+      - early-to-middle of the half (outs < 18 — too few outs left
+        in the last third to spend one for a base)
+      - batter is not a power threat
+      - manager call rate scales with mgr_run_game and inversely with
+        mgr_leverage_aware (modern analytics skippers don't bunt)
+    """
+    if state.is_super_inning:
+        return None
+    bases = state.bases
+    # Need at least a 1B runner (the canonical bunt setup).
+    if bases[0] is None:
+        return None
+    if state.outs >= 18:
+        return None
+
+    batter = state.current_batter
+    if batter.is_pitcher:
+        return None
+    power = float(getattr(batter, "power", 0.5) or 0.5)
+    if power > 0.55:
+        return None  # don't bunt with a power threat
+
+    team = state.batting_team
+    run_game  = float(getattr(team, "mgr_run_game", 0.5))
+    leverage  = float(getattr(team, "mgr_leverage_aware", 0.5))
+
+    bunt_p = (
+        cfg.SAC_BUNT_BASE_PROB
+        * (run_game * cfg.SAC_BUNT_RUNGAME_SCALE / 0.5 if run_game > 0 else 0)
+        * (1.0 + (1.0 - leverage) * cfg.SAC_BUNT_LEVERAGE_DAMPER)
+    )
+    # Score-margin tilt: more likely down 1-2 in the last third of the
+    # batter's at-bat-cycle; less likely when leading by 4+.
+    v = state.score.get("visitors", 0)
+    h = state.score.get("home", 0)
+    bat_score, fld_score = (v, h) if state.half in ("top", "super_top") else (h, v)
+    margin = fld_score - bat_score
+    if margin == 1 or margin == 2:
+        bunt_p *= 1.5
+    elif margin <= -3:
+        bunt_p *= 0.3
+
+    bunt_p = max(0.0, min(0.20, bunt_p))
+    if rng is None:
+        import random as _r
+        roll = _r.random()
+    else:
+        roll = rng.random()
+    if roll >= bunt_p:
+        return None
+
+    # Roll the bunt outcome. Three buckets:
+    #   bunt-for-hit  — batter safe at 1B, runners advance 1
+    #   sacrifice     — batter out at 1B, runners advance 1 (the canonical play)
+    #   failed bunt   — popup or force at lead, no advance, batter out
+    speed = float(getattr(batter, "speed", 0.5) or 0.5)
+    hit_p = max(0.0, cfg.SAC_BUNT_HIT_BASE
+                + (speed - 0.5) * cfg.SAC_BUNT_HIT_SPEED_SCALE)
+    fail_p = cfg.SAC_BUNT_FAIL_RATE
+    r = (rng or __import__("random")).random()
+    if r < hit_p:
+        kind = "hit"
+    elif r < hit_p + fail_p:
+        kind = "fail"
+    else:
+        kind = "sacrifice"
+
+    return {"type": "sac_bunt", "outcome": kind}

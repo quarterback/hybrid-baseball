@@ -186,6 +186,60 @@ HARD_CONTACT: list = [
 RUNNER_EXTRA_SPEED_SCALE: float = 0.35
 
 # ---------------------------------------------------------------------------
+# TOOTBLAN — thrown out trying for the extra base on a hit / fly / grounder.
+# When a runner ATTEMPTS the extra base (probability driven by speed +
+# baserunning + aggressiveness in prob._runner_advance), this layer decides
+# whether the slide beats the throw. Identity preserved at neutral inputs:
+# at speed = baserunning = aggressiveness = 0.5 the attempt probability
+# from RUNNER_EXTRA_SPEED_SCALE is already 0, so TOOTBLAN never fires.
+TOOTBLAN_SAFE_BASE: float  = 0.78   # baseline safe rate when an attempt fires
+TOOTBLAN_SKILL_SCALE: float = 0.40  # +(baserunning - 0.5) * this
+TOOTBLAN_SPEED_SCALE: float = 0.20  # +(speed       - 0.5) * this
+TOOTBLAN_SAFE_MIN: float    = 0.45  # floor — even bad runners aren't always out
+TOOTBLAN_SAFE_MAX: float    = 0.96  # ceiling — even elite runners aren't auto-safe
+
+# ---------------------------------------------------------------------------
+# Pickoff model — pitcher attempts to back-pick a runner. Fires as a
+# between-pitch event in prob.between_pitch_event when a runner is on
+# 1B (or 2B). Probability scales with run_aggressiveness (a leaning
+# runner is exploitable), inversely with baserunning (smart runners
+# don't get caught), and with pitcher Stuff (good moves matter). LHP
+# adds a structural bonus vs runners on 1B (better look-back angle).
+PICKOFF_ATTEMPT_BASE: float        = 0.010  # per pitch, 1B with avg-aggression runner
+PICKOFF_AGGRESSION_SCALE: float    = 0.020  # +(run_aggressiveness - 0.5) * this
+PICKOFF_LHP_1B_BONUS: float        = 0.010  # absolute boost vs 1B runner from LHP
+PICKOFF_2B_DAMPENER: float         = 0.40   # 2B pickoffs much rarer than 1B
+PICKOFF_SUCCESS_BASE: float        = 0.20   # baseline catch rate when a move fires
+PICKOFF_SUCCESS_PITCHER_SCALE: float = 0.30 # +pitcher.pitcher_skill * this
+PICKOFF_SUCCESS_AGGRESSION_SCALE: float = 0.35  # +(aggression - 0.5) * this
+PICKOFF_SUCCESS_BR_SCALE: float    = 0.30   # -(baserunning - 0.5) * this
+PICKOFF_SUCCESS_MIN: float         = 0.05
+PICKOFF_SUCCESS_MAX: float         = 0.55
+
+# ---------------------------------------------------------------------------
+# Hit-and-run — a manager-called SB attempt where the batter is asked to
+# swing at any pitch to protect the runner. Bypasses the SB speed gate
+# (the runner goes regardless) and gives a small success bump because
+# the catcher's read is on the batter, not the runner. Probability of
+# being called scales with the batting team's mgr_run_game tendency.
+HIT_AND_RUN_BASE_PROB: float       = 0.012  # per pitch with a 1B runner
+HIT_AND_RUN_RUNGAME_SCALE: float   = 0.030  # +(mgr_run_game - 0.5) * this
+HIT_AND_RUN_SUCCESS_BONUS: float   = 0.08   # added to SB success_p
+
+# ---------------------------------------------------------------------------
+# Sacrifice bunt — manager pre-PA decision. Trades an out for a base,
+# situationally valuable in close games with weak hitters and runners on.
+# Lower-`mgr_leverage_aware` skippers are more likely to call this (it's
+# generally a -EV play in modern analytics). Speed influences whether
+# the bunt becomes a hit.
+SAC_BUNT_BASE_PROB: float          = 0.05   # base call rate when conditions align
+SAC_BUNT_RUNGAME_SCALE: float      = 0.20   # mgr_run_game * this multiplies
+SAC_BUNT_LEVERAGE_DAMPER: float    = 0.50   # (1 - leverage_aware) * this multiplies
+SAC_BUNT_HIT_BASE: float           = 0.10   # baseline bunt-for-hit rate
+SAC_BUNT_HIT_SPEED_SCALE: float    = 0.30   # +(speed - 0.5) * this
+SAC_BUNT_FAIL_RATE: float          = 0.10   # popups / runner forced at lead
+
+# ---------------------------------------------------------------------------
 # Stolen base model
 # ---------------------------------------------------------------------------
 # Recalibrated for O27 reality (vs MLB defaults):
