@@ -1858,18 +1858,27 @@ def stats_browse():
     """Full sortable, filterable batting + pitching tables.
 
     Query params:
-      side=bat|pit         — which table to show (default: bat)
-      team=<id|all>        — restrict to one team
-      pos=<P|hitter|all>   — restrict by position class
-      min_pa=<int>         — minimum PA gate for batting
-      min_outs=<int>       — minimum outs gate for pitching
-      qualified=1|0        — convenience: ~3.1 PA per team-game / 1 out per team-game
+      side=bat|pit             — which table to show (default: bat)
+      view=standard|advanced|all — column verbosity (default: standard)
+      team=<id|all>            — restrict to one team
+      pos=<all|hitter|pitcher|C|1B|2B|3B|SS|LF|CF|RF|DH|UT|P>
+                                — restrict by position class or specific slot
+      min_pa=<int>             — minimum PA gate for batting
+      min_outs=<int>           — minimum outs gate for pitching
+      qualified=1|0            — convenience: ~3.1 PA per team-game / 1 out per team-game
     """
     side       = (request.args.get("side") or "bat").lower()
+    view       = (request.args.get("view") or "standard").lower()
+    if view not in ("standard", "advanced", "all"):
+        view = "standard"
     team_arg   = request.args.get("team")  or "all"
-    pos_arg    = (request.args.get("pos") or "all").lower()
+    pos_arg    = request.args.get("pos") or "all"
     qualified  = request.args.get("qualified") == "1"
     name_query = (request.args.get("q") or "").strip()
+
+    # All distinct on-field positions, surfaced as filter options.
+    _SPECIFIC_POSITIONS = ("P", "C", "1B", "2B", "3B", "SS",
+                           "LF", "CF", "RF", "DH", "UT")
 
     games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"] or 0
     teams_total  = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 30
@@ -1913,10 +1922,13 @@ def stats_browse():
         if team_filter_id is not None:
             where_clauses.append("bs.team_id = ?")
             params.append(team_filter_id)
-        if pos_arg in ("hitter", "non_pitcher"):
+        if pos_arg.lower() in ("hitter", "non_pitcher"):
             where_clauses.append("p.is_pitcher = 0")
-        elif pos_arg in ("p", "pitcher"):
+        elif pos_arg.lower() in ("pitcher",):
             where_clauses.append("p.is_pitcher = 1")
+        elif pos_arg in _SPECIFIC_POSITIONS:
+            where_clauses.append("p.position = ?")
+            params.append(pos_arg)
         if name_query:
             where_clauses.append("p.name LIKE ?")
             params.append(f"%{name_query}%")
