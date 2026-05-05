@@ -420,26 +420,71 @@ def _select_fielder(rng: random.Random, hit_type: str, fielding_team) -> Optiona
     return None
 
 
-def _scale_hard_row(
-    row: tuple,
-    hr_bonus: float,
-    park_hr: float,
-    park_hits: float,
-) -> tuple:
-    """Apply HR weight bonus + park factors to one HARD_CONTACT row.
+def _redistribute(table: list, edges: list[tuple[str, str, float]],
+                  power_dev: float) -> list:
+    """Sum-preserving redistribution along (from, to, scale) edges.
 
-    `hr_bonus` is additive (legacy archetype + new power-derived bump).
-    `park_hr` multiplies the HR row only.
-    `park_hits` multiplies single / double rows. Other rows pass through.
+    `power_dev` ∈ [-1, +1].  At power_dev = +1, `scale` fraction of the
+    `from` row's weight moves to the `to` row.  At power_dev = -1, the
+    flow reverses: `scale` fraction of `to` moves back to `from`.  At
+    power_dev = 0 the table is unchanged (identity).
 
-    Identity: hr_bonus=0, park_hr=1.0, park_hits=1.0 ⇒ row unchanged.
+    Sum-preserving: the total table weight is invariant under this
+    redistribution, so league-wide event totals stay stable while
+    per-player profiles diverge with their power rating.
     """
-    name, batter_safe, caught_fly, weight = row
-    if name == "hr":
-        weight = (weight + hr_bonus) * park_hr
-    elif name in ("single", "double"):
-        weight *= park_hits
-    return (name, batter_safe, caught_fly, max(0.01, weight))
+    if power_dev == 0 or not edges:
+        return table
+    weights = {row[0]: row[3] for row in table}
+    for from_name, to_name, scale in edges:
+        if from_name not in weights or to_name not in weights:
+            continue
+        if power_dev > 0:
+            shift = weights[from_name] * scale * power_dev
+        else:
+            shift = -weights[to_name] * scale * (-power_dev)
+        weights[from_name] -= shift
+        weights[to_name]   += shift
+    return [(r[0], r[1], r[2], max(0.01, weights[r[0]])) for r in table]
+
+
+def _apply_park(table: list, quality: str, park_hr: float,
+                park_hits: float) -> list:
+    """Park factors as multipliers on specific rows. Not sum-preserving
+    (parks really do create / destroy events — that's what park factors
+    mean), so this is multiplicative by design.
+    """
+    if park_hr == 1.0 and park_hits == 1.0:
+        return table
+    out = []
+    for name, batter_safe, caught_fly, w in table:
+        if quality == "hard" and name == "hr":
+            w *= park_hr
+        elif name in ("single", "double"):
+            w *= park_hits
+        out.append((name, batter_safe, caught_fly, max(0.01, w)))
+    return out
+
+
+# Power-axis redistribution edges per quality. Read as (from, to, scale):
+# at +1 power_dev, `scale` fraction of `from` weight shifts to `to`.
+def _hard_edges() -> list[tuple[str, str, float]]:
+    return [
+        ("line_out", "hr",     cfg.POWER_REDIST_HR),
+        ("single",   "double", cfg.POWER_REDIST_HARD_S2D),
+        ("double",   "triple", cfg.POWER_REDIST_HARD_D2T),
+    ]
+
+def _medium_edges() -> list[tuple[str, str, float]]:
+    return [
+        ("single",     "double",  cfg.POWER_REDIST_MED_S2D),
+        ("ground_out", "fly_out", cfg.POWER_REDIST_MED_GO2FO),
+    ]
+
+def _weak_edges() -> list[tuple[str, str, float]]:
+    return [
+        ("single", "fly_out", cfg.POWER_REDIST_WEAK_S2FO),
+    ]
 
 
 def _pick_from_table(rng: random.Random, table: list) -> tuple:
@@ -472,39 +517,53 @@ def resolve_contact(
     Resolve a ball-in-play event into a full fielding outcome dict.
 
     Returns an outcome dict compatible with apply_event / advance_runners.
-    Phase 8: for hard-contact events, batter.hr_weight_bonus adjusts the HR
-    row weight in HARD_CONTACT (positive → more HR, negative → fewer HR /
-    more line drives / doubles).  Sourced from ARCHETYPE_PA_MODIFIERS.
 
-    Realism layer:
-      - batter.power adds an extra HR-weight bump on top of hr_weight_bonus
-        (collapses to 0 at power=0.5).
-      - The home team's park_hr multiplies the HR row weight (1.0 = identity);
-        park_hits multiplies single/double weights for hit-vs-out feel.
+    Phase 10.2 power model:
+      - batter.power redistributes weight along power-axis edges INSIDE
+        each contact-quality table (sum-preserving). High power moves
+        weight from singles → doubles, doubles → triples, line_outs → HRs
+        on hard contact; from singles → doubles and ground_outs → fly_outs
+        on medium contact; from singles → fly_outs (infield pops) on weak
+        contact when power is *low*. Low power reverses the flow.
+      - Total table weight is invariant under this redistribution, so
+        league-wide event totals stay stable while per-player profiles
+        diverge with their power rating.
+      - The legacy archetype `hr_weight_bonus` field is folded into the
+        same line_out → HR redistribution (one consistent mechanism for
+        both archetype and rating).
+
+    Park factors are applied separately as multipliers (parks really do
+    create / destroy events, so they're multiplicative by design).
     """
     table = _CONTACT_TABLES.get(quality, cfg.WEAK_CONTACT)
 
-    # Power-driven HR weight bonus, additive with the legacy archetype field.
+    # Combined power axis: rating-driven (-1..+1) plus archetype legacy
+    # bonus (typically tiny). Both flow through the SAME line_out → HR edge
+    # via _redistribute, so the joker archetype's HR boost is now sum-
+    # preserving instead of additive.
+    power_dev    = (batter.power - 0.5) * 2.0
     legacy_bonus = getattr(batter, "hr_weight_bonus", 0.0)
-    power_bonus  = (batter.power - 0.5) * 2 * cfg.POWER_HR_WEIGHT_SCALE
-    hr_bonus = legacy_bonus + power_bonus
+    # Archetype bonus translated to a power_dev contribution on the HR
+    # edge only. Scale: each unit of legacy_bonus ≈ 1.0 of POWER_REDIST_HR.
+    archetype_dev_hr = legacy_bonus / max(0.01, cfg.POWER_REDIST_HR)
 
-    # Park factors from the home team (applied symmetrically — both lineups
-    # play in the home park). state.home is the host regardless of half.
+    # Apply power-axis redistribution per quality.
+    if quality == "hard":
+        # HR edge gets both rating and archetype contributions.
+        edges = list(_hard_edges())
+        # Boost the HR edge by the archetype contribution.
+        edges[0] = ("line_out", "hr",
+                    cfg.POWER_REDIST_HR + archetype_dev_hr * cfg.POWER_REDIST_HR)
+        table = _redistribute(table, edges, power_dev)
+    elif quality == "medium":
+        table = _redistribute(table, _medium_edges(), power_dev)
+    elif quality == "weak":
+        table = _redistribute(table, _weak_edges(), power_dev)
+
+    # Park factors (multiplicative) applied AFTER redistribution.
     park_hr   = getattr(state.home, "park_hr", 1.0) if state.home else 1.0
     park_hits = getattr(state.home, "park_hits", 1.0) if state.home else 1.0
-
-    if quality == "hard" and (hr_bonus != 0.0 or park_hr != 1.0 or park_hits != 1.0):
-        table = [
-            _scale_hard_row(r, hr_bonus, park_hr, park_hits)
-            for r in table
-        ]
-    elif quality == "medium" and park_hits != 1.0:
-        table = [
-            (r[0], r[1], r[2],
-             max(0.01, r[3] * (park_hits if r[0] in ("single", "double") else 1.0)))
-            for r in table
-        ]
+    table = _apply_park(table, quality, park_hr, park_hits)
 
     hit_type, batter_safe, caught_fly, _ = _pick_from_table(rng, table)
 

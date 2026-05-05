@@ -119,21 +119,31 @@ BATTER_DOM_CONTACT: float  = +0.03   # more contact events
 #                   FATIGUE_THRESHOLD_BASE + round(pitcher_skill * FATIGUE_THRESHOLD_SCALE))
 # Fatigue factor grows linearly beyond threshold, capped at FATIGUE_MAX.
 
-FATIGUE_THRESHOLD_BASE: int  = 24    # Phase 10: workhorses fatigue much later (was 10)
-# Bumped 20 → 40 so Stamina actually moats the workhorse archetype.
-# Math: an elite-Stamina (0.85) pitcher fatigues at 24 + round(0.85*40) = 58 BF
-# threshold — i.e. effectively never within a 27-out half. A sub-replacement
-# (0.25) Stamina pitcher fatigues at 24 + 10 = 34 BF, visibly tiring through
-# the order. This is what makes Stamina disproportionately valuable in O27.
-FATIGUE_THRESHOLD_SCALE: int = 40    # higher-skill pitchers get longer spells
-FATIGUE_MAX: float           = 0.60  # maximum fatigue multiplier
-FATIGUE_SCALE: float         = 20.0  # spell_count divisor for ramp-up
+FATIGUE_THRESHOLD_BASE: int  = 6     # Phase 10.2: lower further — round 1 (BASE=10) was still dominated by lineup-cycling drift
+# Phase 10 bump (10 → 24) was an over-correction. With BASE=24 and
+# SCALE=40, an avg-stamina (0.5) pitcher's threshold landed at BF=44 —
+# past the end of a 27-out arc (~36-40 BF) — so fatigue literally never
+# fired inside a single appearance. Result: Decay (K%_arc1 - K%_arc3)
+# was indistinguishable between workhorse starters (+0.35 mean) and
+# short relievers (+0.50 mean). The stat existed; the mechanic didn't.
+#
+# At BASE=10 / SCALE=40 the curve becomes:
+#   stamina 0.3 (low)        → threshold BF=22  (fatigues mid arc-2)
+#   stamina 0.5 (avg)        → threshold BF=30  (fatigues late arc-2)
+#   stamina 0.7 (high)       → threshold BF=38  (fatigues late arc-3)
+#   stamina 0.9 (workhorse)  → threshold BF=46  (rarely fatigues — moat preserved)
+# So the workhorse moat survives; the rest of the league actually gets
+# tired across an arc, which produces the K%-by-arc differential the
+# Decay stat is supposed to surface.
+FATIGUE_THRESHOLD_SCALE: int = 40    # higher-stamina pitchers get longer spells
+FATIGUE_MAX: float           = 0.80  # raised 0.60 → 0.80 so the cliff actually bites
+FATIGUE_SCALE: float         = 12.0  # tightened 20 → 12 — flat-then-cliff curve
 
 FATIGUE_BALL: float     = +0.06   # more balls as fatigue grows
-FATIGUE_CONTACT: float  = +0.04   # more contact
+FATIGUE_CONTACT: float  = +0.06   # more contact (was +0.04 — sharper late-arc slap-hit profile)
 FATIGUE_CALLED: float   = -0.04   # fewer called strikes
-FATIGUE_SWINGING: float = -0.03   # fewer swinging strikes
-FATIGUE_FOUL: float     = -0.03   # fewer fouls
+FATIGUE_SWINGING: float = -0.06   # fewer swinging strikes (was -0.03 — the K-suppression term)
+FATIGUE_FOUL: float     = -0.04   # fewer fouls (was -0.03)
 
 # ---------------------------------------------------------------------------
 # Contact quality distribution
@@ -453,9 +463,38 @@ PITCHER_COMMAND_CALLED: float = +0.03
 CONTACT_POWER_TILT:    float = 0.10
 CONTACT_MOVEMENT_TILT: float = 0.06
 
-# --- Power → HARD_CONTACT HR weight bonus ---------------------------------
-# Slugger archetype: an elite-power batter sees a meaningfully boosted HR
-# row inside the HARD_CONTACT table. (power - 0.5) * 2 ∈ [-1, +1] times this.
+# --- Power → in-play distribution redistribution --------------------------
+# Phase 10.2: power was previously a one-trick HR additive (POWER_HR_WEIGHT_
+# SCALE=0.08 was added to the HR row weight, INCREASING total HARD weight
+# rather than redistributing). That broke the "redistribute, don't multiply"
+# rule — high-power hitters were getting *extra* offense on top of the
+# existing distribution, which inflated total league HR. The new model
+# redistributes weight along power-axis edges (sum-preserving), so high-
+# power produces more XBH at the EXPENSE of singles / line outs / grounders,
+# and low-power produces the inverse, leaving league totals stable.
+#
+# Edges (positive power shifts in named direction; negative power reverses):
+#   HARD:    line_out  →  hr           (HR redistribution; replaces additive)
+#   HARD:    single    →  double
+#   HARD:    double    →  triple
+#   MEDIUM:  single    →  double
+#   MEDIUM:  ground_out → fly_out
+#   WEAK:    single    →  fly_out      (low power: solid contact → infield pop)
+#
+# Magnitude is the FRACTION of `from`-row weight shifted to `to`-row at
+# (power - 0.5)*2 = ±1.0. So 0.50 means at full +/− power, half the
+# from-row weight moves to the to-row. Calibrated to keep league HR /
+# 2B / 3B rates stable while opening per-player spread.
+POWER_REDIST_HR:        float = 0.50  # HARD line_out → hr (replaces POWER_HR_WEIGHT_SCALE additive)
+POWER_REDIST_HARD_S2D:  float = 0.30
+POWER_REDIST_HARD_D2T:  float = 0.20
+POWER_REDIST_MED_S2D:   float = 0.20
+POWER_REDIST_MED_GO2FO: float = 0.15
+POWER_REDIST_WEAK_S2FO: float = 0.20
+
+# Legacy alias kept for the archetype `hr_weight_bonus` field, which the
+# data layer hands in for joker / slugger archetypes. Now applied as a
+# redistribute scalar (line_out → HR) on top of the power axis.
 POWER_HR_WEIGHT_SCALE: float = 0.08
 
 # --- Movement → HARD_CONTACT GB bias --------------------------------------

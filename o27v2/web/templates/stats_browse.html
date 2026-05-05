@@ -364,6 +364,7 @@
       <th class="num">BB</th><th class="num">K</th><th class="num">HR</th><th class="num">FO</th>
       <th class="num">P</th>
       <th class="num">wERA</th><th class="num">xRA</th><th class="num">Decay</th>
+      <th class="num" title="Arc-3 K% (incl foul-outs) — useful for short-relief specialists who never see arc-1 sample, so Decay is undefined for them">LateK%</th>
       <th class="num">GSc</th><th class="num">GSc+</th>
       <th class="num">OS+</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
@@ -396,6 +397,7 @@
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.decay) }}">{% if p.decay_known %}{{ '%+.1f'|format(p.decay) }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.late_k_pct or 0) }}">{% if p.late_k_known %}{{ '%.1f'|format((p.late_k_pct or 0) * 100) }}%{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.gsc_avg or 0) }}">{{ '%.1f'|format(p.gsc_avg or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.0f'|format(p.gsc_plus or 100) }}">{{ (p.gsc_plus or 100)|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.0f'|format(p.os_plus or 100) }}">{{ (p.os_plus or 100)|round|int }}</td>
@@ -433,6 +435,7 @@
       <th class="num">FOa1</th><th class="num">FOa2</th><th class="num">FOa3</th>
       <th class="num">BFa1</th><th class="num">BFa2</th><th class="num">BFa3</th>
       <th class="num">wERA</th><th class="num">xRA</th><th class="num">Decay</th>
+      <th class="num" title="Arc-3 K% (incl foul-outs) — useful for short-relief specialists who never see arc-1 sample, so Decay is undefined for them">LateK%</th>
       <th class="num">GSc</th><th class="num">GSc+</th>
       <th class="num">OS+</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
@@ -478,6 +481,7 @@
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.decay) }}">{% if p.decay_known %}{{ '%+.1f'|format(p.decay) }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.late_k_pct or 0) }}">{% if p.late_k_known %}{{ '%.1f'|format((p.late_k_pct or 0) * 100) }}%{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.gsc_avg or 0) }}">{{ '%.1f'|format(p.gsc_avg or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.0f'|format(p.gsc_plus or 100) }}">{{ (p.gsc_plus or 100)|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.0f'|format(p.os_plus or 100) }}">{{ (p.os_plus or 100)|round|int }}</td>

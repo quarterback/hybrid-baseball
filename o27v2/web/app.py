@@ -855,6 +855,22 @@ def _aggregate_pitcher_rows(
             p["decay"] = 999.9
             p["decay_known"] = False
 
+        # LateK% — arc-3-only K% (incl foul-outs). Visible for short-relief
+        # specialists who never see arc-1 sample (so Decay is undefined),
+        # and useful as a sibling stat to Decay even for starters: a
+        # closer's arc-3 K% relative to league arc-3 K% reads cleaner than
+        # a Decay number for someone who only pitched the back half.
+        # Sentinel None when no arc-3 sample at all.
+        if bf3 > 0:
+            p["late_k_pct"]   = (k3 + fo3) / bf3
+            p["late_k_known"] = True
+        else:
+            p["late_k_pct"]   = 0.0
+            p["late_k_known"] = False
+        # Percent-scaled view for the leader-card macro, which formats raw
+        # numbers (no transform). Avoids the 0.305 vs 30.5% display quirk.
+        p["late_k_pct_pct"] = p["late_k_pct"] * 100.0
+
         # --- Workload ---
         p["aor"]    = (outs / g) if g else 0.0
         p["os_pct"] = (p["aor"] / 27.0) if g else 0.0  # avg per appearance
