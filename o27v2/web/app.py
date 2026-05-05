@@ -101,6 +101,83 @@ def _clamp_to_last(date_str: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Dual HTML / JSON renderer. Every data view in the app passes through
+# `_serve()` instead of calling `render_template()` directly. Add
+# `?format=json` to any URL to get a structured payload suitable for
+# scripts, notebooks, or LLM-prompt context.
+#
+# JSON output shape:
+#   {
+#     "endpoint": "leaders",
+#     "args":     {"side": "pit", "view": "advanced", ...},  # query string echo
+#     "data":     {...the same dict the Jinja template received},
+#   }
+#
+# The data block is best-effort JSON-serialized: sqlite3.Row → dict,
+# datetime/date → ISO string, callables / Jinja macros / Flask g objects
+# / undefined types are dropped (with a key list under "_dropped" so the
+# caller can see what was excluded).
+# ---------------------------------------------------------------------------
+
+def _jsonable(value, _depth: int = 0):
+    """Recursively coerce a render-context value into JSON-friendly form."""
+    if _depth > 8:
+        return f"<truncated:{type(value).__name__}>"
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (_dt.date, _dt.datetime)):
+        return value.isoformat()
+    # sqlite3.Row exposes .keys()
+    if hasattr(value, "keys") and callable(value.keys):
+        try:
+            return {k: _jsonable(value[k], _depth + 1) for k in value.keys()}
+        except Exception:
+            pass
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v, _depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(v, _depth + 1) for v in value]
+    # Fallback: anything else (callable, custom class, etc.)
+    return None
+
+
+def _serve(template: str, **context):
+    """Render `template` for HTML clients, or emit a JSON payload when
+    the request has ?format=json. The Jinja-context dict is passed through
+    `_jsonable` so the JSON shape mirrors what the template sees.
+
+    Drop-in replacement for `render_template(...)` everywhere a route
+    returns table-shaped data. Routes that already return Response /
+    jsonify directly (export.md, /api/sim/*) don't go through here.
+    """
+    fmt = (request.args.get("format") or "").lower()
+    if fmt in ("json", "j"):
+        # Strip the few keys we know aren't useful to consumers and would
+        # only bloat the response (the live `request` object never shows
+        # up here, but the sim_state injector adds noise on every page).
+        skip = {"sim", "_csrf_token"}
+        clean = {k: v for k, v in context.items() if k not in skip}
+        dropped: list[str] = []
+        out = {}
+        for k, v in clean.items():
+            j = _jsonable(v)
+            if j is None and v is not None:
+                dropped.append(k)
+            else:
+                out[k] = j
+        endpoint = (request.endpoint or "").rsplit(".", 1)[-1]
+        payload = {
+            "endpoint": endpoint,
+            "args":     dict(request.args),
+            "data":     out,
+        }
+        if dropped:
+            payload["_dropped"] = dropped
+        return jsonify(payload)
+    return render_template(template, **context)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -928,7 +1005,7 @@ def index():
         top["werra"] = sorted(pitching, key=lambda x: x["werra"])[:5]
         top["k"]     = sorted(pitching, key=lambda x: x["k"] or 0, reverse=True)[:5]
 
-    return render_template("index.html",
+    return _serve("index.html",
                            today=today,
                            today_games=today_games,
                            yesterday=yesterday,
@@ -1003,7 +1080,7 @@ def standings():
             "pyth_wl":  f"{pyth_w}-{pyth_l}",
         }
 
-    return render_template("standings.html",
+    return _serve("standings.html",
                            leagues=leagues,
                            extras=extras,
                            win_pct=_win_pct,
@@ -1046,7 +1123,7 @@ def schedule():
     if team_id:
         selected_team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
 
-    return render_template("schedule.html",
+    return _serve("schedule.html",
                            games=games,
                            teams=teams,
                            selected_team=selected_team,
@@ -1303,7 +1380,7 @@ def game_detail(game_id: int):
             "outs":  r["unattributed_outs"],
         })
 
-    return render_template(
+    return _serve(
         "game.html",
         game=game,
         phases=phases,
@@ -1763,7 +1840,7 @@ def players():
     )
     page_ids = [p["id"] for p in base]
     if not page_ids:
-        return render_template(
+        return _serve(
             "players.html",
             kind=kind, batters=[], pitchers=[],
             all_teams=db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name"),
@@ -1839,7 +1916,7 @@ def players():
             _aggregate_pitcher_rows([row], wl, baselines=baselines)
             pitcher_rows.append(row)
 
-    return render_template(
+    return _serve(
         "players.html",
         kind=kind,
         batters=batter_rows,
@@ -2019,7 +2096,7 @@ def stats_browse():
             outs = p["outs"] or 0
             p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
 
-    return render_template(
+    return _serve(
         "stats_browse.html",
         side=side,
         view=view,
@@ -2042,7 +2119,7 @@ def stats_browse():
 def leaders():
     games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
     if games_played == 0:
-        return render_template("leaders.html",
+        return _serve("leaders.html",
                                games_played=0, batting=[], pitching=[],
                                min_pa=0, min_outs=0)
 
@@ -2125,7 +2202,7 @@ def leaders():
         # OS% = share of a complete game (27 outs) recorded per appearance.
         p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
 
-    return render_template(
+    return _serve(
         "leaders.html",
         games_played=games_played,
         min_pa=min_pa, min_outs=min_outs,
@@ -2385,7 +2462,7 @@ def player_detail(player_id: int):
                     player_id, extra, ext_params, wl, baselines)
             splits[label] = split
 
-    return render_template(
+    return _serve(
         "player.html",
         player=player,
         batting_log=batting_log,
@@ -2406,7 +2483,7 @@ def teams():
            GROUP BY t.id
            ORDER BY t.league, t.division, t.name"""
     )
-    return render_template("teams.html", teams=teams_list, win_pct=_win_pct)
+    return _serve("teams.html", teams=teams_list, win_pct=_win_pct)
 
 
 @app.route("/team/<int:team_id>")
@@ -2497,7 +2574,7 @@ def team_detail(team_id: int):
            ORDER BY g.game_date DESC LIMIT 10""",
         (team_id, team_id),
     )
-    return render_template("team.html",
+    return _serve("team.html",
                            team=team,
                            batters=batters,
                            pitchers=pitchers,
@@ -2526,7 +2603,7 @@ def transactions():
         if et in counts:
             counts[et] += 1
 
-    return render_template("transactions.html",
+    return _serve("transactions.html",
                            transactions=txns,
                            teams=teams,
                            selected_team=selected_team,
@@ -2540,7 +2617,7 @@ def new_league_get():
     configs = get_league_configs()
     current_team_count = db.fetchone("SELECT COUNT(*) as n FROM teams")
     current_n = current_team_count["n"] if current_team_count else 0
-    return render_template("new_league.html",
+    return _serve("new_league.html",
                            configs=configs,
                            current_team_count=current_n)
 
@@ -2741,7 +2818,7 @@ def seasons_index():
         "SELECT * FROM seasons ORDER BY season_number DESC"
     )
     live = compute_live_season()
-    return render_template("seasons.html", seasons=rows, live=live)
+    return _serve("seasons.html", seasons=rows, live=live)
 
 
 @app.route("/seasons/<int:season_id>")
@@ -2781,7 +2858,7 @@ def season_detail(season_id: int):
             r["division"] or "—", []
         ).append(r)
 
-    return render_template(
+    return _serve(
         "season_detail.html",
         season=season,
         leagues=leagues,
