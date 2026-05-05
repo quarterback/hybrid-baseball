@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}League{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">League</h2>
+    <div class="text-secondary small">
+      Commissioner view · {{ games_played }} games played
+      · 30-team aggregate · click any column header to sort
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <button class="copy-md" data-md-url="{{ url_for('standings_export') }}"
+            title="Copy standings as markdown">Standings as MD</button>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('league', format='json') }}">JSON</a>
+  </div>
+</div>
+
+{% if games_played == 0 %}
+<div class="panel panel-body text-center text-secondary">
+  No games played yet. Use <span class="badge bg-success">Sim Today</span> in the top bar.
+</div>
+{% else %}
+
+{# ============================================================
+   PULSE — TL;DR card
+   ============================================================ #}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>League Pulse</span>
+    <span class="ms-auto sub">core run-environment + workload metrics, league-wide</span>
+  </div>
+  <div class="panel-body">
+    <div class="row g-3">
+      {% macro pulse_cell(label, value, hint='') %}
+      <div class="col-md-2 col-sm-4 col-6">
+        <div class="score-label">{{ label }}</div>
+        <div class="num fw-bold" style="font-size:1.4rem">{{ value }}</div>
+        {% if hint %}<div class="text-secondary" style="font-size:.72rem;line-height:1.2">{{ hint }}</div>{% endif %}
+      </div>
+      {% endmacro %}
+      {{ pulse_cell('R / G', '%.2f' % pulse.avg_runs_per_game, 'total runs / games') }}
+      {{ pulse_cell('PA / team-game', pulse.league_pa_per_game) }}
+      {{ pulse_cell('Pitches / team-game', pulse.league_p_per_game) }}
+      {{ pulse_cell('League K%', '%.1f%%' % (pulse.league_k_pct * 100)) }}
+      {{ pulse_cell('League BB%', '%.1f%%' % (pulse.league_bb_pct * 100)) }}
+      {{ pulse_cell('League HR%', '%.1f%%' % (pulse.league_hr_pct * 100)) }}
+      {{ pulse_cell('League Stay%', '%.1f%%' % (pulse.league_stay_pct * 100), '3-foul + run-vs-stay are O27-native') }}
+      {{ pulse_cell('League FO%', '%.1f%%' % (pulse.league_fo_pct * 100), '3-foul-out cap') }}
+      {{ pulse_cell('League wERA', '%.2f' % (pulse.league_werra or 0), 'arc-weighted; anchor for GSc+') }}
+      {{ pulse_cell('League GSc', '%.1f' % (pulse.league_gsc_avg or 0), 'avg per-appearance Game Score') }}
+      {{ pulse_cell('Win % spread', '%.3f' % parity.win_pct_spread, 'best - worst record gap') }}
+      {{ pulse_cell('Win % σ', '%.3f' % parity.win_pct_std, 'parity proxy — lower = tighter') }}
+    </div>
+  </div>
+</div>
+
+{# ============================================================
+   TEAM TABLE — every team as a row, sortable on every column
+   ============================================================ #}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>Team Standings &amp; Headline Stats</span>
+    <span class="ms-auto sub">{{ teams|length }} teams · click headers to sort</span>
+  </div>
+  <div class="table-responsive">
+  <table class="table dense-table sortable mb-0">
+    <thead><tr>
+      <th>Tm</th><th>Lg/Div</th>
+      <th class="num">G</th><th class="num">W</th><th class="num">L</th>
+      <th class="num">Pct</th>
+      <th class="num">R</th><th class="num">RA</th>
+      <th class="num" title="Run differential = R - RA">RDiff</th>
+      <th class="num" title="Pythagorean win % from R / RA (exp 1.83)">Pyth%</th>
+      <th class="num" title="Pythag W minus actual W — positive = unlucky, negative = lucky">Luck</th>
+      <th class="num">OPS</th>
+      <th class="num">OPS+</th>
+      <th class="num">PAVG</th>
+      <th class="num">Stay%</th>
+      <th class="num" title="Team batting WAR (single-aggregate; not sum-of-players)">bWAR</th>
+      <th class="num" title="Weighted ERA — arc-weighted runs allowed">wERA</th>
+      <th class="num" title="O27 Expected FIP">xFIP</th>
+      <th class="num" title="(K + foul-outs) / BF for the staff">stK%</th>
+      <th class="num" title="Avg per-appearance Game Score across all team pitchers">GSc</th>
+      <th class="num" title="Team pitching WAR (single-aggregate; not sum-of-players)">pWAR</th>
+    </tr></thead>
+    <tbody>
+    {% for t in teams %}
+    <tr>
+      <td><a href="{{ url_for('team_detail', team_id=t.team_id) }}" class="team-abbrev">{{ t.team_abbrev }}</a></td>
+      <td class="text-secondary small">{{ t.league }} {% if t.division %}<span class="text-muted">/ {{ t.division }}</span>{% endif %}</td>
+      <td class="num">{{ t.gp }}</td>
+      <td class="num">{{ t.w }}</td>
+      <td class="num">{{ t.l }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(t.win_pct) }}">{{ '%.3f'|format(t.win_pct) }}</td>
+      <td class="num">{{ t.r }}</td>
+      <td class="num">{{ t.ra }}</td>
+      <td class="num {% if t.rdiff > 0 %}strk-w{% elif t.rdiff < 0 %}strk-l{% endif %}" data-sort-value="{{ t.rdiff }}">{{ '%+d'|format(t.rdiff) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(t.pythag_pct) }}">{{ '%.3f'|format(t.pythag_pct) }}</td>
+      <td class="num {% if t.pythag_diff > 1.5 %}strk-w{% elif t.pythag_diff < -1.5 %}strk-l{% endif %}" data-sort-value="{{ t.pythag_diff }}" title="Positive = team is winning fewer games than R/RA imply (unlucky); Negative = winning more (lucky)">{{ '%+.1f'|format(t.pythag_diff) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(t.ops) }}">{{ '%.3f'|format(t.ops) }}</td>
+      <td class="num" data-sort-value="{{ '%.0f'|format(t.ops_plus) }}">{{ t.ops_plus|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(t.pavg) }}">{{ '%.3f'|format(t.pavg) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(t.stay_pct) }}">{{ '%.1f'|format(t.stay_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(t.war_bat) }}">{{ '%.1f'|format(t.war_bat) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(t.werra) }}">{{ '%.2f'|format(t.werra) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(t.xfip) }}">{{ '%.2f'|format(t.xfip) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(t.k_pct_pit) }}">{{ '%.1f'|format(t.k_pct_pit * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(t.gsc_avg) }}">{{ '%.1f'|format(t.gsc_avg) }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(t.war_pit) }}">{{ '%.1f'|format(t.war_pit) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{# ============================================================
+   DISTRIBUTIONS — quartile / percentile shape of league metrics
+   ============================================================ #}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>League Distributions</span>
+    <span class="ms-auto sub">where each metric sits across the 30 teams (min · Q1 · median · Q3 · max · σ)</span>
+  </div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Metric</th>
+      <th class="num">Min</th>
+      <th class="num">Q1</th>
+      <th class="num" title="50th percentile">Median</th>
+      <th class="num">Q3</th>
+      <th class="num">Max</th>
+      <th class="num">Mean</th>
+      <th class="num" title="Population standard deviation across teams">σ</th>
+      <th class="num" title="(Max - Min) range">Spread</th>
+    </tr></thead>
+    <tbody>
+      {% for label, d in distributions.items() %}
+      {% if d.n %}
+      {% if label in ('OPS', 'PAVG', 'wERA', 'xFIP', 'GSc avg') %}
+        {% set fmt = '%.3f' %}
+      {% elif label in ('OPS+',) %}
+        {% set fmt = '%d' %}
+      {% elif label in ('Stay%', 'Win %', 'Pythag %') %}
+        {% set fmt = 'pct' %}
+      {% else %}
+        {% set fmt = '%+.1f' if label == 'Run diff' else '%.2f' %}
+      {% endif %}
+      <tr>
+        <td>{{ label }}</td>
+        {% for k in ('min', 'q1', 'median', 'q3', 'max', 'mean', 'std') %}
+        <td class="num">
+          {% if fmt == 'pct' %}{{ '%.1f%%'|format(d[k] * 100) }}
+          {% elif fmt == '%d' %}{{ d[k]|round|int }}
+          {% else %}{{ fmt|format(d[k]) }}{% endif %}
+        </td>
+        {% endfor %}
+        <td class="num text-secondary">
+          {% if fmt == 'pct' %}{{ '%.1f%%'|format((d['max'] - d['min']) * 100) }}
+          {% elif fmt == '%d' %}{{ ((d['max'] - d['min'])|round|int) }}
+          {% else %}{{ fmt|format(d['max'] - d['min']) }}{% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{# ============================================================
+   OUTLIERS — top / bottom 3 with z-scores
+   ============================================================ #}
+<div class="row g-3 mb-3">
+{% for label, items in outliers.items() %}
+  {% if items %}
+  <div class="col-md-6 col-lg-4">
+    <div class="panel">
+      <div class="panel-head">
+        <span>{{ label }}</span>
+        <span class="ms-auto sub">top &amp; bottom 3 (z-score)</span>
+      </div>
+      <table class="table dense-table mb-0">
+        <thead><tr>
+          <th>Rank</th><th>Tm</th>
+          <th class="num">Value</th>
+          <th class="num">z</th>
+        </tr></thead>
+        <tbody>
+          {% for r in items[:3] %}
+          <tr>
+            <td class="text-secondary small">{{ loop.index }}</td>
+            <td><span class="team-abbrev">{{ r.label }}</span></td>
+            <td class="num fw-bold">
+              {% if label == 'wERA' or label == 'xFIP' %}{{ '%.2f'|format(r.value) }}
+              {% elif label == 'OPS' %}{{ '%.3f'|format(r.value) }}
+              {% elif label == 'Run diff' %}{{ '%+d'|format(r.value) }}
+              {% elif label == 'Pythag luck' %}{{ '%+.1f'|format(r.value) }}
+              {% else %}{{ '%.2f'|format(r.value) }}{% endif %}
+            </td>
+            <td class="num text-secondary">{{ '%+.2f'|format(r.z) }}</td>
+          </tr>
+          {% endfor %}
+          <tr><td colspan="4" class="text-secondary small text-center" style="background:var(--bg-soft);font-style:italic">…</td></tr>
+          {% for r in items[-3:] %}
+          <tr>
+            <td class="text-secondary small">{{ items|length - 2 + loop.index0 }}</td>
+            <td><span class="team-abbrev">{{ r.label }}</span></td>
+            <td class="num">
+              {% if label == 'wERA' or label == 'xFIP' %}{{ '%.2f'|format(r.value) }}
+              {% elif label == 'OPS' %}{{ '%.3f'|format(r.value) }}
+              {% elif label == 'Run diff' %}{{ '%+d'|format(r.value) }}
+              {% elif label == 'Pythag luck' %}{{ '%+.1f'|format(r.value) }}
+              {% else %}{{ '%.2f'|format(r.value) }}{% endif %}
+            </td>
+            <td class="num text-secondary">{{ '%+.2f'|format(r.z) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+{% endfor %}
+</div>
+
+<details class="mb-4">
+  <summary class="text-secondary small" style="cursor:pointer">Methodology</summary>
+  <div class="text-secondary small mt-2 p-3" style="background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--radius);line-height:1.55">
+    <strong>Pythagorean win %</strong> uses the Bill James exponent of 1.83, fitted to MLB.
+    O27 has a higher run environment so the absolute exponent isn't ideal, but the residual
+    (Pythag W minus actual W) still flags teams winning more or fewer games than their
+    run differential implies.
+    <br><br>
+    <strong>Team OPS+ / OPS / wERA / xFIP</strong> are computed by aggregating every
+    per-player game row into a single team-level row and running it through the same
+    sabermetric pipeline a player gets. This is "team-quality on the WAR scale," not
+    "sum of individual player WARs" — the team-WAR figure won't match a roster-WAR sum.
+    <br><br>
+    <strong>Distributions</strong> use linear-interpolated quartiles (matches numpy's
+    default <code>percentile()</code>). The <strong>σ</strong> column is population
+    standard deviation across all 30 teams.
+    <br><br>
+    <strong>Outlier z-scores</strong> use the same population σ. A z above 1.5 is
+    notable; above 2.0 the team is genuinely tail-end on that metric.
+    <br><br>
+    Add <code>?format=json</code> to this URL to get the same data as a structured
+    payload for scripts / notebooks / LLM-prompt context.
+  </div>
+</details>
+
+{% endif %}
+{% endblock %}

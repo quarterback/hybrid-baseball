@@ -2475,6 +2475,362 @@ def player_detail(player_id: int):
     )
 
 
+# ---------------------------------------------------------------------------
+# /league — commissioner-style dashboard. Aggregates per-player rows into
+# per-team rows, then layers league-wide context: percentile ranks,
+# Pythagorean residuals, distributions, and outliers.
+# ---------------------------------------------------------------------------
+
+def _team_record_rows() -> list[dict]:
+    """Per-team W / L / R / RA / RDiff from the games table."""
+    return db.fetchall(
+        """SELECT t.id, t.name, t.abbrev, t.league, t.division,
+                  COALESCE(SUM(CASE WHEN g.winner_id = t.id THEN 1 ELSE 0 END), 0) AS w,
+                  COALESCE(SUM(CASE WHEN g.played = 1
+                                     AND g.winner_id IS NOT NULL
+                                     AND g.winner_id <> t.id
+                                     AND (g.home_team_id = t.id OR g.away_team_id = t.id)
+                                    THEN 1 ELSE 0 END), 0) AS l,
+                  COALESCE(SUM(CASE WHEN g.played = 1 AND g.home_team_id = t.id
+                                    THEN g.home_score
+                                    WHEN g.played = 1 AND g.away_team_id = t.id
+                                    THEN g.away_score
+                                    ELSE 0 END), 0) AS r,
+                  COALESCE(SUM(CASE WHEN g.played = 1 AND g.home_team_id = t.id
+                                    THEN g.away_score
+                                    WHEN g.played = 1 AND g.away_team_id = t.id
+                                    THEN g.home_score
+                                    ELSE 0 END), 0) AS ra,
+                  COALESCE(SUM(CASE WHEN g.played = 1
+                                     AND (g.home_team_id = t.id OR g.away_team_id = t.id)
+                                    THEN 1 ELSE 0 END), 0) AS gp
+           FROM teams t
+           LEFT JOIN games g ON (g.home_team_id = t.id OR g.away_team_id = t.id)
+           GROUP BY t.id
+           ORDER BY t.league, t.division, t.abbrev"""
+    )
+
+
+def _team_batting_rows(baselines: dict) -> list[dict]:
+    """Per-team batting aggregate, decorated with the rate-stat suite."""
+    rows = db.fetchall(
+        """SELECT t.id AS team_id, t.name AS team_name, t.abbrev AS team_abbrev,
+                  COUNT(DISTINCT bs.game_id) AS g,
+                  SUM(bs.pa) AS pa, SUM(bs.ab) AS ab, SUM(bs.hits) AS h,
+                  SUM(bs.doubles) AS d2, SUM(bs.triples) AS d3, SUM(bs.hr) AS hr,
+                  SUM(bs.runs) AS r, SUM(bs.rbi) AS rbi,
+                  SUM(bs.bb) AS bb, SUM(bs.k) AS k,
+                  SUM(bs.stays) AS stays,
+                  COALESCE(SUM(bs.hbp),0) AS hbp,
+                  COALESCE(SUM(bs.sb),0)  AS sb,
+                  COALESCE(SUM(bs.cs),0)  AS cs,
+                  COALESCE(SUM(bs.fo),0)  AS fo,
+                  COALESCE(SUM(bs.multi_hit_abs),0) AS mhab,
+                  COALESCE(SUM(bs.stay_rbi),0)     AS stay_rbi,
+                  COALESCE(SUM(bs.roe),0) AS roe,
+                  COALESCE(SUM(bs.po),0) AS po,
+                  COALESCE(SUM(bs.e),0)  AS e
+           FROM teams t
+           LEFT JOIN game_batter_stats bs ON bs.team_id = t.id
+           GROUP BY t.id"""
+    )
+    rows = [dict(r) for r in rows]
+    # Decorate each team row with the same sabermetric pipeline a player
+    # row gets. The aggregator only needs `position`/defense for DRS;
+    # team-level DRS isn't meaningful, so stamp neutral values.
+    for r in rows:
+        r["position"]         = "TEAM"
+        r["defense"]          = 0.5
+        r["defense_infield"]  = 0.5
+        r["defense_outfield"] = 0.5
+        r["defense_catcher"]  = 0.5
+    _aggregate_batter_rows(rows, baselines=baselines)
+    return rows
+
+
+def _team_pitching_rows(baselines: dict) -> list[dict]:
+    """Per-team pitching aggregate, decorated with the wERA / xFIP / Decay
+    suite."""
+    rows = db.fetchall(
+        f"""SELECT t.id AS team_id, t.name AS team_name, t.abbrev AS team_abbrev,
+                   COUNT(DISTINCT ps.game_id) AS g,
+                   SUM(ps.batters_faced) AS bf,
+                   SUM(ps.outs_recorded) AS outs,
+                   SUM(ps.hits_allowed) AS h,
+                   SUM(ps.runs_allowed) AS r,
+                   SUM(ps.er) AS er,
+                   SUM(ps.bb) AS bb, SUM(ps.k) AS k,
+                   SUM(ps.hr_allowed) AS hr_allowed,
+                   COALESCE(SUM(ps.hbp_allowed),0) AS hbp_allowed,
+                   COALESCE(SUM(ps.unearned_runs),0) AS unearned_runs,
+                   COALESCE(SUM(ps.sb_allowed),0) AS sb_allowed,
+                   COALESCE(SUM(ps.cs_caught),0) AS cs_caught,
+                   COALESCE(SUM(ps.fo_induced),0) AS fo_induced,
+                   COALESCE(SUM(ps.pitches),0) AS pitches,
+                   COALESCE(SUM(ps.er_arc1),0) AS er_arc1,
+                   COALESCE(SUM(ps.er_arc2),0) AS er_arc2,
+                   COALESCE(SUM(ps.er_arc3),0) AS er_arc3,
+                   COALESCE(SUM(ps.k_arc1),0)  AS k_arc1,
+                   COALESCE(SUM(ps.k_arc2),0)  AS k_arc2,
+                   COALESCE(SUM(ps.k_arc3),0)  AS k_arc3,
+                   COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1,
+                   COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2,
+                   COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
+                   COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1,
+                   COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2,
+                   COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
+                   COALESCE(SUM(ps.is_starter),0) AS gs
+           FROM teams t
+           LEFT JOIN {_PSTATS_DEDUP_SQL} ps ON ps.team_id = t.id
+           GROUP BY t.id"""
+    )
+    rows = [dict(r) for r in rows]
+    _aggregate_pitcher_rows(rows, wl=None, baselines=baselines)
+    return rows
+
+
+def _percentile_ranks(rows: list[dict], key: str, reverse: bool = False) -> None:
+    """Stamp `<key>_rank` (1 = best) and `<key>_pctile` (0..100, where
+    100 = best) onto every row. `reverse=True` means lower is better
+    (e.g. wERA, BB%)."""
+    valid = [r for r in rows if r.get(key) is not None]
+    if not valid:
+        return
+    valid.sort(key=lambda r: r[key], reverse=not reverse)
+    n = len(valid)
+    for i, r in enumerate(valid):
+        r[f"{key}_rank"] = i + 1
+        r[f"{key}_pctile"] = round((1 - i / max(1, n - 1)) * 100, 1) if n > 1 else 100.0
+
+
+def _league_distribution(rows: list[dict], key: str) -> dict:
+    """Min / Q1 / median / Q3 / max / mean / std for a numeric column
+    across the rows. Drops None values."""
+    import statistics as _st
+    vals = sorted([r[key] for r in rows if r.get(key) is not None])
+    if not vals:
+        return {"n": 0}
+    n = len(vals)
+    def _q(p):
+        # Linear interpolation; matches numpy's default percentile.
+        if n == 1:
+            return vals[0]
+        idx = (n - 1) * p
+        lo = int(idx); hi = min(lo + 1, n - 1)
+        frac = idx - lo
+        return vals[lo] + (vals[hi] - vals[lo]) * frac
+    return {
+        "n":      n,
+        "min":    vals[0],
+        "q1":     _q(0.25),
+        "median": _q(0.5),
+        "q3":     _q(0.75),
+        "max":    vals[-1],
+        "mean":   sum(vals) / n,
+        "std":    _st.pstdev(vals) if n > 1 else 0.0,
+    }
+
+
+def _outliers(rows: list[dict], key: str, *, n: int = 3,
+              reverse: bool = False, label_key: str = "team_abbrev") -> list[dict]:
+    """Top-`n` and bottom-`n` rows on a metric, with z-scores. `reverse`
+    flips the polarity so "low is better" stats (wERA, BB%) put the
+    lowest-value team in the `top` slot.
+    """
+    import statistics as _st
+    valid = [r for r in rows if r.get(key) is not None]
+    if not valid:
+        return []
+    vals = [r[key] for r in valid]
+    mean = sum(vals) / len(vals)
+    std  = _st.pstdev(vals) if len(vals) > 1 else 1.0
+    annotated = [
+        {
+            "label":  r.get(label_key) or "—",
+            "value":  r[key],
+            "z":      ((r[key] - mean) / std) if std > 0 else 0.0,
+        }
+        for r in valid
+    ]
+    annotated.sort(key=lambda x: x["value"], reverse=not reverse)
+    return annotated
+
+
+def _pythag(r: int, ra: int, exp: float = 1.83) -> float:
+    """Pythagorean win expectancy. exp=1.83 is the Bill James-fitted MLB
+    exponent; O27 has higher run scoring but the formula's first-order
+    insight (luck residual relative to RDiff) carries over."""
+    if r <= 0 and ra <= 0:
+        return 0.5
+    return (r ** exp) / (r ** exp + ra ** exp)
+
+
+@app.route("/league")
+def league():
+    """Commissioner dashboard — league-wide aggregates, parity, run
+    environment, distributions, outliers, Pythag residuals.
+
+    Renders HTML; supports ?format=json via the existing _serve() helper.
+    """
+    games_played = db.fetchone(
+        "SELECT COUNT(*) as n FROM games WHERE played = 1"
+    )["n"] or 0
+    if games_played == 0:
+        return _serve("league.html",
+                      games_played=0, pulse=None, teams=[], records=[],
+                      batting=[], pitching=[],
+                      distributions={}, outliers={}, parity={})
+
+    baselines = _league_baselines()
+    records   = [dict(r) for r in _team_record_rows()]
+    batting   = _team_batting_rows(baselines)
+    pitching  = _team_pitching_rows(baselines)
+
+    # --- Wire records onto the team-batting rows so a single team_table
+    # has W / L / R / RA / Pythag alongside team OPS / wERA / etc.
+    rec_by_id = {r["id"]: r for r in records}
+    bat_by_id = {r["team_id"]: r for r in batting}
+    pit_by_id = {r["team_id"]: r for r in pitching}
+
+    teams_combined: list[dict] = []
+    for rec in records:
+        bat = bat_by_id.get(rec["id"], {})
+        pit = pit_by_id.get(rec["id"], {})
+        gp  = rec.get("gp") or 0
+        r   = rec.get("r")  or 0
+        ra  = rec.get("ra") or 0
+        pythag_w = _pythag(r, ra)
+        actual_w = (rec.get("w") / gp) if gp else 0.0
+        teams_combined.append({
+            "team_id":     rec["id"],
+            "team_abbrev": rec["abbrev"],
+            "team_name":   rec["name"],
+            "league":      rec.get("league") or "",
+            "division":    rec.get("division") or "",
+            "gp":          gp,
+            "w":           rec.get("w") or 0,
+            "l":           rec.get("l") or 0,
+            "win_pct":     actual_w,
+            "r":           r,
+            "ra":          ra,
+            "rdiff":       r - ra,
+            "pythag_pct":  pythag_w,
+            "pythag_w":    round(pythag_w * gp) if gp else 0,
+            "pythag_diff": round((pythag_w - actual_w) * gp, 1) if gp else 0.0,
+            # Batting headlines.
+            "ops":         bat.get("ops") or 0,
+            "ops_plus":    bat.get("ops_plus") or 100,
+            "pavg":        bat.get("pavg") or 0,
+            "woba":        bat.get("woba") or 0,
+            "iso":         bat.get("iso") or 0,
+            "stay_pct":    bat.get("stay_pct") or 0,
+            "k_pct_bat":   bat.get("k_pct") or 0,
+            "bb_pct_bat":  bat.get("bb_pct") or 0,
+            "hr_pct_bat":  bat.get("hr_pct") or 0,
+            "war_bat":     bat.get("war") or 0,
+            # Pitching headlines.
+            "werra":       pit.get("werra") or 0,
+            "xfip":        pit.get("xfip") or 0,
+            "decay":       pit.get("decay"),
+            "decay_known": pit.get("decay_known", False),
+            "gsc_avg":     pit.get("gsc_avg") or 0,
+            "gsc_plus":    pit.get("gsc_plus") or 100,
+            "k_pct_pit":   pit.get("k_pct") or 0,
+            "bb_pct_pit":  pit.get("bb_pct") or 0,
+            "war_pit":     pit.get("war") or 0,
+        })
+
+    # --- Stamp percentile ranks for the columns the dashboard sorts on.
+    for k, lower_better in [
+        ("ops", False), ("ops_plus", False), ("pavg", False),
+        ("woba", False), ("iso", False), ("stay_pct", False), ("war_bat", False),
+        ("werra", True), ("xfip", True), ("gsc_avg", False), ("gsc_plus", False),
+        ("war_pit", False), ("rdiff", False), ("pythag_pct", False),
+    ]:
+        _percentile_ranks(teams_combined, k, reverse=lower_better)
+
+    # --- League-wide distribution panels.
+    distributions = {
+        "OPS":       _league_distribution(teams_combined, "ops"),
+        "OPS+":      _league_distribution(teams_combined, "ops_plus"),
+        "PAVG":      _league_distribution(teams_combined, "pavg"),
+        "Stay%":     _league_distribution(teams_combined, "stay_pct"),
+        "wERA":      _league_distribution(teams_combined, "werra"),
+        "xFIP":      _league_distribution(teams_combined, "xfip"),
+        "GSc avg":   _league_distribution(teams_combined, "gsc_avg"),
+        "Run diff":  _league_distribution(teams_combined, "rdiff"),
+        "Win %":     _league_distribution(teams_combined, "win_pct"),
+        "Pythag %":  _league_distribution(teams_combined, "pythag_pct"),
+    }
+
+    # --- Outliers (top/bottom 3 each) for a select set of metrics.
+    outliers = {
+        "Run diff":      _outliers(teams_combined, "rdiff"),
+        "OPS":           _outliers(teams_combined, "ops"),
+        "wERA":          _outliers(teams_combined, "werra", reverse=True),
+        "xFIP":          _outliers(teams_combined, "xfip", reverse=True),
+        "Pythag luck":   _outliers(teams_combined, "pythag_diff"),
+    }
+
+    # --- Parity / competitive-balance roll-up.
+    win_pcts = [t["win_pct"] for t in teams_combined if t["gp"] > 0]
+    n_teams  = len(teams_combined)
+    if win_pcts:
+        import statistics as _st
+        wp_mean   = sum(win_pcts) / len(win_pcts)
+        wp_std    = _st.pstdev(win_pcts) if len(win_pcts) > 1 else 0.0
+        wp_range  = max(win_pcts) - min(win_pcts)
+    else:
+        wp_mean = wp_std = wp_range = 0.0
+    parity = {
+        "win_pct_std":    wp_std,
+        "win_pct_spread": wp_range,
+        "win_pct_mean":   wp_mean,
+    }
+
+    # --- Pulse: TL;DR card at the top of the page.
+    total_runs = sum((t["r"] or 0) + (t["ra"] or 0) for t in teams_combined) // 2
+    avg_r_per_g = (total_runs / games_played) if games_played else 0
+    league_total_pa = sum(b.get("pa") or 0 for b in batting)
+    league_total_outs = sum(p.get("outs") or 0 for p in pitching)
+    league_total_p = sum(p.get("pitches") or 0 for p in pitching)
+    league_total_k_bat = sum(b.get("k") or 0 for b in batting)
+    league_total_bb_bat = sum(b.get("bb") or 0 for b in batting)
+    league_total_hr_bat = sum(b.get("hr") or 0 for b in batting)
+    league_total_stays = sum(b.get("stays") or 0 for b in batting)
+    league_total_fo = sum(b.get("fo") or 0 for b in batting)
+    pulse = {
+        "games_played":       games_played,
+        "n_teams":             n_teams,
+        "avg_runs_per_game":   round(avg_r_per_g, 2),
+        "league_pa":           league_total_pa,
+        "league_outs":         league_total_outs,
+        "league_pitches":      league_total_p,
+        "league_k_pct":        (league_total_k_bat / league_total_pa) if league_total_pa else 0,
+        "league_bb_pct":       (league_total_bb_bat / league_total_pa) if league_total_pa else 0,
+        "league_hr_pct":       (league_total_hr_bat / league_total_pa) if league_total_pa else 0,
+        "league_stay_pct":     (league_total_stays / league_total_pa) if league_total_pa else 0,
+        "league_fo_pct":       (league_total_fo / league_total_pa) if league_total_pa else 0,
+        "league_pa_per_game":  round((league_total_pa / games_played / 2), 1) if games_played else 0,
+        "league_p_per_game":   round((league_total_p / games_played / 2), 1) if games_played else 0,
+        "league_werra":        baselines.get("league_werra"),
+        "league_gsc_avg":      baselines.get("gsc_avg"),
+    }
+
+    return _serve(
+        "league.html",
+        games_played=games_played,
+        pulse=pulse,
+        teams=teams_combined,
+        records=records,
+        batting=batting,
+        pitching=pitching,
+        distributions=distributions,
+        outliers=outliers,
+        parity=parity,
+    )
+
+
 @app.route("/teams")
 def teams():
     teams_list = db.fetchall(
