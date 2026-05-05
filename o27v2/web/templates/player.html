@@ -26,12 +26,14 @@
   </tr>
 {%- endmacro %}
 
-<nav aria-label="breadcrumb" class="mb-2">
+<nav aria-label="breadcrumb" class="mb-2 d-flex justify-content-between align-items-center">
   <ol class="breadcrumb small mb-0">
     <li class="breadcrumb-item"><a href="{{ url_for('players') }}">Players</a></li>
     <li class="breadcrumb-item"><a href="{{ url_for('team_detail', team_id=player.team_id) }}">{{ player.team_name }}</a></li>
     <li class="breadcrumb-item active">{{ player.name }}</li>
   </ol>
+  <button class="copy-md" data-md-url="{{ url_for('player_detail_export', player_id=player.id) }}"
+          title="Copy player season card as markdown">Copy as Markdown</button>
 </nav>
 
 {# ======================== HEADER ======================== #}

@@ -402,6 +402,43 @@
 
     /* close button in dark theme — neutralize the invert filter */
     .btn-close[style*="filter:invert"] { filter: none !important; }
+
+    /* ---- Copy-as-markdown button + toast ---- */
+    .copy-md {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: .78rem;
+      padding: 3px 9px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .copy-md:hover { color: var(--link); border-color: var(--link); background: var(--bg-soft); }
+    .copy-md.copied { color: var(--good); border-color: var(--good); background: #e8f5ec; }
+    .copy-md::before { content: "📋"; font-size: .9rem; }
+    .copy-toast {
+      position: fixed;
+      top: 60px;
+      right: 20px;
+      background: var(--good);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: var(--radius);
+      font-size: .85rem;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+      z-index: 9999;
+    }
+    .copy-toast.show { opacity: 1; transform: translateY(0); }
+    .copy-toast.error { background: var(--bad); }
   </style>
 </head>
 <body>
@@ -506,6 +543,45 @@
       e.preventDefault();
       if (el.disabled || el.classList.contains('disabled')) return;
       runSim(el.dataset.sim);
+    });
+  });
+})();
+
+/* -- Copy-as-Markdown helper: any element with `.copy-md[data-md-url]` --
+   fetches that URL and copies the text/markdown to the clipboard. */
+(function () {
+  const toast = document.createElement('div');
+  toast.className = 'copy-toast';
+  document.body.appendChild(toast);
+  function showToast(msg, isError) {
+    toast.textContent = msg;
+    toast.classList.toggle('error', !!isError);
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1800);
+  }
+  document.querySelectorAll('.copy-md[data-md-url]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const url = btn.dataset.mdUrl;
+      const orig = btn.textContent;
+      btn.textContent = 'Loading…';
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const text = await r.text();
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        showToast('Copied as markdown — ' + text.length.toLocaleString() + ' chars');
+        setTimeout(() => {
+          btn.textContent = orig;
+          btn.classList.remove('copied');
+        }, 1800);
+      } catch (err) {
+        console.error(err);
+        btn.textContent = orig;
+        showToast('Copy failed: ' + err.message, true);
+      }
     });
   });
 })();

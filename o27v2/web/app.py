@@ -25,9 +25,10 @@ _workspace = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _workspace not in sys.path:
     sys.path.insert(0, _workspace)
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, abort
+from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response
 
 from o27v2 import db
+from o27v2.web import text_export
 from o27v2.sim import (
     simulate_game,
     simulate_next_n,
@@ -1325,6 +1326,390 @@ def game_detail(game_id: int):
         prev_game_id=(prev_game["id"] if prev_game else None),
         next_game_id=(next_game["id"] if next_game else None),
     )
+
+
+# ---------------------------------------------------------------------------
+# Markdown text-export endpoints — for forum / GitHub / LLM paste.
+# Each returns Content-Type: text/plain; charset=utf-8 so browsers display
+# the markdown source verbatim instead of trying to render it as HTML.
+# ---------------------------------------------------------------------------
+
+def _md_response(text: str):
+    return Response(text, mimetype="text/plain; charset=utf-8")
+
+
+@app.route("/game/<int:game_id>/export.md")
+def game_detail_export(game_id: int):
+    """Markdown box-score export. Re-uses the same data-prep as the HTML
+    route but skips the phase splits, navigation, game notes, etc."""
+    game = db.fetchone(
+        """SELECT g.*,
+                  ht.name as home_name, ht.abbrev as home_abbrev,
+                  at.name as away_name, at.abbrev as away_abbrev
+           FROM games g
+           JOIN teams ht ON g.home_team_id = ht.id
+           JOIN teams at ON g.away_team_id = at.id
+           WHERE g.id = ?""", (game_id,)
+    )
+    if not game:
+        abort(404)
+
+    away_b = db.fetchall(
+        """SELECT bs.*, p.name as player_name,
+                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position
+           FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
+           WHERE bs.game_id = ? AND bs.team_id = ?""",
+        (game_id, game["away_team_id"]))
+    home_b = db.fetchall(
+        """SELECT bs.*, p.name as player_name,
+                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position
+           FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
+           WHERE bs.game_id = ? AND bs.team_id = ?""",
+        (game_id, game["home_team_id"]))
+    away_p = db.fetchall(
+        """SELECT ps.*, p.name as player_name
+           FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
+           WHERE ps.game_id = ? AND ps.team_id = ?""",
+        (game_id, game["away_team_id"]))
+    home_p = db.fetchall(
+        """SELECT ps.*, p.name as player_name
+           FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
+           WHERE ps.game_id = ? AND ps.team_id = ?""",
+        (game_id, game["home_team_id"]))
+
+    # Consolidate per-player across phases. Same shape as game_detail's
+    # _consolidate_per_player but inlined here so the export is independent.
+    _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
+                "rbi", "bb", "k", "stays", "outs_recorded", "hbp", "sb",
+                "cs", "fo", "multi_hit_abs", "stay_rbi", "roe", "po", "e")
+    _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
+                "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
+                "hbp_allowed", "unearned_runs", "sb_allowed", "cs_caught",
+                "fo_induced",
+                "er_arc1", "er_arc2", "er_arc3",
+                "k_arc1",  "k_arc2",  "k_arc3",
+                "fo_arc1", "fo_arc2", "fo_arc3",
+                "bf_arc1", "bf_arc2", "bf_arc3", "is_starter")
+
+    def _consolidate(rows, num_fields):
+        merged: dict[int, dict] = {}
+        order: list[int] = []
+        for r in rows:
+            pid = r["player_id"]
+            if pid not in merged:
+                merged[pid] = dict(r)
+                order.append(pid)
+            else:
+                acc = merged[pid]
+                for f in num_fields:
+                    acc[f] = (acc.get(f) or 0) + (r[f] or 0)
+        return [merged[k] for k in order]
+
+    away_b_c = _consolidate(away_b, _BAT_NUM)
+    home_b_c = _consolidate(home_b, _BAT_NUM)
+    away_p_c = _consolidate(away_p, _PIT_NUM)
+    home_p_c = _consolidate(home_p, _PIT_NUM)
+
+    # Decorate the pitcher rows so each carries gsc_avg.
+    baselines = _league_baselines()
+    for rows in (away_p_c, home_p_c):
+        for r in rows:
+            r["bf"]   = r.get("batters_faced", 0)
+            r["outs"] = r.get("outs_recorded", 0)
+            r["h"]    = r.get("hits_allowed", 0)
+            r["r"]    = r.get("runs_allowed", 0)
+            r["g"]    = 1
+        _aggregate_pitcher_rows(rows, baselines=baselines)
+
+    # Line score per phase.
+    phases_set = {0}
+    for rs in (away_b, home_b, away_p, home_p):
+        for r in rs:
+            phases_set.add(r["phase"] or 0)
+    phases = sorted(phases_set)
+
+    def _line(b_rows):
+        runs = {p: 0 for p in phases}
+        hits = {p: 0 for p in phases}
+        errs = {p: 0 for p in phases}
+        for r in b_rows:
+            ph = r["phase"] or 0
+            runs[ph] = runs.get(ph, 0) + (r["runs"] or 0)
+            hits[ph] = hits.get(ph, 0) + (r["hits"] or 0)
+            errs[ph] = errs.get(ph, 0) + (r["e"] or 0)
+        return {
+            "runs":   runs, "hits": hits, "errors": errs,
+            "total_r": sum(runs.values()),
+            "total_h": sum(hits.values()),
+            "total_e": sum(errs.values()),
+        }
+
+    return _md_response(text_export.export_box_score(
+        dict(game),
+        away_p_c, home_p_c,
+        away_b_c, home_b_c,
+        _line(away_b), _line(home_b),
+        phases,
+    ))
+
+
+@app.route("/player/<int:player_id>/export.md")
+def player_detail_export(player_id: int):
+    """Markdown player season card."""
+    player = db.fetchone(
+        """SELECT p.*, t.abbrev as team_abbrev, t.name as team_name, t.id as team_id
+           FROM players p JOIN teams t ON p.team_id = t.id WHERE p.id = ?""",
+        (player_id,))
+    if not player:
+        abort(404)
+
+    bt = db.fetchone(
+        """SELECT COUNT(*) as g, SUM(pa) as pa, SUM(ab) as ab, SUM(hits) as h,
+                  SUM(doubles) as d2, SUM(triples) as d3, SUM(hr) as hr,
+                  SUM(runs) as r, SUM(rbi) as rbi, SUM(bb) as bb, SUM(k) as k,
+                  SUM(stays) as stays,
+                  COALESCE(SUM(hbp),0) as hbp,
+                  COALESCE(SUM(sb),0)  as sb,
+                  COALESCE(SUM(cs),0)  as cs,
+                  COALESCE(SUM(fo),0)  as fo,
+                  COALESCE(SUM(multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
+           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+    fld = db.fetchone(
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+    pt = db.fetchone(
+        f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
+                   SUM(hits_allowed) as h, SUM(runs_allowed) as r, SUM(er) as er,
+                   SUM(bb) as bb, SUM(k) as k, SUM(hr_allowed) as hr_allowed,
+                   COALESCE(SUM(hbp_allowed),0) as hbp_allowed,
+                   COALESCE(SUM(unearned_runs),0) as unearned_runs,
+                   COALESCE(SUM(unearned_runs),0) as uer,
+                   COALESCE(SUM(sb_allowed),0) as sb_allowed,
+                   COALESCE(SUM(cs_caught),0) as cs_caught,
+                   COALESCE(SUM(fo_induced),0) as fo_induced,
+                   COALESCE(SUM(pitches),0) as pitches,
+                   COALESCE(SUM(er_arc1),0) as er_arc1, COALESCE(SUM(er_arc2),0) as er_arc2, COALESCE(SUM(er_arc3),0) as er_arc3,
+                   COALESCE(SUM(k_arc1),0) as k_arc1, COALESCE(SUM(k_arc2),0) as k_arc2, COALESCE(SUM(k_arc3),0) as k_arc3,
+                   COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
+                   COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
+                   COALESCE(SUM(is_starter),0) as gs
+            FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
+
+    baselines = _league_baselines()
+    wl = _pitcher_wl_map()
+
+    bt_totals = None
+    if bt and bt["pa"]:
+        bt_totals = dict(bt)
+        bt_totals["position"]         = player.get("position")
+        bt_totals["defense"]          = player.get("defense")
+        bt_totals["defense_infield"]  = player.get("defense_infield")
+        bt_totals["defense_outfield"] = player.get("defense_outfield")
+        bt_totals["defense_catcher"]  = player.get("defense_catcher")
+        _aggregate_batter_rows([bt_totals], baselines=baselines)
+
+    pt_totals = None
+    if pt and pt["outs"]:
+        pt_totals = dict(pt)
+        pt_totals["player_id"] = player_id
+        _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
+
+    fld_totals = {
+        "po": fld["po"] if fld else 0,
+        "e":  fld["e"]  if fld else 0,
+        "chances": (fld["po"] if fld else 0) + (fld["e"] if fld else 0),
+        "fld_pct": ((fld["po"] / ((fld["po"] or 0) + (fld["e"] or 0)))
+                    if fld and ((fld["po"] or 0) + (fld["e"] or 0)) > 0
+                    else None),
+    }
+
+    batting_log = db.fetchall(
+        """SELECT bs.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
+                  ht.abbrev as home_abbrev, at.abbrev as away_abbrev
+           FROM game_batter_stats bs
+           JOIN games g ON bs.game_id = g.id
+           JOIN teams ht ON g.home_team_id = ht.id
+           JOIN teams at ON g.away_team_id = at.id
+           WHERE bs.player_id = ?
+           ORDER BY g.game_date DESC, g.id DESC LIMIT 10""", (player_id,))
+    pitching_log = db.fetchall(
+        f"""SELECT ps.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
+                  ht.abbrev as home_abbrev, at.abbrev as away_abbrev
+           FROM {_PSTATS_DEDUP_SQL} ps
+           JOIN games g ON ps.game_id = g.id
+           JOIN teams ht ON g.home_team_id = ht.id
+           JOIN teams at ON g.away_team_id = at.id
+           WHERE ps.player_id = ?
+           ORDER BY g.game_date DESC, g.id DESC LIMIT 10""", (player_id,))
+
+    return _md_response(text_export.export_player_card(
+        dict(player), bt_totals, pt_totals, fld_totals,
+        batting_log=[dict(r) for r in batting_log],
+        pitching_log=[dict(r) for r in pitching_log],
+    ))
+
+
+@app.route("/standings/export.md")
+def standings_export():
+    return _md_response(text_export.export_standings(
+        _leagues_with_divisions(), _win_pct, _gb,
+    ))
+
+
+@app.route("/leaders/export.md")
+def leaders_export():
+    """Reuse the leaders() route's data prep."""
+    games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
+    if games_played == 0:
+        return _md_response("# Leaders\n\n_No games played yet._\n")
+    num_teams = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
+    min_pa   = max(3, games_per_team)
+    min_outs = max(3, games_per_team)
+    baselines = _league_baselines()
+
+    batting = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.defense as defense, p.arm as arm,
+                  p.defense_infield as defense_infield,
+                  p.defense_outfield as defense_outfield,
+                  p.defense_catcher as defense_catcher,
+                  t.id as team_id, t.abbrev as team_abbrev,
+                  SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                  SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                  SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                  SUM(bs.bb) as bb, SUM(bs.k) as k,
+                  COALESCE(SUM(bs.hbp),0) as hbp,
+                  COALESCE(SUM(bs.sb),0)  as sb,
+                  COALESCE(SUM(bs.cs),0)  as cs,
+                  COALESCE(SUM(bs.fo),0)  as fo,
+                  COALESCE(SUM(bs.stays),0) as stays,
+                  COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.roe),0) as roe
+           FROM game_batter_stats bs
+           JOIN players p ON bs.player_id = p.id
+           JOIN teams   t ON bs.team_id = t.id
+           GROUP BY p.id
+           HAVING SUM(bs.pa) >= ?""", (min_pa,))
+    _aggregate_batter_rows(batting, baselines=baselines)
+
+    pitching = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(ps.game_id) as g,
+                  SUM(ps.batters_faced)  as bf,
+                  SUM(ps.outs_recorded)  as outs,
+                  SUM(ps.hits_allowed)   as h,
+                  SUM(ps.runs_allowed)   as r,
+                  SUM(ps.er)             as er,
+                  SUM(ps.bb)             as bb,
+                  SUM(ps.k)              as k,
+                  SUM(ps.hr_allowed)     as hr_allowed,
+                  COALESCE(SUM(ps.hbp_allowed),0) as hbp_allowed,
+                  COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
+                  COALESCE(SUM(ps.fo_induced),0) as fo_induced,
+                  COALESCE(SUM(ps.pitches),0) as pitches,
+                  COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                  COALESCE(SUM(ps.k_arc1),0) as k_arc1, COALESCE(SUM(ps.k_arc2),0) as k_arc2, COALESCE(SUM(ps.k_arc3),0) as k_arc3,
+                  COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                  COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                  COALESCE(SUM(ps.is_starter),0) as gs
+           FROM {_PSTATS_DEDUP_SQL} ps
+           JOIN players p ON ps.player_id = p.id
+           JOIN teams   t ON ps.team_id = t.id
+           GROUP BY p.id
+           HAVING SUM(ps.outs_recorded) >= ?""", (min_outs,))
+    _aggregate_pitcher_rows(pitching, _pitcher_wl_map(), baselines=baselines)
+
+    return _md_response(text_export.export_leaders(
+        [dict(r) for r in batting],
+        [dict(r) for r in pitching],
+    ))
+
+
+@app.route("/team/<int:team_id>/export.md")
+def team_detail_export(team_id: int):
+    """Markdown team summary."""
+    team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
+    if not team:
+        abort(404)
+    roster = db.fetchall(
+        "SELECT * FROM players WHERE team_id = ? ORDER BY is_pitcher, position, id",
+        (team_id,))
+    ids = [p["id"] for p in roster]
+    if not ids:
+        return _md_response(text_export.export_team(dict(team), [], [], 0, 0))
+
+    ph = ",".join("?" * len(ids))
+    bstats = {
+        r["player_id"]: r for r in db.fetchall(
+            f"""SELECT bs.player_id, COUNT(bs.game_id) as gp,
+                       SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                       SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                       SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                       SUM(bs.bb) as bb, SUM(bs.k) as k,
+                       COALESCE(SUM(bs.hbp),0) as hbp,
+                       COALESCE(SUM(bs.sb),0) as sb, COALESCE(SUM(bs.cs),0) as cs,
+                       COALESCE(SUM(bs.fo),0) as fo,
+                       COALESCE(SUM(bs.stays),0) as stays
+               FROM game_batter_stats bs
+               WHERE bs.player_id IN ({ph}) GROUP BY bs.player_id""",
+            tuple(ids))
+    }
+    pstats = {
+        r["player_id"]: r for r in db.fetchall(
+            f"""SELECT ps.player_id, COUNT(ps.game_id) as gp, COUNT(ps.game_id) as g,
+                       SUM(ps.batters_faced) AS bf, SUM(ps.outs_recorded) AS outs,
+                       SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r,
+                       SUM(ps.er) AS er, SUM(ps.bb) AS bb, SUM(ps.k) AS k,
+                       SUM(ps.hr_allowed) AS hr_allowed,
+                       SUM(ps.pitches) AS pitches,
+                       COALESCE(SUM(ps.hbp_allowed),0) AS hbp_allowed,
+                       COALESCE(SUM(ps.unearned_runs),0) AS unearned_runs,
+                       COALESCE(SUM(ps.fo_induced),0) AS fo_induced,
+                       COALESCE(SUM(ps.er_arc1),0) AS er_arc1, COALESCE(SUM(ps.er_arc2),0) AS er_arc2, COALESCE(SUM(ps.er_arc3),0) AS er_arc3,
+                       COALESCE(SUM(ps.k_arc1),0) AS k_arc1, COALESCE(SUM(ps.k_arc2),0) AS k_arc2, COALESCE(SUM(ps.k_arc3),0) AS k_arc3,
+                       COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1, COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2, COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
+                       COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1, COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2, COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
+                       COALESCE(SUM(ps.is_starter),0) AS gs
+               FROM {_PSTATS_DEDUP_SQL} ps
+               WHERE ps.player_id IN ({ph}) GROUP BY ps.player_id""",
+            tuple(ids))
+    }
+
+    wl = _pitcher_wl_map()
+    baselines = _league_baselines()
+    batters: list[dict] = []
+    pitchers: list[dict] = []
+    for p in roster:
+        if p["is_pitcher"]:
+            row = dict(p)
+            row.update(pstats.get(p["id"], {}))
+            _aggregate_pitcher_rows([row], wl, baselines=baselines)
+            pitchers.append(row)
+        else:
+            row = dict(p)
+            row.update(bstats.get(p["id"], {}))
+            _aggregate_batter_rows([row], baselines=baselines)
+            batters.append(row)
+
+    # Wins / losses for the team — sum of game-level results.
+    record = db.fetchone(
+        """SELECT
+             SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as w,
+             SUM(CASE WHEN played=1 AND winner_id IS NOT NULL AND winner_id != ?
+                       AND (home_team_id = ? OR away_team_id = ?) THEN 1 ELSE 0 END) as l
+           FROM games WHERE played = 1
+             AND (home_team_id = ? OR away_team_id = ?)""",
+        (team_id, team_id, team_id, team_id, team_id, team_id))
+    wins = (record or {}).get("w") or 0
+    losses = (record or {}).get("l") or 0
+
+    return _md_response(text_export.export_team(
+        dict(team), batters, pitchers, wins, losses,
+    ))
 
 
 # ---------------------------------------------------------------------------

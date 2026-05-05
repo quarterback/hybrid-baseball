@@ -12,7 +12,11 @@
       {% endif %}
     </div>
   </div>
-  <a href="{{ url_for('stats_browse') }}" class="btn btn-sm btn-outline-secondary">Full sortable tables →</a>
+  <div class="d-flex gap-2 align-items-center">
+    <button class="copy-md" data-md-url="{{ url_for('leaders_export') }}"
+            title="Copy leaders as markdown">Copy as Markdown</button>
+    <a href="{{ url_for('stats_browse') }}" class="btn btn-sm btn-outline-secondary">Full sortable tables →</a>
+  </div>
 </div>
 
 {% if games_played == 0 %}
