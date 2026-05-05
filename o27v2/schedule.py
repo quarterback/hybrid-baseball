@@ -540,7 +540,7 @@ def seed_schedule(
         db.execute("DELETE FROM team_phase_outs")
         db.execute("DELETE FROM sim_meta WHERE key = 'sim_date'")
 
-    teams = db.fetchall("SELECT id, division FROM teams ORDER BY id")
+    teams = db.fetchall("SELECT id, division, city FROM teams ORDER BY id")
     if not teams:
         raise RuntimeError("seed_league() must be called before seed_schedule()")
 
@@ -552,8 +552,26 @@ def seed_schedule(
         config=cfg,
     )
 
+    # Weather draw — stamped at schedule time so /schedule shows conditions
+    # before the game is played. RNG forks off the schedule seed so reseeds
+    # land deterministically.
+    from o27.engine.weather import draw_weather
+    city_by_id = {t["id"]: (t.get("city") or "") for t in teams}
+    weather_rng = random.Random((rng_seed or 0) ^ 0xBA5EBA11)
+
+    rows = []
+    for g in games:
+        home_city = city_by_id.get(g["home_team_id"], "")
+        w = draw_weather(weather_rng, home_city, g["game_date"])
+        rows.append((
+            g["season"], g["game_date"], g["home_team_id"], g["away_team_id"],
+            w.temperature, w.wind, w.humidity, w.precip, w.cloud,
+        ))
+
     db.executemany(
-        "INSERT INTO games (season, game_date, home_team_id, away_team_id) VALUES (?,?,?,?)",
-        [(g["season"], g["game_date"], g["home_team_id"], g["away_team_id"]) for g in games],
+        "INSERT INTO games (season, game_date, home_team_id, away_team_id, "
+        "temperature_tier, wind_tier, humidity_tier, precip_tier, cloud_tier) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        rows,
     )
     return len(games)

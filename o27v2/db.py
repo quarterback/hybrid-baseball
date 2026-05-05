@@ -99,7 +99,15 @@ CREATE TABLE IF NOT EXISTS games (
     winner_id    INTEGER REFERENCES teams(id),
     super_inning INTEGER DEFAULT 0,
     played       INTEGER DEFAULT 0,
-    seed         INTEGER
+    seed         INTEGER,
+    -- Weather model: stamped at schedule time, visible before the game
+    -- runs. Engine reads via prob.py modifiers; everything else passes it
+    -- through. See o27/engine/weather.py for tier vocabularies.
+    temperature_tier TEXT DEFAULT 'mild',
+    wind_tier        TEXT DEFAULT 'neutral',
+    humidity_tier    TEXT DEFAULT 'normal',
+    precip_tier      TEXT DEFAULT 'none',
+    cloud_tier       TEXT DEFAULT 'clear'
 );
 
 CREATE TABLE IF NOT EXISTS game_batter_stats (
@@ -479,6 +487,22 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+
+        # Weather model columns on games (stamped at schedule time).
+        for col, defval in (
+            ("temperature_tier", "'mild'"),
+            ("wind_tier",        "'neutral'"),
+            ("humidity_tier",    "'normal'"),
+            ("precip_tier",      "'none'"),
+            ("cloud_tier",       "'clear'"),
+        ):
+            try:
+                conn.execute(
+                    f"ALTER TABLE games ADD COLUMN {col} TEXT DEFAULT {defval}"
+                )
+                conn.commit()
+            except Exception:
+                pass
 
         # Task #62: add oavg column to existing season_pitching_leaders.
         try:

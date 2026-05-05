@@ -427,6 +427,10 @@ class GameState:
     # --- Winner ---
     winner: Optional[str] = None    # "visitors" | "home" | None
 
+    # --- Weather (per-game game-conditions context). None = neutral. Read
+    # only by prob.py; everything else passes it through opaquely.
+    weather: Optional[object] = None  # o27.engine.weather.Weather
+
     # -----------------------------------------------------------------------
     # Properties
     # -----------------------------------------------------------------------
