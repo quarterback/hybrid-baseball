@@ -63,18 +63,17 @@
       background: var(--bg-alt);
       border-bottom: 2px solid var(--border-strong);
       padding: 8px 18px;
-      display: flex;
-      align-items: center;
-      gap: 18px;
     }
-    .topbar .brand {
+    .topbar .navbar-brand {
       font-weight: 800;
       font-size: 1.05rem;
       color: var(--link) !important;
       letter-spacing: .04em;
       white-space: nowrap;
+      padding: 0;
+      margin-right: 14px;
     }
-    .topbar .brand:hover { color: var(--link-hov) !important; text-decoration: none; }
+    .topbar .navbar-brand:hover { color: var(--link-hov) !important; text-decoration: none; }
     .topbar .nav-link {
       color: var(--text) !important;
       font-weight: 500;
@@ -85,7 +84,14 @@
     .topbar .nav-link:hover { color: var(--link) !important; background: rgba(10, 58, 115, .08); }
     .topbar .nav-link.active { color: var(--accent) !important; font-weight: 700; background: transparent; }
     .topbar .nav-link.accent { color: var(--accent) !important; }
-    .topbar-spacer { flex: 1; }
+    .topbar .navbar-toggler {
+      border: 1px solid var(--border);
+      padding: 4px 8px;
+      font-size: .9rem;
+      color: var(--text);
+      background: var(--bg-card);
+    }
+    .topbar .navbar-toggler:focus { box-shadow: 0 0 0 .15rem rgba(10, 58, 115, .25); }
 
     /* ---- Sim widget in topbar ---- */
     .sim-widget { display: flex; align-items: center; gap: 8px; }
@@ -530,50 +536,149 @@
       border: 1px solid var(--border);
       cursor: pointer;
     }
+
+    /* ============================================================
+       Responsive overrides — phone (≤576px), tablet (≤768px),
+       narrow desktop (≤992px). Most of the layout uses Bootstrap
+       grid breakpoints; these are surgical fixes for the parts
+       that need extra love.
+       ============================================================ */
+
+    /* Container — eat into the side margins on small viewports */
+    @media (max-width: 768px) {
+      .container-fluid { padding-left: 12px !important; padding-right: 12px !important; }
+      body { font-size: 13px; }
+      h1 { font-size: 1.35rem; }
+      h2 { font-size: 1.10rem; }
+      h3 { font-size: 1rem; }
+    }
+
+    /* Topbar — sim widget shrinks; collapsed nav becomes a stacked list */
+    @media (max-width: 1199px) {
+      .topbar { padding: 6px 12px; }
+      .topbar .navbar-collapse .nav-link {
+        font-size: .88rem;
+        padding: 4px 8px !important;
+      }
+    }
+    @media (max-width: 575px) {
+      .sim-widget .sim-date { font-size: .72rem; padding: 3px 6px; }
+      .sim-btn { font-size: .78rem; padding: 3px 8px; }
+    }
+
+    /* Headline stat strip on player.html — wraps onto multiple rows */
+    @media (max-width: 768px) {
+      .panel-body .score-label + div[style*="font-size:1.35rem"] { font-size: 1.10rem !important; }
+      .score-big { font-size: 1.5rem; }
+    }
+
+    /* Tables — all wide stat tables get horizontal scroll. They
+       already wrap in .table-responsive, but enforce min-widths
+       so the columns don't squish into illegibility. */
+    .table-responsive .dense-table { min-width: 720px; }
+    @media (max-width: 768px) {
+      .dense-table tbody td { font-size: .78rem; padding: 3px 5px; }
+      .dense-table thead th { font-size: .65rem; padding: 4px 5px; }
+    }
+
+    /* League pulse — tighter cell spacing on small screens */
+    @media (max-width: 768px) {
+      .panel-body .num.fw-bold[style*="font-size:1.4rem"] { font-size: 1.05rem !important; }
+    }
+
+    /* Filter bars — let inputs go full-width on phones */
+    @media (max-width: 575px) {
+      .filter-bar { gap: 6px !important; padding: 6px 8px; }
+      .filter-bar > div, .filter-bar .form-control, .filter-bar .form-select { min-width: 0; }
+      .filter-bar input[type=text], .filter-bar input[type=number], .filter-bar select {
+        max-width: 100%;
+      }
+    }
+
+    /* Compare basket — smaller, lower on phones, doesn't cover content */
+    @media (max-width: 575px) {
+      .cmp-basket {
+        right: 8px; bottom: 8px;
+        min-width: 0; max-width: calc(100vw - 16px);
+        padding: 6px 8px;
+        font-size: .78rem;
+      }
+      .cmp-basket .cmp-head { font-size: .68rem; }
+    }
+
+    /* Page header strips with action buttons — stack the buttons
+       under the title on phones */
+    @media (max-width: 575px) {
+      .breadcrumb { font-size: .76rem; }
+      .breadcrumb-item + .breadcrumb-item::before { margin-right: 4px; }
+    }
+
+    /* Make ".dense" panels (legacy alias) inherit the same overflow rules */
+    .dense .table-responsive { -webkit-overflow-scrolling: touch; }
+
+    /* Disable the "+" auto-injection on small screens — the basket
+       still works via the player-detail "+ Compare" button, and
+       the auto-injected dots crowd the row text on a phone. */
+    @media (max-width: 575px) {
+      .cmp-add { display: none; }
+    }
   </style>
 </head>
 <body>
 
-<nav class="topbar">
-  <a class="brand" href="{{ url_for('index') }}">⚾ O27</a>
-  <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}"     href="{{ url_for('index') }}">Scores</a>
-  <a class="nav-link {% if request.endpoint == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a>
-  <a class="nav-link {% if request.endpoint == 'schedule' %}active{% endif %}"  href="{{ url_for('schedule') }}">Schedule</a>
-  <a class="nav-link {% if request.endpoint in ('players','player_detail') %}active{% endif %}" href="{{ url_for('players') }}">Players</a>
-  <a class="nav-link {% if request.endpoint in ('teams','team_detail') %}active{% endif %}"     href="{{ url_for('teams') }}">Teams</a>
-  <a class="nav-link {% if request.endpoint == 'league' %}active{% endif %}" href="{{ url_for('league') }}">League</a>
-  <a class="nav-link {% if request.endpoint == 'distributions' %}active{% endif %}" href="{{ url_for('distributions') }}">Distributions</a>
-  <a class="nav-link {% if request.endpoint == 'leaders' %}active{% endif %}"   href="{{ url_for('leaders') }}">Leaders</a>
-  <a class="nav-link {% if request.endpoint == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stats</a>
-  <a class="nav-link {% if request.endpoint == 'compare' %}active{% endif %}" href="{{ url_for('compare') }}">Compare</a>
-  <a class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}" href="{{ url_for('transactions') }}">Transactions</a>
-  <a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a>
-  <a class="nav-link accent {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">New League</a>
+<nav class="topbar navbar navbar-expand-xl">
+  <div class="container-fluid p-0" style="max-width:1500px">
+    <a class="navbar-brand" href="{{ url_for('index') }}">⚾ O27</a>
+    <button class="navbar-toggler order-2" type="button"
+            data-bs-toggle="collapse" data-bs-target="#topbarNav"
+            aria-controls="topbarNav" aria-expanded="false"
+            aria-label="Toggle navigation">
+      ☰ Menu
+    </button>
 
-  <div class="topbar-spacer"></div>
+    {# Sim widget — always visible (outside the collapse) so the
+       "Sim Today" button is one tap away even on phones #}
+    <div class="sim-widget order-1 order-xl-3 ms-auto">
+      <span class="sim-date" id="sim-date-badge"
+            title="Current sim date — earliest unplayed game">
+        {% if sim.season_complete %}Season complete{% else %}{{ sim.current_date }}{% endif %}
+      </span>
+      <div class="btn-group btn-group-sm" id="sim-controls">
+        <button type="button" class="sim-btn" data-sim="today"
+                {% if sim.season_complete %}disabled{% endif %}>Sim Today</button>
+        <button type="button" class="sim-btn dropdown-toggle dropdown-toggle-split"
+                data-bs-toggle="dropdown" aria-expanded="false"
+                {% if sim.season_complete %}disabled{% endif %}>
+          <span class="visually-hidden">More sim options</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="week">Sim Week (7 days)</a></li>
+          <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="month">Sim to End of Month</a></li>
+          <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="all-star">
+            Sim to All-Star Break{% if sim.all_star_date %} ({{ sim.all_star_date }}){% endif %}
+          </a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="season">Sim to End of Season</a></li>
+        </ul>
+      </div>
+    </div>
 
-  <div class="sim-widget">
-    <span class="sim-date" id="sim-date-badge"
-          title="Current sim date — earliest unplayed game">
-      {% if sim.season_complete %}Season complete{% else %}{{ sim.current_date }}{% endif %}
-    </span>
-    <div class="btn-group btn-group-sm" id="sim-controls">
-      <button type="button" class="sim-btn" data-sim="today"
-              {% if sim.season_complete %}disabled{% endif %}>Sim Today</button>
-      <button type="button" class="sim-btn dropdown-toggle dropdown-toggle-split"
-              data-bs-toggle="dropdown" aria-expanded="false"
-              {% if sim.season_complete %}disabled{% endif %}>
-        <span class="visually-hidden">More sim options</span>
-      </button>
-      <ul class="dropdown-menu dropdown-menu-end">
-        <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="week">Sim Week (7 days)</a></li>
-        <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="month">Sim to End of Month</a></li>
-        <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="all-star">
-          Sim to All-Star Break{% if sim.all_star_date %} ({{ sim.all_star_date }}){% endif %}
-        </a></li>
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item{% if sim.season_complete %} disabled{% endif %}" href="#" data-sim="season">Sim to End of Season</a></li>
-      </ul>
+    <div class="collapse navbar-collapse order-3 order-xl-2" id="topbarNav">
+      <div class="navbar-nav flex-row flex-wrap gap-1 mt-2 mt-xl-0">
+        <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}"     href="{{ url_for('index') }}">Scores</a>
+        <a class="nav-link {% if request.endpoint == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a>
+        <a class="nav-link {% if request.endpoint == 'schedule' %}active{% endif %}"  href="{{ url_for('schedule') }}">Schedule</a>
+        <a class="nav-link {% if request.endpoint in ('players','player_detail') %}active{% endif %}" href="{{ url_for('players') }}">Players</a>
+        <a class="nav-link {% if request.endpoint in ('teams','team_detail') %}active{% endif %}"     href="{{ url_for('teams') }}">Teams</a>
+        <a class="nav-link {% if request.endpoint == 'league' %}active{% endif %}" href="{{ url_for('league') }}">League</a>
+        <a class="nav-link {% if request.endpoint == 'distributions' %}active{% endif %}" href="{{ url_for('distributions') }}">Dist.</a>
+        <a class="nav-link {% if request.endpoint == 'leaders' %}active{% endif %}"   href="{{ url_for('leaders') }}">Leaders</a>
+        <a class="nav-link {% if request.endpoint == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stats</a>
+        <a class="nav-link {% if request.endpoint == 'compare' %}active{% endif %}" href="{{ url_for('compare') }}">Compare</a>
+        <a class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}" href="{{ url_for('transactions') }}">Trans.</a>
+        <a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a>
+        <a class="nav-link accent {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">+ League</a>
+      </div>
     </div>
   </div>
 </nav>
