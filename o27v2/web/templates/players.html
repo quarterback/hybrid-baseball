@@ -50,25 +50,33 @@
   </div>
 
   {% if rating_filter_specs %}
-  <details class="mt-2" {% if rating_filters %}open{% endif %} style="flex-basis:100%">
-    <summary class="text-secondary small" style="cursor:pointer;text-transform:uppercase;letter-spacing:.05em;font-weight:600;font-size:.72rem">
-      Search by rating <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">— scout-grade attributes (20–80 scale, 50 = league avg)</span>
-      {% if rating_filters %}<span class="badge bg-primary ms-1">{{ rating_filters|length }} active</span>{% endif %}
-    </summary>
-    <div class="row g-2 mt-1">
+  <div style="flex-basis:100%;border-top:1px solid var(--border-soft);padding-top:10px;margin-top:4px">
+    <div class="d-flex align-items-baseline justify-content-between mb-2">
+      <strong style="text-transform:uppercase;letter-spacing:.05em;font-size:.72rem;color:var(--text-dim)">
+        Search by rating
+        <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">— 20–80 scout scale, 50 = league avg</span>
+        {% if rating_filters %}<span class="badge bg-primary ms-1">{{ rating_filters|length }} active</span>{% endif %}
+      </strong>
+      {% if rating_filters %}
+      <a href="{{ url_for('players', kind=kind, team=selected_team_id, pos=selected_pos, q=q) }}"
+         class="btn-link" style="font-size:.75rem">Clear ratings</a>
+      {% endif %}
+    </div>
+    <div class="row g-2">
       {% for col, label, scope in rating_filter_specs %}
-      <div class="col-md-3 col-sm-4 col-6">
-        <label class="form-label" for="f-{{ col }}">
-          {{ label }}{% if scope %} <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">({{ scope }}-only attr)</span>{% endif %}
+      <div class="col-lg-2 col-md-3 col-sm-4 col-6">
+        <label class="form-label" for="f-{{ col }}" style="font-size:.7rem">
+          {{ label }}
         </label>
         <input id="f-{{ col }}" type="number" name="min_{{ col }}"
                value="{{ rating_filters.get(col, '') }}"
                class="form-control form-control-sm"
-               min="20" max="80" step="1" placeholder="—">
+               min="20" max="80" step="1" placeholder="—"
+               title="{{ label }}{% if scope %} ({{ scope }}-only attribute){% endif %} · 20-80 scout scale">
       </div>
       {% endfor %}
     </div>
-  </details>
+  </div>
   {% endif %}
 </form>
 

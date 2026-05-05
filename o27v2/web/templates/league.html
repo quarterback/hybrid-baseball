@@ -11,7 +11,8 @@
     </div>
   </div>
   <div class="d-flex gap-2">
-    <button class="copy-md" data-md-url="{{ url_for('standings_export') }}"
+    <button class="copy-md btn btn-sm btn-outline-secondary"
+            data-md-url="{{ url_for('standings_export') }}"
             title="Copy standings as markdown">Standings as MD</button>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('league', format='json') }}">JSON</a>
   </div>

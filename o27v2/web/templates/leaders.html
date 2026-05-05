@@ -12,9 +12,12 @@
       {% endif %}
     </div>
   </div>
-  <div class="d-flex gap-2 align-items-center">
-    <button class="copy-md" data-md-url="{{ url_for('leaders_export') }}"
-            title="Copy leaders as markdown">Copy as Markdown</button>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <button class="copy-md btn btn-sm btn-outline-secondary"
+            data-md-url="{{ url_for('leaders_export') }}"
+            title="Copy leaders as markdown">Copy as MD</button>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('leaders', format='json') }}">JSON</a>
     <a href="{{ url_for('stats_browse') }}" class="btn btn-sm btn-outline-secondary">Full sortable tables →</a>
   </div>
 </div>

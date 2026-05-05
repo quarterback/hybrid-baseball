@@ -11,6 +11,10 @@
       · {{ games_played }} games played · click any column header to sort
     </div>
   </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('stats_browse', side=side, view=view, team=team_arg, pos=pos_arg, q=name_query, qualified='1' if qualified else '0', min_pa=min_pa or '', min_outs=min_outs or '', format='json') }}">JSON</a>
+  </div>
 </div>
 
 <ul class="nav nav-tabs mb-3" role="tablist">

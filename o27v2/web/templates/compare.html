@@ -22,24 +22,60 @@
 </div>
 
 {# ============================================================
-   Picker — quick form to assemble an /compare URL
+   Picker — search by name, click to add. URL still works as
+   fallback for direct linking (?ids=1,2,3).
    ============================================================ #}
 <div class="filter-bar mb-3">
-  <form method="get" class="d-flex flex-wrap gap-2 align-items-end" style="width:100%">
-    <div style="flex:1">
-      <label class="form-label" for="ids">Player IDs <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">(comma-separated, max 4)</span></label>
-      <input id="ids" type="text" name="ids" value="{{ ids|join(',') if ids else '' }}"
-             class="form-control form-control-sm" placeholder="e.g. 123,456,789">
+  <div style="width:100%">
+    <label class="form-label" for="cmp-search">Add a player <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">— start typing a name, then click "Add"</span></label>
+    <div class="d-flex gap-2 align-items-end flex-wrap">
+      <input id="cmp-search" type="text" list="cmp-search-list"
+             class="form-control form-control-sm" placeholder="e.g. Ted Quinn"
+             style="flex:1;min-width:240px">
+      <datalist id="cmp-search-list">
+        {% for p in all_players %}
+        <option value="{{ p.name }} — {{ p.team_abbrev }} ({{ p.position }})" data-id="{{ p.id }}"></option>
+        {% endfor %}
+      </datalist>
+      <button id="cmp-add-btn" type="button" class="btn btn-primary btn-sm">+ Add</button>
+      {% if ids %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('compare') }}">Clear all</a>{% endif %}
     </div>
-    <div>
-      <button class="btn btn-primary btn-sm" type="submit">Compare</button>
-      {% if ids %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('compare') }}">Reset</a>{% endif %}
+    <div class="text-secondary small mt-2" style="line-height:1.4">
+      Or use the <strong>Compare basket</strong> in the bottom-right — every player link site-wide has a "+" next to it that adds the player to the basket. Clicking baseball-reference-style.
+      <br>
+      <span class="text-muted">Direct URL: <code>/compare?ids=1,2,3</code> · max 4 players</span>
     </div>
-    <div class="text-secondary small ms-2 pb-1" style="flex-basis:100%">
-      Find IDs on the <a href="{{ url_for('players') }}">Players</a> index, the <a href="{{ url_for('leaders') }}">Leaders</a> page, or any player URL (<code>/player/&lt;id&gt;</code>). Pre-fillable via URL: <code>/compare?ids=1,2,3</code>.
-    </div>
-  </form>
+  </div>
 </div>
+
+<script>
+(function () {
+  // Map "Name — TM (POS)" datalist labels back to player IDs.
+  const labelToId = {};
+  document.querySelectorAll('#cmp-search-list option').forEach(o => {
+    labelToId[o.value] = o.dataset.id;
+  });
+  const search = document.getElementById('cmp-search');
+  const addBtn = document.getElementById('cmp-add-btn');
+  function doAdd() {
+    const v = (search.value || '').trim();
+    const pid = parseInt(labelToId[v], 10);
+    if (!pid) {
+      search.classList.add('is-invalid');
+      setTimeout(() => search.classList.remove('is-invalid'), 1200);
+      return;
+    }
+    // Build the new URL preserving any existing ids
+    const params = new URLSearchParams(window.location.search);
+    let ids = (params.get('ids') || '').split(',').filter(Boolean);
+    if (!ids.includes(String(pid))) ids.push(String(pid));
+    if (ids.length > 4) ids = ids.slice(-4);
+    window.location.href = '/compare?ids=' + ids.join(',');
+  }
+  addBtn.addEventListener('click', doAdd);
+  search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+})();
+</script>
 
 {% if not overviews %}
 <div class="panel panel-body text-center text-secondary">
@@ -57,7 +93,15 @@
     <thead><tr>
       <th>Field</th>
       {% for o in players %}
-      <th><a href="{{ url_for('player_detail', player_id=o.player.id) }}">{{ o.player.name }}</a></th>
+      <th>
+        <a href="{{ url_for('player_detail', player_id=o.player.id) }}">{{ o.player.name }}</a>
+        {# "Remove from comparison" — rebuild URL without this id #}
+        {% set other_ids = ids | reject('equalto', o.player.id) | list %}
+        <a href="{{ url_for('compare', ids=other_ids|join(',')) if other_ids else url_for('compare') }}"
+           class="text-secondary" data-no-compare
+           title="Remove from comparison"
+           style="font-size:1rem;line-height:1;text-decoration:none;margin-left:4px">×</a>
+      </th>
       {% endfor %}
     </tr></thead>
     <tbody>

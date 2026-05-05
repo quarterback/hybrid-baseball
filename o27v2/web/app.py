@@ -2443,6 +2443,8 @@ def compare():
 
     URL: /compare?ids=123,456,789
     JSON: append &format=json for the structured payload.
+    The page also has a name-search picker so callers don't need to
+    know IDs in advance.
     """
     raw = request.args.get("ids") or request.args.get("id") or ""
     try:
@@ -2460,10 +2462,21 @@ def compare():
         if ov is not None:
             overviews.append(ov)
 
+    # Lightweight roster index for the picker (id, name, team_abbrev,
+    # position). Keep this skinny — a 30-team league has ~1400 players
+    # and the datalist needs only "name (TM)" labels.
+    all_players = db.fetchall(
+        """SELECT p.id, p.name, p.position, p.is_pitcher,
+                  t.abbrev AS team_abbrev
+           FROM players p JOIN teams t ON p.team_id = t.id
+           ORDER BY p.name"""
+    )
+
     return _serve(
         "compare.html",
         ids=ids,
         overviews=overviews,
+        all_players=all_players,
         baselines=baselines,
     )
 

@@ -439,6 +439,97 @@
     }
     .copy-toast.show { opacity: 1; transform: translateY(0); }
     .copy-toast.error { background: var(--bad); }
+
+    /* ---- Compare basket (floating, site-wide) ---- */
+    .cmp-add {
+      display: inline-block;
+      margin-left: 4px;
+      width: 16px; height: 16px;
+      line-height: 14px;
+      text-align: center;
+      font-size: .78rem;
+      font-weight: 700;
+      color: var(--text-dim);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      cursor: pointer;
+      vertical-align: middle;
+      user-select: none;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .cmp-add:hover { background: var(--link); color: #fff; border-color: var(--link); }
+    .cmp-add.in-basket { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .cmp-add.in-basket:hover { background: #8a0e23; border-color: #8a0e23; }
+    .cmp-basket {
+      position: fixed;
+      bottom: 14px;
+      right: 14px;
+      z-index: 9000;
+      background: var(--bg-card);
+      border: 2px solid var(--accent);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 16px rgba(0,0,0,.18);
+      padding: 8px 12px;
+      min-width: 220px;
+      max-width: 340px;
+      display: none;
+      font-size: .82rem;
+    }
+    .cmp-basket.show { display: block; }
+    .cmp-basket .cmp-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-size: .72rem;
+      color: var(--text);
+    }
+    .cmp-basket ul {
+      list-style: none; padding: 0; margin: 0 0 8px;
+      max-height: 180px; overflow-y: auto;
+    }
+    .cmp-basket li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border-soft);
+      gap: 6px;
+    }
+    .cmp-basket li:last-child { border-bottom: 0; }
+    .cmp-basket li .cmp-rm {
+      background: transparent; border: 0; color: var(--text-dim); cursor: pointer;
+      font-size: 1rem; line-height: 1; padding: 0 4px;
+    }
+    .cmp-basket li .cmp-rm:hover { color: var(--accent); }
+    .cmp-basket .cmp-actions {
+      display: flex; gap: 4px;
+    }
+    .cmp-basket .cmp-actions a, .cmp-basket .cmp-actions button {
+      flex: 1;
+      padding: 4px 8px;
+      font-size: .76rem;
+      font-weight: 600;
+      border-radius: var(--radius);
+      text-align: center;
+      text-decoration: none;
+    }
+    .cmp-basket .cmp-go {
+      background: var(--accent);
+      color: #fff;
+      border: 1px solid var(--accent);
+    }
+    .cmp-basket .cmp-go:hover { background: #8a0e23; color: #fff; }
+    .cmp-basket .cmp-clear {
+      background: var(--bg-alt);
+      color: var(--text);
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -494,6 +585,19 @@
 <footer>
   O27 League — single 27-out innings · pesäpallo-influenced stay rule · 3-foul out cap
 </footer>
+
+{# Compare basket — populated by JS from clicks anywhere on the site #}
+<div class="cmp-basket" id="cmp-basket">
+  <div class="cmp-head">
+    <span>Compare basket · <span id="cmp-count">0</span></span>
+    <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">max 4</span>
+  </div>
+  <ul id="cmp-list"></ul>
+  <div class="cmp-actions">
+    <a class="cmp-go" id="cmp-go" href="#">Compare →</a>
+    <button class="cmp-clear" id="cmp-clear" type="button">Clear</button>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -587,6 +691,151 @@
       }
     });
   });
+})();
+
+/* -- Compare basket — site-wide. Clicking a "+" next to any
+      `<a href="/player/N">` link adds that player to the basket;
+      clicking the basket "Compare" button opens /compare?ids=...
+      Persists across pages via localStorage. -- */
+(function () {
+  const STORAGE_KEY = 'o27.compareBasket';
+  const MAX = 4;
+  const basket   = document.getElementById('cmp-basket');
+  const list     = document.getElementById('cmp-list');
+  const count    = document.getElementById('cmp-count');
+  const go       = document.getElementById('cmp-go');
+  const clearBtn = document.getElementById('cmp-clear');
+  if (!basket) return;
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+    catch (e) { return []; }
+  }
+  function save(arr) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); } catch (e) {}
+  }
+  function getBasket() {
+    const v = load();
+    return Array.isArray(v) ? v.slice(0, MAX) : [];
+  }
+  let state = getBasket();
+
+  function render() {
+    count.textContent = state.length;
+    if (state.length === 0) {
+      basket.classList.remove('show');
+      list.innerHTML = '';
+    } else {
+      basket.classList.add('show');
+      list.innerHTML = state.map(p => `
+        <li>
+          <a href="/player/${p.id}">${escapeHtml(p.name || ('Player #' + p.id))}</a>
+          <button class="cmp-rm" type="button" data-id="${p.id}" aria-label="Remove">&times;</button>
+        </li>
+      `).join('');
+    }
+    go.href = state.length
+      ? '/compare?ids=' + state.map(p => p.id).join(',')
+      : '/compare';
+    // Reflect state on every "+" button on the page
+    document.querySelectorAll('.cmp-add').forEach(btn => {
+      const id = parseInt(btn.dataset.cmpId, 10);
+      if (state.some(p => p.id === id)) btn.classList.add('in-basket');
+      else btn.classList.remove('in-basket');
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function addPlayer(id, name) {
+    if (!id) return;
+    if (state.some(p => p.id === id)) return;
+    if (state.length >= MAX) {
+      // Replace the oldest
+      state.shift();
+    }
+    state.push({id, name});
+    save(state);
+    render();
+  }
+
+  function removePlayer(id) {
+    state = state.filter(p => p.id !== id);
+    save(state);
+    render();
+  }
+
+  // Auto-inject "+ compare" buttons next to every player link in the
+  // current page. Skips links inside the basket itself, breadcrumbs,
+  // and any link explicitly opted out via data-no-compare.
+  function inject() {
+    const hits = document.querySelectorAll('a[href*="/player/"]:not([data-no-compare])');
+    hits.forEach(a => {
+      // Skip if a "+" already exists adjacent
+      if (a.nextElementSibling && a.nextElementSibling.classList && a.nextElementSibling.classList.contains('cmp-add')) return;
+      // Skip if inside the basket itself or the topbar
+      if (a.closest('.cmp-basket') || a.closest('.topbar')) return;
+      // Parse the player id out of the href
+      const m = (a.getAttribute('href') || '').match(/\/player\/(\d+)/);
+      if (!m) return;
+      const pid = parseInt(m[1], 10);
+      const name = (a.textContent || '').trim();
+      const btn = document.createElement('span');
+      btn.className = 'cmp-add';
+      btn.dataset.cmpId = String(pid);
+      btn.dataset.cmpName = name;
+      btn.title = 'Add to compare basket';
+      btn.textContent = '+';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = parseInt(btn.dataset.cmpId, 10);
+        const nm = btn.dataset.cmpName;
+        if (state.some(p => p.id === id)) {
+          removePlayer(id);
+        } else {
+          addPlayer(id, nm);
+        }
+      });
+      a.insertAdjacentElement('afterend', btn);
+    });
+    render();
+  }
+
+  // Basket-list remove buttons (event delegation)
+  list.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && t.classList.contains('cmp-rm')) {
+      removePlayer(parseInt(t.dataset.id, 10));
+    }
+  });
+
+  clearBtn.addEventListener('click', () => {
+    state = [];
+    save(state);
+    render();
+  });
+
+  // Sync across tabs
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY) {
+      state = getBasket();
+      render();
+    }
+  });
+
+  inject();
+
+  // Expose to other scripts (e.g. /compare picker can call window.O27Compare.add(...))
+  window.O27Compare = {
+    add: addPlayer,
+    remove: removePlayer,
+    list: () => state.slice(),
+    clear: () => { state = []; save(state); render(); },
+  };
 })();
 
 /* -- Tiny vanilla sortable-table helper -- */
