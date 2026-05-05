@@ -92,6 +92,41 @@ class Weather:
             bits.append("Dry")
         return " · ".join(bits)
 
+    # Representative °F for each tier — midpoint of the rough real-world
+    # range we associate with the categorical bucket. Used by the
+    # newspaper-style box-score footer.
+    _F_BY_TEMP = {"cold": 52, "mild": 66, "warm": 78, "hot": 90}
+
+    def fahrenheit(self) -> int:
+        return self._F_BY_TEMP.get(self.temperature, 70)
+
+    def box_score_line(self) -> str:
+        """Newspaper-footer phrase: '78°F, wind out, clear, humid.'
+
+        Suppresses the humidity descriptor when precipitation is reported
+        — saying "heavy rain, dry" is incoherent on the page even if both
+        tiers were drawn independently.
+        """
+        wind = {
+            "out":     "wind out",
+            "neutral": "calm",
+            "in":      "wind in",
+            "cross":   "wind cross",
+        }[self.wind]
+        cloud = {"clear": "clear", "overcast": "overcast", "dusk": "dusk"}[self.cloud]
+        bits = [f"{self.fahrenheit()}°F", wind, cloud]
+        raining = self.precip in ("light", "heavy")
+        if self.precip == "light":
+            bits.append("light rain")
+        elif self.precip == "heavy":
+            bits.append("heavy rain")
+        if not raining:
+            if self.humidity == "humid":
+                bits.append("humid")
+            elif self.humidity == "dry":
+                bits.append("dry")
+        return ", ".join(bits) + "."
+
 
 NEUTRAL = Weather()
 

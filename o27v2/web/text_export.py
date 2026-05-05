@@ -66,130 +66,36 @@ def export_box_score(game: dict,
                      away_line: dict,
                      home_line: dict,
                      phases: list[int]) -> str:
-    """Markdown box score for a played game.
+    """Newspaper-style monospace plaintext box score, fence-wrapped.
+
+    The earlier markdown-table version rendered as a database-dump grid in
+    every viewer that styles tables. Newspaper box scores are monospace
+    plaintext — visual structure comes from typography, not chrome — so
+    the rendering helper produces fixed-width text and we wrap it in a
+    triple-backtick fence so GitHub / Discord / forums preserve alignment.
 
     Inputs match what `game_detail()` already builds:
-    - game: row from `games` joined with team names/abbrevs
-    - away/home_pitching: consolidated per-pitcher rows (post _decorate_pitchers)
-    - away/home_batting:  consolidated per-batter rows  (post _decorate_batters)
-    - away/home_line:     line-score dict {runs, hits, errors, total_r/h/e}
-    - phases:             [0, 1, 2, ...] (0 = regulation; super-innings = N>=1)
+    - game:                row from `games` joined with team names/abbrevs
+    - away/home_pitching:  consolidated per-pitcher rows (post _decorate_pitchers)
+    - away/home_batting:   consolidated per-batter rows
+    - away/home_line:      line-score dict {runs, hits, errors, total_r/h/e}
+    - phases:              [0, 1, 2, ...] (0 = regulation; super-innings = N>=1)
     """
-    out: list[str] = []
-    away_name = game.get("away_name") or game.get("away_abbrev") or "Away"
-    home_name = game.get("home_name") or game.get("home_abbrev") or "Home"
-    away_abv  = game.get("away_abbrev") or "AWY"
-    home_abv  = game.get("home_abbrev") or "HOM"
-    date      = game.get("game_date") or ""
-    away_s    = game.get("away_score")
-    home_s    = game.get("home_score")
-    si        = game.get("super_inning") or 0
+    from o27.engine.weather import Weather
+    from o27v2.web.box_text import render_box_score
 
-    winner_tag = ""
-    if game.get("winner_id"):
-        if game["winner_id"] == game.get("away_team_id"):
-            winner_tag = f"  ·  **{away_abv} wins**"
-        elif game["winner_id"] == game.get("home_team_id"):
-            winner_tag = f"  ·  **{home_abv} wins**"
-
-    out.append(f"# {away_name} {away_s} – {home_s} {home_name}")
-    out.append("")
-    out.append(f"_{date}_{winner_tag}{'  ·  Super-Innings' if si else ''}")
-    out.append("")
-
-    # ---- Line score ----
-    phase_labels = []
-    for p in phases:
-        if p == 0:
-            phase_labels.append("REG")
-        else:
-            phase_labels.append(f"SI{p}")
-    line_headers = ["Team"] + phase_labels + ["R", "H", "E"]
-    line_align   = ["l"] + ["r"] * (len(phase_labels) + 3)
-    line_rows = []
-    for team_label, line in [(away_name, away_line), (home_name, home_line)]:
-        row = [team_label]
-        for p in phases:
-            row.append(str(line["runs"].get(p, 0)))
-        row += [str(line["total_r"]), str(line["total_h"]), str(line["total_e"])]
-        line_rows.append(row)
-    out.append("## Line Score")
-    out.append("")
-    out.append(_md_table(line_headers, line_rows, line_align))
-    out.append("")
-
-    # ---- Pitching tables ----
-    pitching_headers = ["Pitcher", "GSc", "OUT", "BF", "H", "R", "ER",
-                        "BB", "K", "HR", "FO", "P"]
-    pitching_align   = ["l"] + ["r"] * 11
-
-    def _pitching_rows(rows: list[dict]) -> list[list[str]]:
-        out_rows = []
-        for r in rows:
-            out_rows.append([
-                r.get("player_name") or "",
-                _fmt_num(r.get("gsc_avg"), "%.0f"),
-                _fmt_num(r.get("outs_recorded"), "%d", "0"),
-                _fmt_num(r.get("batters_faced"), "%d", "0"),
-                _fmt_num(r.get("hits_allowed"), "%d", "0"),
-                _fmt_num(r.get("runs_allowed"), "%d", "0"),
-                _fmt_num(r.get("er"), "%d", "0"),
-                _fmt_num(r.get("bb"), "%d", "0"),
-                _fmt_num(r.get("k"), "%d", "0"),
-                _fmt_num(r.get("hr_allowed"), "%d", "0"),
-                _fmt_num(r.get("fo_induced"), "%d", "0"),
-                _fmt_num(r.get("pitches"), "%d", "0"),
-            ])
-        return out_rows
-
-    out.append(f"## Pitching — {away_name}")
-    out.append("")
-    out.append(_md_table(pitching_headers, _pitching_rows(away_pitching), pitching_align))
-    out.append("")
-    out.append(f"## Pitching — {home_name}")
-    out.append("")
-    out.append(_md_table(pitching_headers, _pitching_rows(home_pitching), pitching_align))
-    out.append("")
-
-    # ---- Batting tables ----
-    batting_headers = ["Batter", "Pos", "PA", "AB", "R", "H", "2B", "3B",
-                       "HR", "RBI", "BB", "SO", "SB", "Stays"]
-    batting_align   = ["l", "l"] + ["r"] * 12
-
-    def _batting_rows(rows: list[dict]) -> list[list[str]]:
-        out_rows = []
-        for r in rows:
-            out_rows.append([
-                r.get("player_name") or "",
-                r.get("position") or "",
-                _fmt_num(r.get("pa"), "%d", "0"),
-                _fmt_num(r.get("ab"), "%d", "0"),
-                _fmt_num(r.get("runs"), "%d", "0"),
-                _fmt_num(r.get("hits"), "%d", "0"),
-                _fmt_num(r.get("doubles"), "%d", "0"),
-                _fmt_num(r.get("triples"), "%d", "0"),
-                _fmt_num(r.get("hr"), "%d", "0"),
-                _fmt_num(r.get("rbi"), "%d", "0"),
-                _fmt_num(r.get("bb"), "%d", "0"),
-                _fmt_num(r.get("k"), "%d", "0"),
-                _fmt_num(r.get("sb"), "%d", "0"),
-                _fmt_num(r.get("stays"), "%d", "0"),
-            ])
-        return out_rows
-
-    out.append(f"## Batting — {away_name}")
-    out.append("")
-    out.append(_md_table(batting_headers, _batting_rows(away_batting), batting_align))
-    out.append("")
-    out.append(f"## Batting — {home_name}")
-    out.append("")
-    out.append(_md_table(batting_headers, _batting_rows(home_batting), batting_align))
-    out.append("")
-
-    out.append(f"_O27 League · seed {game.get('seed', '—')} · "
-               f"game id {game.get('id', '—')}_")
-    out.append("")
-    return "\n".join(out)
+    body = render_box_score(
+        game=game,
+        phases=phases,
+        away_line=away_line,
+        home_line=home_line,
+        away_batting=away_batting,
+        home_batting=home_batting,
+        away_pitching=away_pitching,
+        home_pitching=home_pitching,
+        weather=Weather.from_row(game),
+    )
+    return "```\n" + body + "\n```\n"
 
 
 # ---------------------------------------------------------------------------
