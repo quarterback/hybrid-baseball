@@ -1,4 +1,4 @@
-# After-Action Report — Pesäpallo-shape stay advancement + 2C-RBI surfacing
+# After-Action Report — Pesäpallo-shape 2C advancement + 2C-RBI surfacing
 
 **Date completed:** 2026-05-05
 **Branch:** `claude/fix-dark-theme-baseball-terms-7UhIv`
@@ -13,7 +13,7 @@ User's framing, mid-conversation:
 > Pesäpallo's offensive numbers come from the SPORT being optimized for
 > getting on base — hitting .600 is routine, .700–.750 is elite. O27
 > should have *more opportunities* than MLB because of its structural
-> rules (27-out single innings, stay rule, 3-foul cap), and that should
+> rules (27-out single innings, 2C rule, 3-foul cap), and that should
 > be **natural**. Not necessarily 400-RBI seasons — but if the engine is
 > unnaturally suppressing the natural offensive shape, unchain it.
 
@@ -56,9 +56,9 @@ contact quality. The structural lever for the inversion was identified
 exactly there.
 
 **Verdict:** league offense was *not* dramatically suppressed in the
-aggregate, but the stay rule was producing offense more for marginal
+aggregate, but the 2C rule was producing offense more for marginal
 hitters than for the contact specialists who, by archetype design,
-should benefit most from chaining hits via stays.
+should benefit most from chaining hits via 2C.
 
 ---
 
@@ -98,12 +98,12 @@ onto the outcome dict (one extra key, no signature change downstream):
 return {
     ...
     "fielder_id": fielder_id,
-    "quality": quality,   # NEW — read by pa.py's stay branch
+    "quality": quality,   # NEW — read by pa.py's 2C branch
 }
 ```
 
-`o27/engine/pa.py:_resolve_contact()` valid-stay branch reads it and
-boosts `runner_advances` element-wise on medium-contact stays:
+`o27/engine/pa.py:_resolve_contact()` valid-2C branch reads it and
+boosts `runner_advances` element-wise on medium-contact 2C events:
 
 ```python
 if outcome.get("quality") == "medium":
@@ -113,17 +113,18 @@ if outcome.get("quality") == "medium":
     modified_outcome["runner_advances"] = adv
 ```
 
-The structural read: on a medium-contact stay (clean contact, batter
-chose to stay rather than run), the defense is committed to the
-batter-out attempt that didn't materialize, so runners take an extra
-base. **Weak**-contact stays keep `[1,1,1]` — the ball didn't go far
-enough for the runner to push. **Hard**-contact mostly resolves to
-HR/triple/double where the stay rule isn't applicable (HR overrides
-stay → run; very few stays trigger on hard contact).
+The structural read: on a medium-contact 2C (clean contact, batter
+chose to take a second-chance AB rather than run), the defense is
+committed to the batter-out attempt that didn't materialize, so
+runners take an extra base. **Weak**-contact 2C keep `[1,1,1]` — the
+ball didn't go far enough for the runner to push. **Hard**-contact
+mostly resolves to HR/triple/double where the 2C rule isn't
+applicable (HR overrides 2C → run; very few 2C trigger on hard
+contact).
 
 The cap at 3 prevents ground-out → score-from-1B sequences; the floor
 at 1 ensures runners always at least take their base on a successful
-stay (no holds when the stay was the lifeline).
+2C (no holds when the 2C was the lifeline).
 
 ---
 
@@ -133,25 +134,55 @@ Re-sim path: `resetdb` → `sim 2430` → `backfill_arc`.
 
 | Metric | Pre-fix | Post-fix | Read |
 |---|---|---|---|
-| **League `stay_rbi_pct`** | 8.57% | **10.68%** | +25% relative lift |
-| **Top-20 by `player.contact` rating** | est. 7-8% | **11.08%** | **shape corrected** — above league |
-| Top-20 by BAVG (stayer cohort) | — | 10.43% | at league mean |
-| Top-20 by PAVG | — | 8.72% | below league |
-| Top-20 by RBI (slugger cohort) | 6.9% | 8.27% | below league — appropriate |
+| **League 2C-RBI%** | 8.57% | **10.68%** | +25% relative lift |
+| Top-20 by `player.contact` rating 2C-RBI% | est. 7-8% | 11.08% | above league — aggregate shape correction |
+| Top-20 by BAVG (2C-profile cohort) 2C-RBI% | — | 10.43% | at league mean |
+| Top-20 by PAVG 2C-RBI% | — | 8.72% | below league |
+| Top-20 by RBI (slugger cohort) 2C-RBI% | 6.9% | 8.27% | below league — appropriate (HR-driven RBI) |
 | League PAVG | .2825 | .2865 | modest lift |
 | League BAVG | .3359 | .3394 | modest lift |
 | hits/team-game | 12.74 | 12.85 | held |
 | runs/team-game | 12.78 | 12.78 | stable |
-| stay_rate | 5.58% | 5.47% | stable, in band |
+| 2C-rate (stays / PA) | 5.58% | 5.47% | stable, in band |
 | HR redistribute test | 7/7 | 7/7 | unchanged |
 
 **Why the cohort matters.** Top-20 by RBI is a slugger cohort — those
-RBIs are HR-driven, not stay-driven, so it's *correct* that their
-stay_rbi_pct (8.27%) sits below league mean. The user's actual claim
-("elite contact hitters benefit more from stays") needs to be measured
-against the contact-rating cohort, not the RBI cohort. By that lens
-(top-20 by `player.contact` rating = 11.08% > 10.68% league), shape
-is corrected.
+RBIs are HR-driven, not 2C-driven, so it's *correct* that their
+2C-RBI% (8.27%) sits below league mean. By the contact-rating cohort
+(top-20 by `player.contact` = 11.08% > 10.68% league), the aggregate
+read is "shape corrected." But see the per-player drilldown below —
+the aggregate signal is weaker than it first appears.
+
+### Per-player drilldown (the closing narrative correction)
+
+Initial closing read framed second-chance ABs as a contact-archetype
+mechanic. **That framing is structurally incomplete.** Second-chance
+ABs are situationally valuable for any hitter — a slugger with two on
+facing his last out can use successive contact events to advance
+runners two bases each, then drive them in on the third event (three
+RBIs from one AB).
+
+A drilldown on the per-player relationship between contact rating and
+Δ stay (BAVG − PAVG, the per-AB stay productivity signal) showed:
+
+| Diagnostic | Result | Reading |
+|---|---|---|
+| Δ by contact decile (decile 1 → decile 10) | .0514 → .0574 | **essentially flat slope** |
+| Top-20-by-contact mean Δ | +.058 vs league +.053 | 1.09x — well below the .080-.120 target band |
+| Top-20-by-power 2C-RBI% | 9.30% (below league 10.68%) | sluggers vary wildly: Achebe 10.3% (37 HR/302 RBI), Matsumura 19.6%, Morimoto 1.4% |
+| Top-20-by-power BB% | 8.20% vs league 8.21% | pitchers do NOT pitch around sluggers — joker mechanic neutralizes the IBB-Bonds dynamic, as designed |
+
+The contact attribute does not translate into systematic per-player
+differential 2C productivity. The aggregate cohort signal (top-by-
+contact 11.08% > 10.68% league) was driven by a few high-Δ players,
+not a uniform per-player effect.
+
+What this means: **the engine fix is shape-neutral with a small
+positive bias toward higher-contact hitters in the aggregate, but is
+not enforcing a per-player archetype.** Stays distribute their value
+roughly evenly across contact ratings, with slugger-specific high-
+leverage usage that the current schema can't measure (no per-PA log,
+no leverage state).
 
 The headline-number lift (PAVG +.004, BAVG +.004) is modest because the
 mechanic was already producing pesäpallo-range hits/team-game pre-fix
@@ -185,20 +216,28 @@ Commit `0998c52` on `claude/fix-dark-theme-baseball-terms-7UhIv`.
 
 ## Known characteristics to flag (not bugs)
 
-**Top-20 by RBI stays below league.** Shipped as-is and documented.
-Slugger archetypes (the bulk of top-20 by RBI) earn most of their RBIs
-through HR/extra-base hits, not stays. Their below-league
-`stay_rbi_pct` is the correct shape — they're not the cohort the
-mechanic is calibrated for. The 2C-RBI% leaderboard surfaces the
-contact-specialist cohort directly, where the mechanic's intended
-archetype lives.
+**Per-player archetype shape is weak.** The Δ-by-contact-decile slope
+is nearly flat (.051 → .057 from decile 1 to 10). Pre-fix the slope
+was probably similar — the engine change lifted aggregate league Δ
+without sharpening per-player differentiation. This is acceptable
+because second-chance ABs are situationally valuable for ALL hitters,
+not just contact archetypes (a slugger with 2 on facing his last out
+can stay twice to advance runners then drive them in for 3 RBI from
+one AB). The strategic-layer question — "are sluggers using stays in
+high-leverage spots and contact specialists in low-leverage spots?" —
+needs per-PA event logging to answer.
 
-**Weak-contact stays still default to [1,1,1].** Intentional. If post-
-season feedback shows weak-contact stays are too punitive (batter took
-a stay credit but runners didn't move), a follow-up could lift the
-floor to `[1,1,1]` minimum (already done) but allow per-runner
-`run_aggressiveness` to push some weak stays to `[2,1,1]` for the
-aggressive-runner-on-1B case. Not shipping speculatively.
+**Joker mechanic verified to suppress IBB pressure.** Top-20-by-power
+BB% = 8.20% vs league 8.21%. Pitchers are not pitching around
+sluggers because the manager can drop a damaging pinch-hitter behind
+the IBB target. This is exactly the strategic shape the joker rule
+was designed for, and the data confirms it's working.
+
+**Weak-contact 2C still default to [1,1,1].** Intentional. If
+post-season feedback shows weak-contact 2C are too punitive (batter
+took a 2C credit but runners didn't move), a follow-up could allow
+per-runner `run_aggressiveness` to push some weak 2C to `[2,1,1]`
+for the aggressive-runner-on-1B case. Not shipping speculatively.
 
 **Headline PAVG/BAVG lift was modest.** League hits/team-game was
 already in pesäpallo range pre-fix (12.74), so the mechanic wasn't
@@ -217,18 +256,29 @@ correct cohort.
 
 ## Follow-ups parked
 
-1. **Per-PA event log (Phase 11D in the plan).** Would unlock proper
-   Q4 (PA-with-runners-on rate by lineup slot), per-AB hit histogram,
-   RBI/RISP rate, and a runner-advancement audit trail. Schema +
-   migration in `o27v2/db.py` + INSERT in sim path. Deferred — current
-   diagnostics are sufficient for now.
+1. **Per-PA event log (Phase 11D in the plan).** Now upgraded from
+   "deferred, optional" to "the diagnostic that would close out the
+   strategic-layer questions this AAR couldn't answer." Specifically:
+   leverage-indexed 2C usage by archetype (sluggers in high-leverage
+   spots vs low; contact specialists' situational distribution),
+   per-AB hit histograms, RBI/RISP rate, and IBB-as-distinct-from-BB
+   (so the joker-mechanic walk-suppression read can be made directly
+   instead of via the BB-rate proxy). Schema + migration in
+   `o27v2/db.py` + INSERT in sim path.
 
-2. **Per-runner `run_aggressiveness` on stays.** Could replace the
+2. **Per-runner `run_aggressiveness` on 2C.** Could replace the
    uniform `+1` boost with `1 + round(run_aggressiveness)` per runner.
    More flavorful (matches the SB calibration) but more complex.
    Deferred unless future runs show the uniform +1 over-tunes.
 
-3. **Validate stay_rbi_pct distribution shape over multiple seasons.**
-   Single-season run; the contact-cohort > league finding could be
-   noise around a 0.4pp gap. A multi-season aggregate would tighten
-   the confidence interval. Not blocking.
+3. **Validate 2C-RBI% distribution shape over multiple seasons.**
+   Single-season run; the contact-cohort > league finding (11.08% vs
+   10.68%) is a 0.4pp gap that could be noise. A multi-season
+   aggregate would tighten the confidence interval. Not blocking.
+
+4. **Slugger high-leverage 2C audit (depends on #1).** If sluggers'
+   2C-RBI% is uniformly low across all situations, the strategic
+   layer isn't firing. If it's elevated in high-leverage spots vs
+   low-leverage, sluggers are using the rule correctly — saving 2C
+   for moments where advancement matters before driving runs in. The
+   current schema can't compute this; per-PA log unlocks it.
