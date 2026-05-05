@@ -332,8 +332,14 @@ def _make_hitter(
         "skill": skill_g,
         "speed": speed_g,
         "pitcher_skill": max(20, min(45, pskill_g)),
-        "stay_aggressiveness": round(_clamp(rng.gauss(0.10, 0.05)), 3),
-        "contact_quality_threshold": round(_clamp(rng.gauss(0.28, 0.06)), 3),
+        # Tuned upward 2025: prior values (gauss(0.10, 0.05) /
+        # gauss(0.28, 0.06)) produced a league 2C-attempt rate of ~1.6%
+        # of PAs — the second-chance mechanic was a rounding error
+        # instead of the load-bearing tactic it's supposed to be.
+        # New means target a 4-8% league rate by both relaxing the
+        # contact-quality gate and bumping aggressiveness.
+        "stay_aggressiveness": round(_clamp(rng.gauss(0.30, 0.10)), 3),
+        "contact_quality_threshold": round(_clamp(rng.gauss(0.50, 0.10)), 3),
         "archetype": "",
         "pitcher_role": "",
         "hard_contact_delta": 0.0,
@@ -396,8 +402,12 @@ def _make_pitcher(
         "skill":  max(20, _roll_tier_grade(rng) // 2 + 10),  # weak bat
         "speed":  max(20, _roll_tier_grade(rng) // 2 + 15),
         "pitcher_skill": stuff_g,
-        "stay_aggressiveness": round(_clamp(rng.gauss(0.05, 0.03)), 3),
-        "contact_quality_threshold": round(_clamp(rng.gauss(0.20, 0.05)), 3),
+        # Pitchers as hitters — 2C still rarer than position players,
+        # but lifted from 0.05 → 0.20 in step with the position-player
+        # bump so pitcher PAs aren't structurally locked out of the
+        # second-chance mechanic.
+        "stay_aggressiveness": round(_clamp(rng.gauss(0.20, 0.06)), 3),
+        "contact_quality_threshold": round(_clamp(rng.gauss(0.40, 0.08)), 3),
         "archetype": "",
         "pitcher_role": "",   # Task #65: live derivation only — never stored.
         "hard_contact_delta": 0.0,
