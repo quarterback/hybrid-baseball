@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Standings{% endblock %}
 {% block content %}
-<h2 class="mb-3 fw-bold">Standings</h2>
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h2 class="mb-0">Standings</h2>
+  <button class="copy-md" data-md-url="{{ url_for('standings_export') }}"
+          title="Copy standings as markdown">Copy as Markdown</button>
+</div>
 
 {% for league_name, league_divs in leagues.items() %}
 <div class="dense mb-4">

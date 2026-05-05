@@ -26,49 +26,50 @@
   </tr>
 {%- endmacro %}
 
-<nav aria-label="breadcrumb" class="mb-2">
+<nav aria-label="breadcrumb" class="mb-2 d-flex justify-content-between align-items-center">
   <ol class="breadcrumb small mb-0">
     <li class="breadcrumb-item"><a href="{{ url_for('players') }}">Players</a></li>
     <li class="breadcrumb-item"><a href="{{ url_for('team_detail', team_id=player.team_id) }}">{{ player.team_name }}</a></li>
     <li class="breadcrumb-item active">{{ player.name }}</li>
   </ol>
+  <button class="copy-md" data-md-url="{{ url_for('player_detail_export', player_id=player.id) }}"
+          title="Copy player season card as markdown">Copy as Markdown</button>
 </nav>
 
 {# ======================== HEADER ======================== #}
-<div class="dense p-3 mb-3">
-  <div class="d-flex flex-wrap align-items-center gap-3">
-    <span class="fw-bold fs-4">{{ player.name }}</span>
-    {% if player.is_pitcher %}<span class="badge bg-info text-dark">PITCHER</span>{% endif %}
-    <span class="text-secondary">·</span>
+<div class="panel panel-body mb-3" style="padding:14px 16px">
+  <div class="d-flex flex-wrap align-items-baseline gap-3">
+    <h2 class="mb-0" style="font-size:1.6rem;font-weight:800">{{ player.name }}</h2>
+    {% if player.is_pitcher %}<span class="badge bg-info">PITCHER</span>{% endif %}
     <span class="text-secondary">{{ player.position }}</span>
-    <span class="text-secondary">·</span>
-    <a href="{{ url_for('team_detail', team_id=player.team_id) }}" class="team-abbrev fs-6">{{ player.team_abbrev }}</a>
-    <span class="text-secondary">·</span>
-    <span class="text-secondary">Age {{ player.age }}</span>
-    <span class="text-secondary">·</span>
-    <span class="text-secondary small">Bats: <strong>{{ player.bats or '—' }}</strong> &nbsp; Throws: <strong>{{ player.throws or '—' }}</strong></span>
+    <a href="{{ url_for('team_detail', team_id=player.team_id) }}" class="team-abbrev" style="font-size:1rem">{{ player.team_abbrev }}</a>
+    <span class="text-secondary small">Age <strong class="text-dark">{{ player.age }}</strong></span>
+    <span class="text-secondary small">Bats <strong class="text-dark">{{ player.bats or '—' }}</strong> · Throws <strong class="text-dark">{{ player.throws or '—' }}</strong></span>
   </div>
-  {# Quick-glance summary line #}
-  <div class="mt-2 d-flex flex-wrap gap-3 small">
+  {# Headline stat strip — large numbers, monospace, b-ref feel #}
+  {% if bt_totals or pt_totals %}
+  <div class="d-flex flex-wrap gap-4 mt-3 pt-3" style="border-top:1px solid var(--border-soft)">
     {% if bt_totals %}
-      <span><span class="text-secondary">PAVG</span> <strong>{{ '%.3f'|format(bt_totals.pavg) }}</strong></span>
-      <span><span class="text-secondary">OPS+</span> <strong>{{ bt_totals.ops_plus|round|int }}</strong></span>
-      <span><span class="text-secondary">HR</span> <strong>{{ bt_totals.hr }}</strong></span>
-      <span><span class="text-secondary">RBI</span> <strong>{{ bt_totals.rbi }}</strong></span>
-      <span><span class="text-secondary">bWAR</span> <strong>{{ '%.2f'|format(bt_totals.war) }}</strong></span>
+    <div><div class="score-label">PAVG</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.3f'|format(bt_totals.pavg) }}</div></div>
+    <div><div class="score-label">OPS+</div><div class="num fw-bold" style="font-size:1.35rem">{{ bt_totals.ops_plus|round|int }}</div></div>
+    <div><div class="score-label">HR</div><div class="num fw-bold" style="font-size:1.35rem">{{ bt_totals.hr }}</div></div>
+    <div><div class="score-label">RBI</div><div class="num fw-bold" style="font-size:1.35rem">{{ bt_totals.rbi }}</div></div>
+    <div><div class="score-label">bWAR</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(bt_totals.war) }}</div></div>
     {% endif %}
     {% if pt_totals %}
-      {% if bt_totals %}<span class="text-secondary">|</span>{% endif %}
-      <span><span class="text-secondary">W-L</span> <strong>{{ pt_totals.w or 0 }}-{{ pt_totals.l or 0 }}</strong></span>
-      <span title="Weighted ERA — runs allowed weighted by arc position"><span class="text-secondary">wERA</span> <strong>{{ '%.2f'|format(pt_totals.werra) }}</strong></span>
-      <span title="Expected FIP (O27): defense-independent talent isolation"><span class="text-secondary">xFIP</span> <strong>{{ '%.2f'|format(pt_totals.xfip) }}</strong></span>
-      <span><span class="text-secondary">K</span> <strong>{{ pt_totals.k }}</strong></span>
-      <span><span class="text-secondary">pWAR</span> <strong>{{ '%.2f'|format(pt_totals.war) }}</strong></span>
-    {% endif %}
-    {% if not bt_totals and not pt_totals %}
-      <span class="text-secondary">No game stats yet for this player.</span>
+    {% if bt_totals %}<div style="border-left:1px solid var(--border-soft)"></div>{% endif %}
+    <div><div class="score-label">W-L</div><div class="num fw-bold" style="font-size:1.35rem">{{ pt_totals.w or 0 }}-{{ pt_totals.l or 0 }}</div></div>
+    <div title="Weighted ERA"><div class="score-label">wERA</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.werra) }}</div></div>
+    <div title="Expected FIP (O27)"><div class="score-label">xFIP</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.xfip) }}</div></div>
+    <div><div class="score-label">K</div><div class="num fw-bold" style="font-size:1.35rem">{{ pt_totals.k }}</div></div>
+    <div><div class="score-label">pWAR</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.war) }}</div></div>
     {% endif %}
   </div>
+  {% else %}
+  <div class="mt-3 pt-3 text-secondary small" style="border-top:1px solid var(--border-soft)">
+    No game stats yet for this player.
+  </div>
+  {% endif %}
 </div>
 
 {# ======================== TABS ======================== #}

@@ -1,156 +1,111 @@
 {% extends "base.html" %}
-{% block title %}Transaction Log{% endblock %}
+{% block title %}Transactions{% endblock %}
 {% block content %}
 
-<div class="row g-3 mb-3">
-  <div class="col-md-2">
-    <div class="card text-center p-2">
-      <div class="score-big" style="color:#e85d5d">{{ counts.injury }}</div>
-      <div class="score-label">Injuries</div>
+<h2 class="mb-3">Transactions</h2>
+
+{# Stat strip — small, monospaced numbers, semantic colors via CSS variables #}
+<div class="row g-2 mb-3">
+  {% set stats = [
+    ('Injuries', counts.injury, 'var(--bad)'),
+    ('Returns',  counts.return, 'var(--good)'),
+    ('Promotions', counts.promotion, '#5a3aa5'),
+    ('Penalties', counts.penalty, 'var(--warn)'),
+    ('Deadline Trades', counts.deadline_trade, 'var(--link)'),
+    ('In-Season Trades', counts.inseason_trade, 'var(--link-hov)'),
+    ('Waiver Claims', counts.waiver, 'var(--accent-2)'),
+  ] %}
+  {% for label, n, color in stats %}
+  <div class="col">
+    <div class="panel panel-body text-center" style="padding:10px 6px">
+      <div class="num fw-bold" style="font-size:1.6rem;color:{{ color }}">{{ n }}</div>
+      <div class="score-label">{{ label }}</div>
     </div>
   </div>
-  <div class="col-md-2">
-    <div class="card text-center p-2">
-      <div class="score-big" style="color:#2ea043">{{ counts.return }}</div>
-      <div class="score-label">Returns</div>
-    </div>
-  </div>
-  <div class="col-md-2">
-    <div class="card text-center p-2">
-      <div class="score-big" style="color:#d2a8ff">{{ counts.promotion }}</div>
-      <div class="score-label">Promotions</div>
-    </div>
-  </div>
-  <div class="col-md-2">
-    <div class="card text-center p-2">
-      <div class="score-big" style="color:#ffa657">{{ counts.penalty }}</div>
-      <div class="score-label">Penalties</div>
-    </div>
-  </div>
-  <div class="col-md-2">
-    <div class="card text-center p-2">
-      <div class="score-big" style="color:#58a6ff">{{ counts.deadline_trade }}</div>
-      <div class="score-label">Deadline Trades</div>
-    </div>
-  </div>
-  <div class="col-md-2">
-    <div class="card text-center p-2">
-      <div class="score-big" style="color:#79c0ff">{{ counts.inseason_trade }}</div>
-      <div class="score-label">In-Season Trades</div>
-    </div>
-  </div>
-  <div class="col-md-2">
-    <div class="card text-center p-2">
-      <div class="score-big" style="color:#f0883e">{{ counts.waiver }}</div>
-      <div class="score-label">Waiver Claims</div>
-    </div>
-  </div>
+  {% endfor %}
 </div>
 
-<!-- Filter bar -->
-<div class="card mb-3">
-  <div class="card-body py-2">
-    <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
-      <label class="text-secondary small mb-0">Team:</label>
-      <select name="team" class="form-select form-select-sm"
-              style="width:180px;background:#21262d;border-color:#30363d;color:#e6edf3">
-        <option value="">All Teams</option>
-        {% for t in teams %}
-        <option value="{{ t.id }}" {% if selected_team and selected_team.id == t.id %}selected{% endif %}>
-          {{ t.abbrev }} — {{ t.name }}
-        </option>
-        {% endfor %}
-      </select>
-
-      <label class="text-secondary small mb-0 ms-2">Type:</label>
-      <select name="type" class="form-select form-select-sm"
-              style="width:160px;background:#21262d;border-color:#30363d;color:#e6edf3">
-        <option value="">All Types</option>
-        {% for et in event_types %}
-        <option value="{{ et }}" {% if event_type == et %}selected{% endif %}>
-          {{ et.replace('_',' ').title() }}
-        </option>
-        {% endfor %}
-      </select>
-
-      <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
-      {% if selected_team or event_type %}
-      <a href="{{ url_for('transactions') }}" class="btn btn-sm"
-         style="color:#8b949e;border:1px solid #30363d">Clear</a>
-      {% endif %}
-    </form>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span class="fw-bold">
-      Transaction Log
-      {% if selected_team %}— {{ selected_team.name }}{% endif %}
-      {% if event_type %}— {{ event_type.replace('_',' ').title() }}{% endif %}
-    </span>
-    <span class="small text-secondary">{{ transactions | length }} entries shown</span>
-  </div>
-  <div class="card-body p-0">
-    {% if transactions %}
-    <table class="table table-sm mb-0">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Type</th>
-          <th>Team</th>
-          <th>Player</th>
-          <th>Detail</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for tx in transactions %}
-      <tr>
-        <td class="text-secondary small">{{ tx.game_date }}</td>
-        <td>
-          {% if tx.event_type == 'injury' %}
-            <span class="badge" style="background:#7d1f2e;color:#ffa8b8">Injury</span>
-          {% elif tx.event_type == 'return' %}
-            <span class="badge" style="background:#1a4731;color:#56d364">Return</span>
-          {% elif tx.event_type == 'deadline_trade' %}
-            <span class="badge" style="background:#1b3a6b;color:#79c0ff">Trade ⏰</span>
-          {% elif tx.event_type == 'inseason_trade' %}
-            <span class="badge" style="background:#162d4e;color:#a5d6ff">Trade</span>
-          {% elif tx.event_type == 'promotion' %}
-            <span class="badge" style="background:#2d1e66;color:#d2a8ff">Promotion</span>
-          {% elif tx.event_type == 'penalty' %}
-            <span class="badge" style="background:#4a2900;color:#ffa657">Penalty</span>
-          {% elif tx.event_type == 'waiver' %}
-            <span class="badge" style="background:#3d2900;color:#e3b341">Waiver</span>
-          {% else %}
-            <span class="badge bg-secondary">{{ tx.event_type }}</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if tx.team_id %}
-          <a href="{{ url_for('team_detail', team_id=tx.team_id) }}"
-             class="team-abbrev text-decoration-none">{{ tx.team_abbrev or '—' }}</a>
-          {% else %}—{% endif %}
-        </td>
-        <td class="small">
-          {% if tx.player_id and tx.player_name %}
-            {{ tx.player_name }}
-            {% if tx.player_pos %}
-              <span class="text-secondary">({{ tx.player_pos }})</span>
-            {% endif %}
-          {% else %}—{% endif %}
-        </td>
-        <td class="small text-secondary">{{ tx.detail }}</td>
-      </tr>
+<form method="get" class="filter-bar mb-3">
+  <div>
+    <label class="form-label" for="f-team">Team</label>
+    <select id="f-team" name="team" class="form-select form-select-sm" style="width:200px">
+      <option value="">All Teams</option>
+      {% for t in teams %}
+      <option value="{{ t.id }}" {% if selected_team and selected_team.id == t.id %}selected{% endif %}>
+        {{ t.abbrev }} — {{ t.name }}
+      </option>
       {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="p-4 text-center text-secondary">
-      No transactions yet. Simulate some games to generate roster moves.
-    </div>
-    {% endif %}
+    </select>
   </div>
+  <div>
+    <label class="form-label" for="f-type">Type</label>
+    <select id="f-type" name="type" class="form-select form-select-sm" style="width:170px">
+      <option value="">All Types</option>
+      {% for et in event_types %}
+      <option value="{{ et }}" {% if event_type == et %}selected{% endif %}>{{ et.replace('_',' ').title() }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+  {% if selected_team or event_type %}
+  <a href="{{ url_for('transactions') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+  {% endif %}
+  <div class="ms-auto text-secondary small pb-1">{{ transactions | length }} entries</div>
+</form>
+
+<div class="panel">
+  <div class="panel-head">
+    <span>Transaction Log</span>
+    {% if selected_team %}<span class="sub">— {{ selected_team.name }}</span>{% endif %}
+    {% if event_type %}<span class="sub">— {{ event_type.replace('_',' ').title() }}</span>{% endif %}
+  </div>
+  {% if transactions %}
+  <table class="table dense-table mb-0">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Type</th>
+        <th>Team</th>
+        <th>Player</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% macro tx_badge(t) -%}
+      {% if t == 'injury' %}<span class="badge bg-danger">Injury</span>
+      {% elif t == 'return' %}<span class="badge bg-success">Return</span>
+      {% elif t == 'deadline_trade' %}<span class="badge bg-primary">Trade ⏰</span>
+      {% elif t == 'inseason_trade' %}<span class="badge bg-info">Trade</span>
+      {% elif t == 'promotion' %}<span class="badge" style="background:#5a3aa5;color:#fff">Promotion</span>
+      {% elif t == 'penalty' %}<span class="badge bg-warning">Penalty</span>
+      {% elif t == 'waiver' %}<span class="badge" style="background:var(--accent-2);color:#fff">Waiver</span>
+      {% else %}<span class="badge bg-secondary">{{ t }}</span>{% endif %}
+    {%- endmacro %}
+    {% for tx in transactions %}
+    <tr>
+      <td class="text-secondary small">{{ tx.game_date }}</td>
+      <td>{{ tx_badge(tx.event_type) }}</td>
+      <td>
+        {% if tx.team_id %}
+        <a href="{{ url_for('team_detail', team_id=tx.team_id) }}" class="team-abbrev">{{ tx.team_abbrev or '—' }}</a>
+        {% else %}—{% endif %}
+      </td>
+      <td class="small">
+        {% if tx.player_id and tx.player_name %}
+          {{ tx.player_name }}
+          {% if tx.player_pos %}<span class="text-secondary">({{ tx.player_pos }})</span>{% endif %}
+        {% else %}—{% endif %}
+      </td>
+      <td class="small text-secondary">{{ tx.detail }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="panel-body text-center text-secondary">
+    No transactions yet. Simulate some games to generate roster moves.
+  </div>
+  {% endif %}
 </div>
 
 {% endblock %}

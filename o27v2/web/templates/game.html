@@ -193,11 +193,15 @@
     <li class="breadcrumb-item"><a href="{{ url_for('schedule', status='played') }}">Schedule</a></li>
     <li class="breadcrumb-item active">Game #{{ game.id }}</li>
   </ol>
-  <div class="btn-group btn-group-sm">
-    {% if prev_game_id %}<a href="{{ url_for('game_detail', game_id=prev_game_id) }}" class="btn btn-outline-secondary">&larr; Prev</a>
-    {% else %}<span class="btn btn-outline-secondary disabled">&larr; Prev</span>{% endif %}
-    {% if next_game_id %}<a href="{{ url_for('game_detail', game_id=next_game_id) }}" class="btn btn-outline-secondary">Next &rarr;</a>
-    {% else %}<span class="btn btn-outline-secondary disabled">Next &rarr;</span>{% endif %}
+  <div class="d-flex gap-2 align-items-center">
+    <button class="copy-md" data-md-url="{{ url_for('game_detail_export', game_id=game.id) }}"
+            title="Copy box score as markdown — for forums, GitHub, or LLMs">Copy as Markdown</button>
+    <div class="btn-group btn-group-sm">
+      {% if prev_game_id %}<a href="{{ url_for('game_detail', game_id=prev_game_id) }}" class="btn btn-outline-secondary">&larr; Prev</a>
+      {% else %}<span class="btn btn-outline-secondary disabled">&larr; Prev</span>{% endif %}
+      {% if next_game_id %}<a href="{{ url_for('game_detail', game_id=next_game_id) }}" class="btn btn-outline-secondary">Next &rarr;</a>
+      {% else %}<span class="btn btn-outline-secondary disabled">Next &rarr;</span>{% endif %}
+    </div>
   </div>
 </nav>
 
@@ -205,29 +209,36 @@
 <div class="alert alert-warning">This game has not been played yet.</div>
 {% else %}
 
-<div class="dense p-3 mb-3">
-  <div class="row text-center align-items-center">
-    <div class="col">
-      <div class="text-secondary small">AWAY</div>
-      <a href="{{ url_for('team_detail', team_id=game.away_team_id) }}">
-        <div class="score-big team-abbrev mt-1">{{ game.away_abbrev }}</div>
-        <div class="text-secondary">{{ game.away_name }}</div>
-      </a>
-      {% if game.winner_id == game.away_team_id %}<span class="winner-badge mt-1 d-inline-block">WIN</span>{% endif %}
+{# Tight scoreboard: AWAY xx · score · HOME yy in a single row, b-ref header style #}
+<div class="panel panel-body mb-3" style="padding:18px 20px">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+    <div class="d-flex align-items-baseline gap-3">
+      <div>
+        <div class="score-label">AWAY</div>
+        <a href="{{ url_for('team_detail', team_id=game.away_team_id) }}" style="text-decoration:none">
+          <span class="team-abbrev" style="font-size:1.7rem">{{ game.away_abbrev }}</span>
+        </a>
+        <span class="text-secondary small ms-2">{{ game.away_name }}</span>
+        {% if game.winner_id == game.away_team_id %}<span class="winner-badge ms-2">WIN</span>{% endif %}
+      </div>
     </div>
-    <div class="col-auto px-5">
-      <div class="score-big num">{{ game.away_score }} – {{ game.home_score }}</div>
-      <div class="text-secondary small mt-1">{{ game.game_date }}</div>
-      {% if game.super_inning %}<span class="si-badge">Super-Inning</span>{% endif %}
-      {% if game.seed is not none %}<div class="text-secondary" style="font-size:.7rem">seed {{ game.seed }}</div>{% endif %}
+    <div class="text-center">
+      <div class="score-big num" style="line-height:1">{{ game.away_score }} <span style="color:var(--text-dim)">–</span> {{ game.home_score }}</div>
+      <div class="text-secondary small mt-1">
+        {{ game.game_date }}
+        {% if game.super_inning %}<span class="si-badge ms-2">Super-Inning</span>{% endif %}
+        {% if game.seed is not none %}<span class="ms-2" style="font-size:.7rem">seed {{ game.seed }}</span>{% endif %}
+      </div>
     </div>
-    <div class="col">
-      <div class="text-secondary small">HOME</div>
-      <a href="{{ url_for('team_detail', team_id=game.home_team_id) }}">
-        <div class="score-big team-abbrev mt-1">{{ game.home_abbrev }}</div>
-        <div class="text-secondary">{{ game.home_name }}</div>
-      </a>
-      {% if game.winner_id == game.home_team_id %}<span class="winner-badge mt-1 d-inline-block">WIN</span>{% endif %}
+    <div class="d-flex align-items-baseline gap-3">
+      <div class="text-end">
+        {% if game.winner_id == game.home_team_id %}<span class="winner-badge me-2">WIN</span>{% endif %}
+        <span class="text-secondary small me-2">{{ game.home_name }}</span>
+        <a href="{{ url_for('team_detail', team_id=game.home_team_id) }}" style="text-decoration:none">
+          <span class="team-abbrev" style="font-size:1.7rem">{{ game.home_abbrev }}</span>
+        </a>
+        <div class="score-label text-end">HOME</div>
+      </div>
     </div>
   </div>
 </div>

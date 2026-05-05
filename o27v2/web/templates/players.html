@@ -128,16 +128,37 @@
     {% set qs = request.args.to_dict() %}
     {% macro plink(p, label) -%}
       {% set _ = qs.update({'page': p}) %}
-      <li class="page-item {% if p == page %}active{% endif %}"><a class="page-link" style="background:#161b22;border-color:#30363d;color:#58a6ff" href="?{{ qs|urlencode }}">{{ label }}</a></li>
+      <li class="page-item {% if p == page %}active{% endif %}">
+        <a class="page-link" href="?{{ qs|urlencode }}">{{ label }}</a>
+      </li>
     {%- endmacro %}
     {% if page > 1 %}{{ plink(page-1, '‹') }}{% endif %}
     {% set start = [1, page - 3]|max %}
     {% set end = [pages, page + 3]|min %}
-    {% if start > 1 %}{{ plink(1, '1') }}{% if start > 2 %}<li class="page-item disabled"><span class="page-link" style="background:#161b22;border-color:#30363d;color:#8b949e">…</span></li>{% endif %}{% endif %}
+    {% if start > 1 %}{{ plink(1, '1') }}{% if start > 2 %}<li class="page-item disabled"><span class="page-link">…</span></li>{% endif %}{% endif %}
     {% for p in range(start, end + 1) %}{{ plink(p, p) }}{% endfor %}
-    {% if end < pages %}{% if end < pages - 1 %}<li class="page-item disabled"><span class="page-link" style="background:#161b22;border-color:#30363d;color:#8b949e">…</span></li>{% endif %}{{ plink(pages, pages) }}{% endif %}
+    {% if end < pages %}{% if end < pages - 1 %}<li class="page-item disabled"><span class="page-link">…</span></li>{% endif %}{{ plink(pages, pages) }}{% endif %}
     {% if page < pages %}{{ plink(page+1, '›') }}{% endif %}
   </ul>
 </nav>
+<style>
+  .pagination .page-link {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--link);
+    font-size: .82rem;
+    padding: 4px 10px;
+  }
+  .pagination .page-item.active .page-link {
+    background: var(--link);
+    border-color: var(--link);
+    color: #fff;
+  }
+  .pagination .page-item.disabled .page-link {
+    background: var(--bg-soft);
+    color: var(--text-dim);
+  }
+  .pagination .page-link:hover { background: var(--bg-alt); color: var(--link); }
+</style>
 {% endif %}
 {% endblock %}

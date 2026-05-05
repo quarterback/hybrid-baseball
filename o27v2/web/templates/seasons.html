@@ -18,10 +18,10 @@
       <th></th>
     </tr></thead>
     <tbody>
-      <tr style="background:#1f2733">
+      <tr style="background:var(--bg-warm)">
         <td class="num">{{ live.season_number }}</td>
         <td class="num">{{ live.year if live.year is not none else '—' }}</td>
-        <td><span style="color:#f0883e;font-weight:700">● LIVE</span>
+        <td><span class="strk-l" style="font-weight:700">● LIVE</span>
             {% if live.complete %}
               <span class="text-secondary small">— complete, ready to archive</span>
             {% else %}
@@ -70,9 +70,9 @@
       <td class="num">{{ s.champion_w }}-{{ s.champion_l }}</td>
       <td class="num">
         {% if s.invariant_fail and s.invariant_fail > 0 %}
-          <span style="color:#f85149;font-weight:700">{{ s.invariant_pass }} pass / {{ s.invariant_fail }} FAIL</span>
+          <span class="strk-l">{{ s.invariant_pass }} pass / {{ s.invariant_fail }} FAIL</span>
         {% else %}
-          <span style="color:#2ea043">{{ s.invariant_pass }} pass</span>
+          <span class="strk-w">{{ s.invariant_pass }} pass</span>
         {% endif %}
       </td>
       <td><a href="{{ url_for('season_detail', season_id=s.id) }}" class="small">View →</a></td>
