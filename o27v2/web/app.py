@@ -1380,6 +1380,9 @@ def game_detail(game_id: int):
             "outs":  r["unattributed_outs"],
         })
 
+    from o27.engine.weather import Weather
+    weather_label = Weather.from_row(game).short_label()
+
     return _serve(
         "game.html",
         game=game,
@@ -1400,6 +1403,7 @@ def game_detail(game_id: int):
         away_line=away_line,
         home_line=home_line,
         game_notes=notes,
+        weather_label=weather_label,
         prev_game_id=(prev_game["id"] if prev_game else None),
         next_game_id=(next_game["id"] if next_game else None),
     )

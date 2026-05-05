@@ -21,6 +21,7 @@ from typing import Optional
 from .state import GameState, Player
 from . import stay as stay_mod
 from . import manager as mgr
+from . import weather as wx
 from o27 import config as cfg
 
 
@@ -59,6 +60,7 @@ def _pitch_probs(
     balls: int,
     strikes: int,
     spell_count: int,
+    weather: Optional[object] = None,
 ) -> tuple:
     """Return adjusted pitch-outcome probability tuple (sums to 1.0)."""
     base = list(cfg.PITCH_BASE.get((balls, strikes), cfg.PITCH_BASE[(0, 0)]))
@@ -127,12 +129,36 @@ def _pitch_probs(
         cfg.FATIGUE_THRESHOLD_BASE + round(pitcher.stamina * cfg.FATIGUE_THRESHOLD_SCALE),
     )
     if spell_count > fatigue_threshold:
-        fatigue = min(cfg.FATIGUE_MAX, (spell_count - fatigue_threshold) / cfg.FATIGUE_SCALE)
+        # Weather scales how fast fatigue accumulates — hot/humid wears
+        # arms down quicker, cool/dry extends them. Multiplier on the
+        # ramp magnitude only; the threshold itself is unchanged.
+        stam_mult = wx.stamina_decay_multiplier(weather)
+        fatigue = min(
+            cfg.FATIGUE_MAX,
+            (spell_count - fatigue_threshold) / cfg.FATIGUE_SCALE * stam_mult,
+        )
         base[0] += fatigue * cfg.FATIGUE_BALL
         base[4] += fatigue * cfg.FATIGUE_CONTACT
         base[1] += fatigue * cfg.FATIGUE_CALLED
         base[2] += fatigue * cfg.FATIGUE_SWINGING
         base[3] += fatigue * cfg.FATIGUE_FOUL
+
+    # Weather K modifier — applied as a multiplicative shift on the
+    # strike-component shares (called + swinging). Foul / contact
+    # shares are inversely adjusted to preserve normalisation. Identity
+    # at neutral weather (k_mult == 1.0).
+    k_mult = wx.k_multiplier(weather)
+    if k_mult != 1.0:
+        delta_called   = base[1] * (k_mult - 1.0)
+        delta_swinging = base[2] * (k_mult - 1.0)
+        delta = delta_called + delta_swinging
+        base[1] += delta_called
+        base[2] += delta_swinging
+        # Drain delta from contact + foul (keeps balls roughly fixed).
+        if base[3] + base[4] > 0:
+            scale = 1.0 - delta / max(0.01, base[3] + base[4])
+            base[3] = max(0.01, base[3] * scale)
+            base[4] = max(0.01, base[4] * scale)
 
     # Normalise.
     base = [max(0.01, p) for p in base]
@@ -147,9 +173,10 @@ def pitch_outcome(
     balls: int,
     strikes: int,
     spell_count: int,
+    weather: Optional[object] = None,
 ) -> str:
     """Draw one pitch outcome. Returns a string matching one of _PITCH_NAMES."""
-    probs = _pitch_probs(pitcher, batter, balls, strikes, spell_count)
+    probs = _pitch_probs(pitcher, batter, balls, strikes, spell_count, weather)
     r = rng.random()
     cumulative = 0.0
     for name, p in zip(_PITCH_NAMES, probs):
@@ -163,7 +190,12 @@ def pitch_outcome(
 # Contact quality model
 # ---------------------------------------------------------------------------
 
-def contact_quality(rng: random.Random, batter: Player, pitcher: Player) -> str:
+def contact_quality(
+    rng: random.Random,
+    batter: Player,
+    pitcher: Player,
+    weather: Optional[object] = None,
+) -> str:
     """
     Determine whether contact is weak, medium, or hard.
 
@@ -199,6 +231,17 @@ def contact_quality(rng: random.Random, batter: Player, pitcher: Player) -> str:
     # Removing it lets the .01% transcendent talents really transcend.
     weak_p   = max(0.01, cfg.CONTACT_WEAK_BASE   - shift - arch_delta - power_tilt + move_tilt)
     hard_p   = max(0.01, cfg.CONTACT_HARD_BASE   + shift + arch_delta + power_tilt - move_tilt)
+
+    # Weather multiplier on hard-contact share. Excess (or deficit) is
+    # absorbed by weak; medium is computed by complement so the three
+    # sum to 1.0 regardless.
+    hc_mult = wx.hard_contact_multiplier(weather)
+    if hc_mult != 1.0:
+        new_hard = max(0.01, hard_p * hc_mult)
+        delta = new_hard - hard_p
+        hard_p = new_hard
+        weak_p = max(0.01, weak_p - delta)
+
     medium_p = max(0.01, 1.0 - weak_p - hard_p)
 
     total = weak_p + medium_p + hard_p
@@ -494,6 +537,10 @@ def resolve_contact(
     park_hr   = getattr(state.home, "park_hr", 1.0) if state.home else 1.0
     park_hits = getattr(state.home, "park_hits", 1.0) if state.home else 1.0
 
+    # Weather HR multiplier stacks onto park_hr (multiplicative).
+    weather = getattr(state, "weather", None)
+    park_hr = park_hr * wx.hr_multiplier(weather)
+
     if quality == "hard" and (hr_bonus != 0.0 or park_hr != 1.0 or park_hits != 1.0):
         table = [
             _scale_hard_row(r, hr_bonus, park_hr, park_hits)
@@ -537,6 +584,7 @@ def resolve_contact(
     # (they're clean catches by the time we get here).
     if not batter_safe and hit_type != "fielders_choice" and not caught_fly:
         err_p = cfg.DEFENSE_ERROR_BASE - def_dev * cfg.DEFENSE_ERROR_SCALE
+        err_p *= wx.error_multiplier(weather)
         err_p = max(cfg.DEFENSE_ERROR_MIN, min(cfg.DEFENSE_ERROR_MAX, err_p))
         if rng.random() < err_p:
             is_error = True
@@ -940,7 +988,8 @@ class ProbabilisticProvider:
         strikes = state.count.strikes
         spell   = state.pitcher_spell_count
 
-        outcome = pitch_outcome(rng, pitcher, batter, balls, strikes, spell)
+        weather = getattr(state, "weather", None)
+        outcome = pitch_outcome(rng, pitcher, batter, balls, strikes, spell, weather)
 
         # HBP: a fraction of balls become hit-by-pitches, scaled by pitcher
         # command. Converting after pitch_outcome instead of teaching
@@ -974,7 +1023,7 @@ class ProbabilisticProvider:
             return {"type": outcome}
 
         # --- Contact resolution ---
-        quality = contact_quality(rng, batter, pitcher)
+        quality = contact_quality(rng, batter, pitcher, weather)
         is_hr     = False
         is_triple = False
 
