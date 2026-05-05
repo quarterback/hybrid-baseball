@@ -286,7 +286,7 @@
       <thead><tr>
         <th class="num" title="Weighted ERA — outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20. Lower better.">wERA</th>
         <th class="num" title="Expected Runs Allowed — non-negative linear weights, multiplicatively anchored to league wERA. Lower better.">xRA</th>
-        <th class="num" title="K%_arc1 - K%_arc3 in points. 0 = perfectly durable; 30+ = significant late-arc fade.">Decay</th>
+        <th class="num" title="Drift-corrected late-arc fade (points). 0 = matches league norm; positive = fades worse than lineup-cycle drift; negative = holds up better than league.">Decay</th>
       </tr></thead>
       <tbody><tr>
         <td class="num fw-bold">{{ '%.2f'|format(pt_totals.werra) }}</td>

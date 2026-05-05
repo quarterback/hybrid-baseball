@@ -435,6 +435,8 @@
       <th class="num">FOa1</th><th class="num">FOa2</th><th class="num">FOa3</th>
       <th class="num">BFa1</th><th class="num">BFa2</th><th class="num">BFa3</th>
       <th class="num">wERA</th><th class="num">xRA</th><th class="num">Decay</th>
+      <th class="num" title="Per-appearance Decay — mean of (arc-1 K% − arc-3 K%) per game where both arcs had sample. Equal-weights games instead of weighting by BFs. Selection bias still applies (only games that reached arc-3 count).">Decay/G</th>
+      <th class="num" title="Arc-3 reach rate — fraction of appearances that reached arc-3 (bf_arc3 > 0). The actual survivor-bias indicator: a low Decay number from a 30%-reach pitcher is computed only from his good days.">A3%</th>
       <th class="num" title="Arc-3 K% (incl foul-outs) — useful for short-relief specialists who never see arc-1 sample, so Decay is undefined for them">LateK%</th>
       <th class="num">GSc</th><th class="num">GSc+</th>
       <th class="num">OS+</th>
@@ -481,6 +483,8 @@
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.decay) }}">{% if p.decay_known %}{{ '%+.1f'|format(p.decay) }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.decay_pg) }}">{% if p.decay_pg_known %}{{ '%+.1f'|format(p.decay_pg) }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.arc3_reach_rate or 0) }}">{% if p.g_total %}{{ '%.0f'|format((p.arc3_reach_rate or 0) * 100) }}%{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.late_k_pct or 0) }}">{% if p.late_k_known %}{{ '%.1f'|format((p.late_k_pct or 0) * 100) }}%{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.gsc_avg or 0) }}">{{ '%.1f'|format(p.gsc_avg or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.0f'|format(p.gsc_plus or 100) }}">{{ (p.gsc_plus or 100)|round|int }}</td>

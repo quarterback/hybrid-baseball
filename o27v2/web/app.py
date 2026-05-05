@@ -298,6 +298,104 @@ def _position_defense_for_row(row: dict) -> float:
     return 0.6 * sub + 0.4 * general
 
 
+def _pitcher_per_game_decay_map() -> dict[int, dict[str, float]]:
+    """Per-pitcher per-appearance Decay map and arc-3 reach rate.
+
+    Returns {player_id: {'decay_pg': float, 'arc3_reach_rate': float,
+                          'decay_pg_known': bool, 'g_total': int,
+                          'g_arc3_reach': int}}
+
+    `decay_pg` is the mean of per-appearance Decay (raw arc-1 K% −
+    arc-3 K% in points) across the pitcher's appearances that had
+    BOTH arc-1 sample AND arc-3 sample. This is the "less-noisy"
+    sibling to the season-aggregated Decay — it equal-weights games
+    instead of weighting by BFs.
+
+    `arc3_reach_rate` is the fraction of the pitcher's appearances
+    that reached arc-3 (bf_arc3 > 0). The actual survivor-bias
+    signal: a pitcher with low Decay but only 30% arc3-reach rate
+    has a Decay computed from his GOOD outings only — the bad ones
+    got him pulled before arc-3.
+
+    NOTE on dedup: per-game arc fields can be double-counted by the
+    same dedup logic that hits the season aggregates. We MAX across
+    duplicate rows for the same (player, game) instead of SUMming —
+    the per-row arc data should be identical across duplicates, but
+    MAX is safe regardless. If a pitcher genuinely had two spells
+    in one game (rare in O27), they collapse into one appearance
+    record here.
+    """
+    rows = db.fetchall(
+        """SELECT ps.player_id,
+                  ps.game_id,
+                  MAX(COALESCE(ps.bf_arc1, 0)) AS bfa1,
+                  MAX(COALESCE(ps.bf_arc3, 0)) AS bfa3,
+                  MAX(COALESCE(ps.k_arc1,  0) + COALESCE(ps.fo_arc1, 0)) AS ka1,
+                  MAX(COALESCE(ps.k_arc3,  0) + COALESCE(ps.fo_arc3, 0)) AS ka3
+             FROM game_pitcher_stats ps
+             JOIN games g ON g.id = ps.game_id
+            WHERE g.played = 1
+            GROUP BY ps.player_id, ps.game_id"""
+    )
+    out: dict[int, dict[str, float]] = {}
+    for r in rows:
+        pid = r["player_id"]
+        slot = out.setdefault(pid, {
+            "g_total": 0, "g_arc3_reach": 0,
+            "decay_sum": 0.0, "decay_n": 0,
+        })
+        slot["g_total"] += 1
+        bfa1 = r["bfa1"] or 0
+        bfa3 = r["bfa3"] or 0
+        if bfa3 > 0:
+            slot["g_arc3_reach"] += 1
+        if bfa1 > 0 and bfa3 > 0:
+            kp1 = (r["ka1"] or 0) / bfa1
+            kp3 = (r["ka3"] or 0) / bfa3
+            slot["decay_sum"] += (kp1 - kp3) * 100.0
+            slot["decay_n"]   += 1
+
+    finalized: dict[int, dict[str, float]] = {}
+    for pid, slot in out.items():
+        g = slot["g_total"]
+        finalized[pid] = {
+            "g_total":          g,
+            "g_arc3_reach":     slot["g_arc3_reach"],
+            "arc3_reach_rate":  (slot["g_arc3_reach"] / g) if g else 0.0,
+            "decay_pg_known":   slot["decay_n"] > 0,
+            "decay_pg":         (slot["decay_sum"] / slot["decay_n"]) if slot["decay_n"] else 0.0,
+        }
+    return finalized
+
+
+def _stamp_per_game_decay(rows: list[dict], drift: float = 0.0) -> None:
+    """Stamp per-pitcher decay_pg / arc3_reach_rate / g_arc3_reach onto
+    aggregated pitcher rows. Same drift correction is applied to
+    `decay_pg` so it sits in the same "0 = league norm" frame as the
+    season Decay.
+    """
+    if not rows:
+        return
+    pmap = _pitcher_per_game_decay_map()
+    for r in rows:
+        pid = r.get("player_id")
+        meta = pmap.get(pid)
+        if not meta:
+            r["decay_pg"]         = 999.9
+            r["decay_pg_raw"]     = 999.9
+            r["decay_pg_known"]   = False
+            r["arc3_reach_rate"]  = 0.0
+            r["g_arc3_reach"]     = 0
+            r["g_total"]          = 0
+            continue
+        r["decay_pg_known"]  = meta["decay_pg_known"]
+        r["decay_pg_raw"]    = meta["decay_pg"] if meta["decay_pg_known"] else 999.9
+        r["decay_pg"]        = (meta["decay_pg"] - drift) if meta["decay_pg_known"] else 999.9
+        r["arc3_reach_rate"] = meta["arc3_reach_rate"]
+        r["g_arc3_reach"]    = meta["g_arc3_reach"]
+        r["g_total"]         = meta["g_total"]
+
+
 def _pitcher_wl_map() -> dict[int, dict[str, int]]:
     """Award W/L per MLB-style rules adapted to the O27 27-out-per-side
     structure.
@@ -682,6 +780,12 @@ def _league_baselines() -> dict[str, float]:
                    COALESCE(SUM(er_arc1),0)       AS era1,
                    COALESCE(SUM(er_arc2),0)       AS era2,
                    COALESCE(SUM(er_arc3),0)       AS era3,
+                   COALESCE(SUM(k_arc1),0)        AS ka1,
+                   COALESCE(SUM(k_arc3),0)        AS ka3,
+                   COALESCE(SUM(fo_arc1),0)       AS foa1,
+                   COALESCE(SUM(fo_arc3),0)       AS foa3,
+                   COALESCE(SUM(bf_arc1),0)       AS bfa1,
+                   COALESCE(SUM(bf_arc3),0)       AS bfa3,
                    COUNT(*)                       AS g
               FROM {_PSTATS_DEDUP_SQL} ps"""
     ) or {}
@@ -736,6 +840,27 @@ def _league_baselines() -> dict[str, float]:
         # league_xra is anchored to league_werra by xra_norm construction
         # (see _league_werra_consts()).
         out["league_xra"] = out["league_werra"]
+
+        # League arc-1 vs arc-3 K% (incl foul-outs) — used as the zero-point
+        # for drift-corrected Decay. In O27 the 27-out single inning cycles
+        # to weaker hitters, so league arc-3 K% is structurally higher than
+        # arc-1 K% (~3-4 pp) regardless of pitcher fatigue. The drift is
+        # this delta; subtracting it from raw Decay isolates the
+        # fatigue-driven signal from the lineup-cycling signal.
+        bfa1 = pit.get("bfa1") or 0
+        bfa3 = pit.get("bfa3") or 0
+        if bfa1 > 0 and bfa3 > 0:
+            la1 = ((pit.get("ka1") or 0) + (pit.get("foa1") or 0)) / bfa1
+            la3 = ((pit.get("ka3") or 0) + (pit.get("foa3") or 0)) / bfa3
+            out["league_arc1_k_pct"] = la1
+            out["league_arc3_k_pct"] = la3
+            # Stored in percentage POINTS (×100) to match the units Decay
+            # reports — keeps the subtraction unit-clean downstream.
+            out["league_decay_drift"] = (la1 - la3) * 100.0
+        else:
+            out["league_arc1_k_pct"] = 0.0
+            out["league_arc3_k_pct"] = 0.0
+            out["league_decay_drift"] = 0.0
 
         # League-average per-appearance Game Score, computed from
         # per-game means (linear in counts so this matches mean(GSc) for
@@ -842,17 +967,30 @@ def _aggregate_pitcher_rows(
             p["xra"] = raw_xra * xra_norm
         else:
             p["xra"] = 0.0
-        # Decay: K%_arc1 - K%_arc3 (× 100). K% here counts foul-outs as Ks.
+        # Decay: drift-corrected K%_arc1 - K%_arc3 (× 100). K% counts
+        # foul-outs as Ks. The drift correction subtracts the league's
+        # structural arc-1→arc-3 lift (lineup-cycling weakens hitters
+        # late in the 27-out inning), so:
+        #   0    = pitcher matches league norm
+        #   >0   = fades worse than the lineup naturally lifts K%
+        #   <0   = holds up better than the lineup-cycle baseline
+        # `decay_raw` keeps the un-corrected delta as a diagnostic
+        # field — useful when comparing across configs / seasons where
+        # the lineup-cycling magnitude itself shifts.
+        league_drift = (baselines or {}).get("league_decay_drift", 0.0) if baselines else 0.0
         if bf1 > 0 and bf3 > 0:
             kp1 = (k1 + fo1) / bf1
             kp3 = (k3 + fo3) / bf3
-            p["decay"] = (kp1 - kp3) * 100.0
+            raw_delta = (kp1 - kp3) * 100.0
+            p["decay_raw"] = raw_delta
+            p["decay"] = raw_delta - league_drift
             p["decay_known"] = True
         else:
             # Sentinel that sorts to the worst end of "low is better"
             # leaderboards but doesn't break Jinja sort. Templates check
             # `decay_known` to decide whether to render the value.
             p["decay"] = 999.9
+            p["decay_raw"] = 999.9
             p["decay_known"] = False
 
         # LateK% — arc-3-only K% (incl foul-outs). Visible for short-relief
@@ -940,6 +1078,15 @@ def _aggregate_pitcher_rows(
             d = wl.get(pid, {"w": 0, "l": 0})
             p["w"] = d["w"]
             p["l"] = d["l"]
+
+    # Per-appearance Decay + arc-3 reach rate. One cheap GROUP BY query
+    # against game_pitcher_stats; mapped onto every pitcher row in `rows`.
+    # decay_pg uses the SAME drift correction as season Decay so both sit
+    # in the "0 = league norm" frame. arc3_reach_rate exposes the
+    # survivor-bias signal directly: a pitcher whose Decay was computed
+    # from only 30% of his appearances is sampling his good days.
+    drift = (baselines or {}).get("league_decay_drift", 0.0) if baselines else 0.0
+    _stamp_per_game_decay(rows, drift=drift)
 
 
 # ---------------------------------------------------------------------------

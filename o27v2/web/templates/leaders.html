@@ -86,7 +86,7 @@
 <div class="row g-3 mb-3">
   {{ card('wERA',        'werra',    '%.2f',  false, pitching, tooltip='Weighted ERA — runs allowed weighted by arc position (outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20)') }}
   {{ card('xRA',        'xra',     '%.2f',  false, pitching, tooltip='Expected Runs Allowed — non-negative linear-weights formula (HR=1.4, single≈0.45, BB/HBP=0.32), multiplicatively anchored so league xRA = league wERA') }}
-  {{ card('Decay (low)', 'decay',    '%+.1f', false, pitching, tooltip='K%_arc1 - K%_arc3 (points). 0 = perfectly durable, 30+ = significant late-arc fade') }}
+  {{ card('Decay (low)', 'decay',    '%+.1f', false, pitching, tooltip='Drift-corrected late-arc fade (points). 0 = matches league norm; positive = fades worse than the natural lineup-cycling lift; negative = holds up better than league. Subtracts the league arc-1→arc-3 K% delta to isolate fatigue from O27 lineup-cycling.') }}
   {{ card('LateK%',      'late_k_pct_pct', '%.1f%%', true, pitching, tooltip='Arc-3 K% (outs 19-27, incl foul-outs). The short-relief sibling to Decay — closers and back-of-arc specialists who never see arc-1 sample appear here.') }}
   {{ card('GSc+',        'gsc_plus', '%d',    true,  pitching, tooltip='League-relative Game Score (100 = league avg, higher = better)') }}
 </div>

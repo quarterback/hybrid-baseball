@@ -487,7 +487,11 @@ CONTACT_MOVEMENT_TILT: float = 0.06
 # 2B / 3B rates stable while opening per-player spread.
 POWER_REDIST_HR:        float = 0.50  # HARD line_out → hr (replaces POWER_HR_WEIGHT_SCALE additive)
 POWER_REDIST_HARD_S2D:  float = 0.30
-POWER_REDIST_HARD_D2T:  float = 0.20
+# D2T must be small enough that net flow into doubles (from single→double)
+# isn't cancelled by flow out to triples. Coefficients calibrated so that
+# doubles rise net-positive at power_dev=+1 — see
+# `o27/tests/test_power_redistribute.py::test_directionality`.
+POWER_REDIST_HARD_D2T:  float = 0.10
 POWER_REDIST_MED_S2D:   float = 0.20
 POWER_REDIST_MED_GO2FO: float = 0.15
 POWER_REDIST_WEAK_S2FO: float = 0.20
