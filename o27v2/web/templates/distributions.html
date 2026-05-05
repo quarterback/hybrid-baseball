@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Distributions{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Distributions</h2>
+    <div class="text-secondary small">
+      League-wide player histograms · {{ games_played }} games played
+      {% if games_played %}
+        · {{ n_batters }} qualifying batter{{ '' if n_batters == 1 else 's' }}
+        ({{ min_pa }}+ PA)
+        · {{ n_pitchers }} qualifying pitcher{{ '' if n_pitchers == 1 else 's' }}
+        ({{ min_outs }}+ outs)
+      {% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('distributions', highlight=highlight, format='json') }}">JSON</a>
+  </div>
+</div>
+
+{% if games_played == 0 %}
+<div class="panel panel-body text-center text-secondary">
+  No games played yet. Use <span class="badge bg-success">Sim Today</span> in the top bar.
+</div>
+{% else %}
+
+{# Player highlight strip — accepts a player ID and re-renders with their
+   value marked on each histogram. #}
+<form method="get" class="filter-bar mb-3 d-flex gap-2 align-items-end">
+  <div style="flex:1">
+    <label class="form-label" for="hi-id">
+      Highlight a player <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">— marks where they sit on every distribution</span>
+    </label>
+    <input id="hi-id" type="number" name="highlight" value="{{ highlight or '' }}"
+           class="form-control form-control-sm" placeholder="Player ID, e.g. 815">
+  </div>
+  <div>
+    <button class="btn btn-primary btn-sm">Highlight</button>
+    {% if highlight %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('distributions') }}">Clear</a>{% endif %}
+  </div>
+</form>
+
+{% if highlight_player %}
+<div class="alert" style="background:#eff5fc;border:1px solid var(--link);color:var(--text);padding:10px 14px;border-radius:var(--radius)">
+  Marking <strong><a href="{{ url_for('player_detail', player_id=highlight_player.player_id) }}">{{ highlight_player.player_name }}</a></strong>
+  <span class="team-abbrev">{{ highlight_player.team_abbrev }}</span> on every histogram below.
+  <a href="{{ url_for('compare', ids=highlight_player.player_id) }}" class="btn-link ms-2">Compare ↗</a>
+</div>
+{% elif highlight %}
+<div class="alert" style="background:#fff4dc;border:1px solid var(--warn);color:#5a3f00;padding:10px 14px;border-radius:var(--radius)">
+  Player ID <strong>{{ highlight }}</strong> not found in the qualifying population — no histogram marker shown.
+</div>
+{% endif %}
+
+{# ============================================================
+   Macro: render one stat's histogram + percentile table
+   ============================================================ #}
+{% macro dist_panel(d, key) %}
+<div class="col-lg-6 col-md-12 mb-3">
+  <div class="panel">
+    <div class="panel-head">
+      <span>{{ d.label }}</span>
+      <span class="ms-auto sub">n={{ d.n }} · μ={{ ('%.1f%%'|format(d.mean*100)) if d.is_pct else (d.fmt|format(d.mean)) }} · σ={{ ('%.1f%%'|format(d.std*100)) if d.is_pct else ('%.3f'|format(d.std)) }}</span>
+    </div>
+    <div class="panel-body" style="padding:8px 12px">
+      {# ---- Histogram ---- #}
+      <div style="display:grid;grid-template-columns:auto 1fr auto;gap:2px 8px;font-family:'JetBrains Mono', monospace;font-size:.78rem;line-height:1.3">
+        {% for b in d.buckets %}
+          {% set highlight_in_bucket = (d.highlight_value is defined and d.highlight_value is not none and d.highlight_value >= b.lo and (d.highlight_value < b.hi or loop.last)) %}
+          <div class="text-secondary" style="text-align:right;{% if highlight_in_bucket %}font-weight:700;color:var(--accent){% endif %}">
+            {{ ('%.1f%%'|format(b.lo*100)) if d.is_pct else (d.fmt|format(b.lo)) }}
+          </div>
+          <div style="background:var(--bg-alt);height:14px;border:1px solid var(--border-soft);position:relative">
+            <div style="background:{% if highlight_in_bucket %}var(--accent){% else %}var(--link){% endif %};height:100%;width:{{ b.pct }}%;min-width:1px"></div>
+            {% if highlight_in_bucket %}
+            <div title="Highlighted player here" style="position:absolute;top:-3px;right:0;color:var(--accent);font-size:.85rem;line-height:1">●</div>
+            {% endif %}
+          </div>
+          <div class="text-secondary" style="min-width:2.5em;text-align:right;{% if highlight_in_bucket %}font-weight:700;color:var(--accent){% endif %}">{{ b.count }}</div>
+        {% endfor %}
+      </div>
+
+      {# ---- Percentile table ---- #}
+      <table class="table dense-table mb-0 mt-2" style="background:var(--bg-soft)">
+        <thead><tr>
+          <th class="num">10th</th><th class="num">25th</th>
+          <th class="num">Median</th>
+          <th class="num">75th</th><th class="num">90th</th>
+          <th class="num">95th</th><th class="num">99th</th>
+        </tr></thead>
+        <tbody><tr>
+          {% for k in ('p10','p25','p50','p75','p90','p95','p99') %}
+            <td class="num{% if k == 'p50' %} fw-bold{% endif %}">
+              {% if d.is_pct %}{{ '%.1f%%'|format(d.percentiles[k] * 100) }}
+              {% else %}{{ d.fmt|format(d.percentiles[k]) }}{% endif %}
+            </td>
+          {% endfor %}
+        </tr></tbody>
+      </table>
+
+      {% if d.highlight_value is defined and d.highlight_value is not none %}
+      <div class="text-secondary small mt-2" style="line-height:1.4">
+        Highlighted player:
+        <strong style="color:var(--accent)">{% if d.is_pct %}{{ '%.1f%%'|format(d.highlight_value * 100) }}{% else %}{{ d.fmt|format(d.highlight_value) }}{% endif %}</strong>
+        ·
+        approximate percentile:
+        {% set v = d.highlight_value %}
+        {% set p = d.percentiles %}
+        {% if   v <= p.p10 %}≤ 10th
+        {% elif v <= p.p25 %}10–25th
+        {% elif v <= p.p50 %}25–50th
+        {% elif v <= p.p75 %}50–75th
+        {% elif v <= p.p90 %}75–90th
+        {% elif v <= p.p95 %}90–95th
+        {% elif v <= p.p99 %}95–99th
+        {% else %}≥ 99th
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+<h3 class="mt-2 mb-2">Batting distributions</h3>
+<div class="row g-3">
+{% for key, d in bat_dists.items() %}
+  {% if d.n > 0 %}{{ dist_panel(d, key) }}{% endif %}
+{% endfor %}
+</div>
+
+<h3 class="mt-3 mb-2">Pitching distributions</h3>
+<div class="row g-3">
+{% for key, d in pit_dists.items() %}
+  {% if d.n > 0 %}{{ dist_panel(d, key) }}{% endif %}
+{% endfor %}
+</div>
+
+<details class="mb-4 mt-3">
+  <summary class="text-secondary small" style="cursor:pointer">Methodology</summary>
+  <div class="text-secondary small mt-2 p-3" style="background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--radius);line-height:1.55">
+    Each histogram is a 12-bucket equal-width binning of the qualifying-player population's values. Bucket bounds run from <code>min</code> to <code>max</code> across the population — no fixed domain. The labels on the left are the bucket's lower bound; the count on the right is how many players fell into it. Bar widths are normalized to the largest-count bucket (so the longest bar = 100% of the panel width).
+    <br><br>
+    Qualifying thresholds are the same as on the <a href="{{ url_for('leaders') }}">Leaders</a> page — ~1× games-per-team in PA for batters and outs for pitchers, scaled with games played.
+    <br><br>
+    Percentiles use linear interpolation (matches numpy <code>percentile()</code> default). σ is population standard deviation across the qualifying group.
+    <br><br>
+    The Decay distribution is restricted to pitchers with cross-arc sample (faced batters in both arc-1 and arc-3), so the n on that panel is lower than the rest of the pitching panels. Pitchers without enough sample to compute Decay aren't binned.
+  </div>
+</details>
+
+{% endif %}
+{% endblock %}

@@ -2,13 +2,18 @@
 {% block title %}{{ team.name }}{% endblock %}
 {% block content %}
 
-<nav aria-label="breadcrumb" class="mb-2 d-flex justify-content-between align-items-center">
+<nav aria-label="breadcrumb" class="mb-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
   <ol class="breadcrumb small mb-0">
     <li class="breadcrumb-item"><a href="{{ url_for('teams') }}">Teams</a></li>
     <li class="breadcrumb-item active">{{ team.name }}</li>
   </ol>
-  <button class="copy-md" data-md-url="{{ url_for('team_detail_export', team_id=team.id) }}"
-          title="Copy team summary as markdown">Copy as Markdown</button>
+  <div class="d-flex gap-2">
+    <button class="copy-md btn btn-sm btn-outline-secondary"
+            data-md-url="{{ url_for('team_detail_export', team_id=team.id) }}"
+            title="Copy team summary as markdown">Copy as MD</button>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('team_detail', team_id=team.id, format='json') }}">JSON</a>
+  </div>
 </nav>
 
 {# ---- Compact header strip ---- #}

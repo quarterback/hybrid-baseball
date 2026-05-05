@@ -101,6 +101,83 @@ def _clamp_to_last(date_str: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Dual HTML / JSON renderer. Every data view in the app passes through
+# `_serve()` instead of calling `render_template()` directly. Add
+# `?format=json` to any URL to get a structured payload suitable for
+# scripts, notebooks, or LLM-prompt context.
+#
+# JSON output shape:
+#   {
+#     "endpoint": "leaders",
+#     "args":     {"side": "pit", "view": "advanced", ...},  # query string echo
+#     "data":     {...the same dict the Jinja template received},
+#   }
+#
+# The data block is best-effort JSON-serialized: sqlite3.Row → dict,
+# datetime/date → ISO string, callables / Jinja macros / Flask g objects
+# / undefined types are dropped (with a key list under "_dropped" so the
+# caller can see what was excluded).
+# ---------------------------------------------------------------------------
+
+def _jsonable(value, _depth: int = 0):
+    """Recursively coerce a render-context value into JSON-friendly form."""
+    if _depth > 8:
+        return f"<truncated:{type(value).__name__}>"
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (_dt.date, _dt.datetime)):
+        return value.isoformat()
+    # sqlite3.Row exposes .keys()
+    if hasattr(value, "keys") and callable(value.keys):
+        try:
+            return {k: _jsonable(value[k], _depth + 1) for k in value.keys()}
+        except Exception:
+            pass
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v, _depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(v, _depth + 1) for v in value]
+    # Fallback: anything else (callable, custom class, etc.)
+    return None
+
+
+def _serve(template: str, **context):
+    """Render `template` for HTML clients, or emit a JSON payload when
+    the request has ?format=json. The Jinja-context dict is passed through
+    `_jsonable` so the JSON shape mirrors what the template sees.
+
+    Drop-in replacement for `render_template(...)` everywhere a route
+    returns table-shaped data. Routes that already return Response /
+    jsonify directly (export.md, /api/sim/*) don't go through here.
+    """
+    fmt = (request.args.get("format") or "").lower()
+    if fmt in ("json", "j"):
+        # Strip the few keys we know aren't useful to consumers and would
+        # only bloat the response (the live `request` object never shows
+        # up here, but the sim_state injector adds noise on every page).
+        skip = {"sim", "_csrf_token"}
+        clean = {k: v for k, v in context.items() if k not in skip}
+        dropped: list[str] = []
+        out = {}
+        for k, v in clean.items():
+            j = _jsonable(v)
+            if j is None and v is not None:
+                dropped.append(k)
+            else:
+                out[k] = j
+        endpoint = (request.endpoint or "").rsplit(".", 1)[-1]
+        payload = {
+            "endpoint": endpoint,
+            "args":     dict(request.args),
+            "data":     out,
+        }
+        if dropped:
+            payload["_dropped"] = dropped
+        return jsonify(payload)
+    return render_template(template, **context)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -928,7 +1005,7 @@ def index():
         top["werra"] = sorted(pitching, key=lambda x: x["werra"])[:5]
         top["k"]     = sorted(pitching, key=lambda x: x["k"] or 0, reverse=True)[:5]
 
-    return render_template("index.html",
+    return _serve("index.html",
                            today=today,
                            today_games=today_games,
                            yesterday=yesterday,
@@ -1003,7 +1080,7 @@ def standings():
             "pyth_wl":  f"{pyth_w}-{pyth_l}",
         }
 
-    return render_template("standings.html",
+    return _serve("standings.html",
                            leagues=leagues,
                            extras=extras,
                            win_pct=_win_pct,
@@ -1046,7 +1123,7 @@ def schedule():
     if team_id:
         selected_team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
 
-    return render_template("schedule.html",
+    return _serve("schedule.html",
                            games=games,
                            teams=teams,
                            selected_team=selected_team,
@@ -1306,7 +1383,7 @@ def game_detail(game_id: int):
     from o27.engine.weather import Weather
     weather_label = Weather.from_row(game).short_label()
 
-    return render_template(
+    return _serve(
         "game.html",
         game=game,
         phases=phases,
@@ -1723,13 +1800,42 @@ def team_detail_export(team_id: int):
 @app.route("/players")
 def players():
     kind = request.args.get("kind", "batters")
-    if kind not in ("batters", "pitchers", "both"):
+    if kind not in ("batters", "pitchers", "both", "ratings"):
         kind = "batters"
     selected_team_id = request.args.get("team", type=int)
     selected_pos = request.args.get("pos", "") or ""
     q = (request.args.get("q") or "").strip()
     page = max(1, request.args.get("page", 1, type=int))
     per_page = 50
+
+    # Rating-filter URL params. Each is a min threshold on the named
+    # column on `players`. Surfaces the scout-grade attributes that
+    # otherwise weren't filterable anywhere in the app.
+    _RATING_FILTERS = (
+        # column,            label,              applies-to (None = anyone)
+        ("skill",            "Min Skill",        "hitter"),
+        ("power",            "Min Power",        "hitter"),
+        ("contact",          "Min Contact",      "hitter"),
+        ("eye",              "Min Eye",          "hitter"),
+        ("speed",            "Min Speed",        None),
+        ("pitcher_skill",    "Min Stuff",        "pitcher"),
+        ("command",          "Min Command",      "pitcher"),
+        ("movement",         "Min Movement",     "pitcher"),
+        ("stamina",          "Min Stamina",      "pitcher"),
+        ("defense",          "Min Defense",      None),
+        ("arm",              "Min Arm",          None),
+        ("defense_infield",  "Min Def-Infield",  None),
+        ("defense_outfield", "Min Def-Outfield", None),
+        ("defense_catcher",  "Min Def-Catcher",  None),
+    )
+    rating_filters: dict[str, int] = {}
+    for col, _label, _scope in _RATING_FILTERS:
+        v = request.args.get(f"min_{col}")
+        if v:
+            try:
+                rating_filters[col] = int(v)
+            except ValueError:
+                pass
 
     where = []
     params: list = []
@@ -1746,6 +1852,10 @@ def players():
         where.append("p.is_pitcher = 0")
     elif kind == "pitchers":
         where.append("p.is_pitcher = 1")
+    # Ratings view doesn't pre-filter by is_pitcher — show the whole league.
+    for col, threshold in rating_filters.items():
+        where.append(f"p.{col} >= ?")
+        params.append(threshold)
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
 
@@ -1758,6 +1868,10 @@ def players():
 
     base = db.fetchall(
         f"""SELECT p.id, p.name, p.team_id, p.position, p.age, p.is_pitcher, p.is_joker, p.pitcher_role,
+                   p.skill, p.power, p.contact, p.eye, p.speed,
+                   p.pitcher_skill, p.command, p.movement, p.stamina,
+                   p.defense, p.arm, p.defense_infield, p.defense_outfield, p.defense_catcher,
+                   p.archetype,
                    t.abbrev AS team_abbrev
             FROM players p JOIN teams t ON p.team_id = t.id
             {where_sql}
@@ -1766,10 +1880,29 @@ def players():
         tuple(params) + (per_page, offset),
     )
     page_ids = [p["id"] for p in base]
+
+    # If this is the ratings view, no further per-game-stat aggregation
+    # is needed — just hand the base rows to the template.
+    if kind == "ratings":
+        return _serve(
+            "players.html",
+            kind=kind,
+            ratings_rows=base,
+            rating_filters=rating_filters,
+            rating_filter_specs=_RATING_FILTERS,
+            batters=[], pitchers=[],
+            all_teams=db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name"),
+            all_positions=[r["position"] for r in db.fetchall("SELECT DISTINCT position FROM players ORDER BY position")],
+            selected_team_id=selected_team_id, selected_pos=selected_pos, q=q,
+            total=total, page=page, pages=pages,
+        )
+
     if not page_ids:
-        return render_template(
+        return _serve(
             "players.html",
             kind=kind, batters=[], pitchers=[],
+            rating_filters=rating_filters,
+            rating_filter_specs=_RATING_FILTERS,
             all_teams=db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name"),
             all_positions=[r["position"] for r in db.fetchall("SELECT DISTINCT position FROM players ORDER BY position")],
             selected_team_id=selected_team_id, selected_pos=selected_pos, q=q,
@@ -1843,11 +1976,13 @@ def players():
             _aggregate_pitcher_rows([row], wl, baselines=baselines)
             pitcher_rows.append(row)
 
-    return render_template(
+    return _serve(
         "players.html",
         kind=kind,
         batters=batter_rows,
         pitchers=pitcher_rows,
+        rating_filters=rating_filters,
+        rating_filter_specs=_RATING_FILTERS,
         all_teams=db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name"),
         all_positions=[r["position"] for r in db.fetchall("SELECT DISTINCT position FROM players ORDER BY position")],
         selected_team_id=selected_team_id,
@@ -1862,18 +1997,27 @@ def stats_browse():
     """Full sortable, filterable batting + pitching tables.
 
     Query params:
-      side=bat|pit         — which table to show (default: bat)
-      team=<id|all>        — restrict to one team
-      pos=<P|hitter|all>   — restrict by position class
-      min_pa=<int>         — minimum PA gate for batting
-      min_outs=<int>       — minimum outs gate for pitching
-      qualified=1|0        — convenience: ~3.1 PA per team-game / 1 out per team-game
+      side=bat|pit             — which table to show (default: bat)
+      view=standard|advanced|all — column verbosity (default: standard)
+      team=<id|all>            — restrict to one team
+      pos=<all|hitter|pitcher|C|1B|2B|3B|SS|LF|CF|RF|DH|UT|P>
+                                — restrict by position class or specific slot
+      min_pa=<int>             — minimum PA gate for batting
+      min_outs=<int>           — minimum outs gate for pitching
+      qualified=1|0            — convenience: ~3.1 PA per team-game / 1 out per team-game
     """
     side       = (request.args.get("side") or "bat").lower()
+    view       = (request.args.get("view") or "standard").lower()
+    if view not in ("standard", "advanced", "all"):
+        view = "standard"
     team_arg   = request.args.get("team")  or "all"
-    pos_arg    = (request.args.get("pos") or "all").lower()
+    pos_arg    = request.args.get("pos") or "all"
     qualified  = request.args.get("qualified") == "1"
     name_query = (request.args.get("q") or "").strip()
+
+    # All distinct on-field positions, surfaced as filter options.
+    _SPECIFIC_POSITIONS = ("P", "C", "1B", "2B", "3B", "SS",
+                           "LF", "CF", "RF", "DH", "UT")
 
     games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"] or 0
     teams_total  = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 30
@@ -1917,10 +2061,13 @@ def stats_browse():
         if team_filter_id is not None:
             where_clauses.append("bs.team_id = ?")
             params.append(team_filter_id)
-        if pos_arg in ("hitter", "non_pitcher"):
+        if pos_arg.lower() in ("hitter", "non_pitcher"):
             where_clauses.append("p.is_pitcher = 0")
-        elif pos_arg in ("p", "pitcher"):
+        elif pos_arg.lower() in ("pitcher",):
             where_clauses.append("p.is_pitcher = 1")
+        elif pos_arg in _SPECIFIC_POSITIONS:
+            where_clauses.append("p.position = ?")
+            params.append(pos_arg)
         if name_query:
             where_clauses.append("p.name LIKE ?")
             params.append(f"%{name_query}%")
@@ -2011,9 +2158,10 @@ def stats_browse():
             outs = p["outs"] or 0
             p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
 
-    return render_template(
+    return _serve(
         "stats_browse.html",
         side=side,
+        view=view,
         team_arg=team_arg,
         pos_arg=pos_arg,
         min_pa=min_pa,
@@ -2033,7 +2181,7 @@ def stats_browse():
 def leaders():
     games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
     if games_played == 0:
-        return render_template("leaders.html",
+        return _serve("leaders.html",
                                games_played=0, batting=[], pitching=[],
                                min_pa=0, min_outs=0)
 
@@ -2116,11 +2264,224 @@ def leaders():
         # OS% = share of a complete game (27 outs) recorded per appearance.
         p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
 
-    return render_template(
+    return _serve(
         "leaders.html",
         games_played=games_played,
         min_pa=min_pa, min_outs=min_outs,
         batting=batting, pitching=pitching,
+    )
+
+
+def _player_batting_split(player_id: int, team_id: int,
+                          where_extra: str, params_extra: tuple,
+                          baselines: dict) -> dict | None:
+    """Aggregate one batting split for a player.
+
+    where_extra: SQL fragment appended to WHERE (must start with ' AND ').
+    params_extra: tuple of params bound into where_extra.
+    Returns a fully-decorated bt_totals dict (post _aggregate_batter_rows),
+    or None if the player has no PA in this split.
+    """
+    bt = db.fetchone(
+        f"""SELECT COUNT(*) as g, SUM(bs.pa) as pa, SUM(bs.ab) as ab,
+                   SUM(bs.hits) as h,
+                   SUM(bs.doubles) as d2, SUM(bs.triples) as d3,
+                   SUM(bs.hr) as hr, SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                   SUM(bs.bb) as bb, SUM(bs.k) as k, SUM(bs.stays) as stays,
+                   COALESCE(SUM(bs.hbp),0) as hbp,
+                   COALESCE(SUM(bs.sb),0)  as sb,
+                   COALESCE(SUM(bs.cs),0)  as cs,
+                   COALESCE(SUM(bs.fo),0)  as fo,
+                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
+                   COALESCE(SUM(bs.stay_rbi),0) as stay_rbi,
+                   COALESCE(SUM(bs.roe),0) as roe
+            FROM game_batter_stats bs
+            JOIN games g ON bs.game_id = g.id
+            WHERE bs.player_id = ?{where_extra}""",
+        (player_id, *params_extra),
+    )
+    if not bt or not (bt.get("pa") or 0):
+        return None
+    row = dict(bt)
+    # Stamp position info so the aggregator can compute pos_def/DRS/dWAR.
+    p = db.fetchone(
+        "SELECT position, defense, defense_infield, defense_outfield, defense_catcher "
+        "FROM players WHERE id = ?", (player_id,))
+    if p:
+        row["position"]         = p["position"]
+        row["defense"]          = p["defense"]
+        row["defense_infield"]  = p["defense_infield"]
+        row["defense_outfield"] = p["defense_outfield"]
+        row["defense_catcher"]  = p["defense_catcher"]
+    _aggregate_batter_rows([row], baselines=baselines)
+    return row
+
+
+def _player_pitching_split(player_id: int,
+                           where_extra: str, params_extra: tuple,
+                           wl: dict, baselines: dict) -> dict | None:
+    """Aggregate one pitching split. Same shape as _player_batting_split."""
+    pt = db.fetchone(
+        f"""SELECT COUNT(*) as g, SUM(ps.batters_faced) as bf,
+                   SUM(ps.outs_recorded) as outs,
+                   SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
+                   SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
+                   SUM(ps.hr_allowed) as hr_allowed,
+                   COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
+                   COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
+                   COALESCE(SUM(ps.unearned_runs),0) as uer,
+                   COALESCE(SUM(ps.sb_allowed),0)    as sb_allowed,
+                   COALESCE(SUM(ps.cs_caught),0)     as cs_caught,
+                   COALESCE(SUM(ps.fo_induced),0)    as fo_induced,
+                   COALESCE(SUM(ps.pitches),0)       as pitches,
+                   COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                   COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
+                   COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                   COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                   COALESCE(SUM(ps.is_starter),0) as gs
+            FROM {_PSTATS_DEDUP_SQL} ps
+            JOIN games g ON ps.game_id = g.id
+            WHERE ps.player_id = ?{where_extra}""",
+        (player_id, *params_extra),
+    )
+    if not pt or not (pt.get("outs") or 0):
+        return None
+    row = dict(pt)
+    row["player_id"] = player_id
+    _aggregate_pitcher_rows([row], wl=wl, baselines=baselines)
+    return row
+
+
+def _fetch_player_overview(player_id: int,
+                           baselines: dict | None = None,
+                           wl: dict | None = None) -> dict | None:
+    """Self-contained fetch of one player's player-row + season totals
+    (batting + pitching + fielding). Used by both /player/<id> and
+    /compare. Returns None if the player doesn't exist.
+
+    Keep this lean — no game logs, no splits — so /compare with 4
+    players doesn't fan out to 12+ extra queries.
+    """
+    player = db.fetchone(
+        """SELECT p.*, t.abbrev as team_abbrev, t.name as team_name,
+                  t.id as team_id, t.league as team_league, t.division as team_division
+           FROM players p JOIN teams t ON p.team_id = t.id
+           WHERE p.id = ?""",
+        (player_id,),
+    )
+    if not player:
+        return None
+    if baselines is None:
+        baselines = _league_baselines()
+    if wl is None:
+        wl = _pitcher_wl_map()
+
+    bt = db.fetchone(
+        """SELECT COUNT(*) as g, SUM(pa) as pa, SUM(ab) as ab, SUM(hits) as h,
+                  SUM(doubles) as d2, SUM(triples) as d3, SUM(hr) as hr,
+                  SUM(runs) as r, SUM(rbi) as rbi, SUM(bb) as bb, SUM(k) as k,
+                  SUM(stays) as stays,
+                  COALESCE(SUM(hbp),0) as hbp,
+                  COALESCE(SUM(sb),0)  as sb,
+                  COALESCE(SUM(cs),0)  as cs,
+                  COALESCE(SUM(fo),0)  as fo,
+                  COALESCE(SUM(multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
+           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+    fld = db.fetchone(
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+    pt = db.fetchone(
+        f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
+                   SUM(hits_allowed) as h, SUM(runs_allowed) as r,
+                   SUM(er) as er, SUM(bb) as bb, SUM(k) as k,
+                   SUM(hr_allowed) as hr_allowed,
+                   COALESCE(SUM(hbp_allowed),0)   as hbp_allowed,
+                   COALESCE(SUM(unearned_runs),0) as unearned_runs,
+                   COALESCE(SUM(unearned_runs),0) as uer,
+                   COALESCE(SUM(sb_allowed),0)    as sb_allowed,
+                   COALESCE(SUM(cs_caught),0)     as cs_caught,
+                   COALESCE(SUM(fo_induced),0)    as fo_induced,
+                   COALESCE(SUM(pitches),0)       as pitches,
+                   COALESCE(SUM(er_arc1),0) as er_arc1, COALESCE(SUM(er_arc2),0) as er_arc2, COALESCE(SUM(er_arc3),0) as er_arc3,
+                   COALESCE(SUM(k_arc1),0)  as k_arc1,  COALESCE(SUM(k_arc2),0)  as k_arc2,  COALESCE(SUM(k_arc3),0)  as k_arc3,
+                   COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
+                   COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
+                   COALESCE(SUM(is_starter),0) as gs
+            FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
+
+    bt_totals = None
+    if bt and bt["pa"]:
+        bt_totals = dict(bt)
+        bt_totals["position"]         = player.get("position")
+        bt_totals["defense"]          = player.get("defense")
+        bt_totals["defense_infield"]  = player.get("defense_infield")
+        bt_totals["defense_outfield"] = player.get("defense_outfield")
+        bt_totals["defense_catcher"]  = player.get("defense_catcher")
+        _aggregate_batter_rows([bt_totals], baselines=baselines)
+
+    pt_totals = None
+    if pt and pt["outs"]:
+        pt_totals = dict(pt)
+        pt_totals["player_id"] = player_id
+        _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
+
+    po = (fld["po"] if fld else 0) or 0
+    e  = (fld["e"]  if fld else 0) or 0
+    fld_totals = {
+        "po": po, "e": e, "chances": po + e,
+        "fld_pct": (po / (po + e)) if (po + e) > 0 else None,
+    }
+
+    return {
+        "player":     dict(player),
+        "bt_totals":  bt_totals,
+        "pt_totals":  pt_totals,
+        "fld_totals": fld_totals,
+    }
+
+
+@app.route("/compare")
+def compare():
+    """Side-by-side comparison of 2-4 players.
+
+    URL: /compare?ids=123,456,789
+    JSON: append &format=json for the structured payload.
+    The page also has a name-search picker so callers don't need to
+    know IDs in advance.
+    """
+    raw = request.args.get("ids") or request.args.get("id") or ""
+    try:
+        ids = [int(x) for x in raw.replace(" ", "").split(",") if x]
+    except ValueError:
+        ids = []
+    ids = ids[:4]  # cap at 4 — table gets unreadable past that
+
+    baselines = _league_baselines()
+    wl = _pitcher_wl_map()
+
+    overviews: list[dict] = []
+    for pid in ids:
+        ov = _fetch_player_overview(pid, baselines=baselines, wl=wl)
+        if ov is not None:
+            overviews.append(ov)
+
+    # Lightweight roster index for the picker (id, name, team_abbrev,
+    # position). Keep this skinny — a 30-team league has ~1400 players
+    # and the datalist needs only "name (TM)" labels.
+    all_players = db.fetchall(
+        """SELECT p.id, p.name, p.position, p.is_pitcher,
+                  t.abbrev AS team_abbrev
+           FROM players p JOIN teams t ON p.team_id = t.id
+           ORDER BY p.name"""
+    )
+
+    return _serve(
+        "compare.html",
+        ids=ids,
+        overviews=overviews,
+        all_players=all_players,
+        baselines=baselines,
     )
 
 
@@ -2256,7 +2617,47 @@ def player_detail(player_id: int):
         pt_totals["ws_pct"] = (ws_qual / ws_starts) if ws_starts else 0.0
         pt_totals["gs"]     = ws_starts
 
-    return render_template(
+    # ---------------------------------------------------------------
+    # Splits (home / away / last 30 days). Computed only if the player
+    # has overall stats — saves the extra queries for cold rows.
+    # ---------------------------------------------------------------
+    splits: dict[str, dict] = {}
+    if bt_totals or pt_totals:
+        last_played = db.fetchone(
+            "SELECT MAX(game_date) AS d FROM games WHERE played = 1"
+        )
+        last_date = (last_played or {}).get("d")
+        last30_cutoff = None
+        if last_date:
+            try:
+                last30_cutoff = (_dt.date.fromisoformat(last_date)
+                                 - _dt.timedelta(days=30)).isoformat()
+            except Exception:
+                last30_cutoff = None
+
+        # Each split is (label, where_extra, params_extra). The team_id
+        # comes from the player; "home" means the player's team was home.
+        team_id = player["team_id"]
+        split_specs: list[tuple[str, str, tuple]] = [
+            ("Home", " AND g.home_team_id = ?", (team_id,)),
+            ("Away", " AND g.away_team_id = ?", (team_id,)),
+        ]
+        if last30_cutoff:
+            split_specs.append(
+                ("Last 30 days", " AND g.game_date >= ?", (last30_cutoff,))
+            )
+
+        for label, extra, ext_params in split_specs:
+            split: dict = {}
+            if bt_totals:
+                split["bt"] = _player_batting_split(
+                    player_id, team_id, extra, ext_params, baselines)
+            if pt_totals:
+                split["pt"] = _player_pitching_split(
+                    player_id, extra, ext_params, wl, baselines)
+            splits[label] = split
+
+    return _serve(
         "player.html",
         player=player,
         batting_log=batting_log,
@@ -2264,7 +2665,590 @@ def player_detail(player_id: int):
         bt_totals=bt_totals,
         pt_totals=pt_totals,
         fld_totals=fld_totals,
+        splits=splits,
         baselines=baselines,
+    )
+
+
+# ---------------------------------------------------------------------------
+# /league — commissioner-style dashboard. Aggregates per-player rows into
+# per-team rows, then layers league-wide context: percentile ranks,
+# Pythagorean residuals, distributions, and outliers.
+# ---------------------------------------------------------------------------
+
+def _team_record_rows() -> list[dict]:
+    """Per-team W / L / R / RA / RDiff from the games table."""
+    return db.fetchall(
+        """SELECT t.id, t.name, t.abbrev, t.league, t.division,
+                  COALESCE(SUM(CASE WHEN g.winner_id = t.id THEN 1 ELSE 0 END), 0) AS w,
+                  COALESCE(SUM(CASE WHEN g.played = 1
+                                     AND g.winner_id IS NOT NULL
+                                     AND g.winner_id <> t.id
+                                     AND (g.home_team_id = t.id OR g.away_team_id = t.id)
+                                    THEN 1 ELSE 0 END), 0) AS l,
+                  COALESCE(SUM(CASE WHEN g.played = 1 AND g.home_team_id = t.id
+                                    THEN g.home_score
+                                    WHEN g.played = 1 AND g.away_team_id = t.id
+                                    THEN g.away_score
+                                    ELSE 0 END), 0) AS r,
+                  COALESCE(SUM(CASE WHEN g.played = 1 AND g.home_team_id = t.id
+                                    THEN g.away_score
+                                    WHEN g.played = 1 AND g.away_team_id = t.id
+                                    THEN g.home_score
+                                    ELSE 0 END), 0) AS ra,
+                  COALESCE(SUM(CASE WHEN g.played = 1
+                                     AND (g.home_team_id = t.id OR g.away_team_id = t.id)
+                                    THEN 1 ELSE 0 END), 0) AS gp
+           FROM teams t
+           LEFT JOIN games g ON (g.home_team_id = t.id OR g.away_team_id = t.id)
+           GROUP BY t.id
+           ORDER BY t.league, t.division, t.abbrev"""
+    )
+
+
+def _team_batting_rows(baselines: dict) -> list[dict]:
+    """Per-team batting aggregate, decorated with the rate-stat suite."""
+    rows = db.fetchall(
+        """SELECT t.id AS team_id, t.name AS team_name, t.abbrev AS team_abbrev,
+                  COUNT(DISTINCT bs.game_id) AS g,
+                  SUM(bs.pa) AS pa, SUM(bs.ab) AS ab, SUM(bs.hits) AS h,
+                  SUM(bs.doubles) AS d2, SUM(bs.triples) AS d3, SUM(bs.hr) AS hr,
+                  SUM(bs.runs) AS r, SUM(bs.rbi) AS rbi,
+                  SUM(bs.bb) AS bb, SUM(bs.k) AS k,
+                  SUM(bs.stays) AS stays,
+                  COALESCE(SUM(bs.hbp),0) AS hbp,
+                  COALESCE(SUM(bs.sb),0)  AS sb,
+                  COALESCE(SUM(bs.cs),0)  AS cs,
+                  COALESCE(SUM(bs.fo),0)  AS fo,
+                  COALESCE(SUM(bs.multi_hit_abs),0) AS mhab,
+                  COALESCE(SUM(bs.stay_rbi),0)     AS stay_rbi,
+                  COALESCE(SUM(bs.roe),0) AS roe,
+                  COALESCE(SUM(bs.po),0) AS po,
+                  COALESCE(SUM(bs.e),0)  AS e
+           FROM teams t
+           LEFT JOIN game_batter_stats bs ON bs.team_id = t.id
+           GROUP BY t.id"""
+    )
+    rows = [dict(r) for r in rows]
+    # Decorate each team row with the same sabermetric pipeline a player
+    # row gets. The aggregator only needs `position`/defense for DRS;
+    # team-level DRS isn't meaningful, so stamp neutral values.
+    for r in rows:
+        r["position"]         = "TEAM"
+        r["defense"]          = 0.5
+        r["defense_infield"]  = 0.5
+        r["defense_outfield"] = 0.5
+        r["defense_catcher"]  = 0.5
+    _aggregate_batter_rows(rows, baselines=baselines)
+    return rows
+
+
+def _team_pitching_rows(baselines: dict) -> list[dict]:
+    """Per-team pitching aggregate, decorated with the wERA / xFIP / Decay
+    suite."""
+    rows = db.fetchall(
+        f"""SELECT t.id AS team_id, t.name AS team_name, t.abbrev AS team_abbrev,
+                   COUNT(DISTINCT ps.game_id) AS g,
+                   SUM(ps.batters_faced) AS bf,
+                   SUM(ps.outs_recorded) AS outs,
+                   SUM(ps.hits_allowed) AS h,
+                   SUM(ps.runs_allowed) AS r,
+                   SUM(ps.er) AS er,
+                   SUM(ps.bb) AS bb, SUM(ps.k) AS k,
+                   SUM(ps.hr_allowed) AS hr_allowed,
+                   COALESCE(SUM(ps.hbp_allowed),0) AS hbp_allowed,
+                   COALESCE(SUM(ps.unearned_runs),0) AS unearned_runs,
+                   COALESCE(SUM(ps.sb_allowed),0) AS sb_allowed,
+                   COALESCE(SUM(ps.cs_caught),0) AS cs_caught,
+                   COALESCE(SUM(ps.fo_induced),0) AS fo_induced,
+                   COALESCE(SUM(ps.pitches),0) AS pitches,
+                   COALESCE(SUM(ps.er_arc1),0) AS er_arc1,
+                   COALESCE(SUM(ps.er_arc2),0) AS er_arc2,
+                   COALESCE(SUM(ps.er_arc3),0) AS er_arc3,
+                   COALESCE(SUM(ps.k_arc1),0)  AS k_arc1,
+                   COALESCE(SUM(ps.k_arc2),0)  AS k_arc2,
+                   COALESCE(SUM(ps.k_arc3),0)  AS k_arc3,
+                   COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1,
+                   COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2,
+                   COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
+                   COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1,
+                   COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2,
+                   COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
+                   COALESCE(SUM(ps.is_starter),0) AS gs
+           FROM teams t
+           LEFT JOIN {_PSTATS_DEDUP_SQL} ps ON ps.team_id = t.id
+           GROUP BY t.id"""
+    )
+    rows = [dict(r) for r in rows]
+    _aggregate_pitcher_rows(rows, wl=None, baselines=baselines)
+    return rows
+
+
+def _percentile_ranks(rows: list[dict], key: str, reverse: bool = False) -> None:
+    """Stamp `<key>_rank` (1 = best) and `<key>_pctile` (0..100, where
+    100 = best) onto every row. `reverse=True` means lower is better
+    (e.g. wERA, BB%)."""
+    valid = [r for r in rows if r.get(key) is not None]
+    if not valid:
+        return
+    valid.sort(key=lambda r: r[key], reverse=not reverse)
+    n = len(valid)
+    for i, r in enumerate(valid):
+        r[f"{key}_rank"] = i + 1
+        r[f"{key}_pctile"] = round((1 - i / max(1, n - 1)) * 100, 1) if n > 1 else 100.0
+
+
+def _league_distribution(rows: list[dict], key: str) -> dict:
+    """Min / Q1 / median / Q3 / max / mean / std for a numeric column
+    across the rows. Drops None values."""
+    import statistics as _st
+    vals = sorted([r[key] for r in rows if r.get(key) is not None])
+    if not vals:
+        return {"n": 0}
+    n = len(vals)
+    def _q(p):
+        # Linear interpolation; matches numpy's default percentile.
+        if n == 1:
+            return vals[0]
+        idx = (n - 1) * p
+        lo = int(idx); hi = min(lo + 1, n - 1)
+        frac = idx - lo
+        return vals[lo] + (vals[hi] - vals[lo]) * frac
+    return {
+        "n":      n,
+        "min":    vals[0],
+        "q1":     _q(0.25),
+        "median": _q(0.5),
+        "q3":     _q(0.75),
+        "max":    vals[-1],
+        "mean":   sum(vals) / n,
+        "std":    _st.pstdev(vals) if n > 1 else 0.0,
+    }
+
+
+def _outliers(rows: list[dict], key: str, *, n: int = 3,
+              reverse: bool = False, label_key: str = "team_abbrev") -> list[dict]:
+    """Top-`n` and bottom-`n` rows on a metric, with z-scores. `reverse`
+    flips the polarity so "low is better" stats (wERA, BB%) put the
+    lowest-value team in the `top` slot.
+    """
+    import statistics as _st
+    valid = [r for r in rows if r.get(key) is not None]
+    if not valid:
+        return []
+    vals = [r[key] for r in valid]
+    mean = sum(vals) / len(vals)
+    std  = _st.pstdev(vals) if len(vals) > 1 else 1.0
+    annotated = [
+        {
+            "label":  r.get(label_key) or "—",
+            "value":  r[key],
+            "z":      ((r[key] - mean) / std) if std > 0 else 0.0,
+        }
+        for r in valid
+    ]
+    annotated.sort(key=lambda x: x["value"], reverse=not reverse)
+    return annotated
+
+
+def _pythag(r: int, ra: int, exp: float = 1.83) -> float:
+    """Pythagorean win expectancy. exp=1.83 is the Bill James-fitted MLB
+    exponent; O27 has higher run scoring but the formula's first-order
+    insight (luck residual relative to RDiff) carries over."""
+    if r <= 0 and ra <= 0:
+        return 0.5
+    return (r ** exp) / (r ** exp + ra ** exp)
+
+
+@app.route("/league")
+def league():
+    """Commissioner dashboard — league-wide aggregates, parity, run
+    environment, distributions, outliers, Pythag residuals.
+
+    Renders HTML; supports ?format=json via the existing _serve() helper.
+    """
+    games_played = db.fetchone(
+        "SELECT COUNT(*) as n FROM games WHERE played = 1"
+    )["n"] or 0
+    if games_played == 0:
+        return _serve("league.html",
+                      games_played=0, pulse=None, teams=[], records=[],
+                      batting=[], pitching=[],
+                      distributions={}, outliers={}, parity={})
+
+    baselines = _league_baselines()
+    records   = [dict(r) for r in _team_record_rows()]
+    batting   = _team_batting_rows(baselines)
+    pitching  = _team_pitching_rows(baselines)
+
+    # --- Wire records onto the team-batting rows so a single team_table
+    # has W / L / R / RA / Pythag alongside team OPS / wERA / etc.
+    rec_by_id = {r["id"]: r for r in records}
+    bat_by_id = {r["team_id"]: r for r in batting}
+    pit_by_id = {r["team_id"]: r for r in pitching}
+
+    teams_combined: list[dict] = []
+    for rec in records:
+        bat = bat_by_id.get(rec["id"], {})
+        pit = pit_by_id.get(rec["id"], {})
+        gp  = rec.get("gp") or 0
+        r   = rec.get("r")  or 0
+        ra  = rec.get("ra") or 0
+        pythag_w = _pythag(r, ra)
+        actual_w = (rec.get("w") / gp) if gp else 0.0
+        teams_combined.append({
+            "team_id":     rec["id"],
+            "team_abbrev": rec["abbrev"],
+            "team_name":   rec["name"],
+            "league":      rec.get("league") or "",
+            "division":    rec.get("division") or "",
+            "gp":          gp,
+            "w":           rec.get("w") or 0,
+            "l":           rec.get("l") or 0,
+            "win_pct":     actual_w,
+            "r":           r,
+            "ra":          ra,
+            "rdiff":       r - ra,
+            "pythag_pct":  pythag_w,
+            "pythag_w":    round(pythag_w * gp) if gp else 0,
+            "pythag_diff": round((pythag_w - actual_w) * gp, 1) if gp else 0.0,
+            # Batting headlines.
+            "ops":         bat.get("ops") or 0,
+            "ops_plus":    bat.get("ops_plus") or 100,
+            "pavg":        bat.get("pavg") or 0,
+            "woba":        bat.get("woba") or 0,
+            "iso":         bat.get("iso") or 0,
+            "stay_pct":    bat.get("stay_pct") or 0,
+            "k_pct_bat":   bat.get("k_pct") or 0,
+            "bb_pct_bat":  bat.get("bb_pct") or 0,
+            "hr_pct_bat":  bat.get("hr_pct") or 0,
+            "war_bat":     bat.get("war") or 0,
+            # Pitching headlines.
+            "werra":       pit.get("werra") or 0,
+            "xfip":        pit.get("xfip") or 0,
+            "decay":       pit.get("decay"),
+            "decay_known": pit.get("decay_known", False),
+            "gsc_avg":     pit.get("gsc_avg") or 0,
+            "gsc_plus":    pit.get("gsc_plus") or 100,
+            "k_pct_pit":   pit.get("k_pct") or 0,
+            "bb_pct_pit":  pit.get("bb_pct") or 0,
+            "war_pit":     pit.get("war") or 0,
+        })
+
+    # --- Stamp percentile ranks for the columns the dashboard sorts on.
+    for k, lower_better in [
+        ("ops", False), ("ops_plus", False), ("pavg", False),
+        ("woba", False), ("iso", False), ("stay_pct", False), ("war_bat", False),
+        ("werra", True), ("xfip", True), ("gsc_avg", False), ("gsc_plus", False),
+        ("war_pit", False), ("rdiff", False), ("pythag_pct", False),
+    ]:
+        _percentile_ranks(teams_combined, k, reverse=lower_better)
+
+    # --- League-wide distribution panels.
+    distributions = {
+        "OPS":       _league_distribution(teams_combined, "ops"),
+        "OPS+":      _league_distribution(teams_combined, "ops_plus"),
+        "PAVG":      _league_distribution(teams_combined, "pavg"),
+        "Stay%":     _league_distribution(teams_combined, "stay_pct"),
+        "wERA":      _league_distribution(teams_combined, "werra"),
+        "xFIP":      _league_distribution(teams_combined, "xfip"),
+        "GSc avg":   _league_distribution(teams_combined, "gsc_avg"),
+        "Run diff":  _league_distribution(teams_combined, "rdiff"),
+        "Win %":     _league_distribution(teams_combined, "win_pct"),
+        "Pythag %":  _league_distribution(teams_combined, "pythag_pct"),
+    }
+
+    # --- Outliers (top/bottom 3 each) for a select set of metrics.
+    outliers = {
+        "Run diff":      _outliers(teams_combined, "rdiff"),
+        "OPS":           _outliers(teams_combined, "ops"),
+        "wERA":          _outliers(teams_combined, "werra", reverse=True),
+        "xFIP":          _outliers(teams_combined, "xfip", reverse=True),
+        "Pythag luck":   _outliers(teams_combined, "pythag_diff"),
+    }
+
+    # --- Parity / competitive-balance roll-up.
+    win_pcts = [t["win_pct"] for t in teams_combined if t["gp"] > 0]
+    n_teams  = len(teams_combined)
+    if win_pcts:
+        import statistics as _st
+        wp_mean   = sum(win_pcts) / len(win_pcts)
+        wp_std    = _st.pstdev(win_pcts) if len(win_pcts) > 1 else 0.0
+        wp_range  = max(win_pcts) - min(win_pcts)
+    else:
+        wp_mean = wp_std = wp_range = 0.0
+    parity = {
+        "win_pct_std":    wp_std,
+        "win_pct_spread": wp_range,
+        "win_pct_mean":   wp_mean,
+    }
+
+    # --- Pulse: TL;DR card at the top of the page.
+    total_runs = sum((t["r"] or 0) + (t["ra"] or 0) for t in teams_combined) // 2
+    avg_r_per_g = (total_runs / games_played) if games_played else 0
+    league_total_pa = sum(b.get("pa") or 0 for b in batting)
+    league_total_outs = sum(p.get("outs") or 0 for p in pitching)
+    league_total_p = sum(p.get("pitches") or 0 for p in pitching)
+    league_total_k_bat = sum(b.get("k") or 0 for b in batting)
+    league_total_bb_bat = sum(b.get("bb") or 0 for b in batting)
+    league_total_hr_bat = sum(b.get("hr") or 0 for b in batting)
+    league_total_stays = sum(b.get("stays") or 0 for b in batting)
+    league_total_fo = sum(b.get("fo") or 0 for b in batting)
+    pulse = {
+        "games_played":       games_played,
+        "n_teams":             n_teams,
+        "avg_runs_per_game":   round(avg_r_per_g, 2),
+        "league_pa":           league_total_pa,
+        "league_outs":         league_total_outs,
+        "league_pitches":      league_total_p,
+        "league_k_pct":        (league_total_k_bat / league_total_pa) if league_total_pa else 0,
+        "league_bb_pct":       (league_total_bb_bat / league_total_pa) if league_total_pa else 0,
+        "league_hr_pct":       (league_total_hr_bat / league_total_pa) if league_total_pa else 0,
+        "league_stay_pct":     (league_total_stays / league_total_pa) if league_total_pa else 0,
+        "league_fo_pct":       (league_total_fo / league_total_pa) if league_total_pa else 0,
+        "league_pa_per_game":  round((league_total_pa / games_played / 2), 1) if games_played else 0,
+        "league_p_per_game":   round((league_total_p / games_played / 2), 1) if games_played else 0,
+        "league_werra":        baselines.get("league_werra"),
+        "league_gsc_avg":      baselines.get("gsc_avg"),
+    }
+
+    return _serve(
+        "league.html",
+        games_played=games_played,
+        pulse=pulse,
+        teams=teams_combined,
+        records=records,
+        batting=batting,
+        pitching=pitching,
+        distributions=distributions,
+        outliers=outliers,
+        parity=parity,
+    )
+
+
+# ---------------------------------------------------------------------------
+# /distributions — per-stat histograms + percentile tables for the
+# qualifying-player population. Pairs with /league (which does the same
+# thing at the team level) and answers "where does any one player sit on
+# the league shape?"
+# ---------------------------------------------------------------------------
+
+def _histogram(values: list[float], n_buckets: int = 12,
+               lo: float | None = None, hi: float | None = None) -> dict:
+    """Equal-width histogram. Returns
+        {"buckets": [{"lo","hi","count","pct"}, ...],
+         "min", "max", "n",
+         "percentiles": {"p10","p25","p50","p75","p90","p95","p99"}}.
+    Drops None values. `pct` is each bucket's count / max-bucket-count
+    (0..100), so the template can render bars with `width: NN%`.
+    """
+    import statistics as _st
+    vals = sorted(v for v in values if v is not None)
+    if not vals:
+        return {"n": 0, "buckets": [], "percentiles": {}, "min": 0, "max": 0}
+    v_min = lo if lo is not None else vals[0]
+    v_max = hi if hi is not None else vals[-1]
+    if v_max <= v_min:
+        v_max = v_min + 1e-9
+    width = (v_max - v_min) / n_buckets
+    buckets = []
+    for i in range(n_buckets):
+        b_lo = v_min + i * width
+        b_hi = v_min + (i + 1) * width
+        if i == n_buckets - 1:
+            count = sum(1 for v in vals if b_lo <= v <= b_hi)
+        else:
+            count = sum(1 for v in vals if b_lo <= v < b_hi)
+        buckets.append({"lo": b_lo, "hi": b_hi, "count": count})
+    max_count = max((b["count"] for b in buckets), default=1) or 1
+    for b in buckets:
+        b["pct"] = round((b["count"] / max_count) * 100, 1)
+
+    n = len(vals)
+    def _q(p):
+        if n == 1:
+            return vals[0]
+        idx = (n - 1) * p
+        i = int(idx); j = min(i + 1, n - 1)
+        return vals[i] + (vals[j] - vals[i]) * (idx - i)
+    return {
+        "n":     n,
+        "min":   vals[0],
+        "max":   vals[-1],
+        "mean":  sum(vals) / n,
+        "std":   _st.pstdev(vals) if n > 1 else 0.0,
+        "buckets": buckets,
+        "percentiles": {
+            "p10": _q(0.10), "p25": _q(0.25), "p50": _q(0.50),
+            "p75": _q(0.75), "p90": _q(0.90), "p95": _q(0.95), "p99": _q(0.99),
+        },
+    }
+
+
+@app.route("/distributions")
+def distributions():
+    """Per-stat histograms + percentile tables across the qualifying
+    player population. Pair-page to /league.
+
+    URL: /distributions               — full league
+         /distributions?highlight=42  — also marks where player 42 sits
+         /distributions?format=json   — structured payload
+    """
+    games_played = db.fetchone(
+        "SELECT COUNT(*) as n FROM games WHERE played = 1"
+    )["n"] or 0
+    if games_played == 0:
+        return _serve("distributions.html", games_played=0,
+                      bat_dists={}, pit_dists={}, highlight=None,
+                      highlight_player=None)
+
+    num_teams      = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
+    min_pa   = max(3, games_per_team)
+    min_outs = max(3, games_per_team)
+    baselines = _league_baselines()
+
+    # Reuse the leaders-style aggregate. Same shape, same threshold.
+    batting = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.defense as defense, p.arm as arm,
+                  p.defense_infield as defense_infield,
+                  p.defense_outfield as defense_outfield,
+                  p.defense_catcher as defense_catcher,
+                  t.id as team_id, t.abbrev as team_abbrev,
+                  SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                  SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                  SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                  SUM(bs.bb) as bb, SUM(bs.k) as k,
+                  COALESCE(SUM(bs.hbp),0) as hbp,
+                  COALESCE(SUM(bs.sb),0)  as sb,
+                  COALESCE(SUM(bs.cs),0)  as cs,
+                  COALESCE(SUM(bs.fo),0)  as fo,
+                  COALESCE(SUM(bs.stays),0) as stays,
+                  COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.roe),0) as roe
+           FROM game_batter_stats bs
+           JOIN players p ON bs.player_id = p.id
+           JOIN teams   t ON bs.team_id = t.id
+           GROUP BY p.id
+           HAVING SUM(bs.pa) >= ?""",
+        (min_pa,),
+    )
+    batting = [dict(r) for r in batting]
+    _aggregate_batter_rows(batting, baselines=baselines)
+
+    pitching = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(ps.game_id) as g,
+                  SUM(ps.batters_faced)  as bf,
+                  SUM(ps.outs_recorded)  as outs,
+                  SUM(ps.hits_allowed)   as h, SUM(ps.runs_allowed) as r,
+                  SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
+                  SUM(ps.hr_allowed) as hr_allowed,
+                  COALESCE(SUM(ps.hbp_allowed),0) as hbp_allowed,
+                  COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
+                  COALESCE(SUM(ps.fo_induced),0) as fo_induced,
+                  COALESCE(SUM(ps.pitches),0) as pitches,
+                  COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                  COALESCE(SUM(ps.k_arc1),0) as k_arc1, COALESCE(SUM(ps.k_arc2),0) as k_arc2, COALESCE(SUM(ps.k_arc3),0) as k_arc3,
+                  COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                  COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                  COALESCE(SUM(ps.is_starter),0) as gs
+           FROM {_PSTATS_DEDUP_SQL} ps
+           JOIN players p ON ps.player_id = p.id
+           JOIN teams   t ON ps.team_id = t.id
+           GROUP BY p.id
+           HAVING SUM(ps.outs_recorded) >= ?""",
+        (min_outs,),
+    )
+    pitching = [dict(r) for r in pitching]
+    _aggregate_pitcher_rows(pitching, _pitcher_wl_map(), baselines=baselines)
+
+    # Highlight: optionally mark where one specific player sits.
+    highlight_id_str = request.args.get("highlight") or request.args.get("h") or ""
+    highlight_id = None
+    highlight_player = None
+    if highlight_id_str.isdigit():
+        highlight_id = int(highlight_id_str)
+        # Find the row in either dataset.
+        for r in batting + pitching:
+            if r.get("player_id") == highlight_id:
+                highlight_player = {
+                    "player_id":   r.get("player_id"),
+                    "player_name": r.get("player_name"),
+                    "team_abbrev": r.get("team_abbrev"),
+                }
+                break
+
+    # Stat catalog: (key, label, fmt, side='bat'|'pit', is_pct, hi_lo='lo' if lower-is-better)
+    bat_specs = [
+        ("pavg",     "PAVG",   "%.3f", False),
+        ("ops",      "OPS",    "%.3f", False),
+        ("ops_plus", "OPS+",   "%.0f", False),
+        ("woba",     "wOBA",   "%.3f", False),
+        ("bavg",     "BAVG",   "%.3f", False),
+        ("iso",      "ISO",    "%.3f", False),
+        ("babip",    "BABIP",  "%.3f", False),
+        ("k_pct",    "K%",     "%.1f%%", True),
+        ("bb_pct",   "BB%",    "%.1f%%", True),
+        ("stay_pct", "Stay%",  "%.1f%%", True),
+        ("war",      "WAR",    "%.2f", False),
+    ]
+    pit_specs = [
+        ("werra",    "wERA",      "%.2f", False),
+        ("xfip",     "xFIP",      "%.2f", False),
+        ("decay",    "Decay",     "%+.1f", False),
+        ("gsc_avg",  "GSc avg",   "%.1f", False),
+        ("gsc_plus", "GSc+",      "%.0f", False),
+        ("os_plus",  "OS+",       "%.0f", False),
+        ("k_pct",    "K%",        "%.1f%%", True),
+        ("bb_pct",   "BB%",       "%.1f%%", True),
+        ("hr_pct",   "HR%",       "%.1f%%", True),
+        ("oavg",     "oAVG",      "%.3f", False),
+        ("war",      "WAR",       "%.2f", False),
+    ]
+
+    def _build(rows: list[dict], specs: list, side: str) -> dict:
+        out: dict[str, dict] = {}
+        for key, label, fmt, is_pct in specs:
+            vals = [r.get(key) for r in rows if r.get(key) is not None]
+            # For Decay specifically, only include rows where the player
+            # has cross-arc sample (decay_known).
+            if key == "decay":
+                vals = [r.get(key) for r in rows
+                        if r.get("decay_known") and r.get(key) is not None]
+            h = _histogram(vals, n_buckets=12)
+            h["label"] = label
+            h["fmt"]   = fmt
+            h["is_pct"] = is_pct
+            h["side"]  = side
+            # Where does the highlighted player sit?
+            if highlight_id is not None:
+                for r in rows:
+                    if r.get("player_id") == highlight_id:
+                        h["highlight_value"] = r.get(key)
+                        break
+                else:
+                    h["highlight_value"] = None
+            out[key] = h
+        return out
+
+    bat_dists = _build(batting, bat_specs, "bat")
+    pit_dists = _build(pitching, pit_specs, "pit")
+
+    return _serve(
+        "distributions.html",
+        games_played=games_played,
+        n_batters=len(batting),
+        n_pitchers=len(pitching),
+        min_pa=min_pa,
+        min_outs=min_outs,
+        bat_dists=bat_dists,
+        pit_dists=pit_dists,
+        highlight=highlight_id,
+        highlight_player=highlight_player,
     )
 
 
@@ -2276,7 +3260,7 @@ def teams():
            GROUP BY t.id
            ORDER BY t.league, t.division, t.name"""
     )
-    return render_template("teams.html", teams=teams_list, win_pct=_win_pct)
+    return _serve("teams.html", teams=teams_list, win_pct=_win_pct)
 
 
 @app.route("/team/<int:team_id>")
@@ -2367,7 +3351,7 @@ def team_detail(team_id: int):
            ORDER BY g.game_date DESC LIMIT 10""",
         (team_id, team_id),
     )
-    return render_template("team.html",
+    return _serve("team.html",
                            team=team,
                            batters=batters,
                            pitchers=pitchers,
@@ -2396,7 +3380,7 @@ def transactions():
         if et in counts:
             counts[et] += 1
 
-    return render_template("transactions.html",
+    return _serve("transactions.html",
                            transactions=txns,
                            teams=teams,
                            selected_team=selected_team,
@@ -2410,7 +3394,7 @@ def new_league_get():
     configs = get_league_configs()
     current_team_count = db.fetchone("SELECT COUNT(*) as n FROM teams")
     current_n = current_team_count["n"] if current_team_count else 0
-    return render_template("new_league.html",
+    return _serve("new_league.html",
                            configs=configs,
                            current_team_count=current_n)
 
@@ -2611,7 +3595,7 @@ def seasons_index():
         "SELECT * FROM seasons ORDER BY season_number DESC"
     )
     live = compute_live_season()
-    return render_template("seasons.html", seasons=rows, live=live)
+    return _serve("seasons.html", seasons=rows, live=live)
 
 
 @app.route("/seasons/<int:season_id>")
@@ -2651,7 +3635,7 @@ def season_detail(season_id: int):
             r["division"] or "—", []
         ).append(r)
 
-    return render_template(
+    return _serve(
         "season_detail.html",
         season=season,
         leagues=leagues,

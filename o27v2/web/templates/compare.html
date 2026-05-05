@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% block title %}Compare{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Compare</h2>
+    <div class="text-secondary small">
+      {% if overviews %}
+        {{ overviews|length }} player{{ '' if overviews|length == 1 else 's' }} ·
+        side-by-side season totals
+      {% else %}
+        Pick 2–4 player IDs to compare side-by-side
+      {% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if overviews %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('compare', ids=ids|join(','), format='json') }}">JSON</a>
+    {% endif %}
+  </div>
+</div>
+
+{# ============================================================
+   Picker — search by name, click to add. URL still works as
+   fallback for direct linking (?ids=1,2,3).
+   ============================================================ #}
+<div class="filter-bar mb-3">
+  <div style="width:100%">
+    <label class="form-label" for="cmp-search">Add a player <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">— start typing a name, then click "Add"</span></label>
+    <div class="d-flex gap-2 align-items-end flex-wrap">
+      <input id="cmp-search" type="text" list="cmp-search-list"
+             class="form-control form-control-sm" placeholder="e.g. Ted Quinn"
+             style="flex:1;min-width:240px">
+      <datalist id="cmp-search-list">
+        {% for p in all_players %}
+        <option value="{{ p.name }} — {{ p.team_abbrev }} ({{ p.position }})" data-id="{{ p.id }}"></option>
+        {% endfor %}
+      </datalist>
+      <button id="cmp-add-btn" type="button" class="btn btn-primary btn-sm">+ Add</button>
+      {% if ids %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('compare') }}">Clear all</a>{% endif %}
+    </div>
+    <div class="text-secondary small mt-2" style="line-height:1.4">
+      Or use the <strong>Compare basket</strong> in the bottom-right — every player link site-wide has a "+" next to it that adds the player to the basket. Clicking baseball-reference-style.
+      <br>
+      <span class="text-muted">Direct URL: <code>/compare?ids=1,2,3</code> · max 4 players</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Map "Name — TM (POS)" datalist labels back to player IDs.
+  const labelToId = {};
+  document.querySelectorAll('#cmp-search-list option').forEach(o => {
+    labelToId[o.value] = o.dataset.id;
+  });
+  const search = document.getElementById('cmp-search');
+  const addBtn = document.getElementById('cmp-add-btn');
+  function doAdd() {
+    const v = (search.value || '').trim();
+    const pid = parseInt(labelToId[v], 10);
+    if (!pid) {
+      search.classList.add('is-invalid');
+      setTimeout(() => search.classList.remove('is-invalid'), 1200);
+      return;
+    }
+    // Build the new URL preserving any existing ids
+    const params = new URLSearchParams(window.location.search);
+    let ids = (params.get('ids') || '').split(',').filter(Boolean);
+    if (!ids.includes(String(pid))) ids.push(String(pid));
+    if (ids.length > 4) ids = ids.slice(-4);
+    window.location.href = '/compare?ids=' + ids.join(',');
+  }
+  addBtn.addEventListener('click', doAdd);
+  search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+})();
+</script>
+
+{% if not overviews %}
+<div class="panel panel-body text-center text-secondary">
+  No players selected. Add IDs above and submit.
+</div>
+{% else %}
+
+{% set players = overviews %}
+
+{# Header strip — name + team + position + bat/throws — column per player #}
+<div class="panel mb-3">
+  <div class="panel-head"><span>Header</span></div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Field</th>
+      {% for o in players %}
+      <th>
+        <a href="{{ url_for('player_detail', player_id=o.player.id) }}">{{ o.player.name }}</a>
+        {# "Remove from comparison" — rebuild URL without this id #}
+        {% set other_ids = ids | reject('equalto', o.player.id) | list %}
+        <a href="{{ url_for('compare', ids=other_ids|join(',')) if other_ids else url_for('compare') }}"
+           class="text-secondary" data-no-compare
+           title="Remove from comparison"
+           style="font-size:1rem;line-height:1;text-decoration:none;margin-left:4px">×</a>
+      </th>
+      {% endfor %}
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td class="text-secondary">Team</td>
+        {% for o in players %}<td><a href="{{ url_for('team_detail', team_id=o.player.team_id) }}" class="team-abbrev">{{ o.player.team_abbrev }}</a> <span class="text-secondary small">{{ o.player.team_name }}</span></td>{% endfor %}
+      </tr>
+      <tr>
+        <td class="text-secondary">Position</td>
+        {% for o in players %}<td>{{ o.player.position }}{% if o.player.is_pitcher %} <span class="badge bg-info ms-1">P</span>{% endif %}</td>{% endfor %}
+      </tr>
+      <tr>
+        <td class="text-secondary">Age</td>
+        {% for o in players %}<td class="num">{{ o.player.age }}</td>{% endfor %}
+      </tr>
+      <tr>
+        <td class="text-secondary">Bats / Throws</td>
+        {% for o in players %}<td>{{ o.player.bats or '—' }} / {{ o.player.throws or '—' }}</td>{% endfor %}
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{# Helper macros for stat-row rendering. Each row reads value off
+   bt_totals / pt_totals / fld_totals depending on the section. #}
+{% macro stat_row(label, src_key, key, fmt='%d', stretch_cls='', tooltip='') %}
+<tr {% if tooltip %}title="{{ tooltip }}"{% endif %}>
+  <td class="text-secondary">{{ label }}</td>
+  {% for o in players %}
+    {% set src = o[src_key] %}
+    {% if src and src.get(key) is not none %}
+      <td class="num {{ stretch_cls }}">{{ fmt|format(src.get(key)) }}</td>
+    {% else %}
+      <td class="num text-muted">—</td>
+    {% endif %}
+  {% endfor %}
+</tr>
+{% endmacro %}
+
+{% macro pct_row(label, src_key, key, tooltip='') %}
+<tr {% if tooltip %}title="{{ tooltip }}"{% endif %}>
+  <td class="text-secondary">{{ label }}</td>
+  {% for o in players %}
+    {% set src = o[src_key] %}
+    {% if src and src.get(key) is not none %}
+      <td class="num">{{ '%.1f'|format(src.get(key) * 100) }}%</td>
+    {% else %}
+      <td class="num text-muted">—</td>
+    {% endif %}
+  {% endfor %}
+</tr>
+{% endmacro %}
+
+{# ============================================================
+   BATTING — only render if any selected player has bt_totals
+   ============================================================ #}
+{% set any_batting = players | selectattr('bt_totals') | list %}
+{% if any_batting %}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>Batting — season totals</span>
+    <span class="ms-auto sub">— = no PA on file</span>
+  </div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Stat</th>
+      {% for o in players %}<th class="num">{{ o.player.name.split(' ')[-1] }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      {{ stat_row('G',     'bt_totals', 'g')   }}
+      {{ stat_row('PA',    'bt_totals', 'pa')  }}
+      {{ stat_row('AB',    'bt_totals', 'ab')  }}
+      {{ stat_row('H',     'bt_totals', 'h',   '%d', 'fw-bold') }}
+      {{ stat_row('2B',    'bt_totals', 'd2')  }}
+      {{ stat_row('3B',    'bt_totals', 'd3')  }}
+      {{ stat_row('HR',    'bt_totals', 'hr')  }}
+      {{ stat_row('R',     'bt_totals', 'r')   }}
+      {{ stat_row('RBI',   'bt_totals', 'rbi') }}
+      {{ stat_row('BB',    'bt_totals', 'bb')  }}
+      {{ stat_row('SO',    'bt_totals', 'k')   }}
+      {{ stat_row('HBP',   'bt_totals', 'hbp') }}
+      {{ stat_row('SB',    'bt_totals', 'sb')  }}
+      {{ stat_row('CS',    'bt_totals', 'cs')  }}
+      {{ stat_row('Stays', 'bt_totals', 'stays', '%d', '', 'O27 — chose stay over run on contact') }}
+      {{ stat_row('PAVG',  'bt_totals', 'pavg', '%.3f', 'fw-bold') }}
+      {{ stat_row('OBP',   'bt_totals', 'obp',  '%.3f') }}
+      {{ stat_row('SLG',   'bt_totals', 'slg',  '%.3f') }}
+      {{ stat_row('OPS',   'bt_totals', 'ops',  '%.3f', 'fw-bold') }}
+      {{ stat_row('OPS+',  'bt_totals', 'ops_plus', '%d') }}
+      {{ stat_row('wOBA',  'bt_totals', 'woba', '%.3f') }}
+      {{ stat_row('wOBA+', 'bt_totals', 'woba_plus', '%d') }}
+      {{ stat_row('BAVG',  'bt_totals', 'bavg', '%.3f', '', 'H/AB — stayer-profile metric') }}
+      {{ stat_row('Δstay', 'bt_totals', 'stay_diff', '%+.3f') }}
+      {{ stat_row('ISO',   'bt_totals', 'iso',  '%.3f') }}
+      {{ stat_row('BABIP', 'bt_totals', 'babip', '%.3f') }}
+      {{ pct_row('K%',     'bt_totals', 'k_pct') }}
+      {{ pct_row('BB%',    'bt_totals', 'bb_pct') }}
+      {{ pct_row('HR%',    'bt_totals', 'hr_pct') }}
+      {{ pct_row('Stay%',  'bt_totals', 'stay_pct') }}
+      {{ pct_row('FO%',    'bt_totals', 'fo_pct') }}
+      {{ stat_row('DRS',   'bt_totals', 'drs',  '%+.1f') }}
+      {{ stat_row('dWAR',  'bt_totals', 'dwar', '%+.2f') }}
+      {{ stat_row('WAR',   'bt_totals', 'war',  '%.2f', 'fw-bold') }}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================
+   PITCHING
+   ============================================================ #}
+{% set any_pitching = players | selectattr('pt_totals') | list %}
+{% if any_pitching %}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>Pitching — season totals</span>
+    <span class="ms-auto sub">— = no outs on file</span>
+  </div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Stat</th>
+      {% for o in players %}<th class="num">{{ o.player.name.split(' ')[-1] }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      {{ stat_row('G',    'pt_totals', 'g')  }}
+      {{ stat_row('GS',   'pt_totals', 'gs') }}
+      {{ stat_row('W',    'pt_totals', 'w')  }}
+      {{ stat_row('L',    'pt_totals', 'l')  }}
+      {{ stat_row('BF',   'pt_totals', 'bf') }}
+      {{ stat_row('Outs', 'pt_totals', 'outs') }}
+      {{ stat_row('H',    'pt_totals', 'h')  }}
+      {{ stat_row('R',    'pt_totals', 'r')  }}
+      {{ stat_row('ER',   'pt_totals', 'er') }}
+      {{ stat_row('BB',   'pt_totals', 'bb') }}
+      {{ stat_row('SO',   'pt_totals', 'k', '%d', 'fw-bold') }}
+      {{ stat_row('HR',   'pt_totals', 'hr_allowed') }}
+      {{ stat_row('FO',   'pt_totals', 'fo_induced', '%d', '', 'O27 — foul-outs induced') }}
+      {{ stat_row('P',    'pt_totals', 'pitches') }}
+      {{ stat_row('wERA', 'pt_totals', 'werra', '%.2f', 'fw-bold', 'arc-weighted ERA — outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20') }}
+      {{ stat_row('xFIP', 'pt_totals', 'xfip',  '%.2f', '', 'O27 expected FIP') }}
+      <tr title="K%_arc1 - K%_arc3 — late-arc fade signal">
+        <td class="text-secondary">Decay</td>
+        {% for o in players %}
+          {% set src = o.pt_totals %}
+          {% if src and src.get('decay_known') %}
+            <td class="num">{{ '%+.1f'|format(src.get('decay')) }}</td>
+          {% else %}
+            <td class="num text-muted">—</td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {{ stat_row('GSc avg', 'pt_totals', 'gsc_avg', '%.1f') }}
+      {{ stat_row('GSc+',    'pt_totals', 'gsc_plus', '%d') }}
+      {{ stat_row('OS+',     'pt_totals', 'os_plus',  '%d') }}
+      {{ pct_row('K%',       'pt_totals', 'k_pct', '(K + foul-outs) / BF') }}
+      {{ pct_row('BB%',      'pt_totals', 'bb_pct') }}
+      {{ pct_row('HR%',      'pt_totals', 'hr_pct') }}
+      {{ stat_row('oAVG',    'pt_totals', 'oavg', '%.3f') }}
+      {{ stat_row('BABIP',   'pt_totals', 'babip_allowed', '%.3f') }}
+      {{ stat_row('VORP',    'pt_totals', 'vorp', '%.1f') }}
+      {{ stat_row('WAR',     'pt_totals', 'war',  '%.2f', 'fw-bold') }}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================
+   FIELDING
+   ============================================================ #}
+{% set any_fielding = players | selectattr('fld_totals') | rejectattr('fld_totals.po', 'equalto', 0) | list %}
+{% if players %}
+<div class="panel mb-3">
+  <div class="panel-head"><span>Fielding</span></div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Stat</th>
+      {% for o in players %}<th class="num">{{ o.player.name.split(' ')[-1] }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td class="text-secondary">Pos</td>
+        {% for o in players %}<td>{{ o.player.position }}</td>{% endfor %}
+      </tr>
+      {{ stat_row('PO',  'fld_totals', 'po') }}
+      {{ stat_row('E',   'fld_totals', 'e') }}
+      {{ stat_row('TC',  'fld_totals', 'chances') }}
+      <tr>
+        <td class="text-secondary">FldPct</td>
+        {% for o in players %}
+          {% set v = o.fld_totals.fld_pct if o.fld_totals else None %}
+          <td class="num">{% if v is not none %}{{ '%.3f'|format(v) }}{% else %}—{% endif %}</td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================
+   RATINGS — scout-grade attributes
+   ============================================================ #}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>Ratings (20–80 scout scale)</span>
+    <span class="ms-auto sub">50 = league average · 80 = top of the league</span>
+  </div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Rating</th>
+      {% for o in players %}<th class="num">{{ o.player.name.split(' ')[-1] }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      {% macro rating_row(label, key, tooltip='') %}
+      <tr {% if tooltip %}title="{{ tooltip }}"{% endif %}>
+        <td class="text-secondary">{{ label }}</td>
+        {% for o in players %}
+          {% set v = o.player.get(key) %}
+          <td class="num">{% if v is not none %}{{ v }}{% else %}—{% endif %}</td>
+        {% endfor %}
+      </tr>
+      {% endmacro %}
+      {{ rating_row('Skill (overall hitter)', 'skill') }}
+      {{ rating_row('Power',   'power') }}
+      {{ rating_row('Contact', 'contact') }}
+      {{ rating_row('Eye',     'eye') }}
+      {{ rating_row('Speed',   'speed') }}
+      {{ rating_row('Stuff (pitcher_skill)', 'pitcher_skill') }}
+      {{ rating_row('Command',  'command') }}
+      {{ rating_row('Movement', 'movement') }}
+      {{ rating_row('Stamina',  'stamina') }}
+      {{ rating_row('Defense (general)', 'defense') }}
+      {{ rating_row('Arm', 'arm') }}
+      {{ rating_row('Defense — Infield',  'defense_infield') }}
+      {{ rating_row('Defense — Outfield', 'defense_outfield') }}
+      {{ rating_row('Defense — Catcher',  'defense_catcher') }}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<p class="text-secondary small mt-2">
+  Up to 4 players can be compared at once. Add <code>?format=json</code> for the structured payload — useful for prompting an LLM with "compare these players' value-for-cost" or similar.
+</p>
+
+{% endif %}
+{% endblock %}

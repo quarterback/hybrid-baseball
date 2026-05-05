@@ -193,9 +193,12 @@
     <li class="breadcrumb-item"><a href="{{ url_for('schedule', status='played') }}">Schedule</a></li>
     <li class="breadcrumb-item active">Game #{{ game.id }}</li>
   </ol>
-  <div class="d-flex gap-2 align-items-center">
-    <button class="copy-md" data-md-url="{{ url_for('game_detail_export', game_id=game.id) }}"
-            title="Copy box score as markdown — for forums, GitHub, or LLMs">Copy as Markdown</button>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <button class="copy-md btn btn-sm btn-outline-secondary"
+            data-md-url="{{ url_for('game_detail_export', game_id=game.id) }}"
+            title="Copy box score as markdown — for forums, GitHub, or LLMs">Copy as MD</button>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('game_detail', game_id=game.id, format='json') }}">JSON</a>
     <div class="btn-group btn-group-sm">
       {% if prev_game_id %}<a href="{{ url_for('game_detail', game_id=prev_game_id) }}" class="btn btn-outline-secondary">&larr; Prev</a>
       {% else %}<span class="btn btn-outline-secondary disabled">&larr; Prev</span>{% endif %}
