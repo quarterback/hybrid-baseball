@@ -212,6 +212,19 @@
     .dense-table thead th { padding: 5px 8px; }
     .dense-table tbody td { padding: 3px 8px; line-height: 1.3; font-size: .82rem; }
 
+    /* Visual chunking — extra padding-right on the last column of a
+       group (e.g. between counting → rate, or rate → value). Combined
+       with `fw-bold` on key cells, the eye chunks long stat lines into
+       readable groups instead of reading them as one long blur. */
+    .dense-table thead th.col-group-end,
+    .dense-table tbody td.col-group-end,
+    .table thead th.col-group-end,
+    .table tbody td.col-group-end {
+      padding-right: 16px;
+      border-right: 1px solid var(--border-soft);
+    }
+    .table tbody tr:hover td.col-group-end { background: var(--bg-warm); }
+
     /* ---- Buttons ---- */
     .btn {
       font-size: .85rem;
@@ -688,7 +701,11 @@
 </div>
 
 <footer>
-  O27 League — single 27-out innings · pesäpallo-influenced stay rule · 3-foul out cap
+  <a href="{{ url_for('league') }}">League</a> ·
+  <a href="{{ url_for('teams') }}">Teams</a> ·
+  <a href="{{ url_for('stats_browse') }}">Stats</a> ·
+  <a href="{{ url_for('leaders') }}">Leaders</a> ·
+  <a href="{{ url_for('distributions') }}">Distributions</a>
 </footer>
 
 {# Compare basket — populated by JS from clicks anywhere on the site #}

@@ -80,7 +80,7 @@
           <th class="num">Age</th>
           <th class="num">G</th><th class="num">GS</th><th class="num">W</th><th class="num">L</th>
           <th class="num" title="Weighted ERA">wERA</th>
-          <th class="num" title="Expected FIP (O27)">xFIP</th>
+          <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA">xRA</th>
           <th class="num">ER</th><th class="num">OUT</th><th class="num">K</th>
           <th class="num" title="(K + foul-outs) / BF">K%</th>
         </tr></thead>
@@ -94,7 +94,7 @@
           <td class="num">{{ p.w or 0 }}</td>
           <td class="num">{{ p.l or 0 }}</td>
           <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
-          <td class="num" data-sort-value="{{ '%.3f'|format(p.xfip or 0) }}">{{ '%.2f'|format(p.xfip or 0) }}</td>
+          <td class="num" data-sort-value="{{ '%.3f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
           <td class="num">{{ p.er or 0 }}</td>
           <td class="num" data-sort-value="{{ p.outs or 0 }}">{{ p.outs or 0 }}</td>
           <td class="num">{{ p.k or 0 }}</td>

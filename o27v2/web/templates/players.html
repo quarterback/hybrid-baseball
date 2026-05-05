@@ -128,7 +128,7 @@
       <th class="num">G</th><th class="num">GS</th><th class="num">W</th><th class="num">L</th>
       <th class="num">Outs</th>
       <th class="num" title="Weighted ERA">wERA</th>
-      <th class="num" title="Expected FIP (O27)">xFIP</th>
+      <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA">xRA</th>
       <th class="num" title="(K + foul-outs) / BF">K%</th>
       <th class="num">BB%</th>
       <th class="num" title="Outs Share Plus (100 = league avg)">OS+</th>
@@ -145,7 +145,7 @@
       <td class="num">{{ p.l or 0 }}</td>
       <td class="num">{{ p.outs or 0 }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
-      <td class="num" data-sort-value="{{ '%.3f'|format(p.xfip or 0) }}">{{ '%.2f'|format(p.xfip or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num">{{ '%.1f'|format((p.k_pct or 0) * 100) }}%</td>
       <td class="num">{{ '%.1f'|format((p.bb_pct or 0) * 100) }}%</td>
       <td class="num">{{ (p.os_plus or 100)|round|int }}</td>

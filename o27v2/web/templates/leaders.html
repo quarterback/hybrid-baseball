@@ -73,7 +73,7 @@
 
 <h4>Batting · O27-Native &amp; Value</h4>
 <div class="row g-3 mb-3">
-  {{ card('Stay%', 'stay_pct', '%.3f', true,  batting, tooltip='Share of PAs the batter chose to stay') }}
+  {{ card('2C', 'stays', '%d', true,  batting, tooltip='Second-Chance ABs — chose 2C over run on contact (O27)') }}
   {{ card('SB',    'sb',       '%d',   true,  batting) }}
   {{ card('WAR',   'war',      '%.2f', true,  batting, tooltip='Total WAR (offense + defense)') }}
   {{ card('DRS',   'drs',      '%+.1f',true,  batting, tooltip='Defensive runs saved') }}
@@ -85,7 +85,7 @@
 <h4 class="mt-4">Pitching · Result-Tier (the trio)</h4>
 <div class="row g-3 mb-3">
   {{ card('wERA',        'werra',    '%.2f',  false, pitching, tooltip='Weighted ERA — runs allowed weighted by arc position (outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20)') }}
-  {{ card('xFIP',        'xfip',     '%.2f',  false, pitching, tooltip='Expected FIP (O27): defense-independent — (13·HR + 3·BB - 2·(K+FO)) per 27 outs, league-anchored to wERA') }}
+  {{ card('xRA',        'xra',     '%.2f',  false, pitching, tooltip='Expected Runs Allowed — non-negative linear-weights formula (HR=1.4, single≈0.45, BB/HBP=0.32), multiplicatively anchored so league xRA = league wERA') }}
   {{ card('Decay (low)', 'decay',    '%+.1f', false, pitching, tooltip='K%_arc1 - K%_arc3 (points). 0 = perfectly durable, 30+ = significant late-arc fade') }}
   {{ card('GSc+',        'gsc_plus', '%d',    true,  pitching, tooltip='League-relative Game Score (100 = league avg, higher = better)') }}
 </div>
@@ -110,11 +110,11 @@
   <summary class="text-secondary small" style="cursor:pointer">Methodology</summary>
   <div class="text-secondary small mt-2 p-3" style="background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--radius);line-height:1.55">
     <strong>Batting</strong> rates are PA-denominated. PAVG = H/PA; OPS+ / wOBA+ are league-relativized (100 = league avg, higher = better).
-    <strong>Stay%</strong> is the rate at which a batter chose <em>stay</em> over <em>run</em> on a contact event with runners on — the load-bearing O27 mechanic.
+    <strong>2C</strong> (Second-Chance ABs) counts contact events where the batter chose to stay (and earned a hit while spending a strike from their AB-budget) instead of run. The load-bearing O27 mechanic. Listed as a counting stat — the underlying rate is 1-3% of PAs league-wide, too small to read as a percentage.
     <br><br>
     <strong>Pitching</strong> uses three result-tier metrics that each tell a different story.
     <strong>wERA</strong> weights earned runs by arc position (outs 1–9 ×0.85, 10–18 ×1.00, 19–27 ×1.20) and league-anchors to raw ER/27.
-    <strong>xFIP</strong> strips out batted-ball luck and defense — (13·HR + 3·BB − 2·(K + foul-outs)) per 27 outs, re-fit each render so league xFIP = league wERA.
+    <strong>xRA</strong> (Expected Runs Allowed) is a non-negative linear-weights formula — coefficients HR ≈ 1.4, single ≈ 0.45, BB / HBP ≈ 0.32, K / out = 0 — multiplicatively anchored so league xRA = league wERA. Replaces the previous xFIP column, which produced negative values for high-K small-sample pitchers because the FIP coefficient sign convention.
     <strong>Decay</strong> measures late-arc fade (K%_arc1 − K%_arc3 in points; lower = more durable).
     <strong>GSc</strong> is a per-appearance Game Score (50 = neutral, 100 = perfection). <strong>OS+</strong> is league-relative outs per appearance (100 = avg).
     PA-rate <strong>K%</strong> counts foul-outs as Ks. WAR uses an O27-fitted runs-per-win factor (~21 vs MLB's ~10). W/L credits an SP with ≥ 12 outs and the lead, otherwise the most-effective reliever.

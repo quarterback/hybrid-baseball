@@ -187,7 +187,7 @@
       {{ stat_row('HBP',   'bt_totals', 'hbp') }}
       {{ stat_row('SB',    'bt_totals', 'sb')  }}
       {{ stat_row('CS',    'bt_totals', 'cs')  }}
-      {{ stat_row('Stays', 'bt_totals', 'stays', '%d', '', 'O27 — chose stay over run on contact') }}
+      {{ stat_row('2C', 'bt_totals', 'stays', '%d', '', 'Second-Chance ABs — chose 2C over run on contact (O27)') }}
       {{ stat_row('PAVG',  'bt_totals', 'pavg', '%.3f', 'fw-bold') }}
       {{ stat_row('OBP',   'bt_totals', 'obp',  '%.3f') }}
       {{ stat_row('SLG',   'bt_totals', 'slg',  '%.3f') }}
@@ -195,14 +195,16 @@
       {{ stat_row('OPS+',  'bt_totals', 'ops_plus', '%d') }}
       {{ stat_row('wOBA',  'bt_totals', 'woba', '%.3f') }}
       {{ stat_row('wOBA+', 'bt_totals', 'woba_plus', '%d') }}
-      {{ stat_row('BAVG',  'bt_totals', 'bavg', '%.3f', '', 'H/AB — stayer-profile metric') }}
+      {{ stat_row('BAVG',  'bt_totals', 'bavg', '%.3f', '', 'H/AB — second-chance-AB profile metric') }}
       {{ stat_row('Δstay', 'bt_totals', 'stay_diff', '%+.3f') }}
       {{ stat_row('ISO',   'bt_totals', 'iso',  '%.3f') }}
       {{ stat_row('BABIP', 'bt_totals', 'babip', '%.3f') }}
       {{ pct_row('K%',     'bt_totals', 'k_pct') }}
       {{ pct_row('BB%',    'bt_totals', 'bb_pct') }}
       {{ pct_row('HR%',    'bt_totals', 'hr_pct') }}
-      {{ pct_row('Stay%',  'bt_totals', 'stay_pct') }}
+      {# Stay% dropped — readout was ~1.6% league-wide, too small to read.
+         The 2C count above + BAVG (which surfaces the multi-hit signal)
+         carry the same information more legibly. #}
       {{ pct_row('FO%',    'bt_totals', 'fo_pct') }}
       {{ stat_row('DRS',   'bt_totals', 'drs',  '%+.1f') }}
       {{ stat_row('dWAR',  'bt_totals', 'dwar', '%+.2f') }}
@@ -245,7 +247,7 @@
       {{ stat_row('FO',   'pt_totals', 'fo_induced', '%d', '', 'O27 — foul-outs induced') }}
       {{ stat_row('P',    'pt_totals', 'pitches') }}
       {{ stat_row('wERA', 'pt_totals', 'werra', '%.2f', 'fw-bold', 'arc-weighted ERA — outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20') }}
-      {{ stat_row('xFIP', 'pt_totals', 'xfip',  '%.2f', '', 'O27 expected FIP') }}
+      {{ stat_row('xRA', 'pt_totals', 'xra',  '%.2f', '', 'O27 expected FIP') }}
       <tr title="K%_arc1 - K%_arc3 — late-arc fade signal">
         <td class="text-secondary">Decay</td>
         {% for o in players %}

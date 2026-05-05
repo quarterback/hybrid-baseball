@@ -122,43 +122,35 @@
   <div class="table-responsive">
 
   {% if view == 'standard' %}
+  {# Locked 10-col Standard view: G, PA, H, HR, RBI, BB, SO, PAVG, OPS, OPS+.
+     Three column groups separated by extra padding via .col-group-end:
+     identity | counting | rate. Bold the headline cells (PAVG, OPS, OPS+). #}
   <table class="table dense-table sortable mb-0">
     <thead><tr>
-      <th>Name</th><th>Tm</th><th>Pos</th>
+      <th>Name</th><th>Tm</th><th class="col-group-end">Pos</th>
       <th class="num">G</th><th class="num">PA</th>
       <th class="num">H</th><th class="num">HR</th><th class="num">RBI</th>
-      <th class="num">R</th><th class="num">BB</th><th class="num">SO</th><th class="num">SB</th>
-      <th class="num" title="Plate Average — H / PA">PAVG</th>
-      <th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
-      <th class="num">OPS+</th><th class="num">wOBA</th>
-      <th class="num">BAVG</th><th class="num" title="Share of PAs the batter chose to stay">Stay%</th>
-      <th class="num">DRS</th><th class="num">WAR</th>
+      <th class="num">BB</th><th class="num col-group-end">SO</th>
+      <th class="num fw-bold" title="Plate Average — H / PA">PAVG</th>
+      <th class="num fw-bold">OPS</th>
+      <th class="num fw-bold" title="OPS relative to league avg (100 = avg)">OPS+</th>
     </tr></thead>
     <tbody>
     {% for b in batters %}
     <tr>
       <td><a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
       <td><a href="{{ url_for('team_detail', team_id=b.team_id) }}" class="team-abbrev">{{ b.team_abbrev }}</a></td>
-      <td class="text-secondary">{{ b.position }}</td>
+      <td class="text-secondary col-group-end">{{ b.position }}</td>
       <td class="num">{{ b.g or 0 }}</td>
       <td class="num">{{ b.pa or 0 }}</td>
       <td class="num fw-bold">{{ b.h or 0 }}</td>
       <td class="num">{{ b.hr or 0 }}</td>
       <td class="num">{{ b.rbi or 0 }}</td>
-      <td class="num">{{ b.r or 0 }}</td>
       <td class="num">{{ b.bb or 0 }}</td>
-      <td class="num">{{ b.k or 0 }}</td>
-      <td class="num">{{ b.sb or 0 }}</td>
+      <td class="num col-group-end">{{ b.k or 0 }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.pavg) }}">{{ '%.3f'|format(b.pavg) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(b.obp) }}">{{ '%.3f'|format(b.obp) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(b.slg) }}">{{ '%.3f'|format(b.slg) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.ops) }}">{{ '%.3f'|format(b.ops) }}</td>
-      <td class="num" data-sort-value="{{ '%.1f'|format(b.ops_plus) }}">{{ b.ops_plus|round|int }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(b.woba) }}">{{ '%.3f'|format(b.woba) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(b.bavg) }}">{{ '%.3f'|format(b.bavg) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_pct) }}">{{ '%.1f'|format(b.stay_pct * 100) }}%</td>
-      <td class="num" data-sort-value="{{ '%.2f'|format(b.drs) }}">{{ '%+.1f'|format(b.drs) }}</td>
-      <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(b.war) }}">{{ '%.2f'|format(b.war) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.1f'|format(b.ops_plus) }}">{{ b.ops_plus|round|int }}</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -175,13 +167,13 @@
       <th class="num">PAVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
       <th class="num">OPS+</th><th class="num">wOBA</th><th class="num">wOBA+</th>
       <th class="num">BAVG</th>
-      <th class="num" title="BAVG - PAVG">Δstay</th>
+      <th class="num" title="BAVG - PAVG; quantifies 2C-driven hit value">Δ2C</th>
       <th class="num">ISO</th><th class="num">BABIP</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
-      <th class="num">Stay%</th>
+      <th class="num" title="Second-Chance ABs (count, O27)">2C</th>
       <th class="num" title="Foul-out rate">FO%</th>
       <th class="num" title="Multi-hit AB rate">MhAB%</th>
-      <th class="num">DRS</th><th class="num">dWAR</th><th class="num">WAR</th>
+      <th class="num">DRS</th><th class="num">dWAR</th><th class="num fw-bold">WAR</th>
     </tr></thead>
     <tbody>
     {% for b in batters %}
@@ -214,7 +206,7 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(b.k_pct) }}">{{ '%.1f'|format(b.k_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.bb_pct) }}">{{ '%.1f'|format(b.bb_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.hr_pct) }}">{{ '%.1f'|format(b.hr_pct * 100) }}%</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_pct) }}">{{ '%.1f'|format(b.stay_pct * 100) }}%</td>
+      <td class="num">{{ b.stays or 0 }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.fo_pct) }}">{{ '%.1f'|format(b.fo_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.mhab_pct) }}">{{ '%.1f'|format(b.mhab_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(b.drs) }}">{{ '%+.1f'|format(b.drs) }}</td>
@@ -236,17 +228,17 @@
       <th class="num">SB</th><th class="num">CS</th>
       <th class="num" title="Times reached on error">ROE</th>
       <th class="num">FO</th>
-      <th class="num" title="Stays — chose stay over run on contact">Stays</th>
+      <th class="num" title="Second-Chance ABs — chose 2C over run on contact (O27)">2C</th>
       <th class="num" title="Multi-hit AB count">MhAB</th>
-      <th class="num" title="RBI on stay decisions">StayRBI</th>
+      <th class="num" title="RBI on 2C decisions">2C-RBI</th>
       <th class="num" title="Putouts as fielder">PO</th>
       <th class="num" title="Errors committed">E</th>
       <th class="num">PAVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
       <th class="num">OPS+</th><th class="num">wOBA</th><th class="num">wOBA+</th>
-      <th class="num">BAVG</th><th class="num">Δstay</th>
+      <th class="num">BAVG</th><th class="num" title="BAVG - PAVG">Δ2C</th>
       <th class="num">ISO</th><th class="num">BABIP</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th><th class="num">BB/K</th>
-      <th class="num">Stay%</th><th class="num">FO%</th><th class="num">MhAB%</th><th class="num">SB%</th>
+      <th class="num" title="Second-Chance ABs per 100 PA — O27 rate">2C/100</th><th class="num">FO%</th><th class="num">MhAB%</th><th class="num">SB%</th>
       <th class="num">Def</th><th class="num">DRS</th><th class="num">dWAR</th>
       <th class="num">oVORP</th><th class="num">oWAR</th><th class="num">WAR</th>
     </tr></thead>
@@ -292,7 +284,7 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(b.bb_pct) }}">{{ '%.1f'|format(b.bb_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.hr_pct) }}">{{ '%.1f'|format(b.hr_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.3f'|format(b.bb_k) }}">{{ '%.2f'|format(b.bb_k) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_pct) }}">{{ '%.1f'|format(b.stay_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_pct) }}">{{ '%.2f'|format(b.stay_pct * 100) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.fo_pct) }}">{{ '%.1f'|format(b.fo_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.mhab_pct) }}">{{ '%.1f'|format(b.mhab_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.sb_pct) }}">{% if (b.sb + b.cs) > 0 %}{{ '%.1f'|format(b.sb_pct * 100) }}%{% else %}—{% endif %}</td>
@@ -328,46 +320,34 @@
   <div class="table-responsive">
 
   {% if view == 'standard' %}
+  {# Locked 10-col Standard view: G, GS, W, L, OUT, K, BB, wERA, xRA, K-BB%.
+     Identity | record | counting | rate (rate group bolded). #}
   <table class="table dense-table sortable mb-0">
     <thead><tr>
-      <th>Name</th><th>Tm</th>
+      <th>Name</th><th class="col-group-end">Tm</th>
       <th class="num">G</th><th class="num">GS</th>
-      <th class="num">W</th><th class="num">L</th>
-      <th class="num">Outs</th><th class="num">BF</th>
-      <th class="num">K</th><th class="num">BB</th><th class="num">HR</th><th class="num">FO</th>
-      <th class="num" title="Weighted ERA">wERA</th>
-      <th class="num" title="Expected FIP (O27)">xFIP</th>
-      <th class="num" title="Late-arc fade signal">Decay</th>
-      <th class="num" title="Avg per-appearance Game Score">GSc</th>
-      <th class="num">GSc+</th>
-      <th class="num" title="League-relative outs/appearance">OS+</th>
-      <th class="num">K%</th><th class="num">BB%</th>
-      <th class="num">WAR</th>
+      <th class="num">W</th><th class="num col-group-end">L</th>
+      <th class="num">Outs</th>
+      <th class="num">K</th><th class="num col-group-end">BB</th>
+      <th class="num fw-bold" title="Weighted ERA — arc-weighted runs allowed">wERA</th>
+      <th class="num fw-bold" title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA">xRA</th>
+      <th class="num fw-bold" title="(K - BB) / BF — quick-read dominance signal">K-BB%</th>
     </tr></thead>
     <tbody>
     {% for p in pitchers %}
     <tr>
       <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
-      <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
+      <td class="col-group-end"><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
       <td class="num">{{ p.g or 0 }}</td>
       <td class="num">{{ p.gs or 0 }}</td>
       <td class="num">{{ p.w or 0 }}</td>
-      <td class="num">{{ p.l or 0 }}</td>
+      <td class="num col-group-end">{{ p.l or 0 }}</td>
       <td class="num">{{ p.outs or 0 }}</td>
-      <td class="num">{{ p.bf or 0 }}</td>
       <td class="num fw-bold">{{ p.k or 0 }}</td>
-      <td class="num">{{ p.bb or 0 }}</td>
-      <td class="num">{{ p.hr_allowed or 0 }}</td>
-      <td class="num">{{ p.fo_induced or 0 }}</td>
+      <td class="num col-group-end">{{ p.bb or 0 }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.xfip or 0) }}">{{ '%.2f'|format(p.xfip or 0) }}</td>
-      <td class="num" data-sort-value="{{ '%.2f'|format(p.decay) }}">{% if p.decay_known %}{{ '%+.1f'|format(p.decay) }}{% else %}—{% endif %}</td>
-      <td class="num" data-sort-value="{{ '%.2f'|format(p.gsc_avg or 0) }}">{{ '%.1f'|format(p.gsc_avg or 0) }}</td>
-      <td class="num" data-sort-value="{{ '%.0f'|format(p.gsc_plus or 100) }}">{{ (p.gsc_plus or 100)|round|int }}</td>
-      <td class="num" data-sort-value="{{ '%.0f'|format(p.os_plus or 100) }}">{{ (p.os_plus or 100)|round|int }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.k_pct) }}">{{ '%.1f'|format(p.k_pct * 100) }}%</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.bb_pct) }}">{{ '%.1f'|format(p.bb_pct * 100) }}%</td>
-      <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.war) }}">{{ '%.2f'|format(p.war) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.k_minus_bb_pct or 0) }}">{{ '%.1f'|format((p.k_minus_bb_pct or 0) * 100) }}%</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -383,7 +363,7 @@
       <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
       <th class="num">BB</th><th class="num">K</th><th class="num">HR</th><th class="num">FO</th>
       <th class="num">P</th>
-      <th class="num">wERA</th><th class="num">xFIP</th><th class="num">Decay</th>
+      <th class="num">wERA</th><th class="num">xRA</th><th class="num">Decay</th>
       <th class="num">GSc</th><th class="num">GSc+</th>
       <th class="num">OS+</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
@@ -414,7 +394,7 @@
       <td class="num">{{ p.fo_induced or 0 }}</td>
       <td class="num">{{ p.pitches or 0 }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.xfip or 0) }}">{{ '%.2f'|format(p.xfip or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.decay) }}">{% if p.decay_known %}{{ '%+.1f'|format(p.decay) }}{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.gsc_avg or 0) }}">{{ '%.1f'|format(p.gsc_avg or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.0f'|format(p.gsc_plus or 100) }}">{{ (p.gsc_plus or 100)|round|int }}</td>
@@ -452,7 +432,7 @@
       <th class="num">Ka1</th><th class="num">Ka2</th><th class="num">Ka3</th>
       <th class="num">FOa1</th><th class="num">FOa2</th><th class="num">FOa3</th>
       <th class="num">BFa1</th><th class="num">BFa2</th><th class="num">BFa3</th>
-      <th class="num">wERA</th><th class="num">xFIP</th><th class="num">Decay</th>
+      <th class="num">wERA</th><th class="num">xRA</th><th class="num">Decay</th>
       <th class="num">GSc</th><th class="num">GSc+</th>
       <th class="num">OS+</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
@@ -496,7 +476,7 @@
       <td class="num">{{ p.bf_arc2 or 0 }}</td>
       <td class="num">{{ p.bf_arc3 or 0 }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
-      <td class="num" data-sort-value="{{ '%.4f'|format(p.xfip or 0) }}">{{ '%.2f'|format(p.xfip or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.decay) }}">{% if p.decay_known %}{{ '%+.1f'|format(p.decay) }}{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.gsc_avg or 0) }}">{{ '%.1f'|format(p.gsc_avg or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.0f'|format(p.gsc_plus or 100) }}">{{ (p.gsc_plus or 100)|round|int }}</td>

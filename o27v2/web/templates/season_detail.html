@@ -159,11 +159,11 @@
   <div class="col-lg-6">
     <h5 class="text-secondary text-uppercase small">Pitching Leaders</h5>
     {# Storage note: season_pitching_leaders reuses its `era` column to
-       hold wERA values for go-forward archives, and `fip` for xFIP.
+       hold wERA values for go-forward archives, and `fip` for xRA.
        Old archived seasons keep their original ERA/FIP semantics. #}
     {{ pit_table('W',     pitching.get('w',     []), 'w',     '%d') }}
     {{ pit_table('wERA',  pitching.get('werra', pitching.get('era', [])), 'era', '%.2f') }}
-    {{ pit_table('xFIP',  pitching.get('xfip',  pitching.get('fip', [])), 'fip', '%.2f') }}
+    {{ pit_table('xRA',  pitching.get('xra',  pitching.get('fip', [])), 'fip', '%.2f') }}
     {{ pit_table('K',     pitching.get('k',     []), 'k',     '%d') }}
     {{ pit_table('OAVG',  pitching.get('oavg',  []), 'oavg',  '%.3f') }}
   </div>
