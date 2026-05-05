@@ -2022,6 +2022,7 @@ def stats_browse():
     return render_template(
         "stats_browse.html",
         side=side,
+        view=view,
         team_arg=team_arg,
         pos_arg=pos_arg,
         min_pa=min_pa,
@@ -2130,6 +2131,86 @@ def leaders():
         min_pa=min_pa, min_outs=min_outs,
         batting=batting, pitching=pitching,
     )
+
+
+def _player_batting_split(player_id: int, team_id: int,
+                          where_extra: str, params_extra: tuple,
+                          baselines: dict) -> dict | None:
+    """Aggregate one batting split for a player.
+
+    where_extra: SQL fragment appended to WHERE (must start with ' AND ').
+    params_extra: tuple of params bound into where_extra.
+    Returns a fully-decorated bt_totals dict (post _aggregate_batter_rows),
+    or None if the player has no PA in this split.
+    """
+    bt = db.fetchone(
+        f"""SELECT COUNT(*) as g, SUM(bs.pa) as pa, SUM(bs.ab) as ab,
+                   SUM(bs.hits) as h,
+                   SUM(bs.doubles) as d2, SUM(bs.triples) as d3,
+                   SUM(bs.hr) as hr, SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                   SUM(bs.bb) as bb, SUM(bs.k) as k, SUM(bs.stays) as stays,
+                   COALESCE(SUM(bs.hbp),0) as hbp,
+                   COALESCE(SUM(bs.sb),0)  as sb,
+                   COALESCE(SUM(bs.cs),0)  as cs,
+                   COALESCE(SUM(bs.fo),0)  as fo,
+                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
+                   COALESCE(SUM(bs.stay_rbi),0) as stay_rbi,
+                   COALESCE(SUM(bs.roe),0) as roe
+            FROM game_batter_stats bs
+            JOIN games g ON bs.game_id = g.id
+            WHERE bs.player_id = ?{where_extra}""",
+        (player_id, *params_extra),
+    )
+    if not bt or not (bt.get("pa") or 0):
+        return None
+    row = dict(bt)
+    # Stamp position info so the aggregator can compute pos_def/DRS/dWAR.
+    p = db.fetchone(
+        "SELECT position, defense, defense_infield, defense_outfield, defense_catcher "
+        "FROM players WHERE id = ?", (player_id,))
+    if p:
+        row["position"]         = p["position"]
+        row["defense"]          = p["defense"]
+        row["defense_infield"]  = p["defense_infield"]
+        row["defense_outfield"] = p["defense_outfield"]
+        row["defense_catcher"]  = p["defense_catcher"]
+    _aggregate_batter_rows([row], baselines=baselines)
+    return row
+
+
+def _player_pitching_split(player_id: int,
+                           where_extra: str, params_extra: tuple,
+                           wl: dict, baselines: dict) -> dict | None:
+    """Aggregate one pitching split. Same shape as _player_batting_split."""
+    pt = db.fetchone(
+        f"""SELECT COUNT(*) as g, SUM(ps.batters_faced) as bf,
+                   SUM(ps.outs_recorded) as outs,
+                   SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
+                   SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
+                   SUM(ps.hr_allowed) as hr_allowed,
+                   COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
+                   COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
+                   COALESCE(SUM(ps.unearned_runs),0) as uer,
+                   COALESCE(SUM(ps.sb_allowed),0)    as sb_allowed,
+                   COALESCE(SUM(ps.cs_caught),0)     as cs_caught,
+                   COALESCE(SUM(ps.fo_induced),0)    as fo_induced,
+                   COALESCE(SUM(ps.pitches),0)       as pitches,
+                   COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                   COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
+                   COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                   COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                   COALESCE(SUM(ps.is_starter),0) as gs
+            FROM {_PSTATS_DEDUP_SQL} ps
+            JOIN games g ON ps.game_id = g.id
+            WHERE ps.player_id = ?{where_extra}""",
+        (player_id, *params_extra),
+    )
+    if not pt or not (pt.get("outs") or 0):
+        return None
+    row = dict(pt)
+    row["player_id"] = player_id
+    _aggregate_pitcher_rows([row], wl=wl, baselines=baselines)
+    return row
 
 
 @app.route("/player/<int:player_id>")
@@ -2264,6 +2345,46 @@ def player_detail(player_id: int):
         pt_totals["ws_pct"] = (ws_qual / ws_starts) if ws_starts else 0.0
         pt_totals["gs"]     = ws_starts
 
+    # ---------------------------------------------------------------
+    # Splits (home / away / last 30 days). Computed only if the player
+    # has overall stats — saves the extra queries for cold rows.
+    # ---------------------------------------------------------------
+    splits: dict[str, dict] = {}
+    if bt_totals or pt_totals:
+        last_played = db.fetchone(
+            "SELECT MAX(game_date) AS d FROM games WHERE played = 1"
+        )
+        last_date = (last_played or {}).get("d")
+        last30_cutoff = None
+        if last_date:
+            try:
+                last30_cutoff = (_dt.date.fromisoformat(last_date)
+                                 - _dt.timedelta(days=30)).isoformat()
+            except Exception:
+                last30_cutoff = None
+
+        # Each split is (label, where_extra, params_extra). The team_id
+        # comes from the player; "home" means the player's team was home.
+        team_id = player["team_id"]
+        split_specs: list[tuple[str, str, tuple]] = [
+            ("Home", " AND g.home_team_id = ?", (team_id,)),
+            ("Away", " AND g.away_team_id = ?", (team_id,)),
+        ]
+        if last30_cutoff:
+            split_specs.append(
+                ("Last 30 days", " AND g.game_date >= ?", (last30_cutoff,))
+            )
+
+        for label, extra, ext_params in split_specs:
+            split: dict = {}
+            if bt_totals:
+                split["bt"] = _player_batting_split(
+                    player_id, team_id, extra, ext_params, baselines)
+            if pt_totals:
+                split["pt"] = _player_pitching_split(
+                    player_id, extra, ext_params, wl, baselines)
+            splits[label] = split
+
     return render_template(
         "player.html",
         player=player,
@@ -2272,6 +2393,7 @@ def player_detail(player_id: int):
         bt_totals=bt_totals,
         pt_totals=pt_totals,
         fld_totals=fld_totals,
+        splits=splits,
         baselines=baselines,
     )
 

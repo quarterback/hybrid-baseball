@@ -82,6 +82,7 @@
   <li class="nav-item"><button class="nav-link {% if default_tab == 'pitching' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tab-pitching">Pitching</button></li>
   {% endif %}
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-fielding">Fielding</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-splits">Splits</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ratings">Ratings</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-gamelog">Game Log</button></li>
 </ul>
@@ -386,6 +387,153 @@
   </div>
   {% endif %}
   <p class="text-secondary small">Plays are attributed to a fielder by position-weighted probability per BIP type (grounders cluster at SS/2B; flies at CF; etc.). Errors get charged to the responsible position. Assists and double plays aren't yet tracked separately — only PO and E.</p>
+</div>
+
+{# ======================== SPLITS TAB ======================== #}
+<div class="tab-pane fade" id="tab-splits">
+  {% if not splits or (splits and not splits.values()|selectattr('bt')|list and not splits.values()|selectattr('pt')|list) %}
+  <div class="panel panel-body text-center text-secondary small">No split data yet — splits populate once the player has appeared in games on both sides (home / away).</div>
+  {% else %}
+
+  {# Build a comparison table: rows = stats, columns = Overall + each split.
+     Two tables when the player has both batting and pitching. #}
+
+  {% if bt_totals %}
+  {% set bt_split_labels = ['Overall'] + splits.keys() | list %}
+  {% set bt_split_data = [bt_totals] + (splits.values() | map(attribute='bt') | list) %}
+  <div class="panel mb-3">
+    <div class="panel-head">
+      <span>Batting Splits</span>
+      <span class="ms-auto sub">all rate stats are league-baseline-relativized to the season; counting stats are raw within-split totals</span>
+    </div>
+    <div class="table-responsive">
+    <table class="table dense-table mb-0">
+      <thead><tr>
+        <th>Stat</th>
+        {% for label in bt_split_labels %}<th class="num">{{ label }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        {% macro brow(label, key, fmt='%d', stretch_cls='', tooltip='') %}
+        <tr {% if tooltip %}title="{{ tooltip }}"{% endif %}>
+          <td class="text-secondary">{{ label }}</td>
+          {% for d in bt_split_data %}
+            <td class="num {{ stretch_cls }}">{% if d %}{{ fmt|format(d[key] or 0) }}{% else %}—{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endmacro %}
+        {{ brow('G',     'g')   }}
+        {{ brow('PA',    'pa')  }}
+        {{ brow('AB',    'ab')  }}
+        {{ brow('H',     'h',   '%d', 'fw-bold') }}
+        {{ brow('2B',    'd2')  }}
+        {{ brow('3B',    'd3')  }}
+        {{ brow('HR',    'hr')  }}
+        {{ brow('RBI',   'rbi') }}
+        {{ brow('R',     'r')   }}
+        {{ brow('BB',    'bb')  }}
+        {{ brow('SO',    'k')   }}
+        {{ brow('SB',    'sb')  }}
+        {{ brow('PAVG',  'pavg', '%.3f', 'fw-bold') }}
+        {{ brow('OBP',   'obp',  '%.3f') }}
+        {{ brow('SLG',   'slg',  '%.3f') }}
+        {{ brow('OPS',   'ops',  '%.3f', 'fw-bold') }}
+        {{ brow('OPS+',  'ops_plus', '%d') }}
+        {{ brow('wOBA',  'woba', '%.3f') }}
+        {{ brow('BAVG',  'bavg', '%.3f') }}
+        <tr>
+          <td class="text-secondary" title="Share of PAs the batter chose to stay (O27)">Stay%</td>
+          {% for d in bt_split_data %}
+          <td class="num">{% if d %}{{ '%.1f'|format((d.stay_pct or 0) * 100) }}%{% else %}—{% endif %}</td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <td class="text-secondary">WAR</td>
+          {% for d in bt_split_data %}
+          <td class="num fw-bold">{% if d %}{{ '%.2f'|format(d.war or 0) }}{% else %}—{% endif %}</td>
+          {% endfor %}
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pt_totals %}
+  {% set pt_split_labels = ['Overall'] + splits.keys() | list %}
+  {% set pt_split_data = [pt_totals] + (splits.values() | map(attribute='pt') | list) %}
+  <div class="panel mb-3">
+    <div class="panel-head">
+      <span>Pitching Splits</span>
+      <span class="ms-auto sub">arc-bucketed metrics (wERA / Decay) recompute per split using only that subset's arc counts</span>
+    </div>
+    <div class="table-responsive">
+    <table class="table dense-table mb-0">
+      <thead><tr>
+        <th>Stat</th>
+        {% for label in pt_split_labels %}<th class="num">{{ label }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        {% macro prow(label, key, fmt='%d', stretch_cls='', tooltip='') %}
+        <tr {% if tooltip %}title="{{ tooltip }}"{% endif %}>
+          <td class="text-secondary">{{ label }}</td>
+          {% for d in pt_split_data %}
+            <td class="num {{ stretch_cls }}">{% if d %}{{ fmt|format(d[key] or 0) }}{% else %}—{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endmacro %}
+        {{ prow('G',    'g')  }}
+        {{ prow('GS',   'gs') }}
+        {{ prow('W',    'w')  }}
+        {{ prow('L',    'l')  }}
+        {{ prow('BF',   'bf') }}
+        {{ prow('Outs', 'outs') }}
+        {{ prow('K',    'k', '%d', 'fw-bold') }}
+        {{ prow('BB',   'bb') }}
+        {{ prow('HR',   'hr_allowed') }}
+        {{ prow('FO',   'fo_induced') }}
+        {{ prow('wERA', 'werra', '%.2f', 'fw-bold') }}
+        {{ prow('xFIP', 'xfip',  '%.2f') }}
+        <tr>
+          <td class="text-secondary">Decay</td>
+          {% for d in pt_split_data %}
+          <td class="num">{% if d and d.decay_known %}{{ '%+.1f'|format(d.decay) }}{% elif d %}—{% else %}—{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {{ prow('GSc avg', 'gsc_avg', '%.1f') }}
+        {{ prow('GSc+',    'gsc_plus', '%d') }}
+        {{ prow('OS+',     'os_plus',  '%d') }}
+        <tr>
+          <td class="text-secondary" title="(K + foul-outs) / BF">K%</td>
+          {% for d in pt_split_data %}
+          <td class="num">{% if d %}{{ '%.1f'|format((d.k_pct or 0) * 100) }}%{% else %}—{% endif %}</td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <td class="text-secondary">BB%</td>
+          {% for d in pt_split_data %}
+          <td class="num">{% if d %}{{ '%.1f'|format((d.bb_pct or 0) * 100) }}%{% else %}—{% endif %}</td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <td class="text-secondary">WAR</td>
+          {% for d in pt_split_data %}
+          <td class="num fw-bold">{% if d %}{{ '%.2f'|format(d.war or 0) }}{% else %}—{% endif %}</td>
+          {% endfor %}
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <p class="text-secondary small mt-2">
+    <strong>Splits</strong> available: <strong>Home</strong> (player's team was home),
+    <strong>Away</strong> (player's team was away), <strong>Last 30 days</strong>
+    (rolling window from the league's most recent played date). All rate stats are
+    relativized against full-season league baselines, not split-specific baselines.
+  </p>
+
+  {% endif %}
 </div>
 
 {# ======================== RATINGS TAB ======================== #}
