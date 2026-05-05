@@ -186,6 +186,9 @@
         <th class="num" title="OPS relative to league avg (100 = avg)">OPS+</th>
         <th class="num" title="wOBA relative to league avg (100 = avg)">wOBA+</th>
         <th class="num" title="Second-Chance ABs — chose 2C over run on contact">2C</th>
+        <th class="num" title="RBI driven by 2C events">2C-RBI</th>
+        <th class="num" title="Share of total RBI driven by 2C — elite contact hitters should exceed league mean">2C-RBI%</th>
+        <th class="num" title="RBI per 2C event">2C-RBI/2C</th>
         <th class="num" title="Foul-out rate — share of PAs ending in 3-foul out">FO%</th>
         <th class="num" title="Multi-hit AB rate — share of ABs with 2+ credited hits">MhAB%</th>
         <th class="num" title="SB success rate on attempts">SB%</th>
@@ -203,6 +206,9 @@
         <td class="num">{{ bt_totals.ops_plus|round|int }}</td>
         <td class="num">{{ bt_totals.woba_plus|round|int }}</td>
         <td class="num">{{ bt_totals.stays or 0 }}</td>
+        <td class="num">{{ bt_totals.stay_rbi or 0 }}</td>
+        <td class="num">{{ '%.1f'|format(bt_totals.stay_rbi_pct * 100) }}%</td>
+        <td class="num">{{ '%.2f'|format(bt_totals.stay_rbi_per_stay) }}</td>
         <td class="num">{{ '%.1f'|format(bt_totals.fo_pct * 100) }}%</td>
         <td class="num">{{ '%.1f'|format(bt_totals.mhab_pct * 100) }}%</td>
         <td class="num">{% if (bt_totals.sb + bt_totals.cs) > 0 %}{{ '%.1f'|format(bt_totals.sb_pct * 100) }}%{% else %}—{% endif %}</td>

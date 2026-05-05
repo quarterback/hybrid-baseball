@@ -171,6 +171,9 @@
       <th class="num">ISO</th><th class="num">BABIP</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
       <th class="num" title="Second-Chance ABs (count, O27)">2C</th>
+      <th class="num" title="RBI driven by 2C events">2C-RBI</th>
+      <th class="num" title="Share of total RBI driven by 2C; elite contact hitters should exceed league mean">2C-RBI%</th>
+      <th class="num" title="RBI per 2C event">2C-RBI/2C</th>
       <th class="num" title="Foul-out rate">FO%</th>
       <th class="num" title="Multi-hit AB rate">MhAB%</th>
       <th class="num">DRS</th><th class="num">dWAR</th><th class="num fw-bold">WAR</th>
@@ -207,6 +210,9 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(b.bb_pct) }}">{{ '%.1f'|format(b.bb_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.hr_pct) }}">{{ '%.1f'|format(b.hr_pct * 100) }}%</td>
       <td class="num">{{ b.stays or 0 }}</td>
+      <td class="num">{{ b.stay_rbi or 0 }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_rbi_pct) }}">{{ '%.1f'|format(b.stay_rbi_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(b.stay_rbi_per_stay) }}">{{ '%.2f'|format(b.stay_rbi_per_stay) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.fo_pct) }}">{{ '%.1f'|format(b.fo_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.mhab_pct) }}">{{ '%.1f'|format(b.mhab_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(b.drs) }}">{{ '%+.1f'|format(b.drs) }}</td>
@@ -231,6 +237,8 @@
       <th class="num" title="Second-Chance ABs — chose 2C over run on contact (O27)">2C</th>
       <th class="num" title="Multi-hit AB count">MhAB</th>
       <th class="num" title="RBI on 2C decisions">2C-RBI</th>
+      <th class="num" title="Share of total RBI driven by 2C">2C-RBI%</th>
+      <th class="num" title="RBI per 2C event">2C-RBI/2C</th>
       <th class="num" title="Putouts as fielder">PO</th>
       <th class="num" title="Errors committed">E</th>
       <th class="num">PAVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
@@ -267,6 +275,8 @@
       <td class="num">{{ b.stays or 0 }}</td>
       <td class="num">{{ b.mhab or 0 }}</td>
       <td class="num">{{ b.stay_rbi or 0 }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_rbi_pct) }}">{{ '%.1f'|format(b.stay_rbi_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(b.stay_rbi_per_stay) }}">{{ '%.2f'|format(b.stay_rbi_per_stay) }}</td>
       <td class="num">{{ b.po or 0 }}</td>
       <td class="num">{{ b.e or 0 }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.pavg) }}">{{ '%.3f'|format(b.pavg) }}</td>

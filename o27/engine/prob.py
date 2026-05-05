@@ -680,6 +680,7 @@ def resolve_contact(
         "runner_out_idx": runner_out_idx,
         "is_error": is_error,
         "fielder_id": fielder_id,
+        "quality": quality,
     }
 
 

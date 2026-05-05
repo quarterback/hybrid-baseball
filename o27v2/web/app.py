@@ -602,6 +602,12 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         # runners; this surfaces who actually drives in runs while staying.
         stay_rbi = b.get("stay_rbi") or 0
         b["stay_rbi_per_stay"] = (stay_rbi / stays_v) if stays_v else 0.0
+        # Stay-RBI%: fraction of total RBI driven by stays. Diagnostic ratio
+        # for "is the second-chance AB rule pulling its share of offense?"
+        # League-wide ~8-15% under [1,1,1] advancement, higher when stays
+        # advance runners aggressively.
+        rbi_v = b.get("rbi") or 0
+        b["stay_rbi_pct"] = (stay_rbi / rbi_v) if rbi_v else 0.0
         # Foul-out rate (O27's 3-foul cap). High FO% = batter prone to
         # fouling himself out — a real cost in this rule set.
         fo = b.get("fo") or 0
@@ -3411,16 +3417,18 @@ def distributions():
 
     # Stat catalog: (key, label, fmt, side='bat'|'pit', is_pct, hi_lo='lo' if lower-is-better)
     bat_specs = [
-        ("pavg",     "PAVG",   "%.3f", False),
-        ("ops",      "OPS",    "%.3f", False),
-        ("ops_plus", "OPS+",   "%.0f", False),
-        ("woba",     "wOBA",   "%.3f", False),
-        ("bavg",     "BAVG",   "%.3f", False),
-        ("iso",      "ISO",    "%.3f", False),
-        ("babip",    "BABIP",  "%.3f", False),
-        ("k_pct",    "K%",     "%.1f%%", True),
-        ("bb_pct",   "BB%",    "%.1f%%", True),
-        ("war",      "WAR",    "%.2f", False),
+        ("pavg",          "PAVG",     "%.3f", False),
+        ("ops",           "OPS",      "%.3f", False),
+        ("ops_plus",      "OPS+",     "%.0f", False),
+        ("woba",          "wOBA",     "%.3f", False),
+        ("bavg",          "BAVG",     "%.3f", False),
+        ("iso",           "ISO",      "%.3f", False),
+        ("babip",         "BABIP",    "%.3f", False),
+        ("k_pct",         "K%",       "%.1f%%", True),
+        ("bb_pct",        "BB%",      "%.1f%%", True),
+        ("stay_rbi_pct",  "2C-RBI%",  "%.1f%%", True),
+        ("mhab_pct",      "MhAB%",    "%.1f%%", True),
+        ("war",           "WAR",      "%.2f", False),
     ]
     pit_specs = [
         ("werra",         "wERA",      "%.2f", False),
