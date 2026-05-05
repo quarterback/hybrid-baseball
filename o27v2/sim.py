@@ -873,6 +873,10 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
 
     state = GameState(visitors=visitors_team, home=home_team)
     state.current_pitcher_id = _find_pitcher_id(home_team)
+    # Stamp the per-game weather context (drawn at schedule time). prob.py
+    # reads this; everything else passes it through.
+    from o27.engine.weather import Weather
+    state.weather = Weather.from_row(game)
 
     renderer = Renderer()
     provider = ProbabilisticProvider(rng)
