@@ -1796,13 +1796,42 @@ def team_detail_export(team_id: int):
 @app.route("/players")
 def players():
     kind = request.args.get("kind", "batters")
-    if kind not in ("batters", "pitchers", "both"):
+    if kind not in ("batters", "pitchers", "both", "ratings"):
         kind = "batters"
     selected_team_id = request.args.get("team", type=int)
     selected_pos = request.args.get("pos", "") or ""
     q = (request.args.get("q") or "").strip()
     page = max(1, request.args.get("page", 1, type=int))
     per_page = 50
+
+    # Rating-filter URL params. Each is a min threshold on the named
+    # column on `players`. Surfaces the scout-grade attributes that
+    # otherwise weren't filterable anywhere in the app.
+    _RATING_FILTERS = (
+        # column,            label,              applies-to (None = anyone)
+        ("skill",            "Min Skill",        "hitter"),
+        ("power",            "Min Power",        "hitter"),
+        ("contact",          "Min Contact",      "hitter"),
+        ("eye",              "Min Eye",          "hitter"),
+        ("speed",            "Min Speed",        None),
+        ("pitcher_skill",    "Min Stuff",        "pitcher"),
+        ("command",          "Min Command",      "pitcher"),
+        ("movement",         "Min Movement",     "pitcher"),
+        ("stamina",          "Min Stamina",      "pitcher"),
+        ("defense",          "Min Defense",      None),
+        ("arm",              "Min Arm",          None),
+        ("defense_infield",  "Min Def-Infield",  None),
+        ("defense_outfield", "Min Def-Outfield", None),
+        ("defense_catcher",  "Min Def-Catcher",  None),
+    )
+    rating_filters: dict[str, int] = {}
+    for col, _label, _scope in _RATING_FILTERS:
+        v = request.args.get(f"min_{col}")
+        if v:
+            try:
+                rating_filters[col] = int(v)
+            except ValueError:
+                pass
 
     where = []
     params: list = []
@@ -1819,6 +1848,10 @@ def players():
         where.append("p.is_pitcher = 0")
     elif kind == "pitchers":
         where.append("p.is_pitcher = 1")
+    # Ratings view doesn't pre-filter by is_pitcher — show the whole league.
+    for col, threshold in rating_filters.items():
+        where.append(f"p.{col} >= ?")
+        params.append(threshold)
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
 
@@ -1831,6 +1864,10 @@ def players():
 
     base = db.fetchall(
         f"""SELECT p.id, p.name, p.team_id, p.position, p.age, p.is_pitcher, p.is_joker, p.pitcher_role,
+                   p.skill, p.power, p.contact, p.eye, p.speed,
+                   p.pitcher_skill, p.command, p.movement, p.stamina,
+                   p.defense, p.arm, p.defense_infield, p.defense_outfield, p.defense_catcher,
+                   p.archetype,
                    t.abbrev AS team_abbrev
             FROM players p JOIN teams t ON p.team_id = t.id
             {where_sql}
@@ -1839,10 +1876,29 @@ def players():
         tuple(params) + (per_page, offset),
     )
     page_ids = [p["id"] for p in base]
+
+    # If this is the ratings view, no further per-game-stat aggregation
+    # is needed — just hand the base rows to the template.
+    if kind == "ratings":
+        return _serve(
+            "players.html",
+            kind=kind,
+            ratings_rows=base,
+            rating_filters=rating_filters,
+            rating_filter_specs=_RATING_FILTERS,
+            batters=[], pitchers=[],
+            all_teams=db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name"),
+            all_positions=[r["position"] for r in db.fetchall("SELECT DISTINCT position FROM players ORDER BY position")],
+            selected_team_id=selected_team_id, selected_pos=selected_pos, q=q,
+            total=total, page=page, pages=pages,
+        )
+
     if not page_ids:
         return _serve(
             "players.html",
             kind=kind, batters=[], pitchers=[],
+            rating_filters=rating_filters,
+            rating_filter_specs=_RATING_FILTERS,
             all_teams=db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name"),
             all_positions=[r["position"] for r in db.fetchall("SELECT DISTINCT position FROM players ORDER BY position")],
             selected_team_id=selected_team_id, selected_pos=selected_pos, q=q,
@@ -1921,6 +1977,8 @@ def players():
         kind=kind,
         batters=batter_rows,
         pitchers=pitcher_rows,
+        rating_filters=rating_filters,
+        rating_filter_specs=_RATING_FILTERS,
         all_teams=db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name"),
         all_positions=[r["position"] for r in db.fetchall("SELECT DISTINCT position FROM players ORDER BY position")],
         selected_team_id=selected_team_id,
@@ -2288,6 +2346,126 @@ def _player_pitching_split(player_id: int,
     row["player_id"] = player_id
     _aggregate_pitcher_rows([row], wl=wl, baselines=baselines)
     return row
+
+
+def _fetch_player_overview(player_id: int,
+                           baselines: dict | None = None,
+                           wl: dict | None = None) -> dict | None:
+    """Self-contained fetch of one player's player-row + season totals
+    (batting + pitching + fielding). Used by both /player/<id> and
+    /compare. Returns None if the player doesn't exist.
+
+    Keep this lean — no game logs, no splits — so /compare with 4
+    players doesn't fan out to 12+ extra queries.
+    """
+    player = db.fetchone(
+        """SELECT p.*, t.abbrev as team_abbrev, t.name as team_name,
+                  t.id as team_id, t.league as team_league, t.division as team_division
+           FROM players p JOIN teams t ON p.team_id = t.id
+           WHERE p.id = ?""",
+        (player_id,),
+    )
+    if not player:
+        return None
+    if baselines is None:
+        baselines = _league_baselines()
+    if wl is None:
+        wl = _pitcher_wl_map()
+
+    bt = db.fetchone(
+        """SELECT COUNT(*) as g, SUM(pa) as pa, SUM(ab) as ab, SUM(hits) as h,
+                  SUM(doubles) as d2, SUM(triples) as d3, SUM(hr) as hr,
+                  SUM(runs) as r, SUM(rbi) as rbi, SUM(bb) as bb, SUM(k) as k,
+                  SUM(stays) as stays,
+                  COALESCE(SUM(hbp),0) as hbp,
+                  COALESCE(SUM(sb),0)  as sb,
+                  COALESCE(SUM(cs),0)  as cs,
+                  COALESCE(SUM(fo),0)  as fo,
+                  COALESCE(SUM(multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
+           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+    fld = db.fetchone(
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+    pt = db.fetchone(
+        f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
+                   SUM(hits_allowed) as h, SUM(runs_allowed) as r,
+                   SUM(er) as er, SUM(bb) as bb, SUM(k) as k,
+                   SUM(hr_allowed) as hr_allowed,
+                   COALESCE(SUM(hbp_allowed),0)   as hbp_allowed,
+                   COALESCE(SUM(unearned_runs),0) as unearned_runs,
+                   COALESCE(SUM(unearned_runs),0) as uer,
+                   COALESCE(SUM(sb_allowed),0)    as sb_allowed,
+                   COALESCE(SUM(cs_caught),0)     as cs_caught,
+                   COALESCE(SUM(fo_induced),0)    as fo_induced,
+                   COALESCE(SUM(pitches),0)       as pitches,
+                   COALESCE(SUM(er_arc1),0) as er_arc1, COALESCE(SUM(er_arc2),0) as er_arc2, COALESCE(SUM(er_arc3),0) as er_arc3,
+                   COALESCE(SUM(k_arc1),0)  as k_arc1,  COALESCE(SUM(k_arc2),0)  as k_arc2,  COALESCE(SUM(k_arc3),0)  as k_arc3,
+                   COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
+                   COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
+                   COALESCE(SUM(is_starter),0) as gs
+            FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
+
+    bt_totals = None
+    if bt and bt["pa"]:
+        bt_totals = dict(bt)
+        bt_totals["position"]         = player.get("position")
+        bt_totals["defense"]          = player.get("defense")
+        bt_totals["defense_infield"]  = player.get("defense_infield")
+        bt_totals["defense_outfield"] = player.get("defense_outfield")
+        bt_totals["defense_catcher"]  = player.get("defense_catcher")
+        _aggregate_batter_rows([bt_totals], baselines=baselines)
+
+    pt_totals = None
+    if pt and pt["outs"]:
+        pt_totals = dict(pt)
+        pt_totals["player_id"] = player_id
+        _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
+
+    po = (fld["po"] if fld else 0) or 0
+    e  = (fld["e"]  if fld else 0) or 0
+    fld_totals = {
+        "po": po, "e": e, "chances": po + e,
+        "fld_pct": (po / (po + e)) if (po + e) > 0 else None,
+    }
+
+    return {
+        "player":     dict(player),
+        "bt_totals":  bt_totals,
+        "pt_totals":  pt_totals,
+        "fld_totals": fld_totals,
+    }
+
+
+@app.route("/compare")
+def compare():
+    """Side-by-side comparison of 2-4 players.
+
+    URL: /compare?ids=123,456,789
+    JSON: append &format=json for the structured payload.
+    """
+    raw = request.args.get("ids") or request.args.get("id") or ""
+    try:
+        ids = [int(x) for x in raw.replace(" ", "").split(",") if x]
+    except ValueError:
+        ids = []
+    ids = ids[:4]  # cap at 4 — table gets unreadable past that
+
+    baselines = _league_baselines()
+    wl = _pitcher_wl_map()
+
+    overviews: list[dict] = []
+    for pid in ids:
+        ov = _fetch_player_overview(pid, baselines=baselines, wl=wl)
+        if ov is not None:
+            overviews.append(ov)
+
+    return _serve(
+        "compare.html",
+        ids=ids,
+        overviews=overviews,
+        baselines=baselines,
+    )
 
 
 @app.route("/player/<int:player_id>")
