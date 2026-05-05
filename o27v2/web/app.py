@@ -3009,6 +3009,232 @@ def league():
     )
 
 
+# ---------------------------------------------------------------------------
+# /distributions — per-stat histograms + percentile tables for the
+# qualifying-player population. Pairs with /league (which does the same
+# thing at the team level) and answers "where does any one player sit on
+# the league shape?"
+# ---------------------------------------------------------------------------
+
+def _histogram(values: list[float], n_buckets: int = 12,
+               lo: float | None = None, hi: float | None = None) -> dict:
+    """Equal-width histogram. Returns
+        {"buckets": [{"lo","hi","count","pct"}, ...],
+         "min", "max", "n",
+         "percentiles": {"p10","p25","p50","p75","p90","p95","p99"}}.
+    Drops None values. `pct` is each bucket's count / max-bucket-count
+    (0..100), so the template can render bars with `width: NN%`.
+    """
+    import statistics as _st
+    vals = sorted(v for v in values if v is not None)
+    if not vals:
+        return {"n": 0, "buckets": [], "percentiles": {}, "min": 0, "max": 0}
+    v_min = lo if lo is not None else vals[0]
+    v_max = hi if hi is not None else vals[-1]
+    if v_max <= v_min:
+        v_max = v_min + 1e-9
+    width = (v_max - v_min) / n_buckets
+    buckets = []
+    for i in range(n_buckets):
+        b_lo = v_min + i * width
+        b_hi = v_min + (i + 1) * width
+        if i == n_buckets - 1:
+            count = sum(1 for v in vals if b_lo <= v <= b_hi)
+        else:
+            count = sum(1 for v in vals if b_lo <= v < b_hi)
+        buckets.append({"lo": b_lo, "hi": b_hi, "count": count})
+    max_count = max((b["count"] for b in buckets), default=1) or 1
+    for b in buckets:
+        b["pct"] = round((b["count"] / max_count) * 100, 1)
+
+    n = len(vals)
+    def _q(p):
+        if n == 1:
+            return vals[0]
+        idx = (n - 1) * p
+        i = int(idx); j = min(i + 1, n - 1)
+        return vals[i] + (vals[j] - vals[i]) * (idx - i)
+    return {
+        "n":     n,
+        "min":   vals[0],
+        "max":   vals[-1],
+        "mean":  sum(vals) / n,
+        "std":   _st.pstdev(vals) if n > 1 else 0.0,
+        "buckets": buckets,
+        "percentiles": {
+            "p10": _q(0.10), "p25": _q(0.25), "p50": _q(0.50),
+            "p75": _q(0.75), "p90": _q(0.90), "p95": _q(0.95), "p99": _q(0.99),
+        },
+    }
+
+
+@app.route("/distributions")
+def distributions():
+    """Per-stat histograms + percentile tables across the qualifying
+    player population. Pair-page to /league.
+
+    URL: /distributions               — full league
+         /distributions?highlight=42  — also marks where player 42 sits
+         /distributions?format=json   — structured payload
+    """
+    games_played = db.fetchone(
+        "SELECT COUNT(*) as n FROM games WHERE played = 1"
+    )["n"] or 0
+    if games_played == 0:
+        return _serve("distributions.html", games_played=0,
+                      bat_dists={}, pit_dists={}, highlight=None,
+                      highlight_player=None)
+
+    num_teams      = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
+    min_pa   = max(3, games_per_team)
+    min_outs = max(3, games_per_team)
+    baselines = _league_baselines()
+
+    # Reuse the leaders-style aggregate. Same shape, same threshold.
+    batting = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.defense as defense, p.arm as arm,
+                  p.defense_infield as defense_infield,
+                  p.defense_outfield as defense_outfield,
+                  p.defense_catcher as defense_catcher,
+                  t.id as team_id, t.abbrev as team_abbrev,
+                  SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                  SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                  SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                  SUM(bs.bb) as bb, SUM(bs.k) as k,
+                  COALESCE(SUM(bs.hbp),0) as hbp,
+                  COALESCE(SUM(bs.sb),0)  as sb,
+                  COALESCE(SUM(bs.cs),0)  as cs,
+                  COALESCE(SUM(bs.fo),0)  as fo,
+                  COALESCE(SUM(bs.stays),0) as stays,
+                  COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.roe),0) as roe
+           FROM game_batter_stats bs
+           JOIN players p ON bs.player_id = p.id
+           JOIN teams   t ON bs.team_id = t.id
+           GROUP BY p.id
+           HAVING SUM(bs.pa) >= ?""",
+        (min_pa,),
+    )
+    batting = [dict(r) for r in batting]
+    _aggregate_batter_rows(batting, baselines=baselines)
+
+    pitching = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(ps.game_id) as g,
+                  SUM(ps.batters_faced)  as bf,
+                  SUM(ps.outs_recorded)  as outs,
+                  SUM(ps.hits_allowed)   as h, SUM(ps.runs_allowed) as r,
+                  SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
+                  SUM(ps.hr_allowed) as hr_allowed,
+                  COALESCE(SUM(ps.hbp_allowed),0) as hbp_allowed,
+                  COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
+                  COALESCE(SUM(ps.fo_induced),0) as fo_induced,
+                  COALESCE(SUM(ps.pitches),0) as pitches,
+                  COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                  COALESCE(SUM(ps.k_arc1),0) as k_arc1, COALESCE(SUM(ps.k_arc2),0) as k_arc2, COALESCE(SUM(ps.k_arc3),0) as k_arc3,
+                  COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                  COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                  COALESCE(SUM(ps.is_starter),0) as gs
+           FROM {_PSTATS_DEDUP_SQL} ps
+           JOIN players p ON ps.player_id = p.id
+           JOIN teams   t ON ps.team_id = t.id
+           GROUP BY p.id
+           HAVING SUM(ps.outs_recorded) >= ?""",
+        (min_outs,),
+    )
+    pitching = [dict(r) for r in pitching]
+    _aggregate_pitcher_rows(pitching, _pitcher_wl_map(), baselines=baselines)
+
+    # Highlight: optionally mark where one specific player sits.
+    highlight_id_str = request.args.get("highlight") or request.args.get("h") or ""
+    highlight_id = None
+    highlight_player = None
+    if highlight_id_str.isdigit():
+        highlight_id = int(highlight_id_str)
+        # Find the row in either dataset.
+        for r in batting + pitching:
+            if r.get("player_id") == highlight_id:
+                highlight_player = {
+                    "player_id":   r.get("player_id"),
+                    "player_name": r.get("player_name"),
+                    "team_abbrev": r.get("team_abbrev"),
+                }
+                break
+
+    # Stat catalog: (key, label, fmt, side='bat'|'pit', is_pct, hi_lo='lo' if lower-is-better)
+    bat_specs = [
+        ("pavg",     "PAVG",   "%.3f", False),
+        ("ops",      "OPS",    "%.3f", False),
+        ("ops_plus", "OPS+",   "%.0f", False),
+        ("woba",     "wOBA",   "%.3f", False),
+        ("bavg",     "BAVG",   "%.3f", False),
+        ("iso",      "ISO",    "%.3f", False),
+        ("babip",    "BABIP",  "%.3f", False),
+        ("k_pct",    "K%",     "%.1f%%", True),
+        ("bb_pct",   "BB%",    "%.1f%%", True),
+        ("stay_pct", "Stay%",  "%.1f%%", True),
+        ("war",      "WAR",    "%.2f", False),
+    ]
+    pit_specs = [
+        ("werra",    "wERA",      "%.2f", False),
+        ("xfip",     "xFIP",      "%.2f", False),
+        ("decay",    "Decay",     "%+.1f", False),
+        ("gsc_avg",  "GSc avg",   "%.1f", False),
+        ("gsc_plus", "GSc+",      "%.0f", False),
+        ("os_plus",  "OS+",       "%.0f", False),
+        ("k_pct",    "K%",        "%.1f%%", True),
+        ("bb_pct",   "BB%",       "%.1f%%", True),
+        ("hr_pct",   "HR%",       "%.1f%%", True),
+        ("oavg",     "oAVG",      "%.3f", False),
+        ("war",      "WAR",       "%.2f", False),
+    ]
+
+    def _build(rows: list[dict], specs: list, side: str) -> dict:
+        out: dict[str, dict] = {}
+        for key, label, fmt, is_pct in specs:
+            vals = [r.get(key) for r in rows if r.get(key) is not None]
+            # For Decay specifically, only include rows where the player
+            # has cross-arc sample (decay_known).
+            if key == "decay":
+                vals = [r.get(key) for r in rows
+                        if r.get("decay_known") and r.get(key) is not None]
+            h = _histogram(vals, n_buckets=12)
+            h["label"] = label
+            h["fmt"]   = fmt
+            h["is_pct"] = is_pct
+            h["side"]  = side
+            # Where does the highlighted player sit?
+            if highlight_id is not None:
+                for r in rows:
+                    if r.get("player_id") == highlight_id:
+                        h["highlight_value"] = r.get(key)
+                        break
+                else:
+                    h["highlight_value"] = None
+            out[key] = h
+        return out
+
+    bat_dists = _build(batting, bat_specs, "bat")
+    pit_dists = _build(pitching, pit_specs, "pit")
+
+    return _serve(
+        "distributions.html",
+        games_played=games_played,
+        n_batters=len(batting),
+        n_pitchers=len(pitching),
+        min_pa=min_pa,
+        min_outs=min_outs,
+        bat_dists=bat_dists,
+        pit_dists=pit_dists,
+        highlight=highlight_id,
+        highlight_player=highlight_player,
+    )
+
+
 @app.route("/teams")
 def teams():
     teams_list = db.fetchall(
