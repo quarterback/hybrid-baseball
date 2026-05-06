@@ -41,7 +41,7 @@ from flask import (
     jsonify, flash, get_flashed_messages, send_from_directory,
 )
 
-from o27.engine.state import GameState, Team, Player
+from o27.engine.state import GameState, Team, Player, PitchEntry
 from o27.engine.game import run_game
 from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
@@ -64,6 +64,34 @@ def to_grade(v: float) -> int:
         return max(20, min(80, round(20 + float(v) * 60)))
     except (TypeError, ValueError):
         return 50
+
+
+@app.template_filter("pitch_consistency")
+def pitch_consistency(pitch_variance: float) -> float:
+    """Convert pitch_variance to a 0.0–1.0 Consistency score (inverted, clamped)."""
+    from o27 import config as _c
+    try:
+        return max(0.0, min(1.0, 1.0 - float(pitch_variance) / _c.PITCH_VARIANCE_MAX))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 1.0
+
+
+@app.template_filter("release_label")
+def release_label(v: float) -> str:
+    """Convert release_angle float to display string."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "Sidearm"
+    if v <= 0.25:
+        return "Submarine"
+    if v <= 0.45:
+        return "Low Sidearm"
+    if v <= 0.62:
+        return "Sidearm"
+    if v <= 0.80:
+        return "High Sidearm"
+    return "Three-Quarter"
 
 
 # ---------------------------------------------------------------------------
@@ -93,12 +121,32 @@ def _team_obj(team_data: dict, team_id: str) -> Team:
     roster: list[Player] = []
     for i, p in enumerate(team_data["players"]):
         pid = f"{team_id}_{team_data['abbrev']}{i}"
+
+        # Convert serialised repertoire dicts → PitchEntry objects.
+        raw_rep = p.get("repertoire") or []
+        repertoire = [
+            PitchEntry(
+                pitch_type=r["pitch_type"],
+                quality=float(r.get("quality", 0.5)),
+                usage_weight=float(r.get("usage_weight", 1.0)),
+            )
+            for r in raw_rep
+        ]
+
         roster.append(Player(
             player_id=pid,
             name=p["name"],
             skill=p["skill"],
             speed=p["speed"],
             pitcher_skill=p["pitcher_skill"],
+            command=float(p.get("command",  0.5)),
+            movement=float(p.get("movement", 0.5)),
+            stamina=float(p.get("stamina",   0.5)),
+            grit=float(p.get("grit",         0.5)),
+            pitch_variance=float(p.get("pitch_variance", 0.0)),
+            release_angle=float(p.get("release_angle",  0.5)),
+            pitcher_archetype=p.get("pitcher_archetype", ""),
+            repertoire=repertoire,
             stay_aggressiveness=p["stay_aggressiveness"],
             contact_quality_threshold=p["contact_quality_threshold"],
             is_pitcher=p["is_pitcher"],

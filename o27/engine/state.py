@@ -62,6 +62,19 @@ class Count:
 # ---------------------------------------------------------------------------
 
 @dataclass
+class PitchEntry:
+    """One pitch in a pitcher's repertoire.
+
+    pitch_type   — key into config.PITCH_CATALOG
+    quality      — this pitcher's mastery of the pitch (0.0–1.0)
+    usage_weight — relative frequency in neutral situations (un-normalised)
+    """
+    pitch_type:    str
+    quality:       float = 0.5
+    usage_weight:  float = 1.0
+
+
+@dataclass
 class Player:
     """A player on a roster."""
     player_id: str
@@ -100,6 +113,7 @@ class Player:
     # Legacy Phase-8 fields (kept zeroed for backward compatibility with the
     # probability code that still references them; jokers/archetypes are gone).
     archetype: str = ""
+    pitcher_archetype: str = ""
     hard_contact_delta: float = 0.0
     hr_weight_bonus:    float = 0.0
 
@@ -112,6 +126,22 @@ class Player:
     eye:      float = 0.5   # batter: more balls taken, fewer called strikes
     command:  float = 0.5   # pitcher: lower P(ball)
     movement: float = 0.5   # pitcher: bias contact toward weak/ground_out
+
+    # Pitch-quality range — each pitcher has a STATIC half-width around their
+    # central Stuff/Command/Movement ratings. Each pitch samples uniformly in
+    # [rating - pitch_variance, rating + pitch_variance], so a "consistent"
+    # arm (low variance) repeats his stuff every pitch while a "max-effort,
+    # frayed mechanics" arm (high variance) lives on the edges. Identity at
+    # pitch_variance = 0.0 (every pitch == central rating).
+    pitch_variance: float = 0.0
+
+    # Grit — pitcher fatigue resistance. Bounded 0.25–0.75 in roster
+    # generation; at 0.50 the fatigue ramp is unaffected (identity). High
+    # grit lets stuff/movement/command keep playing even when the arm is
+    # past its Stamina threshold; low grit means a pitcher's repertoire
+    # falls apart the moment they tire. This is what the user calls "the
+    # gutty veteran who finds another gear" vs "the kid who unravels."
+    grit: float = 0.5
     # Defense layer — fielding ability + throwing arm.
     # `defense` is the player's general glove rating. The three position-
     # group sub-ratings let a player be elite at INF but weak at OF, etc.
@@ -140,6 +170,18 @@ class Player:
     # game loop on every `_set_fielding_pitcher` so the same SP can pitch
     # a gem one start and a clunker the next. 1.0 = legacy parity.
     today_form: float = 1.0
+
+    # Release-point position within the sidearm/submarine spectrum.
+    # O27 is a sidearm/submarine sport (lore-level structural fact).
+    #   0.0 = submarine       (extreme downward angle, strongest platoon effect, least arm stress)
+    #   0.5 = sidearm         (default; league centre-mass; identity for all multipliers)
+    #   1.0 = three-quarter   (highest slot in O27; slightly reduced platoon effect)
+    release_angle: float = 0.5
+
+    # Pitch repertoire. Empty list = legacy pitcher without typed repertoire;
+    # the engine falls back to aggregate Stuff/Movement/Command. Populated by
+    # roster generation or player creation helpers.
+    repertoire: list = field(default_factory=list)  # list[PitchEntry]
 
     # Workload-model state — populated per-game by sim.py from the live DB
     # game_pitcher_stats history. Defaults preserve identity for legacy

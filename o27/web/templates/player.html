@@ -22,9 +22,15 @@
         <tbody>
           {% if player.is_pitcher %}
           <tr><td>Stuff</td><td class="r mono">{{ player.pitcher_skill | to_grade }}</td></tr>
-          <tr><td>Control</td><td class="r mono">{{ player.skill | to_grade }}</td></tr>
-          <tr><td>Movement</td><td class="r mono">{{ player.speed | to_grade }}</td></tr>
-          <tr><td>Stamina</td><td class="r mono">{{ (1.0 - player.stay_aggressiveness) | to_grade }}</td></tr>
+          <tr><td>Command</td><td class="r mono">{{ player.command | to_grade }}</td></tr>
+          <tr><td>Movement</td><td class="r mono">{{ player.movement | to_grade }}</td></tr>
+          <tr><td>Stamina</td><td class="r mono">{{ player.stamina | to_grade }}</td></tr>
+          <tr><td>Grit</td><td class="r mono">{{ player.grit | to_grade }}</td></tr>
+          <tr><td>Consistency</td><td class="r mono">{{ player.pitch_variance | pitch_consistency | to_grade }}</td></tr>
+          <tr><td>Slot</td><td class="r">{{ player.release_angle | release_label }}</td></tr>
+          {% if player.pitcher_archetype %}
+          <tr><td>Archetype</td><td class="r dim small">{{ player.pitcher_archetype | replace('_',' ') | title }}</td></tr>
+          {% endif %}
           {% else %}
           <tr><td>Contact</td><td class="r mono">{{ player.skill | to_grade }}</td></tr>
           <tr><td>Eye</td><td class="r mono">{{ player.contact_quality_threshold | to_grade }}</td></tr>
@@ -116,6 +122,36 @@
   </div>
 
 </div>
+
+{# ── REPERTOIRE (pitchers only, when non-empty) ── #}
+{% if player.is_pitcher and player.repertoire %}
+<div class="card">
+  <div class="card-hd">Pitch Repertoire</div>
+  <table class="dt">
+    <thead>
+      <tr>
+        <th>Pitch</th>
+        <th class="r">Quality</th>
+        <th style="width:160px;">Grade</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pe in player.repertoire %}
+      {% set grade = pe.quality | to_grade %}
+      <tr>
+        <td>{{ pe.pitch_type | replace('_',' ') | title }}</td>
+        <td class="r mono">{{ grade }}</td>
+        <td>
+          <div style="background:var(--border);border-radius:3px;height:8px;width:140px;display:inline-block;vertical-align:middle;">
+            <div style="background:var(--accent);border-radius:3px;height:8px;width:{{ ((grade - 20) / 60 * 140) | round | int }}px;"></div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 {# ── CAREER TOTALS (batters) ── #}
 {% if not player.is_pitcher %}

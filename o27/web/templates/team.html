@@ -55,24 +55,32 @@
         <tr>
           <th>Player</th><th>Pos</th>
           <th class="r" title="Contact / Stuff">CON</th>
-          <th class="r" title="Speed / Movement">SPD</th>
-          <th class="r" title="Arm / Pitcher Skill">ARM</th>
+          <th class="r" title="Speed / Command">SPD</th>
+          <th class="r" title="Arm / Movement">ARM</th>
         </tr>
       </thead>
       <tbody>
         {% for p in team.players %}
-        {% set slug = p.name.lower().replace(' ','_').replace('.','') %}
         <tr{% if p.is_joker %} class="jr"{% endif %}>
           <td>
             <a href="/player/{{ team.abbrev }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a>
             {% if p.is_joker and p.joker_archetype %}
             <span class="ab ab-{{ p.joker_archetype | lower }}">{{ p.joker_archetype }}</span>
             {% endif %}
+            {% if p.is_pitcher and p.pitcher_archetype %}
+            <span class="ab dim small" style="font-size:.6rem; opacity:.7;">{{ p.pitcher_archetype | replace('_',' ') | title }}</span>
+            {% endif %}
           </td>
           <td class="pos">{{ p.position }}</td>
+          {% if p.is_pitcher %}
+          <td class="r mono">{{ p.pitcher_skill | to_grade }}</td>
+          <td class="r mono">{{ p.command | to_grade }}</td>
+          <td class="r mono">{{ p.movement | to_grade }}</td>
+          {% else %}
           <td class="r mono">{{ p.skill | to_grade }}</td>
           <td class="r mono">{{ p.speed | to_grade }}</td>
           <td class="r mono">{{ p.pitcher_skill | to_grade }}</td>
+          {% endif %}
         </tr>
         {% endfor %}
       </tbody>
