@@ -97,8 +97,18 @@ def _generate_pairings(
         n_intra_per_team = max(1, n_d - 1)
         n_inter_per_team = max(1, n - n_d)
 
-        intra_target = round(games_per_team * intra_w)
-        inter_target = games_per_team - intra_target
+        # If a bucket is impossible (single division → no inter pairs;
+        # divisions of size 1 → no intra pairs), redirect its share to
+        # the other bucket so we still hit games_per_team.
+        if not inter_pairs:
+            intra_target = games_per_team
+            inter_target = 0
+        elif not intra_pairs:
+            intra_target = 0
+            inter_target = games_per_team
+        else:
+            intra_target = round(games_per_team * intra_w)
+            inter_target = games_per_team - intra_target
 
         intra_full  = intra_target // n_intra_per_team
         intra_extra = intra_target %  n_intra_per_team
