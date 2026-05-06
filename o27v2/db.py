@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS teams (
     mgr_pinch_hit_aggression REAL  DEFAULT 0.5,
     mgr_platoon_aggression   REAL  DEFAULT 0.5,
     mgr_run_game             REAL  DEFAULT 0.5,
-    mgr_bench_usage          REAL  DEFAULT 0.5
+    mgr_bench_usage          REAL  DEFAULT 0.5,
+    org_strength             INTEGER DEFAULT 50
 );
 
 CREATE TABLE IF NOT EXISTS players (
