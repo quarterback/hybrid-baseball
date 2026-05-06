@@ -160,6 +160,9 @@
   <table class="table dense-table sortable mb-0">
     <thead><tr>
       <th>Name</th><th>Tm</th><th>Pos</th>
+      <th class="num" title="Power rating (0-100)">Pwr</th>
+      <th class="num" title="Contact rating (0-100): drives talent gate on run-chosen + 2C events">Con</th>
+      <th class="num" title="Eye rating (0-100): drives talent gate on run-chosen + 2C events">Eye</th>
       <th class="num">G</th><th class="num">PA</th><th class="num">AB</th>
       <th class="num">H</th><th class="num">HR</th><th class="num">RBI</th>
       <th class="num">R</th><th class="num">BB</th><th class="num">SO</th><th class="num">HBP</th>
@@ -186,6 +189,9 @@
       <td><a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
       <td><a href="{{ url_for('team_detail', team_id=b.team_id) }}" class="team-abbrev">{{ b.team_abbrev }}</a></td>
       <td class="text-secondary">{{ b.position }}</td>
+      <td class="num">{{ b.r_power or 0 }}</td>
+      <td class="num">{{ b.r_contact or 0 }}</td>
+      <td class="num">{{ b.r_eye or 0 }}</td>
       <td class="num">{{ b.g or 0 }}</td>
       <td class="num">{{ b.pa or 0 }}</td>
       <td class="num">{{ b.ab or 0 }}</td>
@@ -375,6 +381,10 @@
   <table class="table dense-table sortable mb-0">
     <thead><tr>
       <th>Name</th><th>Tm</th>
+      <th class="num" title="Stuff (pitcher_skill, 0-100): swing-and-miss / contact dominance">Stf</th>
+      <th class="num" title="Command (0-100): drives talent gate on contact events from the pitcher side">Cmd</th>
+      <th class="num" title="Movement (0-100): bias contact toward weak / ground-out">Mov</th>
+      <th class="num" title="Stamina (0-100): durability across the arc">Sta</th>
       <th class="num">G</th><th class="num">GS</th>
       <th class="num">W</th><th class="num">L</th>
       <th class="num">BF</th><th class="num">Outs</th>
@@ -398,6 +408,10 @@
     <tr>
       <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
       <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
+      <td class="num">{{ p.r_stuff or 0 }}</td>
+      <td class="num">{{ p.r_command or 0 }}</td>
+      <td class="num">{{ p.r_movement or 0 }}</td>
+      <td class="num">{{ p.r_stamina or 0 }}</td>
       <td class="num">{{ p.g or 0 }}</td>
       <td class="num">{{ p.gs or 0 }}</td>
       <td class="num">{{ p.w or 0 }}</td>

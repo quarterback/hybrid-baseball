@@ -83,6 +83,13 @@
   {{ card('DRS',   'drs',      '%+.1f',true,  batting, tooltip='Defensive runs saved') }}
 </div>
 
+<h4>Batting · Tools (talent ratings)</h4>
+<div class="row g-3 mb-3">
+  {{ card('Power',   'r_power',   '%d', true, batting, tooltip='Power rating — bias contact toward hard, more HR weight') }}
+  {{ card('Contact', 'r_contact', '%d', true, batting, tooltip='Contact rating — drives talent gate on every contact event (run + 2C)') }}
+  {{ card('Eye',     'r_eye',     '%d', true, batting, tooltip='Eye rating — plate discipline + 2C swing-2 read; drives talent gate on contact events') }}
+</div>
+
 {# ============================================================
    PITCHING
    ============================================================ #}
@@ -101,6 +108,14 @@
   {{ card('OS+',       'os_plus', '%d',   true,  pitching, tooltip='Outs Share Plus — league-relative outs per appearance (100 = avg)') }}
   {{ card('K%',        'k_pct',   '%.3f', true,  pitching, tooltip='(K + foul-outs) / BF — O27 K% includes foul-outs') }}
   {{ card('BB% (low)', 'bb_pct',  '%.3f', false, pitching) }}
+</div>
+
+<h4>Pitching · Tools (talent ratings)</h4>
+<div class="row g-3 mb-3">
+  {{ card('Stuff',    'r_stuff',    '%d', true, pitching, tooltip='Stuff (pitcher_skill) — swing-and-miss / contact dominance') }}
+  {{ card('Command',  'r_command',  '%d', true, pitching, tooltip='Command — control; drives talent gate on contact events from the pitcher side') }}
+  {{ card('Movement', 'r_movement', '%d', true, pitching, tooltip='Movement — bias contact toward weak / ground-out') }}
+  {{ card('Stamina',  'r_stamina',  '%d', true, pitching, tooltip='Stamina — durability across the arc') }}
 </div>
 
 <h4>Pitching · Counting &amp; Value</h4>

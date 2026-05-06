@@ -1888,6 +1888,8 @@ def leaders_export():
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
+                  p.pitcher_skill as r_stuff, p.command as r_command,
+                  p.movement as r_movement, p.stamina as r_stamina,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(ps.game_id) as g,
                   SUM(ps.batters_faced)  as bf,
@@ -2293,6 +2295,7 @@ def stats_browse():
             f"""SELECT p.id as player_id, p.name as player_name,
                        p.position as position, t.abbrev as team_abbrev, t.id as team_id,
                        p.is_pitcher as is_pitcher,
+                       p.power as r_power, p.contact as r_contact, p.eye as r_eye,
                        p.defense as defense, p.arm as arm,
                        p.defense_infield as defense_infield,
                        p.defense_outfield as defense_outfield,
@@ -2338,6 +2341,8 @@ def stats_browse():
         pitchers = db.fetchall(
             f"""SELECT p.id as player_id, p.name as player_name,
                        p.position as position, t.abbrev as team_abbrev, t.id as team_id,
+                       p.pitcher_skill as r_stuff, p.command as r_command,
+                       p.movement as r_movement, p.stamina as r_stamina,
                        COUNT(ps.game_id) as g,
                        SUM(ps.batters_faced)  as bf,
                        SUM(ps.outs_recorded)  as outs,
@@ -2412,6 +2417,7 @@ def leaders():
 
     batting = db.fetchall(
         """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.power as r_power, p.contact as r_contact, p.eye as r_eye,
                   p.defense as defense, p.arm as arm,
                   p.defense_infield as defense_infield,
                   p.defense_outfield as defense_outfield,
@@ -2444,6 +2450,8 @@ def leaders():
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
+                  p.pitcher_skill as r_stuff, p.command as r_command,
+                  p.movement as r_movement, p.stamina as r_stamina,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(ps.game_id) as g,
                   SUM(ps.batters_faced)  as bf,
@@ -3390,6 +3398,8 @@ def distributions():
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
+                  p.pitcher_skill as r_stuff, p.command as r_command,
+                  p.movement as r_movement, p.stamina as r_stamina,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(ps.game_id) as g,
                   SUM(ps.batters_faced)  as bf,
