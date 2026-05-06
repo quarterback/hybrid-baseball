@@ -3,6 +3,60 @@
 {% block content %}
 
 {# ============================================================
+   b-ref style game-card macro. Two-line score block (away then
+   home), W/L pitchers underneath for finals, no chrome between
+   cards beyond a thin border. Sized to pack 6-up at lg, 3-up at
+   md, 2-up at sm.
+   ============================================================ #}
+{% macro game_card(g) -%}
+<div style="border:1px solid var(--border-soft, #ddd); border-radius:3px;
+            padding:.4rem .55rem; font-size:.82rem; line-height:1.35;
+            background:var(--panel-bg, transparent); min-width:0">
+  {# Away line #}
+  <div class="d-flex justify-content-between align-items-baseline">
+    <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}"
+       style="text-decoration:none; color:inherit;
+              {% if g.played and g.winner_id == g.away_team_id %}font-weight:700{% endif %}">
+      <span class="team-abbrev">{{ g.away_abbrev }}</span>
+      <span class="text-secondary small ms-1">{{ g.away_name }}</span>
+    </a>
+    <span class="num"
+          style="{% if g.played and g.winner_id == g.away_team_id %}font-weight:700{% endif %}">
+      {% if g.played %}{{ g.away_score }}{% else %}—{% endif %}
+    </span>
+  </div>
+  {# Home line + status link #}
+  <div class="d-flex justify-content-between align-items-baseline">
+    <a href="{{ url_for('team_detail', team_id=g.home_team_id) }}"
+       style="text-decoration:none; color:inherit;
+              {% if g.played and g.winner_id == g.home_team_id %}font-weight:700{% endif %}">
+      <span class="team-abbrev">{{ g.home_abbrev }}</span>
+      <span class="text-secondary small ms-1">{{ g.home_name }}</span>
+    </a>
+    <span class="num"
+          style="{% if g.played and g.winner_id == g.home_team_id %}font-weight:700{% endif %}">
+      {% if g.played %}{{ g.home_score }}{% else %}—{% endif %}
+    </span>
+  </div>
+  {# Status / decision lines #}
+  <div class="text-secondary" style="font-size:.72rem; margin-top:.2rem">
+    {% if g.played %}
+      <a href="{{ url_for('game_detail', game_id=g.id) }}"
+         style="text-decoration:none; color:inherit; font-weight:600">Final{% if g.super_inning %}/SI{% endif %}</a>
+      {% if g.w_pitcher %}
+      <div>W: {{ g.w_pitcher.name }} ({{ g.w_pitcher.w }}-{{ g.w_pitcher.l }})</div>
+      {% endif %}
+      {% if g.l_pitcher %}
+      <div>L: {{ g.l_pitcher.name }} ({{ g.l_pitcher.w }}-{{ g.l_pitcher.l }})</div>
+      {% endif %}
+    {% else %}
+      Scheduled
+    {% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{# ============================================================
    Date strip — the current sim date is the headline. All-Star Break
    and Season-End dates live below it as small grey text; they're
    reference info, not the page's primary content.
@@ -11,8 +65,20 @@
 <div class="d-flex flex-wrap align-items-end gap-3 mb-3">
   <div>
     {% if sim.current_date %}
-    <div style="font-size:1.6rem; font-weight:700; line-height:1.1">
-      {{ sim.current_date }}
+    <div style="display:flex; align-items:baseline; gap:.5rem; line-height:1.1">
+      {% if prev_date %}
+      <a href="?date={{ prev_date }}" title="Previous day with games"
+         style="text-decoration:none; font-size:1.4rem; color:var(--link)">&laquo;</a>
+      {% else %}
+      <span style="font-size:1.4rem; color:var(--text-secondary, #999)">&laquo;</span>
+      {% endif %}
+      <div style="font-size:1.6rem; font-weight:700">{{ sim.current_date }}</div>
+      {% if next_date %}
+      <a href="?date={{ next_date }}" title="Next day with games"
+         style="text-decoration:none; font-size:1.4rem; color:var(--link)">&raquo;</a>
+      {% else %}
+      <span style="font-size:1.4rem; color:var(--text-secondary, #999)">&raquo;</span>
+      {% endif %}
     </div>
     {% endif %}
     <div class="text-secondary" style="font-size:.78rem; margin-top:.15rem">
@@ -130,35 +196,13 @@
         <span class="ms-auto"><a href="{{ url_for('schedule') }}" class="btn-link" style="font-size:.78rem">Full schedule →</a></span>
       </div>
       {% if today_games %}
-      <table class="table dense-table mb-0">
-        <thead><tr>
-          <th>Away</th><th class="num">R</th><th class="num">H</th>
-          <th>Home</th><th class="num">R</th><th class="num">H</th>
-          <th>Status</th><th></th>
-        </tr></thead>
-        <tbody>
-        {% for g in today_games %}
-        <tr>
-          <td>
-            <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}" class="team-abbrev">{{ g.away_abbrev }}</a>
-            {% if g.played and g.winner_id == g.away_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
-          </td>
-          <td class="num fw-bold">{% if g.played %}{{ g.away_score }}{% else %}—{% endif %}</td>
-          <td class="num">{% if g.away_hits is not none %}{{ g.away_hits }}{% else %}—{% endif %}</td>
-          <td>
-            <a href="{{ url_for('team_detail', team_id=g.home_team_id) }}" class="team-abbrev">{{ g.home_abbrev }}</a>
-            {% if g.played and g.winner_id == g.home_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
-          </td>
-          <td class="num fw-bold">{% if g.played %}{{ g.home_score }}{% else %}—{% endif %}</td>
-          <td class="num">{% if g.home_hits is not none %}{{ g.home_hits }}{% else %}—{% endif %}</td>
-          <td class="text-secondary small">
-            {% if g.played %}Final{% if g.super_inning %} <span class="si-badge ms-1">SI</span>{% endif %}{% else %}Scheduled{% endif %}
-          </td>
-          <td>{% if g.played %}<a href="{{ url_for('game_detail', game_id=g.id) }}" class="btn-link" style="font-size:.78rem">Box</a>{% endif %}</td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+      <div class="p-2" style="display:grid;
+                              grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+                              gap:.5rem">
+      {% for g in today_games %}
+        {{ game_card(g) }}
+      {% endfor %}
+      </div>
       {% else %}
       <div class="panel-body text-center text-secondary small">No games scheduled for today.</div>
       {% endif %}
@@ -172,30 +216,13 @@
         <span class="ms-auto"><a href="{{ url_for('schedule', status='played') }}" class="btn-link" style="font-size:.78rem">All results →</a></span>
       </div>
       {% if yesterday_games %}
-      <table class="table dense-table mb-0">
-        <thead><tr>
-          <th>Away</th><th class="num">R</th>
-          <th>Home</th><th class="num">R</th>
-          <th></th>
-        </tr></thead>
-        <tbody>
-        {% for g in yesterday_games %}
-        <tr>
-          <td>
-            <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}" class="team-abbrev">{{ g.away_abbrev }}</a>
-            {% if g.winner_id == g.away_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
-          </td>
-          <td class="num fw-bold">{{ g.away_score }}</td>
-          <td>
-            <a href="{{ url_for('team_detail', team_id=g.home_team_id) }}" class="team-abbrev">{{ g.home_abbrev }}</a>
-            {% if g.winner_id == g.home_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
-          </td>
-          <td class="num fw-bold">{{ g.home_score }}</td>
-          <td><a href="{{ url_for('game_detail', game_id=g.id) }}" class="btn-link" style="font-size:.78rem">Box</a>{% if g.super_inning %} <span class="si-badge ms-1">SI</span>{% endif %}</td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+      <div class="p-2" style="display:grid;
+                              grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+                              gap:.5rem">
+      {% for g in yesterday_games %}
+        {{ game_card(g) }}
+      {% endfor %}
+      </div>
       {% else %}
       <div class="panel-body text-center text-secondary small">No games played yet.</div>
       {% endif %}
