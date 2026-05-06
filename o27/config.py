@@ -165,6 +165,20 @@ CONTACT_MATCHUP_SHIFT: float = 0.25   # max ±0.125 swing per unit matchup
 SECOND_SWING_EYE_SCALE: float     = 0.20   # batter.eye contribution
 SECOND_SWING_COMMAND_SCALE: float = 0.20   # pitcher.command contribution (subtracted)
 
+# Talent-weighted 2C outcome resolution (Phase 11D / Path A — applies on
+# every 2C-chosen event, including swing 1, where Path 2's swing-2+ scope
+# couldn't reach). On a stay-chosen contact:
+#   - WEAK quality: hit-credit gate. Talent_factor shifts a base 50%
+#     credit_p; gate failure forces runner_advances to [0,0,0] (no advance,
+#     no hit credit — the FC-flavored downgrade per spec).
+#   - MEDIUM quality: advancement-magnitude gate. Talent_factor shifts a
+#     base 50% upgrade_p from [1,1,1] (low-talent) to [2,2,2] (high-talent
+#     — the Phase 11C aggressive advance, now talent-conditional).
+#   - HARD quality: no modification (rare for 2C; auto-runs typically).
+# talent_factor = (eye_dev + contact_dev) / 2 - command_dev,
+# range roughly -1.5 (worst matchup) to +1.5 (best matchup).
+TALENT_2C_SHIFT_SCALE: float = 1.00   # ±1.5 nominal swing; bounded 0.05-0.95
+
 # ---------------------------------------------------------------------------
 # Contact outcome tables
 # ---------------------------------------------------------------------------

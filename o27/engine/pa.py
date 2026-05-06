@@ -547,20 +547,11 @@ def _resolve_contact(
     modified_outcome = dict(outcome)
     modified_outcome["batter_safe"] = True   # batter can't be put out on this play
 
-    # Phase 11C — pesäpallo-shape stay advancement.
-    # On a medium-contact stay, the defense is flat-footed (committed to
-    # the batter-out attempt that didn't materialize because the batter
-    # stayed), so runners take an extra base. This is the structural fix
-    # for the [1,1,1] MLB-shape default that was suppressing elite contact
-    # hitters' stay value (top-20 stay_rbi_pct < league mean pre-fix).
-    # Weak-contact stays keep [1,1,1] — ball didn't go far enough for
-    # runners to push for the extra base.
-    if outcome.get("quality") == "medium":
-        adv = list(modified_outcome.get("runner_advances") or [1, 1, 1])
-        # Boost each runner's advance by +1, floor at 1 (no holds on a
-        # successful stay — runners always at least take their base).
-        adv = [min(3, max(1, a) + 1) for a in adv]
-        modified_outcome["runner_advances"] = adv
+    # Note: 2C-event runner_advances are talent-weighted in
+    # prob.py (post-stay-decision block), not here. The outcome dict
+    # arriving in this branch already reflects the eye/contact-vs-command
+    # gate that decides hit-credit (weak) and advancement magnitude
+    # (medium). pa.py just consumes the modified outcome.
 
     original_bases = list(state.bases)   # snapshot BEFORE mutation for credit check
     # Capture runner thrown out BEFORE advance_runners clears the slot.

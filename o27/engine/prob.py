@@ -1121,6 +1121,35 @@ class ProbabilisticProvider:
         else:
             choice = "run"
 
+        # Talent-weighted 2C outcome resolution (Path A). Replaces Phase 11C's
+        # unconditional [2,2,2] for medium stays with a talent-gated version
+        # and adds a hit-credit gate for weak stays. Applies on every 2C
+        # event (including swing 1, which Path 2's swing-2+ scope didn't
+        # reach), so the eye/contact-vs-command signal differentiates the
+        # bulk of the 2C population.
+        if choice == "stay" and quality in ("weak", "medium"):
+            eye_dev = (batter.eye - 0.5) * 2
+            con_dev = (batter.contact - 0.5) * 2
+            cmd_dev = (pitcher.command - 0.5) * 2
+            # Talent factor — full batter contribution (no averaging),
+            # so eye and contact each contribute their full signed range
+            # to the gate. Theoretical range ±3.0; typical ±1.0.
+            talent_factor = eye_dev + con_dev - cmd_dev
+            shift = talent_factor * cfg.TALENT_2C_SHIFT_SCALE
+            gate_p = max(0.05, min(0.95, 0.50 + shift))
+            if quality == "weak":
+                # Hit-credit gate: gate FAIL → no advance, no hit credit.
+                if rng.random() >= gate_p:
+                    outcome_dict["runner_advances"] = [0, 0, 0]
+            else:  # medium
+                # Advancement-magnitude gate: gate PASS → upgrade to [2,2,2].
+                if rng.random() < gate_p:
+                    outcome_dict["runner_advances"] = [
+                        min(3, max(1, a) + 1)
+                        for a in (outcome_dict.get("runner_advances") or [1, 1, 1])
+                    ]
+                # else: keep underlying [1,1,1]-ish from resolve_contact
+
         return {
             "type": "ball_in_play",
             "choice": choice,
