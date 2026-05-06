@@ -54,6 +54,40 @@ Target summary (PRD §5 / §7):
   Super-inning freq       <5%              4.60% ✓
   Avg run rate R/out      ~0.43            0.444 ✓
   Avg PAs/game            ~79             80.4   ✓
+
+--- Phase 11: Talent-dictates-performance (pitcher retune) ---
+Goal: remove artificial weights compressing pitcher talent; let stuff/cmd/
+      movement/stamina/grit/variance dictate outcomes more than league-mean
+      anchors.
+Changes:
+  • PITCHER_DOM_BALL      -0.06 → -0.07   (parity with command on walks)
+  • PITCHER_DOM_SWINGING  +0.03 → +0.06   (matches BATTER_CONTACT_SWINGING)
+  • PITCHER_DOM_CONTACT   -0.04 → -0.06   (exceeds batter promotion)
+  • CONTACT_MOVEMENT_TILT  0.06 → 0.10   (parity with CONTACT_POWER_TILT)
+  • TODAY_FORM_SIGMA       0.10 → 0.04, bounds [0.80,1.20] → [0.92,1.08]
+  • FATIGUE_MAX            0.60 → 1.00   (uncapped collapse for low-stam arms)
+  • FATIGUE_DEBT_MAX_PEN.  0.20 → 0.40   (overworked arms suffer more)
+  • prob.py probability floors 0.01 → 0.001 (let elite stuff transcend)
+New mechanics:
+  • Player.pitch_variance — per-guy static range; each pitch samples
+    uniformly within [rating ± variance] for stuff/cmd/movement.
+  • Player.grit (0.25–0.75) — multiplicative dampener on the fatigue
+    ramp; high-grit veterans grind through, low-grit kids unravel.
+Result (500 games, default rosters):
+  Avg total runs/game   23.52  target 22–24  ✓
+  Avg run rate R/out    0.4355 target ~0.43  ✓
+  Avg PAs/game          80.2   ref ~79       ✓
+  Avg stays/game        0.730  target 0.3–1.0 ✓
+  Super-inning freq     5.20%  target <5%    ! (slightly over)
+  League K%             18.38% target 17–19% ✓
+  League BB%            7.45%  target 9–10%  ! (pitcher command winning)
+  League BA / SLG / HR%  .292 / .462 / 2.08% ✓ ✓ ✓
+Talent dispersion (the goal):
+  Ace (0.85/0.85/0.80, grit 0.70) vs replacement (0.30/0.30/0.30, grit 0.30)
+  facing avg bat:
+    Ball:     26.0% vs 39.4%   (-13.4 pp)
+    Whiff:    16.2% vs  7.7%   (+8.5 pp, 2.1× ratio)
+    Hard%:     6.8% vs 30.3%   (base 22%)
 =============================================================================
 """
 
@@ -98,10 +132,10 @@ PITCH_BASE: dict[tuple, tuple] = {
 # loosened 0.01 floors in contact_quality and the Elite+ talent tier,
 # this is what lets aces actually pitch like aces.
 
-PITCHER_DOM_BALL: float     = -0.06   # fewer balls when pitcher dominant
+PITCHER_DOM_BALL: float     = -0.07   # fewer balls when pitcher dominant
 PITCHER_DOM_CALLED: float   = +0.03   # more called strikes
-PITCHER_DOM_SWINGING: float = +0.03   # more swinging strikes
-PITCHER_DOM_CONTACT: float  = -0.04   # fewer contact events
+PITCHER_DOM_SWINGING: float = +0.06   # more swinging strikes (matches BATTER_CONTACT_SWINGING magnitude)
+PITCHER_DOM_CONTACT: float  = -0.06   # fewer contact events (exceeds batter's +0.05 promotion)
 
 # ---------------------------------------------------------------------------
 # Batter dominance adjustments
@@ -126,7 +160,7 @@ FATIGUE_THRESHOLD_BASE: int  = 24    # Phase 10: workhorses fatigue much later (
 # (0.25) Stamina pitcher fatigues at 24 + 10 = 34 BF, visibly tiring through
 # the order. This is what makes Stamina disproportionately valuable in O27.
 FATIGUE_THRESHOLD_SCALE: int = 40    # higher-skill pitchers get longer spells
-FATIGUE_MAX: float           = 0.60  # maximum fatigue multiplier
+FATIGUE_MAX: float           = 1.00  # was 0.60 — uncap fatigue so low-Stamina arms truly collapse when pushed past their limit
 FATIGUE_SCALE: float         = 20.0  # spell_count divisor for ramp-up
 
 FATIGUE_BALL: float     = +0.06   # more balls as fatigue grows
@@ -344,6 +378,32 @@ PLAYER_DEFAULT_STAY_AGGRESSIVENESS: float      = 0.40   # 0.0–1.0 tendency to 
 PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD: float = 0.45  # P(stay | medium contact) gate
 
 # ---------------------------------------------------------------------------
+# Pitch-quality range (per-pitch sampling around central rating)
+# ---------------------------------------------------------------------------
+# Each pitch samples uniformly in [rating - pitch_variance, rating + pitch_variance]
+# for stuff / command / movement. Identity at pitch_variance = 0.0.
+# Roster generation rolls each pitcher their own pitch_variance — some arms
+# repeat (low variance), others live on the edges (high variance).
+PITCH_VARIANCE_MIN: float = 0.03   # league min — every arm has a touch of variance
+PITCH_VARIANCE_MAX: float = 0.12   # max-effort / inconsistent mechanics archetype
+PITCH_VARIANCE_MEAN: float = 0.06  # league mean used by roster generators
+
+# ---------------------------------------------------------------------------
+# Grit — pitcher fatigue resistance
+# ---------------------------------------------------------------------------
+# Bounded 0.25–0.75 across the league (some guys have it, some don't).
+# Applied as a multiplicative dampener on the FATIGUE term:
+#   fatigue_eff = fatigue * max(0.0, 1.0 - (grit - 0.5) * 2 * GRIT_FATIGUE_RESIST)
+# At grit = 0.50 the term collapses to fatigue * 1.0 (identity).
+# At grit = 0.75 fatigue is reduced by GRIT_FATIGUE_RESIST × 0.5 = 30% (default).
+# At grit = 0.25 fatigue is *amplified* by the same magnitude — low-grit arms
+# unravel quicker than the raw Stamina ramp would suggest.
+GRIT_BOUND_MIN: float          = 0.25
+GRIT_BOUND_MAX: float          = 0.75
+GRIT_FATIGUE_RESIST: float     = 0.60   # max grit dampens 30% of fatigue; min grit amplifies 30%
+PLAYER_DEFAULT_GRIT: float     = 0.50   # identity
+
+# ---------------------------------------------------------------------------
 # Manager heuristics — joker insertion (§4.6)
 # ---------------------------------------------------------------------------
 
@@ -451,7 +511,7 @@ PITCHER_COMMAND_CALLED: float = +0.03
 # --- Contact-quality shifts -----------------------------------------------
 # Power tilts contact toward hard; movement (pitcher) tilts toward weak.
 CONTACT_POWER_TILT:    float = 0.10
-CONTACT_MOVEMENT_TILT: float = 0.06
+CONTACT_MOVEMENT_TILT: float = 0.10   # parity with power tilt — high-movement pitcher suppresses hard contact as strongly as a slugger creates it
 
 # --- Power → HARD_CONTACT HR weight bonus ---------------------------------
 # Slugger archetype: an elite-power batter sees a meaningfully boosted HR
@@ -472,9 +532,9 @@ PLATOON_BONUS_SWITCH:   float = 0.0   # switch hitters always face advantage
 # --- Daily pitcher form ---------------------------------------------------
 # Per-spell N(mu, sigma) clipped roll. today_form = 1.0 ⇒ legacy parity.
 TODAY_FORM_MU:    float = 1.00
-TODAY_FORM_SIGMA: float = 0.10
-TODAY_FORM_MIN:   float = 0.80
-TODAY_FORM_MAX:   float = 1.20
+TODAY_FORM_SIGMA: float = 0.04   # was 0.10 — slashed so daily-form noise stops overriding talent
+TODAY_FORM_MIN:   float = 0.92   # was 0.80 — tight bounds keep ratings (not RNG) in charge of outcomes
+TODAY_FORM_MAX:   float = 1.08   # was 1.20
 
 # Multi-game fatigue (workload-debt) penalty applied on top of today_form.
 # Identity invariant: at pitch_debt = 0, all of these collapse to no penalty.
@@ -484,7 +544,7 @@ TODAY_FORM_MAX:   float = 1.20
 FATIGUE_DEBT_MIN_BUDGET:    float = 30.0   # pitches; floor for low-stamina arms
 FATIGUE_DEBT_BUDGET_SCALE:  float = 100.0  # stamina (0-1) * this = budget pitches
 FATIGUE_DEBT_PER_PITCH:     float = 0.005  # form penalty per pitch over budget
-FATIGUE_DEBT_MAX_PENALTY:   float = 0.20   # cap on the form penalty
+FATIGUE_DEBT_MAX_PENALTY:   float = 0.40   # was 0.20 — let chronically overworked arms really suffer; Stamina becomes a real moat
 # Shift toward strikes on top of the existing pitcher_dom term, scaled by
 # (today_form - 1.0). Magnitudes are deliberately small.
 FORM_BALL:     float = -0.04   # good day → fewer balls

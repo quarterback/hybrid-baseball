@@ -112,6 +112,22 @@ class Player:
     eye:      float = 0.5   # batter: more balls taken, fewer called strikes
     command:  float = 0.5   # pitcher: lower P(ball)
     movement: float = 0.5   # pitcher: bias contact toward weak/ground_out
+
+    # Pitch-quality range — each pitcher has a STATIC half-width around their
+    # central Stuff/Command/Movement ratings. Each pitch samples uniformly in
+    # [rating - pitch_variance, rating + pitch_variance], so a "consistent"
+    # arm (low variance) repeats his stuff every pitch while a "max-effort,
+    # frayed mechanics" arm (high variance) lives on the edges. Identity at
+    # pitch_variance = 0.0 (every pitch == central rating).
+    pitch_variance: float = 0.0
+
+    # Grit — pitcher fatigue resistance. Bounded 0.25–0.75 in roster
+    # generation; at 0.50 the fatigue ramp is unaffected (identity). High
+    # grit lets stuff/movement/command keep playing even when the arm is
+    # past its Stamina threshold; low grit means a pitcher's repertoire
+    # falls apart the moment they tire. This is what the user calls "the
+    # gutty veteran who finds another gear" vs "the kid who unravels."
+    grit: float = 0.5
     # Defense layer — fielding ability + throwing arm.
     # `defense` is the player's general glove rating. The three position-
     # group sub-ratings let a player be elite at INF but weak at OF, etc.
