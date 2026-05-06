@@ -1104,6 +1104,45 @@ class ProbabilisticProvider:
 
         # Resolve fielding outcome.
         outcome_dict = resolve_contact(rng, quality, batter, state)
+
+        # Talent-weighted hit-vs-out resolution (applies BEFORE the run/stay
+        # decision so it affects both paths). On weak / medium contact, the
+        # underlying hit_type from resolve_contact is talent-flexed: a
+        # marginal-talent batter is more likely to see a borderline hit
+        # downgrade to a ground_out, and a star is more likely to see a
+        # borderline ground_out upgrade to an infield_single. The gate uses
+        # the same talent_factor as the 2C fractional advance — eye + contact
+        # − command — so a single coherent talent signal flows through every
+        # contact event in O27, not just stays.
+        if quality in ("weak", "medium"):
+            eye_dev_run = (batter.eye - 0.5) * 2
+            con_dev_run = (batter.contact - 0.5) * 2
+            cmd_dev_run = (pitcher.command - 0.5) * 2
+            talent_run  = eye_dev_run + con_dev_run - cmd_dev_run
+            # Bonus is bidirectional: positive shifts toward more hits,
+            # negative toward more outs. Weak gets a wider swing because
+            # the underlying outcome is more often borderline; medium has
+            # mostly already-hit outcomes so the swing is narrower.
+            hit_bonus = (0.15 if quality == "weak" else 0.10) * talent_run
+            ht = outcome_dict.get("hit_type", "")
+            is_safety   = ht in ("single", "infield_single", "double", "triple")
+            is_clean_out = (ht in ("ground_out", "fly_out", "line_out")
+                            and not outcome_dict.get("batter_safe", True)
+                            and not outcome_dict.get("caught_fly"))
+            if is_safety and hit_bonus < 0:
+                # Marginal talent can lose a borderline hit.
+                if rng.random() < min(0.6, abs(hit_bonus)):
+                    outcome_dict["hit_type"] = "ground_out"
+                    outcome_dict["batter_safe"] = False
+                    outcome_dict["runner_advances"] = [0, 0, 0]
+            elif is_clean_out and hit_bonus > 0:
+                # Star talent can flip a borderline out into an infield_single.
+                if rng.random() < min(0.6, hit_bonus):
+                    new_type = "infield_single" if quality == "weak" else "single"
+                    outcome_dict["hit_type"] = new_type
+                    outcome_dict["batter_safe"] = True
+                    outcome_dict["runner_advances"] = [1, 1, 1]
+
         hit_type = outcome_dict["hit_type"]
         caught_fly = outcome_dict["caught_fly"]
 
