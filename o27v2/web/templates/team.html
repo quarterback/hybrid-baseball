@@ -26,6 +26,19 @@
   <span class="text-secondary">·</span>
   <span class="fw-bold num" style="font-size:1.05rem">{{ team.wins }}-{{ team.losses }}</span>
   <span class="text-secondary num">({{ win_pct(team) }})</span>
+  {% if team.org_strength %}
+  <span class="text-secondary">·</span>
+  <span class="text-secondary small" title="Org strength — team-level talent grade (20-95). Drives an additive shift on every player attribute roll at seed time. 50 = league average; 80+ = elite organization.">
+    Org <strong class="text-dark">{{ team.org_strength }}</strong>
+    {% if team.org_strength >= 81 %}<span class="badge bg-warning text-dark ms-1">Elite+</span>
+    {% elif team.org_strength >= 75 %}<span class="badge bg-warning text-dark ms-1">Elite</span>
+    {% elif team.org_strength >= 65 %}<span class="badge bg-success ms-1">Excellent</span>
+    {% elif team.org_strength >= 55 %}<span class="badge bg-primary ms-1">Good</span>
+    {% elif team.org_strength >= 45 %}<span class="badge bg-secondary ms-1">Average</span>
+    {% elif team.org_strength >= 30 %}<span class="badge bg-danger ms-1">Replacement</span>
+    {% else %}<span class="badge bg-danger ms-1">Sub-Repl</span>{% endif %}
+  </span>
+  {% endif %}
 </div>
 
 <div class="row g-3">

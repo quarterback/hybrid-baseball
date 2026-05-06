@@ -244,16 +244,24 @@ def _tier_unit(rng: random.Random, team_shift: int = 0) -> float:
     return _scout.to_unit(_roll_tier_grade(rng, team_shift))
 
 
-# Per-team org-strength shift parameters. Applied additively to every
-# tier roll for the team's players (clamped to [20,95] grade range).
-# sigma controls how widely teams differ; cap controls the worst /
-# best possible. With sigma=8 / cap=15: ~68% of teams roll within
-# ±8 grade pts of league mean (roughly ±1.5 talent tiers); ~5% land
-# at the cap. This produces a real talent gap between the best and
-# worst orgs without making perennial cellar dwellers play sub-replacement
-# baseball every game.
-_TEAM_ORG_SIGMA = 8.0
-_TEAM_ORG_CAP   = 15
+# Per-team org-strength: a 20-95 scout-grade team attribute, rolled
+# from the same _TALENT_TIERS distribution as individual player
+# attributes and then PERSISTED on the teams row (see seed_league()).
+# `team_shift` is derived as `org_strength - 50`, so:
+#
+#   org_strength == 50 → no shift (league-mean org)
+#   org_strength == 80 → +30 shift  (Elite org → all rolls +30)
+#   org_strength == 25 → -25 shift  (Sub-Repl org → all rolls -25)
+#
+# An Elite+ org (81-95) compresses its tier rolls hard against the
+# grade-95 ceiling, producing rosters where almost every player is
+# 80+ and the team-mean lands in the upper 70s / low 80s. The inverse
+# happens at the cellar. This produces a real "MLB vs AAA" spread
+# between best and worst orgs — substantially wider than the prior
+# Gaussian-shift approach, and now visible / sortable on the team page.
+def _org_strength_to_shift(org_strength: int) -> int:
+    """Convert a team's org_strength (20-95 grade) to its tier-roll shift."""
+    return org_strength - 50
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +505,7 @@ def generate_players(
     team_idx: int,
     rng: random.Random,
     home_bonus: float = 0.0,
+    org_strength: int = 50,
 ) -> list[dict]:
     """Generate ~47 players for a team (Task #65 expanded roster).
 
@@ -515,26 +524,21 @@ def generate_players(
     distribution (`_TALENT_TIERS`), producing the spiky archetypes the
     league needs to surface real stars on the leaderboards.
 
-    Per-team org strength: every team rolls a single Gaussian
-    `org_shift` (sigma=8 grade points, capped at ±15) that's added to
-    every tier roll for the team's players. This produces real
-    organizational talent gaps — strong orgs roll above the curve on
-    every player, cellar-dweller orgs roll below — without hand-tuning
-    individual rosters. Combined with the bimodal `_TALENT_TIERS`,
-    this gives both wide team-level parity AND wide player-level spread.
+    `org_strength` (20-95 scout grade) is the team-level talent
+    attribute — it's persisted on the teams row by seed_league() and
+    drives `team_shift = org_strength - 50` here. An Elite org
+    (org_strength=80) shifts every tier roll +30, compressing rolls
+    against the grade-95 ceiling and producing 75-85 team-mean skill;
+    a Sub-Replacement org (25) shifts -25, producing 25-35 team-mean.
+    This is what gives teams identifiable talent levels.
 
     `team_idx` and `home_bonus` are accepted for backward compatibility
-    but don't directly affect the distribution; the org_shift roll is
-    self-contained per team.
+    but don't affect the distribution.
     """
     pools = _load_name_pools()
     used_names: set[str] = set()
 
-    # Roll this team's org-strength shift once. Every player on the team
-    # uses the same shift — that's what makes it a TEAM signal rather
-    # than yet another per-player roll.
-    org_shift = round(rng.gauss(0.0, _TEAM_ORG_SIGMA))
-    org_shift = max(-_TEAM_ORG_CAP, min(_TEAM_ORG_CAP, org_shift))
+    org_shift = _org_strength_to_shift(org_strength)
 
     def _name() -> str:
         for _ in range(200):
@@ -644,22 +648,26 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
         park_hr, park_hits = _roll_park_factors(rng2)
         from o27v2.managers import roll_manager
         mgr = roll_manager(rng2)
+        # Roll team-level org strength on the same 9-tier ladder players
+        # use. The rolled grade is both persisted (visible on the team
+        # page, sortable) and used to derive every player's team_shift.
+        org_strength = _roll_tier_grade(rng2)
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, division, league, "
             "park_hr, park_hits, manager_archetype, mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
-            "mgr_bench_usage)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "mgr_bench_usage, org_strength)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, division, league_name,
              park_hr, park_hits,
              mgr["manager_archetype"], mgr["mgr_quick_hook"],
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
              mgr["mgr_joker_aggression"], mgr["mgr_pinch_hit_aggression"],
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
-             mgr["mgr_bench_usage"]),
+             mgr["mgr_bench_usage"], org_strength),
         )
-        players = generate_players(idx, rng2)
+        players = generate_players(idx, rng2, org_strength=org_strength)
         db.executemany(
             """INSERT INTO players
                (team_id, name, position, is_pitcher, skill, speed,
