@@ -143,6 +143,30 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     UNIQUE(player_id, game_id, phase)
 );
 
+-- Phase 11D — per-PA event log. One row per ball_in_play event; captures
+-- the swing index within the AB (so swing-1 vs swing-2+ conversion can be
+-- measured), the contact quality, the stay/run choice, and whether a stay
+-- was credited. Diagnostic-grade (not surfaced in templates) — used for
+-- V2 swing-split conversion verification and Δ-source decomposition.
+CREATE TABLE IF NOT EXISTS game_pa_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id       INTEGER NOT NULL REFERENCES games(id),
+    team_id       INTEGER NOT NULL REFERENCES teams(id),
+    batter_id     INTEGER NOT NULL REFERENCES players(id),
+    pitcher_id    INTEGER REFERENCES players(id),
+    ab_seq        INTEGER NOT NULL,              -- which AB in the game (per team)
+    swing_idx     INTEGER NOT NULL,              -- which contact event in the AB (1, 2, or 3)
+    choice        TEXT NOT NULL,                 -- 'run' | 'stay'
+    quality       TEXT,                          -- 'weak' | 'medium' | 'hard'
+    hit_type      TEXT,                          -- underlying fielding outcome
+    was_stay      INTEGER NOT NULL DEFAULT 0,
+    stay_credited INTEGER NOT NULL DEFAULT 0,
+    runs_scored   INTEGER NOT NULL DEFAULT 0,
+    rbi_credited  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pa_log_game ON game_pa_log(game_id);
+CREATE INDEX IF NOT EXISTS idx_pa_log_batter ON game_pa_log(batter_id);
+
 CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id        INTEGER NOT NULL REFERENCES games(id),
@@ -557,6 +581,7 @@ def drop_all() -> None:
         # failed and the whole reset aborts.
         conn.executescript("""
             DROP TABLE IF EXISTS transactions;
+            DROP TABLE IF EXISTS game_pa_log;
             DROP TABLE IF EXISTS game_pitcher_stats;
             DROP TABLE IF EXISTS game_batter_stats;
             DROP TABLE IF EXISTS team_phase_outs;

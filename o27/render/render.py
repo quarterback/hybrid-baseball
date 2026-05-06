@@ -73,6 +73,14 @@ class Renderer:
         # per-phase batter rows after the game finishes. game.py calls
         # end_phase(N) after each phase (regulation = 0, SI round N >= 1).
         self._phase_end_snapshots: dict[int, dict[str, BatterStats]] = {}
+        # Phase 11D — per-PA event log (ball_in_play only). Each entry is
+        # a dict ready to insert into game_pa_log. Per-batter tracking of
+        # which AB they're currently in + which swing within that AB. AB
+        # boundary is detected by comparing s.ab+1 to the batter's last
+        # observed in-progress AB number (changes when prior AB completed).
+        self._pa_log: list[dict] = []
+        self._batter_current_ab: dict = {}      # batter_id -> in-progress ab number
+        self._batter_swing_idx: dict = {}       # batter_id -> swing_idx within current ab
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -851,6 +859,41 @@ class Renderer:
             choice = disp.get("choice", "run")
             hit_type = disp.get("hit_type", "")
             is_safety_hit = hit_type in _SAFETY_HITS
+
+            # Phase 11D — append a per-event row to _pa_log for diagnostic
+            # swing-split analysis. Detect AB boundary: in-progress AB number
+            # is `s.ab + 1` (s.ab counts COMPLETED ABs prior to this event).
+            # When that changes vs the last observed value for this batter,
+            # swing_idx resets to 1; otherwise it increments.
+            bid = batter.player_id
+            in_progress_ab = (s.ab or 0) + 1
+            if self._batter_current_ab.get(bid) != in_progress_ab:
+                # New AB started — reset swing_idx
+                self._batter_current_ab[bid] = in_progress_ab
+                self._batter_swing_idx[bid] = 1
+            else:
+                self._batter_swing_idx[bid] += 1
+            swing_idx = self._batter_swing_idx[bid]
+            outcome = event.get("outcome", {})
+            quality = outcome.get("quality")
+            team_id = ctx.get("batting_team_id")
+            pitcher = ctx.get("pitcher")
+            self._pa_log.append({
+                "team_id": team_id,
+                "batter_id": bid,
+                "pitcher_id": pitcher.player_id if pitcher else None,
+                "ab_seq": in_progress_ab,
+                "swing_idx": swing_idx,
+                "choice": choice,
+                "quality": quality,
+                "hit_type": hit_type,
+                # was_stay = 1 only on VALID 2C events (matches s.sty); invalid
+                # stays (auto-out caught fly) don't count as 2C events.
+                "was_stay": 1 if (choice == "stay" and disp.get("stay_valid")) else 0,
+                "stay_credited": 1 if (choice == "stay" and disp.get("stay_hit_credited")) else 0,
+                "runs_scored": runs_scored,
+                "rbi_credited": runs_scored,
+            })
 
             if choice == "stay":
                 if disp.get("stay_valid"):
