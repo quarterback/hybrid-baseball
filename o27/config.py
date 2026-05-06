@@ -248,6 +248,15 @@ HARD_CONTACT: list = [
 
 RUNNER_EXTRA_SPEED_SCALE: float = 0.35
 
+# Baseline extra-base attempt probability for the runner on 1B on a double.
+# Without this baseline, every double produced an identical [2, 2, 1] runner
+# advancement and runs scored were rigidly tied to the hit type — fast and
+# slow runners alike stopped at 3B. The baseline + speed/baserunning/
+# aggressiveness scaling decouples runs from hits at the most common
+# extra-base-hit type. Tuned to roughly match MLB rates of "1B runner scores
+# on a double" (~40%) at league-average attributes.
+RUNNER_EXTRA_DOUBLE_FROM_1B: float = 0.30
+
 # ---------------------------------------------------------------------------
 # TOOTBLAN — thrown out trying for the extra base on a hit / fly / grounder.
 # When a runner ATTEMPTS the extra base (probability driven by speed +

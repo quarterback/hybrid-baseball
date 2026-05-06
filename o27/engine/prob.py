@@ -590,7 +590,12 @@ def runner_advances_for_hit(
         return [adv1, adv2, adv3], out_idx
 
     elif hit_type == "double":
-        return [2, 2, 1], None   # routine — 3B scores
+        # Runner on 1B: typically pulls up at 3B, but speed/baserunning/
+        # aggressiveness can drive them home. Without this draw, every
+        # double yielded an identical [2, 2, 1] line and runs scored
+        # tracked hit count too tightly.
+        adv1 = _resolve(0, 2, s1, cfg.RUNNER_EXTRA_DOUBLE_FROM_1B, br1, ag1)
+        return [adv1, 2, 1], out_idx
 
     elif hit_type in ("triple", "hr"):
         return [3, 3, 3], None
