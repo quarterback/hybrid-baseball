@@ -479,6 +479,76 @@ def _pitcher_wl_map() -> dict[int, dict[str, int]]:
     return out
 
 
+def _attach_decisions(games: list[dict]) -> None:
+    """For finals only, attach `w_pitcher` and `l_pitcher` dicts to each
+    game with the format {'name', 'w', 'l'} — last name and the pitcher's
+    season W-L through this game. Powers the b-ref-style game-card line
+    'W: Bello (2-4)' under the score."""
+    if not games:
+        return
+    finals = [g for g in games if g.get("played")]
+    if not finals:
+        return
+    ids = [g["id"] for g in finals]
+    ph = ",".join("?" * len(ids))
+    rows = db.fetchall(
+        f"""SELECT ps.game_id, ps.team_id, ps.player_id,
+                   ps.outs_recorded AS outs, ps.runs_allowed AS runs,
+                   ps.er AS er, ps.rowid AS rowid,
+                   p.name AS player_name
+              FROM game_pitcher_stats ps
+              JOIN players p ON ps.player_id = p.id
+             WHERE ps.game_id IN ({ph})
+             ORDER BY ps.game_id, ps.team_id, ps.rowid""",
+        tuple(ids),
+    )
+    by_team_game: dict[tuple[int, int], list[dict]] = {}
+    name_by_id: dict[int, str] = {}
+    for r in rows:
+        by_team_game.setdefault((r["game_id"], r["team_id"]), []).append(dict(r))
+        name_by_id[r["player_id"]] = r["player_name"]
+
+    season_wl = _pitcher_wl_map()
+
+    def _last(name: str) -> str:
+        return (name or "").rsplit(" ", 1)[-1]
+
+    for g in finals:
+        winner_id = g.get("winner_id")
+        if winner_id is None:
+            continue
+        loser_id = g["away_team_id"] if winner_id == g["home_team_id"] else g["home_team_id"]
+        win_pitchers = by_team_game.get((g["id"], winner_id), [])
+        lose_pitchers = by_team_game.get((g["id"], loser_id), [])
+        # W: SP if 12+ outs else most-effective reliever.
+        w_pid = None
+        if win_pitchers:
+            sp = win_pitchers[0]
+            if (sp["outs"] or 0) >= _SP_OUTS_THRESHOLD:
+                w_pid = sp["player_id"]
+            else:
+                relievers = win_pitchers[1:] or win_pitchers
+                relievers = sorted(
+                    relievers,
+                    key=lambda p: ((p["outs"] or 0) - (p["er"] or 0), p["outs"] or 0),
+                    reverse=True,
+                )
+                w_pid = relievers[0]["player_id"]
+        # L: pitcher with most ER.
+        l_pid = None
+        if lose_pitchers:
+            losers = sorted(lose_pitchers, key=lambda p: (-(p["er"] or 0), p["rowid"]))
+            l_pid = losers[0]["player_id"]
+        if w_pid:
+            wl = season_wl.get(w_pid, {"w": 0, "l": 0})
+            g["w_pitcher"] = {"name": _last(name_by_id.get(w_pid, "")),
+                              "w": wl["w"], "l": wl["l"]}
+        if l_pid:
+            wl = season_wl.get(l_pid, {"w": 0, "l": 0})
+            g["l_pitcher"] = {"name": _last(name_by_id.get(l_pid, "")),
+                              "w": wl["w"], "l": wl["l"]}
+
+
 def _attach_hits(games: list[dict]) -> None:
     """Sum hits per (game_id, team_id) from game_batter_stats and attach
     home_hits / away_hits to each game row. Pure roll-up of sim output —
@@ -1123,7 +1193,10 @@ def index():
     if not team_count or team_count["n"] == 0:
         return redirect(url_for("new_league_get"))
 
-    today = get_current_sim_date()
+    # Date strip lets the user navigate days via prev/next arrows; the
+    # ?date= query param overrides the auto-detected current sim date.
+    requested = request.args.get("date")
+    today = requested or get_current_sim_date()
     today_games = []
     if today:
         today_games = db.fetchall(
@@ -1138,6 +1211,23 @@ def index():
             (today,),
         )
         _attach_hits(today_games)
+        _attach_decisions(today_games)
+    # Prev / next days that have any scheduled games — for the date strip
+    # arrows. We hop by date, not by single days, so a day with no games
+    # doesn't render as a dead-end.
+    prev_date = None
+    next_date = None
+    if today:
+        r = db.fetchone(
+            "SELECT MAX(game_date) AS d FROM games WHERE game_date < ?",
+            (today,),
+        )
+        prev_date = r["d"] if r else None
+        r = db.fetchone(
+            "SELECT MIN(game_date) AS d FROM games WHERE game_date > ?",
+            (today,),
+        )
+        next_date = r["d"] if r else None
 
     # Yesterday's finals = the most recent date < today with played=1 games.
     yesterday = None
@@ -1161,6 +1251,7 @@ def index():
             (yesterday,),
         )
         _attach_hits(yesterday_games)
+        _attach_decisions(yesterday_games)
 
     divs = _divisions()
 
@@ -1226,6 +1317,8 @@ def index():
     return _serve("index.html",
                            today=today,
                            today_games=today_games,
+                           prev_date=prev_date,
+                           next_date=next_date,
                            yesterday=yesterday,
                            yesterday_games=yesterday_games,
                            divisions=divs,

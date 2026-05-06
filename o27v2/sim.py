@@ -518,6 +518,11 @@ def _db_team_to_engine(
     # at most once per cycle through the order.
     bench_pool = list(dhs) + list(fielders[8:])
     jokers     = _pick_jokers(bench_pool, n=3)
+    # Force-stamp every joker with game_position="J" — the per-bench-
+    # source picker can pull a non-DH (e.g. utility infielder) so we
+    # can't rely on `_assign_game_positions(... dhs)` having tagged them.
+    for j in jokers:
+        j.game_position = "J"
 
     # Reorder the roster so today's SP is the first pitcher. The engine's
     # `_set_fielding_pitcher` picks the first is_pitcher in roster order,
@@ -564,7 +569,8 @@ def _db_team_to_engine(
 # Stat extraction from Renderer
 # ---------------------------------------------------------------------------
 
-def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict]) -> list[dict]:
+def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict],
+                          engine_team=None) -> list[dict]:
     """Extract per-phase batter stats from the Renderer's per-phase snapshots.
 
     Task #58: yields one row per (player, phase) tuple, where phase 0 is
@@ -572,6 +578,16 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict])
     activity in a phase are omitted.
     """
     team_player_ids: set[int] = {p["id"] for p in players}
+    # Build engine-player lookup so we can pull `game_position` (set on
+    # the Player object at lineup-build time by `_assign_game_positions`).
+    engine_players_by_id: dict[str, object] = {}
+    if engine_team is not None:
+        for ep in (getattr(engine_team, "roster", None) or []):
+            engine_players_by_id[str(ep.player_id)] = ep
+        for ep in (getattr(engine_team, "lineup", None) or []):
+            engine_players_by_id.setdefault(str(ep.player_id), ep)
+        for ep in (getattr(engine_team, "jokers_available", None) or []):
+            engine_players_by_id.setdefault(str(ep.player_id), ep)
     rows: list[dict] = []
     phases = renderer.phases_seen()
     if not phases:
@@ -620,7 +636,9 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict])
                 "c2_adv_2b": getattr(bstat, "c2_adv_2b", 0),
                 "c2_op_3b":  getattr(bstat, "c2_op_3b", 0),
                 "c2_adv_3b": getattr(bstat, "c2_adv_3b", 0),
-                "game_position": str(getattr(player, "game_position", "") or ""),
+                "game_position": str(getattr(
+                    engine_players_by_id.get(str(engine_pid)),
+                    "game_position", "") or ""),
                 "entry_type": str(getattr(bstat, "entry_type", "") or "starter"),
                 "replaced_player_id": (
                     int(getattr(bstat, "replaced_player_id", "") or 0) or None
@@ -992,8 +1010,10 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     all_away_players = db.fetchall(
         "SELECT * FROM players WHERE team_id = ? ORDER BY id", (away_team_id,)
     )
-    away_bstats = _extract_batter_stats(renderer, away_team_id, all_away_players)
-    home_bstats = _extract_batter_stats(renderer, home_team_id, all_home_players)
+    away_bstats = _extract_batter_stats(renderer, away_team_id, all_away_players,
+                                        engine_team=visitors_team)
+    home_bstats = _extract_batter_stats(renderer, home_team_id, all_home_players,
+                                        engine_team=home_team)
     away_pstats = _extract_pitcher_stats(final_state, away_team_id, all_away_players)
     home_pstats = _extract_pitcher_stats(final_state, home_team_id, all_home_players)
     team_phase_outs = _compute_team_phase_outs(

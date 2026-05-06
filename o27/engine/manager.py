@@ -129,6 +129,11 @@ def pinch_hit(state: GameState, replacement: Player) -> list[str]:
     pos = team.lineup_position % len(team.lineup)
     replaced = team.lineup[pos]
     team.lineup[pos] = replacement
+    # Inherit the replaced player's fielding slot so the box score has
+    # something to render. If the PH later actually plays the field
+    # (mid-game, after their PA), they'll be at this position.
+    if not getattr(replacement, "game_position", "") and getattr(replaced, "game_position", ""):
+        replacement.game_position = replaced.game_position
     log = [f"  PINCH HIT: {replacement.name} bats for {replaced.name}."]
 
     state.events.append({
