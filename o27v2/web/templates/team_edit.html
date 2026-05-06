@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ team.name }}{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{{ url_for('teams') }}">Teams</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('team_detail', team_id=team.id) }}">{{ team.name }}</a></li>
+    <li class="breadcrumb-item active">Edit</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <h2 class="mb-3">Edit team — {{ team.abbrev }}</h2>
+
+    <div class="panel mb-3" style="padding:14px">
+      <div class="text-secondary small">
+        Renaming and relocating only changes display + weather draws.
+        Rosters, division, league, and stats stay intact. Changing the
+        city <strong>re-rolls weather</strong> for unplayed home games on
+        this team's schedule (already-played games keep their stamped
+        conditions).
+      </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('team_edit_post', team_id=team.id) }}">
+      <div class="row g-3 mb-3">
+        <div class="col-md-7">
+          <label class="form-label" for="name">Team name</label>
+          <input id="name" type="text" name="name" required maxlength="60"
+                 value="{{ team.name }}"
+                 class="form-control form-control-sm">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="abbrev">Abbrev</label>
+          <input id="abbrev" type="text" name="abbrev" required minlength="2" maxlength="4"
+                 value="{{ team.abbrev }}" pattern="[A-Za-z0-9]{2,4}"
+                 class="form-control form-control-sm" style="text-transform:uppercase">
+          <div class="text-secondary mt-1" style="font-size:.72rem">2-4 letters</div>
+        </div>
+        <div class="col-md-7">
+          <label class="form-label" for="city">City</label>
+          <input id="city" type="text" name="city" maxlength="80"
+                 value="{{ team.city }}"
+                 class="form-control form-control-sm">
+          <div class="text-secondary mt-1" style="font-size:.72rem">
+            Drives weather. Append a 2/3-letter country code for non-US cities
+            (e.g. <code>Helsinki FIN</code>, <code>Tokyo JPN</code>) so the
+            weather model picks the right archetype. Current archetype:
+            <strong>{{ current_archetype }}</strong>.
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 align-items-center">
+        <button type="submit" class="btn btn-primary">Save changes</button>
+        <a href="{{ url_for('team_detail', team_id=team.id) }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

@@ -83,13 +83,20 @@ def _end_of_month(d: _dt.date) -> _dt.date:
 
 
 def _sim_response(from_date: str | None, to_date: str | None, results: list) -> dict:
+    errors = [r for r in results if isinstance(r, dict) and "error" in r]
     return {
-        "simulated":       len(results),
+        "simulated":       len(results) - len(errors),
+        "errored":         len(errors),
+        "first_error":     (errors[0].get("error") if errors else None),
         "from_date":       from_date,
         "to_date":         to_date,
         "current_date":    get_current_sim_date(),
         "season_complete": is_season_complete(),
     }
+
+
+def _had_errors(results: list) -> bool:
+    return any(isinstance(r, dict) and "error" in r for r in results)
 
 
 def _clamp_to_last(date_str: str) -> str:
@@ -3814,6 +3821,92 @@ def team_detail(team_id: int):
                            win_pct=_win_pct)
 
 
+@app.route("/team/<int:team_id>/edit", methods=["GET"])
+def team_edit_get(team_id: int):
+    from o27.engine.weather import archetype_for_city
+    team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
+    if not team:
+        abort(404)
+    return _serve("team_edit.html",
+                           team=team,
+                           current_archetype=archetype_for_city(team["city"] or ""))
+
+
+@app.route("/team/<int:team_id>/edit", methods=["POST"])
+def team_edit_post(team_id: int):
+    from flask import flash
+    from o27.engine.weather import draw_weather, archetype_for_city
+    import random as _random
+
+    team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
+    if not team:
+        abort(404)
+
+    new_name   = (request.form.get("name", "") or "").strip()
+    new_abbrev = (request.form.get("abbrev", "") or "").strip().upper()
+    new_city   = (request.form.get("city", "") or "").strip()
+
+    # Validation: bounce back to the form with a flash on error so the
+    # user keeps their typed values via the rendered form fields.
+    err: str | None = None
+    if not new_name:
+        err = "Team name cannot be blank."
+    elif not (2 <= len(new_abbrev) <= 4) or not new_abbrev.isalnum():
+        err = "Abbreviation must be 2-4 alphanumeric characters."
+    if err:
+        flash(err, "error")
+        return redirect(url_for("team_edit_get", team_id=team_id))
+
+    # Detect collision: another team already using this abbrev.
+    clash = db.fetchone(
+        "SELECT id FROM teams WHERE abbrev = ? AND id != ?",
+        (new_abbrev, team_id),
+    )
+    if clash:
+        flash(f"Abbreviation {new_abbrev} is already used by another team.", "error")
+        return redirect(url_for("team_edit_get", team_id=team_id))
+
+    city_changed = (new_city != (team["city"] or ""))
+
+    db.execute(
+        "UPDATE teams SET name = ?, abbrev = ?, city = ? WHERE id = ?",
+        (new_name, new_abbrev, new_city, team_id),
+    )
+
+    # Re-roll weather for unplayed home games when the city changes —
+    # archetype_for_city is called fresh per-game inside draw_weather, so
+    # changing the city alone changes the climatology. A new RNG forked
+    # off the team_id keeps the reseed deterministic per team.
+    rerolled = 0
+    if city_changed:
+        unplayed_home = db.fetchall(
+            "SELECT id, game_date FROM games WHERE home_team_id = ? AND played = 0",
+            (team_id,),
+        )
+        if unplayed_home:
+            rng = _random.Random(team_id ^ 0xCAFE_BABE)
+            for g in unplayed_home:
+                w = draw_weather(rng, new_city, g["game_date"])
+                db.execute(
+                    """UPDATE games SET temperature_tier=?, wind_tier=?,
+                       humidity_tier=?, precip_tier=?, cloud_tier=?
+                       WHERE id=?""",
+                    (w.temperature, w.wind, w.humidity, w.precip, w.cloud, g["id"]),
+                )
+                rerolled += 1
+
+    if city_changed:
+        flash(
+            f"Team updated. Re-rolled weather for {rerolled} unplayed home games "
+            f"({archetype_for_city(new_city)} archetype).",
+            "info",
+        )
+    else:
+        flash("Team updated.", "info")
+
+    return redirect(url_for("team_detail", team_id=team_id))
+
+
 @app.route("/transactions")
 def transactions():
     from o27v2.transactions import get_transactions
@@ -3846,32 +3939,97 @@ def transactions():
 
 @app.route("/new-league", methods=["GET"])
 def new_league_get():
+    from o27v2.league import get_name_region_presets, get_name_regions
     configs = get_league_configs()
     current_team_count = db.fetchone("SELECT COUNT(*) as n FROM teams")
     current_n = current_team_count["n"] if current_team_count else 0
     return _serve("new_league.html",
                            configs=configs,
-                           current_team_count=current_n)
+                           current_team_count=current_n,
+                           name_region_presets=get_name_region_presets(),
+                           name_regions=get_name_regions())
 
 
 @app.route("/new-league", methods=["POST"])
 def new_league_post():
-    from o27v2.league import seed_league
+    from o27v2.league import seed_league, build_custom_config
     from o27v2.schedule import seed_schedule
-
-    config_id  = request.form.get("config_id", "30teams")
-    rng_seed   = int(request.form.get("rng_seed", 42))
-
-    configs = get_league_configs()
-    if config_id not in configs:
-        abort(400, f"Unknown config: {config_id}")
-
     from o27v2.season_archive import set_active_league_meta
+    from flask import flash
+
+    rng_seed = int(request.form.get("rng_seed", 42) or 42)
+    mode     = (request.form.get("mode") or "preset").strip()
+
+    # Two paths: a named preset (the JSON files in data/league_configs/)
+    # or a custom config built from the form fields.
+    if mode == "preset":
+        config_id = request.form.get("config_id", "30teams")
+        configs   = get_league_configs()
+        if config_id not in configs:
+            abort(400, f"Unknown config: {config_id}")
+        custom_cfg  = None
+        meta_cfg_id = config_id
+    else:
+        # Custom: build a config dict from the form. Validation lives in
+        # build_custom_config; surface the message to the user instead of
+        # showing a 400 page.
+        try:
+            dows = request.form.getlist("weekly_off_dows")
+            custom_cfg = build_custom_config(
+                team_count           = int(request.form.get("team_count", 30) or 30),
+                leagues_count        = int(request.form.get("leagues_count", 2) or 2),
+                divisions_per_league = int(request.form.get("divisions_per_league", 3) or 3),
+                games_per_team       = int(request.form.get("games_per_team", 162) or 162),
+                season_days          = int(request.form.get("season_days", 186) or 186),
+                intra_division_weight = float(request.form.get("intra_division_weight", 0.46) or 0.46),
+                inter_division_weight = float(request.form.get("inter_division_weight", 0.54) or 0.54),
+                season_year          = int(request.form.get("season_year", 2026) or 2026),
+                season_start_month   = int(request.form.get("season_start_month", 4) or 4),
+                season_start_day     = int(request.form.get("season_start_day", 1) or 1),
+                weekly_off_dows      = [int(d) for d in dows if d.strip().isdigit()],
+                max_consecutive_game_days = int(request.form.get("max_consecutive_game_days", 20) or 20),
+                target_stand_length       = int(request.form.get("target_stand_length", 3) or 3),
+                level                = request.form.get("level", "MLB") or "MLB",
+                label                = request.form.get("label") or None,
+                gender               = request.form.get("gender", "male") or "male",
+                name_region_preset   = request.form.get("name_region_preset") or None,
+            )
+        except (ValueError, TypeError) as e:
+            flash(f"League configuration error: {e}", "error")
+            return redirect(url_for("new_league_get"))
+        meta_cfg_id = "custom"
+
     db.drop_all()
     db.init_db()
-    seed_league(rng_seed=rng_seed, config_id=config_id)
-    seed_schedule(config_id=config_id, rng_seed=rng_seed)
-    set_active_league_meta(rng_seed, config_id)
+    seed_league(rng_seed=rng_seed,
+                config_id=meta_cfg_id if custom_cfg is None else "custom",
+                config=custom_cfg)
+    seed_schedule(rng_seed=rng_seed,
+                  config_id=meta_cfg_id if custom_cfg is None else "custom",
+                  config=custom_cfg)
+    set_active_league_meta(rng_seed, meta_cfg_id)
+
+    # Surface a schedule-quality report so the user sees imbalance
+    # warnings (uneven opponent counts, off-day spread, etc.) before
+    # they get deep into a season and notice a lopsided play sample.
+    try:
+        from o27v2.schedule import verify_opponent_balance
+        teams_rows = db.fetchall("SELECT id, division FROM teams")
+        games_rows = db.fetchall("SELECT game_date, home_team_id, away_team_id FROM games")
+        report = verify_opponent_balance(
+            [dict(g) for g in games_rows],
+            [dict(t) for t in teams_rows],
+            custom_cfg,
+        )
+        msg = (f"League ready: {len(games_rows)} games · "
+               f"{report['intra_avg']:.1f} games per intra-div opponent · "
+               f"{report['inter_avg']:.1f} per inter-div · "
+               f"off-days {report['off_day_min']}-{report['off_day_max']}/team.")
+        flash(msg, "info")
+        for w in report.get("warnings", []):
+            flash(f"Schedule warning: {w}", "warning")
+    except Exception as e:
+        app.logger.exception("verify_opponent_balance failed: %s", e)
 
     return redirect(url_for("index"))
 
@@ -3897,8 +4055,12 @@ def api_sim_today():
         return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
     results = simulate_date(current)
-    next_day = (_dt.date.fromisoformat(current) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(_clamp_to_last(next_day))
+    # Only advance the clock if every game on `current` actually played.
+    # Otherwise we'd desync: schedule shows unplayed games on a past day
+    # and the user has no obvious way to retry them.
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(current) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(_clamp_to_last(next_day))
     return jsonify(_sim_response(current, current, results))
 
 
@@ -3909,8 +4071,11 @@ def api_sim_week():
     current = get_current_sim_date()
     target  = (_dt.date.fromisoformat(current) + _dt.timedelta(days=6)).isoformat()
     results = simulate_through(target)
-    next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(_clamp_to_last(next_day))
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(_clamp_to_last(next_day))
+    else:
+        resync_sim_clock()
     return jsonify(_sim_response(current, target, results))
 
 
@@ -3921,8 +4086,11 @@ def api_sim_month():
     current = get_current_sim_date()
     target  = _end_of_month(_dt.date.fromisoformat(current)).isoformat()
     results = simulate_through(target)
-    next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(_clamp_to_last(next_day))
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(_clamp_to_last(next_day))
+    else:
+        resync_sim_clock()
     return jsonify(_sim_response(current, target, results))
 
 
@@ -3935,8 +4103,11 @@ def api_sim_all_star():
     if target is None or current > target:
         return jsonify(_sim_response(current, target, []))
     results = simulate_through(target)
-    next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(_clamp_to_last(next_day))
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(_clamp_to_last(next_day))
+    else:
+        resync_sim_clock()
     return jsonify(_sim_response(current, target, results))
 
 
@@ -3952,8 +4123,11 @@ def api_sim_season():
     current = get_current_sim_date()
     last    = get_last_scheduled_date()
     results = simulate_through(last)
-    next_day = (_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(next_day)
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(next_day)
+    else:
+        resync_sim_clock()
     # Auto-archive on completion: simulating through the last scheduled date
     # finishes the season, so snapshot leaders/standings/invariants now.
     archived_id = None
@@ -4108,7 +4282,17 @@ def api_sim_game(game_id: int):
         resync_sim_clock()
         return jsonify(result)
     except ValueError as e:
+        # Expected: e.g. "Game already played" / "Game not found"
         return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        # Unexpected engine/DB failure. Log a full traceback server-side
+        # so deployments surface the actual cause, and return enough info
+        # for the schedule-page JS to show a useful error to the user.
+        app.logger.exception("simulate_game(%s) failed", game_id)
+        return jsonify({
+            "error": f"{type(e).__name__}: {e}",
+            "game_id": game_id,
+        }), 500
 
 
 @app.route("/api/league-configs")

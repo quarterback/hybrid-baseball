@@ -33,18 +33,51 @@ _TEAMS_DB     = os.path.join(_DATA_DIR, "teams_database.json")
 # ---------------------------------------------------------------------------
 
 _name_pools: dict[str, dict] | None = None
+_regions_meta: dict | None = None
 _teams_db: list[dict] | None = None
 
 
 def _load_name_pools() -> dict[str, dict]:
+    """Load the viperball-derived raw name pools.
+
+    Returns a dict shaped like:
+        {
+          "male_first":   {bucket_key: [name, ...], ...},   # 40 buckets
+          "female_first": {bucket_key: [name, ...], ...},   # 40 buckets
+          "surnames":     {bucket_key: [name, ...], ...},   # 39 buckets
+        }
+    The bucket keys come from the source JSON files unchanged. The
+    `regions.json` meta file maps high-level world-regions onto a list
+    of these raw bucket keys.
+    """
     global _name_pools
     if _name_pools is None:
         _name_pools = {}
-        for region in ("usa", "latin", "japan_korea", "other"):
-            path = os.path.join(_NAMES_DIR, f"{region}.json")
+        for kind in ("male_first", "female_first", "surnames"):
+            path = os.path.join(_NAMES_DIR, f"{kind}.json")
             with open(path, encoding="utf-8") as fh:
-                _name_pools[region] = json.load(fh)
+                _name_pools[kind] = json.load(fh)
     return _name_pools
+
+
+def _load_regions_meta() -> dict:
+    """Load the world-region metadata: super-region groupings + named
+    presets the league-creation form exposes."""
+    global _regions_meta
+    if _regions_meta is None:
+        with open(os.path.join(_NAMES_DIR, "regions.json"), encoding="utf-8") as fh:
+            _regions_meta = json.load(fh)
+    return _regions_meta
+
+
+def get_name_region_presets() -> dict[str, dict]:
+    """Return preset id -> {label, weights} for the new-league form."""
+    return _load_regions_meta().get("presets", {})
+
+
+def get_name_regions() -> dict[str, dict]:
+    """Return region id -> {label, first_keys, surname_keys}."""
+    return _load_regions_meta().get("regions", {})
 
 
 def _load_teams_db() -> list[dict]:
@@ -73,6 +106,124 @@ def get_config(config_id: str) -> dict:
         raise ValueError(f"Unknown league config: {config_id!r}")
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def build_custom_config(
+    *,
+    team_count: int,
+    leagues_count: int = 2,
+    divisions_per_league: int = 3,
+    games_per_team: int = 162,
+    season_days: int = 186,
+    intra_division_weight: float = 0.46,
+    inter_division_weight: float = 0.54,
+    season_year: int = 2026,
+    season_start_month: int = 4,
+    season_start_day: int = 1,
+    all_star_break_month: int = 7,
+    all_star_break_day: int = 13,
+    all_star_break_days: int = 4,
+    weekly_off_dows: list[int] | None = None,
+    max_consecutive_game_days: int = 20,
+    target_stand_length: int = 3,
+    level: str = "MLB",
+    label: str | None = None,
+    gender: str = "male",
+    name_region_preset: str | None = None,
+    name_region_weights: dict[str, float] | None = None,
+) -> dict:
+    """Build a league-config dict from raw inputs (the parametric form path).
+
+    Validates the team-count math: must be even and divisible by
+    `leagues_count * divisions_per_league` so divisions can be even-sized.
+    Weights are normalised to sum to 1.0 before being stored.
+
+    Raises `ValueError` with a human-readable message on invalid input
+    so the form handler can surface it to the user.
+    """
+    if team_count < 2:
+        raise ValueError("Team count must be at least 2.")
+    if team_count % 2 != 0:
+        raise ValueError(
+            f"Team count must be even (got {team_count}) — "
+            f"a balanced schedule needs every team to have a partner each day."
+        )
+    if leagues_count < 1:
+        raise ValueError("Leagues count must be at least 1.")
+    if divisions_per_league < 1:
+        raise ValueError("Divisions per league must be at least 1.")
+    total_divs = leagues_count * divisions_per_league
+    if team_count % total_divs != 0:
+        raise ValueError(
+            f"Team count ({team_count}) must divide evenly across "
+            f"{leagues_count} leagues × {divisions_per_league} divisions "
+            f"({total_divs} total). Try {((team_count // total_divs) + 1) * total_divs} "
+            f"or {(team_count // total_divs) * total_divs} teams."
+        )
+    if games_per_team < 1:
+        raise ValueError("Games per team must be at least 1.")
+    if intra_division_weight < 0 or inter_division_weight < 0:
+        raise ValueError("Division weights must be non-negative.")
+
+    # Normalise weights so 0.4 / 0.6 and 40 / 60 both work.
+    total_w = intra_division_weight + inter_division_weight
+    if total_w <= 0:
+        # No division weighting — equal-opponent schedule.
+        intra_norm, inter_norm = 0.0, 0.0
+    else:
+        intra_norm = intra_division_weight / total_w
+        inter_norm = inter_division_weight / total_w
+
+    teams_per_division = team_count // total_divs
+
+    # Resolve name distribution. Explicit weights win; otherwise look up
+    # the named preset; otherwise fall back to the americas_pro defaults.
+    presets = get_name_region_presets()
+    if name_region_weights is None:
+        if name_region_preset and name_region_preset in presets:
+            resolved_weights = dict(presets[name_region_preset]["weights"])
+        else:
+            resolved_weights = _default_region_weights()
+    else:
+        resolved_weights = _normalise_weights(name_region_weights)
+
+    g = (gender or "male").lower()
+    if g not in ("male", "female", "mixed"):
+        raise ValueError(f"Gender must be 'male', 'female', or 'mixed' (got {gender!r}).")
+
+    # Pick league names: AL/NL for 2, otherwise League 1..N.
+    if leagues_count == 2:
+        leagues = ["AL", "NL"]
+    elif leagues_count == 1:
+        leagues = ["MLB"]
+    else:
+        leagues = [f"L{i + 1}" for i in range(leagues_count)]
+
+    return {
+        "id":                     "custom",
+        "label":                  label or f"Custom — {team_count} teams",
+        "team_count":             team_count,
+        "level":                  level,
+        "games_per_team":         games_per_team,
+        "season_days":            season_days,
+        "leagues":                leagues,
+        "divisions_per_league":   divisions_per_league,
+        "teams_per_division":     teams_per_division,
+        "intra_division_weight":  intra_norm,
+        "inter_division_weight":  inter_norm,
+        "season_year":            season_year,
+        "season_start_month":     season_start_month,
+        "season_start_day":       season_start_day,
+        "all_star_break_month":   all_star_break_month,
+        "all_star_break_day":     all_star_break_day,
+        "all_star_break_days":    all_star_break_days,
+        "weekly_off_dows":        list(weekly_off_dows or []),
+        "max_consecutive_game_days": int(max_consecutive_game_days),
+        "target_stand_length":       int(target_stand_length),
+        "gender":                    g,
+        "name_region_preset":        name_region_preset,
+        "name_region_weights":       resolved_weights,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -152,27 +303,124 @@ _JOKER_NAMES = [
     "The Zenith", "The Arrow", "The Baron", "The Cobra", "The Dagger",
 ]
 
-_REGION_WEIGHTS = [
-    ("usa",         0.50),
-    ("latin",       0.30),
-    ("japan_korea", 0.10),
-    ("other",       0.10),
-]
-
-
 def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, v))
 
 
-def _weighted_region(rng: random.Random) -> str:
-    """Pick a region using the configured weights."""
+# Default region distribution — preserves legacy "Americas-pro / MLB-like"
+# behavior so any code path that doesn't explicitly set a name config
+# (tests, smoke-test, legacy presets) still gets the same shape it
+# always did. Looks up the canonical preset from regions.json so the
+# defaults stay one source of truth.
+def _default_region_weights() -> dict[str, float]:
+    presets = get_name_region_presets()
+    if "americas_pro" in presets:
+        return dict(presets["americas_pro"]["weights"])
+    # Fallback if regions.json gets stripped down: 100% USA.
+    return {"us": 1.0}
+
+
+def _normalise_weights(weights: dict[str, float]) -> dict[str, float]:
+    """Clamp negative weights to 0, then renormalise so the values
+    sum to 1.0. Empty / all-zero input falls back to the default."""
+    cleaned = {k: max(0.0, float(v)) for k, v in (weights or {}).items()}
+    total = sum(cleaned.values())
+    if total <= 0:
+        return _default_region_weights()
+    return {k: v / total for k, v in cleaned.items() if v > 0}
+
+
+def _pick_weighted_key(rng: random.Random, weights: dict[str, float]) -> str:
+    """Sample one key from a probability dict. Caller is responsible for
+    making sure the values sum to ~1.0. Distinct from `_weighted_pick`
+    which takes (label, weight) tuples — used by bats / throws / etc."""
     r = rng.random()
     cumulative = 0.0
-    for region, weight in _REGION_WEIGHTS:
-        cumulative += weight
+    last_key = None
+    for k, w in weights.items():
+        cumulative += w
+        last_key = k
         if r < cumulative:
-            return region
-    return "usa"
+            return k
+    return last_key or next(iter(weights))
+
+
+def make_name_picker(
+    rng: random.Random,
+    *,
+    gender: str = "male",
+    region_weights: dict[str, float] | None = None,
+):
+    """Return a callable `_name() -> str` that draws a unique full name
+    using the configured world-region distribution and gender.
+
+    `gender` values:
+      - "male"    → uses male_first.json
+      - "female"  → uses female_first.json
+      - "mixed"   → 50/50 split per draw
+
+    `region_weights` is a {region_id: weight} dict (region ids defined
+    in regions.json). Falls back to the americas_pro preset when None
+    is passed. Weights are auto-normalised.
+    """
+    pools         = _load_name_pools()
+    regions_meta  = get_name_regions()
+    weights       = _normalise_weights(region_weights)
+    used: set[str] = set()
+    g_lower = (gender or "male").lower()
+
+    def _pick_first(region_id: str) -> str | None:
+        region = regions_meta.get(region_id)
+        if region is None:
+            return None
+        keys = region.get("first_keys") or []
+        # Pool for this draw: concatenate all source buckets the region
+        # maps to, then sample one entry. Doing this lazily per-draw
+        # keeps the loader simple and lets the user retune regions.json
+        # without rebuilding caches.
+        pool_kind = "male_first" if g_lower == "male" else (
+            "female_first" if g_lower == "female"
+            else ("male_first" if rng.random() < 0.5 else "female_first")
+        )
+        bucket = pools[pool_kind]
+        candidates: list[str] = []
+        for k in keys:
+            v = bucket.get(k)
+            if isinstance(v, list):
+                candidates.extend(v)
+        if not candidates:
+            return None
+        return rng.choice(candidates)
+
+    def _pick_last(region_id: str) -> str | None:
+        region = regions_meta.get(region_id)
+        if region is None:
+            return None
+        keys = region.get("surname_keys") or []
+        bucket = pools["surnames"]
+        candidates: list[str] = []
+        for k in keys:
+            v = bucket.get(k)
+            if isinstance(v, list):
+                candidates.extend(v)
+        if not candidates:
+            return None
+        return rng.choice(candidates)
+
+    def _name() -> str:
+        for _ in range(500):
+            region_id = _pick_weighted_key(rng, weights)
+            first = _pick_first(region_id)
+            last  = _pick_last(region_id)
+            if not first or not last:
+                continue
+            full = f"{first} {last}"
+            if full not in used:
+                used.add(full)
+                return full
+        return f"Player {rng.randint(100, 999)}"
+
+    return _name
 
 
 # Archetype profiles, PA modifiers, and committee positions are defined in
@@ -537,6 +785,7 @@ def generate_players(
     rng: random.Random,
     home_bonus: float = 0.0,
     org_strength: int = 50,
+    name_config: dict | None = None,
 ) -> list[dict]:
     """Generate ~47 players for a team (Task #65 expanded roster).
 
@@ -566,22 +815,14 @@ def generate_players(
     `team_idx` and `home_bonus` are accepted for backward compatibility
     but don't affect the distribution.
     """
-    pools = _load_name_pools()
-    used_names: set[str] = set()
-
     org_shift = _org_strength_to_shift(org_strength)
 
-    def _name() -> str:
-        for _ in range(200):
-            region = _weighted_region(rng)
-            pool   = pools[region]
-            first  = rng.choice(pool["first_names"])
-            last   = rng.choice(pool["last_names"])
-            full   = f"{first} {last}"
-            if full not in used_names:
-                used_names.add(full)
-                return full
-        return f"Player {rng.randint(100, 999)}"
+    cfg = name_config or {}
+    _name = make_name_picker(
+        rng,
+        gender         = cfg.get("gender", "male"),
+        region_weights = cfg.get("region_weights"),
+    )
 
     players: list[dict] = []
 
@@ -615,10 +856,15 @@ def generate_players(
     return players
 
 
-def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
+def seed_league(rng_seed: int = 42, config_id: str = "30teams",
+                config: dict | None = None) -> None:
     """
     Insert teams and their players into the database.
     Safe to call only once (checks for existing data first).
+
+    Pass either `config_id` (loads from `data/league_configs/<id>.json`)
+    or a fully-built `config` dict — the dict wins when both are given.
+    Custom configs from the `/new-league` form take this path.
 
     Team selection strategy:
       1. Take ALL available teams at the config's declared level.
@@ -634,7 +880,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
     if existing and existing["n"] > 0:
         return
 
-    config  = get_config(config_id)
+    config  = config if config is not None else get_config(config_id)
     level   = config.get("level", "MLB")
     n_teams = config["team_count"]
 
@@ -669,6 +915,14 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
 
     div_map = _assign_geographic_divisions(selected, config)
 
+    # Name-distribution config: gender + region weights flow through to
+    # every player's name draw. Pulled from the league config so a
+    # "Nordic" preset produces Nordic names, etc.
+    name_config = {
+        "gender":         config.get("gender", "male"),
+        "region_weights": config.get("name_region_weights"),
+    }
+
     rng2 = random.Random(rng_seed)
     for idx, (team_def, (league_name, division)) in enumerate(zip(selected, div_map)):
         # Build a 3-letter abbreviation if needed
@@ -698,7 +952,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
              mgr["mgr_bench_usage"], org_strength),
         )
-        players = generate_players(idx, rng2, org_strength=org_strength)
+        players = generate_players(idx, rng2, org_strength=org_strength,
+                                   name_config=name_config)
         db.executemany(
             """INSERT INTO players
                (team_id, name, position, is_pitcher, skill, speed,
