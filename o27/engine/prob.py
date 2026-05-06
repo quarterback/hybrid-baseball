@@ -534,6 +534,72 @@ def _runner_advance(
     return base_advance, True
 
 
+def _gidp_force_factor(bases: list) -> float:
+    """Multiplier on GIDP probability based on which bases are occupied.
+    Reflects how many force-out options the defense has."""
+    has_1b, has_2b, has_3b = (b is not None for b in bases)
+    if has_1b and has_2b and has_3b:
+        return cfg.GIDP_FORCE_LOADED
+    if has_1b and has_2b:
+        return cfg.GIDP_FORCE_1B_2B
+    if has_1b and has_3b:
+        return cfg.GIDP_FORCE_1B_3B
+    if has_2b and has_3b:
+        return cfg.GIDP_FORCE_2B_3B
+    if has_1b:
+        return cfg.GIDP_FORCE_1B_ONLY
+    if has_2b:
+        return cfg.GIDP_FORCE_2B_ONLY
+    if has_3b:
+        return cfg.GIDP_FORCE_3B_ONLY
+    return 0.0
+
+
+def _gidp_quality_factor(quality: Optional[str]) -> float:
+    """Contact-quality multiplier on GIDP probability."""
+    if quality == "weak":
+        return cfg.GIDP_QUALITY_WEAK
+    if quality == "hard":
+        return cfg.GIDP_QUALITY_HARD
+    return cfg.GIDP_QUALITY_MEDIUM
+
+
+def _gidp_probability(state: GameState, batter: Player, quality: Optional[str]) -> float:
+    """Compose the per-event GIDP probability and clamp to the configured
+    [MIN, MAX] band. Used by both the run-path GIDP and the stay-path
+    fielders'-choice block (the latter scales it down further)."""
+    bat_speed = float(getattr(batter, "speed", 0.5) or 0.5)
+    inf_def = float(getattr(state.fielding_team, "defense_rating", 0.5) or 0.5)
+    p = (cfg.GIDP_BASE_PROB
+         * _gidp_force_factor(state.bases)
+         * _gidp_quality_factor(quality)
+         - (bat_speed - 0.5) * cfg.GIDP_SPEED_SCALE
+         + (inf_def - 0.5) * cfg.GIDP_DEFENSE_SCALE)
+    return max(cfg.GIDP_MIN_PROB, min(cfg.GIDP_MAX_PROB, p))
+
+
+def _thrown_out_at_home(rng: random.Random, speed: float, baserunning: float) -> bool:
+    """Probability the runner is thrown out at the plate on a play where
+    their default base_advance carries them across home (e.g. 2B runner
+    on a single, 1B runner on a triple). Returns True if they're out.
+
+    Distinct from the TOOTBLAN model in `_runner_advance`, which only fires
+    when an EXTRA base is attempted above the default. This is for the
+    routine-but-not-automatic case: a runner who's expected to score, but
+    who can be cut down by a fielder's relay if they're slow / unaware.
+
+    Symmetric in sign — fast/skilled runners shave the probability toward
+    zero; slow/raw runners inflate it.
+    """
+    out_p = (cfg.RUNNER_THROWN_OUT_AT_HOME_BASE
+             - (speed - 0.5) * cfg.RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE
+             - (baserunning - 0.5) * cfg.RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE)
+    # Floor: even an elite runner has a small chance of being thrown out —
+    # a perfect throw, a slip rounding third, etc. Never automatic.
+    out_p = max(cfg.RUNNER_THROWN_OUT_AT_HOME_MIN, out_p)
+    return rng.random() < out_p
+
+
 def _get_speed(pid: Optional[str], state: GameState) -> float:
     if pid is None:
         return 0.5
@@ -586,13 +652,36 @@ def runner_advances_for_hit(
     if hit_type == "single":
         adv1 = _resolve(0, 1, s1, 0.10, br1, ag1)
         adv2 = _resolve(1, 2, s2, 0.0,  br2, ag2)
-        adv3 = 1   # 3B always scores on a single
+        adv3 = 1   # 3B always scores on a single (90 ft, routine)
+        # Runner from 2B trying to score on a single is the classic
+        # close play at the plate. If the throw beats them, mark them
+        # out (priority: prefer this over a 1B-runner extra-base out
+        # since the play at the plate is the lead runner).
+        if (bases[1] is not None and adv2 >= 2
+                and _thrown_out_at_home(rng, s2, br2)):
+            out_idx = 1
+            adv2 = 1   # held at 3B in the log; pid is cleared by advance_runners
         return [adv1, adv2, adv3], out_idx
 
     elif hit_type == "double":
-        return [2, 2, 1], None   # routine — 3B scores
+        # Runner on 1B: typically pulls up at 3B, but speed/baserunning/
+        # aggressiveness can drive them home. Without this draw, every
+        # double yielded an identical [2, 2, 1] line and runs scored
+        # tracked hit count too tightly.
+        adv1 = _resolve(0, 2, s1, cfg.RUNNER_EXTRA_DOUBLE_FROM_1B, br1, ag1)
+        return [adv1, 2, 1], out_idx
 
-    elif hit_type in ("triple", "hr"):
+    elif hit_type == "triple":
+        # 1B runner is the close play at the plate on a triple. Almost
+        # always scores, but a slow / unaware runner can be cut down by
+        # a strong relay throw.
+        adv1 = 3
+        if bases[0] is not None and _thrown_out_at_home(rng, s1, br1):
+            out_idx = 0
+            adv1 = 2   # presented as held; advance_runners clears the slot
+        return [adv1, 3, 3], out_idx
+
+    elif hit_type == "hr":
         return [3, 3, 3], None
 
     elif hit_type in ("ground_out", "fielders_choice"):
@@ -1240,6 +1329,28 @@ class ProbabilisticProvider:
                 "player_in":  def_sub["player_in"],
             }
 
+        # Pinch runner — late-game, close score, slow runner on base.
+        # Burns the slow batter's lineup slot for a fresh set of legs.
+        pr = mgr.should_pinch_run(state, rng=self.rng)
+        if pr is not None:
+            return {
+                "type": "pinch_runner",
+                "base_idx": pr["base_idx"],
+                "runner_in": pr["runner_in"],
+            }
+
+        # Joker-to-field — VERY rare. Only fires very late game with the
+        # fielding team trailing badly and a notable defense upgrade
+        # available from a joker. Standard MLB analog: functionally
+        # never happens; in O27 the mechanic exists for completeness.
+        j2f = mgr.should_joker_to_field(state, rng=self.rng)
+        if j2f is not None:
+            return {
+                "type": "joker_to_field",
+                "joker": j2f["joker"],
+                "player_out": j2f["player_out"],
+            }
+
         # Mid-batting-half offensive→defensive swap. Road team only
         # (state.half == "top"), once the lineup has cycled at least
         # once. Pulls a slugger and brings in a defensive specialist
@@ -1426,6 +1537,76 @@ class ProbabilisticProvider:
             adv = floor_v + (1 if rng.random() < frac else 0)
             adv = max(0, min(3, adv))
             outcome_dict["runner_advances"] = [adv, adv, adv]
+
+        # GIDP / triple play. A ground out with at least one runner on base
+        # and < 2 outs can become a double play. Probability composes:
+        #   base × force_factor(bases) × quality_factor(quality)
+        #     ± speed/defense bonuses, clamped to [GIDP_MIN_PROB, GIDP_MAX_PROB].
+        # The force_factor encodes that 1B-occupancy gives a free force at
+        # 2B (canonical DP), while a lone 2B or 3B runner requires a tag
+        # (rarer). The quality_factor encodes that weak grounders are
+        # DP-prone and hard contact rarely DPs.
+        # Lead-runner identity for the force-out:
+        #   - 1B occupied → 1B runner forced at 2B. (Standard DP.)
+        #   - 1B empty, 2B occupied → 2B runner thrown out at 3B. (Tag play.)
+        #   - 1B empty, 2B empty, 3B occupied → 3B runner thrown out at home.
+        # With 1B+2B both occupied AND 0 outs, a slice of DPs promote to
+        # triple plays (force at 3B AND force at 2B, then batter at 1B).
+        # Bases loaded extends this. Errors short-circuit the whole thing.
+        # Stay (2C) plays don't allow a true DP — the batter isn't running
+        # so there's no force at 1B — but a separate reduced-rate fielders'
+        # choice block below tags out the lead runner.
+        if (choice == "run"
+                and outcome_dict.get("hit_type") == "ground_out"
+                and not outcome_dict.get("is_error")
+                and any(state.bases)
+                and state.outs < 2):
+            dp_p = _gidp_probability(state, batter, quality)
+            if rng.random() < dp_p:
+                # Identify the lead force/tag-out target. Prefer 1B (force
+                # at 2B); fall back to 2B (tag at 3B), then 3B (tag at home).
+                lead_idx = (0 if state.bases[0] is not None
+                            else 1 if state.bases[1] is not None else 2)
+                outcome_dict["hit_type"] = "double_play"
+                outcome_dict["runner_out_idx"] = lead_idx
+                adv = list(outcome_dict.get("runner_advances", [1, 1, 1]))
+                adv[lead_idx] = 0
+                outcome_dict["runner_advances"] = adv
+                # Triple play: 1B+2B both occupied + 0 outs. Force-chain:
+                # batter forces 1B runner at 2B; 1B runner forces 2B runner
+                # at 3B. Lead runner from 3B (if loaded) holds. Bonus from
+                # poor baserunning on the lead forced runner (errors
+                # induce TPs in real baseball).
+                if (state.bases[0] is not None
+                        and state.bases[1] is not None
+                        and state.outs == 0):
+                    tp_p = cfg.TRIPLE_PLAY_GIVEN_DP_PROB
+                    lead_pid = state.bases[1]   # 2B runner — most exposed
+                    lead_br, _ = _get_baserunning(lead_pid, state)
+                    if lead_br < 0.5:
+                        tp_p += (0.5 - lead_br) * cfg.TRIPLE_PLAY_BASERUNNING_BONUS
+                    if rng.random() < tp_p:
+                        outcome_dict["hit_type"] = "triple_play"
+                        outcome_dict["extra_runner_outs"] = [1]
+                        # TP ends the play before any runner can score.
+                        outcome_dict["runner_advances"] = [0, 0, 0]
+
+        # Stay (2C) lead-runner tag-out. On a stay there's no force at 1B
+        # (the batter is still at the plate) so a true DP isn't physical,
+        # but a fielder can still tag out a lead runner who broke. Same
+        # composition as GIDP scaled down by GIDP_STAY_MULTIPLIER.
+        if (choice == "stay"
+                and outcome_dict.get("hit_type") == "ground_out"
+                and not outcome_dict.get("is_error")
+                and any(state.bases)
+                and state.outs < 2
+                and outcome_dict.get("runner_out_idx") is None):
+            tag_p = _gidp_probability(state, batter, quality) * cfg.GIDP_STAY_MULTIPLIER
+            if rng.random() < tag_p:
+                lead_idx = (0 if state.bases[0] is not None
+                            else 1 if state.bases[1] is not None else 2)
+                outcome_dict["runner_out_idx"] = lead_idx
+                outcome_dict["hit_type"] = "fielders_choice"
 
         return {
             "type": "ball_in_play",

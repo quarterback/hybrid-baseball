@@ -248,6 +248,84 @@ HARD_CONTACT: list = [
 
 RUNNER_EXTRA_SPEED_SCALE: float = 0.35
 
+# Baseline extra-base attempt probability for the runner on 1B on a double.
+# Without this baseline, every double produced an identical [2, 2, 1] runner
+# advancement and runs scored were rigidly tied to the hit type — fast and
+# slow runners alike stopped at 3B. The baseline + speed/baserunning/
+# aggressiveness scaling decouples runs from hits at the most common
+# extra-base-hit type. Tuned to roughly match MLB rates of "1B runner scores
+# on a double" (~40%) at league-average attributes.
+RUNNER_EXTRA_DOUBLE_FROM_1B: float = 0.30
+
+# Thrown-out-at-home — for runners whose default base_advance already
+# carries them across the plate (2B runner on a single, 1B runner on a
+# triple). Distinct from TOOTBLAN, which only fires when an "extra base"
+# attempt above base_advance is rolled. Tuning targets at the relevant
+# attribute axes (speed and baserunning, both at the listed value):
+#   fast/skilled (0.95):   ~2%   — never automatic, floor enforced
+#   neutral      (0.50):   ~9%
+#   slow/raw     (0.10):  ~25%
+RUNNER_THROWN_OUT_AT_HOME_BASE: float        = 0.09
+RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.20
+RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.20
+RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.02
+
+# GIDP — ground-ball double plays. With at least one runner on base
+# and < 2 outs, a share of ground outs become double plays. The exact
+# probability depends on:
+#   1. WHICH bases are occupied — a runner on 1B gives the defense a
+#      free force at 2B; a lone runner on 2B or 3B requires a tag, which
+#      is rarer. Multiple runners (especially with 1B) multiply the
+#      force-out options.
+#   2. The CONTACT QUALITY — weak-contact ground balls (slow choppers,
+#      6-4-3 setups) are DP-prone; hard-contact ground balls tend to be
+#      too fast for the relay or skip through the infield entirely.
+#   3. BATTER SPEED — slow batters lose the relay race.
+#   4. TEAM DEFENSE — strong infields turn more DPs.
+# Tuning targets (after all factors compose, before clamp):
+#   - Low end (~6%):  3B alone, hard contact, fast batter, weak defense.
+#   - Mid (~13-14%):  1B alone, medium contact, neutral attributes.
+#   - High end (~23%): bases loaded, weak contact, slow batter, elite defense.
+GIDP_BASE_PROB: float    = 0.13
+GIDP_SPEED_SCALE: float  = 0.20
+GIDP_DEFENSE_SCALE: float = 0.15
+GIDP_MIN_PROB: float     = 0.06
+GIDP_MAX_PROB: float     = 0.23
+
+# Force-factor table — multiplier applied based on which bases are
+# occupied. The (1B-only) case is the canonical 1.0 baseline.
+GIDP_FORCE_1B_ONLY: float        = 1.00   # runner on 1B only
+GIDP_FORCE_2B_ONLY: float        = 0.40   # runner on 2B only — no force, tag required
+GIDP_FORCE_3B_ONLY: float        = 0.40   # runner on 3B only — no force, tag required
+GIDP_FORCE_1B_2B: float          = 1.20   # 1B + 2B (force at 3B + 2B)
+GIDP_FORCE_1B_3B: float          = 1.10   # 1B + 3B (force at 2B; 3B tag)
+GIDP_FORCE_2B_3B: float          = 0.50   # 2B + 3B — no force; tag plays
+GIDP_FORCE_LOADED: float         = 1.40   # bases loaded — most options
+
+# Contact-quality multiplier. Weak ground balls feed DPs (slow rollers,
+# 6-4-3 setups); hard contact is too fast for the relay or punches through.
+GIDP_QUALITY_WEAK: float    = 1.30
+GIDP_QUALITY_MEDIUM: float  = 1.00
+GIDP_QUALITY_HARD: float    = 0.55
+
+# Stay (2C) plays still see fielders' choice / lead-runner-tag-out events,
+# just at a reduced rate — the batter isn't running so there's no force at
+# 1B, but a fielder can still tag out a runner who broke for the next base.
+# This keeps the run-game alive on stays without making 2C a free pass on
+# the bases. Multiplier on GIDP_BASE_PROB; only the lead runner is at risk
+# (no double play through 1B since the batter is at the plate).
+GIDP_STAY_MULTIPLIER: float = 0.30
+
+# Triple play — at least 2 forceable runners on (1B+2B or bases loaded)
+# and 0 outs. Real MLB rate is ~1 per 700 opportunities; we keep it
+# rare. Conditional on a DP firing in the eligible base config, this
+# probability promotes it to a TP. Set to 0 to disable.
+# Baserunner errors can also induce a TP — a runner with low baserunning
+# skill (poor read off the bat, late tag-up) inflates the TP probability
+# via the SKILL bonus below.
+TRIPLE_PLAY_GIVEN_DP_PROB: float       = 0.04
+TRIPLE_PLAY_BASERUNNING_BONUS: float   = 0.06   # added when lead runner is below-average
+
 # ---------------------------------------------------------------------------
 # TOOTBLAN — thrown out trying for the extra base on a hit / fly / grounder.
 # When a runner ATTEMPTS the extra base (probability driven by speed +

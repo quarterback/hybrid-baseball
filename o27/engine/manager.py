@@ -810,6 +810,207 @@ def defensive_sub(
     return log
 
 
+def pinch_run(state: GameState, base_idx: int, runner_in: Player) -> list[str]:
+    """Replace the runner at `base_idx` (0=1B, 1=2B, 2=3B) with `runner_in`.
+
+    The pinch runner takes the original runner's lineup slot — when their
+    spot comes up to bat, the PR is the one batting. Standard MLB rules.
+    Emits a 'pinch_runner' event the renderer captures for box-score
+    entry-type tagging.
+    """
+    if base_idx not in (0, 1, 2):
+        return [f"  [PINCH RUN ERROR] base_idx {base_idx} out of range."]
+    out_id = state.bases[base_idx]
+    if out_id is None:
+        return [f"  [PINCH RUN ERROR] no runner at "
+                f"{'1B 2B 3B'.split()[base_idx]}."]
+    batting = state.batting_team
+    out_player = batting.get_player(out_id) if hasattr(batting, "get_player") else None
+    # Replace in lineup: PR takes the outgoing runner's slot.
+    if out_player is not None and out_player in batting.lineup:
+        idx = batting.lineup.index(out_player)
+        batting.lineup[idx] = runner_in
+    state.bases[base_idx] = runner_in.player_id
+    out_name = out_player.name if out_player else out_id
+    log = [f"  PINCH RUN: {runner_in.name} replaces {out_name} at "
+           f"{'1B 2B 3B'.split()[base_idx]}."]
+    state.events.append({
+        "type":    "pinch_runner",
+        "in_id":   runner_in.player_id,
+        "in_name": runner_in.name,
+        "out_id":  out_id,
+        "base_idx": base_idx,
+    })
+    return log
+
+
+def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
+    """Late-game pinch-runner check. Conservative gate: only fires when
+    the score is close, an inning of work remains, and the runner on
+    base is meaningfully slower than the available bench's best speed.
+
+    Returns {'base_idx': int, 'runner_in': Player} or None.
+    """
+    if state.is_super_inning:
+        return None
+    # Only late-game leverage. In O27 a "half" is 27 outs; "late" =
+    # the offense has banked at least 18 outs already (last third).
+    fielding_outs = state.outs
+    if fielding_outs < 18:
+        return None
+    # Score close — within 1 run either way.
+    bat_role = "visitors" if state.half in ("top", "super_top") else "home"
+    fld_role = "home" if bat_role == "visitors" else "visitors"
+    score_diff = state.score.get(bat_role, 0) - state.score.get(fld_role, 0)
+    if abs(score_diff) > 1:
+        return None
+    batting = state.batting_team
+    # Pick the slowest runner on base as the candidate.
+    cand_idx = None
+    cand_speed = 1.0
+    for i, pid in enumerate(state.bases):
+        if pid is None:
+            continue
+        p = batting.get_player(pid) if hasattr(batting, "get_player") else None
+        if p is None:
+            continue
+        s = float(getattr(p, "speed", 0.5) or 0.5)
+        if s < cand_speed:
+            cand_speed = s
+            cand_idx = i
+    if cand_idx is None or cand_speed >= 0.40:
+        return None
+    # Find the fastest available bench bat (not in current lineup, not a
+    # joker — jokers stay in the joker pool unless joker_to_field fires).
+    in_lineup = set(p.player_id for p in batting.lineup)
+    used_jokers = batting.jokers_used_this_cycle
+    bench_pool = [p for p in batting.roster
+                  if p.player_id not in in_lineup
+                  and not getattr(p, "is_pitcher", False)
+                  and p.player_id not in {j.player_id for j in batting.jokers_available}]
+    if not bench_pool:
+        return None
+    bench_pool.sort(key=lambda p: -float(getattr(p, "speed", 0.5) or 0.5))
+    runner_in = bench_pool[0]
+    if float(getattr(runner_in, "speed", 0.5) or 0.5) <= cand_speed + 0.20:
+        # Bench speed isn't enough faster to justify burning a roster slot.
+        return None
+    # Probabilistic fire — manager run-game tendency biases.
+    p_fire = 0.20 + (float(getattr(batting, "mgr_run_game", 0.5) or 0.5) - 0.5) * 0.30
+    rng = rng or _local_rng()
+    if rng.random() >= p_fire:
+        return None
+    return {"base_idx": cand_idx, "runner_in": runner_in}
+
+
+def joker_to_field(state: GameState, joker: Player, player_out: Player) -> list[str]:
+    """Pull a joker from the bench (DH-pool) into a fielding slot to
+    replace `player_out`. Rare in real baseball — typically forced by
+    injury or extreme tactical needs. The joker takes both the lineup
+    slot AND the fielding position.
+
+    Reduces the team's joker pool by 1 (jokers_available shrinks) and
+    stamps `joker.game_position` to the position they're taking.
+    """
+    fielding = state.fielding_team
+    if joker not in fielding.jokers_available:
+        return [f"  [JOKER FIELD ERROR] {joker.name} not in joker pool."]
+    if player_out not in fielding.lineup:
+        return [f"  [JOKER FIELD ERROR] {player_out.name} not in lineup."]
+    idx = fielding.lineup.index(player_out)
+    fielding.lineup[idx] = joker
+    fielding.jokers_available = [
+        j for j in fielding.jokers_available if j.player_id != joker.player_id
+    ]
+    # Stamp the joker with the position they took. Format: "J→SS" so the
+    # box score signals "this row is a joker who's now playing SS".
+    out_pos = getattr(player_out, "game_position", "") or getattr(player_out, "position", "")
+    joker.game_position = f"J→{out_pos}" if out_pos else "J"
+    log = [
+        f"  JOKER TO FIELD: {joker.name} replaces {player_out.name} at "
+        f"{out_pos or '?'}. {len(fielding.jokers_available)} jokers remaining."
+    ]
+    state.events.append({
+        "type":      "joker_to_field",
+        "team_id":   fielding.team_id,
+        "joker_id":  joker.player_id,
+        "joker_name": joker.name,
+        "out_id":    player_out.player_id,
+        "position":  out_pos,
+    })
+    return log
+
+
+def should_joker_to_field(state: GameState, rng=None) -> Optional[dict]:
+    """Joker-to-field is RARE. Only fires under extreme conditions:
+    very late game, fielding team trailing badly, a joker has notably
+    better defense at some position than the current fielder. Real-MLB
+    base rate is functionally zero (no DH→position swaps); we keep this
+    so the mechanic exists but barely fires."""
+    if state.is_super_inning:
+        return None
+    if state.outs < 24:
+        return None
+    fielding = state.fielding_team
+    if not getattr(fielding, "jokers_available", None):
+        return None
+    # Only consider if fielding team is trailing meaningfully (defensive
+    # downgrade is justified when the game is already mostly lost).
+    bat_role = "visitors" if state.half in ("top", "super_top") else "home"
+    fld_role = "home" if bat_role == "visitors" else "visitors"
+    score_diff = state.score.get(fld_role, 0) - state.score.get(bat_role, 0)
+    if score_diff > -3:
+        return None
+    rng = rng or _local_rng()
+    # Tiny base rate; barely fires.
+    if rng.random() >= 0.005:
+        return None
+    # Pick the worst-glove fielder and check if any joker has materially
+    # better defense at that position group.
+    weakest = None
+    weakest_score = 1.0
+    for p in fielding.lineup:
+        if getattr(p, "is_pitcher", False):
+            continue
+        gp = getattr(p, "game_position", "") or ""
+        if gp in ("LF", "CF", "RF"):
+            s = float(getattr(p, "defense_outfield", 0.5) or 0.5)
+        elif gp in ("1B", "2B", "3B", "SS"):
+            s = float(getattr(p, "defense_infield", 0.5) or 0.5)
+        elif gp == "C":
+            s = float(getattr(p, "defense_catcher", 0.5) or 0.5)
+        else:
+            continue
+        if s < weakest_score:
+            weakest_score = s
+            weakest = p
+    if weakest is None:
+        return None
+    # Joker with best fit at that position group.
+    gp = weakest.game_position
+    if gp in ("LF", "CF", "RF"):
+        attr = "defense_outfield"
+    elif gp == "C":
+        attr = "defense_catcher"
+    else:
+        attr = "defense_infield"
+    candidates = sorted(
+        fielding.jokers_available,
+        key=lambda j: -float(getattr(j, attr, 0.5) or 0.5),
+    )
+    if not candidates:
+        return None
+    best = candidates[0]
+    if float(getattr(best, attr, 0.5) or 0.5) <= weakest_score + 0.10:
+        return None
+    return {"joker": best, "player_out": weakest}
+
+
+def _local_rng():
+    import random as _r
+    return _r.Random()
+
+
 def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     """Tactical defensive substitution by the FIELDING team's manager.
 

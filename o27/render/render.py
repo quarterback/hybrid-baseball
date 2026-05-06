@@ -33,7 +33,9 @@ _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 _NON_PA_EVENTS = frozenset(
     {"joker_insertion", "pitching_change", "pinch_hit",
      "stolen_base_attempt", "pickoff_attempt", "balk",
-     "wild_pitch", "passed_ball"}
+     "wild_pitch", "passed_ball",
+     "defensive_sub", "tactical_def_swap", "pinch_runner",
+     "joker_to_field"}
 )
 
 # Maps internal hit_type strings → human-readable prose for the transcript.
@@ -49,6 +51,7 @@ _HIT_TYPE_DISPLAY: dict[str, str] = {
     "line_out":        "line out",
     "fielders_choice": "fielder's choice",
     "double_play":     "double play",
+    "triple_play":     "triple play",
     "stay_ground":     "ground ball (stay)",
     "stay_fly_no_catch": "fly ball (stay)",
     "error":           "error",
@@ -761,6 +764,82 @@ class Renderer:
         elif etype == "pinch_hit":
             replacement = event.get("replacement")
             d["replacement_name"] = replacement.name if replacement else "?"
+            # Mark the replacement as a PH and record who they came in for.
+            # The replaced player is the team's CURRENT batter at this point
+            # in the event stream (pinch_hit fires before the replacement
+            # has actually batted).
+            replaced = ctx.get("batter")
+            if replacement is not None:
+                rs = self._get_stats(replacement)
+                rs.entry_type = "PH"
+                if replaced is not None:
+                    rs.replaced_player_id = str(replaced.player_id)
+
+        elif etype == "joker_inserted":
+            # Joker entered for one PA. They get game_position="J" elsewhere;
+            # here we mark entry_type so the box score can group them.
+            joker_id = event.get("joker_id")
+            joker_name = event.get("joker_name", "")
+            if joker_id and joker_id in self._batter_stats:
+                self._batter_stats[joker_id].entry_type = "joker"
+            elif joker_id:
+                self._batter_stats[joker_id] = BatterStats(
+                    player_id=str(joker_id), name=joker_name, entry_type="joker"
+                )
+
+        elif etype == "defensive_sub":
+            # Mid-game defensive substitution. The substitute takes the
+            # outgoing player's lineup slot — they may bat later. Mark them
+            # with entry_type="DEF" so the box score indents them under the
+            # player they replaced.
+            in_id  = event.get("in_id")
+            out_id = event.get("out_id")
+            in_name = event.get("in_name", "")
+            if in_id is not None:
+                stats_obj = self._batter_stats.get(in_id) or BatterStats(
+                    player_id=str(in_id), name=in_name
+                )
+                stats_obj.entry_type = "DEF"
+                if out_id is not None:
+                    stats_obj.replaced_player_id = str(out_id)
+                self._batter_stats[in_id] = stats_obj
+
+        elif etype == "pinch_runner":
+            # Pinch runner takes over for `out_id` on the basepaths. They
+            # don't get a PA/AB unless they later come up to bat (their
+            # lineup slot replaces the outgoing player). For box-score
+            # purposes mark with entry_type="PR".
+            in_id  = event.get("in_id")
+            out_id = event.get("out_id")
+            in_name = event.get("in_name", "")
+            if in_id is not None:
+                stats_obj = self._batter_stats.get(in_id) or BatterStats(
+                    player_id=str(in_id), name=in_name
+                )
+                stats_obj.entry_type = "PR"
+                if out_id is not None:
+                    stats_obj.replaced_player_id = str(out_id)
+                self._batter_stats[in_id] = stats_obj
+
+        elif etype == "joker_to_field":
+            # Rare: a joker is moved from the bench (DH-pool) into a
+            # fielding slot to replace a fielder (injury, leverage). The
+            # joker now occupies that fielding position for the rest of
+            # the game; the team's joker-pool count drops by 1. Mark the
+            # joker with entry_type="joker_field" so the box score lists
+            # them with the position they took, separately from the
+            # tactical-PH joker pool.
+            joker_id = event.get("joker_id")
+            joker_name = event.get("joker_name", "")
+            out_id = event.get("out_id")
+            if joker_id is not None:
+                stats_obj = self._batter_stats.get(joker_id) or BatterStats(
+                    player_id=str(joker_id), name=joker_name
+                )
+                stats_obj.entry_type = "joker_field"
+                if out_id is not None:
+                    stats_obj.replaced_player_id = str(out_id)
+                self._batter_stats[joker_id] = stats_obj
 
         return d
 
@@ -912,6 +991,40 @@ class Renderer:
                     if runs_scored > 0:
                         s.stay_rbi += runs_scored
                     s.rbi += runs_scored
+
+                    # 2C moved-runner stats. For each runner on base BEFORE
+                    # this 2C event, record an opportunity; if the same
+                    # runner ended up on a higher base or scored cleanly,
+                    # record a successful move. Runners thrown out (FC/
+                    # TOOTBLAN) count as opportunities but not moves.
+                    bases_before = ctx.get("bases_list") or [None, None, None]
+                    bases_after = state_after.bases
+                    outcome = event.get("outcome", {})
+                    out_idxs = []
+                    if outcome.get("runner_out_idx") is not None:
+                        out_idxs.append(outcome["runner_out_idx"])
+                    out_idxs.extend(outcome.get("extra_runner_outs") or [])
+                    for src_idx in (0, 1, 2):
+                        runner_id = bases_before[src_idx]
+                        if runner_id is None:
+                            continue
+                        if src_idx == 0:   s.c2_op_1b += 1
+                        elif src_idx == 1: s.c2_op_2b += 1
+                        else:              s.c2_op_3b += 1
+                        # Did the runner advance?
+                        moved = False
+                        for dst_idx in range(src_idx + 1, 3):
+                            if bases_after[dst_idx] == runner_id:
+                                moved = True
+                                break
+                        if (not moved
+                                and runner_id not in bases_after
+                                and src_idx not in out_idxs):
+                            moved = True   # scored cleanly
+                        if moved:
+                            if src_idx == 0:   s.c2_adv_1b += 1
+                            elif src_idx == 1: s.c2_adv_2b += 1
+                            else:              s.c2_adv_3b += 1
                     # If the stay's strike-credit pushed the count to 3
                     # strikes, the AB ends — count as an AB (max-hits stay
                     # sequence terminates the AB without a batter-out).
@@ -959,6 +1072,10 @@ class Renderer:
                     s.triples += 1
                 elif hit_type in ("hr", "home_run"):
                     s.hr += 1
+                elif hit_type == "double_play":
+                    s.gidp += 1
+                elif hit_type == "triple_play":
+                    s.gitp += 1
                 s.rbi += runs_scored
                 # Terminal running hit counts toward multi-hit AB. Errors
                 # don't count toward multi-hit (they aren't hits).

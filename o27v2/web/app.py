@@ -1384,13 +1384,21 @@ def game_detail(game_id: int):
     # rows (suitable for the Game Totals section in the template).
     away_batting_rows = db.fetchall(
         """SELECT bs.*, p.name as player_name,
-                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position
+                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
+                  COALESCE(NULLIF(bs.game_position, ''),
+                           CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
+                  COALESCE(bs.entry_type, 'starter') AS entry_type,
+                  bs.replaced_player_id AS replaced_player_id
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["away_team_id"]))
     home_batting_rows = db.fetchall(
         """SELECT bs.*, p.name as player_name,
-                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position
+                  CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
+                  COALESCE(NULLIF(bs.game_position, ''),
+                           CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
+                  COALESCE(bs.entry_type, 'starter') AS entry_type,
+                  bs.replaced_player_id AS replaced_player_id
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["home_team_id"]))
@@ -1418,7 +1426,7 @@ def game_detail(game_id: int):
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples",
                 "hr", "rbi", "bb", "k", "stays", "outs_recorded",
                 "hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi",
-                "stay_hits", "roe", "po", "e")
+                "stay_hits", "gidp", "gitp", "roe", "po", "e")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs",
@@ -1601,6 +1609,55 @@ def game_detail(game_id: int):
     from o27.engine.weather import Weather
     weather_label = Weather.from_row(game).short_label()
 
+    # Season HR totals through this game — for the box-score "HR: Smith (12)"
+    # annotation. One round-trip per side; cheap.
+    def _season_hr_through(team_id: int) -> dict[int, int]:
+        rows = db.fetchall(
+            """SELECT bs.player_id AS pid, SUM(bs.hr) AS hr_total
+               FROM game_batter_stats bs JOIN games g ON bs.game_id = g.id
+               WHERE bs.team_id = ?
+                 AND (g.game_date < ? OR (g.game_date = ? AND g.id <= ?))
+               GROUP BY bs.player_id""",
+            (team_id, game["game_date"], game["game_date"], game_id),
+        )
+        return {r["pid"]: int(r["hr_total"] or 0) for r in rows}
+    away_season_hr = _season_hr_through(game["away_team_id"])
+    home_season_hr = _season_hr_through(game["home_team_id"])
+    for r in away_batting_consolidated:
+        r["season_hr"] = away_season_hr.get(r["player_id"], 0)
+    for r in home_batting_consolidated:
+        r["season_hr"] = home_season_hr.get(r["player_id"], 0)
+
+    # Newspaper-style plaintext box score. Built from the consolidated
+    # per-player rows and the line-score totals computed above. Rendered
+    # in the template as a single <pre> block — no internal HTML chrome.
+    from .box_score import render_box_score as _render_box_score
+    game_for_box = dict(game)
+    game_for_box["weather_label"] = weather_label
+    # Decisions map: pitcher_id → "W" / "L" / "S".
+    _decisions: dict[int, str] = {}
+    for prow in away_pitching_consolidated + home_pitching_consolidated:
+        pid = prow.get("player_id")
+        if pid is None:
+            continue
+        if (prow.get("w") or 0) > 0:
+            _decisions[pid] = "W"
+        elif (prow.get("l") or 0) > 0:
+            _decisions[pid] = "L"
+        elif (prow.get("sv") or 0) > 0:
+            _decisions[pid] = "S"
+    box_score_text = _render_box_score(
+        game=game_for_box,
+        phases=phases,
+        away_line=away_line,
+        home_line=home_line,
+        away_batting=away_batting_consolidated,
+        home_batting=home_batting_consolidated,
+        away_pitching=away_pitching_consolidated,
+        home_pitching=home_pitching_consolidated,
+        decisions=_decisions,
+    )
+
     return _serve(
         "game.html",
         game=game,
@@ -1622,6 +1679,7 @@ def game_detail(game_id: int):
         home_line=home_line,
         game_notes=notes,
         weather_label=weather_label,
+        box_score_text=box_score_text,
         prev_game_id=(prev_game["id"] if prev_game else None),
         next_game_id=(next_game["id"] if next_game else None),
     )

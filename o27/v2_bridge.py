@@ -753,7 +753,10 @@ def get_player_stats(team_abbrev: str, player_name: str) -> Optional[dict]:
                   SUM(hits) AS hits, SUM(doubles) AS doubles,
                   SUM(triples) AS triples, SUM(hr) AS hr,
                   SUM(rbi) AS rbi, SUM(bb) AS bb, SUM(k) AS k,
-                  SUM(stays) AS stays
+                  SUM(stays) AS stays,
+                  SUM(c2_op_1b) AS c2_op_1b, SUM(c2_adv_1b) AS c2_adv_1b,
+                  SUM(c2_op_2b) AS c2_op_2b, SUM(c2_adv_2b) AS c2_adv_2b,
+                  SUM(c2_op_3b) AS c2_op_3b, SUM(c2_adv_3b) AS c2_adv_3b
            FROM game_batter_stats WHERE player_id = ?""",
         (pl["id"],),
     )
@@ -766,6 +769,9 @@ def get_player_stats(team_abbrev: str, player_name: str) -> Optional[dict]:
     pos = pl.get("position") or ""
     if is_joker and archetype:
         pos = f"JKR-{archetype[:3]}"
+    # 2C moved-runner rates per source base.
+    c2_op_total  = (r["c2_op_1b"] or 0) + (r["c2_op_2b"] or 0) + (r["c2_op_3b"] or 0)
+    c2_adv_total = (r["c2_adv_1b"] or 0) + (r["c2_adv_2b"] or 0) + (r["c2_adv_3b"] or 0)
     return {
         "name": player_name, "pos": pos,
         "is_joker": is_joker, "archetype": archetype,
@@ -780,6 +786,16 @@ def get_player_stats(team_abbrev: str, player_name: str) -> Optional[dict]:
         "stays": r["stays"] or 0,
         "hbp": 0, "or_": 0,
         "avg": f"{hits/ab:.3f}" if ab > 0 else ".000",
+        # 2C moved-runner totals + per-source rates. The empty-opportunity
+        # case is rendered as "—" by the template.
+        "c2_op_1b":  r["c2_op_1b"]  or 0,
+        "c2_adv_1b": r["c2_adv_1b"] or 0,
+        "c2_op_2b":  r["c2_op_2b"]  or 0,
+        "c2_adv_2b": r["c2_adv_2b"] or 0,
+        "c2_op_3b":  r["c2_op_3b"]  or 0,
+        "c2_adv_3b": r["c2_adv_3b"] or 0,
+        "c2_op_total":  c2_op_total,
+        "c2_adv_total": c2_adv_total,
     }
 
 

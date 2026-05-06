@@ -42,15 +42,16 @@ def advance_runners(
     hit_type = outcome["hit_type"]
     runner_advances = outcome["runner_advances"]   # [adv_1B, adv_2B, adv_3B]
     runner_out_idx = outcome.get("runner_out_idx")  # which runner (if any) is thrown out
+    extra_runner_outs = outcome.get("extra_runner_outs") or []  # additional runner outs (triple plays)
     batter_safe = outcome["batter_safe"]
 
     # --- Throw out a specific runner first (fielder's choice / stay runner out) ---
-    if runner_out_idx is not None:
-        thrown_out_id = bases[runner_out_idx]
+    bases = list(bases)
+    for out_idx in ([runner_out_idx] if runner_out_idx is not None else []) + list(extra_runner_outs):
+        thrown_out_id = bases[out_idx]
         if thrown_out_id is not None:
-            log_lines.append(f"  Runner at {'1B 2B 3B'.split()[runner_out_idx]} thrown out.")
-            bases = list(bases)
-            bases[runner_out_idx] = None
+            log_lines.append(f"  Runner at {'1B 2B 3B'.split()[out_idx]} thrown out.")
+            bases[out_idx] = None
 
     # --- Home run: everyone scores ---
     if hit_type == "hr":
