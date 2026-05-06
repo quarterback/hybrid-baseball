@@ -1,8 +1,8 @@
-# After-Action Report — Decoupling Hits and Runs on Doubles
+# After-Action Report — Decoupling Hits and Runs (Doubles, Throw-outs at Home, GIDP, Triple Play, 2C Fielders' Choice)
 
 **Date completed:** 2026-05-06
 **Branch:** `claude/decouple-hits-runs-rGteJ`
-**Commit:** `f1ac800`
+**Commits:** `f1ac800` (doubles), `9145b77` (throw-outs at home + GIDP + triple play + 2C FC)
 
 ---
 
@@ -172,9 +172,172 @@ A larger refactor — say, a parallel "runner table" alongside the contact table
 
 ---
 
-## Files touched
+## Files touched (commit 1 — doubles)
 
 - `o27/config.py` — added `RUNNER_EXTRA_DOUBLE_FROM_1B`.
 - `o27/engine/prob.py` — replaced the static doubles branch in `runner_advances_for_hit` with a `_resolve(...)` call.
 
 Total diff: 15 insertions, 1 deletion.
+
+---
+
+## Follow-up — broader scope (commit `9145b77`)
+
+User came back with a series of expansions:
+
+> "Triples shouldn't always score there should be a percentage that get thrown out at home or GIDP or Triple plays or get caught stealing or other thing"
+>
+> "Or just men on 3rd base i mean not just triples, same for anyone on base really."
+>
+> "Double plays too obviously"
+>
+> "But not impossible Fielders choice lessens witb 2nd chance ab"
+
+Translation in order: (1) triples shouldn't auto-score; (2) generalize that to any runner trying to score on a hit; (3) ship double plays; (4) double plays / fielders' choice should still happen on a 2C / stay AB, just at a reduced rate.
+
+### What was built
+
+**1. `_thrown_out_at_home` helper (`o27/engine/prob.py`).**
+A small utility for "runner whose default base advance carries them across the plate, who can still be cut down by a strong relay." Distinct from the existing TOOTBLAN model (which fires only on *extra*-base attempts above the default). Symmetric in sign — fast/skilled runners shave the rate toward zero, slow/raw runners inflate it. Tuned via three new config knobs:
+
+```python
+RUNNER_THROWN_OUT_AT_HOME_BASE: float        = 0.05
+RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.10
+RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.10
+```
+
+Wired into two `runner_advances_for_hit` branches:
+- **Single** — the runner from 2B trying to score (close play at the plate). The runner from 3B is NOT challenged: at 90 ft from home it's routine.
+- **Triple** — the runner from 1B trying to score. The triple branch was previously merged with `hr` into `[3, 3, 3]`; it's now split out so HRs stay deterministic.
+
+The 2B runner on a double also routinely scores, but the throw home from a deep outfield ball is too long to be a meaningful close play, so it's left as automatic.
+
+**2. GIDP — ground-ball double plays.**
+
+Inserted in `_generate_pitch` *after* the run/stay choice (so it only fires on run plays). Conditions: `hit_type == "ground_out"`, runner on 1B, `< 2` outs, not an error. Probability:
+
+```
+dp_p = clamp(0, 0.65,
+        0.32                                            # GIDP_BASE_PROB
+        - (batter.speed - 0.5) * 0.30                   # GIDP_SPEED_SCALE
+        + (team.defense_rating - 0.5) * 0.20)           # GIDP_DEFENSE_SCALE
+```
+
+When a DP fires:
+- `hit_type` flipped to `double_play`.
+- `runner_out_idx = 0` (1B runner forced at 2B).
+- `runner_advances[0] = 0` (1B runner doesn't advance, will be cleared anyway).
+- `batter_safe` stays False from the original ground out.
+
+The architecture already supported two outs on a single play — `_resolve_contact` in `pa.py` records `_record_out` once for the runner_out_idx slot and once for `not batter_safe`. No changes needed there for DPs.
+
+**3. Triple plays.**
+
+Conditional on a DP firing in the bases-loaded-0-outs case, a small slice promote to triple plays (`TRIPLE_PLAY_GIVEN_DP_PROB = 0.04`). Required adding a new optional outcome-dict field:
+
+```python
+extra_runner_outs: list[int] = []   # additional runner outs beyond runner_out_idx
+```
+
+Threaded through `baserunning.advance_runners` (clears the extra slots, logs the outs) and `_resolve_contact` in `pa.py` (records `_record_out` for each extra runner). On a TP all `runner_advances` are zeroed — the 5-4-3 around-the-horn play is too abrupt for a runner to score before the 3rd out is recorded.
+
+**4. 2C / stay reduced-rate fielders' choice.**
+
+User constraint: stays shouldn't make the bases a free pass, but the batter isn't running so a true DP through 1B is physically impossible. Implementation: a separate `choice == "stay"` block in `_generate_pitch` rolls for a tag-out of the lead runner (1B forced no, but a fielder can still tag a runner who broke). Same speed-vs-defense math as GIDP, scaled by `GIDP_STAY_MULTIPLIER = 0.30`. When it fires:
+
+- `hit_type` flipped to `fielders_choice` (renders as "fielder's choice").
+- `runner_out_idx = 0`.
+- The stay path in `_resolve_contact` preserves `batter_safe = True`, so the batter survives the AB; only the lead runner is out.
+
+This deliberately *does not* fire if `runner_out_idx` was already set by an earlier path (TOOTBLAN, fielders_choice from `resolve_contact`) — first writer wins.
+
+### Validation data — throw-outs at home
+
+5000 hits per cohort, runner attribute on the relevant base varied. Other bases empty.
+
+| Hit type | Runner profile (speed / baserunning)        | Thrown out at home |
+| -------- | ------------------------------------------- | ------------------ |
+| Single   | Neutral 2B runner (0.50 / 0.50)             | 5.2%               |
+| Single   | Fast / skilled (0.95 / 0.95)                | 1.3%               |
+| Single   | Slow / raw (0.10 / 0.10)                    | 13.1%              |
+| Triple   | Neutral 1B runner (0.50 / 0.50)             | 4.6%               |
+| Triple   | Fast / skilled (0.95 / 0.95)                | 0.0%               |
+| Triple   | Slow / raw (0.10 / 0.10)                    | 13.1%              |
+
+A ~13-percentage-point spread between elite and replacement-level runners on the close-play axis. At neutral attributes the rate is small enough (5%) that league-wide run rates barely move; at extreme attributes the variation is enough to feel different.
+
+### Validation data — GIDP / TP rates
+
+5000 BIPs per scenario, neutral pitcher / batter / defense unless noted. Reporting share of all balls in play (so totals include singles, doubles, etc.):
+
+| Scenario                                       | Ground out | Double play | Triple play |
+| ---------------------------------------------- | ---------- | ----------- | ----------- |
+| 1B runner, 0 outs, neutral                     | 22.1%      | 5.5%        | —           |
+| 1B runner, 0 outs, slow batter + elite defense | 19.1%      | 9.0%        | —           |
+| 1B runner, 0 outs, fast batter + weak defense  | 23.5%      | 0.9%        | —           |
+| Bases loaded, 0 outs, neutral                  | 21.9%      | 5.5%        | 0.34%       |
+| 1B runner, 2 outs (gate closed)                | 28.4%      | 0.0%        | —           |
+| Bases empty, 0 outs (gate closed)              | 27.5%      | 0.0%        | —           |
+
+Reading the table:
+- The GIDP gate works: DPs are 0% when the 1B-runner-and-<2-outs gate is closed, and 5–9% when open.
+- Ground-out share drops by ~5–6 points in GIDP-eligible scenarios — that's the ground outs that got upgraded to DPs. Total out share is preserved.
+- The slow-batter-elite-defense cohort hits 9% (up from 5.5% neutral); the fast-batter-weak-defense cohort hits 0.9% (down from 5.5%). The same speed-vs-defense math the user already applies to extra-base hits applies cleanly here.
+- Triple plays at 0.34% per BIP in their tightest gate (bases loaded, 0 outs). MLB-conditional rate is roughly in the right neighborhood.
+
+### Identity / regression check
+
+`tests/test_realism_identity.py` still passes 6/6. None of the changes touch the contact-quality / pitch-probability / power axes that the identity contract pins.
+
+### Net effect on run rates
+
+Three changes that *reduce* runs (throw-outs at home on singles & triples, GIDPs, TPs) and one that *increases* runs (1B runner scoring on a double from the first commit). Rough back-of-envelope for a neutral roster:
+
+- Doubles per game ≈ 3-4. Previously 0% of 1B-runner-on-double scored; now ~23%. With ~1.5 doubles per game having a runner on 1B, that's ~+0.35 runs/game per side.
+- GIDPs at ~5% of BIPs in eligible situations (~3 ground outs per game with runner on 1B and < 2 outs) → ~+0.15 outs/game per side. Each DP forfeits ~0.4 expected runs → ~-0.06 runs/game.
+- Throw-outs at home on triples + singles: rare; ~5% of triples (1 per 5 games?) and ~5% of single-with-2B-runner situations (~1 per 2 games?) → ~-0.05 runs/game per side.
+- Triple plays: ~1 every 100+ games. Negligible.
+
+Rough net: maybe +0.20 runs/game per side at neutral. Worth re-checking against the stat-invariant suite once a fresh-sim DB is available; the relevant config knobs to dial back if it's too hot are `RUNNER_EXTRA_DOUBLE_FROM_1B` and `GIDP_BASE_PROB`.
+
+---
+
+## Open question — moving-runners ("Apollo") effectiveness stat for 2C
+
+User raised a separate question alongside the gameplay asks:
+
+> "pay Apollo has the stat ... where you can see ... on second chance at bat they actually rate the batters on like how successful they are moving Reuter moving runners so like you've got a rate of moving runners from first second 2nd to 3rd and third to home and so it just shows the effectiveness of the second chance at bat ... if it's worth modeling I'd like to do it"
+
+This is a tracked-and-rendered stat, not a gameplay change. The engine already has all the inputs:
+
+- 2C events are first-class — they fire through `pa.py`'s stay path with `is_stay=True` into `advance_runners`, which returns `runner_advances`.
+- The pre-stay base state and the post-stay base state are both visible in the stay path.
+- The existing batter-stats schema (`o27/stats/batter.py`) is the natural place to add tracked counters.
+
+**Recommendation: yes, model it. It's a high-fit feature.**
+
+Rationale:
+1. **2C is already a first-class concept.** The engine names it, gates it, has dedicated stay-vs-run probability code (`stay.py`, `should_stay_prob`, `_2C_*` config). Adding a per-batter "how good are you on 2Cs?" stat is consistent with the existing direction of the project — it's the natural box-score companion to the engine work that's already shipped.
+2. **The mechanic is sabermetric in flavor.** Apollo's "rate of moving runners from 1st→2nd / 2nd→3rd / 3rd→home" is exactly the kind of derived rate stat that fits O27's other sabermetric exposures (the project already has the contact-quality breakdown, talent-flexed hits, fatigue-adjusted ERA, etc.). It's not a gameplay stat masquerading as box-score noise; it's a genuine evaluator.
+3. **The data is cheap to capture.** Three counters per batter — `c2_attempts_runner_1B`, `c2_advances_runner_1B`, same for 2B and 3B — incremented in the stay branch of `_resolve_contact`. The aggregate rate is a derived percentage in the renderer.
+
+**Suggested shape** (proposing only — would land in a follow-up commit, not this branch):
+
+- **Counter:** for each 2C event with a runner on base X, increment `c2_attempts_X`. If the post-stay base state has the runner advanced ≥ 1 base, also increment `c2_advances_X`.
+- **Display:** new column in the batter detail page — "2C Move %" with three sub-rates. In the box score: a single aggregate "2C eff" number, weighted across opportunities.
+- **Naming:** "2C Moved-Runner Rate" or "2C Productivity" — depending on how heavily you want to lean into the Apollo nomenclature. The internal name `c2_*` is consistent with the existing config style; the user-facing name should match the rest of the stats page.
+- **Edge cases:** no opportunity if no runner on base, so divide-by-zero handling. Foul-tip strikeouts on 2C swings shouldn't count as a "move attempt." A 2C that scores a runner from 3B on an existing fielding play (e.g., the runner was already going) shouldn't credit the batter — but separating that from a "moved by the swing" event is hard and probably not worth the complexity for a first cut.
+
+Not implementing in this branch (would expand scope beyond the decoupling work); flagging as a clean next step if the user wants to pursue it.
+
+---
+
+## Files touched (commit 2 — broader scope)
+
+- `o27/config.py` — `RUNNER_THROWN_OUT_AT_HOME_*`, `GIDP_*`, `TRIPLE_PLAY_GIVEN_DP_PROB`, `GIDP_STAY_MULTIPLIER`.
+- `o27/engine/prob.py` — `_thrown_out_at_home` helper; split triple from hr in `runner_advances_for_hit`; added 2B-runner-out-at-home check on singles and 1B-runner-out-at-home on triples; GIDP/TP conversion + 2C reduced-rate FC block in `_generate_pitch`.
+- `o27/engine/baserunning.py` — `advance_runners` now reads `extra_runner_outs` and clears those slots before the advance loop.
+- `o27/engine/pa.py` — `_resolve_contact` now records outs for `runner_out_idx` and every entry in `extra_runner_outs`.
+- `o27/render/render.py` — display string for `triple_play`.
+
+Total diff for commit 2: 161 insertions, 13 deletions.
