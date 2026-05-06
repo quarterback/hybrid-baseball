@@ -83,23 +83,54 @@ _LEAGUE_NAMES = ["AL", "NL"]
 _DIV_SUFFIXES = ["East", "Central", "West"]
 
 
-def _build_division_map(config: dict) -> list[tuple[str, str]]:
+def _div_suffixes_geo(divs_per_league: int) -> list[str]:
+    # Ordered west-to-east so the westmost cluster gets index 0.
+    if divs_per_league == 2:
+        return ["West", "East"]
+    if divs_per_league == 3:
+        return ["West", "Central", "East"]
+    if divs_per_league == 4:
+        return ["West", "Mountain", "Central", "East"]
+    return [f"Div {i + 1}" for i in range(divs_per_league)]
+
+
+def _assign_geographic_divisions(
+    selected: list[dict], config: dict
+) -> list[tuple[str, str]]:
     """
-    Return a list of (league, division) tuples, one per team slot,
-    in order so teams can be assigned to divisions round-robin.
+    Build a (league, division) assignment for each team in ``selected``,
+    bucketing by longitude so divisions are geographically coherent.
+
+    Walks west→east, alternating leagues, then chunks each league's
+    longitude-ordered teams into West / Central / East slices. Teams
+    without lat/lon fall back to a Kansas-ish midpoint so missing
+    coords don't distort the partition.
     """
     leagues          = config.get("leagues", ["AL", "NL"])
     divs_per_league  = config["divisions_per_league"]
     teams_per_div    = config["teams_per_division"]
+    suffixes         = _div_suffixes_geo(divs_per_league)
 
-    div_suffixes = _DIV_SUFFIXES[:divs_per_league]
+    indexed = list(enumerate(selected))
+    indexed.sort(key=lambda item: (
+        item[1].get("lon", -95.0),
+        -item[1].get("lat", 39.0),
+    ))
 
-    assignment: list[tuple[str, str]] = []
-    for lg in leagues:
-        for suf in div_suffixes:
-            for _ in range(teams_per_div):
-                assignment.append((lg, f"{lg} {suf}"))
-    return assignment
+    league_buckets: dict[str, list[int]] = {lg: [] for lg in leagues}
+    for pos, (orig_idx, _td) in enumerate(indexed):
+        lg = leagues[pos % len(leagues)]
+        league_buckets[lg].append(orig_idx)
+
+    assignments: list[tuple[str, str]] = [("", "")] * len(selected)
+    for lg, ordered_indices in league_buckets.items():
+        for div_idx, suf in enumerate(suffixes):
+            chunk = ordered_indices[
+                div_idx * teams_per_div : (div_idx + 1) * teams_per_div
+            ]
+            for orig_idx in chunk:
+                assignments[orig_idx] = (lg, f"{lg} {suf}")
+    return assignments
 
 
 # ---------------------------------------------------------------------------
@@ -636,7 +667,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
         rng.shuffle(remaining)
         selected += remaining[: n_teams - len(selected)]
 
-    div_map = _build_division_map(config)
+    div_map = _assign_geographic_divisions(selected, config)
 
     rng2 = random.Random(rng_seed)
     for idx, (team_def, (league_name, division)) in enumerate(zip(selected, div_map)):
