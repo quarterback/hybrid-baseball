@@ -75,6 +75,99 @@ def get_config(config_id: str) -> dict:
         return json.load(fh)
 
 
+def build_custom_config(
+    *,
+    team_count: int,
+    leagues_count: int = 2,
+    divisions_per_league: int = 3,
+    games_per_team: int = 162,
+    season_days: int = 186,
+    intra_division_weight: float = 0.46,
+    inter_division_weight: float = 0.54,
+    season_year: int = 2026,
+    season_start_month: int = 4,
+    season_start_day: int = 1,
+    all_star_break_month: int = 7,
+    all_star_break_day: int = 13,
+    all_star_break_days: int = 4,
+    weekly_off_dows: list[int] | None = None,
+    level: str = "MLB",
+    label: str | None = None,
+) -> dict:
+    """Build a league-config dict from raw inputs (the parametric form path).
+
+    Validates the team-count math: must be even and divisible by
+    `leagues_count * divisions_per_league` so divisions can be even-sized.
+    Weights are normalised to sum to 1.0 before being stored.
+
+    Raises `ValueError` with a human-readable message on invalid input
+    so the form handler can surface it to the user.
+    """
+    if team_count < 2:
+        raise ValueError("Team count must be at least 2.")
+    if team_count % 2 != 0:
+        raise ValueError(
+            f"Team count must be even (got {team_count}) — "
+            f"a balanced schedule needs every team to have a partner each day."
+        )
+    if leagues_count < 1:
+        raise ValueError("Leagues count must be at least 1.")
+    if divisions_per_league < 1:
+        raise ValueError("Divisions per league must be at least 1.")
+    total_divs = leagues_count * divisions_per_league
+    if team_count % total_divs != 0:
+        raise ValueError(
+            f"Team count ({team_count}) must divide evenly across "
+            f"{leagues_count} leagues × {divisions_per_league} divisions "
+            f"({total_divs} total). Try {((team_count // total_divs) + 1) * total_divs} "
+            f"or {(team_count // total_divs) * total_divs} teams."
+        )
+    if games_per_team < 1:
+        raise ValueError("Games per team must be at least 1.")
+    if intra_division_weight < 0 or inter_division_weight < 0:
+        raise ValueError("Division weights must be non-negative.")
+
+    # Normalise weights so 0.4 / 0.6 and 40 / 60 both work.
+    total_w = intra_division_weight + inter_division_weight
+    if total_w <= 0:
+        # No division weighting — equal-opponent schedule.
+        intra_norm, inter_norm = 0.0, 0.0
+    else:
+        intra_norm = intra_division_weight / total_w
+        inter_norm = inter_division_weight / total_w
+
+    teams_per_division = team_count // total_divs
+
+    # Pick league names: AL/NL for 2, otherwise League 1..N.
+    if leagues_count == 2:
+        leagues = ["AL", "NL"]
+    elif leagues_count == 1:
+        leagues = ["MLB"]
+    else:
+        leagues = [f"L{i + 1}" for i in range(leagues_count)]
+
+    return {
+        "id":                     "custom",
+        "label":                  label or f"Custom — {team_count} teams",
+        "team_count":             team_count,
+        "level":                  level,
+        "games_per_team":         games_per_team,
+        "season_days":            season_days,
+        "leagues":                leagues,
+        "divisions_per_league":   divisions_per_league,
+        "teams_per_division":     teams_per_division,
+        "intra_division_weight":  intra_norm,
+        "inter_division_weight":  inter_norm,
+        "season_year":            season_year,
+        "season_start_month":     season_start_month,
+        "season_start_day":       season_start_day,
+        "all_star_break_month":   all_star_break_month,
+        "all_star_break_day":     all_star_break_day,
+        "all_star_break_days":    all_star_break_days,
+        "weekly_off_dows":        list(weekly_off_dows or []),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Division assignment helpers
 # ---------------------------------------------------------------------------
@@ -615,10 +708,15 @@ def generate_players(
     return players
 
 
-def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
+def seed_league(rng_seed: int = 42, config_id: str = "30teams",
+                config: dict | None = None) -> None:
     """
     Insert teams and their players into the database.
     Safe to call only once (checks for existing data first).
+
+    Pass either `config_id` (loads from `data/league_configs/<id>.json`)
+    or a fully-built `config` dict — the dict wins when both are given.
+    Custom configs from the `/new-league` form take this path.
 
     Team selection strategy:
       1. Take ALL available teams at the config's declared level.
@@ -634,7 +732,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
     if existing and existing["n"] > 0:
         return
 
-    config  = get_config(config_id)
+    config  = config if config is not None else get_config(config_id)
     level   = config.get("level", "MLB")
     n_teams = config["team_count"]
 

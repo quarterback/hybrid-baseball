@@ -8,9 +8,20 @@
     <div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
       <div>
         <h2 class="mb-1">Start a New League</h2>
-        <div class="text-secondary small">Pick a preset configuration. All current data will be reset.</div>
+        <div class="text-secondary small">Pick a preset or build your own. All current data will be reset.</div>
       </div>
     </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+        <div class="alert mb-3"
+             style="background:#ffe1e1;border:1px solid #c9482b;color:#7a1d0e;border-radius:var(--radius);padding:10px 14px;font-size:.88rem">
+          {{ msg }}
+        </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
     {% if current_team_count > 0 %}
     <div class="alert mb-3 d-flex align-items-start gap-2"
@@ -29,33 +40,146 @@
     </div>
     {% endif %}
 
-    <form method="POST" action="{{ url_for('new_league_post') }}" id="new-league-form">
+    {# Tab strip — preset vs custom. Hidden mode input drives the form. #}
+    <div class="btn-group mb-3" role="tablist" id="mode-tabs">
+      <button type="button" class="btn btn-outline-secondary active" data-mode="preset">Use a preset</button>
+      <button type="button" class="btn btn-outline-secondary"        data-mode="custom">Build your own</button>
+    </div>
 
-      <div class="row g-3 mb-4" id="config-cards">
-        {% for cfg_id, cfg in configs.items() %}
-        <div class="col-md-6 col-lg-4">
-          <label class="config-card-label d-block" style="cursor:pointer;margin:0">
-            <input type="radio" name="config_id" value="{{ cfg_id }}"
-                   class="d-none config-radio"
-                   {% if cfg_id == '30teams' %}checked{% endif %}>
-            <div class="config-option panel" style="margin:0;height:100%;padding:14px 14px;transition:border-color .12s, background .12s">
-              <div class="d-flex justify-content-between align-items-start mb-2">
-                <span class="fw-bold" style="font-size:.96rem;color:var(--text)">{{ cfg.label }}</span>
-                <span class="badge bg-secondary">{{ cfg.level }}</span>
+    <form method="POST" action="{{ url_for('new_league_post') }}" id="new-league-form">
+      <input type="hidden" name="mode" id="mode-input" value="preset">
+
+      {# ------- Preset cards ------- #}
+      <div id="preset-pane">
+        <div class="row g-3 mb-4" id="config-cards">
+          {% for cfg_id, cfg in configs.items() %}
+          <div class="col-md-6 col-lg-4">
+            <label class="config-card-label d-block" style="cursor:pointer;margin:0">
+              <input type="radio" name="config_id" value="{{ cfg_id }}"
+                     class="d-none config-radio"
+                     data-team-count="{{ cfg.team_count }}"
+                     data-leagues-count="{{ cfg.leagues|length }}"
+                     data-divisions-per-league="{{ cfg.divisions_per_league }}"
+                     data-games-per-team="{{ cfg.games_per_team }}"
+                     data-season-days="{{ cfg.season_days }}"
+                     data-intra="{{ cfg.intra_division_weight or 0 }}"
+                     data-inter="{{ cfg.inter_division_weight or 0 }}"
+                     {% if cfg_id == '30teams' %}checked{% endif %}>
+              <div class="config-option panel" style="margin:0;height:100%;padding:14px 14px;transition:border-color .12s, background .12s">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                  <span class="fw-bold" style="font-size:.96rem;color:var(--text)">{{ cfg.label }}</span>
+                  <span class="badge bg-secondary">{{ cfg.level }}</span>
+                </div>
+                <div class="mb-1" style="font-size:.84rem;color:var(--text-dim)">
+                  <span class="me-2">⚾ <strong style="color:var(--text)">{{ cfg.team_count }}</strong> teams</span>
+                  <span>📅 <strong style="color:var(--text)">{{ cfg.games_per_team }}</strong> games/team</span>
+                </div>
+                <div style="font-size:.78rem;color:var(--text-dim)">
+                  {{ cfg.divisions_per_league * (cfg.leagues|length) }} divisions
+                  &nbsp;·&nbsp; {{ cfg.teams_per_division }} teams/div
+                  &nbsp;·&nbsp; {{ cfg.season_days }}-day season
+                </div>
               </div>
-              <div class="mb-1" style="font-size:.84rem;color:var(--text-dim)">
-                <span class="me-2">⚾ <strong style="color:var(--text)">{{ cfg.team_count }}</strong> teams</span>
-                <span>📅 <strong style="color:var(--text)">{{ cfg.games_per_team }}</strong> games/team</span>
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# ------- Custom builder ------- #}
+      <div id="custom-pane" style="display:none">
+        <div class="panel mb-4" style="padding:18px">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label" for="cf-team-count">Teams</label>
+              <input id="cf-team-count" type="number" name="team_count" min="2" max="60" step="2" value="30"
+                     class="form-control form-control-sm">
+              <div class="text-secondary mt-1" style="font-size:.72rem">Even, divisible by leagues × divs/league</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="cf-leagues">Leagues</label>
+              <input id="cf-leagues" type="number" name="leagues_count" min="1" max="4" value="2"
+                     class="form-control form-control-sm">
+              <div class="text-secondary mt-1" style="font-size:.72rem">e.g. AL + NL</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="cf-divs">Divisions / league</label>
+              <input id="cf-divs" type="number" name="divisions_per_league" min="1" max="6" value="3"
+                     class="form-control form-control-sm">
+              <div class="text-secondary mt-1" style="font-size:.72rem">e.g. East / Cent / West</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Teams / division</label>
+              <input id="cf-tpd" type="text" class="form-control form-control-sm" readonly value="5"
+                     style="background:var(--bg-soft)">
+              <div class="text-secondary mt-1" style="font-size:.72rem">Computed</div>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label" for="cf-gpt">Games / team</label>
+              <input id="cf-gpt" type="number" name="games_per_team" min="1" max="200" value="162"
+                     class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="cf-sdays">Season length (days)</label>
+              <input id="cf-sdays" type="number" name="season_days" min="14" max="240" value="186"
+                     class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="cf-intra">Intra-div weight</label>
+              <input id="cf-intra" type="number" name="intra_division_weight" min="0" max="1" step="0.01" value="0.46"
+                     class="form-control form-control-sm">
+              <div class="text-secondary mt-1" style="font-size:.72rem">Share of games vs. own division</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="cf-inter">Inter-div weight</label>
+              <input id="cf-inter" type="number" name="inter_division_weight" min="0" max="1" step="0.01" value="0.54"
+                     class="form-control form-control-sm">
+              <div class="text-secondary mt-1" style="font-size:.72rem">Share vs. other divisions</div>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label" for="cf-syear">Season year</label>
+              <input id="cf-syear" type="number" name="season_year" min="1900" max="2100" value="2026"
+                     class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="cf-smonth">Start month</label>
+              <input id="cf-smonth" type="number" name="season_start_month" min="1" max="12" value="4"
+                     class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="cf-sday">Start day</label>
+              <input id="cf-sday" type="number" name="season_start_day" min="1" max="31" value="1"
+                     class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="cf-level">Talent level</label>
+              <select id="cf-level" name="level" class="form-select form-select-sm">
+                <option value="MLB" selected>MLB</option>
+                <option value="AAA">AAA</option>
+                <option value="AA">AA</option>
+                <option value="A">A</option>
+              </select>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">League-wide off-days</label>
+              <div class="d-flex gap-3 flex-wrap" style="font-size:.86rem">
+                {% set dow_labels = [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
+                {% for v, lab in dow_labels %}
+                <label style="cursor:pointer">
+                  <input type="checkbox" name="weekly_off_dows" value="{{ v }}"
+                         {% if v == 0 %}checked{% endif %}> {{ lab }}
+                </label>
+                {% endfor %}
               </div>
-              <div style="font-size:.78rem;color:var(--text-dim)">
-                {{ cfg.divisions_per_league * 2 }} divisions
-                &nbsp;·&nbsp; {{ cfg.teams_per_division }} teams/div
-                &nbsp;·&nbsp; {{ cfg.season_days }}-day season
+              <div class="text-secondary mt-1" style="font-size:.72rem">
+                No games on these weekdays. Real MLB skips most Mondays. Active series pause and resume the next playable day.
               </div>
             </div>
-          </label>
+          </div>
         </div>
-        {% endfor %}
       </div>
 
       <div class="row g-3 mb-4 align-items-end">
@@ -100,7 +224,7 @@
             <td class="team-abbrev">{{ cfg_id }}</td>
             <td class="num">{{ cfg.team_count }}</td>
             <td><span class="badge bg-secondary">{{ cfg.level }}</span></td>
-            <td class="num">{{ cfg.divisions_per_league * 2 }}</td>
+            <td class="num">{{ cfg.divisions_per_league * (cfg.leagues|length) }}</td>
             <td class="num">{{ cfg.teams_per_division }}</td>
             <td class="num">{{ cfg.games_per_team }}</td>
             <td class="num">{{ cfg.season_days }}</td>
@@ -131,14 +255,54 @@
     background: #eff5fc;
     box-shadow: 0 0 0 1px var(--link);
   }
+  #mode-tabs .btn { font-size:.86rem }
+  #mode-tabs .btn.active {
+    background: var(--bg-soft);
+    border-color: var(--link);
+    color: var(--text);
+    font-weight: 600;
+  }
 </style>
 {% endblock %}
 
 {% block scripts %}
 <script>
 (function() {
-  // No JS needed for selection styling — handled by .config-radio:checked.
-  // Keep the form-submit feedback though.
+  const modeInput  = document.getElementById('mode-input');
+  const presetPane = document.getElementById('preset-pane');
+  const customPane = document.getElementById('custom-pane');
+  const tabs       = document.querySelectorAll('#mode-tabs .btn');
+
+  function setMode(m) {
+    modeInput.value = m;
+    presetPane.style.display = (m === 'preset') ? '' : 'none';
+    customPane.style.display = (m === 'custom') ? '' : 'none';
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.mode === m));
+  }
+  tabs.forEach(t => t.addEventListener('click', () => setMode(t.dataset.mode)));
+
+  // Live "teams per division" in the custom pane.
+  const elTeams = document.getElementById('cf-team-count');
+  const elLg    = document.getElementById('cf-leagues');
+  const elDivs  = document.getElementById('cf-divs');
+  const elTpd   = document.getElementById('cf-tpd');
+  function recomputeTpd() {
+    const t = parseInt(elTeams.value, 10) || 0;
+    const l = parseInt(elLg.value,   10) || 1;
+    const d = parseInt(elDivs.value, 10) || 1;
+    const total = l * d;
+    if (total > 0 && t % total === 0 && t / total > 0) {
+      elTpd.value = t / total;
+      elTpd.style.color = '';
+    } else {
+      elTpd.value = `${(t / total).toFixed(1)} (uneven)`;
+      elTpd.style.color = '#c9482b';
+    }
+  }
+  [elTeams, elLg, elDivs].forEach(el => el.addEventListener('input', recomputeTpd));
+  recomputeTpd();
+
+  // Form-submit feedback.
   document.getElementById('new-league-form').addEventListener('submit', function() {
     const btn  = document.getElementById('submit-btn');
     const note = document.getElementById('submit-note');

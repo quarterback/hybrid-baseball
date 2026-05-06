@@ -3863,22 +3863,58 @@ def new_league_get():
 
 @app.route("/new-league", methods=["POST"])
 def new_league_post():
-    from o27v2.league import seed_league
+    from o27v2.league import seed_league, build_custom_config
     from o27v2.schedule import seed_schedule
-
-    config_id  = request.form.get("config_id", "30teams")
-    rng_seed   = int(request.form.get("rng_seed", 42))
-
-    configs = get_league_configs()
-    if config_id not in configs:
-        abort(400, f"Unknown config: {config_id}")
-
     from o27v2.season_archive import set_active_league_meta
+    from flask import flash
+
+    rng_seed = int(request.form.get("rng_seed", 42) or 42)
+    mode     = (request.form.get("mode") or "preset").strip()
+
+    # Two paths: a named preset (the JSON files in data/league_configs/)
+    # or a custom config built from the form fields.
+    if mode == "preset":
+        config_id = request.form.get("config_id", "30teams")
+        configs   = get_league_configs()
+        if config_id not in configs:
+            abort(400, f"Unknown config: {config_id}")
+        custom_cfg  = None
+        meta_cfg_id = config_id
+    else:
+        # Custom: build a config dict from the form. Validation lives in
+        # build_custom_config; surface the message to the user instead of
+        # showing a 400 page.
+        try:
+            dows = request.form.getlist("weekly_off_dows")
+            custom_cfg = build_custom_config(
+                team_count           = int(request.form.get("team_count", 30) or 30),
+                leagues_count        = int(request.form.get("leagues_count", 2) or 2),
+                divisions_per_league = int(request.form.get("divisions_per_league", 3) or 3),
+                games_per_team       = int(request.form.get("games_per_team", 162) or 162),
+                season_days          = int(request.form.get("season_days", 186) or 186),
+                intra_division_weight = float(request.form.get("intra_division_weight", 0.46) or 0.46),
+                inter_division_weight = float(request.form.get("inter_division_weight", 0.54) or 0.54),
+                season_year          = int(request.form.get("season_year", 2026) or 2026),
+                season_start_month   = int(request.form.get("season_start_month", 4) or 4),
+                season_start_day     = int(request.form.get("season_start_day", 1) or 1),
+                weekly_off_dows      = [int(d) for d in dows if d.strip().isdigit()],
+                level                = request.form.get("level", "MLB") or "MLB",
+                label                = request.form.get("label") or None,
+            )
+        except (ValueError, TypeError) as e:
+            flash(f"League configuration error: {e}", "error")
+            return redirect(url_for("new_league_get"))
+        meta_cfg_id = "custom"
+
     db.drop_all()
     db.init_db()
-    seed_league(rng_seed=rng_seed, config_id=config_id)
-    seed_schedule(config_id=config_id, rng_seed=rng_seed)
-    set_active_league_meta(rng_seed, config_id)
+    seed_league(rng_seed=rng_seed,
+                config_id=meta_cfg_id if custom_cfg is None else "custom",
+                config=custom_cfg)
+    seed_schedule(rng_seed=rng_seed,
+                  config_id=meta_cfg_id if custom_cfg is None else "custom",
+                  config=custom_cfg)
+    set_active_league_meta(rng_seed, meta_cfg_id)
 
     return redirect(url_for("index"))
 

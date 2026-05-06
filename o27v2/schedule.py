@@ -251,9 +251,16 @@ def _partition_pair_into_series(
 # Calendar helpers
 # ---------------------------------------------------------------------------
 
-def _resolve_calendar(config: dict | None) -> tuple[datetime.date, set[str]]:
-    """Return (season_start_date, set_of_asb_iso_dates) honouring config
-    overrides. Defaults: April 1, 2026 start; July 13–16 ASB."""
+def _resolve_calendar(config: dict | None) -> tuple[datetime.date, set[str], set[int]]:
+    """Return (season_start_date, set_of_asb_iso_dates, set_of_weekly_off_dows)
+    honouring config overrides. Defaults: April 1, 2026 start; July 13–16 ASB;
+    no weekly league-wide off-days.
+
+    `weekly_off_dows` is a set of Python weekday integers (0=Mon ... 6=Sun);
+    every date matching one of those weekdays is treated like an ASB day —
+    the scheduler skips it entirely, so it falls out as a league-wide off-day.
+    A real-MLB-feel cadence is `[0]` (no Monday games) or `[0, 3]` (no Mon/Thu).
+    """
     cfg = config or {}
     year  = int(cfg.get("season_year", _DEFAULT_SEASON_YEAR))
     smon  = int(cfg.get("season_start_month", _DEFAULT_SEASON_START_MONTH))
@@ -267,7 +274,16 @@ def _resolve_calendar(config: dict | None) -> tuple[datetime.date, set[str]]:
         (asb_start + datetime.timedelta(days=i)).isoformat()
         for i in range(alen)
     }
-    return start, asb_dates
+    raw_dows = cfg.get("weekly_off_dows") or []
+    weekly_off: set[int] = set()
+    for d in raw_dows:
+        try:
+            di = int(d)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= di <= 6:
+            weekly_off.add(di)
+    return start, asb_dates, weekly_off
 
 
 # ---------------------------------------------------------------------------
@@ -292,12 +308,18 @@ def _schedule_series(
     asb_dates: set[str],
     season_days: int,
     rng: random.Random,
+    weekly_off_dows: set[int] | None = None,
 ) -> list[dict]:
     """Greedy series-aware scheduler. Walks the calendar one day at a time,
     advancing in-progress series and starting new ones for free teams.
 
     Off-days fall out for any team whose queue has no opponent free today.
-    All teams are off during ASB days. Returns a list of game dicts."""
+    All teams are off during ASB days, and on any weekday in
+    `weekly_off_dows` (0=Mon ... 6=Sun) — that's the league-wide off-day
+    cadence. Active series pause across these gaps and resume when the
+    calendar reopens, so a 4-game series can span Sun–Tue–Wed–Thu if Mon
+    is off."""
+    weekly_off = weekly_off_dows or set()
 
     # Per-team queue of pending series (each series appears in BOTH teams'
     # queues; first team to schedule it wins and removes from both).
@@ -329,7 +351,7 @@ def _schedule_series(
         date = season_start + datetime.timedelta(days=day)
         date_iso = date.isoformat()
 
-        if date_iso in asb_dates:
+        if date_iso in asb_dates or date.weekday() in weekly_off:
             day += 1
             continue
 
@@ -478,9 +500,10 @@ def generate_schedule(
         series_list.extend(_partition_pair_into_series(a, b, games_for_pair, rng))
 
     # Step 3: lay series onto the calendar.
-    season_start, asb_dates = _resolve_calendar(config)
+    season_start, asb_dates, weekly_off = _resolve_calendar(config)
     games = _schedule_series(
-        series_list, team_ids, season_start, asb_dates, season_days, rng
+        series_list, team_ids, season_start, asb_dates, season_days, rng,
+        weekly_off_dows=weekly_off,
     )
     return games
 
@@ -503,8 +526,13 @@ def seed_schedule(
     season_days: int | None = None,
     config_id: str = "30teams",
     rng_seed: int = 42,
+    config: dict | None = None,
 ) -> int:
     """Insert the schedule into the database.
+
+    Pass either `config_id` (loads `data/league_configs/<id>.json`) or
+    a fully-built `config` dict (used by the parametric / "build your own
+    league" form). When both are provided, the dict wins.
 
     Reseed-on-different-seed: if the games table already has rows but the
     active league meta seed differs from `rng_seed` (or no meta seed is
@@ -518,7 +546,7 @@ def seed_schedule(
     from o27v2.league import get_config
     from o27v2.season_archive import get_active_league_meta
 
-    cfg = get_config(config_id)
+    cfg = config if config is not None else get_config(config_id)
     if games_per_team is None:
         games_per_team = cfg["games_per_team"]
     if season_days is None:
