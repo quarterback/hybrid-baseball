@@ -3898,6 +3898,8 @@ def new_league_post():
                 season_start_month   = int(request.form.get("season_start_month", 4) or 4),
                 season_start_day     = int(request.form.get("season_start_day", 1) or 1),
                 weekly_off_dows      = [int(d) for d in dows if d.strip().isdigit()],
+                max_consecutive_game_days = int(request.form.get("max_consecutive_game_days", 20) or 20),
+                target_stand_length       = int(request.form.get("target_stand_length", 3) or 3),
                 level                = request.form.get("level", "MLB") or "MLB",
                 label                = request.form.get("label") or None,
             )
@@ -3915,6 +3917,28 @@ def new_league_post():
                   config_id=meta_cfg_id if custom_cfg is None else "custom",
                   config=custom_cfg)
     set_active_league_meta(rng_seed, meta_cfg_id)
+
+    # Surface a schedule-quality report so the user sees imbalance
+    # warnings (uneven opponent counts, off-day spread, etc.) before
+    # they get deep into a season and notice a lopsided play sample.
+    try:
+        from o27v2.schedule import verify_opponent_balance
+        teams_rows = db.fetchall("SELECT id, division FROM teams")
+        games_rows = db.fetchall("SELECT game_date, home_team_id, away_team_id FROM games")
+        report = verify_opponent_balance(
+            [dict(g) for g in games_rows],
+            [dict(t) for t in teams_rows],
+            custom_cfg,
+        )
+        msg = (f"League ready: {len(games_rows)} games · "
+               f"{report['intra_avg']:.1f} games per intra-div opponent · "
+               f"{report['inter_avg']:.1f} per inter-div · "
+               f"off-days {report['off_day_min']}-{report['off_day_max']}/team.")
+        flash(msg, "info")
+        for w in report.get("warnings", []):
+            flash(f"Schedule warning: {w}", "warning")
+    except Exception as e:
+        app.logger.exception("verify_opponent_balance failed: %s", e)
 
     return redirect(url_for("index"))
 

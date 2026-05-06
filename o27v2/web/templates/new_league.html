@@ -12,17 +12,6 @@
       </div>
     </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, msg in messages %}
-        <div class="alert mb-3"
-             style="background:#ffe1e1;border:1px solid #c9482b;color:#7a1d0e;border-radius:var(--radius);padding:10px 14px;font-size:.88rem">
-          {{ msg }}
-        </div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
     {% if current_team_count > 0 %}
     <div class="alert mb-3 d-flex align-items-start gap-2"
          style="background:#fff4dc;border:1px solid #d49d3a;color:#5a3f00;border-radius:var(--radius);padding:10px 14px;font-size:.88rem">
@@ -92,9 +81,9 @@
           <div class="row g-3">
             <div class="col-md-3">
               <label class="form-label" for="cf-team-count">Teams</label>
-              <input id="cf-team-count" type="number" name="team_count" min="2" max="60" step="2" value="30"
+              <input id="cf-team-count" type="number" name="team_count" min="2" max="86" step="2" value="30"
                      class="form-control form-control-sm">
-              <div class="text-secondary mt-1" style="font-size:.72rem">Even, divisible by leagues × divs/league</div>
+              <div class="text-secondary mt-1" style="font-size:.72rem">Even, divisible by leagues × divs/league. Max 86 (team-DB ceiling).</div>
             </div>
             <div class="col-md-3">
               <label class="form-label" for="cf-leagues">Leagues</label>
@@ -177,6 +166,19 @@
               <div class="text-secondary mt-1" style="font-size:.72rem">
                 No games on these weekdays. Real MLB skips most Mondays. Active series pause and resume the next playable day.
               </div>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label" for="cf-mcd">Max consecutive game-days</label>
+              <input id="cf-mcd" type="number" name="max_consecutive_game_days" min="5" max="40" value="20"
+                     class="form-control form-control-sm">
+              <div class="text-secondary mt-1" style="font-size:.72rem">Real MLB cap is 20 (CBA). Forces an off-day at this streak.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="cf-stand">Target stand length (series)</label>
+              <input id="cf-stand" type="number" name="target_stand_length" min="1" max="6" value="3"
+                     class="form-control form-control-sm">
+              <div class="text-secondary mt-1" style="font-size:.72rem">Series in a row at home / on road before flipping. Real MLB ≈ 3.</div>
             </div>
           </div>
         </div>

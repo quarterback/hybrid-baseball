@@ -697,6 +697,24 @@
 </nav>
 
 <div class="container-fluid px-4 py-3" style="max-width:1500px;margin:0 auto">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-region mb-3">
+      {% for category, msg in messages %}
+        {% set palette = {
+            'error':   ('#ffe1e1', '#c9482b', '#7a1d0e'),
+            'warning': ('#fff4dc', '#d49d3a', '#5a3f00'),
+            'info':    ('#e3f0ff', '#3b7dd8', '#0e3a73'),
+        } %}
+        {% set bg, brd, fg = palette.get(category, palette['info']) %}
+        <div class="alert mb-2"
+             style="background:{{ bg }};border:1px solid {{ brd }};color:{{ fg }};border-radius:var(--radius);padding:8px 12px;font-size:.86rem">
+          {{ msg }}
+        </div>
+      {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
   {% block content %}{% endblock %}
 </div>
 

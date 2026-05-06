@@ -198,22 +198,47 @@ def _inter_div_matching(
 # ---------------------------------------------------------------------------
 
 def _chunks_for_count(rem: int, rng: random.Random) -> list[int]:
-    """Partition `rem` games into series lengths in {2, 3, 4}. Falls back
-    to a 1-game series only if `rem == 1` and no merge is possible."""
+    """Partition `rem` games into series lengths in {2, 3, 4}, tuned to
+    the game count.
+
+    Real-MLB shape: most series are 3 games, with 4-game sets common
+    when the calendar permits and 2-game sets used to balance the math.
+    Pair-game counts that don't decompose cleanly (e.g. exactly 1) get
+    handled by stealing a game from a longer chunk.
+
+    The tuning depends on `rem`:
+      - Thin pairs (≤4 games): single series of that length, no chopping.
+      - Mid pairs (5-9): mix of 2 / 3 / 4, weighted toward 3.
+      - Thick pairs (≥10): closer to MLB's pattern — mostly 3-game with
+        a few 4-game; 2-game series only as residue.
+    """
     out: list[int] = []
+    if rem <= 0:
+        return out
+    if rem <= 4:
+        # 1- to 4-game pair: keep the entire matchup as one series. A
+        # 1-game leg is rare (only fires when directed-pair math gives
+        # one team a single home game in the entire season) but legal.
+        return [rem]
+
+    # For thicker pairs, MLB-style: prefer 3-game, sprinkle in 4-game,
+    # use 2-game only when needed to land on an integer.
+    if rem >= 10:
+        prob_4 = 0.30  # ~30% of long pairs are 4-game sets
+    else:
+        prob_4 = 0.40  # mid pairs slightly more 4s to absorb the slack
+
     while rem >= 5:
-        size = 4 if rng.random() < 0.45 else 3
+        size = 4 if rng.random() < prob_4 else 3
         out.append(size)
         rem -= size
-    if rem == 4:
-        out.append(4)
-    elif rem == 3:
-        out.append(3)
-    elif rem == 2:
-        out.append(2)
+
+    if rem == 4 or rem == 3 or rem == 2:
+        out.append(rem)
     elif rem == 1:
-        # Steal a game from a previous chunk if it's >2, else make a
-        # 1-game series (edge case for very thin matchups).
+        # Steal a game from a previous chunk if it's >2 (turn a 4 into
+        # a 3 + 2, or a 3 into a 2 + 2). Falls back to a 1-game series
+        # only when every prior chunk is already 2 — extremely rare.
         for i in range(len(out)):
             if out[i] > 2:
                 out[i] -= 1
@@ -309,6 +334,8 @@ def _schedule_series(
     season_days: int,
     rng: random.Random,
     weekly_off_dows: set[int] | None = None,
+    max_consec_days: int = 20,
+    target_stand_length: int = 3,
 ) -> list[dict]:
     """Greedy series-aware scheduler. Walks the calendar one day at a time,
     advancing in-progress series and starting new ones for free teams.
@@ -317,8 +344,24 @@ def _schedule_series(
     All teams are off during ASB days, and on any weekday in
     `weekly_off_dows` (0=Mon ... 6=Sun) — that's the league-wide off-day
     cadence. Active series pause across these gaps and resume when the
-    calendar reopens, so a 4-game series can span Sun–Tue–Wed–Thu if Mon
-    is off."""
+    calendar reopens, so a 4-game series can span Sun-Tue-Wed-Thu if Mon
+    is off.
+
+    Two extra constraints beyond pure availability:
+
+    * **Per-team off-day budget**: any team that has played
+      `max_consec_days` calendar days in a row is forced off today, even
+      if it has a compatible partner. Real-MLB cap is 20 consecutive
+      game-days (CBA); the scheduler defaults match that. Off-days for
+      a team reset the streak.
+
+    * **Road-trip / homestand grouping**: when a free team has multiple
+      compatible series in its queue, pick the one that keeps the team
+      in its current stand (home or away) until `target_stand_length`
+      series, then switch. This produces real-MLB-shaped trips
+      (3-4 series at home, 3-4 on the road) instead of single-series
+      flips. Default target is 3 series per stand.
+    """
     weekly_off = weekly_off_dows or set()
 
     # Per-team queue of pending series (each series appears in BOTH teams'
@@ -333,6 +376,28 @@ def _schedule_series(
     scheduled: set[int] = set()
 
     active: dict[int, _SeriesState | None] = {t: None for t in team_ids}
+    # Stand state: which mode each team last played in, and how many
+    # consecutive series they've been in that mode. Off-days don't reset
+    # the stand (a team coming off a 1-day break still continues their
+    # homestand) but do reset the consecutive-game-day streak.
+    last_stand: dict[int, str | None] = {t: None for t in team_ids}
+    stand_len:  dict[int, int]        = {t: 0    for t in team_ids}
+    consec_days: dict[int, int]       = {t: 0    for t in team_ids}
+
+    def _stand_score(t: int, home: int) -> int:
+        """Higher = better fit for team `t` if this series gets scheduled.
+        Continues the current stand until `target_stand_length`, then
+        prefers flipping. Teams with no current stand take anything."""
+        new_stand = "home" if t == home else "away"
+        cur = last_stand[t]
+        if cur is None:
+            return 1
+        if cur == new_stand:
+            # Continue: prefer until we hit the target length.
+            return 2 if stand_len[t] < target_stand_length else 0
+        else:
+            # Flip: prefer once we've completed a stand of decent length.
+            return 2 if stand_len[t] >= target_stand_length else 0
 
     games: list[dict] = []
     day = 0
@@ -352,10 +417,14 @@ def _schedule_series(
         date_iso = date.isoformat()
 
         if date_iso in asb_dates or date.weekday() in weekly_off:
+            # League-wide off day: every team's consec-day streak resets.
+            for t in team_ids:
+                consec_days[t] = 0
             day += 1
             continue
 
         used_today: set[int] = set()
+        played_today: set[int] = set()
 
         # --- Step 1: advance any in-progress series ---
         # Iterate by unique series object so we emit exactly one game per
@@ -374,6 +443,8 @@ def _schedule_series(
             })
             used_today.add(ss.home)
             used_today.add(ss.away)
+            played_today.add(ss.home)
+            played_today.add(ss.away)
             ss.days_done += 1
             if ss.days_done >= ss.length:
                 active[ss.home] = None
@@ -386,8 +457,12 @@ def _schedule_series(
         for t in free:
             if t in used_today or active[t] is not None:
                 continue
+            # Force off-day if this team would exceed the consecutive-day cap.
+            if consec_days[t] >= max_consec_days:
+                continue
             q = team_q[t]
-            chosen: tuple | None = None
+            best: tuple | None = None
+            best_score = -1
             for entry in q:
                 sid, home, away, length = entry
                 if sid in scheduled:
@@ -395,8 +470,19 @@ def _schedule_series(
                 opp = away if t == home else home
                 if opp in used_today or active[opp] is not None:
                     continue
-                chosen = entry
-                break
+                if consec_days[opp] >= max_consec_days:
+                    continue
+                # Score: own stand-fit + opponent's stand-fit (so the
+                # picker doesn't break the opponent's homestand pattern).
+                score = _stand_score(t, home) + _stand_score(opp, home)
+                if score > best_score:
+                    best_score = score
+                    best = entry
+                    # Score-2-for-self / score-2-for-opp = 4 is the max;
+                    # short-circuit when achievable.
+                    if best_score >= 4:
+                        break
+            chosen = best
             if chosen is None:
                 continue  # team takes an implicit off-day today
 
@@ -411,10 +497,20 @@ def _schedule_series(
             })
             used_today.add(home)
             used_today.add(away)
+            played_today.add(home)
+            played_today.add(away)
             active[home] = ss
             active[away] = ss
             scheduled.add(sid)
             pending_series -= 1
+            # Update stand state.
+            for tid, is_home in ((home, True), (away, False)):
+                stand = "home" if is_home else "away"
+                if last_stand[tid] == stand:
+                    stand_len[tid] += 1
+                else:
+                    last_stand[tid] = stand
+                    stand_len[tid] = 1
             if length == 1:
                 # 1-game series: closes immediately.
                 active[home] = None
@@ -429,6 +525,13 @@ def _schedule_series(
                 team_q[away].remove(chosen)
             except ValueError:
                 pass
+
+        # --- Step 3: update consecutive-game-day streaks ---
+        for t in team_ids:
+            if t in played_today:
+                consec_days[t] += 1
+            else:
+                consec_days[t] = 0
 
         day += 1
 
@@ -501,9 +604,14 @@ def generate_schedule(
 
     # Step 3: lay series onto the calendar.
     season_start, asb_dates, weekly_off = _resolve_calendar(config)
+    cfg = config or {}
+    max_consec       = int(cfg.get("max_consecutive_game_days", 20))
+    target_stand     = int(cfg.get("target_stand_length", 3))
     games = _schedule_series(
         series_list, team_ids, season_start, asb_dates, season_days, rng,
         weekly_off_dows=weekly_off,
+        max_consec_days=max_consec,
+        target_stand_length=target_stand,
     )
     return games
 
@@ -519,6 +627,103 @@ def verify_balance(games: list[dict], team_ids: list[int]) -> dict[int, int]:
         counts[g["home_team_id"]] += 1
         counts[g["away_team_id"]] += 1
     return counts
+
+
+def verify_opponent_balance(
+    games: list[dict],
+    teams: list[dict],
+    config: dict | None = None,
+) -> dict:
+    """Inspect opponent distribution and return a structured report:
+
+        {
+          "ok":              bool,             # True if no warnings
+          "intra_avg":       float,            # avg games per intra-div opponent
+          "inter_avg":       float,            # avg games per inter-div opponent
+          "intra_spread":    int,              # max - min intra count, per pair
+          "inter_spread":    int,              # max - min inter count, per pair
+          "off_day_min":     int,              # min off-days any team got
+          "off_day_max":     int,              # max off-days
+          "off_day_avg":     float,
+          "warnings":        list[str],        # human-readable issues
+        }
+
+    Doesn't raise; the caller (e.g. seed_schedule) decides whether to log
+    or surface in the UI. The form-handler displays it on the new-league
+    flash banner so the user sees what they're getting before clicking
+    "Sim Today" 50 times and noticing imbalance.
+    """
+    cfg = config or {}
+    div_map = {t["id"]: t.get("division") for t in teams}
+
+    pair_counts: dict[tuple[int, int], int] = defaultdict(int)
+    for g in games:
+        a, b = g["home_team_id"], g["away_team_id"]
+        key = (a, b) if a < b else (b, a)
+        pair_counts[key] += 1
+
+    intra_pair_counts: list[int] = []
+    inter_pair_counts: list[int] = []
+    for (a, b), n in pair_counts.items():
+        same_div = (div_map.get(a) == div_map.get(b)) and div_map.get(a)
+        if same_div:
+            intra_pair_counts.append(n)
+        else:
+            inter_pair_counts.append(n)
+
+    def _avg(xs: list[int]) -> float:
+        return (sum(xs) / len(xs)) if xs else 0.0
+    def _spread(xs: list[int]) -> int:
+        return (max(xs) - min(xs)) if xs else 0
+
+    # Per-team off-day count. An off-day is any calendar date in the
+    # span of the schedule on which the team didn't play. We don't have
+    # the calendar bounds here directly, so approximate using the played
+    # game-date span.
+    if games:
+        all_dates = sorted({g["game_date"] for g in games})
+        first, last = all_dates[0], all_dates[-1]
+        first_d = datetime.date.fromisoformat(first)
+        last_d  = datetime.date.fromisoformat(last)
+        total_days = (last_d - first_d).days + 1
+    else:
+        total_days = 0
+
+    games_played: dict[int, set[str]] = defaultdict(set)
+    for g in games:
+        games_played[g["home_team_id"]].add(g["game_date"])
+        games_played[g["away_team_id"]].add(g["game_date"])
+    off_days = [total_days - len(d) for d in games_played.values()]
+
+    warnings: list[str] = []
+    intra_spread = _spread(intra_pair_counts)
+    inter_spread = _spread(inter_pair_counts)
+    if intra_spread > 4:
+        warnings.append(
+            f"Intra-division opponent counts vary by {intra_spread} games "
+            f"(some pairs play many more than others)."
+        )
+    if inter_spread > 4:
+        warnings.append(
+            f"Inter-division opponent counts vary by {inter_spread} games."
+        )
+    if off_days and (max(off_days) - min(off_days)) > 10:
+        warnings.append(
+            f"Off-day distribution is uneven: min {min(off_days)}, "
+            f"max {max(off_days)} per team."
+        )
+
+    return {
+        "ok":           not warnings,
+        "intra_avg":    _avg(intra_pair_counts),
+        "inter_avg":    _avg(inter_pair_counts),
+        "intra_spread": intra_spread,
+        "inter_spread": inter_spread,
+        "off_day_min":  min(off_days) if off_days else 0,
+        "off_day_max":  max(off_days) if off_days else 0,
+        "off_day_avg":  _avg(off_days),
+        "warnings":     warnings,
+    }
 
 
 def seed_schedule(

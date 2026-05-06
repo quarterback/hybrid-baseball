@@ -91,6 +91,8 @@ def build_custom_config(
     all_star_break_day: int = 13,
     all_star_break_days: int = 4,
     weekly_off_dows: list[int] | None = None,
+    max_consecutive_game_days: int = 20,
+    target_stand_length: int = 3,
     level: str = "MLB",
     label: str | None = None,
 ) -> dict:
@@ -165,6 +167,8 @@ def build_custom_config(
         "all_star_break_day":     all_star_break_day,
         "all_star_break_days":    all_star_break_days,
         "weekly_off_dows":        list(weekly_off_dows or []),
+        "max_consecutive_game_days": int(max_consecutive_game_days),
+        "target_stand_length":       int(target_stand_length),
     }
 
 
