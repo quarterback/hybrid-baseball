@@ -83,13 +83,20 @@ def _end_of_month(d: _dt.date) -> _dt.date:
 
 
 def _sim_response(from_date: str | None, to_date: str | None, results: list) -> dict:
+    errors = [r for r in results if isinstance(r, dict) and "error" in r]
     return {
-        "simulated":       len(results),
+        "simulated":       len(results) - len(errors),
+        "errored":         len(errors),
+        "first_error":     (errors[0].get("error") if errors else None),
         "from_date":       from_date,
         "to_date":         to_date,
         "current_date":    get_current_sim_date(),
         "season_complete": is_season_complete(),
     }
+
+
+def _had_errors(results: list) -> bool:
+    return any(isinstance(r, dict) and "error" in r for r in results)
 
 
 def _clamp_to_last(date_str: str) -> str:
@@ -3897,8 +3904,12 @@ def api_sim_today():
         return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
     results = simulate_date(current)
-    next_day = (_dt.date.fromisoformat(current) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(_clamp_to_last(next_day))
+    # Only advance the clock if every game on `current` actually played.
+    # Otherwise we'd desync: schedule shows unplayed games on a past day
+    # and the user has no obvious way to retry them.
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(current) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(_clamp_to_last(next_day))
     return jsonify(_sim_response(current, current, results))
 
 
@@ -3909,8 +3920,11 @@ def api_sim_week():
     current = get_current_sim_date()
     target  = (_dt.date.fromisoformat(current) + _dt.timedelta(days=6)).isoformat()
     results = simulate_through(target)
-    next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(_clamp_to_last(next_day))
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(_clamp_to_last(next_day))
+    else:
+        resync_sim_clock()
     return jsonify(_sim_response(current, target, results))
 
 
@@ -3921,8 +3935,11 @@ def api_sim_month():
     current = get_current_sim_date()
     target  = _end_of_month(_dt.date.fromisoformat(current)).isoformat()
     results = simulate_through(target)
-    next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(_clamp_to_last(next_day))
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(_clamp_to_last(next_day))
+    else:
+        resync_sim_clock()
     return jsonify(_sim_response(current, target, results))
 
 
@@ -3935,8 +3952,11 @@ def api_sim_all_star():
     if target is None or current > target:
         return jsonify(_sim_response(current, target, []))
     results = simulate_through(target)
-    next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(_clamp_to_last(next_day))
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(_clamp_to_last(next_day))
+    else:
+        resync_sim_clock()
     return jsonify(_sim_response(current, target, results))
 
 
@@ -3952,8 +3972,11 @@ def api_sim_season():
     current = get_current_sim_date()
     last    = get_last_scheduled_date()
     results = simulate_through(last)
-    next_day = (_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat()
-    advance_sim_clock(next_day)
+    if not _had_errors(results):
+        next_day = (_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(next_day)
+    else:
+        resync_sim_clock()
     # Auto-archive on completion: simulating through the last scheduled date
     # finishes the season, so snapshot leaders/standings/invariants now.
     archived_id = None
@@ -4108,7 +4131,17 @@ def api_sim_game(game_id: int):
         resync_sim_clock()
         return jsonify(result)
     except ValueError as e:
+        # Expected: e.g. "Game already played" / "Game not found"
         return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        # Unexpected engine/DB failure. Log a full traceback server-side
+        # so deployments surface the actual cause, and return enough info
+        # for the schedule-page JS to show a useful error to the user.
+        app.logger.exception("simulate_game(%s) failed", game_id)
+        return jsonify({
+            "error": f"{type(e).__name__}: {e}",
+            "game_id": game_id,
+        }), 500
 
 
 @app.route("/api/league-configs")

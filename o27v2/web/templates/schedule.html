@@ -76,10 +76,22 @@ document.querySelectorAll('.sim-one-btn').forEach(btn => {
     const gid = this.dataset.gameId;
     this.disabled = true;
     this.textContent = '…';
-    const r = await fetch(`/api/sim/${gid}`, {method:'POST',
-      headers:{'Content-Type':'application/json'}, body:'{}'});
-    if (r.ok) window.location.reload();
-    else { this.disabled = false; this.textContent = 'Err'; }
+    try {
+      const r = await fetch(`/api/sim/${gid}`, {method:'POST',
+        headers:{'Content-Type':'application/json'}, body:'{}'});
+      if (r.ok) { window.location.reload(); return; }
+      const data = await r.json().catch(() => ({}));
+      const msg = data.error || `HTTP ${r.status}`;
+      this.disabled = false;
+      this.textContent = 'Err';
+      this.title = msg;
+      alert(`Sim failed for game ${gid}: ${msg}`);
+    } catch (err) {
+      this.disabled = false;
+      this.textContent = 'Err';
+      this.title = String(err);
+      alert(`Sim failed for game ${gid}: ${err}`);
+    }
   });
 });
 </script>

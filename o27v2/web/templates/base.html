@@ -753,6 +753,19 @@
       });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json().catch(() => ({}));
+      if (data.errored && data.errored > 0) {
+        // Sim ran but some games crashed — surface the cause and don't
+        // reload (the schedule's "Err" buttons would hide the real reason).
+        badge.textContent = orig;
+        setBusy(false);
+        alert(
+          `Simulation finished with ${data.errored} game(s) failing. ` +
+          `Played ${data.simulated || 0} successfully.\n\n` +
+          `First error: ${data.first_error || '(unknown)'}\n\n` +
+          `The clock did not advance past unplayed games — retry or check server logs.`
+        );
+        return;
+      }
       if (data.from_date && data.to_date && data.from_date !== data.to_date) {
         badge.textContent = `Simulated ${data.from_date} → ${data.to_date}`;
       } else if (data.from_date) {
