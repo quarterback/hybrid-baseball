@@ -448,6 +448,11 @@ class GameState:
 
     # --- Multi-hit tracking (within one at-bat) ---
     current_at_bat_hits: int = 0
+    # Count of contact events (swings that put ball in play) so far in
+    # the current AB. Increments at the top of _resolve_contact, resets
+    # at AB end. Read by contact_quality on subsequent swings to apply
+    # the eye/command second-swing modifier.
+    current_at_bat_swings: int = 0
 
     # --- Joker insertion override ---
     # When the manager inserts a joker, this field holds the joker Player

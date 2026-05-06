@@ -88,6 +88,9 @@
     <thead><tr>
       <th>Name</th><th>Tm</th><th>Pos</th>
       <th class="num">Age</th>
+      <th class="num" title="Power rating (0-100): bias contact toward hard, more HR weight">Pwr</th>
+      <th class="num" title="Contact rating (0-100): lower whiff rate, more bat on ball">Con</th>
+      <th class="num" title="Eye rating (0-100): plate discipline, more walks taken, fewer called Ks">Eye</th>
       <th class="num">GP</th><th class="num">PA</th><th class="num">AB</th>
       <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
       <th class="num">RBI</th><th class="num">R</th><th class="num">BB</th><th class="num">SO</th>
@@ -100,6 +103,9 @@
       <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
       <td class="text-secondary">{{ p.position }}</td>
       <td class="num text-secondary">{{ p.age }}</td>
+      <td class="num">{{ p.power or 0 }}</td>
+      <td class="num">{{ p.contact or 0 }}</td>
+      <td class="num">{{ p.eye or 0 }}</td>
       <td class="num">{{ p.gp or 0 }}</td><td class="num">{{ p.pa or 0 }}</td><td class="num">{{ p.ab or 0 }}</td>
       <td class="num fw-bold">{{ p.h or 0 }}</td><td class="num">{{ p.d2 or 0 }}</td><td class="num">{{ p.d3 or 0 }}</td><td class="num">{{ p.hr or 0 }}</td>
       <td class="num">{{ p.rbi or 0 }}</td><td class="num">{{ p.r or 0 }}</td><td class="num">{{ p.bb or 0 }}</td><td class="num">{{ p.k or 0 }}</td>
@@ -125,10 +131,14 @@
     <thead><tr>
       <th>Name</th><th>Tm</th>
       <th class="num">Age</th>
+      <th class="num" title="Stuff (pitcher_skill, 0-100): swing-and-miss / contact dominance">Stf</th>
+      <th class="num" title="Command (0-100): control — lower walk rate, fewer balls">Cmd</th>
+      <th class="num" title="Movement (0-100): bias contact toward weak / ground-out">Mov</th>
+      <th class="num" title="Stamina (0-100): how long the arm endures before fatigue degrades stuff">Sta</th>
       <th class="num">G</th><th class="num">GS</th><th class="num">W</th><th class="num">L</th>
       <th class="num">Outs</th>
       <th class="num" title="Weighted ERA">wERA</th>
-      <th class="num" title="Expected FIP (O27)">xFIP</th>
+      <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA">xRA</th>
       <th class="num" title="(K + foul-outs) / BF">K%</th>
       <th class="num">BB%</th>
       <th class="num" title="Outs Share Plus (100 = league avg)">OS+</th>
@@ -139,13 +149,17 @@
       <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a></td>
       <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
       <td class="num text-secondary">{{ p.age }}</td>
+      <td class="num">{{ p.pitcher_skill or 0 }}</td>
+      <td class="num">{{ p.command or 0 }}</td>
+      <td class="num">{{ p.movement or 0 }}</td>
+      <td class="num">{{ p.stamina or 0 }}</td>
       <td class="num">{{ p.gp or p.g or 0 }}</td>
       <td class="num">{{ p.gs or 0 }}</td>
       <td class="num">{{ p.w or 0 }}</td>
       <td class="num">{{ p.l or 0 }}</td>
       <td class="num">{{ p.outs or 0 }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
-      <td class="num" data-sort-value="{{ '%.3f'|format(p.xfip or 0) }}">{{ '%.2f'|format(p.xfip or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num">{{ '%.1f'|format((p.k_pct or 0) * 100) }}%</td>
       <td class="num">{{ '%.1f'|format((p.bb_pct or 0) * 100) }}%</td>
       <td class="num">{{ (p.os_plus or 100)|round|int }}</td>

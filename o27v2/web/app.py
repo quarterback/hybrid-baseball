@@ -298,6 +298,104 @@ def _position_defense_for_row(row: dict) -> float:
     return 0.6 * sub + 0.4 * general
 
 
+def _pitcher_per_game_decay_map() -> dict[int, dict[str, float]]:
+    """Per-pitcher per-appearance Decay map and arc-3 reach rate.
+
+    Returns {player_id: {'decay_pg': float, 'arc3_reach_rate': float,
+                          'decay_pg_known': bool, 'g_total': int,
+                          'g_arc3_reach': int}}
+
+    `decay_pg` is the mean of per-appearance Decay (raw arc-1 K% −
+    arc-3 K% in points) across the pitcher's appearances that had
+    BOTH arc-1 sample AND arc-3 sample. This is the "less-noisy"
+    sibling to the season-aggregated Decay — it equal-weights games
+    instead of weighting by BFs.
+
+    `arc3_reach_rate` is the fraction of the pitcher's appearances
+    that reached arc-3 (bf_arc3 > 0). The actual survivor-bias
+    signal: a pitcher with low Decay but only 30% arc3-reach rate
+    has a Decay computed from his GOOD outings only — the bad ones
+    got him pulled before arc-3.
+
+    NOTE on dedup: per-game arc fields can be double-counted by the
+    same dedup logic that hits the season aggregates. We MAX across
+    duplicate rows for the same (player, game) instead of SUMming —
+    the per-row arc data should be identical across duplicates, but
+    MAX is safe regardless. If a pitcher genuinely had two spells
+    in one game (rare in O27), they collapse into one appearance
+    record here.
+    """
+    rows = db.fetchall(
+        """SELECT ps.player_id,
+                  ps.game_id,
+                  MAX(COALESCE(ps.bf_arc1, 0)) AS bfa1,
+                  MAX(COALESCE(ps.bf_arc3, 0)) AS bfa3,
+                  MAX(COALESCE(ps.k_arc1,  0) + COALESCE(ps.fo_arc1, 0)) AS ka1,
+                  MAX(COALESCE(ps.k_arc3,  0) + COALESCE(ps.fo_arc3, 0)) AS ka3
+             FROM game_pitcher_stats ps
+             JOIN games g ON g.id = ps.game_id
+            WHERE g.played = 1
+            GROUP BY ps.player_id, ps.game_id"""
+    )
+    out: dict[int, dict[str, float]] = {}
+    for r in rows:
+        pid = r["player_id"]
+        slot = out.setdefault(pid, {
+            "g_total": 0, "g_arc3_reach": 0,
+            "decay_sum": 0.0, "decay_n": 0,
+        })
+        slot["g_total"] += 1
+        bfa1 = r["bfa1"] or 0
+        bfa3 = r["bfa3"] or 0
+        if bfa3 > 0:
+            slot["g_arc3_reach"] += 1
+        if bfa1 > 0 and bfa3 > 0:
+            kp1 = (r["ka1"] or 0) / bfa1
+            kp3 = (r["ka3"] or 0) / bfa3
+            slot["decay_sum"] += (kp1 - kp3) * 100.0
+            slot["decay_n"]   += 1
+
+    finalized: dict[int, dict[str, float]] = {}
+    for pid, slot in out.items():
+        g = slot["g_total"]
+        finalized[pid] = {
+            "g_total":          g,
+            "g_arc3_reach":     slot["g_arc3_reach"],
+            "arc3_reach_rate":  (slot["g_arc3_reach"] / g) if g else 0.0,
+            "decay_pg_known":   slot["decay_n"] > 0,
+            "decay_pg":         (slot["decay_sum"] / slot["decay_n"]) if slot["decay_n"] else 0.0,
+        }
+    return finalized
+
+
+def _stamp_per_game_decay(rows: list[dict], drift: float = 0.0) -> None:
+    """Stamp per-pitcher decay_pg / arc3_reach_rate / g_arc3_reach onto
+    aggregated pitcher rows. Same drift correction is applied to
+    `decay_pg` so it sits in the same "0 = league norm" frame as the
+    season Decay.
+    """
+    if not rows:
+        return
+    pmap = _pitcher_per_game_decay_map()
+    for r in rows:
+        pid = r.get("player_id")
+        meta = pmap.get(pid)
+        if not meta:
+            r["decay_pg"]         = 999.9
+            r["decay_pg_raw"]     = 999.9
+            r["decay_pg_known"]   = False
+            r["arc3_reach_rate"]  = 0.0
+            r["g_arc3_reach"]     = 0
+            r["g_total"]          = 0
+            continue
+        r["decay_pg_known"]  = meta["decay_pg_known"]
+        r["decay_pg_raw"]    = meta["decay_pg"] if meta["decay_pg_known"] else 999.9
+        r["decay_pg"]        = (meta["decay_pg"] - drift) if meta["decay_pg_known"] else 999.9
+        r["arc3_reach_rate"] = meta["arc3_reach_rate"]
+        r["g_arc3_reach"]    = meta["g_arc3_reach"]
+        r["g_total"]         = meta["g_total"]
+
+
 def _pitcher_wl_map() -> dict[int, dict[str, int]]:
     """Award W/L per MLB-style rules adapted to the O27 27-out-per-side
     structure.
@@ -504,6 +602,19 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         # runners; this surfaces who actually drives in runs while staying.
         stay_rbi = b.get("stay_rbi") or 0
         b["stay_rbi_per_stay"] = (stay_rbi / stays_v) if stays_v else 0.0
+        # Stay-RBI%: fraction of total RBI driven by stays. Diagnostic ratio
+        # for "is the second-chance AB rule pulling its share of offense?"
+        # League-wide ~8-15% under [1,1,1] advancement, higher when stays
+        # advance runners aggressively.
+        rbi_v = b.get("rbi") or 0
+        b["stay_rbi_pct"] = (stay_rbi / rbi_v) if rbi_v else 0.0
+        # 2C-Conv%: fraction of valid 2C events that credited a hit
+        # (i.e., a runner advanced). Talent-weighted via the eye-vs-command
+        # second-swing modifier in contact_quality. Spec target: top hitters
+        # 60-70%, marginal 30-40%.
+        stay_hits = b.get("stay_hits") or 0
+        b["stay_hits"] = stay_hits
+        b["stay_conv_pct"] = (stay_hits / stays_v) if stays_v else 0.0
         # Foul-out rate (O27's 3-foul cap). High FO% = batter prone to
         # fouling himself out — a real cost in this rule set.
         fo = b.get("fo") or 0
@@ -572,22 +683,38 @@ def _pitcher_game_score(
     return float(score)
 
 
+# xRA seeded linear-weights coefficients. Non-negative — every event
+# contributes ≥ 0 expected runs allowed. Outs and Ks contribute zero.
+# Locked v1: HR=1.4, single≈0.45, BB/HBP=0.32. We approximate doubles
+# and triples allowed as singles since they aren't persisted at the
+# pitcher row level.
+_XRA_W_HR    = 1.40
+_XRA_W_HIT   = 0.45   # used for any non-HR hit (singles-equivalent)
+_XRA_W_BB    = 0.32
+_XRA_W_HBP   = 0.32
+
+
 def _league_werra_consts() -> tuple[float, float, float]:
-    """Refit (C_w, C_x, league_outs_per_g) per call.
+    """Refit (C_w, xra_norm, league_outs_per_g) per call.
 
     - C_w anchors league wERA to league raw ER per 27 outs so wERA reads
       on the same scale as the old ERA: a pitcher whose ER are spread
       proportionally to the league sees wERA ≈ raw-ER/27, while late-arc
       damage pulls the metric up and early-arc damage pulls it down.
-    - C_x anchors league xFIP to league wERA so xFIP-vs-wERA gaps
-      isolate batted-ball luck the same way classic FIP-vs-ERA gaps do.
+    - xra_norm is a multiplicative scaler: per-pitcher raw_xra (sum of
+      seeded run values divided by outs * 27) is multiplied by this so
+      league xRA == league wERA. Multiplicative anchor (vs. an additive
+      constant) keeps every pitcher's xRA ≥ 0 — no more `xFIP -8.81`
+      blow-ups in small samples.
     - league_outs_per_g feeds OS+ (league-relative outs share).
 
-    Falls back to neutral constants (1.0, 0.0, 5.0) on an empty DB.
+    Falls back to neutral constants (1.0, 1.0, 5.0) on an empty DB.
     """
     row = db.fetchone(
         f"""SELECT COALESCE(SUM(hr_allowed),0)    AS hr,
+                   COALESCE(SUM(hits_allowed),0)  AS h,
                    COALESCE(SUM(bb),0)            AS bb,
+                   COALESCE(SUM(hbp_allowed),0)   AS hbp,
                    COALESCE(SUM(k),0)             AS k,
                    COALESCE(SUM(fo_induced),0)    AS fo,
                    COALESCE(SUM(er),0)            AS er,
@@ -601,7 +728,7 @@ def _league_werra_consts() -> tuple[float, float, float]:
     outs = row.get("outs") or 0
     g    = row.get("g")    or 0
     if not outs:
-        return 1.0, 0.0, 5.0
+        return 1.0, 1.0, 5.0
     league_era = (row["er"] * 27.0) / outs
     league_w_raw = (
         (0.85 * row["era1"] + 1.00 * row["era2"] + 1.20 * row["era3"])
@@ -610,14 +737,19 @@ def _league_werra_consts() -> tuple[float, float, float]:
     )
     c_w = (league_era / league_w_raw) if league_w_raw > 0 else 1.0
     league_werra = league_w_raw * c_w  # by construction == league_era
-    raw_xfip = (
-        (13 * row["hr"] + 3 * row["bb"] - 2 * (row["k"] + row["fo"]))
-        * 27.0
-        / outs
+
+    # Compute league raw xRA from seeded weights.
+    non_hr_hits = max(0, row["h"] - row["hr"])
+    raw_xra_total = (
+        _XRA_W_HR  * row["hr"]
+      + _XRA_W_HIT * non_hr_hits
+      + _XRA_W_BB  * row["bb"]
+      + _XRA_W_HBP * row["hbp"]
     )
-    c_x = league_werra - raw_xfip
+    league_raw_xra = (raw_xra_total * 27.0 / outs) if outs else 0.0
+    xra_norm = (league_werra / league_raw_xra) if league_raw_xra > 0 else 1.0
     league_outs_per_g = (outs / g) if g else 5.0
-    return c_w, c_x, league_outs_per_g
+    return c_w, xra_norm, league_outs_per_g
 
 
 def _league_baselines() -> dict[str, float]:
@@ -661,6 +793,12 @@ def _league_baselines() -> dict[str, float]:
                    COALESCE(SUM(er_arc1),0)       AS era1,
                    COALESCE(SUM(er_arc2),0)       AS era2,
                    COALESCE(SUM(er_arc3),0)       AS era3,
+                   COALESCE(SUM(k_arc1),0)        AS ka1,
+                   COALESCE(SUM(k_arc3),0)        AS ka3,
+                   COALESCE(SUM(fo_arc1),0)       AS foa1,
+                   COALESCE(SUM(fo_arc3),0)       AS foa3,
+                   COALESCE(SUM(bf_arc1),0)       AS bfa1,
+                   COALESCE(SUM(bf_arc3),0)       AS bfa3,
                    COUNT(*)                       AS g
               FROM {_PSTATS_DEDUP_SQL} ps"""
     ) or {}
@@ -670,8 +808,8 @@ def _league_baselines() -> dict[str, float]:
         "woba": 0.330, "replacement_woba": 0.280, "replacement_era": 6.00,
         "runs_per_win": 10.0,
         "total_pa": 0.0, "total_outs": 0.0,
-        # New league-level baselines for the wERA / xFIP / GSc+ stack.
-        "league_werra": 5.00, "league_xfip": 5.00, "gsc_avg": 50.0,
+        # New league-level baselines for the wERA / xRA / GSc+ stack.
+        "league_werra": 5.00, "league_xra": 5.00, "gsc_avg": 50.0,
     }
 
     pa = bat.get("pa", 0) or 0
@@ -712,14 +850,30 @@ def _league_baselines() -> dict[str, float]:
         # the aggregator can read it without re-fitting.
         out["league_werra"] = out["era"]
 
-        # league_xfip = league_werra by C_x construction, but we store
-        # the raw value before C_x for diagnostics.
-        league_xfip_raw = (
-            (13 * pit.get("hr", 0) + 3 * pit.get("bb", 0)
-             - 2 * (pit.get("k", 0) + pit.get("fo", 0)))
-            * 27.0 / pit_outs
-        )
-        out["league_xfip"] = out["league_werra"]  # by C_x construction
+        # league_xra is anchored to league_werra by xra_norm construction
+        # (see _league_werra_consts()).
+        out["league_xra"] = out["league_werra"]
+
+        # League arc-1 vs arc-3 K% (incl foul-outs) — used as the zero-point
+        # for drift-corrected Decay. In O27 the 27-out single inning cycles
+        # to weaker hitters, so league arc-3 K% is structurally higher than
+        # arc-1 K% (~3-4 pp) regardless of pitcher fatigue. The drift is
+        # this delta; subtracting it from raw Decay isolates the
+        # fatigue-driven signal from the lineup-cycling signal.
+        bfa1 = pit.get("bfa1") or 0
+        bfa3 = pit.get("bfa3") or 0
+        if bfa1 > 0 and bfa3 > 0:
+            la1 = ((pit.get("ka1") or 0) + (pit.get("foa1") or 0)) / bfa1
+            la3 = ((pit.get("ka3") or 0) + (pit.get("foa3") or 0)) / bfa3
+            out["league_arc1_k_pct"] = la1
+            out["league_arc3_k_pct"] = la3
+            # Stored in percentage POINTS (×100) to match the units Decay
+            # reports — keeps the subtraction unit-clean downstream.
+            out["league_decay_drift"] = (la1 - la3) * 100.0
+        else:
+            out["league_arc1_k_pct"] = 0.0
+            out["league_arc3_k_pct"] = 0.0
+            out["league_decay_drift"] = 0.0
 
         # League-average per-appearance Game Score, computed from
         # per-game means (linear in counts so this matches mean(GSc) for
@@ -759,7 +913,7 @@ def _aggregate_pitcher_rows(
     """Compute the O27 pitcher-stat suite onto each row in place.
 
     Keys produced:
-      werra, xfip, decay  — three result-tier metrics
+      werra, xra, decay   — three result-tier metrics
       gsc_avg             — mean Game Score (linear approx from aggregates)
       os_pct              — outs share per appearance (outs/g/27)
       os_plus             — league-relative outs share (100 = league avg)
@@ -770,13 +924,14 @@ def _aggregate_pitcher_rows(
                             -- aggregator separately.
       gsc_plus            — league-relative GSc (100 = league avg, higher = better)
       k_pct, bb_pct, hr_pct (PA-rate; K% includes foul-outs)
+      k_minus_bb_pct      — (K - BB) / BF, plain Ks (no foul-outs)
       oavg, babip_allowed, outs_per_pitch, p_per_bf, fo_pct_pit
       vorp, war           — rebased to wERA
       w, l                — from the wl map if provided
     """
     if werra_consts is None:
         werra_consts = _league_werra_consts()
-    c_w, c_x, league_outs_per_g = werra_consts
+    c_w, xra_norm, league_outs_per_g = werra_consts
     if baselines is None:
         baselines = {"era": 0.0}
     for p in rows:
@@ -806,24 +961,66 @@ def _aggregate_pitcher_rows(
                          p.get("bf_arc3") or 0)
         gs = p.get("gs") or p.get("starts") or 0
 
-        # --- Result-tier: wERA / xFIP / Decay ---
+        # --- Result-tier: wERA / xRA / Decay ---
         weighted_er = 0.85 * er1 + 1.00 * er2 + 1.20 * er3
         p["werra"] = (weighted_er * 27.0 / outs) * c_w if outs else 0.0
-        p["xfip"]  = (
-            (13 * hr + 3 * bb - 2 * (k + fo)) * 27.0 / outs + c_x
-        ) if outs else 0.0
-        # Decay: K%_arc1 - K%_arc3 (× 100). K% here counts foul-outs as Ks.
+        # xRA — expected runs allowed using non-negative seeded
+        # linear-weights coefficients. Multiplicatively anchored to
+        # league wERA via xra_norm so xRA-vs-wERA gap reads as
+        # batted-ball luck, the same way the old xFIP-vs-wERA gap did,
+        # but with mathematically guaranteed non-negative output.
+        if outs:
+            non_hr_hits = max(0, h - hr)
+            raw_xra = (
+                _XRA_W_HR  * hr
+              + _XRA_W_HIT * non_hr_hits
+              + _XRA_W_BB  * bb
+              + _XRA_W_HBP * hbp_a
+            ) * 27.0 / outs
+            p["xra"] = raw_xra * xra_norm
+        else:
+            p["xra"] = 0.0
+        # Decay: drift-corrected K%_arc1 - K%_arc3 (× 100). K% counts
+        # foul-outs as Ks. The drift correction subtracts the league's
+        # structural arc-1→arc-3 lift (lineup-cycling weakens hitters
+        # late in the 27-out inning), so:
+        #   0    = pitcher matches league norm
+        #   >0   = fades worse than the lineup naturally lifts K%
+        #   <0   = holds up better than the lineup-cycle baseline
+        # `decay_raw` keeps the un-corrected delta as a diagnostic
+        # field — useful when comparing across configs / seasons where
+        # the lineup-cycling magnitude itself shifts.
+        league_drift = (baselines or {}).get("league_decay_drift", 0.0) if baselines else 0.0
         if bf1 > 0 and bf3 > 0:
             kp1 = (k1 + fo1) / bf1
             kp3 = (k3 + fo3) / bf3
-            p["decay"] = (kp1 - kp3) * 100.0
+            raw_delta = (kp1 - kp3) * 100.0
+            p["decay_raw"] = raw_delta
+            p["decay"] = raw_delta - league_drift
             p["decay_known"] = True
         else:
             # Sentinel that sorts to the worst end of "low is better"
             # leaderboards but doesn't break Jinja sort. Templates check
             # `decay_known` to decide whether to render the value.
             p["decay"] = 999.9
+            p["decay_raw"] = 999.9
             p["decay_known"] = False
+
+        # LateK% — arc-3-only K% (incl foul-outs). Visible for short-relief
+        # specialists who never see arc-1 sample (so Decay is undefined),
+        # and useful as a sibling stat to Decay even for starters: a
+        # closer's arc-3 K% relative to league arc-3 K% reads cleaner than
+        # a Decay number for someone who only pitched the back half.
+        # Sentinel None when no arc-3 sample at all.
+        if bf3 > 0:
+            p["late_k_pct"]   = (k3 + fo3) / bf3
+            p["late_k_known"] = True
+        else:
+            p["late_k_pct"]   = 0.0
+            p["late_k_known"] = False
+        # Percent-scaled view for the leader-card macro, which formats raw
+        # numbers (no transform). Avoids the 0.305 vs 30.5% display quirk.
+        p["late_k_pct_pct"] = p["late_k_pct"] * 100.0
 
         # --- Workload ---
         p["aor"]    = (outs / g) if g else 0.0
@@ -848,8 +1045,9 @@ def _aggregate_pitcher_rows(
         p["k_pct"]  = ((k + fo) / bf) if bf else 0.0
         p["bb_pct"] = (bb / bf) if bf else 0.0
         p["hr_pct"] = (hr / bf) if bf else 0.0
-        # K-BB% — composite for box-score row.
-        p["k_minus_bb_pct"] = p["k_pct"] - p["bb_pct"]
+        # K-BB% — plain Ks only (no foul-outs), per current spec.
+        # Quick-read dominance signal that doesn't need recalibration.
+        p["k_minus_bb_pct"] = ((k - bb) / bf) if bf else 0.0
 
         # --- Opponent profile (kept) ---
         ab_faced = max(0, bf - bb - hbp_a)
@@ -893,6 +1091,15 @@ def _aggregate_pitcher_rows(
             d = wl.get(pid, {"w": 0, "l": 0})
             p["w"] = d["w"]
             p["l"] = d["l"]
+
+    # Per-appearance Decay + arc-3 reach rate. One cheap GROUP BY query
+    # against game_pitcher_stats; mapped onto every pitcher row in `rows`.
+    # decay_pg uses the SAME drift correction as season Decay so both sit
+    # in the "0 = league norm" frame. arc3_reach_rate exposes the
+    # survivor-bias signal directly: a pitcher whose Decay was computed
+    # from only 30% of his appearances is sampling his good days.
+    drift = (baselines or {}).get("league_decay_drift", 0.0) if baselines else 0.0
+    _stamp_per_game_decay(rows, drift=drift)
 
 
 # ---------------------------------------------------------------------------
@@ -968,7 +1175,7 @@ def index():
                HAVING SUM(bs.pa) >= ?""",
             (min_pa,),
         )
-        _aggregate_batter_rows(batting)
+        _aggregate_batter_rows(batting, baselines=baselines)
         top["avg"] = sorted(batting, key=lambda x: x["avg"], reverse=True)[:5]
         top["hr"]  = sorted(batting, key=lambda x: x["hr"] or 0, reverse=True)[:5]
         top["rbi"] = sorted(batting, key=lambda x: x["rbi"] or 0, reverse=True)[:5]
@@ -1200,7 +1407,7 @@ def game_detail(game_id: int):
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples",
                 "hr", "rbi", "bb", "k", "stays", "outs_recorded",
                 "hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi",
-                "roe", "po", "e")
+                "stay_hits", "roe", "po", "e")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs",
@@ -1462,7 +1669,8 @@ def game_detail_export(game_id: int):
     # _consolidate_per_player but inlined here so the export is independent.
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                 "rbi", "bb", "k", "stays", "outs_recorded", "hbp", "sb",
-                "cs", "fo", "multi_hit_abs", "stay_rbi", "roe", "po", "e")
+                "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits",
+                "roe", "po", "e")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs", "sb_allowed", "cs_caught",
@@ -1554,7 +1762,8 @@ def player_detail_export(player_id: int):
                   COALESCE(SUM(cs),0)  as cs,
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
-                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
@@ -1668,6 +1877,7 @@ def leaders_export():
                   COALESCE(SUM(bs.stays),0) as stays,
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                   COALESCE(SUM(bs.roe),0) as roe
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
@@ -1678,6 +1888,8 @@ def leaders_export():
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
+                  p.pitcher_skill as r_stuff, p.command as r_command,
+                  p.movement as r_movement, p.stamina as r_stamina,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(ps.game_id) as g,
                   SUM(ps.batters_faced)  as bf,
@@ -1859,6 +2071,11 @@ def players():
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
 
+    # Hoisted up so the batter loop below sees baselines too — without
+    # this, _aggregate_batter_rows fell through to runs_per_win=10.0
+    # and inflated WAR by ~75% in O27's 24-R/G environment.
+    baselines = _league_baselines()
+
     total_row = db.fetchone(f"SELECT COUNT(*) AS n FROM players p{where_sql}", tuple(params))
     total = total_row["n"] if total_row else 0
     pages = max(1, math.ceil(total / per_page))
@@ -1935,7 +2152,7 @@ def players():
             row = dict(p)
             s = bstats.get(p["id"], {})
             row.update(s)
-            _aggregate_batter_rows([row])
+            _aggregate_batter_rows([row], baselines=baselines)
             batter_rows.append(row)
 
     if kind in ("pitchers", "both"):
@@ -1966,7 +2183,7 @@ def players():
             )
         }
         wl = _pitcher_wl_map()
-        baselines = _league_baselines()
+        # baselines hoisted earlier in the route — reuse.
         for p in base:
             if not p["is_pitcher"] and kind == "both":
                 continue
@@ -2078,6 +2295,7 @@ def stats_browse():
             f"""SELECT p.id as player_id, p.name as player_name,
                        p.position as position, t.abbrev as team_abbrev, t.id as team_id,
                        p.is_pitcher as is_pitcher,
+                       p.power as r_power, p.contact as r_contact, p.eye as r_eye,
                        p.defense as defense, p.arm as arm,
                        p.defense_infield as defense_infield,
                        p.defense_outfield as defense_outfield,
@@ -2093,6 +2311,7 @@ def stats_browse():
                        COALESCE(SUM(bs.fo),0)  as fo,
                        COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                        COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                        COALESCE(SUM(bs.roe),0)          as roe
                 FROM game_batter_stats bs
                 JOIN players p ON bs.player_id = p.id
@@ -2122,6 +2341,8 @@ def stats_browse():
         pitchers = db.fetchall(
             f"""SELECT p.id as player_id, p.name as player_name,
                        p.position as position, t.abbrev as team_abbrev, t.id as team_id,
+                       p.pitcher_skill as r_stuff, p.command as r_command,
+                       p.movement as r_movement, p.stamina as r_stamina,
                        COUNT(ps.game_id) as g,
                        SUM(ps.batters_faced)  as bf,
                        SUM(ps.outs_recorded)  as outs,
@@ -2196,6 +2417,7 @@ def leaders():
 
     batting = db.fetchall(
         """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.power as r_power, p.contact as r_contact, p.eye as r_eye,
                   p.defense as defense, p.arm as arm,
                   p.defense_infield as defense_infield,
                   p.defense_outfield as defense_outfield,
@@ -2212,6 +2434,7 @@ def leaders():
                   COALESCE(SUM(bs.fo),0)  as fo,
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                   COALESCE(SUM(bs.roe),0)          as roe,
                   COALESCE(SUM(bs.po),0)           as po,
                   COALESCE(SUM(bs.e),0)            as e
@@ -2227,6 +2450,8 @@ def leaders():
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
+                  p.pitcher_skill as r_stuff, p.command as r_command,
+                  p.movement as r_movement, p.stamina as r_stamina,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(ps.game_id) as g,
                   SUM(ps.batters_faced)  as bf,
@@ -2294,6 +2519,7 @@ def _player_batting_split(player_id: int, team_id: int,
                    COALESCE(SUM(bs.fo),0)  as fo,
                    COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                    COALESCE(SUM(bs.stay_rbi),0) as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                    COALESCE(SUM(bs.roe),0) as roe
             FROM game_batter_stats bs
             JOIN games g ON bs.game_id = g.id
@@ -2386,7 +2612,8 @@ def _fetch_player_overview(player_id: int,
                   COALESCE(SUM(cs),0)  as cs,
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
-                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
@@ -2530,7 +2757,8 @@ def player_detail(player_id: int):
                   COALESCE(SUM(cs),0)  as cs,
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
-                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
     )
@@ -2722,6 +2950,7 @@ def _team_batting_rows(baselines: dict) -> list[dict]:
                   COALESCE(SUM(bs.fo),0)  AS fo,
                   COALESCE(SUM(bs.multi_hit_abs),0) AS mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     AS stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                   COALESCE(SUM(bs.roe),0) AS roe,
                   COALESCE(SUM(bs.po),0) AS po,
                   COALESCE(SUM(bs.e),0)  AS e
@@ -2860,33 +3089,22 @@ def _pythag(r: int, ra: int, exp: float = 1.83) -> float:
     return (r ** exp) / (r ** exp + ra ** exp)
 
 
-@app.route("/league")
-def league():
-    """Commissioner dashboard — league-wide aggregates, parity, run
-    environment, distributions, outliers, Pythag residuals.
+def _league_team_aggregate(baselines: dict) -> tuple[list[dict], list[dict], list[dict], list[dict]]:
+    """Build the per-team data structures shared by /league and
+    /distributions?scope=teams.
 
-    Renders HTML; supports ?format=json via the existing _serve() helper.
+    Returns (records, batting, pitching, teams_combined) where
+    teams_combined has the fully-stitched per-team row with W / L / R /
+    RA / Pythag / OPS / wERA / xRA / etc. plus stamped percentile
+    ranks. The other three are the raw aggregate sources kept around so
+    callers can do their own roll-ups (Pulse uses the batting/pitching
+    SUMs).
     """
-    games_played = db.fetchone(
-        "SELECT COUNT(*) as n FROM games WHERE played = 1"
-    )["n"] or 0
-    if games_played == 0:
-        return _serve("league.html",
-                      games_played=0, pulse=None, teams=[], records=[],
-                      batting=[], pitching=[],
-                      distributions={}, outliers={}, parity={})
-
-    baselines = _league_baselines()
     records   = [dict(r) for r in _team_record_rows()]
     batting   = _team_batting_rows(baselines)
     pitching  = _team_pitching_rows(baselines)
-
-    # --- Wire records onto the team-batting rows so a single team_table
-    # has W / L / R / RA / Pythag alongside team OPS / wERA / etc.
-    rec_by_id = {r["id"]: r for r in records}
     bat_by_id = {r["team_id"]: r for r in batting}
     pit_by_id = {r["team_id"]: r for r in pitching}
-
     teams_combined: list[dict] = []
     for rec in records:
         bat = bat_by_id.get(rec["id"], {})
@@ -2912,7 +3130,6 @@ def league():
             "pythag_pct":  pythag_w,
             "pythag_w":    round(pythag_w * gp) if gp else 0,
             "pythag_diff": round((pythag_w - actual_w) * gp, 1) if gp else 0.0,
-            # Batting headlines.
             "ops":         bat.get("ops") or 0,
             "ops_plus":    bat.get("ops_plus") or 100,
             "pavg":        bat.get("pavg") or 0,
@@ -2923,49 +3140,45 @@ def league():
             "bb_pct_bat":  bat.get("bb_pct") or 0,
             "hr_pct_bat":  bat.get("hr_pct") or 0,
             "war_bat":     bat.get("war") or 0,
-            # Pitching headlines.
             "werra":       pit.get("werra") or 0,
-            "xfip":        pit.get("xfip") or 0,
+            "xra":         pit.get("xra") or 0,
             "decay":       pit.get("decay"),
             "decay_known": pit.get("decay_known", False),
             "gsc_avg":     pit.get("gsc_avg") or 0,
             "gsc_plus":    pit.get("gsc_plus") or 100,
             "k_pct_pit":   pit.get("k_pct") or 0,
             "bb_pct_pit":  pit.get("bb_pct") or 0,
+            "k_minus_bb_pct": pit.get("k_minus_bb_pct") or 0,
             "war_pit":     pit.get("war") or 0,
         })
-
-    # --- Stamp percentile ranks for the columns the dashboard sorts on.
     for k, lower_better in [
         ("ops", False), ("ops_plus", False), ("pavg", False),
-        ("woba", False), ("iso", False), ("stay_pct", False), ("war_bat", False),
-        ("werra", True), ("xfip", True), ("gsc_avg", False), ("gsc_plus", False),
+        ("woba", False), ("iso", False), ("war_bat", False),
+        ("werra", True), ("xra", True), ("gsc_avg", False), ("gsc_plus", False),
         ("war_pit", False), ("rdiff", False), ("pythag_pct", False),
     ]:
         _percentile_ranks(teams_combined, k, reverse=lower_better)
+    return records, batting, pitching, teams_combined
 
-    # --- League-wide distribution panels.
-    distributions = {
-        "OPS":       _league_distribution(teams_combined, "ops"),
-        "OPS+":      _league_distribution(teams_combined, "ops_plus"),
-        "PAVG":      _league_distribution(teams_combined, "pavg"),
-        "Stay%":     _league_distribution(teams_combined, "stay_pct"),
-        "wERA":      _league_distribution(teams_combined, "werra"),
-        "xFIP":      _league_distribution(teams_combined, "xfip"),
-        "GSc avg":   _league_distribution(teams_combined, "gsc_avg"),
-        "Run diff":  _league_distribution(teams_combined, "rdiff"),
-        "Win %":     _league_distribution(teams_combined, "win_pct"),
-        "Pythag %":  _league_distribution(teams_combined, "pythag_pct"),
-    }
 
-    # --- Outliers (top/bottom 3 each) for a select set of metrics.
-    outliers = {
-        "Run diff":      _outliers(teams_combined, "rdiff"),
-        "OPS":           _outliers(teams_combined, "ops"),
-        "wERA":          _outliers(teams_combined, "werra", reverse=True),
-        "xFIP":          _outliers(teams_combined, "xfip", reverse=True),
-        "Pythag luck":   _outliers(teams_combined, "pythag_diff"),
-    }
+@app.route("/league")
+def league():
+    """Commissioner dashboard — league-wide aggregates + Pulse + Pythag
+    residuals + per-team headline table. Distributions and outlier panels
+    moved to /distributions?scope=teams (use that for analytical depth).
+
+    Renders HTML; supports ?format=json via the existing _serve() helper.
+    """
+    games_played = db.fetchone(
+        "SELECT COUNT(*) as n FROM games WHERE played = 1"
+    )["n"] or 0
+    if games_played == 0:
+        return _serve("league.html",
+                      games_played=0, pulse=None, teams=[], records=[],
+                      batting=[], pitching=[], parity={})
+
+    baselines = _league_baselines()
+    records, batting, pitching, teams_combined = _league_team_aggregate(baselines)
 
     # --- Parity / competitive-balance roll-up.
     win_pcts = [t["win_pct"] for t in teams_combined if t["gp"] > 0]
@@ -3020,8 +3233,6 @@ def league():
         records=records,
         batting=batting,
         pitching=pitching,
-        distributions=distributions,
-        outliers=outliers,
         parity=parity,
     )
 
@@ -3087,26 +3298,72 @@ def _histogram(values: list[float], n_buckets: int = 12,
 
 @app.route("/distributions")
 def distributions():
-    """Per-stat histograms + percentile tables across the qualifying
-    player population. Pair-page to /league.
+    """Per-stat histograms + percentile tables.
 
-    URL: /distributions               — full league
-         /distributions?highlight=42  — also marks where player 42 sits
-         /distributions?format=json   — structured payload
+    URL:  /distributions                       — players (default)
+          /distributions?scope=teams           — team-level distributions
+                                                 (quartile table + outliers)
+          /distributions?highlight=42          — players scope, mark where
+                                                 player 42 sits on each chart
+          /distributions?format=json           — structured payload
     """
+    scope = (request.args.get("scope") or "players").lower()
+    if scope not in ("players", "teams"):
+        scope = "players"
+
     games_played = db.fetchone(
         "SELECT COUNT(*) as n FROM games WHERE played = 1"
     )["n"] or 0
     if games_played == 0:
-        return _serve("distributions.html", games_played=0,
-                      bat_dists={}, pit_dists={}, highlight=None,
-                      highlight_player=None)
+        return _serve("distributions.html",
+                      scope=scope, games_played=0,
+                      bat_dists={}, pit_dists={},
+                      team_dists={}, team_outliers={},
+                      highlight=None, highlight_player=None)
+
+    baselines = _league_baselines()
+
+    # Teams scope: pull team-aggregate rows + reuse the
+    # _league_distribution + _outliers helpers we already had.
+    if scope == "teams":
+        _, _, _, teams_combined = _league_team_aggregate(baselines)
+        team_dists = {
+            "OPS":       _league_distribution(teams_combined, "ops"),
+            "OPS+":      _league_distribution(teams_combined, "ops_plus"),
+            "PAVG":      _league_distribution(teams_combined, "pavg"),
+            "wERA":      _league_distribution(teams_combined, "werra"),
+            "xRA":       _league_distribution(teams_combined, "xra"),
+            "GSc avg":   _league_distribution(teams_combined, "gsc_avg"),
+            "Run diff":  _league_distribution(teams_combined, "rdiff"),
+            "Win %":     _league_distribution(teams_combined, "win_pct"),
+            "Pythag %":  _league_distribution(teams_combined, "pythag_pct"),
+        }
+        team_outliers = {
+            "Run diff":      _outliers(teams_combined, "rdiff"),
+            "OPS":           _outliers(teams_combined, "ops"),
+            "wERA":          _outliers(teams_combined, "werra", reverse=True),
+            "xRA":           _outliers(teams_combined, "xra", reverse=True),
+            "Pythag luck":   _outliers(teams_combined, "pythag_diff"),
+        }
+        return _serve(
+            "distributions.html",
+            scope="teams",
+            games_played=games_played,
+            n_teams=len(teams_combined),
+            team_dists=team_dists,
+            team_outliers=team_outliers,
+            # Player-scope keys still required by the template
+            # so the macros don't trip:
+            bat_dists={}, pit_dists={},
+            n_batters=0, n_pitchers=0,
+            min_pa=0, min_outs=0,
+            highlight=None, highlight_player=None,
+        )
 
     num_teams      = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 2
     games_per_team = max(1, (games_played * 2) // num_teams)
     min_pa   = max(3, games_per_team)
     min_outs = max(3, games_per_team)
-    baselines = _league_baselines()
 
     # Reuse the leaders-style aggregate. Same shape, same threshold.
     batting = db.fetchall(
@@ -3127,6 +3384,7 @@ def distributions():
                   COALESCE(SUM(bs.stays),0) as stays,
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                   COALESCE(SUM(bs.roe),0) as roe
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
@@ -3140,6 +3398,8 @@ def distributions():
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
+                  p.pitcher_skill as r_stuff, p.command as r_command,
+                  p.movement as r_movement, p.stamina as r_stamina,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(ps.game_id) as g,
                   SUM(ps.batters_faced)  as bf,
@@ -3184,30 +3444,33 @@ def distributions():
 
     # Stat catalog: (key, label, fmt, side='bat'|'pit', is_pct, hi_lo='lo' if lower-is-better)
     bat_specs = [
-        ("pavg",     "PAVG",   "%.3f", False),
-        ("ops",      "OPS",    "%.3f", False),
-        ("ops_plus", "OPS+",   "%.0f", False),
-        ("woba",     "wOBA",   "%.3f", False),
-        ("bavg",     "BAVG",   "%.3f", False),
-        ("iso",      "ISO",    "%.3f", False),
-        ("babip",    "BABIP",  "%.3f", False),
-        ("k_pct",    "K%",     "%.1f%%", True),
-        ("bb_pct",   "BB%",    "%.1f%%", True),
-        ("stay_pct", "Stay%",  "%.1f%%", True),
-        ("war",      "WAR",    "%.2f", False),
+        ("pavg",          "PAVG",     "%.3f", False),
+        ("ops",           "OPS",      "%.3f", False),
+        ("ops_plus",      "OPS+",     "%.0f", False),
+        ("woba",          "wOBA",     "%.3f", False),
+        ("bavg",          "BAVG",     "%.3f", False),
+        ("iso",           "ISO",      "%.3f", False),
+        ("babip",         "BABIP",    "%.3f", False),
+        ("k_pct",         "K%",       "%.1f%%", True),
+        ("bb_pct",        "BB%",      "%.1f%%", True),
+        ("stay_rbi_pct",  "2C-RBI%",  "%.1f%%", True),
+        ("stay_conv_pct", "2C-Conv%", "%.1f%%", True),
+        ("mhab_pct",      "MhAB%",    "%.1f%%", True),
+        ("war",           "WAR",      "%.2f", False),
     ]
     pit_specs = [
-        ("werra",    "wERA",      "%.2f", False),
-        ("xfip",     "xFIP",      "%.2f", False),
-        ("decay",    "Decay",     "%+.1f", False),
-        ("gsc_avg",  "GSc avg",   "%.1f", False),
-        ("gsc_plus", "GSc+",      "%.0f", False),
-        ("os_plus",  "OS+",       "%.0f", False),
-        ("k_pct",    "K%",        "%.1f%%", True),
-        ("bb_pct",   "BB%",       "%.1f%%", True),
-        ("hr_pct",   "HR%",       "%.1f%%", True),
-        ("oavg",     "oAVG",      "%.3f", False),
-        ("war",      "WAR",       "%.2f", False),
+        ("werra",         "wERA",      "%.2f", False),
+        ("xra",           "xRA",       "%.2f", False),
+        ("decay",         "Decay",     "%+.1f", False),
+        ("gsc_avg",       "GSc avg",   "%.1f", False),
+        ("gsc_plus",      "GSc+",      "%.0f", False),
+        ("os_plus",       "OS+",       "%.0f", False),
+        ("k_pct",         "K%",        "%.1f%%", True),
+        ("bb_pct",        "BB%",       "%.1f%%", True),
+        ("hr_pct",        "HR%",       "%.1f%%", True),
+        ("k_minus_bb_pct","K-BB%",     "%.1f%%", True),
+        ("oavg",          "oAVG",      "%.3f", False),
+        ("war",           "WAR",       "%.2f", False),
     ]
 
     def _build(rows: list[dict], specs: list, side: str) -> dict:
@@ -3240,6 +3503,7 @@ def distributions():
 
     return _serve(
         "distributions.html",
+        scope="players",
         games_played=games_played,
         n_batters=len(batting),
         n_pitchers=len(pitching),
@@ -3247,6 +3511,7 @@ def distributions():
         min_outs=min_outs,
         bat_dists=bat_dists,
         pit_dists=pit_dists,
+        team_dists={}, team_outliers={},
         highlight=highlight_id,
         highlight_player=highlight_player,
     )

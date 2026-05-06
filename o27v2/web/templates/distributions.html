@@ -6,24 +6,156 @@
   <div>
     <h2 class="mb-1">Distributions</h2>
     <div class="text-secondary small">
-      League-wide player histograms · {{ games_played }} games played
-      {% if games_played %}
-        · {{ n_batters }} qualifying batter{{ '' if n_batters == 1 else 's' }}
-        ({{ min_pa }}+ PA)
-        · {{ n_pitchers }} qualifying pitcher{{ '' if n_pitchers == 1 else 's' }}
-        ({{ min_outs }}+ outs)
+      {% if scope == 'teams' %}
+        Team-level distributions · {{ games_played }} games played
+        {% if n_teams %} · {{ n_teams }} teams{% endif %}
+      {% else %}
+        League-wide player histograms · {{ games_played }} games played
+        {% if games_played %}
+          · {{ n_batters }} qualifying batter{{ '' if n_batters == 1 else 's' }}
+          ({{ min_pa }}+ PA)
+          · {{ n_pitchers }} qualifying pitcher{{ '' if n_pitchers == 1 else 's' }}
+          ({{ min_outs }}+ outs)
+        {% endif %}
       {% endif %}
     </div>
   </div>
   <div class="d-flex gap-2">
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('distributions', highlight=highlight, format='json') }}">JSON</a>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('distributions', scope=scope, highlight=highlight, format='json') }}">JSON</a>
   </div>
+</div>
+
+{# View-toggle pill: Players (default) / Teams #}
+<div class="btn-group btn-group-sm mb-3" role="group" aria-label="Distribution scope">
+  <a href="{{ url_for('distributions', highlight=highlight) }}"
+     class="btn btn-outline-secondary {% if scope != 'teams' %}active{% endif %}">Players</a>
+  <a href="{{ url_for('distributions', scope='teams') }}"
+     class="btn btn-outline-secondary {% if scope == 'teams' %}active{% endif %}">Teams</a>
 </div>
 
 {% if games_played == 0 %}
 <div class="panel panel-body text-center text-secondary">
   No games played yet. Use <span class="badge bg-success">Sim Today</span> in the top bar.
 </div>
+{% else %}
+
+{# ============================================================
+   TEAMS scope — quartile table + outliers
+   ============================================================ #}
+{% if scope == 'teams' %}
+
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>Distribution &amp; Quartiles</span>
+    <span class="ms-auto sub">across all {{ n_teams }} teams · σ = population stdev</span>
+  </div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Metric</th>
+      <th class="num">Min</th>
+      <th class="num">Q1</th>
+      <th class="num">Median</th>
+      <th class="num">Q3</th>
+      <th class="num">Max</th>
+      <th class="num">σ</th>
+    </tr></thead>
+    <tbody>
+    {% macro team_dist_row(label, d, fmt='%.3f') %}
+      {% if d.n %}
+      <tr>
+        <td>{{ label }}</td>
+        <td class="num">{{ fmt|format(d.min) }}</td>
+        <td class="num">{{ fmt|format(d.q1) }}</td>
+        <td class="num fw-bold">{{ fmt|format(d.median) }}</td>
+        <td class="num">{{ fmt|format(d.q3) }}</td>
+        <td class="num">{{ fmt|format(d.max) }}</td>
+        <td class="num text-secondary">{{ '%.3f'|format(d.std) }}</td>
+      </tr>
+      {% endif %}
+    {% endmacro %}
+    {{ team_dist_row('Win %',     team_dists['Win %'],    '%.3f') }}
+    {{ team_dist_row('Pythag %',  team_dists['Pythag %'], '%.3f') }}
+    {{ team_dist_row('Run diff',  team_dists['Run diff'], '%+d') }}
+    {{ team_dist_row('OPS',       team_dists['OPS'],      '%.3f') }}
+    {{ team_dist_row('OPS+',      team_dists['OPS+'],     '%.0f') }}
+    {{ team_dist_row('PAVG',      team_dists['PAVG'],     '%.3f') }}
+    {{ team_dist_row('wERA',      team_dists['wERA'],     '%.2f') }}
+    {{ team_dist_row('xRA',       team_dists['xRA'],      '%.2f') }}
+    {{ team_dist_row('GSc avg',   team_dists['GSc avg'],  '%.1f') }}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  {% macro outlier_panel(label, items, fmt='%.3f', invert=False) %}
+  {% if items %}
+  <div class="col-lg-6 col-md-12">
+    <div class="panel">
+      <div class="panel-head">
+        <span>{{ label }} — outliers</span>
+        <span class="ms-auto sub">top &amp; bottom 3 · z = std-devs from mean</span>
+      </div>
+      <div class="panel-body" style="padding:8px 12px">
+        <table class="table dense-table mb-0">
+          <thead><tr><th>Tm</th><th class="num">Value</th><th class="num">z</th></tr></thead>
+          <tbody>
+          {% set top3 = items[:3] %}
+          {% set bot3 = items[-3:]|reverse|list %}
+          {% for o in top3 %}
+            <tr>
+              <td><span class="team-abbrev">{{ o.label }}</span></td>
+              <td class="num fw-bold">{{ fmt|format(o.value) }}</td>
+              <td class="num {% if o.z|abs > 1.5 %}strk-w{% endif %}">{{ '%+.2f'|format(o.z) }}</td>
+            </tr>
+          {% endfor %}
+          <tr><td colspan="3" class="text-secondary small" style="border-top:1px dashed var(--border-soft);padding:4px 0">…</td></tr>
+          {% for o in bot3 %}
+            <tr>
+              <td><span class="team-abbrev">{{ o.label }}</span></td>
+              <td class="num">{{ fmt|format(o.value) }}</td>
+              <td class="num {% if o.z|abs > 1.5 %}strk-l{% endif %}">{{ '%+.2f'|format(o.z) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% endmacro %}
+  {{ outlier_panel('Run diff',     team_outliers['Run diff'],    '%+d') }}
+  {{ outlier_panel('OPS',          team_outliers['OPS'],         '%.3f') }}
+  {{ outlier_panel('wERA (lower=better)', team_outliers['wERA'], '%.2f', invert=True) }}
+  {{ outlier_panel('xRA (lower=better)',  team_outliers['xRA'],  '%.2f', invert=True) }}
+  {{ outlier_panel('Pythag luck', team_outliers['Pythag luck'],  '%+.1f') }}
+</div>
+
+<details class="mb-4 mt-3">
+  <summary class="text-secondary small" style="cursor:pointer">Methodology</summary>
+  <div class="text-secondary small mt-2 p-3" style="background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--radius);line-height:1.55">
+    Quartiles use linear interpolation across the 30 team-aggregate values
+    (matches numpy's default <code>percentile()</code>). σ is population
+    standard deviation, not sample.
+    <br><br>
+    Outlier z-scores use that same population σ. A z above 1.5 is notable;
+    above 2.0 the team is genuinely tail-end on that metric.
+    <br><br>
+    For the lower-is-better metrics (wERA, xRA), the outlier panel sorts
+    ascending so the strongest run-prevention staffs sit in the top three.
+    <br><br>
+    Team aggregates roll up every per-player game row into a single
+    team-level row before running the same sabermetric pipeline a player
+    gets — so this is "team-quality on the WAR scale," not "sum of player
+    WARs." Roster-WAR sum will not match the team WAR figure.
+  </div>
+</details>
+
+{# ============================================================
+   PLAYERS scope (default) — histograms
+   ============================================================ #}
 {% else %}
 
 {# Player highlight strip — accepts a player ID and re-renders with their
@@ -148,8 +280,12 @@
     Percentiles use linear interpolation (matches numpy <code>percentile()</code> default). σ is population standard deviation across the qualifying group.
     <br><br>
     The Decay distribution is restricted to pitchers with cross-arc sample (faced batters in both arc-1 and arc-3), so the n on that panel is lower than the rest of the pitching panels. Pitchers without enough sample to compute Decay aren't binned.
+    <br><br>
+    <strong>xRA</strong> is the non-negative linear-weights expected runs allowed (HR=1.4, single≈0.45, BB/HBP=0.32, K/out=0), multiplicatively anchored so league xRA matches league wERA. <strong>K-BB%</strong> is plain <code>(K - BB) / BF</code>.
   </div>
 </details>
+
+{% endif %}
 
 {% endif %}
 {% endblock %}

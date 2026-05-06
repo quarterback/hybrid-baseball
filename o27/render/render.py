@@ -73,6 +73,14 @@ class Renderer:
         # per-phase batter rows after the game finishes. game.py calls
         # end_phase(N) after each phase (regulation = 0, SI round N >= 1).
         self._phase_end_snapshots: dict[int, dict[str, BatterStats]] = {}
+        # Phase 11D — per-PA event log (ball_in_play only). Each entry is
+        # a dict ready to insert into game_pa_log. Per-batter tracking of
+        # which AB they're currently in + which swing within that AB. AB
+        # boundary is detected by comparing s.ab+1 to the batter's last
+        # observed in-progress AB number (changes when prior AB completed).
+        self._pa_log: list[dict] = []
+        self._batter_current_ab: dict = {}      # batter_id -> in-progress ab number
+        self._batter_swing_idx: dict = {}       # batter_id -> swing_idx within current ab
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -99,6 +107,7 @@ class Renderer:
             "bases_list": list(state.bases),          # copy — safe after mutation
             "score": dict(state.score),               # copy
             "batting_team_id": batting_tid,
+            "phase": getattr(state, "super_inning_number", 0),
             "batting_team_name": state.batting_team.name,
             "fielding_team_name": state.fielding_team.name,
             "visitors_name": state.visitors.name,
@@ -224,6 +233,7 @@ class Renderer:
                 t.hbp          += r.hbp
                 t.sty          += r.sty
                 t.stay_rbi     += r.stay_rbi
+                t.stay_hits    += r.stay_hits
                 t.multi_hit_abs += r.multi_hit_abs
             return t
 
@@ -851,6 +861,42 @@ class Renderer:
             hit_type = disp.get("hit_type", "")
             is_safety_hit = hit_type in _SAFETY_HITS
 
+            # Phase 11D — append a per-event row to _pa_log for diagnostic
+            # swing-split analysis. Detect AB boundary: in-progress AB number
+            # is `s.ab + 1` (s.ab counts COMPLETED ABs prior to this event).
+            # When that changes vs the last observed value for this batter,
+            # swing_idx resets to 1; otherwise it increments.
+            bid = batter.player_id
+            in_progress_ab = (s.ab or 0) + 1
+            if self._batter_current_ab.get(bid) != in_progress_ab:
+                # New AB started — reset swing_idx
+                self._batter_current_ab[bid] = in_progress_ab
+                self._batter_swing_idx[bid] = 1
+            else:
+                self._batter_swing_idx[bid] += 1
+            swing_idx = self._batter_swing_idx[bid]
+            outcome = event.get("outcome", {})
+            quality = outcome.get("quality")
+            team_id = ctx.get("batting_team_id")
+            pitcher = ctx.get("pitcher")
+            self._pa_log.append({
+                "team_id": team_id,
+                "batter_id": bid,
+                "pitcher_id": pitcher.player_id if pitcher else None,
+                "phase": ctx.get("phase", 0),
+                "ab_seq": in_progress_ab,
+                "swing_idx": swing_idx,
+                "choice": choice,
+                "quality": quality,
+                "hit_type": hit_type,
+                # was_stay = 1 only on VALID 2C events (matches s.sty); invalid
+                # stays (auto-out caught fly) don't count as 2C events.
+                "was_stay": 1 if (choice == "stay" and disp.get("stay_valid")) else 0,
+                "stay_credited": 1 if (choice == "stay" and disp.get("stay_hit_credited")) else 0,
+                "runs_scored": runs_scored,
+                "rbi_credited": runs_scored,
+            })
+
             if choice == "stay":
                 if disp.get("stay_valid"):
                     # Stay: 1 PA. At-bat MAY end if strikes hits 3 — engine
@@ -861,6 +907,7 @@ class Renderer:
                     s.sty += 1
                     if disp.get("stay_hit_credited"):
                         s.hits += 1
+                        s.stay_hits += 1
                     # stay_rbi: credit RBI for runs that score on a valid stay.
                     if runs_scored > 0:
                         s.stay_rbi += runs_scored
@@ -1018,7 +1065,7 @@ class Renderer:
         prev_get = (lambda f: getattr(prev_s, f)) if prev_s else (lambda f: 0)
         for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
-                  "stay_rbi", "multi_hit_abs",
+                  "stay_rbi", "stay_hits", "multi_hit_abs",
                   "sb", "cs", "fo", "roe",
                   "po", "e"):
             setattr(d, f, getattr(end_s, f) - prev_get(f))

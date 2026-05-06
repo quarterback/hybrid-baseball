@@ -15,6 +15,7 @@ Public API
 """
 
 from __future__ import annotations
+import math
 import random
 from typing import Optional
 
@@ -395,6 +396,7 @@ def contact_quality(
     batter: Player,
     pitcher: Player,
     weather: Optional[object] = None,
+    swings_in_ab: int = 0,
     pitch_type: Optional[str] = None,
     pitch_quality: float = 0.5,
 ) -> str:
@@ -423,6 +425,15 @@ def contact_quality(
 
     matchup = (batter.skill * plat) - stuff_eff   # +ve → batter advantage
     shift = matchup * cfg.CONTACT_MATCHUP_SHIFT    # up to ±0.125 swing
+
+    # Second-swing modifier: on swings 2+ within the same AB, tilt the
+    # contact distribution by eye-vs-command. High-eye batter reads the
+    # pitcher; high-command pitcher disrupts the read. Competing forces.
+    if swings_in_ab >= 1:
+        eye_dev = (batter.eye - 0.5) * 2 * plat
+        cmd_dev = (pitcher.command - 0.5) * 2
+        shift += (eye_dev * cfg.SECOND_SWING_EYE_SCALE
+                  - cmd_dev * cfg.SECOND_SWING_COMMAND_SCALE)
 
     arch_delta = getattr(batter, "hard_contact_delta", 0.0)
 
@@ -678,26 +689,71 @@ def _select_fielder(rng: random.Random, hit_type: str, fielding_team) -> Optiona
     return None
 
 
-def _scale_hard_row(
-    row: tuple,
-    hr_bonus: float,
-    park_hr: float,
-    park_hits: float,
-) -> tuple:
-    """Apply HR weight bonus + park factors to one HARD_CONTACT row.
+def _redistribute(table: list, edges: list[tuple[str, str, float]],
+                  power_dev: float) -> list:
+    """Sum-preserving redistribution along (from, to, scale) edges.
 
-    `hr_bonus` is additive (legacy archetype + new power-derived bump).
-    `park_hr` multiplies the HR row only.
-    `park_hits` multiplies single / double rows. Other rows pass through.
+    `power_dev` ∈ [-1, +1].  At power_dev = +1, `scale` fraction of the
+    `from` row's weight moves to the `to` row.  At power_dev = -1, the
+    flow reverses: `scale` fraction of `to` moves back to `from`.  At
+    power_dev = 0 the table is unchanged (identity).
 
-    Identity: hr_bonus=0, park_hr=1.0, park_hits=1.0 ⇒ row unchanged.
+    Sum-preserving: the total table weight is invariant under this
+    redistribution, so league-wide event totals stay stable while
+    per-player profiles diverge with their power rating.
     """
-    name, batter_safe, caught_fly, weight = row
-    if name == "hr":
-        weight = (weight + hr_bonus) * park_hr
-    elif name in ("single", "double"):
-        weight *= park_hits
-    return (name, batter_safe, caught_fly, max(0.01, weight))
+    if power_dev == 0 or not edges:
+        return table
+    weights = {row[0]: row[3] for row in table}
+    for from_name, to_name, scale in edges:
+        if from_name not in weights or to_name not in weights:
+            continue
+        if power_dev > 0:
+            shift = weights[from_name] * scale * power_dev
+        else:
+            shift = -weights[to_name] * scale * (-power_dev)
+        weights[from_name] -= shift
+        weights[to_name]   += shift
+    return [(r[0], r[1], r[2], max(0.01, weights[r[0]])) for r in table]
+
+
+def _apply_park(table: list, quality: str, park_hr: float,
+                park_hits: float) -> list:
+    """Park factors as multipliers on specific rows. Not sum-preserving
+    (parks really do create / destroy events — that's what park factors
+    mean), so this is multiplicative by design.
+    """
+    if park_hr == 1.0 and park_hits == 1.0:
+        return table
+    out = []
+    for name, batter_safe, caught_fly, w in table:
+        if quality == "hard" and name == "hr":
+            w *= park_hr
+        elif name in ("single", "double"):
+            w *= park_hits
+        out.append((name, batter_safe, caught_fly, max(0.01, w)))
+    return out
+
+
+# Power-axis redistribution edges per quality. Read as (from, to, scale):
+# at +1 power_dev, `scale` fraction of `from` weight shifts to `to`.
+def _hard_edges() -> list[tuple[str, str, float]]:
+    return [
+        ("line_out", "hr",     cfg.POWER_REDIST_HR),
+        ("single",   "double", cfg.POWER_REDIST_HARD_S2D),
+        ("double",   "triple", cfg.POWER_REDIST_HARD_D2T),
+    ]
+
+def _medium_edges() -> list[tuple[str, str, float]]:
+    return [
+        ("single",     "double",  cfg.POWER_REDIST_MED_S2D),
+        ("ground_out", "fly_out", cfg.POWER_REDIST_MED_GO2FO),
+    ]
+
+def _weak_edges() -> list[tuple[str, str, float]]:
+    return [
+        ("single", "fly_out", cfg.POWER_REDIST_WEAK_S2FO),
+    ]
 
 
 def _pick_from_table(rng: random.Random, table: list) -> tuple:
@@ -730,25 +786,50 @@ def resolve_contact(
     Resolve a ball-in-play event into a full fielding outcome dict.
 
     Returns an outcome dict compatible with apply_event / advance_runners.
-    Phase 8: for hard-contact events, batter.hr_weight_bonus adjusts the HR
-    row weight in HARD_CONTACT (positive → more HR, negative → fewer HR /
-    more line drives / doubles).  Sourced from ARCHETYPE_PA_MODIFIERS.
 
-    Realism layer:
-      - batter.power adds an extra HR-weight bump on top of hr_weight_bonus
-        (collapses to 0 at power=0.5).
-      - The home team's park_hr multiplies the HR row weight (1.0 = identity);
-        park_hits multiplies single/double weights for hit-vs-out feel.
+    Phase 10.2 power model:
+      - batter.power redistributes weight along power-axis edges INSIDE
+        each contact-quality table (sum-preserving). High power moves
+        weight from singles → doubles, doubles → triples, line_outs → HRs
+        on hard contact; from singles → doubles and ground_outs → fly_outs
+        on medium contact; from singles → fly_outs (infield pops) on weak
+        contact when power is *low*. Low power reverses the flow.
+      - Total table weight is invariant under this redistribution, so
+        league-wide event totals stay stable while per-player profiles
+        diverge with their power rating.
+      - The legacy archetype `hr_weight_bonus` field is folded into the
+        same line_out → HR redistribution (one consistent mechanism for
+        both archetype and rating).
+
+    Park factors are applied separately as multipliers (parks really do
+    create / destroy events, so they're multiplicative by design).
     """
     table = _CONTACT_TABLES.get(quality, cfg.WEAK_CONTACT)
 
-    # Power-driven HR weight bonus, additive with the legacy archetype field.
+    # Combined power axis: rating-driven (-1..+1) plus archetype legacy
+    # bonus (typically tiny). Both flow through the SAME line_out → HR edge
+    # via _redistribute, so the joker archetype's HR boost is now sum-
+    # preserving instead of additive.
+    power_dev    = (batter.power - 0.5) * 2.0
     legacy_bonus = getattr(batter, "hr_weight_bonus", 0.0)
-    power_bonus  = (batter.power - 0.5) * 2 * cfg.POWER_HR_WEIGHT_SCALE
-    hr_bonus = legacy_bonus + power_bonus
+    # Archetype bonus translated to a power_dev contribution on the HR
+    # edge only. Scale: each unit of legacy_bonus ≈ 1.0 of POWER_REDIST_HR.
+    archetype_dev_hr = legacy_bonus / max(0.01, cfg.POWER_REDIST_HR)
 
-    # Park factors from the home team (applied symmetrically — both lineups
-    # play in the home park). state.home is the host regardless of half.
+    # Apply power-axis redistribution per quality.
+    if quality == "hard":
+        # HR edge gets both rating and archetype contributions.
+        edges = list(_hard_edges())
+        # Boost the HR edge by the archetype contribution.
+        edges[0] = ("line_out", "hr",
+                    cfg.POWER_REDIST_HR + archetype_dev_hr * cfg.POWER_REDIST_HR)
+        table = _redistribute(table, edges, power_dev)
+    elif quality == "medium":
+        table = _redistribute(table, _medium_edges(), power_dev)
+    elif quality == "weak":
+        table = _redistribute(table, _weak_edges(), power_dev)
+
+    # Park factors (multiplicative) applied AFTER redistribution.
     park_hr   = getattr(state.home, "park_hr", 1.0) if state.home else 1.0
     park_hits = getattr(state.home, "park_hits", 1.0) if state.home else 1.0
 
@@ -756,17 +837,7 @@ def resolve_contact(
     weather = getattr(state, "weather", None)
     park_hr = park_hr * wx.hr_multiplier(weather)
 
-    if quality == "hard" and (hr_bonus != 0.0 or park_hr != 1.0 or park_hits != 1.0):
-        table = [
-            _scale_hard_row(r, hr_bonus, park_hr, park_hits)
-            for r in table
-        ]
-    elif quality == "medium" and park_hits != 1.0:
-        table = [
-            (r[0], r[1], r[2],
-             max(0.01, r[3] * (park_hits if r[0] in ("single", "double") else 1.0)))
-            for r in table
-        ]
+    table = _apply_park(table, quality, park_hr, park_hits)
 
     hit_type, batter_safe, caught_fly, _ = _pick_from_table(rng, table)
 
@@ -835,6 +906,7 @@ def resolve_contact(
         "runner_out_idx": runner_out_idx,
         "is_error": is_error,
         "fielder_id": fielder_id,
+        "quality": quality,
     }
 
 
@@ -1250,6 +1322,7 @@ class ProbabilisticProvider:
         # --- Contact resolution ---
         quality = contact_quality(
             rng, batter, pitcher, weather,
+            swings_in_ab=state.current_at_bat_swings,
             pitch_type=sel_pitch, pitch_quality=sel_quality,
         )
         is_hr     = False
@@ -1257,6 +1330,45 @@ class ProbabilisticProvider:
 
         # Resolve fielding outcome.
         outcome_dict = resolve_contact(rng, quality, batter, state)
+
+        # Talent-weighted hit-vs-out resolution (applies BEFORE the run/stay
+        # decision so it affects both paths). On weak / medium contact, the
+        # underlying hit_type from resolve_contact is talent-flexed: a
+        # marginal-talent batter is more likely to see a borderline hit
+        # downgrade to a ground_out, and a star is more likely to see a
+        # borderline ground_out upgrade to an infield_single. The gate uses
+        # the same talent_factor as the 2C fractional advance — eye + contact
+        # − command — so a single coherent talent signal flows through every
+        # contact event in O27, not just stays.
+        if quality in ("weak", "medium"):
+            eye_dev_run = (batter.eye - 0.5) * 2
+            con_dev_run = (batter.contact - 0.5) * 2
+            cmd_dev_run = (pitcher.command - 0.5) * 2
+            talent_run  = eye_dev_run + con_dev_run - cmd_dev_run
+            # Bonus is bidirectional: positive shifts toward more hits,
+            # negative toward more outs. Weak gets a wider swing because
+            # the underlying outcome is more often borderline; medium has
+            # mostly already-hit outcomes so the swing is narrower.
+            hit_bonus = (0.15 if quality == "weak" else 0.10) * talent_run
+            ht = outcome_dict.get("hit_type", "")
+            is_safety   = ht in ("single", "infield_single", "double", "triple")
+            is_clean_out = (ht in ("ground_out", "fly_out", "line_out")
+                            and not outcome_dict.get("batter_safe", True)
+                            and not outcome_dict.get("caught_fly"))
+            if is_safety and hit_bonus < 0:
+                # Marginal talent can lose a borderline hit.
+                if rng.random() < min(0.6, abs(hit_bonus)):
+                    outcome_dict["hit_type"] = "ground_out"
+                    outcome_dict["batter_safe"] = False
+                    outcome_dict["runner_advances"] = [0, 0, 0]
+            elif is_clean_out and hit_bonus > 0:
+                # Star talent can flip a borderline out into an infield_single.
+                if rng.random() < min(0.6, hit_bonus):
+                    new_type = "infield_single" if quality == "weak" else "single"
+                    outcome_dict["hit_type"] = new_type
+                    outcome_dict["batter_safe"] = True
+                    outcome_dict["runner_advances"] = [1, 1, 1]
+
         hit_type = outcome_dict["hit_type"]
         caught_fly = outcome_dict["caught_fly"]
 
@@ -1274,6 +1386,46 @@ class ProbabilisticProvider:
             choice = "stay" if stay else "run"
         else:
             choice = "run"
+
+        # Talent-weighted 2C outcome resolution (Path A). Replaces Phase 11C's
+        # unconditional [2,2,2] for medium stays with a talent-gated version
+        # and adds a hit-credit gate for weak stays. Applies on every 2C
+        # event (including swing 1, which Path 2's swing-2+ scope didn't
+        # reach), so the eye/contact-vs-command signal differentiates the
+        # bulk of the 2C population.
+        if choice == "stay" and quality in ("weak", "medium"):
+            eye_dev = (batter.eye - 0.5) * 2
+            con_dev = (batter.contact - 0.5) * 2
+            cmd_dev = (pitcher.command - 0.5) * 2
+            # Talent factor — full batter contribution (no averaging),
+            # so eye and contact each contribute their full signed range
+            # to the gate. Theoretical range ±3.0; typical ±1.0.
+            talent_factor = eye_dev + con_dev - cmd_dev
+            # Talent-driven fractional advance. talent_factor maps to an
+            # EXPECTED advance value (continuous, talent-diverse), then
+            # one rng draw resolves the fractional part to an integer.
+            #   weak quality   expected ≈ 0.5*(1 + talent_factor)
+            #     → low-talent  (factor ≈ -1):  expected ~0   → mostly no advance
+            #       neutral     (factor ≈  0):  expected ~0.5 → ~50% credit
+            #       high-talent (factor ≈ +2):  expected ~1.5 → always credit, sometimes 2
+            #   medium quality expected ≈ 1.0 + 0.5*talent_factor
+            #     → low-talent:  expected ~0.5 → mostly 1 (credit), sometimes 0
+            #       neutral:     expected ~1.0 → always 1
+            #       high-talent: expected ~2.0 → 2, sometimes 3
+            # Even low-talent batters can occasionally drive runners on a 2C;
+            # stars are reliably better. Talent flows continuously through
+            # the expected-value formula; the rng draw is purely fractional
+            # resolution, not a gate on whether talent matters.
+            if quality == "weak":
+                expected = 0.5 * (1.0 + talent_factor)
+            else:  # medium
+                expected = 1.0 + 0.5 * talent_factor
+            expected = max(0.0, min(3.0, expected))
+            floor_v = int(expected)
+            frac = expected - floor_v
+            adv = floor_v + (1 if rng.random() < frac else 0)
+            adv = max(0, min(3, adv))
+            outcome_dict["runner_advances"] = [adv, adv, adv]
 
         return {
             "type": "ball_in_play",

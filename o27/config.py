@@ -153,21 +153,27 @@ BATTER_DOM_CONTACT: float  = +0.03   # more contact events
 #                   FATIGUE_THRESHOLD_BASE + round(pitcher_skill * FATIGUE_THRESHOLD_SCALE))
 # Fatigue factor grows linearly beyond threshold, capped at FATIGUE_MAX.
 
-FATIGUE_THRESHOLD_BASE: int  = 24    # Phase 10: workhorses fatigue much later (was 10)
+FATIGUE_THRESHOLD_BASE: int  = 24    # Phase 10/11 pitcher retune: workhorses fatigue much later
 # Bumped 20 → 40 so Stamina actually moats the workhorse archetype.
 # Math: an elite-Stamina (0.85) pitcher fatigues at 24 + round(0.85*40) = 58 BF
 # threshold — i.e. effectively never within a 27-out half. A sub-replacement
 # (0.25) Stamina pitcher fatigues at 24 + 10 = 34 BF, visibly tiring through
 # the order. This is what makes Stamina disproportionately valuable in O27.
-FATIGUE_THRESHOLD_SCALE: int = 40    # higher-skill pitchers get longer spells
-FATIGUE_MAX: float           = 1.00  # was 0.60 — uncap fatigue so low-Stamina arms truly collapse when pushed past their limit
+#
+# Earlier branch (Phase 10.2 Decay work) ran BASE=6 to make K%_arc1−arc3
+# differentiate between workhorse starters and short relievers. Phase 11
+# pitcher retune walked it back to BASE=24 to preserve the workhorse moat;
+# the Decay diagnostic is muted as a result but still visible at the
+# extremes. Keep an eye on Decay regression in future tuning passes.
+FATIGUE_THRESHOLD_SCALE: int = 40    # higher-stamina pitchers get longer spells
+FATIGUE_MAX: float           = 1.00  # uncapped collapse for low-stamina arms past their limit
 FATIGUE_SCALE: float         = 20.0  # spell_count divisor for ramp-up
 
 FATIGUE_BALL: float     = +0.06   # more balls as fatigue grows
-FATIGUE_CONTACT: float  = +0.04   # more contact
+FATIGUE_CONTACT: float  = +0.06   # more contact (was +0.04 — sharper late-arc slap-hit profile)
 FATIGUE_CALLED: float   = -0.04   # fewer called strikes
-FATIGUE_SWINGING: float = -0.03   # fewer swinging strikes
-FATIGUE_FOUL: float     = -0.03   # fewer fouls
+FATIGUE_SWINGING: float = -0.06   # fewer swinging strikes (was -0.03 — the K-suppression term)
+FATIGUE_FOUL: float     = -0.04   # fewer fouls (was -0.03)
 
 # ---------------------------------------------------------------------------
 # Contact quality distribution
@@ -179,6 +185,29 @@ CONTACT_WEAK_BASE: float     = 0.38
 CONTACT_MEDIUM_BASE: float   = 0.40
 CONTACT_HARD_BASE: float     = 0.22
 CONTACT_MATCHUP_SHIFT: float = 0.25   # max ±0.125 swing per unit matchup
+
+# Second-swing modifier: on the 2nd+ contact event within the same AB
+# (i.e., after a non-terminal 2C), tilt the contact_quality distribution
+# by (batter.eye - pitcher.command). Reads as: a high-eye batter is
+# reading the pitcher across multiple swings; a high-command pitcher
+# knows what's coming on swing 2 and shuts it down. Net shift (positive
+# = batter advantage) feeds into contact_quality's `shift` term.
+SECOND_SWING_EYE_SCALE: float     = 0.20   # batter.eye contribution
+SECOND_SWING_COMMAND_SCALE: float = 0.20   # pitcher.command contribution (subtracted)
+
+# Talent-weighted 2C outcome resolution (Phase 11D / Path A — applies on
+# every 2C-chosen event, including swing 1, where Path 2's swing-2+ scope
+# couldn't reach). On a stay-chosen contact:
+#   - WEAK quality: hit-credit gate. Talent_factor shifts a base 50%
+#     credit_p; gate failure forces runner_advances to [0,0,0] (no advance,
+#     no hit credit — the FC-flavored downgrade per spec).
+#   - MEDIUM quality: advancement-magnitude gate. Talent_factor shifts a
+#     base 50% upgrade_p from [1,1,1] (low-talent) to [2,2,2] (high-talent
+#     — the Phase 11C aggressive advance, now talent-conditional).
+#   - HARD quality: no modification (rare for 2C; auto-runs typically).
+# talent_factor = (eye_dev + contact_dev) / 2 - command_dev,
+# range roughly -1.5 (worst matchup) to +1.5 (best matchup).
+TALENT_2C_SHIFT_SCALE: float = 1.00   # ±1.5 nominal swing; bounded 0.05-0.95
 
 # ---------------------------------------------------------------------------
 # Contact outcome tables
@@ -513,9 +542,42 @@ PITCHER_COMMAND_CALLED: float = +0.03
 CONTACT_POWER_TILT:    float = 0.10
 CONTACT_MOVEMENT_TILT: float = 0.10   # parity with power tilt — high-movement pitcher suppresses hard contact as strongly as a slugger creates it
 
-# --- Power → HARD_CONTACT HR weight bonus ---------------------------------
-# Slugger archetype: an elite-power batter sees a meaningfully boosted HR
-# row inside the HARD_CONTACT table. (power - 0.5) * 2 ∈ [-1, +1] times this.
+# --- Power → in-play distribution redistribution --------------------------
+# Phase 10.2: power was previously a one-trick HR additive (POWER_HR_WEIGHT_
+# SCALE=0.08 was added to the HR row weight, INCREASING total HARD weight
+# rather than redistributing). That broke the "redistribute, don't multiply"
+# rule — high-power hitters were getting *extra* offense on top of the
+# existing distribution, which inflated total league HR. The new model
+# redistributes weight along power-axis edges (sum-preserving), so high-
+# power produces more XBH at the EXPENSE of singles / line outs / grounders,
+# and low-power produces the inverse, leaving league totals stable.
+#
+# Edges (positive power shifts in named direction; negative power reverses):
+#   HARD:    line_out  →  hr           (HR redistribution; replaces additive)
+#   HARD:    single    →  double
+#   HARD:    double    →  triple
+#   MEDIUM:  single    →  double
+#   MEDIUM:  ground_out → fly_out
+#   WEAK:    single    →  fly_out      (low power: solid contact → infield pop)
+#
+# Magnitude is the FRACTION of `from`-row weight shifted to `to`-row at
+# (power - 0.5)*2 = ±1.0. So 0.50 means at full +/− power, half the
+# from-row weight moves to the to-row. Calibrated to keep league HR /
+# 2B / 3B rates stable while opening per-player spread.
+POWER_REDIST_HR:        float = 0.50  # HARD line_out → hr (replaces POWER_HR_WEIGHT_SCALE additive)
+POWER_REDIST_HARD_S2D:  float = 0.30
+# D2T must be small enough that net flow into doubles (from single→double)
+# isn't cancelled by flow out to triples. Coefficients calibrated so that
+# doubles rise net-positive at power_dev=+1 — see
+# `o27/tests/test_power_redistribute.py::test_directionality`.
+POWER_REDIST_HARD_D2T:  float = 0.10
+POWER_REDIST_MED_S2D:   float = 0.20
+POWER_REDIST_MED_GO2FO: float = 0.15
+POWER_REDIST_WEAK_S2FO: float = 0.20
+
+# Legacy alias kept for the archetype `hr_weight_bonus` field, which the
+# data layer hands in for joker / slugger archetypes. Now applied as a
+# redistribute scalar (line_out → HR) on top of the power axis.
 POWER_HR_WEIGHT_SCALE: float = 0.08
 
 # --- Movement → HARD_CONTACT GB bias --------------------------------------

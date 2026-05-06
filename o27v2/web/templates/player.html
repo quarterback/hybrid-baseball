@@ -100,7 +100,7 @@
     {% if bt_totals %}<div style="border-left:1px solid var(--border-soft)"></div>{% endif %}
     <div><div class="score-label">W-L</div><div class="num fw-bold" style="font-size:1.35rem">{{ pt_totals.w or 0 }}-{{ pt_totals.l or 0 }}</div></div>
     <div title="Weighted ERA"><div class="score-label">wERA</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.werra) }}</div></div>
-    <div title="Expected FIP (O27)"><div class="score-label">xFIP</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.xfip) }}</div></div>
+    <div title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA"><div class="score-label">xRA</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.xra) }}</div></div>
     <div><div class="score-label">K</div><div class="num fw-bold" style="font-size:1.35rem">{{ pt_totals.k }}</div></div>
     <div><div class="score-label">pWAR</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.war) }}</div></div>
     {% endif %}
@@ -176,8 +176,8 @@
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
-        <th class="num" title="H/AB — secondary stayer-profile metric, can exceed 1.000">BAVG</th>
-        <th class="num" title="BAVG - PAVG; quantifies stay-driven hit value">Δstay</th>
+        <th class="num" title="H/AB — secondary 2C-profile metric, can exceed 1.000 thanks to multi-hit ABs">BAVG</th>
+        <th class="num" title="BAVG - PAVG; quantifies 2C-driven hit value">Δ2C</th>
         <th class="num">ISO</th>
         <th class="num">BABIP</th>
         <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
@@ -185,7 +185,12 @@
         <th class="num">wOBA</th>
         <th class="num" title="OPS relative to league avg (100 = avg)">OPS+</th>
         <th class="num" title="wOBA relative to league avg (100 = avg)">wOBA+</th>
-        <th class="num" title="Stay rate — share of PAs the batter stayed">Stay%</th>
+        <th class="num" title="Second-Chance ABs — chose 2C over run on contact">2C</th>
+        <th class="num" title="Hits credited on 2C events">2C-H</th>
+        <th class="num" title="2C events that produced a credited hit. Talent-weighted via eye vs pitcher.command on 2nd+ swing.">2C-Conv%</th>
+        <th class="num" title="RBI driven by 2C events">2C-RBI</th>
+        <th class="num" title="Share of total RBI driven by 2C — elite contact hitters should exceed league mean">2C-RBI%</th>
+        <th class="num" title="RBI per 2C event">2C-RBI/2C</th>
         <th class="num" title="Foul-out rate — share of PAs ending in 3-foul out">FO%</th>
         <th class="num" title="Multi-hit AB rate — share of ABs with 2+ credited hits">MhAB%</th>
         <th class="num" title="SB success rate on attempts">SB%</th>
@@ -202,7 +207,12 @@
         <td class="num fw-bold">{{ '%.3f'|format(bt_totals.woba) }}</td>
         <td class="num">{{ bt_totals.ops_plus|round|int }}</td>
         <td class="num">{{ bt_totals.woba_plus|round|int }}</td>
-        <td class="num">{{ '%.1f'|format(bt_totals.stay_pct * 100) }}%</td>
+        <td class="num">{{ bt_totals.stays or 0 }}</td>
+        <td class="num">{{ bt_totals.stay_hits or 0 }}</td>
+        <td class="num">{{ '%.1f'|format(bt_totals.stay_conv_pct * 100) }}%</td>
+        <td class="num">{{ bt_totals.stay_rbi or 0 }}</td>
+        <td class="num">{{ '%.1f'|format(bt_totals.stay_rbi_pct * 100) }}%</td>
+        <td class="num">{{ '%.2f'|format(bt_totals.stay_rbi_per_stay) }}</td>
         <td class="num">{{ '%.1f'|format(bt_totals.fo_pct * 100) }}%</td>
         <td class="num">{{ '%.1f'|format(bt_totals.mhab_pct * 100) }}%</td>
         <td class="num">{% if (bt_totals.sb + bt_totals.cs) > 0 %}{{ '%.1f'|format(bt_totals.sb_pct * 100) }}%{% else %}—{% endif %}</td>
@@ -280,17 +290,17 @@
   </div>
 
   <div class="dense mb-3">
-    <div class="panel-title">Result-Tier (wERA / xFIP / Decay)</div>
+    <div class="panel-title">Result-Tier (wERA / xRA / Decay)</div>
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
         <th class="num" title="Weighted ERA — outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20. Lower better.">wERA</th>
-        <th class="num" title="Expected FIP (O27): (13·HR + 3·BB - 2·(K+FO)) per 27 outs, league-anchored. Lower better.">xFIP</th>
-        <th class="num" title="K%_arc1 - K%_arc3 in points. 0 = perfectly durable; 30+ = significant late-arc fade.">Decay</th>
+        <th class="num" title="Expected Runs Allowed — non-negative linear weights, multiplicatively anchored to league wERA. Lower better.">xRA</th>
+        <th class="num" title="Drift-corrected late-arc fade (points). 0 = matches league norm; positive = fades worse than lineup-cycle drift; negative = holds up better than league.">Decay</th>
       </tr></thead>
       <tbody><tr>
         <td class="num fw-bold">{{ '%.2f'|format(pt_totals.werra) }}</td>
-        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.xfip) }}</td>
+        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.xra) }}</td>
         <td class="num">{% if pt_totals.decay_known %}{{ '%+.1f'|format(pt_totals.decay) }}{% else %}—{% endif %}</td>
       </tr></tbody>
     </table>
@@ -481,9 +491,9 @@
         {{ brow('wOBA',  'woba', '%.3f') }}
         {{ brow('BAVG',  'bavg', '%.3f') }}
         <tr>
-          <td class="text-secondary" title="Share of PAs the batter chose to stay (O27)">Stay%</td>
+          <td class="text-secondary" title="Second-Chance ABs (count, O27)">2C</td>
           {% for d in bt_split_data %}
-          <td class="num">{% if d %}{{ '%.1f'|format((d.stay_pct or 0) * 100) }}%{% else %}—{% endif %}</td>
+          <td class="num">{% if d %}{{ d.stays or 0 }}{% else %}—{% endif %}</td>
           {% endfor %}
         </tr>
         <tr>
@@ -532,7 +542,7 @@
         {{ prow('HR',   'hr_allowed') }}
         {{ prow('FO',   'fo_induced') }}
         {{ prow('wERA', 'werra', '%.2f', 'fw-bold') }}
-        {{ prow('xFIP', 'xfip',  '%.2f') }}
+        {{ prow('xRA', 'xra',  '%.2f') }}
         <tr>
           <td class="text-secondary">Decay</td>
           {% for d in pt_split_data %}
@@ -629,7 +639,7 @@
             <tr><td class="text-secondary">Bats</td><td><strong>{{ player.bats or '—' }}</strong></td><td class="text-secondary small">L / R / S</td></tr>
             <tr><td class="text-secondary">Throws</td><td><strong>{{ player.throws or '—' }}</strong></td><td class="text-secondary small">L / R</td></tr>
             <tr><td class="text-secondary">Age</td><td><strong>{{ player.age }}</strong></td><td></td></tr>
-            <tr><td class="text-secondary">Stay aggressiveness</td><td><strong>{{ '%.2f'|format(player.stay_aggressiveness or 0) }}</strong></td><td class="text-secondary small">Probability of staying when eligible</td></tr>
+            <tr><td class="text-secondary">2C aggressiveness</td><td><strong>{{ '%.2f'|format(player.stay_aggressiveness or 0) }}</strong></td><td class="text-secondary small">Probability of choosing 2C when eligible</td></tr>
             <tr><td class="text-secondary">Contact-quality threshold</td><td><strong>{{ '%.2f'|format(player.contact_quality_threshold or 0) }}</strong></td><td class="text-secondary small">Stay-eligibility on medium contact</td></tr>
             {% if player.injured_until %}
             <tr><td class="text-secondary">IL status</td><td><strong class="text-warning">{{ player.il_tier or 'IL' }}</strong></td><td class="text-secondary small">Out until {{ player.injured_until }}</td></tr>
@@ -656,7 +666,7 @@
         <th class="num">R</th><th class="num">RBI</th>
         <th class="num">BB</th><th class="num">SO</th>
         <th class="num">HBP</th><th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
-        <th class="num" title="Stays">STY</th>
+        <th class="num" title="Second-Chance ABs">2C</th>
         <th class="num" title="Reached on error">ROE</th>
         <th data-nosort></th>
       </tr></thead>

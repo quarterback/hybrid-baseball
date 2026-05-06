@@ -134,7 +134,7 @@ def export_player_card(player: dict,
         out.append("")
         out.append(_md_table(
             ["G", "PA", "AB", "R", "H", "2B", "3B", "HR", "RBI", "BB", "SO",
-             "SB", "PAVG", "OBP", "SLG", "OPS", "OPS+", "wOBA", "Stay%", "WAR"],
+             "SB", "2C", "PAVG", "OBP", "SLG", "OPS", "OPS+", "wOBA", "WAR"],
             [[
                 _fmt_num(bt_totals.get("g")),
                 _fmt_num(bt_totals.get("pa")),
@@ -148,13 +148,13 @@ def export_player_card(player: dict,
                 _fmt_num(bt_totals.get("bb")),
                 _fmt_num(bt_totals.get("k")),
                 _fmt_num(bt_totals.get("sb")),
+                _fmt_num(bt_totals.get("stays")),
                 _fmt_num(bt_totals.get("pavg"), "%.3f"),
                 _fmt_num(bt_totals.get("obp"), "%.3f"),
                 _fmt_num(bt_totals.get("slg"), "%.3f"),
                 _fmt_num(bt_totals.get("ops"), "%.3f"),
                 _fmt_num(bt_totals.get("ops_plus"), "%d"),
                 _fmt_num(bt_totals.get("woba"), "%.3f"),
-                _fmt_num((bt_totals.get("stay_pct") or 0) * 100, "%.1f%%"),
                 _fmt_num(bt_totals.get("war"), "%.2f"),
             ]],
             ["r"] * 20,
@@ -167,8 +167,8 @@ def export_player_card(player: dict,
         out.append("")
         out.append(_md_table(
             ["G", "GS", "W", "L", "BF", "Outs", "H", "R", "ER", "BB", "SO",
-             "HR", "FO", "P", "wERA", "xFIP", "Decay", "GSc", "GSc+",
-             "OS+", "K%", "BB%", "WAR"],
+             "HR", "FO", "P", "wERA", "xRA", "Decay", "GSc", "GSc+",
+             "OS+", "K%", "BB%", "K-BB%", "WAR"],
             [[
                 _fmt_num(pt_totals.get("g")),
                 _fmt_num(pt_totals.get("gs")),
@@ -185,16 +185,17 @@ def export_player_card(player: dict,
                 _fmt_num(pt_totals.get("fo_induced")),
                 _fmt_num(pt_totals.get("pitches")),
                 _fmt_num(pt_totals.get("werra"), "%.2f"),
-                _fmt_num(pt_totals.get("xfip"), "%.2f"),
+                _fmt_num(pt_totals.get("xra"), "%.2f"),
                 ("%+.1f" % pt_totals["decay"]) if pt_totals.get("decay_known") else "—",
                 _fmt_num(pt_totals.get("gsc_avg"), "%.1f"),
                 _fmt_num(pt_totals.get("gsc_plus"), "%d"),
                 _fmt_num(pt_totals.get("os_plus"), "%d"),
                 _fmt_num((pt_totals.get("k_pct") or 0) * 100, "%.1f%%"),
                 _fmt_num((pt_totals.get("bb_pct") or 0) * 100, "%.1f%%"),
+                _fmt_num((pt_totals.get("k_minus_bb_pct") or 0) * 100, "%.1f%%"),
                 _fmt_num(pt_totals.get("war"), "%.2f"),
             ]],
-            ["r"] * 23,
+            ["r"] * 24,
         ))
         out.append("")
 
@@ -237,7 +238,7 @@ def export_player_card(player: dict,
                 _fmt_num(g.get("stays"), "%d", "0"),
             ])
         out.append(_md_table(
-            ["Date", "Opp", "PA", "AB", "H", "HR", "RBI", "BB", "SO", "Stays"],
+            ["Date", "Opp", "PA", "AB", "H", "HR", "RBI", "BB", "SO", "2C"],
             log_rows,
             ["l", "l"] + ["r"] * 8,
         ))
@@ -373,7 +374,7 @@ def export_leaders(batting: list[dict], pitching: list[dict]) -> str:
     out.append("## Pitching")
     out.append("")
     _table("wERA (low)",      pitching, "werra",    "%.2f", reverse=False)
-    _table("xFIP (low)",      pitching, "xfip",     "%.2f", reverse=False)
+    _table("xRA (low)",      pitching, "xra",     "%.2f", reverse=False)
     _table("Decay (low)",     pitching, "decay",    "%+.1f", reverse=False)
     _table("GSc avg",         pitching, "gsc_avg",  "%.1f")
     _table("GSc+",            pitching, "gsc_plus", "%d")
@@ -381,7 +382,7 @@ def export_leaders(batting: list[dict], pitching: list[dict]) -> str:
     _table("K",               pitching, "k",        "%d")
     _table("WAR",             pitching, "war",      "%.2f")
 
-    out.append("_O27 League · leaders export · pitcher metrics: wERA / xFIP / Decay are O27-native (arc-weighted ERA, defense-independent O27 FIP, late-arc K-rate fade)_")
+    out.append("_O27 League · leaders export · pitcher metrics: wERA / xRA / Decay are O27-native (arc-weighted ERA, defense-independent O27 FIP, late-arc K-rate fade)_")
     out.append("")
     return "\n".join(out)
 
@@ -441,13 +442,13 @@ def export_team(team: dict, batters: list[dict], pitchers: list[dict],
                 _fmt_num(p.get("outs"), "%d", "0"),
                 _fmt_num(p.get("k"), "%d", "0"),
                 _fmt_num(p.get("werra"), "%.2f"),
-                _fmt_num(p.get("xfip"), "%.2f"),
+                _fmt_num(p.get("xra"), "%.2f"),
                 _fmt_num((p.get("k_pct") or 0) * 100, "%.1f%%"),
                 _fmt_num(p.get("war"), "%.2f"),
             ])
         out.append(_md_table(
             ["Name", "Age", "G", "GS", "W", "L", "Outs", "K", "wERA",
-             "xFIP", "K%", "WAR"],
+             "xRA", "K%", "WAR"],
             rows,
             ["l", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r", "r"],
         ))

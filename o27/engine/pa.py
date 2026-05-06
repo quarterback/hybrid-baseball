@@ -142,6 +142,7 @@ def _end_at_bat(state: GameState) -> list[str]:
         log.append(f"  Multi-hit at-bat: {hits} credited hits.")
     state.count.reset()
     state.current_at_bat_hits = 0
+    state.current_at_bat_swings = 0
     # Hit-and-run protection clears at PA boundary — the play is over.
     state.hit_and_run_active = False
     # Joker AB: clear the override and DO NOT advance the base lineup.
@@ -458,6 +459,10 @@ def _resolve_contact(
     outcome: dict,
 ) -> list[str]:
     """Resolve a ball_in_play event (run_chosen or stay_chosen)."""
+    # Bump the in-AB swing counter so the next pitch's contact_quality sees
+    # this as a 2nd+ swing (only matters when AB continues — a run-chosen or
+    # terminal stay calls _end_at_bat which resets to 0).
+    state.current_at_bat_swings += 1
     batter = state.current_batter
     batter_id = batter.player_id
     caught_fly = outcome.get("caught_fly", False)
@@ -541,6 +546,12 @@ def _resolve_contact(
     # Advance runners; no force at 1B; no DP through 1B.
     modified_outcome = dict(outcome)
     modified_outcome["batter_safe"] = True   # batter can't be put out on this play
+
+    # Note: 2C-event runner_advances are talent-weighted in
+    # prob.py (post-stay-decision block), not here. The outcome dict
+    # arriving in this branch already reflects the eye/contact-vs-command
+    # gate that decides hit-credit (weak) and advancement magnitude
+    # (medium). pa.py just consumes the modified outcome.
 
     original_bases = list(state.bases)   # snapshot BEFORE mutation for credit check
     # Capture runner thrown out BEFORE advance_runners clears the slot.

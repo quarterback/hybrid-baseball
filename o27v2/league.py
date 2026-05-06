@@ -170,20 +170,37 @@ def _player_age(rng: random.Random) -> int:
 # archetypes the league needs.
 _TALENT_TIERS: list[tuple[float, int, int]] = [
     # (probability, lo_grade, hi_grade)
-    # Elite+: the once-in-a-generation talent. ~0.5% of attribute rolls
-    # land here, on grades 81-95 — beyond the canonical 20-80 ceiling.
-    # The user explicitly wants the .01% transcendent players to exist
-    # and not be capped by an artificial scale.
+    #
+    # Re-tuned 2026: prior table had Elite+/Elite combined at 2.5% and
+    # the good-to-average band swelled to ~52% — the top hitter capped
+    # at OPS+ ~125 (compressed) while the middle was a homogenous mass
+    # with no archetype separation. The new shape is wider on both tails:
+    #
+    #   Elite+/Elite combined  =  2%   (transcendent + star talent)
+    #   Excellent              =  8%   (the "next highest" tier)
+    #   Good-to-Average band   = 25%   (Good + AboveAvg + Average)
+    #   Below-Average → Sub-R  = 53%   (long tail of replacement-level)
+    #
+    # O27 is more offensively dynamic than MLB by design (27-out single
+    # innings, 3-foul cap, 2C rule), so a wide-spread talent distribution
+    # rewards offensive archetypes — elite contact hitters carve up the
+    # below-replacement long tail, producing the monster lines and
+    # blowout games the format is built for. Do NOT compress this back
+    # toward MLB's tighter bell.
+    #
+    # Elite+ stays as a transcendent grade-81+ slice — beyond the 20-80
+    # canonical scale by design, so the .01% players exist without being
+    # capped by the scout-grade ceiling.
     (0.005, 81, 95),  # Elite+ (transcendent)
-    (0.02,  75, 80),  # Elite
-    (0.05,  65, 74),  # Excellent
-    (0.10,  60, 64),  # Very Good
-    (0.15,  55, 59),  # Good
-    (0.18,  50, 54),  # Above Average
-    (0.195, 45, 49),  # Average        (was 0.20; trimmed to fit Elite+)
-    (0.15,  40, 44),  # Below Average
-    (0.10,  30, 39),  # Replacement
-    (0.05,  20, 29),  # Sub-Replacement
+    (0.015, 75, 80),  # Elite              — Elite+/Elite combined = 2%
+    (0.080, 65, 74),  # Excellent          — "next highest" = 8%
+    (0.120, 60, 64),  # Very Good
+    (0.120, 55, 59),  # Good                ┐
+    (0.080, 50, 54),  # Above Average       ├─ good-to-average = 25%
+    (0.050, 45, 49),  # Average             ┘
+    (0.180, 40, 44),  # Below Average
+    (0.200, 30, 39),  # Replacement
+    (0.150, 20, 29),  # Sub-Replacement
 ]
 
 
@@ -332,8 +349,14 @@ def _make_hitter(
         "skill": skill_g,
         "speed": speed_g,
         "pitcher_skill": max(20, min(45, pskill_g)),
-        "stay_aggressiveness": round(_clamp(rng.gauss(0.10, 0.05)), 3),
-        "contact_quality_threshold": round(_clamp(rng.gauss(0.28, 0.06)), 3),
+        # Tuned upward 2025: prior values (gauss(0.10, 0.05) /
+        # gauss(0.28, 0.06)) produced a league 2C-attempt rate of ~1.6%
+        # of PAs — the second-chance mechanic was a rounding error
+        # instead of the load-bearing tactic it's supposed to be.
+        # New means target a 4-8% league rate by both relaxing the
+        # contact-quality gate and bumping aggressiveness.
+        "stay_aggressiveness": round(_clamp(rng.gauss(0.30, 0.10)), 3),
+        "contact_quality_threshold": round(_clamp(rng.gauss(0.50, 0.10)), 3),
         "archetype": "",
         "pitcher_role": "",
         "hard_contact_delta": 0.0,
@@ -396,8 +419,12 @@ def _make_pitcher(
         "skill":  max(20, _roll_tier_grade(rng) // 2 + 10),  # weak bat
         "speed":  max(20, _roll_tier_grade(rng) // 2 + 15),
         "pitcher_skill": stuff_g,
-        "stay_aggressiveness": round(_clamp(rng.gauss(0.05, 0.03)), 3),
-        "contact_quality_threshold": round(_clamp(rng.gauss(0.20, 0.05)), 3),
+        # Pitchers as hitters — 2C still rarer than position players,
+        # but lifted from 0.05 → 0.20 in step with the position-player
+        # bump so pitcher PAs aren't structurally locked out of the
+        # second-chance mechanic.
+        "stay_aggressiveness": round(_clamp(rng.gauss(0.20, 0.06)), 3),
+        "contact_quality_threshold": round(_clamp(rng.gauss(0.40, 0.08)), 3),
         "archetype": "",
         "pitcher_role": "",   # Task #65: live derivation only — never stored.
         "hard_contact_delta": 0.0,

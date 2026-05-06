@@ -73,10 +73,21 @@
 
 <h4>Batting · O27-Native &amp; Value</h4>
 <div class="row g-3 mb-3">
-  {{ card('Stay%', 'stay_pct', '%.3f', true,  batting, tooltip='Share of PAs the batter chose to stay') }}
+  {{ card('2C', 'stays', '%d', true,  batting, tooltip='Second-Chance ABs — chose 2C over run on contact (O27)') }}
+  {{ card('2C-H',    'stay_hits',    '%d',   true, batting, tooltip='Hits credited on 2C events') }}
+  {{ card('2C-Conv%','stay_conv_pct','%.3f', true, batting, tooltip='Fraction of 2C events that credited a hit (decimal). Talent-weighted by eye vs pitcher.command on subsequent swings; spec target top hitters .60-.70, marginal .30-.40.') }}
+  {{ card('2C-RBI',  'stay_rbi',     '%d',   true, batting, tooltip='RBI driven by 2C events — surfaces 2C-mechanic specialists') }}
+  {{ card('2C-RBI%', 'stay_rbi_pct', '%.3f', true, batting, tooltip='Share of total RBI driven by 2C (decimal).') }}
   {{ card('SB',    'sb',       '%d',   true,  batting) }}
   {{ card('WAR',   'war',      '%.2f', true,  batting, tooltip='Total WAR (offense + defense)') }}
   {{ card('DRS',   'drs',      '%+.1f',true,  batting, tooltip='Defensive runs saved') }}
+</div>
+
+<h4>Batting · Tools (talent ratings)</h4>
+<div class="row g-3 mb-3">
+  {{ card('Power',   'r_power',   '%d', true, batting, tooltip='Power rating — bias contact toward hard, more HR weight') }}
+  {{ card('Contact', 'r_contact', '%d', true, batting, tooltip='Contact rating — drives talent gate on every contact event (run + 2C)') }}
+  {{ card('Eye',     'r_eye',     '%d', true, batting, tooltip='Eye rating — plate discipline + 2C swing-2 read; drives talent gate on contact events') }}
 </div>
 
 {# ============================================================
@@ -85,8 +96,9 @@
 <h4 class="mt-4">Pitching · Result-Tier (the trio)</h4>
 <div class="row g-3 mb-3">
   {{ card('wERA',        'werra',    '%.2f',  false, pitching, tooltip='Weighted ERA — runs allowed weighted by arc position (outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20)') }}
-  {{ card('xFIP',        'xfip',     '%.2f',  false, pitching, tooltip='Expected FIP (O27): defense-independent — (13·HR + 3·BB - 2·(K+FO)) per 27 outs, league-anchored to wERA') }}
-  {{ card('Decay (low)', 'decay',    '%+.1f', false, pitching, tooltip='K%_arc1 - K%_arc3 (points). 0 = perfectly durable, 30+ = significant late-arc fade') }}
+  {{ card('xRA',        'xra',     '%.2f',  false, pitching, tooltip='Expected Runs Allowed — non-negative linear-weights formula (HR=1.4, single≈0.45, BB/HBP=0.32), multiplicatively anchored so league xRA = league wERA') }}
+  {{ card('Decay (low)', 'decay',    '%+.1f', false, pitching, tooltip='Drift-corrected late-arc fade (points). 0 = matches league norm; positive = fades worse than the natural lineup-cycling lift; negative = holds up better than league. Subtracts the league arc-1→arc-3 K% delta to isolate fatigue from O27 lineup-cycling.') }}
+  {{ card('LateK%',      'late_k_pct_pct', '%.1f%%', true, pitching, tooltip='Arc-3 K% (outs 19-27, incl foul-outs). The short-relief sibling to Decay — closers and back-of-arc specialists who never see arc-1 sample appear here.') }}
   {{ card('GSc+',        'gsc_plus', '%d',    true,  pitching, tooltip='League-relative Game Score (100 = league avg, higher = better)') }}
 </div>
 
@@ -96,6 +108,14 @@
   {{ card('OS+',       'os_plus', '%d',   true,  pitching, tooltip='Outs Share Plus — league-relative outs per appearance (100 = avg)') }}
   {{ card('K%',        'k_pct',   '%.3f', true,  pitching, tooltip='(K + foul-outs) / BF — O27 K% includes foul-outs') }}
   {{ card('BB% (low)', 'bb_pct',  '%.3f', false, pitching) }}
+</div>
+
+<h4>Pitching · Tools (talent ratings)</h4>
+<div class="row g-3 mb-3">
+  {{ card('Stuff',    'r_stuff',    '%d', true, pitching, tooltip='Stuff (pitcher_skill) — swing-and-miss / contact dominance') }}
+  {{ card('Command',  'r_command',  '%d', true, pitching, tooltip='Command — control; drives talent gate on contact events from the pitcher side') }}
+  {{ card('Movement', 'r_movement', '%d', true, pitching, tooltip='Movement — bias contact toward weak / ground-out') }}
+  {{ card('Stamina',  'r_stamina',  '%d', true, pitching, tooltip='Stamina — durability across the arc') }}
 </div>
 
 <h4>Pitching · Counting &amp; Value</h4>
@@ -110,11 +130,11 @@
   <summary class="text-secondary small" style="cursor:pointer">Methodology</summary>
   <div class="text-secondary small mt-2 p-3" style="background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--radius);line-height:1.55">
     <strong>Batting</strong> rates are PA-denominated. PAVG = H/PA; OPS+ / wOBA+ are league-relativized (100 = league avg, higher = better).
-    <strong>Stay%</strong> is the rate at which a batter chose <em>stay</em> over <em>run</em> on a contact event with runners on — the load-bearing O27 mechanic.
+    <strong>2C</strong> (Second-Chance ABs) counts contact events where the batter chose to stay (and earned a hit while spending a strike from their AB-budget) instead of run. The load-bearing O27 mechanic. Listed as a counting stat — the underlying rate is 1-3% of PAs league-wide, too small to read as a percentage.
     <br><br>
     <strong>Pitching</strong> uses three result-tier metrics that each tell a different story.
     <strong>wERA</strong> weights earned runs by arc position (outs 1–9 ×0.85, 10–18 ×1.00, 19–27 ×1.20) and league-anchors to raw ER/27.
-    <strong>xFIP</strong> strips out batted-ball luck and defense — (13·HR + 3·BB − 2·(K + foul-outs)) per 27 outs, re-fit each render so league xFIP = league wERA.
+    <strong>xRA</strong> (Expected Runs Allowed) is a non-negative linear-weights formula — coefficients HR ≈ 1.4, single ≈ 0.45, BB / HBP ≈ 0.32, K / out = 0 — multiplicatively anchored so league xRA = league wERA. Replaces the previous xFIP column, which produced negative values for high-K small-sample pitchers because the FIP coefficient sign convention.
     <strong>Decay</strong> measures late-arc fade (K%_arc1 − K%_arc3 in points; lower = more durable).
     <strong>GSc</strong> is a per-appearance Game Score (50 = neutral, 100 = perfection). <strong>OS+</strong> is league-relative outs per appearance (100 = avg).
     PA-rate <strong>K%</strong> counts foul-outs as Ks. WAR uses an O27-fitted runs-per-win factor (~21 vs MLB's ~10). W/L credits an SP with ≥ 12 outs and the lead, otherwise the most-effective reliever.
