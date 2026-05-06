@@ -3821,6 +3821,92 @@ def team_detail(team_id: int):
                            win_pct=_win_pct)
 
 
+@app.route("/team/<int:team_id>/edit", methods=["GET"])
+def team_edit_get(team_id: int):
+    from o27.engine.weather import archetype_for_city
+    team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
+    if not team:
+        abort(404)
+    return _serve("team_edit.html",
+                           team=team,
+                           current_archetype=archetype_for_city(team["city"] or ""))
+
+
+@app.route("/team/<int:team_id>/edit", methods=["POST"])
+def team_edit_post(team_id: int):
+    from flask import flash
+    from o27.engine.weather import draw_weather, archetype_for_city
+    import random as _random
+
+    team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
+    if not team:
+        abort(404)
+
+    new_name   = (request.form.get("name", "") or "").strip()
+    new_abbrev = (request.form.get("abbrev", "") or "").strip().upper()
+    new_city   = (request.form.get("city", "") or "").strip()
+
+    # Validation: bounce back to the form with a flash on error so the
+    # user keeps their typed values via the rendered form fields.
+    err: str | None = None
+    if not new_name:
+        err = "Team name cannot be blank."
+    elif not (2 <= len(new_abbrev) <= 4) or not new_abbrev.isalnum():
+        err = "Abbreviation must be 2-4 alphanumeric characters."
+    if err:
+        flash(err, "error")
+        return redirect(url_for("team_edit_get", team_id=team_id))
+
+    # Detect collision: another team already using this abbrev.
+    clash = db.fetchone(
+        "SELECT id FROM teams WHERE abbrev = ? AND id != ?",
+        (new_abbrev, team_id),
+    )
+    if clash:
+        flash(f"Abbreviation {new_abbrev} is already used by another team.", "error")
+        return redirect(url_for("team_edit_get", team_id=team_id))
+
+    city_changed = (new_city != (team["city"] or ""))
+
+    db.execute(
+        "UPDATE teams SET name = ?, abbrev = ?, city = ? WHERE id = ?",
+        (new_name, new_abbrev, new_city, team_id),
+    )
+
+    # Re-roll weather for unplayed home games when the city changes —
+    # archetype_for_city is called fresh per-game inside draw_weather, so
+    # changing the city alone changes the climatology. A new RNG forked
+    # off the team_id keeps the reseed deterministic per team.
+    rerolled = 0
+    if city_changed:
+        unplayed_home = db.fetchall(
+            "SELECT id, game_date FROM games WHERE home_team_id = ? AND played = 0",
+            (team_id,),
+        )
+        if unplayed_home:
+            rng = _random.Random(team_id ^ 0xCAFE_BABE)
+            for g in unplayed_home:
+                w = draw_weather(rng, new_city, g["game_date"])
+                db.execute(
+                    """UPDATE games SET temperature_tier=?, wind_tier=?,
+                       humidity_tier=?, precip_tier=?, cloud_tier=?
+                       WHERE id=?""",
+                    (w.temperature, w.wind, w.humidity, w.precip, w.cloud, g["id"]),
+                )
+                rerolled += 1
+
+    if city_changed:
+        flash(
+            f"Team updated. Re-rolled weather for {rerolled} unplayed home games "
+            f"({archetype_for_city(new_city)} archetype).",
+            "info",
+        )
+    else:
+        flash("Team updated.", "info")
+
+    return redirect(url_for("team_detail", team_id=team_id))
+
+
 @app.route("/transactions")
 def transactions():
     from o27v2.transactions import get_transactions
