@@ -1,0 +1,113 @@
+{
+  "regions": {
+    "us": {
+      "label": "USA",
+      "first_keys":   ["american_northeast", "american_south", "american_midwest",
+                       "american_west", "american_texas_southwest", "black_american",
+                       "asian_american"],
+      "surname_keys": ["american_general", "black_american"]
+    },
+    "latin_america": {
+      "label": "Latin America / Caribbean",
+      "first_keys":   ["latino_hispanic", "latin_american", "caribbean"],
+      "surname_keys": ["latino_hispanic", "latin_american", "caribbean"]
+    },
+    "europe_western": {
+      "label": "Western Europe",
+      "first_keys":   ["uk_european", "irish_european", "french", "german",
+                       "italian", "spanish", "dutch", "portuguese"],
+      "surname_keys": ["uk_european", "irish", "french", "german",
+                       "italian", "spanish", "dutch", "portuguese"]
+    },
+    "europe_eastern": {
+      "label": "Eastern Europe",
+      "first_keys":   ["polish", "czech", "russian"],
+      "surname_keys": ["polish", "czech", "russian"]
+    },
+    "nordic": {
+      "label": "Nordic",
+      "first_keys":   ["nordic"],
+      "surname_keys": ["nordic", "scandinavian"]
+    },
+    "east_asia": {
+      "label": "East Asia",
+      "first_keys":   ["east_asian"],
+      "surname_keys": ["chinese", "korean", "japanese", "east_asian"]
+    },
+    "southeast_asia": {
+      "label": "Southeast Asia",
+      "first_keys":   ["southeast_asian", "vietnamese", "cambodian"],
+      "surname_keys": ["southeast_asian", "vietnamese", "filipino", "cambodian"]
+    },
+    "south_asia": {
+      "label": "South Asia",
+      "first_keys":   ["indian"],
+      "surname_keys": ["indian"]
+    },
+    "central_west_asia": {
+      "label": "Central / West Asia / Middle East",
+      "first_keys":   ["central_asian", "turkish", "arabic"],
+      "surname_keys": ["central_asian", "turkish", "arabic"]
+    },
+    "africa": {
+      "label": "Sub-Saharan Africa",
+      "first_keys":   ["african", "ethiopian", "east_african", "lusophone_african", "malagasy"],
+      "surname_keys": ["african", "ethiopian", "east_african", "lusophone_african", "malagasy"]
+    },
+    "anzac_pacific": {
+      "label": "Australia / NZ / Pacific Islands",
+      "first_keys":   ["australian", "new_zealand", "pacific_islander"],
+      "surname_keys": ["australian", "new_zealand", "pacific_islander"]
+    },
+    "canada": {
+      "label": "Canada",
+      "first_keys":   ["canadian_english", "canadian_french"],
+      "surname_keys": ["canadian_french", "american_general"]
+    }
+  },
+  "presets": {
+    "americas_pro": {
+      "label": "Americas Pro (MLB-like)",
+      "weights": {
+        "us": 0.55, "latin_america": 0.28, "east_asia": 0.04,
+        "anzac_pacific": 0.03, "canada": 0.04, "europe_western": 0.03,
+        "africa": 0.02, "central_west_asia": 0.01
+      }
+    },
+    "global": {
+      "label": "Global",
+      "weights": {
+        "us": 0.18, "latin_america": 0.14, "europe_western": 0.14,
+        "europe_eastern": 0.06, "nordic": 0.04, "east_asia": 0.10,
+        "southeast_asia": 0.07, "south_asia": 0.06, "central_west_asia": 0.06,
+        "africa": 0.07, "anzac_pacific": 0.05, "canada": 0.03
+      }
+    },
+    "european": {
+      "label": "European",
+      "weights": {
+        "europe_western": 0.55, "europe_eastern": 0.20, "nordic": 0.15,
+        "central_west_asia": 0.05, "africa": 0.05
+      }
+    },
+    "asian_pro": {
+      "label": "East-Asia Pro",
+      "weights": {
+        "east_asia": 0.65, "southeast_asia": 0.20, "us": 0.10,
+        "latin_america": 0.05
+      }
+    },
+    "nordic": {
+      "label": "Nordic (pesäpallo / Finnish)",
+      "weights": {
+        "nordic": 0.92, "europe_eastern": 0.04, "us": 0.04
+      }
+    },
+    "us_only": {
+      "label": "USA Only",
+      "weights": {
+        "us": 1.0
+      }
+    }
+  }
+}

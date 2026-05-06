@@ -3853,12 +3853,15 @@ def transactions():
 
 @app.route("/new-league", methods=["GET"])
 def new_league_get():
+    from o27v2.league import get_name_region_presets, get_name_regions
     configs = get_league_configs()
     current_team_count = db.fetchone("SELECT COUNT(*) as n FROM teams")
     current_n = current_team_count["n"] if current_team_count else 0
     return _serve("new_league.html",
                            configs=configs,
-                           current_team_count=current_n)
+                           current_team_count=current_n,
+                           name_region_presets=get_name_region_presets(),
+                           name_regions=get_name_regions())
 
 
 @app.route("/new-league", methods=["POST"])
@@ -3902,6 +3905,8 @@ def new_league_post():
                 target_stand_length       = int(request.form.get("target_stand_length", 3) or 3),
                 level                = request.form.get("level", "MLB") or "MLB",
                 label                = request.form.get("label") or None,
+                gender               = request.form.get("gender", "male") or "male",
+                name_region_preset   = request.form.get("name_region_preset") or None,
             )
         except (ValueError, TypeError) as e:
             flash(f"League configuration error: {e}", "error")
