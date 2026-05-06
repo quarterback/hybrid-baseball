@@ -56,6 +56,76 @@ POSITIONAL_VALUE: dict[str, float] = {
 _INFIELD_POSITIONS  = frozenset(("1B", "2B", "3B", "SS"))
 _OUTFIELD_POSITIONS = frozenset(("LF", "CF", "RF"))
 
+# Canonical 8 fielding positions (excluding pitcher). Every starting
+# fielder must land on exactly one of these.
+_CANONICAL_FIELDING_8 = ("C", "1B", "2B", "3B", "SS", "LF", "CF", "RF")
+
+
+def _assign_game_positions(starters: list, sp: list, dhs: list) -> None:
+    """Stamp `game_position` on every player in today's batting lineup.
+
+    - 8 starting fielders → one of {C, 1B, 2B, 3B, SS, LF, CF, RF}.
+      Players whose static `position` already matches one of these slots
+      keep it. Utility players (or excess at a single position) are
+      placed in remaining slots based on glove-rating fit:
+        infield slots → defense_infield
+        outfield slots → defense_outfield
+        catcher slot → defense_catcher
+    - SP → "P".
+    - Jokers (DH-pool) → "J" — every team carries exactly 3 jokers; they
+      bat as tactical pinch-hitters but don't field. (Jokers MAY enter
+      the field as defensive subs mid-game; that move shows up via a
+      runtime `game_position` mutation, not at lineup build time.)
+    """
+    assigned: dict[str, object] = {}   # position → player
+    unassigned: list = []
+    for p in starters:
+        pos = (p.position or "").upper()
+        if pos in _CANONICAL_FIELDING_8 and pos not in assigned:
+            assigned[pos] = p
+            p.game_position = pos
+        else:
+            unassigned.append(p)
+
+    open_slots = [s for s in _CANONICAL_FIELDING_8 if s not in assigned]
+
+    # Greedy best-fit: at each step pick the (player, slot) pair with the
+    # highest fit score. 8×8 search is tiny.
+    while unassigned and open_slots:
+        best_score = -1.0
+        best_pair = None
+        for p in unassigned:
+            for slot in open_slots:
+                if slot in _INFIELD_POSITIONS:
+                    score = float(getattr(p, "defense_infield", 0.5) or 0.5)
+                elif slot in _OUTFIELD_POSITIONS:
+                    score = float(getattr(p, "defense_outfield", 0.5) or 0.5)
+                else:   # C
+                    score = float(getattr(p, "defense_catcher", 0.5) or 0.5)
+                if score > best_score:
+                    best_score = score
+                    best_pair = (p, slot)
+        if best_pair is None:
+            break
+        p, slot = best_pair
+        p.game_position = slot
+        unassigned.remove(p)
+        open_slots.remove(slot)
+
+    # Anything that didn't get a slot (shouldn't happen with 8 fielders +
+    # 8 slots, but guard) falls back to the static position so the box
+    # score still has SOMETHING to display.
+    for p in unassigned:
+        p.game_position = p.position or "UT"
+
+    for p in sp:
+        p.game_position = "P"
+    for p in dhs:
+        # Jokers bat from the DH pool. Every team carries exactly 3; they
+        # remain "J" on the box score until/unless one is moved to the
+        # field as a defensive sub.
+        p.game_position = "J"
+
 
 _SPEED_RANGE_POSITIONS = {
     # Position → fraction of the rating that's driven by foot speed
@@ -434,6 +504,11 @@ def _db_team_to_engine(
                 idx = starting_fielders.index(rested)
                 starting_fielders[idx] = bench_sorted[i]
 
+    # Stamp per-game fielding positions BEFORE building the lineup so the
+    # ordering pass already sees concrete positions on every player. Jokers
+    # picked from the DH pool below get their "J" tag here too.
+    _assign_game_positions(starting_fielders, todays_sp, dhs)
+
     # Build the 9-batter base lineup: 8 fielders + SP, ordered by talent.
     lineup = _ordered_lineup(starting_fielders, todays_sp)
 
@@ -545,6 +620,7 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict])
                 "c2_adv_2b": getattr(bstat, "c2_adv_2b", 0),
                 "c2_op_3b":  getattr(bstat, "c2_op_3b", 0),
                 "c2_adv_3b": getattr(bstat, "c2_adv_3b", 0),
+                "game_position": str(getattr(player, "game_position", "") or ""),
                 "roe": getattr(bstat, "roe", 0),
                 "po": getattr(bstat, "po", 0),
                 "e":  getattr(bstat, "e",  0),
@@ -942,8 +1018,8 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                     doubles, triples, hr, rbi, bb, k, stays, outs_recorded,
                     hbp, sb, cs, fo, multi_hit_abs, stay_rbi, stay_hits,
                     c2_op_1b, c2_adv_1b, c2_op_2b, c2_adv_2b, c2_op_3b, c2_adv_3b,
-                    roe, po, e)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    game_position, roe, po, e)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
@@ -954,6 +1030,7 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                  r.get("c2_op_1b", 0), r.get("c2_adv_1b", 0),
                  r.get("c2_op_2b", 0), r.get("c2_adv_2b", 0),
                  r.get("c2_op_3b", 0), r.get("c2_adv_3b", 0),
+                 r.get("game_position", ""),
                  r.get("roe", 0),
                  r.get("po", 0), r.get("e", 0)),
             )

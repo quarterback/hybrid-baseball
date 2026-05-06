@@ -147,6 +147,11 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     c2_adv_2b  INTEGER DEFAULT 0,
     c2_op_3b   INTEGER DEFAULT 0,
     c2_adv_3b  INTEGER DEFAULT 0,
+    -- Per-game fielding position. Distinct from `players.position` (the
+    -- player's primary), this is the actual spot they played that day.
+    -- Utility (UT) players land on a concrete slot at lineup build time;
+    -- jokers stay "J". Mid-game defensive moves can extend (e.g. "SS-2B").
+    game_position TEXT DEFAULT '',
     roe        INTEGER DEFAULT 0,   -- reached on error (NOT a hit; AB credited)
     -- Per-fielder defensive events (the player as a FIELDER, not as a batter).
     po         INTEGER DEFAULT 0,   -- putouts as primary fielder
@@ -478,6 +483,11 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+        try:
+            conn.execute("ALTER TABLE game_batter_stats ADD COLUMN game_position TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
         # Defense-event column: batter "reached on error" count (per-batter).
         # Team errors-committed are derived as the sum of OPPOSING batters'
         # ROE in a given game, so no separate team-level column is needed.
