@@ -371,6 +371,12 @@ def export_leaders(batting: list[dict], pitching: list[dict]) -> str:
     _table("RBI",   batting, "rbi",      "%d")
     _table("WAR",   batting, "war",      "%.2f")
 
+    out.append("## Fielding")
+    out.append("")
+    _table("PO",      batting, "po",      "%d")
+    _table("TC",      batting, "chances", "%d")
+    _table("FldPct",  batting, "fld_pct", "%.3f")
+
     out.append("## Pitching")
     out.append("")
     _table("wERA (low)",      pitching, "werra",    "%.2f", reverse=False)

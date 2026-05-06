@@ -91,6 +91,21 @@
 </div>
 
 {# ============================================================
+   FIELDING
+   ============================================================ #}
+<h4 class="mt-4">Fielding</h4>
+<div class="text-secondary small mb-2">
+  PO/E credited per fielder via position-weighted attribution on each ball in
+  play. Rate cards (FldPct, fewest errors) require ≥ {{ min_chances }} chance{{ '' if min_chances == 1 else 's' }}.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('PO',       'po',      '%d',   true,  fielding,      tooltip='Putouts — outs recorded as the primary fielder on a play') }}
+  {{ card('TC',       'chances', '%d',   true,  fielding,      tooltip='Total chances (PO + E)') }}
+  {{ card('FldPct',   'fld_pct', '%.3f', true,  fielding_qual, tooltip='Fielding % = PO / (PO + E). Min ' ~ min_chances ~ ' chances to qualify.') }}
+  {{ card('E (low)',  'e',       '%d',   false, fielding_qual, tooltip='Fewest errors among qualified fielders. Min ' ~ min_chances ~ ' chances.') }}
+</div>
+
+{# ============================================================
    PITCHING
    ============================================================ #}
 <h4 class="mt-4">Pitching · Result-Tier (the trio)</h4>

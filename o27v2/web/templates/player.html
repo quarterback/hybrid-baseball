@@ -668,6 +668,8 @@
         <th class="num">HBP</th><th class="num">SB</th><th class="num">CS</th><th class="num">FO</th>
         <th class="num" title="Second-Chance ABs">2C</th>
         <th class="num" title="Reached on error">ROE</th>
+        <th class="num" title="Putouts as fielder">PO</th>
+        <th class="num" title="Errors committed">E</th>
         <th data-nosort></th>
       </tr></thead>
       <tbody>
@@ -693,6 +695,8 @@
           <td class="num">{{ g.fo or 0 }}</td>
           <td class="num">{{ g.stays }}</td>
           <td class="num">{{ g.roe or 0 }}</td>
+          <td class="num">{{ g.po or 0 }}</td>
+          <td class="num">{{ g.e or 0 }}</td>
           <td><a href="{{ url_for('game_detail', game_id=g.game_id) }}" class="small">Box</a></td>
         </tr>
         {% endfor %}

@@ -410,6 +410,18 @@ def init_db() -> None:
             except Exception:
                 pass
 
+        # Org-strength: 20-95 scout-grade team attribute that drives the
+        # additive shift applied to every player attribute roll for the
+        # team. Persisted on the team so it can be displayed, sorted on,
+        # and consumed by future draft / signing logic — the team_shift
+        # is no longer a hidden Gaussian rolled at seed time.
+        # Default 50 = league-average org (no shift).
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN org_strength INTEGER DEFAULT 50")
+            conn.commit()
+        except Exception:
+            pass
+
         # Manager persona columns (re-rolled on every reseed; see managers.py).
         try:
             conn.execute("ALTER TABLE teams ADD COLUMN manager_archetype TEXT DEFAULT ''")

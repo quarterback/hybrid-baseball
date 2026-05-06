@@ -654,6 +654,17 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         b["war_off"] = bwar_off
         b["war"] = bwar_off + b["dwar"]
 
+        # --- Per-fielder counting stats ---
+        # PO/E come straight off the row; chances and fielding% derive from
+        # them. fld_pct is None when the player has zero fielding chances
+        # (templates render it as "—").
+        po_v = b.get("po") or 0
+        e_v  = b.get("e")  or 0
+        b["po"]      = po_v
+        b["e"]       = e_v
+        b["chances"] = po_v + e_v
+        b["fld_pct"] = (po_v / (po_v + e_v)) if (po_v + e_v) > 0 else None
+
 
 def _pitcher_game_score(
     outs: int, k: int, h: int, er: int, uer: int, bb: int, hr: int, fo: int,
@@ -1878,7 +1889,9 @@ def leaders_export():
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
-                  COALESCE(SUM(bs.roe),0) as roe
+                  COALESCE(SUM(bs.roe),0) as roe,
+                  COALESCE(SUM(bs.po),0)  as po,
+                  COALESCE(SUM(bs.e),0)   as e
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
@@ -2489,11 +2502,37 @@ def leaders():
         # OS% = share of a complete game (27 outs) recorded per appearance.
         p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
 
+    # Fielding leaders are sourced from a dedicated query because PO/E are
+    # credited to the player who made the play (potentially a pitcher with
+    # zero PA), so the PA-qualified batting set would exclude them. We
+    # qualify on total chances (PO + E) instead — a single great or terrible
+    # play can't top the board.
+    min_chances = max(3, games_per_team)
+    fielding = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.position,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(bs.game_id) as g,
+                  COALESCE(SUM(bs.po),0) as po,
+                  COALESCE(SUM(bs.e),0)  as e
+           FROM game_batter_stats bs
+           JOIN players p ON bs.player_id = p.id
+           JOIN teams   t ON bs.team_id = t.id
+           GROUP BY p.id
+           HAVING (COALESCE(SUM(bs.po),0) + COALESCE(SUM(bs.e),0)) > 0""",
+    )
+    for f in fielding:
+        po_v = f.get("po") or 0
+        e_v  = f.get("e")  or 0
+        f["chances"] = po_v + e_v
+        f["fld_pct"] = (po_v / (po_v + e_v)) if (po_v + e_v) > 0 else None
+    fielding_qual = [f for f in fielding if f["chances"] >= min_chances]
+
     return _serve(
         "leaders.html",
         games_played=games_played,
-        min_pa=min_pa, min_outs=min_outs,
+        min_pa=min_pa, min_outs=min_outs, min_chances=min_chances,
         batting=batting, pitching=pitching,
+        fielding=fielding, fielding_qual=fielding_qual,
     )
 
 

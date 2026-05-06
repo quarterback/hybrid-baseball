@@ -171,15 +171,26 @@ def _player_age(rng: random.Random) -> int:
 _TALENT_TIERS: list[tuple[float, int, int]] = [
     # (probability, lo_grade, hi_grade)
     #
-    # Re-tuned 2026: prior table had Elite+/Elite combined at 2.5% and
-    # the good-to-average band swelled to ~52% — the top hitter capped
-    # at OPS+ ~125 (compressed) while the middle was a homogenous mass
-    # with no archetype separation. The new shape is wider on both tails:
+    # Re-tuned 2026 (pass 2): prior table still had a too-fat middle
+    # (Good-to-Average ≈ 25%) which, after ~47 independent rolls per
+    # team, produced very tight team-to-team parity by Law of Large
+    # Numbers — every roster regressed to league mean. The new shape
+    # is bimodal on PURPOSE: fatter top tail (more genuine stars),
+    # hollow middle (fewer "league average" filler players), and a
+    # very long replacement-level tail. Combined with the per-team
+    # org_shift in generate_players(), this produces:
     #
-    #   Elite+/Elite combined  =  2%   (transcendent + star talent)
-    #   Excellent              =  8%   (the "next highest" tier)
-    #   Good-to-Average band   = 25%   (Good + AboveAvg + Average)
-    #   Below-Average → Sub-R  = 53%   (long tail of replacement-level)
+    #   - clearly identifiable star talent (top 5% of grades)
+    #   - real depth charts where bench guys are visibly worse than
+    #     starters (instead of clones at grade ~50)
+    #   - team-level talent gaps (good orgs roll above the curve on
+    #     every player; bad orgs roll below)
+    #
+    # Approximate shape:
+    #   Elite+/Elite combined   =  7%   (was 2%)
+    #   Excellent               = 12%   (was 8%)
+    #   Very Good → Average      = 21%   (was 35% — hollowed)
+    #   Below-Avg → Sub-Repl    = 60%   (was 53% — slightly fatter)
     #
     # O27 is more offensively dynamic than MLB by design (27-out single
     # innings, 3-foul cap, 2C rule), so a wide-spread talent distribution
@@ -191,39 +202,66 @@ _TALENT_TIERS: list[tuple[float, int, int]] = [
     # Elite+ stays as a transcendent grade-81+ slice — beyond the 20-80
     # canonical scale by design, so the .01% players exist without being
     # capped by the scout-grade ceiling.
-    (0.005, 81, 95),  # Elite+ (transcendent)
-    (0.015, 75, 80),  # Elite              — Elite+/Elite combined = 2%
-    (0.080, 65, 74),  # Excellent          — "next highest" = 8%
-    (0.120, 60, 64),  # Very Good
-    (0.120, 55, 59),  # Good                ┐
-    (0.080, 50, 54),  # Above Average       ├─ good-to-average = 25%
-    (0.050, 45, 49),  # Average             ┘
-    (0.180, 40, 44),  # Below Average
-    (0.200, 30, 39),  # Replacement
-    (0.150, 20, 29),  # Sub-Replacement
+    (0.020, 81, 95),  # Elite+ (transcendent) — was 0.5%
+    (0.050, 75, 80),  # Elite                 — combined top = 7%
+    (0.120, 65, 74),  # Excellent             — was 8%
+    (0.090, 60, 64),  # Very Good             ┐
+    (0.060, 55, 59),  # Good                  ├─ middle band = 21% (was 35%)
+    (0.040, 50, 54),  # Above Average         │
+    (0.020, 45, 49),  # Average               ┘
+    (0.150, 40, 44),  # Below Average
+    (0.220, 30, 39),  # Replacement
+    (0.230, 20, 29),  # Sub-Replacement       — long tail
 ]
 
 
-def _roll_tier_grade(rng: random.Random) -> int:
+def _roll_tier_grade(rng: random.Random, team_shift: int = 0) -> int:
     """Roll one attribute against the 9-tier league talent distribution.
 
-    Returns an integer 20-80 scout grade. Used independently for every
+    Returns an integer 20-95 scout grade. Used independently for every
     hitter and pitcher attribute on every player.
+
+    `team_shift` is the per-team org-strength offset (see
+    `generate_players`). It's applied AFTER the tier-bucket roll so a
+    +shift team still has the same shape of tier distribution — just
+    centered higher. Clamped to [20, 95] post-shift so an elite team
+    can't push into superhuman territory and a cellar team still has
+    some grade-20 floor.
     """
     r = rng.random()
     cumulative = 0.0
     for prob, lo, hi in _TALENT_TIERS:
         cumulative += prob
         if r < cumulative:
-            return rng.randint(lo, hi)
+            return max(20, min(95, rng.randint(lo, hi) + team_shift))
     # Floating-point safety net (probabilities sum to 1.0).
     lo, hi = _TALENT_TIERS[-1][1], _TALENT_TIERS[-1][2]
-    return rng.randint(lo, hi)
+    return max(20, min(95, rng.randint(lo, hi) + team_shift))
 
 
-def _tier_unit(rng: random.Random) -> float:
+def _tier_unit(rng: random.Random, team_shift: int = 0) -> float:
     """Tier-rolled grade converted to the [0,1] unit float the engine uses."""
-    return _scout.to_unit(_roll_tier_grade(rng))
+    return _scout.to_unit(_roll_tier_grade(rng, team_shift))
+
+
+# Per-team org-strength: a 20-95 scout-grade team attribute, rolled
+# from the same _TALENT_TIERS distribution as individual player
+# attributes and then PERSISTED on the teams row (see seed_league()).
+# `team_shift` is derived as `org_strength - 50`, so:
+#
+#   org_strength == 50 → no shift (league-mean org)
+#   org_strength == 80 → +30 shift  (Elite org → all rolls +30)
+#   org_strength == 25 → -25 shift  (Sub-Repl org → all rolls -25)
+#
+# An Elite+ org (81-95) compresses its tier rolls hard against the
+# grade-95 ceiling, producing rosters where almost every player is
+# 80+ and the team-mean lands in the upper 70s / low 80s. The inverse
+# happens at the cellar. This produces a real "MLB vs AAA" spread
+# between best and worst orgs — substantially wider than the prior
+# Gaussian-shift approach, and now visible / sortable on the team page.
+def _org_strength_to_shift(org_strength: int) -> int:
+    """Convert a team's org_strength (20-95 grade) to its tier-roll shift."""
+    return org_strength - 50
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +324,7 @@ def _make_hitter(
     pos: str,
     is_active: int,
     name: str,
+    team_shift: int = 0,
 ) -> dict:
     """Build one position-player dict with every attribute rolled
     independently against the talent-tier distribution (Task #65).
@@ -293,19 +332,26 @@ def _make_hitter(
     `skill` is the engine's overall hitter rating; `speed` is its own
     independent roll. Both come from the same 9-tier ladder so genuine
     elite bats and burners exist alongside replacement-level players.
+
+    `team_shift` is added to every tier roll so all players on a strong
+    org skew higher and all players on a weak org skew lower. Set by
+    `generate_players` once per team.
     """
-    skill_g  = _roll_tier_grade(rng)
-    speed_g  = _roll_tier_grade(rng)
+    def roll() -> int:
+        return _roll_tier_grade(rng, team_shift)
+
+    skill_g  = roll()
+    speed_g  = roll()
     # Realism layer — independently tier-rolled so a hitter can be elite
     # power but average eye, etc. Drives distinct stat-line shapes.
-    contact_g  = _roll_tier_grade(rng)
-    power_g    = _roll_tier_grade(rng)
-    eye_g      = _roll_tier_grade(rng)
+    contact_g  = roll()
+    power_g    = roll()
+    eye_g      = roll()
     # Defense layer — general glove + arm independently tier-rolled.
     # A great-glove no-bat archetype (low skill, elite defense) is a
     # real type in this sport.
-    defense_g  = _roll_tier_grade(rng)
-    arm_g      = _roll_tier_grade(rng)
+    defense_g  = roll()
+    arm_g      = roll()
 
     # Per-position sub-ratings. Strategy:
     # - Roll one "primary specialty" group at full tier
@@ -318,9 +364,9 @@ def _make_hitter(
     #   multi-position contributors.
     is_utility = (pos == "UT") or rng.random() < 0.10
     if is_utility:
-        if_g  = _roll_tier_grade(rng)
-        of_g  = _roll_tier_grade(rng)
-        cat_g = _roll_tier_grade(rng)
+        if_g  = roll()
+        of_g  = roll()
+        cat_g = roll()
     else:
         # Pick a primary specialty group based on the canonical position.
         primary = "if"
@@ -330,9 +376,9 @@ def _make_hitter(
             primary = "cat"
         # Specialist: the primary group gets a full roll; others get a
         # lower clamped roll (average grade 35-40, replacement-ish).
-        spec_high = _roll_tier_grade(rng)
-        spec_low_a = max(20, _roll_tier_grade(rng) // 2 + 10)
-        spec_low_b = max(20, _roll_tier_grade(rng) // 2 + 10)
+        spec_high = roll()
+        spec_low_a = max(20, roll() // 2 + 10)
+        spec_low_b = max(20, roll() // 2 + 10)
         if primary == "if":
             if_g, of_g, cat_g = spec_high, spec_low_a, spec_low_b
         elif primary == "of":
@@ -340,7 +386,7 @@ def _make_hitter(
         else:  # cat
             if_g, of_g, cat_g = spec_low_a, spec_low_b, spec_high
     # Pitcher_skill on a position player is only used in emergencies.
-    pskill_g = _roll_tier_grade(rng) // 2 + 10  # cap fielder-pitching at low grades
+    pskill_g = roll() // 2 + 10  # cap fielder-pitching at low grades
     return {
         "name": name,
         "position": pos,
@@ -362,7 +408,7 @@ def _make_hitter(
         "hard_contact_delta": 0.0,
         "hr_weight_bonus":    0.0,
         "age": _player_age(rng),
-        "stamina":   _roll_tier_grade(rng) // 2 + 10,  # irrelevant for hitters
+        "stamina":   roll() // 2 + 10,  # irrelevant for hitters
         "is_active": is_active,
         # Realism layer
         "contact":  contact_g,
@@ -380,8 +426,8 @@ def _make_hitter(
         # Baserunning skill + aggressiveness, independent rolls. A smart
         # average-speed runner (high baserunning, mid speed) is just as
         # useful on the bases as a pure burner.
-        "baserunning":        _roll_tier_grade(rng),
-        "run_aggressiveness": _roll_tier_grade(rng),
+        "baserunning":        roll(),
+        "run_aggressiveness": roll(),
     }
 
 
@@ -389,6 +435,7 @@ def _make_pitcher(
     rng: random.Random,
     is_active: int,
     name: str,
+    team_shift: int = 0,
 ) -> dict:
     """Build one pitcher dict with Stuff (`pitcher_skill`) and Stamina
     rolled INDEPENDENTLY against the tier ladder.
@@ -398,26 +445,29 @@ def _make_pitcher(
     Stamina automatically slides from rotation into middle relief without
     any persisted re-tagging.
     """
-    stuff_g   = _roll_tier_grade(rng)
-    stamina_g = _roll_tier_grade(rng)
+    def roll() -> int:
+        return _roll_tier_grade(rng, team_shift)
+
+    stuff_g   = roll()
+    stamina_g = roll()
     # Realism layer — pitcher Command + Movement rolled INDEPENDENTLY of
     # Stuff. Drives the Maddux-vs-Ryan stat-shape spectrum: high Command
     # = low BB regardless of Stuff; high Movement = ground-ball pitcher.
-    command_g  = _roll_tier_grade(rng)
-    movement_g = _roll_tier_grade(rng)
+    command_g  = roll()
+    movement_g = roll()
     # Pitchers also get defense/arm — they field comebackers and bunts,
     # and high-arm pitchers help suppress steals. Capped lower than
     # position players since pitcher fielding matters less in O27.
-    defense_g  = max(20, _roll_tier_grade(rng) // 2 + 15)
-    arm_g      = max(20, _roll_tier_grade(rng) // 2 + 20)
+    defense_g  = max(20, roll() // 2 + 15)
+    arm_g      = max(20, roll() // 2 + 20)
     throws = _roll_throws(rng, is_pitcher=True)
     return {
         "name": name,
         "position": "P",
         "is_pitcher": 1,
         "is_joker": 0,
-        "skill":  max(20, _roll_tier_grade(rng) // 2 + 10),  # weak bat
-        "speed":  max(20, _roll_tier_grade(rng) // 2 + 15),
+        "skill":  max(20, roll() // 2 + 10),  # weak bat
+        "speed":  max(20, roll() // 2 + 15),
         "pitcher_skill": stuff_g,
         # Pitchers as hitters — 2C still rarer than position players,
         # but lifted from 0.05 → 0.20 in step with the position-player
@@ -455,6 +505,7 @@ def generate_players(
     team_idx: int,
     rng: random.Random,
     home_bonus: float = 0.0,
+    org_strength: int = 50,
 ) -> list[dict]:
     """Generate ~47 players for a team (Task #65 expanded roster).
 
@@ -473,12 +524,21 @@ def generate_players(
     distribution (`_TALENT_TIERS`), producing the spiky archetypes the
     league needs to surface real stars on the leaderboards.
 
+    `org_strength` (20-95 scout grade) is the team-level talent
+    attribute — it's persisted on the teams row by seed_league() and
+    drives `team_shift = org_strength - 50` here. An Elite org
+    (org_strength=80) shifts every tier roll +30, compressing rolls
+    against the grade-95 ceiling and producing 75-85 team-mean skill;
+    a Sub-Replacement org (25) shifts -25, producing 25-35 team-mean.
+    This is what gives teams identifiable talent levels.
+
     `team_idx` and `home_bonus` are accepted for backward compatibility
-    but no longer skew the distribution — the league's variance now comes
-    from per-player tier rolls, not per-team gaussian centers.
+    but don't affect the distribution.
     """
     pools = _load_name_pools()
     used_names: set[str] = set()
+
+    org_shift = _org_strength_to_shift(org_strength)
 
     def _name() -> str:
         for _ in range(200):
@@ -496,24 +556,30 @@ def generate_players(
 
     # ---- Active position players: 8 starting positions + 4 bench ----
     for pos in FIELDER_POSITIONS:
-        players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
+        players.append(_make_hitter(rng, pos, is_active=1, name=_name(),
+                                    team_shift=org_shift))
     bench_positions = ["UT", "UT", "UT", "UT"]
     for pos in bench_positions:
-        players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
+        players.append(_make_hitter(rng, pos, is_active=1, name=_name(),
+                                    team_shift=org_shift))
 
     # ---- Active DH/utility bats ----
     for _ in range(ACTIVE_DH):
-        players.append(_make_hitter(rng, "DH", is_active=1, name=_name()))
+        players.append(_make_hitter(rng, "DH", is_active=1, name=_name(),
+                                    team_shift=org_shift))
 
     # ---- Active pitching staff (no role buckets) ----
     for _ in range(ACTIVE_PITCHERS):
-        players.append(_make_pitcher(rng, is_active=1, name=_name()))
+        players.append(_make_pitcher(rng, is_active=1, name=_name(),
+                                     team_shift=org_shift))
 
     # ---- Reserve pool: bench-level depth, promoted on injury ----
     for _ in range(RESERVE_HITTERS):
-        players.append(_make_hitter(rng, "UT", is_active=0, name=_name()))
+        players.append(_make_hitter(rng, "UT", is_active=0, name=_name(),
+                                    team_shift=org_shift))
     for _ in range(RESERVE_PITCHERS):
-        players.append(_make_pitcher(rng, is_active=0, name=_name()))
+        players.append(_make_pitcher(rng, is_active=0, name=_name(),
+                                     team_shift=org_shift))
 
     return players
 
@@ -582,22 +648,26 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams") -> None:
         park_hr, park_hits = _roll_park_factors(rng2)
         from o27v2.managers import roll_manager
         mgr = roll_manager(rng2)
+        # Roll team-level org strength on the same 9-tier ladder players
+        # use. The rolled grade is both persisted (visible on the team
+        # page, sortable) and used to derive every player's team_shift.
+        org_strength = _roll_tier_grade(rng2)
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, division, league, "
             "park_hr, park_hits, manager_archetype, mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
-            "mgr_bench_usage)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "mgr_bench_usage, org_strength)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, division, league_name,
              park_hr, park_hits,
              mgr["manager_archetype"], mgr["mgr_quick_hook"],
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
              mgr["mgr_joker_aggression"], mgr["mgr_pinch_hit_aggression"],
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
-             mgr["mgr_bench_usage"]),
+             mgr["mgr_bench_usage"], org_strength),
         )
-        players = generate_players(idx, rng2)
+        players = generate_players(idx, rng2, org_strength=org_strength)
         db.executemany(
             """INSERT INTO players
                (team_id, name, position, is_pitcher, skill, speed,
