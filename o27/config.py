@@ -257,6 +257,43 @@ RUNNER_EXTRA_SPEED_SCALE: float = 0.35
 # on a double" (~40%) at league-average attributes.
 RUNNER_EXTRA_DOUBLE_FROM_1B: float = 0.30
 
+# Thrown-out-at-home — for runners whose default base_advance already
+# carries them across the plate (2B runner on a single, 1B runner on a
+# triple). Distinct from TOOTBLAN, which only fires when an "extra base"
+# attempt above base_advance is rolled. The base rate is small; speed and
+# baserunning shave it toward zero for elite runners and inflate it for
+# slow / raw runners. Identity drift at neutral inputs: ~5% of those
+# would-be runs become outs.
+RUNNER_THROWN_OUT_AT_HOME_BASE: float  = 0.05
+RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.10
+RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.10
+
+# GIDP — ground-ball double plays. With a runner on 1B and < 2 outs, a
+# share of ground outs become double plays: 1B runner forced at 2B, batter
+# erased at 1B by the relay. Slow batters get DP'd more often (they lose
+# the relay race); strong infield defense turns more DPs.
+# Tuned to roughly match MLB GIDP-per-opportunity rates (~12% of all PAs
+# with a runner on 1B and < 2 outs, which works out to ~30-35% of ground
+# outs in those situations).
+GIDP_BASE_PROB: float    = 0.32
+GIDP_SPEED_SCALE: float  = 0.30
+GIDP_DEFENSE_SCALE: float = 0.20
+GIDP_MAX_PROB: float     = 0.65
+
+# Stay (2C) plays still see fielders' choice / lead-runner-tag-out events,
+# just at a reduced rate — the batter isn't running so there's no force at
+# 1B, but a fielder can still tag out a runner who broke for the next base.
+# This keeps the run-game alive on stays without making 2C a free pass on
+# the bases. Multiplier on GIDP_BASE_PROB; only the lead runner is at risk
+# (no double play through 1B since the batter is at the plate).
+GIDP_STAY_MULTIPLIER: float = 0.30
+
+# Triple play — bases loaded, 0 outs, ground ball. Real MLB rate is ~1
+# per 700 opportunities; we keep it deliberately rare. Conditional on a
+# DP firing in the bases-loaded-0-outs case, this probability promotes
+# it to a TP. Set to 0 to disable.
+TRIPLE_PLAY_GIVEN_DP_PROB: float = 0.04
+
 # ---------------------------------------------------------------------------
 # TOOTBLAN — thrown out trying for the extra base on a hit / fly / grounder.
 # When a runner ATTEMPTS the extra base (probability driven by speed +

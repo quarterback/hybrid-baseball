@@ -49,6 +49,7 @@ _HIT_TYPE_DISPLAY: dict[str, str] = {
     "line_out":        "line out",
     "fielders_choice": "fielder's choice",
     "double_play":     "double play",
+    "triple_play":     "triple play",
     "stay_ground":     "ground ball (stay)",
     "stay_fly_no_catch": "fly ball (stay)",
     "error":           "error",

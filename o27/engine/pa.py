@@ -490,10 +490,16 @@ def _resolve_contact(
             state.pitcher_h_this_spell += 1
         if hit_type in ("hr", "home_run"):
             state.pitcher_hr_this_spell += 1
-        # Capture runner at runner_out_idx BEFORE advance_runners clears the slot.
+        # Capture runners at runner_out_idx + extra_runner_outs (TP) BEFORE
+        # advance_runners clears the slots.
         runner_out_idx = outcome.get("runner_out_idx")
-        thrown_out_id = (state.bases[runner_out_idx]
-                         if runner_out_idx is not None else None)
+        extra_outs_idxs = outcome.get("extra_runner_outs") or []
+        out_runner_ids: list[str] = []
+        if runner_out_idx is not None and state.bases[runner_out_idx] is not None:
+            out_runner_ids.append(state.bases[runner_out_idx])
+        for ix in extra_outs_idxs:
+            if state.bases[ix] is not None:
+                out_runner_ids.append(state.bases[ix])
         new_bases, runs, adv_log = advance_runners(
             state.bases, outcome, batter_id, is_stay=False
         )
@@ -501,9 +507,9 @@ def _resolve_contact(
         log += adv_log
         if runs:
             log += _score_run(state, runs)
-        # Record out for runner thrown out on fielder's choice / DP.
-        if thrown_out_id is not None:
-            log += _record_out(state, thrown_out_id)
+        # Record outs for runners thrown out on fielder's choice / DP / TP.
+        for rid in out_runner_ids:
+            log += _record_out(state, rid)
         if not batter_safe:
             log.append(f"  {batter.name} is out.")
             log += _record_out(state, batter_id)
