@@ -41,7 +41,7 @@ from flask import (
     jsonify, flash, get_flashed_messages, send_from_directory,
 )
 
-from o27.engine.state import GameState, Team, Player
+from o27.engine.state import GameState, Team, Player, PitchEntry
 from o27.engine.game import run_game
 from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
@@ -93,12 +93,31 @@ def _team_obj(team_data: dict, team_id: str) -> Team:
     roster: list[Player] = []
     for i, p in enumerate(team_data["players"]):
         pid = f"{team_id}_{team_data['abbrev']}{i}"
+
+        # Convert serialised repertoire dicts → PitchEntry objects.
+        raw_rep = p.get("repertoire") or []
+        repertoire = [
+            PitchEntry(
+                pitch_type=r["pitch_type"],
+                quality=float(r.get("quality", 0.5)),
+                usage_weight=float(r.get("usage_weight", 1.0)),
+            )
+            for r in raw_rep
+        ]
+
         roster.append(Player(
             player_id=pid,
             name=p["name"],
             skill=p["skill"],
             speed=p["speed"],
             pitcher_skill=p["pitcher_skill"],
+            command=float(p.get("command",  0.5)),
+            movement=float(p.get("movement", 0.5)),
+            stamina=float(p.get("stamina",   0.5)),
+            grit=float(p.get("grit",         0.5)),
+            pitch_variance=float(p.get("pitch_variance", 0.0)),
+            release_angle=float(p.get("release_angle",  0.5)),
+            repertoire=repertoire,
             stay_aggressiveness=p["stay_aggressiveness"],
             contact_quality_threshold=p["contact_quality_threshold"],
             is_pitcher=p["is_pitcher"],

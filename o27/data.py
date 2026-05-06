@@ -22,6 +22,140 @@ _REGION_WEIGHTS = [("usa", 0.50), ("latin", 0.30), ("japan_korea", 0.10), ("othe
 _POSITIONS      = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C", "P"]
 
 # ---------------------------------------------------------------------------
+# Pitcher archetype templates
+# ---------------------------------------------------------------------------
+# Each archetype defines a repertoire template (pitch_type, usage_weight) and
+# the release_angle band from which the pitcher's slot is drawn. The first
+# pitch is the primary pitch (quality = pitcher_skill); subsequent pitches
+# get quality derived as a fraction of pitcher_skill ± variance.
+#
+# Weights govern how often each archetype appears in procedurally generated
+# rosters. They do not need to sum to 1 — they are relative.
+
+_PITCHER_ARCHETYPES = [
+    {
+        "name":    "standard_sidearm",
+        "weight":  0.25,
+        "release": (0.35, 0.65),
+        "pitches": [
+            ("four_seam", 2.0), ("sinker",  1.5),
+            ("slider",    2.0), ("changeup", 1.2),
+        ],
+    },
+    {
+        "name":    "sidearm_k_specialist",
+        "weight":  0.18,
+        "release": (0.30, 0.58),
+        "pitches": [
+            ("four_seam",     2.0), ("sisko_slider",  2.5),
+            ("curve_10_to_2", 1.5), ("changeup",      1.0),
+        ],
+    },
+    {
+        "name":    "submarine_groundball",
+        "weight":  0.14,
+        "release": (0.05, 0.32),
+        "pitches": [
+            ("sinker",        3.0), ("walking_slider", 2.0),
+            ("spitter",       1.5), ("curve_10_to_2",  2.0),
+        ],
+    },
+    {
+        "name":    "junkball_veteran",
+        "weight":  0.16,
+        "release": (0.35, 0.65),
+        "pitches": [
+            ("palmball",       2.0), ("curveball",       1.5),
+            ("changeup",       1.8), ("vulcan_changeup", 1.5),
+            ("walking_slider", 1.2),
+        ],
+    },
+    {
+        "name":    "reverse_platoon_specialist",
+        "weight":  0.10,
+        "release": (0.35, 0.62),
+        "pitches": [
+            ("four_seam",      2.0), ("screwball",       2.0),
+            ("vulcan_changeup", 1.5),
+        ],
+    },
+    {
+        "name":    "knuckleball_lifer",
+        "weight":  0.05,
+        "release": (0.25, 0.65),
+        "pitches": [
+            ("knuckleball", 4.0), ("palmball", 1.0),
+        ],
+    },
+    {
+        "name":    "gyroball_ace",
+        "weight":  0.04,   # rare — 3-4% of pitchers per lore
+        "release": (0.40, 0.70),
+        "pitches": [
+            ("four_seam", 2.0), ("slider",   1.8),
+            ("gyroball",  2.5), ("changeup", 1.2),
+        ],
+    },
+    {
+        "name":    "eephus_specialist",
+        "weight":  0.08,
+        "release": (0.40, 0.70),
+        "pitches": [
+            ("four_seam", 2.0), ("slider",   1.8),
+            ("changeup",  1.5), ("eephus",   0.8),
+        ],
+    },
+]
+
+# Cumulative weight for weighted draw.
+_ARCHETYPE_WEIGHT_TOTAL = sum(a["weight"] for a in _PITCHER_ARCHETYPES)
+
+
+def _pick_archetype(rng: random.Random) -> dict:
+    r = rng.random() * _ARCHETYPE_WEIGHT_TOTAL
+    cum = 0.0
+    for arch in _PITCHER_ARCHETYPES:
+        cum += arch["weight"]
+        if r < cum:
+            return arch
+    return _PITCHER_ARCHETYPES[0]
+
+
+def _generate_pitcher_attrs(rng: random.Random, pitcher_skill: float) -> dict:
+    """Generate all new pitcher-specific attributes for roster generation."""
+    arch = _pick_archetype(rng)
+
+    command       = _clamp(rng.gauss(0.50, 0.12))
+    movement      = _clamp(rng.gauss(0.50, 0.12))
+    stamina       = _clamp(rng.gauss(0.50, 0.12))
+    grit          = _clamp(rng.gauss(0.50, 0.10), lo=0.25, hi=0.75)
+    pitch_variance = _clamp(rng.gauss(0.06, 0.02), lo=0.03, hi=0.12)
+
+    lo, hi = arch["release"]
+    release_angle = _clamp(rng.uniform(lo, hi))
+
+    # Build repertoire: primary pitch gets pitcher_skill; each subsequent
+    # tier is a declining fraction ± small noise.
+    repertoire = []
+    quality_multipliers = [1.0, 0.87, 0.78, 0.72, 0.68]
+    for idx, (ptype, usage_w) in enumerate(arch["pitches"]):
+        mult = quality_multipliers[min(idx, len(quality_multipliers) - 1)]
+        q = _clamp(pitcher_skill * mult + rng.gauss(0.0, 0.04))
+        repertoire.append({"pitch_type": ptype, "quality": round(q, 3),
+                            "usage_weight": usage_w})
+
+    return {
+        "command":        round(command,        3),
+        "movement":       round(movement,       3),
+        "stamina":        round(stamina,        3),
+        "grit":           round(grit,           3),
+        "pitch_variance": round(pitch_variance, 3),
+        "release_angle":  round(release_angle,  3),
+        "pitcher_archetype": arch["name"],
+        "repertoire":     repertoire,
+    }
+
+# ---------------------------------------------------------------------------
 # In-memory stores
 # ---------------------------------------------------------------------------
 
@@ -122,7 +256,7 @@ def _generate_roster(team_seed: int) -> list[dict]:
         pskill = _clamp(rng.gauss(pitcher_base, 0.12)) if is_p else _clamp(rng.gauss(0.35, 0.08))
         stay_a = _clamp(rng.gauss(0.40, 0.12))
         cqt    = _clamp(rng.gauss(0.45, 0.08))
-        players.append({
+        entry = {
             "name": _name(), "position": pos,
             "is_pitcher": is_p, "is_joker": False,
             "joker_archetype": "",
@@ -130,7 +264,10 @@ def _generate_roster(team_seed: int) -> list[dict]:
             "pitcher_skill": round(pskill, 3),
             "stay_aggressiveness": round(stay_a, 3),
             "contact_quality_threshold": round(cqt, 3),
-        })
+        }
+        if is_p:
+            entry.update(_generate_pitcher_attrs(rng, pskill))
+        players.append(entry)
 
     joker_archetypes = [
         {"label": "Power",   "skill_mu": 0.68, "speed_mu": 0.42, "stay_mu": 0.25},
