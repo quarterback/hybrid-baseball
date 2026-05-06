@@ -953,13 +953,14 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
             role_to_db = {"home": home_team_id, "away": away_team_id}
             conn.executemany(
                 """INSERT INTO game_pa_log
-                   (game_id, team_id, batter_id, pitcher_id, ab_seq, swing_idx,
+                   (game_id, team_id, batter_id, pitcher_id, phase, ab_seq, swing_idx,
                     choice, quality, hit_type, was_stay, stay_credited,
                     runs_scored, rbi_credited)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [(game_id, role_to_db.get(e["team_id"], None),
                   int(e["batter_id"]) if e["batter_id"] is not None else None,
                   int(e["pitcher_id"]) if e["pitcher_id"] is not None else None,
+                  e.get("phase", 0),
                   e["ab_seq"], e["swing_idx"],
                   e["choice"], e.get("quality"), e.get("hit_type"),
                   e["was_stay"], e["stay_credited"],

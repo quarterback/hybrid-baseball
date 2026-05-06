@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS game_pa_log (
     team_id       INTEGER NOT NULL REFERENCES teams(id),
     batter_id     INTEGER NOT NULL REFERENCES players(id),
     pitcher_id    INTEGER REFERENCES players(id),
+    phase         INTEGER NOT NULL DEFAULT 0,    -- 0 = regulation, N>=1 = SI round N
     ab_seq        INTEGER NOT NULL,              -- which AB in the game (per team)
     swing_idx     INTEGER NOT NULL,              -- which contact event in the AB (1, 2, or 3)
     choice        TEXT NOT NULL,                 -- 'run' | 'stay'

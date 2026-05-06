@@ -107,6 +107,7 @@ class Renderer:
             "bases_list": list(state.bases),          # copy — safe after mutation
             "score": dict(state.score),               # copy
             "batting_team_id": batting_tid,
+            "phase": getattr(state, "super_inning_number", 0),
             "batting_team_name": state.batting_team.name,
             "fielding_team_name": state.fielding_team.name,
             "visitors_name": state.visitors.name,
@@ -882,6 +883,7 @@ class Renderer:
                 "team_id": team_id,
                 "batter_id": bid,
                 "pitcher_id": pitcher.player_id if pitcher else None,
+                "phase": ctx.get("phase", 0),
                 "ab_seq": in_progress_ab,
                 "swing_idx": swing_idx,
                 "choice": choice,
