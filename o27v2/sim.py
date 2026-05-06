@@ -625,6 +625,8 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict])
                 "replaced_player_id": (
                     int(getattr(bstat, "replaced_player_id", "") or 0) or None
                 ),
+                "gidp": getattr(bstat, "gidp", 0),
+                "gitp": getattr(bstat, "gitp", 0),
                 "roe": getattr(bstat, "roe", 0),
                 "po": getattr(bstat, "po", 0),
                 "e":  getattr(bstat, "e",  0),
@@ -1023,8 +1025,9 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                     hbp, sb, cs, fo, multi_hit_abs, stay_rbi, stay_hits,
                     c2_op_1b, c2_adv_1b, c2_op_2b, c2_adv_2b, c2_op_3b, c2_adv_3b,
                     game_position, entry_type, replaced_player_id,
+                    gidp, gitp,
                     roe, po, e)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
@@ -1038,6 +1041,7 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                  r.get("game_position", ""),
                  r.get("entry_type", "starter"),
                  r.get("replaced_player_id"),
+                 r.get("gidp", 0), r.get("gitp", 0),
                  r.get("roe", 0),
                  r.get("po", 0), r.get("e", 0)),
             )

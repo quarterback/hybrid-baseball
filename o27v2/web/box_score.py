@@ -140,7 +140,7 @@ def _ordered_rows_with_indent(rows: list[dict]) -> list[tuple[dict, int]]:
     starters/jokers, 1 for PH/sub.
     """
     starters = [r for r in rows if r.get("entry_type", "starter") == "starter"]
-    phs      = [r for r in rows if r.get("entry_type") in ("PH", "sub")]
+    phs      = [r for r in rows if r.get("entry_type") in ("PH", "PR", "DEF", "sub", "joker_field")]
     jokers   = [r for r in rows if r.get("entry_type") == "joker"]
 
     # Index PH/sub rows under the starter they replaced.
@@ -196,13 +196,18 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
         k   = r.get("k",  0) or 0
         c2  = r.get("stays", 0) or 0   # internal "sty" maps to 2C count
 
-        # PH/sub rows show position "ph" instead of the fielding slot
-        # they didn't actually take (a PH with 0 PAs in the field).
+        # Position label depends on entry type:
+        #   PH  → "ph"
+        #   PR  → "pr"
+        #   DEF → the fielding slot they took
+        #   sub → same
+        #   joker_field → the slot they took (e.g. "J→SS"), already on box_position
+        #   joker / starter → their concrete game_position
         et = r.get("entry_type", "starter")
         if et == "PH":
             pos = "ph"
-        elif et == "sub":
-            pos = (r.get("box_position") or r.get("position") or "").lower()
+        elif et == "PR":
+            pos = "pr"
         else:
             pos = r.get("box_position") or r.get("position", "")
 
@@ -299,6 +304,12 @@ def render_batting_annotations(rows: Iterable[dict]) -> str:
     pairs = _pick("hbp")
     if pairs:
         lines.append(f"  HBP: {_items(pairs)}.")
+    pairs = _pick("gidp")
+    if pairs:
+        lines.append(f"  GIDP: {_items(pairs)}.")
+    pairs = _pick("gitp")
+    if pairs:
+        lines.append(f"  GITP: {_items(pairs)}.")
 
     return "\n".join(lines)
 

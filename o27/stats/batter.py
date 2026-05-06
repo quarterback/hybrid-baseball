@@ -41,12 +41,22 @@ class BatterStats:
     # Box-score entry classification. Set by the render pipeline:
     #   "starter" — batted at the start of the game (default)
     #   "PH"       — entered as a pinch hitter for `replaced_player_id`
-    #   "sub"      — defensive substitution (mid-game)
+    #   "PR"       — entered as a pinch runner
+    #   "DEF"      — defensive substitution (mid-game)
     #   "joker"    — tactical joker insertion (one-PA appearance)
+    #   "joker_field" — joker pulled in to play the field (rare)
     # `replaced_player_id` lets the box score indent this row under the
     # player they replaced so the lineup ordering reads naturally.
     entry_type: str = "starter"
     replaced_player_id: str = ""
+
+    # Grounded into double / triple play — for box-score annotations.
+    # Incremented in the run path of contact resolution when the engine
+    # produces a double_play / triple_play outcome attributed to this
+    # batter. Pitcher-side DPs/TPs induced are not separately tracked
+    # here (they show up implicitly through outs_recorded on the GP).
+    gidp: int = 0
+    gitp: int = 0
     # Counting stats persisted post-realism layer.
     sb: int = 0     # Successful steals charged to this runner
     cs: int = 0     # Caught-stealing outs charged to this runner

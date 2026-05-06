@@ -1426,7 +1426,7 @@ def game_detail(game_id: int):
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples",
                 "hr", "rbi", "bb", "k", "stays", "outs_recorded",
                 "hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi",
-                "stay_hits", "roe", "po", "e")
+                "stay_hits", "gidp", "gitp", "roe", "po", "e")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs",

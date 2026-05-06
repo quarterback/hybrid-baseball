@@ -1329,6 +1329,28 @@ class ProbabilisticProvider:
                 "player_in":  def_sub["player_in"],
             }
 
+        # Pinch runner — late-game, close score, slow runner on base.
+        # Burns the slow batter's lineup slot for a fresh set of legs.
+        pr = mgr.should_pinch_run(state, rng=self.rng)
+        if pr is not None:
+            return {
+                "type": "pinch_runner",
+                "base_idx": pr["base_idx"],
+                "runner_in": pr["runner_in"],
+            }
+
+        # Joker-to-field — VERY rare. Only fires very late game with the
+        # fielding team trailing badly and a notable defense upgrade
+        # available from a joker. Standard MLB analog: functionally
+        # never happens; in O27 the mechanic exists for completeness.
+        j2f = mgr.should_joker_to_field(state, rng=self.rng)
+        if j2f is not None:
+            return {
+                "type": "joker_to_field",
+                "joker": j2f["joker"],
+                "player_out": j2f["player_out"],
+            }
+
         # Mid-batting-half offensive→defensive swap. Road team only
         # (state.half == "top"), once the lineup has cycled at least
         # once. Pulls a slugger and brings in a defensive specialist

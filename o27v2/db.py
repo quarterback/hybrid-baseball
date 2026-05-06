@@ -152,11 +152,16 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     -- Utility (UT) players land on a concrete slot at lineup build time;
     -- jokers stay "J". Mid-game defensive moves can extend (e.g. "SS-2B").
     game_position TEXT DEFAULT '',
-    -- Box-score entry classification. "starter" / "PH" / "sub" / "joker".
+    -- Box-score entry classification. "starter" / "PH" / "PR" / "DEF" /
+    -- "joker" / "joker_field".
     entry_type TEXT DEFAULT 'starter',
-    -- For PH / sub rows: the player_id they came in for, used to indent
-    -- the box-score row directly under the starter they replaced.
+    -- For PH / PR / DEF / joker_field rows: the player_id they came in
+    -- for, used to indent the box-score row directly under the starter
+    -- they replaced.
     replaced_player_id INTEGER DEFAULT NULL,
+    -- Grounded into double / triple play counters.
+    gidp INTEGER DEFAULT 0,
+    gitp INTEGER DEFAULT 0,
     roe        INTEGER DEFAULT 0,   -- reached on error (NOT a hit; AB credited)
     -- Per-fielder defensive events (the player as a FIELDER, not as a batter).
     po         INTEGER DEFAULT 0,   -- putouts as primary fielder
@@ -503,6 +508,12 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        for col in ("gidp", "gitp"):
+            try:
+                conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
         # Defense-event column: batter "reached on error" count (per-batter).
         # Team errors-committed are derived as the sum of OPPOSING batters'
         # ROE in a given game, so no separate team-level column is needed.

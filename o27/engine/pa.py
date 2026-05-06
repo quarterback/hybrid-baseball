@@ -375,6 +375,14 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         log += mgr.defensive_sub(state, out_p, in_p)
         return log
 
+    if etype == "pinch_runner":
+        log += mgr.pinch_run(state, event["base_idx"], event["runner_in"])
+        return log
+
+    if etype == "joker_to_field":
+        log += mgr.joker_to_field(state, event["joker"], event["player_out"])
+        return log
+
     if etype == "tactical_def_swap":
         # Mid-batting-half offensive→defensive swap. Reuse pinch_hit
         # semantics (replace current scheduled batter, take the slot)
