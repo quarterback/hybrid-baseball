@@ -913,6 +913,40 @@ class Renderer:
                     if runs_scored > 0:
                         s.stay_rbi += runs_scored
                     s.rbi += runs_scored
+
+                    # 2C moved-runner stats. For each runner on base BEFORE
+                    # this 2C event, record an opportunity; if the same
+                    # runner ended up on a higher base or scored cleanly,
+                    # record a successful move. Runners thrown out (FC/
+                    # TOOTBLAN) count as opportunities but not moves.
+                    bases_before = ctx.get("bases_list") or [None, None, None]
+                    bases_after = state_after.bases
+                    outcome = event.get("outcome", {})
+                    out_idxs = []
+                    if outcome.get("runner_out_idx") is not None:
+                        out_idxs.append(outcome["runner_out_idx"])
+                    out_idxs.extend(outcome.get("extra_runner_outs") or [])
+                    for src_idx in (0, 1, 2):
+                        runner_id = bases_before[src_idx]
+                        if runner_id is None:
+                            continue
+                        if src_idx == 0:   s.c2_op_1b += 1
+                        elif src_idx == 1: s.c2_op_2b += 1
+                        else:              s.c2_op_3b += 1
+                        # Did the runner advance?
+                        moved = False
+                        for dst_idx in range(src_idx + 1, 3):
+                            if bases_after[dst_idx] == runner_id:
+                                moved = True
+                                break
+                        if (not moved
+                                and runner_id not in bases_after
+                                and src_idx not in out_idxs):
+                            moved = True   # scored cleanly
+                        if moved:
+                            if src_idx == 0:   s.c2_adv_1b += 1
+                            elif src_idx == 1: s.c2_adv_2b += 1
+                            else:              s.c2_adv_3b += 1
                     # If the stay's strike-credit pushed the count to 3
                     # strikes, the AB ends — count as an AB (max-hits stay
                     # sequence terminates the AB without a batter-out).

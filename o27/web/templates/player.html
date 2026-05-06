@@ -275,6 +275,54 @@
 </div>
 {% endif %}
 
+{# ── 2C MOVED-RUNNER ── #}
+{% if not player.is_pitcher and stats and stats.c2_op_total > 0 %}
+<div class="card">
+  <div class="card-hd">2C Moved-Runner Rate
+    <span class="r dim small">how often a 2C swing actually advances the runner</span>
+  </div>
+  <table class="dt">
+    <thead>
+      <tr>
+        <th>From</th>
+        <th class="r" title="Opportunities — runner on this base when batter went to a 2C">Opp</th>
+        <th class="r" title="Successes — runner ended up on a higher base or scored cleanly">Adv</th>
+        <th class="r">Rate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1B → 2B+</td>
+        <td class="r mono">{{ stats.c2_op_1b }}</td>
+        <td class="r mono">{{ stats.c2_adv_1b }}</td>
+        <td class="r mono">{{ "%.1f%%"|format(100 * stats.c2_adv_1b / stats.c2_op_1b) if stats.c2_op_1b > 0 else "—" }}</td>
+      </tr>
+      <tr>
+        <td>2B → 3B+</td>
+        <td class="r mono">{{ stats.c2_op_2b }}</td>
+        <td class="r mono">{{ stats.c2_adv_2b }}</td>
+        <td class="r mono">{{ "%.1f%%"|format(100 * stats.c2_adv_2b / stats.c2_op_2b) if stats.c2_op_2b > 0 else "—" }}</td>
+      </tr>
+      <tr>
+        <td>3B → home</td>
+        <td class="r mono">{{ stats.c2_op_3b }}</td>
+        <td class="r mono">{{ stats.c2_adv_3b }}</td>
+        <td class="r mono">{{ "%.1f%%"|format(100 * stats.c2_adv_3b / stats.c2_op_3b) if stats.c2_op_3b > 0 else "—" }}</td>
+      </tr>
+      <tr class="w" style="font-weight:700;">
+        <td>Combined</td>
+        <td class="r mono">{{ stats.c2_op_total }}</td>
+        <td class="r mono">{{ stats.c2_adv_total }}</td>
+        <td class="r mono">{{ "%.1f%%"|format(100 * stats.c2_adv_total / stats.c2_op_total) if stats.c2_op_total > 0 else "—" }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="dim small" style="margin-top:.4rem;padding:0 .65rem .5rem;">
+    Each row is a 2C swing that found a runner on that base. "Adv" counts plays where the runner ended up on a higher base or scored cleanly — runners thrown out trying still count as opportunities, not successes.
+  </p>
+</div>
+{% endif %}
+
 {# ── BATTER GAME LOG ── #}
 {% if not player.is_pitcher and game_log %}
 <div class="card">

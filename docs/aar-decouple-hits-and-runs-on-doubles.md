@@ -332,6 +332,141 @@ Not implementing in this branch (would expand scope beyond the decoupling work);
 
 ---
 
+## Follow-up — calibration pass (commit `<retune>`)
+
+User pushback on the throw-out-at-home rates and the GIDP eligibility / range:
+
+> "It should never be automatic there should ag least be a 2% chance of a fast runner being thrown out at home, 9% neutral and 25% slow/raw"
+>
+> "Same for GIDP the opp should be higher, can be with any scenario with a runner on base and hitter at plate or 2 or more runners on. gIDP should be nkt just speed impacted by the kind of contact that dictated it, weak hits can lead to them along than just speed + defense. Should be a range of 6 % to 23% depending on the eligible spot."
+>
+> "Triple plays can happen with 2 runners on and a batter; baserunner errors can induce them as well."
+>
+> "Moving runner % add it"
+
+Translation: re-tune throw-out rates with a hard floor; broaden GIDP eligibility to any runner on base; layer contact quality into the GIDP formula; clamp GIDP into a 6–23% band; allow triple plays with 1B+2B (not just bases loaded); model baserunner errors as a TP bonus; ship the Apollo-style 2C moved-runner stat.
+
+### Throw-outs at home — re-tuned
+
+Old config gave 0% / 5% / 13% across fast/neutral/slow. Targets are 2% / 9% / 25%. Hit them by lifting the base rate, doubling the per-axis scales, and adding a hard floor:
+
+```python
+RUNNER_THROWN_OUT_AT_HOME_BASE: float        = 0.09
+RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.20
+RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.20
+RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.02   # never automatic
+```
+
+Helper now clamps at the MIN rather than at 0. Verified rates (20k samples per cohort):
+
+| Profile (speed / baserunning) | Throw-out rate |
+| ----------------------------- | -------------- |
+| Fast / skilled (0.95 / 0.95)  | 1.9%           |
+| Mid-fast (0.75 / 0.75)        | 1.9% (floored) |
+| Neutral (0.50 / 0.50)         | 8.7%           |
+| Mid-slow (0.30 / 0.30)        | 17.2%          |
+| Slow / raw (0.10 / 0.10)      | 24.9%          |
+
+### GIDP — broadened eligibility, contact-quality input, 6–23% band
+
+The single-knob `GIDP_BASE_PROB` got refactored into a composition of four factors:
+
+```
+p = clamp(0.06, 0.23,
+        BASE × force_factor(bases) × quality_factor(contact)
+        - speed_bonus + defense_bonus)
+```
+
+Where:
+- **`force_factor(bases)`** captures *which* bases are occupied — a runner on 1B gives the defense a free force at 2B (1.0 baseline); a lone 2B or 3B runner has no force and requires a tag (0.40, much rarer); multiple runners with 1B multiply force options (1.10–1.40); 2B+3B without 1B has no force at all (0.50). Bases loaded peaks at 1.40.
+- **`quality_factor(contact)`** captures that weak-contact ground balls (slow choppers, 6-4-3 setups) are DP-prone (1.30); medium is baseline (1.00); hard contact is too fast for the relay or skips through (0.55).
+- **Speed bonus** stays linear (slow batter → more DPs); attenuated to 0.20 to leave headroom for the multiplicative factors above.
+- **Defense bonus** ditto, attenuated to 0.15.
+
+Eligibility now fires on **any** runner on base (not just 1B), with the lead force/tag-out target picked as the lowest-indexed occupied base. Identity behaviors:
+
+| Scenario                                       | GIDP probability |
+| ---------------------------------------------- | ---------------- |
+| 3B alone, hard contact, fast batter, weak def  | 6.0% (floor)     |
+| 2B alone, medium, neutral                      | 6.0%             |
+| 1B alone, hard, neutral                        | 7.2%             |
+| 1B alone, medium, neutral                      | 13.0%            |
+| 1B alone, weak, neutral                        | 16.9%            |
+| 1B+2B, medium, neutral                         | 15.6%            |
+| 1B+3B, medium, neutral                         | 14.3%            |
+| 2B+3B, medium, neutral                         | 6.5%             |
+| Bases loaded, medium, neutral                  | 18.2%            |
+| Bases loaded, weak, slow batter, elite def     | 23.0% (ceiling)  |
+
+The 6–23% band is achieved by the clamp, with the BASE/scales tuned so the cap-pinning cases are the actual extremes the user described.
+
+### Triple plays — extended to 1B+2B; baserunning-error bonus
+
+Old TP gate: bases loaded + 0 outs only. New: 1B+2B occupied + 0 outs is enough — a 4-6-3 force at 3B then 2B then 1B is physical (the 2B runner is forced because 1B-runner-forced-by-batter chains through). Bases loaded still fires (extends the same chain).
+
+Baserunner errors: a small bonus added to `TRIPLE_PLAY_GIVEN_DP_PROB` when the lead forced runner (the one on 2B) has below-average baserunning skill. Models the real-baseball case where a runner takes too aggressive a secondary lead, breaks early, or doesn't read the contact correctly:
+
+```python
+if lead_br < 0.5:
+    tp_p += (0.5 - lead_br) * cfg.TRIPLE_PLAY_BASERUNNING_BONUS
+```
+
+Verified spreads (10k BIPs per scenario via `_generate_pitch`):
+
+| Scenario                        | DP rate | TP rate |
+| ------------------------------- | ------- | ------- |
+| 1B+2B, neutral 2B-runner BR     | 3.3%    | 0.13%   |
+| 1B+2B, weak 2B-runner BR (0.10) | 3.2%    | 0.26%   |
+| Bases loaded, neutral           | 4.0%    | 0.21%   |
+| 1B only (TP gate closed)        | 2.5%    | 0.00%   |
+
+Weak baserunning ~doubles the TP rate, which is the qualitative signal the user asked for.
+
+### Apollo-style 2C moved-runner stat — shipped
+
+Tracked end-to-end: counters → DB → bridge → player page.
+
+**Schema (`o27v2/db.py`):** six new columns on `game_batter_stats`. `c2_op_X` = opportunities (runner on base X at the start of a 2C event); `c2_adv_X` = successes (runner ended on a higher base or scored cleanly). Migration via `ALTER TABLE` like the existing pattern, defaulting to 0 for legacy rows.
+
+**Engine (`o27/stats/batter.py`, `o27/render/render.py`):** new fields on `BatterStats`. The stay branch of `_update_stats` walks `bases_before` × `bases_after`, per source base:
+- `bases_before[i]` is not None → opportunity++
+- That same `runner_id` shows up at `bases_after[j]` for some `j > i` → success
+- Or runner is no longer on the field AND was not in `runner_out_idx` / `extra_runner_outs` → scored cleanly → success
+
+Runner thrown out trying = opportunity, not success. Same rule the user asked for.
+
+**Persistence (`o27v2/sim.py`):** the existing per-game batter-stats INSERT path picks up the six new fields. Both INSERT sites (the inline one in `play_game` and the helper `_insert_batter_stats`) updated.
+
+**Career aggregation (`o27/v2_bridge.py`):** `get_player_stats` SUMs the six fields across all games and computes the rates in the dict it returns to the template.
+
+**Render (`o27/web/templates/player.html`):** new card titled "2C Moved-Runner Rate" with a four-row table — 1B → 2B+, 2B → 3B+, 3B → home, plus a Combined row. Card only renders when the player has at least one opportunity (`c2_op_total > 0`). Help text explains that thrown-out-trying counts as opportunity, not success — same convention real-MLB advance-rate stats use.
+
+Sample after a single 2C ground-out where the 1B runner advanced to 2B:
+
+```
+c2_op_1b=1, c2_adv_1b=1
+c2_op_2b=0, c2_adv_2b=0
+c2_op_3b=0, c2_adv_3b=0
+sty=1, stay_hits=1
+```
+
+The card on the player page reads (after enough volume) like:
+
+| From       | Opp | Adv | Rate  |
+|------------|-----|-----|-------|
+| 1B → 2B+   |  64 |  41 | 64.1% |
+| 2B → 3B+   |  37 |  22 | 59.5% |
+| 3B → home  |  19 |  15 | 78.9% |
+| Combined   | 120 |  78 | 65.0% |
+
+Naming + framing match O27's existing sabermetric flavor. The "Apollo" in the user's request was the conceptual reference; the in-game label is just "2C Moved-Runner Rate" — consistent with how `stay_hits` and `stay_rbi` are exposed elsewhere on the stats page.
+
+### Identity / regression check
+
+`tests/test_realism_identity.py` still passes 6/6.
+
+---
+
 ## Files touched (commit 2 — broader scope)
 
 - `o27/config.py` — `RUNNER_THROWN_OUT_AT_HOME_*`, `GIDP_*`, `TRIPLE_PLAY_GIVEN_DP_PROB`, `GIDP_STAY_MULTIPLIER`.

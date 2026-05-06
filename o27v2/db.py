@@ -137,6 +137,16 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     multi_hit_abs INTEGER DEFAULT 0,
     stay_rbi   INTEGER DEFAULT 0,
     stay_hits  INTEGER DEFAULT 0,   -- hits credited on a 2C event (subset of hits)
+    -- 2C moved-runner stats (Apollo-style): per-base opportunities and
+    -- successes. A successful "move" = post-stay base position is higher
+    -- than pre-stay (or runner scored cleanly). Runner thrown out trying
+    -- = opportunity but not move. Rate stat: c2_adv_X / c2_op_X.
+    c2_op_1b   INTEGER DEFAULT 0,
+    c2_adv_1b  INTEGER DEFAULT 0,
+    c2_op_2b   INTEGER DEFAULT 0,
+    c2_adv_2b  INTEGER DEFAULT 0,
+    c2_op_3b   INTEGER DEFAULT 0,
+    c2_adv_3b  INTEGER DEFAULT 0,
     roe        INTEGER DEFAULT 0,   -- reached on error (NOT a hit; AB credited)
     -- Per-fielder defensive events (the player as a FIELDER, not as a batter).
     po         INTEGER DEFAULT 0,   -- putouts as primary fielder
@@ -461,7 +471,8 @@ def init_db() -> None:
 
         # Counting-stat columns persisted post-realism (Stage 1 of stats expansion).
         # Defaults of 0 leave pre-existing rows neutral; new games populate fully.
-        for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits"):
+        for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits",
+                    "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b", "c2_op_3b", "c2_adv_3b"):
             try:
                 conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()
