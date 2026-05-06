@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     fo         INTEGER DEFAULT 0,   -- foul-outs (3-foul rule; subset of outs_recorded)
     multi_hit_abs INTEGER DEFAULT 0,
     stay_rbi   INTEGER DEFAULT 0,
+    stay_hits  INTEGER DEFAULT 0,   -- hits credited on a 2C event (subset of hits)
     roe        INTEGER DEFAULT 0,   -- reached on error (NOT a hit; AB credited)
     -- Per-fielder defensive events (the player as a FIELDER, not as a batter).
     po         INTEGER DEFAULT 0,   -- putouts as primary fielder
@@ -422,7 +423,7 @@ def init_db() -> None:
 
         # Counting-stat columns persisted post-realism (Stage 1 of stats expansion).
         # Defaults of 0 leave pre-existing rows neutral; new games populate fully.
-        for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi"):
+        for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits"):
             try:
                 conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()

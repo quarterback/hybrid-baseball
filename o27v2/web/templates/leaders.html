@@ -74,8 +74,10 @@
 <h4>Batting · O27-Native &amp; Value</h4>
 <div class="row g-3 mb-3">
   {{ card('2C', 'stays', '%d', true,  batting, tooltip='Second-Chance ABs — chose 2C over run on contact (O27)') }}
-  {{ card('2C-RBI',  'stay_rbi',     '%d',   true, batting, tooltip='RBI driven by 2C events — surfaces stay-mechanic specialists') }}
-  {{ card('2C-RBI%', 'stay_rbi_pct', '%.3f', true, batting, tooltip='Share of total RBI driven by 2C (decimal). Elite contact hitters should exceed league mean — if top-end is below league, the mechanic is benefiting marginal hitters more than specialists.') }}
+  {{ card('2C-H',    'stay_hits',    '%d',   true, batting, tooltip='Hits credited on 2C events') }}
+  {{ card('2C-Conv%','stay_conv_pct','%.3f', true, batting, tooltip='Fraction of 2C events that credited a hit (decimal). Talent-weighted by eye vs pitcher.command on subsequent swings; spec target top hitters .60-.70, marginal .30-.40.') }}
+  {{ card('2C-RBI',  'stay_rbi',     '%d',   true, batting, tooltip='RBI driven by 2C events — surfaces 2C-mechanic specialists') }}
+  {{ card('2C-RBI%', 'stay_rbi_pct', '%.3f', true, batting, tooltip='Share of total RBI driven by 2C (decimal).') }}
   {{ card('SB',    'sb',       '%d',   true,  batting) }}
   {{ card('WAR',   'war',      '%.2f', true,  batting, tooltip='Total WAR (offense + defense)') }}
   {{ card('DRS',   'drs',      '%+.1f',true,  batting, tooltip='Defensive runs saved') }}

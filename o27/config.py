@@ -156,6 +156,15 @@ CONTACT_MEDIUM_BASE: float   = 0.40
 CONTACT_HARD_BASE: float     = 0.22
 CONTACT_MATCHUP_SHIFT: float = 0.25   # max ±0.125 swing per unit matchup
 
+# Second-swing modifier: on the 2nd+ contact event within the same AB
+# (i.e., after a non-terminal 2C), tilt the contact_quality distribution
+# by (batter.eye - pitcher.command). Reads as: a high-eye batter is
+# reading the pitcher across multiple swings; a high-command pitcher
+# knows what's coming on swing 2 and shuts it down. Net shift (positive
+# = batter advantage) feeds into contact_quality's `shift` term.
+SECOND_SWING_EYE_SCALE: float     = 0.20   # batter.eye contribution
+SECOND_SWING_COMMAND_SCALE: float = 0.20   # pitcher.command contribution (subtracted)
+
 # ---------------------------------------------------------------------------
 # Contact outcome tables
 # ---------------------------------------------------------------------------

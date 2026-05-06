@@ -171,6 +171,8 @@
       <th class="num">ISO</th><th class="num">BABIP</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
       <th class="num" title="Second-Chance ABs (count, O27)">2C</th>
+      <th class="num" title="Hits credited on 2C events (subset of H)">2C-H</th>
+      <th class="num" title="2C events that produced a credited hit. Talent-weighted by eye vs pitcher.command on 2nd+ swing.">2C-Conv%</th>
       <th class="num" title="RBI driven by 2C events">2C-RBI</th>
       <th class="num" title="Share of total RBI driven by 2C; elite contact hitters should exceed league mean">2C-RBI%</th>
       <th class="num" title="RBI per 2C event">2C-RBI/2C</th>
@@ -210,6 +212,8 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(b.bb_pct) }}">{{ '%.1f'|format(b.bb_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.hr_pct) }}">{{ '%.1f'|format(b.hr_pct * 100) }}%</td>
       <td class="num">{{ b.stays or 0 }}</td>
+      <td class="num">{{ b.stay_hits or 0 }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_conv_pct) }}">{{ '%.1f'|format(b.stay_conv_pct * 100) }}%</td>
       <td class="num">{{ b.stay_rbi or 0 }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_rbi_pct) }}">{{ '%.1f'|format(b.stay_rbi_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.3f'|format(b.stay_rbi_per_stay) }}">{{ '%.2f'|format(b.stay_rbi_per_stay) }}</td>
@@ -236,6 +240,8 @@
       <th class="num">FO</th>
       <th class="num" title="Second-Chance ABs — chose 2C over run on contact (O27)">2C</th>
       <th class="num" title="Multi-hit AB count">MhAB</th>
+      <th class="num" title="Hits credited on 2C events">2C-H</th>
+      <th class="num" title="2C events that produced a credited hit">2C-Conv%</th>
       <th class="num" title="RBI on 2C decisions">2C-RBI</th>
       <th class="num" title="Share of total RBI driven by 2C">2C-RBI%</th>
       <th class="num" title="RBI per 2C event">2C-RBI/2C</th>
@@ -274,6 +280,8 @@
       <td class="num">{{ b.fo or 0 }}</td>
       <td class="num">{{ b.stays or 0 }}</td>
       <td class="num">{{ b.mhab or 0 }}</td>
+      <td class="num">{{ b.stay_hits or 0 }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_conv_pct) }}">{{ '%.1f'|format(b.stay_conv_pct * 100) }}%</td>
       <td class="num">{{ b.stay_rbi or 0 }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_rbi_pct) }}">{{ '%.1f'|format(b.stay_rbi_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.3f'|format(b.stay_rbi_per_stay) }}">{{ '%.2f'|format(b.stay_rbi_per_stay) }}</td>

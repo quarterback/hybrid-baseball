@@ -224,6 +224,7 @@ class Renderer:
                 t.hbp          += r.hbp
                 t.sty          += r.sty
                 t.stay_rbi     += r.stay_rbi
+                t.stay_hits    += r.stay_hits
                 t.multi_hit_abs += r.multi_hit_abs
             return t
 
@@ -861,6 +862,7 @@ class Renderer:
                     s.sty += 1
                     if disp.get("stay_hit_credited"):
                         s.hits += 1
+                        s.stay_hits += 1
                     # stay_rbi: credit RBI for runs that score on a valid stay.
                     if runs_scored > 0:
                         s.stay_rbi += runs_scored
@@ -1018,7 +1020,7 @@ class Renderer:
         prev_get = (lambda f: getattr(prev_s, f)) if prev_s else (lambda f: 0)
         for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
-                  "stay_rbi", "multi_hit_abs",
+                  "stay_rbi", "stay_hits", "multi_hit_abs",
                   "sb", "cs", "fo", "roe",
                   "po", "e"):
             setattr(d, f, getattr(end_s, f) - prev_get(f))

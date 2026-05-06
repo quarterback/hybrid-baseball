@@ -195,6 +195,7 @@ def contact_quality(
     batter: Player,
     pitcher: Player,
     weather: Optional[object] = None,
+    swings_in_ab: int = 0,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
@@ -216,6 +217,15 @@ def contact_quality(
 
     matchup = (batter.skill * plat) - stuff_eff   # +ve → batter advantage
     shift = matchup * cfg.CONTACT_MATCHUP_SHIFT    # up to ±0.125 swing
+
+    # Second-swing modifier: on swings 2+ within the same AB, tilt the
+    # contact distribution by eye-vs-command. High-eye batter reads the
+    # pitcher; high-command pitcher disrupts the read. Competing forces.
+    if swings_in_ab >= 1:
+        eye_dev = (batter.eye - 0.5) * 2 * plat
+        cmd_dev = (pitcher.command - 0.5) * 2
+        shift += (eye_dev * cfg.SECOND_SWING_EYE_SCALE
+                  - cmd_dev * cfg.SECOND_SWING_COMMAND_SCALE)
 
     arch_delta = getattr(batter, "hard_contact_delta", 0.0)
 
@@ -1084,7 +1094,10 @@ class ProbabilisticProvider:
             return {"type": outcome}
 
         # --- Contact resolution ---
-        quality = contact_quality(rng, batter, pitcher, weather)
+        quality = contact_quality(
+            rng, batter, pitcher, weather,
+            swings_in_ab=state.current_at_bat_swings,
+        )
         is_hr     = False
         is_triple = False
 

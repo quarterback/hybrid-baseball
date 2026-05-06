@@ -608,6 +608,13 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         # advance runners aggressively.
         rbi_v = b.get("rbi") or 0
         b["stay_rbi_pct"] = (stay_rbi / rbi_v) if rbi_v else 0.0
+        # 2C-Conv%: fraction of valid 2C events that credited a hit
+        # (i.e., a runner advanced). Talent-weighted via the eye-vs-command
+        # second-swing modifier in contact_quality. Spec target: top hitters
+        # 60-70%, marginal 30-40%.
+        stay_hits = b.get("stay_hits") or 0
+        b["stay_hits"] = stay_hits
+        b["stay_conv_pct"] = (stay_hits / stays_v) if stays_v else 0.0
         # Foul-out rate (O27's 3-foul cap). High FO% = batter prone to
         # fouling himself out — a real cost in this rule set.
         fo = b.get("fo") or 0
@@ -1400,7 +1407,7 @@ def game_detail(game_id: int):
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples",
                 "hr", "rbi", "bb", "k", "stays", "outs_recorded",
                 "hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi",
-                "roe", "po", "e")
+                "stay_hits", "roe", "po", "e")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs",
@@ -1662,7 +1669,8 @@ def game_detail_export(game_id: int):
     # _consolidate_per_player but inlined here so the export is independent.
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                 "rbi", "bb", "k", "stays", "outs_recorded", "hbp", "sb",
-                "cs", "fo", "multi_hit_abs", "stay_rbi", "roe", "po", "e")
+                "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits",
+                "roe", "po", "e")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs", "sb_allowed", "cs_caught",
@@ -1754,7 +1762,8 @@ def player_detail_export(player_id: int):
                   COALESCE(SUM(cs),0)  as cs,
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
-                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
@@ -1868,6 +1877,7 @@ def leaders_export():
                   COALESCE(SUM(bs.stays),0) as stays,
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                   COALESCE(SUM(bs.roe),0) as roe
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
@@ -2298,6 +2308,7 @@ def stats_browse():
                        COALESCE(SUM(bs.fo),0)  as fo,
                        COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                        COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                        COALESCE(SUM(bs.roe),0)          as roe
                 FROM game_batter_stats bs
                 JOIN players p ON bs.player_id = p.id
@@ -2417,6 +2428,7 @@ def leaders():
                   COALESCE(SUM(bs.fo),0)  as fo,
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                   COALESCE(SUM(bs.roe),0)          as roe,
                   COALESCE(SUM(bs.po),0)           as po,
                   COALESCE(SUM(bs.e),0)            as e
@@ -2499,6 +2511,7 @@ def _player_batting_split(player_id: int, team_id: int,
                    COALESCE(SUM(bs.fo),0)  as fo,
                    COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                    COALESCE(SUM(bs.stay_rbi),0) as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                    COALESCE(SUM(bs.roe),0) as roe
             FROM game_batter_stats bs
             JOIN games g ON bs.game_id = g.id
@@ -2591,7 +2604,8 @@ def _fetch_player_overview(player_id: int,
                   COALESCE(SUM(cs),0)  as cs,
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
-                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
@@ -2735,7 +2749,8 @@ def player_detail(player_id: int):
                   COALESCE(SUM(cs),0)  as cs,
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
-                  COALESCE(SUM(stay_rbi),0)     as stay_rbi
+                  COALESCE(SUM(stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
     )
@@ -2927,6 +2942,7 @@ def _team_batting_rows(baselines: dict) -> list[dict]:
                   COALESCE(SUM(bs.fo),0)  AS fo,
                   COALESCE(SUM(bs.multi_hit_abs),0) AS mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     AS stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                   COALESCE(SUM(bs.roe),0) AS roe,
                   COALESCE(SUM(bs.po),0) AS po,
                   COALESCE(SUM(bs.e),0)  AS e
@@ -3360,6 +3376,7 @@ def distributions():
                   COALESCE(SUM(bs.stays),0) as stays,
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
                   COALESCE(SUM(bs.roe),0) as roe
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
@@ -3427,6 +3444,7 @@ def distributions():
         ("k_pct",         "K%",       "%.1f%%", True),
         ("bb_pct",        "BB%",      "%.1f%%", True),
         ("stay_rbi_pct",  "2C-RBI%",  "%.1f%%", True),
+        ("stay_conv_pct", "2C-Conv%", "%.1f%%", True),
         ("mhab_pct",      "MhAB%",    "%.1f%%", True),
         ("war",           "WAR",      "%.2f", False),
     ]

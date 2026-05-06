@@ -23,6 +23,7 @@ class BatterStats:
     sty: int = 0           # Stays (internal only — not displayed in UI)
     outs_recorded: int = 0  # OR — times this batter was retired
     stay_rbi: int = 0
+    stay_hits: int = 0      # Hits credited on a 2C event (subset of `hits`)
     multi_hit_abs: int = 0  # At-bats with 2+ credited hits
     # Counting stats persisted post-realism layer.
     sb: int = 0     # Successful steals charged to this runner

@@ -142,6 +142,7 @@ def _end_at_bat(state: GameState) -> list[str]:
         log.append(f"  Multi-hit at-bat: {hits} credited hits.")
     state.count.reset()
     state.current_at_bat_hits = 0
+    state.current_at_bat_swings = 0
     # Hit-and-run protection clears at PA boundary — the play is over.
     state.hit_and_run_active = False
     # Joker AB: clear the override and DO NOT advance the base lineup.
@@ -458,6 +459,10 @@ def _resolve_contact(
     outcome: dict,
 ) -> list[str]:
     """Resolve a ball_in_play event (run_chosen or stay_chosen)."""
+    # Bump the in-AB swing counter so the next pitch's contact_quality sees
+    # this as a 2nd+ swing (only matters when AB continues — a run-chosen or
+    # terminal stay calls _end_at_bat which resets to 0).
+    state.current_at_bat_swings += 1
     batter = state.current_batter
     batter_id = batter.player_id
     caught_fly = outcome.get("caught_fly", False)
