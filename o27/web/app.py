@@ -66,6 +66,34 @@ def to_grade(v: float) -> int:
         return 50
 
 
+@app.template_filter("pitch_consistency")
+def pitch_consistency(pitch_variance: float) -> float:
+    """Convert pitch_variance to a 0.0–1.0 Consistency score (inverted, clamped)."""
+    from o27 import config as _c
+    try:
+        return max(0.0, min(1.0, 1.0 - float(pitch_variance) / _c.PITCH_VARIANCE_MAX))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 1.0
+
+
+@app.template_filter("release_label")
+def release_label(v: float) -> str:
+    """Convert release_angle float to display string."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "Sidearm"
+    if v <= 0.25:
+        return "Submarine"
+    if v <= 0.45:
+        return "Low Sidearm"
+    if v <= 0.62:
+        return "Sidearm"
+    if v <= 0.80:
+        return "High Sidearm"
+    return "Three-Quarter"
+
+
 # ---------------------------------------------------------------------------
 # Context processor — inject globals into every template
 # ---------------------------------------------------------------------------
@@ -117,6 +145,7 @@ def _team_obj(team_data: dict, team_id: str) -> Team:
             grit=float(p.get("grit",         0.5)),
             pitch_variance=float(p.get("pitch_variance", 0.0)),
             release_angle=float(p.get("release_angle",  0.5)),
+            pitcher_archetype=p.get("pitcher_archetype", ""),
             repertoire=repertoire,
             stay_aggressiveness=p["stay_aggressiveness"],
             contact_quality_threshold=p["contact_quality_threshold"],

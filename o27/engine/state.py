@@ -113,6 +113,7 @@ class Player:
     # Legacy Phase-8 fields (kept zeroed for backward compatibility with the
     # probability code that still references them; jokers/archetypes are gone).
     archetype: str = ""
+    pitcher_archetype: str = ""
     hard_contact_delta: float = 0.0
     hr_weight_bonus:    float = 0.0
 
