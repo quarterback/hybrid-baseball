@@ -10,9 +10,15 @@ Five categorical variables stamped on every game at SCHEDULE time:
   cloud        clear / overcast / dusk
 
 Drawn from a city -> climatological archetype lookup, with a per-archetype
-per-month tier distribution. Seven archetypes cover the catalogue:
+per-month tier distribution. Twelve archetypes cover the catalogue:
 desert, coastal_cool, coastal_warm, continental_cold, continental_warm,
-tropical, mountain.
+tropical, mountain, subarctic, mediterranean, tropical_monsoon,
+subtropical_humid, arid_steppe.
+
+City lookup chain: exact city → city with trailing 2/3-letter country
+code stripped → country-code default (e.g. "FIN" → subarctic) →
+continental_warm. So a custom team in "Helsinki FIN" gets subarctic
+weather without anyone having to add Helsinki to the per-city table.
 
 Engine touch points (bounded — DON'T sprinkle reads beyond these):
 
@@ -233,14 +239,427 @@ _CITY_ARCHETYPES = {
     "Colorado":         "mountain",
     "Colorado Springs": "mountain",
     "Salt Lake City":   "mountain",
+
+    # ---------- INTERNATIONAL ---------------------------------------------
+    # Listed where the country fallback is wrong for a specific city — e.g.
+    # Australia falls back to subtropical_humid which fits Sydney/Brisbane
+    # but not Perth (mediterranean) or Alice Springs (desert).
+
+    # Nordic — Finland / Sweden / Norway / Iceland: subarctic everywhere
+    "Helsinki":         "subarctic",
+    "Tampere":          "subarctic",
+    "Turku":            "subarctic",
+    "Espoo":            "subarctic",
+    "Vantaa":           "subarctic",
+    "Oulu":             "subarctic",
+    "Lahti":            "subarctic",
+    "Kuopio":           "subarctic",
+    "Jyväskylä":        "subarctic",
+    "Vaasa":            "subarctic",
+    "Joensuu":          "subarctic",
+    "Pori":             "subarctic",
+    "Lappeenranta":     "subarctic",
+    "Hämeenlinna":      "subarctic",
+    "Rovaniemi":        "subarctic",
+    "Mikkeli":          "subarctic",
+    "Kotka":            "subarctic",
+    "Salo":             "subarctic",
+    "Porvoo":           "subarctic",
+    "Kouvola":          "subarctic",
+    "Stockholm":        "subarctic",
+    "Gothenburg":       "subarctic",
+    "Malmö":            "subarctic",
+    "Uppsala":          "subarctic",
+    "Oslo":             "subarctic",
+    "Bergen":           "coastal_cool",
+    "Trondheim":        "subarctic",
+    "Reykjavik":        "subarctic",
+    "Copenhagen":       "continental_cold",
+
+    # Baltics
+    "Tallinn":          "subarctic",
+    "Riga":             "subarctic",
+    "Vilnius":          "continental_cold",
+
+    # UK / Ireland
+    "London":           "coastal_cool",
+    "Manchester":       "coastal_cool",
+    "Birmingham":       "coastal_cool",
+    "Liverpool":        "coastal_cool",
+    "Leeds":            "coastal_cool",
+    "Edinburgh":        "coastal_cool",
+    "Glasgow":          "coastal_cool",
+    "Belfast":          "coastal_cool",
+    "Dublin":           "coastal_cool",
+    "Cardiff":          "coastal_cool",
+
+    # Western Europe
+    "Paris":            "continental_warm",
+    "Lyon":             "continental_warm",
+    "Marseille":        "mediterranean",
+    "Nice":             "mediterranean",
+    "Toulouse":         "continental_warm",
+    "Bordeaux":         "continental_warm",
+    "Berlin":           "continental_warm",
+    "Munich":           "continental_warm",
+    "Hamburg":          "continental_warm",
+    "Frankfurt":        "continental_warm",
+    "Cologne":          "continental_warm",
+    "Vienna":           "continental_warm",
+    "Zürich":           "continental_warm",
+    "Amsterdam":        "coastal_cool",
+    "Rotterdam":        "coastal_cool",
+    "Brussels":         "continental_warm",
+
+    # Mediterranean Europe
+    "Madrid":           "mediterranean",
+    "Barcelona":        "mediterranean",
+    "Valencia":         "mediterranean",
+    "Seville":          "mediterranean",
+    "Bilbao":           "coastal_cool",  # Atlantic-influenced
+    "Lisbon":           "mediterranean",
+    "Porto":            "mediterranean",
+    "Rome":             "mediterranean",
+    "Milan":            "continental_warm",
+    "Naples":           "mediterranean",
+    "Turin":            "continental_warm",
+    "Bologna":          "continental_warm",
+    "Florence":         "mediterranean",
+    "Venice":           "mediterranean",
+    "Athens":           "mediterranean",
+    "Thessaloniki":     "mediterranean",
+
+    # Eastern Europe
+    "Warsaw":           "continental_cold",
+    "Krakow":           "continental_cold",
+    "Prague":           "continental_warm",
+    "Budapest":         "continental_warm",
+    "Bucharest":        "continental_warm",
+    "Belgrade":         "continental_warm",
+    "Sofia":            "continental_warm",
+    "Zagreb":           "continental_warm",
+    "Moscow":           "continental_cold",
+    "Saint Petersburg": "subarctic",
+    "Kyiv":             "continental_cold",
+    "Istanbul":         "mediterranean",
+    "Ankara":           "arid_steppe",
+
+    # East Asia
+    "Tokyo":            "subtropical_humid",
+    "Osaka":            "subtropical_humid",
+    "Yokohama":         "subtropical_humid",
+    "Nagoya":           "subtropical_humid",
+    "Sapporo":          "continental_cold",
+    "Fukuoka":          "subtropical_humid",
+    "Hiroshima":        "subtropical_humid",
+    "Sendai":           "continental_warm",
+    "Kobe":             "subtropical_humid",
+    "Kyoto":            "subtropical_humid",
+    "Seoul":            "subtropical_humid",
+    "Busan":            "subtropical_humid",
+    "Incheon":          "subtropical_humid",
+    "Daegu":            "subtropical_humid",
+    "Beijing":          "continental_warm",
+    "Shanghai":         "subtropical_humid",
+    "Guangzhou":        "tropical_monsoon",
+    "Shenzhen":         "tropical_monsoon",
+    "Chengdu":          "subtropical_humid",
+    "Wuhan":            "subtropical_humid",
+    "Hong Kong":        "tropical_monsoon",
+    "Taipei":           "subtropical_humid",
+    "Kaohsiung":        "tropical_monsoon",
+    "Ulaanbaatar":      "continental_cold",
+
+    # Southeast Asia
+    "Bangkok":          "tropical_monsoon",
+    "Chiang Mai":       "tropical_monsoon",
+    "Phuket":           "tropical_monsoon",
+    "Ho Chi Minh City": "tropical_monsoon",
+    "Saigon":           "tropical_monsoon",
+    "Hanoi":            "tropical_monsoon",
+    "Manila":           "tropical_monsoon",
+    "Cebu":             "tropical_monsoon",
+    "Jakarta":          "tropical_monsoon",
+    "Surabaya":         "tropical_monsoon",
+    "Bali":             "tropical_monsoon",
+    "Kuala Lumpur":     "tropical_monsoon",
+    "Penang":           "tropical_monsoon",
+    "Singapore":        "tropical_monsoon",
+    "Phnom Penh":       "tropical_monsoon",
+    "Yangon":           "tropical_monsoon",
+    "Vientiane":        "tropical_monsoon",
+
+    # South Asia
+    "Mumbai":           "tropical_monsoon",
+    "Delhi":            "subtropical_humid",
+    "New Delhi":        "subtropical_humid",
+    "Bangalore":        "tropical_monsoon",
+    "Bengaluru":        "tropical_monsoon",
+    "Chennai":          "tropical_monsoon",
+    "Kolkata":          "tropical_monsoon",
+    "Hyderabad":        "tropical_monsoon",
+    "Pune":             "tropical_monsoon",
+    "Karachi":          "arid_steppe",
+    "Lahore":           "arid_steppe",
+    "Islamabad":        "subtropical_humid",
+    "Dhaka":            "tropical_monsoon",
+    "Colombo":          "tropical",
+    "Kathmandu":        "continental_warm",
+
+    # Middle East
+    "Dubai":            "desert",
+    "Abu Dhabi":        "desert",
+    "Doha":             "desert",
+    "Riyadh":           "desert",
+    "Jeddah":           "desert",
+    "Mecca":            "desert",
+    "Tehran":           "arid_steppe",
+    "Baghdad":          "desert",
+    "Tel Aviv":         "mediterranean",
+    "Jerusalem":        "mediterranean",
+    "Beirut":           "mediterranean",
+    "Amman":            "arid_steppe",
+    "Cairo":            "desert",
+    "Alexandria":       "mediterranean",
+
+    # Africa
+    "Lagos":            "tropical",
+    "Abuja":            "tropical",
+    "Nairobi":          "tropical",
+    "Mombasa":          "tropical",
+    "Addis Ababa":      "continental_warm",
+    "Dar es Salaam":    "tropical",
+    "Kampala":          "tropical",
+    "Kigali":           "tropical",
+    "Accra":            "tropical",
+    "Dakar":            "tropical",
+    "Casablanca":       "mediterranean",
+    "Marrakech":        "arid_steppe",
+    "Tunis":            "mediterranean",
+    "Algiers":          "mediterranean",
+    "Johannesburg":     "subtropical_humid",
+    "Cape Town":        "mediterranean",
+    "Durban":           "subtropical_humid",
+    "Pretoria":         "subtropical_humid",
+    "Luanda":           "tropical",
+    "Antananarivo":     "tropical",
+
+    # Australia & NZ & Pacific
+    "Sydney":           "subtropical_humid",
+    "Melbourne":        "subtropical_humid",
+    "Brisbane":         "subtropical_humid",
+    "Perth":            "mediterranean",
+    "Adelaide":         "mediterranean",
+    "Canberra":         "continental_warm",
+    "Hobart":           "coastal_cool",
+    "Darwin":           "tropical_monsoon",
+    "Alice Springs":    "desert",
+    "Auckland":         "coastal_cool",
+    "Wellington":       "coastal_cool",
+    "Christchurch":     "coastal_cool",
+    "Suva":             "tropical",
+    "Port Moresby":     "tropical_monsoon",
+
+    # Latin America & Caribbean (cities not already in the US list)
+    "Mexico City":      "subtropical_humid",
+    "Guadalajara":      "subtropical_humid",
+    "Monterrey":        "subtropical_humid",
+    "Tijuana":          "mediterranean",
+    "Cancun":           "tropical",
+    "Havana":           "tropical",
+    "Santo Domingo":    "tropical",
+    "San Juan":         "tropical",
+    "Kingston":         "tropical",
+    "San José":         "tropical",
+    "Panama City":      "tropical",
+    "Caracas":          "tropical",
+    "Bogotá":           "tropical",
+    "Medellín":         "tropical",
+    "Cali":             "tropical",
+    "Quito":            "tropical",
+    "Guayaquil":        "tropical",
+    "Lima":             "tropical",
+    "La Paz":           "mountain",
+    "Santa Cruz":       "tropical",
+    "Asunción":         "subtropical_humid",
+    "Buenos Aires":     "subtropical_humid",
+    "Córdoba":          "continental_warm",
+    "Rosario":          "subtropical_humid",
+    "Mendoza":          "arid_steppe",
+    "Santiago":         "mediterranean",
+    "Valparaíso":       "mediterranean",
+    "Montevideo":       "subtropical_humid",
+    "Rio de Janeiro":   "tropical",
+    "São Paulo":        "subtropical_humid",
+    "Brasília":         "tropical",
+    "Salvador":         "tropical",
+    "Recife":           "tropical",
+    "Fortaleza":        "tropical",
+    "Manaus":           "tropical_monsoon",
+    "Porto Alegre":     "subtropical_humid",
+    "Curitiba":         "subtropical_humid",
+    "Belo Horizonte":   "subtropical_humid",
+
+    # Canada (extends the existing handful)
+    "Vancouver":        "coastal_cool",
+    "Victoria":         "coastal_cool",
+    "Calgary":          "continental_cold",
+    "Edmonton":         "continental_cold",
+    "Winnipeg":         "continental_cold",
+    "Halifax":          "coastal_cool",
+    "Quebec City":      "continental_cold",
+    "Ottawa":           "continental_cold",
 }
 
 
+# ---------------------------------------------------------------------------
+# Country-code fallbacks
+# ---------------------------------------------------------------------------
+#
+# Cities often arrive as "Helsinki FIN" / "Tokyo JPN" — the viperball
+# cities.json shape. When a city isn't in `_CITY_ARCHETYPES`, strip the
+# trailing 2/3-letter country code and look up a per-country default.
+# Keeps custom international teams sensible without forcing per-city
+# authoring for every city in the world.
+#
+# Picked to roughly match Köppen climate zones, with a baseball-shaped
+# bias: warmer-leaning for shoulder-season nuance.
+
+_COUNTRY_ARCHETYPES: dict[str, str] = {
+    # Nordic / subarctic
+    "FIN": "subarctic", "SWE": "subarctic", "NOR": "subarctic",
+    "ISL": "subarctic", "DNK": "continental_cold",
+
+    # Western Europe (mostly mild oceanic / continental_warm)
+    "GBR": "coastal_cool", "IRL": "coastal_cool",
+    "FRA": "continental_warm", "DEU": "continental_warm",
+    "NLD": "coastal_cool",     "BEL": "continental_warm",
+    "CHE": "continental_warm", "AUT": "continental_warm",
+    "LUX": "continental_warm",
+
+    # Mediterranean rim
+    "ESP": "mediterranean", "ITA": "mediterranean",
+    "PRT": "mediterranean", "GRC": "mediterranean",
+    "TUR": "mediterranean", "ISR": "mediterranean",
+    "MAR": "mediterranean", "TUN": "mediterranean",
+    "CYP": "mediterranean",
+
+    # Eastern Europe / Russia
+    "POL": "continental_cold", "CZE": "continental_warm",
+    "SVK": "continental_warm", "HUN": "continental_warm",
+    "ROU": "continental_warm", "BGR": "continental_warm",
+    "SRB": "continental_warm", "HRV": "mediterranean",
+    "RUS": "continental_cold", "UKR": "continental_warm",
+    "BLR": "continental_cold", "EST": "subarctic",
+    "LVA": "subarctic",        "LTU": "continental_cold",
+
+    # East Asia
+    "JPN": "subtropical_humid", "KOR": "subtropical_humid",
+    "PRK": "continental_cold",  "CHN": "subtropical_humid",
+    "TWN": "subtropical_humid", "HKG": "subtropical_humid",
+    "MNG": "continental_cold",
+
+    # Southeast Asia / monsoon belt
+    "THA": "tropical_monsoon", "VNM": "tropical_monsoon",
+    "PHL": "tropical_monsoon", "MYS": "tropical_monsoon",
+    "IDN": "tropical_monsoon", "SGP": "tropical_monsoon",
+    "KHM": "tropical_monsoon", "MMR": "tropical_monsoon",
+    "LAO": "tropical_monsoon", "BRN": "tropical_monsoon",
+    "TLS": "tropical_monsoon",
+
+    # South Asia
+    "IND": "tropical_monsoon", "PAK": "arid_steppe",
+    "BGD": "tropical_monsoon", "LKA": "tropical",
+    "NPL": "continental_warm", "BTN": "continental_warm",
+    "AFG": "arid_steppe",      "MDV": "tropical",
+
+    # Central / West Asia
+    "KAZ": "arid_steppe",      "UZB": "arid_steppe",
+    "TKM": "arid_steppe",      "KGZ": "continental_cold",
+    "TJK": "continental_cold", "IRN": "arid_steppe",
+    "IRQ": "desert",           "SYR": "arid_steppe",
+    "JOR": "arid_steppe",      "LBN": "mediterranean",
+    "ARE": "desert",           "SAU": "desert",
+    "OMN": "desert",           "QAT": "desert",
+    "KWT": "desert",           "BHR": "desert",
+    "YEM": "desert",           "AZE": "arid_steppe",
+    "ARM": "continental_warm", "GEO": "continental_warm",
+
+    # Sub-Saharan Africa
+    "ZAF": "subtropical_humid", "EGY": "desert",
+    "DZA": "mediterranean",    "LBY": "desert",
+    "SDN": "desert",           "ETH": "continental_warm",
+    "KEN": "tropical",         "TZA": "tropical",
+    "UGA": "tropical",         "RWA": "tropical",
+    "NGA": "tropical",         "GHA": "tropical",
+    "CIV": "tropical",         "SEN": "tropical",
+    "CMR": "tropical",         "AGO": "tropical",
+    "MOZ": "tropical",         "ZMB": "tropical",
+    "ZWE": "tropical",         "BWA": "arid_steppe",
+    "NAM": "desert",           "MDG": "tropical",
+    "MUS": "tropical",         "ERI": "arid_steppe",
+    "SOM": "arid_steppe",
+
+    # Oceania
+    "AUS": "subtropical_humid",  # eastern coast bias; arid interior covered by city overrides
+    "NZL": "coastal_cool",
+    "FJI": "tropical",         "PNG": "tropical",
+    "WSM": "tropical",         "TON": "tropical",
+    "NCL": "tropical",         "PYF": "tropical",
+    "VUT": "tropical",         "SLB": "tropical",
+
+    # Latin America & Caribbean
+    "MEX": "subtropical_humid",
+    "BRA": "tropical",         "ARG": "continental_warm",
+    "CHL": "mediterranean",    "URY": "subtropical_humid",
+    "PRY": "subtropical_humid", "BOL": "mountain",
+    "PER": "tropical",         "ECU": "tropical",
+    "COL": "tropical",         "VEN": "tropical",
+    "GUY": "tropical",         "SUR": "tropical",
+    "DOM": "tropical",         "CUB": "tropical",
+    "PRI": "tropical",         "JAM": "tropical",
+    "HTI": "tropical",         "BHS": "tropical",
+    "TTO": "tropical",         "BRB": "tropical",
+    "CRI": "tropical",         "PAN": "tropical",
+    "NIC": "tropical",         "HND": "tropical",
+    "GTM": "tropical",         "SLV": "tropical",
+    "BLZ": "tropical",
+
+    # North America (city overrides take precedence; these are wide nets)
+    "USA": "continental_warm",
+    "CAN": "continental_cold",
+}
+
+
+def _strip_country_code(city: str) -> tuple[str, str | None]:
+    """Split 'Helsinki FIN' -> ('Helsinki', 'FIN'). Accepts 2- or
+    3-letter codes after the last whitespace. Returns (city, None) if
+    no trailing code is present."""
+    s = city.strip()
+    if not s:
+        return s, None
+    parts = s.rsplit(" ", 1)
+    if len(parts) == 2 and parts[1].isupper() and 2 <= len(parts[1]) <= 3 and parts[1].isalpha():
+        return parts[0].strip(), parts[1]
+    return s, None
+
+
 def archetype_for_city(city: str) -> str:
-    """Return the climatological archetype for `city`. Unknown -> continental_warm."""
+    """Return the climatological archetype for `city`. Lookup chain:
+    exact city -> city minus trailing country code -> country fallback ->
+    continental_warm.
+    """
     if not city:
         return "continental_warm"
-    return _CITY_ARCHETYPES.get(city.strip(), "continental_warm")
+    s = city.strip()
+    if s in _CITY_ARCHETYPES:
+        return _CITY_ARCHETYPES[s]
+    bare, country = _strip_country_code(s)
+    if bare in _CITY_ARCHETYPES:
+        return _CITY_ARCHETYPES[bare]
+    if country and country in _COUNTRY_ARCHETYPES:
+        return _COUNTRY_ARCHETYPES[country]
+    return "continental_warm"
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +847,128 @@ _MOUNTAIN = {
             "precip":      {"none": 17, "light": 2, "heavy": 1}},
 }
 
+_SUBARCTIC = {
+    # Helsinki / Stockholm / Reykjavik shape: cold-dominated season with
+    # a brief mild-warm window in midsummer. Skies trend overcast, light
+    # precip is the norm, hot is essentially absent. Pesäpallo home turf.
+    "apr": {"temperature": {"cold": 8, "mild": 2},
+            "humidity":    {"normal": 6, "humid": 3, "dry": 1},
+            "precip":      {"none": 13, "light": 6, "heavy": 1}},
+    "may": {"temperature": {"cold": 4, "mild": 6},
+            "humidity":    {"normal": 6, "humid": 3, "dry": 1},
+            "precip":      {"none": 14, "light": 5, "heavy": 1}},
+    "jun": {"temperature": {"mild": 7, "warm": 3},
+            "humidity":    {"normal": 6, "humid": 3, "dry": 1},
+            "precip":      {"none": 14, "light": 5, "heavy": 1}},
+    "jul": {"temperature": {"mild": 5, "warm": 5},
+            "humidity":    {"normal": 5, "humid": 4, "dry": 1},
+            "precip":      {"none": 13, "light": 6, "heavy": 1}},
+    "aug": {"temperature": {"mild": 6, "warm": 4},
+            "humidity":    {"normal": 6, "humid": 3, "dry": 1},
+            "precip":      {"none": 13, "light": 6, "heavy": 1}},
+    "sep": {"temperature": {"cold": 5, "mild": 5},
+            "humidity":    {"normal": 6, "humid": 3, "dry": 1},
+            "precip":      {"none": 12, "light": 6, "heavy": 2}},
+}
+
+_MEDITERRANEAN = {
+    # Madrid / Rome / Athens / Marseille / Lisbon: hot dry summers, mild
+    # wet shoulders. Heavy precip is rare in midsummer; spring/fall get
+    # the rain. Humidity tilts dry except by the coast in shoulder months.
+    "apr": {"temperature": {"mild": 6, "warm": 3, "cold": 1},
+            "humidity":    {"dry": 3, "normal": 5, "humid": 2},
+            "precip":      {"none": 14, "light": 5, "heavy": 1}},
+    "may": {"temperature": {"warm": 6, "mild": 3, "hot": 1},
+            "humidity":    {"dry": 4, "normal": 5, "humid": 1},
+            "precip":      {"none": 16, "light": 3, "heavy": 1}},
+    "jun": {"temperature": {"warm": 4, "hot": 6},
+            "humidity":    {"dry": 7, "normal": 3, "humid": 0},
+            "precip":      {"none": 19, "light": 1, "heavy": 0}},
+    "jul": {"temperature": {"hot": 8, "warm": 2},
+            "humidity":    {"dry": 8, "normal": 2, "humid": 0},
+            "precip":      {"none": 20, "light": 0, "heavy": 0}},
+    "aug": {"temperature": {"hot": 8, "warm": 2},
+            "humidity":    {"dry": 8, "normal": 2, "humid": 0},
+            "precip":      {"none": 20, "light": 0, "heavy": 0}},
+    "sep": {"temperature": {"warm": 6, "hot": 2, "mild": 2},
+            "humidity":    {"dry": 5, "normal": 4, "humid": 1},
+            "precip":      {"none": 16, "light": 3, "heavy": 1}},
+}
+
+_TROPICAL_MONSOON = {
+    # Bangkok / Manila / Mumbai / Jakarta: hot and humid year-round with
+    # a distinct wet season that dominates the heart of the calendar.
+    # Heavy precip is genuinely common Jul-Aug; light rain is the norm.
+    "apr": {"temperature": {"warm": 4, "hot": 6},
+            "humidity":    {"normal": 3, "humid": 7, "dry": 0},
+            "precip":      {"none": 13, "light": 5, "heavy": 2}},
+    "may": {"temperature": {"warm": 3, "hot": 7},
+            "humidity":    {"normal": 2, "humid": 8, "dry": 0},
+            "precip":      {"none": 9,  "light": 7, "heavy": 4}},
+    "jun": {"temperature": {"warm": 4, "hot": 6},
+            "humidity":    {"normal": 1, "humid": 9, "dry": 0},
+            "precip":      {"none": 6,  "light": 8, "heavy": 6}},
+    "jul": {"temperature": {"warm": 5, "hot": 5},
+            "humidity":    {"normal": 1, "humid": 9, "dry": 0},
+            "precip":      {"none": 5,  "light": 8, "heavy": 7}},
+    "aug": {"temperature": {"warm": 5, "hot": 5},
+            "humidity":    {"normal": 1, "humid": 9, "dry": 0},
+            "precip":      {"none": 5,  "light": 8, "heavy": 7}},
+    "sep": {"temperature": {"warm": 4, "hot": 6},
+            "humidity":    {"normal": 2, "humid": 8, "dry": 0},
+            "precip":      {"none": 8,  "light": 8, "heavy": 4}},
+}
+
+_SUBTROPICAL_HUMID = {
+    # Tokyo / Shanghai / Seoul / Houston / Buenos Aires shoulder. Hot
+    # humid midsummer (with the East-Asia rainy season in jun) but
+    # less extreme than tropical_monsoon — hottest tier doesn't dominate
+    # the way it does at lower latitudes.
+    "apr": {"temperature": {"mild": 5, "warm": 4, "cold": 1},
+            "humidity":    {"normal": 5, "humid": 4, "dry": 1},
+            "precip":      {"none": 14, "light": 5, "heavy": 1}},
+    "may": {"temperature": {"warm": 6, "mild": 3, "hot": 1},
+            "humidity":    {"normal": 4, "humid": 5, "dry": 1},
+            "precip":      {"none": 12, "light": 6, "heavy": 2}},
+    "jun": {"temperature": {"warm": 5, "hot": 4, "mild": 1},
+            "humidity":    {"normal": 2, "humid": 8, "dry": 0},
+            "precip":      {"none": 10, "light": 7, "heavy": 3}},
+    "jul": {"temperature": {"hot": 7, "warm": 3},
+            "humidity":    {"normal": 1, "humid": 9, "dry": 0},
+            "precip":      {"none": 11, "light": 6, "heavy": 3}},
+    "aug": {"temperature": {"hot": 7, "warm": 3},
+            "humidity":    {"normal": 1, "humid": 9, "dry": 0},
+            "precip":      {"none": 11, "light": 6, "heavy": 3}},
+    "sep": {"temperature": {"warm": 6, "hot": 2, "mild": 2},
+            "humidity":    {"normal": 3, "humid": 7, "dry": 0},
+            "precip":      {"none": 12, "light": 6, "heavy": 2}},
+}
+
+_ARID_STEPPE = {
+    # Astana / Tashkent / interior West-Asia: hot dry summers, cool
+    # springs/falls, very low humidity, occasional thunderstorm. Less
+    # extreme than desert (more spring rain, cooler shoulders).
+    "apr": {"temperature": {"cold": 3, "mild": 6, "warm": 1},
+            "humidity":    {"dry": 6, "normal": 3, "humid": 1},
+            "precip":      {"none": 16, "light": 3, "heavy": 1}},
+    "may": {"temperature": {"mild": 4, "warm": 5, "hot": 1},
+            "humidity":    {"dry": 6, "normal": 3, "humid": 1},
+            "precip":      {"none": 17, "light": 2, "heavy": 1}},
+    "jun": {"temperature": {"warm": 5, "hot": 4, "mild": 1},
+            "humidity":    {"dry": 7, "normal": 3, "humid": 0},
+            "precip":      {"none": 19, "light": 1, "heavy": 0}},
+    "jul": {"temperature": {"hot": 7, "warm": 3},
+            "humidity":    {"dry": 8, "normal": 2, "humid": 0},
+            "precip":      {"none": 19, "light": 1, "heavy": 0}},
+    "aug": {"temperature": {"hot": 6, "warm": 4},
+            "humidity":    {"dry": 8, "normal": 2, "humid": 0},
+            "precip":      {"none": 19, "light": 1, "heavy": 0}},
+    "sep": {"temperature": {"mild": 4, "warm": 5, "cold": 1},
+            "humidity":    {"dry": 6, "normal": 3, "humid": 1},
+            "precip":      {"none": 18, "light": 2, "heavy": 0}},
+}
+
+
 _TABLES: dict[str, dict] = {
     "desert":            _DESERT,
     "coastal_cool":      _COASTAL_COOL,
@@ -436,6 +977,11 @@ _TABLES: dict[str, dict] = {
     "continental_warm":  _CONTINENTAL_WARM,
     "tropical":          _TROPICAL,
     "mountain":          _MOUNTAIN,
+    "subarctic":         _SUBARCTIC,
+    "mediterranean":     _MEDITERRANEAN,
+    "tropical_monsoon":  _TROPICAL_MONSOON,
+    "subtropical_humid": _SUBTROPICAL_HUMID,
+    "arid_steppe":       _ARID_STEPPE,
 }
 
 # Wind and cloud cover are archetype-agnostic at v1 — they vary too much
