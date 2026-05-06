@@ -762,6 +762,28 @@ class Renderer:
         elif etype == "pinch_hit":
             replacement = event.get("replacement")
             d["replacement_name"] = replacement.name if replacement else "?"
+            # Mark the replacement as a PH and record who they came in for.
+            # The replaced player is the team's CURRENT batter at this point
+            # in the event stream (pinch_hit fires before the replacement
+            # has actually batted).
+            replaced = ctx.get("batter")
+            if replacement is not None:
+                rs = self._get_stats(replacement)
+                rs.entry_type = "PH"
+                if replaced is not None:
+                    rs.replaced_player_id = str(replaced.player_id)
+
+        elif etype == "joker_inserted":
+            # Joker entered for one PA. They get game_position="J" elsewhere;
+            # here we mark entry_type so the box score can group them.
+            joker_id = event.get("joker_id")
+            joker_name = event.get("joker_name", "")
+            if joker_id and joker_id in self._batter_stats:
+                self._batter_stats[joker_id].entry_type = "joker"
+            elif joker_id:
+                self._batter_stats[joker_id] = BatterStats(
+                    player_id=str(joker_id), name=joker_name, entry_type="joker"
+                )
 
         return d
 

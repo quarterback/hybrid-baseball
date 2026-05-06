@@ -621,6 +621,10 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict])
                 "c2_op_3b":  getattr(bstat, "c2_op_3b", 0),
                 "c2_adv_3b": getattr(bstat, "c2_adv_3b", 0),
                 "game_position": str(getattr(player, "game_position", "") or ""),
+                "entry_type": str(getattr(bstat, "entry_type", "") or "starter"),
+                "replaced_player_id": (
+                    int(getattr(bstat, "replaced_player_id", "") or 0) or None
+                ),
                 "roe": getattr(bstat, "roe", 0),
                 "po": getattr(bstat, "po", 0),
                 "e":  getattr(bstat, "e",  0),
@@ -1018,8 +1022,9 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                     doubles, triples, hr, rbi, bb, k, stays, outs_recorded,
                     hbp, sb, cs, fo, multi_hit_abs, stay_rbi, stay_hits,
                     c2_op_1b, c2_adv_1b, c2_op_2b, c2_adv_2b, c2_op_3b, c2_adv_3b,
-                    game_position, roe, po, e)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    game_position, entry_type, replaced_player_id,
+                    roe, po, e)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
@@ -1031,6 +1036,8 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                  r.get("c2_op_2b", 0), r.get("c2_adv_2b", 0),
                  r.get("c2_op_3b", 0), r.get("c2_adv_3b", 0),
                  r.get("game_position", ""),
+                 r.get("entry_type", "starter"),
+                 r.get("replaced_player_id"),
                  r.get("roe", 0),
                  r.get("po", 0), r.get("e", 0)),
             )

@@ -52,12 +52,15 @@ def _pos_short(pos: str) -> str:
     return (pos or "").lower()
 
 
-def _name_pos_with_dots(name: str, pos: str) -> str:
+def _name_pos_with_dots(name: str, pos: str, indent: int = 0) -> str:
     """'Biggio       ss .......' — name + position followed by dot leaders
-    out to NAME_POS_WIDTH."""
+    out to NAME_POS_WIDTH. `indent` (0 or 2) shifts the name right by that
+    many spaces while preserving total prefix width — the stat columns
+    still align under any starter."""
     last = _last_name(name)
     pos_s = _pos_short(pos)
-    head = f"{last:<11} {pos_s:<2}"
+    name_cap = max(4, 11 - indent)
+    head = (" " * indent) + f"{last[:name_cap]:<{name_cap}} {pos_s:<2}"
     if len(head) >= NAME_POS_WIDTH - 1:
         head = head[: NAME_POS_WIDTH - 2]
     pad = NAME_POS_WIDTH - len(head) - 1
@@ -124,6 +127,48 @@ def render_line_score(
                   + "\n" + _row(game.get("home_name", "Home"), home_line)
 
 
+def _ordered_rows_with_indent(rows: list[dict]) -> list[tuple[dict, int]]:
+    """Order batting rows for newspaper-style display.
+
+    - Starters in their original game order (lineup order is preserved by
+      the caller; we don't re-sort starters).
+    - PH / sub rows immediately follow the starter they replaced, indented.
+    - Joker rows trail at the end, un-indented but flagged with position
+      "J" so the reader sees they're tactical pinch-hitters.
+
+    Returns list of (row, indent_level) tuples. indent_level is 0 for
+    starters/jokers, 1 for PH/sub.
+    """
+    starters = [r for r in rows if r.get("entry_type", "starter") == "starter"]
+    phs      = [r for r in rows if r.get("entry_type") in ("PH", "sub")]
+    jokers   = [r for r in rows if r.get("entry_type") == "joker"]
+
+    # Index PH/sub rows under the starter they replaced.
+    by_replaced: dict = {}
+    for r in phs:
+        rp = r.get("replaced_player_id")
+        if rp is None:
+            continue
+        by_replaced.setdefault(int(rp), []).append(r)
+
+    out: list[tuple[dict, int]] = []
+    for s in starters:
+        out.append((s, 0))
+        for sub in by_replaced.get(s.get("player_id"), []):
+            out.append((sub, 1))
+    # Any PH/sub rows that we couldn't pair (legacy rows missing
+    # replaced_player_id, or replacement of a player not in the table)
+    # land at the end indented but un-paired.
+    placed = {id(t[0]) for t in out}
+    for r in phs:
+        if id(r) not in placed:
+            out.append((r, 1))
+    # Jokers trail.
+    for j in jokers:
+        out.append((j, 0))
+    return out
+
+
 def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
     """Per-team batting block: TEAM NAME, header row, player rows w/ dot
     leaders, totals row. PA is intentionally omitted (implied; box-score
@@ -137,8 +182,9 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
     out.append(header)
 
     totals = {k.lower(): 0 for k in cols}
+    ordered = _ordered_rows_with_indent(rows)
 
-    for r in rows:
+    for r, indent in ordered:
         ab  = r.get("ab", 0) or 0
         runs = r.get("runs", 0) or 0
         h   = r.get("hits", 0) or 0
@@ -150,10 +196,21 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
         k   = r.get("k",  0) or 0
         c2  = r.get("stays", 0) or 0   # internal "sty" maps to 2C count
 
+        # PH/sub rows show position "ph" instead of the fielding slot
+        # they didn't actually take (a PH with 0 PAs in the field).
+        et = r.get("entry_type", "starter")
+        if et == "PH":
+            pos = "ph"
+        elif et == "sub":
+            pos = (r.get("box_position") or r.get("position") or "").lower()
+        else:
+            pos = r.get("box_position") or r.get("position", "")
+
         prefix = _name_pos_with_dots(
-            r.get("player_name", ""),
-            r.get("box_position") or r.get("position", ""),
+            r.get("player_name", ""), pos,
+            indent=2 if indent else 0,
         )
+
         line = (
             prefix
             + _rj(ab) + _rj(runs) + _rj(h)
@@ -214,9 +271,22 @@ def render_batting_annotations(rows: Iterable[dict]) -> str:
     pairs = _pick("triples")
     if pairs:
         lines.append(f"  3B: {_items(pairs)}.")
-    pairs = _pick("hr")
-    if pairs:
-        lines.append(f"  HR: {_items(pairs)}.")
+    # HR: include season total in parentheses, real-newspaper convention.
+    # "Smith (12)"  =  hit a HR; that was his 12th of the season.
+    # "Smith 2 (12)" = hit 2 HR today; season total stands at 12.
+    hr_items: list[str] = []
+    for r in rows:
+        n = r.get("hr", 0) or 0
+        if n <= 0:
+            continue
+        last = _last_name(r.get("player_name") or "")
+        season = r.get("season_hr") or n
+        if n > 1:
+            hr_items.append(f"{last} {n} ({season})")
+        else:
+            hr_items.append(f"{last} ({season})")
+    if hr_items:
+        lines.append(f"  HR: {', '.join(hr_items)}.")
     pairs = _pick("sb")
     if pairs:
         lines.append(f"  SB: {_items(pairs)}.")

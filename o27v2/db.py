@@ -152,6 +152,11 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     -- Utility (UT) players land on a concrete slot at lineup build time;
     -- jokers stay "J". Mid-game defensive moves can extend (e.g. "SS-2B").
     game_position TEXT DEFAULT '',
+    -- Box-score entry classification. "starter" / "PH" / "sub" / "joker".
+    entry_type TEXT DEFAULT 'starter',
+    -- For PH / sub rows: the player_id they came in for, used to indent
+    -- the box-score row directly under the starter they replaced.
+    replaced_player_id INTEGER DEFAULT NULL,
     roe        INTEGER DEFAULT 0,   -- reached on error (NOT a hit; AB credited)
     -- Per-fielder defensive events (the player as a FIELDER, not as a batter).
     po         INTEGER DEFAULT 0,   -- putouts as primary fielder
@@ -485,6 +490,16 @@ def init_db() -> None:
                 pass
         try:
             conn.execute("ALTER TABLE game_batter_stats ADD COLUMN game_position TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE game_batter_stats ADD COLUMN entry_type TEXT DEFAULT 'starter'")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE game_batter_stats ADD COLUMN replaced_player_id INTEGER DEFAULT NULL")
             conn.commit()
         except Exception:
             pass

@@ -37,6 +37,16 @@ class BatterStats:
     c2_adv_2b: int = 0
     c2_op_3b: int = 0
     c2_adv_3b: int = 0      # 3B "advance" = scored
+
+    # Box-score entry classification. Set by the render pipeline:
+    #   "starter" — batted at the start of the game (default)
+    #   "PH"       — entered as a pinch hitter for `replaced_player_id`
+    #   "sub"      — defensive substitution (mid-game)
+    #   "joker"    — tactical joker insertion (one-PA appearance)
+    # `replaced_player_id` lets the box score indent this row under the
+    # player they replaced so the lineup ordering reads naturally.
+    entry_type: str = "starter"
+    replaced_player_id: str = ""
     # Counting stats persisted post-realism layer.
     sb: int = 0     # Successful steals charged to this runner
     cs: int = 0     # Caught-stealing outs charged to this runner

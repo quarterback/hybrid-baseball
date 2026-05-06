@@ -1386,7 +1386,9 @@ def game_detail(game_id: int):
         """SELECT bs.*, p.name as player_name,
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
-                           CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position
+                           CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
+                  COALESCE(bs.entry_type, 'starter') AS entry_type,
+                  bs.replaced_player_id AS replaced_player_id
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["away_team_id"]))
@@ -1394,7 +1396,9 @@ def game_detail(game_id: int):
         """SELECT bs.*, p.name as player_name,
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
-                           CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position
+                           CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
+                  COALESCE(bs.entry_type, 'starter') AS entry_type,
+                  bs.replaced_player_id AS replaced_player_id
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["home_team_id"]))
@@ -1604,6 +1608,25 @@ def game_detail(game_id: int):
 
     from o27.engine.weather import Weather
     weather_label = Weather.from_row(game).short_label()
+
+    # Season HR totals through this game — for the box-score "HR: Smith (12)"
+    # annotation. One round-trip per side; cheap.
+    def _season_hr_through(team_id: int) -> dict[int, int]:
+        rows = db.fetchall(
+            """SELECT bs.player_id AS pid, SUM(bs.hr) AS hr_total
+               FROM game_batter_stats bs JOIN games g ON bs.game_id = g.id
+               WHERE bs.team_id = ?
+                 AND (g.game_date < ? OR (g.game_date = ? AND g.id <= ?))
+               GROUP BY bs.player_id""",
+            (team_id, game["game_date"], game["game_date"], game_id),
+        )
+        return {r["pid"]: int(r["hr_total"] or 0) for r in rows}
+    away_season_hr = _season_hr_through(game["away_team_id"])
+    home_season_hr = _season_hr_through(game["home_team_id"])
+    for r in away_batting_consolidated:
+        r["season_hr"] = away_season_hr.get(r["player_id"], 0)
+    for r in home_batting_consolidated:
+        r["season_hr"] = home_season_hr.get(r["player_id"], 0)
 
     # Newspaper-style plaintext box score. Built from the consolidated
     # per-player rows and the line-score totals computed above. Rendered
