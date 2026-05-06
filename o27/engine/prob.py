@@ -55,6 +55,130 @@ def _sample_quality(
     return draw
 
 
+def _select_pitch(
+    rng: Optional[random.Random],
+    pitcher: Player,
+    balls: int,
+    strikes: int,
+) -> tuple:
+    """Select one pitch from the pitcher's repertoire for this pitch event.
+
+    Returns (pitch_type, quality) or (None, 0.5) for legacy pitchers without
+    a typed repertoire. Weights are count-biased: 2-strike counts favour
+    put-away pitches; behind-in-count favours fastballs.
+    """
+    repertoire = getattr(pitcher, "repertoire", None)
+    if not repertoire or rng is None:
+        return None, 0.5
+
+    release_angle = float(getattr(pitcher, "release_angle", 0.5))
+    two_strike = (strikes == 2)
+    behind     = (balls > strikes)
+    ahead      = (strikes > 0 and balls <= strikes)
+
+    pitches: list = []
+    weights: list = []
+
+    for entry in repertoire:
+        catalog = cfg.PITCH_CATALOG.get(entry.pitch_type)
+        if catalog is None:
+            continue
+        # Hard release-point gate — some pitches simply don't work above a
+        # given arm slot (e.g. curve_10_to_2 needs sidearm or below).
+        max_rel = catalog.get("max_release")
+        if max_rel is not None and release_angle > max_rel:
+            continue
+
+        w = float(entry.usage_weight)
+        bias = catalog.get("count_bias", "all")
+        if two_strike and bias == "2strike":
+            w *= 2.2
+        elif behind and bias == "behind":
+            w *= 1.6
+        elif ahead and bias == "ahead":
+            w *= 1.4
+        # "all" pitches: no weight bump
+
+        pitches.append((entry.pitch_type, float(entry.quality)))
+        weights.append(w)
+
+    if not pitches:
+        return None, 0.5
+
+    total = sum(weights)
+    r = rng.random() * total
+    cumsum = 0.0
+    for (ptype, pq), w in zip(pitches, weights):
+        cumsum += w
+        if r < cumsum:
+            return ptype, pq
+    return pitches[-1]
+
+
+def _release_quality(release_angle: float, catalog: dict) -> float:
+    """Multiplier [0.5, 1.0] on pitch effectiveness based on release compatibility.
+
+    Within the pitch's release_window around its release_optimal: full effect.
+    Beyond that: degrades toward 0.5 over another window of distance.
+    """
+    optimal = catalog.get("release_optimal", 0.5)
+    window  = catalog.get("release_window", 0.4)
+    dist = abs(release_angle - optimal)
+    if dist <= window:
+        return 1.0
+    excess = dist - window
+    return max(0.5, 1.0 - 0.5 * excess / max(window, 0.01))
+
+
+def _apply_pitch_platoon(
+    base: list,
+    catalog: dict,
+    pitcher: Player,
+    batter: Player,
+) -> None:
+    """Apply pitch-type-specific platoon K/contact shifts to base probability vector.
+
+    Each platoon_mode defines who the pitcher has the bonus against:
+      standard     — pitcher advantage vs same-handed (standard slider/fastball split)
+      reverse      — pitcher advantage vs opposite-handed (changeup, screwball)
+      neutral      — no platoon adjustment
+      same_heavy   — large bonus vs same-handed (Sisko slider), slight penalty vs opposite
+      opposite_heavy — large bonus vs opposite-handed (vulcan changeup, cutter)
+    """
+    mode  = catalog.get("platoon_mode", "neutral")
+    scale = float(catalog.get("platoon_scale", 1.0))
+    if mode == "neutral" or scale == 0.0:
+        return
+
+    b, p = batter.bats, pitcher.throws
+    if not b or not p:
+        return
+
+    same_handed = (b != "S" and b == p)
+    base_adj    = cfg.PLATOON_PENALTY * scale
+
+    if mode == "standard":
+        if same_handed:
+            base[2] += base_adj * 0.5
+            base[4] -= base_adj * 0.3
+    elif mode == "reverse":
+        if not same_handed and b != "S":
+            base[2] += base_adj * 0.5
+            base[4] -= base_adj * 0.3
+    elif mode == "same_heavy":
+        if same_handed:
+            base[2] += base_adj * 1.0
+            base[4] -= base_adj * 0.5
+        elif b != "S":
+            base[2] -= base_adj * 0.15   # slightly weaker vs opposite
+    elif mode == "opposite_heavy":
+        if not same_handed and b != "S":
+            base[2] += base_adj * 0.8
+            base[4] -= base_adj * 0.4
+        else:
+            base[2] -= base_adj * 0.10
+
+
 def _platoon_factor(batter: Player, pitcher: Player) -> float:
     """Return the multiplier to apply to batter-side probability shifts.
 
@@ -85,6 +209,8 @@ def _pitch_probs(
     spell_count: int,
     weather: Optional[object] = None,
     rng: Optional[random.Random] = None,
+    pitch_type: Optional[str] = None,
+    pitch_quality: float = 0.5,
 ) -> tuple:
     """Return adjusted pitch-outcome probability tuple (sums to 1.0)."""
     base = list(cfg.PITCH_BASE.get((balls, strikes), cfg.PITCH_BASE[(0, 0)]))
@@ -115,7 +241,13 @@ def _pitch_probs(
     base[4] += p_dom * cfg.PITCHER_DOM_CONTACT
 
     # Batter dominance: skill > 0.5 shifts probability toward contact.
-    plat = _platoon_factor(batter, pitcher)
+    # Release-angle platoon amplifier: submarine pitchers' horizontal
+    # movement amplifies the handedness advantage — the ball starts inside
+    # and breaks away (or vice-versa) more dramatically than from a higher
+    # slot. Identity at release_angle = 0.5 (sidearm).
+    release_angle = float(getattr(pitcher, "release_angle", 0.5))
+    rel_plat_amp  = 1.0 + (0.5 - release_angle) * cfg.RELEASE_PLATOON_AMP_SCALE
+    plat  = _platoon_factor(batter, pitcher) * max(0.5, rel_plat_amp)
     b_dom = (batter.skill - 0.5) * 2 * plat        # −1.0 to +1.0
     base[2] += b_dom * cfg.BATTER_DOM_SWINGING
     base[4] += b_dom * cfg.BATTER_DOM_CONTACT
@@ -176,11 +308,32 @@ def _pitch_probs(
         grit = float(getattr(pitcher, "grit", 0.5))
         grit_mult = max(0.0, 1.0 - (grit - 0.5) * 2.0 * cfg.GRIT_FATIGUE_RESIST)
         fatigue *= grit_mult
+        # Release-angle arm ease: submarine deliveries are structurally
+        # less taxing. Identity at 0.5 (sidearm). Below 0.5 only.
+        rel_ease = max(0.0, 0.5 - release_angle) * cfg.RELEASE_FATIGUE_SCALE
+        fatigue *= (1.0 - rel_ease)
+
         base[0] += fatigue * cfg.FATIGUE_BALL
         base[4] += fatigue * cfg.FATIGUE_CONTACT
         base[1] += fatigue * cfg.FATIGUE_CALLED
         base[2] += fatigue * cfg.FATIGUE_SWINGING
         base[3] += fatigue * cfg.FATIGUE_FOUL
+
+    # Pitch-type adjustments — quality-scaled deltas from the PITCH_CATALOG.
+    # Applied after all talent/fatigue terms, before weather. At quality=1.0
+    # the full catalog delta fires; at quality=0.0 it collapses to 0 (identity).
+    # Release-quality multiplier further scales the effect if the pitcher's arm
+    # slot doesn't match this pitch's natural release window.
+    if pitch_type is not None:
+        catalog = cfg.PITCH_CATALOG.get(pitch_type)
+        if catalog is not None:
+            pq   = float(pitch_quality)
+            rq   = _release_quality(release_angle, catalog)
+            eff  = pq * rq           # effective quality after release-match penalty
+            base[0] += catalog["bb_delta"]      * eff
+            base[2] += catalog["k_delta"]        * eff
+            base[4] += catalog["contact_delta"]  * eff
+            _apply_pitch_platoon(base, catalog, pitcher, batter)
 
     # Weather K modifier — applied as a multiplicative shift on the
     # strike-component shares (called + swinging). Foul / contact
@@ -216,9 +369,14 @@ def pitch_outcome(
     strikes: int,
     spell_count: int,
     weather: Optional[object] = None,
+    pitch_type: Optional[str] = None,
+    pitch_quality: float = 0.5,
 ) -> str:
     """Draw one pitch outcome. Returns a string matching one of _PITCH_NAMES."""
-    probs = _pitch_probs(pitcher, batter, balls, strikes, spell_count, weather, rng=rng)
+    probs = _pitch_probs(
+        pitcher, batter, balls, strikes, spell_count, weather,
+        rng=rng, pitch_type=pitch_type, pitch_quality=pitch_quality,
+    )
     r = rng.random()
     cumulative = 0.0
     for name, p in zip(_PITCH_NAMES, probs):
@@ -237,6 +395,8 @@ def contact_quality(
     batter: Player,
     pitcher: Player,
     weather: Optional[object] = None,
+    pitch_type: Optional[str] = None,
+    pitch_quality: float = 0.5,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
@@ -277,6 +437,15 @@ def contact_quality(
     # rate vanishingly low against a replacement bat, and vice-versa.
     weak_p   = max(0.001, cfg.CONTACT_WEAK_BASE   - shift - arch_delta - power_tilt + move_tilt)
     hard_p   = max(0.001, cfg.CONTACT_HARD_BASE   + shift + arch_delta + power_tilt - move_tilt)
+
+    # Pitch-type contact-quality shifts — applied quality-scaled, release-matched.
+    if pitch_type is not None:
+        catalog = cfg.PITCH_CATALOG.get(pitch_type)
+        if catalog is not None:
+            release_angle = float(getattr(pitcher, "release_angle", 0.5))
+            eff = float(pitch_quality) * _release_quality(release_angle, catalog)
+            weak_p = max(0.001, weak_p + catalog.get("weak_contact_shift", 0.0) * eff)
+            hard_p = max(0.001, hard_p + catalog.get("hard_contact_shift", 0.0) * eff)
 
     # Weather multiplier on hard-contact share. Excess (or deficit) is
     # absorbed by weak; medium is computed by complement so the three
@@ -1035,7 +1204,17 @@ class ProbabilisticProvider:
         spell   = state.pitcher_spell_count
 
         weather = getattr(state, "weather", None)
-        outcome = pitch_outcome(rng, pitcher, batter, balls, strikes, spell, weather)
+
+        # Select one pitch from the repertoire (if the pitcher has one).
+        # The same pitch drives both the pitch-outcome model and, if contact
+        # results, the contact-quality model. Legacy pitchers (no repertoire)
+        # return (None, 0.5) and the aggregate Stuff/Command/Movement path fires.
+        sel_pitch, sel_quality = _select_pitch(rng, pitcher, balls, strikes)
+
+        outcome = pitch_outcome(
+            rng, pitcher, batter, balls, strikes, spell, weather,
+            pitch_type=sel_pitch, pitch_quality=sel_quality,
+        )
 
         # HBP: a fraction of balls become hit-by-pitches, scaled by pitcher
         # command. Converting after pitch_outcome instead of teaching
@@ -1069,7 +1248,10 @@ class ProbabilisticProvider:
             return {"type": outcome}
 
         # --- Contact resolution ---
-        quality = contact_quality(rng, batter, pitcher, weather)
+        quality = contact_quality(
+            rng, batter, pitcher, weather,
+            pitch_type=sel_pitch, pitch_quality=sel_quality,
+        )
         is_hr     = False
         is_triple = False
 

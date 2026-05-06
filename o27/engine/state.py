@@ -62,6 +62,19 @@ class Count:
 # ---------------------------------------------------------------------------
 
 @dataclass
+class PitchEntry:
+    """One pitch in a pitcher's repertoire.
+
+    pitch_type   — key into config.PITCH_CATALOG
+    quality      — this pitcher's mastery of the pitch (0.0–1.0)
+    usage_weight — relative frequency in neutral situations (un-normalised)
+    """
+    pitch_type:    str
+    quality:       float = 0.5
+    usage_weight:  float = 1.0
+
+
+@dataclass
 class Player:
     """A player on a roster."""
     player_id: str
@@ -156,6 +169,18 @@ class Player:
     # game loop on every `_set_fielding_pitcher` so the same SP can pitch
     # a gem one start and a clunker the next. 1.0 = legacy parity.
     today_form: float = 1.0
+
+    # Release-point position within the sidearm/submarine spectrum.
+    # O27 is a sidearm/submarine sport (lore-level structural fact).
+    #   0.0 = submarine       (extreme downward angle, strongest platoon effect, least arm stress)
+    #   0.5 = sidearm         (default; league centre-mass; identity for all multipliers)
+    #   1.0 = three-quarter   (highest slot in O27; slightly reduced platoon effect)
+    release_angle: float = 0.5
+
+    # Pitch repertoire. Empty list = legacy pitcher without typed repertoire;
+    # the engine falls back to aggregate Stuff/Movement/Command. Populated by
+    # roster generation or player creation helpers.
+    repertoire: list = field(default_factory=list)  # list[PitchEntry]
 
     # Workload-model state — populated per-game by sim.py from the live DB
     # game_pitcher_stats history. Defaults preserve identity for legacy

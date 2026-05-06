@@ -22,7 +22,7 @@ if _workspace_root not in sys.path:
 
 from o27 import config as _cfg
 
-from o27.engine.state import GameState, Team, Player
+from o27.engine.state import GameState, Team, Player, PitchEntry
 from o27.engine.game import run_game, make_script_provider
 from o27.engine.prob import ProbabilisticProvider
 from o27.engine import fielding as fld
@@ -44,6 +44,8 @@ def _player(
     movement: float = 0.5,
     pitch_variance: float = 0.0,
     grit: float = _cfg.PLAYER_DEFAULT_GRIT,
+    release_angle: float = 0.5,
+    repertoire: list | None = None,
     stay_aggressiveness: float = _cfg.PLAYER_DEFAULT_STAY_AGGRESSIVENESS,
     contact_quality_threshold: float = _cfg.PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD,
     is_pitcher: bool = False,
@@ -61,6 +63,8 @@ def _player(
         movement=movement,
         pitch_variance=pitch_variance,
         grit=grit,
+        release_angle=release_angle,
+        repertoire=repertoire or [],
         stay_aggressiveness=stay_aggressiveness,
         contact_quality_threshold=contact_quality_threshold,
         is_pitcher=is_pitcher,
@@ -92,9 +96,19 @@ def make_foxes() -> Team:
                 stay_aggressiveness=0.07, contact_quality_threshold=0.32),
         _player("F8",  "K. Yamada",   skill=0.44, speed=0.70,
                 stay_aggressiveness=0.06, contact_quality_threshold=0.30),
+        # S. Okafor — sidearm K-specialist. Four-seam (setup) + Sisko slider
+        # (same-handed destroyer) + curve_10_to_2 (groundball engine).
+        # Classic O27 sidearm archetype: strong same-handed platoon advantage,
+        # changeup as a fourth pitch to survive opposite-handed lineups.
         _player("F9",  "S. Okafor",   skill=0.30, speed=0.38,
-                pitcher_skill=0.52, command=0.55, movement=0.50,
-                pitch_variance=0.06, grit=0.55,
+                pitcher_skill=0.52, command=0.55, movement=0.55,
+                pitch_variance=0.06, grit=0.55, release_angle=0.45,
+                repertoire=[
+                    PitchEntry("four_seam",      quality=0.55, usage_weight=2.0),
+                    PitchEntry("sisko_slider",   quality=0.72, usage_weight=2.5),
+                    PitchEntry("curve_10_to_2",  quality=0.60, usage_weight=1.5),
+                    PitchEntry("changeup",       quality=0.45, usage_weight=1.0),
+                ],
                 stay_aggressiveness=0.03, contact_quality_threshold=0.18,
                 is_pitcher=True),
         _player("FJ1", "V. Ramos",    skill=0.70, speed=0.52,
@@ -138,9 +152,19 @@ def make_bears() -> Team:
                 stay_aggressiveness=0.05, contact_quality_threshold=0.20),
         _player("B8",  "H. Mwangi",     skill=0.40, speed=0.46,
                 stay_aggressiveness=0.04, contact_quality_threshold=0.18),
+        # C. Lindqvist — submarine groundball monster. Sinker + walking slider
+        # + spitter + curve_10_to_2. The extreme low release amplifies platoon
+        # effects and the pitch mix is all movement, no velocity. 2C-suppressing
+        # because batters won't extend on grounders; a terror in the right lineup.
         _player("B9",  "C. Lindqvist",  skill=0.28, speed=0.35,
-                pitcher_skill=0.62, command=0.48, movement=0.58,
-                pitch_variance=0.07, grit=0.62,
+                pitcher_skill=0.62, command=0.48, movement=0.70,
+                pitch_variance=0.07, grit=0.62, release_angle=0.15,
+                repertoire=[
+                    PitchEntry("sinker",         quality=0.75, usage_weight=3.0),
+                    PitchEntry("walking_slider",  quality=0.65, usage_weight=2.0),
+                    PitchEntry("spitter",        quality=0.58, usage_weight=1.5),
+                    PitchEntry("curve_10_to_2",  quality=0.68, usage_weight=2.0),
+                ],
                 stay_aggressiveness=0.02, contact_quality_threshold=0.10,
                 is_pitcher=True),
         _player("BJ1", "D. Oduya",      skill=0.74, speed=0.38,

@@ -91,6 +91,55 @@ Late-game (50 BF, fatigue zone):
 - **Grit + Stamina compose cleanly.** Stamina sets the threshold; Grit scales the post-threshold ramp. They mean different things and can be rolled independently in roster generation.
 - **Per-pitch variance gives pitchers their own consistency identity** without adding a new RNG branch — the helper falls back to identity at variance = 0 so legacy callers get bit-exact behavior.
 
+## Phase 11b — Pitch Catalog + Release-Angle System
+
+Implemented in the same branch after user approval.
+
+### What was added
+
+**17-pitch catalog** in `o27/config.py → PITCH_CATALOG`:
+- Fastballs: four_seam, sinker, cutter, palmball
+- Breaking: slider, sisko_slider, walking_slider, curveball, curve_10_to_2
+- Off-speed: changeup, vulcan_changeup, splitter
+- Specialty: knuckleball, spitter, eephus, screwball, gyroball
+
+Each pitch type defines k_delta, bb_delta, contact_delta, hard/weak_contact_shift, platoon_mode/scale, release_optimal/window, arm_stress, max_release, count_bias.
+
+**`PitchEntry` dataclass** (`engine/state.py`): `pitch_type`, `quality`, `usage_weight`.
+
+**`Player.release_angle`** (0.0=submarine / 0.5=sidearm / 1.0=three-quarter sidearm). Drives:
+- Release-angle platoon amplifier: submarine pitchers have stronger platoon effects (RELEASE_PLATOON_AMP_SCALE=0.60, so sub adds 30% more).
+- Arm-ease fatigue reduction for submarine deliveries (RELEASE_FATIGUE_SCALE=0.20).
+- Per-pitch release_quality multiplier [0.5, 1.0] that scales how well a pitch works from a given slot.
+
+**`Player.repertoire`** (list[PitchEntry]) — per-pitcher pitch selection. Legacy pitchers (empty list) retain full identity.
+
+**`_select_pitch`** — count-aware weighted selection. 2-strike counts boost put-away pitches 2.2×; behind boosts fastballs 1.6×. Hard release gate excludes pitches with `max_release < pitcher.release_angle`.
+
+**Pitch selection threaded through `_generate_pitch`** — one `_select_pitch` call, same pitch drives both `pitch_outcome` (K/BB/contact) and `contact_quality` (hard/weak/GB shifts).
+
+**Platoon per pitch type** via `_apply_pitch_platoon` — five modes:
+- neutral / standard / reverse / same_heavy (Sisko slider) / opposite_heavy (Vulcan changeup, cutter)
+
+**O27 sidearm/submarine structural fact**: treated as lore-level, not enforced mechanically. `max_release` on individual pitches (e.g. curve_10_to_2 ≤ 0.50, sisko_slider ≤ 0.70) encodes which pitches simply don't work from higher slots — the restriction emerges from pitch viability, not an enforcement gate.
+
+**Demo pitchers given archetypes:**
+- F9 S. Okafor (release_angle=0.45): sidearm K-specialist — four_seam + sisko_slider + curve_10_to_2 + changeup
+- B9 C. Lindqvist (release_angle=0.15): submarine groundball monster — sinker + walking_slider + spitter + curve_10_to_2
+
+### Validation (500-game tune, full pitch system)
+| Metric | Post 11b | Target |
+|---|---|---|
+| Avg total runs/game | 22.51 | 22–24 ✓ |
+| Avg run rate (R/out) | 0.4169 | ~0.43 ✓ |
+| Super-inning freq | 5.00% | <5% ≈ |
+| League K% | 18.54% | 17–19% ✓ |
+| League BA | .280 | .280–.305 ✓ |
+
+Identity invariant preserved (all-neutral inputs: max_diff < 1e-6 vs base table).
+
+---
+
 ## Open Items / Follow-ups
 
 - **BB% is at 7.45%** (target 9–10%). Pitcher Command and Stuff-Ball are now both pulling hard. If the league-mean BB% target stands, trim `PITCHER_COMMAND_BALL` from −0.07 → −0.05 OR raise `PITCHER_DOM_BALL` ceiling. But the user's mandate was "talent dictates performance, not the artificial mean," so the stat-line drift may be acceptable.

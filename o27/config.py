@@ -568,3 +568,352 @@ PARK_HITS_MAX:  float = 1.08
 # Set to 0.0 to disable a new attribute entirely.
 BLEND_BATTER_CONTACT_VS_SKILL: float = 0.6   # contact-quality matchup blend
 BLEND_PITCHER_STUFF_VS_FORM:   float = 1.0   # today_form already a multiplier
+
+# ---------------------------------------------------------------------------
+# Release-point model
+# ---------------------------------------------------------------------------
+# O27 is a sidearm/submarine sport — the conventional overhand delivery is
+# a lore-level structural fact, not enforced mechanically. The release_angle
+# attribute encodes position within the sidearm spectrum:
+#   0.0 = submarine  (extreme downward angle, strongest platoon, least arm stress)
+#   0.5 = sidearm    (default; league centre-mass)
+#   1.0 = three-quarter sidearm  (highest slot available in O27)
+#
+# Effects compound with the pitch catalog below. Identity at release_angle=0.5.
+
+# Platoon amplifier: submarine pitchers' side-to-side movement amplifies the
+# handedness advantage. (0.5 - release_angle) positive for sub, negative for 3q.
+RELEASE_PLATOON_AMP_SCALE: float = 0.60   # submarine adds 30% more platoon effect
+
+# Arm-stress reducer: lower arm slot less taxing on the shoulder/elbow.
+# Only fires for release_angle < 0.5 (sub side); identity at 0.5+.
+RELEASE_FATIGUE_SCALE: float = 0.20   # submarine (0.0) cuts fatigue by 10%
+
+# ---------------------------------------------------------------------------
+# Pitch catalog — O27 pitch types
+# ---------------------------------------------------------------------------
+# Each entry describes one pitch type's structural effects on per-pitch
+# probabilities (via _pitch_probs) and contact quality (via contact_quality).
+#
+# Keys:
+#   k_delta           added to swinging_strike probability (positive = more Ks)
+#   bb_delta          added to ball probability
+#   contact_delta     added to contact probability (negative = fewer balls in play)
+#   hard_contact_shift  contact-quality shift (negative = suppresses hard contact)
+#   weak_contact_shift  contact-quality shift (positive = drives ground balls)
+#   platoon_mode      "standard" | "reverse" | "neutral" | "same_heavy" | "opposite_heavy"
+#   platoon_scale     magnitude multiplier on PLATOON_PENALTY (0 = no platoon)
+#   release_optimal   [0,1] — release angle where this pitch works best
+#   release_window    half-width of the "full effectiveness" range around optimal
+#   arm_stress        multiplier on per-pitch fatigue contribution (>1 = harder on arm)
+#   max_release       Optional upper bound — pitch doesn't work above this angle
+#   count_bias        "all" | "ahead" | "behind" | "2strike" — usage weight bias
+#
+# All deltas are quality-scaled: they represent the shift at quality=1.0 and
+# collapse to 0 at quality=0.0. Identity at pitch_type=None.
+
+PITCH_CATALOG: dict = {
+
+    # ── FASTBALLS ─────────────────────────────────────────────────────────────
+    "four_seam": {
+        "velocity_class":     "high",
+        # From sidearm, the four-seam lacks the downward plane that creates
+        # swing-and-miss in MLB. It's a setup pitch more than a put-away.
+        "k_delta":            +0.02,
+        "bb_delta":           -0.01,
+        "contact_delta":      -0.01,
+        "hard_contact_shift": +0.04,   # HR-prone at lower quality — batters key on it
+        "weak_contact_shift": -0.03,
+        "platoon_mode":       "standard",
+        "platoon_scale":       1.0,
+        "release_optimal":     0.80,   # works better from higher slot
+        "release_window":      0.30,
+        "arm_stress":          1.10,
+        "max_release":         None,
+        "count_bias":          "behind",   # throw when behind — need a strike
+    },
+    "sinker": {
+        "velocity_class":     "high",
+        # O27's workhorse fastball. All movement, GB-heavy, HR-suppressing.
+        "k_delta":            -0.02,
+        "bb_delta":           -0.01,
+        "contact_delta":      +0.01,
+        "hard_contact_shift": -0.05,
+        "weak_contact_shift": +0.06,
+        "platoon_mode":       "standard",
+        "platoon_scale":       1.0,
+        "release_optimal":     0.45,   # natural sidearm pitch
+        "release_window":      0.30,
+        "arm_stress":          0.90,
+        "max_release":         None,
+        "count_bias":          "all",
+    },
+    "cutter": {
+        "velocity_class":     "high",
+        # Late-breaking. Drives weak contact, bonus vs opposite-handed.
+        "k_delta":            +0.01,
+        "bb_delta":           -0.01,
+        "contact_delta":      -0.01,
+        "hard_contact_shift": -0.03,
+        "weak_contact_shift": +0.04,
+        "platoon_mode":       "opposite_heavy",
+        "platoon_scale":       0.8,
+        "release_optimal":     0.60,
+        "release_window":      0.30,
+        "arm_stress":          1.00,
+        "max_release":         None,
+        "count_bias":          "all",
+    },
+    "palmball": {
+        "velocity_class":     "low",
+        # Deception over velocity. 78–82 mph that plays up because the arm
+        # action looks like a regular fastball. Suppresses Ks but induces
+        # unusual soft contact from the velocity mismatch. The "lost velocity"
+        # veteran's fastball equivalent.
+        "k_delta":            -0.03,
+        "bb_delta":           +0.01,
+        "contact_delta":      +0.02,
+        "hard_contact_shift": -0.04,
+        "weak_contact_shift": +0.05,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.5,
+        "release_optimal":     0.50,   # works from any arm slot — it's the grip, not the slot
+        "release_window":      0.50,
+        "arm_stress":          0.75,
+        "max_release":         None,
+        "count_bias":          "ahead",   # keep the batter off-balance, not a strike-getter
+    },
+
+    # ── BREAKING BALLS ────────────────────────────────────────────────────────
+    "slider": {
+        "velocity_class":     "mid",
+        # Standard hard slider. K-driving. Genuinely neutral platoon.
+        "k_delta":            +0.04,
+        "bb_delta":           +0.01,
+        "contact_delta":      -0.02,
+        "hard_contact_shift": -0.02,
+        "weak_contact_shift": +0.02,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.0,
+        "release_optimal":     0.50,
+        "release_window":      0.40,
+        "arm_stress":          1.00,
+        "max_release":         None,
+        "count_bias":          "2strike",
+    },
+    "sisko_slider": {
+        "velocity_class":     "mid",
+        # O27-original. Reverse-breaking — breaks INTO same-handed batters
+        # rather than away. From sidearm the surprise is amplified: batters
+        # expect the natural side-arm break to go away; the Sisko goes the
+        # other direction. High K same-handed, neutral opposite-handed.
+        "k_delta":            +0.03,
+        "bb_delta":           +0.01,
+        "contact_delta":      -0.02,
+        "hard_contact_shift": -0.01,
+        "weak_contact_shift": +0.01,
+        "platoon_mode":       "same_heavy",
+        "platoon_scale":       1.8,   # massive same-handed advantage
+        "release_optimal":     0.25,  # best from sidearm / low sidearm
+        "release_window":      0.25,
+        "arm_stress":          1.05,
+        "max_release":         0.70,  # loses its break magic above this angle
+        "count_bias":          "2strike",
+    },
+    "walking_slider": {
+        "velocity_class":     "mid",
+        # Slow lateral slider — doesn't snap sharply but walks across the zone.
+        # Batter commits before it arrives; the crafty veteran's version.
+        "k_delta":            +0.02,
+        "bb_delta":           +0.02,
+        "contact_delta":      -0.01,
+        "hard_contact_shift": -0.03,
+        "weak_contact_shift": +0.05,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.3,
+        "release_optimal":     0.35,
+        "release_window":      0.30,
+        "arm_stress":          0.90,
+        "max_release":         0.75,
+        "count_bias":          "ahead",
+    },
+    "curveball": {
+        "velocity_class":     "mid",
+        # Standard 12-to-6 curve. Hard-contact suppression, moderate K.
+        # Worse from sidearm — the 12-to-6 topspin requires height to load.
+        # Less common in O27 precisely because of the structural sidearm world.
+        "k_delta":            +0.02,
+        "bb_delta":           +0.02,
+        "contact_delta":      -0.01,
+        "hard_contact_shift": -0.04,
+        "weak_contact_shift": +0.02,
+        "platoon_mode":       "standard",
+        "platoon_scale":       1.0,
+        "release_optimal":     0.90,   # wants height — best from 3q sidearm
+        "release_window":      0.25,   # quality degrades quickly toward sidearm
+        "arm_stress":          1.05,
+        "max_release":         None,
+        "count_bias":          "ahead",
+    },
+    "curve_10_to_2": {
+        "velocity_class":     "mid",
+        # Sidearm/submarine specialist curve. Breaks diagonally — the pitcher
+        # "steers" the batter's eye across the plate. Extreme weak contact,
+        # GB-heavy. From sidearm a righty produces grounders to the right side.
+        # Structurally incompatible with three-quarter release.
+        "k_delta":            +0.01,
+        "bb_delta":           +0.02,
+        "contact_delta":      +0.01,
+        "hard_contact_shift": -0.06,
+        "weak_contact_shift": +0.09,   # extreme groundball
+        "platoon_mode":       "standard",
+        "platoon_scale":       1.3,    # amplified platoon from the weird break
+        "release_optimal":     0.20,
+        "release_window":      0.25,
+        "arm_stress":          0.85,
+        "max_release":         0.50,   # sidearm or below — won't break correctly above
+        "count_bias":          "ahead",
+    },
+
+    # ── OFF-SPEED ─────────────────────────────────────────────────────────────
+    "changeup": {
+        "velocity_class":     "low",
+        # Velocity differential. Reverse-platoon advantage (same-sided pitcher
+        # changeup arm-side, boring in on the same-handed batter — works like
+        # a screwball at reduced arm stress).
+        "k_delta":            +0.01,
+        "bb_delta":           +0.01,
+        "contact_delta":      -0.01,
+        "hard_contact_shift": -0.03,
+        "weak_contact_shift": +0.04,
+        "platoon_mode":       "reverse",
+        "platoon_scale":       1.0,
+        "release_optimal":     0.50,
+        "release_window":      0.40,
+        "arm_stress":          0.85,
+        "max_release":         None,
+        "count_bias":          "ahead",
+    },
+    "vulcan_changeup": {
+        "velocity_class":     "low",
+        # Tumbling action from the split-finger grip (middle+ring finger).
+        # Higher K than regular changeup, devastating opposite-handed.
+        "k_delta":            +0.03,
+        "bb_delta":           +0.01,
+        "contact_delta":      -0.02,
+        "hard_contact_shift": -0.04,
+        "weak_contact_shift": +0.03,
+        "platoon_mode":       "opposite_heavy",
+        "platoon_scale":       1.5,
+        "release_optimal":     0.45,
+        "release_window":      0.35,
+        "arm_stress":          0.90,
+        "max_release":         None,
+        "count_bias":          "2strike",
+    },
+    "splitter": {
+        "velocity_class":     "mid",
+        # Hard off-speed with sharp downward break. K-driving, GB-heavy.
+        "k_delta":            +0.04,
+        "bb_delta":           +0.01,
+        "contact_delta":      -0.02,
+        "hard_contact_shift": -0.03,
+        "weak_contact_shift": +0.04,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.3,
+        "release_optimal":     0.50,
+        "release_window":      0.35,
+        "arm_stress":          1.10,   # stressful grip over a long season
+        "max_release":         None,
+        "count_bias":          "2strike",
+    },
+
+    # ── SPECIALTY / O27-REVIVED ───────────────────────────────────────────────
+    "knuckleball": {
+        "velocity_class":     "low",
+        # Velocity-independent. Durability monster — knuckleballers pitch into
+        # their late 40s. 2C-suppressing because nobody extends on a knuckler.
+        "k_delta":            -0.01,
+        "bb_delta":           +0.03,   # command is the challenge
+        "contact_delta":      +0.01,
+        "hard_contact_shift": -0.05,
+        "weak_contact_shift": +0.03,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.0,    # handedness is irrelevant to a knuckleball
+        "release_optimal":     0.50,
+        "release_window":      0.50,   # works from any arm slot
+        "arm_stress":          0.60,   # the easiest sustained pitch on the arm
+        "max_release":         None,
+        "count_bias":          "all",
+    },
+    "spitter": {
+        "velocity_class":     "mid",
+        # Legal in O27 lore. Extreme weak contact / GB, low K, low BB —
+        # it tumbles into the zone and batters can't get under it.
+        "k_delta":            -0.02,
+        "bb_delta":           -0.01,
+        "contact_delta":      +0.02,
+        "hard_contact_shift": -0.07,
+        "weak_contact_shift": +0.08,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.2,
+        "release_optimal":     0.40,
+        "release_window":      0.35,
+        "arm_stress":          0.80,
+        "max_release":         None,
+        "count_bias":          "all",
+    },
+    "eephus": {
+        "velocity_class":     "low",
+        # 2C-disruption weapon when used selectively — never a primary pitch.
+        # The batter can't reconcile the velocity with the arm action. When it
+        # works, it works big; the rest of the time it's a ball or a foul.
+        "k_delta":            +0.05,
+        "bb_delta":           +0.03,
+        "contact_delta":      -0.03,
+        "hard_contact_shift": -0.02,
+        "weak_contact_shift": +0.02,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.3,
+        "release_optimal":     0.50,
+        "release_window":      0.50,
+        "arm_stress":          0.50,   # the most arm-friendly pitch in existence
+        "max_release":         None,
+        "count_bias":          "2strike",
+    },
+    "screwball": {
+        "velocity_class":     "mid",
+        # Reverse-breaking. Reverse-platoon advantage (righty screwball is the
+        # righty's weapon against lefty bats). Higher arm stress.
+        "k_delta":            +0.02,
+        "bb_delta":           +0.01,
+        "contact_delta":      -0.01,
+        "hard_contact_shift": -0.03,
+        "weak_contact_shift": +0.02,
+        "platoon_mode":       "reverse",
+        "platoon_scale":       1.2,
+        "release_optimal":     0.40,
+        "release_window":      0.30,
+        "arm_stress":          1.25,   # genuinely punishing on the forearm
+        "max_release":         None,
+        "count_bias":          "ahead",
+    },
+    "gyroball": {
+        "velocity_class":     "high",
+        # Bullet gyrospin — minimal break but extreme deception. The ball
+        # arrives at a different location than the batter's eye predicted.
+        # Rare: maybe 3-4% of O27 pitchers throw one at elite quality.
+        "k_delta":            +0.03,
+        "bb_delta":           +0.01,
+        "contact_delta":      -0.02,
+        "hard_contact_shift": -0.06,   # can't square it up
+        "weak_contact_shift": +0.02,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.4,
+        "release_optimal":     0.50,
+        "release_window":      0.40,
+        "arm_stress":          1.10,
+        "max_release":         None,
+        "count_bias":          "2strike",
+    },
+}
