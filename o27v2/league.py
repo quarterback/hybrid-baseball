@@ -497,29 +497,57 @@ _TALENT_TIERS: list[tuple[float, int, int]] = [
 def _roll_tier_grade(rng: random.Random, team_shift: int = 0) -> int:
     """Roll one attribute against the 9-tier league talent distribution.
 
-    Returns an integer 20-95 scout grade. Used independently for every
-    hitter and pitcher attribute on every player.
+    Returns an integer 20-80 scout grade at seed time. The Elite+ tier
+    (81-95) is reserved for talent earned via multi-season development
+    (see `o27v2/development.py`) — capping the initial roll at 80 means
+    every league starts in true parity, then dynasties emerge as good
+    orgs grow their players past the standard scout ceiling.
 
-    `team_shift` is preserved for backwards compatibility but defaults
-    to 0 — the league is now seeded via a snake draft over a single
-    team-blind player pool (see `_run_snake_draft`), so per-team
-    shifting is no longer applied. Old callers that pass a non-zero
-    shift will still get the old additive behaviour.
+    `team_shift` defaults to 0 — the league is seeded via a snake draft
+    over a team-blind pool, so per-team shifting is no longer applied
+    at draft time. Org_strength still drives talent growth between
+    seasons via the development pass.
+
+    Older callers that pass a non-zero shift still get the additive
+    behaviour clamped to [20, 80].
     """
     r = rng.random()
     cumulative = 0.0
     for prob, lo, hi in _TALENT_TIERS:
         cumulative += prob
         if r < cumulative:
-            return max(20, min(95, rng.randint(lo, hi) + team_shift))
+            # Clamp BOTH ends of the range to 80 so an Elite+ tier roll
+            # (lo=81, hi=95) collapses to exactly 80 — the league's top
+            # legitimate scout grade. Higher grades are earned via
+            # development, not handed out at seed time.
+            seed_lo = min(lo, 80)
+            seed_hi = min(hi, 80)
+            return max(20, min(80, rng.randint(seed_lo, seed_hi) + team_shift))
     # Floating-point safety net (probabilities sum to 1.0).
     lo, hi = _TALENT_TIERS[-1][1], _TALENT_TIERS[-1][2]
-    return max(20, min(95, rng.randint(lo, hi) + team_shift))
+    return max(20, min(80, rng.randint(min(lo, 80), min(hi, 80)) + team_shift))
 
 
 def _tier_unit(rng: random.Random, team_shift: int = 0) -> float:
     """Tier-rolled grade converted to the [0,1] unit float the engine uses."""
     return _scout.to_unit(_roll_tier_grade(rng, team_shift))
+
+
+def _roll_org_grade(rng: random.Random) -> int:
+    """Roll an org_strength against the full 9-tier ladder, NOT capped
+    at 80. Org_strength influences multi-season development rate, so a
+    handful of teams legitimately start in the Elite/Elite+ band — they
+    just can't translate that into per-pitch outcomes (which is where
+    the old team_shift abuse lived). Player attributes are still capped
+    at 80 at seed time via `_roll_tier_grade`."""
+    r = rng.random()
+    cumulative = 0.0
+    for prob, lo, hi in _TALENT_TIERS:
+        cumulative += prob
+        if r < cumulative:
+            return max(20, min(95, rng.randint(lo, hi)))
+    lo, hi = _TALENT_TIERS[-1][1], _TALENT_TIERS[-1][2]
+    return max(20, min(95, rng.randint(lo, hi)))
 
 
 # Per-team org-strength: a 20-95 scout-grade team attribute, rolled
@@ -1071,10 +1099,13 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     rng2 = random.Random(rng_seed)
     from o27v2.managers import roll_manager
 
-    # Phase 1: insert all teams with a placeholder org_strength. The real
-    # value is recomputed post-draft from each team's drafted roster, so
-    # the persisted column reflects actual talent rather than a hidden
-    # multiplier.
+    # Phase 1: insert all teams with their rolled org_strength. The
+    # value is rolled from the same 9-tier ladder players use (uncapped
+    # at 95 here — orgs CAN be Elite+ at seed; only player attributes
+    # are capped at 80). Org_strength drives multi-season player
+    # development (see o27v2/development.py): high-org teams grow
+    # talent faster between seasons, building dynasties organically.
+    # It does NOT bias per-pitch outcomes — that role is gone.
     team_ids: list[int] = []
     for idx, (team_def, (league_name, division)) in enumerate(zip(selected, div_map)):
         abbrev = team_def.get("abbreviation") or team_def.get("abbrev", "???")
@@ -1083,6 +1114,11 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
 
         park_hr, park_hits = _roll_park_factors(rng2)
         mgr = roll_manager(rng2)
+        # Org_strength rolled on the full 9-tier ladder (uncapped at 95) —
+        # ~7% of teams genuinely start with Elite+/Elite development orgs,
+        # ~12% Excellent, etc. Drives multi-season player growth without
+        # biasing per-pitch outcomes.
+        org_strength = _roll_org_grade(rng2)
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, division, league, "
             "park_hr, park_hits, manager_archetype, mgr_quick_hook, "
@@ -1096,7 +1132,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
              mgr["mgr_joker_aggression"], mgr["mgr_pinch_hit_aggression"],
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
-             mgr["mgr_bench_usage"], 50),
+             mgr["mgr_bench_usage"], org_strength),
         )
         team_ids.append(team_id)
 
@@ -1148,9 +1184,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         roster = assignments.get(team_id, [])
         if roster:
             db.executemany(insert_sql, [_row(team_id, p) for p in roster])
-        org = _team_org_strength_from_roster(roster)
-        db.execute("UPDATE teams SET org_strength = ? WHERE id = ?",
-                   (org, team_id))
+        # `teams.org_strength` was rolled at INSERT time above and is
+        # NOT recomputed from the drafted roster — it represents the
+        # team's development infrastructure, not its current talent.
 
     if free_agents:
         db.executemany(insert_sql, [_row(None, p) for p in free_agents])

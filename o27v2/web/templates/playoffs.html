@@ -6,9 +6,37 @@
 
 {% if champion %}
 <div class="panel panel-body mb-3" style="border-left: 4px solid var(--accent)">
-  <div class="score-label">Champion</div>
-  <div style="font-size: 1.6rem; font-weight: 700">{{ champion.name }}
-    <span class="text-secondary" style="font-weight: 400">({{ champion.abbrev }})</span>
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <div class="score-label">Champion</div>
+      <div style="font-size: 1.6rem; font-weight: 700">{{ champion.name }}
+        <span class="text-secondary" style="font-weight: 400">({{ champion.abbrev }})</span>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="button" id="advance-season-btn"
+            onclick="advanceSeason(this)">Advance to Next Season →</button>
+    <script>
+      function advanceSeason(btn) {
+        if (!confirm('Advance to the next season?\n\n• Every player ages +1\n• Development engine applies (growth + decline)\n• Org_strength rolls forward\n• W-L resets, schedule re-generates\n\nRosters are preserved.')) return;
+        btn.disabled = true; btn.textContent = 'Working…';
+        fetch('{{ url_for("api_season_advance") }}', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: '{}'
+        }).then(r => r.json()).then(d => {
+          if (d.ok) {
+            alert('Advanced from season ' + d.from_season + ' to ' + d.to_season + '.');
+            window.location.href = '{{ url_for("league") }}';
+          } else {
+            alert('Failed: ' + (d.error || 'unknown'));
+            btn.disabled = false; btn.textContent = 'Advance to Next Season →';
+          }
+        }).catch(err => {
+          alert('Network error: ' + err);
+          btn.disabled = false; btn.textContent = 'Advance to Next Season →';
+        });
+      }
+    </script>
   </div>
 </div>
 {% endif %}

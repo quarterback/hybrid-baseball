@@ -4400,6 +4400,99 @@ def api_seasons_clear():
     return jsonify({"ok": True})
 
 
+@app.route("/api/season/advance", methods=["POST"])
+def api_season_advance():
+    """Advance to the next season — preserves rosters / team identities,
+    ages every player +1, runs the development pass (per-attribute
+    growth/decline driven by age + org_strength), rolls new org_strength
+    for each team via the bond-market formula, resets W-L, wipes the
+    games + playoff_series tables, and re-generates the schedule for
+    the new year. This is the dynasty-mode rollover.
+
+    Body: {rng_seed: int (optional — defaults to a per-season hash)}
+
+    Returns a summary including the org_strength deltas (so the UI can
+    show "your org climbed from 64 to 71 after the championship run")
+    and per-team development counts.
+    """
+    from o27v2.season_archive import (multi_season_status,
+                                       archive_current_season,
+                                       set_active_league_meta)
+    from o27v2.development import run_offseason
+    from o27v2.schedule import seed_schedule
+    from o27v2.playoffs import champion as _champion, playoffs_initiated
+
+    status = multi_season_status()
+    if status.get("running"):
+        return jsonify({"ok": False, "error": "multi-season runner is active"}), 409
+
+    # Allow advance only after playoffs have crowned a champion.
+    ch = _champion()
+    if ch is None:
+        return jsonify({"ok": False,
+                        "error": "no champion yet — finish the playoffs first"}), 400
+
+    data = request.get_json(silent=True) or {}
+    rng_seed = data.get("rng_seed")
+
+    # Read the current season number off sim_meta; bump it.
+    cur_row = db.fetchone(
+        "SELECT value FROM sim_meta WHERE key = 'season_number'")
+    season_no = int((cur_row or {}).get("value") or 1)
+    next_season = season_no + 1
+
+    # Optionally archive the just-completed season.
+    archived_id = None
+    try:
+        archived_id = archive_current_season(run_invariants=False)
+    except Exception:
+        pass
+
+    # Run the off-season development + org-strength roll.
+    summary = run_offseason(season=season_no, rng_seed=rng_seed or season_no * 17)
+
+    # Reset W-L and wipe per-game tables; the league + roster stay.
+    db.execute("UPDATE teams SET wins = 0, losses = 0")
+    db.execute("DELETE FROM game_pa_log")
+    db.execute("DELETE FROM game_pitcher_stats")
+    db.execute("DELETE FROM game_batter_stats")
+    db.execute("DELETE FROM team_phase_outs")
+    db.execute("DELETE FROM games")
+    db.execute("DELETE FROM playoff_series")
+    db.execute("DELETE FROM season_awards")
+    db.execute("DELETE FROM transactions")
+    db.execute("DELETE FROM sim_meta WHERE key IN ('sim_date', 'last_match_day')")
+
+    # Bump season counter.
+    db.execute(
+        "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('season_number', ?)",
+        (str(next_season),),
+    )
+
+    # Re-seed the schedule for the new year. Re-use whatever config was
+    # last used; bump season_year forward so the calendar lands in a
+    # new year.
+    cfg_row = db.fetchone("SELECT value FROM sim_meta WHERE key = 'league_config'")
+    cfg_id  = (cfg_row or {}).get("value") or "30teams"
+    seed_row = db.fetchone("SELECT value FROM sim_meta WHERE key = 'league_seed'")
+    last_seed = int((seed_row or {}).get("value") or 42)
+    new_seed = last_seed + 1   # rotate per season so weather / sim differ
+
+    # Bump the season year on the config (only matters when a custom cfg
+    # was supplied; presets rebuild from disk and roll their own year).
+    seed_schedule(rng_seed=new_seed, config_id=cfg_id)
+    set_active_league_meta(new_seed, cfg_id)
+
+    return jsonify({
+        "ok":              True,
+        "from_season":     season_no,
+        "to_season":       next_season,
+        "archived_season": archived_id,
+        "champion":        ch,
+        "development":     summary,
+    })
+
+
 @app.route("/api/season/reset", methods=["POST"])
 def api_season_reset():
     """One-click 'New season' — optionally archive first, then drop+reseed.
