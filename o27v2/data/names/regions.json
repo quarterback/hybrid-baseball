@@ -361,10 +361,46 @@
                        "italian", "spanish", "dutch", "portuguese"]
     },
     "europe_eastern": {
+      "_doc": [
+        "CZECH REPUBLIC is the European baseball powerhouse — real-world",
+        "Czech baseball has been the breakout story (WBC 2023 qualification,",
+        "growing MLB-org presence). In O27 fiction the trend accelerates:",
+        "European football academies redirect to baseball faster in CZ than",
+        "anywhere else on the continent, and Czech players become the",
+        "single largest non-Anglophone European feeder. CZ holds 0.42 of",
+        "the region — more than PL+RU combined.",
+        "",
+        "Other subregions decompose Eastern Europe properly: Ukraine,",
+        "Hungary, Slovakia, Romania, Bulgaria. Russia retained but",
+        "reduced — a real but secondary pipeline."
+      ],
       "label": "Eastern Europe",
-      "country_weights": { "PL": 0.40, "CZ": 0.20, "RU": 0.40 },
-      "first_keys":   ["polish", "czech", "russian"],
-      "surname_keys": ["polish", "czech", "russian"]
+      "subregions": [
+        { "weight": 0.42, "country": "CZ",
+          "first_keys": ["czech"],
+          "surname_keys": ["czech"] },
+        { "weight": 0.18, "country": "PL",
+          "first_keys": ["polish"],
+          "surname_keys": ["polish"] },
+        { "weight": 0.12, "country": "RU",
+          "first_keys": ["russian"],
+          "surname_keys": ["russian"] },
+        { "weight": 0.10, "country": "UA",
+          "first_keys": ["ukrainian"],
+          "surname_keys": ["ukrainian"] },
+        { "weight": 0.08, "country": "HU",
+          "first_keys": ["hungarian"],
+          "surname_keys": ["hungarian"] },
+        { "weight": 0.05, "country": "SK",
+          "first_keys": ["slovak"],
+          "surname_keys": ["slovak"] },
+        { "weight": 0.03, "country": "RO",
+          "first_keys": ["romanian"],
+          "surname_keys": ["romanian"] },
+        { "weight": 0.02, "country": "BG",
+          "first_keys": ["bulgarian"],
+          "surname_keys": ["bulgarian"] }
+      ]
     },
     "nordic": {
       "label": "Nordic",
@@ -477,7 +513,8 @@
         "caribbean_cricket": 0.07, "caribbean_dutch": 0.01,
         "africa_cricket": 0.03, "british_isles": 0.025,
         "afghan_central_asia": 0.005, "malaysia": 0.01,
-        "pacific_islands": 0.005, "canada": 0.04, "europe_western": 0.02
+        "pacific_islands": 0.005, "canada": 0.04,
+        "europe_western": 0.02, "europe_eastern": 0.005
       }
     },
     "o27_year_5": {
@@ -498,7 +535,8 @@
         "caribbean_cricket": 0.11, "caribbean_dutch": 0.02,
         "africa_cricket": 0.05, "british_isles": 0.03,
         "afghan_central_asia": 0.015, "malaysia": 0.025,
-        "pacific_islands": 0.02, "canada": 0.02, "europe_western": 0.015
+        "pacific_islands": 0.02, "canada": 0.02,
+        "europe_western": 0.015, "europe_eastern": 0.02
       }
     },
     "o27_year_10": {
@@ -523,7 +561,8 @@
         "caribbean_cricket": 0.13, "caribbean_dutch": 0.025,
         "africa_cricket": 0.06, "british_isles": 0.035,
         "afghan_central_asia": 0.02, "malaysia": 0.035,
-        "pacific_islands": 0.04, "canada": 0.015, "europe_western": 0.005
+        "pacific_islands": 0.04, "canada": 0.015,
+        "europe_western": 0.005, "europe_eastern": 0.04
       }
     },
     "global": {
