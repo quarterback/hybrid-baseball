@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS teams (
 
 CREATE TABLE IF NOT EXISTS players (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    team_id       INTEGER NOT NULL REFERENCES teams(id),
+    -- team_id NULL = unsigned free agent (in the waiver / match-day pool).
+    team_id       INTEGER REFERENCES teams(id),
     name          TEXT NOT NULL,
     position      TEXT NOT NULL,
     is_pitcher    INTEGER DEFAULT 0,

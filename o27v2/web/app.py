@@ -3916,7 +3916,9 @@ def transactions():
     txns  = get_transactions(team_id=team_id, event_type=event_type or None, limit=300)
     teams = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
 
-    event_types = ["injury", "return", "promotion", "penalty", "deadline_trade", "inseason_trade", "waiver"]
+    event_types = ["injury", "return", "promotion", "penalty",
+                   "deadline_trade", "inseason_trade",
+                   "waiver_claim", "waiver_release"]
     selected_team = None
     if team_id:
         selected_team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
@@ -3935,6 +3937,56 @@ def transactions():
                            event_type=event_type or "",
                            event_types=event_types,
                            counts=counts)
+
+
+@app.route("/free-agents")
+def free_agents():
+    """Browse the free-agent pool. Players in this list have team_id NULL
+    and are eligible to be claimed by the weekly Sunday match-day sweep
+    (see o27v2/waivers.py)."""
+    from o27v2.waivers import _player_overall, _last_sweep_date
+
+    pos_filter = (request.args.get("pos") or "").strip().upper()
+    kind       = (request.args.get("kind") or "all").strip().lower()  # all|hitters|pitchers
+    sort       = (request.args.get("sort") or "ovr").strip().lower()
+
+    where = ["team_id IS NULL"]
+    params: list = []
+    if pos_filter:
+        where.append("position = ?")
+        params.append(pos_filter)
+    if kind == "hitters":
+        where.append("is_pitcher = 0")
+    elif kind == "pitchers":
+        where.append("is_pitcher = 1")
+
+    rows = db.fetchall(
+        f"SELECT * FROM players WHERE {' AND '.join(where)}",
+        tuple(params),
+    )
+    for r in rows:
+        r["overall"] = _player_overall(r)
+
+    if sort == "name":
+        rows.sort(key=lambda r: r["name"])
+    elif sort == "pos":
+        rows.sort(key=lambda r: (r["position"], -r["overall"]))
+    else:  # default: best-overall first
+        rows.sort(key=lambda r: -r["overall"])
+
+    # Group by position for the per-bucket counts
+    by_pos: dict[str, int] = {}
+    for r in db.fetchall("SELECT position FROM players WHERE team_id IS NULL"):
+        by_pos[r["position"]] = by_pos.get(r["position"], 0) + 1
+
+    return _serve("free_agents.html",
+                  free_agents=rows,
+                  total=len(rows),
+                  by_pos=sorted(by_pos.items(), key=lambda kv: -kv[1]),
+                  selected_pos=pos_filter,
+                  kind=kind,
+                  sort=sort,
+                  last_sweep=_last_sweep_date())
 
 
 @app.route("/new-league", methods=["GET"])
