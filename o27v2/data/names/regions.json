@@ -44,6 +44,55 @@
       "first_keys":   ["latino_hispanic", "latin_american"],
       "surname_keys": ["latino_hispanic", "latin_american"]
     },
+    "south_america": {
+      "_doc": [
+        "ARGENTINA + BRAZIL are the secondary 'non-baseball powerhouse' axis.",
+        "Football-built athletic infrastructure redirects to O27, scouts arrive",
+        "before MLB saturates. Top-10 by player count, not per-capita —",
+        "their dominance comes from population scale, not the structural",
+        "over-production seen in Guyana/Trinidad.",
+        "",
+        "Brazilian sub-pools deliberately surface hyphenated naming patterns",
+        "(Yamamoto-Costa, Bauer-Silva) that are genuinely distinct from",
+        "generic 'Latin American' MLB naming."
+      ],
+      "label": "South America (non-baseball powerhouses)",
+      "subregions": [
+        { "weight": 0.18, "country": "AR",
+          "first_keys": ["argentinian", "spanish", "italian"],
+          "surname_keys": ["argentinian"] },
+        { "weight": 0.04, "country": "AR",
+          "first_keys": ["argentinian_german", "argentinian"],
+          "surname_keys": ["argentinian_german"] },
+        { "weight": 0.20, "country": "BR",
+          "first_keys": ["brazilian", "portuguese"],
+          "surname_keys": ["brazilian_portuguese"] },
+        { "weight": 0.10, "country": "BR",
+          "first_keys": ["brazilian", "italian"],
+          "surname_keys": ["brazilian_italian"] },
+        { "weight": 0.07, "country": "BR",
+          "first_keys": ["brazilian_japanese"],
+          "surname_keys": ["brazilian_japanese"] },
+        { "weight": 0.04, "country": "BR",
+          "first_keys": ["brazilian", "german"],
+          "surname_keys": ["brazilian_german"] },
+        { "weight": 0.02, "country": "BR",
+          "first_keys": ["brazilian", "arabic"],
+          "surname_keys": ["brazilian_lebanese"] },
+        { "weight": 0.10, "country": "CL",
+          "first_keys": ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american", "spanish"] },
+        { "weight": 0.10, "country": "PE",
+          "first_keys": ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american", "spanish"] },
+        { "weight": 0.08, "country": "CO",
+          "first_keys": ["latino_hispanic", "latin_american", "afro_caribbean"],
+          "surname_keys": ["latino_hispanic", "latin_american", "spanish"] },
+        { "weight": 0.07, "country": "VE",
+          "first_keys": ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american"] }
+      ]
+    },
     "south_asia": {
       "label": "South Asia (cricket pipeline)",
       "subregions": [
@@ -106,27 +155,42 @@
       "surname_keys": ["pacific_islander"]
     },
     "caribbean_cricket": {
+      "_doc": [
+        "GUYANA + TRINIDAD are the dual axis. Combined they hold 0.72 of",
+        "the region's mass — disproportionate to their populations relative",
+        "to JM/BB/AG, but matching the O27 thesis: the Indo-Caribbean cricket",
+        "pipeline is the highest-density talent producer in the league per",
+        "capita. Trinidad is decomposed into Indo / Afro / Chinese / Lebanese",
+        "subregions to reflect the country's actual demographic spread, which",
+        "is more complex than Guyana's bi-ethnic split."
+      ],
       "label": "Caribbean (Cricket Anglophone)",
       "subregions": [
-        { "weight": 0.35, "country": "JM",
+        { "weight": 0.26, "country": "GY",
+          "first_keys": ["indo_guyanese"],
+          "surname_keys": ["indo_guyanese"] },
+        { "weight": 0.10, "country": "GY",
+          "first_keys": ["afro_caribbean"],
+          "surname_keys": ["afro_guyanese", "afro_caribbean"] },
+        { "weight": 0.20, "country": "TT",
+          "first_keys": ["indo_trinidadian"],
+          "surname_keys": ["indo_trinidadian"] },
+        { "weight": 0.11, "country": "TT",
+          "first_keys": ["afro_caribbean"],
+          "surname_keys": ["afro_trinidadian", "afro_caribbean"] },
+        { "weight": 0.03, "country": "TT",
+          "first_keys": ["afro_caribbean"],
+          "surname_keys": ["chinese_trinidadian"] },
+        { "weight": 0.02, "country": "TT",
+          "first_keys": ["arabic"],
+          "surname_keys": ["lebanese_trinidadian"] },
+        { "weight": 0.13, "country": "JM",
           "first_keys": ["afro_caribbean"],
           "surname_keys": ["afro_caribbean"] },
-        { "weight": 0.18, "country": "TT",
+        { "weight": 0.05, "country": "BB",
           "first_keys": ["afro_caribbean"],
           "surname_keys": ["afro_caribbean"] },
-        { "weight": 0.16, "country": "TT",
-          "first_keys": ["indo_caribbean"],
-          "surname_keys": ["indo_caribbean"] },
-        { "weight": 0.12, "country": "GY",
-          "first_keys": ["indo_caribbean"],
-          "surname_keys": ["indo_caribbean"] },
-        { "weight": 0.06, "country": "GY",
-          "first_keys": ["afro_caribbean"],
-          "surname_keys": ["afro_caribbean"] },
-        { "weight": 0.08, "country": "BB",
-          "first_keys": ["afro_caribbean"],
-          "surname_keys": ["afro_caribbean"] },
-        { "weight": 0.05, "country": "AG",
+        { "weight": 0.03, "country": "AG",
           "first_keys": ["afro_caribbean"],
           "surname_keys": ["afro_caribbean"] }
       ]
@@ -270,14 +334,20 @@
         "Launch season: cricket-conversion academies announced but the player",
         "pipeline hasn't matured. Roster mix is heavily MLB-shaped + a real",
         "East-Asia presence (the launch market) and the first wave of cricket",
-        "early-adopters from South Asia, Australia, Caribbean, SA."
+        "early-adopters from South Asia, Australia, Caribbean, SA.",
+        "",
+        "Guyana and Trinidad already over-represented within the (small)",
+        "caribbean_cricket allocation — see that region's subregion weights.",
+        "South America starts visible: Argentine and Brazilian football-",
+        "infrastructure converts faster than expected. Pelé's grandson",
+        "narrative."
       ],
       "weights": {
-        "us": 0.36, "latin_america": 0.22, "east_asia": 0.12,
-        "south_asia": 0.07, "anzac": 0.05, "caribbean_cricket": 0.05,
-        "africa_cricket": 0.03, "british_isles": 0.025,
-        "afghan_central_asia": 0.005, "malaysia": 0.01,
-        "canada": 0.04, "europe_western": 0.02
+        "us": 0.34, "latin_america": 0.20, "south_america": 0.04,
+        "east_asia": 0.12, "south_asia": 0.07, "anzac": 0.05,
+        "caribbean_cricket": 0.07, "africa_cricket": 0.03,
+        "british_isles": 0.025, "afghan_central_asia": 0.005,
+        "malaysia": 0.01, "canada": 0.04, "europe_western": 0.02
       }
     },
     "o27_year_5": {
@@ -285,14 +355,19 @@
       "_note": [
         "Mid-pipeline: cricket academies in Pakistan, India, Caribbean, SA",
         "are graduating their first wave of legitimate O27 pros. Malaysia",
-        "growth visible. North American share retreats."
+        "growth visible. North American share retreats.",
+        "",
+        "Guyana + Trinidad combined now ~70% of caribbean_cricket mass.",
+        "Argentine + Brazilian academies (football pipeline conversion)",
+        "produce first All-Stars; south_america cracks 10% — top-10 by",
+        "count, while GY+TT remain top-tier per capita."
       ],
       "weights": {
-        "us": 0.24, "latin_america": 0.18, "east_asia": 0.12,
-        "south_asia": 0.16, "anzac": 0.08, "caribbean_cricket": 0.08,
-        "africa_cricket": 0.05, "british_isles": 0.035,
-        "afghan_central_asia": 0.015, "malaysia": 0.025,
-        "canada": 0.025, "europe_western": 0.015
+        "us": 0.20, "latin_america": 0.16, "south_america": 0.10,
+        "east_asia": 0.10, "south_asia": 0.14, "anzac": 0.07,
+        "caribbean_cricket": 0.11, "africa_cricket": 0.05,
+        "british_isles": 0.03, "afghan_central_asia": 0.015,
+        "malaysia": 0.025, "canada": 0.02, "europe_western": 0.015
       }
     },
     "o27_year_10": {
@@ -301,24 +376,33 @@
         "Mature league: the cricket-conversion thesis has played out. South",
         "Asia is the largest single feeder, Malaysia is the structural",
         "growth market, and the league looks globally rooted instead of an",
-        "MLB sim with the rules filed off."
+        "MLB sim with the rules filed off.",
+        "",
+        "Guyana + Trinidad combined are ~10% of total league players —",
+        "from countries with a combined population of ~2M. That's the",
+        "structural over-production: Cuba-of-O27 per capita, top-5 elite",
+        "producers in absolute terms. South America (Argentina + Brazil",
+        "anchor) is the top-10-by-scale story: ~13% of league, Brazil with",
+        "visibly hyphenated Italian-Brazilian / Japanese-Brazilian /",
+        "German-Brazilian rosters distinct from MLB-shaped Latin America."
       ],
       "weights": {
-        "us": 0.18, "latin_america": 0.16, "east_asia": 0.12,
-        "south_asia": 0.22, "anzac": 0.10, "caribbean_cricket": 0.10,
-        "africa_cricket": 0.06, "british_isles": 0.04,
-        "afghan_central_asia": 0.02, "malaysia": 0.035,
-        "canada": 0.02, "europe_western": 0.005
+        "us": 0.14, "latin_america": 0.13, "south_america": 0.13,
+        "east_asia": 0.10, "south_asia": 0.20, "anzac": 0.085,
+        "caribbean_cricket": 0.13, "africa_cricket": 0.06,
+        "british_isles": 0.035, "afghan_central_asia": 0.02,
+        "malaysia": 0.035, "canada": 0.015, "europe_western": 0.005
       }
     },
     "global": {
       "label": "Global (even-handed mix)",
       "weights": {
-        "us": 0.14, "latin_america": 0.12, "europe_western": 0.10,
-        "europe_eastern": 0.04, "nordic": 0.03, "east_asia": 0.10,
-        "southeast_asia": 0.05, "south_asia": 0.14, "central_west_asia": 0.04,
-        "africa": 0.05, "africa_cricket": 0.05, "anzac": 0.05,
-        "caribbean_cricket": 0.04, "british_isles": 0.03, "malaysia": 0.02
+        "us": 0.12, "latin_america": 0.10, "south_america": 0.07,
+        "europe_western": 0.09, "europe_eastern": 0.04, "nordic": 0.03,
+        "east_asia": 0.09, "southeast_asia": 0.05, "south_asia": 0.13,
+        "central_west_asia": 0.04, "africa": 0.05, "africa_cricket": 0.05,
+        "anzac": 0.05, "caribbean_cricket": 0.05, "british_isles": 0.03,
+        "malaysia": 0.02
       }
     },
     "european": {
