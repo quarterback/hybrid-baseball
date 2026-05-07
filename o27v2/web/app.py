@@ -4006,8 +4006,25 @@ def new_league_get():
 def new_league_post():
     from o27v2.league import seed_league, build_custom_config
     from o27v2.schedule import seed_schedule
-    from o27v2.season_archive import set_active_league_meta
+    from o27v2.season_archive import set_active_league_meta, multi_season_status
     from flask import flash
+
+    # Refuse to start if the multi-season runner is active. Both flows
+    # call db.drop_all() / seed_league / seed_schedule on the same DB
+    # without coordination — running them concurrently produces a race
+    # where the runner's drop wipes teams between this flow's seed_league
+    # and seed_schedule, surfacing as `FOREIGN KEY constraint failed` on
+    # the games-table insert.
+    status = multi_season_status()
+    if status.get("running"):
+        cur = status.get("current_season_index") or 0
+        tgt = status.get("target_seasons") or 0
+        flash(
+            f"Multi-season test sim is running (season {cur}/{tgt}). "
+            f"Wait for it to finish before creating a new league.",
+            "error",
+        )
+        return redirect(url_for("new_league_get"))
 
     rng_seed = int(request.form.get("rng_seed", 42) or 42)
     mode     = (request.form.get("mode") or "preset").strip()
@@ -4272,7 +4289,19 @@ def api_season_reset():
     """
     from o27v2.league import seed_league
     from o27v2.schedule import seed_schedule
-    from o27v2.season_archive import archive_current_season, set_active_league_meta
+    from o27v2.season_archive import (archive_current_season, set_active_league_meta,
+                                       multi_season_status)
+
+    # Same drop-during-runner race as /new-league — refuse if the
+    # multi-season runner is active.
+    status = multi_season_status()
+    if status.get("running"):
+        return jsonify({
+            "ok": False,
+            "error": "multi-season test sim is running — wait for it to finish",
+            "current_season_index": status.get("current_season_index"),
+            "target_seasons": status.get("target_seasons"),
+        }), 409
 
     data = request.get_json(silent=True) or {}
     new_config_id = (data.get("config_id") or "30teams").strip()
