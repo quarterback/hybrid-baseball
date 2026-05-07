@@ -1028,6 +1028,96 @@ _HABIT_CUP_STEP = 0.04
 _HABIT_CUP_MIN  = 0.0
 _HABIT_CUP_MAX  = 1.0
 
+# Phase 5g — motivator-archetype cup-fill. Some manager personas can
+# nudge a player's cup upward independently of the player's own
+# game line — the leadership / morale layer. The trigger is a
+# per-player dice roll each game, gated by:
+#   - grit   (≈ stamina_unit) — gritty players respond to motivators
+#   - talent (player's primary skill) — stars get the leader bump
+#   - team last-10-game form — winning teams have momentum to share
+# Three archetypes qualify (the morale-coded skippers in
+# managers.py): `players_manager`, `iron_manager`, `fiery`. Other
+# archetypes don't fill cups via this path — those teams rely on
+# the standard performance-driven cup updates only.
+_MOTIVATOR_ARCHETYPES = frozenset({"players_manager", "iron_manager", "fiery"})
+_MOTIVATOR_BASE_P     = 0.02   # 2% floor — even on a losing team a low-grit
+                                # bench scrub has a sliver of upside
+_MOTIVATOR_GRIT_W     = 0.08   # +8 pp at full grit (stamina=95)
+_MOTIVATOR_TALENT_W   = 0.08   # +8 pp at grade-80 talent
+_MOTIVATOR_FORM_W     = 0.05   # +5 pp at full hot streak (10-0 last 10)
+_MOTIVATOR_CUP_FILL   = 0.02   # half of _HABIT_CUP_STEP — "small amount"
+
+
+def _team_last10_winpct(team_id: int) -> float:
+    """Winning percentage over the team's last 10 played regular-season
+    games. Returns 0.5 (neutral) when the team has played < 1 game."""
+    rows = db.fetchall(
+        "SELECT winner_id FROM games "
+        "WHERE played = 1 AND COALESCE(is_playoff, 0) = 0 "
+        "  AND (home_team_id = ? OR away_team_id = ?) "
+        "ORDER BY game_date DESC, id DESC LIMIT 10",
+        (team_id, team_id),
+    )
+    if not rows:
+        return 0.5
+    wins = sum(1 for r in rows if r["winner_id"] == team_id)
+    return wins / len(rows)
+
+
+def _motivator_cup_fill(team_id: int, stat_rows: list[dict],
+                         rng: random.Random) -> None:
+    """For motivator-coded managers, roll a small cup boost for every
+    player who appeared in the game. Probability scales with player
+    grit + talent + team's last-10 form."""
+    team = db.fetchone(
+        "SELECT manager_archetype FROM teams WHERE id = ?", (team_id,)
+    )
+    if not team or team["manager_archetype"] not in _MOTIVATOR_ARCHETYPES:
+        return
+
+    # Only roll for players who actually appeared (any PA or any out).
+    pids = [
+        r["player_id"] for r in stat_rows
+        if r.get("player_id")
+        and ((r.get("pa") or 0) > 0 or (r.get("outs_recorded") or 0) > 0)
+    ]
+    if not pids:
+        return
+
+    last10 = _team_last10_winpct(team_id)
+    team_form = max(-1.0, min(1.0, (last10 - 0.5) * 2.0))
+    form_bonus = max(0.0, team_form) * _MOTIVATOR_FORM_W
+
+    placeholders = ",".join(["?"] * len(pids))
+    players = db.fetchall(
+        f"SELECT id, skill, pitcher_skill, stamina, is_pitcher "
+        f"FROM players WHERE id IN ({placeholders})",
+        tuple(pids),
+    )
+
+    fills: list[int] = []
+    for p in players:
+        grit_unit = max(0.0, min(1.0, ((p.get("stamina") or 50) - 20) / 60.0))
+        talent_grade = (p.get("pitcher_skill") if p.get("is_pitcher")
+                        else p.get("skill"))
+        talent_unit = max(0.0, min(1.0, ((talent_grade or 50) - 20) / 60.0))
+        chance = (_MOTIVATOR_BASE_P
+                  + _MOTIVATOR_GRIT_W   * grit_unit
+                  + _MOTIVATOR_TALENT_W * talent_unit
+                  + form_bonus)
+        if rng.random() < chance:
+            fills.append(p["id"])
+
+    if fills:
+        with db.get_conn() as conn:
+            for pid in fills:
+                conn.execute(
+                    "UPDATE players SET habit_cup = "
+                    "MIN(?, MAX(?, habit_cup + ?)) WHERE id = ?",
+                    (_HABIT_CUP_MAX, _HABIT_CUP_MIN, _MOTIVATOR_CUP_FILL, pid),
+                )
+            conn.commit()
+
 
 def _update_habit_cups(batter_rows: list[dict], pitcher_rows: list[dict]) -> None:
     """Push each player's `habit_cup` toward 1.0 on a good game and
@@ -1363,6 +1453,20 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
         try:
             _update_habit_cups(away_bstats + home_bstats,
                                away_pstats + home_pstats)
+        except Exception:
+            pass
+
+    # Phase 5g: motivator-archetype cup-fill. Independent of the
+    # performance-driven cup update above — runs an extra dice roll
+    # per appearing player on teams whose manager is morale-coded
+    # (players_manager / iron_manager / fiery). Probability scales
+    # with grit + talent + last-10 team form.
+    if not game.get("is_playoff"):
+        try:
+            _motivator_cup_fill(away_team_id,
+                                away_bstats + away_pstats, rng)
+            _motivator_cup_fill(home_team_id,
+                                home_bstats + home_pstats, rng)
         except Exception:
             pass
 

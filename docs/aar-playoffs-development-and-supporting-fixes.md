@@ -428,7 +428,62 @@ League shape unchanged: `.367-.633` win-pct spread, consistent with
 prior smoke runs. The mechanism doesn't distort parity — it just
 tactically rotates within talent-similar bands.
 
-### 8. Drop UT as a position (`1e54168`)
+### 9. Phase 5g — Motivator-archetype cup-fill
+
+The user added a leadership/morale layer on top of the cup mechanic:
+some manager archetypes can fill a player's cup a small amount each
+game, gated by a dice roll whose probability scales with grit,
+talent, and the team's recent form.
+
+**Eligible archetypes** (the morale-coded skippers in `managers.py`):
+`players_manager`, `iron_manager`, `fiery`. Other archetypes don't
+fire this mechanic — those teams rely on the standard performance-
+driven cup updates only.
+
+**Per-player roll each game:**
+
+```
+chance = 0.02
+       + 0.08 × grit_unit       # stamina mapped to [0, 1]
+       + 0.08 × talent_unit     # skill (or pitcher_skill) mapped to [0, 1]
+       + 0.05 × max(0, last10_form_unit)
+```
+
+Where `last10_form_unit = clip((last10_winpct - 0.5) × 2, -1, 1)` —
+a hot team contributes positively, a cold team contributes nothing
+(no morale tax on losing streaks; we just don't get the boost).
+
+Probability ranges:
+- **Floor (low-grit / low-talent / cold team):** 2% per game.
+- **Ceiling (max-grit / max-talent / 10-0 hot streak):** 23% per game.
+
+**Fill amount:** `+0.02` (half the regular `±0.04` step). "Small
+amount" per the user's spec.
+
+**Trigger:** only fires for players who appeared in the game (had
+≥1 PA or recorded ≥1 out). Bench-warmers don't get the morale boost
+on idle days — leadership transfers through participation.
+
+**Smoke (14-team / 30-game season, A/B halved):**
+
+| Group | n cups | Mean cup |
+|---|---|---|
+| Motivator-managed teams (3 each: players_mgr, iron_mgr, fiery) | 329 | 0.594 |
+| Non-motivator (set_and_forget × 7) | 329 | 0.579 |
+
+Differential: **+0.014**. Small per the spec, but the per-team
+breakdown shows it's consistent — every motivator team ends in
+the upper half of the cup range, set-and-forget teams cluster
+lower. Aggregate behavior: ~10% of player-games on motivator teams
+trigger a fill across the season, raising team-mean cup steadily.
+
+This compounds with the existing performance-driven cup mechanic:
+a hot-talent player on a winning team under a Players' Manager
+gets BOTH the performance boost AND the leadership boost, so their
+effective work_habits stays elevated all season — exactly the
+"team leader" archetype the user described.
+
+### 10. Drop UT as a position (`1e54168`)
 
 The user noticed UT-tagged bench players kept showing up in places
 where canonical positions or jokers should — box scores read as "UT"
@@ -538,7 +593,8 @@ same shape as prior smokes.
 | `o27v2/sim.py` | 75b1b79 | Habit-bench pass (`_try_habit_bench`) in `_db_team_to_engine`, before the rest-day pass. Swaps slumping starters for similar-skill bench fielders with healthier cups. |
 | `o27v2/league.py` | 1e54168 | `_DRAFT_SLOTS` rewritten with per-position backups; `_generate_draft_pool` aggregates slots per position; `_make_hitter` drops the UT-utility short-circuit; legacy `generate_players` distributes bench across canonical positions. |
 | `o27v2/waivers.py` | 1e54168 | `_HITTER_BUCKETS` and `_BUCKET_ACTIVE_SLOTS` updated for the per-position bench layout. |
-| `o27v2/sim.py` | (next commit) | Habit-bench thresholds scale with `mgr_bench_usage`: old-school skippers fire on cup ≤ 0.15 with +0.40 gap required; analytics-forward fire on cup ≤ 0.45 with +0.20 gap. |
+| `o27v2/sim.py` | 756209a | Habit-bench thresholds scale with `mgr_bench_usage`: old-school skippers fire on cup ≤ 0.15 with +0.40 gap required; analytics-forward fire on cup ≤ 0.45 with +0.20 gap. |
+| `o27v2/sim.py` | (next commit) | Phase 5g — `_motivator_cup_fill` + `_team_last10_winpct`. Per-game per-player dice roll on motivator-archetype teams (`players_manager`, `iron_manager`, `fiery`) for a small `+0.02` cup boost, gated by grit + talent + last-10 team form. |
 
 ---
 
