@@ -287,23 +287,85 @@ resets, schedule re-generates, rosters preserved"). Reloads to
 
 ---
 
-## What was deferred
+### 6. Phase 5e — `work_ethic` + `work_habits` with in-season cup (`96ec734`)
 
-**`work_ethic` + `work_habits`** (Phase 5e per the user's design).
-Substantial enough scope for its own pass:
-- Two new player columns (visible `work_ethic`, hidden `work_habits`).
-- Re-roll cadence: `work_ethic` re-rolls each off-season under age
-  30, locks at 30; `work_habits` dynamic until 27, locks at 27.
-- "Cup" mechanic for `work_habits` — fills with success, drains
-  with failure; situational in-game boost or slump penalty.
-- Manager-AI integration: bench struggling players for similar-
-  rated roster-mates with better habits.
-- Engine integration: a new per-PA read alongside `today_form` /
-  `today_condition` to apply the boost.
+The user's "leaders / fell-off / fun randomness" mechanic, layered on
+top of the dynasty engine.
 
-The current development engine handles the dynasty arc without these
-columns; they're pure flavor + in-season variance. Tracked as the
-next phase to revisit.
+**Schema additions** (3 columns on `players` + ALTER TABLE migration):
+
+| Column | Type | Visibility | Notes |
+|---|---|---|---|
+| `work_ethic` | INTEGER 20-80 | shown on player page | re-rolls each off-season under age 30; locks at 30 |
+| `work_habits` | INTEGER 20-80 | hidden | re-rolls under age 27; locks at 27 |
+| `habit_cup` | REAL 0..1 (default 0.5) | hidden | in-season "cup" — fills with success, drains with failure |
+
+**Initial seed:** `_make_hitter` / `_make_pitcher` roll both attributes
+from the same 9-tier ladder (capped at 80 like every other seed-time
+attribute). `habit_cup` starts at 0.5 (neutral).
+
+**Game-day integration:** `_roll_today_condition` (the Phase 3 daily
+wellness draw) now folds in ethic + cup-modulated habits:
+
+```
+ethic_shift  = (work_ethic  - 50) / 500   →   range ±0.06
+habits_raw   = (work_habits - 50) / 500   →   range ±0.06
+cup_factor   = (cup - 0.5) × 2            →   range −1.0 .. +1.0
+μ_player    += ethic_shift + habits_raw × cup_factor
+```
+
+A great-ethic / hot-cup player on a mild day has μ ≈ 1.12 (capped by
+the [0.85, 1.15] floor on the gauss draw); a bad-ethic / cold-cup
+player on a hot rainy day has μ ≈ 0.83 — frequent off games. Total
+μ shift range from ethic + habits: ±0.12 on top of the existing
+weather penalties.
+
+**Per-game cup updates** in `_update_habit_cups` after each
+regular-season game (playoffs don't move the season-arc cup):
+
+| Player | Good day (cup +0.04) | Bad day (cup −0.04) |
+|---|---|---|
+| Hitter | 1+ H AND OBP ≥ .333 | 3+ AB, 0 H, 0 BB, 0 HBP |
+| Pitcher | 9+ outs AND ≤2 ER | (6+ outs AND ≥4 ER) OR (≤3 outs AND ≥3 ER) |
+
+Idle bench days don't move the cup either way. Step size is ±0.04 so
+a real streak takes ~12 games to swing the full 0→1 range.
+
+**Off-season re-rolls** in `development._develop_player` use a soft
+formula:
+
+```
+new = round(0.6 × old + 0.4 × fresh_tier_roll)
+```
+
+so values persist year-over-year instead of bouncing wildly. Once a
+player crosses the lock age (`work_ethic` at 30, `work_habits` at
+27), the attribute is frozen — the high-ethic 32-year-old who shows
+up ready every day stays that way; the cellar-ethic veteran also
+stays bad. `habit_cup` resets to 0.5 every off-season.
+
+**UI:** the player page surfaces `work_ethic` with a "Locked" badge
+once the player hits 30. `work_habits` and `habit_cup` stay hidden —
+they shape outcomes invisibly so the user can't game them.
+
+**Smoke (14-team / 30-game season + offseason):**
+- Seed-time `work_ethic` range 20-80 ✓
+- Post-season cup distribution: mean 0.555, σ 0.158, range 0.180-1.000.
+  Real streak shape — 51 players ended ≤0.4, 107 ended ≥0.8. The
+  mass clustered near 0.5 (no movement) is players with limited
+  playing time / mostly-mediocre games.
+- Off-season locks fire correctly: an age-33 player kept his
+  ethic 37 / habits 27; an age-22 player got both re-rolled
+  (42→48 ethic, 80→64 habits).
+- Cup resets to 0.5 for every player at off-season ✓
+
+**What was deferred** (the manager-AI half of the user's spec):
+benching a struggling player for a similar-rated roster-mate with
+better habits. Skipped for v1 because the cup mechanic already
+produces the in-season variance via the today_condition shift, and
+bench logic would need careful tuning so it doesn't permanently
+exile any player whose cup happened to crash early in a season. Left
+as a Phase 5f follow-up.
 
 ---
 
@@ -346,6 +408,11 @@ next phase to revisit.
 | `o27v2/league.py` | e20e1cc | `_roll_tier_grade` clamps both ends of the range to 80; `_roll_org_grade` helper rolls org_strength on full 9-tier ladder uncapped at 95; seed_league inserts the rolled value (no post-draft recompute). |
 | `o27v2/development.py` | e20e1cc | New module. Age curves (`_mu_age`), org bonus (`_mu_org`), grit modulator, per-attribute development draw with bust events, free-agent dev pass, org-strength bond-market roll, `run_offseason` top-level entry. |
 | `o27v2/web/app.py` | e20e1cc | `/api/season/advance` dynasty rollover endpoint. |
+| `o27v2/db.py` | 96ec734 | `players` adds `work_ethic`, `work_habits`, `habit_cup` columns + ALTER TABLE migration. |
+| `o27v2/league.py` | 96ec734 | `_make_hitter` / `_make_pitcher` roll the new columns; `seed_league` INSERT extended. |
+| `o27v2/sim.py` | 96ec734 | `_db_team_to_engine` stamps the new attrs on engine Player; `_roll_today_condition` folds them into μ; `_update_habit_cups` runs after each regular-season game. |
+| `o27v2/development.py` | 96ec734 | Off-season re-roll with age-27 (habits) / age-30 (ethic) locks, soft re-roll formula, cup reset to 0.5. |
+| `o27v2/web/templates/player.html` | 96ec734 | Surfaces `work_ethic` with "Locked" badge once frozen. |
 
 ---
 
@@ -394,3 +461,27 @@ next phase to revisit.
   variance on top of the new dynasty mechanics could over-correct
   toward soup. Will revisit if standings don't have enough texture
   after a multi-season run.
+- **work_ethic / habits via μ shift, not a separate multiplier.**
+  Considered making them an independent multiplicative term in
+  prob.py alongside `today_condition`. Rejected because the existing
+  `today_condition` machinery already supports the exact shape we
+  needed (gauss draw with a μ shift), and the user's spec was
+  "boost attributes 1-5 points during a season" — folding into the
+  μ shift gets us roughly that magnitude without touching prob.py
+  at all. Kept the implementation contained to sim.py.
+- **Cup step ±0.04 over ±0.10.** Tested both. ±0.10 made hot/cold
+  streaks too volatile — a single bad game could flip a player from
+  full cup to neutral, which doesn't match real-world momentum.
+  ±0.04 means it takes a 5-6 game streak to meaningfully shift the
+  cup, which matches how baseball commentary actually talks about
+  slumps and hot streaks.
+- **Idle days don't move the cup.** A pinch-hit appearance (1 PA)
+  shouldn't crash a starter's cup; a bench day shouldn't reset
+  anything. Required `pa >= 2` (hitters) / `outs >= 1` (pitchers)
+  to update.
+- **Soft re-roll (60/40) over full re-roll on ethic/habits.** Real
+  baseball "leaders" stay leaders for years. A full re-roll each
+  off-season would mean a high-ethic age-25 had a coin-flip chance
+  of being mediocre at age-26, which doesn't match the user's
+  "leaders / fell off" framing. The 60/40 weighted average preserves
+  identity year-over-year while still allowing meaningful drift.
