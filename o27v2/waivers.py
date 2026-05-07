@@ -25,13 +25,23 @@ Trigger: `simulate_date` and `simulate_through` call `maybe_run_sweep`
 before any games on a date that's a Sunday and hasn't already had a
 sweep run for it. The last-sweep date is persisted in `sim_meta` so
 a sweep never runs twice for the same Sunday.
+
+Performance shape:
+  - One `SELECT * FROM players` to load every team roster + the FA
+    pool into memory at sweep start.
+  - All round / pick / swap logic is pure-Python on dicts — zero
+    SQL during the round loop.
+  - At the end: three executemany calls (team_id move, is_active
+    reflag, transaction log) regardless of how many claims fired.
+  - Total SQL per sweep: ~5 statements. Previous version did
+    O(teams × FAs × claims) per-row queries (~10K+ per Sunday) and
+    blocked the sim around the first Sunday.
 """
 from __future__ import annotations
 
 import datetime as _dt
 
 from o27v2 import db
-from o27v2.transactions import log_transaction
 
 
 # Position buckets a team carries. Mirrors `_DRAFT_SLOTS` in league.py.
@@ -92,119 +102,9 @@ def get_free_agents() -> list[dict]:
     return db.fetchall("SELECT * FROM players WHERE team_id IS NULL")
 
 
-def _team_bucket(team_id: int, bucket: str) -> list[dict]:
-    """Players on this team whose `position` equals `bucket`. For 'P'
-    we bucket by `is_pitcher = 1` instead, since pitcher positions are
-    all 'P' but include both active and reserve."""
-    if bucket == _PITCHER_BUCKET:
-        return db.fetchall(
-            "SELECT * FROM players WHERE team_id = ? AND is_pitcher = 1",
-            (team_id,),
-        )
-    return db.fetchall(
-        "SELECT * FROM players WHERE team_id = ? AND position = ? AND is_pitcher = 0",
-        (team_id, bucket),
-    )
-
-
-def _team_worst_in_bucket(team_id: int, bucket: str) -> dict | None:
-    """Return the lowest-rated player in the team's bucket, or None
-    if the team has nobody at that position."""
-    roster = _team_bucket(team_id, bucket)
-    if not roster:
-        return None
-    return min(roster, key=_player_overall)
-
-
 def _bucket_for_player(p: dict) -> str:
     """Which sweep-bucket does this player belong to?"""
-    return _PITCHER_BUCKET if p.get("is_pitcher") else p["position"]
-
-
-def _pick_best_claim(
-    team_id: int,
-    fa_pool: list[dict],
-) -> tuple[dict, dict, int] | None:
-    """For one team, find the FA whose addition produces the largest
-    positive improvement vs the team's worst player at that FA's
-    position. Returns (fa, displaced_player, delta) or None if no
-    positive-improvement claim exists.
-
-    "Positive improvement" means strictly greater than the worst
-    player's overall — no-op swaps are skipped so the sweep doesn't
-    churn the league's player IDs without changing roster strength.
-    """
-    best: tuple[dict, dict, int] | None = None
-    for fa in fa_pool:
-        bucket = _bucket_for_player(fa)
-        worst = _team_worst_in_bucket(team_id, bucket)
-        if worst is None:
-            # Team has no slot at this position — shouldn't happen
-            # post-draft, but skip defensively.
-            continue
-        delta = _player_overall(fa) - _player_overall(worst)
-        if delta <= 0:
-            continue
-        if best is None or delta > best[2]:
-            best = (fa, worst, delta)
-    return best
-
-
-def _reassign_active_flags(team_id: int, bucket: str) -> None:
-    """After a swap, re-sort the bucket by overall rating and set the
-    top-N rows to is_active=1, the rest to is_active=0. N is read
-    from `_BUCKET_ACTIVE_SLOTS`. Single-active-slot buckets (CF, SS,
-    etc.) are no-ops since those buckets only have one player anyway.
-    """
-    active_n = _BUCKET_ACTIVE_SLOTS.get(bucket, 1)
-    roster = _team_bucket(team_id, bucket)
-    if len(roster) <= active_n:
-        # Everyone in the bucket is already active.
-        for p in roster:
-            db.execute("UPDATE players SET is_active = 1 WHERE id = ?", (p["id"],))
-        return
-    roster.sort(key=_player_overall, reverse=True)
-    for idx, p in enumerate(roster):
-        db.execute(
-            "UPDATE players SET is_active = ? WHERE id = ?",
-            (1 if idx < active_n else 0, p["id"]),
-        )
-
-
-def _apply_claim(
-    season: int,
-    game_date: str,
-    team_id: int,
-    fa: dict,
-    displaced: dict,
-) -> None:
-    """Move `fa` onto `team_id`, cut `displaced` to the FA pool, and
-    re-balance active/reserve flags in the affected position bucket.
-    Logs both halves of the swap to the transactions table."""
-    bucket = _bucket_for_player(fa)
-    # Promote the FA — temporarily mark active=1; the rebalance below
-    # will demote them to reserve if their bucket is over the active
-    # cap and they're not in the top N.
-    db.execute(
-        "UPDATE players SET team_id = ?, is_active = 1 WHERE id = ?",
-        (team_id, fa["id"]),
-    )
-    # Cut the displaced player to the FA pool.
-    db.execute(
-        "UPDATE players SET team_id = NULL, is_active = 0 WHERE id = ?",
-        (displaced["id"],),
-    )
-    _reassign_active_flags(team_id, bucket)
-    log_transaction(
-        season, game_date, "waiver_claim", team_id, fa["id"],
-        f"Claimed {fa['name']} ({bucket}, ovr {_player_overall(fa)}) "
-        f"from waivers — replaces {displaced['name']} "
-        f"(ovr {_player_overall(displaced)})",
-    )
-    log_transaction(
-        season, game_date, "waiver_release", team_id, displaced["id"],
-        f"Released {displaced['name']} to waivers — bumped by {fa['name']}",
-    )
+    return _PITCHER_BUCKET if p.get("is_pitcher") else (p.get("position") or "")
 
 
 def _team_order_worst_first() -> list[int]:
@@ -236,68 +136,155 @@ def run_match_day(
           "fa_after": int,
         }
 
-    Mechanics (see module docstring):
-      - Up to `max_rounds` rounds.
-      - Each round, every team accrues 1 pick allowance.
-      - Teams claim worst-record-first. During a team's turn it
-        consumes its current allowance, claiming while a positive-
-        improvement FA is available; unused allowance banks for
-        later rounds.
-      - The sweep ends early if a full round passes with zero claims
-        (no team can find an improvement).
+    See module docstring for mechanics. Implementation is one bulk
+    load + in-memory rounds + bulk writeback for performance.
     """
-    fa_before = len(get_free_agents())
-    team_ids  = _team_order_worst_first()
+    team_ids = _team_order_worst_first()
+    if not team_ids:
+        return {"date": game_date, "rounds_run": 0, "claims": [],
+                "fa_before": 0, "fa_after": 0}
+
+    # ---- Bulk load ---------------------------------------------------------
+    all_players = db.fetchall("SELECT * FROM players")
+    fa_pool: list[dict] = []
+    team_buckets: dict[int, dict[str, list[dict]]] = {tid: {} for tid in team_ids}
+
+    for row in all_players:
+        p = dict(row)
+        tid = p.get("team_id")
+        if tid is None:
+            fa_pool.append(p)
+        elif tid in team_buckets:
+            bucket = _bucket_for_player(p)
+            team_buckets[tid].setdefault(bucket, []).append(p)
+        # Players with team_id pointing at a missing team (shouldn't happen
+        # post-Phase-1, but defensive) are skipped — they won't bias the
+        # claim math and won't get reassigned.
+
+    fa_before = len(fa_pool)
+
+    # ---- Round loop (pure in-memory) ---------------------------------------
     picks_available: dict[int, int] = {tid: 0 for tid in team_ids}
     claims: list[dict] = []
+    moved_players: dict[int, int | None] = {}   # player_id -> new team_id (None for FA)
+    dirty_buckets: set[tuple[int, str]] = set() # (team_id, bucket) pairs needing is_active reflag
 
     rounds_run = 0
     for round_idx in range(max_rounds):
         rounds_run = round_idx + 1
-        # Each team gains 1 fresh pick at the start of the round.
+        # Each team gains one fresh pick at the start of the round.
         for tid in team_ids:
             picks_available[tid] += 1
 
-        # Refresh FA pool once per round (in-round claims update the
-        # in-memory pool directly so we don't re-query mid-round).
-        fa_pool = get_free_agents()
         round_claims = 0
-
         for tid in team_ids:
             while picks_available[tid] > 0:
-                pick = _pick_best_claim(tid, fa_pool)
-                if pick is None:
-                    break  # no improvement available — bank remaining
-                fa, displaced, delta = pick
-                _apply_claim(season, game_date, tid, fa, displaced)
-                # Update in-memory pool: remove claimed FA, add the
-                # displaced player so other teams can pick them up
-                # later this round.
-                fa_pool = [p for p in fa_pool if p["id"] != fa["id"]]
-                # Reload displaced from DB since we just updated it.
-                displaced_row = db.fetchone(
-                    "SELECT * FROM players WHERE id = ?", (displaced["id"],)
-                )
-                if displaced_row is not None:
-                    fa_pool.append(displaced_row)
-                picks_available[tid] -= 1
+                # In-memory scan for the best positive-delta upgrade.
+                best: tuple[dict, dict, int] | None = None
+                for fa in fa_pool:
+                    bucket = _bucket_for_player(fa)
+                    bucket_roster = team_buckets[tid].get(bucket)
+                    if not bucket_roster:
+                        continue
+                    worst = min(bucket_roster, key=_player_overall)
+                    delta = _player_overall(fa) - _player_overall(worst)
+                    if delta <= 0:
+                        continue
+                    if best is None or delta > best[2]:
+                        best = (fa, worst, delta)
+
+                if best is None:
+                    break  # no upgrade — bank remaining picks for later rounds
+
+                fa, displaced, delta = best
+                bucket = _bucket_for_player(fa)
+
+                # In-memory swap.
+                team_buckets[tid][bucket].remove(displaced)
+                team_buckets[tid][bucket].append(fa)
+                fa_pool.remove(fa)
+                fa_pool.append(displaced)
+
+                # Track for the writeback pass.
+                moved_players[fa["id"]] = tid
+                moved_players[displaced["id"]] = None
+                dirty_buckets.add((tid, bucket))
+
                 claims.append({
                     "round": rounds_run,
                     "team_id": tid,
-                    "claimed_id": fa["id"],
+                    "claimed_id":   fa["id"],
                     "claimed_name": fa["name"],
-                    "claimed_pos": _bucket_for_player(fa),
-                    "claimed_ovr": _player_overall(fa),
-                    "released_id": displaced["id"],
+                    "claimed_pos":  bucket,
+                    "claimed_ovr":  _player_overall(fa),
+                    "released_id":   displaced["id"],
                     "released_name": displaced["name"],
-                    "released_ovr": _player_overall(displaced),
+                    "released_ovr":  _player_overall(displaced),
                     "delta": delta,
                 })
+                picks_available[tid] -= 1
                 round_claims += 1
 
         if round_claims == 0:
             # Nobody found an improvement this round — sweep is done.
             break
+
+    # ---- Writeback (bulk) --------------------------------------------------
+    if moved_players:
+        # New team_id for each moved player (None ⇒ FA pool).
+        db.executemany(
+            "UPDATE players SET team_id = ? WHERE id = ?",
+            [(new_tid, pid) for pid, new_tid in moved_players.items()],
+        )
+        # Players cut to FA: also clear is_active.
+        fa_demote = [(pid,) for pid, new_tid in moved_players.items() if new_tid is None]
+        if fa_demote:
+            db.executemany(
+                "UPDATE players SET is_active = 0 WHERE id = ?",
+                fa_demote,
+            )
+
+    # Reflag is_active for every bucket that saw a swap. Top-N (per
+    # `_BUCKET_ACTIVE_SLOTS`) stay active; the rest become reserve.
+    if dirty_buckets:
+        active_updates: list[tuple[int, int]] = []
+        for tid, bucket in dirty_buckets:
+            active_n = _BUCKET_ACTIVE_SLOTS.get(bucket, 1)
+            roster = sorted(team_buckets[tid].get(bucket, []),
+                            key=_player_overall, reverse=True)
+            for idx, p in enumerate(roster):
+                active_updates.append((1 if idx < active_n else 0, p["id"]))
+        if active_updates:
+            db.executemany(
+                "UPDATE players SET is_active = ? WHERE id = ?",
+                active_updates,
+            )
+
+    # Bulk-log the transactions for the whole sweep.
+    if claims:
+        from o27v2.transactions import log_many
+        events: list[dict] = []
+        for c in claims:
+            events.append({
+                "event_type": "waiver_claim",
+                "team_id":   c["team_id"],
+                "player_id": c["claimed_id"],
+                "detail": (
+                    f"R{c['round']} claim — {c['claimed_name']} "
+                    f"({c['claimed_pos']}, ovr {c['claimed_ovr']}); "
+                    f"replaces {c['released_name']} (ovr {c['released_ovr']})"
+                ),
+            })
+            events.append({
+                "event_type": "waiver_release",
+                "team_id":   c["team_id"],
+                "player_id": c["released_id"],
+                "detail": (
+                    f"R{c['round']} release — bumped by {c['claimed_name']} "
+                    f"(ovr {c['claimed_ovr']})"
+                ),
+            })
+        log_many(season, game_date, events)
 
     _set_last_sweep_date(game_date)
 
@@ -306,7 +293,7 @@ def run_match_day(
         "rounds_run": rounds_run,
         "claims": claims,
         "fa_before": fa_before,
-        "fa_after": len(get_free_agents()),
+        "fa_after": len(fa_pool),
     }
 
 
