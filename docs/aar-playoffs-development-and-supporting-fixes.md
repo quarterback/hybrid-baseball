@@ -359,13 +359,67 @@ they shape outcomes invisibly so the user can't game them.
   (42→48 ethic, 80→64 habits).
 - Cup resets to 0.5 for every player at off-season ✓
 
-**What was deferred** (the manager-AI half of the user's spec):
-benching a struggling player for a similar-rated roster-mate with
-better habits. Skipped for v1 because the cup mechanic already
-produces the in-season variance via the today_condition shift, and
-bench logic would need careful tuning so it doesn't permanently
-exile any player whose cup happened to crash early in a season. Left
-as a Phase 5f follow-up.
+**What was deferred** — actually, *not* deferred. See section 7
+below. The manager-AI habit-bench pass shipped in `75b1b79` the
+same day.
+
+### 7. Phase 5f — Manager-AI habit-bench pass (`75b1b79`)
+
+The "bench struggling player for similar-rated player with better
+habits / work-ethic" half of the Phase 5e spec.
+
+A new pass in `_db_team_to_engine` runs BEFORE the existing rest-day
+pass. Logic:
+
+```
+for starter in starters_by_cup_ascending:
+    if starter.habit_cup >= 0.30:        # not a real slump → done
+        break
+    candidates = bench_fielders where:
+        |bat_score(cand) - bat_score(starter)| <= 6.0  AND
+        cand.habit_cup >= starter.habit_cup + 0.30
+    if candidates:
+        replacement = max(candidates, key=cup)
+        swap(starter, replacement)
+        break                              # one swap per game
+```
+
+Why before rest-day: the rest pass walks `starting_fielders` to
+decide who's tired. If habit-bench had run after, the rest pass
+would have considered the post-habit-swap lineup — conflating "who's
+slumping" with "who's tired", which are separate signals. Running
+habit-bench first means the rest pass sees the lineup the manager
+*chose*, not the lineup that arrived by accident.
+
+**Threshold knobs:**
+
+| Knob | Value | Notes |
+|---|---|---|
+| `_HABIT_BENCH_CUP_THRESHOLD` | 0.30 | starter cup must be below this to fire (≈5+ bad games) |
+| `_HABIT_BENCH_SKILL_TOLERANCE` | 6.0 | bat_score grade points; bench fielder must be within this much |
+| `_HABIT_BENCH_CUP_DELTA` | 0.30 | bench fielder's cup must exceed starter's by this margin |
+
+**Safety property: no permanent burial.** The cup resets to 0.5 every
+off-season, so a player whose cup crashed early in a season at worst
+loses that season's PA share — they return next year with a clean
+slate. No bench-and-forget failure mode.
+
+**Smoke** (artificially crashed Kaliq Dawkins' cup to 0.05, bumped
+four UT bench cups to 0.95):
+
+| Player | Expected PA | Actual PA | Behavior |
+|---|---|---|---|
+| Kaliq Dawkins (cold cup, CF) | ~120 | **24** | benched ~26 of 30 games |
+| (His backups, hot cups, UT) | low | high | rotated in instead |
+
+League shape unchanged: `.367-.633` win-pct spread, consistent with
+prior smoke runs. The mechanism doesn't distort parity — it just
+tactically rotates within talent-similar bands.
+
+**Future tuning** (not in this PR): the threshold constants could
+hook into `mgr_bench_usage` so an old-school skipper swaps less
+aggressively than an analytics-forward one. Today they're flat
+across managers.
 
 ---
 
@@ -413,6 +467,7 @@ as a Phase 5f follow-up.
 | `o27v2/sim.py` | 96ec734 | `_db_team_to_engine` stamps the new attrs on engine Player; `_roll_today_condition` folds them into μ; `_update_habit_cups` runs after each regular-season game. |
 | `o27v2/development.py` | 96ec734 | Off-season re-roll with age-27 (habits) / age-30 (ethic) locks, soft re-roll formula, cup reset to 0.5. |
 | `o27v2/web/templates/player.html` | 96ec734 | Surfaces `work_ethic` with "Locked" badge once frozen. |
+| `o27v2/sim.py` | 75b1b79 | Habit-bench pass (`_try_habit_bench`) in `_db_team_to_engine`, before the rest-day pass. Swaps slumping starters for similar-skill bench fielders with healthier cups. |
 
 ---
 
