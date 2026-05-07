@@ -140,7 +140,46 @@ def _develop_player(p: dict, org_strength: int, rng: _random.Random,
         # Clamp to [20, 95] — Elite+ tier is reachable here, that's
         # the whole point of the dev engine.
         updated[attr] = max(20, min(95, new_val))
+
+    # Phase 5e — work-ethic / work-habits offseason re-roll with age
+    # locks. Both use a "soft re-roll": new value blends 60% of the
+    # carry-forward with 40% of a fresh tier-roll, giving year-over-
+    # year persistence without making either attribute static. After
+    # the lock age, the attribute is frozen at its last carried value.
+    cur_ethic = p.get("work_ethic")
+    cur_habits = p.get("work_habits")
+    if cur_ethic is not None:
+        if new_age < 30:
+            fresh = _fresh_ethic_roll(rng)
+            updated["work_ethic"] = max(20, min(80, round(0.6 * cur_ethic + 0.4 * fresh)))
+        # else: locked — leave as-is
+    if cur_habits is not None:
+        if new_age < 27:
+            fresh = _fresh_ethic_roll(rng)
+            updated["work_habits"] = max(20, min(80, round(0.6 * cur_habits + 0.4 * fresh)))
+        # else: locked
+
+    # Reset habit_cup to neutral (0.5) at season start regardless.
+    # Stored as REAL so cast to float.
+    updated["habit_cup"] = 0.5
+
     return updated, new_age
+
+
+def _fresh_ethic_roll(rng: _random.Random) -> int:
+    """Tier-rolled grade clamped to [20, 80] for the offseason work-
+    ethic / work-habits re-rolls. Mirrors the seed-time roll shape."""
+    from o27v2.league import _TALENT_TIERS
+    r = rng.random()
+    cumulative = 0.0
+    for prob, lo, hi in _TALENT_TIERS:
+        cumulative += prob
+        if r < cumulative:
+            seed_lo = min(lo, 80)
+            seed_hi = min(hi, 80)
+            return rng.randint(seed_lo, seed_hi)
+    lo, hi = _TALENT_TIERS[-1][1], _TALENT_TIERS[-1][2]
+    return rng.randint(min(lo, 80), min(hi, 80))
 
 
 def develop_players_for_team(team_id: int, org_strength: int,

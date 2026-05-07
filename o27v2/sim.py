@@ -397,6 +397,13 @@ def _db_team_to_engine(
         wl = workload.get(int(p["id"]), {}) if p.get("is_pitcher") else {}
         player.days_rest  = int(wl.get("days_rest", 99))
         player.pitch_debt = int(wl.get("pitch_debt", 0))
+        # Phase 5e — work-ethic / work-habits stamp. Defaults of 50 / 0.5
+        # produce engine-identical behavior on legacy DB rows that
+        # predate these columns. Used by _roll_today_condition to shift
+        # the per-game wellness draw and (post-game) by the cup updater.
+        player.work_ethic  = int(p.get("work_ethic")  or 50)
+        player.work_habits = int(p.get("work_habits") or 50)
+        player.habit_cup   = float(p.get("habit_cup") if p.get("habit_cup") is not None else 0.5)
         engine_players.append(player)
         engine_to_db_id[player.player_id] = int(p["id"])
         if bool(p.get("is_joker")):
@@ -929,6 +936,18 @@ _COLD_PENALTY     = -0.020   # `temp == "cold"`
 _HEAVY_RAIN_PEN   = -0.030   # `precipitation == "heavy"`
 _LIGHT_RAIN_PEN   = -0.010   # `precipitation == "light"`
 
+# Phase 5e — work-ethic / work-habits scale on the daily μ. Both are
+# 20-80 grades; we centre at 50 and divide by 500 so the per-grade
+# contribution is small but the extreme ends matter:
+#   work_ethic = 80  → μ += +0.06   (≈ "always shows up ready")
+#   work_ethic = 20  → μ += -0.06   (≈ "phones it in")
+#   work_habits = 80 with full cup → μ += +0.06; with empty cup → -0.06
+# So a great-ethic / hot-cup player on a mild day has μ ~ 1.12 (capped
+# by [0.85, 1.15] floor on the gauss draw); a bad-ethic / cold-cup
+# player on a hot rainy day has μ ~ 0.83 → frequent off games.
+_ETHIC_SCALE   = 1.0 / 500.0
+_HABITS_SCALE  = 1.0 / 500.0
+
 
 def _condition_mu_for_weather(weather) -> float:
     """Compute the μ of the condition roll for the day. 1.0 in mild
@@ -949,13 +968,95 @@ def _condition_mu_for_weather(weather) -> float:
     return mu
 
 
+# Phase 5e — habit-cup deltas per game. The cup is in [0, 1]; we move
+# it ±_HABIT_CUP_STEP based on the game's performance, then clamp.
+# Step is small (≈ 12 games to swing the full range) so streaks build
+# gradually instead of flipping every game.
+_HABIT_CUP_STEP = 0.04
+_HABIT_CUP_MIN  = 0.0
+_HABIT_CUP_MAX  = 1.0
+
+
+def _update_habit_cups(batter_rows: list[dict], pitcher_rows: list[dict]) -> None:
+    """Push each player's `habit_cup` toward 1.0 on a good game and
+    toward 0.0 on a bad one. "Good" thresholds are deliberately mild
+    so the cup actually moves over a 30-game season:
+      Hitter good day: 1+ hit AND on-base ≥ 0.333 (1-for-3 with a walk
+                       counts; 0-for-3 with a walk doesn't).
+      Hitter bad day:  0-for-3+ AND no walk / HBP.
+      Pitcher good day: 9+ outs AND ≤2 ER (3 IP, 6.00 ERA-equivalent).
+      Pitcher bad day:  6+ outs AND ≥4 ER, OR ≤3 outs AND ≥3 ER.
+    Idle bench days don't move the cup either way."""
+    deltas: dict[int, float] = {}
+
+    for r in batter_rows:
+        pid = r.get("player_id")
+        if pid is None:
+            continue
+        pa = r.get("pa") or 0
+        ab = r.get("ab") or 0
+        h  = r.get("hits") or 0
+        bb = r.get("bb") or 0
+        hbp = r.get("hbp") or 0
+        if pa < 2:
+            continue   # idle / pinch-only — no cup movement
+        on_base = h + bb + hbp
+        obp = on_base / pa if pa else 0.0
+        if h >= 1 and obp >= 0.333:
+            deltas[pid] = deltas.get(pid, 0.0) + _HABIT_CUP_STEP
+        elif ab >= 3 and h == 0 and bb == 0 and hbp == 0:
+            deltas[pid] = deltas.get(pid, 0.0) - _HABIT_CUP_STEP
+
+    for r in pitcher_rows:
+        pid = r.get("player_id")
+        if pid is None:
+            continue
+        outs = r.get("outs_recorded") or 0
+        er   = r.get("er", r.get("runs_allowed", 0)) or 0
+        if outs < 1:
+            continue
+        if outs >= 9 and er <= 2:
+            deltas[pid] = deltas.get(pid, 0.0) + _HABIT_CUP_STEP
+        elif (outs >= 6 and er >= 4) or (outs <= 3 and er >= 3):
+            deltas[pid] = deltas.get(pid, 0.0) - _HABIT_CUP_STEP
+
+    if not deltas:
+        return
+    # Apply via individual UPDATE statements with clamp inline, in one
+    # connection so it's a single transaction.
+    with db.get_conn() as conn:
+        for pid, d in deltas.items():
+            conn.execute(
+                "UPDATE players SET habit_cup = "
+                "MIN(?, MAX(?, habit_cup + ?)) WHERE id = ?",
+                (_HABIT_CUP_MAX, _HABIT_CUP_MIN, d, pid),
+            )
+        conn.commit()
+
+
 def _roll_today_condition(visitors: Team, home: Team, weather, rng: random.Random) -> None:
     """Roll a `today_condition` multiplier for every player on both
     teams. Stamped directly on the Player dataclass field so prob.py's
-    existing `getattr(player, "today_condition", 1.0)` reads pick it up."""
-    mu = _condition_mu_for_weather(weather)
+    existing `getattr(player, "today_condition", 1.0)` reads pick it up.
+
+    Per-player μ folds in:
+      - weather penalties (heat / cold / rain)
+      - work_ethic shift  (constant for the season; locks at age 30)
+      - work_habits shift (modulated by `habit_cup`; cup fills with
+        good performance and drains with bad — so a high-habits
+        player on a hot streak gets the full +shift, on a cold streak
+        the full -shift)
+    """
+    weather_mu = _condition_mu_for_weather(weather)
     for team in (visitors, home):
         for p in team.roster:
+            ethic_shift  = (getattr(p, "work_ethic",  50) - 50) * _ETHIC_SCALE
+            habits_raw   = (getattr(p, "work_habits", 50) - 50) * _HABITS_SCALE
+            cup          = float(getattr(p, "habit_cup", 0.5))
+            # cup=0.5 ⇒ neutral; cup=1.0 ⇒ +1× habits; cup=0.0 ⇒ -1× habits.
+            cup_factor   = (cup - 0.5) * 2.0
+            habits_shift = habits_raw * cup_factor
+            mu = weather_mu + ethic_shift + habits_shift
             cond = rng.gauss(mu, _CONDITION_SIGMA)
             p.today_condition = max(_CONDITION_MIN, min(_CONDITION_MAX, cond))
 
@@ -1200,6 +1301,18 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     # Phase 9: Post-game injury draws + transaction logging
     # -----------------------------------------------------------------------
     _post_game_roster_processing(game_id, game_date, home_team_id, away_team_id, rng, seed)
+
+    # Phase 5e: post-game habit-cup update. Each player's cup drifts
+    # toward 1.0 on a good game and toward 0.0 on a bad one. Only fires
+    # for regular-season games (playoffs aren't part of the season-arc
+    # cup mechanic) and does nothing on legacy DB rows where the column
+    # is missing — the helper itself is best-effort.
+    if not game.get("is_playoff"):
+        try:
+            _update_habit_cups(away_bstats + home_bstats,
+                               away_pstats + home_pstats)
+        except Exception:
+            pass
 
     # Phase 4: post-game playoff hook — if this game was part of a
     # playoff series, update the series and (if decided) advance the

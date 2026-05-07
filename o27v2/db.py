@@ -87,7 +87,21 @@ CREATE TABLE IF NOT EXISTS players (
     -- Baserunning skill (reads, routes, slides) and aggressiveness
     -- (willingness to risk extra base). Independent of foot speed.
     baserunning         INTEGER DEFAULT 50,
-    run_aggressiveness  INTEGER DEFAULT 50
+    run_aggressiveness  INTEGER DEFAULT 50,
+    -- Phase 5e — work-ethic / work-habits.
+    --   work_ethic  (visible 20-80) is a season-long boost on every
+    --     attribute. Re-rolled each off-season under age 30; locks
+    --     at 30 (the value held at age 29 carries forward).
+    --   work_habits (hidden 20-80) is a context-dependent multiplier.
+    --     Re-rolled each off-season under age 27; locks at 27.
+    --   habit_cup (0..1, defaults 0.5) is the in-season "cup" — fills
+    --     with success, drains with failure. Modulates how strongly
+    --     work_habits applies to today_condition: at cup=1.0 a high-
+    --     habits player gets the full boost; at cup=0.0 a low-habits
+    --     player takes the full penalty. Resets to 0.5 each off-season.
+    work_ethic   INTEGER DEFAULT 50,
+    work_habits  INTEGER DEFAULT 50,
+    habit_cup    REAL    DEFAULT 0.5
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -455,6 +469,19 @@ def init_db() -> None:
         ]:
             try:
                 conn.execute(f"ALTER TABLE games ADD COLUMN {col} {sql_type} DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Phase 5e: work-ethic / work-habits / habit-cup columns on
+        # players. Idempotent.
+        for col, sql_type, defval in [
+            ("work_ethic",  "INTEGER", "50"),
+            ("work_habits", "INTEGER", "50"),
+            ("habit_cup",   "REAL",    "0.5"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} {sql_type} DEFAULT {defval}")
                 conn.commit()
             except Exception:
                 pass

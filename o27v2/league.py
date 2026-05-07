@@ -734,6 +734,12 @@ def _make_hitter(
         # useful on the bases as a pure burner.
         "baserunning":        roll(),
         "run_aggressiveness": roll(),
+        # Phase 5e — work-ethic / work-habits. Both rolled from the same
+        # 9-tier ladder (capped at 80 like every other seed-time
+        # attribute). habit_cup starts at 0.5 (neutral).
+        "work_ethic":  roll(),
+        "work_habits": roll(),
+        "habit_cup":   0.5,
     }
 
 
@@ -804,6 +810,10 @@ def _make_pitcher(
         # Pitchers don't bat in O27 → baserunning is academic. Neutral.
         "baserunning":        50,
         "run_aggressiveness": 50,
+        # Phase 5e — work-ethic / work-habits. Same shape as hitters.
+        "work_ethic":  roll(),
+        "work_habits": roll(),
+        "habit_cup":   0.5,
     }
 
 
@@ -1158,8 +1168,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          contact, power, eye, command, movement, bats, throws,
          defense, arm,
          defense_infield, defense_outfield, defense_catcher,
-         baserunning, run_aggressiveness)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         baserunning, run_aggressiveness,
+         work_ethic, work_habits, habit_cup)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     def _row(team_id_or_none, p: dict) -> tuple:
         return (team_id_or_none, p["name"], p["position"], p["is_pitcher"],
@@ -1178,7 +1189,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("defense_outfield", 50),
                 p.get("defense_catcher", 50),
                 p.get("baserunning", 50),
-                p.get("run_aggressiveness", 50))
+                p.get("run_aggressiveness", 50),
+                p.get("work_ethic", 50), p.get("work_habits", 50),
+                p.get("habit_cup", 0.5))
 
     for team_id in team_ids:
         roster = assignments.get(team_id, [])
