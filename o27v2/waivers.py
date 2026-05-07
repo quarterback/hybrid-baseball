@@ -46,17 +46,23 @@ from o27v2 import db
 
 # Position buckets a team carries. Mirrors `_DRAFT_SLOTS` in league.py.
 # A claim at position P always swaps with the worst player on the team
-# whose `position` column equals P.
-_HITTER_BUCKETS = ("CF", "SS", "2B", "3B", "RF", "LF", "1B", "C", "UT", "DH")
+# whose `position` column equals P. UT was removed — bench depth is
+# now position-typed (CF backup, SS backup, etc.).
+_HITTER_BUCKETS = ("CF", "SS", "2B", "3B", "RF", "LF", "1B", "C", "DH")
 _PITCHER_BUCKET = "P"
 
 # How many players per team are "active" in each bucket. Anything beyond
-# is reserve. Mirrors generate_players()'s slot composition.
+# is reserve. Mirrors `_DRAFT_SLOTS` in league.py.
 _BUCKET_ACTIVE_SLOTS: dict[str, int] = {
-    "CF": 1, "SS": 1, "2B": 1, "3B": 1, "RF": 1, "LF": 1, "1B": 1, "C": 1,
-    "UT": 4,    # 4 active bench, 8 reserve
-    "DH": 3,    # all 3 active
-    "P":  19,   # 19 active staff, 5 reserve arms
+    # High-rotation positions: 1 starter + 1 active backup = 2 active,
+    # plus 1 reserve. So a team carries 3 of each.
+    "CF": 2, "SS": 2, "2B": 2, "C": 2,
+    # Less-rotated positions: 1 starter active, 1 reserve. 2 each.
+    "3B": 1, "1B": 1, "LF": 1, "RF": 1,
+    # DH: 3 active, no reserves.
+    "DH": 3,
+    # Pitching staff: 19 active + 5 reserve.
+    "P":  19,
 }
 
 _MAX_ROUNDS = 5

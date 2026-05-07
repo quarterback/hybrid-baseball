@@ -664,11 +664,12 @@ def _make_hitter(
     # - Roll the other two groups at attenuated rolls (mean ~ general
     #   defense - 5, with variance), so most players are visibly weaker
     #   outside their group
-    # - With small probability (or for UT-slot players), roll all three
-    #   at full tier → utility player (Ben Zobrist style). UT slots are
-    #   ~10% of the active roster and are explicitly meant to be
-    #   multi-position contributors.
-    is_utility = (pos == "UT") or rng.random() < 0.10
+    # - With ~10% probability roll all three at full tier → Ben
+    #   Zobrist-style utility archetype. UT-as-a-position was removed;
+    #   bench players carry canonical positions now (the utility
+    #   archetype is just a secondary trait that can show up at any
+    #   spot on the diamond).
+    is_utility = rng.random() < 0.10
     if is_utility:
         if_g  = roll()
         of_g  = roll()
@@ -856,8 +857,10 @@ def generate_players(
     # ---- Active position players: 8 starting positions + 4 bench ----
     for pos in FIELDER_POSITIONS:
         players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
-    bench_positions = ["UT", "UT", "UT", "UT"]
-    for pos in bench_positions:
+    # Active bench: 4 backups at high-rotation positions (catchers rest
+    # a lot, middle infield rotates, CF backup is near-everyday).
+    # No "UT" position — every bench guy carries a canonical position.
+    for pos in ("CF", "SS", "2B", "C"):
         players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
 
     # ---- Active DH/utility bats ----
@@ -869,8 +872,12 @@ def generate_players(
         players.append(_make_pitcher(rng, is_active=1, name=_name()))
 
     # ---- Reserve pool: bench-level depth, promoted on injury ----
-    for _ in range(RESERVE_HITTERS):
-        players.append(_make_hitter(rng, "UT", is_active=0, name=_name()))
+    # Round-robin one reserve at each canonical fielding position, then
+    # cycle if RESERVE_HITTERS exceeds 8.
+    _RESERVE_POSITIONS = ("CF", "SS", "2B", "3B", "RF", "LF", "1B", "C")
+    for i in range(RESERVE_HITTERS):
+        pos = _RESERVE_POSITIONS[i % len(_RESERVE_POSITIONS)]
+        players.append(_make_hitter(rng, pos, is_active=0, name=_name()))
     for _ in range(RESERVE_PITCHERS):
         players.append(_make_pitcher(rng, is_active=0, name=_name()))
 
@@ -899,19 +906,27 @@ def generate_players(
 # of slot type. This keeps cumulative draft-position equity tight.
 
 # Draft slot definition: (position_string, n_active_per_team, n_reserve_per_team)
-# Mirrors generate_players()'s composition for parity with single-team callers.
+# UT was removed — every bench / reserve hitter carries a canonical
+# position now, so when one shows up in a box score or on the FA page
+# it reads as e.g. "backup CF" instead of "UT". Active backups go to
+# the high-rotation positions (CF, SS, 2B, C) where real teams need
+# day-to-day coverage; reserve depth is one body per canonical
+# position so injury fill-ins are position-typed.
 _DRAFT_SLOTS: list[tuple[str, int, int]] = [
-    ("CF", 1, 0),
-    ("SS", 1, 0),
-    ("2B", 1, 0),
-    ("3B", 1, 0),
-    ("RF", 1, 0),
-    ("LF", 1, 0),
-    ("1B", 1, 0),
-    ("C",  1, 0),
-    ("UT", 4, 8),    # 4 active bench + 8 reserve depth
+    # 8 canonical starters (1 active each).
+    ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0), ("3B", 1, 0),
+    ("RF", 1, 0), ("LF", 1, 0), ("1B", 1, 0), ("C",  1, 0),
+    # DH (3 active).
     ("DH", 3, 0),
-    ("P", 19, 5),    # 19 active staff + 5 reserve arms
+    # Active backups at high-rotation positions: catchers rest a lot,
+    # middle infield rotates, CF backup is a near-everyday role.
+    # Each entry adds 1 active + 1 reserve at the given position.
+    ("CF", 1, 1), ("SS", 1, 1), ("2B", 1, 1), ("C",  1, 1),
+    # Reserve depth at corners + outfield (less rotation needed): 1
+    # reserve body per position so injury fill-ins are position-typed.
+    ("3B", 0, 1), ("1B", 0, 1), ("LF", 0, 1), ("RF", 0, 1),
+    # Pitchers (19 active + 5 reserve).
+    ("P", 19, 5),
 ]
 
 _DRAFT_OVERSAMPLE = 1.4   # generate 40% more players than rosters need
@@ -940,15 +955,19 @@ def _generate_draft_pool(
 ) -> dict[str, list[dict]]:
     """Build the league-wide player pool, keyed by slot position.
 
-    For each slot type in `_DRAFT_SLOTS` we generate
-    `n_teams * (active + reserve) * _DRAFT_OVERSAMPLE` players,
-    rounded up. The pool is unsorted at this point — the draft sorts
-    on demand so a fresh rng draw determines tie-break order.
+    `_DRAFT_SLOTS` may list the same position multiple times (e.g. CF
+    appears once as a starter and again as an active+reserve backup),
+    so we aggregate slots per position before sizing the pool. The
+    pool is unsorted at this point — the draft sorts on demand so a
+    fresh rng draw determines tie-break order.
     """
-    pool: dict[str, list[dict]] = {}
+    slots_per_pos: dict[str, int] = {}
     for pos, n_active, n_reserve in _DRAFT_SLOTS:
-        per_team = n_active + n_reserve
-        target = int(round(n_teams * per_team * _DRAFT_OVERSAMPLE))
+        slots_per_pos[pos] = slots_per_pos.get(pos, 0) + n_active + n_reserve
+
+    pool: dict[str, list[dict]] = {}
+    for pos, total_slots in slots_per_pos.items():
+        target = int(round(n_teams * total_slots * _DRAFT_OVERSAMPLE))
         bucket: list[dict] = []
         for _ in range(target):
             if pos == "P":
