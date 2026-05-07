@@ -3528,6 +3528,56 @@ def league():
 
 
 # ---------------------------------------------------------------------------
+# /analytics — SABR-flavoured context-tier metrics: RE24-O27, the run-
+# expectancy curve by outs-remaining, expected wOBA, and an empirically
+# refit Pythagorean exponent. All derived from game_pa_log state stamps
+# and team R/RA aggregates — no engine replay required.
+# ---------------------------------------------------------------------------
+
+@app.route("/analytics")
+def analytics():
+    """SABR analytics dashboard. Renders the four context-tier suites
+    that sit on top of the rate-tier stats in /leaders and /league:
+
+      * RE24-O27 — Run expectancy by (bases, outs-bucket).
+      * RE-by-outs-remaining — 1-D curve, 27 → 1 outs.
+      * Expected wOBA — strips BABIP variance via contact-quality bins.
+      * Pythagorean exponent — empirically refit for O27's run env.
+    """
+    games_played = db.fetchone(
+        "SELECT COUNT(*) AS n FROM games WHERE played = 1"
+    )["n"] or 0
+    if games_played == 0:
+        return _serve("analytics.html",
+                      games_played=0, re_table=None, re_curve=None,
+                      xwoba=None, pythag=None)
+
+    from o27v2.analytics import (
+        build_re_table, build_re_by_outs_remaining,
+        build_xwoba_table, refit_pythag_exponent,
+    )
+
+    # Scale qualifier to season completeness: full-season convention is
+    # 162 PA (matches /leaders); 2,430 / 15 = 162.
+    min_pa = max(20, games_played // 15)
+
+    re_table = build_re_table()
+    re_curve = build_re_by_outs_remaining()
+    xwoba    = build_xwoba_table(min_pa=min_pa)
+    pythag   = refit_pythag_exponent()
+
+    return _serve(
+        "analytics.html",
+        games_played=games_played,
+        re_table=re_table,
+        re_curve=re_curve,
+        xwoba=xwoba,
+        pythag=pythag,
+        min_pa=min_pa,
+    )
+
+
+# ---------------------------------------------------------------------------
 # /distributions — per-stat histograms + percentile tables for the
 # qualifying-player population. Pairs with /league (which does the same
 # thing at the team level) and answers "where does any one player sit on

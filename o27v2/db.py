@@ -212,7 +212,19 @@ CREATE TABLE IF NOT EXISTS game_pa_log (
     was_stay      INTEGER NOT NULL DEFAULT 0,
     stay_credited INTEGER NOT NULL DEFAULT 0,
     runs_scored   INTEGER NOT NULL DEFAULT 0,
-    rbi_credited  INTEGER NOT NULL DEFAULT 0
+    rbi_credited  INTEGER NOT NULL DEFAULT 0,
+    -- SABR analytics: pre/post game-state stamped per event so RE24 /
+    -- leverage / WPA can be computed without engine replay. `bases_*` is
+    -- a 3-bit mask (bit0=1B, bit1=2B, bit2=3B), `outs_*` is outs in the
+    -- half (0..27 for regulation, may exceed in super-innings),
+    -- `score_diff_*` is batting_score − fielding_score at the moment.
+    -- NULL on legacy rows written before the stamping was added.
+    outs_before       INTEGER DEFAULT NULL,
+    bases_before      INTEGER DEFAULT NULL,
+    score_diff_before INTEGER DEFAULT NULL,
+    outs_after        INTEGER DEFAULT NULL,
+    bases_after       INTEGER DEFAULT NULL,
+    score_diff_after  INTEGER DEFAULT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pa_log_game ON game_pa_log(game_id);
 CREATE INDEX IF NOT EXISTS idx_pa_log_batter ON game_pa_log(batter_id);
@@ -698,6 +710,17 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+
+        # SABR analytics: per-event game-state stamps on game_pa_log
+        # (outs / bases-mask / score-diff before & after). Idempotent —
+        # silently no-op if columns already exist or table absent.
+        for col in ("outs_before", "bases_before", "score_diff_before",
+                    "outs_after",  "bases_after",  "score_diff_after"):
+            try:
+                conn.execute(f"ALTER TABLE game_pa_log ADD COLUMN {col} INTEGER DEFAULT NULL")
+                conn.commit()
+            except Exception:
+                pass
 
         # Task #58: phase column on both stat tables (0 = regulation,
         # N>=1 = super-inning round N). Existing rows are backfilled to

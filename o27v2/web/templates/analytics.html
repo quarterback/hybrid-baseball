@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Analytics</h2>
+    <div class="text-secondary small">
+      SABR-flavoured context-tier metrics ·
+      {{ games_played }} games played ·
+      {% if xwoba %}{{ xwoba.leaders|length }} qualifying batters (≥{{ min_pa }} PA){% endif %}
+    </div>
+  </div>
+  <div>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('analytics', format='json') }}">JSON</a>
+  </div>
+</div>
+
+{% if games_played == 0 %}
+<div class="panel panel-body text-center text-secondary">
+  No games played yet. Use <span class="badge bg-success">Sim Today</span> in the top bar.
+</div>
+{% else %}
+
+{# ============================================================
+   1. RE24-O27 — Run Expectancy Matrix
+   ============================================================ #}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>RE24-O27 · Run Expectancy by (bases, outs)</span>
+    <span class="ms-auto sub">{{ '%d' | format(re_table.n_events) }} events ·
+      {{ re_table.n_halves }} halves · league-avg runs/half =
+      <span class="num">{{ '%.2f' | format(re_table.league_avg_runs_per_half) }}</span>
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="text-secondary small mb-2">
+      Each cell shows expected runs scored from this state to end-of-half.
+      Outs are bucketed in 3s (the engine's natural arc). Read across a row
+      to see how RE decays as outs accumulate; read down a column to see
+      how RE rises with runners on base.
+    </div>
+    <div class="table-responsive">
+      <table class="table dense-table sortable">
+        <thead>
+          <tr>
+            <th>Bases</th>
+            {% for ob in range(9) %}
+            <th class="num" data-nosort>
+              {{ {0:'0-2',1:'3-5',2:'6-8',3:'9-11',4:'12-14',5:'15-17',6:'18-20',7:'21-23',8:'24-26'}[ob] }}
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in [0,1,2,3,4,5,6,7] %}
+          <tr>
+            <td><code>{{ {0:'___',1:'1__',2:'_2_',3:'12_',4:'__3',5:'1_3',6:'_23',7:'123'}[b] }}</code></td>
+            {% for ob in range(9) %}
+              {% set cell = re_table.matrix.get(b, {}).get(ob) %}
+              {% if cell %}
+              <td class="num" title="n = {{ cell.n }}"
+                  data-sort-value="{{ cell.re }}">
+                {{ '%.2f' | format(cell.re) }}
+                <span class="text-secondary" style="font-size:.65rem">
+                  ({{ cell.n }})
+                </span>
+              </td>
+              {% else %}
+              <td class="num text-secondary">—</td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ============================================================
+   2. RE by outs-remaining — 1-D curve
+   ============================================================ #}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>RE by outs-remaining · 1-D curve</span>
+    <span class="ms-auto sub">expected future runs given outs already recorded</span>
+  </div>
+  <div class="panel-body">
+    <div class="text-secondary small mb-2">
+      The "how much offence is left?" curve. Anchors GSc / wERA scaling and
+      gives one number for any leverage-aware context.
+    </div>
+    <div class="table-responsive">
+      <table class="table dense-table">
+        <thead>
+          <tr>
+            <th>Outs done</th>
+            {% for r in re_curve.curve %}
+            <th class="num">{{ r.outs_so_far }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Outs left</td>
+            {% for r in re_curve.curve %}
+            <td class="num">{{ r.outs_remaining }}</td>
+            {% endfor %}
+          </tr>
+          <tr>
+            <td>RE</td>
+            {% for r in re_curve.curve %}
+            <td class="num fw-bold">{{ '%.2f' | format(r.re) }}</td>
+            {% endfor %}
+          </tr>
+          <tr>
+            <td class="text-secondary">n</td>
+            {% for r in re_curve.curve %}
+            <td class="num text-secondary">{{ r.n }}</td>
+            {% endfor %}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ============================================================
+   3. Expected wOBA — strip BABIP variance via contact quality
+   ============================================================ #}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>Expected wOBA · contact-quality model</span>
+    <span class="ms-auto sub">league wOBA = <span class="num">{{ '%.3f' | format(xwoba.league_woba) }}</span>
+      · league xwOBA = <span class="num">{{ '%.3f' | format(xwoba.league_xwoba) }}</span>
+      <span class="text-secondary">(must match — calibration check)</span>
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <h4>Contact-quality table</h4>
+        <table class="table dense-table">
+          <thead>
+            <tr><th>Quality</th><th class="num">n BIP</th><th class="num">xwOBA / BIP</th></tr>
+          </thead>
+          <tbody>
+            {% set order = ['hard', 'medium', 'weak', None] %}
+            {% for q in order %}
+              {% set v = xwoba.quality_table.get(q) %}
+              {% if v %}
+              <tr>
+                <td>{{ q if q else '(unknown)' }}</td>
+                <td class="num">{{ v.n }}</td>
+                <td class="num fw-bold">{{ '%.3f' | format(v.xwoba_per_bip) }}</td>
+              </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="text-secondary small">
+          Per-BIP wOBA points expected from each quality bin. Linear-weight
+          scaffolding: BB = 0.72, HBP = 0.74, 1B = 0.95, 2B = 1.30, 3B =
+          1.70, HR = 2.05.
+        </div>
+      </div>
+      <div class="col-md-8">
+        <h4>Top 15 by xwOBA</h4>
+        <div class="table-responsive mb-3">
+          <table class="table dense-table sortable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Player</th>
+                <th>Tm</th>
+                <th class="num">PA</th>
+                <th class="num">wOBA</th>
+                <th class="num">xwOBA</th>
+                <th class="num">Δ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in xwoba.leaders[:15] %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
+                <td><span class="team-abbrev">{{ r.team_abbrev }}</span></td>
+                <td class="num">{{ r.pa }}</td>
+                <td class="num">{{ '%.3f' | format(r.woba) }}</td>
+                <td class="num fw-bold">{{ '%.3f' | format(r.xwoba) }}</td>
+                <td class="num"
+                    style="color:{% if r.woba_minus_xwoba > 0.020 %}var(--bad){% elif r.woba_minus_xwoba < -0.020 %}var(--good){% else %}inherit{% endif %}">
+                  {{ '%+.3f' | format(r.woba_minus_xwoba) }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Biggest BABIP swings · Δ = wOBA − xwOBA</h4>
+        {% set hot = xwoba.leaders | sort(attribute='woba_minus_xwoba', reverse=true) %}
+        <div class="row g-2">
+          <div class="col-md-6">
+            <div class="text-secondary small mb-1">
+              Hot bats — production above contact (regression candidates)
+            </div>
+            <table class="table dense-table">
+              <thead>
+                <tr><th>Player</th><th>Tm</th><th class="num">PA</th>
+                    <th class="num">wOBA</th><th class="num">xwOBA</th>
+                    <th class="num">Δ</th></tr>
+              </thead>
+              <tbody>
+                {% for r in hot[:7] %}
+                <tr>
+                  <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
+                  <td><span class="team-abbrev">{{ r.team_abbrev }}</span></td>
+                  <td class="num">{{ r.pa }}</td>
+                  <td class="num">{{ '%.3f' | format(r.woba) }}</td>
+                  <td class="num">{{ '%.3f' | format(r.xwoba) }}</td>
+                  <td class="num fw-bold" style="color:var(--bad)">{{ '%+.3f' | format(r.woba_minus_xwoba) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="col-md-6">
+            <div class="text-secondary small mb-1">
+              Cold bats — contact above production (ceiling above headline wOBA)
+            </div>
+            <table class="table dense-table">
+              <thead>
+                <tr><th>Player</th><th>Tm</th><th class="num">PA</th>
+                    <th class="num">wOBA</th><th class="num">xwOBA</th>
+                    <th class="num">Δ</th></tr>
+              </thead>
+              <tbody>
+                {% for r in hot[-7:] | reverse %}
+                <tr>
+                  <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
+                  <td><span class="team-abbrev">{{ r.team_abbrev }}</span></td>
+                  <td class="num">{{ r.pa }}</td>
+                  <td class="num">{{ '%.3f' | format(r.woba) }}</td>
+                  <td class="num">{{ '%.3f' | format(r.xwoba) }}</td>
+                  <td class="num fw-bold" style="color:var(--good)">{{ '%+.3f' | format(r.woba_minus_xwoba) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ============================================================
+   4. Pythagorean exponent re-fit
+   ============================================================ #}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>Pythagorean exponent · empirically refit for O27</span>
+    <span class="ms-auto sub">{{ pythag.n_teams }} teams ·
+      k* = <span class="num fw-bold">{{ pythag.fitted_exponent }}</span>
+      vs MLB default 1.83 ·
+      RMSE {{ pythag.fitted_rmse }} (cut {{ pythag.improvement_pct }}%)
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="text-secondary small mb-2">
+      Bill James's exponent (1.83) was fit to MLB's ~9 R/G run environment.
+      O27 sits at ~22 R/G; the win/loss curve sharpens, so the optimal
+      exponent is much higher. The fitted value comes from a 1-D ternary
+      search minimising SSE in win-percentage prediction across the league.
+    </div>
+    <div class="table-responsive">
+      <table class="table dense-table sortable">
+        <thead>
+          <tr>
+            <th>Tm</th>
+            <th class="num">G</th>
+            <th class="num">W</th>
+            <th class="num">RS</th>
+            <th class="num">RA</th>
+            <th class="num">W%</th>
+            <th class="num">Pythag W (1.83)</th>
+            <th class="num">Luck (1.83)</th>
+            <th class="num">Pythag W (k*)</th>
+            <th class="num fw-bold">Luck (k*)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in pythag.residuals %}
+          <tr>
+            <td><a class="team-abbrev" href="{{ url_for('team_detail', team_id=t.team_id) }}">{{ t.abbrev }}</a></td>
+            <td class="num">{{ t.gp }}</td>
+            <td class="num">{{ t.w }}</td>
+            <td class="num">{{ t.r }}</td>
+            <td class="num">{{ t.ra }}</td>
+            <td class="num">{{ '%.3f' | format(t.win_pct) }}</td>
+            <td class="num">{{ '%.1f' | format(t.pythag_w_default) }}</td>
+            <td class="num"
+                style="color:{% if t.luck_default > 5 %}var(--good){% elif t.luck_default < -5 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.luck_default) }}
+            </td>
+            <td class="num">{{ '%.1f' | format(t.pythag_w_fitted) }}</td>
+            <td class="num fw-bold"
+                style="color:{% if t.luck_fitted > 5 %}var(--good){% elif t.luck_fitted < -5 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.luck_fitted) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="text-secondary small mt-1">
+      Sorted by |Luck (k*)|. With the fitted exponent the residuals
+      generally compress vs. the default — the teams that still appear
+      with double-digit luck are the genuine sequencing outliers.
+    </div>
+  </div>
+</div>
+
+{% endif %}{# /games_played > 0 #}
+
+{% endblock %}

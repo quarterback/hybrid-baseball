@@ -1382,16 +1382,24 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                  r.get("po", 0), r.get("e", 0)),
             )
         # Phase 11D — per-PA event log (ball_in_play events only).
-        # Engine team_ids are role-strings ("home"/"away"); map to DB IDs.
+        # Engine team_ids are role-strings ("home"/"visitors") — see
+        # o27/engine/state.py:Team.team_id. The legacy mapping used "away"
+        # which silently dropped every visitor's PA event from the log.
         pa_log = getattr(renderer, "_pa_log", []) or []
         if pa_log:
-            role_to_db = {"home": home_team_id, "away": away_team_id}
+            role_to_db = {
+                "home":     home_team_id,
+                "visitors": away_team_id,
+                "away":     away_team_id,  # legacy — kept for backward compat
+            }
             conn.executemany(
                 """INSERT INTO game_pa_log
                    (game_id, team_id, batter_id, pitcher_id, phase, ab_seq, swing_idx,
                     choice, quality, hit_type, was_stay, stay_credited,
-                    runs_scored, rbi_credited)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    runs_scored, rbi_credited,
+                    outs_before, bases_before, score_diff_before,
+                    outs_after,  bases_after,  score_diff_after)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [(game_id, role_to_db.get(e["team_id"], None),
                   int(e["batter_id"]) if e["batter_id"] is not None else None,
                   int(e["pitcher_id"]) if e["pitcher_id"] is not None else None,
@@ -1399,7 +1407,9 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
                   e["ab_seq"], e["swing_idx"],
                   e["choice"], e.get("quality"), e.get("hit_type"),
                   e["was_stay"], e["stay_credited"],
-                  e["runs_scored"], e["rbi_credited"])
+                  e["runs_scored"], e["rbi_credited"],
+                  e.get("outs_before"), e.get("bases_before"), e.get("score_diff_before"),
+                  e.get("outs_after"),  e.get("bases_after"),  e.get("score_diff_after"))
                  for e in pa_log
                  if e["team_id"] in role_to_db],
             )
