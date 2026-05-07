@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Playoffs{% endblock %}
+{% block content %}
+
+<h2 class="mb-3">Postseason</h2>
+
+{% if champion %}
+<div class="panel panel-body mb-3" style="border-left: 4px solid var(--accent)">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <div class="score-label">Champion</div>
+      <div style="font-size: 1.6rem; font-weight: 700">{{ champion.name }}
+        <span class="text-secondary" style="font-weight: 400">({{ champion.abbrev }})</span>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="button" id="advance-season-btn"
+            onclick="advanceSeason(this)">Advance to Next Season →</button>
+    <script>
+      function advanceSeason(btn) {
+        if (!confirm('Advance to the next season?\n\n• Every player ages +1\n• Development engine applies (growth + decline)\n• Org_strength rolls forward\n• W-L resets, schedule re-generates\n\nRosters are preserved.')) return;
+        btn.disabled = true; btn.textContent = 'Working…';
+        fetch('{{ url_for("api_season_advance") }}', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: '{}'
+        }).then(r => r.json()).then(d => {
+          if (d.ok) {
+            alert('Advanced from season ' + d.from_season + ' to ' + d.to_season + '.');
+            window.location.href = '{{ url_for("league") }}';
+          } else {
+            alert('Failed: ' + (d.error || 'unknown'));
+            btn.disabled = false; btn.textContent = 'Advance to Next Season →';
+          }
+        }).catch(err => {
+          alert('Network error: ' + err);
+          btn.disabled = false; btn.textContent = 'Advance to Next Season →';
+        });
+      }
+    </script>
+  </div>
+</div>
+{% endif %}
+
+{% if awards %}
+<div class="panel panel-body mb-4">
+  <h3 class="mb-3" style="font-size: 1rem; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary)">Awards</h3>
+  <div class="row g-2">
+    {% for a in awards %}
+    {% set label = {'mvp': 'MVP', 'cy_young': 'Cy Young', 'roy': 'Rookie of the Year', 'ws_mvp': 'World Series MVP'}.get(a.category, a.category) %}
+    <div class="col-12 col-md-6 col-lg-3">
+      <div class="panel panel-body" style="padding: 10px">
+        <div class="score-label">{{ label }}</div>
+        <div style="font-weight: 700">{{ a.player_name }}</div>
+        <div class="text-secondary small">{{ a.team_abbrev }} · {{ a.headline_stat }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if not playoffs_initiated %}
+  {% if regular_season_complete %}
+  <p class="text-secondary">Regular season is complete. Run the next sim step to initiate the bracket.</p>
+  {% elif projected_field %}
+  <h3 class="mb-3" style="font-size: 1rem; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary)">Projected Field</h3>
+  <p class="text-secondary small">If the season ended today. Final seeds will lock when the regular season concludes.</p>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr><th>Seed</th><th>Team</th><th class="text-end">W</th><th class="text-end">L</th><th class="text-end">Pct</th><th>Bid</th></tr>
+      </thead>
+      <tbody>
+        {% for t in projected_field %}
+        <tr>
+          <td><span class="badge bg-secondary">#{{ t.seed }}</span></td>
+          <td><strong>{{ t.abbrev }}</strong> {{ t.name }} <span class="text-secondary small">({{ t.division }})</span></td>
+          <td class="text-end num">{{ t.wins }}</td>
+          <td class="text-end num">{{ t.losses }}</td>
+          <td class="text-end num">{{ '%.3f' % t.win_pct }}</td>
+          <td><span class="badge {% if t.kind == 'div_champ' %}bg-success{% else %}bg-info text-dark{% endif %}">
+            {{ 'Div Champ' if t.kind == 'div_champ' else 'Wild Card' }}
+          </span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-secondary">Playoffs haven't been seeded yet.</p>
+  {% endif %}
+{% endif %}
+
+{% if rounds %}
+<h3 class="mt-4 mb-3" style="font-size: 1rem; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary)">Bracket</h3>
+<div class="row g-3">
+  {% for round_idx, series_list in rounds %}
+  {% set rtf = series_list[0].rounds_to_final %}
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="panel" style="padding: 12px">
+      <div class="d-flex justify-content-between align-items-baseline mb-2">
+        <strong>{{ round_name(rtf) }}</strong>
+        <span class="text-secondary small">best of {{ series_list[0].best_of }}</span>
+      </div>
+      {% for s in series_list %}
+      <div class="mb-3" style="padding-bottom: 8px; border-bottom: 1px dashed var(--border)">
+        {% if s.low_seed_team_id %}
+        <div class="d-flex justify-content-between align-items-baseline">
+          <span>
+            <span class="text-secondary small">#{{ s.high_seed }}</span>
+            <strong style="margin-left:4px {% if s.winner_team_id == s.high_seed_team_id %}; color: var(--accent){% endif %}">
+              {{ s.high_abbrev }}
+            </strong>
+          </span>
+          <span class="num{% if s.high_wins > s.low_wins %} fw-bold{% endif %}">{{ s.high_wins }}</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-baseline">
+          <span>
+            <span class="text-secondary small">#{{ s.low_seed }}</span>
+            <strong style="margin-left:4px {% if s.winner_team_id == s.low_seed_team_id %}; color: var(--accent){% endif %}">
+              {{ s.low_abbrev }}
+            </strong>
+          </span>
+          <span class="num{% if s.low_wins > s.high_wins %} fw-bold{% endif %}">{{ s.low_wins }}</span>
+        </div>
+        {% if s.winner_team_id %}
+        <div class="text-secondary small mt-1">→ {{ s.winner_abbrev }} wins {{ s.high_wins if s.winner_team_id == s.high_seed_team_id else s.low_wins }}-{{ s.low_wins if s.winner_team_id == s.high_seed_team_id else s.high_wins }}</div>
+        {% endif %}
+        {% else %}
+        <div class="d-flex justify-content-between align-items-baseline">
+          <span>
+            <span class="text-secondary small">#{{ s.high_seed }}</span>
+            <strong style="margin-left:4px">{{ s.high_abbrev }}</strong>
+          </span>
+          <span class="text-secondary small">bye</span>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

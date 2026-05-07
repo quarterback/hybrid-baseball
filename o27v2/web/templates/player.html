@@ -639,6 +639,14 @@
             <tr><td class="text-secondary">Bats</td><td><strong>{{ player.bats or '—' }}</strong></td><td class="text-secondary small">L / R / S</td></tr>
             <tr><td class="text-secondary">Throws</td><td><strong>{{ player.throws or '—' }}</strong></td><td class="text-secondary small">L / R</td></tr>
             <tr><td class="text-secondary">Age</td><td><strong>{{ player.age }}</strong></td><td></td></tr>
+            <tr>
+              <td class="text-secondary">Work ethic</td>
+              <td><strong>{{ player.work_ethic or 50 }}</strong></td>
+              <td class="text-secondary small">
+                Season-long boost on every attribute.
+                {% if player.age and player.age >= 30 %}<span class="badge bg-secondary">Locked</span>{% else %}Re-rolls each off-season until age 30.{% endif %}
+              </td>
+            </tr>
             <tr><td class="text-secondary">2C aggressiveness</td><td><strong>{{ '%.2f'|format(player.stay_aggressiveness or 0) }}</strong></td><td class="text-secondary small">Probability of choosing 2C when eligible</td></tr>
             <tr><td class="text-secondary">Contact-quality threshold</td><td><strong>{{ '%.2f'|format(player.contact_quality_threshold or 0) }}</strong></td><td class="text-secondary small">Stay-eligibility on medium contact</td></tr>
             {% if player.injured_until %}

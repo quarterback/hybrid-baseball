@@ -105,31 +105,54 @@ def inject_sim_state():
 # looking at a fresh deploy or just a restarted image.
 
 def _resolve_app_version() -> dict:
+    """Resolve the running build's short SHA without requiring `git` to be
+    on the container's PATH. Reads `.git/HEAD` directly — works in
+    `python:3.12-slim` where the git binary isn't installed."""
     sha   = os.environ.get("APP_VERSION") or ""
     dirty = False
     if not sha:
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        try:
+            head_path = os.path.join(repo_root, ".git", "HEAD")
+            with open(head_path) as f:
+                head = f.read().strip()
+            if head.startswith("ref:"):
+                ref = head.split(" ", 1)[1].strip()
+                # Try the loose ref file first; fall back to packed-refs if
+                # the branch was packed by the deploy step.
+                ref_path = os.path.join(repo_root, ".git", ref)
+                if os.path.exists(ref_path):
+                    with open(ref_path) as f:
+                        sha = f.read().strip()
+                else:
+                    packed = os.path.join(repo_root, ".git", "packed-refs")
+                    if os.path.exists(packed):
+                        with open(packed) as f:
+                            for line in f:
+                                line = line.strip()
+                                if line.endswith(" " + ref):
+                                    sha = line.split(" ", 1)[0]
+                                    break
+            else:
+                # Detached HEAD — full SHA written directly.
+                sha = head
+            sha = sha[:7] if sha else ""
+        except Exception:
+            sha = ""
+
+        # Best-effort dirty check via `git status --porcelain` (only if git
+        # is actually available — we don't want to fail the page render).
         try:
             import subprocess
-            sha = subprocess.check_output(
-                ["git", "rev-parse", "--short", "HEAD"],
-                cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            status = subprocess.check_output(
+                ["git", "status", "--porcelain"],
+                cwd=repo_root,
                 stderr=subprocess.DEVNULL,
                 timeout=2,
             ).decode().strip()
-            try:
-                # Non-empty `git status --porcelain` means uncommitted changes
-                # in the running image — useful for catching "i forgot to push".
-                status = subprocess.check_output(
-                    ["git", "status", "--porcelain"],
-                    cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                    stderr=subprocess.DEVNULL,
-                    timeout=2,
-                ).decode().strip()
-                dirty = bool(status)
-            except Exception:
-                pass
+            dirty = bool(status)
         except Exception:
-            sha = "dev"
+            pass
     return {"sha": sha or "dev", "dirty": dirty}
 
 
@@ -4009,6 +4032,52 @@ def transactions():
                            counts=counts)
 
 
+@app.route("/playoffs")
+def playoffs_view():
+    """Bracket + awards for the current season. Shows the field and
+    each round's series with current win counts and the champion when
+    the final concludes."""
+    from o27v2.playoffs import (
+        get_bracket, champion as _champion, compute_field,
+        playoffs_initiated, regular_season_complete,
+    )
+    from o27v2.awards import get_awards
+
+    bracket = get_bracket()
+    # Group by round for the template.
+    rounds: dict[int, list[dict]] = {}
+    for s in bracket:
+        rounds.setdefault(s["round_idx"], []).append(s)
+    rounds_sorted = sorted(rounds.items())
+
+    # Round names — count from the final backwards.
+    def _round_name(rounds_to_final: int) -> str:
+        return ["Final", "Semifinals", "Quarterfinals", "Wild Card"][
+            min(rounds_to_final, 3)]
+
+    # If playoffs haven't initiated yet, surface the projected field.
+    projected_field: list[dict] = []
+    if not playoffs_initiated() and not regular_season_complete():
+        try:
+            teams = db.fetchall(
+                "SELECT id, name, abbrev, league, division, wins, losses FROM teams"
+            )
+            projected_field = compute_field(teams)
+        except Exception:
+            projected_field = []
+
+    return _serve(
+        "playoffs.html",
+        rounds=rounds_sorted,
+        round_name=_round_name,
+        champion=_champion(),
+        awards=get_awards(),
+        projected_field=projected_field,
+        playoffs_initiated=playoffs_initiated(),
+        regular_season_complete=regular_season_complete(),
+    )
+
+
 @app.route("/free-agents")
 def free_agents():
     """Browse the free-agent pool. Players in this list have team_id NULL
@@ -4349,6 +4418,99 @@ def api_seasons_clear():
     db.execute("DELETE FROM seasons")
     db.execute("DELETE FROM sim_meta WHERE key = 'current_season_archived_id'")
     return jsonify({"ok": True})
+
+
+@app.route("/api/season/advance", methods=["POST"])
+def api_season_advance():
+    """Advance to the next season — preserves rosters / team identities,
+    ages every player +1, runs the development pass (per-attribute
+    growth/decline driven by age + org_strength), rolls new org_strength
+    for each team via the bond-market formula, resets W-L, wipes the
+    games + playoff_series tables, and re-generates the schedule for
+    the new year. This is the dynasty-mode rollover.
+
+    Body: {rng_seed: int (optional — defaults to a per-season hash)}
+
+    Returns a summary including the org_strength deltas (so the UI can
+    show "your org climbed from 64 to 71 after the championship run")
+    and per-team development counts.
+    """
+    from o27v2.season_archive import (multi_season_status,
+                                       archive_current_season,
+                                       set_active_league_meta)
+    from o27v2.development import run_offseason
+    from o27v2.schedule import seed_schedule
+    from o27v2.playoffs import champion as _champion, playoffs_initiated
+
+    status = multi_season_status()
+    if status.get("running"):
+        return jsonify({"ok": False, "error": "multi-season runner is active"}), 409
+
+    # Allow advance only after playoffs have crowned a champion.
+    ch = _champion()
+    if ch is None:
+        return jsonify({"ok": False,
+                        "error": "no champion yet — finish the playoffs first"}), 400
+
+    data = request.get_json(silent=True) or {}
+    rng_seed = data.get("rng_seed")
+
+    # Read the current season number off sim_meta; bump it.
+    cur_row = db.fetchone(
+        "SELECT value FROM sim_meta WHERE key = 'season_number'")
+    season_no = int((cur_row or {}).get("value") or 1)
+    next_season = season_no + 1
+
+    # Optionally archive the just-completed season.
+    archived_id = None
+    try:
+        archived_id = archive_current_season(run_invariants=False)
+    except Exception:
+        pass
+
+    # Run the off-season development + org-strength roll.
+    summary = run_offseason(season=season_no, rng_seed=rng_seed or season_no * 17)
+
+    # Reset W-L and wipe per-game tables; the league + roster stay.
+    db.execute("UPDATE teams SET wins = 0, losses = 0")
+    db.execute("DELETE FROM game_pa_log")
+    db.execute("DELETE FROM game_pitcher_stats")
+    db.execute("DELETE FROM game_batter_stats")
+    db.execute("DELETE FROM team_phase_outs")
+    db.execute("DELETE FROM games")
+    db.execute("DELETE FROM playoff_series")
+    db.execute("DELETE FROM season_awards")
+    db.execute("DELETE FROM transactions")
+    db.execute("DELETE FROM sim_meta WHERE key IN ('sim_date', 'last_match_day')")
+
+    # Bump season counter.
+    db.execute(
+        "INSERT OR REPLACE INTO sim_meta (key, value) VALUES ('season_number', ?)",
+        (str(next_season),),
+    )
+
+    # Re-seed the schedule for the new year. Re-use whatever config was
+    # last used; bump season_year forward so the calendar lands in a
+    # new year.
+    cfg_row = db.fetchone("SELECT value FROM sim_meta WHERE key = 'league_config'")
+    cfg_id  = (cfg_row or {}).get("value") or "30teams"
+    seed_row = db.fetchone("SELECT value FROM sim_meta WHERE key = 'league_seed'")
+    last_seed = int((seed_row or {}).get("value") or 42)
+    new_seed = last_seed + 1   # rotate per season so weather / sim differ
+
+    # Bump the season year on the config (only matters when a custom cfg
+    # was supplied; presets rebuild from disk and roll their own year).
+    seed_schedule(rng_seed=new_seed, config_id=cfg_id)
+    set_active_league_meta(new_seed, cfg_id)
+
+    return jsonify({
+        "ok":              True,
+        "from_season":     season_no,
+        "to_season":       next_season,
+        "archived_season": archived_id,
+        "champion":        ch,
+        "development":     summary,
+    })
 
 
 @app.route("/api/season/reset", methods=["POST"])

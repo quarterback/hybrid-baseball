@@ -558,29 +558,57 @@ _TALENT_TIERS: list[tuple[float, int, int]] = [
 def _roll_tier_grade(rng: random.Random, team_shift: int = 0) -> int:
     """Roll one attribute against the 9-tier league talent distribution.
 
-    Returns an integer 20-95 scout grade. Used independently for every
-    hitter and pitcher attribute on every player.
+    Returns an integer 20-80 scout grade at seed time. The Elite+ tier
+    (81-95) is reserved for talent earned via multi-season development
+    (see `o27v2/development.py`) — capping the initial roll at 80 means
+    every league starts in true parity, then dynasties emerge as good
+    orgs grow their players past the standard scout ceiling.
 
-    `team_shift` is preserved for backwards compatibility but defaults
-    to 0 — the league is now seeded via a snake draft over a single
-    team-blind player pool (see `_run_snake_draft`), so per-team
-    shifting is no longer applied. Old callers that pass a non-zero
-    shift will still get the old additive behaviour.
+    `team_shift` defaults to 0 — the league is seeded via a snake draft
+    over a team-blind pool, so per-team shifting is no longer applied
+    at draft time. Org_strength still drives talent growth between
+    seasons via the development pass.
+
+    Older callers that pass a non-zero shift still get the additive
+    behaviour clamped to [20, 80].
     """
     r = rng.random()
     cumulative = 0.0
     for prob, lo, hi in _TALENT_TIERS:
         cumulative += prob
         if r < cumulative:
-            return max(20, min(95, rng.randint(lo, hi) + team_shift))
+            # Clamp BOTH ends of the range to 80 so an Elite+ tier roll
+            # (lo=81, hi=95) collapses to exactly 80 — the league's top
+            # legitimate scout grade. Higher grades are earned via
+            # development, not handed out at seed time.
+            seed_lo = min(lo, 80)
+            seed_hi = min(hi, 80)
+            return max(20, min(80, rng.randint(seed_lo, seed_hi) + team_shift))
     # Floating-point safety net (probabilities sum to 1.0).
     lo, hi = _TALENT_TIERS[-1][1], _TALENT_TIERS[-1][2]
-    return max(20, min(95, rng.randint(lo, hi) + team_shift))
+    return max(20, min(80, rng.randint(min(lo, 80), min(hi, 80)) + team_shift))
 
 
 def _tier_unit(rng: random.Random, team_shift: int = 0) -> float:
     """Tier-rolled grade converted to the [0,1] unit float the engine uses."""
     return _scout.to_unit(_roll_tier_grade(rng, team_shift))
+
+
+def _roll_org_grade(rng: random.Random) -> int:
+    """Roll an org_strength against the full 9-tier ladder, NOT capped
+    at 80. Org_strength influences multi-season development rate, so a
+    handful of teams legitimately start in the Elite/Elite+ band — they
+    just can't translate that into per-pitch outcomes (which is where
+    the old team_shift abuse lived). Player attributes are still capped
+    at 80 at seed time via `_roll_tier_grade`."""
+    r = rng.random()
+    cumulative = 0.0
+    for prob, lo, hi in _TALENT_TIERS:
+        cumulative += prob
+        if r < cumulative:
+            return max(20, min(95, rng.randint(lo, hi)))
+    lo, hi = _TALENT_TIERS[-1][1], _TALENT_TIERS[-1][2]
+    return max(20, min(95, rng.randint(lo, hi)))
 
 
 # Per-team org-strength: a 20-95 scout-grade team attribute, rolled
@@ -698,11 +726,12 @@ def _make_hitter(
     # - Roll the other two groups at attenuated rolls (mean ~ general
     #   defense - 5, with variance), so most players are visibly weaker
     #   outside their group
-    # - With small probability (or for UT-slot players), roll all three
-    #   at full tier → utility player (Ben Zobrist style). UT slots are
-    #   ~10% of the active roster and are explicitly meant to be
-    #   multi-position contributors.
-    is_utility = (pos == "UT") or rng.random() < 0.10
+    # - With ~10% probability roll all three at full tier → Ben
+    #   Zobrist-style utility archetype. UT-as-a-position was removed;
+    #   bench players carry canonical positions now (the utility
+    #   archetype is just a secondary trait that can show up at any
+    #   spot on the diamond).
+    is_utility = rng.random() < 0.10
     if is_utility:
         if_g  = roll()
         of_g  = roll()
@@ -769,6 +798,12 @@ def _make_hitter(
         # useful on the bases as a pure burner.
         "baserunning":        roll(),
         "run_aggressiveness": roll(),
+        # Phase 5e — work-ethic / work-habits. Both rolled from the same
+        # 9-tier ladder (capped at 80 like every other seed-time
+        # attribute). habit_cup starts at 0.5 (neutral).
+        "work_ethic":  roll(),
+        "work_habits": roll(),
+        "habit_cup":   0.5,
     }
 
 
@@ -841,6 +876,10 @@ def _make_pitcher(
         # Pitchers don't bat in O27 → baserunning is academic. Neutral.
         "baserunning":        50,
         "run_aggressiveness": 50,
+        # Phase 5e — work-ethic / work-habits. Same shape as hitters.
+        "work_ethic":  roll(),
+        "work_habits": roll(),
+        "habit_cup":   0.5,
     }
 
 
@@ -891,7 +930,10 @@ def generate_players(
     # ---- Active position players: 8 starting positions + 4 bench ----
     for pos in FIELDER_POSITIONS:
         players.append(_hitter(pos, is_active=1))
-    for pos in ["UT", "UT", "UT", "UT"]:
+    # Active bench: 4 backups at high-rotation positions (catchers rest
+    # a lot, middle infield rotates, CF backup is near-everyday).
+    # No "UT" position — every bench guy carries a canonical position.
+    for pos in ("CF", "SS", "2B", "C"):
         players.append(_hitter(pos, is_active=1))
 
     # ---- Active DH/utility bats ----
@@ -903,8 +945,13 @@ def generate_players(
         players.append(_pitcher(is_active=1))
 
     # ---- Reserve pool: bench-level depth, promoted on injury ----
-    for _ in range(RESERVE_HITTERS):
-        players.append(_hitter("UT", is_active=0))
+    # Round-robin one reserve at each canonical fielding position, then
+    # cycle if RESERVE_HITTERS exceeds 8. No "UT" — every reserve guy
+    # carries a canonical position.
+    _RESERVE_POSITIONS = ("CF", "SS", "2B", "3B", "RF", "LF", "1B", "C")
+    for i in range(RESERVE_HITTERS):
+        pos = _RESERVE_POSITIONS[i % len(_RESERVE_POSITIONS)]
+        players.append(_hitter(pos, is_active=0))
     for _ in range(RESERVE_PITCHERS):
         players.append(_pitcher(is_active=0))
 
@@ -933,19 +980,27 @@ def generate_players(
 # of slot type. This keeps cumulative draft-position equity tight.
 
 # Draft slot definition: (position_string, n_active_per_team, n_reserve_per_team)
-# Mirrors generate_players()'s composition for parity with single-team callers.
+# UT was removed — every bench / reserve hitter carries a canonical
+# position now, so when one shows up in a box score or on the FA page
+# it reads as e.g. "backup CF" instead of "UT". Active backups go to
+# the high-rotation positions (CF, SS, 2B, C) where real teams need
+# day-to-day coverage; reserve depth is one body per canonical
+# position so injury fill-ins are position-typed.
 _DRAFT_SLOTS: list[tuple[str, int, int]] = [
-    ("CF", 1, 0),
-    ("SS", 1, 0),
-    ("2B", 1, 0),
-    ("3B", 1, 0),
-    ("RF", 1, 0),
-    ("LF", 1, 0),
-    ("1B", 1, 0),
-    ("C",  1, 0),
-    ("UT", 4, 8),    # 4 active bench + 8 reserve depth
+    # 8 canonical starters (1 active each).
+    ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0), ("3B", 1, 0),
+    ("RF", 1, 0), ("LF", 1, 0), ("1B", 1, 0), ("C",  1, 0),
+    # DH (3 active).
     ("DH", 3, 0),
-    ("P", 19, 5),    # 19 active staff + 5 reserve arms
+    # Active backups at high-rotation positions: catchers rest a lot,
+    # middle infield rotates, CF backup is a near-everyday role.
+    # Each entry adds 1 active + 1 reserve at the given position.
+    ("CF", 1, 1), ("SS", 1, 1), ("2B", 1, 1), ("C",  1, 1),
+    # Reserve depth at corners + outfield (less rotation needed): 1
+    # reserve body per position so injury fill-ins are position-typed.
+    ("3B", 0, 1), ("1B", 0, 1), ("LF", 0, 1), ("RF", 0, 1),
+    # Pitchers (19 active + 5 reserve).
+    ("P", 19, 5),
 ]
 
 _DRAFT_OVERSAMPLE = 1.4   # generate 40% more players than rosters need
@@ -974,15 +1029,19 @@ def _generate_draft_pool(
 ) -> dict[str, list[dict]]:
     """Build the league-wide player pool, keyed by slot position.
 
-    For each slot type in `_DRAFT_SLOTS` we generate
-    `n_teams * (active + reserve) * _DRAFT_OVERSAMPLE` players,
-    rounded up. The pool is unsorted at this point — the draft sorts
-    on demand so a fresh rng draw determines tie-break order.
+    `_DRAFT_SLOTS` may list the same position multiple times (e.g. CF
+    appears once as a starter and again as an active+reserve backup),
+    so we aggregate slots per position before sizing the pool. The
+    pool is unsorted at this point — the draft sorts on demand so a
+    fresh rng draw determines tie-break order.
     """
-    pool: dict[str, list[dict]] = {}
+    slots_per_pos: dict[str, int] = {}
     for pos, n_active, n_reserve in _DRAFT_SLOTS:
-        per_team = n_active + n_reserve
-        target = int(round(n_teams * per_team * _DRAFT_OVERSAMPLE))
+        slots_per_pos[pos] = slots_per_pos.get(pos, 0) + n_active + n_reserve
+
+    pool: dict[str, list[dict]] = {}
+    for pos, total_slots in slots_per_pos.items():
+        target = int(round(n_teams * total_slots * _DRAFT_OVERSAMPLE))
         bucket: list[dict] = []
         for _ in range(target):
             nm, country = name_picker()
@@ -1144,10 +1203,13 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     rng2 = random.Random(rng_seed)
     from o27v2.managers import roll_manager
 
-    # Phase 1: insert all teams with a placeholder org_strength. The real
-    # value is recomputed post-draft from each team's drafted roster, so
-    # the persisted column reflects actual talent rather than a hidden
-    # multiplier.
+    # Phase 1: insert all teams with their rolled org_strength. The
+    # value is rolled from the same 9-tier ladder players use (uncapped
+    # at 95 here — orgs CAN be Elite+ at seed; only player attributes
+    # are capped at 80). Org_strength drives multi-season player
+    # development (see o27v2/development.py): high-org teams grow
+    # talent faster between seasons, building dynasties organically.
+    # It does NOT bias per-pitch outcomes — that role is gone.
     team_ids: list[int] = []
     for idx, (team_def, (league_name, division)) in enumerate(zip(selected, div_map)):
         abbrev = team_def.get("abbreviation") or team_def.get("abbrev", "???")
@@ -1156,6 +1218,11 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
 
         park_hr, park_hits = _roll_park_factors(rng2)
         mgr = roll_manager(rng2)
+        # Org_strength rolled on the full 9-tier ladder (uncapped at 95) —
+        # ~7% of teams genuinely start with Elite+/Elite development orgs,
+        # ~12% Excellent, etc. Drives multi-season player growth without
+        # biasing per-pitch outcomes.
+        org_strength = _roll_org_grade(rng2)
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, division, league, "
             "park_hr, park_hits, manager_archetype, mgr_quick_hook, "
@@ -1169,7 +1236,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
              mgr["mgr_joker_aggression"], mgr["mgr_pinch_hit_aggression"],
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
-             mgr["mgr_bench_usage"], 50),
+             mgr["mgr_bench_usage"], org_strength),
         )
         team_ids.append(team_id)
 
@@ -1195,8 +1262,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          contact, power, eye, command, movement, bats, throws,
          defense, arm,
          defense_infield, defense_outfield, defense_catcher,
-         baserunning, run_aggressiveness)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         baserunning, run_aggressiveness,
+         work_ethic, work_habits, habit_cup)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     def _row(team_id_or_none, p: dict) -> tuple:
         return (team_id_or_none, p["name"], p.get("country", ""),
@@ -1216,15 +1284,17 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("defense_outfield", 50),
                 p.get("defense_catcher", 50),
                 p.get("baserunning", 50),
-                p.get("run_aggressiveness", 50))
+                p.get("run_aggressiveness", 50),
+                p.get("work_ethic", 50), p.get("work_habits", 50),
+                p.get("habit_cup", 0.5))
 
     for team_id in team_ids:
         roster = assignments.get(team_id, [])
         if roster:
             db.executemany(insert_sql, [_row(team_id, p) for p in roster])
-        org = _team_org_strength_from_roster(roster)
-        db.execute("UPDATE teams SET org_strength = ? WHERE id = ?",
-                   (org, team_id))
+        # `teams.org_strength` was rolled at INSERT time above and is
+        # NOT recomputed from the drafted roster — it represents the
+        # team's development infrastructure, not its current talent.
 
     if free_agents:
         db.executemany(insert_sql, [_row(None, p) for p in free_agents])

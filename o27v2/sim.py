@@ -397,6 +397,13 @@ def _db_team_to_engine(
         wl = workload.get(int(p["id"]), {}) if p.get("is_pitcher") else {}
         player.days_rest  = int(wl.get("days_rest", 99))
         player.pitch_debt = int(wl.get("pitch_debt", 0))
+        # Phase 5e — work-ethic / work-habits stamp. Defaults of 50 / 0.5
+        # produce engine-identical behavior on legacy DB rows that
+        # predate these columns. Used by _roll_today_condition to shift
+        # the per-game wellness draw and (post-game) by the cup updater.
+        player.work_ethic  = int(p.get("work_ethic")  or 50)
+        player.work_habits = int(p.get("work_habits") or 50)
+        player.habit_cup   = float(p.get("habit_cup") if p.get("habit_cup") is not None else 0.5)
         engine_players.append(player)
         engine_to_db_id[player.player_id] = int(p["id"])
         if bool(p.get("is_joker")):
@@ -441,6 +448,58 @@ def _db_team_to_engine(
     # for engine compatibility.
     starting_fielders = list(fielders[:8])
     bench_fielders = list(fielders[8:])
+
+    # Phase 5e/5f: habit-bench pass. Fires BEFORE the rest-day pass so
+    # a cold-cup starter can be swapped for a hot-cup bench fielder of
+    # comparable skill before the manager's rest-day logic considers
+    # the new lineup. Capped at one swap per game.
+    #
+    # Threshold sensitivity scales with `mgr_bench_usage`:
+    #   usage = 0.0 (old-school skipper) — only fires on extreme
+    #     slumps (cup ≤ 0.15), and the bench fielder must be a clear
+    #     upgrade (cup at least +0.40 above the starter's).
+    #   usage = 0.5 (default) — fires on cup ≤ 0.30, requires a
+    #     +0.30 cup gap. Same as the original Phase 5f thresholds.
+    #   usage = 1.0 (analytics-forward) — fires on cup ≤ 0.45,
+    #     requires only a +0.20 cup gap.
+    #
+    # Skill tolerance stays flat at 6 _bat_score grade-points across
+    # all managers — every skipper agrees not to swap a stud for a
+    # scrub. The "how easily I bench" question is the right knob.
+    bench_usage = float(team_row.get("mgr_bench_usage") or 0.5)
+    _HABIT_BENCH_CUP_THRESHOLD = 0.15 + bench_usage * 0.30   # 0.15 .. 0.45
+    _HABIT_BENCH_CUP_DELTA     = 0.40 - bench_usage * 0.20   # 0.40 .. 0.20
+    _HABIT_BENCH_SKILL_TOLERANCE = 6.0   # _bat_score grade points
+
+    def _try_habit_bench():
+        if not bench_fielders:
+            return
+        # Walk starters slump-first so the worst cup gets the swap if
+        # only one is available.
+        starters_by_cup = sorted(
+            list(enumerate(starting_fielders)),
+            key=lambda iv: float(getattr(iv[1], "habit_cup", 0.5)),
+        )
+        for idx, starter in starters_by_cup:
+            starter_cup = float(getattr(starter, "habit_cup", 0.5))
+            if starter_cup >= _HABIT_BENCH_CUP_THRESHOLD:
+                return  # remaining starters all have healthy cups
+            starter_score = _bat_score(starter)
+            candidates = [
+                pl for pl in bench_fielders
+                if abs(_bat_score(pl) - starter_score) <= _HABIT_BENCH_SKILL_TOLERANCE
+                and float(getattr(pl, "habit_cup", 0.5)) >= starter_cup + _HABIT_BENCH_CUP_DELTA
+            ]
+            if not candidates:
+                continue
+            # Hottest cup among comparable bench guys.
+            replacement = max(candidates,
+                              key=lambda pl: float(getattr(pl, "habit_cup", 0.5)))
+            starting_fielders[idx] = replacement
+            bench_fielders.remove(replacement)
+            bench_fielders.append(starter)
+            return  # one swap per game
+    _try_habit_bench()
 
     # Rest-day pass: rotate UT bench bats in for regulars based on the
     # manager's bench_usage tendency, age, position (catchers rest more),
@@ -929,6 +988,18 @@ _COLD_PENALTY     = -0.020   # `temp == "cold"`
 _HEAVY_RAIN_PEN   = -0.030   # `precipitation == "heavy"`
 _LIGHT_RAIN_PEN   = -0.010   # `precipitation == "light"`
 
+# Phase 5e — work-ethic / work-habits scale on the daily μ. Both are
+# 20-80 grades; we centre at 50 and divide by 500 so the per-grade
+# contribution is small but the extreme ends matter:
+#   work_ethic = 80  → μ += +0.06   (≈ "always shows up ready")
+#   work_ethic = 20  → μ += -0.06   (≈ "phones it in")
+#   work_habits = 80 with full cup → μ += +0.06; with empty cup → -0.06
+# So a great-ethic / hot-cup player on a mild day has μ ~ 1.12 (capped
+# by [0.85, 1.15] floor on the gauss draw); a bad-ethic / cold-cup
+# player on a hot rainy day has μ ~ 0.83 → frequent off games.
+_ETHIC_SCALE   = 1.0 / 500.0
+_HABITS_SCALE  = 1.0 / 500.0
+
 
 def _condition_mu_for_weather(weather) -> float:
     """Compute the μ of the condition roll for the day. 1.0 in mild
@@ -949,13 +1020,185 @@ def _condition_mu_for_weather(weather) -> float:
     return mu
 
 
+# Phase 5e — habit-cup deltas per game. The cup is in [0, 1]; we move
+# it ±_HABIT_CUP_STEP based on the game's performance, then clamp.
+# Step is small (≈ 12 games to swing the full range) so streaks build
+# gradually instead of flipping every game.
+_HABIT_CUP_STEP = 0.04
+_HABIT_CUP_MIN  = 0.0
+_HABIT_CUP_MAX  = 1.0
+
+# Phase 5g — motivator-archetype cup-fill. Some manager personas can
+# nudge a player's cup upward independently of the player's own
+# game line — the leadership / morale layer. The trigger is a
+# per-player dice roll each game, gated by:
+#   - grit   (≈ stamina_unit) — gritty players respond to motivators
+#   - talent (player's primary skill) — stars get the leader bump
+#   - team last-10-game form — winning teams have momentum to share
+# Three archetypes qualify (the morale-coded skippers in
+# managers.py): `players_manager`, `iron_manager`, `fiery`. Other
+# archetypes don't fill cups via this path — those teams rely on
+# the standard performance-driven cup updates only.
+_MOTIVATOR_ARCHETYPES = frozenset({"players_manager", "iron_manager", "fiery"})
+_MOTIVATOR_BASE_P     = 0.02   # 2% floor — even on a losing team a low-grit
+                                # bench scrub has a sliver of upside
+_MOTIVATOR_GRIT_W     = 0.08   # +8 pp at full grit (stamina=95)
+_MOTIVATOR_TALENT_W   = 0.08   # +8 pp at grade-80 talent
+_MOTIVATOR_FORM_W     = 0.05   # +5 pp at full hot streak (10-0 last 10)
+_MOTIVATOR_CUP_FILL   = 0.02   # half of _HABIT_CUP_STEP — "small amount"
+
+
+def _team_last10_winpct(team_id: int) -> float:
+    """Winning percentage over the team's last 10 played regular-season
+    games. Returns 0.5 (neutral) when the team has played < 1 game."""
+    rows = db.fetchall(
+        "SELECT winner_id FROM games "
+        "WHERE played = 1 AND COALESCE(is_playoff, 0) = 0 "
+        "  AND (home_team_id = ? OR away_team_id = ?) "
+        "ORDER BY game_date DESC, id DESC LIMIT 10",
+        (team_id, team_id),
+    )
+    if not rows:
+        return 0.5
+    wins = sum(1 for r in rows if r["winner_id"] == team_id)
+    return wins / len(rows)
+
+
+def _motivator_cup_fill(team_id: int, stat_rows: list[dict],
+                         rng: random.Random) -> None:
+    """For motivator-coded managers, roll a small cup boost for every
+    player who appeared in the game. Probability scales with player
+    grit + talent + team's last-10 form."""
+    team = db.fetchone(
+        "SELECT manager_archetype FROM teams WHERE id = ?", (team_id,)
+    )
+    if not team or team["manager_archetype"] not in _MOTIVATOR_ARCHETYPES:
+        return
+
+    # Only roll for players who actually appeared (any PA or any out).
+    pids = [
+        r["player_id"] for r in stat_rows
+        if r.get("player_id")
+        and ((r.get("pa") or 0) > 0 or (r.get("outs_recorded") or 0) > 0)
+    ]
+    if not pids:
+        return
+
+    last10 = _team_last10_winpct(team_id)
+    team_form = max(-1.0, min(1.0, (last10 - 0.5) * 2.0))
+    form_bonus = max(0.0, team_form) * _MOTIVATOR_FORM_W
+
+    placeholders = ",".join(["?"] * len(pids))
+    players = db.fetchall(
+        f"SELECT id, skill, pitcher_skill, stamina, is_pitcher "
+        f"FROM players WHERE id IN ({placeholders})",
+        tuple(pids),
+    )
+
+    fills: list[int] = []
+    for p in players:
+        grit_unit = max(0.0, min(1.0, ((p.get("stamina") or 50) - 20) / 60.0))
+        talent_grade = (p.get("pitcher_skill") if p.get("is_pitcher")
+                        else p.get("skill"))
+        talent_unit = max(0.0, min(1.0, ((talent_grade or 50) - 20) / 60.0))
+        chance = (_MOTIVATOR_BASE_P
+                  + _MOTIVATOR_GRIT_W   * grit_unit
+                  + _MOTIVATOR_TALENT_W * talent_unit
+                  + form_bonus)
+        if rng.random() < chance:
+            fills.append(p["id"])
+
+    if fills:
+        with db.get_conn() as conn:
+            for pid in fills:
+                conn.execute(
+                    "UPDATE players SET habit_cup = "
+                    "MIN(?, MAX(?, habit_cup + ?)) WHERE id = ?",
+                    (_HABIT_CUP_MAX, _HABIT_CUP_MIN, _MOTIVATOR_CUP_FILL, pid),
+                )
+            conn.commit()
+
+
+def _update_habit_cups(batter_rows: list[dict], pitcher_rows: list[dict]) -> None:
+    """Push each player's `habit_cup` toward 1.0 on a good game and
+    toward 0.0 on a bad one. "Good" thresholds are deliberately mild
+    so the cup actually moves over a 30-game season:
+      Hitter good day: 1+ hit AND on-base ≥ 0.333 (1-for-3 with a walk
+                       counts; 0-for-3 with a walk doesn't).
+      Hitter bad day:  0-for-3+ AND no walk / HBP.
+      Pitcher good day: 9+ outs AND ≤2 ER (3 IP, 6.00 ERA-equivalent).
+      Pitcher bad day:  6+ outs AND ≥4 ER, OR ≤3 outs AND ≥3 ER.
+    Idle bench days don't move the cup either way."""
+    deltas: dict[int, float] = {}
+
+    for r in batter_rows:
+        pid = r.get("player_id")
+        if pid is None:
+            continue
+        pa = r.get("pa") or 0
+        ab = r.get("ab") or 0
+        h  = r.get("hits") or 0
+        bb = r.get("bb") or 0
+        hbp = r.get("hbp") or 0
+        if pa < 2:
+            continue   # idle / pinch-only — no cup movement
+        on_base = h + bb + hbp
+        obp = on_base / pa if pa else 0.0
+        if h >= 1 and obp >= 0.333:
+            deltas[pid] = deltas.get(pid, 0.0) + _HABIT_CUP_STEP
+        elif ab >= 3 and h == 0 and bb == 0 and hbp == 0:
+            deltas[pid] = deltas.get(pid, 0.0) - _HABIT_CUP_STEP
+
+    for r in pitcher_rows:
+        pid = r.get("player_id")
+        if pid is None:
+            continue
+        outs = r.get("outs_recorded") or 0
+        er   = r.get("er", r.get("runs_allowed", 0)) or 0
+        if outs < 1:
+            continue
+        if outs >= 9 and er <= 2:
+            deltas[pid] = deltas.get(pid, 0.0) + _HABIT_CUP_STEP
+        elif (outs >= 6 and er >= 4) or (outs <= 3 and er >= 3):
+            deltas[pid] = deltas.get(pid, 0.0) - _HABIT_CUP_STEP
+
+    if not deltas:
+        return
+    # Apply via individual UPDATE statements with clamp inline, in one
+    # connection so it's a single transaction.
+    with db.get_conn() as conn:
+        for pid, d in deltas.items():
+            conn.execute(
+                "UPDATE players SET habit_cup = "
+                "MIN(?, MAX(?, habit_cup + ?)) WHERE id = ?",
+                (_HABIT_CUP_MAX, _HABIT_CUP_MIN, d, pid),
+            )
+        conn.commit()
+
+
 def _roll_today_condition(visitors: Team, home: Team, weather, rng: random.Random) -> None:
     """Roll a `today_condition` multiplier for every player on both
     teams. Stamped directly on the Player dataclass field so prob.py's
-    existing `getattr(player, "today_condition", 1.0)` reads pick it up."""
-    mu = _condition_mu_for_weather(weather)
+    existing `getattr(player, "today_condition", 1.0)` reads pick it up.
+
+    Per-player μ folds in:
+      - weather penalties (heat / cold / rain)
+      - work_ethic shift  (constant for the season; locks at age 30)
+      - work_habits shift (modulated by `habit_cup`; cup fills with
+        good performance and drains with bad — so a high-habits
+        player on a hot streak gets the full +shift, on a cold streak
+        the full -shift)
+    """
+    weather_mu = _condition_mu_for_weather(weather)
     for team in (visitors, home):
         for p in team.roster:
+            ethic_shift  = (getattr(p, "work_ethic",  50) - 50) * _ETHIC_SCALE
+            habits_raw   = (getattr(p, "work_habits", 50) - 50) * _HABITS_SCALE
+            cup          = float(getattr(p, "habit_cup", 0.5))
+            # cup=0.5 ⇒ neutral; cup=1.0 ⇒ +1× habits; cup=0.0 ⇒ -1× habits.
+            cup_factor   = (cup - 0.5) * 2.0
+            habits_shift = habits_raw * cup_factor
+            mu = weather_mu + ethic_shift + habits_shift
             cond = rng.gauss(mu, _CONDITION_SIGMA)
             p.today_condition = max(_CONDITION_MIN, min(_CONDITION_MAX, cond))
 
@@ -1100,7 +1343,9 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
             (home_score, away_score, winner_team_id,
              final_state.super_inning_number, seed, game_id),
         )
-        if winner_team_id is not None:
+        if winner_team_id is not None and not game.get("is_playoff"):
+            # Regular-season W-L only — playoff results are tracked on
+            # playoff_series rows, not on teams.wins/losses.
             loser_id = away_team_id if winner_team_id == home_team_id else home_team_id
             conn.execute("UPDATE teams SET wins = wins + 1 WHERE id = ?", (winner_team_id,))
             conn.execute("UPDATE teams SET losses = losses + 1 WHERE id = ?", (loser_id,))
@@ -1198,6 +1443,53 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     # Phase 9: Post-game injury draws + transaction logging
     # -----------------------------------------------------------------------
     _post_game_roster_processing(game_id, game_date, home_team_id, away_team_id, rng, seed)
+
+    # Phase 5e: post-game habit-cup update. Each player's cup drifts
+    # toward 1.0 on a good game and toward 0.0 on a bad one. Only fires
+    # for regular-season games (playoffs aren't part of the season-arc
+    # cup mechanic) and does nothing on legacy DB rows where the column
+    # is missing — the helper itself is best-effort.
+    if not game.get("is_playoff"):
+        try:
+            _update_habit_cups(away_bstats + home_bstats,
+                               away_pstats + home_pstats)
+        except Exception:
+            pass
+
+    # Phase 5g: motivator-archetype cup-fill. Independent of the
+    # performance-driven cup update above — runs an extra dice roll
+    # per appearing player on teams whose manager is morale-coded
+    # (players_manager / iron_manager / fiery). Probability scales
+    # with grit + talent + last-10 team form.
+    if not game.get("is_playoff"):
+        try:
+            _motivator_cup_fill(away_team_id,
+                                away_bstats + away_pstats, rng)
+            _motivator_cup_fill(home_team_id,
+                                home_bstats + home_pstats, rng)
+        except Exception:
+            pass
+
+    # Phase 4: post-game playoff hook — if this game was part of a
+    # playoff series, update the series and (if decided) advance the
+    # bracket to the next round. winner_team_id is the same one written
+    # to the games row (engine emits "visitors"/"home", not "away").
+    if game.get("is_playoff"):
+        try:
+            from o27v2.playoffs import post_playoff_game
+            post_playoff_game({
+                "id":         game_id,
+                "series_id":  game.get("series_id"),
+                "winner_id":  winner_team_id,
+                "game_date":  game_date,
+            }, rng_seed=seed)
+        except Exception as e:
+            # Don't let a bracket bookkeeping bug crash the sim.
+            try:
+                from o27v2.web.app import app as _app
+                _app.logger.exception("post_playoff_game failed: %s", e)
+            except Exception:
+                pass
 
     return {
         "game_id": game_id,
@@ -1347,9 +1639,11 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
 
     Triggers the weekly Sunday match-day waiver sweep before any games
     on a Sunday date (idempotent — never runs twice for the same
-    Sunday).
+    Sunday). After the last regular-season game completes, initiates
+    the playoff bracket (idempotent).
     """
     from o27v2.waivers import maybe_run_sweep
+    from o27v2.playoffs import maybe_initiate as _maybe_init_playoffs
     games = db.fetchall(
         "SELECT id, game_date FROM games WHERE played = 0 ORDER BY game_date, id LIMIT ?", (n,)
     )
@@ -1368,6 +1662,10 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
             results.append(r)
         except Exception as e:
             results.append({"game_id": g["id"], "error": str(e)})
+    try:
+        _maybe_init_playoffs(rng_seed=seed_base)
+    except Exception as e:
+        results.append({"playoff_init_error": str(e)})
     return results
 
 
@@ -1534,26 +1832,55 @@ def simulate_through(target_date: str, seed_base: int | None = None, max_games: 
 
     Runs the weekly Sunday match-day sweep at every distinct Sunday
     encountered in the date range (idempotent — see o27v2/waivers.py).
+    Initiates the playoff bracket once the regular season is complete,
+    and re-queries games so newly-scheduled playoff games inside the
+    target window get simulated in the same call.
     """
     from o27v2.waivers import maybe_run_sweep
-    games = db.fetchall(
-        "SELECT id, game_date FROM games WHERE played = 0 AND game_date <= ? ORDER BY game_date, id LIMIT ?",
-        (target_date, max_games),
-    )
+    from o27v2.playoffs import maybe_initiate as _maybe_init_playoffs
+
     results: list[dict] = []
     seen_sunday: set[str] = set()
-    for i, g in enumerate(games):
-        if g["game_date"] not in seen_sunday:
-            seen_sunday.add(g["game_date"])
+    seen_game_ids: set[int] = set()
+    iterations_remaining = 50  # safety bound on the schedule-then-sim loop
+
+    while iterations_remaining > 0:
+        iterations_remaining -= 1
+        games = db.fetchall(
+            "SELECT id, game_date FROM games WHERE played = 0 AND game_date <= ? "
+            "AND id NOT IN ({}) ORDER BY game_date, id LIMIT ?".format(
+                ",".join(str(i) for i in seen_game_ids) if seen_game_ids else "0"
+            ),
+            (target_date, max_games),
+        )
+        if not games:
+            break
+        for i, g in enumerate(games):
+            seen_game_ids.add(g["id"])
+            if g["game_date"] not in seen_sunday:
+                seen_sunday.add(g["game_date"])
+                try:
+                    maybe_run_sweep(g["game_date"])
+                except Exception as e:
+                    results.append({"sweep_error": str(e), "date": g["game_date"]})
+            seed = None if seed_base is None else seed_base + len(seen_game_ids)
             try:
-                maybe_run_sweep(g["game_date"])
+                results.append(simulate_game(g["id"], seed=seed))
             except Exception as e:
-                results.append({"sweep_error": str(e), "date": g["game_date"]})
-        seed = None if seed_base is None else seed_base + i
+                results.append({"game_id": g["id"], "error": str(e)})
         try:
-            results.append(simulate_game(g["id"], seed=seed))
+            init_summary = _maybe_init_playoffs(rng_seed=seed_base)
+            if init_summary is None:
+                # No new playoff games to drain — only re-loop if a
+                # series-advance might have scheduled a game inside the
+                # target window. The post-game hook already handles that
+                # by inserting the next game into `games`, so we re-query.
+                pass
         except Exception as e:
-            results.append({"game_id": g["id"], "error": str(e)})
+            results.append({"playoff_init_error": str(e)})
+        # Loop again to pick up any newly-scheduled playoff games whose
+        # date falls within target_date. Safe because `seen_game_ids`
+        # prevents re-simulating already-played games.
     return results
 
 
