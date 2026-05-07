@@ -76,6 +76,56 @@ def inject_sim_state():
     }}
 
 
+# ---- App version footer -------------------------------------------------
+# Computed once at process start so the footer reflects the actual code
+# loaded into THIS process. After a Fly redeploy the new image starts a
+# new process and `_APP_VERSION` is recomputed with the new SHA. After a
+# bare machine restart of the same image, the SHA is the same but
+# `_APP_BOOTED_AT` advances — so the user can tell whether they're
+# looking at a fresh deploy or just a restarted image.
+
+def _resolve_app_version() -> dict:
+    sha   = os.environ.get("APP_VERSION") or ""
+    dirty = False
+    if not sha:
+        try:
+            import subprocess
+            sha = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                stderr=subprocess.DEVNULL,
+                timeout=2,
+            ).decode().strip()
+            try:
+                # Non-empty `git status --porcelain` means uncommitted changes
+                # in the running image — useful for catching "i forgot to push".
+                status = subprocess.check_output(
+                    ["git", "status", "--porcelain"],
+                    cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                    stderr=subprocess.DEVNULL,
+                    timeout=2,
+                ).decode().strip()
+                dirty = bool(status)
+            except Exception:
+                pass
+        except Exception:
+            sha = "dev"
+    return {"sha": sha or "dev", "dirty": dirty}
+
+
+_APP_VERSION_INFO = _resolve_app_version()
+_APP_BOOTED_AT    = _dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+@app.context_processor
+def inject_app_version():
+    return {"app_version": {
+        "sha":       _APP_VERSION_INFO["sha"],
+        "dirty":     _APP_VERSION_INFO["dirty"],
+        "booted_at": _APP_BOOTED_AT,
+    }}
+
+
 def _end_of_month(d: _dt.date) -> _dt.date:
     if d.month == 12:
         return _dt.date(d.year, 12, 31)

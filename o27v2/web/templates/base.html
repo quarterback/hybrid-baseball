@@ -725,6 +725,10 @@
   <a href="{{ url_for('stats_browse') }}">Stats</a> ·
   <a href="{{ url_for('leaders') }}">Leaders</a> ·
   <a href="{{ url_for('distributions') }}">Distributions</a>
+  <div class="app-version" style="margin-top:8px; font-size:.7rem; color:#888; letter-spacing:.04em">
+    build <code style="color:#aaa">{{ app_version.sha }}{% if app_version.dirty %}+dirty{% endif %}</code>
+    · booted <code style="color:#aaa">{{ app_version.booted_at }}</code>
+  </div>
 </footer>
 
 {# Compare basket — populated by JS from clicks anywhere on the site #}
