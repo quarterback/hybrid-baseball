@@ -84,7 +84,7 @@
     <tbody>
       {% for p in free_agents %}
       <tr>
-        <td>{{ p.name }}</td>
+        <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}{{ p.name }}</td>
         <td><span class="badge bg-secondary">{{ p.position }}</span></td>
         <td class="text-end fw-bold num">{{ p.overall }}</td>
         {% if p.is_pitcher %}
