@@ -391,13 +391,25 @@ slumping" with "who's tired", which are separate signals. Running
 habit-bench first means the rest pass sees the lineup the manager
 *chose*, not the lineup that arrived by accident.
 
-**Threshold knobs:**
+**Threshold knobs** — sensitivity scales with `mgr_bench_usage` so
+old-school skippers swap less aggressively than analytics-forward
+ones. Skill tolerance stays flat across managers (every skipper
+agrees not to bench a stud for a scrub):
 
-| Knob | Value | Notes |
+| `mgr_bench_usage` | Cup threshold | Required cup gap |
 |---|---|---|
-| `_HABIT_BENCH_CUP_THRESHOLD` | 0.30 | starter cup must be below this to fire (≈5+ bad games) |
-| `_HABIT_BENCH_SKILL_TOLERANCE` | 6.0 | bat_score grade points; bench fielder must be within this much |
-| `_HABIT_BENCH_CUP_DELTA` | 0.30 | bench fielder's cup must exceed starter's by this margin |
+| 0.00 (old-school) | 0.150 | 0.400 |
+| 0.25 (classic) | 0.225 | 0.350 |
+| 0.50 (default) | 0.300 | 0.300 |
+| 0.75 (modern) | 0.375 | 0.250 |
+| 1.00 (analytics-forward) | 0.450 | 0.200 |
+
+Formula: `threshold = 0.15 + bench_usage × 0.30`,
+`required_delta = 0.40 − bench_usage × 0.20`,
+`skill_tolerance = 6.0` (constant). An old-school skipper waits
+for a 8-game crash before considering a swap and demands a clearly
+better bench guy; an analytics-forward skipper acts on a 2-game
+slump if the bench has anyone meaningfully hot.
 
 **Safety property: no permanent burial.** The cup resets to 0.5 every
 off-season, so a player whose cup crashed early in a season at worst
@@ -416,10 +428,66 @@ League shape unchanged: `.367-.633` win-pct spread, consistent with
 prior smoke runs. The mechanism doesn't distort parity — it just
 tactically rotates within talent-similar bands.
 
-**Future tuning** (not in this PR): the threshold constants could
-hook into `mgr_bench_usage` so an old-school skipper swaps less
-aggressively than an analytics-forward one. Today they're flat
-across managers.
+### 8. Drop UT as a position (`1e54168`)
+
+The user noticed UT-tagged bench players kept showing up in places
+where canonical positions or jokers should — box scores read as "UT"
+instead of "backup CF", the FA browser was a UT-heavy soup, and the
+rest-day / habit-bench passes pulled UT bodies into canonical-
+position slots without typing the swap.
+
+Fix: every hitter now has a real position. UT is gone as a roster
+slot. Bench depth is distributed across canonical positions so
+backups are typed:
+
+- **Active backups** (1 each, on top of the existing 1 starter at
+  these positions) at the high-rotation spots where real teams
+  rotate every day: **CF, SS, 2B, C** — 2 active per team.
+- **Reserve depth** (1 each) at every canonical position: 3B, 1B,
+  LF, RF get 1 active starter + 1 reserve; CF/SS/2B/C add 1 reserve
+  on top of their 2 active.
+
+Per team:
+
+| Position | Total | Active | Reserve |
+|---|---|---|---|
+| CF, SS, 2B, C | 3 each | 2 | 1 |
+| 3B, 1B, LF, RF | 2 each | 1 | 1 |
+| DH | 3 | 3 | 0 |
+| P | 24 | 19 | 5 |
+
+Total still 47 / team — same composition as before, just typed.
+
+**Code changes:**
+- `_DRAFT_SLOTS` rewritten — multiple entries per position now
+  allowed (CF appears twice: once as starter, once as
+  active+reserve backup).
+- `_generate_draft_pool` aggregates slot counts per position
+  before sizing the pool, so the multi-entry layout doesn't
+  undercount high-rotation positions.
+- `_make_hitter` dropped the `pos == "UT"` utility-roll
+  short-circuit. The 10% Zobrist-style utility archetype is still
+  available as a secondary trait, applied randomly regardless of
+  primary position.
+- `generate_players` (legacy non-league callers — smoke_test,
+  batch.py) now distributes bench / reserve to canonical positions
+  via a round-robin instead of stamping "UT".
+- `waivers._BUCKET_ACTIVE_SLOTS` rewritten — UT removed; per-
+  position active-slot counts (CF/SS/2B/C: 2 active, 3B/1B/LF/RF:
+  1 active, DH: 3, P: 19) so the post-claim is_active reflag works
+  correctly.
+
+**Backward-compat fallbacks** (the position-defense bonus map's UT
+entry, the "p.position or 'UT'" no-position-stamp guard, and the
+UT entries in app.py's stat-page filters) are left in place. They
+won't fire on rosters seeded post-1e54168 and can be removed when
+no DB rows with UT exist.
+
+**Smoke (14-team / 30-game):** 0 players with UT position;
+canonical positions distributed correctly (39 each at 1B/3B/LF/RF,
+59 each at CF/SS/2B/C/DH for the FA pool); full season + playoffs
+in 25s; champion crowned (Astros); standings spread .233-.667 —
+same shape as prior smokes.
 
 ---
 
@@ -468,6 +536,9 @@ across managers.
 | `o27v2/development.py` | 96ec734 | Off-season re-roll with age-27 (habits) / age-30 (ethic) locks, soft re-roll formula, cup reset to 0.5. |
 | `o27v2/web/templates/player.html` | 96ec734 | Surfaces `work_ethic` with "Locked" badge once frozen. |
 | `o27v2/sim.py` | 75b1b79 | Habit-bench pass (`_try_habit_bench`) in `_db_team_to_engine`, before the rest-day pass. Swaps slumping starters for similar-skill bench fielders with healthier cups. |
+| `o27v2/league.py` | 1e54168 | `_DRAFT_SLOTS` rewritten with per-position backups; `_generate_draft_pool` aggregates slots per position; `_make_hitter` drops the UT-utility short-circuit; legacy `generate_players` distributes bench across canonical positions. |
+| `o27v2/waivers.py` | 1e54168 | `_HITTER_BUCKETS` and `_BUCKET_ACTIVE_SLOTS` updated for the per-position bench layout. |
+| `o27v2/sim.py` | (next commit) | Habit-bench thresholds scale with `mgr_bench_usage`: old-school skippers fire on cup ≤ 0.15 with +0.40 gap required; analytics-forward fire on cup ≤ 0.45 with +0.20 gap. |
 
 ---
 

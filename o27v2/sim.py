@@ -449,21 +449,27 @@ def _db_team_to_engine(
     starting_fielders = list(fielders[:8])
     bench_fielders = list(fielders[8:])
 
-    # Phase 5e: habit-bench pass. Fires BEFORE the rest-day pass so a
-    # cold-cup starter can be swapped for a hot-cup bench fielder of
+    # Phase 5e/5f: habit-bench pass. Fires BEFORE the rest-day pass so
+    # a cold-cup starter can be swapped for a hot-cup bench fielder of
     # comparable skill before the manager's rest-day logic considers
-    # the new lineup. Only fires when:
-    #   - starter's habit_cup is below the slump threshold (0.30),
-    #   - a bench fielder is within 6 grade points of the starter's
-    #     composite hitting score (so we don't bench a stud for a
-    #     scrub just because their cup happened to crash),
-    #   - that bench fielder's cup is meaningfully higher.
-    # Capped at one swap per game to avoid lineup churn. Cup resets
-    # at off-season so no player gets permanently buried by an early
-    # bad streak.
-    _HABIT_BENCH_CUP_THRESHOLD  = 0.30
+    # the new lineup. Capped at one swap per game.
+    #
+    # Threshold sensitivity scales with `mgr_bench_usage`:
+    #   usage = 0.0 (old-school skipper) — only fires on extreme
+    #     slumps (cup ≤ 0.15), and the bench fielder must be a clear
+    #     upgrade (cup at least +0.40 above the starter's).
+    #   usage = 0.5 (default) — fires on cup ≤ 0.30, requires a
+    #     +0.30 cup gap. Same as the original Phase 5f thresholds.
+    #   usage = 1.0 (analytics-forward) — fires on cup ≤ 0.45,
+    #     requires only a +0.20 cup gap.
+    #
+    # Skill tolerance stays flat at 6 _bat_score grade-points across
+    # all managers — every skipper agrees not to swap a stud for a
+    # scrub. The "how easily I bench" question is the right knob.
+    bench_usage = float(team_row.get("mgr_bench_usage") or 0.5)
+    _HABIT_BENCH_CUP_THRESHOLD = 0.15 + bench_usage * 0.30   # 0.15 .. 0.45
+    _HABIT_BENCH_CUP_DELTA     = 0.40 - bench_usage * 0.20   # 0.40 .. 0.20
     _HABIT_BENCH_SKILL_TOLERANCE = 6.0   # _bat_score grade points
-    _HABIT_BENCH_CUP_DELTA       = 0.30
 
     def _try_habit_bench():
         if not bench_fielders:
