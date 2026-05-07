@@ -60,7 +60,7 @@
         <tbody>
         {% for p in batters %}
         <tr {% if p.is_joker %}style="color:#f0883e"{% endif %}>
-          <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.is_joker %} <span class="si-badge">JKR</span>{% endif %}</td>
+          <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.is_joker %} <span class="si-badge">JKR</span>{% endif %}</td>
           <td class="text-secondary">{{ p.position }}</td>
           <td class="num text-secondary">{{ p.age }}</td>
           <td class="num">{{ p.gp or 0 }}</td>
@@ -103,7 +103,7 @@
         <tbody>
         {% for p in pitchers %}
         <tr style="color:#79c0ff">
-          <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.pitcher_role %} <span class="text-secondary small">· {{ p.pitcher_role }}</span>{% endif %}</td>
+          <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.pitcher_role %} <span class="text-secondary small">· {{ p.pitcher_role }}</span>{% endif %}</td>
           <td class="num text-secondary">{{ p.age }}</td>
           <td class="num">{{ p.gp or p.g or 0 }}</td>
           <td class="num">{{ p.gs or 0 }}</td>

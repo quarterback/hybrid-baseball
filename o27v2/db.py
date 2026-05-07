@@ -78,6 +78,10 @@ CREATE TABLE IF NOT EXISTS players (
     movement  INTEGER DEFAULT 50,
     bats      TEXT DEFAULT 'R',
     throws    TEXT DEFAULT 'R',
+    -- ISO 3166-1 alpha-2 country code (e.g. "IN", "PK", "MY"). Drives
+    -- the flag emoji rendered next to the player's name in the UI.
+    -- Empty string for legacy rows / pre-roster generation.
+    country   TEXT DEFAULT '',
     -- Defense layer (range / glove / arm + per-position-group sub-ratings).
     defense           INTEGER DEFAULT 50,
     arm               INTEGER DEFAULT 50,
@@ -428,6 +432,16 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+
+        # Country code: ISO 3166-1 alpha-2 (e.g. "IN", "PK", "MY"). Drives
+        # the flag emoji rendered next to the player's name in roster /
+        # player / box-score views. Empty default keeps pre-migration
+        # rosters rendering as flag-less without breaking the templates.
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN country TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
 
         # Realism layer team columns (ballpark factors).
         for col, defval in [("park_hr", "1.0"), ("park_hits", "1.0")]:

@@ -66,6 +66,26 @@ def _scout(val) -> int:
 app.jinja_env.filters["scout"] = _scout
 
 
+def _flag(country_code) -> str:
+    """Render an ISO 3166-1 alpha-2 country code as a flag emoji.
+
+    Two regional-indicator code points (U+1F1E6..U+1F1FF). Empty / invalid
+    codes render as empty string so templates can unconditionally
+    `{{ p.country | flag }}` next to player names.
+    """
+    if not country_code:
+        return ""
+    s = str(country_code).strip().upper()
+    if len(s) != 2 or not s.isalpha():
+        return ""
+    base = 0x1F1E6
+    a = ord("A")
+    return chr(base + ord(s[0]) - a) + chr(base + ord(s[1]) - a)
+
+
+app.jinja_env.filters["flag"] = _flag
+
+
 @app.context_processor
 def inject_sim_state():
     return {"sim": {
@@ -1533,7 +1553,7 @@ def game_detail(game_id: int):
     # phase N>=1 = super-inning round N. We also build per-phase totals
     # rows (suitable for the Game Totals section in the template).
     away_batting_rows = db.fetchall(
-        """SELECT bs.*, p.name as player_name,
+        """SELECT bs.*, p.name as player_name, p.country as player_country,
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
@@ -1543,7 +1563,7 @@ def game_detail(game_id: int):
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["away_team_id"]))
     home_batting_rows = db.fetchall(
-        """SELECT bs.*, p.name as player_name,
+        """SELECT bs.*, p.name as player_name, p.country as player_country,
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
@@ -1553,12 +1573,12 @@ def game_detail(game_id: int):
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["home_team_id"]))
     away_pitching_rows = db.fetchall(
-        """SELECT ps.*, p.name as player_name
+        """SELECT ps.*, p.name as player_name, p.country as player_country
            FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
            WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.phase, ps.id""",
         (game_id, game["away_team_id"]))
     home_pitching_rows = db.fetchall(
-        """SELECT ps.*, p.name as player_name
+        """SELECT ps.*, p.name as player_name, p.country as player_country
            FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
            WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.phase, ps.id""",
         (game_id, game["home_team_id"]))
@@ -2305,7 +2325,7 @@ def players():
     offset = (page - 1) * per_page
 
     base = db.fetchall(
-        f"""SELECT p.id, p.name, p.team_id, p.position, p.age, p.is_pitcher, p.is_joker, p.pitcher_role,
+        f"""SELECT p.id, p.name, p.country, p.team_id, p.position, p.age, p.is_pitcher, p.is_joker, p.pitcher_role,
                    p.skill, p.power, p.contact, p.eye, p.speed,
                    p.pitcher_skill, p.command, p.movement, p.stamina,
                    p.defense, p.arm, p.defense_infield, p.defense_outfield, p.defense_catcher,
