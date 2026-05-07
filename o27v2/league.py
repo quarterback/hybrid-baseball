@@ -921,6 +921,18 @@ def _generate_draft_pool(
     return pool
 
 
+_DRAFT_SORT_NOISE = 6   # ± grade points of jitter on the draft-rank sort.
+                        # Without it, the top-N picks at every position go
+                        # to teams in strict overall order and the FA pool
+                        # ends up uniformly worse than every roster — so
+                        # the match-day waiver sweep can never find a
+                        # positive-improvement claim. With ±6 of jitter the
+                        # FA pool overlaps team-roster talent enough that
+                        # legitimate upgrades exist on day 1, while still
+                        # preserving the parity property at the team-mean
+                        # level (the noise cancels out across ~55 picks).
+
+
 def _run_snake_draft(
     team_ids: list[int],
     pool: dict[str, list[dict]],
@@ -945,8 +957,14 @@ def _run_snake_draft(
 
     global_round = 0
     for pos, n_active, n_reserve in _DRAFT_SLOTS:
+        # Jittered sort: each player's draft-rank gets ± _DRAFT_SORT_NOISE
+        # grade points of random nudge. The on-roster `skill`/`pitcher_skill`
+        # values are unchanged — this only affects pick order, so the
+        # FA pool ends up overlapping team talent instead of being a
+        # strict bottom-N slice.
         bucket = sorted(pool.get(pos, []),
-                        key=_player_overall,
+                        key=lambda p: _player_overall(p) + rng.uniform(
+                            -_DRAFT_SORT_NOISE, _DRAFT_SORT_NOISE),
                         reverse=True)
         per_team = n_active + n_reserve
         # Picks 0..n_active-1 → active; picks n_active..per_team-1 → reserve.

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Free Agents{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Free Agents</h2>
+    <div class="text-secondary small">
+      {{ total }} player{{ '' if total == 1 else 's' }} unclaimed
+      {% if last_sweep %}· last match-day sweep <strong>{{ last_sweep }}</strong>{% endif %}
+    </div>
+  </div>
+</div>
+
+<p class="text-secondary small mb-3" style="max-width:780px">
+  The free-agent pool. Players land here when they're undrafted at season start
+  or when a team cuts them on a Sunday match-day sweep. Each Sunday during the
+  season the league runs an automated sweep (worst-record team picks first,
+  up to 5 rounds, picks bank between rounds) so anyone better than a team's
+  weakest at their position has a way onto a roster.
+</p>
+
+{# Per-position counts #}
+<div class="row g-2 mb-3">
+  {% for pos, n in by_pos %}
+  <div class="col-auto">
+    <a class="panel panel-body d-block text-decoration-none"
+       style="padding:8px 12px; min-width:64px; text-align:center"
+       href="{{ url_for('free_agents', pos=pos, kind=kind, sort=sort) }}">
+      <div class="num fw-bold" style="font-size:1.2rem">{{ n }}</div>
+      <div class="score-label">{{ pos }}</div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+
+<form method="get" class="filter-bar mb-3">
+  <div>
+    <label class="form-label" for="f-pos">Position</label>
+    <select id="f-pos" name="pos" class="form-select form-select-sm" style="width:140px">
+      <option value="">All Positions</option>
+      {% for pos, _n in by_pos %}
+      <option value="{{ pos }}" {% if selected_pos == pos %}selected{% endif %}>{{ pos }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label" for="f-kind">Kind</label>
+    <select id="f-kind" name="kind" class="form-select form-select-sm" style="width:130px">
+      <option value="all"      {% if kind == 'all' %}selected{% endif %}>All</option>
+      <option value="hitters"  {% if kind == 'hitters' %}selected{% endif %}>Hitters</option>
+      <option value="pitchers" {% if kind == 'pitchers' %}selected{% endif %}>Pitchers</option>
+    </select>
+  </div>
+  <div>
+    <label class="form-label" for="f-sort">Sort</label>
+    <select id="f-sort" name="sort" class="form-select form-select-sm" style="width:140px">
+      <option value="ovr"  {% if sort == 'ovr' %}selected{% endif %}>Overall</option>
+      <option value="pos"  {% if sort == 'pos' %}selected{% endif %}>Position</option>
+      <option value="name" {% if sort == 'name' %}selected{% endif %}>Name</option>
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+  {% if selected_pos or kind != 'all' or sort != 'ovr' %}
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('free_agents') }}">Clear</a>
+  {% endif %}
+</form>
+
+{% if free_agents %}
+<div class="table-responsive">
+  <table class="table table-sm table-hover align-middle">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Pos</th>
+        <th class="text-end">Ovr</th>
+        <th class="text-end">Skill / Stuff</th>
+        <th class="text-end">Contact / Cmd</th>
+        <th class="text-end">Power / Mvmt</th>
+        <th class="text-end">Eye / Stamina</th>
+        <th class="text-end">Age</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in free_agents %}
+      <tr>
+        <td>{{ p.name }}</td>
+        <td><span class="badge bg-secondary">{{ p.position }}</span></td>
+        <td class="text-end fw-bold num">{{ p.overall }}</td>
+        {% if p.is_pitcher %}
+        <td class="text-end num">{{ p.pitcher_skill }}</td>
+        <td class="text-end num">{{ p.command }}</td>
+        <td class="text-end num">{{ p.movement }}</td>
+        <td class="text-end num">{{ p.stamina }}</td>
+        {% else %}
+        <td class="text-end num">{{ p.skill }}</td>
+        <td class="text-end num">{{ p.contact }}</td>
+        <td class="text-end num">{{ p.power }}</td>
+        <td class="text-end num">{{ p.eye }}</td>
+        {% endif %}
+        <td class="text-end num">{{ p.age }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="panel panel-body text-secondary">
+  No free agents match the current filter.
+</div>
+{% endif %}
+
+{% endblock %}

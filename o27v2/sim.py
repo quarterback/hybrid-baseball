@@ -1273,12 +1273,24 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
     """
     Simulate the next N unplayed games in schedule order.
     Returns list of result dicts.
+
+    Triggers the weekly Sunday match-day waiver sweep before any games
+    on a Sunday date (idempotent — never runs twice for the same
+    Sunday).
     """
+    from o27v2.waivers import maybe_run_sweep
     games = db.fetchall(
-        "SELECT id FROM games WHERE played = 0 ORDER BY game_date, id LIMIT ?", (n,)
+        "SELECT id, game_date FROM games WHERE played = 0 ORDER BY game_date, id LIMIT ?", (n,)
     )
     results = []
+    seen_sunday: set[str] = set()
     for i, g in enumerate(games):
+        if g["game_date"] not in seen_sunday:
+            seen_sunday.add(g["game_date"])
+            try:
+                maybe_run_sweep(g["game_date"])
+            except Exception as e:
+                results.append({"sweep_error": str(e), "date": g["game_date"]})
         seed = None if seed_base is None else seed_base + i
         try:
             r = simulate_game(g["id"], seed=seed)
@@ -1420,12 +1432,23 @@ SIM_PER_REQUEST_GAME_CAP = 3000
 
 
 def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_PER_REQUEST_GAME_CAP) -> list[dict]:
-    """Simulate every unplayed game whose game_date == `date`. Does NOT touch the clock."""
+    """Simulate every unplayed game whose game_date == `date`. Does NOT touch the clock.
+
+    Runs the weekly Sunday match-day sweep first if `date` is a Sunday
+    (idempotent — see o27v2/waivers.py).
+    """
+    from o27v2.waivers import maybe_run_sweep
+    try:
+        maybe_run_sweep(date)
+    except Exception as e:
+        # Don't let a sweep failure block the day's simulation.
+        results: list[dict] = [{"sweep_error": str(e), "date": date}]
+    else:
+        results = []
     games = db.fetchall(
         "SELECT id FROM games WHERE played = 0 AND game_date = ? ORDER BY id LIMIT ?",
         (date, max_games),
     )
-    results = []
     for i, g in enumerate(games):
         seed = None if seed_base is None else seed_base + i
         try:
@@ -1436,13 +1459,25 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_
 
 
 def simulate_through(target_date: str, seed_base: int | None = None, max_games: int = SIM_PER_REQUEST_GAME_CAP) -> list[dict]:
-    """Simulate every unplayed game with game_date <= `target_date`. Does NOT touch the clock."""
+    """Simulate every unplayed game with game_date <= `target_date`. Does NOT touch the clock.
+
+    Runs the weekly Sunday match-day sweep at every distinct Sunday
+    encountered in the date range (idempotent — see o27v2/waivers.py).
+    """
+    from o27v2.waivers import maybe_run_sweep
     games = db.fetchall(
-        "SELECT id FROM games WHERE played = 0 AND game_date <= ? ORDER BY game_date, id LIMIT ?",
+        "SELECT id, game_date FROM games WHERE played = 0 AND game_date <= ? ORDER BY game_date, id LIMIT ?",
         (target_date, max_games),
     )
-    results = []
+    results: list[dict] = []
+    seen_sunday: set[str] = set()
     for i, g in enumerate(games):
+        if g["game_date"] not in seen_sunday:
+            seen_sunday.add(g["game_date"])
+            try:
+                maybe_run_sweep(g["game_date"])
+            except Exception as e:
+                results.append({"sweep_error": str(e), "date": g["game_date"]})
         seed = None if seed_base is None else seed_base + i
         try:
             results.append(simulate_game(g["id"], seed=seed))
