@@ -958,6 +958,28 @@ class Renderer:
             quality = outcome.get("quality")
             team_id = ctx.get("batting_team_id")
             pitcher = ctx.get("pitcher")
+
+            # SABR analytics: stamp pre/post game-state on every BIP event
+            # so RE24 / leverage / WPA can be computed without replaying the
+            # engine. Bases encoded as a 3-bit mask (bit0=1B, bit1=2B,
+            # bit2=3B), score_diff is batting_score − fielding_score.
+            def _bases_mask(seq):
+                return sum((1 << i) for i, r in enumerate(seq or [None, None, None]) if r is not None)
+
+            outs_before = ctx.get("outs", 0) or 0
+            bases_before_mask = _bases_mask(ctx.get("bases_list"))
+            score_before_dict = ctx.get("score") or {}
+            bat_before = score_before_dict.get(team_id, 0)
+            fld_before = sum(v for k, v in score_before_dict.items() if k != team_id)
+            score_diff_before = bat_before - fld_before
+
+            outs_after = getattr(state_after, "outs", outs_before) or 0
+            bases_after_mask = _bases_mask(list(getattr(state_after, "bases", [None, None, None])))
+            score_after_dict = dict(getattr(state_after, "score", {}) or {})
+            bat_after = score_after_dict.get(team_id, bat_before)
+            fld_after = sum(v for k, v in score_after_dict.items() if k != team_id)
+            score_diff_after = bat_after - fld_after
+
             self._pa_log.append({
                 "team_id": team_id,
                 "batter_id": bid,
@@ -974,6 +996,12 @@ class Renderer:
                 "stay_credited": 1 if (choice == "stay" and disp.get("stay_hit_credited")) else 0,
                 "runs_scored": runs_scored,
                 "rbi_credited": runs_scored,
+                "outs_before": outs_before,
+                "bases_before": bases_before_mask,
+                "score_diff_before": score_diff_before,
+                "outs_after": outs_after,
+                "bases_after": bases_after_mask,
+                "score_diff_after": score_diff_after,
             })
 
             if choice == "stay":

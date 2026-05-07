@@ -693,6 +693,7 @@
         <a class="nav-link {% if request.endpoint in ('teams','team_detail') %}active{% endif %}"     href="{{ url_for('teams') }}">Teams</a>
         <a class="nav-link {% if request.endpoint == 'league' %}active{% endif %}" href="{{ url_for('league') }}">League</a>
         <a class="nav-link {% if request.endpoint == 'distributions' %}active{% endif %}" href="{{ url_for('distributions') }}">Dist.</a>
+        <a class="nav-link {% if request.endpoint == 'analytics' %}active{% endif %}" href="{{ url_for('analytics') }}">Analytics</a>
         <a class="nav-link {% if request.endpoint == 'leaders' %}active{% endif %}"   href="{{ url_for('leaders') }}">Leaders</a>
         <a class="nav-link {% if request.endpoint == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stats</a>
         <a class="nav-link {% if request.endpoint == 'compare' %}active{% endif %}" href="{{ url_for('compare') }}">Compare</a>
