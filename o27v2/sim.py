@@ -907,6 +907,60 @@ def _promote_pitcher_role(players: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Phase 3 — per-game per-player condition roll
+# ---------------------------------------------------------------------------
+
+# Tuning knobs for the daily-condition multiplier. Picked to produce a
+# noticeable "bad day" tail without flattening talent: σ=0.07 ⇒ ~16% of
+# players land below 0.93 on any given game (a real off-day rate),
+# clamped to [0.85, 1.15] so condition can't fully erase or double a
+# player's effective talent.
+_CONDITION_SIGMA      = 0.07
+_CONDITION_MIN        = 0.85
+_CONDITION_MAX        = 1.15
+
+# Weather penalties on the μ of the condition roll. Bad weather doesn't
+# uniformly degrade everyone (the engine's existing per-PA weather hooks
+# already do that) — instead it shifts the daily-condition distribution
+# down so bad-weather days have MORE bad performances. Heat / cold /
+# heavy rain compounds when stacked.
+_HEAT_PENALTY     = -0.025   # `temp == "hot"`
+_COLD_PENALTY     = -0.020   # `temp == "cold"`
+_HEAVY_RAIN_PEN   = -0.030   # `precipitation == "heavy"`
+_LIGHT_RAIN_PEN   = -0.010   # `precipitation == "light"`
+
+
+def _condition_mu_for_weather(weather) -> float:
+    """Compute the μ of the condition roll for the day. 1.0 in mild
+    weather; subtracts small penalties in extreme conditions."""
+    mu = 1.0
+    if weather is None:
+        return mu
+    temp   = getattr(weather, "temp", None)
+    precip = getattr(weather, "precipitation", None)
+    if temp == "hot":
+        mu += _HEAT_PENALTY
+    elif temp == "cold":
+        mu += _COLD_PENALTY
+    if precip == "heavy":
+        mu += _HEAVY_RAIN_PEN
+    elif precip == "light":
+        mu += _LIGHT_RAIN_PEN
+    return mu
+
+
+def _roll_today_condition(visitors: Team, home: Team, weather, rng: random.Random) -> None:
+    """Roll a `today_condition` multiplier for every player on both
+    teams. Stamped directly on the Player dataclass field so prob.py's
+    existing `getattr(player, "today_condition", 1.0)` reads pick it up."""
+    mu = _condition_mu_for_weather(weather)
+    for team in (visitors, home):
+        for p in team.roster:
+            cond = rng.gauss(mu, _CONDITION_SIGMA)
+            p.today_condition = max(_CONDITION_MIN, min(_CONDITION_MAX, cond))
+
+
+# ---------------------------------------------------------------------------
 # Main simulation entry point
 # ---------------------------------------------------------------------------
 
@@ -984,6 +1038,14 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     # reads this; everything else passes it through.
     from o27.engine.weather import Weather
     state.weather = Weather.from_row(game)
+
+    # Phase 3: roll today_condition once per player per game so any player
+    # — ace or replacement bat — can have an off day. The roll is centred
+    # at 1.0 with σ=0.07, weather-modulated: extreme heat / cold / rain
+    # shifts μ down so bad-weather days produce more bad performances
+    # without uniformly degrading every player. Read in prob.py's
+    # _pitch_probs and contact_quality alongside the existing today_form.
+    _roll_today_condition(visitors_team, home_team, state.weather, rng)
 
     renderer = Renderer()
     provider = ProbabilisticProvider(rng)

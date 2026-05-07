@@ -220,6 +220,11 @@ def _pitch_probs(
     # Multiplies effective Stuff so the same SP can throw a gem one start
     # and a clunker the next. today_form == 1.0 ⇒ identity.
     form = getattr(pitcher, "today_form", 1.0)
+    # Phase 3: per-game wellness multiplier rolled once per player per game
+    # in o27v2/sim.py:_roll_today_condition. Stacks with today_form for
+    # pitchers (1.0 = identity). Weather-modulated μ so bad-weather days
+    # produce more bad performances without flattening every player.
+    p_cond = getattr(pitcher, "today_condition", 1.0)
     # Per-pitch quality draw — each pitch samples within the pitcher's
     # static [rating ± pitch_variance] range. At pitch_variance == 0.0 or
     # rng == None this collapses to the legacy central rating (identity).
@@ -232,7 +237,7 @@ def _pitch_probs(
     if not getattr(pitcher, "is_pitcher", True):
         arm = float(getattr(pitcher, "arm", 0.5) or 0.5)
         raw_stuff = 0.55 * arm + 0.45 * raw_stuff
-    stuff_eff = max(0.0, min(1.0, raw_stuff * form))
+    stuff_eff = max(0.0, min(1.0, raw_stuff * form * p_cond))
 
     # Pitcher dominance: stuff_eff > 0.5 shifts probability toward strikes.
     p_dom = (stuff_eff - 0.5) * 2   # −1.0 to +1.0
@@ -249,7 +254,14 @@ def _pitch_probs(
     release_angle = float(getattr(pitcher, "release_angle", 0.5))
     rel_plat_amp  = 1.0 + (0.5 - release_angle) * cfg.RELEASE_PLATOON_AMP_SCALE
     plat  = _platoon_factor(batter, pitcher) * max(0.5, rel_plat_amp)
-    b_dom = (batter.skill - 0.5) * 2 * plat        # −1.0 to +1.0
+    # Phase 3: batter side gets the same per-game wellness multiplier.
+    # Scales every batter-rating-driven dominance term so a great hitter
+    # can have a 0-fer day and a replacement bat can carry a game. The
+    # `(rating - 0.5) * 2 * cond` shape keeps identity at cond=1.0 and
+    # symmetrically shrinks both positive and negative dominance toward
+    # league-average on bad days (0.85) or amplifies it on good days (1.15).
+    b_cond = getattr(batter, "today_condition", 1.0)
+    b_dom = (batter.skill - 0.5) * 2 * plat * b_cond  # −1.0 to +1.0
     base[2] += b_dom * cfg.BATTER_DOM_SWINGING
     base[4] += b_dom * cfg.BATTER_DOM_CONTACT
 
@@ -258,12 +270,12 @@ def _pitch_probs(
     # the identity invariant against the legacy probability surface.
 
     # Eye: discipline → more balls taken, fewer called strikes.
-    eye_dev = (batter.eye - 0.5) * 2 * plat
+    eye_dev = (batter.eye - 0.5) * 2 * plat * b_cond
     base[0] += eye_dev * cfg.BATTER_EYE_BALL
     base[1] += eye_dev * cfg.BATTER_EYE_CALLED
 
     # Contact (batter): bat-on-ball ability → fewer whiffs, more fouls/in-play.
-    con_dev = (batter.contact - 0.5) * 2 * plat
+    con_dev = (batter.contact - 0.5) * 2 * plat * b_cond
     base[2] += con_dev * cfg.BATTER_CONTACT_SWINGING
     base[3] += con_dev * cfg.BATTER_CONTACT_FOUL
     base[4] += con_dev * cfg.BATTER_CONTACT_CONTACT
@@ -416,29 +428,35 @@ def contact_quality(
     """
     plat = _platoon_factor(batter, pitcher)
     form = getattr(pitcher, "today_form", 1.0)
+    # Phase 3: per-game wellness multipliers (see _pitch_probs above).
+    p_cond = getattr(pitcher, "today_condition", 1.0)
+    b_cond = getattr(batter,  "today_condition", 1.0)
     # Per-pitch quality draws — same model as _pitch_probs. Each batted-
     # ball event samples within the pitcher's static stuff/movement range.
     pv = float(getattr(pitcher, "pitch_variance", 0.0) or 0.0)
     stuff_draw = _sample_quality(rng, float(pitcher.pitcher_skill), pv)
     move_draw  = _sample_quality(rng, float(pitcher.movement), pv)
-    stuff_eff = max(0.0, min(1.0, stuff_draw * form))
+    stuff_eff = max(0.0, min(1.0, stuff_draw * form * p_cond))
 
-    matchup = (batter.skill * plat) - stuff_eff   # +ve → batter advantage
+    # Phase 3: batter's effective skill is also condition-scaled in the
+    # matchup term. Identity at b_cond=1.0; off-day batters lose ground
+    # in the matchup, hot batters gain.
+    matchup = (batter.skill * plat * b_cond) - stuff_eff   # +ve → batter advantage
     shift = matchup * cfg.CONTACT_MATCHUP_SHIFT    # up to ±0.125 swing
 
     # Second-swing modifier: on swings 2+ within the same AB, tilt the
     # contact distribution by eye-vs-command. High-eye batter reads the
     # pitcher; high-command pitcher disrupts the read. Competing forces.
     if swings_in_ab >= 1:
-        eye_dev = (batter.eye - 0.5) * 2 * plat
-        cmd_dev = (pitcher.command - 0.5) * 2
+        eye_dev = (batter.eye - 0.5) * 2 * plat * b_cond
+        cmd_dev = (pitcher.command - 0.5) * 2 * p_cond
         shift += (eye_dev * cfg.SECOND_SWING_EYE_SCALE
                   - cmd_dev * cfg.SECOND_SWING_COMMAND_SCALE)
 
     arch_delta = getattr(batter, "hard_contact_delta", 0.0)
 
     # Power → harder contact (collapses to 0 at power=0.5).
-    power_tilt = (batter.power - 0.5) * 2 * plat * cfg.CONTACT_POWER_TILT
+    power_tilt = (batter.power - 0.5) * 2 * plat * b_cond * cfg.CONTACT_POWER_TILT
     # Movement → weaker contact (collapses to 0 at movement=0.5).
     move_tilt  = (move_draw - 0.5) * 2 * cfg.CONTACT_MOVEMENT_TILT
 

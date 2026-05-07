@@ -180,6 +180,14 @@ class Player:
     # a gem one start and a clunker the next. 1.0 = legacy parity.
     today_form: float = 1.0
 
+    # Per-game wellness multiplier. Rolled once per player per game in
+    # o27v2/sim.py:_db_team_to_engine (driven by weather + slight talent
+    # bias). Stacks multiplicatively on top of today_form for pitchers
+    # and scales batter ratings in the dominance terms in prob.py so a
+    # great hitter can have a 0-fer day and a replacement bat can carry
+    # a game. 1.0 = identity (no condition effect).
+    today_condition: float = 1.0
+
     # Release-point position within the sidearm/submarine spectrum.
     # O27 is a sidearm/submarine sport (lore-level structural fact).
     #   0.0 = submarine       (extreme downward angle, strongest platoon effect, least arm stress)
