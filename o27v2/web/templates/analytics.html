@@ -324,6 +324,80 @@
   </div>
 </div>
 
+{# ============================================================
+   5. BaseRuns — sequencing / cluster-luck decomposition
+   ============================================================ #}
+{% if base_runs and base_runs.n_teams %}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>BaseRuns · sequencing luck on offense and defense</span>
+    <span class="ms-auto sub">{{ base_runs.n_teams }} teams ·
+      league re-center: B<sub>off</sub> ×<span class="num">{{ base_runs.b_scale_offense }}</span>,
+      B<sub>def</sub> ×<span class="num">{{ base_runs.b_scale_defense }}</span>
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="text-secondary small mb-2">
+      BaseRuns predicts runs scored from raw event counts (H, 2B, 3B, HR,
+      BB, HBP, AB) with no information about the order events arrived in.
+      The residual <span class="fw-bold">actual − predicted</span> is
+      therefore pure sequencing/cluster luck — hits-with-RISP timing,
+      double-play avoidance, runner distribution. Applied to opposing
+      offenses it gives sequencing luck on defense; the net is a clean
+      "runs of cluster luck" figure that complements xwOBA (event-level
+      luck) and the Pythag k* residual (W%-from-RD curvature).
+    </div>
+    <div class="table-responsive">
+      <table class="table dense-table sortable">
+        <thead>
+          <tr>
+            <th>Tm</th>
+            <th class="num">RS</th>
+            <th class="num">RS<sub>BsR</sub></th>
+            <th class="num">Off luck</th>
+            <th class="num">RA</th>
+            <th class="num">RA<sub>BsR</sub></th>
+            <th class="num">Def luck</th>
+            <th class="num fw-bold">Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in base_runs.teams %}
+          <tr>
+            <td><a class="team-abbrev" href="{{ url_for('team_detail', team_id=t.team_id) }}">{{ t.abbrev }}</a></td>
+            <td class="num">{{ t.rs }}</td>
+            <td class="num">{{ '%.1f' | format(t.rs_pred) }}</td>
+            <td class="num"
+                style="color:{% if t.bsr_off > 5 %}var(--good){% elif t.bsr_off < -5 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_off) }}
+            </td>
+            <td class="num">{{ t.ra }}</td>
+            <td class="num">{{ '%.1f' | format(t.ra_pred) }}</td>
+            <td class="num"
+                style="color:{% if t.bsr_def > 5 %}var(--bad){% elif t.bsr_def < -5 %}var(--good){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_def) }}
+            </td>
+            <td class="num fw-bold"
+                style="color:{% if t.bsr_total > 8 %}var(--good){% elif t.bsr_total < -8 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_total) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="text-secondary small mt-1">
+      Off luck = RS − RS<sub>BsR</sub> (positive = clustered hits well).
+      Def luck = RA − RA<sub>BsR</sub> (positive = opponents clustered against
+      you, i.e. unlucky on D). Net = Off − Def. B-coefficients are MLB-fit;
+      we re-center so league sums match, then residuals reflect pure
+      within-league sequencing variance. A B-coefficient *shape* refit
+      (analogous to the Pythag k* refit) is a worthwhile follow-up.
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% endif %}{# /games_played > 0 #}
 
 {% endblock %}

@@ -3550,21 +3550,23 @@ def analytics():
     if games_played == 0:
         return _serve("analytics.html",
                       games_played=0, re_table=None, re_curve=None,
-                      xwoba=None, pythag=None)
+                      xwoba=None, pythag=None, base_runs=None)
 
     from o27v2.analytics import (
         build_re_table, build_re_by_outs_remaining,
         build_xwoba_table, refit_pythag_exponent,
+        build_base_runs_table,
     )
 
     # Scale qualifier to season completeness: full-season convention is
     # 162 PA (matches /leaders); 2,430 / 15 = 162.
     min_pa = max(20, games_played // 15)
 
-    re_table = build_re_table()
-    re_curve = build_re_by_outs_remaining()
-    xwoba    = build_xwoba_table(min_pa=min_pa)
-    pythag   = refit_pythag_exponent()
+    re_table  = build_re_table()
+    re_curve  = build_re_by_outs_remaining()
+    xwoba     = build_xwoba_table(min_pa=min_pa)
+    pythag    = refit_pythag_exponent()
+    base_runs = build_base_runs_table()
 
     return _serve(
         "analytics.html",
@@ -3573,6 +3575,7 @@ def analytics():
         re_curve=re_curve,
         xwoba=xwoba,
         pythag=pythag,
+        base_runs=base_runs,
         min_pa=min_pa,
     )
 
