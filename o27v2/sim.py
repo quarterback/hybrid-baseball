@@ -1085,6 +1085,15 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
 
     # Atomic write: game row + team W/L + per-player stats in one txn.
     with db.get_conn() as conn:
+        # Clear any stat rows left over from a prior interrupted attempt
+        # at this game (played=0 but stats already inserted). Without this,
+        # the retry hits UNIQUE(player_id, game_id, phase) on the very
+        # first batter row and the day's whole sweep fails. Same-txn dup
+        # rows from a real bug would still collide on the inserts below.
+        conn.execute("DELETE FROM game_batter_stats  WHERE game_id = ?", (game_id,))
+        conn.execute("DELETE FROM game_pitcher_stats WHERE game_id = ?", (game_id,))
+        conn.execute("DELETE FROM game_pa_log        WHERE game_id = ?", (game_id,))
+        conn.execute("DELETE FROM team_phase_outs    WHERE game_id = ?", (game_id,))
         conn.execute(
             """UPDATE games SET home_score=?, away_score=?, winner_id=?,
                super_inning=?, played=1, seed=? WHERE id=?""",

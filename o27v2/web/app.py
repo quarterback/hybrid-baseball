@@ -4230,6 +4230,40 @@ def api_season_archive():
     return jsonify({"ok": True, "season_id": sid})
 
 
+@app.route("/api/season/<int:season_id>", methods=["DELETE"])
+def api_season_delete(season_id: int):
+    """Delete a single archived season + its standings/leaders rows.
+
+    If the season being deleted is the one marked as the current league's
+    archive (`current_season_archived_id` in sim_meta), clear that marker
+    so a fresh archive can be written for the live league.
+    """
+    row = db.fetchone("SELECT id FROM seasons WHERE id = ?", (season_id,))
+    if not row:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    db.execute("DELETE FROM season_standings        WHERE season_id = ?", (season_id,))
+    db.execute("DELETE FROM season_batting_leaders  WHERE season_id = ?", (season_id,))
+    db.execute("DELETE FROM season_pitching_leaders WHERE season_id = ?", (season_id,))
+    db.execute("DELETE FROM seasons                 WHERE id = ?",        (season_id,))
+    marker = db.fetchone(
+        "SELECT value FROM sim_meta WHERE key = 'current_season_archived_id'"
+    )
+    if marker and str(marker.get("value")) == str(season_id):
+        db.execute("DELETE FROM sim_meta WHERE key = 'current_season_archived_id'")
+    return jsonify({"ok": True, "deleted_id": season_id})
+
+
+@app.route("/api/seasons/clear", methods=["POST"])
+def api_seasons_clear():
+    """Delete every archived season. Used when starting fresh."""
+    db.execute("DELETE FROM season_standings")
+    db.execute("DELETE FROM season_batting_leaders")
+    db.execute("DELETE FROM season_pitching_leaders")
+    db.execute("DELETE FROM seasons")
+    db.execute("DELETE FROM sim_meta WHERE key = 'current_season_archived_id'")
+    return jsonify({"ok": True})
+
+
 @app.route("/api/season/reset", methods=["POST"])
 def api_season_reset():
     """One-click 'New season' — optionally archive first, then drop+reseed.
