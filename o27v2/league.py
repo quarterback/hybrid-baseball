@@ -500,12 +500,11 @@ def _roll_tier_grade(rng: random.Random, team_shift: int = 0) -> int:
     Returns an integer 20-95 scout grade. Used independently for every
     hitter and pitcher attribute on every player.
 
-    `team_shift` is the per-team org-strength offset (see
-    `generate_players`). It's applied AFTER the tier-bucket roll so a
-    +shift team still has the same shape of tier distribution — just
-    centered higher. Clamped to [20, 95] post-shift so an elite team
-    can't push into superhuman territory and a cellar team still has
-    some grade-20 floor.
+    `team_shift` is preserved for backwards compatibility but defaults
+    to 0 — the league is now seeded via a snake draft over a single
+    team-blind player pool (see `_run_snake_draft`), so per-team
+    shifting is no longer applied. Old callers that pass a non-zero
+    shift will still get the old additive behaviour.
     """
     r = rng.random()
     cumulative = 0.0
@@ -787,36 +786,26 @@ def generate_players(
     org_strength: int = 50,
     name_config: dict | None = None,
 ) -> list[dict]:
-    """Generate ~47 players for a team (Task #65 expanded roster).
+    """Generate ~47 players for a single team (legacy helper).
 
     Composition (active = 34, reserve = 13, total = 47):
       - 12 active position players (8 starters at canonical positions
         CF/SS/2B/3B/RF/LF/1B/C plus 4 utility bench)
       -  3 active DH/utility bats
-      - 19 active pitchers (no role buckets at generation time — every
-        pitcher is rolled independently against the tier ladder, so the
-        active staff naturally contains workhorses, short-burst arms, and
-        everything in between)
+      - 19 active pitchers
       -  8 reserve position players (is_active=0)
       -  5 reserve pitchers (is_active=0)
 
     Every attribute is rolled independently against the talent-tier
-    distribution (`_TALENT_TIERS`), producing the spiky archetypes the
-    league needs to surface real stars on the leaderboards.
+    distribution (`_TALENT_TIERS`).
 
-    `org_strength` (20-95 scout grade) is the team-level talent
-    attribute — it's persisted on the teams row by seed_league() and
-    drives `team_shift = org_strength - 50` here. An Elite org
-    (org_strength=80) shifts every tier roll +30, compressing rolls
-    against the grade-95 ceiling and producing 75-85 team-mean skill;
-    a Sub-Replacement org (25) shifts -25, producing 25-35 team-mean.
-    This is what gives teams identifiable talent levels.
-
-    `team_idx` and `home_bonus` are accepted for backward compatibility
-    but don't affect the distribution.
+    `org_strength`, `team_idx`, and `home_bonus` are accepted for
+    backward compatibility but no longer bias the rolls — the league
+    is seeded via a snake draft over a flat, team-blind player pool
+    (see `_run_snake_draft`), which is what produces realistic
+    parity. This helper is kept for non-league callers (smoke tests,
+    one-off batch sims).
     """
-    org_shift = _org_strength_to_shift(org_strength)
-
     cfg = name_config or {}
     _name = make_name_picker(
         rng,
@@ -828,32 +817,170 @@ def generate_players(
 
     # ---- Active position players: 8 starting positions + 4 bench ----
     for pos in FIELDER_POSITIONS:
-        players.append(_make_hitter(rng, pos, is_active=1, name=_name(),
-                                    team_shift=org_shift))
+        players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
     bench_positions = ["UT", "UT", "UT", "UT"]
     for pos in bench_positions:
-        players.append(_make_hitter(rng, pos, is_active=1, name=_name(),
-                                    team_shift=org_shift))
+        players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
 
     # ---- Active DH/utility bats ----
     for _ in range(ACTIVE_DH):
-        players.append(_make_hitter(rng, "DH", is_active=1, name=_name(),
-                                    team_shift=org_shift))
+        players.append(_make_hitter(rng, "DH", is_active=1, name=_name()))
 
     # ---- Active pitching staff (no role buckets) ----
     for _ in range(ACTIVE_PITCHERS):
-        players.append(_make_pitcher(rng, is_active=1, name=_name(),
-                                     team_shift=org_shift))
+        players.append(_make_pitcher(rng, is_active=1, name=_name()))
 
     # ---- Reserve pool: bench-level depth, promoted on injury ----
     for _ in range(RESERVE_HITTERS):
-        players.append(_make_hitter(rng, "UT", is_active=0, name=_name(),
-                                    team_shift=org_shift))
+        players.append(_make_hitter(rng, "UT", is_active=0, name=_name()))
     for _ in range(RESERVE_PITCHERS):
-        players.append(_make_pitcher(rng, is_active=0, name=_name(),
-                                     team_shift=org_shift))
+        players.append(_make_pitcher(rng, is_active=0, name=_name()))
 
     return players
+
+
+# ---------------------------------------------------------------------------
+# Snake-draft seeding (replaces per-team team_shift talent generation)
+# ---------------------------------------------------------------------------
+#
+# Old model: each team rolled its own org_strength (20-95), and every player
+# attribute on the roster got an additive shift of `org_strength - 50`. With
+# a 9-tier distribution that hands out a +30 shift to ~7% of teams and a
+# -25 shift to ~23%, the inevitable result was 155-7 vs 7-155 standings.
+#
+# New model:
+#   1. Generate a flat, team-blind player pool (1.4× the roster slots league-
+#      wide) from the same 9-tier distribution. No team bias.
+#   2. Snake-draft per slot type (CF, SS, ..., UT, DH, P) so the elite-level
+#      talent at each position is forced to disperse across teams.
+#   3. Surplus players land in the free-agent pool (team_id = NULL) — used
+#      by the weekly Sunday match-day waiver sweep (Phase 2).
+#
+# Snake direction alternates across the entire draft (not per slot type),
+# so a team that drafts first in round 1 drafts last in round 2 regardless
+# of slot type. This keeps cumulative draft-position equity tight.
+
+# Draft slot definition: (position_string, n_active_per_team, n_reserve_per_team)
+# Mirrors generate_players()'s composition for parity with single-team callers.
+_DRAFT_SLOTS: list[tuple[str, int, int]] = [
+    ("CF", 1, 0),
+    ("SS", 1, 0),
+    ("2B", 1, 0),
+    ("3B", 1, 0),
+    ("RF", 1, 0),
+    ("LF", 1, 0),
+    ("1B", 1, 0),
+    ("C",  1, 0),
+    ("UT", 4, 8),    # 4 active bench + 8 reserve depth
+    ("DH", 3, 0),
+    ("P", 19, 5),    # 19 active staff + 5 reserve arms
+]
+
+_DRAFT_OVERSAMPLE = 1.4   # generate 40% more players than rosters need
+                          # → the surplus is the initial free-agent pool
+
+
+def _player_overall(p: dict) -> int:
+    """Composite rating used to sort the draft pool. Hitters: skill +
+    contact + power + eye averaged; pitchers: pitcher_skill + command +
+    movement averaged. Keeps ranking aligned with what the engine
+    actually rewards per-PA."""
+    if p.get("is_pitcher"):
+        return (int(p.get("pitcher_skill", 50))
+              + int(p.get("command", 50))
+              + int(p.get("movement", 50))) // 3
+    return (int(p.get("skill", 50))
+          + int(p.get("contact", 50))
+          + int(p.get("power", 50))
+          + int(p.get("eye", 50))) // 4
+
+
+def _generate_draft_pool(
+    n_teams: int,
+    rng: random.Random,
+    name_picker,
+) -> dict[str, list[dict]]:
+    """Build the league-wide player pool, keyed by slot position.
+
+    For each slot type in `_DRAFT_SLOTS` we generate
+    `n_teams * (active + reserve) * _DRAFT_OVERSAMPLE` players,
+    rounded up. The pool is unsorted at this point — the draft sorts
+    on demand so a fresh rng draw determines tie-break order.
+    """
+    pool: dict[str, list[dict]] = {}
+    for pos, n_active, n_reserve in _DRAFT_SLOTS:
+        per_team = n_active + n_reserve
+        target = int(round(n_teams * per_team * _DRAFT_OVERSAMPLE))
+        bucket: list[dict] = []
+        for _ in range(target):
+            if pos == "P":
+                bucket.append(_make_pitcher(rng, is_active=0, name=name_picker()))
+            else:
+                bucket.append(_make_hitter(rng, pos, is_active=0, name=name_picker()))
+        pool[pos] = bucket
+    return pool
+
+
+def _run_snake_draft(
+    team_ids: list[int],
+    pool: dict[str, list[dict]],
+    rng: random.Random,
+) -> tuple[dict[int, list[dict]], list[dict]]:
+    """Snake-draft players from `pool` onto teams. Returns
+    (assignments, free_agents).
+
+    For each slot type, runs (n_active + n_reserve) rounds where every
+    team picks the best remaining player at that position. Snake
+    direction alternates per round across the entire draft so first-
+    pick equity stays balanced.
+
+    The first `n_active` picks per team at each position are flagged
+    is_active=1 (active roster); the remainder are is_active=0
+    (reserve depth, promoted on injury). Surplus players keep
+    is_active=0 and are returned as free agents.
+    """
+    assignments: dict[int, list[dict]] = {tid: [] for tid in team_ids}
+    order = list(team_ids)
+    rng.shuffle(order)
+
+    global_round = 0
+    for pos, n_active, n_reserve in _DRAFT_SLOTS:
+        bucket = sorted(pool.get(pos, []),
+                        key=_player_overall,
+                        reverse=True)
+        per_team = n_active + n_reserve
+        # Picks 0..n_active-1 → active; picks n_active..per_team-1 → reserve.
+        for slot_idx in range(per_team):
+            is_active = 1 if slot_idx < n_active else 0
+            round_order = order if (global_round % 2 == 0) else list(reversed(order))
+            for tid in round_order:
+                if not bucket:
+                    break
+                pick = bucket.pop(0)
+                pick["is_active"] = is_active
+                assignments[tid].append(pick)
+            global_round += 1
+        # Whatever's left in this position bucket → free agents.
+        # is_active stays 0 (default for FAs).
+        pool[pos] = bucket  # pool now holds only the surplus
+
+    free_agents: list[dict] = []
+    for leftovers in pool.values():
+        for fa in leftovers:
+            fa["is_active"] = 0
+            free_agents.append(fa)
+    return assignments, free_agents
+
+
+def _team_org_strength_from_roster(players: list[dict]) -> int:
+    """Recompute a team's org_strength as the mean composite rating of
+    its active roster, clamped to the 20-95 grade range. The persisted
+    org_strength is now a *reflection* of actual talent (so the team
+    page sort still works), not a hidden multiplier biasing rolls."""
+    actives = [p for p in players if p.get("is_active")]
+    if not actives:
+        return 50
+    return max(20, min(95, round(sum(_player_overall(p) for p in actives) / len(actives))))
 
 
 def seed_league(rng_seed: int = 42, config_id: str = "30teams",
@@ -924,19 +1051,20 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     }
 
     rng2 = random.Random(rng_seed)
+    from o27v2.managers import roll_manager
+
+    # Phase 1: insert all teams with a placeholder org_strength. The real
+    # value is recomputed post-draft from each team's drafted roster, so
+    # the persisted column reflects actual talent rather than a hidden
+    # multiplier.
+    team_ids: list[int] = []
     for idx, (team_def, (league_name, division)) in enumerate(zip(selected, div_map)):
-        # Build a 3-letter abbreviation if needed
         abbrev = team_def.get("abbreviation") or team_def.get("abbrev", "???")
         city   = team_def.get("city", "")
         name   = team_def.get("name", "Team")
 
         park_hr, park_hits = _roll_park_factors(rng2)
-        from o27v2.managers import roll_manager
         mgr = roll_manager(rng2)
-        # Roll team-level org strength on the same 9-tier ladder players
-        # use. The rolled grade is both persisted (visible on the team
-        # page, sortable) and used to derive every player's team_shift.
-        org_strength = _roll_tier_grade(rng2)
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, division, league, "
             "park_hr, park_hits, manager_archetype, mgr_quick_hook, "
@@ -950,37 +1078,61 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
              mgr["mgr_joker_aggression"], mgr["mgr_pinch_hit_aggression"],
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
-             mgr["mgr_bench_usage"], org_strength),
+             mgr["mgr_bench_usage"], 50),
         )
-        players = generate_players(idx, rng2, org_strength=org_strength,
-                                   name_config=name_config)
-        db.executemany(
-            """INSERT INTO players
-               (team_id, name, position, is_pitcher, skill, speed,
-                pitcher_skill, stay_aggressiveness, contact_quality_threshold,
-                archetype, pitcher_role, hard_contact_delta, hr_weight_bonus,
-                age, stamina, is_active,
-                contact, power, eye, command, movement, bats, throws,
-                defense, arm,
-                defense_infield, defense_outfield, defense_catcher,
-                baserunning, run_aggressiveness)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            [(team_id, p["name"], p["position"], p["is_pitcher"],
-              p["skill"], p["speed"], p["pitcher_skill"],
-              p["stay_aggressiveness"], p["contact_quality_threshold"],
-              p.get("archetype", ""), p.get("pitcher_role", ""),
-              p.get("hard_contact_delta", 0.0), p.get("hr_weight_bonus", 0.0),
-              p.get("age", 27),
-              p.get("stamina", p.get("pitcher_skill", 50)),
-              p.get("is_active", 1),
-              p.get("contact", 50), p.get("power", 50), p.get("eye", 50),
-              p.get("command", 50), p.get("movement", 50),
-              p.get("bats", "R"), p.get("throws", "R"),
-              p.get("defense", 50), p.get("arm", 50),
-              p.get("defense_infield", 50),
-              p.get("defense_outfield", 50),
-              p.get("defense_catcher", 50),
-              p.get("baserunning", 50),
-              p.get("run_aggressiveness", 50))
-             for p in players],
-        )
+        team_ids.append(team_id)
+
+    # Phase 2: generate the league-wide draft pool and snake-draft it.
+    # No team bias — every player is rolled from the same 9-tier
+    # distribution. Surplus players become free agents (team_id NULL),
+    # picked up by the weekly Sunday match-day waiver sweep.
+    name_picker = make_name_picker(
+        rng2,
+        gender         = name_config.get("gender", "male"),
+        region_weights = name_config.get("region_weights"),
+    )
+    pool = _generate_draft_pool(len(team_ids), rng2, name_picker)
+    assignments, free_agents = _run_snake_draft(team_ids, pool, rng2)
+
+    # Phase 3: persist drafted rosters + free-agent pool, and recompute
+    # each team's org_strength from its actual roster.
+    insert_sql = """INSERT INTO players
+        (team_id, name, position, is_pitcher, skill, speed,
+         pitcher_skill, stay_aggressiveness, contact_quality_threshold,
+         archetype, pitcher_role, hard_contact_delta, hr_weight_bonus,
+         age, stamina, is_active,
+         contact, power, eye, command, movement, bats, throws,
+         defense, arm,
+         defense_infield, defense_outfield, defense_catcher,
+         baserunning, run_aggressiveness)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+
+    def _row(team_id_or_none, p: dict) -> tuple:
+        return (team_id_or_none, p["name"], p["position"], p["is_pitcher"],
+                p["skill"], p["speed"], p["pitcher_skill"],
+                p["stay_aggressiveness"], p["contact_quality_threshold"],
+                p.get("archetype", ""), p.get("pitcher_role", ""),
+                p.get("hard_contact_delta", 0.0), p.get("hr_weight_bonus", 0.0),
+                p.get("age", 27),
+                p.get("stamina", p.get("pitcher_skill", 50)),
+                p.get("is_active", 1),
+                p.get("contact", 50), p.get("power", 50), p.get("eye", 50),
+                p.get("command", 50), p.get("movement", 50),
+                p.get("bats", "R"), p.get("throws", "R"),
+                p.get("defense", 50), p.get("arm", 50),
+                p.get("defense_infield", 50),
+                p.get("defense_outfield", 50),
+                p.get("defense_catcher", 50),
+                p.get("baserunning", 50),
+                p.get("run_aggressiveness", 50))
+
+    for team_id in team_ids:
+        roster = assignments.get(team_id, [])
+        if roster:
+            db.executemany(insert_sql, [_row(team_id, p) for p in roster])
+        org = _team_org_strength_from_roster(roster)
+        db.execute("UPDATE teams SET org_strength = ? WHERE id = ?",
+                   (org, team_id))
+
+    if free_agents:
+        db.executemany(insert_sql, [_row(None, p) for p in free_agents])
