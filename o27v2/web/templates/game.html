@@ -61,7 +61,7 @@
   <tbody>
   {% for b in rows %}
   <tr>
-    <td><a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
+    <td>{% if b.player_country %}<span class="player-flag" title="{{ b.player_country }}">{{ b.player_country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
     <td class="text-secondary">{{ b.position }}</td>
     <td class="num">{{ b.pa }}</td><td class="num">{{ b.ab }}</td>
     <td class="num">{{ b.runs }}</td>
@@ -146,7 +146,7 @@
   <tbody>
   {% for p in rows %}
   <tr>
-    <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
+    <td>{% if p.player_country %}<span class="player-flag" title="{{ p.player_country }}">{{ p.player_country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
     <td class="num">1</td>
     <td class="num fw-bold">{{ '%.0f'|format(p.gsc_avg or 0) }}</td>
     <td class="num">{{ p.outs_recorded }}</td>

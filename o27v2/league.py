@@ -351,8 +351,9 @@ def make_name_picker(
     gender: str = "male",
     region_weights: dict[str, float] | None = None,
 ):
-    """Return a callable `_name() -> str` that draws a unique full name
-    using the configured world-region distribution and gender.
+    """Return a callable `_name() -> (str, str)` that draws a unique
+    full name + ISO 3166-1 alpha-2 country code using the configured
+    world-region distribution and gender.
 
     `gender` values:
       - "male"    → uses male_first.json
@@ -362,6 +363,13 @@ def make_name_picker(
     `region_weights` is a {region_id: weight} dict (region ids defined
     in regions.json). Falls back to the americas_pro preset when None
     is passed. Weights are auto-normalised.
+
+    Sub-region cohesion: when a region has a `subregions` list, each
+    draw picks ONE subregion by weight and BOTH the first name and the
+    surname come from that subregion's keys. This keeps culturally
+    distinct first/surname pairs from being mixed (e.g. preventing
+    'Babar Iyer' from a flat south-asia pool — instead you get
+    'Babar Iqbal' or 'Aarav Sharma').
     """
     pools         = _load_name_pools()
     regions_meta  = get_name_regions()
@@ -369,58 +377,111 @@ def make_name_picker(
     used: set[str] = set()
     g_lower = (gender or "male").lower()
 
-    def _pick_first(region_id: str) -> str | None:
-        region = regions_meta.get(region_id)
-        if region is None:
-            return None
-        keys = region.get("first_keys") or []
-        # Pool for this draw: concatenate all source buckets the region
-        # maps to, then sample one entry. Doing this lazily per-draw
-        # keeps the loader simple and lets the user retune regions.json
-        # without rebuilding caches.
-        pool_kind = "male_first" if g_lower == "male" else (
-            "female_first" if g_lower == "female"
-            else ("male_first" if rng.random() < 0.5 else "female_first")
-        )
-        bucket = pools[pool_kind]
-        candidates: list[str] = []
+    def _first_pool_kind() -> str:
+        if g_lower == "male":
+            return "male_first"
+        if g_lower == "female":
+            return "female_first"
+        return "male_first" if rng.random() < 0.5 else "female_first"
+
+    def _gather(bucket_kind: str, keys: list[str]) -> list[str]:
+        bucket = pools.get(bucket_kind, {})
+        out: list[str] = []
         for k in keys:
             v = bucket.get(k)
             if isinstance(v, list):
-                candidates.extend(v)
-        if not candidates:
-            return None
-        return rng.choice(candidates)
+                out.extend(v)
+        return out
 
-    def _pick_last(region_id: str) -> str | None:
+    def _resolve_country(node: dict) -> str:
+        """Country code resolution. Direct `country` wins; otherwise sample
+        from `country_weights` if present; else empty string."""
+        c = node.get("country")
+        if isinstance(c, str) and c:
+            return c
+        cw = node.get("country_weights")
+        if isinstance(cw, dict) and cw:
+            return _pick_weighted_key(rng, _normalise_weights(cw))
+        return ""
+
+    def _draw_from_region(region_id: str) -> tuple[str | None, str | None, str]:
+        """Return (first, last, country) for one region draw. Either name
+        may be None if the bucket is empty (caller should retry)."""
         region = regions_meta.get(region_id)
         if region is None:
-            return None
-        keys = region.get("surname_keys") or []
-        bucket = pools["surnames"]
-        candidates: list[str] = []
-        for k in keys:
-            v = bucket.get(k)
-            if isinstance(v, list):
-                candidates.extend(v)
-        if not candidates:
-            return None
-        return rng.choice(candidates)
+            return None, None, ""
+        subregions = region.get("subregions")
+        if isinstance(subregions, list) and subregions:
+            sr_weights = _normalise_weights(
+                {str(i): float(sr.get("weight", 0.0)) for i, sr in enumerate(subregions)}
+            )
+            idx = int(_pick_weighted_key(rng, sr_weights))
+            sr = subregions[idx]
+            first_candidates = _gather(_first_pool_kind(), sr.get("first_keys", []))
+            last_candidates  = _gather("surnames",          sr.get("surname_keys", []))
+            country = _resolve_country(sr) or _resolve_country(region)
+            if not first_candidates or not last_candidates:
+                return None, None, country
+            return rng.choice(first_candidates), rng.choice(last_candidates), country
+        # Flat region: independent first/surname draws (legacy shape).
+        first_candidates = _gather(_first_pool_kind(), region.get("first_keys") or [])
+        last_candidates  = _gather("surnames",          region.get("surname_keys") or [])
+        country = _resolve_country(region)
+        if not first_candidates or not last_candidates:
+            return None, None, country
+        return rng.choice(first_candidates), rng.choice(last_candidates), country
 
-    def _name() -> str:
+    def _name() -> tuple[str, str]:
         for _ in range(500):
             region_id = _pick_weighted_key(rng, weights)
-            first = _pick_first(region_id)
-            last  = _pick_last(region_id)
+            first, last, country = _draw_from_region(region_id)
             if not first or not last:
                 continue
             full = f"{first} {last}"
             if full not in used:
                 used.add(full)
-                return full
-        return f"Player {rng.randint(100, 999)}"
+                return full, country
+        return f"Player {rng.randint(100, 999)}", ""
 
     return _name
+
+
+def progression_weights(season_index: int) -> dict[str, float]:
+    """Return the O27 thesis-shaped region weights for a given league
+    season index (1 = inaugural season).
+
+    Linearly interpolates between the named presets:
+        season  1  → o27_year_1
+        season  5  → o27_year_5
+        season 10+ → o27_year_10
+
+    Custom league configs that want the cricket-conversion arc to play
+    out automatically can call this once per season and store the result
+    in `name_region_weights` before generating that season's free-agent
+    pool / draftees. Existing leagues keep their static preset.
+    """
+    presets = get_name_region_presets()
+    y1  = dict((presets.get("o27_year_1")  or {}).get("weights", {}))
+    y5  = dict((presets.get("o27_year_5")  or {}).get("weights", {}))
+    y10 = dict((presets.get("o27_year_10") or {}).get("weights", {}))
+    if not (y1 and y5 and y10):
+        # If the presets aren't loadable, fall back to americas_pro.
+        return _default_region_weights()
+
+    def _lerp(a: dict[str, float], b: dict[str, float], t: float) -> dict[str, float]:
+        keys = set(a) | set(b)
+        return {k: a.get(k, 0.0) * (1 - t) + b.get(k, 0.0) * t for k in keys}
+
+    s = max(1, int(season_index))
+    if s <= 1:
+        out = y1
+    elif s >= 10:
+        out = y10
+    elif s <= 5:
+        out = _lerp(y1, y5, (s - 1) / 4.0)
+    else:
+        out = _lerp(y5, y10, (s - 5) / 5.0)
+    return _normalise_weights(out)
 
 
 # Archetype profiles, PA modifiers, and committee positions are defined in
@@ -631,6 +692,7 @@ def _make_hitter(
     is_active: int,
     name: str,
     team_shift: int = 0,
+    country: str = "",
 ) -> dict:
     """Build one position-player dict with every attribute rolled
     independently against the talent-tier distribution (Task #65).
@@ -696,6 +758,7 @@ def _make_hitter(
     pskill_g = roll() // 2 + 10  # cap fielder-pitching at low grades
     return {
         "name": name,
+        "country": country,
         "position": pos,
         "is_pitcher": 0,
         "is_joker": 0,
@@ -749,6 +812,7 @@ def _make_pitcher(
     is_active: int,
     name: str,
     team_shift: int = 0,
+    country: str = "",
 ) -> dict:
     """Build one pitcher dict with Stuff (`pitcher_skill`) and Stamina
     rolled INDEPENDENTLY against the tier ladder.
@@ -776,6 +840,7 @@ def _make_pitcher(
     throws = _roll_throws(rng, is_pitcher=True)
     return {
         "name": name,
+        "country": country,
         "position": "P",
         "is_pitcher": 1,
         "is_joker": 0,
@@ -854,32 +919,41 @@ def generate_players(
 
     players: list[dict] = []
 
+    def _hitter(pos: str, is_active: int) -> dict:
+        nm, country = _name()
+        return _make_hitter(rng, pos, is_active=is_active, name=nm, country=country)
+
+    def _pitcher(is_active: int) -> dict:
+        nm, country = _name()
+        return _make_pitcher(rng, is_active=is_active, name=nm, country=country)
+
     # ---- Active position players: 8 starting positions + 4 bench ----
     for pos in FIELDER_POSITIONS:
-        players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
+        players.append(_hitter(pos, is_active=1))
     # Active bench: 4 backups at high-rotation positions (catchers rest
     # a lot, middle infield rotates, CF backup is near-everyday).
     # No "UT" position — every bench guy carries a canonical position.
     for pos in ("CF", "SS", "2B", "C"):
-        players.append(_make_hitter(rng, pos, is_active=1, name=_name()))
+        players.append(_hitter(pos, is_active=1))
 
     # ---- Active DH/utility bats ----
     for _ in range(ACTIVE_DH):
-        players.append(_make_hitter(rng, "DH", is_active=1, name=_name()))
+        players.append(_hitter("DH", is_active=1))
 
     # ---- Active pitching staff (no role buckets) ----
     for _ in range(ACTIVE_PITCHERS):
-        players.append(_make_pitcher(rng, is_active=1, name=_name()))
+        players.append(_pitcher(is_active=1))
 
     # ---- Reserve pool: bench-level depth, promoted on injury ----
     # Round-robin one reserve at each canonical fielding position, then
-    # cycle if RESERVE_HITTERS exceeds 8.
+    # cycle if RESERVE_HITTERS exceeds 8. No "UT" — every reserve guy
+    # carries a canonical position.
     _RESERVE_POSITIONS = ("CF", "SS", "2B", "3B", "RF", "LF", "1B", "C")
     for i in range(RESERVE_HITTERS):
         pos = _RESERVE_POSITIONS[i % len(_RESERVE_POSITIONS)]
-        players.append(_make_hitter(rng, pos, is_active=0, name=_name()))
+        players.append(_hitter(pos, is_active=0))
     for _ in range(RESERVE_PITCHERS):
-        players.append(_make_pitcher(rng, is_active=0, name=_name()))
+        players.append(_pitcher(is_active=0))
 
     return players
 
@@ -970,10 +1044,11 @@ def _generate_draft_pool(
         target = int(round(n_teams * total_slots * _DRAFT_OVERSAMPLE))
         bucket: list[dict] = []
         for _ in range(target):
+            nm, country = name_picker()
             if pos == "P":
-                bucket.append(_make_pitcher(rng, is_active=0, name=name_picker()))
+                bucket.append(_make_pitcher(rng, is_active=0, name=nm, country=country))
             else:
-                bucket.append(_make_hitter(rng, pos, is_active=0, name=name_picker()))
+                bucket.append(_make_hitter(rng, pos, is_active=0, name=nm, country=country))
         pool[pos] = bucket
     return pool
 
@@ -1180,7 +1255,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     # Phase 3: persist drafted rosters + free-agent pool, and recompute
     # each team's org_strength from its actual roster.
     insert_sql = """INSERT INTO players
-        (team_id, name, position, is_pitcher, skill, speed,
+        (team_id, name, country, position, is_pitcher, skill, speed,
          pitcher_skill, stay_aggressiveness, contact_quality_threshold,
          archetype, pitcher_role, hard_contact_delta, hr_weight_bonus,
          age, stamina, is_active,
@@ -1189,10 +1264,11 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          defense_infield, defense_outfield, defense_catcher,
          baserunning, run_aggressiveness,
          work_ethic, work_habits, habit_cup)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     def _row(team_id_or_none, p: dict) -> tuple:
-        return (team_id_or_none, p["name"], p["position"], p["is_pitcher"],
+        return (team_id_or_none, p["name"], p.get("country", ""),
+                p["position"], p["is_pitcher"],
                 p["skill"], p["speed"], p["pitcher_skill"],
                 p["stay_aggressiveness"], p["contact_quality_threshold"],
                 p.get("archetype", ""), p.get("pitcher_role", ""),

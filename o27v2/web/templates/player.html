@@ -79,7 +79,7 @@
 {# ======================== HEADER ======================== #}
 <div class="panel panel-body mb-3" style="padding:14px 16px">
   <div class="d-flex flex-wrap align-items-baseline gap-3">
-    <h2 class="mb-0" style="font-size:1.6rem;font-weight:800">{{ player.name }}</h2>
+    <h2 class="mb-0" style="font-size:1.6rem;font-weight:800">{% if player.country %}<span class="player-flag" title="{{ player.country }}">{{ player.country | flag }}</span> {% endif %}{{ player.name }}</h2>
     {% if player.is_pitcher %}<span class="badge bg-info">PITCHER</span>{% endif %}
     <span class="text-secondary">{{ player.position }}</span>
     <a href="{{ url_for('team_detail', team_id=player.team_id) }}" class="team-abbrev" style="font-size:1rem">{{ player.team_abbrev }}</a>

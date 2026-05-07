@@ -1,19 +1,224 @@
 {
+  "_doc": [
+    "World-region groupings + named presets for the league name picker.",
+    "",
+    "A region either has flat first_keys/surname_keys (legacy shape) OR a list",
+    "of `subregions`. Subregions are the picker's atomic unit: when a draw lands",
+    "on a region with subregions, ONE subregion is chosen by weight and the",
+    "first name + surname are both drawn from THAT subregion's keys. This keeps",
+    "names culturally coherent — a Pakistani draw produces 'Babar Iqbal', not",
+    "'Babar Iyer' (which would happen if first/surname were sampled from the",
+    "concatenated South Asia pool).",
+    "",
+    "`country` (or, for legacy regions, `country_weights`) gives the ISO 3166-1",
+    "alpha-2 country code stored on the player row. The web UI converts it to",
+    "a flag emoji at render time.",
+    "",
+    "Presets are O27-thesis-shaped: the league launches in East Asia, then a",
+    "cricket-conversion pipeline floods the rosters with South Asian, Caribbean,",
+    "Australasian, African, Afghan and (most importantly) Malaysian players —",
+    "Malaysia being the structural growth market for the sport, the way Germany",
+    "is for football."
+  ],
   "regions": {
     "us": {
       "label": "USA",
+      "country": "US",
       "first_keys":   ["american_northeast", "american_south", "american_midwest",
                        "american_west", "american_texas_southwest", "black_american",
                        "asian_american"],
       "surname_keys": ["american_general", "black_american"]
     },
+    "canada": {
+      "label": "Canada",
+      "country": "CA",
+      "first_keys":   ["canadian_english", "canadian_french"],
+      "surname_keys": ["canadian_french", "american_general"]
+    },
     "latin_america": {
-      "label": "Latin America / Caribbean",
-      "first_keys":   ["latino_hispanic", "latin_american", "caribbean"],
-      "surname_keys": ["latino_hispanic", "latin_american", "caribbean"]
+      "label": "Latin America",
+      "country_weights": {
+        "DO": 0.30, "VE": 0.20, "CU": 0.15, "PR": 0.13,
+        "MX": 0.13, "CO": 0.05, "PA": 0.02, "NI": 0.02
+      },
+      "first_keys":   ["latino_hispanic", "latin_american"],
+      "surname_keys": ["latino_hispanic", "latin_american"]
+    },
+    "south_asia": {
+      "label": "South Asia (cricket pipeline)",
+      "subregions": [
+        { "weight": 0.20, "country": "IN",
+          "first_keys": ["indian_north"],
+          "surname_keys": ["indian_north"] },
+        { "weight": 0.10, "country": "IN",
+          "first_keys": ["indian_punjabi_sikh", "indian_north"],
+          "surname_keys": ["indian_punjabi_sikh"] },
+        { "weight": 0.16, "country": "IN",
+          "first_keys": ["indian_south"],
+          "surname_keys": ["indian_south_tamil", "indian_south_telugu", "indian_south_kannada"] },
+        { "weight": 0.13, "country": "IN",
+          "first_keys": ["indian_west"],
+          "surname_keys": ["indian_west_marathi", "indian_west_gujarati"] },
+        { "weight": 0.08, "country": "IN",
+          "first_keys": ["indian_east"],
+          "surname_keys": ["indian_east"] },
+        { "weight": 0.18, "country": "PK",
+          "first_keys": ["pakistani"],
+          "surname_keys": ["pakistani"] },
+        { "weight": 0.08, "country": "BD",
+          "first_keys": ["bangladeshi"],
+          "surname_keys": ["bangladeshi"] },
+        { "weight": 0.04, "country": "LK",
+          "first_keys": ["sri_lankan_sinhalese"],
+          "surname_keys": ["sri_lankan_sinhalese"] },
+        { "weight": 0.03, "country": "LK",
+          "first_keys": ["sri_lankan_tamil"],
+          "surname_keys": ["sri_lankan_tamil"] }
+      ]
+    },
+    "east_asia": {
+      "label": "East Asia",
+      "country_weights": { "JP": 0.45, "KR": 0.32, "TW": 0.15, "CN": 0.08 },
+      "first_keys":   ["east_asian"],
+      "surname_keys": ["chinese", "korean", "japanese", "east_asian"]
+    },
+    "anzac": {
+      "label": "Australia / New Zealand",
+      "subregions": [
+        { "weight": 0.50, "country": "AU",
+          "first_keys": ["anglo_australian"],
+          "surname_keys": ["anglo_australian"] },
+        { "weight": 0.05, "country": "AU",
+          "first_keys": ["aboriginal_australian", "anglo_australian"],
+          "surname_keys": ["anglo_australian"] },
+        { "weight": 0.30, "country": "NZ",
+          "first_keys": ["anglo_nz"],
+          "surname_keys": ["anglo_nz"] },
+        { "weight": 0.15, "country": "NZ",
+          "first_keys": ["maori", "anglo_nz"],
+          "surname_keys": ["maori", "anglo_nz"] }
+      ]
+    },
+    "pacific_islands": {
+      "label": "Pacific Islands",
+      "country_weights": { "FJ": 0.45, "WS": 0.25, "TO": 0.20, "PG": 0.10 },
+      "first_keys":   ["pacific_islander"],
+      "surname_keys": ["pacific_islander"]
+    },
+    "caribbean_cricket": {
+      "label": "Caribbean (Cricket Anglophone)",
+      "subregions": [
+        { "weight": 0.35, "country": "JM",
+          "first_keys": ["afro_caribbean"],
+          "surname_keys": ["afro_caribbean"] },
+        { "weight": 0.18, "country": "TT",
+          "first_keys": ["afro_caribbean"],
+          "surname_keys": ["afro_caribbean"] },
+        { "weight": 0.16, "country": "TT",
+          "first_keys": ["indo_caribbean"],
+          "surname_keys": ["indo_caribbean"] },
+        { "weight": 0.12, "country": "GY",
+          "first_keys": ["indo_caribbean"],
+          "surname_keys": ["indo_caribbean"] },
+        { "weight": 0.06, "country": "GY",
+          "first_keys": ["afro_caribbean"],
+          "surname_keys": ["afro_caribbean"] },
+        { "weight": 0.08, "country": "BB",
+          "first_keys": ["afro_caribbean"],
+          "surname_keys": ["afro_caribbean"] },
+        { "weight": 0.05, "country": "AG",
+          "first_keys": ["afro_caribbean"],
+          "surname_keys": ["afro_caribbean"] }
+      ]
+    },
+    "africa_cricket": {
+      "label": "Africa (Cricket Nations)",
+      "subregions": [
+        { "weight": 0.20, "country": "ZA",
+          "first_keys": ["afrikaner"],
+          "surname_keys": ["afrikaner"] },
+        { "weight": 0.13, "country": "ZA",
+          "first_keys": ["english_south_african", "anglo_australian"],
+          "surname_keys": ["english_south_african"] },
+        { "weight": 0.18, "country": "ZA",
+          "first_keys": ["zulu"],
+          "surname_keys": ["zulu"] },
+        { "weight": 0.10, "country": "ZA",
+          "first_keys": ["xhosa"],
+          "surname_keys": ["xhosa"] },
+        { "weight": 0.07, "country": "ZA",
+          "first_keys": ["indian_south_african", "indian_south"],
+          "surname_keys": ["indian_south_african"] },
+        { "weight": 0.06, "country": "ZW",
+          "first_keys": ["english_zimbabwean"],
+          "surname_keys": ["english_zimbabwean"] },
+        { "weight": 0.10, "country": "ZW",
+          "first_keys": ["shona"],
+          "surname_keys": ["shona"] },
+        { "weight": 0.04, "country": "ZW",
+          "first_keys": ["ndebele"],
+          "surname_keys": ["ndebele"] },
+        { "weight": 0.04, "country": "KE",
+          "first_keys": ["english_kenyan"],
+          "surname_keys": ["english_kenyan"] },
+        { "weight": 0.05, "country": "KE",
+          "first_keys": ["kikuyu"],
+          "surname_keys": ["kikuyu"] },
+        { "weight": 0.03, "country": "KE",
+          "first_keys": ["luo"],
+          "surname_keys": ["luo"] }
+      ]
+    },
+    "british_isles": {
+      "label": "Britain & Ireland",
+      "subregions": [
+        { "weight": 0.50, "country": "GB",
+          "first_keys": ["english_general"],
+          "surname_keys": ["english_general"] },
+        { "weight": 0.15, "country": "GB",
+          "first_keys": ["scottish"],
+          "surname_keys": ["scottish"] },
+        { "weight": 0.10, "country": "GB",
+          "first_keys": ["welsh"],
+          "surname_keys": ["welsh"] },
+        { "weight": 0.25, "country": "IE",
+          "first_keys": ["irish"],
+          "surname_keys": ["irish"] }
+      ]
+    },
+    "afghan_central_asia": {
+      "label": "Afghanistan / Central Asia",
+      "subregions": [
+        { "weight": 0.55, "country": "AF",
+          "first_keys": ["pashto"],
+          "surname_keys": ["pashto"] },
+        { "weight": 0.30, "country": "AF",
+          "first_keys": ["dari"],
+          "surname_keys": ["dari"] },
+        { "weight": 0.15, "country": "UZ",
+          "first_keys": ["uzbek"],
+          "surname_keys": ["uzbek"] }
+      ]
+    },
+    "malaysia": {
+      "label": "Malaysia (the structural growth market)",
+      "subregions": [
+        { "weight": 0.55, "country": "MY",
+          "first_keys": ["malay"],
+          "surname_keys": ["malay"] },
+        { "weight": 0.30, "country": "MY",
+          "first_keys": ["chinese_malaysian"],
+          "surname_keys": ["chinese_malaysian"] },
+        { "weight": 0.15, "country": "MY",
+          "first_keys": ["indian_malaysian"],
+          "surname_keys": ["indian_malaysian"] }
+      ]
     },
     "europe_western": {
       "label": "Western Europe",
+      "country_weights": {
+        "DE": 0.25, "FR": 0.20, "NL": 0.18, "IT": 0.15, "ES": 0.12, "PT": 0.10
+      },
       "first_keys":   ["uk_european", "irish_european", "french", "german",
                        "italian", "spanish", "dutch", "portuguese"],
       "surname_keys": ["uk_european", "irish", "french", "german",
@@ -21,80 +226,113 @@
     },
     "europe_eastern": {
       "label": "Eastern Europe",
+      "country_weights": { "PL": 0.40, "CZ": 0.20, "RU": 0.40 },
       "first_keys":   ["polish", "czech", "russian"],
       "surname_keys": ["polish", "czech", "russian"]
     },
     "nordic": {
       "label": "Nordic",
+      "country_weights": { "SE": 0.30, "FI": 0.30, "NO": 0.20, "DK": 0.20 },
       "first_keys":   ["nordic"],
       "surname_keys": ["nordic", "scandinavian"]
     },
-    "east_asia": {
-      "label": "East Asia",
-      "first_keys":   ["east_asian"],
-      "surname_keys": ["chinese", "korean", "japanese", "east_asian"]
-    },
     "southeast_asia": {
       "label": "Southeast Asia",
+      "country_weights": { "VN": 0.30, "PH": 0.25, "TH": 0.20, "ID": 0.15, "KH": 0.10 },
       "first_keys":   ["southeast_asian", "vietnamese", "cambodian"],
       "surname_keys": ["southeast_asian", "vietnamese", "filipino", "cambodian"]
     },
-    "south_asia": {
-      "label": "South Asia",
-      "first_keys":   ["indian"],
-      "surname_keys": ["indian"]
-    },
     "central_west_asia": {
       "label": "Central / West Asia / Middle East",
+      "country_weights": { "TR": 0.45, "SA": 0.20, "IR": 0.15, "EG": 0.10, "KZ": 0.10 },
       "first_keys":   ["central_asian", "turkish", "arabic"],
       "surname_keys": ["central_asian", "turkish", "arabic"]
     },
     "africa": {
       "label": "Sub-Saharan Africa",
+      "country_weights": { "NG": 0.40, "ET": 0.20, "GH": 0.15, "TZ": 0.10, "MG": 0.05, "MZ": 0.05, "AO": 0.05 },
       "first_keys":   ["african", "ethiopian", "east_african", "lusophone_african", "malagasy"],
       "surname_keys": ["african", "ethiopian", "east_african", "lusophone_african", "malagasy"]
-    },
-    "anzac_pacific": {
-      "label": "Australia / NZ / Pacific Islands",
-      "first_keys":   ["australian", "new_zealand", "pacific_islander"],
-      "surname_keys": ["australian", "new_zealand", "pacific_islander"]
-    },
-    "canada": {
-      "label": "Canada",
-      "first_keys":   ["canadian_english", "canadian_french"],
-      "surname_keys": ["canadian_french", "american_general"]
     }
   },
   "presets": {
     "americas_pro": {
-      "label": "Americas Pro (MLB-like)",
+      "label": "Americas Pro (MLB-like — pre-cricket-pipeline baseline)",
       "weights": {
         "us": 0.55, "latin_america": 0.28, "east_asia": 0.04,
-        "anzac_pacific": 0.03, "canada": 0.04, "europe_western": 0.03,
+        "anzac": 0.03, "canada": 0.04, "europe_western": 0.03,
         "africa": 0.02, "central_west_asia": 0.01
       }
     },
-    "global": {
-      "label": "Global",
+    "o27_year_1": {
+      "label": "O27 Year 1 (Launch — East Asia + legacy baseball pipelines)",
+      "_note": [
+        "Launch season: cricket-conversion academies announced but the player",
+        "pipeline hasn't matured. Roster mix is heavily MLB-shaped + a real",
+        "East-Asia presence (the launch market) and the first wave of cricket",
+        "early-adopters from South Asia, Australia, Caribbean, SA."
+      ],
       "weights": {
-        "us": 0.18, "latin_america": 0.14, "europe_western": 0.14,
-        "europe_eastern": 0.06, "nordic": 0.04, "east_asia": 0.10,
-        "southeast_asia": 0.07, "south_asia": 0.06, "central_west_asia": 0.06,
-        "africa": 0.07, "anzac_pacific": 0.05, "canada": 0.03
+        "us": 0.36, "latin_america": 0.22, "east_asia": 0.12,
+        "south_asia": 0.07, "anzac": 0.05, "caribbean_cricket": 0.05,
+        "africa_cricket": 0.03, "british_isles": 0.025,
+        "afghan_central_asia": 0.005, "malaysia": 0.01,
+        "canada": 0.04, "europe_western": 0.02
+      }
+    },
+    "o27_year_5": {
+      "label": "O27 Year 5 (Pipeline visible — academies producing pros)",
+      "_note": [
+        "Mid-pipeline: cricket academies in Pakistan, India, Caribbean, SA",
+        "are graduating their first wave of legitimate O27 pros. Malaysia",
+        "growth visible. North American share retreats."
+      ],
+      "weights": {
+        "us": 0.24, "latin_america": 0.18, "east_asia": 0.12,
+        "south_asia": 0.16, "anzac": 0.08, "caribbean_cricket": 0.08,
+        "africa_cricket": 0.05, "british_isles": 0.035,
+        "afghan_central_asia": 0.015, "malaysia": 0.025,
+        "canada": 0.025, "europe_western": 0.015
+      }
+    },
+    "o27_year_10": {
+      "label": "O27 Year 10 (Mature — full cricket-pipeline thesis)",
+      "_note": [
+        "Mature league: the cricket-conversion thesis has played out. South",
+        "Asia is the largest single feeder, Malaysia is the structural",
+        "growth market, and the league looks globally rooted instead of an",
+        "MLB sim with the rules filed off."
+      ],
+      "weights": {
+        "us": 0.18, "latin_america": 0.16, "east_asia": 0.12,
+        "south_asia": 0.22, "anzac": 0.10, "caribbean_cricket": 0.10,
+        "africa_cricket": 0.06, "british_isles": 0.04,
+        "afghan_central_asia": 0.02, "malaysia": 0.035,
+        "canada": 0.02, "europe_western": 0.005
+      }
+    },
+    "global": {
+      "label": "Global (even-handed mix)",
+      "weights": {
+        "us": 0.14, "latin_america": 0.12, "europe_western": 0.10,
+        "europe_eastern": 0.04, "nordic": 0.03, "east_asia": 0.10,
+        "southeast_asia": 0.05, "south_asia": 0.14, "central_west_asia": 0.04,
+        "africa": 0.05, "africa_cricket": 0.05, "anzac": 0.05,
+        "caribbean_cricket": 0.04, "british_isles": 0.03, "malaysia": 0.02
       }
     },
     "european": {
       "label": "European",
       "weights": {
-        "europe_western": 0.55, "europe_eastern": 0.20, "nordic": 0.15,
-        "central_west_asia": 0.05, "africa": 0.05
+        "europe_western": 0.45, "europe_eastern": 0.18, "nordic": 0.13,
+        "british_isles": 0.15, "central_west_asia": 0.05, "africa": 0.04
       }
     },
     "asian_pro": {
       "label": "East-Asia Pro",
       "weights": {
-        "east_asia": 0.65, "southeast_asia": 0.20, "us": 0.10,
-        "latin_america": 0.05
+        "east_asia": 0.65, "southeast_asia": 0.18, "us": 0.07,
+        "latin_america": 0.05, "malaysia": 0.05
       }
     },
     "nordic": {
