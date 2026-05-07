@@ -1100,7 +1100,9 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
             (home_score, away_score, winner_team_id,
              final_state.super_inning_number, seed, game_id),
         )
-        if winner_team_id is not None:
+        if winner_team_id is not None and not game.get("is_playoff"):
+            # Regular-season W-L only — playoff results are tracked on
+            # playoff_series rows, not on teams.wins/losses.
             loser_id = away_team_id if winner_team_id == home_team_id else home_team_id
             conn.execute("UPDATE teams SET wins = wins + 1 WHERE id = ?", (winner_team_id,))
             conn.execute("UPDATE teams SET losses = losses + 1 WHERE id = ?", (loser_id,))
@@ -1198,6 +1200,27 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     # Phase 9: Post-game injury draws + transaction logging
     # -----------------------------------------------------------------------
     _post_game_roster_processing(game_id, game_date, home_team_id, away_team_id, rng, seed)
+
+    # Phase 4: post-game playoff hook — if this game was part of a
+    # playoff series, update the series and (if decided) advance the
+    # bracket to the next round. winner_team_id is the same one written
+    # to the games row (engine emits "visitors"/"home", not "away").
+    if game.get("is_playoff"):
+        try:
+            from o27v2.playoffs import post_playoff_game
+            post_playoff_game({
+                "id":         game_id,
+                "series_id":  game.get("series_id"),
+                "winner_id":  winner_team_id,
+                "game_date":  game_date,
+            }, rng_seed=seed)
+        except Exception as e:
+            # Don't let a bracket bookkeeping bug crash the sim.
+            try:
+                from o27v2.web.app import app as _app
+                _app.logger.exception("post_playoff_game failed: %s", e)
+            except Exception:
+                pass
 
     return {
         "game_id": game_id,
@@ -1347,9 +1370,11 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
 
     Triggers the weekly Sunday match-day waiver sweep before any games
     on a Sunday date (idempotent — never runs twice for the same
-    Sunday).
+    Sunday). After the last regular-season game completes, initiates
+    the playoff bracket (idempotent).
     """
     from o27v2.waivers import maybe_run_sweep
+    from o27v2.playoffs import maybe_initiate as _maybe_init_playoffs
     games = db.fetchall(
         "SELECT id, game_date FROM games WHERE played = 0 ORDER BY game_date, id LIMIT ?", (n,)
     )
@@ -1368,6 +1393,10 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
             results.append(r)
         except Exception as e:
             results.append({"game_id": g["id"], "error": str(e)})
+    try:
+        _maybe_init_playoffs(rng_seed=seed_base)
+    except Exception as e:
+        results.append({"playoff_init_error": str(e)})
     return results
 
 
@@ -1534,26 +1563,55 @@ def simulate_through(target_date: str, seed_base: int | None = None, max_games: 
 
     Runs the weekly Sunday match-day sweep at every distinct Sunday
     encountered in the date range (idempotent — see o27v2/waivers.py).
+    Initiates the playoff bracket once the regular season is complete,
+    and re-queries games so newly-scheduled playoff games inside the
+    target window get simulated in the same call.
     """
     from o27v2.waivers import maybe_run_sweep
-    games = db.fetchall(
-        "SELECT id, game_date FROM games WHERE played = 0 AND game_date <= ? ORDER BY game_date, id LIMIT ?",
-        (target_date, max_games),
-    )
+    from o27v2.playoffs import maybe_initiate as _maybe_init_playoffs
+
     results: list[dict] = []
     seen_sunday: set[str] = set()
-    for i, g in enumerate(games):
-        if g["game_date"] not in seen_sunday:
-            seen_sunday.add(g["game_date"])
+    seen_game_ids: set[int] = set()
+    iterations_remaining = 50  # safety bound on the schedule-then-sim loop
+
+    while iterations_remaining > 0:
+        iterations_remaining -= 1
+        games = db.fetchall(
+            "SELECT id, game_date FROM games WHERE played = 0 AND game_date <= ? "
+            "AND id NOT IN ({}) ORDER BY game_date, id LIMIT ?".format(
+                ",".join(str(i) for i in seen_game_ids) if seen_game_ids else "0"
+            ),
+            (target_date, max_games),
+        )
+        if not games:
+            break
+        for i, g in enumerate(games):
+            seen_game_ids.add(g["id"])
+            if g["game_date"] not in seen_sunday:
+                seen_sunday.add(g["game_date"])
+                try:
+                    maybe_run_sweep(g["game_date"])
+                except Exception as e:
+                    results.append({"sweep_error": str(e), "date": g["game_date"]})
+            seed = None if seed_base is None else seed_base + len(seen_game_ids)
             try:
-                maybe_run_sweep(g["game_date"])
+                results.append(simulate_game(g["id"], seed=seed))
             except Exception as e:
-                results.append({"sweep_error": str(e), "date": g["game_date"]})
-        seed = None if seed_base is None else seed_base + i
+                results.append({"game_id": g["id"], "error": str(e)})
         try:
-            results.append(simulate_game(g["id"], seed=seed))
+            init_summary = _maybe_init_playoffs(rng_seed=seed_base)
+            if init_summary is None:
+                # No new playoff games to drain — only re-loop if a
+                # series-advance might have scheduled a game inside the
+                # target window. The post-game hook already handles that
+                # by inserting the next game into `games`, so we re-query.
+                pass
         except Exception as e:
-            results.append({"game_id": g["id"], "error": str(e)})
+            results.append({"playoff_init_error": str(e)})
+        # Loop again to pick up any newly-scheduled playoff games whose
+        # date falls within target_date. Safe because `seen_game_ids`
+        # prevents re-simulating already-played games.
     return results
 
 

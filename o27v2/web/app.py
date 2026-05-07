@@ -4012,6 +4012,52 @@ def transactions():
                            counts=counts)
 
 
+@app.route("/playoffs")
+def playoffs_view():
+    """Bracket + awards for the current season. Shows the field and
+    each round's series with current win counts and the champion when
+    the final concludes."""
+    from o27v2.playoffs import (
+        get_bracket, champion as _champion, compute_field,
+        playoffs_initiated, regular_season_complete,
+    )
+    from o27v2.awards import get_awards
+
+    bracket = get_bracket()
+    # Group by round for the template.
+    rounds: dict[int, list[dict]] = {}
+    for s in bracket:
+        rounds.setdefault(s["round_idx"], []).append(s)
+    rounds_sorted = sorted(rounds.items())
+
+    # Round names — count from the final backwards.
+    def _round_name(rounds_to_final: int) -> str:
+        return ["Final", "Semifinals", "Quarterfinals", "Wild Card"][
+            min(rounds_to_final, 3)]
+
+    # If playoffs haven't initiated yet, surface the projected field.
+    projected_field: list[dict] = []
+    if not playoffs_initiated() and not regular_season_complete():
+        try:
+            teams = db.fetchall(
+                "SELECT id, name, abbrev, league, division, wins, losses FROM teams"
+            )
+            projected_field = compute_field(teams)
+        except Exception:
+            projected_field = []
+
+    return _serve(
+        "playoffs.html",
+        rounds=rounds_sorted,
+        round_name=_round_name,
+        champion=_champion(),
+        awards=get_awards(),
+        projected_field=projected_field,
+        playoffs_initiated=playoffs_initiated(),
+        regular_season_complete=regular_season_complete(),
+    )
+
+
 @app.route("/free-agents")
 def free_agents():
     """Browse the free-agent pool. Players in this list have team_id NULL

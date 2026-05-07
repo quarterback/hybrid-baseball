@@ -109,7 +109,11 @@ CREATE TABLE IF NOT EXISTS games (
     wind_tier        TEXT DEFAULT 'neutral',
     humidity_tier    TEXT DEFAULT 'normal',
     precip_tier      TEXT DEFAULT 'none',
-    cloud_tier       TEXT DEFAULT 'clear'
+    cloud_tier       TEXT DEFAULT 'clear',
+    -- Playoff hookup. NULL `series_id` ⇒ regular-season game.
+    -- `is_playoff` is the cheap flag the UI / queries filter on.
+    series_id        INTEGER REFERENCES playoff_series(id),
+    is_playoff       INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS game_batter_stats (
@@ -335,6 +339,44 @@ CREATE TABLE IF NOT EXISTS season_pitching_leaders (
     oavg        REAL DEFAULT 0,   -- opponent batting average (H / (BF - BB))
     PRIMARY KEY (season_id, category, rank)
 );
+
+-- Phase 4: postseason bracket. One row per series (e.g. "1 vs 8 in WC
+-- round"). Created in waves as each round's pairings are determined.
+-- best_of is the series length; high_wins/low_wins track the standings;
+-- winner_team_id is set once one side hits ceil(best_of / 2) wins.
+CREATE TABLE IF NOT EXISTS playoff_series (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    season              INTEGER DEFAULT 1,
+    round_idx           INTEGER NOT NULL,        -- 0 = first round, increases toward final
+    rounds_to_final     INTEGER NOT NULL,        -- 0 = the final itself
+    bracket_position    INTEGER NOT NULL,        -- pairing slot within the round
+    high_seed           INTEGER NOT NULL,        -- numeric seed (1..N)
+    low_seed            INTEGER,                 -- NULL when bye
+    high_seed_team_id   INTEGER NOT NULL REFERENCES teams(id),
+    low_seed_team_id    INTEGER          REFERENCES teams(id),  -- NULL on bye
+    best_of             INTEGER NOT NULL,        -- 3, 5, 7
+    high_wins           INTEGER DEFAULT 0,
+    low_wins            INTEGER DEFAULT 0,
+    winner_team_id      INTEGER REFERENCES teams(id),
+    started_at          TEXT,
+    ended_at            TEXT
+);
+
+-- Phase 4: regular-season + WS-MVP awards. One row per (category, season)
+-- so a fresh league can re-award without colliding with prior seasons'
+-- archived rows. Player ID denormalised to name/abbrev so the row
+-- survives roster wipes between seasons.
+CREATE TABLE IF NOT EXISTS season_awards (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    season        INTEGER DEFAULT 1,
+    category      TEXT NOT NULL,        -- mvp / cy_young / roy / ws_mvp
+    league        TEXT,                 -- AL / NL / MLB / "" — for split awards
+    player_id     INTEGER REFERENCES players(id),
+    player_name   TEXT,
+    team_abbrev   TEXT,
+    headline_stat TEXT,                 -- one-line stat blurb for the UI
+    awarded_at    TEXT
+);
 """
 
 
@@ -401,6 +443,18 @@ def init_db() -> None:
         for col, defval in phase9_int + task65_int:
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Phase 4: playoff hookup on games. Older DBs need the columns
+        # added without losing data; new DBs get them via SCHEMA below.
+        for col, sql_type, defval in [
+            ("series_id",  "INTEGER", "NULL"),
+            ("is_playoff", "INTEGER", "0"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE games ADD COLUMN {col} {sql_type} DEFAULT {defval}")
                 conn.commit()
             except Exception:
                 pass
@@ -648,7 +702,9 @@ def drop_all() -> None:
             DROP TABLE IF EXISTS game_batter_stats;
             DROP TABLE IF EXISTS team_phase_outs;
             DROP TABLE IF EXISTS sim_meta;
+            DROP TABLE IF EXISTS season_awards;
             DROP TABLE IF EXISTS games;
+            DROP TABLE IF EXISTS playoff_series;
             DROP TABLE IF EXISTS players;
             DROP TABLE IF EXISTS teams;
         """)
