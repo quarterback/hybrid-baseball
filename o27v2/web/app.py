@@ -85,31 +85,54 @@ def inject_sim_state():
 # looking at a fresh deploy or just a restarted image.
 
 def _resolve_app_version() -> dict:
+    """Resolve the running build's short SHA without requiring `git` to be
+    on the container's PATH. Reads `.git/HEAD` directly — works in
+    `python:3.12-slim` where the git binary isn't installed."""
     sha   = os.environ.get("APP_VERSION") or ""
     dirty = False
     if not sha:
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        try:
+            head_path = os.path.join(repo_root, ".git", "HEAD")
+            with open(head_path) as f:
+                head = f.read().strip()
+            if head.startswith("ref:"):
+                ref = head.split(" ", 1)[1].strip()
+                # Try the loose ref file first; fall back to packed-refs if
+                # the branch was packed by the deploy step.
+                ref_path = os.path.join(repo_root, ".git", ref)
+                if os.path.exists(ref_path):
+                    with open(ref_path) as f:
+                        sha = f.read().strip()
+                else:
+                    packed = os.path.join(repo_root, ".git", "packed-refs")
+                    if os.path.exists(packed):
+                        with open(packed) as f:
+                            for line in f:
+                                line = line.strip()
+                                if line.endswith(" " + ref):
+                                    sha = line.split(" ", 1)[0]
+                                    break
+            else:
+                # Detached HEAD — full SHA written directly.
+                sha = head
+            sha = sha[:7] if sha else ""
+        except Exception:
+            sha = ""
+
+        # Best-effort dirty check via `git status --porcelain` (only if git
+        # is actually available — we don't want to fail the page render).
         try:
             import subprocess
-            sha = subprocess.check_output(
-                ["git", "rev-parse", "--short", "HEAD"],
-                cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            status = subprocess.check_output(
+                ["git", "status", "--porcelain"],
+                cwd=repo_root,
                 stderr=subprocess.DEVNULL,
                 timeout=2,
             ).decode().strip()
-            try:
-                # Non-empty `git status --porcelain` means uncommitted changes
-                # in the running image — useful for catching "i forgot to push".
-                status = subprocess.check_output(
-                    ["git", "status", "--porcelain"],
-                    cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                    stderr=subprocess.DEVNULL,
-                    timeout=2,
-                ).decode().strip()
-                dirty = bool(status)
-            except Exception:
-                pass
+            dirty = bool(status)
         except Exception:
-            sha = "dev"
+            pass
     return {"sha": sha or "dev", "dirty": dirty}
 
 
