@@ -449,6 +449,52 @@ def _db_team_to_engine(
     starting_fielders = list(fielders[:8])
     bench_fielders = list(fielders[8:])
 
+    # Phase 5e: habit-bench pass. Fires BEFORE the rest-day pass so a
+    # cold-cup starter can be swapped for a hot-cup bench fielder of
+    # comparable skill before the manager's rest-day logic considers
+    # the new lineup. Only fires when:
+    #   - starter's habit_cup is below the slump threshold (0.30),
+    #   - a bench fielder is within 6 grade points of the starter's
+    #     composite hitting score (so we don't bench a stud for a
+    #     scrub just because their cup happened to crash),
+    #   - that bench fielder's cup is meaningfully higher.
+    # Capped at one swap per game to avoid lineup churn. Cup resets
+    # at off-season so no player gets permanently buried by an early
+    # bad streak.
+    _HABIT_BENCH_CUP_THRESHOLD  = 0.30
+    _HABIT_BENCH_SKILL_TOLERANCE = 6.0   # _bat_score grade points
+    _HABIT_BENCH_CUP_DELTA       = 0.30
+
+    def _try_habit_bench():
+        if not bench_fielders:
+            return
+        # Walk starters slump-first so the worst cup gets the swap if
+        # only one is available.
+        starters_by_cup = sorted(
+            list(enumerate(starting_fielders)),
+            key=lambda iv: float(getattr(iv[1], "habit_cup", 0.5)),
+        )
+        for idx, starter in starters_by_cup:
+            starter_cup = float(getattr(starter, "habit_cup", 0.5))
+            if starter_cup >= _HABIT_BENCH_CUP_THRESHOLD:
+                return  # remaining starters all have healthy cups
+            starter_score = _bat_score(starter)
+            candidates = [
+                pl for pl in bench_fielders
+                if abs(_bat_score(pl) - starter_score) <= _HABIT_BENCH_SKILL_TOLERANCE
+                and float(getattr(pl, "habit_cup", 0.5)) >= starter_cup + _HABIT_BENCH_CUP_DELTA
+            ]
+            if not candidates:
+                continue
+            # Hottest cup among comparable bench guys.
+            replacement = max(candidates,
+                              key=lambda pl: float(getattr(pl, "habit_cup", 0.5)))
+            starting_fielders[idx] = replacement
+            bench_fielders.remove(replacement)
+            bench_fielders.append(starter)
+            return  # one swap per game
+    _try_habit_bench()
+
     # Rest-day pass: rotate UT bench bats in for regulars based on the
     # manager's bench_usage tendency, age, position (catchers rest more),
     # and consecutive starts (compounds after 5 days). Capped at 2 rests
