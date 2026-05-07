@@ -332,8 +332,11 @@
   <div class="panel-head">
     <span>BaseRuns · sequencing luck on offense and defense</span>
     <span class="ms-auto sub">{{ base_runs.n_teams }} teams ·
-      league re-center: B<sub>off</sub> ×<span class="num">{{ base_runs.b_scale_offense }}</span>,
-      B<sub>def</sub> ×<span class="num">{{ base_runs.b_scale_defense }}</span>
+      fitted B = (<span class="num fw-bold">{{ base_runs.fitted_coeffs[0] }}</span>·TB
+      <span class="num fw-bold">{{ '%+.3f' | format(base_runs.fitted_coeffs[1]) }}</span>·H
+      <span class="num fw-bold">{{ '%+.3f' | format(base_runs.fitted_coeffs[2]) }}</span>·HR
+      <span class="num fw-bold">{{ '%+.3f' | format(base_runs.fitted_coeffs[3]) }}</span>·(BB+HBP))
+      vs MLB (1.4·TB −0.6·H −3·HR +0.1·(BB+HBP)) · SSE cut {{ base_runs.improvement_pct }}%
     </span>
   </div>
   <div class="panel-body">
@@ -346,18 +349,29 @@
       offenses it gives sequencing luck on defense; the net is a clean
       "runs of cluster luck" figure that complements xwOBA (event-level
       luck) and the Pythag k* residual (W%-from-RD curvature).
+      Default coefficients are MLB-fit for ~9 R/G; O27 sits at ~22 R/G,
+      so we additionally refit all four B coefficients via joint
+      coordinate-descent (analogous to Pythag's k* refit). The fitted
+      luck column is the cleaner sequencing read; the gap between
+      default and fitted shows how much of the apparent "luck" was
+      actually environment shape mis-fit.
     </div>
     <div class="table-responsive">
       <table class="table dense-table sortable">
         <thead>
           <tr>
-            <th>Tm</th>
-            <th class="num">RS</th>
-            <th class="num">RS<sub>BsR</sub></th>
-            <th class="num">Off luck</th>
-            <th class="num">RA</th>
-            <th class="num">RA<sub>BsR</sub></th>
-            <th class="num">Def luck</th>
+            <th rowspan="2">Tm</th>
+            <th class="num" rowspan="2">RS</th>
+            <th class="num" rowspan="2">RA</th>
+            <th class="num text-center" colspan="3">MLB-default coeffs</th>
+            <th class="num text-center" colspan="3">Refit coeffs (O27)</th>
+          </tr>
+          <tr>
+            <th class="num">Off</th>
+            <th class="num">Def</th>
+            <th class="num">Net</th>
+            <th class="num">Off</th>
+            <th class="num">Def</th>
             <th class="num fw-bold">Net</th>
           </tr>
         </thead>
@@ -366,20 +380,30 @@
           <tr>
             <td><a class="team-abbrev" href="{{ url_for('team_detail', team_id=t.team_id) }}">{{ t.abbrev }}</a></td>
             <td class="num">{{ t.rs }}</td>
-            <td class="num">{{ '%.1f' | format(t.rs_pred) }}</td>
-            <td class="num"
-                style="color:{% if t.bsr_off > 5 %}var(--good){% elif t.bsr_off < -5 %}var(--bad){% else %}inherit{% endif %}">
-              {{ '%+.1f' | format(t.bsr_off) }}
-            </td>
             <td class="num">{{ t.ra }}</td>
-            <td class="num">{{ '%.1f' | format(t.ra_pred) }}</td>
             <td class="num"
-                style="color:{% if t.bsr_def > 5 %}var(--bad){% elif t.bsr_def < -5 %}var(--good){% else %}inherit{% endif %}">
-              {{ '%+.1f' | format(t.bsr_def) }}
+                style="color:{% if t.bsr_off_def > 5 %}var(--good){% elif t.bsr_off_def < -5 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_off_def) }}
+            </td>
+            <td class="num"
+                style="color:{% if t.bsr_def_def > 5 %}var(--bad){% elif t.bsr_def_def < -5 %}var(--good){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_def_def) }}
+            </td>
+            <td class="num"
+                style="color:{% if t.bsr_total_def > 8 %}var(--good){% elif t.bsr_total_def < -8 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_total_def) }}
+            </td>
+            <td class="num"
+                style="color:{% if t.bsr_off_fit > 5 %}var(--good){% elif t.bsr_off_fit < -5 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_off_fit) }}
+            </td>
+            <td class="num"
+                style="color:{% if t.bsr_def_fit > 5 %}var(--bad){% elif t.bsr_def_fit < -5 %}var(--good){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_def_fit) }}
             </td>
             <td class="num fw-bold"
-                style="color:{% if t.bsr_total > 8 %}var(--good){% elif t.bsr_total < -8 %}var(--bad){% else %}inherit{% endif %}">
-              {{ '%+.1f' | format(t.bsr_total) }}
+                style="color:{% if t.bsr_total_fit > 8 %}var(--good){% elif t.bsr_total_fit < -8 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_total_fit) }}
             </td>
           </tr>
           {% endfor %}
@@ -387,12 +411,14 @@
       </table>
     </div>
     <div class="text-secondary small mt-1">
-      Off luck = RS − RS<sub>BsR</sub> (positive = clustered hits well).
-      Def luck = RA − RA<sub>BsR</sub> (positive = opponents clustered against
-      you, i.e. unlucky on D). Net = Off − Def. B-coefficients are MLB-fit;
-      we re-center so league sums match, then residuals reflect pure
-      within-league sequencing variance. A B-coefficient *shape* refit
-      (analogous to the Pythag k* refit) is a worthwhile follow-up.
+      Sorted by |Net (refit)|. Off = RS − RS<sub>BsR</sub> (positive = clustered hits well).
+      Def = RA − RA<sub>BsR</sub> (positive = opponents clustered against
+      you — unlucky on D). Net = Off − Def. Both passes re-center to
+      league means before residualising, so columns are directly
+      comparable. The refit fits all four B coefficients (TB, H, HR,
+      BB+HBP weights) jointly across offense and defense via coordinate-
+      descent ternary search — 4 parameters from 60 datapoints (30 teams ×
+      2 sides), warm-started from MLB defaults.
     </div>
   </div>
 </div>
