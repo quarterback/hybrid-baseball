@@ -32,8 +32,8 @@
   {% if config_summary %}
   <div class="small text-secondary">
     Config: <strong>{{ config_summary.keepers_per_team }}</strong> keepers/team
-      &nbsp;·&nbsp; <strong>${{ config_summary.team_purse }}</strong> purse
-      &nbsp;·&nbsp; min bid <strong>${{ config_summary.min_bid }}</strong>
+      &nbsp;·&nbsp; {{ config_summary.team_purse | money }} purse
+      &nbsp;·&nbsp; min bid {{ config_summary.min_bid | money }}
   </div>
   {% endif %}
 </div>
@@ -74,8 +74,8 @@
                 <span class="text-secondary">unsold</span>
               {% endif %}
             </td>
-            <td class="num fw-bold">{% if r.winning_bid %}${{ r.winning_bid }}{% else %}—{% endif %}</td>
-            <td class="num text-secondary">{% if r.second_bid %}${{ r.second_bid }}{% else %}—{% endif %}</td>
+            <td class="num fw-bold">{% if r.winning_bid %}{{ r.winning_bid | money }}{% else %}—{% endif %}</td>
+            <td class="num text-secondary">{% if r.second_bid %}{{ r.second_bid | money }}{% else %}—{% endif %}</td>
           </tr>
         {% endfor %}
       </tbody>

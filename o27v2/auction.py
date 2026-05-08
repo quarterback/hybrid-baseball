@@ -59,8 +59,9 @@ CREATE TABLE IF NOT EXISTS auction_results (
     player_id   INTEGER NOT NULL REFERENCES players(id),
     player_overall INTEGER,                    -- snapshot at auction time
     winner_team_id INTEGER REFERENCES teams(id),  -- NULL = unsold
-    winning_bid INTEGER,
-    second_bid  INTEGER,
+    winning_bid INTEGER,                       -- the winner's max bid
+    second_bid  INTEGER,                       -- the runner-up's bid (Vickrey reference)
+    price       INTEGER,                       -- the realised clearing price (Vickrey)
     bid_round   INTEGER NOT NULL DEFAULT 1
 );
 """
@@ -87,7 +88,11 @@ def init_auction_schema() -> None:
     db.execute(_SCHEMA_LOT_BIDS)
     # Idempotent migrations for older auction_results rows that pre-date
     # the live-auction columns.
-    for col_def in ("lot_order INTEGER", "player_overall INTEGER"):
+    for col_def in (
+        "lot_order INTEGER",
+        "player_overall INTEGER",
+        "price INTEGER",
+    ):
         try:
             db.execute(f"ALTER TABLE auction_results ADD COLUMN {col_def}")
         except Exception:
@@ -157,23 +162,33 @@ def _team_position_need(team_id: int, position: str,
     return max(0, target - have)
 
 
+# Bid base in guilders per overall point. With a 78-overall mega-star
+# this lands at ƒ39 cr × need_mult (≤1.5) × noise (≤1.15) ≈ ƒ67 cr max
+# bid; Vickrey collapses that to a clearing price around ƒ45-55 cr —
+# the "ƒ50-crore signing" headline tier on a ƒ100-cr team purse.
+BID_BASE_PER_OVERALL: int = 50 * 100_000  # 50 lakh = ƒ50,00,000
+
+
 def _team_bid(player: dict, team_id: int, purse_remaining: int,
-              n_keepers: int, rng: random.Random) -> int:
-    """Compute a single team's private valuation for a player.
+              n_keepers: int, rng: random.Random,
+              *, min_bid: int) -> int:
+    """Compute a single team's private valuation for a player, in
+    guilders.
 
     Formula:
-      base_value      = overall * scale            ($1 per grade-pt × scale)
+      base_value      = overall × BID_BASE_PER_OVERALL
       need_multiplier = 1.0 + 0.15 × position_need (capped at 1.5)
       noise           = uniform(0.85, 1.15)
       max_bid         = floor(base × need_mult × noise)
 
-    The team will not exceed `purse_remaining // (slots_needed)` so it
-    leaves money for other roster needs. This produces the IPL-shaped
-    distribution where the top players spike high and the depth players
+    The team won't overspend relative to remaining slot needs — it
+    reserves at least `min_bid` per remaining slot so the rest of the
+    roster can clear without bricking. Produces the IPL-shaped
+    distribution where the top players spike high and the depth lots
     clear at floor.
     """
     overall = _player_overall(player)
-    base = overall * 5  # $250-$400 range for star grades
+    base = overall * BID_BASE_PER_OVERALL
 
     is_pitcher = bool(player.get("is_pitcher"))
     position = player.get("position", "P" if is_pitcher else "DH")
@@ -183,10 +198,8 @@ def _team_bid(player: dict, team_id: int, purse_remaining: int,
     noise = rng.uniform(0.85, 1.15)
     max_bid = int(base * need_mult * noise)
 
-    # Don't overspend relative to remaining slot needs. Reserve at least
-    # 10 per remaining slot to avoid bricking the rest of the roster.
     remaining_slots = max(1, ROSTER_TARGET - n_keepers)
-    cap = max(10, purse_remaining - 10 * (remaining_slots - 1))
+    cap = max(min_bid, purse_remaining - min_bid * (remaining_slots - 1))
     return max(0, min(max_bid, cap))
 
 
@@ -225,8 +238,11 @@ def apply_auction(
         return {"ok": False, "reason": "auction disabled in config"}
 
     n_keepers = int(cfg_a.get("keepers_per_team", 3))
-    purse_init = int(cfg_a.get("team_purse", 1000))
-    min_bid = int(cfg_a.get("min_bid", 10))
+    # Defaults are guilder-era: 100 cr per team, 50 lakh min-bid.
+    # See `BID_BASE_PER_OVERALL` for the per-grade scaling that ties
+    # the bid distribution to this purse.
+    purse_init = int(cfg_a.get("team_purse", 100 * 1_00_00_000))   # 100 cr
+    min_bid    = int(cfg_a.get("min_bid",       50 * 1_00_000))    # 50 lakh
 
     if season is None:
         row = db.fetchone(
@@ -314,7 +330,8 @@ def apply_auction(
             if purse[tid] < min_bid:
                 continue
             bid = _team_bid(player, tid, purse[tid],
-                            n_keepers + won_so_far, rng)
+                            n_keepers + won_so_far, rng,
+                            min_bid=min_bid)
             if bid >= min_bid:
                 bids.append((bid, tid))
 
@@ -335,8 +352,8 @@ def apply_auction(
             db.execute(
                 "INSERT INTO auction_results "
                 "(season, lot_order, player_id, player_overall, "
-                " winner_team_id, winning_bid, second_bid) "
-                "VALUES (?, ?, ?, ?, NULL, NULL, NULL)",
+                " winner_team_id, winning_bid, second_bid, price) "
+                "VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL)",
                 (season, lot_order, player["id"], player_overall),
             )
             log.append({
@@ -368,10 +385,10 @@ def apply_auction(
         db.execute(
             "INSERT INTO auction_results "
             "(season, lot_order, player_id, player_overall, "
-            " winner_team_id, winning_bid, second_bid) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " winner_team_id, winning_bid, second_bid, price) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (season, lot_order, player["id"], player_overall,
-             winner_tid, winner_bid, second),
+             winner_tid, winner_bid, second, price),
         )
         log.append({
             "player_id":     player["id"],
@@ -522,17 +539,17 @@ def get_live_auction(season: int | None = None) -> dict | None:
 
     # Stage / montage split.
     def _shape(r: dict) -> dict:
-        # Vickrey price: max(min_bid, second + 1). We don't store min_bid
-        # here, but we can infer the realised price as min(winning_bid,
-        # max(second + 1, 10)) when second is set, else min_bid floor.
         winning = r["winning_bid"]
         second  = r["second_bid"]
-        if winning is None:
-            price = None
-        elif second is None:
-            price = winning
-        else:
-            price = min(winning, max(10, second + 1))
+        # Prefer the persisted clearing price; fall back to the Vickrey
+        # reconstruction for older auction_results rows that pre-date
+        # the `price` column. The fallback uses winning as the floor
+        # (rather than a hardcoded magic number) since `winning >=
+        # min_bid` is invariant of the auction loop.
+        price = r["price"] if r["price"] is not None else (
+            None if winning is None else
+            (winning if second is None else min(winning, second + 1))
+        )
         return {
             "lot_order":      r["lot_order"],
             "player_id":      r["player_id"],
