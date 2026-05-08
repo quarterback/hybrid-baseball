@@ -14,37 +14,37 @@ Pipeline:
   2. Per-batter aggregate: replay each batter's BIP events with the
      expected weight, plus BB/HBP from game_batter_stats. Divide by PA.
 
-Linear weights match _aggregate_batter_rows() in o27v2/web/app.py:
-  BB 0.72, HBP 0.74, 1B 0.95, 2B 1.30, 3B 1.70, HR 2.05.
+Linear weights are loaded dynamically from
+`o27v2.analytics.linear_weights.derive_linear_weights` so this module
+and `_aggregate_batter_rows` in o27v2/web/app.py stay in sync.
 """
 from __future__ import annotations
 from collections import defaultdict
 
 from o27v2 import db
+from o27v2.analytics.linear_weights import derive_linear_weights
 
 
-_WOBA_BB  = 0.72
-_WOBA_HBP = 0.74
-_WOBA_1B  = 0.95
-_WOBA_2B  = 1.30
-_WOBA_3B  = 1.70
-_WOBA_HR  = 2.05
+def _woba_weights() -> dict:
+    return derive_linear_weights()["woba_weights"]
 
 
-def _bip_woba_points(hit_type: str | None, was_stay: int, stay_credited: int) -> float:
-    """wOBA points credited for one BIP event."""
+def _bip_woba_points(weights: dict,
+                     hit_type: str | None,
+                     was_stay: int, stay_credited: int) -> float:
+    """wOBA points credited for one BIP event under the given weights."""
     if was_stay and stay_credited:
-        return _WOBA_1B   # stay-credited hit ≈ single
+        return weights["1B"]    # stay-credited hit ≈ single
     if was_stay and not stay_credited:
-        return 0.0        # stay event without credit (auto-out)
+        return 0.0              # stay event without credit (auto-out)
     if hit_type in ("hr", "home_run"):
-        return _WOBA_HR
+        return weights["HR"]
     if hit_type == "triple":
-        return _WOBA_3B
+        return weights["3B"]
     if hit_type == "double":
-        return _WOBA_2B
+        return weights["2B"]
     if hit_type in ("single", "infield_single"):
-        return _WOBA_1B
+        return weights["1B"]
     # error / fielders_choice / ground_out / fly_out / line_out / stay_*
     # outs: 0 weight
     return 0.0
@@ -61,6 +61,7 @@ def _quality_table() -> dict[str, dict]:
             None:     {...},   # legacy / unknown quality bucket
         }
     """
+    weights = _woba_weights()
     rows = db.fetchall(
         """
         SELECT quality, hit_type, was_stay, stay_credited, COUNT(*) AS n
@@ -73,7 +74,7 @@ def _quality_table() -> dict[str, dict]:
     counts: dict[str | None, int]  = defaultdict(int)
     for r in rows:
         n = r["n"]
-        wpts = _bip_woba_points(r["hit_type"], r["was_stay"], r["stay_credited"])
+        wpts = _bip_woba_points(weights, r["hit_type"], r["was_stay"], r["stay_credited"])
         sums[r["quality"]]   += wpts * n
         counts[r["quality"]] += n
     out = {}
@@ -101,7 +102,8 @@ def build_xwoba_table(min_pa: int = 162) -> dict:
             "league_xwoba":  float,
         }
     """
-    qtable = _quality_table()
+    weights   = _woba_weights()
+    qtable    = _quality_table()
     bip_xwoba = {q: v["xwoba_per_bip"] for q, v in qtable.items()}
 
     bip_rows = db.fetchall(
@@ -127,9 +129,9 @@ def build_xwoba_table(min_pa: int = 162) -> dict:
         q = r["quality"]
         # Actual: rebuild from event mix
         actual_pts[pid] += (
-            _WOBA_HR * r["hr"] + _WOBA_3B * r["d3"] +
-            _WOBA_2B * r["d2"] + _WOBA_1B * r["d1"] +
-            _WOBA_1B * r["stay_h"]
+            weights["HR"] * r["hr"] + weights["3B"] * r["d3"] +
+            weights["2B"] * r["d2"] + weights["1B"] * r["d1"] +
+            weights["1B"] * r["stay_h"]
         )
         bip_count[pid] += r["n_bip"]
         expected_pts[pid] += bip_xwoba.get(q, 0.0) * r["n_bip"]
@@ -157,8 +159,8 @@ def build_xwoba_table(min_pa: int = 162) -> dict:
             continue
         bb  = r["bb"]  or 0
         hbp = r["hbp"] or 0
-        actual  = actual_pts.get(pid, 0.0)   + _WOBA_BB * bb + _WOBA_HBP * hbp
-        expect  = expected_pts.get(pid, 0.0) + _WOBA_BB * bb + _WOBA_HBP * hbp
+        actual  = actual_pts.get(pid, 0.0)   + weights["BB"] * bb + weights["HBP"] * hbp
+        expect  = expected_pts.get(pid, 0.0) + weights["BB"] * bb + weights["HBP"] * hbp
         woba    = actual  / pa
         xwoba   = expect  / pa
 

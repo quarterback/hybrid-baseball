@@ -750,17 +750,18 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         b["sb_pct"] = (sb / attempts) if attempts else 0.0
 
         # --- O27-native sabermetrics ---
-        # wOBA with O27-tuned linear weights, PA-denominated. 1B and BB
-        # nudged up vs MLB because the stay mechanic lets baserunners
-        # advance more freely on singles and walks, raising those events'
-        # run-value contribution. HR weight slightly trimmed because
-        # runners are already moving easily under stays.
-        # Denominator is PA (NOT AB+BB+HBP) since each PA represents one
-        # opportunity; stays inside an AB are separate PAs.
+        # wOBA with linear weights empirically derived from the league's
+        # RE matrix (see `o27v2.analytics.linear_weights`), normalized so
+        # league wOBA == league OBP. Walks gain value vs MLB because the
+        # bases are fuller more often in 22 R/G; HR loses relative value
+        # because singles + walks already clear them. Denominator is PA
+        # (NOT AB+BB+HBP) since each PA represents one opportunity;
+        # stays inside an AB are separate PAs.
+        ww = _linear_weights()["woba_weights"]
         singles = h - d2 - d3 - hr
         woba_num = (
-            0.72 * bb + 0.74 * hbp + 0.95 * singles +
-            1.30 * d2 + 1.70 * d3  + 2.05 * hr
+            ww["BB"] * bb + ww["HBP"] * hbp + ww["1B"] * singles +
+            ww["2B"] * d2 + ww["3B"]  * d3  + ww["HR"] * hr
         )
         b["woba"] = (woba_num / pa) if pa else 0.0
 
@@ -836,26 +837,58 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         b["fld_pct"] = (po_v / (po_v + e_v)) if (po_v + e_v) > 0 else None
 
 
+_LINEAR_WEIGHTS_CACHE: dict | None = None
+
+
+def _linear_weights() -> dict:
+    """Lazy cache for `derive_linear_weights()` — one DB walk per process.
+
+    Recomputed only on `invalidate_linear_weights()` (called after any
+    sim that adds games). The output drives both the wOBA weights in
+    `_aggregate_batter_rows` and the Game Score coefficients in
+    `_pitcher_game_score`, so consumers see consistent league-derived
+    constants.
+    """
+    global _LINEAR_WEIGHTS_CACHE
+    if _LINEAR_WEIGHTS_CACHE is None:
+        from o27v2.analytics.linear_weights import derive_linear_weights
+        _LINEAR_WEIGHTS_CACHE = derive_linear_weights()
+    return _LINEAR_WEIGHTS_CACHE
+
+
+def invalidate_linear_weights() -> None:
+    """Drop the cached linear-weights table — call after sim writes."""
+    global _LINEAR_WEIGHTS_CACHE
+    _LINEAR_WEIGHTS_CACHE = None
+
+
 def _pitcher_game_score(
-    outs: int, k: int, h: int, er: int, uer: int, bb: int, hr: int, fo: int,
+    outs: float, k: float, h: float, er: float, uer: float,
+    bb: float, hr: float, fo: float,
 ) -> float:
     """Per-appearance Game Score for an O27 pitcher row.
 
-    Locked formula (with FO bonus):
-        50 + outs + 2·max(0, K - 3) - 2H - 4ER - 2UER - BB - 4HR + 1·fo_induced
-    Clamped to [0, 100]. Foul-outs are O27-cheap outs (the 3-foul rule)
-    and earn their own bonus on top of the implicit +outs credit.
+    Coefficients are O27-empirical: each penalty/bonus equals the event's
+    average run-prevention value (derived from the RE matrix in
+    `linear_weights.derive_linear_weights`), scaled at 1 GSc point ≈ 0.5
+    runs (MLB convention preserved). The base constant is auto-tuned so
+    league-mean starter GSc ≈ 50 in this run environment.
+
+    Result is clamped to [0, 100]. The HR penalty is the *additional*
+    cost beyond a generic non-HR hit, since `H` already absorbs the
+    average-hit penalty.
     """
+    c = _linear_weights()["gsc_coeffs"]
     score = (
-        50
-        + outs
-        + 2 * max(0, k - 3)
-        - 2 * h
-        - 4 * er
-        - 2 * uer
-        - bb
-        - 4 * hr
-        + fo
+        c["base"]
+        + c["out"]         * outs
+        + c["K_over_out"]  * k
+        + c["FO_over_out"] * fo
+        - c["H"]           * h
+        - c["HR_over_H"]   * hr
+        - c["BB"]          * bb
+        - c["ER"]          * er
+        - c["UER"]         * uer
     )
     if score < 0:
         return 0.0
@@ -3550,21 +3583,57 @@ def analytics():
     if games_played == 0:
         return _serve("analytics.html",
                       games_played=0, re_table=None, re_curve=None,
-                      xwoba=None, pythag=None)
+                      xwoba=None, pythag=None, base_runs=None,
+                      lin_w=None, gsc_summary=None)
 
     from o27v2.analytics import (
         build_re_table, build_re_by_outs_remaining,
         build_xwoba_table, refit_pythag_exponent,
+        build_base_runs_table,
     )
 
     # Scale qualifier to season completeness: full-season convention is
     # 162 PA (matches /leaders); 2,430 / 15 = 162.
     min_pa = max(20, games_played // 15)
 
-    re_table = build_re_table()
-    re_curve = build_re_by_outs_remaining()
-    xwoba    = build_xwoba_table(min_pa=min_pa)
-    pythag   = refit_pythag_exponent()
+    re_table  = build_re_table()
+    re_curve  = build_re_by_outs_remaining()
+    xwoba     = build_xwoba_table(min_pa=min_pa)
+    pythag    = refit_pythag_exponent()
+    base_runs = build_base_runs_table()
+    lin_w     = _linear_weights()
+
+    # League mean / median Game Score across all starter outings, so the
+    # linear-weights panel can show the auto-tune result vs the target of 50.
+    gsc_dist = db.fetchall(
+        """
+        SELECT outs_recorded AS o, k, hits_allowed AS h, er,
+               unearned_runs AS uer, bb, hr_allowed AS hr,
+               fo_induced AS fo
+        FROM game_pitcher_stats
+        WHERE phase = 0 AND is_starter = 1
+        """
+    )
+    if gsc_dist:
+        gscs = sorted(
+            _pitcher_game_score(
+                r["o"] or 0, r["k"] or 0, r["h"] or 0, r["er"] or 0,
+                r["uer"] or 0, r["bb"] or 0, r["hr"] or 0, r["fo"] or 0,
+            )
+            for r in gsc_dist
+        )
+        n_g = len(gscs)
+        gsc_summary = {
+            "n":      n_g,
+            "mean":   round(sum(gscs) / n_g, 2),
+            "p25":    round(gscs[n_g // 4], 1),
+            "median": round(gscs[n_g // 2], 1),
+            "p75":    round(gscs[3 * n_g // 4], 1),
+            "min":    round(gscs[0], 1),
+            "max":    round(gscs[-1], 1),
+        }
+    else:
+        gsc_summary = None
 
     return _serve(
         "analytics.html",
@@ -3573,6 +3642,9 @@ def analytics():
         re_curve=re_curve,
         xwoba=xwoba,
         pythag=pythag,
+        base_runs=base_runs,
+        lin_w=lin_w,
+        gsc_summary=gsc_summary,
         min_pa=min_pa,
     )
 
@@ -4304,6 +4376,7 @@ def api_sim():
     seed_base = data.get("seed_base")
     results   = simulate_next_n(n, seed_base=seed_base)
     resync_sim_clock()
+    invalidate_linear_weights()
     return jsonify({"simulated": len(results), "results": results})
 
 
@@ -4319,6 +4392,7 @@ def api_sim_today():
     if not _had_errors(results):
         next_day = (_dt.date.fromisoformat(current) + _dt.timedelta(days=1)).isoformat()
         advance_sim_clock(_clamp_to_last(next_day))
+    invalidate_linear_weights()
     return jsonify(_sim_response(current, current, results))
 
 
@@ -4334,6 +4408,7 @@ def api_sim_week():
         advance_sim_clock(_clamp_to_last(next_day))
     else:
         resync_sim_clock()
+    invalidate_linear_weights()
     return jsonify(_sim_response(current, target, results))
 
 
@@ -4349,6 +4424,7 @@ def api_sim_month():
         advance_sim_clock(_clamp_to_last(next_day))
     else:
         resync_sim_clock()
+    invalidate_linear_weights()
     return jsonify(_sim_response(current, target, results))
 
 
@@ -4366,6 +4442,7 @@ def api_sim_all_star():
         advance_sim_clock(_clamp_to_last(next_day))
     else:
         resync_sim_clock()
+    invalidate_linear_weights()
     return jsonify(_sim_response(current, target, results))
 
 
@@ -4395,6 +4472,7 @@ def api_sim_season():
         except Exception as e:
             archived_id = None
             app.logger.exception("auto-archive after /api/sim/season failed: %s", e)
+    invalidate_linear_weights()
     resp = _sim_response(current, last, results)
     resp["archived_season_id"] = archived_id
     return jsonify(resp)

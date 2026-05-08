@@ -128,6 +128,139 @@
 </div>
 
 {# ============================================================
+   2b. Linear weights — empirical event run values driving wOBA + GSc
+   ============================================================ #}
+{% if lin_w %}
+{% set ww = lin_w.woba_weights %}
+{% set gc = lin_w.gsc_coeffs %}
+{% set rv = lin_w.rv %}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>Linear weights · empirical run values driving wOBA + Game Score</span>
+    <span class="ms-auto sub">{{ lin_w.n_events }} BIP events ·
+      league RE/half = <span class="num">{{ '%.2f' | format(lin_w.league_re_start) }}</span> ·
+      league wOBA = league OBP = <span class="num">{{ '%.3f' | format(lin_w.league_obp) }}</span>
+      <span class="text-secondary">(by construction)</span>
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="text-secondary small mb-2">
+      Each event's run value is derived from the RE matrix above:
+      <code>RV(event) = runs_scored + RE(state_after) − RE(state_before)</code>,
+      averaged across all BIP events. BB / HBP go analytically (forced-runner
+      transitions weighted by empirical state occupation). These values feed
+      both the wOBA weights (OBP-scaled, replacing MLB defaults in
+      <code>expected_woba.py</code> and <code>_aggregate_batter_rows</code>)
+      and the Game Score coefficients (run-prevention values × 2 GSc points
+      per run, replacing the MLB-tuned penalty constants in
+      <code>_pitcher_game_score</code>).
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <h4>Event run values</h4>
+        <table class="table dense-table">
+          <thead>
+            <tr><th>Event</th><th class="num">RV (runs)</th></tr>
+          </thead>
+          <tbody>
+            {% for evt in ['HR','3B','2B','BB','HBP','1B','K_over_out','out'] %}
+              {% if rv.get(evt) is not none %}
+              <tr>
+                <td>{{ evt }}</td>
+                <td class="num fw-bold"
+                    style="color:{% if rv[evt] > 0 %}var(--good){% elif rv[evt] < 0 %}var(--bad){% else %}inherit{% endif %}">
+                  {{ '%+.3f' | format(rv[evt]) }}
+                </td>
+              </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="text-secondary small">
+          Out RV is negative (an out costs the offense ~0.4 runs vs prior
+          expectation). BB ≥ 1B happens when stay-credited "1B" events
+          (which don't advance runners) dilute the 1B average; true 1B run
+          value sits above BB.
+        </div>
+      </div>
+      <div class="col-md-4">
+        <h4>wOBA weights (OBP-scaled)</h4>
+        <table class="table dense-table">
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th class="num">O27 refit</th>
+              <th class="num">MLB default</th>
+              <th class="num">Δ%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set mlb_woba = {'BB': 0.72, 'HBP': 0.74, '1B': 0.95,
+                               '2B': 1.30, '3B': 1.70, 'HR': 2.05} %}
+            {% for evt in ['BB', 'HBP', '1B', '2B', '3B', 'HR'] %}
+              {% set fit = ww[evt] %}
+              {% set mlb = mlb_woba[evt] %}
+              {% set delta_pct = (fit - mlb) / mlb * 100 %}
+              <tr>
+                <td>{{ evt }}</td>
+                <td class="num fw-bold">{{ '%.3f' | format(fit) }}</td>
+                <td class="num text-secondary">{{ '%.3f' | format(mlb) }}</td>
+                <td class="num"
+                    style="color:{% if delta_pct > 5 %}var(--good){% elif delta_pct < -5 %}var(--bad){% else %}inherit{% endif %}">
+                  {{ '%+.0f' | format(delta_pct) }}%
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div class="text-secondary small">
+          Walks gain ~31% vs MLB (high-RPG environment fills bases more
+          often). HR loses ~28% — singles + walks already clear the
+          bases, shrinking HR's marginal advantage. Drives every wOBA
+          / xwOBA value on /leaders and /analytics.
+        </div>
+      </div>
+      <div class="col-md-4">
+        <h4>Game Score coefficients</h4>
+        <table class="table dense-table">
+          <thead>
+            <tr>
+              <th>Term</th>
+              <th class="num">O27 refit</th>
+              <th class="num">MLB</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set mlb_gsc = {'base': 50, 'out': 1, 'K_over_out': 2,
+                              'FO_over_out': 1, 'H': 2, 'HR_over_H': 4,
+                              'BB': 1, 'ER': 4, 'UER': 2} %}
+            {% for term in ['base', 'out', 'K_over_out', 'FO_over_out',
+                            'H', 'HR_over_H', 'BB', 'ER', 'UER'] %}
+              <tr>
+                <td>{{ term }}</td>
+                <td class="num fw-bold">{{ '%.2f' | format(gc[term]) }}</td>
+                <td class="num text-secondary">{{ mlb_gsc[term] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if gsc_summary %}
+        <div class="text-secondary small">
+          League starter GSc dist over {{ gsc_summary.n }} outings:
+          mean = <span class="num fw-bold">{{ gsc_summary.mean }}</span>
+          (target 50, auto-tuned via <code>base</code>),
+          p25/p50/p75 = {{ gsc_summary.p25 }} / {{ gsc_summary.median }} /
+          {{ gsc_summary.p75 }}, range [{{ gsc_summary.min }},
+          {{ gsc_summary.max }}]. No clamping at 0 or 100.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================
    3. Expected wOBA — strip BABIP variance via contact quality
    ============================================================ #}
 <div class="panel mb-3">
@@ -162,8 +295,9 @@
         </table>
         <div class="text-secondary small">
           Per-BIP wOBA points expected from each quality bin. Linear-weight
-          scaffolding: BB = 0.72, HBP = 0.74, 1B = 0.95, 2B = 1.30, 3B =
-          1.70, HR = 2.05.
+          scaffolding: weights are O27-empirical (derived from this
+          league's RE matrix in <code>linear_weights.py</code>), not MLB
+          defaults. League wOBA = league OBP by construction.
         </div>
       </div>
       <div class="col-md-8">
@@ -323,6 +457,106 @@
     </div>
   </div>
 </div>
+
+{# ============================================================
+   5. BaseRuns — sequencing / cluster-luck decomposition
+   ============================================================ #}
+{% if base_runs and base_runs.n_teams %}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>BaseRuns · sequencing luck on offense and defense</span>
+    <span class="ms-auto sub">{{ base_runs.n_teams }} teams ·
+      fitted B = (<span class="num fw-bold">{{ base_runs.fitted_coeffs[0] }}</span>·TB
+      <span class="num fw-bold">{{ '%+.3f' | format(base_runs.fitted_coeffs[1]) }}</span>·H
+      <span class="num fw-bold">{{ '%+.3f' | format(base_runs.fitted_coeffs[2]) }}</span>·HR
+      <span class="num fw-bold">{{ '%+.3f' | format(base_runs.fitted_coeffs[3]) }}</span>·(BB+HBP))
+      vs MLB (1.4·TB −0.6·H −3·HR +0.1·(BB+HBP)) · SSE cut {{ base_runs.improvement_pct }}%
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="text-secondary small mb-2">
+      BaseRuns predicts runs scored from raw event counts (H, 2B, 3B, HR,
+      BB, HBP, AB) with no information about the order events arrived in.
+      The residual <span class="fw-bold">actual − predicted</span> is
+      therefore pure sequencing/cluster luck — hits-with-RISP timing,
+      double-play avoidance, runner distribution. Applied to opposing
+      offenses it gives sequencing luck on defense; the net is a clean
+      "runs of cluster luck" figure that complements xwOBA (event-level
+      luck) and the Pythag k* residual (W%-from-RD curvature).
+      Default coefficients are MLB-fit for ~9 R/G; O27 sits at ~22 R/G,
+      so we additionally refit all four B coefficients via joint
+      coordinate-descent (analogous to Pythag's k* refit). The fitted
+      luck column is the cleaner sequencing read; the gap between
+      default and fitted shows how much of the apparent "luck" was
+      actually environment shape mis-fit.
+    </div>
+    <div class="table-responsive">
+      <table class="table dense-table sortable">
+        <thead>
+          <tr>
+            <th rowspan="2">Tm</th>
+            <th class="num" rowspan="2">RS</th>
+            <th class="num" rowspan="2">RA</th>
+            <th class="num text-center" colspan="3">MLB-default coeffs</th>
+            <th class="num text-center" colspan="3">Refit coeffs (O27)</th>
+          </tr>
+          <tr>
+            <th class="num">Off</th>
+            <th class="num">Def</th>
+            <th class="num">Net</th>
+            <th class="num">Off</th>
+            <th class="num">Def</th>
+            <th class="num fw-bold">Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in base_runs.teams %}
+          <tr>
+            <td><a class="team-abbrev" href="{{ url_for('team_detail', team_id=t.team_id) }}">{{ t.abbrev }}</a></td>
+            <td class="num">{{ t.rs }}</td>
+            <td class="num">{{ t.ra }}</td>
+            <td class="num"
+                style="color:{% if t.bsr_off_def > 5 %}var(--good){% elif t.bsr_off_def < -5 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_off_def) }}
+            </td>
+            <td class="num"
+                style="color:{% if t.bsr_def_def > 5 %}var(--bad){% elif t.bsr_def_def < -5 %}var(--good){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_def_def) }}
+            </td>
+            <td class="num"
+                style="color:{% if t.bsr_total_def > 8 %}var(--good){% elif t.bsr_total_def < -8 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_total_def) }}
+            </td>
+            <td class="num"
+                style="color:{% if t.bsr_off_fit > 5 %}var(--good){% elif t.bsr_off_fit < -5 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_off_fit) }}
+            </td>
+            <td class="num"
+                style="color:{% if t.bsr_def_fit > 5 %}var(--bad){% elif t.bsr_def_fit < -5 %}var(--good){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_def_fit) }}
+            </td>
+            <td class="num fw-bold"
+                style="color:{% if t.bsr_total_fit > 8 %}var(--good){% elif t.bsr_total_fit < -8 %}var(--bad){% else %}inherit{% endif %}">
+              {{ '%+.1f' | format(t.bsr_total_fit) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="text-secondary small mt-1">
+      Sorted by |Net (refit)|. Off = RS − RS<sub>BsR</sub> (positive = clustered hits well).
+      Def = RA − RA<sub>BsR</sub> (positive = opponents clustered against
+      you — unlucky on D). Net = Off − Def. Both passes re-center to
+      league means before residualising, so columns are directly
+      comparable. The refit fits all four B coefficients (TB, H, HR,
+      BB+HBP weights) jointly across offense and defense via coordinate-
+      descent ternary search — 4 parameters from 60 datapoints (30 teams ×
+      2 sides), warm-started from MLB defaults.
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {% endif %}{# /games_played > 0 #}
 
