@@ -29,6 +29,12 @@
   <span class="text-secondary">·</span>
   <span class="fw-bold num" style="font-size:1.05rem">{{ team.wins }}-{{ team.losses }}</span>
   <span class="text-secondary num">({{ win_pct(team) }})</span>
+  {% if team_payroll is defined %}
+  <span class="text-secondary">·</span>
+  <span class="text-secondary small" title="Estimated team payroll — sum of derived player values across the active roster. Toggle the pill to view in USD or EUR.">
+    Payroll {{ team_payroll | money }}
+  </span>
+  {% endif %}
   {% if team.org_strength %}
   <span class="text-secondary">·</span>
   <span class="text-secondary small" title="Org strength — team-level talent grade (20-95). Drives an additive shift on every player attribute roll at seed time. 50 = league average; 80+ = elite organization.">
