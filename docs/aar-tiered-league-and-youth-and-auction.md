@@ -393,6 +393,173 @@ search — no follow-up sync is needed.
 
 ---
 
+## Phase 4 — Youth roster overhaul: jokers, YPI governor, recruiting stars, hidden ratings
+
+### Why this happened
+
+The Phase 3 youth-sim commit shipped with `jokers_available=[]` and
+`mgr_joker_aggression=0.0`. Reviewer correctly pointed out that this
+isn't O27. Jokers are structural — `README.md:19` lists them as a
+load-bearing rule of the sport, and `README.md:68` describes joker
+deployment as the reason intentional walks are rare in O27. A youth
+tournament with no jokers is a different game.
+
+So Phase 4 fixes that, and while we were re-shaping the youth roster
+anyway, also addresses two other regressions / requests the user
+flagged:
+
+1. Roster was 12 (8 hitters + 4 pitchers) — too thin. No backups, no
+   real bullpen, no jokers. Bumped to **28 per team**: 8 starters +
+   8 backups + 9 pitchers + 3 jokers.
+2. The numerical attribute grid (skill=72, contact=68, …) was being
+   surfaced directly in the UI. Per the user's design ask: youth
+   ratings should work like US college recruiting stars (★ to ★★★★★)
+   and the underlying numbers should stay hidden. Stats are the only
+   in-period signal you get on a kid; stars are a sticky one-time
+   projection from age-14 evaluation.
+3. Even-talent-everywhere produced too-predictable youth tournaments.
+   Solved with the **Youth Potential Index** governor.
+
+### The Youth Potential Index (YPI)
+
+Per-player access factor in `[0.22, 0.81]`, rolled once at creation
+and stored on the `youth_players` row. Stored attribute grades are
+the player's **TRUE potential**; the engine multiplies each unit-
+space rating by YPI before resolving plate appearances. Effect:
+
+```
+true potential          → engine sees → produces stats like
+─────────────────────────────────────────────────────────────
+80 grade × 0.81 YPI     →   65 unit  → looks like a 4★ in box scores
+80 grade × 0.30 YPI     →   24 unit  → looks like a 1★ in box scores
+40 grade × 0.79 YPI     →   32 unit  → looks like a 2★
+40 grade × 0.22 YPI     →    9 unit  → looks borderline-replacement
+```
+
+YPI never persists into the pro `players` table. When a 19-year-old
+graduates at season rollover, `_graduate_to_pro_fa` inserts their
+TRUE attribute grades into the pro pool — the governor lifts. So the
+flameout / hidden-gem narrative emerges naturally:
+
+- 5★ recruit, true 80 attrs, YPI 0.30 → posted .150 in tournaments
+  → enters pro pool with full 80-attr grades → reveals himself as a
+  star. **The hidden gem.**
+- 1★ recruit, true 35 attrs, YPI 0.79 → posted .380 in tournaments,
+  user thought "wow, this kid's special" → enters pro pool with
+  actual 35 grades → washes out. **The phenom who didn't pan out.**
+
+### Recruiting stars (★ to ★★★★★)
+
+Public-facing rating. Computed once at age 14 from the composite of
+TRUE attributes (hitters: skill+contact+power+eye / 4; pitchers:
+pitcher_skill+command+movement+stamina / 4) and stored on the row.
+**Sticky** — does NOT update as the player develops. So a kid rated
+3★ at 14 keeps that label even if his attributes climb to 4★-grade
+levels by 19. Empirical distribution at the calibrated thresholds:
+
+```
+5★ : 0.7%  — true elite (composite ≥ 68)
+4★ : 9%    — solid blue-chip (composite ≥ 58)
+3★ : 30%   — most starting-caliber kids (composite ≥ 48)
+2★ : 47%   — back-end depth (composite ≥ 36)
+1★ : 13%   — walk-on tier
+```
+
+Stars don't move with development AND aren't the same signal as
+stats — that's the whole design point.
+
+### What the user sees
+
+- **Stars** (sticky, true-potential-derived): 1-5 stars on every
+  player.
+- **Stats**: PA / AB / H / HR / RBI / BB / K / AVG for hitters,
+  G / GS / OUT / K / BB / H / R / ER for pitchers. Aggregated from
+  `game_youth_batter_stats` / `game_youth_pitcher_stats` over the
+  season's tournament.
+- **Names, ages, country, position, B/T**.
+
+What the user does NOT see:
+- Numerical attribute grades (skill, contact, power, eye, etc.).
+- The Youth Potential Index access factor.
+
+The AVG ladder by stars in the calibration sample tournament:
+
+```
+5★ .333   — small sample, masked by YPI variance
+4★ .340   — solid; flips the script vs 5★ on individual kids
+3★ .303
+2★ .273
+1★ .228
+```
+
+The closeness of 5★/4★ and the wide gap to 1★/2★ is the YPI doing
+exactly what it should — diffusion at the top, more deterministic at
+the bottom.
+
+### Roster shape
+
+```
+8 starting fielders (CF, SS, 2B, 3B, RF, LF, 1B, C)
+8 position-player backups (one per starter slot)
+9 pitchers              (3 rotation + 6 bullpen, youth scale)
+3 jokers                (one of each archetype: power, speed, contact)
+─────
+28 per team × 32 nations = 896 league-wide
+```
+
+Empirically every team passed the shape audit post-rollover (28
+total, 9 pitchers, 3 jokers per team, all three joker archetypes
+present).
+
+### Joker integration
+
+`youth_sim._build_youth_engine_team` now:
+- Walks youth_players rows; flags rows with `is_joker=1` separately
+  and builds them as engine `Player` objects with `archetype` set
+  from `joker_archetype`.
+- Passes the 3 joker Players via `Team.jokers_available`.
+- Sets `mgr_joker_aggression=0.5` (league mean) so the manager AI
+  actually deploys them.
+
+In the calibration sim, jokers produced 1262 PAs across the 63-game
+tournament — confirming the manager AI is using them naturally.
+
+### Schema additions
+
+```sql
+ALTER TABLE youth_players ADD COLUMN is_joker INTEGER DEFAULT 0;
+ALTER TABLE youth_players ADD COLUMN joker_archetype TEXT DEFAULT '';
+ALTER TABLE youth_players ADD COLUMN youth_potential_index REAL DEFAULT 1.0;
+ALTER TABLE youth_players ADD COLUMN recruit_stars INTEGER DEFAULT 3;
+```
+
+Older saves get these via `init_youth_schema()`'s ALTER TABLE
+migration block. New seeds populate them at creation. The default
+YPI of 1.0 on legacy rows means "no governor" — older youth players
+play at full ratings until they're regenerated.
+
+### Files touched
+
+| File | What changed |
+|------|--------------|
+| `o27v2/youth.py` | Roster shape constants, schema migrations, `_make_youth_player` rolls YPI + stars + joker archetype, `_spawn_roster` and `_refill_team` rebuilt for 28-player shape with role buckets, `top_prospects` switched to observed-stats sort, new `player_observed_stats()` aggregator, graduate-cascade child cleanup. |
+| `o27v2/youth_sim.py` | `_make_engine_player` applies YPI to every unit-space rating, `_build_youth_engine_team` populates `jokers_available` and sets `mgr_joker_aggression=0.5`. |
+| `o27v2/web/templates/youth.html` | Removed all numerical attribute columns. New star-macro renders 1-5★. New filter buttons: Hitters / Pitchers / By stars. Hitter view shows AVG; pitcher view shows K/BB/ER per appearances. |
+| `o27v2/web/templates/youth_team.html` | Three sections: Position players + Jokers + Pitchers. All show stars + observed stats. No attribute reveal. Footer note explains the design intent. |
+| `o27v2/web/app.py` | `/youth/team/<id>` now also pulls `player_observed_stats` per player; archetype-options switched to `bat / arm / stars`. |
+
+### Known regression
+
+Any youth player that already exists in a save dating from before
+this commit has `youth_potential_index = 1.0` (the column default).
+That means their existing tournament stats reflect "full potential"
+rather than YPI-muted potential. If the user wants the diffusion to
+apply retroactively, the cleanest path is a re-roll: reset the
+tournament, re-roll YPI for surviving players, re-run. Players
+created from this commit forward get YPI rolled at creation.
+
+---
+
 ## Phase 3 — Real game sim for the youth tournament (post-AAR addition)
 
 After the original AAR shipped, the heuristic per-game youth result

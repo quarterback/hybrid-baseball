@@ -76,14 +76,32 @@ _NATIONAL_TEAMS: list[tuple[str, str, str, str]] = [
     ("FJ", "Fiji",                 "FIJ", "pacific_islands"),
 ]
 
-# Per-team roster shape for the youth league. 8 hitters at canonical
-# positions + 4 pitchers — small enough to scan on a single page,
-# large enough to populate a prospect list.
-_HITTER_POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
-_N_PITCHERS = 4
+# Per-team roster shape for the youth league.
+#
+# 28 players per team: enough depth to platoon, hold a real bullpen,
+# and run jokers without leaving the bench bare. Over 32 teams that's
+# 896 youth players league-wide.
+#
+#   8 starting fielders (one at each canonical position)
+#   8 position-player backups (one backup per starting position)
+#   9 pitchers              (3 rotation + 6 bullpen, youth scale)
+#   3 jokers                (the structural O27 joker trio)
+#  ----
+#  28 total
 
-# Total per team = 12. Over 32 teams = 384 youth players league-wide.
-ROSTER_SIZE = len(_HITTER_POSITIONS) + _N_PITCHERS
+_HITTER_POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
+_N_PITCHERS = 9
+_N_JOKERS   = 3
+
+ROSTER_SIZE = (
+    len(_HITTER_POSITIONS)        # 8 starters
+    + len(_HITTER_POSITIONS)      # 8 backups
+    + _N_PITCHERS                 # 9 pitchers
+    + _N_JOKERS                   # 3 jokers
+)  # = 28
+
+# Joker archetypes — same set the pro league rolls.
+_JOKER_ARCHETYPES = ["power", "speed", "contact"]
 
 # Age bounds. Players spawn at ages 14-19 in the inaugural pass; in
 # subsequent annual passes the AGE_OUT threshold drives graduation
@@ -93,6 +111,36 @@ ROSTER_SIZE = len(_HITTER_POSITIONS) + _N_PITCHERS
 _SEED_AGE_LO = 14
 _SEED_AGE_HI = 19
 AGE_OUT      = 19   # players who would turn 20 graduate this offseason
+
+# Youth Potential Index (YPI) — per-player access factor in [0.22, 0.81].
+# Stored on the youth_players row; rolled once at creation and SHRUNK
+# by no further mechanic during the youth career. It scales the
+# player's true attribute units at engine entry only — stored ratings
+# are unmodified, and the governor LIFTS at graduation (the pro pool
+# sees the player's full potential).
+#
+# Effect: a 5★ recruit with a 0.30 YPI plays like a 1-2★ in stats
+# (recruiting bust); a 1★ recruit with a 0.79 YPI plays like a 4★
+# (sleeper / hidden gem). The user sees stars + observed stats, not
+# the underlying ratings nor the YPI itself. When the player graduates
+# at age 20, both signals collapse into the pro `players` row's full
+# attribute grid and the pro stats tell the truth.
+_YPI_LO = 0.22
+_YPI_HI = 0.81
+
+# Recruit-star thresholds (US college recruiting feel).
+# Composite is averaged from TRUE attribute grades, NOT YPI-modified.
+# Hitters: (skill + contact + power + eye) / 4
+# Pitchers: (pitcher_skill + command + movement + stamina) / 4
+def _stars_from_composite(c: int) -> int:
+    # Calibrated to the 9-tier _TALENT_TIERS distribution (capped at 80
+    # at seed time). Empirically across 5000 sample rolls these yield
+    # approx: 5★ ~1%, 4★ ~10%, 3★ ~30%, 2★ ~40%, 1★ ~20%.
+    if c >= 68: return 5    # rare elite — must roll high on most attrs
+    if c >= 58: return 4    # solid blue-chip
+    if c >= 48: return 3    # most starting-caliber kids
+    if c >= 36: return 2    # back-end depth
+    return 1                # walk-on tier
 
 
 # ---------------------------------------------------------------------------
@@ -117,11 +165,14 @@ CREATE TABLE IF NOT EXISTS youth_players (
     country        TEXT DEFAULT '',
     position       TEXT NOT NULL,
     is_pitcher     INTEGER DEFAULT 0,
+    is_joker       INTEGER DEFAULT 0,
+    joker_archetype TEXT DEFAULT '',
     age            INTEGER NOT NULL,
     seed_year      INTEGER NOT NULL DEFAULT 1,
     -- Attribute set mirrors the engine's hitter / pitcher dev attrs so
     -- we can call o27v2.development._develop_player on these rows
-    -- directly.
+    -- directly. These are TRUE potential — visible to the engine
+    -- only after multiplication by youth_potential_index.
     skill              INTEGER DEFAULT 50,
     speed              INTEGER DEFAULT 50,
     pitcher_skill      INTEGER DEFAULT 50,
@@ -142,7 +193,16 @@ CREATE TABLE IF NOT EXISTS youth_players (
     throws             TEXT DEFAULT 'R',
     work_ethic         INTEGER DEFAULT 50,
     work_habits        INTEGER DEFAULT 50,
-    habit_cup          REAL    DEFAULT 0.5
+    habit_cup          REAL    DEFAULT 0.5,
+    -- Hidden governor (0.22-0.81). Multiplied into attribute units at
+    -- engine entry; never displayed in the UI.
+    youth_potential_index REAL DEFAULT 1.0,
+    -- Public-facing 1-5 stars derived from TRUE composite at creation.
+    -- Sticky once set — does NOT update as the player develops, so a
+    -- 14-year-old who got rated 4★ keeps that label even if his
+    -- numbers underwhelm by 19 (busted phenom) or vice versa
+    -- (late-blooming sleeper).
+    recruit_stars      INTEGER DEFAULT 3
 );
 """
 
@@ -184,18 +244,57 @@ CREATE TABLE IF NOT EXISTS youth_games (
 
 
 def init_youth_schema() -> None:
-    """Create the youth_* tables if they don't exist. Idempotent."""
+    """Create the youth_* tables if they don't exist. Idempotent.
+
+    Also runs lightweight ALTER TABLE migrations for the columns added
+    in the joker / YPI / stars overhaul, since older saves seeded
+    before that work won't have them.
+    """
     db.execute(_SCHEMA_TEAMS)
     db.execute(_SCHEMA_PLAYERS)
     db.execute(_SCHEMA_GROUPS)
     db.execute(_SCHEMA_GROUP_MEMBERSHIP)
     db.execute(_SCHEMA_GAMES)
 
+    # Migrations for older youth tables. ALTER TABLE ... ADD COLUMN is
+    # idempotent in spirit (we ignore "duplicate column" errors).
+    _migrations: list[tuple[str, str]] = [
+        ("youth_players", "is_joker INTEGER DEFAULT 0"),
+        ("youth_players", "joker_archetype TEXT DEFAULT ''"),
+        ("youth_players", "youth_potential_index REAL DEFAULT 1.0"),
+        ("youth_players", "recruit_stars INTEGER DEFAULT 3"),
+    ]
+    for table, col_def in _migrations:
+        try:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
+        except Exception:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # Player generation (reuses league.py's _make_hitter / _make_pitcher,
 # with the age field overridden into the youth band)
 # ---------------------------------------------------------------------------
+
+def _composite_for_player(p: dict) -> int:
+    """Composite of TRUE attribute grades. Used to derive recruit_stars
+    at creation. Pitchers and hitters use their respective archetype
+    bundles so stars ladder reflects what the player will be evaluated
+    on at age 19."""
+    if p.get("is_pitcher"):
+        return int(round((
+            int(p.get("pitcher_skill", 50))
+            + int(p.get("command", 50))
+            + int(p.get("movement", 50))
+            + int(p.get("stamina", 50))
+        ) / 4.0))
+    return int(round((
+        int(p.get("skill", 50))
+        + int(p.get("contact", 50))
+        + int(p.get("power", 50))
+        + int(p.get("eye", 50))
+    ) / 4.0))
+
 
 def _make_youth_player(
     rng: random.Random,
@@ -204,16 +303,28 @@ def _make_youth_player(
     name: str,
     country: str,
     age: int,
+    *,
+    is_joker: bool = False,
+    joker_archetype: str = "",
 ) -> dict:
-    """Build one youth player dict. Reuses the standard maker so the
-    attribute distribution stays consistent with the pro league, then
-    forces age into the youth band."""
+    """Build one youth player dict. Reuses the standard pro maker so
+    the attribute distribution stays consistent with the pro league,
+    then:
+      * forces age into the youth band,
+      * rolls a per-player Youth Potential Index in [0.22, 0.81],
+      * derives a sticky 1-5 recruit-stars grade from true composite,
+      * tags joker rows with archetype.
+    """
     from o27v2.league import _make_hitter, _make_pitcher
     if is_pitcher:
         p = _make_pitcher(rng, is_active=1, name=name, country=country)
     else:
         p = _make_hitter(rng, pos, is_active=1, name=name, country=country)
     p["age"] = age
+    p["is_joker"] = 1 if is_joker else 0
+    p["joker_archetype"] = joker_archetype if is_joker else ""
+    p["youth_potential_index"] = round(rng.uniform(_YPI_LO, _YPI_HI), 3)
+    p["recruit_stars"] = _stars_from_composite(_composite_for_player(p))
     return p
 
 
@@ -234,32 +345,43 @@ def _spawn_roster(
     team: dict,
     rng: random.Random,
     seed_year: int,
-    age_dist: list[int] | None = None,
 ) -> list[dict]:
-    """Build a full 12-player roster for one youth team."""
+    """Build a full 28-player youth roster for one team:
+       8 starting fielders + 8 position-player backups
+       + 9 pitchers + 3 jokers.
+    """
     name_pick = _name_picker_for_region(rng, team["name_region"])
     rows: list[dict] = []
-    if age_dist is None:
-        # Inaugural seed — spread across the youth age band.
-        age_dist = [
-            rng.randint(_SEED_AGE_LO, _SEED_AGE_HI)
-            for _ in range(ROSTER_SIZE)
-        ]
-    for i, pos in enumerate(_HITTER_POSITIONS):
+
+    def _age() -> int:
+        return rng.randint(_SEED_AGE_LO, _SEED_AGE_HI)
+
+    def _spawn(pos: str, *, is_pitcher: bool, is_joker: bool = False,
+               joker_archetype: str = "") -> dict:
         nm, ctry = name_pick()
         country = ctry or team["country_code"]
-        p = _make_youth_player(rng, pos, is_pitcher=False, name=nm,
-                               country=country, age=age_dist[i])
+        p = _make_youth_player(
+            rng, pos, is_pitcher=is_pitcher, name=nm, country=country,
+            age=_age(),
+            is_joker=is_joker, joker_archetype=joker_archetype,
+        )
         p["seed_year"] = seed_year
-        rows.append(p)
-    for j in range(_N_PITCHERS):
-        nm, ctry = name_pick()
-        country = ctry or team["country_code"]
-        p = _make_youth_player(rng, "P", is_pitcher=True, name=nm,
-                               country=country,
-                               age=age_dist[len(_HITTER_POSITIONS) + j])
-        p["seed_year"] = seed_year
-        rows.append(p)
+        return p
+
+    # 8 starting fielders.
+    for pos in _HITTER_POSITIONS:
+        rows.append(_spawn(pos, is_pitcher=False))
+    # 8 position-player backups (one per starting position).
+    for pos in _HITTER_POSITIONS:
+        rows.append(_spawn(pos, is_pitcher=False))
+    # 9 pitchers.
+    for _ in range(_N_PITCHERS):
+        rows.append(_spawn("P", is_pitcher=True))
+    # 3 jokers — one of each archetype.
+    for archetype in _JOKER_ARCHETYPES[:_N_JOKERS]:
+        rows.append(_spawn("DH", is_pitcher=False,
+                           is_joker=True, joker_archetype=archetype))
+
     return rows
 
 
@@ -268,13 +390,14 @@ def _spawn_roster(
 # ---------------------------------------------------------------------------
 
 _PLAYER_COLS = (
-    "youth_team_id", "name", "country", "position", "is_pitcher", "age",
-    "seed_year",
+    "youth_team_id", "name", "country", "position", "is_pitcher",
+    "is_joker", "joker_archetype", "age", "seed_year",
     "skill", "speed", "pitcher_skill",
     "contact", "power", "eye", "command", "movement", "stamina",
     "defense", "arm", "defense_infield", "defense_outfield", "defense_catcher",
     "baserunning", "run_aggressiveness",
     "bats", "throws", "work_ethic", "work_habits", "habit_cup",
+    "youth_potential_index", "recruit_stars",
 )
 
 
@@ -283,7 +406,10 @@ def _insert_player(team_id: int, p: dict) -> None:
     qs   = ", ".join("?" for _ in _PLAYER_COLS)
     vals = (
         team_id, p["name"], p.get("country", ""),
-        p["position"], int(p["is_pitcher"]), int(p["age"]),
+        p["position"], int(p["is_pitcher"]),
+        int(p.get("is_joker", 0)),
+        str(p.get("joker_archetype", "") or ""),
+        int(p["age"]),
         int(p.get("seed_year", 1)),
         p.get("skill", 50), p.get("speed", 50), p.get("pitcher_skill", 50),
         p.get("contact", 50), p.get("power", 50), p.get("eye", 50),
@@ -295,6 +421,8 @@ def _insert_player(team_id: int, p: dict) -> None:
         p.get("bats", "R"), p.get("throws", "R"),
         p.get("work_ethic", 50), p.get("work_habits", 50),
         float(p.get("habit_cup", 0.5)),
+        float(p.get("youth_potential_index", 1.0)),
+        int(p.get("recruit_stars", 3)),
     )
     db.execute(
         f"INSERT INTO youth_players ({cols}) VALUES ({qs})",
@@ -355,7 +483,13 @@ def _develop_youth_row(p: dict, rng: random.Random) -> tuple[dict, int]:
 def _graduate_to_pro_fa(p: dict) -> int | None:
     """Insert a graduated youth player as a free agent in the pro
     `players` table (team_id = NULL, is_active = 0). Returns the new
-    pro-side player id, or None on failure."""
+    pro-side player id, or None on failure.
+
+    The Youth Potential Index is NOT applied here — the pro pool sees
+    the player's full TRUE attribute grades, which is what produces
+    the busted-prospect / hidden-gem narrative when pro stats reveal
+    the divergence from youth-tournament observed stats.
+    """
     cols = (
         "team_id", "name", "country", "position", "is_pitcher",
         "skill", "speed", "pitcher_skill",
@@ -396,44 +530,77 @@ def _graduate_to_pro_fa(p: dict) -> int | None:
 
 
 def _refill_team(team: dict, rng: random.Random, seed_year: int) -> int:
-    """After graduations, top up the team back to ROSTER_SIZE with new
-    18-year-olds. Matches each missing position so the roster stays
-    structurally complete."""
+    """After graduations, top up the team back to its target shape
+    with new 14-year-olds. Each role bucket (starter slot at every
+    position, backup slot at every position, pitchers, jokers) gets
+    refilled independently so the roster doesn't drift in shape over
+    multiple seasons.
+    """
     rows = db.fetchall(
-        "SELECT position, is_pitcher FROM youth_players "
+        "SELECT position, is_pitcher, is_joker FROM youth_players "
         "WHERE youth_team_id = ?",
         (team["id"],),
     )
-    have_positions: list[str] = [r["position"] for r in rows]
-    have_pitcher_count = sum(1 for r in rows if r["is_pitcher"])
+
+    # Bucket by role.
+    pitcher_count = sum(1 for r in rows if r["is_pitcher"] and not r["is_joker"])
+    joker_count   = sum(1 for r in rows if r["is_joker"])
+    pos_counts: dict[str, int] = {pos: 0 for pos in _HITTER_POSITIONS}
+    for r in rows:
+        if not r["is_pitcher"] and not r["is_joker"]:
+            pos_counts[r["position"]] = pos_counts.get(r["position"], 0) + 1
 
     name_pick = _name_picker_for_region(rng, team["name_region"])
-
-    # Restore canonical hitter slots first.
     added = 0
-    for pos in _HITTER_POSITIONS:
-        if pos not in have_positions:
-            nm, ctry = name_pick()
-            country = ctry or team["country_code"]
-            p = _make_youth_player(rng, pos, is_pitcher=False,
-                                   name=nm, country=country,
-                                   age=_SEED_AGE_LO)
-            p["seed_year"] = seed_year
-            _insert_player(team["id"], p)
-            have_positions.append(pos)
-            added += 1
 
-    # Restore the pitcher pool.
-    while have_pitcher_count < _N_PITCHERS:
+    def _spawn_and_insert(pos: str, *, is_pitcher: bool,
+                          is_joker: bool = False,
+                          joker_archetype: str = "") -> None:
+        nonlocal added
         nm, ctry = name_pick()
         country = ctry or team["country_code"]
-        p = _make_youth_player(rng, "P", is_pitcher=True,
-                               name=nm, country=country,
-                               age=_SEED_AGE_LO)
+        p = _make_youth_player(
+            rng, pos, is_pitcher=is_pitcher,
+            name=nm, country=country, age=_SEED_AGE_LO,
+            is_joker=is_joker, joker_archetype=joker_archetype,
+        )
         p["seed_year"] = seed_year
         _insert_player(team["id"], p)
-        have_pitcher_count += 1
         added += 1
+
+    # Each canonical position needs a starter + backup = 2 bodies.
+    POSITION_TARGET = 2
+    for pos in _HITTER_POSITIONS:
+        while pos_counts.get(pos, 0) < POSITION_TARGET:
+            _spawn_and_insert(pos, is_pitcher=False)
+            pos_counts[pos] = pos_counts.get(pos, 0) + 1
+
+    # Pitchers.
+    while pitcher_count < _N_PITCHERS:
+        _spawn_and_insert("P", is_pitcher=True)
+        pitcher_count += 1
+
+    # Jokers — preserve archetype rotation so each team always has all
+    # three flavours.
+    have_archetypes = {
+        r["position"]: True for r in rows  # not actually used; cover by archetype below
+    }
+    existing_archetypes = set()
+    if joker_count:
+        existing_jokers = db.fetchall(
+            "SELECT joker_archetype FROM youth_players "
+            "WHERE youth_team_id = ? AND is_joker = 1",
+            (team["id"],),
+        )
+        existing_archetypes = {
+            (r["joker_archetype"] or "") for r in existing_jokers
+        }
+    for archetype in _JOKER_ARCHETYPES[:_N_JOKERS]:
+        if archetype not in existing_archetypes:
+            _spawn_and_insert("DH", is_pitcher=False,
+                              is_joker=True, joker_archetype=archetype)
+            existing_archetypes.add(archetype)
+
     return added
 
 
@@ -502,6 +669,19 @@ def advance_youth_year(rng_seed: int = 0,
                     "position":       fresh["position"],
                     "pro_player_id":  pro_id,
                 })
+                # Cascade delete the graduate's tournament stat rows so
+                # the youth_players FK constraint can resolve. The
+                # tournament happened, the player has moved on; their
+                # youth-side stats are no longer needed (the pro FA
+                # pool only cares about their attributes).
+                for child in ("game_youth_batter_stats", "game_youth_pitcher_stats"):
+                    try:
+                        db.execute(
+                            f"DELETE FROM {child} WHERE player_id = ?",
+                            (p["id"],),
+                        )
+                    except Exception:
+                        pass
                 db.execute("DELETE FROM youth_players WHERE id = ?", (p["id"],))
 
         # Refill missing slots with new 18-year-olds.
@@ -520,17 +700,26 @@ def advance_youth_year(rng_seed: int = 0,
 # ---------------------------------------------------------------------------
 
 def youth_teams() -> list[dict]:
+    """Public team-roster summary. Reveals only public-facing signals:
+    roster size, average age, recruit-stars distribution, and observed
+    win-loss from played tournament games. Numerical attribute grades
+    are deliberately not exposed."""
     init_youth_schema()
     rows = db.fetchall(
         "SELECT t.*, "
-        "       (SELECT COUNT(*) FROM youth_players p WHERE p.youth_team_id = t.id) AS roster_size, "
-        "       (SELECT ROUND(AVG(p.age), 1)  FROM youth_players p WHERE p.youth_team_id = t.id) AS avg_age, "
-        "       (SELECT ROUND(AVG((p.skill + p.contact + p.power + p.eye) / 4.0)) "
-        "          FROM youth_players p "
-        "          WHERE p.youth_team_id = t.id AND p.is_pitcher = 0) AS bat_grade, "
-        "       (SELECT ROUND(AVG((p.pitcher_skill + p.command + p.movement) / 3.0)) "
-        "          FROM youth_players p "
-        "          WHERE p.youth_team_id = t.id AND p.is_pitcher = 1) AS arm_grade "
+        "       (SELECT COUNT(*) FROM youth_players p "
+        "          WHERE p.youth_team_id = t.id) AS roster_size, "
+        "       (SELECT ROUND(AVG(p.age), 1) FROM youth_players p "
+        "          WHERE p.youth_team_id = t.id) AS avg_age, "
+        "       (SELECT ROUND(AVG(p.recruit_stars), 1) FROM youth_players p "
+        "          WHERE p.youth_team_id = t.id) AS avg_stars, "
+        "       (SELECT COUNT(*) FROM youth_players p "
+        "          WHERE p.youth_team_id = t.id AND p.recruit_stars >= 4) AS top_stars_count, "
+        "       (SELECT COUNT(*) FROM youth_games g "
+        "          WHERE g.played = 1 AND g.winner_id = t.id) AS w, "
+        "       (SELECT COUNT(*) FROM youth_games g "
+        "          WHERE g.played = 1 AND (g.home_team_id = t.id OR g.away_team_id = t.id) "
+        "                AND g.winner_id IS NOT NULL AND g.winner_id != t.id) AS l "
         "FROM youth_teams t "
         "ORDER BY t.id"
     )
@@ -548,43 +737,103 @@ def youth_roster(team_id: int) -> list[dict]:
 
 
 def top_prospects(limit: int = 25,
-                  archetype: str = "overall") -> list[dict]:
-    """Return the top youth players league-wide by the requested
-    archetype.
+                  archetype: str = "bat") -> list[dict]:
+    """Return the top youth players league-wide by OBSERVED
+    tournament performance (no rating reveal).
 
-    `archetype` ∈ {"overall", "bat", "arm", "speed"}. The composite
-    used in each branch is the same one the team summary uses, so the
-    /youth list and per-team list line up.
+    `archetype`:
+      - "bat":   hitters ordered by hits desc (then OPS-ish proxy)
+      - "arm":   pitchers ordered by K desc (then ER asc)
+      - "stars": all players ordered by recruit_stars desc, age desc
+                 — used for a pre-tournament roster view when no
+                 stats exist yet.
+
+    Numerical attribute grades are NOT projected into the result —
+    the user gets stars + observed stats only. The "stars" archetype
+    is the pre-season default since it's the only ranking that exists
+    before any games are played.
     """
     init_youth_schema()
-    if archetype == "bat":
-        sort_expr = "(skill + contact + power + eye) / 4.0"
-        where = " WHERE p.is_pitcher = 0"
-    elif archetype == "arm":
-        sort_expr = "(pitcher_skill + command + movement) / 3.0"
-        where = " WHERE p.is_pitcher = 1"
-    elif archetype == "speed":
-        sort_expr = "speed"
-        where = ""
-    else:  # overall
-        sort_expr = (
-            "CASE WHEN is_pitcher = 1 "
-            "THEN (pitcher_skill + command + movement) / 3.0 "
-            "ELSE (skill + contact + power + eye) / 4.0 END"
+    if archetype == "arm":
+        rows = db.fetchall(
+            "SELECT p.id, p.name, p.country, p.position, p.age, "
+            "       p.is_pitcher, p.is_joker, p.recruit_stars, "
+            "       t.name AS team_name, t.abbrev AS team_abbrev, "
+            "       t.country_code AS team_country, "
+            "       COALESCE(SUM(gp.outs_recorded), 0) AS outs, "
+            "       COALESCE(SUM(gp.k), 0) AS k, "
+            "       COALESCE(SUM(gp.bb), 0) AS bb, "
+            "       COALESCE(SUM(gp.er), 0) AS er, "
+            "       COUNT(gp.id) AS appearances "
+            "FROM youth_players p "
+            "JOIN youth_teams t ON t.id = p.youth_team_id "
+            "LEFT JOIN game_youth_pitcher_stats gp ON gp.player_id = p.id "
+            "WHERE p.is_pitcher = 1 "
+            "GROUP BY p.id "
+            "HAVING outs > 0 "
+            "ORDER BY k DESC, er ASC, outs DESC "
+            "LIMIT ?", (limit,),
         )
-        where = ""
-    rows = db.fetchall(
-        f"SELECT p.*, t.name AS team_name, t.abbrev AS team_abbrev, "
-        f"       t.country_code AS team_country, "
-        f"       ROUND({sort_expr}, 1) AS composite "
-        f"FROM youth_players p "
-        f"JOIN youth_teams t ON t.id = p.youth_team_id "
-        f"{where} "
-        f"ORDER BY composite DESC, p.age ASC "
-        f"LIMIT ?",
-        (limit,),
-    )
+    elif archetype == "stars":
+        rows = db.fetchall(
+            "SELECT p.id, p.name, p.country, p.position, p.age, "
+            "       p.is_pitcher, p.is_joker, p.recruit_stars, "
+            "       t.name AS team_name, t.abbrev AS team_abbrev, "
+            "       t.country_code AS team_country "
+            "FROM youth_players p "
+            "JOIN youth_teams t ON t.id = p.youth_team_id "
+            "ORDER BY p.recruit_stars DESC, p.age DESC, p.id "
+            "LIMIT ?", (limit,),
+        )
+    else:  # bat
+        rows = db.fetchall(
+            "SELECT p.id, p.name, p.country, p.position, p.age, "
+            "       p.is_pitcher, p.is_joker, p.recruit_stars, "
+            "       t.name AS team_name, t.abbrev AS team_abbrev, "
+            "       t.country_code AS team_country, "
+            "       COALESCE(SUM(gb.pa), 0) AS pa, "
+            "       COALESCE(SUM(gb.ab), 0) AS ab, "
+            "       COALESCE(SUM(gb.hits), 0) AS h, "
+            "       COALESCE(SUM(gb.hr), 0) AS hr, "
+            "       COALESCE(SUM(gb.rbi), 0) AS rbi, "
+            "       COALESCE(SUM(gb.bb), 0) AS bb, "
+            "       COALESCE(SUM(gb.k), 0) AS k "
+            "FROM youth_players p "
+            "JOIN youth_teams t ON t.id = p.youth_team_id "
+            "LEFT JOIN game_youth_batter_stats gb ON gb.player_id = p.id "
+            "WHERE p.is_pitcher = 0 "
+            "GROUP BY p.id "
+            "HAVING pa > 0 "
+            "ORDER BY h DESC, hr DESC, rbi DESC "
+            "LIMIT ?", (limit,),
+        )
     return [dict(r) for r in rows]
+
+
+def player_observed_stats(player_id: int) -> dict:
+    """Aggregate this player's tournament line so the per-team page
+    can show stats without revealing ratings."""
+    init_youth_schema()
+    bat = db.fetchone(
+        "SELECT COALESCE(SUM(pa),0) AS pa, COALESCE(SUM(ab),0) AS ab, "
+        "       COALESCE(SUM(hits),0) AS h, COALESCE(SUM(hr),0) AS hr, "
+        "       COALESCE(SUM(rbi),0) AS rbi, COALESCE(SUM(bb),0) AS bb, "
+        "       COALESCE(SUM(k),0) AS k, COALESCE(SUM(runs),0) AS r "
+        "FROM game_youth_batter_stats WHERE player_id = ?",
+        (player_id,),
+    ) or {}
+    pit = db.fetchone(
+        "SELECT COALESCE(COUNT(*),0) AS g, "
+        "       COALESCE(SUM(is_starter),0) AS gs, "
+        "       COALESCE(SUM(outs_recorded),0) AS outs, "
+        "       COALESCE(SUM(k),0) AS k, COALESCE(SUM(bb),0) AS bb, "
+        "       COALESCE(SUM(runs_allowed),0) AS r, "
+        "       COALESCE(SUM(er),0) AS er, "
+        "       COALESCE(SUM(hits_allowed),0) AS h "
+        "FROM game_youth_pitcher_stats WHERE player_id = ?",
+        (player_id,),
+    ) or {}
+    return {"bat": dict(bat), "pit": dict(pit)}
 
 
 # ---------------------------------------------------------------------------

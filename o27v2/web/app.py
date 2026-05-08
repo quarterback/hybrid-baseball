@@ -4960,16 +4960,16 @@ def api_sim_game(game_id: int):
 @app.route("/youth")
 def youth_view():
     from o27v2 import youth as _youth
-    archetype = (request.args.get("archetype") or "overall").strip()
-    if archetype not in ("overall", "bat", "arm", "speed"):
-        archetype = "overall"
+    archetype = (request.args.get("archetype") or "bat").strip()
+    if archetype not in ("bat", "arm", "stars"):
+        archetype = "bat"
     teams_rows  = _youth.youth_teams()
     prospects   = _youth.top_prospects(limit=25, archetype=archetype)
     return _serve("youth.html",
                   teams=teams_rows,
                   prospects=prospects,
                   archetype=archetype,
-                  archetype_options=("overall", "bat", "arm", "speed"))
+                  archetype_options=("bat", "arm", "stars"))
 
 
 @app.route("/youth/team/<int:team_id>")
@@ -4981,7 +4981,16 @@ def youth_team_view(team_id: int):
     if not team:
         abort(404)
     roster = _youth.youth_roster(team_id)
-    return _serve("youth_team.html", team=dict(team), roster=roster)
+    # Attach observed tournament stats per player so the page can show
+    # stats without revealing ratings.
+    enriched: list[dict] = []
+    for p in roster:
+        stats = _youth.player_observed_stats(p["id"])
+        merged = dict(p)
+        merged["bat_obs"] = stats.get("bat") or {}
+        merged["pit_obs"] = stats.get("pit") or {}
+        enriched.append(merged)
+    return _serve("youth_team.html", team=dict(team), roster=enriched)
 
 
 @app.route("/api/youth/seed", methods=["POST"])

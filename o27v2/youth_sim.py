@@ -93,36 +93,58 @@ def _make_engine_player(p: dict, *, home_bonus: float = 0.0) -> Player:
     """Build one engine Player from a youth_players row. Mirrors
     `o27v2.sim._db_team_to_engine`'s field assignment but skips the
     pro-league-only fields (work_ethic-cup interaction, archetype
-    deltas, pitcher_role string)."""
+    deltas, pitcher_role string).
+
+    Youth Potential Index governor: every performance attribute is
+    multiplied by the player's YPI in unit space (after `to_unit`).
+    The stored grades are TRUE potential; what the engine sees is
+    `true × YPI` so a 5★ kid with a 0.30 YPI plays like a borderline
+    1-2★ in raw outcomes. Floor + handedness columns are NOT scaled.
+    """
+    ypi = float(p.get("youth_potential_index") or 1.0)
+    # Defensive clamp — older youth_players rows pre-YPI default to
+    # 1.0, which collapses to a no-op governor. Out-of-band stored
+    # values get clamped to the design range.
+    if ypi <= 0:
+        ypi = 1.0
+    ypi = max(0.10, min(1.0, ypi))
+
+    def gov(unit: float) -> float:
+        """Apply YPI to a unit-space rating, clamped to [0, 1]."""
+        return max(0.0, min(1.0, unit * ypi))
+
     stamina_grade = p.get("stamina") or p.get("pitcher_skill") or 50
+    archetype = ""
+    if int(p.get("is_joker") or 0):
+        archetype = str(p.get("joker_archetype") or "")
     return Player(
         player_id=str(p["id"]),
         name=p["name"],
         is_pitcher=bool(p["is_pitcher"]),
-        skill=_scout.to_unit(p["skill"]) + home_bonus,
-        speed=_scout.to_unit(p["speed"]),
-        pitcher_skill=_scout.to_unit(p["pitcher_skill"]),
-        stamina=_scout.to_unit(stamina_grade),
+        skill=gov(_scout.to_unit(p["skill"])) + home_bonus,
+        speed=gov(_scout.to_unit(p["speed"])),
+        pitcher_skill=gov(_scout.to_unit(p["pitcher_skill"])),
+        stamina=gov(_scout.to_unit(stamina_grade)),
         stay_aggressiveness=0.30,
         contact_quality_threshold=0.50,
-        archetype="",
+        archetype=archetype,
         pitcher_role="",
         hard_contact_delta=0.0,
         hr_weight_bonus=0.0,
-        contact=_scout.to_unit(p.get("contact") or 50),
-        power=_scout.to_unit(p.get("power") or 50),
-        eye=_scout.to_unit(p.get("eye") or 50),
-        command=_scout.to_unit(p.get("command") or 50),
-        movement=_scout.to_unit(p.get("movement") or 50),
+        contact=gov(_scout.to_unit(p.get("contact") or 50)),
+        power=gov(_scout.to_unit(p.get("power") or 50)),
+        eye=gov(_scout.to_unit(p.get("eye") or 50)),
+        command=gov(_scout.to_unit(p.get("command") or 50)),
+        movement=gov(_scout.to_unit(p.get("movement") or 50)),
         bats=str(p.get("bats") or "R"),
         throws=str(p.get("throws") or "R"),
-        defense=_scout.to_unit(p.get("defense") or 50),
-        arm=_scout.to_unit(p.get("arm") or 50),
-        defense_infield=_scout.to_unit(p.get("defense_infield") or 50),
-        defense_outfield=_scout.to_unit(p.get("defense_outfield") or 50),
-        defense_catcher=_scout.to_unit(p.get("defense_catcher") or 50),
-        baserunning=_scout.to_unit(p.get("baserunning") or 50),
-        run_aggressiveness=_scout.to_unit(p.get("run_aggressiveness") or 50),
+        defense=gov(_scout.to_unit(p.get("defense") or 50)),
+        arm=gov(_scout.to_unit(p.get("arm") or 50)),
+        defense_infield=gov(_scout.to_unit(p.get("defense_infield") or 50)),
+        defense_outfield=gov(_scout.to_unit(p.get("defense_outfield") or 50)),
+        defense_catcher=gov(_scout.to_unit(p.get("defense_catcher") or 50)),
+        baserunning=gov(_scout.to_unit(p.get("baserunning") or 50)),
+        run_aggressiveness=gov(_scout.to_unit(p.get("run_aggressiveness") or 50)),
         position=str(p.get("position") or ("P" if p.get("is_pitcher") else "DH")),
     )
 
@@ -189,48 +211,56 @@ def _build_youth_engine_team(
         raise ValueError(f"Youth team {youth_team_id} has no pitchers")
 
     # Build engine players. Home bonus is small — kids field a less-
-    # established home advantage.
+    # established home advantage. Sort youth_players rows so jokers
+    # are constructed last, after the canonical lineup positions.
     HOME_BONUS = 0.005 if team_role == "home" else 0.0
     engine_players: list[Player] = []
-    hitters: list[Player] = []
+    starting_hitters_by_pos: dict[str, Player] = {}
+    backup_hitters: list[Player] = []
     pitchers: list[Player] = []
+    jokers_engine: list[Player] = []
     starter_engine: Player | None = None
+
+    # Walk position-player rows first, mark the FIRST row at each
+    # canonical position as the starter — every subsequent same-
+    # position row becomes a backup.
+    seen_starter_pos: set[str] = set()
     for p in players:
+        is_joker = bool(p.get("is_joker"))
+        is_pitcher = bool(p.get("is_pitcher"))
         ep = _make_engine_player(p, home_bonus=HOME_BONUS)
         engine_players.append(ep)
-        if p["is_pitcher"]:
+        if is_joker:
+            jokers_engine.append(ep)
+            continue
+        if is_pitcher:
             pitchers.append(ep)
             if p["id"] == starter_pid:
                 starter_engine = ep
+            continue
+        # Position player: starter if first at this position, else backup.
+        pos = str(p.get("position") or "")
+        if pos in _HITTER_POSITIONS_ORDER and pos not in seen_starter_pos:
+            starting_hitters_by_pos[pos] = ep
+            seen_starter_pos.add(pos)
         else:
-            hitters.append(ep)
+            backup_hitters.append(ep)
 
+    if starter_engine is None and pitchers:
+        starter_engine = max(pitchers, key=lambda x: getattr(x, "stamina", 0.5))
     if starter_engine is None:
-        # Fallback: highest-stamina pitcher if the rotation pick failed.
-        starter_engine = max(
-            pitchers,
-            key=lambda x: getattr(x, "stamina", 0.5),
-        )
+        raise ValueError(f"Youth team {youth_team_id} has no usable pitchers")
 
-    # 9-batter lineup: 8 hitters in canonical order + SP last (matches
-    # the original O27 rule that the starter must bat).
-    HITTER_ORDER = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
-    hitters_by_pos = {h.position: h for h in hitters}
-    lineup_hitters: list[Player] = []
-    used: set[str] = set()
-    for pos in HITTER_ORDER:
-        h = hitters_by_pos.get(pos)
-        if h and h.player_id not in used:
-            lineup_hitters.append(h)
-            used.add(h.player_id)
-    # Backfill with whatever hitters are left if a position is missing.
-    for h in hitters:
-        if len(lineup_hitters) >= 8:
-            break
-        if h.player_id not in used:
-            lineup_hitters.append(h)
-            used.add(h.player_id)
-    lineup = lineup_hitters[:8] + [starter_engine]
+    # 9-batter lineup: 8 starting fielders in canonical order + SP last
+    # (the original O27 rule: every fielder bats including the SP).
+    lineup: list[Player] = []
+    for pos in _HITTER_POSITIONS_ORDER:
+        if pos in starting_hitters_by_pos:
+            lineup.append(starting_hitters_by_pos[pos])
+    # Pad from backups if any starting position is missing entirely.
+    while len(lineup) < 8 and backup_hitters:
+        lineup.append(backup_hitters.pop(0))
+    lineup.append(starter_engine)
 
     team = Team(
         team_id=team_role,
@@ -246,14 +276,19 @@ def _build_youth_engine_team(
         mgr_quick_hook=0.5,
         mgr_bullpen_aggression=0.5,
         mgr_leverage_aware=0.5,
-        mgr_joker_aggression=0.0,    # disabled — no jokers on youth
+        # Jokers are structural to O27 — turn the manager AI loose on
+        # them. Same default 0.5 as a league-mean pro team.
+        mgr_joker_aggression=0.5,
         mgr_pinch_hit_aggression=0.5,
         mgr_platoon_aggression=0.5,
         mgr_run_game=0.5,
         mgr_bench_usage=0.5,
-        jokers_available=[],
+        jokers_available=jokers_engine,
     )
     return team, players, int(starter_engine.player_id)
+
+
+_HITTER_POSITIONS_ORDER = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
 
 
 # ---------------------------------------------------------------------------
