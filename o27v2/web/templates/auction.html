@@ -9,6 +9,11 @@
     </div>
   </div>
   <div class="d-flex gap-2">
+    {% if auction %}
+      <a class="btn btn-sm btn-outline-info" href="{{ url_for('auction_live_view') }}" title="IPL-style replay with animated bidding">
+        ▶ Watch the auction
+      </a>
+    {% endif %}
     {% if is_tiered %}
       <button id="run-auction-btn" class="btn btn-warning btn-sm">
         {% if auction %}Re-run Auction{% else %}Run Auction{% endif %}

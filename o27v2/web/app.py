@@ -5116,6 +5116,26 @@ def auction_view():
                   config_summary=(cfg.get("auction") if cfg else None))
 
 
+@app.route("/auction/live")
+def auction_live_view():
+    from o27v2 import auction as _auction
+    feed = _auction.get_live_auction()
+    cfg = _active_config()
+    is_tiered = bool(cfg and cfg.get("schedule_mode") == "tiered")
+    return _serve("auction_live.html",
+                  feed=feed,
+                  is_tiered=is_tiered)
+
+
+@app.route("/api/auction/live")
+def api_auction_live():
+    from o27v2 import auction as _auction
+    feed = _auction.get_live_auction()
+    if feed is None:
+        return jsonify({"ok": False, "error": "No auction has been run yet."}), 404
+    return jsonify({"ok": True, "feed": feed})
+
+
 @app.route("/api/auction/run", methods=["POST"])
 def api_auction_run():
     """Run the Vickrey auction against the current league state. Tiered
