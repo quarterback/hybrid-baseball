@@ -320,14 +320,50 @@ def _team_valuation_noisefree(player: dict, team_id: int,
 # from churning on every lot, only triggering when the would-be buyer
 # clearly values the player higher than the noisy original auction
 # allocated. Trade clears at the midpoint, so both sides realise
-# surplus. One trade per lot.
+# surplus.
+#
+# Two hard caps prevent runaway churning that leaves teams full at
+# the roster cap with surplus cash forfeit:
+#   * Trades only fire in the first TRADE_LOT_LIMIT lots — past the
+#     marquee tier, the auction settles and rosters can't be flipped.
+#   * Each team can sell at most TRADE_SALES_PER_TEAM player(s)
+#     across the whole auction. One sale per team is the natural
+#     "draft trade-back" rhythm — pick someone for another team and
+#     get cash, then commit to your remaining picks.
 TRADE_THRESHOLD: float = 0.05    # buyer must value at ≥ 5% above winning bid
+TRADE_LOT_LIMIT: int   = 50      # trades only allowed in lots 1..50
+TRADE_SALES_PER_TEAM: int = 1    # max sellbacks per team per auction
+
+
+def _team_pressure(purse_remaining: int, lot_order: int,
+                   auction_lot_limit: int, purse_init: int) -> float:
+    """How much surplus does a team have vs expected linear depletion?
+
+    Auction budget doesn't roll over to the regular season, so a team
+    sitting on a pile of cash with the auction running out has every
+    incentive to overpay rather than let the money disappear. Returns
+    a multiplier on aggression: 1.0 = on the linear track, > 1.0 =
+    sitting on cash and should bid hotter, capped at 2.5× so the
+    pressure doesn't go infinite at the very end of the auction.
+
+    Surplus only ever comes from sellbacks (a team that flipped a player
+    for more than they paid). The pressure factor is what closes the
+    "no rollover ⇒ overpay later" loop the brief described.
+    """
+    if auction_lot_limit <= 0 or purse_init <= 0:
+        return 1.0
+    fraction_done = min(1.0, lot_order / auction_lot_limit)
+    # Expected purse decays linearly from purse_init to 5% over the
+    # auction phase — never to 0, so the ratio doesn't blow up.
+    expected = purse_init * max(0.05, 1.0 - fraction_done)
+    return max(1.0, min(2.5, purse_remaining / expected))
 
 
 def _team_bid(player: dict, team_id: int, purse_remaining: int,
               n_keepers: int, rng: random.Random,
               *, min_bid: int, lot_order: int,
-              profile: dict[str, float]) -> int:
+              profile: dict[str, float],
+              pressure: float = 1.0) -> int:
     """Compute a single team's private valuation for a player, in
     guilders. The team's `profile` (from `_team_auction_profile`) is
     fixed for the whole auction — the only per-lot randomness is the
@@ -370,7 +406,8 @@ def _team_bid(player: dict, team_id: int, purse_remaining: int,
     half_hi = 0.50 - 0.40 * profile["discipline"]   # 0.50 → 0.10
     noise = rng.uniform(1.0 - half_lo, 1.0 + half_hi)
 
-    max_bid = int(base * need_mult * profile["aggression"] * noise)
+    effective_aggression = profile["aggression"] * pressure
+    max_bid = int(base * need_mult * effective_aggression * noise)
 
     remaining_slots = max(1, ROSTER_TARGET - n_keepers)
     cap = _per_lot_cap(purse_remaining, lot_order, remaining_slots, min_bid)
@@ -504,6 +541,12 @@ def apply_auction(
     # Step 3: per-team purse, slot tracking, auction loop.
     purse = {tid: purse_init for tid in team_ids}
     won_by_team: dict[int, list[dict]] = {tid: [] for tid in team_ids}
+    # Per-team sales count for the sellback mechanic. Capped at 1 so
+    # no team can churn dozens of player → cash flips and exit the
+    # auction with massive surplus. One sale per team across the
+    # whole auction; the team picks the timing implicitly via "first
+    # qualifying offer wins."
+    sales_count: dict[int, int] = {tid: 0 for tid in team_ids}
     log: list[dict] = []
     unsold = 0
 
@@ -522,11 +565,14 @@ def apply_auction(
                 continue
             if purse[tid] < min_bid:
                 continue
+            tp = _team_pressure(purse[tid], lot_order,
+                                auction_lot_limit, purse_init)
             bid = _team_bid(player, tid, purse[tid],
                             n_keepers + won_so_far, rng,
                             min_bid=min_bid,
                             lot_order=lot_order,
-                            profile=profiles[tid])
+                            profile=profiles[tid],
+                            pressure=tp)
             if bid >= min_bid:
                 bids.append((bid, tid))
 
@@ -591,33 +637,59 @@ def apply_auction(
         # buy the player off the original winner at the midpoint of
         # (winning_bid, buyer_valuation). Cash flows to the seller, who
         # uses it (or doesn't — no rollover) on later lots.
+        #
+        # Two hard caps gate the trade: the lot must be inside the
+        # marquee window (lot_order ≤ TRADE_LOT_LIMIT), and the seller
+        # mustn't already be at their per-team sale cap. Without these
+        # the auction churns — teams flip players endlessly, end up
+        # full at the roster cap, and forfeit surplus cash they
+        # couldn't deploy.
         traded_to_tid: int | None = None
         traded_to_abbrev = ""
         trade_price: int | None = None
-        threshold_price = int(winner_bid * (1.0 + TRADE_THRESHOLD))
+
+        trade_eligible = (lot_order <= TRADE_LOT_LIMIT
+                          and sales_count[winner_tid] < TRADE_SALES_PER_TEAM)
+
+        # The trade fires when another team's noise-free valuation
+        # exceeds the auction winner's noise-free valuation — i.e.,
+        # the wrong team won the lot because the winner's noise rolled
+        # high, not because they actually wanted the player most.
+        # Trade clears at the midpoint of (winner_val, buyer_val), so
+        # both sides extract surplus relative to their reservation
+        # price. The original winning_bid is sunk cost for the seller —
+        # what matters is whether the cash they'd receive exceeds
+        # their own valuation of the player.
+        winner_val = _team_valuation_noisefree(
+            player, winner_tid, profiles[winner_tid],
+        )
+        val_threshold = int(winner_val * (1.0 + TRADE_THRESHOLD))
 
         candidates: list[tuple[int, int]] = []
-        for tid in team_ids:
-            if tid == winner_tid:
-                continue
-            slots_filled = (len(keepers_by_team.get(tid, []))
-                            + len(won_by_team[tid]))
-            if slots_filled >= ROSTER_TARGET + 13:
-                continue
-            if purse[tid] < threshold_price:
-                continue
-            val = _team_valuation_noisefree(player, tid, profiles[tid])
-            if val >= threshold_price:
-                candidates.append((val, tid))
+        if trade_eligible:
+            for tid in team_ids:
+                if tid == winner_tid:
+                    continue
+                slots_filled = (len(keepers_by_team.get(tid, []))
+                                + len(won_by_team[tid]))
+                if slots_filled >= ROSTER_TARGET + 13:
+                    continue
+                buyer_pressure = _team_pressure(
+                    purse[tid], lot_order, auction_lot_limit, purse_init,
+                )
+                val = int(_team_valuation_noisefree(player, tid, profiles[tid])
+                          * buyer_pressure)
+                if val >= val_threshold:
+                    candidates.append((val, tid))
 
         if candidates:
             candidates.sort(reverse=True)
             buyer_val, buyer_tid = candidates[0]
-            mid = (winner_bid + buyer_val) // 2
+            mid = (winner_val + buyer_val) // 2
             t_price = min(mid, purse[buyer_tid])
-            # Confirm the buyer can still cover the midpoint price. If
-            # not, fall back to the strictest mutually-acceptable price.
-            if t_price > winner_bid:
+            # Seller's reservation: their own noise-free valuation. They
+            # only sell if the cash exceeds what they value the player at.
+            if t_price > winner_val:
                 purse[buyer_tid] -= t_price
                 purse[winner_tid] += t_price
                 # Move the player off the original winner's roster.
@@ -626,6 +698,7 @@ def apply_auction(
                     if p["id"] != player["id"]
                 ]
                 won_by_team[buyer_tid].append(player)
+                sales_count[winner_tid] += 1
                 traded_to_tid = buyer_tid
                 trade_price = t_price
                 buyer_team = next(
@@ -702,9 +775,20 @@ def apply_auction(
             player_overall = _player_overall(player)
             tid = team_ids[snake_idx]
 
-            # Floor-draft: pay min_bid, even if purse can't cover (we
-            # treat min_bid contracts as below-the-cap roster moves).
-            price = min_bid
+            # Variable-cost snake fill: spread any leftover auction
+            # purse evenly across the team's remaining open slots so
+            # surplus cash gets sopped up by overpaying for floor-tier
+            # players rather than forfeit. Floor: min_bid. A team that
+            # ran its purse close to zero in the auction phase pays
+            # the floor on every snake pick; a team sitting on ƒ50 cr
+            # of un-deployed cash with 30 open slots pays ƒ1.7 cr per
+            # pick — match the brief's "no money should leave the
+            # auction unspent."
+            slots_filled = (len(keepers_by_team.get(tid, []))
+                            + len(won_by_team[tid]))
+            open_slots = max(1, (ROSTER_TARGET + 13) - slots_filled)
+            price = max(min_bid, purse[tid] // open_slots)
+            price = min(price, purse[tid])  # never spend more than we have
             purse[tid] = max(0, purse[tid] - price)
             won_by_team[tid].append(player)
             n_drafted += 1
