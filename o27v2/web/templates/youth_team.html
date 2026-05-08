@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}{{ team.name }} — Youth roster{% endblock %}
+{% block content %}
+
+{% macro stars(n) -%}
+  <span class="youth-stars" title="{{ n }}-star recruit">
+    {%- for i in range(5) -%}
+      {%- if i < n %}<span class="star-on">★</span>{% else %}<span class="star-off">★</span>{% endif -%}
+    {%- endfor -%}
+  </span>
+{%- endmacro %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="{{ url_for('youth_view') }}" class="small text-secondary">← Youth League</a>
+    <h2 class="mb-0 mt-1">
+      <span class="team-abbrev">{{ team.abbrev }}</span>
+      <span class="ms-2">{{ team.name }}</span>
+    </h2>
+    <div class="text-secondary small">{{ team.country_code }} · name pool: {{ team.name_region }}</div>
+  </div>
+</div>
+
+{% set hitters  = roster | rejectattr('is_pitcher') | rejectattr('is_joker') | list %}
+{% set pitchers = roster | selectattr('is_pitcher') | list %}
+{% set jokers   = roster | selectattr('is_joker')   | list %}
+
+<div class="dense mb-4">
+  <div class="panel-title">Position players ({{ hitters|length }})</div>
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Player</th>
+      <th>Pos</th>
+      <th class="num">Age</th>
+      <th>Recruit</th>
+      <th>B/T</th>
+      <th class="num">PA</th>
+      <th class="num">AB</th>
+      <th class="num">H</th>
+      <th class="num">HR</th>
+      <th class="num">RBI</th>
+      <th class="num">BB</th>
+      <th class="num">K</th>
+      <th class="num" title="batting average">AVG</th>
+    </tr></thead>
+    <tbody>
+    {% for p in hitters %}
+      {% set b = p.bat_obs or {} %}
+      <tr>
+        <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+        <td>{{ p.position }}</td>
+        <td class="num {% if p.age >= 19 %}strk-w{% endif %}" title="{% if p.age >= 19 %}Graduates to the pro FA pool at next season rollover.{% endif %}">{{ p.age }}</td>
+        <td>{{ stars(p.recruit_stars or 1) }}</td>
+        <td>{{ p.bats }}/{{ p.throws }}</td>
+        <td class="num">{{ b.pa or 0 }}</td>
+        <td class="num">{{ b.ab or 0 }}</td>
+        <td class="num fw-bold">{{ b.h or 0 }}</td>
+        <td class="num">{{ b.hr or 0 }}</td>
+        <td class="num">{{ b.rbi or 0 }}</td>
+        <td class="num">{{ b.bb or 0 }}</td>
+        <td class="num">{{ b.k or 0 }}</td>
+        <td class="num">{% if b.ab %}.{{ '%03d' | format(((b.h / b.ab) * 1000) | int) }}{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if jokers %}
+<div class="dense mb-4">
+  <div class="panel-title">Jokers ({{ jokers|length }})</div>
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th>Player</th>
+      <th>Archetype</th>
+      <th class="num">Age</th>
+      <th>Recruit</th>
+      <th>B/T</th>
+      <th class="num">PA</th>
+      <th class="num">H</th>
+      <th class="num">HR</th>
+      <th class="num">BB</th>
+    </tr></thead>
+    <tbody>
+    {% for p in jokers %}
+      {% set b = p.bat_obs or {} %}
+      <tr>
+        <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+        <td>{{ p.joker_archetype or '—' }}</td>
+        <td class="num {% if p.age >= 19 %}strk-w{% endif %}">{{ p.age }}</td>
+        <td>{{ stars(p.recruit_stars or 1) }}</td>
+        <td>{{ p.bats }}/{{ p.throws }}</td>
+        <td class="num">{{ b.pa or 0 }}</td>
+        <td class="num fw-bold">{{ b.h or 0 }}</td>
+        <td class="num">{{ b.hr or 0 }}</td>
+        <td class="num">{{ b.bb or 0 }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="dense mb-4">
+  <div class="panel-title">Pitchers ({{ pitchers|length }})</div>
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Player</th>
+      <th class="num">Age</th>
+      <th>Recruit</th>
+      <th>Throws</th>
+      <th class="num">G</th>
+      <th class="num">GS</th>
+      <th class="num" title="Outs recorded across the tournament">OUT</th>
+      <th class="num">K</th>
+      <th class="num">BB</th>
+      <th class="num">H</th>
+      <th class="num">R</th>
+      <th class="num">ER</th>
+    </tr></thead>
+    <tbody>
+    {% for p in pitchers %}
+      {% set s = p.pit_obs or {} %}
+      <tr>
+        <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+        <td class="num {% if p.age >= 19 %}strk-w{% endif %}">{{ p.age }}</td>
+        <td>{{ stars(p.recruit_stars or 1) }}</td>
+        <td>{{ p.throws }}</td>
+        <td class="num">{{ s.g or 0 }}</td>
+        <td class="num">{{ s.gs or 0 }}</td>
+        <td class="num">{{ s.outs or 0 }}</td>
+        <td class="num fw-bold">{{ s.k or 0 }}</td>
+        <td class="num">{{ s.bb or 0 }}</td>
+        <td class="num">{{ s.h or 0 }}</td>
+        <td class="num">{{ s.r or 0 }}</td>
+        <td class="num">{{ s.er or 0 }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="text-secondary small">
+  Cells highlighted green flag age-19 players who graduate to the pro free-agent pool at the next season rollover.
+  Recruiting stars come from a one-time projection at age 14 and stay sticky — they don't update with year-over-year development, so a busted phenom keeps his ★★★★★ label and a hidden gem stays at ★ until graduation.
+  Numerical attribute grades and the per-player Youth Potential Index governor are deliberately not shown — observed stats are the only signal you get during the youth career.
+</div>
+
+<style>
+.youth-stars { letter-spacing: 1px; }
+.youth-stars .star-on  { color: #f0c024; }
+.youth-stars .star-off { color: var(--border); }
+</style>
+
+{% endblock %}

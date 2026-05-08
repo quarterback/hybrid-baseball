@@ -3,15 +3,233 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <h2 class="mb-0">Standings</h2>
-  <div class="d-flex gap-2">
+  <div class="d-flex gap-2 flex-wrap">
     <button class="copy-md btn btn-sm btn-outline-secondary"
             data-md-url="{{ url_for('standings_export') }}"
             title="Copy standings as markdown">Copy as MD</button>
     <a class="btn btn-sm btn-outline-secondary"
        href="{{ url_for('standings', format='json') }}">JSON</a>
+    {% if is_tiered %}
+      <button id="pr-preview-btn" class="btn btn-sm btn-outline-info"
+              type="button" title="Preview promotion/relegation without applying it">
+        Preview P/R
+      </button>
+      <button id="pr-apply-btn" class="btn btn-sm btn-warning"
+              type="button"
+              {% if not all_games_played %}disabled title="All games must be played before applying promotion/relegation."{% else %}title="Apply promotion/relegation now (writes to DB)"{% endif %}>
+        Run Promotion / Relegation
+      </button>
+    {% endif %}
   </div>
 </div>
 
+{% if is_tiered %}
+<div class="dense mb-3" style="padding:10px 14px;background:var(--bg-soft)">
+  <div class="small text-secondary">
+    <strong>Tiered league.</strong>
+    <span class="me-3"><span class="pr-pill pr-promo">▲</span> top 2 promote</span>
+    <span class="me-3"><span class="pr-pill pr-playoff">▼</span> seeds 11/12/13 relegation playoff (loser of 11-vs-12 plays 13; loser drops)</span>
+    <span><span class="pr-pill pr-auto">▼</span> bottom seed auto-relegated</span>
+  </div>
+</div>
+
+<div id="pr-result" style="display:none" class="dense mb-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="panel-title mb-0" id="pr-result-title">Promotion / Relegation</div>
+    <button id="pr-result-close" class="btn btn-sm btn-link p-0">Close</button>
+  </div>
+  <div id="pr-result-body"></div>
+</div>
+
+{% for tier_name in tier_order %}
+  {% set tier_teams = tiered_view.get(tier_name, []) %}
+  {% set m = tier_meta.get(tier_name, {}) %}
+  {% set leader = tier_teams[0] if tier_teams else None %}
+  <div class="dense mb-4">
+    <div class="panel-title">
+      {{ tier_name }}
+      <span class="text-secondary small ms-2">
+        Tier {{ (m.tier_index or 0) + 1 }} of {{ tier_order|length }}
+        {% if m.is_top %}· top tier (no promotion){% endif %}
+        {% if m.is_bottom %}· bottom tier (no relegation){% endif %}
+      </span>
+    </div>
+    <table class="table table-sm dense-table sortable mb-0">
+      <thead><tr>
+        <th class="num">#</th>
+        <th>Team</th>
+        <th class="num">W</th><th class="num">L</th>
+        <th class="num">PCT</th><th class="num">GB</th>
+        <th class="num">L10</th><th>Strk</th>
+        <th class="num">RS</th><th class="num">RA</th><th class="num">DIFF</th>
+        <th class="num" title="Pythagorean expected W-L (RS² / (RS² + RA²))">PYTH</th>
+        <th data-nosort>Last5</th>
+        <th class="num" title="Sum of player salaries on the active roster, in guilders.">PAYROLL</th>
+        <th data-nosort>Status</th>
+      </tr></thead>
+      <tbody>
+      {% for t in tier_teams %}
+        {% set seed = loop.index %}
+        {% set zone = (m.ranks or {}).get(seed) %}
+        {% set ex = extras.get(t.id, {}) %}
+        <tr class="pr-row pr-row-{{ zone or 'safe' }}">
+          <td class="num text-secondary">{{ seed }}</td>
+          <td>
+            <a href="{{ url_for('team_detail', team_id=t.id) }}">
+              <span class="team-abbrev">{{ t.abbrev }}</span>
+              <span class="text-secondary small ms-1">{{ t.city }}</span>
+            </a>
+          </td>
+          <td class="num fw-bold">{{ t.wins }}</td>
+          <td class="num text-secondary">{{ t.losses }}</td>
+          <td class="num" data-sort-value="{{ '%.4f'|format((t.wins / (t.wins + t.losses)) if (t.wins + t.losses) else 0) }}">{{ win_pct(t) }}</td>
+          <td class="num text-secondary" data-sort-value="{{ ((leader.wins - t.wins + t.losses - leader.losses) / 2) if leader else 0 }}">{% if leader %}{{ gb(leader, t) }}{% else %}—{% endif %}</td>
+          <td class="num text-secondary">{{ ex.l10 or '—' }}</td>
+          <td class="{% if ex.streak and ex.streak.startswith('W') %}strk-w{% elif ex.streak %}strk-l{% else %}text-secondary{% endif %}">{{ ex.streak or '—' }}</td>
+          <td class="num">{{ ex.rs if ex.rs is not none else '—' }}</td>
+          <td class="num">{{ ex.ra if ex.ra is not none else '—' }}</td>
+          <td class="num {% if ex.diff and ex.diff > 0 %}strk-w{% elif ex.diff and ex.diff < 0 %}strk-l{% endif %}" data-sort-value="{{ ex.diff if ex.diff is not none else 0 }}">{% if ex.diff is not none %}{% if ex.diff > 0 %}+{% endif %}{{ ex.diff }}{% else %}—{% endif %}</td>
+          <td class="num text-secondary" data-sort-value="{{ '%.4f'|format(ex.pyth_pct or 0) }}" title="Expected record from Pythagorean">{{ ex.pyth_wl or '—' }}</td>
+          <td>
+            {% for r in (ex.last5 or []) %}<span class="l5pill {{ r }}"></span>{% endfor %}
+          </td>
+          <td class="num" data-sort-value="{{ payrolls.get(t.id, 0) }}">{{ payrolls.get(t.id, 0) | money }}</td>
+          <td>
+            {% if zone == 'promotion' %}
+              <span class="pr-pill pr-promo" title="Promoted to the tier above">▲ promotion</span>
+            {% elif zone == 'relegation_auto' %}
+              <span class="pr-pill pr-auto" title="Auto-relegated to the tier below">▼ relegation</span>
+            {% elif zone == 'relegation_playoff' %}
+              <span class="pr-pill pr-playoff" title="Enters the relegation playoff (11 vs 12; loser plays 13; second loser drops)">▼ playoff</span>
+            {% else %}
+              <span class="text-secondary small">—</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endfor %}
+
+<style>
+.pr-pill {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.pr-promo   { background: rgba(40,167,69,.18);  color: #2fb858; border: 1px solid rgba(40,167,69,.40); }
+.pr-auto    { background: rgba(220,53,69,.18);  color: #e0606e; border: 1px solid rgba(220,53,69,.40); }
+.pr-playoff { background: rgba(255,193,7,.18);  color: #f0c024; border: 1px solid rgba(255,193,7,.40); }
+.pr-row-promotion          td:first-child { box-shadow: inset 3px 0 0 rgba(40,167,69,.65); }
+.pr-row-relegation_auto    td:first-child { box-shadow: inset 3px 0 0 rgba(220,53,69,.65); }
+.pr-row-relegation_playoff td:first-child { box-shadow: inset 3px 0 0 rgba(255,193,7,.65); }
+</style>
+
+<script>
+(function () {
+  const previewBtn = document.getElementById('pr-preview-btn');
+  const applyBtn   = document.getElementById('pr-apply-btn');
+  const panel      = document.getElementById('pr-result');
+  const title      = document.getElementById('pr-result-title');
+  const body       = document.getElementById('pr-result-body');
+  const closeBtn   = document.getElementById('pr-result-close');
+
+  if (!previewBtn || !applyBtn || !panel) return;
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function renderReport(report, dryRun) {
+    title.textContent = dryRun
+      ? 'Promotion / Relegation — Preview (no DB changes)'
+      : 'Promotion / Relegation — Applied';
+    let html = '';
+    const moves = (report && report.moves) || [];
+    if (!moves.length) {
+      html += '<div class="text-secondary p-2">No moves computed (check that the season has finished and tier_order matches).</div>';
+    } else {
+      html += '<table class="table table-sm dense-table mb-3"><thead><tr>'
+            + '<th>Team</th><th>From</th><th></th><th>To</th><th>Reason</th>'
+            + '</tr></thead><tbody>';
+      moves.forEach(m => {
+        const arrow = (m.reason === 'promotion') ? '▲' : '▼';
+        const cls   = (m.reason === 'promotion') ? 'pr-promo' : 'pr-auto';
+        html += '<tr>'
+              + '<td><span class="team-abbrev">' + escapeHtml(m.abbrev || '') + '</span> ' + escapeHtml(m.name || '') + '</td>'
+              + '<td>' + escapeHtml(m.from) + '</td>'
+              + '<td><span class="pr-pill ' + cls + '">' + arrow + '</span></td>'
+              + '<td>' + escapeHtml(m.to) + '</td>'
+              + '<td class="text-secondary">' + escapeHtml(m.reason) + '</td>'
+              + '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    const logs = (report && report.playoff_logs) || {};
+    const logTiers = Object.keys(logs);
+    if (logTiers.length) {
+      html += '<div class="panel-title mt-3 mb-2">Relegation playoff log</div>';
+      logTiers.forEach(tier => {
+        const matches = logs[tier] || [];
+        if (!matches.length) return;
+        html += '<div class="mb-2"><strong>' + escapeHtml(tier) + '</strong><ul class="mb-1">';
+        matches.forEach(mt => {
+          html += '<li class="small">R' + escapeHtml(mt.round) + ': '
+                + escapeHtml(mt.matchup) + ' → winner: <strong>' + escapeHtml(mt.winner)
+                + '</strong>, loser: <strong>' + escapeHtml(mt.loser) + '</strong></li>';
+        });
+        html += '</ul></div>';
+      });
+    }
+    body.innerHTML = html;
+    panel.style.display = 'block';
+    panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
+
+  async function runPR(dryRun) {
+    const btn = dryRun ? previewBtn : applyBtn;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = dryRun ? 'Computing…' : 'Applying…';
+    try {
+      const r = await fetch('/api/season/promote-relegate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({dry_run: dryRun}),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'request failed');
+      renderReport(data.report, dryRun);
+      if (!dryRun) {
+        // After applying, the team-tier assignments have changed. Reload
+        // the page so the standings reflect the new tier slots.
+        setTimeout(() => window.location.reload(), 1200);
+      }
+    } catch (err) {
+      alert('Promotion/Relegation failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+
+  previewBtn.addEventListener('click', () => runPR(true));
+  applyBtn.addEventListener('click',   () => {
+    if (!confirm('Apply promotion/relegation? Team tier assignments will be updated in the database.')) return;
+    runPR(false);
+  });
+  closeBtn.addEventListener('click', () => { panel.style.display = 'none'; });
+})();
+</script>
+
+{% else %}
+{# Non-tiered fallback: original league/division layout, unchanged. #}
 {% for league_name, league_divs in leagues.items() %}
 <div class="dense mb-4">
   <div class="panel-title">{{ league_name }}</div>
@@ -60,4 +278,5 @@
   </table>
 </div>
 {% endfor %}
+{% endif %}
 {% endblock %}

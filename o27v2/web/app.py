@@ -335,6 +335,89 @@ def _leagues_with_divisions() -> dict[str, dict[str, list[dict]]]:
     return out
 
 
+def _active_config() -> dict | None:
+    """Return the currently active league config dict, or None when no
+    league config is recorded in sim_meta."""
+    from o27v2.season_archive import get_active_league_meta
+    _seed, cfg_id = get_active_league_meta()
+    if not cfg_id:
+        return None
+    try:
+        from o27v2.league import get_config
+        return get_config(cfg_id)
+    except Exception:
+        return None
+
+
+def _tiered_standings(cfg: dict) -> tuple[dict[str, list[dict]], dict[str, dict]]:
+    """Build tier-ordered standings + per-tier cut-line metadata for a
+    tiered config. Returns (tiers, meta) where:
+      tiers   — {tier_name: [team_row, ...]} in seed order (1..N)
+      meta    — {tier_name: {position: zone}} with zones in
+                {"promotion", "relegation_playoff", "relegation_auto"}.
+
+    Zone assignment is symmetric to `o27v2/promotion.apply_promotion_relegation`:
+      * Top N seeds in any tier *below the top tier* are flagged
+        "promotion" (would move up).
+      * Bottom M seeds in any tier *above the bottom tier* are flagged
+        "relegation_auto".
+      * The seeds listed in `playoff_seeds` (default [11,12,13]) for any
+        tier above the bottom tier are flagged "relegation_playoff".
+    """
+    tier_order = list(cfg.get("tier_order") or cfg.get("leagues") or [])
+    pr = dict(cfg.get("promotion_relegation") or {})
+    n_promote = int(pr.get("auto_promote_top_n", 2))
+    n_auto    = int(pr.get("auto_relegate_bottom_n", 1))
+    use_po    = bool(pr.get("playoff_relegation", True))
+    po_seeds  = list(pr.get("playoff_seeds") or [11, 12, 13])
+
+    rows = db.fetchall(
+        "SELECT * FROM teams ORDER BY wins DESC, losses ASC, id ASC"
+    )
+    by_tier: dict[str, list[dict]] = {tier: [] for tier in tier_order}
+    for r in rows:
+        if r["league"] in by_tier:
+            by_tier[r["league"]].append(dict(r))
+
+    meta: dict[str, dict] = {}
+    for idx, tier in enumerate(tier_order):
+        ranks: dict[int, str] = {}
+        not_top    = idx > 0
+        not_bottom = idx < len(tier_order) - 1
+        n_in_tier  = len(by_tier.get(tier, []))
+        if not_top:
+            for seed in range(1, n_promote + 1):
+                ranks[seed] = "promotion"
+        if not_bottom:
+            for seed in range(n_in_tier, n_in_tier - n_auto, -1):
+                if seed >= 1:
+                    ranks[seed] = "relegation_auto"
+            if use_po:
+                for seed in po_seeds:
+                    if 1 <= seed <= n_in_tier and seed not in ranks:
+                        ranks[seed] = "relegation_playoff"
+        meta[tier] = {
+            "ranks":      ranks,
+            "is_top":     idx == 0,
+            "is_bottom":  idx == len(tier_order) - 1,
+            "tier_index": idx,
+        }
+    return by_tier, meta
+
+
+def _all_games_played() -> bool:
+    """True iff there's at least one game and zero unplayed games. Used
+    to gate the 'Run Promotion/Relegation' button on /standings."""
+    row = db.fetchone(
+        "SELECT COUNT(*) AS total, "
+        "       SUM(CASE WHEN played = 1 THEN 1 ELSE 0 END) AS played "
+        "FROM games"
+    )
+    if not row or not row["total"]:
+        return False
+    return (row["played"] or 0) == row["total"]
+
+
 def _win_pct(t: dict) -> str:
     total = t["wins"] + t["losses"]
     if total == 0:
@@ -1559,6 +1642,15 @@ def standings():
             "pyth_wl":  f"{pyth_w}-{pyth_l}",
         }
 
+    cfg = _active_config()
+    is_tiered = bool(cfg and cfg.get("schedule_mode") == "tiered")
+    tier_meta: dict[str, dict] = {}
+    tier_order_list: list[str] = []
+    tiered_view: dict[str, list[dict]] = {}
+    if is_tiered and cfg is not None:
+        tiered_view, tier_meta = _tiered_standings(cfg)
+        tier_order_list = list(cfg.get("tier_order") or cfg.get("leagues") or [])
+
     payrolls = {
         row["team_id"]: int(row["payroll"] or 0)
         for row in db.fetchall(
@@ -1572,7 +1664,12 @@ def standings():
                            extras=extras,
                            payrolls=payrolls,
                            win_pct=_win_pct,
-                           gb=_gb)
+                           gb=_gb,
+                           is_tiered=is_tiered,
+                           tier_order=tier_order_list,
+                           tier_meta=tier_meta,
+                           tiered_view=tiered_view,
+                           all_games_played=_all_games_played())
 
 
 @app.route("/schedule")
@@ -4571,6 +4668,42 @@ def api_sim_multi_season_status():
     return jsonify(multi_season_status())
 
 
+@app.route("/api/season/promote-relegate", methods=["POST"])
+def api_season_promote_relegate():
+    """Run the tiered-config promotion/relegation pass.
+
+    Body (all optional):
+      {
+        "dry_run":   bool,   # default false — apply DB updates if false
+        "rng_seed":  int,    # seeds the playoff Bernoulli draw
+      }
+
+    Returns the structured report produced by
+    `o27v2.promotion.apply_promotion_relegation`. 400s if the active
+    league config isn't tiered.
+    """
+    from o27v2 import promotion
+    cfg = _active_config()
+    if not cfg or cfg.get("schedule_mode") != "tiered":
+        return jsonify({
+            "ok": False,
+            "error": "Active league config is not tiered. Pick a "
+                     "promotion/relegation config from /new-league first.",
+        }), 400
+
+    data = request.get_json(silent=True) or {}
+    dry_run = bool(data.get("dry_run", False))
+    rng_seed = int(data.get("rng_seed") or 0)
+
+    try:
+        report = promotion.apply_promotion_relegation(
+            cfg, rng_seed=rng_seed, dry_run=dry_run,
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "report": report})
+
+
 @app.route("/api/season/archive", methods=["POST"])
 def api_season_archive():
     """Snapshot the current DB into the seasons history (no reset)."""
@@ -4666,6 +4799,56 @@ def api_season_advance():
     # Run the off-season development + org-strength roll.
     summary = run_offseason(season=season_no, rng_seed=rng_seed or season_no * 17)
 
+    # Youth league: run the season's tournament (group stage + knockout)
+    # FIRST so the prospects play their tournament with this year's
+    # rosters; THEN run aging + graduation. If the tournament was
+    # already run mid-season via the manual button, run_youth_tournament
+    # is a no-op.
+    youth_tournament_summary = None
+    youth_summary = None
+    try:
+        from o27v2 import youth
+        youth_tournament_summary = youth.run_youth_tournament(
+            rng_seed=(rng_seed or season_no * 17),
+        )
+        youth_summary = youth.advance_youth_year(
+            rng_seed=(rng_seed or season_no * 17),
+            new_season_year=next_season,
+        )
+    except Exception:
+        # Either the youth tables don't exist (legacy save) or one of
+        # the steps blew up. We deliberately swallow so the pro-side
+        # rollover still completes.
+        pass
+
+    # Tiered configs: apply promotion/relegation BEFORE wiping wins/losses.
+    # The function reads live standings off the teams table, so it must
+    # run while the just-completed season's W-L is still there.
+    # Auction (also tiered-only) runs immediately AFTER promotion/relegation
+    # so the auction pool is sized against the final tier slots.
+    pr_report = None
+    auction_report = None
+    cfg_active = _active_config()
+    if cfg_active and cfg_active.get("schedule_mode") == "tiered":
+        from o27v2 import promotion
+        try:
+            pr_report = promotion.apply_promotion_relegation(
+                cfg_active, rng_seed=(rng_seed or season_no * 17),
+                dry_run=False,
+            )
+        except Exception:
+            pr_report = None
+        if (cfg_active.get("auction") or {}).get("enabled", True):
+            from o27v2 import auction as _auction
+            try:
+                auction_report = _auction.apply_auction(
+                    cfg_active,
+                    rng_seed=(rng_seed or season_no * 17),
+                    season=season_no,
+                )
+            except Exception:
+                auction_report = None
+
     # Reset W-L and wipe per-game tables; the league + roster stay.
     db.execute("UPDATE teams SET wins = 0, losses = 0")
     db.execute("DELETE FROM game_pa_log")
@@ -4705,6 +4888,10 @@ def api_season_advance():
         "archived_season": archived_id,
         "champion":        ch,
         "development":     summary,
+        "promotion_relegation":   pr_report,
+        "auction":                auction_report,
+        "youth_league":           youth_summary,
+        "youth_tournament":       youth_tournament_summary,
     })
 
 
@@ -4835,6 +5022,138 @@ def api_sim_game(game_id: int):
             "error": f"{type(e).__name__}: {e}",
             "game_id": game_id,
         }), 500
+
+
+@app.route("/youth")
+def youth_view():
+    from o27v2 import youth as _youth
+    archetype = (request.args.get("archetype") or "bat").strip()
+    if archetype not in ("bat", "arm", "stars"):
+        archetype = "bat"
+    teams_rows  = _youth.youth_teams()
+    prospects   = _youth.top_prospects(limit=25, archetype=archetype)
+    return _serve("youth.html",
+                  teams=teams_rows,
+                  prospects=prospects,
+                  archetype=archetype,
+                  archetype_options=("bat", "arm", "stars"))
+
+
+@app.route("/youth/team/<int:team_id>")
+def youth_team_view(team_id: int):
+    from o27v2 import youth as _youth
+    team = db.fetchone(
+        "SELECT * FROM youth_teams WHERE id = ?", (team_id,)
+    )
+    if not team:
+        abort(404)
+    roster = _youth.youth_roster(team_id)
+    # Attach observed tournament stats per player so the page can show
+    # stats without revealing ratings.
+    enriched: list[dict] = []
+    for p in roster:
+        stats = _youth.player_observed_stats(p["id"])
+        merged = dict(p)
+        merged["bat_obs"] = stats.get("bat") or {}
+        merged["pit_obs"] = stats.get("pit") or {}
+        enriched.append(merged)
+    return _serve("youth_team.html", team=dict(team), roster=enriched)
+
+
+@app.route("/api/youth/seed", methods=["POST"])
+def api_youth_seed():
+    """Manually attach the youth league to an existing save (for users
+    who created their league before the youth feature shipped, or who
+    opted out at seed time and changed their mind)."""
+    from o27v2 import youth as _youth
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    n = _youth.seed_youth_league(rng_seed=rng_seed, seed_year=1)
+    return jsonify({"ok": True, "teams_inserted": n})
+
+
+@app.route("/youth/tournament")
+def youth_tournament_view():
+    from o27v2 import youth as _youth
+    summary = _youth.get_tournament()
+    return _serve("youth_tournament.html",
+                  tournament=summary,
+                  season=(summary or {}).get("season"))
+
+
+@app.route("/youth/game/<int:game_id>")
+def youth_game_view(game_id: int):
+    from o27v2 import youth_sim
+    box = youth_sim.get_box_score(game_id)
+    if not box:
+        abort(404)
+    return _serve("youth_box_score.html", box=box)
+
+
+@app.route("/api/youth/tournament/run", methods=["POST"])
+def api_youth_tournament_run():
+    """Run (or re-run via reset=true) the youth tournament for the
+    current season."""
+    from o27v2 import youth as _youth
+    data = request.get_json(silent=True) or {}
+    reset    = bool(data.get("reset"))
+    rng_seed = int(data.get("rng_seed") or 0)
+    if reset:
+        _youth.reset_youth_tournament()
+    summary = _youth.run_youth_tournament(rng_seed=rng_seed)
+    return jsonify({"ok": True, "tournament": summary})
+
+
+@app.route("/auction")
+def auction_view():
+    from o27v2 import auction as _auction
+    summary = _auction.get_auction()
+    cfg = _active_config()
+    is_tiered = bool(cfg and cfg.get("schedule_mode") == "tiered")
+    return _serve("auction.html",
+                  auction=summary,
+                  is_tiered=is_tiered,
+                  config_summary=(cfg.get("auction") if cfg else None))
+
+
+@app.route("/auction/live")
+def auction_live_view():
+    from o27v2 import auction as _auction
+    feed = _auction.get_live_auction()
+    cfg = _active_config()
+    is_tiered = bool(cfg and cfg.get("schedule_mode") == "tiered")
+    return _serve("auction_live.html",
+                  feed=feed,
+                  is_tiered=is_tiered)
+
+
+@app.route("/api/auction/live")
+def api_auction_live():
+    from o27v2 import auction as _auction
+    feed = _auction.get_live_auction()
+    if feed is None:
+        return jsonify({"ok": False, "error": "No auction has been run yet."}), 404
+    return jsonify({"ok": True, "feed": feed})
+
+
+@app.route("/api/auction/run", methods=["POST"])
+def api_auction_run():
+    """Run the Vickrey auction against the current league state. Tiered
+    configs only; refuses on non-tiered."""
+    from o27v2 import auction as _auction
+    cfg = _active_config()
+    if not cfg or cfg.get("schedule_mode") != "tiered":
+        return jsonify({
+            "ok": False,
+            "error": "Auction is only available for tiered configs.",
+        }), 400
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    try:
+        report = _auction.apply_auction(cfg, rng_seed=rng_seed)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "auction": report})
 
 
 @app.route("/api/league-configs")

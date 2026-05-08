@@ -1,0 +1,40 @@
+{
+  "id": "56teams_tiered",
+  "label": "O27 Tiered (56 teams, 4 tiers w/ promotion + relegation)",
+  "team_count": 56,
+  "level": "MLB",
+  "games_per_team": 80,
+  "season_days": 130,
+  "leagues": ["O27 Galactic", "O27 Premier", "O27 National", "O27 Association"],
+  "divisions_per_league": 1,
+  "teams_per_division": 14,
+  "intra_division_weight": 0.0,
+  "inter_division_weight": 0.0,
+  "schedule_mode": "tiered",
+  "tier_order": ["O27 Galactic", "O27 Premier", "O27 National", "O27 Association"],
+  "tier_in_league_games_per_pair": 4,
+  "tier_schedule_pairs": [
+    ["O27 Galactic", "O27 Premier"],
+    ["O27 National", "O27 Association"]
+  ],
+  "tier_cross_games_per_pair": 2,
+  "promotion_relegation": {
+    "auto_promote_top_n": 2,
+    "auto_relegate_bottom_n": 1,
+    "playoff_relegation": true,
+    "playoff_seeds": [11, 12, 13]
+  },
+  "auction": {
+    "enabled": true,
+    "keepers_per_team": 3,
+    "team_purse": 2000000000,
+    "min_bid": 5000000,
+    "auction_lot_limit": 500
+  },
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
+}

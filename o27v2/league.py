@@ -245,6 +245,37 @@ def _div_suffixes_geo(divs_per_league: int) -> list[str]:
     return [f"Div {i + 1}" for i in range(divs_per_league)]
 
 
+def _assign_tiered_divisions(
+    selected: list[dict], config: dict, rng: random.Random
+) -> list[tuple[str, str]]:
+    """Build a (league, division) assignment for tiered configs.
+
+    The four tiers come from `config["tier_order"]` (top → bottom). Teams
+    are shuffled and dealt round-robin into the tiers — talent-blind
+    initial placement, since the user explicitly opted out of tiered
+    talent stratification for the demo. The `league` and `division`
+    columns are both set to the tier name; a tiered config has no
+    sub-divisions inside a tier.
+    """
+    tier_order = list(config.get("tier_order") or config.get("leagues") or [])
+    teams_per_tier = int(config["teams_per_division"])
+    if not tier_order or len(tier_order) * teams_per_tier != len(selected):
+        raise ValueError(
+            f"Tiered config requires len(tier_order) × teams_per_division "
+            f"== team_count (got {len(tier_order)} × {teams_per_tier} != "
+            f"{len(selected)})."
+        )
+
+    indices = list(range(len(selected)))
+    rng.shuffle(indices)
+
+    assignments: list[tuple[str, str]] = [("", "")] * len(selected)
+    for slot, orig_idx in enumerate(indices):
+        tier = tier_order[slot // teams_per_tier]
+        assignments[orig_idx] = (tier, tier)
+    return assignments
+
+
 def _assign_geographic_divisions(
     selected: list[dict], config: dict
 ) -> list[tuple[str, str]]:
@@ -1190,7 +1221,10 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         rng.shuffle(remaining)
         selected += remaining[: n_teams - len(selected)]
 
-    div_map = _assign_geographic_divisions(selected, config)
+    if config.get("schedule_mode") == "tiered":
+        div_map = _assign_tiered_divisions(selected, config, rng)
+    else:
+        div_map = _assign_geographic_divisions(selected, config)
 
     # Name-distribution config: gender + region weights flow through to
     # every player's name draw. Pulled from the league config so a
@@ -1316,3 +1350,15 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
 
     if free_agents:
         db.executemany(insert_sql, [_row(None, p, None) for p in free_agents])
+
+    # Auto-attach the O27 Youth League. Default-on; opt out by setting
+    # `attach_youth_league: false` on the league config. Failure here is
+    # logged but non-fatal — pro-side seeding has already succeeded and
+    # the youth tables can be back-filled with a separate call later.
+    if config.get("attach_youth_league", True):
+        try:
+            from o27v2 import youth
+            youth.seed_youth_league(rng_seed=rng_seed, seed_year=1)
+        except Exception as e:
+            import sys
+            print(f"[seed_league] youth-league attach failed: {e}", file=sys.stderr)

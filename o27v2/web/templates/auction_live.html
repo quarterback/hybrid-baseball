@@ -1,0 +1,546 @@
+{% extends "base.html" %}
+{% block title %}Live Auction{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="{{ url_for('auction_view') }}" class="small text-secondary">← Auction</a>
+    <h2 class="mb-0 mt-1">Live Auction Replay</h2>
+    <div class="text-secondary small">
+      Top 50 lots get the full stage treatment with animated bidding. The remaining lots scroll past in a fast-forward montage.
+    </div>
+  </div>
+</div>
+
+{% if not feed %}
+<div class="dense" style="padding:18px;text-align:center">
+  <div class="text-secondary mb-2">No auction recorded yet.</div>
+  <div class="small">
+    Head to <a href="{{ url_for('auction_view') }}">/auction</a> and click <strong>Run Auction</strong> to generate a replay-able auction. Live auctions only work for tiered configs.
+  </div>
+</div>
+{% else %}
+
+<div class="dense mb-3" style="padding:10px 14px">
+  <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
+    <div class="text-secondary small">
+      Season {{ feed.season }} ·
+      <strong style="color:var(--text)">{{ feed.summary.n_lots }}</strong> lots
+      ({{ feed.summary.n_sold }} sold, {{ feed.summary.n_unsold }} unsold) ·
+      <strong style="color:var(--text)">{{ feed.stage_count }}</strong> stage lots, {{ feed.montage_lots|length }} in the montage
+    </div>
+    <div class="d-flex gap-1 align-items-center">
+      <button id="play-pause" class="btn btn-sm btn-warning" type="button">▶ Play</button>
+      <button id="restart"    class="btn btn-sm btn-outline-secondary" type="button">⟲</button>
+      <button id="skip-end"   class="btn btn-sm btn-outline-secondary" type="button">⏭ Skip</button>
+      <span class="text-secondary small ms-2">Speed</span>
+      <div class="btn-group btn-group-sm" role="group">
+        <button data-speed="1" class="btn btn-sm btn-outline-secondary speed-btn active">1×</button>
+        <button data-speed="2" class="btn btn-sm btn-outline-secondary speed-btn">2×</button>
+        <button data-speed="5" class="btn btn-sm btn-outline-secondary speed-btn">5×</button>
+      </div>
+    </div>
+  </div>
+  <div class="progress mt-2" style="height:5px">
+    <div id="progress-bar" class="progress-bar bg-warning" role="progressbar" style="width:0%"></div>
+  </div>
+</div>
+
+<div class="row g-3">
+  {# ─── STAGE ─────────────────────────────────────────────────────── #}
+  <div class="col-lg-8">
+    <div id="stage" class="dense" style="padding:18px;min-height:340px;position:relative">
+      <div id="stage-empty" class="text-secondary text-center py-5">
+        Click <strong>Play</strong> to start the auction replay.
+      </div>
+
+      <div id="stage-card" style="display:none">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <div class="text-secondary small" id="lot-label">Lot 1 of {{ feed.summary.n_lots }}</div>
+            <div id="player-name" style="font-size:1.6rem;font-weight:700;line-height:1.1"></div>
+            <div class="text-secondary mt-1">
+              <span id="player-position"></span>
+              <span class="ms-3" id="player-stars"></span>
+              <span class="ms-3 text-muted" id="player-overall"></span>
+            </div>
+          </div>
+          <div class="text-end">
+            <div class="text-secondary small">FINAL PRICE</div>
+            <div id="final-price" style="font-size:1.8rem;font-weight:700;color:var(--accent)">—</div>
+            <div class="small" id="winner-line">&nbsp;</div>
+          </div>
+        </div>
+        <div class="text-secondary small mb-1">Bidders</div>
+        <ul id="bid-list" class="list-unstyled mb-0" style="font-family:'JetBrains Mono', monospace;font-size:.92rem">
+        </ul>
+      </div>
+    </div>
+
+    <div id="montage" class="dense mt-3" style="padding:12px;display:none">
+      <div class="panel-title mb-2">Montage</div>
+      <div id="montage-stream" style="max-height:160px;overflow-y:auto;font-family:'JetBrains Mono', monospace;font-size:.84rem"></div>
+    </div>
+
+    <div id="end-screen" class="dense mt-3" style="display:none">
+      <div class="panel-title">Auction complete</div>
+      <div class="p-3">
+        <div class="small text-secondary mb-2">Top 5 sales of the day</div>
+        <table class="table table-sm dense-table mb-3">
+          <thead><tr>
+            <th>Player</th><th>Won by</th>
+            <th class="num">Price</th><th class="num">2nd bid</th>
+          </tr></thead>
+          <tbody id="top-sales-body"></tbody>
+        </table>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('auction_view') }}">View static report →</a>
+      </div>
+    </div>
+  </div>
+
+  {# ─── SIDEBAR ───────────────────────────────────────────────────── #}
+  <div class="col-lg-4">
+    <div class="dense" style="padding:12px">
+      <div class="panel-title mb-2">Top spenders (running)</div>
+      <table class="table table-sm dense-table mb-0">
+        <thead><tr>
+          <th>Team</th>
+          <th class="num">Won</th>
+          <th class="num">Spent</th>
+        </tr></thead>
+        <tbody id="purse-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script id="auction-feed" type="application/json">
+{{ feed | tojson }}
+</script>
+
+<style>
+.lot-bid {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border-soft);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+.lot-bid.shown { opacity: 1; transform: none; }
+.lot-bid.winner-row {
+  background: rgba(255,193,7,.20);
+  border-left: 3px solid #f0c024;
+  padding-left: 6px;
+  font-weight: 700;
+}
+.lot-bid.runner-up { background: rgba(10,58,115,.10); }
+.bid-amount { font-weight: 700; color: var(--text); }
+.youth-stars .star-on  { color: #f0c024; letter-spacing: 1px; }
+.youth-stars .star-off { color: var(--border); letter-spacing: 1px; }
+.montage-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 1px 4px;
+  border-bottom: 1px solid var(--border-soft);
+  animation: slidein .18s ease-out;
+}
+@keyframes slidein {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+.speed-btn.active { background: var(--bg-warm); border-color: var(--border-strong); }
+</style>
+
+<script>
+(function () {
+  const feedEl = document.getElementById('auction-feed');
+  if (!feedEl) return;
+  const FEED = JSON.parse(feedEl.textContent || '{}');
+  if (!FEED || !(FEED.stage_lots || []).length) return;
+
+  // Pacing — at 1× speed, stage lots take 3.5s, montage rolls 12 lots/sec.
+  const STAGE_BASE_MS    = 3500;
+  const MONTAGE_BASE_MS  = 80;
+  const BID_TICK_MS      = 220;     // each bid reveal step
+
+  let speed = 1;
+  let playing = false;
+  let stageIdx = 0;
+  let montageIdx = 0;
+  let phase = 'stage';   // 'stage' | 'montage' | 'end'
+  let timer = null;
+
+  const $stageEmpty = document.getElementById('stage-empty');
+  const $stageCard  = document.getElementById('stage-card');
+  const $lotLabel   = document.getElementById('lot-label');
+  const $playerName = document.getElementById('player-name');
+  const $playerPos  = document.getElementById('player-position');
+  const $playerStars= document.getElementById('player-stars');
+  const $playerOver = document.getElementById('player-overall');
+  const $finalPrice = document.getElementById('final-price');
+  const $winnerLine = document.getElementById('winner-line');
+  const $bidList    = document.getElementById('bid-list');
+  const $montage    = document.getElementById('montage');
+  const $montageStr = document.getElementById('montage-stream');
+  const $endScreen  = document.getElementById('end-screen');
+  const $topSales   = document.getElementById('top-sales-body');
+  const $purseBody  = document.getElementById('purse-body');
+  const $progress   = document.getElementById('progress-bar');
+  const $playPause  = document.getElementById('play-pause');
+  const $restart    = document.getElementById('restart');
+  const $skipEnd    = document.getElementById('skip-end');
+
+  // Running purse trackers (mutated as we play through).
+  const teamPurseRunning = new Map();
+  (FEED.team_purses || []).forEach(t => {
+    teamPurseRunning.set(t.team_id, {abbrev: t.abbrev, name: t.name, spent: 0, won: 0});
+  });
+
+  function fmtMoney(n) {
+    // Returns an `.o27-money` span matching the server-side `money`
+    // Jinja filter (see o27v2/web/app.py::_money). Three labels are
+    // baked in as data attributes so the existing toggle pill in
+    // base.html cycles ƒ → $ → € on these cells just like static ones.
+    if (n == null) return '<span class="text-secondary">—</span>';
+    const g = Math.round(Number(n) || 0);
+    const labels = labelsForGuilders(g);
+    const initial = labels[currentMode()];
+    return ''
+      + '<span class="o27-money" data-g="' + g + '"'
+      + ' data-label-guilder="' + escapeHtml(labels.guilder) + '"'
+      + ' data-label-usd="' + escapeHtml(labels.usd) + '"'
+      + ' data-label-eur="' + escapeHtml(labels.eur) + '">'
+      + '<span class="o27-money-label">' + escapeHtml(initial) + '</span>'
+      + '<button type="button" class="o27-money-pill"'
+      + ' aria-label="Toggle currency display">' + currentSymbol() + '</button>'
+      + '</span>';
+  }
+
+  // Mirror of o27v2/currency.py — kept tiny because we only ever need
+  // the headline forms here. The Python module remains source-of-truth;
+  // the rates dict (RATES) is injected by base.html.
+  const RATES = (window.O27_RATES || {});
+  const GUILDER_PER_USD = RATES.guilderPerUsd || 100;
+  const GUILDER_PER_EUR = RATES.guilderPerEur || 108;
+  const LAKH  = RATES.lakh  || 100000;
+  const CRORE = RATES.crore || 10000000;
+  const SYMBOLS = {guilder: RATES.symbol || 'ƒ', usd: '$', eur: '€'};
+
+  function currentMode() {
+    try {
+      const v = localStorage.getItem('o27.currencyDisplay');
+      return ['guilder','usd','eur'].indexOf(v) >= 0 ? v : 'guilder';
+    } catch (e) { return 'guilder'; }
+  }
+  function currentSymbol() { return SYMBOLS[currentMode()]; }
+
+  function formatIndian(n) {
+    n = Math.round(n);
+    if (n < 0) return '-' + formatIndian(-n);
+    const s = String(n);
+    if (s.length <= 3) return s;
+    let head = s.slice(0, -3), tail = s.slice(-3);
+    const groups = [];
+    while (head.length > 2) { groups.push(head.slice(-2)); head = head.slice(0, -2); }
+    if (head) groups.push(head);
+    return groups.reverse().join(',') + ',' + tail;
+  }
+  function formatCrore(n) {
+    n = Math.round(n);
+    if (n < 0) return '-' + formatCrore(-n);
+    if (n >= CRORE) {
+      const c = n / CRORE;
+      if (c >= 100 || c === Math.floor(c)) return Math.round(c) + ' crore';
+      return c.toFixed(1) + ' crore';
+    }
+    if (n >= LAKH) {
+      const l = n / LAKH;
+      if (l >= 100 || l === Math.floor(l)) return Math.round(l) + ' lakh';
+      return l.toFixed(1) + ' lakh';
+    }
+    return formatIndian(n);
+  }
+  function formatWestern(amt, sym) {
+    const sign = amt < 0 ? '-' : '';
+    const a = Math.abs(amt);
+    if (a >= 1e9) return sign + sym + (a / 1e9).toFixed(1) + 'B';
+    if (a >= 1e6) return sign + sym + (a / 1e6).toFixed(1) + 'M';
+    if (a >= 1e4) return sign + sym + Math.round(a / 1e3) + 'K';
+    return sign + sym + Math.round(a).toLocaleString('en-US');
+  }
+  function labelsForGuilders(g) {
+    return {
+      guilder: SYMBOLS.guilder + formatCrore(g),
+      usd:     formatWestern(g / GUILDER_PER_USD, '$'),
+      eur:     formatWestern(g / GUILDER_PER_EUR, '€'),
+    };
+  }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+  function renderStars(n) {
+    let h = '<span class="youth-stars">';
+    for (let i = 0; i < 5; i++) {
+      h += i < n ? '<span class="star-on">★</span>' : '<span class="star-off">★</span>';
+    }
+    return h + '</span>';
+  }
+
+  function updatePurseBoard() {
+    const rows = Array.from(teamPurseRunning.values());
+    rows.sort((a, b) => b.spent - a.spent);
+    $purseBody.innerHTML = rows.slice(0, 12).map(r =>
+      '<tr>'
+      + '<td><span class="team-abbrev">' + escapeHtml(r.abbrev) + '</span></td>'
+      + '<td class="num">' + r.won + '</td>'
+      + '<td class="num">' + fmtMoney(r.spent) + '</td>'
+      + '</tr>'
+    ).join('');
+  }
+  updatePurseBoard();
+
+  function updateProgress() {
+    const total = (FEED.summary && FEED.summary.n_lots) || 1;
+    const done = (phase === 'end')
+      ? total
+      : (phase === 'stage' ? stageIdx : (FEED.stage_count + montageIdx));
+    $progress.style.width = (100 * done / total).toFixed(1) + '%';
+  }
+
+  function applyBidsToPurse(lot) {
+    if (lot.winner_team_id && lot.price) {
+      const t = teamPurseRunning.get(lot.winner_team_id);
+      if (t) t.spent += lot.price;
+    }
+    if (lot.traded_to_team_id && lot.trade_price != null) {
+      const seller = teamPurseRunning.get(lot.winner_team_id);
+      const buyer  = teamPurseRunning.get(lot.traded_to_team_id);
+      if (seller) seller.spent -= lot.trade_price;
+      if (buyer)  buyer.spent  += lot.trade_price;
+    }
+    const owner = lot.final_owner_team_id;
+    if (owner) {
+      const t = teamPurseRunning.get(owner);
+      if (t) t.won += 1;
+    }
+  }
+
+  // ─── Stage card animation ──────────────────────────────────────────
+  function playStageLot(lot, doneCb) {
+    $stageEmpty.style.display = 'none';
+    $stageCard.style.display  = '';
+    $lotLabel.textContent  = 'Lot ' + lot.lot_order + ' of ' + (FEED.summary && FEED.summary.n_lots || '');
+    $playerName.textContent = lot.player_name;
+    const posLabel = lot.position + (lot.is_pitcher ? ' · P' : '');
+    $playerPos.textContent  = posLabel;
+    $playerStars.innerHTML  = renderStars(lot.stars);
+    $playerOver.textContent = (lot.overall != null ? 'Composite ' + lot.overall : '');
+    $finalPrice.textContent = '—';
+    $finalPrice.style.color = 'var(--text-muted)';
+    $winnerLine.innerHTML   = '&nbsp;';
+    $bidList.innerHTML = '';
+
+    if (!lot.bids || !lot.bids.length) {
+      $finalPrice.textContent = 'Unsold';
+      $finalPrice.style.color = 'var(--text-muted)';
+      $winnerLine.innerHTML   = '<span class="text-secondary">No bids — to FA pool</span>';
+      $bidList.innerHTML = '<li class="text-secondary small p-2">No team bid this lot.</li>';
+      const wait = STAGE_BASE_MS / speed * 0.5;
+      timer = setTimeout(doneCb, wait);
+      return;
+    }
+
+    // Insert all bid rows hidden, then reveal bottom-up so the highest
+    // bid lands last → producing the price-pumped feel.
+    const bidsAsc = lot.bids.slice().reverse();
+    bidsAsc.forEach(b => {
+      const li = document.createElement('li');
+      li.className = 'lot-bid';
+      if (b.rank === 1) li.classList.add('winner-row');
+      else if (b.rank === 2) li.classList.add('runner-up');
+      li.innerHTML =
+        '<span><span class="team-abbrev">' + escapeHtml(b.abbrev) + '</span> '
+        + '<span class="text-secondary small ms-1">' + escapeHtml(b.name) + '</span></span>'
+        + '<span class="bid-amount">' + fmtMoney(b.bid) + '</span>';
+      $bidList.appendChild(li);
+    });
+
+    const tickInterval = Math.max(40, BID_TICK_MS / speed);
+    let i = 0;
+    function tick() {
+      if (i >= bidsAsc.length) {
+        // Final reveal.
+        $finalPrice.textContent = lot.price != null ? fmtMoney(lot.price) : 'Unsold';
+        $finalPrice.style.color = lot.price != null ? 'var(--accent)' : 'var(--text-muted)';
+        if (lot.winner_abbrev) {
+          const secondPart = lot.second_bid != null
+            ? ' · pushed by 2nd bid ' + fmtMoney(lot.second_bid)
+            : '';
+          let html =
+            'Won by <strong><span class="team-abbrev">' + escapeHtml(lot.winner_abbrev)
+            + '</span> ' + escapeHtml(lot.winner_name) + '</strong>'
+            + '<span class="text-secondary small">' + secondPart + '</span>';
+          // Sellback: the original winner flipped the player to a
+          // higher valuer for cash. Show the trade as a follow-up
+          // line under the original sale.
+          if (lot.traded_to_abbrev && lot.trade_price != null) {
+            html += '<div class="mt-1 small" style="color:var(--accent)">'
+              + '⇄ Traded to <strong><span class="team-abbrev">'
+              + escapeHtml(lot.traded_to_abbrev) + '</span> '
+              + escapeHtml(lot.traded_to_name) + '</strong> for '
+              + fmtMoney(lot.trade_price)
+              + '</div>';
+          }
+          $winnerLine.innerHTML = html;
+        }
+        applyBidsToPurse(lot);
+        updatePurseBoard();
+        const linger = STAGE_BASE_MS / speed - tickInterval * bidsAsc.length;
+        timer = setTimeout(doneCb, Math.max(150, linger));
+        return;
+      }
+      const li = $bidList.children[$bidList.children.length - 1 - i];
+      if (li) li.classList.add('shown');
+      i += 1;
+      timer = setTimeout(tick, tickInterval);
+    }
+    tick();
+  }
+
+  // ─── Montage ──────────────────────────────────────────────────────
+  function playMontageBatch() {
+    if (!FEED.montage_lots || !FEED.montage_lots.length) return finishUp();
+    if (montageIdx === 0) {
+      $montage.style.display = '';
+      $stageCard.style.display = 'none';
+      $stageEmpty.textContent = 'Montage…';
+      $stageEmpty.style.display = '';
+    }
+    const STEP = Math.max(1, Math.floor(speed * 4));   // batch lots per tick
+    const wait = MONTAGE_BASE_MS;
+    function step() {
+      if (!playing) return;
+      if (montageIdx >= FEED.montage_lots.length) return finishUp();
+      const end = Math.min(FEED.montage_lots.length, montageIdx + STEP);
+      const slice = FEED.montage_lots.slice(montageIdx, end);
+      slice.forEach(lot => {
+        applyBidsToPurse(lot);
+        const row = document.createElement('div');
+        row.className = 'montage-row';
+        const sale = lot.winner_abbrev
+          ? ('<span><strong>' + escapeHtml(lot.winner_abbrev) + '</strong> ' + fmtMoney(lot.price) + '</span>')
+          : '<span class="text-secondary">unsold</span>';
+        row.innerHTML =
+          '<span>#' + lot.lot_order + ' ' + escapeHtml(lot.player_name)
+          + ' <span class="text-secondary small">' + escapeHtml(lot.position) + '</span></span>'
+          + sale;
+        $montageStr.appendChild(row);
+        // Trim to last 60 entries so DOM doesn't balloon.
+        while ($montageStr.childElementCount > 60) {
+          $montageStr.removeChild($montageStr.firstChild);
+        }
+      });
+      montageIdx = end;
+      updatePurseBoard();
+      updateProgress();
+      timer = setTimeout(step, wait);
+    }
+    step();
+  }
+
+  function finishUp() {
+    phase = 'end';
+    playing = false;
+    $playPause.textContent = '▶ Play';
+    $endScreen.style.display = '';
+
+    // Top 5 sales — from the full shaped log.
+    const all = (FEED.stage_lots || []).concat(FEED.montage_lots || []);
+    const sold = all.filter(l => l.winner_team_id && l.price != null);
+    sold.sort((a, b) => (b.price || 0) - (a.price || 0));
+    $topSales.innerHTML = sold.slice(0, 5).map(s =>
+      '<tr>'
+      + '<td>' + escapeHtml(s.player_name) + ' <span class="text-secondary small">' + escapeHtml(s.position) + '</span></td>'
+      + '<td><span class="team-abbrev">' + escapeHtml(s.winner_abbrev) + '</span> ' + escapeHtml(s.winner_name) + '</td>'
+      + '<td class="num fw-bold">' + fmtMoney(s.price) + '</td>'
+      + '<td class="num text-secondary">' + (s.second_bid != null ? fmtMoney(s.second_bid) : '—') + '</td>'
+      + '</tr>'
+    ).join('');
+    updateProgress();
+  }
+
+  function nextLot() {
+    if (!playing) return;
+    if (phase === 'stage') {
+      if (stageIdx >= (FEED.stage_lots || []).length) {
+        phase = 'montage';
+        return playMontageBatch();
+      }
+      const lot = FEED.stage_lots[stageIdx];
+      stageIdx += 1;
+      updateProgress();
+      playStageLot(lot, () => {
+        if (playing) nextLot();
+      });
+    } else if (phase === 'montage') {
+      // playMontageBatch handles its own self-rescheduling
+    }
+  }
+
+  function play() {
+    if (phase === 'end') restart();
+    if (playing) return;
+    playing = true;
+    $playPause.textContent = '⏸ Pause';
+    nextLot();
+  }
+  function pause() {
+    playing = false;
+    $playPause.textContent = '▶ Play';
+    if (timer) clearTimeout(timer);
+  }
+  function restart() {
+    pause();
+    stageIdx = 0; montageIdx = 0; phase = 'stage';
+    teamPurseRunning.forEach(t => { t.spent = 0; t.won = 0; });
+    updatePurseBoard();
+    $stageCard.style.display = 'none';
+    $stageEmpty.style.display = '';
+    $stageEmpty.textContent = 'Click Play to start the auction replay.';
+    $montage.style.display = 'none';
+    $montageStr.innerHTML = '';
+    $endScreen.style.display = 'none';
+    updateProgress();
+  }
+  function skipToEnd() {
+    pause();
+    // Replay everything in memory to bring the purse board to its
+    // final state.
+    teamPurseRunning.forEach(t => { t.spent = 0; t.won = 0; });
+    [...(FEED.stage_lots || []), ...(FEED.montage_lots || [])].forEach(applyBidsToPurse);
+    updatePurseBoard();
+    stageIdx = (FEED.stage_lots || []).length;
+    montageIdx = (FEED.montage_lots || []).length;
+    finishUp();
+  }
+
+  $playPause.addEventListener('click', () => playing ? pause() : play());
+  $restart.addEventListener('click', restart);
+  $skipEnd.addEventListener('click', skipToEnd);
+
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      speed = parseFloat(btn.dataset.speed) || 1;
+    });
+  });
+})();
+</script>
+
+{% endif %}
+{% endblock %}

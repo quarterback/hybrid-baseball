@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}O27 Youth Tournament{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="{{ url_for('youth_view') }}" class="small text-secondary">← Youth League</a>
+    <h2 class="mb-0 mt-1">O27 Youth Tournament{% if season %} — Season {{ season }}{% endif %}</h2>
+    <div class="text-secondary small">
+      8 groups of 4 → top 2 advance → R16 → QF → SF → Final.
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if not tournament %}
+      <button id="run-btn" class="btn btn-warning btn-sm">Run Tournament</button>
+    {% else %}
+      <button id="reset-btn" class="btn btn-outline-danger btn-sm">Re-roll Tournament</button>
+    {% endif %}
+  </div>
+</div>
+
+{% if not tournament %}
+<div class="dense" style="padding:18px;text-align:center">
+  <div class="text-secondary">No tournament has been run for this season yet. Click <strong>Run Tournament</strong> to draw groups and play the bracket through the final.</div>
+</div>
+{% else %}
+
+  {% if tournament.champion %}
+  <div class="dense mb-4" style="padding:14px;background:rgba(255,193,7,.10);border-left:3px solid #f0c024">
+    <div class="d-flex align-items-center gap-3">
+      <div style="font-size:1.6rem">🏆</div>
+      <div>
+        <div class="text-secondary small">CHAMPION — Season {{ season }}</div>
+        <div style="font-size:1.15rem;font-weight:700">
+          <span class="team-abbrev">{{ tournament.champion.abbrev }}</span>
+          {{ tournament.champion.name }}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="dense mb-4">
+    <div class="panel-title">Group stage</div>
+    <div class="row g-3">
+      {% for grp in tournament.groups %}
+      <div class="col-md-6 col-lg-3">
+        <div class="panel" style="padding:10px 12px;height:100%">
+          <div class="fw-bold mb-2">Group {{ grp.group_letter }}</div>
+          <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
+            <thead><tr>
+              <th class="num">#</th>
+              <th>Team</th>
+              <th class="num">W</th>
+              <th class="num">L</th>
+              <th class="num">±</th>
+            </tr></thead>
+            <tbody>
+              {% for r in grp.rows %}
+                {% set seed = loop.index %}
+                <tr class="{% if seed <= 2 %}strk-w{% endif %}">
+                  <td class="num">{{ seed }}</td>
+                  <td>
+                    <span class="team-abbrev">{{ r.abbrev }}</span>
+                    <span class="text-secondary small ms-1">{{ r.name }}</span>
+                  </td>
+                  <td class="num">{{ r.w }}</td>
+                  <td class="num">{{ r.l }}</td>
+                  <td class="num">{{ r.rs - r.ra }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <div class="text-secondary small mt-1">Top 2 advance</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% set rounds = [
+      ('r16',   'Round of 16'),
+      ('qf',    'Quarter-finals'),
+      ('sf',    'Semi-finals'),
+      ('final', 'Final')
+  ] %}
+
+  {% for code, label in rounds %}
+    {% set games = tournament.by_round.get(code) %}
+    {% if games %}
+    <div class="dense mb-4">
+      <div class="panel-title">{{ label }}</div>
+      <table class="table table-sm dense-table mb-0">
+        <thead><tr>
+          <th>Match</th>
+          <th class="num">Score</th>
+          <th>Winner</th>
+        </tr></thead>
+        <tbody>
+        {% for g in games %}
+          <tr>
+            <td>
+              <span class="team-abbrev">{{ g.home_abbrev }}</span> {{ g.home_name }}
+              <span class="text-secondary mx-2">vs</span>
+              <span class="team-abbrev">{{ g.away_abbrev }}</span> {{ g.away_name }}
+            </td>
+            <td class="num">{% if g.played %}{{ g.home_score }}–{{ g.away_score }}{% else %}—{% endif %}</td>
+            <td>
+              {% if g.played %}
+                <strong>
+                  {% if g.winner_id == g.home_team_id %}{{ g.home_abbrev }}{% else %}{{ g.away_abbrev }}{% endif %}
+                </strong>
+              {% else %}
+                <span class="text-secondary">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if g.played %}
+                <a class="small" href="{{ url_for('youth_game_view', game_id=g.id) }}">Box →</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+{% endif %}
+
+<script>
+(function () {
+  async function runTournament(reset) {
+    const target = reset ? document.getElementById('reset-btn')
+                         : document.getElementById('run-btn');
+    if (!target) return;
+    const original = target.textContent;
+    target.disabled = true;
+    target.textContent = reset ? 'Re-rolling…' : 'Running…';
+    try {
+      const r = await fetch('/api/youth/tournament/run', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({reset: reset}),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'request failed');
+      window.location.reload();
+    } catch (err) {
+      alert('Tournament run failed: ' + err.message);
+      target.disabled = false;
+      target.textContent = original;
+    }
+  }
+  const runBtn = document.getElementById('run-btn');
+  const resetBtn = document.getElementById('reset-btn');
+  if (runBtn)   runBtn.addEventListener('click', () => runTournament(false));
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    if (!confirm('Wipe the current tournament and re-roll groups + bracket?')) return;
+    runTournament(true);
+  });
+})();
+</script>
+{% endblock %}

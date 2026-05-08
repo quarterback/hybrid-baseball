@@ -163,6 +163,85 @@ def _perfect_matching(ids: list[int], rng: random.Random) -> list[tuple[int, int
     return [(shuffled[i], shuffled[i + 1]) for i in range(0, len(shuffled), 2)]
 
 
+# ---------------------------------------------------------------------------
+# Tiered-mode pairings (4-tier promotion/relegation league)
+# ---------------------------------------------------------------------------
+#
+# Used when `config["schedule_mode"] == "tiered"`. Tiers are top-down ordered
+# in `config["tier_order"]`; each team's tier is its `league` value. Pair-
+# wise game counts are read from the config:
+#
+#   tier_in_league_games_per_pair    — round-robin within a tier
+#   tier_schedule_pairs              — list of [tier_a, tier_b] pairs that
+#                                       play cross-tier games this season
+#   tier_cross_games_per_pair        — games per opponent in a paired tier
+#
+# Tier pairing is what actually balances 80 games for every team in the
+# 56-team config: G↔P and N↔A are the only cross-tier edges. P-N has no
+# games even though they're adjacent for promotion/relegation purposes;
+# the standings ladder is what moves teams between Premier and National,
+# not the schedule.
+
+def _generate_tiered_pairings(
+    team_ids: list[int],
+    tier_map: dict[int, str],
+    config: dict,
+    rng: random.Random,
+) -> list[tuple[int, int]]:
+    """Tiered schedule: round-robin per tier + paired-tier cross games.
+
+    Returns a directed (home, away) list. Home/away is balanced per pair
+    by alternating the assignment so a 2-game pair gets 1 home + 1 away
+    and a 4-game pair gets 2 home + 2 away.
+    """
+    in_tier_per_pair = int(config.get("tier_in_league_games_per_pair", 4))
+    cross_per_pair   = int(config.get("tier_cross_games_per_pair", 2))
+    pairs_cfg        = config.get("tier_schedule_pairs") or []
+
+    # Bucket teams by tier.
+    tier_teams: dict[str, list[int]] = defaultdict(list)
+    for tid in team_ids:
+        tier = tier_map.get(tid)
+        if tier:
+            tier_teams[tier].append(tid)
+
+    directed: list[tuple[int, int]] = []
+
+    def _emit_pair(a: int, b: int, n_games: int) -> None:
+        # Alternate home so each pair lands at floor/ceil home counts.
+        # First game's host is randomised so successive seasons don't
+        # always favour the same team.
+        first_home_a = rng.random() < 0.5
+        for k in range(n_games):
+            host_a = first_home_a if (k % 2 == 0) else not first_home_a
+            if host_a:
+                directed.append((a, b))
+            else:
+                directed.append((b, a))
+
+    # In-tier round-robin.
+    for tier_name, ids in tier_teams.items():
+        ids = list(ids)
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                _emit_pair(ids[i], ids[j], in_tier_per_pair)
+
+    # Cross-tier games for each scheduled tier-pair.
+    for entry in pairs_cfg:
+        if not entry or len(entry) != 2:
+            continue
+        a_tier, b_tier = entry[0], entry[1]
+        a_ids = tier_teams.get(a_tier, [])
+        b_ids = tier_teams.get(b_tier, [])
+        if not a_ids or not b_ids:
+            continue
+        for a in a_ids:
+            for b in b_ids:
+                _emit_pair(a, b, cross_per_pair)
+
+    return directed
+
+
 def _intra_div_matching(
     team_ids: list[int],
     div_map: dict[int, str],
@@ -597,9 +676,25 @@ def generate_schedule(
     inter_w = float((config or {}).get("inter_division_weight", 0.0))
 
     # Step 1: directed pair generation.
-    directed = _generate_pairings(
-        team_ids, games_per_team, div_map, intra_w, inter_w, rng
-    )
+    if (config or {}).get("schedule_mode") == "tiered":
+        tier_map = {t["id"]: t.get("league") for t in teams}
+        directed = _generate_tiered_pairings(team_ids, tier_map, config or {}, rng)
+        # Verify the generated pairings hit games_per_team for every team.
+        counts: dict[int, int] = {tid: 0 for tid in team_ids}
+        for home, away in directed:
+            counts[home] += 1
+            counts[away] += 1
+        bad = [tid for tid, c in counts.items() if c != games_per_team]
+        if bad:
+            raise RuntimeError(
+                f"Tiered schedule imbalance for team IDs: {bad} "
+                f"(expected {games_per_team} each). Check tier_order, "
+                f"tier_schedule_pairs, and per-pair counts in config."
+            )
+    else:
+        directed = _generate_pairings(
+            team_ids, games_per_team, div_map, intra_w, inter_w, rng
+        )
 
     # Step 2: group into per-pair series. Iterate unordered pairs to keep
     # each pair's series lengths internally consistent.
@@ -783,7 +878,7 @@ def seed_schedule(
         db.execute("DELETE FROM team_phase_outs")
         db.execute("DELETE FROM sim_meta WHERE key = 'sim_date'")
 
-    teams = db.fetchall("SELECT id, division, city FROM teams ORDER BY id")
+    teams = db.fetchall("SELECT id, division, league, city FROM teams ORDER BY id")
     if not teams:
         raise RuntimeError("seed_league() must be called before seed_schedule()")
 

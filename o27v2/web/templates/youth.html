@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}O27 Youth League{% endblock %}
+{% block content %}
+
+{% macro stars(n) -%}
+  <span class="youth-stars" title="{{ n }}-star recruit">
+    {%- for i in range(5) -%}
+      {%- if i < n %}<span class="star-on">★</span>{% else %}<span class="star-off">★</span>{% endif -%}
+    {%- endfor -%}
+  </span>
+{%- endmacro %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">O27 Youth League</h2>
+    <div class="text-secondary small">
+      32 national teams, ages 14–19, 28-player rosters with jokers. Players who turn 20 graduate to the pro free-agent pool at season rollover.
+      <br>
+      <em>You see recruiting stars + observed tournament stats only — true potential is hidden, the way real prospect evaluation works.</em>
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if teams %}
+      <a class="btn btn-sm btn-outline-warning" href="{{ url_for('youth_tournament_view') }}" title="Group stage + knockout bracket">
+        Tournament 🏆
+      </a>
+    {% endif %}
+    {% if not teams %}
+    <button id="youth-seed-btn" class="btn btn-sm btn-warning"
+            title="Attach the youth league to this save (one-time)">
+      Attach Youth League
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{% if not teams %}
+<div class="dense" style="padding:18px;text-align:center">
+  <div class="text-secondary mb-2">Youth tables are empty. Attach the league to start watching prospects develop.</div>
+  <div class="small text-secondary">
+    (New leagues created via <strong>+ League</strong> after this feature shipped get the youth league attached automatically.)
+  </div>
+</div>
+{% else %}
+
+<div class="dense mb-4">
+  <div class="panel-title">National teams</div>
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Country</th>
+      <th class="num">Roster</th>
+      <th class="num">Avg age</th>
+      <th class="num" title="Avg recruiting-star rating across the roster">Avg ★</th>
+      <th class="num" title="Count of 4★ and 5★ players on the roster">4★+ recruits</th>
+      <th class="num">W</th>
+      <th class="num">L</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+    {% for t in teams %}
+      <tr>
+        <td>
+          <a href="{{ url_for('youth_team_view', team_id=t.id) }}">
+            <span class="team-abbrev">{{ t.abbrev }}</span>
+            <span class="ms-1">{{ t.name }}</span>
+          </a>
+        </td>
+        <td class="num">{{ t.roster_size or 0 }}</td>
+        <td class="num">{{ t.avg_age if t.avg_age is not none else '—' }}</td>
+        <td class="num">{{ t.avg_stars if t.avg_stars is not none else '—' }}</td>
+        <td class="num">{{ t.top_stars_count or 0 }}</td>
+        <td class="num strk-w">{{ t.w or 0 }}</td>
+        <td class="num strk-l">{{ t.l or 0 }}</td>
+        <td><a href="{{ url_for('youth_team_view', team_id=t.id) }}" class="small">Roster →</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="dense mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="panel-title mb-0">Top 25 prospects</div>
+    <div class="btn-group btn-group-sm" role="group">
+      {% for opt, label in [('bat', 'Hitters'), ('arm', 'Pitchers'), ('stars', 'By stars')] %}
+      <a class="btn btn-sm {% if archetype == opt %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         href="{{ url_for('youth_view', archetype=opt) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if archetype == 'arm' %}
+    <table class="table table-sm dense-table sortable mb-0">
+      <thead><tr>
+        <th class="num">#</th>
+        <th>Player</th>
+        <th>Team</th>
+        <th class="num">Age</th>
+        <th>Pos</th>
+        <th>Recruit</th>
+        <th class="num">G</th>
+        <th class="num" title="Outs recorded across the tournament">OUT</th>
+        <th class="num">K</th>
+        <th class="num">BB</th>
+        <th class="num">ER</th>
+      </tr></thead>
+      <tbody>
+      {% for p in prospects %}
+        <tr>
+          <td class="num text-secondary">{{ loop.index }}</td>
+          <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+          <td><span class="team-abbrev">{{ p.team_abbrev }}</span> <span class="text-secondary small">{{ p.team_name }}</span></td>
+          <td class="num">{{ p.age }}</td>
+          <td>{{ p.position }}</td>
+          <td>{{ stars(p.recruit_stars) }}</td>
+          <td class="num">{{ p.appearances }}</td>
+          <td class="num">{{ p.outs }}</td>
+          <td class="num fw-bold">{{ p.k }}</td>
+          <td class="num">{{ p.bb }}</td>
+          <td class="num">{{ p.er }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% elif archetype == 'stars' %}
+    <table class="table table-sm dense-table sortable mb-0">
+      <thead><tr>
+        <th class="num">#</th>
+        <th>Player</th>
+        <th>Team</th>
+        <th class="num">Age</th>
+        <th>Pos</th>
+        <th>Recruit</th>
+      </tr></thead>
+      <tbody>
+      {% for p in prospects %}
+        <tr>
+          <td class="num text-secondary">{{ loop.index }}</td>
+          <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+          <td><span class="team-abbrev">{{ p.team_abbrev }}</span> <span class="text-secondary small">{{ p.team_name }}</span></td>
+          <td class="num">{{ p.age }}</td>
+          <td>{{ p.position }}{% if p.is_joker %} <span class="text-secondary small">(J)</span>{% endif %}</td>
+          <td>{{ stars(p.recruit_stars) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <table class="table table-sm dense-table sortable mb-0">
+      <thead><tr>
+        <th class="num">#</th>
+        <th>Player</th>
+        <th>Team</th>
+        <th class="num">Age</th>
+        <th>Pos</th>
+        <th>Recruit</th>
+        <th class="num">PA</th>
+        <th class="num">AB</th>
+        <th class="num">H</th>
+        <th class="num">HR</th>
+        <th class="num">RBI</th>
+        <th class="num">BB</th>
+        <th class="num">K</th>
+        <th class="num" title="hits / AB">AVG</th>
+      </tr></thead>
+      <tbody>
+      {% for p in prospects %}
+        {% set avg = (p.h / p.ab) if p.ab else 0 %}
+        <tr>
+          <td class="num text-secondary">{{ loop.index }}</td>
+          <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+          <td><span class="team-abbrev">{{ p.team_abbrev }}</span> <span class="text-secondary small">{{ p.team_name }}</span></td>
+          <td class="num">{{ p.age }}</td>
+          <td>{{ p.position }}{% if p.is_joker %} <span class="text-secondary small">(J)</span>{% endif %}</td>
+          <td>{{ stars(p.recruit_stars) }}</td>
+          <td class="num">{{ p.pa }}</td>
+          <td class="num">{{ p.ab }}</td>
+          <td class="num fw-bold">{{ p.h }}</td>
+          <td class="num">{{ p.hr }}</td>
+          <td class="num">{{ p.rbi }}</td>
+          <td class="num">{{ p.bb }}</td>
+          <td class="num">{{ p.k }}</td>
+          <td class="num">{% if p.ab %}.{{ '%03d' | format((avg * 1000) | int) }}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if not prospects %}
+    <div class="text-secondary small p-2">No tournament games played yet — run the youth tournament to populate this list.</div>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% endif %}
+
+<style>
+.youth-stars { letter-spacing: 1px; }
+.youth-stars .star-on  { color: #f0c024; }
+.youth-stars .star-off { color: var(--border); }
+</style>
+
+<script>
+(function () {
+  const btn = document.getElementById('youth-seed-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    if (!confirm('Attach the O27 Youth League to this save? Creates 32 national teams with 28-player rosters.')) return;
+    btn.disabled = true; btn.textContent = 'Attaching…';
+    try {
+      const r = await fetch('/api/youth/seed', {method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'});
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'attach failed');
+      window.location.reload();
+    } catch (err) {
+      alert('Failed: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = 'Attach Youth League';
+    }
+  });
+})();
+</script>
+{% endblock %}

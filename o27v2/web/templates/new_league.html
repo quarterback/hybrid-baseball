@@ -57,17 +57,35 @@
               <div class="config-option panel" style="margin:0;height:100%;padding:14px 14px;transition:border-color .12s, background .12s">
                 <div class="d-flex justify-content-between align-items-start mb-2">
                   <span class="fw-bold" style="font-size:.96rem;color:var(--text)">{{ cfg.label }}</span>
-                  <span class="badge bg-secondary">{{ cfg.level }}</span>
+                  <div class="d-flex gap-1">
+                    {% if cfg.schedule_mode == 'tiered' %}
+                      <span class="badge" style="background:rgba(255,193,7,.20);color:#f0c024;border:1px solid rgba(255,193,7,.45)" title="Tiered league with promotion/relegation between seasons">Tiered · P/R</span>
+                    {% endif %}
+                    <span class="badge bg-secondary">{{ cfg.level }}</span>
+                  </div>
                 </div>
                 <div class="mb-1" style="font-size:.84rem;color:var(--text-dim)">
                   <span class="me-2">⚾ <strong style="color:var(--text)">{{ cfg.team_count }}</strong> teams</span>
                   <span>📅 <strong style="color:var(--text)">{{ cfg.games_per_team }}</strong> games/team</span>
                 </div>
                 <div style="font-size:.78rem;color:var(--text-dim)">
-                  {{ cfg.divisions_per_league * (cfg.leagues|length) }} divisions
-                  &nbsp;·&nbsp; {{ cfg.teams_per_division }} teams/div
-                  &nbsp;·&nbsp; {{ cfg.season_days }}-day season
+                  {% if cfg.schedule_mode == 'tiered' %}
+                    {{ cfg.leagues|length }} tiers
+                    &nbsp;·&nbsp; {{ cfg.teams_per_division }} teams/tier
+                    &nbsp;·&nbsp; {{ cfg.season_days }}-day season
+                  {% else %}
+                    {{ cfg.divisions_per_league * (cfg.leagues|length) }} divisions
+                    &nbsp;·&nbsp; {{ cfg.teams_per_division }} teams/div
+                    &nbsp;·&nbsp; {{ cfg.season_days }}-day season
+                  {% endif %}
                 </div>
+                {% if cfg.schedule_mode == 'tiered' and cfg.tier_order %}
+                <div class="mt-2" style="font-size:.74rem;color:var(--text-dim)">
+                  {% for tier in cfg.tier_order %}
+                    <span class="me-1" style="display:inline-block;padding:1px 5px;border:1px solid var(--border);border-radius:2px;background:var(--bg-soft);color:var(--text)">{{ tier }}</span>
+                  {% endfor %}
+                </div>
+                {% endif %}
               </div>
             </label>
           </div>
