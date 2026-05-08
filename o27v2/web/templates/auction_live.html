@@ -314,10 +314,18 @@
   function applyBidsToPurse(lot) {
     if (lot.winner_team_id && lot.price) {
       const t = teamPurseRunning.get(lot.winner_team_id);
-      if (t) {
-        t.spent += lot.price;
-        t.won  += 1;
-      }
+      if (t) t.spent += lot.price;
+    }
+    if (lot.traded_to_team_id && lot.trade_price != null) {
+      const seller = teamPurseRunning.get(lot.winner_team_id);
+      const buyer  = teamPurseRunning.get(lot.traded_to_team_id);
+      if (seller) seller.spent -= lot.trade_price;
+      if (buyer)  buyer.spent  += lot.trade_price;
+    }
+    const owner = lot.final_owner_team_id;
+    if (owner) {
+      const t = teamPurseRunning.get(owner);
+      if (t) t.won += 1;
     }
   }
 
@@ -372,10 +380,22 @@
           const secondPart = lot.second_bid != null
             ? ' · pushed by 2nd bid ' + fmtMoney(lot.second_bid)
             : '';
-          $winnerLine.innerHTML =
+          let html =
             'Won by <strong><span class="team-abbrev">' + escapeHtml(lot.winner_abbrev)
             + '</span> ' + escapeHtml(lot.winner_name) + '</strong>'
             + '<span class="text-secondary small">' + secondPart + '</span>';
+          // Sellback: the original winner flipped the player to a
+          // higher valuer for cash. Show the trade as a follow-up
+          // line under the original sale.
+          if (lot.traded_to_abbrev && lot.trade_price != null) {
+            html += '<div class="mt-1 small" style="color:var(--accent)">'
+              + '⇄ Traded to <strong><span class="team-abbrev">'
+              + escapeHtml(lot.traded_to_abbrev) + '</span> '
+              + escapeHtml(lot.traded_to_name) + '</strong> for '
+              + fmtMoney(lot.trade_price)
+              + '</div>';
+          }
+          $winnerLine.innerHTML = html;
         }
         applyBidsToPurse(lot);
         updatePurseBoard();

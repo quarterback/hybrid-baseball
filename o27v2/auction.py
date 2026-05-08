@@ -58,10 +58,12 @@ CREATE TABLE IF NOT EXISTS auction_results (
     lot_order   INTEGER,                       -- 1-based sequence at the auction
     player_id   INTEGER NOT NULL REFERENCES players(id),
     player_overall INTEGER,                    -- snapshot at auction time
-    winner_team_id INTEGER REFERENCES teams(id),  -- NULL = unsold
+    winner_team_id INTEGER REFERENCES teams(id),  -- NULL = unsold; the original Vickrey winner
     winning_bid INTEGER,                       -- the winner's max bid
     second_bid  INTEGER,                       -- the runner-up's bid (Vickrey reference)
     price       INTEGER,                       -- the realised clearing price (Vickrey)
+    traded_to_team_id INTEGER REFERENCES teams(id),  -- post-clear sellback target; NULL = no trade
+    trade_price INTEGER,                       -- guilders the buyer paid the seller
     bid_round   INTEGER NOT NULL DEFAULT 1
 );
 """
@@ -87,11 +89,13 @@ def init_auction_schema() -> None:
     db.execute(_SCHEMA_RESULTS)
     db.execute(_SCHEMA_LOT_BIDS)
     # Idempotent migrations for older auction_results rows that pre-date
-    # the live-auction columns.
+    # the live-auction + sellback columns.
     for col_def in (
         "lot_order INTEGER",
         "player_overall INTEGER",
         "price INTEGER",
+        "traded_to_team_id INTEGER",
+        "trade_price INTEGER",
     ):
         try:
             db.execute(f"ALTER TABLE auction_results ADD COLUMN {col_def}")
@@ -178,25 +182,38 @@ def _team_position_need(team_id: int, position: str,
 # Vickrey price discovery rather than every team hitting the ceiling.
 #
 # Sample raw bases (before need × aggression × noise × star_warp):
-#   OVR 30 →   25 × 1L = ƒ25 lakh
-#   OVR 40 →  225 × 1L = ƒ2.25 cr
-#   OVR 50 →  625 × 1L = ƒ6.25 cr
-#   OVR 55 →  900 × 1L = ƒ9    cr
-#   OVR 60 → 1225 × 1L = ƒ12.25 cr
-#   OVR 65 → 1600 × 1L = ƒ16   cr
-#   OVR 68 → 1849 × 1L = ƒ18.5 cr
-#   OVR 70 → 2025 × 1L = ƒ20.25 cr
-#   OVR 78 → 2809 × 1L = ƒ28.1 cr
+#   OVR 30 →   25 × 1L                = ƒ25 lakh
+#   OVR 40 →  225 × 1L                = ƒ2.25 cr
+#   OVR 50 →  625 × 1L                = ƒ6.25 cr
+#   OVR 55 →  900 × 1L                = ƒ9    cr
+#   OVR 60 → 1225 × 1L  +    0 × 10L  = ƒ12.25 cr   (elite bonus pivot)
+#   OVR 65 → 1600 × 1L  +   25 × 10L  = ƒ18.5 cr
+#   OVR 67 → 1764 × 1L  +   49 × 10L  = ƒ22.5 cr
+#   OVR 68 → 1849 × 1L  +   64 × 10L  = ƒ24.9 cr
+#   OVR 70 → 2025 × 1L  +  100 × 10L  = ƒ30.25 cr
+#   OVR 78 → 2809 × 1L  +  324 × 10L  = ƒ60.5 cr
+#
+# The elite bonus carves out a real step-up between the top ~25 in
+# any seeded pool and everyone else: the OVR 60 → 68 stretch goes
+# from a 1.5× ratio under pure quadratic to ~2× under quadratic +
+# elite bonus. First 3 picks read as marquee, not "slightly better
+# than the next picks."
 BID_QUAD_PIVOT: int = 25                  # talent floor — base is 0 here
 BID_QUAD_SCALE: int = 1_00_000            # ƒ1 lakh × pivot²
+BID_ELITE_PIVOT: int = 60                 # elite bonus kicks in here
+BID_ELITE_SCALE: int = 10 * 1_00_000      # ƒ10 lakh × elite_pivot²
 
 
 def _bid_base(overall: int) -> int:
-    """Quadratic curve from overall → raw bid base (in guilders). Pure
-    function so the test suite (and future calibration sweeps) can pin
-    its shape."""
-    pivot = max(0, int(overall or 0) - BID_QUAD_PIVOT)
-    return pivot * pivot * BID_QUAD_SCALE
+    """Quadratic curve from overall → raw bid base (in guilders) with
+    an elite-tier bonus stacked on top. Pure function so the test
+    suite (and future calibration sweeps) can pin its shape."""
+    o = int(overall or 0)
+    pivot = max(0, o - BID_QUAD_PIVOT)
+    base = pivot * pivot * BID_QUAD_SCALE
+    elite = max(0, o - BID_ELITE_PIVOT)
+    base += elite * elite * BID_ELITE_SCALE
+    return base
 
 
 def _team_auction_profile(team_row: dict) -> dict[str, float]:
@@ -272,6 +289,39 @@ def _per_lot_cap(purse_remaining: int, lot_order: int,
     floor_reserve = min_bid * max(0, remaining_slots - 1)
     hard = max(min_bid, purse_remaining - floor_reserve)
     return max(min_bid, min(soft, hard))
+
+
+def _team_valuation_noisefree(player: dict, team_id: int,
+                              profile: dict[str, float]) -> int:
+    """Deterministic willingness-to-pay for a player — same shape as
+    `_team_bid` but with the per-lot noise term collapsed to 1.0 and
+    no cap. Used by the post-clear trade phase: the question is "would
+    team X pay more than the cleared price for this player on average,"
+    not "did team X happen to roll a high noise this lot."
+    """
+    overall = _player_overall(player)
+    base = _bid_base(overall)
+
+    over_50 = max(-25, overall - 50)
+    star_warp = max(0.4, 1.0 + profile["star_bias"] * (over_50 / 17.0))
+    base = int(base * star_warp)
+
+    is_pitcher = bool(player.get("is_pitcher"))
+    position = player.get("position", "P" if is_pitcher else "DH")
+    need = _team_position_need(team_id, position, is_pitcher)
+    need_mult = min(1.5, 1.0 + 0.15 * need)
+
+    return int(base * need_mult * profile["aggression"])
+
+
+# Sellback / post-clear trade thresholds. The buyer's noise-free
+# valuation must exceed the cleared price by at least
+# (1 + TRADE_THRESHOLD) for the trade to fire — this keeps the engine
+# from churning on every lot, only triggering when the would-be buyer
+# clearly values the player higher than the noisy original auction
+# allocated. Trade clears at the midpoint, so both sides realise
+# surplus. One trade per lot.
+TRADE_THRESHOLD: float = 0.05    # buyer must value at ≥ 5% above winning bid
 
 
 def _team_bid(player: dict, team_id: int, purse_remaining: int,
@@ -535,6 +585,60 @@ def apply_auction(
             (season, lot_order, player["id"], player_overall,
              winner_tid, winner_bid, second, price),
         )
+
+        # Sellback / post-clear trade: any other team whose noise-free
+        # valuation exceeds the cleared price by ≥ TRADE_THRESHOLD can
+        # buy the player off the original winner at the midpoint of
+        # (winning_bid, buyer_valuation). Cash flows to the seller, who
+        # uses it (or doesn't — no rollover) on later lots.
+        traded_to_tid: int | None = None
+        traded_to_abbrev = ""
+        trade_price: int | None = None
+        threshold_price = int(winner_bid * (1.0 + TRADE_THRESHOLD))
+
+        candidates: list[tuple[int, int]] = []
+        for tid in team_ids:
+            if tid == winner_tid:
+                continue
+            slots_filled = (len(keepers_by_team.get(tid, []))
+                            + len(won_by_team[tid]))
+            if slots_filled >= ROSTER_TARGET + 13:
+                continue
+            if purse[tid] < threshold_price:
+                continue
+            val = _team_valuation_noisefree(player, tid, profiles[tid])
+            if val >= threshold_price:
+                candidates.append((val, tid))
+
+        if candidates:
+            candidates.sort(reverse=True)
+            buyer_val, buyer_tid = candidates[0]
+            mid = (winner_bid + buyer_val) // 2
+            t_price = min(mid, purse[buyer_tid])
+            # Confirm the buyer can still cover the midpoint price. If
+            # not, fall back to the strictest mutually-acceptable price.
+            if t_price > winner_bid:
+                purse[buyer_tid] -= t_price
+                purse[winner_tid] += t_price
+                # Move the player off the original winner's roster.
+                won_by_team[winner_tid] = [
+                    p for p in won_by_team[winner_tid]
+                    if p["id"] != player["id"]
+                ]
+                won_by_team[buyer_tid].append(player)
+                traded_to_tid = buyer_tid
+                trade_price = t_price
+                buyer_team = next(
+                    (t for t in teams if t["id"] == buyer_tid), None
+                )
+                traded_to_abbrev = buyer_team["abbrev"] if buyer_team else ""
+                db.execute(
+                    "UPDATE auction_results "
+                    "SET traded_to_team_id = ?, trade_price = ? "
+                    "WHERE season = ? AND lot_order = ?",
+                    (buyer_tid, t_price, season, lot_order),
+                )
+
         log.append({
             "player_id":     player["id"],
             "player_name":   player["name"],
@@ -546,7 +650,10 @@ def apply_auction(
             "winning_bid":    winner_bid,
             "second_bid":     second,
             "price":          price,
-            "result":         "sold",
+            "traded_to_team_id": traded_to_tid,
+            "traded_to_abbrev":  traded_to_abbrev,
+            "trade_price":       trade_price,
+            "result":         "traded" if traded_to_tid else "sold",
         })
 
     # Step 3b: snake-draft phase. Roster-fill players (those past the
@@ -756,10 +863,12 @@ def get_live_auction(season: int | None = None) -> dict | None:
     results = db.fetchall(
         "SELECT r.*, "
         "       p.name AS player_name, p.position, p.is_pitcher, "
-        "       wt.abbrev AS winner_abbrev, wt.name AS winner_name "
+        "       wt.abbrev AS winner_abbrev, wt.name AS winner_name, "
+        "       tt.abbrev AS traded_to_abbrev, tt.name AS traded_to_name "
         "FROM auction_results r "
         "JOIN players p ON p.id = r.player_id "
         "LEFT JOIN teams wt ON wt.id = r.winner_team_id "
+        "LEFT JOIN teams tt ON tt.id = r.traded_to_team_id "
         "WHERE r.season = ? AND r.lot_order IS NOT NULL "
         "ORDER BY r.lot_order ASC",
         (season,),
@@ -799,6 +908,16 @@ def get_live_auction(season: int | None = None) -> dict | None:
             None if winning is None else
             (winning if second is None else min(winning, second + 1))
         )
+        traded_to_tid = r["traded_to_team_id"]
+        trade_price   = r["trade_price"]
+        if r["winner_team_id"]:
+            result_kind = "traded" if traded_to_tid else "sold"
+        else:
+            result_kind = "unsold"
+        # Final owner = traded-to (if a trade occurred) else original winner.
+        final_owner_tid    = traded_to_tid or r["winner_team_id"]
+        final_owner_abbrev = (r["traded_to_abbrev"]
+                              if traded_to_tid else r["winner_abbrev"]) or ""
         return {
             "lot_order":      r["lot_order"],
             "player_id":      r["player_id"],
@@ -813,7 +932,13 @@ def get_live_auction(season: int | None = None) -> dict | None:
             "winning_bid":    winning,
             "second_bid":     second,
             "price":          price,
-            "result":         "sold" if r["winner_team_id"] else "unsold",
+            "traded_to_team_id":  traded_to_tid,
+            "traded_to_abbrev":   r["traded_to_abbrev"] or "",
+            "traded_to_name":     r["traded_to_name"] or "",
+            "trade_price":        trade_price,
+            "final_owner_team_id":  final_owner_tid,
+            "final_owner_abbrev":   final_owner_abbrev,
+            "result":         result_kind,
             "bids":           bids_by_lot.get(r["lot_order"], []),
         }
 
@@ -826,13 +951,19 @@ def get_live_auction(season: int | None = None) -> dict | None:
     spent_by_team: dict[int, int] = {t["id"]: 0 for t in team_rows}
     won_by_team:   dict[int, int] = {t["id"]: 0 for t in team_rows}
     for s in shaped:
+        # Spend ledger is the *net* cash out per team. Original winner
+        # paid `price`; if they later sold the player on, refund that
+        # team and bill the buyer the trade price. Won-count goes to
+        # the final roster owner so the purse-rollup line reads as
+        # "what teams ended up with."
         if s["winner_team_id"] and s["price"]:
-            spent_by_team[s["winner_team_id"]] = (
-                spent_by_team.get(s["winner_team_id"], 0) + (s["price"] or 0)
-            )
-            won_by_team[s["winner_team_id"]] = (
-                won_by_team.get(s["winner_team_id"], 0) + 1
-            )
+            spent_by_team[s["winner_team_id"]] += s["price"]
+        if s["traded_to_team_id"] and s["trade_price"]:
+            spent_by_team[s["winner_team_id"]] -= s["trade_price"]
+            spent_by_team[s["traded_to_team_id"]] += s["trade_price"]
+        owner = s["final_owner_team_id"]
+        if owner:
+            won_by_team[owner] = won_by_team.get(owner, 0) + 1
     team_purses = []
     for t in team_rows:
         team_purses.append({
