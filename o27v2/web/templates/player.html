@@ -85,6 +85,11 @@
     <a href="{{ url_for('team_detail', team_id=player.team_id) }}" class="team-abbrev" style="font-size:1rem">{{ player.team_abbrev }}</a>
     <span class="text-secondary small">Age <strong class="text-dark">{{ player.age }}</strong></span>
     <span class="text-secondary small">Bats <strong class="text-dark">{{ player.bats or '—' }}</strong> · Throws <strong class="text-dark">{{ player.throws or '—' }}</strong></span>
+    {% if player_est_value is defined %}
+    <span class="text-secondary small" title="Estimated contract value, derived from skill, age, role, and archetype. Toggle the pill to view in USD or EUR.">
+      Est. value {{ player_est_value | money }}
+    </span>
+    {% endif %}
   </div>
   {# Headline stat strip — large numbers, monospace, b-ref feel #}
   {% if bt_totals or pt_totals %}

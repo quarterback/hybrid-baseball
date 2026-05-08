@@ -27,7 +27,7 @@ if _workspace not in sys.path:
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response
 
-from o27v2 import db
+from o27v2 import db, currency, valuation
 from o27v2.web import text_export
 from o27v2.sim import (
     simulate_game,
@@ -84,6 +84,41 @@ def _flag(country_code) -> str:
 
 
 app.jinja_env.filters["flag"] = _flag
+
+
+from markupsafe import Markup as _Markup  # noqa: E402
+
+
+def _money(g) -> _Markup:
+    """Render a guilder amount as a `<span class="o27-money">` cell with
+    pre-baked guilder / USD / EUR labels and a clickable pill. The pill
+    handler in base.html cycles between modes by swapping the visible
+    label, so each money cell carries everything the toggle needs."""
+    try:
+        n = int(g or 0)
+    except (TypeError, ValueError):
+        n = 0
+    label_g = currency.format_money(n, "guilder")
+    label_u = currency.format_money(n, "usd")
+    label_e = currency.format_money(n, "eur")
+    return _Markup(
+        f'<span class="o27-money" data-g="{n}" '
+        f'data-label-guilder="{label_g}" '
+        f'data-label-usd="{label_u}" '
+        f'data-label-eur="{label_e}">'
+        f'<span class="o27-money-label">{label_g}</span>'
+        f'<button type="button" class="o27-money-pill" '
+        f'aria-label="Toggle currency display">{currency.GUILDER}</button>'
+        f'</span>'
+    )
+
+
+app.jinja_env.filters["money"] = _money
+
+
+@app.context_processor
+def inject_currency_rates():
+    return {"currency_rates": currency.rates_for_js()}
 
 
 @app.context_processor
@@ -1524,9 +1559,18 @@ def standings():
             "pyth_wl":  f"{pyth_w}-{pyth_l}",
         }
 
+    payrolls = {
+        row["team_id"]: int(row["payroll"] or 0)
+        for row in db.fetchall(
+            "SELECT team_id, COALESCE(SUM(salary), 0) AS payroll "
+            "FROM players WHERE team_id IS NOT NULL GROUP BY team_id"
+        )
+    }
+
     return _serve("standings.html",
                            leagues=leagues,
                            extras=extras,
+                           payrolls=payrolls,
                            win_pct=_win_pct,
                            gb=_gb)
 
@@ -2811,12 +2855,24 @@ def leaders():
         f["fld_pct"] = (po_v / (po_v + e_v)) if (po_v + e_v) > 0 else None
     fielding_qual = [f for f in fielding if f["chances"] >= min_chances]
 
+    salaries = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.is_pitcher, p.salary,
+                  t.abbrev as team_abbrev, t.id as team_id
+           FROM players p
+           JOIN teams t ON p.team_id = t.id
+           WHERE p.salary > 0
+           ORDER BY p.salary DESC
+           LIMIT 25""",
+    )
+
     return _serve(
         "leaders.html",
         games_played=games_played,
         min_pa=min_pa, min_outs=min_outs, min_chances=min_chances,
         batting=batting, pitching=pitching,
         fielding=fielding, fielding_qual=fielding_qual,
+        salaries=salaries,
     )
 
 
@@ -3208,6 +3264,14 @@ def player_detail(player_id: int):
                     player_id, extra, ext_params, wl, baselines)
             splits[label] = split
 
+    team_row = db.fetchone(
+        "SELECT league FROM teams WHERE id = ?", (player["team_id"],),
+    )
+    league_name = team_row["league"] if team_row else None
+    player_est_value = valuation.estimate_player_value(
+        dict(player), league_name=league_name,
+    )
+
     return _serve(
         "player.html",
         player=player,
@@ -3218,6 +3282,7 @@ def player_detail(player_id: int):
         fld_totals=fld_totals,
         splits=splits,
         baselines=baselines,
+        player_est_value=player_est_value,
     )
 
 
@@ -4028,12 +4093,14 @@ def team_detail(team_id: int):
            ORDER BY g.game_date DESC LIMIT 10""",
         (team_id, team_id),
     )
+    team_payroll = valuation.estimate_team_payroll(team_id)
     return _serve("team.html",
                            team=team,
                            batters=batters,
                            pitchers=pitchers,
                            recent=recent,
-                           win_pct=_win_pct)
+                           win_pct=_win_pct,
+                           team_payroll=team_payroll)
 
 
 @app.route("/team/<int:team_id>/edit", methods=["GET"])

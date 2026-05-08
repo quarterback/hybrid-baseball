@@ -7,6 +7,7 @@ Usage:
     python o27v2/manage.py resetdb  [--config CONFIG_ID]
     python o27v2/manage.py sim [N]
     python o27v2/manage.py backfill_arc          — replay played games via stored seeds to populate arc-bucketed pitcher stats
+    python o27v2/manage.py backfill_salaries     — recompute every player's salary in guilders from current attributes
     python o27v2/manage.py smoke
     python o27v2/manage.py configs              — list available league configs
     python o27v2/manage.py tune [SEASON_GAMES]  — sim a full season, verify Phase 9 targets
@@ -160,6 +161,40 @@ def cmd_smoke():
     sys.exit(0 if ok else 1)
 
 
+def cmd_backfill_salaries():
+    """Recompute every player's `salary` field from current attributes
+    via valuation.estimate_player_value. Idempotent — safe to re-run.
+    Use after migrating an existing live DB (where the new salary
+    column starts at 0) without reseeding the league."""
+    from o27v2 import db
+    from o27v2.valuation import estimate_player_value
+
+    team_league = {
+        row["id"]: row["league"]
+        for row in db.fetchall("SELECT id, league FROM teams")
+    }
+    rows = db.fetchall("SELECT * FROM players")
+    if not rows:
+        print("No players in DB — nothing to backfill.")
+        return
+
+    updates: list[tuple[int, int]] = []
+    for p in rows:
+        league_name = team_league.get(p["team_id"]) if p["team_id"] is not None else None
+        # Recompute by zeroing the persisted field — `estimate_player_value`
+        # short-circuits on a non-zero salary, but we want fresh math here.
+        d = dict(p)
+        d["salary"] = 0
+        salary = estimate_player_value(d, league_name=league_name)
+        updates.append((salary, p["id"]))
+
+    with db.get_conn() as conn:
+        conn.executemany("UPDATE players SET salary = ? WHERE id = ?", updates)
+        conn.commit()
+
+    print(f"Backfilled salaries on {len(updates)} player rows.")
+
+
 def cmd_configs():
     configs = get_league_configs()
     print(f"{'ID':<12} {'Label':<30} {'Teams':>5} {'GPT':>5} {'Level':<5}")
@@ -307,6 +342,8 @@ def main():
         cmd_smoke()
     elif args[0] == "backfill_arc":
         cmd_backfill_arc()
+    elif args[0] == "backfill_salaries":
+        cmd_backfill_salaries()
     elif args[0] == "configs":
         cmd_configs()
     elif args[0] == "tune":

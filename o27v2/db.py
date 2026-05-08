@@ -105,7 +105,11 @@ CREATE TABLE IF NOT EXISTS players (
     --     player takes the full penalty. Resets to 0.5 each off-season.
     work_ethic   INTEGER DEFAULT 50,
     work_habits  INTEGER DEFAULT 50,
-    habit_cup    REAL    DEFAULT 0.5
+    habit_cup    REAL    DEFAULT 0.5,
+    -- Persisted salary in guilders (int). Seeded at league creation
+    -- via o27v2.valuation. Default 0 lets older rows fall through to
+    -- on-the-fly estimation in valuation.estimate_player_value.
+    salary       INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -579,6 +583,15 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+
+        # Persisted salary in guilders. 0 = unpopulated; valuation.py
+        # falls back to on-the-fly estimation in that case. Backfill via
+        # `python o27v2/manage.py backfill_salaries`.
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN salary INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
 
         # Defense layer columns. Defaults of 50 = neutral.
         # Per-position sub-ratings (infield / outfield / catcher) let a

@@ -467,6 +467,32 @@
     .copy-toast.show { opacity: 1; transform: translateY(0); }
     .copy-toast.error { background: var(--bad); }
 
+    /* ---- Money pill (per-value currency toggle, site-wide) ---- */
+    .o27-money {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .o27-money-label {
+      font-family: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+      font-weight: 600;
+    }
+    .o27-money-pill {
+      font-size: .68rem;
+      line-height: 1;
+      padding: 1px 5px;
+      border-radius: 99px;
+      border: 1px solid var(--border);
+      background: var(--bg-soft);
+      color: var(--text-dim);
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    .o27-money-pill:hover { border-color: var(--link); color: var(--link); background: var(--bg-card); }
+    .o27-money-pill:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+
     /* ---- Compare basket (floating, site-wide) ---- */
     .cmp-add {
       display: inline-block;
@@ -755,7 +781,60 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>window.O27_RATES = {{ currency_rates | tojson }};</script>
 <script>
+/* -- Money toggle — per-value currency display. Click the small pill
+      next to any ƒ-amount to cycle ƒ → $ → € → ƒ. The choice persists
+      via localStorage and syncs across tabs. -- */
+(function () {
+  const STORAGE_KEY = 'o27.currencyDisplay';
+  const MODES  = ['guilder', 'usd', 'eur'];
+  const SYMBOLS = {guilder: 'ƒ', usd: '$', eur: '€'};
+
+  function readMode() {
+    try {
+      const v = localStorage.getItem(STORAGE_KEY);
+      return MODES.indexOf(v) >= 0 ? v : 'guilder';
+    } catch (e) { return 'guilder'; }
+  }
+  function writeMode(m) {
+    try { localStorage.setItem(STORAGE_KEY, m); } catch (e) {}
+  }
+
+  function applyAll(mode) {
+    document.querySelectorAll('.o27-money[data-g]').forEach(el => {
+      const lbl = el.querySelector('.o27-money-label');
+      const pill = el.querySelector('.o27-money-pill');
+      if (lbl) {
+        const cached = el.dataset['label' + mode.charAt(0).toUpperCase() + mode.slice(1)];
+        lbl.textContent = cached || lbl.textContent;
+      }
+      if (pill) pill.textContent = SYMBOLS[mode];
+    });
+  }
+
+  function cycle() {
+    const cur = readMode();
+    const next = MODES[(MODES.indexOf(cur) + 1) % MODES.length];
+    writeMode(next);
+    applyAll(next);
+  }
+
+  // Delegate clicks so dynamically-injected money cells work too.
+  document.addEventListener('click', (e) => {
+    const pill = e.target.closest('.o27-money-pill');
+    if (!pill) return;
+    e.preventDefault();
+    cycle();
+  });
+
+  // Sync across tabs.
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY) applyAll(readMode());
+  });
+
+  applyAll(readMode());
+})();
 (function () {
   const ENDPOINTS = {
     today:     '/api/sim/today',
