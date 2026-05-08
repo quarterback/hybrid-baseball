@@ -1297,10 +1297,16 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          defense, arm,
          defense_infield, defense_outfield, defense_catcher,
          baserunning, run_aggressiveness,
-         work_ethic, work_habits, habit_cup)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         work_ethic, work_habits, habit_cup, salary)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
-    def _row(team_id_or_none, p: dict) -> tuple:
+    # Salary is computed at insert time so the persisted ledger is the
+    # canonical source of truth for the rest of the app. Free agents
+    # use the default tier cap (no league context).
+    from o27v2.valuation import estimate_player_value
+
+    def _row(team_id_or_none, p: dict, league_name: str | None) -> tuple:
+        salary = estimate_player_value(p, league_name=league_name)
         return (team_id_or_none, p["name"], p.get("country", ""),
                 p["position"], p["is_pitcher"],
                 p["skill"], p["speed"], p["pitcher_skill"],
@@ -1320,18 +1326,30 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("baserunning", 50),
                 p.get("run_aggressiveness", 50),
                 p.get("work_ethic", 50), p.get("work_habits", 50),
-                p.get("habit_cup", 0.5))
+                p.get("habit_cup", 0.5),
+                salary)
+
+    # Cache team-id → league name so each player's salary uses the
+    # right tier cap.
+    team_league = {
+        row["id"]: row["league"]
+        for row in db.fetchall("SELECT id, league FROM teams")
+    }
 
     for team_id in team_ids:
         roster = assignments.get(team_id, [])
         if roster:
-            db.executemany(insert_sql, [_row(team_id, p) for p in roster])
+            league_name = team_league.get(team_id)
+            db.executemany(
+                insert_sql,
+                [_row(team_id, p, league_name) for p in roster],
+            )
         # `teams.org_strength` was rolled at INSERT time above and is
         # NOT recomputed from the drafted roster — it represents the
         # team's development infrastructure, not its current talent.
 
     if free_agents:
-        db.executemany(insert_sql, [_row(None, p) for p in free_agents])
+        db.executemany(insert_sql, [_row(None, p, None) for p in free_agents])
 
     # Auto-attach the O27 Youth League. Default-on; opt out by setting
     # `attach_youth_league: false` on the league config. Failure here is

@@ -64,6 +64,7 @@
         <th class="num">RS</th><th class="num">RA</th><th class="num">DIFF</th>
         <th class="num" title="Pythagorean expected W-L (RS² / (RS² + RA²))">PYTH</th>
         <th data-nosort>Last5</th>
+        <th class="num" title="Sum of player salaries on the active roster, in guilders.">PAYROLL</th>
         <th data-nosort>Status</th>
       </tr></thead>
       <tbody>
@@ -92,6 +93,7 @@
           <td>
             {% for r in (ex.last5 or []) %}<span class="l5pill {{ r }}"></span>{% endfor %}
           </td>
+          <td class="num" data-sort-value="{{ payrolls.get(t.id, 0) }}">{{ payrolls.get(t.id, 0) | money }}</td>
           <td>
             {% if zone == 'promotion' %}
               <span class="pr-pill pr-promo" title="Promoted to the tier above">▲ promotion</span>
@@ -240,11 +242,12 @@
       <th class="num">RS</th><th class="num">RA</th><th class="num">DIFF</th>
       <th class="num" title="Pythagorean expected W-L (RS² / (RS² + RA²))">PYTH</th>
       <th data-nosort>Last5</th>
+      <th class="num" title="Sum of player salaries on the active roster, in guilders.">PAYROLL</th>
     </tr></thead>
     <tbody>
     {% for div_name, div_teams in league_divs.items() %}
       {% set leader = div_teams[0] %}
-      <tr data-divider class="div-divider"><td colspan="12">{{ div_name }}</td></tr>
+      <tr data-divider class="div-divider"><td colspan="13">{{ div_name }}</td></tr>
       {% for t in div_teams %}
         {% set ex = extras.get(t.id, {}) %}
         <tr>
@@ -267,6 +270,7 @@
           <td>
             {% for r in (ex.last5 or []) %}<span class="l5pill {{ r }}"></span>{% endfor %}
           </td>
+          <td class="num" data-sort-value="{{ payrolls.get(t.id, 0) }}">{{ payrolls.get(t.id, 0) | money }}</td>
         </tr>
       {% endfor %}
     {% endfor %}
