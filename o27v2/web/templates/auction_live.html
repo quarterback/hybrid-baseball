@@ -199,8 +199,83 @@
   });
 
   function fmtMoney(n) {
-    if (n == null) return '—';
-    return '$' + Number(n).toLocaleString('en-US');
+    // Returns an `.o27-money` span matching the server-side `money`
+    // Jinja filter (see o27v2/web/app.py::_money). Three labels are
+    // baked in as data attributes so the existing toggle pill in
+    // base.html cycles ƒ → $ → € on these cells just like static ones.
+    if (n == null) return '<span class="text-secondary">—</span>';
+    const g = Math.round(Number(n) || 0);
+    const labels = labelsForGuilders(g);
+    const initial = labels[currentMode()];
+    return ''
+      + '<span class="o27-money" data-g="' + g + '"'
+      + ' data-label-guilder="' + escapeHtml(labels.guilder) + '"'
+      + ' data-label-usd="' + escapeHtml(labels.usd) + '"'
+      + ' data-label-eur="' + escapeHtml(labels.eur) + '">'
+      + '<span class="o27-money-label">' + escapeHtml(initial) + '</span>'
+      + '<button type="button" class="o27-money-pill"'
+      + ' aria-label="Toggle currency display">' + currentSymbol() + '</button>'
+      + '</span>';
+  }
+
+  // Mirror of o27v2/currency.py — kept tiny because we only ever need
+  // the headline forms here. The Python module remains source-of-truth;
+  // the rates dict (RATES) is injected by base.html.
+  const RATES = (window.O27_RATES || {});
+  const GUILDER_PER_USD = RATES.guilderPerUsd || 100;
+  const GUILDER_PER_EUR = RATES.guilderPerEur || 108;
+  const LAKH  = RATES.lakh  || 100000;
+  const CRORE = RATES.crore || 10000000;
+  const SYMBOLS = {guilder: RATES.symbol || 'ƒ', usd: '$', eur: '€'};
+
+  function currentMode() {
+    try {
+      const v = localStorage.getItem('o27.currencyDisplay');
+      return ['guilder','usd','eur'].indexOf(v) >= 0 ? v : 'guilder';
+    } catch (e) { return 'guilder'; }
+  }
+  function currentSymbol() { return SYMBOLS[currentMode()]; }
+
+  function formatIndian(n) {
+    n = Math.round(n);
+    if (n < 0) return '-' + formatIndian(-n);
+    const s = String(n);
+    if (s.length <= 3) return s;
+    let head = s.slice(0, -3), tail = s.slice(-3);
+    const groups = [];
+    while (head.length > 2) { groups.push(head.slice(-2)); head = head.slice(0, -2); }
+    if (head) groups.push(head);
+    return groups.reverse().join(',') + ',' + tail;
+  }
+  function formatCrore(n) {
+    n = Math.round(n);
+    if (n < 0) return '-' + formatCrore(-n);
+    if (n >= CRORE) {
+      const c = n / CRORE;
+      if (c >= 100 || c === Math.floor(c)) return Math.round(c) + ' crore';
+      return c.toFixed(1) + ' crore';
+    }
+    if (n >= LAKH) {
+      const l = n / LAKH;
+      if (l >= 100 || l === Math.floor(l)) return Math.round(l) + ' lakh';
+      return l.toFixed(1) + ' lakh';
+    }
+    return formatIndian(n);
+  }
+  function formatWestern(amt, sym) {
+    const sign = amt < 0 ? '-' : '';
+    const a = Math.abs(amt);
+    if (a >= 1e9) return sign + sym + (a / 1e9).toFixed(1) + 'B';
+    if (a >= 1e6) return sign + sym + (a / 1e6).toFixed(1) + 'M';
+    if (a >= 1e4) return sign + sym + Math.round(a / 1e3) + 'K';
+    return sign + sym + Math.round(a).toLocaleString('en-US');
+  }
+  function labelsForGuilders(g) {
+    return {
+      guilder: SYMBOLS.guilder + formatCrore(g),
+      usd:     formatWestern(g / GUILDER_PER_USD, '$'),
+      eur:     formatWestern(g / GUILDER_PER_EUR, '€'),
+    };
   }
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
