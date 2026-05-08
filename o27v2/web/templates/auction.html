@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Auction{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">IPL-Style Auction</h2>
+    <div class="text-secondary small">
+      Vickrey (second-price) bid resolution. Each team protects N keepers; the rest go to auction. Highest valuer wins, pays second-highest + 1.
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if is_tiered %}
+      <button id="run-auction-btn" class="btn btn-warning btn-sm">
+        {% if auction %}Re-run Auction{% else %}Run Auction{% endif %}
+      </button>
+    {% endif %}
+  </div>
+</div>
+
+{% if not is_tiered %}
+<div class="dense" style="padding:18px;text-align:center">
+  <div class="text-secondary">Auction is only available for tiered league configs (e.g. <strong>O27 Tiered (56 teams)</strong>). Pick one from <a href="{{ url_for('new_league_get') }}">+ League</a> to enable.</div>
+</div>
+{% elif not auction %}
+<div class="dense" style="padding:18px;text-align:center">
+  <div class="text-secondary mb-2">No auction has been run yet for this season.</div>
+  {% if config_summary %}
+  <div class="small text-secondary">
+    Config: <strong>{{ config_summary.keepers_per_team }}</strong> keepers/team
+      &nbsp;·&nbsp; <strong>${{ config_summary.team_purse }}</strong> purse
+      &nbsp;·&nbsp; min bid <strong>${{ config_summary.min_bid }}</strong>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+
+  <div class="dense mb-4">
+    <div class="panel-title">Season {{ auction.season }} — Summary</div>
+    <div class="row g-2 mb-2 text-secondary small">
+      <div class="col-md-3">Keepers retained: <strong style="color:var(--text)">{{ auction.keepers|length }}</strong></div>
+      <div class="col-md-3">Players sold: <strong style="color:var(--text)">{{ auction.results|selectattr('winner_team_id')|list|length }}</strong></div>
+      <div class="col-md-3">Players unsold: <strong style="color:var(--text)">{{ auction.results|rejectattr('winner_team_id')|list|length }}</strong></div>
+      <div class="col-md-3">Total auction lots: <strong style="color:var(--text)">{{ auction.results|length }}</strong></div>
+    </div>
+  </div>
+
+  <div class="dense mb-4">
+    <div class="panel-title">Top 30 sales by winning bid</div>
+    <table class="table table-sm dense-table sortable mb-0">
+      <thead><tr>
+        <th class="num">#</th>
+        <th>Player</th>
+        <th>Pos</th>
+        <th>Won by</th>
+        <th class="num">Winning bid</th>
+        <th class="num" title="Highest losing bid">2nd</th>
+      </tr></thead>
+      <tbody>
+        {% for r in auction.results[:30] %}
+          <tr>
+            <td class="num text-secondary">{{ loop.index }}</td>
+            <td>{{ r.player_name }}</td>
+            <td>{{ r.position }}</td>
+            <td>
+              {% if r.winner_abbrev %}
+                <span class="team-abbrev">{{ r.winner_abbrev }}</span>
+                <span class="text-secondary small ms-1">{{ r.winner_name }}</span>
+              {% else %}
+                <span class="text-secondary">unsold</span>
+              {% endif %}
+            </td>
+            <td class="num fw-bold">{% if r.winning_bid %}${{ r.winning_bid }}{% else %}—{% endif %}</td>
+            <td class="num text-secondary">{% if r.second_bid %}${{ r.second_bid }}{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="dense mb-4">
+    <div class="panel-title">Keepers by team</div>
+    <div class="row g-2">
+      {% set keepers_by_team = {} %}
+      {% for k in auction.keepers %}
+        {% set _ = keepers_by_team.setdefault(k.team_abbrev ~ ' — ' ~ k.team_name, []).append(k) %}
+      {% endfor %}
+      {% for team_label, ks in keepers_by_team.items() %}
+        <div class="col-md-6 col-lg-4">
+          <div class="panel" style="padding:8px 12px;height:100%">
+            <div class="fw-bold small mb-1">{{ team_label }}</div>
+            <ul class="mb-0" style="font-size:.82rem;padding-left:18px">
+              {% for k in ks %}
+                <li>{{ k.player_name }}
+                  <span class="text-secondary">— {{ k.position }}{% if k.is_pitcher %} (P){% endif %}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+{% endif %}
+
+<script>
+(function () {
+  const btn = document.getElementById('run-auction-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    if (!confirm('Run the auction now? Every team\'s non-keeper players will be redistributed.')) return;
+    btn.disabled = true; btn.textContent = 'Running…';
+    try {
+      const r = await fetch('/api/auction/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'request failed');
+      window.location.reload();
+    } catch (err) {
+      alert('Auction failed: ' + err.message);
+      btn.disabled = false; btn.textContent = 'Run Auction';
+    }
+  });
+})();
+</script>
+{% endblock %}

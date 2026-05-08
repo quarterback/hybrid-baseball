@@ -8,12 +8,19 @@
       32 national teams, ages 14–19. Players who turn 20 graduate to the pro free-agent pool at season rollover.
     </div>
   </div>
-  {% if not teams %}
-  <button id="youth-seed-btn" class="btn btn-sm btn-warning"
-          title="Attach the youth league to this save (one-time)">
-    Attach Youth League
-  </button>
-  {% endif %}
+  <div class="d-flex gap-2">
+    {% if teams %}
+      <a class="btn btn-sm btn-outline-warning" href="{{ url_for('youth_tournament_view') }}" title="Group stage + knockout bracket">
+        Tournament 🏆
+      </a>
+    {% endif %}
+    {% if not teams %}
+    <button id="youth-seed-btn" class="btn btn-sm btn-warning"
+            title="Attach the youth league to this save (one-time)">
+      Attach Youth League
+    </button>
+    {% endif %}
+  </div>
 </div>
 
 {% if not teams %}

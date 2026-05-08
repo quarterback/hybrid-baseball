@@ -146,11 +146,50 @@ CREATE TABLE IF NOT EXISTS youth_players (
 );
 """
 
+# Tournament schema. Each season the youth league runs one short
+# tournament: 8 groups of 4 → top 2 per group advance → R16 → QF →
+# SF → Final. 32 teams total, 63 games per tournament.
+_SCHEMA_GROUPS = """
+CREATE TABLE IF NOT EXISTS youth_groups (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    season       INTEGER NOT NULL,
+    group_letter TEXT NOT NULL
+);
+"""
+
+_SCHEMA_GROUP_MEMBERSHIP = """
+CREATE TABLE IF NOT EXISTS youth_group_membership (
+    group_id      INTEGER NOT NULL REFERENCES youth_groups(id),
+    youth_team_id INTEGER NOT NULL REFERENCES youth_teams(id),
+    PRIMARY KEY (group_id, youth_team_id)
+);
+"""
+
+_SCHEMA_GAMES = """
+CREATE TABLE IF NOT EXISTS youth_games (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    season          INTEGER NOT NULL,
+    bracket_round   TEXT NOT NULL,            -- 'group','r16','qf','sf','final'
+    group_id        INTEGER REFERENCES youth_groups(id),  -- NULL for knockout
+    bracket_slot    INTEGER,                  -- index into the bracket fixture list
+    home_team_id    INTEGER NOT NULL REFERENCES youth_teams(id),
+    away_team_id    INTEGER NOT NULL REFERENCES youth_teams(id),
+    home_score      INTEGER,
+    away_score      INTEGER,
+    winner_id       INTEGER REFERENCES youth_teams(id),
+    played          INTEGER NOT NULL DEFAULT 0,
+    seed            INTEGER
+);
+"""
+
 
 def init_youth_schema() -> None:
     """Create the youth_* tables if they don't exist. Idempotent."""
     db.execute(_SCHEMA_TEAMS)
     db.execute(_SCHEMA_PLAYERS)
+    db.execute(_SCHEMA_GROUPS)
+    db.execute(_SCHEMA_GROUP_MEMBERSHIP)
+    db.execute(_SCHEMA_GAMES)
 
 
 # ---------------------------------------------------------------------------
@@ -546,3 +585,479 @@ def top_prospects(limit: int = 25,
         (limit,),
     )
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Tournament: group draw, schedule, simulation, knockout bracket
+# ---------------------------------------------------------------------------
+#
+# Format (per season):
+#   * 32 teams drawn into 8 groups of 4 (random — no pots/seeding for v1).
+#   * Each group: full round-robin, 3 games per team (each pair plays
+#     once). 6 games per group × 8 groups = 48 group games.
+#   * Top 2 per group advance to R16 (single-elim). 8 + 4 + 2 + 1 = 15
+#     knockout games. Tournament total = 63 games.
+#
+# Game simulation here is a HEURISTIC, not the full PA-by-PA O27 engine.
+# We compute each team's overall composite from its current youth
+# roster, draw a winner via win-prob sigmoid on the rating gap, and
+# generate a plausible scoreline. This is intentional — the youth
+# league is a prospect-watching layer, not a separate fully-modelled
+# competition. Per-PA stats would balloon the schema for marginal
+# narrative value, and the development engine (which IS the substance
+# of the youth feature) does not depend on per-game stats.
+
+_GROUP_LETTERS  = ["A", "B", "C", "D", "E", "F", "G", "H"]
+_TEAMS_PER_GROUP = 4
+
+
+def _team_overall(team_id: int) -> float:
+    """Average composite rating across the team's active youth roster.
+    Hitters use (skill + contact + power + eye)/4, pitchers use
+    (pitcher_skill + command + movement)/3. We blend by population
+    weight inside the roster, so a team with one stud pitcher and a
+    weak lineup is correctly punished."""
+    rows = db.fetchall(
+        "SELECT is_pitcher, skill, contact, power, eye, "
+        "       pitcher_skill, command, movement "
+        "FROM youth_players WHERE youth_team_id = ?",
+        (team_id,),
+    )
+    if not rows:
+        return 50.0
+    total = 0.0
+    for r in rows:
+        if r["is_pitcher"]:
+            total += (r["pitcher_skill"] + r["command"] + r["movement"]) / 3.0
+        else:
+            total += (r["skill"] + r["contact"] + r["power"] + r["eye"]) / 4.0
+    return total / len(rows)
+
+
+def _simulate_youth_game_result(
+    home_overall: float,
+    away_overall: float,
+    rng: random.Random,
+) -> tuple[int, int]:
+    """Heuristic result generator for one youth game. Returns
+    (home_score, away_score). Win prob comes from a logistic on the
+    rating gap; scores are then drawn around an expected total tied to
+    the higher-rated team's grade. No ties — if scores collide we
+    extend until one side scores a final run."""
+    # Logistic with a sensible scale: a 10-grade gap → ~64% win prob
+    # for the better team, a 20-grade gap → ~76%.
+    import math
+    gap = home_overall - away_overall
+    home_win_prob = 1.0 / (1.0 + math.exp(-gap / 12.0))
+
+    expected_total = max(4, round((home_overall + away_overall) / 14.0))
+    # Draw a total around expected (Poisson-ish via gauss + clamp).
+    total = max(2, round(rng.gauss(expected_total, 2.5)))
+
+    # Split via win prob.
+    favorite_share = max(0.5, min(0.85, 0.5 + (home_win_prob - 0.5) * 0.7))
+    home_share = favorite_share if home_win_prob >= 0.5 else (1 - favorite_share)
+    home_score = max(1, round(total * home_share))
+    away_score = max(0, total - home_score)
+
+    # Resolve any tie with a sudden-death extra run for the favourite.
+    if home_score == away_score:
+        if rng.random() < home_win_prob:
+            home_score += 1
+        else:
+            away_score += 1
+    return home_score, away_score
+
+
+def _next_season_number() -> int:
+    """The youth tournament uses the same season number as the pro
+    league. Falls back to 1 when sim_meta has no record."""
+    row = db.fetchone(
+        "SELECT value FROM sim_meta WHERE key = 'season_number'"
+    )
+    if row and row.get("value"):
+        try:
+            return int(row["value"])
+        except (TypeError, ValueError):
+            pass
+    return 1
+
+
+def _has_tournament_for_season(season: int) -> bool:
+    init_youth_schema()
+    row = db.fetchone(
+        "SELECT COUNT(*) AS n FROM youth_games WHERE season = ?",
+        (season,),
+    )
+    return bool(row and row["n"])
+
+
+def draw_groups(season: int, rng_seed: int = 0) -> list[dict]:
+    """Random 8-group draw. Inserts youth_groups + membership rows.
+    Returns a list of {group_letter, team_ids} for inspection.
+
+    Idempotent: returns the existing draw when one already exists for
+    `season`."""
+    init_youth_schema()
+    existing = db.fetchall(
+        "SELECT g.id, g.group_letter, m.youth_team_id "
+        "FROM youth_groups g "
+        "LEFT JOIN youth_group_membership m ON m.group_id = g.id "
+        "WHERE g.season = ? "
+        "ORDER BY g.group_letter, m.youth_team_id",
+        (season,),
+    )
+    if existing:
+        out: dict[str, dict] = {}
+        for r in existing:
+            grp = out.setdefault(r["group_letter"], {
+                "group_letter": r["group_letter"],
+                "team_ids":     [],
+            })
+            if r["youth_team_id"] is not None:
+                grp["team_ids"].append(r["youth_team_id"])
+        return list(out.values())
+
+    teams = db.fetchall("SELECT id FROM youth_teams ORDER BY id")
+    if len(teams) < len(_GROUP_LETTERS) * _TEAMS_PER_GROUP:
+        raise RuntimeError(
+            f"Need at least {len(_GROUP_LETTERS) * _TEAMS_PER_GROUP} youth "
+            f"teams to draw groups; have {len(teams)}."
+        )
+    rng = random.Random((rng_seed or 0) ^ 0xD2A4_1)
+    ids = [t["id"] for t in teams]
+    rng.shuffle(ids)
+
+    out_groups: list[dict] = []
+    for i, letter in enumerate(_GROUP_LETTERS):
+        gid = db.execute(
+            "INSERT INTO youth_groups (season, group_letter) VALUES (?, ?)",
+            (season, letter),
+        )
+        members = ids[i * _TEAMS_PER_GROUP : (i + 1) * _TEAMS_PER_GROUP]
+        for tid in members:
+            db.execute(
+                "INSERT INTO youth_group_membership (group_id, youth_team_id) "
+                "VALUES (?, ?)",
+                (gid, tid),
+            )
+        out_groups.append({
+            "group_id":     gid,
+            "group_letter": letter,
+            "team_ids":     members,
+        })
+    return out_groups
+
+
+def _schedule_group_games(season: int, groups: list[dict],
+                          rng: random.Random) -> int:
+    """For each group, insert the C(4,2) = 6 round-robin games. Home/
+    away alternates within the pair list."""
+    n = 0
+    for grp in groups:
+        team_ids = list(grp["team_ids"])
+        for i in range(len(team_ids)):
+            for j in range(i + 1, len(team_ids)):
+                a, b = team_ids[i], team_ids[j]
+                home, away = (a, b) if rng.random() < 0.5 else (b, a)
+                db.execute(
+                    "INSERT INTO youth_games "
+                    "(season, bracket_round, group_id, home_team_id, "
+                    " away_team_id, seed) "
+                    "VALUES (?, 'group', ?, ?, ?, ?)",
+                    (season, grp["group_id"], home, away,
+                     rng.randint(1, 2**31 - 1)),
+                )
+                n += 1
+    return n
+
+
+def _simulate_unplayed_games(season: int, bracket_round: str,
+                             rng: random.Random) -> int:
+    """Run the heuristic sim over every unplayed game in the given
+    round. Updates score + winner, marks played=1."""
+    rows = db.fetchall(
+        "SELECT id, home_team_id, away_team_id, seed "
+        "FROM youth_games "
+        "WHERE season = ? AND bracket_round = ? AND played = 0 "
+        "ORDER BY id",
+        (season, bracket_round),
+    )
+    n = 0
+    for r in rows:
+        game_rng = random.Random(r["seed"] or rng.randint(1, 2**31 - 1))
+        h_overall = _team_overall(r["home_team_id"])
+        a_overall = _team_overall(r["away_team_id"])
+        hs, as_ = _simulate_youth_game_result(h_overall, a_overall, game_rng)
+        winner = r["home_team_id"] if hs > as_ else r["away_team_id"]
+        db.execute(
+            "UPDATE youth_games SET home_score = ?, away_score = ?, "
+            "winner_id = ?, played = 1 WHERE id = ?",
+            (hs, as_, winner, r["id"]),
+        )
+        n += 1
+    return n
+
+
+def _group_standings(season: int) -> dict[int, list[dict]]:
+    """Compute group standings. Tie-break: wins desc, run diff desc,
+    runs scored desc, then team id (stable)."""
+    rows = db.fetchall(
+        "SELECT g.group_id, g.group_letter, g.youth_team_id AS team_id, "
+        "       SUM(g.w)  AS w, SUM(g.l) AS l, "
+        "       SUM(g.rs) AS rs, SUM(g.ra) AS ra "
+        "FROM ( "
+        "  SELECT m.group_id, gr.group_letter, m.youth_team_id, "
+        "         CASE WHEN yg.winner_id = m.youth_team_id THEN 1 ELSE 0 END AS w, "
+        "         CASE WHEN yg.winner_id IS NOT NULL "
+        "              AND yg.winner_id != m.youth_team_id THEN 1 ELSE 0 END AS l, "
+        "         CASE WHEN yg.home_team_id = m.youth_team_id THEN yg.home_score "
+        "              WHEN yg.away_team_id = m.youth_team_id THEN yg.away_score "
+        "              ELSE 0 END AS rs, "
+        "         CASE WHEN yg.home_team_id = m.youth_team_id THEN yg.away_score "
+        "              WHEN yg.away_team_id = m.youth_team_id THEN yg.home_score "
+        "              ELSE 0 END AS ra "
+        "  FROM youth_group_membership m "
+        "  JOIN youth_groups gr ON gr.id = m.group_id "
+        "  LEFT JOIN youth_games yg "
+        "       ON yg.season = gr.season "
+        "      AND yg.bracket_round = 'group' "
+        "      AND yg.played = 1 "
+        "      AND (yg.home_team_id = m.youth_team_id OR yg.away_team_id = m.youth_team_id) "
+        "  WHERE gr.season = ? "
+        ") g "
+        "GROUP BY g.group_id, g.group_letter, g.youth_team_id "
+        "ORDER BY g.group_letter, "
+        "         SUM(g.w) DESC, "
+        "         SUM(g.rs) - SUM(g.ra) DESC, "
+        "         SUM(g.rs) DESC, "
+        "         g.youth_team_id",
+        (season,),
+    )
+    out: dict[int, list[dict]] = {}
+    for r in rows:
+        out.setdefault(r["group_id"], []).append({
+            "team_id":      r["team_id"],
+            "group_letter": r["group_letter"],
+            "w":            r["w"] or 0,
+            "l":            r["l"] or 0,
+            "rs":           r["rs"] or 0,
+            "ra":           r["ra"] or 0,
+        })
+    return out
+
+
+def _build_knockout_bracket(season: int, rng: random.Random) -> int:
+    """After the group stage finishes, seed the R16. Standard pairings:
+    group winner of A vs runner-up of B, A2 vs B1, C1 vs D2, etc. Then
+    QF/SF/Final are scheduled with NULL team ids and filled as winners
+    propagate (we just pre-create the slots). Returns count of R16
+    games inserted."""
+    groups = _group_standings(season)
+    if not groups:
+        return 0
+
+    # Map group_letter → standings (length 4) for easy access.
+    by_letter: dict[str, list[dict]] = {}
+    for rows in groups.values():
+        if rows:
+            by_letter[rows[0]["group_letter"]] = rows
+
+    # Pair group winners with runners-up of the next group, walking
+    # the alphabet. (A1 vs B2, B1 vs A2, C1 vs D2, D1 vs C2, ...)
+    # This gives all 8 group winners a different opponent, no immediate
+    # rematch, and matches typical UEFA-style draw constraints.
+    r16_pairs: list[tuple[int, int]] = []
+    for i in range(0, len(_GROUP_LETTERS), 2):
+        gl_a = _GROUP_LETTERS[i]
+        gl_b = _GROUP_LETTERS[i + 1]
+        a = by_letter.get(gl_a, [])
+        b = by_letter.get(gl_b, [])
+        if len(a) >= 2 and len(b) >= 2:
+            r16_pairs.append((a[0]["team_id"], b[1]["team_id"]))
+            r16_pairs.append((b[0]["team_id"], a[1]["team_id"]))
+
+    n = 0
+    for slot, (home, away) in enumerate(r16_pairs):
+        db.execute(
+            "INSERT INTO youth_games "
+            "(season, bracket_round, bracket_slot, home_team_id, "
+            " away_team_id, seed) "
+            "VALUES (?, 'r16', ?, ?, ?, ?)",
+            (season, slot, home, away, rng.randint(1, 2**31 - 1)),
+        )
+        n += 1
+    return n
+
+
+def _advance_knockout_round(
+    season: int,
+    from_round: str,
+    to_round: str,
+    rng: random.Random,
+) -> int:
+    """Pair winners of `from_round` games into `to_round` matchups.
+    Slots come from the order of from_round's `bracket_slot` field;
+    winners of slot 0+1 face each other in slot 0 of the next round,
+    and so on. Returns count of next-round games inserted."""
+    rows = db.fetchall(
+        "SELECT bracket_slot, winner_id FROM youth_games "
+        "WHERE season = ? AND bracket_round = ? AND played = 1 "
+        "ORDER BY bracket_slot",
+        (season, from_round),
+    )
+    if len(rows) < 2:
+        return 0
+    n = 0
+    new_slot = 0
+    for i in range(0, len(rows), 2):
+        if i + 1 >= len(rows):
+            break
+        a = rows[i]["winner_id"]
+        b = rows[i + 1]["winner_id"]
+        if not a or not b:
+            continue
+        # Coin-flip home assignment (no real home/away in knockout).
+        if rng.random() < 0.5:
+            home, away = a, b
+        else:
+            home, away = b, a
+        db.execute(
+            "INSERT INTO youth_games "
+            "(season, bracket_round, bracket_slot, home_team_id, "
+            " away_team_id, seed) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (season, to_round, new_slot, home, away,
+             rng.randint(1, 2**31 - 1)),
+        )
+        n += 1
+        new_slot += 1
+    return n
+
+
+def run_youth_tournament(rng_seed: int = 0,
+                         season: int | None = None) -> dict[str, Any]:
+    """Run the full tournament: group draw → group games → knockout
+    bracket. If a tournament for `season` already exists, this becomes
+    a no-op (use `reset_youth_tournament` first to re-run).
+
+    Returns a structured summary suitable for the UI.
+    """
+    init_youth_schema()
+    if season is None:
+        season = _next_season_number()
+    rng = random.Random((rng_seed or 0) ^ 0xC07_07)
+
+    if _has_tournament_for_season(season):
+        return _summarise_tournament(season)
+
+    groups = draw_groups(season, rng_seed=rng_seed)
+    n_group_games = _schedule_group_games(season, groups, rng)
+    _simulate_unplayed_games(season, "group", rng)
+    n_r16 = _build_knockout_bracket(season, rng)
+    _simulate_unplayed_games(season, "r16", rng)
+    n_qf = _advance_knockout_round(season, "r16", "qf", rng)
+    _simulate_unplayed_games(season, "qf", rng)
+    n_sf = _advance_knockout_round(season, "qf", "sf", rng)
+    _simulate_unplayed_games(season, "sf", rng)
+    n_final = _advance_knockout_round(season, "sf", "final", rng)
+    _simulate_unplayed_games(season, "final", rng)
+
+    return _summarise_tournament(season)
+
+
+def _summarise_tournament(season: int) -> dict[str, Any]:
+    """Return a UI-friendly summary of the season's tournament state."""
+    init_youth_schema()
+    groups   = _group_standings(season)
+    games    = db.fetchall(
+        "SELECT yg.*, "
+        "       ht.abbrev AS home_abbrev, ht.name AS home_name, "
+        "       at.abbrev AS away_abbrev, at.name AS away_name "
+        "FROM youth_games yg "
+        "LEFT JOIN youth_teams ht ON ht.id = yg.home_team_id "
+        "LEFT JOIN youth_teams at ON at.id = yg.away_team_id "
+        "WHERE yg.season = ? "
+        "ORDER BY CASE yg.bracket_round "
+        "         WHEN 'group'  THEN 0 "
+        "         WHEN 'r16'    THEN 1 "
+        "         WHEN 'qf'     THEN 2 "
+        "         WHEN 'sf'     THEN 3 "
+        "         WHEN 'final'  THEN 4 ELSE 5 END, "
+        "         yg.id",
+        (season,),
+    )
+    by_round: dict[str, list[dict]] = {}
+    for g in games:
+        by_round.setdefault(g["bracket_round"], []).append(dict(g))
+
+    final_game = (by_round.get("final") or [None])[0]
+    champion = None
+    if final_game and final_game.get("winner_id"):
+        champ_team = db.fetchone(
+            "SELECT * FROM youth_teams WHERE id = ?",
+            (final_game["winner_id"],),
+        )
+        if champ_team:
+            champion = dict(champ_team)
+
+    # Attach team meta to each group standings row for display.
+    teams = {t["id"]: dict(t) for t in db.fetchall("SELECT * FROM youth_teams")}
+    enriched_groups: list[dict] = []
+    for gid, rows in sorted(groups.items(),
+                            key=lambda kv: kv[1][0]["group_letter"] if kv[1] else ""):
+        enriched_rows = []
+        for r in rows:
+            t = teams.get(r["team_id"], {})
+            enriched_rows.append({
+                **r,
+                "abbrev": t.get("abbrev", ""),
+                "name":   t.get("name", ""),
+                "country_code": t.get("country_code", ""),
+            })
+        if enriched_rows:
+            enriched_groups.append({
+                "group_id":     gid,
+                "group_letter": enriched_rows[0]["group_letter"],
+                "rows":         enriched_rows,
+            })
+
+    return {
+        "season":     season,
+        "groups":     enriched_groups,
+        "by_round":   by_round,
+        "champion":   champion,
+        "complete":   bool(final_game and final_game.get("played")),
+    }
+
+
+def reset_youth_tournament(season: int | None = None) -> int:
+    """Wipe the tournament for `season` so it can be re-run. Returns
+    the count of game rows deleted. Mostly useful for re-rolling the
+    bracket during a demo session."""
+    init_youth_schema()
+    if season is None:
+        season = _next_season_number()
+    n = db.fetchone(
+        "SELECT COUNT(*) AS n FROM youth_games WHERE season = ?",
+        (season,),
+    )["n"]
+    db.execute("DELETE FROM youth_games WHERE season = ?", (season,))
+    db.execute(
+        "DELETE FROM youth_group_membership "
+        "WHERE group_id IN (SELECT id FROM youth_groups WHERE season = ?)",
+        (season,),
+    )
+    db.execute("DELETE FROM youth_groups WHERE season = ?", (season,))
+    return n
+
+
+def get_tournament(season: int | None = None) -> dict[str, Any] | None:
+    """Read-only fetch of a season's tournament summary, or None when
+    no tournament has been run yet."""
+    init_youth_schema()
+    if season is None:
+        season = _next_season_number()
+    if not _has_tournament_for_season(season):
+        return None
+    return _summarise_tournament(season)

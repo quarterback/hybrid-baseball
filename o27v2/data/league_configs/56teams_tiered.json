@@ -24,6 +24,12 @@
     "playoff_relegation": true,
     "playoff_seeds": [11, 12, 13]
   },
+  "auction": {
+    "enabled": true,
+    "keepers_per_team": 3,
+    "team_purse": 1000,
+    "min_bid": 10
+  },
   "season_year": 2026,
   "season_start_month": 4,
   "season_start_day": 1,

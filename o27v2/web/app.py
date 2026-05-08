@@ -4732,22 +4732,35 @@ def api_season_advance():
     # Run the off-season development + org-strength roll.
     summary = run_offseason(season=season_no, rng_seed=rng_seed or season_no * 17)
 
-    # Youth league: aging + graduation pass runs every offseason if the
-    # youth tables exist on the active save.
+    # Youth league: run the season's tournament (group stage + knockout)
+    # FIRST so the prospects play their tournament with this year's
+    # rosters; THEN run aging + graduation. If the tournament was
+    # already run mid-season via the manual button, run_youth_tournament
+    # is a no-op.
+    youth_tournament_summary = None
     youth_summary = None
     try:
         from o27v2 import youth
+        youth_tournament_summary = youth.run_youth_tournament(
+            rng_seed=(rng_seed or season_no * 17),
+        )
         youth_summary = youth.advance_youth_year(
             rng_seed=(rng_seed or season_no * 17),
             new_season_year=next_season,
         )
     except Exception:
-        youth_summary = None
+        # Either the youth tables don't exist (legacy save) or one of
+        # the steps blew up. We deliberately swallow so the pro-side
+        # rollover still completes.
+        pass
 
     # Tiered configs: apply promotion/relegation BEFORE wiping wins/losses.
     # The function reads live standings off the teams table, so it must
     # run while the just-completed season's W-L is still there.
+    # Auction (also tiered-only) runs immediately AFTER promotion/relegation
+    # so the auction pool is sized against the final tier slots.
     pr_report = None
+    auction_report = None
     cfg_active = _active_config()
     if cfg_active and cfg_active.get("schedule_mode") == "tiered":
         from o27v2 import promotion
@@ -4758,6 +4771,16 @@ def api_season_advance():
             )
         except Exception:
             pr_report = None
+        if (cfg_active.get("auction") or {}).get("enabled", True):
+            from o27v2 import auction as _auction
+            try:
+                auction_report = _auction.apply_auction(
+                    cfg_active,
+                    rng_seed=(rng_seed or season_no * 17),
+                    season=season_no,
+                )
+            except Exception:
+                auction_report = None
 
     # Reset W-L and wipe per-game tables; the league + roster stay.
     db.execute("UPDATE teams SET wins = 0, losses = 0")
@@ -4798,8 +4821,10 @@ def api_season_advance():
         "archived_season": archived_id,
         "champion":        ch,
         "development":     summary,
-        "promotion_relegation": pr_report,
-        "youth_league":         youth_summary,
+        "promotion_relegation":   pr_report,
+        "auction":                auction_report,
+        "youth_league":           youth_summary,
+        "youth_tournament":       youth_tournament_summary,
     })
 
 
@@ -4969,6 +4994,61 @@ def api_youth_seed():
     rng_seed = int(data.get("rng_seed") or 0)
     n = _youth.seed_youth_league(rng_seed=rng_seed, seed_year=1)
     return jsonify({"ok": True, "teams_inserted": n})
+
+
+@app.route("/youth/tournament")
+def youth_tournament_view():
+    from o27v2 import youth as _youth
+    summary = _youth.get_tournament()
+    return _serve("youth_tournament.html",
+                  tournament=summary,
+                  season=(summary or {}).get("season"))
+
+
+@app.route("/api/youth/tournament/run", methods=["POST"])
+def api_youth_tournament_run():
+    """Run (or re-run via reset=true) the youth tournament for the
+    current season."""
+    from o27v2 import youth as _youth
+    data = request.get_json(silent=True) or {}
+    reset    = bool(data.get("reset"))
+    rng_seed = int(data.get("rng_seed") or 0)
+    if reset:
+        _youth.reset_youth_tournament()
+    summary = _youth.run_youth_tournament(rng_seed=rng_seed)
+    return jsonify({"ok": True, "tournament": summary})
+
+
+@app.route("/auction")
+def auction_view():
+    from o27v2 import auction as _auction
+    summary = _auction.get_auction()
+    cfg = _active_config()
+    is_tiered = bool(cfg and cfg.get("schedule_mode") == "tiered")
+    return _serve("auction.html",
+                  auction=summary,
+                  is_tiered=is_tiered,
+                  config_summary=(cfg.get("auction") if cfg else None))
+
+
+@app.route("/api/auction/run", methods=["POST"])
+def api_auction_run():
+    """Run the Vickrey auction against the current league state. Tiered
+    configs only; refuses on non-tiered."""
+    from o27v2 import auction as _auction
+    cfg = _active_config()
+    if not cfg or cfg.get("schedule_mode") != "tiered":
+        return jsonify({
+            "ok": False,
+            "error": "Auction is only available for tiered configs.",
+        }), 400
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    try:
+        report = _auction.apply_auction(cfg, rng_seed=rng_seed)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "auction": report})
 
 
 @app.route("/api/league-configs")
