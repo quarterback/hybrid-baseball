@@ -1559,9 +1559,18 @@ def standings():
             "pyth_wl":  f"{pyth_w}-{pyth_l}",
         }
 
+    payrolls = {
+        row["team_id"]: int(row["payroll"] or 0)
+        for row in db.fetchall(
+            "SELECT team_id, COALESCE(SUM(salary), 0) AS payroll "
+            "FROM players WHERE team_id IS NOT NULL GROUP BY team_id"
+        )
+    }
+
     return _serve("standings.html",
                            leagues=leagues,
                            extras=extras,
+                           payrolls=payrolls,
                            win_pct=_win_pct,
                            gb=_gb)
 
@@ -2846,12 +2855,24 @@ def leaders():
         f["fld_pct"] = (po_v / (po_v + e_v)) if (po_v + e_v) > 0 else None
     fielding_qual = [f for f in fielding if f["chances"] >= min_chances]
 
+    salaries = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.is_pitcher, p.salary,
+                  t.abbrev as team_abbrev, t.id as team_id
+           FROM players p
+           JOIN teams t ON p.team_id = t.id
+           WHERE p.salary > 0
+           ORDER BY p.salary DESC
+           LIMIT 25""",
+    )
+
     return _serve(
         "leaders.html",
         games_played=games_played,
         min_pa=min_pa, min_outs=min_outs, min_chances=min_chances,
         batting=batting, pitching=pitching,
         fielding=fielding, fielding_qual=fielding_qual,
+        salaries=salaries,
     )
 
 
@@ -4072,11 +4093,7 @@ def team_detail(team_id: int):
            ORDER BY g.game_date DESC LIMIT 10""",
         (team_id, team_id),
     )
-    league_name = team["league"] if "league" in team.keys() else None
-    team_payroll = sum(
-        valuation.estimate_player_value(dict(p), league_name=league_name)
-        for p in roster
-    )
+    team_payroll = valuation.estimate_team_payroll(team_id)
     return _serve("team.html",
                            team=team,
                            batters=batters,

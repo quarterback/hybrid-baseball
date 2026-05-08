@@ -141,6 +141,33 @@
   {{ card('WAR',  'war',  '%.2f', true, pitching) }}
 </div>
 
+{% if salaries %}
+<h4>Wallet · Highest Paid</h4>
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="panel">
+      <div class="panel-head" title="Top 25 player salaries league-wide. Toggle the pill on any value to view in USD or EUR.">
+        <span>Salary (guilders)</span>
+        <span class="ms-auto sub">Top 25</span>
+      </div>
+      <table class="table dense-table mb-0">
+        <tbody>
+        {% for r in salaries %}
+        <tr>
+          <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
+          <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a>
+              <span class="text-secondary small">· {{ r.position }}{% if r.is_pitcher %} · P{% endif %}</span></td>
+          <td><a href="{{ url_for('team_detail', team_id=r.team_id) }}" class="team-abbrev">{{ r.team_abbrev }}</a></td>
+          <td class="num fw-bold">{{ r.salary | money }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <details class="mb-4">
   <summary class="text-secondary small" style="cursor:pointer">Methodology</summary>
   <div class="text-secondary small mt-2 p-3" style="background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--radius);line-height:1.55">

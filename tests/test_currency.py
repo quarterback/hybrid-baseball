@@ -108,3 +108,46 @@ def test_rates_for_js_shape():
     assert rates["crore"] == 1_00_00_000
     assert rates["guilderPerUsd"] == 100.0
     assert rates["guilderPerEur"] > rates["guilderPerUsd"]
+
+
+# ---------------------------------------------------------------------------
+# Prose form (no ƒ prefix)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("n, expected", [
+    (1_50_00_000,    "1.5 crore"),
+    (470_00_00_000,  "470 crore"),
+    (30_00_000,      "30 lakh"),
+    (50_000,         "50,000"),
+])
+def test_format_crore_prose(n, expected):
+    assert c.format_crore_prose(n) == expected
+    # Prose form must never include the symbol — keep it usable inside
+    # narrative sentences without colliding with the headline filter.
+    assert "ƒ" not in c.format_crore_prose(n)
+
+
+# ---------------------------------------------------------------------------
+# Valuation band map
+# ---------------------------------------------------------------------------
+
+def test_valuation_band_endpoints():
+    from o27v2 import valuation as v
+    # 0.30 score → ƒ50 lakh ceiling at default tier
+    assert v._score_to_base_value(0.30) == 50 * c.LAKH
+    # 0.78 score → ƒ200 cr ceiling
+    assert v._score_to_base_value(0.78) == 200 * c.CRORE
+    # 1.00 score → ƒ900 cr (auction record)
+    assert v._score_to_base_value(1.00) == 900 * c.CRORE
+    # Score below 0 clamps to floor
+    assert v._score_to_base_value(-0.5) == 20 * c.LAKH
+
+
+def test_valuation_persisted_salary_short_circuits():
+    from o27v2 import valuation as v
+    p = {"age": 22, "skill": 30, "pitcher_skill": 30, "speed": 30,
+         "pitcher_role": "", "archetype": "", "salary": 470 * c.CRORE}
+    assert v.estimate_player_value(p, league_name="Galactic") == 470 * c.CRORE
+    p["salary"] = 0
+    # With salary=0 we fall back to the band map; result must NOT be 470 cr.
+    assert v.estimate_player_value(p, league_name="Galactic") != 470 * c.CRORE

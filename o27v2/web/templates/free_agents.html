@@ -79,6 +79,7 @@
         <th class="text-end">Power / Mvmt</th>
         <th class="text-end">Eye / Stamina</th>
         <th class="text-end">Age</th>
+        <th class="text-end" title="Asking price — projected contract value at the default tier cap.">Asking</th>
       </tr>
     </thead>
     <tbody>
@@ -99,6 +100,7 @@
         <td class="text-end num">{{ p.eye }}</td>
         {% endif %}
         <td class="text-end num">{{ p.age }}</td>
+        <td class="text-end num">{{ p.salary | money }}</td>
       </tr>
       {% endfor %}
     </tbody>

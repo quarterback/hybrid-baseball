@@ -129,6 +129,14 @@ def format_crore(n: int) -> str:
     return format_indian(n)
 
 
+def format_crore_prose(g: int) -> str:
+    """Prose form of a guilder amount: spelled in crore / lakh, no ƒ
+    prefix. Suitable for sentences like "Trinidad signed Bonacini for
+    312 crore over six years." Use `format_money` (or the `money` Jinja
+    filter) for headline / table rendering where the symbol matters."""
+    return format_crore(g)
+
+
 # ---------------------------------------------------------------------------
 # USD / EUR conversion
 # ---------------------------------------------------------------------------
