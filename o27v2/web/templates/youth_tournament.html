@@ -113,6 +113,11 @@
                 <span class="text-secondary">—</span>
               {% endif %}
             </td>
+            <td>
+              {% if g.played %}
+                <a class="small" href="{{ url_for('youth_game_view', game_id=g.id) }}">Box →</a>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
         </tbody>

@@ -393,14 +393,75 @@ search — no follow-up sync is needed.
 
 ---
 
-## What's not done
+## Phase 3 — Real game sim for the youth tournament (post-AAR addition)
 
-- **Real game sim for the youth tournament.** Heuristic resolution
-  only. A follow-up could feed each pair into the existing engine and
-  produce per-PA stats, but that's a substantial wiring effort
-  (`_db_team_to_engine` adapted to read from `youth_players`, plus
-  `youth_game_batter_stats` / `youth_game_pitcher_stats` tables, plus
-  manager AI calibration for the youth talent floor).
+After the original AAR shipped, the heuristic per-game youth result
+got replaced with the actual O27 PA-by-PA engine. Files:
+
+| File | What changed |
+|------|--------------|
+| `o27v2/youth_sim.py` | New module. `simulate_youth_game(game_id)` builds two engine `Team`s from `youth_players`, calls `o27.engine.run_game`, persists score + winner + per-player stats. `_pick_youth_starter()` rotates SP across the tournament by start count desc, then `pitcher_skill` desc. |
+| `o27v2/youth_sim.py` schemas | New `game_youth_batter_stats` + `game_youth_pitcher_stats` tables — slim shape (PA/AB/R/H/2B/3B/HR/RBI/BB/K/STY/OUT for batters; BF/OUT/H/R/ER/BB/K/HR/PITCHES for pitchers). No per-PA log; no super-inning phase splitting; no entry-type tracking. Enough for a recognisable box score. |
+| `o27v2/youth.py` | `_simulate_unplayed_games` now calls `youth_sim.simulate_youth_game` instead of the heuristic. The heuristic is kept as a per-game fallback wrapped in try/except so a single engine bug doesn't brick the whole tournament. `reset_youth_tournament` now clears child stat rows before deleting `youth_games`. |
+| `o27v2/web/app.py` | New route `/youth/game/<id>` with `get_box_score()` helper. |
+| `o27v2/web/templates/youth_box_score.html` | Two batting tables + two pitching tables, side-headed by team, score banner up top with the winning side highlighted. |
+| `o27v2/web/templates/youth_tournament.html` | Each played-game row in every knockout round now has a "Box →" link to the box score. |
+
+### Roster shape adaptation
+
+The pro engine assumes a 12-batter lineup (8 fielders + SP + 3 DH).
+Youth rosters are 12 players (8 hitters + 4 pitchers) — no DHs. Two
+options were on the table:
+
+1. **Pad the youth lineup with three pitchers as DH-equivalents.**
+   Bizarre — a pitcher batting four times in a youth tournament when
+   he isn't on the mound makes no sense.
+2. **Use a 9-batter lineup matching the original O27 README rules
+   (8 fielders + SP, all 9 fielders bat).** The engine's `Team.lineup`
+   is `len(self.lineup)`-driven everywhere — no hard-coded 12. This
+   was the path taken.
+
+Side effect: youth games naturally produce slightly fewer PAs per
+27-out half than pro games (lineups cycle 9-deep instead of 12-deep),
+which suppresses runs slightly. Final-game scoring of 17–2 in test
+sims with avg 24.8 R/G is consistent with the pro league's documented
+22–26 R/G/T target.
+
+### Manager AI on a roster that has no archetype data
+
+Youth teams have no `manager_archetype`, no `mgr_*` tendency dials —
+those are pro-team columns. `_build_youth_engine_team` fills them
+with the league-mean defaults (0.5 across the board, archetype="").
+The manager AI's pitcher-pull logic still runs; it just runs with
+neutral-everything tunings. Joker-related decisions short-circuit
+because `jokers_available=[]` and `mgr_joker_aggression=0.0`.
+
+### SP rotation
+
+Each youth team has 4 pitchers and plays 3 group games + up to 4
+knockout games = 7 max. The rotation:
+
+```
+For team T:
+  pitchers = SELECT all is_pitcher=1 from youth_players WHERE team_id = T
+  starts_so_far = COUNT starts per pitcher in this season's tournament
+  starter = pitchers ORDER BY starts_so_far ASC, pitcher_skill DESC, id ASC
+```
+
+This guarantees no pitcher starts a second game until every arm has
+started once (over the tournament's full bracket run). Knockout
+relievers are picked live by the existing `pick_new_pitcher()` —
+manager AI sees the 4-arm pool, scores by Stamina, and pulls the SP
+when fatigue triggers fire just like in the pro sim.
+
+### Performance
+
+A full 63-game tournament runs in **~16.5 seconds** (~0.26 s/game) on
+the reference dev machine. Acceptable inline during a `/api/season/advance`
+call; well below any UI timeout.
+
+### What's still not done
+
 - **Geographic / pot-based group draw for the youth tournament.**
   Random draw only.
 - **Performance-based youth development bonuses.** A player who

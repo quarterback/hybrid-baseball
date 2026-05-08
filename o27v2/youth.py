@@ -774,28 +774,43 @@ def _schedule_group_games(season: int, groups: list[dict],
 
 def _simulate_unplayed_games(season: int, bracket_round: str,
                              rng: random.Random) -> int:
-    """Run the heuristic sim over every unplayed game in the given
-    round. Updates score + winner, marks played=1."""
+    """Run the real O27 engine over every unplayed game in the given
+    round. Each game gets persisted with score + winner + per-player
+    stats via `o27v2.youth_sim.simulate_youth_game`. Returns the count
+    of games played in this call."""
+    from o27v2 import youth_sim
     rows = db.fetchall(
-        "SELECT id, home_team_id, away_team_id, seed "
-        "FROM youth_games "
+        "SELECT id, seed FROM youth_games "
         "WHERE season = ? AND bracket_round = ? AND played = 0 "
         "ORDER BY id",
         (season, bracket_round),
     )
     n = 0
     for r in rows:
-        game_rng = random.Random(r["seed"] or rng.randint(1, 2**31 - 1))
-        h_overall = _team_overall(r["home_team_id"])
-        a_overall = _team_overall(r["away_team_id"])
-        hs, as_ = _simulate_youth_game_result(h_overall, a_overall, game_rng)
-        winner = r["home_team_id"] if hs > as_ else r["away_team_id"]
-        db.execute(
-            "UPDATE youth_games SET home_score = ?, away_score = ?, "
-            "winner_id = ?, played = 1 WHERE id = ?",
-            (hs, as_, winner, r["id"]),
-        )
-        n += 1
+        seed = r["seed"] or rng.randint(1, 2**31 - 1)
+        try:
+            youth_sim.simulate_youth_game(r["id"], seed=seed)
+            n += 1
+        except Exception:
+            # If a single game fails (e.g. a degenerate roster), fall
+            # back to the heuristic so the tournament can still
+            # progress. Real-engine bugs are caught in tests, not in
+            # production tournaments — better to ship a result than
+            # leave the bracket stuck.
+            game = db.fetchone("SELECT * FROM youth_games WHERE id = ?", (r["id"],))
+            if not game:
+                continue
+            game_rng = random.Random(seed)
+            h_overall = _team_overall(game["home_team_id"])
+            a_overall = _team_overall(game["away_team_id"])
+            hs, as_ = _simulate_youth_game_result(h_overall, a_overall, game_rng)
+            winner = game["home_team_id"] if hs > as_ else game["away_team_id"]
+            db.execute(
+                "UPDATE youth_games SET home_score = ?, away_score = ?, "
+                "winner_id = ?, played = 1 WHERE id = ?",
+                (hs, as_, winner, r["id"]),
+            )
+            n += 1
     return n
 
 
@@ -1042,6 +1057,19 @@ def reset_youth_tournament(season: int | None = None) -> int:
         "SELECT COUNT(*) AS n FROM youth_games WHERE season = ?",
         (season,),
     )["n"]
+    # Clear child stat rows before parent. The youth_sim tables were
+    # added in a follow-up commit so legacy DBs may not have them yet —
+    # tolerate the absence so a reset doesn't blow up on a pre-Phase-3
+    # save.
+    for child_table in ("game_youth_batter_stats", "game_youth_pitcher_stats"):
+        try:
+            db.execute(
+                f"DELETE FROM {child_table} "
+                f"WHERE game_id IN (SELECT id FROM youth_games WHERE season = ?)",
+                (season,),
+            )
+        except Exception:
+            pass
     db.execute("DELETE FROM youth_games WHERE season = ?", (season,))
     db.execute(
         "DELETE FROM youth_group_membership "

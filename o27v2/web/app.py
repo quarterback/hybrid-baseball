@@ -5005,6 +5005,15 @@ def youth_tournament_view():
                   season=(summary or {}).get("season"))
 
 
+@app.route("/youth/game/<int:game_id>")
+def youth_game_view(game_id: int):
+    from o27v2 import youth_sim
+    box = youth_sim.get_box_score(game_id)
+    if not box:
+        abort(404)
+    return _serve("youth_box_score.html", box=box)
+
+
 @app.route("/api/youth/tournament/run", methods=["POST"])
 def api_youth_tournament_run():
     """Run (or re-run via reset=true) the youth tournament for the
