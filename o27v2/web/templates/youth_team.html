@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ team.name }} — Youth roster{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="{{ url_for('youth_view') }}" class="small text-secondary">← Youth League</a>
+    <h2 class="mb-0 mt-1">
+      <span class="team-abbrev">{{ team.abbrev }}</span>
+      <span class="ms-2">{{ team.name }}</span>
+    </h2>
+    <div class="text-secondary small">{{ team.country_code }} · name pool: {{ team.name_region }}</div>
+  </div>
+</div>
+
+<div class="dense mb-4">
+  <div class="panel-title">Roster ({{ roster|length }})</div>
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Player</th>
+      <th>Pos</th>
+      <th class="num">Age</th>
+      <th class="num" title="Hitter overall (skill)">SK</th>
+      <th class="num" title="Speed">SP</th>
+      <th class="num" title="Contact">CT</th>
+      <th class="num" title="Power">PW</th>
+      <th class="num" title="Eye">EY</th>
+      <th class="num" title="Pitcher Stuff (pitcher_skill)">ST</th>
+      <th class="num" title="Command">CM</th>
+      <th class="num" title="Movement">MV</th>
+      <th class="num" title="Stamina">SM</th>
+      <th class="num" title="Defense">DEF</th>
+      <th class="num" title="Arm">ARM</th>
+      <th>B/T</th>
+    </tr></thead>
+    <tbody>
+    {% for p in roster %}
+      <tr>
+        <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+        <td>{{ p.position }}</td>
+        <td class="num {% if p.age >= 19 %}strk-w{% endif %}" title="{% if p.age >= 19 %}Graduates to the pro FA pool at next season rollover.{% endif %}">{{ p.age }}</td>
+        <td class="num">{{ p.skill }}</td>
+        <td class="num">{{ p.speed }}</td>
+        <td class="num">{{ p.contact }}</td>
+        <td class="num">{{ p.power }}</td>
+        <td class="num">{{ p.eye }}</td>
+        <td class="num">{{ p.pitcher_skill if p.is_pitcher else '—' }}</td>
+        <td class="num">{{ p.command if p.is_pitcher else '—' }}</td>
+        <td class="num">{{ p.movement if p.is_pitcher else '—' }}</td>
+        <td class="num">{{ p.stamina if p.is_pitcher else '—' }}</td>
+        <td class="num">{{ p.defense }}</td>
+        <td class="num">{{ p.arm }}</td>
+        <td>{{ p.bats }}/{{ p.throws }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="text-secondary small">
+  Cells highlighted green flag age-19 players who will graduate to the pro free-agent pool at the next season rollover.
+</div>
+{% endblock %}

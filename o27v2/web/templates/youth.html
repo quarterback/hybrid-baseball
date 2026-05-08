@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}O27 Youth League{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">O27 Youth League</h2>
+    <div class="text-secondary small">
+      32 national teams, ages 14–19. Players who turn 20 graduate to the pro free-agent pool at season rollover.
+    </div>
+  </div>
+  {% if not teams %}
+  <button id="youth-seed-btn" class="btn btn-sm btn-warning"
+          title="Attach the youth league to this save (one-time)">
+    Attach Youth League
+  </button>
+  {% endif %}
+</div>
+
+{% if not teams %}
+<div class="dense" style="padding:18px;text-align:center">
+  <div class="text-secondary mb-2">Youth tables are empty. Attach the league to start watching prospects develop.</div>
+  <div class="small text-secondary">
+    (New leagues created via <strong>+ League</strong> after this feature shipped get the youth league attached automatically.)
+  </div>
+</div>
+{% else %}
+
+<div class="dense mb-4">
+  <div class="panel-title">National teams</div>
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th>Country</th>
+      <th class="num">Roster</th>
+      <th class="num">Avg age</th>
+      <th class="num" title="Average composite hitter grade (skill+contact+power+eye)/4">Bat grade</th>
+      <th class="num" title="Average composite pitcher grade (stuff+command+movement)/3">Arm grade</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+    {% for t in teams %}
+      <tr>
+        <td>
+          <a href="{{ url_for('youth_team_view', team_id=t.id) }}">
+            <span class="team-abbrev">{{ t.abbrev }}</span>
+            <span class="ms-1">{{ t.name }}</span>
+          </a>
+        </td>
+        <td class="num">{{ t.roster_size or 0 }}</td>
+        <td class="num">{{ t.avg_age if t.avg_age is not none else '—' }}</td>
+        <td class="num">{{ t.bat_grade if t.bat_grade is not none else '—' }}</td>
+        <td class="num">{{ t.arm_grade if t.arm_grade is not none else '—' }}</td>
+        <td><a href="{{ url_for('youth_team_view', team_id=t.id) }}" class="small">Roster →</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="dense mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="panel-title mb-0">Top 25 prospects</div>
+    <div class="btn-group btn-group-sm" role="group">
+      {% for opt in archetype_options %}
+      <a class="btn btn-sm {% if archetype == opt %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         href="{{ url_for('youth_view', archetype=opt) }}">{{ opt|capitalize }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  <table class="table table-sm dense-table sortable mb-0">
+    <thead><tr>
+      <th class="num">#</th>
+      <th>Player</th>
+      <th>Team</th>
+      <th class="num">Age</th>
+      <th>Pos</th>
+      <th class="num">Composite</th>
+      <th class="num" title="Hitter overall (skill)">SK</th>
+      <th class="num" title="Speed">SP</th>
+      <th class="num" title="Contact">CT</th>
+      <th class="num" title="Power">PW</th>
+      <th class="num" title="Eye">EY</th>
+      <th class="num" title="Pitcher Stuff (pitcher_skill)">ST</th>
+      <th class="num" title="Command">CM</th>
+      <th class="num" title="Movement">MV</th>
+      <th class="num" title="Stamina">SM</th>
+    </tr></thead>
+    <tbody>
+    {% for p in prospects %}
+      <tr>
+        <td class="num text-secondary">{{ loop.index }}</td>
+        <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+        <td>
+          <span class="team-abbrev">{{ p.team_abbrev }}</span>
+          <span class="text-secondary small ms-1">{{ p.team_name }}</span>
+        </td>
+        <td class="num">{{ p.age }}</td>
+        <td>{{ p.position }}</td>
+        <td class="num fw-bold">{{ p.composite }}</td>
+        <td class="num">{{ p.skill }}</td>
+        <td class="num">{{ p.speed }}</td>
+        <td class="num">{{ p.contact }}</td>
+        <td class="num">{{ p.power }}</td>
+        <td class="num">{{ p.eye }}</td>
+        <td class="num">{{ p.pitcher_skill if p.is_pitcher else '—' }}</td>
+        <td class="num">{{ p.command if p.is_pitcher else '—' }}</td>
+        <td class="num">{{ p.movement if p.is_pitcher else '—' }}</td>
+        <td class="num">{{ p.stamina if p.is_pitcher else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  const btn = document.getElementById('youth-seed-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    if (!confirm('Attach the O27 Youth League to this save? Creates 16 national teams with starter rosters.')) return;
+    btn.disabled = true; btn.textContent = 'Attaching…';
+    try {
+      const r = await fetch('/api/youth/seed', {method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'});
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'attach failed');
+      window.location.reload();
+    } catch (err) {
+      alert('Failed: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = 'Attach Youth League';
+    }
+  });
+})();
+</script>
+{% endblock %}

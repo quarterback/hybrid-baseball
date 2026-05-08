@@ -4732,6 +4732,18 @@ def api_season_advance():
     # Run the off-season development + org-strength roll.
     summary = run_offseason(season=season_no, rng_seed=rng_seed or season_no * 17)
 
+    # Youth league: aging + graduation pass runs every offseason if the
+    # youth tables exist on the active save.
+    youth_summary = None
+    try:
+        from o27v2 import youth
+        youth_summary = youth.advance_youth_year(
+            rng_seed=(rng_seed or season_no * 17),
+            new_season_year=next_season,
+        )
+    except Exception:
+        youth_summary = None
+
     # Tiered configs: apply promotion/relegation BEFORE wiping wins/losses.
     # The function reads live standings off the teams table, so it must
     # run while the just-completed season's W-L is still there.
@@ -4787,6 +4799,7 @@ def api_season_advance():
         "champion":        ch,
         "development":     summary,
         "promotion_relegation": pr_report,
+        "youth_league":         youth_summary,
     })
 
 
@@ -4917,6 +4930,45 @@ def api_sim_game(game_id: int):
             "error": f"{type(e).__name__}: {e}",
             "game_id": game_id,
         }), 500
+
+
+@app.route("/youth")
+def youth_view():
+    from o27v2 import youth as _youth
+    archetype = (request.args.get("archetype") or "overall").strip()
+    if archetype not in ("overall", "bat", "arm", "speed"):
+        archetype = "overall"
+    teams_rows  = _youth.youth_teams()
+    prospects   = _youth.top_prospects(limit=25, archetype=archetype)
+    return _serve("youth.html",
+                  teams=teams_rows,
+                  prospects=prospects,
+                  archetype=archetype,
+                  archetype_options=("overall", "bat", "arm", "speed"))
+
+
+@app.route("/youth/team/<int:team_id>")
+def youth_team_view(team_id: int):
+    from o27v2 import youth as _youth
+    team = db.fetchone(
+        "SELECT * FROM youth_teams WHERE id = ?", (team_id,)
+    )
+    if not team:
+        abort(404)
+    roster = _youth.youth_roster(team_id)
+    return _serve("youth_team.html", team=dict(team), roster=roster)
+
+
+@app.route("/api/youth/seed", methods=["POST"])
+def api_youth_seed():
+    """Manually attach the youth league to an existing save (for users
+    who created their league before the youth feature shipped, or who
+    opted out at seed time and changed their mind)."""
+    from o27v2 import youth as _youth
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    n = _youth.seed_youth_league(rng_seed=rng_seed, seed_year=1)
+    return jsonify({"ok": True, "teams_inserted": n})
 
 
 @app.route("/api/league-configs")

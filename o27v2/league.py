@@ -1332,3 +1332,15 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
 
     if free_agents:
         db.executemany(insert_sql, [_row(None, p) for p in free_agents])
+
+    # Auto-attach the O27 Youth League. Default-on; opt out by setting
+    # `attach_youth_league: false` on the league config. Failure here is
+    # logged but non-fatal — pro-side seeding has already succeeded and
+    # the youth tables can be back-filled with a separate call later.
+    if config.get("attach_youth_league", True):
+        try:
+            from o27v2 import youth
+            youth.seed_youth_league(rng_seed=rng_seed, seed_year=1)
+        except Exception as e:
+            import sys
+            print(f"[seed_league] youth-league attach failed: {e}", file=sys.stderr)
