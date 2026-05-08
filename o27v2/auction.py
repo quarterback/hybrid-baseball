@@ -162,44 +162,168 @@ def _team_position_need(team_id: int, position: str,
     return max(0, target - have)
 
 
-# Bid base in guilders per overall point. With a 78-overall mega-star
-# this lands at ƒ39 cr × need_mult (≤1.5) × noise (≤1.15) ≈ ƒ67 cr max
-# bid; Vickrey collapses that to a clearing price around ƒ45-55 cr —
-# the "ƒ50-crore signing" headline tier on a ƒ100-cr team purse.
-BID_BASE_PER_OVERALL: int = 50 * 100_000  # 50 lakh = ƒ50,00,000
+# Bid base curve. A linear `overall × const` produces too-tight Vickrey
+# clustering at the top. The cure is a non-linear curve that pulls the
+# elite tier well above the mid-tier *before* noise and need-multipliers
+# compress them. Pivot at OVR 25 (well below the auction-pool floor
+# of ~30) so even fringe players land at a meaningful base — and the
+# gap between fringe and elite stretches across the full quadratic.
+#
+# Quadratic: base = max(0, overall - 25) ** 2 × BID_QUAD_SCALE
+#
+# Scale × purse calibration: raw bases stay an order of magnitude under
+# the per-team cap (≈ ƒ185 cr on a ƒ200-cr purse). Personality
+# multipliers stack to ~4.5× before clipping, which is enough headroom
+# for the top star's max-bid to land in the ƒ80-100 cr range — real
+# Vickrey price discovery rather than every team hitting the ceiling.
+#
+# Sample raw bases (before need × aggression × noise × star_warp):
+#   OVR 30 →   25 × 1L = ƒ25 lakh
+#   OVR 40 →  225 × 1L = ƒ2.25 cr
+#   OVR 50 →  625 × 1L = ƒ6.25 cr
+#   OVR 55 →  900 × 1L = ƒ9    cr
+#   OVR 60 → 1225 × 1L = ƒ12.25 cr
+#   OVR 65 → 1600 × 1L = ƒ16   cr
+#   OVR 68 → 1849 × 1L = ƒ18.5 cr
+#   OVR 70 → 2025 × 1L = ƒ20.25 cr
+#   OVR 78 → 2809 × 1L = ƒ28.1 cr
+BID_QUAD_PIVOT: int = 25                  # talent floor — base is 0 here
+BID_QUAD_SCALE: int = 1_00_000            # ƒ1 lakh × pivot²
+
+
+def _bid_base(overall: int) -> int:
+    """Quadratic curve from overall → raw bid base (in guilders). Pure
+    function so the test suite (and future calibration sweeps) can pin
+    its shape."""
+    pivot = max(0, int(overall or 0) - BID_QUAD_PIVOT)
+    return pivot * pivot * BID_QUAD_SCALE
+
+
+def _team_auction_profile(team_row: dict) -> dict[str, float]:
+    """Derive a per-team auction strategy from existing manager
+    personality + organizational strength columns. The same profile
+    applies across every lot the team bids on, so each team's bidding
+    reads as a consistent strategy instead of freewheeling per-lot
+    randomness.
+
+    Inputs (already persisted on `teams` from league seed-time):
+      * `org_strength`           20-95, league-mean 50.
+      * `mgr_quick_hook`         0..1, sabermetric vs traditional.
+      * `mgr_bullpen_aggression` 0..1, modern vs old-school.
+      * `mgr_joker_aggression`   0..1, gambler vs patient.
+
+    Outputs:
+      * `discipline`   0..1 — high-org teams have tighter per-lot noise.
+                       A 90-org team identifies true value; a 25-org
+                       team disagrees with the market a lot.
+      * `star_bias`    -0.5..+0.5 — positive = traditional-leaning,
+                       overpays for marquee names; negative =
+                       sabermetric-leaning, hunts arbitrage in the
+                       depth tier.
+      * `aggression`   0.85..1.35 — gambler/joker managers go big on
+                       lots they want; patient managers pull back.
+    """
+    org = int(team_row.get("org_strength") or 50)
+    org01 = max(0.0, min(1.0, (org - 20) / 75.0))   # 0..1 over the 20-95 range
+
+    qh = float(team_row.get("mgr_quick_hook") or 0.5)
+    ba = float(team_row.get("mgr_bullpen_aggression") or 0.5)
+    ja = float(team_row.get("mgr_joker_aggression") or 0.5)
+
+    # qh + ba both run 0=traditional → 1=sabermetric. Average them so
+    # the "saber" axis is robust to per-axis noise.
+    saber = (qh + ba) / 2.0
+    star_bias = 0.5 - saber                         # +0.5..-0.5
+
+    aggression = 0.85 + ja * 0.50                   # 0.85..1.35
+
+    return {
+        "discipline": org01,
+        "star_bias":  star_bias,
+        "aggression": aggression,
+    }
+
+
+# Per-lot cap as a fraction of remaining purse. Tranche cutoffs match
+# the live-auction page's stage / montage split (50 stage lots first,
+# then everything else) so the audience-facing pacing and the engine's
+# pacing line up. Cutoff in `lot_order` (1-based, the same column the
+# live page reads).
+TRANCHE_CAPS: tuple[tuple[int | None, float], ...] = (
+    ( 50, 0.50),   # marquee — up to 50% of remaining purse on one lot
+    (200, 0.20),   # core    — up to 20%
+    (500, 0.10),   # depth   — up to 10%
+    (None, 0.04),  # roster-fill — 4%
+)
+
+
+def _per_lot_cap(purse_remaining: int, lot_order: int,
+                 remaining_slots: int, min_bid: int) -> int:
+    """Per-lot maximum bid. Soft cap is the tranche fraction of the
+    team's remaining purse; hard cap leaves enough behind for the
+    rest of the roster to clear at floor. Returns the binding (lower)
+    of the two."""
+    pct = TRANCHE_CAPS[-1][1]
+    for cutoff, p in TRANCHE_CAPS:
+        if cutoff is None or lot_order <= cutoff:
+            pct = p
+            break
+    soft = int(purse_remaining * pct)
+    floor_reserve = min_bid * max(0, remaining_slots - 1)
+    hard = max(min_bid, purse_remaining - floor_reserve)
+    return max(min_bid, min(soft, hard))
 
 
 def _team_bid(player: dict, team_id: int, purse_remaining: int,
               n_keepers: int, rng: random.Random,
-              *, min_bid: int) -> int:
+              *, min_bid: int, lot_order: int,
+              profile: dict[str, float]) -> int:
     """Compute a single team's private valuation for a player, in
-    guilders.
+    guilders. The team's `profile` (from `_team_auction_profile`) is
+    fixed for the whole auction — the only per-lot randomness is the
+    final noise term.
 
     Formula:
-      base_value      = overall × BID_BASE_PER_OVERALL
-      need_multiplier = 1.0 + 0.15 × position_need (capped at 1.5)
-      noise           = uniform(0.85, 1.15)
-      max_bid         = floor(base × need_mult × noise)
+      raw_base    = _bid_base(overall)
+      star_warp   = 1.0 + profile.star_bias × (overall - 50) / 17.0
+                    (positive → curve steepens at the top; negative →
+                    flattens, value-hunters pay up on depth instead)
+      need_mult   = 1.0 + 0.15 × position_need (capped at 1.5)
+      noise_band  = uniform(0.45, 1.50) for a 0-discipline team;
+                    tightens to ~uniform(0.85, 1.10) for a 1-discipline
+                    team. High-org teams converge on true value.
+      max_bid     = floor(raw_base × star_warp × need_mult ×
+                          aggression × noise)
 
     The team won't overspend relative to remaining slot needs — it
     reserves at least `min_bid` per remaining slot so the rest of the
-    roster can clear without bricking. Produces the IPL-shaped
-    distribution where the top players spike high and the depth lots
-    clear at floor.
+    roster can clear without bricking.
     """
     overall = _player_overall(player)
-    base = overall * BID_BASE_PER_OVERALL
+    base = _bid_base(overall)
+
+    over_50 = max(-25, overall - 50)
+    star_warp = max(0.4, 1.0 + profile["star_bias"] * (over_50 / 17.0))
+    base = int(base * star_warp)
 
     is_pitcher = bool(player.get("is_pitcher"))
     position = player.get("position", "P" if is_pitcher else "DH")
     need = _team_position_need(team_id, position, is_pitcher)
     need_mult = min(1.5, 1.0 + 0.15 * need)
 
-    noise = rng.uniform(0.85, 1.15)
-    max_bid = int(base * need_mult * noise)
+    # Noise band tightens with discipline. The full ±55%/+50% band
+    # lives at the bottom-end org-strength; well-run franchises (org
+    # ≈ 90) shrink to roughly ±15%, mirroring the existing in-game
+    # manager `noise` attribute on Archetype but applied to the
+    # auction's valuation step.
+    half_lo = 0.55 - 0.40 * profile["discipline"]   # 0.55 → 0.15
+    half_hi = 0.50 - 0.40 * profile["discipline"]   # 0.50 → 0.10
+    noise = rng.uniform(1.0 - half_lo, 1.0 + half_hi)
+
+    max_bid = int(base * need_mult * profile["aggression"] * noise)
 
     remaining_slots = max(1, ROSTER_TARGET - n_keepers)
-    cap = max(min_bid, purse_remaining - min_bid * (remaining_slots - 1))
+    cap = _per_lot_cap(purse_remaining, lot_order, remaining_slots, min_bid)
     return max(0, min(max_bid, cap))
 
 
@@ -238,11 +362,19 @@ def apply_auction(
         return {"ok": False, "reason": "auction disabled in config"}
 
     n_keepers = int(cfg_a.get("keepers_per_team", 3))
-    # Defaults are guilder-era: 100 cr per team, 50 lakh min-bid.
-    # See `BID_BASE_PER_OVERALL` for the per-grade scaling that ties
-    # the bid distribution to this purse.
-    purse_init = int(cfg_a.get("team_purse", 100 * 1_00_00_000))   # 100 cr
+    # Defaults are guilder-era: 200 cr per team, 50 lakh min-bid.
+    # See `BID_QUAD_SCALE` and `TRANCHE_CAPS` for the per-lot scaling
+    # and tranche-based cap that together produce the IPL-shape: top
+    # stars in the ƒ70-100 cr range, mid-tier at ƒ15-30 cr, depth at
+    # ƒ2-5 cr, replacement-tier unsold or at floor.
+    purse_init = int(cfg_a.get("team_purse", 200 * 1_00_00_000))   # 200 cr
     min_bid    = int(cfg_a.get("min_bid",       50 * 1_00_000))    # 50 lakh
+    # Top N lots (sorted by composite) go through the bidding loop;
+    # the rest fill rosters via snake draft at min_bid. Splits the
+    # auction into "real price discovery" (top tier) and "depth
+    # roster fill" (everyone else) — the floor-tier doesn't need
+    # bidding theatre, just an order.
+    auction_lot_limit = int(cfg_a.get("auction_lot_limit", 500))
 
     if season is None:
         row = db.fetchone(
@@ -265,6 +397,11 @@ def apply_auction(
     team_ids = [t["id"] for t in teams]
     if not teams:
         return {"ok": False, "reason": "no teams"}
+
+    # Sample each team's auction profile once. Stable across every
+    # lot — the auction reads as a consistent personality per team
+    # rather than freewheeling per-lot randomness.
+    profiles = {t["id"]: _team_auction_profile(t) for t in teams}
 
     # Step 1: keepers
     keepers_by_team: dict[int, list[dict]] = {}
@@ -308,6 +445,12 @@ def apply_auction(
     pool.sort(key=lambda p: _player_overall(p) + rng.uniform(-2, 2),
               reverse=True)
 
+    # Split: top N go through bidding, the rest go through snake-draft
+    # at min_bid. Players further down the list will only fill open
+    # roster slots — anything left unallocated becomes a free agent.
+    auction_pool = pool[:auction_lot_limit]
+    draft_pool   = pool[auction_lot_limit:]
+
     # Step 3: per-team purse, slot tracking, auction loop.
     purse = {tid: purse_init for tid in team_ids}
     won_by_team: dict[int, list[dict]] = {tid: [] for tid in team_ids}
@@ -315,7 +458,7 @@ def apply_auction(
     unsold = 0
 
     lot_order = 0
-    for player in pool:
+    for player in auction_pool:
         lot_order += 1
         player_overall = _player_overall(player)
 
@@ -331,7 +474,9 @@ def apply_auction(
                 continue
             bid = _team_bid(player, tid, purse[tid],
                             n_keepers + won_so_far, rng,
-                            min_bid=min_bid)
+                            min_bid=min_bid,
+                            lot_order=lot_order,
+                            profile=profiles[tid])
             if bid >= min_bid:
                 bids.append((bid, tid))
 
@@ -403,6 +548,110 @@ def apply_auction(
             "price":          price,
             "result":         "sold",
         })
+
+    # Step 3b: snake-draft phase. Roster-fill players (those past the
+    # auction-lot-limit) get assigned in snake order, no bidding —
+    # everyone pays min_bid. Order is by team_id; round 1 forward,
+    # round 2 reverse, etc. Teams already at the active+reserve cap
+    # are skipped. Anything that can't be placed becomes a free agent.
+    n_drafted = 0
+    if draft_pool:
+        snake_idx = 0
+        snake_dir = 1
+        team_count = len(team_ids)
+
+        def _team_has_slot(tid: int) -> bool:
+            slots_filled = (len(keepers_by_team.get(tid, []))
+                            + len(won_by_team[tid]))
+            return slots_filled < ROSTER_TARGET + 13
+
+        def _advance() -> bool:
+            """Move snake_idx to the next pickable team. Returns False
+            if every team is full."""
+            nonlocal snake_idx, snake_dir
+            for _ in range(team_count * 2):
+                next_idx = snake_idx + snake_dir
+                if next_idx >= team_count:
+                    snake_dir = -1            # bounce; same team picks again
+                    next_idx = team_count - 1
+                    if snake_idx == next_idx:  # already there → step inward
+                        next_idx = team_count - 2 if team_count > 1 else 0
+                elif next_idx < 0:
+                    snake_dir = 1
+                    next_idx = 0
+                    if snake_idx == next_idx:
+                        next_idx = 1 if team_count > 1 else 0
+                snake_idx = next_idx
+                if _team_has_slot(team_ids[snake_idx]):
+                    return True
+            return False
+
+        # Make sure the starting team has a slot. If not, advance.
+        if not _team_has_slot(team_ids[snake_idx]) and not _advance():
+            draft_pool = []  # everyone full
+
+        for player in draft_pool:
+            lot_order += 1
+            player_overall = _player_overall(player)
+            tid = team_ids[snake_idx]
+
+            # Floor-draft: pay min_bid, even if purse can't cover (we
+            # treat min_bid contracts as below-the-cap roster moves).
+            price = min_bid
+            purse[tid] = max(0, purse[tid] - price)
+            won_by_team[tid].append(player)
+            n_drafted += 1
+
+            winner_team = next((t for t in teams if t["id"] == tid), None)
+            winner_abbrev = winner_team["abbrev"] if winner_team else ""
+
+            db.execute(
+                "INSERT INTO auction_results "
+                "(season, lot_order, player_id, player_overall, "
+                " winner_team_id, winning_bid, second_bid, price) "
+                "VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
+                (season, lot_order, player["id"], player_overall,
+                 tid, price, price),
+            )
+            # Persist a single-bid sheet so the live-auction UI can
+            # render the pick without hitting a special-case.
+            db.execute(
+                "INSERT INTO auction_lot_bids "
+                "(season, lot_order, team_id, bid, rank) "
+                "VALUES (?, ?, ?, ?, 1)",
+                (season, lot_order, tid, price),
+            )
+            log.append({
+                "player_id":     player["id"],
+                "player_name":   player["name"],
+                "position":      player["position"],
+                "overall":       player_overall,
+                "lot_order":     lot_order,
+                "winner_team_id": tid,
+                "winner_abbrev":  winner_abbrev,
+                "winning_bid":    price,
+                "second_bid":     None,
+                "price":          price,
+                "result":         "drafted",
+            })
+
+            # Advance the snake. If we're now out of teams with slots,
+            # remaining draft_pool players become unsold.
+            if not _advance():
+                # Mark every leftover player as unsold and stop.
+                idx_at_break = draft_pool.index(player) + 1
+                for leftover in draft_pool[idx_at_break:]:
+                    lot_order += 1
+                    db.execute(
+                        "INSERT INTO auction_results "
+                        "(season, lot_order, player_id, player_overall, "
+                        " winner_team_id, winning_bid, second_bid, price) "
+                        "VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL)",
+                        (season, lot_order, leftover["id"],
+                         _player_overall(leftover)),
+                    )
+                    unsold += 1
+                break
 
     # Step 4: assign winners to teams + active/reserve flags.
     for tid in team_ids:
