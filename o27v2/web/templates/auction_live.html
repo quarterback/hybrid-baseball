@@ -282,6 +282,17 @@
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     }[c]));
   }
+  // Mirror of o27v2/web/app.py::_flag — ISO 3166-1 alpha-2 → regional
+  // indicator pair. Empty/invalid codes return '' so callers can
+  // unconditionally inject `flagEmoji(country)` next to a name.
+  function flagEmoji(cc) {
+    if (!cc) return '';
+    const s = String(cc).trim().toUpperCase();
+    if (s.length !== 2 || !/^[A-Z]{2}$/.test(s)) return '';
+    const BASE = 0x1F1E6, A = 'A'.charCodeAt(0);
+    return String.fromCodePoint(BASE + s.charCodeAt(0) - A)
+         + String.fromCodePoint(BASE + s.charCodeAt(1) - A);
+  }
   function renderStars(n) {
     let h = '<span class="youth-stars">';
     for (let i = 0; i < 5; i++) {
@@ -334,7 +345,11 @@
     $stageEmpty.style.display = 'none';
     $stageCard.style.display  = '';
     $lotLabel.textContent  = 'Lot ' + lot.lot_order + ' of ' + (FEED.summary && FEED.summary.n_lots || '');
-    $playerName.textContent = lot.player_name;
+    // Flag goes inline before the name so the nationality reads at a
+    // glance with the rest of the player banner.
+    const flag = flagEmoji(lot.player_country);
+    $playerName.innerHTML = (flag ? '<span class="me-2" style="font-size:.85em">' + flag + '</span>' : '')
+      + escapeHtml(lot.player_name);
     const posLabel = lot.position + (lot.is_pitcher ? ' · P' : '');
     $playerPos.textContent  = posLabel;
     $playerStars.innerHTML  = renderStars(lot.stars);
@@ -373,8 +388,14 @@
     let i = 0;
     function tick() {
       if (i >= bidsAsc.length) {
-        // Final reveal.
-        $finalPrice.textContent = lot.price != null ? fmtMoney(lot.price) : 'Unsold';
+        // Final reveal. fmtMoney() returns the .o27-money HTML cell,
+        // so it has to land in innerHTML — textContent would render
+        // the markup as literal text.
+        if (lot.price != null) {
+          $finalPrice.innerHTML = fmtMoney(lot.price);
+        } else {
+          $finalPrice.textContent = 'Unsold';
+        }
         $finalPrice.style.color = lot.price != null ? 'var(--accent)' : 'var(--text-muted)';
         if (lot.winner_abbrev) {
           const secondPart = lot.second_bid != null
@@ -434,8 +455,11 @@
         const sale = lot.winner_abbrev
           ? ('<span><strong>' + escapeHtml(lot.winner_abbrev) + '</strong> ' + fmtMoney(lot.price) + '</span>')
           : '<span class="text-secondary">unsold</span>';
+        const mflag = flagEmoji(lot.player_country);
         row.innerHTML =
-          '<span>#' + lot.lot_order + ' ' + escapeHtml(lot.player_name)
+          '<span>#' + lot.lot_order + ' '
+          + (mflag ? mflag + ' ' : '')
+          + escapeHtml(lot.player_name)
           + ' <span class="text-secondary small">' + escapeHtml(lot.position) + '</span></span>'
           + sale;
         $montageStr.appendChild(row);
@@ -462,14 +486,15 @@
     const all = (FEED.stage_lots || []).concat(FEED.montage_lots || []);
     const sold = all.filter(l => l.winner_team_id && l.price != null);
     sold.sort((a, b) => (b.price || 0) - (a.price || 0));
-    $topSales.innerHTML = sold.slice(0, 5).map(s =>
-      '<tr>'
-      + '<td>' + escapeHtml(s.player_name) + ' <span class="text-secondary small">' + escapeHtml(s.position) + '</span></td>'
+    $topSales.innerHTML = sold.slice(0, 5).map(s => {
+      const sf = flagEmoji(s.player_country);
+      return '<tr>'
+      + '<td>' + (sf ? sf + ' ' : '') + escapeHtml(s.player_name) + ' <span class="text-secondary small">' + escapeHtml(s.position) + '</span></td>'
       + '<td><span class="team-abbrev">' + escapeHtml(s.winner_abbrev) + '</span> ' + escapeHtml(s.winner_name) + '</td>'
       + '<td class="num fw-bold">' + fmtMoney(s.price) + '</td>'
       + '<td class="num text-secondary">' + (s.second_bid != null ? fmtMoney(s.second_bid) : '—') + '</td>'
-      + '</tr>'
-    ).join('');
+      + '</tr>';
+    }).join('');
     updateProgress();
   }
 
