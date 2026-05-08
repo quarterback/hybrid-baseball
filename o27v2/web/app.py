@@ -3583,7 +3583,8 @@ def analytics():
     if games_played == 0:
         return _serve("analytics.html",
                       games_played=0, re_table=None, re_curve=None,
-                      xwoba=None, pythag=None, base_runs=None)
+                      xwoba=None, pythag=None, base_runs=None,
+                      lin_w=None, gsc_summary=None)
 
     from o27v2.analytics import (
         build_re_table, build_re_by_outs_remaining,
@@ -3600,6 +3601,39 @@ def analytics():
     xwoba     = build_xwoba_table(min_pa=min_pa)
     pythag    = refit_pythag_exponent()
     base_runs = build_base_runs_table()
+    lin_w     = _linear_weights()
+
+    # League mean / median Game Score across all starter outings, so the
+    # linear-weights panel can show the auto-tune result vs the target of 50.
+    gsc_dist = db.fetchall(
+        """
+        SELECT outs_recorded AS o, k, hits_allowed AS h, er,
+               unearned_runs AS uer, bb, hr_allowed AS hr,
+               fo_induced AS fo
+        FROM game_pitcher_stats
+        WHERE phase = 0 AND is_starter = 1
+        """
+    )
+    if gsc_dist:
+        gscs = sorted(
+            _pitcher_game_score(
+                r["o"] or 0, r["k"] or 0, r["h"] or 0, r["er"] or 0,
+                r["uer"] or 0, r["bb"] or 0, r["hr"] or 0, r["fo"] or 0,
+            )
+            for r in gsc_dist
+        )
+        n_g = len(gscs)
+        gsc_summary = {
+            "n":      n_g,
+            "mean":   round(sum(gscs) / n_g, 2),
+            "p25":    round(gscs[n_g // 4], 1),
+            "median": round(gscs[n_g // 2], 1),
+            "p75":    round(gscs[3 * n_g // 4], 1),
+            "min":    round(gscs[0], 1),
+            "max":    round(gscs[-1], 1),
+        }
+    else:
+        gsc_summary = None
 
     return _serve(
         "analytics.html",
@@ -3609,6 +3643,8 @@ def analytics():
         xwoba=xwoba,
         pythag=pythag,
         base_runs=base_runs,
+        lin_w=lin_w,
+        gsc_summary=gsc_summary,
         min_pa=min_pa,
     )
 
