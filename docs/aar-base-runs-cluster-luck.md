@@ -185,8 +185,11 @@ three-axis luck decomposition is:
 | Game-level (sequence) | BsR residual (refit)     | RISP timing, runner distribution, GIDP    |
 | Season-level (curve)  | Pythag k* residual       | W%-from-RD curvature, leverage spread     |
 
-These are *almost* orthogonal but not perfectly so — see the next
-section.
+These are orthogonal — both by construction (Pythag conditions on
+RS/RA so its residual mathematically can't contain anything but the
+W%-curvature piece) and empirically (r = −0.05 between BsR-net and
+Pythag-fitted luck across 30 teams; 0.3% shared variance). See the
+"corrected math" entry below.
 
 A natural follow-on (left for later) is a single combined panel that
 shows each team's W% surplus split into the three buckets as a stacked
@@ -197,16 +200,46 @@ running close games."
 
 ---
 
+## Corrected math: BsR ↔ Pythag are already orthogonal
+
+The first draft of this AAR (and the chat-level reasoning behind it)
+suggested BsR and Pythag residuals were "partially correlated" and
+recommended a Pythag-on-BsR-predicted-RS/RA refit as a fix. Both the
+worry and the proposed fix were wrong; this section records the
+corrected understanding so future work doesn't re-walk into it.
+
+**Empirical finding.** Across the 30 teams in the live league:
+`corr(e_BsR_net_fit, e_pythag_actual_fitted_kstar) = −0.052`
+(0.3% shared variance). The two residuals are essentially independent.
+
+**Why they're orthogonal.** Pythag's residual is `actual_W% −
+W%_pred(RS, RA, k*)`. By conditioning on RS and RA, the residual can
+*only* contain information about how those runs distributed across
+games (leverage / W%-curvature). Sequencing luck shows up *in* RS/RA
+already and is "absorbed" by the Pythag prediction. So the residual
+is sequencing-free by construction; the empirical r ≈ 0 confirms no
+secondary leakage in this league.
+
+**Why the proposed fix went the wrong direction.** I built (and
+discarded uncommitted) a parallel Pythag-on-BsR-predicted-RS/RA
+refit on the theory that "feeding BsR predictions in strips
+sequencing." It does the opposite: feeding *predicted* RS strips
+sequencing from the **input**, but actual W% (still the target) reflects
+sequencing fully — so the residual = actual_W% − W%_pred(RS_BsR, …)
+captures sequencing + leverage *combined*. Empirical correlation
+between BsR-net and the BsR-input Pythag residual came back at
+**+0.785**, the opposite of decorrelation. Reverted before commit;
+not in tree.
+
+**Takeaway.** The original Pythag panel column is already the clean
+leverage axis. The BsR panel net column is already the clean
+sequencing axis. The xwOBA Δ column is the clean event-level axis.
+Three axes, already orthogonal, no additional fit needed.
+
+---
+
 ## Caveats / known issues
 
-- **BsR ↔ Pythag residuals are partially correlated.** A team that
-  sequences well scores more runs *and* tends to score them in higher-
-  leverage spots, which inflates Pythag overperformance too. Fitting
-  them independently double-counts some sequencing luck. The fix is
-  to fit Pythag on **BaseRuns-predicted** RS/RA rather than actual,
-  so the k* residual captures only distribution-shape luck on top of
-  the sequencing residual. Not done here; flagged for the combined-
-  panel ship.
 - **30 teams × 2 sides = 60 points fitting 4 parameters** is 15:1
   DoF. Fine for a stable point estimate, but the fitted coefficients
   will jitter season-to-season. The structural fit (multiple seasons
