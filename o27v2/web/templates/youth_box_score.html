@@ -64,7 +64,7 @@
       <tbody>
         {% for b in team_batters %}
         <tr>
-          <td>{{ b.player_name }}</td>
+          <td><a href="{{ url_for('youth_player_view', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
           <td>{{ b.position }}</td>
           <td class="num">{{ b.pa }}</td>
           <td class="num">{{ b.ab }}</td>
@@ -104,7 +104,7 @@
         {% for p in team_pitchers %}
         <tr>
           <td>
-            {{ p.player_name }}
+            <a href="{{ url_for('youth_player_view', player_id=p.player_id) }}">{{ p.player_name }}</a>
             {% if p.is_starter %}<span class="text-secondary small ms-1">(SP)</span>{% endif %}
           </td>
           <td class="num">{{ p.batters_faced }}</td>
