@@ -805,6 +805,23 @@ def _attach_hits(games: list[dict]) -> None:
         g["away_hits"] = team_hits.get(g["away_team_id"]) if g.get("played") else None
 
 
+def _qualifying_thresholds(games_played: int) -> tuple[int, int]:
+    """MLB-style qualifying minimums: 3.1 PA per team-game for batting,
+    1 IP (3 outs) per team-game for pitching, with a small absolute floor
+    so the leaderboards aren't empty in the first week of a season.
+
+    Used by both the dashboard's Top-5 widget and /leaders so the two
+    views agree on who qualifies — otherwise a 5-PA hitter at .800 leads
+    one but not the other.
+    """
+    num_teams_row = db.fetchone("SELECT COUNT(*) as n FROM teams")
+    num_teams = (num_teams_row["n"] if num_teams_row else 0) or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
+    min_pa   = max(5, int(round(3.1 * games_per_team)))
+    min_outs = max(5, 3 * games_per_team)
+    return min_pa, min_outs
+
+
 def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> None:
     """Mutates rows in place to add classical, advanced, and O27-native
     sabermetrics.
@@ -1520,11 +1537,11 @@ def index():
 
     divs = _divisions()
 
-    # Top-5 leaders for AVG / HR / RBI / W / ERA / K
+    # Top-5 leaders for AVG / HR / RBI / W / ERA / K. Use the shared
+    # qualifying threshold so this widget matches /leaders.
     games_played_row = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")
     games_played = games_played_row["n"] if games_played_row else 0
-    min_pa = max(20, games_played // 30 * 8)
-    min_outs = max(9, games_played // 30 * 5)
+    min_pa, min_outs = _qualifying_thresholds(games_played)
 
     top = {"avg": [], "hr": [], "rbi": [], "w": [], "werra": [], "k": []}
     baselines = _league_baselines()
@@ -2859,13 +2876,10 @@ def leaders():
                                min_pa=0, min_outs=0)
 
     # Scale qualifying minimums by games-per-team, not by total league games.
-    # MLB rule of thumb: 3.1 PA/team-game qualifies for batting title; here we
-    # use ~1× games/team for batting and ~1× games/team in outs for pitching,
-    # so leaders are visible from week one and grow naturally with the season.
-    num_teams = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 2
-    games_per_team = max(1, (games_played * 2) // num_teams)
-    min_pa   = max(3, games_per_team)        # ~1 PA/team-game
-    min_outs = max(3, games_per_team)        # ~1 out/team-game (very lenient)
+    # MLB rule of thumb: 3.1 PA/team-game for batting, 1 IP/team-game for
+    # pitching. Same threshold as the dashboard widget so the two views
+    # don't disagree on who qualifies.
+    min_pa, min_outs = _qualifying_thresholds(games_played)
 
     batting = db.fetchall(
         """SELECT p.id as player_id, p.name as player_name, p.position,
@@ -2946,6 +2960,9 @@ def leaders():
     # zero PA), so the PA-qualified batting set would exclude them. We
     # qualify on total chances (PO + E) instead — a single great or terrible
     # play can't top the board.
+    num_teams_row = db.fetchone("SELECT COUNT(*) as n FROM teams")
+    num_teams = (num_teams_row["n"] if num_teams_row else 0) or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
     min_chances = max(3, games_per_team)
     fielding = db.fetchall(
         """SELECT p.id as player_id, p.name as player_name, p.position,
@@ -5046,8 +5063,19 @@ def youth_view():
         archetype = "bat"
     teams_rows  = _youth.youth_teams()
     prospects   = _youth.top_prospects(limit=25, archetype=archetype)
+
+    # Bucket teams by geographic region. Empty regions get dropped so a
+    # config without African teams (say) doesn't render an empty header.
+    by_region: dict[str, list[dict]] = {r: [] for r in _youth.REGION_ORDER}
+    by_region["Other"] = []
+    for t in teams_rows:
+        by_region.setdefault(_youth.country_region(t.get("country_code", "")), []).append(t)
+    region_groups = [(r, by_region[r]) for r in _youth.REGION_ORDER + ["Other"]
+                     if by_region.get(r)]
+
     return _serve("youth.html",
                   teams=teams_rows,
+                  region_groups=region_groups,
                   prospects=prospects,
                   archetype=archetype,
                   archetype_options=("bat", "arm", "stars"))
@@ -5072,6 +5100,56 @@ def youth_team_view(team_id: int):
         merged["pit_obs"] = stats.get("pit") or {}
         enriched.append(merged)
     return _serve("youth_team.html", team=dict(team), roster=enriched)
+
+
+@app.route("/youth/player/<int:player_id>")
+def youth_player_view(player_id: int):
+    from o27v2 import youth as _youth
+    player = db.fetchone(
+        """SELECT p.*, t.id AS team_id, t.name AS team_name,
+                  t.abbrev AS team_abbrev, t.country_code AS team_country
+           FROM youth_players p
+           JOIN youth_teams t ON t.id = p.youth_team_id
+           WHERE p.id = ?""",
+        (player_id,),
+    )
+    if not player:
+        abort(404)
+
+    obs = _youth.player_observed_stats(player_id)
+
+    bat_log = db.fetchall(
+        """SELECT gb.*, g.bracket_round, g.season,
+                  ht.abbrev AS home_abbrev, at.abbrev AS away_abbrev,
+                  g.home_team_id, g.away_team_id, g.home_score, g.away_score
+           FROM game_youth_batter_stats gb
+           JOIN youth_games g ON g.id = gb.game_id
+           JOIN youth_teams ht ON ht.id = g.home_team_id
+           JOIN youth_teams at ON at.id = g.away_team_id
+           WHERE gb.player_id = ?
+           ORDER BY g.id DESC""",
+        (player_id,),
+    )
+    pit_log = db.fetchall(
+        """SELECT gp.*, g.bracket_round, g.season,
+                  ht.abbrev AS home_abbrev, at.abbrev AS away_abbrev,
+                  g.home_team_id, g.away_team_id, g.home_score, g.away_score
+           FROM game_youth_pitcher_stats gp
+           JOIN youth_games g ON g.id = gp.game_id
+           JOIN youth_teams ht ON ht.id = g.home_team_id
+           JOIN youth_teams at ON at.id = g.away_team_id
+           WHERE gp.player_id = ?
+           ORDER BY g.id DESC""",
+        (player_id,),
+    )
+
+    return _serve("youth_player.html",
+                  player=dict(player),
+                  bat_obs=obs.get("bat") or {},
+                  pit_obs=obs.get("pit") or {},
+                  bat_log=[dict(r) for r in bat_log],
+                  pit_log=[dict(r) for r in pit_log],
+                  region=_youth.country_region(player.get("team_country") or ""))
 
 
 @app.route("/api/youth/seed", methods=["POST"])
