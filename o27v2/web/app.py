@@ -86,6 +86,20 @@ def _flag(country_code) -> str:
 app.jinja_env.filters["flag"] = _flag
 
 
+def _archetype_label(key) -> str:
+    """Convert a manager archetype key (e.g. 'mad_scientist') to its
+    human label (e.g. 'Mad Scientist'). Empty / unknown keys fall back
+    to the snake_case key so templates render *something* rather than
+    breaking."""
+    if not key:
+        return ""
+    from o27v2.managers import archetype_label
+    return archetype_label(str(key))
+
+
+app.jinja_env.filters["archetype_label"] = _archetype_label
+
+
 from markupsafe import Markup as _Markup  # noqa: E402
 
 
