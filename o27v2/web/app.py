@@ -805,6 +805,23 @@ def _attach_hits(games: list[dict]) -> None:
         g["away_hits"] = team_hits.get(g["away_team_id"]) if g.get("played") else None
 
 
+def _qualifying_thresholds(games_played: int) -> tuple[int, int]:
+    """MLB-style qualifying minimums: 3.1 PA per team-game for batting,
+    1 IP (3 outs) per team-game for pitching, with a small absolute floor
+    so the leaderboards aren't empty in the first week of a season.
+
+    Used by both the dashboard's Top-5 widget and /leaders so the two
+    views agree on who qualifies — otherwise a 5-PA hitter at .800 leads
+    one but not the other.
+    """
+    num_teams_row = db.fetchone("SELECT COUNT(*) as n FROM teams")
+    num_teams = (num_teams_row["n"] if num_teams_row else 0) or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
+    min_pa   = max(5, int(round(3.1 * games_per_team)))
+    min_outs = max(5, 3 * games_per_team)
+    return min_pa, min_outs
+
+
 def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> None:
     """Mutates rows in place to add classical, advanced, and O27-native
     sabermetrics.
@@ -1520,11 +1537,11 @@ def index():
 
     divs = _divisions()
 
-    # Top-5 leaders for AVG / HR / RBI / W / ERA / K
+    # Top-5 leaders for AVG / HR / RBI / W / ERA / K. Use the shared
+    # qualifying threshold so this widget matches /leaders.
     games_played_row = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")
     games_played = games_played_row["n"] if games_played_row else 0
-    min_pa = max(20, games_played // 30 * 8)
-    min_outs = max(9, games_played // 30 * 5)
+    min_pa, min_outs = _qualifying_thresholds(games_played)
 
     top = {"avg": [], "hr": [], "rbi": [], "w": [], "werra": [], "k": []}
     baselines = _league_baselines()
@@ -2859,13 +2876,10 @@ def leaders():
                                min_pa=0, min_outs=0)
 
     # Scale qualifying minimums by games-per-team, not by total league games.
-    # MLB rule of thumb: 3.1 PA/team-game qualifies for batting title; here we
-    # use ~1× games/team for batting and ~1× games/team in outs for pitching,
-    # so leaders are visible from week one and grow naturally with the season.
-    num_teams = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 2
-    games_per_team = max(1, (games_played * 2) // num_teams)
-    min_pa   = max(3, games_per_team)        # ~1 PA/team-game
-    min_outs = max(3, games_per_team)        # ~1 out/team-game (very lenient)
+    # MLB rule of thumb: 3.1 PA/team-game for batting, 1 IP/team-game for
+    # pitching. Same threshold as the dashboard widget so the two views
+    # don't disagree on who qualifies.
+    min_pa, min_outs = _qualifying_thresholds(games_played)
 
     batting = db.fetchall(
         """SELECT p.id as player_id, p.name as player_name, p.position,
@@ -2946,6 +2960,9 @@ def leaders():
     # zero PA), so the PA-qualified batting set would exclude them. We
     # qualify on total chances (PO + E) instead — a single great or terrible
     # play can't top the board.
+    num_teams_row = db.fetchone("SELECT COUNT(*) as n FROM teams")
+    num_teams = (num_teams_row["n"] if num_teams_row else 0) or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
     min_chances = max(3, games_per_team)
     fielding = db.fetchall(
         """SELECT p.id as player_id, p.name as player_name, p.position,
