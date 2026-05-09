@@ -5176,10 +5176,54 @@ def youth_tournament_view():
 @app.route("/youth/game/<int:game_id>")
 def youth_game_view(game_id: int):
     from o27v2 import youth_sim
+    from .box_score import render_box_score as _render_box_score
     box = youth_sim.get_box_score(game_id)
     if not box:
         abort(404)
-    return _serve("youth_box_score.html", box=box)
+    g = box["game"]
+    away_id, home_id = g["away_team_id"], g["home_team_id"]
+    away_batting = [dict(r) for r in box["batters"]  if r["team_id"] == away_id]
+    home_batting = [dict(r) for r in box["batters"]  if r["team_id"] == home_id]
+    away_pitching = [dict(r) for r in box["pitchers"] if r["team_id"] == away_id]
+    home_pitching = [dict(r) for r in box["pitchers"] if r["team_id"] == home_id]
+    # Youth schema lacks the optional pro fields the renderer reads; the
+    # renderer falls back to 0/blank via .get() so we only need to plug
+    # the defaults that affect layout (position label, season HR caption).
+    for r in away_batting + home_batting:
+        r.setdefault("entry_type", "starter")
+        r.setdefault("box_position", r.get("position") or "")
+        r["season_hr"] = r.get("hr") or 0
+    line_for = lambda rows: {
+        "runs":    {0: sum((r.get("runs") or 0) for r in rows)},
+        "hits":    {0: sum((r.get("hits") or 0) for r in rows)},
+        "errors":  {0: 0},
+        "total_r": sum((r.get("runs") or 0) for r in rows),
+        "total_h": sum((r.get("hits") or 0) for r in rows),
+        "total_e": 0,
+    }
+    away_line = line_for(away_batting)
+    home_line = line_for(home_batting)
+    decisions: dict[int, str] = {}
+    winner_id = g.get("winner_id")
+    if winner_id is not None:
+        win_pitchers  = away_pitching if winner_id == away_id else home_pitching
+        lose_pitchers = home_pitching if winner_id == away_id else away_pitching
+        if win_pitchers:
+            decisions[win_pitchers[0]["player_id"]] = "W"
+        if lose_pitchers:
+            decisions[lose_pitchers[0]["player_id"]] = "L"
+    box_score_text = _render_box_score(
+        game=g,
+        phases=[0],
+        away_line=away_line,
+        home_line=home_line,
+        away_batting=away_batting,
+        home_batting=home_batting,
+        away_pitching=away_pitching,
+        home_pitching=home_pitching,
+        decisions=decisions,
+    )
+    return _serve("youth_box_score.html", box=box, box_score_text=box_score_text)
 
 
 @app.route("/api/youth/tournament/run", methods=["POST"])

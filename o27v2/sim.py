@@ -15,6 +15,7 @@ from __future__ import annotations
 import random
 import sys
 import os
+import threading
 
 _workspace = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _workspace not in sys.path:
@@ -28,6 +29,24 @@ from o27.render.render import Renderer
 from o27v2 import db
 import o27v2.config as v2cfg
 from o27v2 import scout as _scout
+
+
+# Process-wide serialisation for sim execution. Flask's dev server is
+# threaded by default, so without this two concurrent sim requests
+# (e.g. a bulk "Sim to All-Star Break" click while a single-game Sim
+# button is mid-flight, two browser tabs, or a multi-season run racing
+# a manual sim) both pass the per-game `played=0` check before either
+# commits, then one wins the UPDATE and the other raises
+# "Game N has already been played" — corrupting stats along the way.
+# RLock lets bulk sim drivers re-enter simulate_game on the same thread.
+_SIM_LOCK = threading.RLock()
+
+
+class GameAlreadyPlayedError(ValueError):
+    """Raised by simulate_game when its game already has played=1.
+    Subclass of ValueError so existing `except ValueError` handlers
+    (e.g. /api/sim/<id>) still see it; bulk drivers catch this type
+    specifically and silently skip — the work is already done."""
 
 
 # ---------------------------------------------------------------------------
@@ -1217,11 +1236,16 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     - Fires post-game injury draws, deadline trade checks, and waiver claims.
     - Returns a summary dict.
     """
+    with _SIM_LOCK:
+        return _simulate_game_locked(game_id, seed=seed)
+
+
+def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
     game = db.fetchone("SELECT * FROM games WHERE id = ?", (game_id,))
     if game is None:
         raise ValueError(f"Game {game_id} not found")
     if game["played"]:
-        raise ValueError(f"Game {game_id} has already been played")
+        raise GameAlreadyPlayedError(f"Game {game_id} has already been played")
 
     game_date    = game["game_date"]
     home_team_id = game["home_team_id"]
@@ -1670,6 +1694,8 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
         try:
             r = simulate_game(g["id"], seed=seed)
             results.append(r)
+        except GameAlreadyPlayedError:
+            continue
         except Exception as e:
             results.append({"game_id": g["id"], "error": str(e)})
     try:
@@ -1832,6 +1858,8 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_
         seed = None if seed_base is None else seed_base + i
         try:
             results.append(simulate_game(g["id"], seed=seed))
+        except GameAlreadyPlayedError:
+            continue
         except Exception as e:
             results.append({"game_id": g["id"], "error": str(e)})
     return results
@@ -1876,6 +1904,8 @@ def simulate_through(target_date: str, seed_base: int | None = None, max_games: 
             seed = None if seed_base is None else seed_base + len(seen_game_ids)
             try:
                 results.append(simulate_game(g["id"], seed=seed))
+            except GameAlreadyPlayedError:
+                continue
             except Exception as e:
                 results.append({"game_id": g["id"], "error": str(e)})
         try:

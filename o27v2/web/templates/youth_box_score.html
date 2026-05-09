@@ -34,93 +34,13 @@
   </div>
 </div>
 
-{% set teams = [(g.away_team_id, g.away_abbrev, g.away_name),
-                (g.home_team_id, g.home_abbrev, g.home_name)] %}
-
-{% for team_id, abbr, team_name in teams %}
-  {% set team_batters = box.batters | selectattr('team_id', 'equalto', team_id) | list %}
-  {% set team_pitchers = box.pitchers | selectattr('team_id', 'equalto', team_id) | list %}
-
-  <div class="dense mb-4">
-    <div class="panel-title">
-      <span class="team-abbrev">{{ abbr }}</span> {{ team_name }} — batting
-    </div>
-    <table class="table table-sm dense-table mb-0">
-      <thead><tr>
-        <th>Player</th>
-        <th>Pos</th>
-        <th class="num">PA</th>
-        <th class="num">AB</th>
-        <th class="num">R</th>
-        <th class="num">H</th>
-        <th class="num">2B</th>
-        <th class="num">3B</th>
-        <th class="num">HR</th>
-        <th class="num">RBI</th>
-        <th class="num">BB</th>
-        <th class="num">K</th>
-        <th class="num" title="Stays — second-chance hits">STY</th>
-      </tr></thead>
-      <tbody>
-        {% for b in team_batters %}
-        <tr>
-          <td><a href="{{ url_for('youth_player_view', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
-          <td>{{ b.position }}</td>
-          <td class="num">{{ b.pa }}</td>
-          <td class="num">{{ b.ab }}</td>
-          <td class="num">{{ b.runs }}</td>
-          <td class="num fw-bold">{{ b.hits }}</td>
-          <td class="num">{{ b.doubles }}</td>
-          <td class="num">{{ b.triples }}</td>
-          <td class="num">{{ b.hr }}</td>
-          <td class="num">{{ b.rbi }}</td>
-          <td class="num">{{ b.bb }}</td>
-          <td class="num">{{ b.k }}</td>
-          <td class="num text-secondary">{{ b.stays }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <div class="dense mb-4">
-    <div class="panel-title">
-      <span class="team-abbrev">{{ abbr }}</span> {{ team_name }} — pitching
-    </div>
-    <table class="table table-sm dense-table mb-0">
-      <thead><tr>
-        <th>Player</th>
-        <th class="num">BF</th>
-        <th class="num">OUT</th>
-        <th class="num">H</th>
-        <th class="num">R</th>
-        <th class="num">ER</th>
-        <th class="num">BB</th>
-        <th class="num">K</th>
-        <th class="num">HR</th>
-        <th class="num">P</th>
-      </tr></thead>
-      <tbody>
-        {% for p in team_pitchers %}
-        <tr>
-          <td>
-            <a href="{{ url_for('youth_player_view', player_id=p.player_id) }}">{{ p.player_name }}</a>
-            {% if p.is_starter %}<span class="text-secondary small ms-1">(SP)</span>{% endif %}
-          </td>
-          <td class="num">{{ p.batters_faced }}</td>
-          <td class="num">{{ p.outs_recorded }}</td>
-          <td class="num">{{ p.hits_allowed }}</td>
-          <td class="num">{{ p.runs_allowed }}</td>
-          <td class="num">{{ p.er }}</td>
-          <td class="num">{{ p.bb }}</td>
-          <td class="num">{{ p.k }}</td>
-          <td class="num">{{ p.hr_allowed }}</td>
-          <td class="num text-secondary">{{ p.pitches }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-{% endfor %}
+{% if not g.played %}
+<div class="alert alert-warning">This game has not been played yet.</div>
+{% else %}
+<pre style="font-family:'Courier New',Consolas,Menlo,monospace;
+            font-size:13px; line-height:1.35; white-space:pre;
+            color:var(--fg, inherit); background:transparent;
+            padding:1rem; margin:0; overflow-x:auto;">{{ box_score_text }}</pre>
+{% endif %}
 
 {% endblock %}
