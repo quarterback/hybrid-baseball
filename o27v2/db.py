@@ -768,23 +768,32 @@ def init_db() -> None:
 def drop_all() -> None:
     """Drop all tables (for re-seeding)."""
     with get_conn() as conn:
-        # Drop child tables before parents to avoid FK constraint failures.
-        # team_phase_outs and sim_meta were added in Task #58; if they hold
-        # rows when we try to drop `games` they raise FOREIGN KEY constraint
-        # failed and the whole reset aborts.
-        conn.executescript("""
-            DROP TABLE IF EXISTS transactions;
-            DROP TABLE IF EXISTS game_pa_log;
-            DROP TABLE IF EXISTS game_pitcher_stats;
-            DROP TABLE IF EXISTS game_batter_stats;
-            DROP TABLE IF EXISTS team_phase_outs;
-            DROP TABLE IF EXISTS sim_meta;
-            DROP TABLE IF EXISTS season_awards;
-            DROP TABLE IF EXISTS games;
-            DROP TABLE IF EXISTS playoff_series;
-            DROP TABLE IF EXISTS players;
-            DROP TABLE IF EXISTS teams;
-        """)
+        # FKs off for the duration of the drop: auction_*, and any other
+        # module-owned tables that reference teams/players, would otherwise
+        # raise FOREIGN KEY constraint failed and abort the reset
+        # mid-script — which leaves the DB in a half-dropped state where
+        # every subsequent request 500s with "no such table: sim_meta".
+        conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            conn.executescript("""
+                DROP TABLE IF EXISTS auction_lot_bids;
+                DROP TABLE IF EXISTS auction_results;
+                DROP TABLE IF EXISTS auction_keepers;
+                DROP TABLE IF EXISTS transactions;
+                DROP TABLE IF EXISTS game_pa_log;
+                DROP TABLE IF EXISTS game_pitcher_stats;
+                DROP TABLE IF EXISTS game_batter_stats;
+                DROP TABLE IF EXISTS team_phase_outs;
+                DROP TABLE IF EXISTS sim_meta;
+                DROP TABLE IF EXISTS season_awards;
+                DROP TABLE IF EXISTS games;
+                DROP TABLE IF EXISTS playoff_series;
+                DROP TABLE IF EXISTS players;
+                DROP TABLE IF EXISTS teams;
+            """)
+            conn.commit()
+        finally:
+            conn.execute("PRAGMA foreign_keys = ON")
 
 
 def fetchall(sql: str, params: tuple = ()) -> list[dict]:
