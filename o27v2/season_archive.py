@@ -508,6 +508,27 @@ def _run_multi_season_thread(
                 _tick_games_simmed()
                 cur = step_to + _dt.timedelta(days=1)
 
+            # Drain the playoff bracket. Regular-season chunks above stop
+            # at `last_date` (= last regular-season date), but playoff
+            # initiation and post-game series scheduling insert games
+            # dated AFTER that — each round's games appear only once the
+            # prior round's series resolve. Loop until the schedule stops
+            # extending; otherwise archive_current_season would snapshot
+            # a season with no champion.
+            from o27v2.sim import is_season_complete
+            prev_target: str | None = None
+            drain_safety = 40
+            while drain_safety > 0:
+                drain_safety -= 1
+                if is_season_complete():
+                    break
+                target = get_last_scheduled_date()
+                if target is None or target == prev_target:
+                    break
+                simulate_through(target)
+                _tick_games_simmed()
+                prev_target = target
+
             _state_update(current_phase="archiving")
             sid = archive_current_season(
                 rng_seed=seed,
