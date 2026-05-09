@@ -4651,11 +4651,36 @@ def api_sim_season():
         resp["archived_season_id"] = sid
         return jsonify(resp)
     current = get_current_sim_date()
-    last    = get_last_scheduled_date()
-    results = simulate_through(last)
-    if not _had_errors(results):
-        next_day = (_dt.date.fromisoformat(last) + _dt.timedelta(days=1)).isoformat()
-        advance_sim_clock(next_day)
+    initial_last = get_last_scheduled_date()
+
+    # Loop simulate_through until the season actually finishes. Each call
+    # only sims games dated <= its target, but playoff initiation and
+    # post-game hooks schedule new games dated AFTER the regular season's
+    # last date — so a single call would leave the playoffs unplayed and
+    # the user would have to click again for every round / series game.
+    # Cap iterations defensively in case scheduling never converges.
+    all_results: list = []
+    prev_target: str | None = None
+    safety = 40  # > rounds × max series length; converges far sooner.
+    while safety > 0:
+        safety -= 1
+        if is_season_complete():
+            break
+        target = get_last_scheduled_date()
+        if target is None or target == prev_target:
+            # No new games scheduled this iteration — schedule has converged.
+            break
+        results = simulate_through(target)
+        all_results.extend(results)
+        if _had_errors(results):
+            break
+        prev_target = target
+
+    if not _had_errors(all_results):
+        final_last = get_last_scheduled_date() or initial_last
+        if final_last:
+            next_day = (_dt.date.fromisoformat(final_last) + _dt.timedelta(days=1)).isoformat()
+            advance_sim_clock(next_day)
     else:
         resync_sim_clock()
     # Auto-archive on completion: simulating through the last scheduled date
@@ -4668,7 +4693,7 @@ def api_sim_season():
             archived_id = None
             app.logger.exception("auto-archive after /api/sim/season failed: %s", e)
     invalidate_linear_weights()
-    resp = _sim_response(current, last, results)
+    resp = _sim_response(current, initial_last, all_results)
     resp["archived_season_id"] = archived_id
     return jsonify(resp)
 
