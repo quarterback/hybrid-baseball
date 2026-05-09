@@ -947,6 +947,7 @@ def get_live_auction(season: int | None = None) -> dict | None:
     results = db.fetchall(
         "SELECT r.*, "
         "       p.name AS player_name, p.position, p.is_pitcher, "
+        "       p.country AS player_country, "
         "       wt.abbrev AS winner_abbrev, wt.name AS winner_name, "
         "       tt.abbrev AS traded_to_abbrev, tt.name AS traded_to_name "
         "FROM auction_results r "
@@ -1006,6 +1007,7 @@ def get_live_auction(season: int | None = None) -> dict | None:
             "lot_order":      r["lot_order"],
             "player_id":      r["player_id"],
             "player_name":    r["player_name"],
+            "player_country": (r["player_country"] or "").upper(),
             "position":       r["position"],
             "is_pitcher":     bool(r["is_pitcher"]),
             "overall":        r["player_overall"],

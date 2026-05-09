@@ -256,6 +256,13 @@ def init_youth_schema() -> None:
     db.execute(_SCHEMA_GROUP_MEMBERSHIP)
     db.execute(_SCHEMA_GAMES)
 
+    # Per-game stat tables live in `youth_sim` but are referenced from
+    # `top_prospects()` and `player_observed_stats()` here. Co-initialise
+    # so /youth doesn't 500 on a save where the tournament has never
+    # been run yet (the LEFT JOINs would otherwise hit missing tables).
+    from o27v2 import youth_sim as _youth_sim
+    _youth_sim.init_youth_sim_schema()
+
     # Migrations for older youth tables. ALTER TABLE ... ADD COLUMN is
     # idempotent in spirit (we ignore "duplicate column" errors).
     _migrations: list[tuple[str, str]] = [
