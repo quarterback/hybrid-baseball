@@ -371,17 +371,23 @@ def _make_youth_player(
     return p
 
 
-def _name_picker_for_region(rng: random.Random, region_id: str):
-    """Build a name picker biased entirely toward the given region,
-    falling back to americas_pro if the region isn't found."""
-    from o27v2.league import make_name_picker, get_name_regions
+def _name_picker_for_region(rng: random.Random, region_id: str,
+                             country_code: str = ""):
+    """Build a name picker for a youth team. When the team's
+    country_code matches a subregion in the named region, the picker
+    pins to that country only — Team Japan gets Japanese names, not
+    a JP/KR/TW/CN mix from east_asia's full distribution. Falls back
+    to the regular region-weighted picker (or the us pool) if no
+    match."""
+    from o27v2.league import (make_name_picker, make_country_pinned_picker,
+                              get_name_regions)
     regions = get_name_regions()
-    if region_id in regions:
-        weights = {region_id: 1.0}
-    else:
-        # Fallback: the americas/us pool, which is always present.
-        weights = {"us": 1.0}
-    return make_name_picker(rng, gender="male", region_weights=weights)
+    if region_id not in regions:
+        return make_name_picker(rng, gender="male", region_weights={"us": 1.0})
+    if country_code:
+        return make_country_pinned_picker(rng, region_id, country_code, "male")
+    return make_name_picker(rng, gender="male",
+                            region_weights={region_id: 1.0})
 
 
 def _spawn_roster(
@@ -393,7 +399,8 @@ def _spawn_roster(
        8 starting fielders + 8 position-player backups
        + 9 pitchers + 3 jokers.
     """
-    name_pick = _name_picker_for_region(rng, team["name_region"])
+    name_pick = _name_picker_for_region(rng, team["name_region"],
+                                          team.get("country_code", ""))
     rows: list[dict] = []
 
     def _age() -> int:
@@ -593,7 +600,8 @@ def _refill_team(team: dict, rng: random.Random, seed_year: int) -> int:
         if not r["is_pitcher"] and not r["is_joker"]:
             pos_counts[r["position"]] = pos_counts.get(r["position"], 0) + 1
 
-    name_pick = _name_picker_for_region(rng, team["name_region"])
+    name_pick = _name_picker_for_region(rng, team["name_region"],
+                                          team.get("country_code", ""))
     added = 0
 
     def _spawn_and_insert(pos: str, *, is_pitcher: bool,

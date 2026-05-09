@@ -36,13 +36,42 @@
       "surname_keys": ["canadian_french", "american_general"]
     },
     "latin_america": {
+      "_doc": [
+        "Subregioned by country so each youth-league nation pins to a",
+        "country-flavored pool via make_country_pinned_picker. Subregion",
+        "weights mirror the prior country_weights so the broad pro-league",
+        "use of latin_america: 1.0 keeps its country mix.",
+        "PR pulls from the curated puerto_rican pool (see male_first /",
+        "surnames JSON); the rest currently share latino_hispanic +",
+        "latin_american pending per-country curation."
+      ],
       "label": "Latin America",
-      "country_weights": {
-        "DO": 0.30, "VE": 0.20, "CU": 0.15, "PR": 0.13,
-        "MX": 0.13, "CO": 0.05, "PA": 0.02, "NI": 0.02
-      },
-      "first_keys":   ["latino_hispanic", "latin_american"],
-      "surname_keys": ["latino_hispanic", "latin_american"]
+      "subregions": [
+        { "weight": 0.30, "country": "DO",
+          "first_keys":   ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american"] },
+        { "weight": 0.20, "country": "VE",
+          "first_keys":   ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american"] },
+        { "weight": 0.15, "country": "CU",
+          "first_keys":   ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american"] },
+        { "weight": 0.13, "country": "PR",
+          "first_keys":   ["puerto_rican"],
+          "surname_keys": ["puerto_rican", "latino_hispanic"] },
+        { "weight": 0.13, "country": "MX",
+          "first_keys":   ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american"] },
+        { "weight": 0.05, "country": "CO",
+          "first_keys":   ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american"] },
+        { "weight": 0.02, "country": "PA",
+          "first_keys":   ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american"] },
+        { "weight": 0.02, "country": "NI",
+          "first_keys":   ["latino_hispanic", "latin_american"],
+          "surname_keys": ["latino_hispanic", "latin_american"] }
+      ]
     },
     "south_america": {
       "_doc": [

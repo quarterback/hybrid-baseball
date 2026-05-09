@@ -477,6 +477,67 @@ def make_name_picker(
     return _name
 
 
+def make_country_pinned_picker(rng: random.Random, region_id: str,
+                                country_code: str, gender: str = "male"):
+    """Like `make_name_picker` but pinned to a single country within a
+    region's subregion list. Used by the youth league, where each team
+    represents one specific country and should never draw cross-country
+    names — Team Japan should get Japanese names, not the broader
+    east_asia 45/32/15/8 JP/KR/TW/CN mix. Falls back to the regular
+    weighted picker if the region has no subregions or no subregion
+    matches the country code.
+
+    When a country has multiple cultural-variant subregions in the same
+    region (e.g. Brazil's 5 in south_america, or Fiji's native + Indo-
+    Fijian pair in pacific_islands), the relative weights between those
+    variants are preserved.
+    """
+    region = get_name_regions().get(region_id) or {}
+    subregions = region.get("subregions") or []
+    cc = (country_code or "").upper()
+    matching = [sr for sr in subregions if str(sr.get("country", "")).upper() == cc]
+    if not matching:
+        return make_name_picker(rng, gender=gender,
+                                region_weights={region_id: 1.0})
+
+    pools = _load_name_pools()
+    g_lower = (gender or "male").lower()
+    used: set[str] = set()
+    sr_weights = _normalise_weights(
+        {str(i): float(sr.get("weight", 0.0) or 0.0) for i, sr in enumerate(matching)}
+    )
+
+    def _gather(bucket_kind: str, keys: list[str]) -> list[str]:
+        bucket = pools.get(bucket_kind, {})
+        out: list[str] = []
+        for k in keys:
+            v = bucket.get(k)
+            if isinstance(v, list):
+                out.extend(v)
+        return out
+
+    def _first_kind() -> str:
+        if g_lower == "male":   return "male_first"
+        if g_lower == "female": return "female_first"
+        return "male_first" if rng.random() < 0.5 else "female_first"
+
+    def _name() -> tuple[str, str]:
+        for _ in range(500):
+            idx = int(_pick_weighted_key(rng, sr_weights))
+            sr  = matching[idx]
+            firsts = _gather(_first_kind(), sr.get("first_keys", []))
+            lasts  = _gather("surnames",    sr.get("surname_keys", []))
+            if not firsts or not lasts:
+                continue
+            full = f"{rng.choice(firsts)} {rng.choice(lasts)}"
+            if full not in used:
+                used.add(full)
+                return full, cc
+        return f"Player {rng.randint(100, 999)}", cc
+
+    return _name
+
+
 def progression_weights(season_index: int) -> dict[str, float]:
     """Return the O27 thesis-shaped region weights for a given league
     season index (1 = inaugural season).
