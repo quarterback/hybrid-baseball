@@ -118,7 +118,11 @@
     </div>
     <div class="col-auto">
       <label class="form-label" for="ns-seed">RNG seed</label>
-      <input type="number" id="ns-seed" value="42" class="form-control form-control-sm" style="width:110px">
+      <div class="d-flex gap-1">
+        <input type="number" id="ns-seed" value="42" min="0" class="form-control form-control-sm" style="width:110px">
+        <button type="button" id="ns-seed-randomize" class="btn btn-sm btn-outline-secondary"
+                title="Pick a random seed">🎲</button>
+      </div>
     </div>
     <div class="col-auto pb-1">
       <div class="form-check">
@@ -147,7 +151,11 @@
     </div>
     <div class="col-auto">
       <label class="form-label" for="ms-seed">Base seed</label>
-      <input type="number" id="ms-seed" value="42" class="form-control form-control-sm" style="width:110px">
+      <div class="d-flex gap-1">
+        <input type="number" id="ms-seed" value="42" min="0" class="form-control form-control-sm" style="width:110px">
+        <button type="button" id="ms-seed-randomize" class="btn btn-sm btn-outline-secondary"
+                title="Pick a random base seed">🎲</button>
+      </div>
     </div>
     <div class="col-auto">
       <label class="form-label" for="ms-config">Config</label>
@@ -329,6 +337,18 @@
   const msBar        = document.getElementById('ms-bar');
   const msDetail     = document.getElementById('ms-detail');
   const msResults    = document.getElementById('ms-results');
+
+  // Dice buttons that fill the seed inputs with a random number so the
+  // user doesn't have to guess one.
+  [['ns-seed', 'ns-seed-randomize'], ['ms-seed', 'ms-seed-randomize']].forEach(([inputId, btnId]) => {
+    const inp = document.getElementById(inputId);
+    const btn = document.getElementById(btnId);
+    if (!inp || !btn) return;
+    btn.addEventListener('click', () => {
+      inp.value = Math.floor(Math.random() * 1_000_000);
+      inp.focus();
+    });
+  });
 
   if (!newSeasonBtn || !multiBtn) return;
 

@@ -5063,8 +5063,19 @@ def youth_view():
         archetype = "bat"
     teams_rows  = _youth.youth_teams()
     prospects   = _youth.top_prospects(limit=25, archetype=archetype)
+
+    # Bucket teams by geographic region. Empty regions get dropped so a
+    # config without African teams (say) doesn't render an empty header.
+    by_region: dict[str, list[dict]] = {r: [] for r in _youth.REGION_ORDER}
+    by_region["Other"] = []
+    for t in teams_rows:
+        by_region.setdefault(_youth.country_region(t.get("country_code", "")), []).append(t)
+    region_groups = [(r, by_region[r]) for r in _youth.REGION_ORDER + ["Other"]
+                     if by_region.get(r)]
+
     return _serve("youth.html",
                   teams=teams_rows,
+                  region_groups=region_groups,
                   prospects=prospects,
                   archetype=archetype,
                   archetype_options=("bat", "arm", "stars"))
@@ -5089,6 +5100,56 @@ def youth_team_view(team_id: int):
         merged["pit_obs"] = stats.get("pit") or {}
         enriched.append(merged)
     return _serve("youth_team.html", team=dict(team), roster=enriched)
+
+
+@app.route("/youth/player/<int:player_id>")
+def youth_player_view(player_id: int):
+    from o27v2 import youth as _youth
+    player = db.fetchone(
+        """SELECT p.*, t.id AS team_id, t.name AS team_name,
+                  t.abbrev AS team_abbrev, t.country_code AS team_country
+           FROM youth_players p
+           JOIN youth_teams t ON t.id = p.youth_team_id
+           WHERE p.id = ?""",
+        (player_id,),
+    )
+    if not player:
+        abort(404)
+
+    obs = _youth.player_observed_stats(player_id)
+
+    bat_log = db.fetchall(
+        """SELECT gb.*, g.bracket_round, g.season,
+                  ht.abbrev AS home_abbrev, at.abbrev AS away_abbrev,
+                  g.home_team_id, g.away_team_id, g.home_score, g.away_score
+           FROM game_youth_batter_stats gb
+           JOIN youth_games g ON g.id = gb.game_id
+           JOIN youth_teams ht ON ht.id = g.home_team_id
+           JOIN youth_teams at ON at.id = g.away_team_id
+           WHERE gb.player_id = ?
+           ORDER BY g.id DESC""",
+        (player_id,),
+    )
+    pit_log = db.fetchall(
+        """SELECT gp.*, g.bracket_round, g.season,
+                  ht.abbrev AS home_abbrev, at.abbrev AS away_abbrev,
+                  g.home_team_id, g.away_team_id, g.home_score, g.away_score
+           FROM game_youth_pitcher_stats gp
+           JOIN youth_games g ON g.id = gp.game_id
+           JOIN youth_teams ht ON ht.id = g.home_team_id
+           JOIN youth_teams at ON at.id = g.away_team_id
+           WHERE gp.player_id = ?
+           ORDER BY g.id DESC""",
+        (player_id,),
+    )
+
+    return _serve("youth_player.html",
+                  player=dict(player),
+                  bat_obs=obs.get("bat") or {},
+                  pit_obs=obs.get("pit") or {},
+                  bat_log=[dict(r) for r in bat_log],
+                  pit_log=[dict(r) for r in pit_log],
+                  region=_youth.country_region(player.get("team_country") or ""))
 
 
 @app.route("/api/youth/seed", methods=["POST"])

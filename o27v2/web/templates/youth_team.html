@@ -47,7 +47,7 @@
     {% for p in hitters %}
       {% set b = p.bat_obs or {} %}
       <tr>
-        <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+        <td><a href="{{ url_for('youth_player_view', player_id=p.id) }}">{{ p.name }}</a>{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
         <td>{{ p.position }}</td>
         <td class="num {% if p.age >= 19 %}strk-w{% endif %}" title="{% if p.age >= 19 %}Graduates to the pro FA pool at next season rollover.{% endif %}">{{ p.age }}</td>
         <td>{{ stars(p.recruit_stars or 1) }}</td>
@@ -85,7 +85,7 @@
     {% for p in jokers %}
       {% set b = p.bat_obs or {} %}
       <tr>
-        <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+        <td><a href="{{ url_for('youth_player_view', player_id=p.id) }}">{{ p.name }}</a>{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
         <td>{{ p.joker_archetype or '—' }}</td>
         <td class="num {% if p.age >= 19 %}strk-w{% endif %}">{{ p.age }}</td>
         <td>{{ stars(p.recruit_stars or 1) }}</td>
@@ -122,7 +122,7 @@
     {% for p in pitchers %}
       {% set s = p.pit_obs or {} %}
       <tr>
-        <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+        <td><a href="{{ url_for('youth_player_view', player_id=p.id) }}">{{ p.name }}</a>{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
         <td class="num {% if p.age >= 19 %}strk-w{% endif %}">{{ p.age }}</td>
         <td>{{ stars(p.recruit_stars or 1) }}</td>
         <td>{{ p.throws }}</td>

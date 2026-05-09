@@ -235,8 +235,12 @@
       <div class="row g-3 mb-4 align-items-end">
         <div class="col-md-4">
           <label class="form-label" for="rng-seed">RNG Seed</label>
-          <input id="rng-seed" type="number" name="rng_seed" value="42" min="0" max="999999"
-                 class="form-control form-control-sm" style="width:140px">
+          <div class="d-flex gap-1">
+            <input id="rng-seed" type="number" name="rng_seed" value="42" min="0"
+                   class="form-control form-control-sm" style="width:140px">
+            <button type="button" id="rng-seed-randomize" class="btn btn-sm btn-outline-secondary"
+                    title="Pick a random seed">🎲</button>
+          </div>
           <div class="text-secondary mt-1" style="font-size:.75rem">Change for a different random league</div>
         </div>
       </div>
@@ -316,6 +320,18 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+(function() {
+  const seedInput     = document.getElementById('rng-seed');
+  const randomizeBtn  = document.getElementById('rng-seed-randomize');
+  if (seedInput && randomizeBtn) {
+    randomizeBtn.addEventListener('click', () => {
+      seedInput.value = Math.floor(Math.random() * 1_000_000);
+      seedInput.focus();
+    });
+  }
+})();
+</script>
 <script>
 (function() {
   const modeInput  = document.getElementById('mode-input');

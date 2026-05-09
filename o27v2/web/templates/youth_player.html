@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}{{ player.name }} — Youth player{% endblock %}
+{% block content %}
+
+{% macro stars(n) -%}
+  <span class="youth-stars" title="{{ n }}-star recruit">
+    {%- for i in range(5) -%}
+      {%- if i < n %}<span class="star-on">★</span>{% else %}<span class="star-off">★</span>{% endif -%}
+    {%- endfor -%}
+  </span>
+{%- endmacro %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <div class="small text-secondary">
+      <a href="{{ url_for('youth_view') }}">← Youth League</a>
+      &nbsp;·&nbsp;
+      <a href="{{ url_for('youth_team_view', team_id=player.team_id) }}">{{ player.team_name }}</a>
+      {% if region %} &nbsp;·&nbsp; <span>{{ region }}</span>{% endif %}
+    </div>
+    <h2 class="mb-0 mt-1">
+      {{ player.name }}
+      {% if player.country %}<span class="text-secondary small">({{ player.country }})</span>{% endif %}
+    </h2>
+    <div class="text-secondary small mt-1">
+      {{ player.position }}{% if player.is_joker %} · Joker ({{ player.joker_archetype or '—' }}){% endif %}
+      &nbsp;·&nbsp; Age {% if player.age >= 19 %}<span class="strk-w" title="Graduates to the pro FA pool at next season rollover.">{{ player.age }}</span>{% else %}{{ player.age }}{% endif %}
+      &nbsp;·&nbsp; B/T {{ player.bats }}/{{ player.throws }}
+      &nbsp;·&nbsp; {{ stars(player.recruit_stars or 1) }}
+    </div>
+  </div>
+  <div class="text-secondary small text-end">
+    <span class="team-abbrev">{{ player.team_abbrev }}</span>
+    <div>{{ player.team_name }}</div>
+  </div>
+</div>
+
+{% if not player.is_pitcher %}
+<div class="dense mb-4">
+  <div class="panel-title">Observed batting (tournament totals)</div>
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th class="num">PA</th><th class="num">AB</th><th class="num">H</th>
+      <th class="num">HR</th><th class="num">RBI</th><th class="num">R</th>
+      <th class="num">BB</th><th class="num">K</th>
+      <th class="num">AVG</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td class="num">{{ bat_obs.pa or 0 }}</td>
+        <td class="num">{{ bat_obs.ab or 0 }}</td>
+        <td class="num fw-bold">{{ bat_obs.h or 0 }}</td>
+        <td class="num">{{ bat_obs.hr or 0 }}</td>
+        <td class="num">{{ bat_obs.rbi or 0 }}</td>
+        <td class="num">{{ bat_obs.r or 0 }}</td>
+        <td class="num">{{ bat_obs.bb or 0 }}</td>
+        <td class="num">{{ bat_obs.k or 0 }}</td>
+        <td class="num">{% if bat_obs.ab %}.{{ '%03d' | format(((bat_obs.h / bat_obs.ab) * 1000) | int) }}{% else %}—{% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% if bat_log %}
+<div class="dense mb-4">
+  <div class="panel-title">Game log</div>
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th>Round</th>
+      <th>Opponent</th>
+      <th>Result</th>
+      <th class="num">PA</th>
+      <th class="num">AB</th>
+      <th class="num">H</th>
+      <th class="num">HR</th>
+      <th class="num">RBI</th>
+      <th class="num">BB</th>
+      <th class="num">K</th>
+    </tr></thead>
+    <tbody>
+    {% for r in bat_log %}
+      {% set is_home = r.team_id == r.home_team_id %}
+      {% set opp_abbrev = r.away_abbrev if is_home else r.home_abbrev %}
+      {% set my_score = r.home_score if is_home else r.away_score %}
+      {% set their_score = r.away_score if is_home else r.home_score %}
+      <tr>
+        <td><span class="text-secondary small">{{ r.bracket_round }}</span></td>
+        <td>{{ 'vs' if is_home else '@' }} <span class="team-abbrev">{{ opp_abbrev }}</span></td>
+        <td>
+          {% if my_score is not none and their_score is not none %}
+            {% if my_score > their_score %}<span class="strk-w">W {{ my_score }}-{{ their_score }}</span>
+            {% else %}<span class="strk-l">L {{ my_score }}-{{ their_score }}</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="num">{{ r.pa or 0 }}</td>
+        <td class="num">{{ r.ab or 0 }}</td>
+        <td class="num fw-bold">{{ r.hits or 0 }}</td>
+        <td class="num">{{ r.hr or 0 }}</td>
+        <td class="num">{{ r.rbi or 0 }}</td>
+        <td class="num">{{ r.bb or 0 }}</td>
+        <td class="num">{{ r.k or 0 }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-secondary small p-2">No tournament games played yet.</div>
+{% endif %}
+
+{% else %}
+<div class="dense mb-4">
+  <div class="panel-title">Observed pitching (tournament totals)</div>
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th class="num">G</th><th class="num">GS</th>
+      <th class="num" title="Outs recorded">OUT</th>
+      <th class="num">K</th><th class="num">BB</th>
+      <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td class="num">{{ pit_obs.g or 0 }}</td>
+        <td class="num">{{ pit_obs.gs or 0 }}</td>
+        <td class="num">{{ pit_obs.outs or 0 }}</td>
+        <td class="num fw-bold">{{ pit_obs.k or 0 }}</td>
+        <td class="num">{{ pit_obs.bb or 0 }}</td>
+        <td class="num">{{ pit_obs.h or 0 }}</td>
+        <td class="num">{{ pit_obs.r or 0 }}</td>
+        <td class="num">{{ pit_obs.er or 0 }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% if pit_log %}
+<div class="dense mb-4">
+  <div class="panel-title">Game log</div>
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th>Round</th>
+      <th>Opponent</th>
+      <th>Result</th>
+      <th class="num">GS</th>
+      <th class="num">OUT</th>
+      <th class="num">K</th>
+      <th class="num">BB</th>
+      <th class="num">H</th>
+      <th class="num">R</th>
+      <th class="num">ER</th>
+    </tr></thead>
+    <tbody>
+    {% for r in pit_log %}
+      {% set is_home = r.team_id == r.home_team_id %}
+      {% set opp_abbrev = r.away_abbrev if is_home else r.home_abbrev %}
+      {% set my_score = r.home_score if is_home else r.away_score %}
+      {% set their_score = r.away_score if is_home else r.home_score %}
+      <tr>
+        <td><span class="text-secondary small">{{ r.bracket_round }}</span></td>
+        <td>{{ 'vs' if is_home else '@' }} <span class="team-abbrev">{{ opp_abbrev }}</span></td>
+        <td>
+          {% if my_score is not none and their_score is not none %}
+            {% if my_score > their_score %}<span class="strk-w">W {{ my_score }}-{{ their_score }}</span>
+            {% else %}<span class="strk-l">L {{ my_score }}-{{ their_score }}</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="num">{{ r.is_starter or 0 }}</td>
+        <td class="num">{{ r.outs_recorded or 0 }}</td>
+        <td class="num fw-bold">{{ r.k or 0 }}</td>
+        <td class="num">{{ r.bb or 0 }}</td>
+        <td class="num">{{ r.hits_allowed or 0 }}</td>
+        <td class="num">{{ r.runs_allowed or 0 }}</td>
+        <td class="num">{{ r.er or 0 }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="text-secondary small p-2">No tournament games played yet.</div>
+{% endif %}
+{% endif %}
+
+<div class="text-secondary small">
+  Recruit-star rating is fixed at age 14 — it doesn't update with year-over-year development. Numerical ratings + Youth Potential Index governor are deliberately hidden.
+  Observed tournament stats are the only public signal until the player graduates to the pro FA pool at age 20.
+</div>
+
+<style>
+.youth-stars { letter-spacing: 1px; }
+.youth-stars .star-on  { color: #f0c024; }
+.youth-stars .star-off { color: var(--border); }
+</style>
+
+{% endblock %}

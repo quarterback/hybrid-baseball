@@ -44,38 +44,46 @@
 {% else %}
 
 <div class="dense mb-4">
-  <div class="panel-title">National teams</div>
-  <table class="table table-sm dense-table sortable mb-0">
-    <thead><tr>
-      <th>Country</th>
-      <th class="num">Roster</th>
-      <th class="num">Avg age</th>
-      <th class="num" title="Avg recruiting-star rating across the roster">Avg ★</th>
-      <th class="num" title="Count of 4★ and 5★ players on the roster">4★+ recruits</th>
-      <th class="num">W</th>
-      <th class="num">L</th>
-      <th></th>
-    </tr></thead>
-    <tbody>
-    {% for t in teams %}
-      <tr>
-        <td>
-          <a href="{{ url_for('youth_team_view', team_id=t.id) }}">
-            <span class="team-abbrev">{{ t.abbrev }}</span>
-            <span class="ms-1">{{ t.name }}</span>
-          </a>
-        </td>
-        <td class="num">{{ t.roster_size or 0 }}</td>
-        <td class="num">{{ t.avg_age if t.avg_age is not none else '—' }}</td>
-        <td class="num">{{ t.avg_stars if t.avg_stars is not none else '—' }}</td>
-        <td class="num">{{ t.top_stars_count or 0 }}</td>
-        <td class="num strk-w">{{ t.w or 0 }}</td>
-        <td class="num strk-l">{{ t.l or 0 }}</td>
-        <td><a href="{{ url_for('youth_team_view', team_id=t.id) }}" class="small">Roster →</a></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="panel-title">National teams (by region)</div>
+  {% for region, region_teams in region_groups %}
+  <div class="mb-3">
+    <div class="px-2 py-1 small text-secondary text-uppercase"
+         style="letter-spacing:.06em;background:var(--bg-soft);border-bottom:1px solid var(--border-soft)">
+      {{ region }} <span class="text-secondary" style="font-weight:400">· {{ region_teams|length }}</span>
+    </div>
+    <table class="table table-sm dense-table sortable mb-0">
+      <thead><tr>
+        <th>Country</th>
+        <th class="num">Roster</th>
+        <th class="num">Avg age</th>
+        <th class="num" title="Avg recruiting-star rating across the roster">Avg ★</th>
+        <th class="num" title="Count of 4★ and 5★ players on the roster">4★+ recruits</th>
+        <th class="num">W</th>
+        <th class="num">L</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+      {% for t in region_teams %}
+        <tr>
+          <td>
+            <a href="{{ url_for('youth_team_view', team_id=t.id) }}">
+              <span class="team-abbrev">{{ t.abbrev }}</span>
+              <span class="ms-1">{{ t.name }}</span>
+            </a>
+          </td>
+          <td class="num">{{ t.roster_size or 0 }}</td>
+          <td class="num">{{ t.avg_age if t.avg_age is not none else '—' }}</td>
+          <td class="num">{{ t.avg_stars if t.avg_stars is not none else '—' }}</td>
+          <td class="num">{{ t.top_stars_count or 0 }}</td>
+          <td class="num strk-w">{{ t.w or 0 }}</td>
+          <td class="num strk-l">{{ t.l or 0 }}</td>
+          <td><a href="{{ url_for('youth_team_view', team_id=t.id) }}" class="small">Roster →</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
 </div>
 
 <div class="dense mb-4">
@@ -108,7 +116,7 @@
       {% for p in prospects %}
         <tr>
           <td class="num text-secondary">{{ loop.index }}</td>
-          <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+          <td><a href="{{ url_for('youth_player_view', player_id=p.id) }}">{{ p.name }}</a>{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
           <td><span class="team-abbrev">{{ p.team_abbrev }}</span> <span class="text-secondary small">{{ p.team_name }}</span></td>
           <td class="num">{{ p.age }}</td>
           <td>{{ p.position }}</td>
@@ -136,7 +144,7 @@
       {% for p in prospects %}
         <tr>
           <td class="num text-secondary">{{ loop.index }}</td>
-          <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+          <td><a href="{{ url_for('youth_player_view', player_id=p.id) }}">{{ p.name }}</a>{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
           <td><span class="team-abbrev">{{ p.team_abbrev }}</span> <span class="text-secondary small">{{ p.team_name }}</span></td>
           <td class="num">{{ p.age }}</td>
           <td>{{ p.position }}{% if p.is_joker %} <span class="text-secondary small">(J)</span>{% endif %}</td>
@@ -168,7 +176,7 @@
         {% set avg = (p.h / p.ab) if p.ab else 0 %}
         <tr>
           <td class="num text-secondary">{{ loop.index }}</td>
-          <td>{{ p.name }}{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
+          <td><a href="{{ url_for('youth_player_view', player_id=p.id) }}">{{ p.name }}</a>{% if p.country %} <span class="text-secondary small">({{ p.country }})</span>{% endif %}</td>
           <td><span class="team-abbrev">{{ p.team_abbrev }}</span> <span class="text-secondary small">{{ p.team_name }}</span></td>
           <td class="num">{{ p.age }}</td>
           <td>{{ p.position }}{% if p.is_joker %} <span class="text-secondary small">(J)</span>{% endif %}</td>

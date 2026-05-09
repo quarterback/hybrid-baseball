@@ -76,6 +76,42 @@ _NATIONAL_TEAMS: list[tuple[str, str, str, str]] = [
     ("FJ", "Fiji",                 "FIJ", "pacific_islands"),
 ]
 
+# Geographic region a country belongs to, for grouping the standings on
+# /youth so 32 teams aren't a flat list. Order here is the order regions
+# render. Any code missing from this map is bucketed under "Other".
+_COUNTRY_REGION: dict[str, str] = {
+    # North & Central America
+    "US": "North America",  "CA": "North America",  "MX": "North America",
+    # Caribbean
+    "DO": "Caribbean",      "PR": "Caribbean",      "CU": "Caribbean",
+    "JM": "Caribbean",      "TT": "Caribbean",      "SR": "Caribbean",
+    "GY": "Caribbean",
+    # South America
+    "VE": "South America",  "CO": "South America",
+    "BR": "South America",  "AR": "South America",
+    # Europe
+    "GB": "Europe",         "IE": "Europe",         "NL": "Europe",
+    "IT": "Europe",         "CZ": "Europe",         "FI": "Europe",
+    # Africa
+    "ZA": "Africa",         "ZW": "Africa",
+    # Asia
+    "IN": "Asia",           "PK": "Asia",           "MY": "Asia",
+    "PH": "Asia",           "JP": "Asia",           "KR": "Asia",
+    "TW": "Asia",
+    # Oceania
+    "AU": "Oceania",        "NZ": "Oceania",        "FJ": "Oceania",
+}
+
+REGION_ORDER: list[str] = [
+    "North America", "Caribbean", "South America",
+    "Europe", "Africa", "Asia", "Oceania",
+]
+
+
+def country_region(country_code: str) -> str:
+    return _COUNTRY_REGION.get((country_code or "").upper(), "Other")
+
+
 # Per-team roster shape for the youth league.
 #
 # 28 players per team: enough depth to platoon, hold a real bullpen,
