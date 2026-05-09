@@ -1104,11 +1104,15 @@ def get_auction(season: int | None = None) -> dict | None:
 
     results = db.fetchall(
         "SELECT r.season, r.player_id, r.winner_team_id, r.winning_bid, "
-        "       r.second_bid, p.name AS player_name, p.position, p.is_pitcher, "
-        "       t.abbrev AS winner_abbrev, t.name AS winner_name "
+        "       r.second_bid, r.price, "
+        "       r.traded_to_team_id, r.trade_price, "
+        "       p.name AS player_name, p.position, p.is_pitcher, "
+        "       t.abbrev AS winner_abbrev, t.name AS winner_name, "
+        "       tt.abbrev AS traded_to_abbrev, tt.name AS traded_to_name "
         "FROM auction_results r "
         "JOIN players p ON p.id = r.player_id "
-        "LEFT JOIN teams t ON t.id = r.winner_team_id "
+        "LEFT JOIN teams t  ON t.id  = r.winner_team_id "
+        "LEFT JOIN teams tt ON tt.id = r.traded_to_team_id "
         "WHERE r.season = ? "
         "ORDER BY r.winning_bid DESC NULLS LAST, r.id",
         (season,),

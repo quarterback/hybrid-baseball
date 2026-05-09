@@ -256,6 +256,15 @@ def derive_linear_weights() -> dict:
         n_events   += 1
 
     rv = {et: (rv_sum[et] / rv_n[et]) if rv_n[et] else 0.0 for et in rv_sum}
+    # On a fresh DB with no plays, `rv_sum` is empty so no event type
+    # got a key — but the wOBA weight + GSc-coefficient blocks below
+    # unconditionally dereference rv["1B"], rv["2B"], rv["3B"], rv["HR"],
+    # rv["out"]. Default any missing event type to 0.0 (correct semantics:
+    # no data → no signal) so this entire derivation is safe to call
+    # before any games have been simmed. /team/<id>, /player/<id>,
+    # /standings, etc. all funnel through here via _aggregate_batter_rows.
+    for _et in ("out", "1B", "2B", "3B", "HR"):
+        rv.setdefault(_et, 0.0)
     rv["BB"]  = _walk_run_value(re_map, state_p)
     rv["HBP"] = rv["BB"]   # same state transition
 

@@ -59,6 +59,7 @@
         <th>Won by</th>
         <th class="num">Winning bid</th>
         <th class="num" title="Highest losing bid">2nd</th>
+        <th title="Final owner — if a sellback trade fired post-Vickrey, the player ended up here. Trade price shown below.">Final owner</th>
       </tr></thead>
       <tbody>
         {% for r in auction.results[:30] %}
@@ -76,6 +77,16 @@
             </td>
             <td class="num fw-bold">{% if r.winning_bid %}{{ r.winning_bid | money }}{% else %}—{% endif %}</td>
             <td class="num text-secondary">{% if r.second_bid %}{{ r.second_bid | money }}{% else %}—{% endif %}</td>
+            <td>
+              {% if r.traded_to_abbrev %}
+                <span style="color:var(--accent)" title="Sellback trade: {{ r.winner_abbrev }} flipped this player to {{ r.traded_to_abbrev }} for {{ r.trade_price | money }}.">⇄ <span class="team-abbrev">{{ r.traded_to_abbrev }}</span></span>
+                <span class="text-secondary small ms-1">{{ r.trade_price | money }}</span>
+              {% elif r.winner_abbrev %}
+                <span class="text-secondary small">—</span>
+              {% else %}
+                <span class="text-secondary small">—</span>
+              {% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>

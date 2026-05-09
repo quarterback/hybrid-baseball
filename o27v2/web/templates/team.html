@@ -50,6 +50,33 @@
   {% endif %}
 </div>
 
+{# ---- Manager card ---- #}
+{% if team.manager_archetype %}
+<div class="dense p-2 mb-3 d-flex flex-wrap align-items-center gap-3" style="font-size:.86rem">
+  <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Manager</span>
+  <span class="fw-bold" style="color:var(--text)">{{ team.manager_archetype | archetype_label }}</span>
+  <span class="text-secondary">·</span>
+  {# Eight tactical axes from o27v2/managers.py. Compact bar/percent form
+     so the whole personality fits on one row. Higher = more aggressive
+     across all eight axes. #}
+  {% for label, val, hint in [
+        ('Quick hook',    team.mgr_quick_hook,         'Yank starters at the first sign of trouble'),
+        ('Bullpen aggr.', team.mgr_bullpen_aggression, 'Burn multiple relievers in high-leverage spots'),
+        ('Leverage',      team.mgr_leverage_aware,     'Match best reliever to the biggest moments'),
+        ('Joker aggr.',   team.mgr_joker_aggression,   'Spend joker pinch-hitters early and aggressively'),
+        ('Pinch hit',     team.mgr_pinch_hit_aggression,'Permanently PH for weak bats vs platoon mismatches'),
+        ('Platoon',       team.mgr_platoon_aggression, 'LHB-vs-RHP / RHB-vs-LHP matchup hunting'),
+        ('Run game',      team.mgr_run_game,           'SB attempts, hit-and-run frequency'),
+        ('Bench usage',   team.mgr_bench_usage,        'Defensive subs and pinch-runners late')] %}
+    {% if val is not none %}
+    <span class="text-secondary small" title="{{ hint }}">
+      {{ label }} <strong style="color:var(--text)">{{ '%d'|format((val or 0) * 100) }}</strong>
+    </span>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="dense">
@@ -62,6 +89,7 @@
           <th class="num">GP</th><th class="num">PA</th><th class="num">AB</th>
           <th class="num">H</th><th class="num">HR</th><th class="num">RBI</th><th class="num">R</th><th class="num">BB</th><th class="num">SO</th>
           <th class="num">AVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
+          <th class="num" title="Persisted salary (the wage ledger). Toggle the pill to view in USD or EUR.">Salary</th>
         </tr></thead>
         <tbody>
         {% for p in batters %}
@@ -82,6 +110,7 @@
           <td class="num" data-sort-value="{{ '%.4f'|format(p.obp) }}">{{ '%.3f'|format(p.obp) }}</td>
           <td class="num" data-sort-value="{{ '%.4f'|format(p.slg) }}">{{ '%.3f'|format(p.slg) }}</td>
           <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.ops) }}">{{ '%.3f'|format(p.ops) }}</td>
+          <td class="num text-secondary" data-sort-value="{{ p.salary or 0 }}">{% if p.salary %}{{ p.salary | money }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>
@@ -105,6 +134,7 @@
           <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA">xRA</th>
           <th class="num">ER</th><th class="num">OUT</th><th class="num">K</th>
           <th class="num" title="(K + foul-outs) / BF">K%</th>
+          <th class="num" title="Persisted salary (the wage ledger). Toggle the pill to view in USD or EUR.">Salary</th>
         </tr></thead>
         <tbody>
         {% for p in pitchers %}
@@ -121,6 +151,7 @@
           <td class="num" data-sort-value="{{ p.outs or 0 }}">{{ p.outs or 0 }}</td>
           <td class="num">{{ p.k or 0 }}</td>
           <td class="num" data-sort-value="{{ '%.4f'|format(p.k_pct or 0) }}">{{ '%.1f'|format((p.k_pct or 0) * 100) }}%</td>
+          <td class="num text-secondary" data-sort-value="{{ p.salary or 0 }}">{% if p.salary %}{{ p.salary | money }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>
