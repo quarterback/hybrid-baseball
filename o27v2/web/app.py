@@ -224,7 +224,12 @@ def _end_of_month(d: _dt.date) -> _dt.date:
     return _dt.date(d.year, d.month + 1, 1) - _dt.timedelta(days=1)
 
 
-def _sim_response(from_date: str | None, to_date: str | None, results: list) -> dict:
+def _sim_response(
+    from_date: str | None,
+    to_date: str | None,
+    results: list,
+    done: bool = True,
+) -> dict:
     errors = [r for r in results if isinstance(r, dict) and "error" in r]
     return {
         "simulated":       len(results) - len(errors),
@@ -234,6 +239,11 @@ def _sim_response(from_date: str | None, to_date: str | None, results: list) -> 
         "to_date":         to_date,
         "current_date":    get_current_sim_date(),
         "season_complete": is_season_complete(),
+        # Bulk-sim endpoints chunk their work to keep each HTTP round-trip
+        # short (mobile Safari + Fly proxy drop long requests with a generic
+        # "Load failed"). `done=False` → the JS loops and POSTs again until
+        # the target is reached.
+        "done":            done,
     }
 
 
@@ -4587,8 +4597,44 @@ def api_sim_today():
     if not _had_errors(results):
         next_day = (_dt.date.fromisoformat(current) + _dt.timedelta(days=1)).isoformat()
         advance_sim_clock(_clamp_to_last(next_day))
+        # Also catch the clock up to reality. If a previous bulk sim
+        # request was dropped by the proxy / mobile Safari but the Flask
+        # thread kept running, games may have been played far past the
+        # clock — resync jumps the clock forward to the earliest
+        # un-played day so the standings match the date again.
+        resync_sim_clock()
     invalidate_linear_weights()
     return jsonify(_sim_response(current, current, results))
+
+
+# Bulk-sim chunk budget. Each /api/sim/{week,month,all-star,season} call
+# bails out of simulate_through after this many seconds and returns
+# `done=False` so the JS can immediately POST the same endpoint again.
+# Keeps each round-trip well under both the Fly proxy idle window and
+# mobile Safari's fetch timeout (the original "Load failed" symptom).
+_BULK_SIM_MAX_SECONDS = 8.0
+
+
+def _run_bulk_sim_chunk(current: str, target: str) -> tuple[list, bool]:
+    """Sim toward `target` for up to _BULK_SIM_MAX_SECONDS, then advance the
+    clock to reflect actual progress. Returns (results, done) where
+    `done=True` means no unplayed games <= target remain."""
+    results = simulate_through(target, max_seconds=_BULK_SIM_MAX_SECONDS)
+    if _had_errors(results):
+        resync_sim_clock()
+        # Errors stop the loop on the JS side regardless of done flag.
+        return results, True
+    earliest = get_earliest_unplayed_date()
+    done = earliest is None or earliest > target
+    if done:
+        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
+        advance_sim_clock(_clamp_to_last(next_day))
+    else:
+        # Partial chunk: advance the clock to the next unplayed day so the
+        # dashboard badge updates between chunks. `earliest` is the next
+        # unplayed day's date (= the day the user is "currently on").
+        advance_sim_clock(earliest)
+    return results, done
 
 
 @app.route("/api/sim/week", methods=["POST"])
@@ -4597,14 +4643,9 @@ def api_sim_week():
         return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
     target  = (_dt.date.fromisoformat(current) + _dt.timedelta(days=6)).isoformat()
-    results = simulate_through(target)
-    if not _had_errors(results):
-        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
-        advance_sim_clock(_clamp_to_last(next_day))
-    else:
-        resync_sim_clock()
+    results, done = _run_bulk_sim_chunk(current, target)
     invalidate_linear_weights()
-    return jsonify(_sim_response(current, target, results))
+    return jsonify(_sim_response(current, target, results, done=done))
 
 
 @app.route("/api/sim/month", methods=["POST"])
@@ -4613,14 +4654,9 @@ def api_sim_month():
         return jsonify(_sim_response(None, None, []))
     current = get_current_sim_date()
     target  = _end_of_month(_dt.date.fromisoformat(current)).isoformat()
-    results = simulate_through(target)
-    if not _had_errors(results):
-        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
-        advance_sim_clock(_clamp_to_last(next_day))
-    else:
-        resync_sim_clock()
+    results, done = _run_bulk_sim_chunk(current, target)
     invalidate_linear_weights()
-    return jsonify(_sim_response(current, target, results))
+    return jsonify(_sim_response(current, target, results, done=done))
 
 
 @app.route("/api/sim/all-star", methods=["POST"])
@@ -4631,14 +4667,9 @@ def api_sim_all_star():
     target  = get_all_star_date()
     if target is None or current > target:
         return jsonify(_sim_response(current, target, []))
-    results = simulate_through(target)
-    if not _had_errors(results):
-        next_day = (_dt.date.fromisoformat(target) + _dt.timedelta(days=1)).isoformat()
-        advance_sim_clock(_clamp_to_last(next_day))
-    else:
-        resync_sim_clock()
+    results, done = _run_bulk_sim_chunk(current, target)
     invalidate_linear_weights()
-    return jsonify(_sim_response(current, target, results))
+    return jsonify(_sim_response(current, target, results, done=done))
 
 
 @app.route("/api/sim/season", methods=["POST"])
@@ -4651,49 +4682,41 @@ def api_sim_season():
         resp["archived_season_id"] = sid
         return jsonify(resp)
     current = get_current_sim_date()
-    initial_last = get_last_scheduled_date()
+    target  = get_last_scheduled_date()
 
-    # Loop simulate_through until the season actually finishes. Each call
-    # only sims games dated <= its target, but playoff initiation and
-    # post-game hooks schedule new games dated AFTER the regular season's
-    # last date — so a single call would leave the playoffs unplayed and
-    # the user would have to click again for every round / series game.
-    # Cap iterations defensively in case scheduling never converges.
-    all_results: list = []
-    prev_target: str | None = None
-    safety = 40  # > rounds × max series length; converges far sooner.
-    while safety > 0:
-        safety -= 1
-        if is_season_complete():
-            break
-        target = get_last_scheduled_date()
-        if target is None or target == prev_target:
-            # No new games scheduled this iteration — schedule has converged.
-            break
-        results = simulate_through(target)
-        all_results.extend(results)
-        if _had_errors(results):
-            break
-        prev_target = target
+    # Sim one chunk's worth toward the schedule's current end. The JS
+    # loops until done — each call also re-targets `get_last_scheduled_date`,
+    # which grows as playoff initiation + post-game series scheduling
+    # add games dated after the regular-season finale.
+    if target is None:
+        return jsonify(_sim_response(current, None, [], done=True))
+    results = simulate_through(target, max_seconds=_BULK_SIM_MAX_SECONDS)
 
-    if not _had_errors(all_results):
-        final_last = get_last_scheduled_date() or initial_last
-        if final_last:
+    # Done = the season is fully complete (regular + all playoff rounds).
+    # Note: at the end of a chunk, the schedule may have grown (a series
+    # advanced and added a game). We always loop again until is_season_complete.
+    archived_id = None
+    if _had_errors(results):
+        resync_sim_clock()
+        done = True  # stop the JS loop on errors
+    else:
+        earliest = get_earliest_unplayed_date()
+        if earliest is not None:
+            advance_sim_clock(earliest)
+            done = False
+        else:
+            final_last = get_last_scheduled_date() or target
             next_day = (_dt.date.fromisoformat(final_last) + _dt.timedelta(days=1)).isoformat()
             advance_sim_clock(next_day)
-    else:
-        resync_sim_clock()
-    # Auto-archive on completion: simulating through the last scheduled date
-    # finishes the season, so snapshot leaders/standings/invariants now.
-    archived_id = None
-    if is_season_complete():
-        try:
-            archived_id = archive_current_season(run_invariants=True)
-        except Exception as e:
-            archived_id = None
-            app.logger.exception("auto-archive after /api/sim/season failed: %s", e)
+            done = is_season_complete()
+            if done:
+                try:
+                    archived_id = archive_current_season(run_invariants=True)
+                except Exception as e:
+                    archived_id = None
+                    app.logger.exception("auto-archive after /api/sim/season failed: %s", e)
     invalidate_linear_weights()
-    resp = _sim_response(current, initial_last, all_results)
+    resp = _sim_response(current, target, results, done=done)
     resp["archived_season_id"] = archived_id
     return jsonify(resp)
 

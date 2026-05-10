@@ -16,6 +16,7 @@ import random
 import sys
 import os
 import threading
+import time
 
 _workspace = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _workspace not in sys.path:
@@ -1865,7 +1866,12 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_
     return results
 
 
-def simulate_through(target_date: str, seed_base: int | None = None, max_games: int = SIM_PER_REQUEST_GAME_CAP) -> list[dict]:
+def simulate_through(
+    target_date: str,
+    seed_base: int | None = None,
+    max_games: int = SIM_PER_REQUEST_GAME_CAP,
+    max_seconds: float | None = None,
+) -> list[dict]:
     """Simulate every unplayed game with game_date <= `target_date`. Does NOT touch the clock.
 
     Runs the weekly Sunday match-day sweep at every distinct Sunday
@@ -1873,10 +1879,15 @@ def simulate_through(target_date: str, seed_base: int | None = None, max_games: 
     Initiates the playoff bracket once the regular season is complete,
     and re-queries games so newly-scheduled playoff games inside the
     target window get simulated in the same call.
+
+    `max_seconds` (when set) bounds wall-clock time spent in this call so
+    the bulk-sim HTTP endpoints can return promptly enough to dodge mobile
+    Safari / Fly proxy fetch timeouts. Caller loops until target reached.
     """
     from o27v2.waivers import maybe_run_sweep
     from o27v2.playoffs import maybe_initiate as _maybe_init_playoffs
 
+    deadline = None if max_seconds is None else (time.monotonic() + max_seconds)
     results: list[dict] = []
     seen_sunday: set[str] = set()
     seen_game_ids: set[int] = set()
@@ -1884,6 +1895,8 @@ def simulate_through(target_date: str, seed_base: int | None = None, max_games: 
 
     while iterations_remaining > 0:
         iterations_remaining -= 1
+        if deadline is not None and time.monotonic() >= deadline:
+            break
         games = db.fetchall(
             "SELECT id, game_date FROM games WHERE played = 0 AND game_date <= ? "
             "AND id NOT IN ({}) ORDER BY game_date, id LIMIT ?".format(
@@ -1894,6 +1907,8 @@ def simulate_through(target_date: str, seed_base: int | None = None, max_games: 
         if not games:
             break
         for i, g in enumerate(games):
+            if deadline is not None and time.monotonic() >= deadline:
+                return results
             seen_game_ids.add(g["id"])
             if g["game_date"] not in seen_sunday:
                 seen_sunday.add(g["game_date"])
