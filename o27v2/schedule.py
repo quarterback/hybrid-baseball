@@ -423,8 +423,10 @@ def _schedule_series(
     season_days: int,
     rng: random.Random,
     weekly_off_dows: set[int] | None = None,
-    max_consec_days: int = 20,
+    max_consec_days: int = 14,
     target_stand_length: int = 3,
+    soft_consec_days: int = 6,
+    games_per_team: int | None = None,
 ) -> list[dict]:
     """Greedy series-aware scheduler. Walks the calendar one day at a time,
     advancing in-progress series and starting new ones for free teams.
@@ -436,13 +438,22 @@ def _schedule_series(
     calendar reopens, so a 4-game series can span Sun-Tue-Wed-Thu if Mon
     is off.
 
-    Two extra constraints beyond pure availability:
+    Three layered constraints govern off-days:
 
-    * **Per-team off-day budget**: any team that has played
-      `max_consec_days` calendar days in a row is forced off today, even
-      if it has a compatible partner. Real-MLB cap is 20 consecutive
-      game-days (CBA); the scheduler defaults match that. Off-days for
-      a team reset the streak.
+    * **Hard streak cap**: any team that has played `max_consec_days`
+      calendar days in a row is forced off today. MLB CBA caps consec
+      game-days at 20, but real schedules rarely push past 14, so the
+      default is 14. Off-days reset the streak.
+
+    * **Soft per-team off-day pacing** (NEW): once a team passes
+      `soft_consec_days` games in a row AND has played at least its
+      pro-rated share of the season (per `games_per_team` / `season_days`),
+      it takes an off-day with high probability instead of starting a new
+      series. Without this, a free team always grabs a partner if one is
+      available — producing 20-game streaks and "all 36 teams play" days.
+      Real MLB schedules have an off-day every ~7-10 game-days per team;
+      this rule reproduces that pattern instead of cramming off-days into
+      league-wide pauses. `games_per_team` must be set for it to fire.
 
     * **Road-trip / homestand grouping**: when a free team has multiple
       compatible series in its queue, pick the one that keeps the team
@@ -472,6 +483,11 @@ def _schedule_series(
     last_stand: dict[int, str | None] = {t: None for t in team_ids}
     stand_len:  dict[int, int]        = {t: 0    for t in team_ids}
     consec_days: dict[int, int]       = {t: 0    for t in team_ids}
+    # Total game-days each team has logged so far. Drives the soft off-day
+    # pacing rule: a team that's at-or-ahead of its pro-rated games target
+    # is biased toward an off-day once it's past `soft_consec_days`.
+    games_played: dict[int, int]      = {t: 0    for t in team_ids}
+    pace_per_day = (games_per_team / season_days) if games_per_team else None
 
     def _stand_score(t: int, home: int) -> int:
         """Higher = better fit for team `t` if this series gets scheduled.
@@ -539,9 +555,38 @@ def _schedule_series(
                 active[ss.home] = None
                 active[ss.away] = None
 
-        # --- Step 2: start new series for free teams ---
+        # --- Step 2a: pre-compute teams that should rest today ---
+        # Soft pacing: a free team that's at-or-ahead of its pro-rated
+        # games target AND has been playing for `soft_consec_days` in a
+        # row takes an off-day with high probability instead of grabbing
+        # the next compatible series. Without this rule the greedy picker
+        # produces 20-game streaks because there's almost always a
+        # compatible partner.
+        rest_today: set[int] = set()
+        if pace_per_day is not None:
+            expected_games = pace_per_day * (day + 1)
+            for t in team_ids:
+                if active[t] is not None or consec_days[t] < soft_consec_days:
+                    continue
+                if games_played[t] < expected_games - 0.5:
+                    # Behind pace — keep playing.
+                    continue
+                # Ramp the rest probability with consec_days: at the soft
+                # cap a 60% chance, scaling to 95% as we approach the
+                # hard cap. Series continuations are unaffected; only the
+                # decision to *start* a new series is biased.
+                span = max(1, max_consec_days - soft_consec_days)
+                ratio = (consec_days[t] - soft_consec_days) / span
+                p = 0.6 + 0.35 * min(1.0, max(0.0, ratio))
+                if rng.random() < p:
+                    rest_today.add(t)
+
+        # --- Step 2b: start new series for free teams ---
         # Shuffle to avoid biasing toward low team_ids when partners compete.
-        free = [t for t in team_ids if active[t] is None and t not in used_today]
+        free = [t for t in team_ids
+                if active[t] is None
+                and t not in used_today
+                and t not in rest_today]
         rng.shuffle(free)
         for t in free:
             if t in used_today or active[t] is not None:
@@ -560,6 +605,8 @@ def _schedule_series(
                 if opp in used_today or active[opp] is not None:
                     continue
                 if consec_days[opp] >= max_consec_days:
+                    continue
+                if opp in rest_today:
                     continue
                 # Score: own stand-fit + opponent's stand-fit (so the
                 # picker doesn't break the opponent's homestand pattern).
@@ -615,10 +662,11 @@ def _schedule_series(
             except ValueError:
                 pass
 
-        # --- Step 3: update consecutive-game-day streaks ---
+        # --- Step 3: update consecutive-game-day streaks + games_played ---
         for t in team_ids:
             if t in played_today:
                 consec_days[t] += 1
+                games_played[t] += 1
             else:
                 consec_days[t] = 0
 
@@ -710,13 +758,16 @@ def generate_schedule(
     # Step 3: lay series onto the calendar.
     season_start, asb_dates, weekly_off = _resolve_calendar(config)
     cfg = config or {}
-    max_consec       = int(cfg.get("max_consecutive_game_days", 20))
+    max_consec       = int(cfg.get("max_consecutive_game_days", 14))
     target_stand     = int(cfg.get("target_stand_length", 3))
+    soft_consec      = int(cfg.get("soft_consecutive_game_days", 6))
     games = _schedule_series(
         series_list, team_ids, season_start, asb_dates, season_days, rng,
         weekly_off_dows=weekly_off,
         max_consec_days=max_consec,
         target_stand_length=target_stand,
+        soft_consec_days=soft_consec,
+        games_per_team=games_per_team,
     )
     return games
 

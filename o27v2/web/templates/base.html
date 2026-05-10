@@ -859,27 +859,45 @@
   async function runSim(kind) {
     const orig = badge.textContent;
     setBusy(true, `Simulating ${currentDate}…`);
+    let lastData = null;
     try {
-      const r = await fetch(ENDPOINTS[kind], {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: '{}',
-      });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const data = await r.json().catch(() => ({}));
-      if (data.errored && data.errored > 0) {
-        // Sim ran but some games crashed — surface the cause and don't
-        // reload (the schedule's "Err" buttons would hide the real reason).
-        badge.textContent = orig;
-        setBusy(false);
-        alert(
-          `Simulation finished with ${data.errored} game(s) failing. ` +
-          `Played ${data.simulated || 0} successfully.\n\n` +
-          `First error: ${data.first_error || '(unknown)'}\n\n` +
-          `The clock did not advance past unplayed games — retry or check server logs.`
-        );
-        return;
+      // Bulk endpoints chunk their work and return done=false when more
+      // remains. Loop until done so a Sim Month / Sim Season click is one
+      // user action, not 30. Each round-trip is bounded server-side
+      // (~8s) so iOS Safari and Fly proxy don't drop it as "Load failed".
+      // Safety cap prevents an infinite loop if the server keeps returning
+      // done=false without making progress.
+      for (let attempts = 0; attempts < 500; attempts++) {
+        const r = await fetch(ENDPOINTS[kind], {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: '{}',
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json().catch(() => ({}));
+        lastData = data;
+        if (data.errored && data.errored > 0) {
+          // Sim ran but some games crashed — surface the cause and don't
+          // reload (the schedule's "Err" buttons would hide the real reason).
+          badge.textContent = orig;
+          setBusy(false);
+          alert(
+            `Simulation finished with ${data.errored} game(s) failing. ` +
+            `Played ${data.simulated || 0} successfully.\n\n` +
+            `First error: ${data.first_error || '(unknown)'}\n\n` +
+            `The clock did not advance past unplayed games — retry or check server logs.`
+          );
+          return;
+        }
+        if (data.done === false) {
+          if (data.current_date) {
+            badge.textContent = `Simulating ${data.current_date}…`;
+          }
+          continue;
+        }
+        break;
       }
+      const data = lastData || {};
       if (data.from_date && data.to_date && data.from_date !== data.to_date) {
         badge.textContent = `Simulated ${data.from_date} → ${data.to_date}`;
       } else if (data.from_date) {
