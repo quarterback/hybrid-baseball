@@ -40,6 +40,7 @@ from o27v2.sim import (
     is_season_complete,
     advance_sim_clock,
     resync_sim_clock,
+    get_earliest_unplayed_date,
 )
 from o27v2.league import get_league_configs
 
