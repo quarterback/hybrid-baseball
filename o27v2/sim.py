@@ -1594,13 +1594,11 @@ def _post_game_roster_processing(
 def _find_pitcher_id(team: Team) -> str | None:
     """Phase 10: return the player_id of today's starter (in the lineup)."""
     # Today's SP is the lone pitcher in the batting lineup (slot 9).
-    for p in team.lineup:
-        if p.is_pitcher and p.pitcher_role in ("starter", "workhorse"):
-            return p.player_id
+    # Task #65 cleared all stored pitcher_role values, so the prior
+    # role-tagged fast path never fired — collapsed into the single loop.
     for p in team.lineup:
         if p.is_pitcher:
             return p.player_id
-    # Fallback to roster (should not happen with Phase 10 setup)
     for p in team.roster:
         if p.is_pitcher:
             return p.player_id
