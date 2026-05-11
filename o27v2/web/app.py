@@ -4369,14 +4369,43 @@ def playoffs_view():
         get_bracket, champion as _champion, compute_field,
         playoffs_initiated, regular_season_complete,
     )
-    from o27v2.awards import get_awards
+    from o27v2.awards import get_awards, get_award_results
 
     bracket = get_bracket()
+
+    # Attach the list of games played (or scheduled) in each series so
+    # the bracket tile can render clickable G1/G2/… rows linking to the
+    # box score. Single bulk query, then group in Python.
+    series_ids = [s["id"] for s in bracket]
+    games_by_series: dict[int, list[dict]] = {}
+    if series_ids:
+        qmarks = ",".join("?" * len(series_ids))
+        game_rows = db.fetchall(
+            f"""SELECT id, series_id, game_date, played,
+                       home_team_id, away_team_id,
+                       home_score, away_score, winner_id
+                FROM games
+                WHERE series_id IN ({qmarks})
+                ORDER BY series_id, game_date, id""",
+            tuple(series_ids),
+        )
+        for r in game_rows:
+            games_by_series.setdefault(r["series_id"], []).append(r)
+    for s in bracket:
+        s["games"] = games_by_series.get(s["id"], [])
+
     # Group by round for the template.
     rounds: dict[int, list[dict]] = {}
     for s in bracket:
         rounds.setdefault(s["round_idx"], []).append(s)
     rounds_sorted = sorted(rounds.items())
+
+    # team_id → abbrev lookup for the bracket games list. Reused for the
+    # projected-field branch below.
+    team_rows = db.fetchall(
+        "SELECT id, name, abbrev, league, division, wins, losses FROM teams"
+    )
+    team_abbrev = {t["id"]: t["abbrev"] for t in team_rows}
 
     # Round names — count from the final backwards.
     def _round_name(rounds_to_final: int) -> str:
@@ -4387,12 +4416,20 @@ def playoffs_view():
     projected_field: list[dict] = []
     if not playoffs_initiated() and not regular_season_complete():
         try:
-            teams = db.fetchall(
-                "SELECT id, name, abbrev, league, division, wins, losses FROM teams"
-            )
-            projected_field = compute_field(teams)
+            projected_field = compute_field(team_rows)
         except Exception:
             projected_field = []
+
+    # BBWAA-style top-5 per category. Falls through to the single-winner
+    # `awards` list for seasons that pre-date the ballots table.
+    award_results: dict[str, list[dict]] = {}
+    try:
+        for cat in ("mvp", "cy_young", "roy", "ws_mvp"):
+            rows = get_award_results(category=cat, limit=5)
+            if rows:
+                award_results[cat] = rows
+    except Exception:
+        award_results = {}
 
     return _serve(
         "playoffs.html",
@@ -4400,6 +4437,8 @@ def playoffs_view():
         round_name=_round_name,
         champion=_champion(),
         awards=get_awards(),
+        award_results=award_results,
+        team_abbrev=team_abbrev,
         projected_field=projected_field,
         playoffs_initiated=playoffs_initiated(),
         regular_season_complete=regular_season_complete(),
