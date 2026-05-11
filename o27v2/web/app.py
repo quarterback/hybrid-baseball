@@ -1059,17 +1059,24 @@ def _pitcher_game_score(
 
 # xRA seeded linear-weights coefficients. Non-negative — every event
 # contributes ≥ 0 expected runs allowed. Outs and Ks contribute zero.
-# Locked v1: HR=1.4, single≈0.45, BB/HBP=0.32. We approximate doubles
-# and triples allowed as singles since they aren't persisted at the
-# pitcher row level.
+# v2: separate weights per hit type (Tango linear weights, lightly
+# rounded). Doubles and triples aren't persisted at the pitcher row
+# level, so per-pitcher non-HR hits are apportioned by the league
+# share of 1B/2B/3B among non-HR hits (computed once per render in
+# `_league_werra_consts`). xra_norm still anchors league xRA to league
+# wERA, so introducing the 2B/3B uplift doesn't drift the league mean.
 _XRA_W_HR    = 1.40
-_XRA_W_HIT   = 0.45   # used for any non-HR hit (singles-equivalent)
+_XRA_W_1B    = 0.45
+_XRA_W_2B    = 0.78
+_XRA_W_3B    = 1.05
+_XRA_W_HIT   = _XRA_W_1B   # back-compat alias if anything else imports it
 _XRA_W_BB    = 0.32
 _XRA_W_HBP   = 0.32
 
 
-def _league_werra_consts() -> tuple[float, float, float]:
-    """Refit (C_w, xra_norm, league_outs_per_g) per call.
+def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
+    """Refit (C_w, xra_norm, league_outs_per_g, share_1b, share_2b, share_3b)
+    per call.
 
     - C_w anchors league wERA to league raw ER per 27 outs so wERA reads
       on the same scale as the old ERA: a pitcher whose ER are spread
@@ -1081,8 +1088,13 @@ def _league_werra_consts() -> tuple[float, float, float]:
       constant) keeps every pitcher's xRA ≥ 0 — no more `xFIP -8.81`
       blow-ups in small samples.
     - league_outs_per_g feeds OS+ (league-relative outs share).
+    - share_1b/2b/3b are the league shares of singles/doubles/triples
+      within non-HR hits, sourced from game_batter_stats. xRA v2 uses
+      these to apportion each pitcher's non-HR hits across hit types
+      (the pitcher table doesn't break hits-allowed down by type).
+      Defaults to MLB-ish 0.85 / 0.12 / 0.03 on an empty DB.
 
-    Falls back to neutral constants (1.0, 1.0, 5.0) on an empty DB.
+    Falls back to neutral constants on an empty DB.
     """
     row = db.fetchone(
         f"""SELECT COALESCE(SUM(hr_allowed),0)    AS hr,
@@ -1101,8 +1113,11 @@ def _league_werra_consts() -> tuple[float, float, float]:
     ) or {}
     outs = row.get("outs") or 0
     g    = row.get("g")    or 0
+    # MLB-ish defaults for the 1B/2B/3B shares; only used on an empty DB
+    # or when the batter aggregate yields zero non-HR hits.
+    _DEFAULT_SHARES = (0.85, 0.12, 0.03)
     if not outs:
-        return 1.0, 1.0, 5.0
+        return (1.0, 1.0, 5.0, *_DEFAULT_SHARES)
     league_era = (row["er"] * 27.0) / outs
     league_w_raw = (
         (0.85 * row["era1"] + 1.00 * row["era2"] + 1.20 * row["era3"])
@@ -1112,18 +1127,43 @@ def _league_werra_consts() -> tuple[float, float, float]:
     c_w = (league_era / league_w_raw) if league_w_raw > 0 else 1.0
     league_werra = league_w_raw * c_w  # by construction == league_era
 
-    # Compute league raw xRA from seeded weights.
+    # League hit-type shares within non-HR hits. Sourced from the batter
+    # side because pitcher stats don't persist hits-allowed by type.
+    bat_row = db.fetchone(
+        """SELECT COALESCE(SUM(hits),0)    AS h,
+                  COALESCE(SUM(doubles),0) AS d2,
+                  COALESCE(SUM(triples),0) AS d3,
+                  COALESCE(SUM(hr),0)      AS hr
+           FROM game_batter_stats"""
+    ) or {}
+    bat_non_hr = max(0, (bat_row.get("h") or 0) - (bat_row.get("hr") or 0))
+    if bat_non_hr > 0:
+        d2 = bat_row.get("d2") or 0
+        d3 = bat_row.get("d3") or 0
+        share_2b = d2 / bat_non_hr
+        share_3b = d3 / bat_non_hr
+        share_1b = max(0.0, 1.0 - share_2b - share_3b)
+    else:
+        share_1b, share_2b, share_3b = _DEFAULT_SHARES
+
+    # League raw xRA — apportion non-HR hits across 1B/2B/3B using the
+    # league shares and the v2 per-type weights. The xra_norm anchor
+    # below absorbs whatever absolute level this produces so league xRA
+    # still equals league wERA.
     non_hr_hits = max(0, row["h"] - row["hr"])
+    per_non_hr_weight = (
+        _XRA_W_1B * share_1b + _XRA_W_2B * share_2b + _XRA_W_3B * share_3b
+    )
     raw_xra_total = (
         _XRA_W_HR  * row["hr"]
-      + _XRA_W_HIT * non_hr_hits
+      + per_non_hr_weight * non_hr_hits
       + _XRA_W_BB  * row["bb"]
       + _XRA_W_HBP * row["hbp"]
     )
     league_raw_xra = (raw_xra_total * 27.0 / outs) if outs else 0.0
     xra_norm = (league_werra / league_raw_xra) if league_raw_xra > 0 else 1.0
     league_outs_per_g = (outs / g) if g else 5.0
-    return c_w, xra_norm, league_outs_per_g
+    return c_w, xra_norm, league_outs_per_g, share_1b, share_2b, share_3b
 
 
 def _league_baselines() -> dict[str, float]:
@@ -1305,7 +1345,13 @@ def _aggregate_pitcher_rows(
     """
     if werra_consts is None:
         werra_consts = _league_werra_consts()
-    c_w, xra_norm, league_outs_per_g = werra_consts
+    c_w, xra_norm, league_outs_per_g, share_1b, share_2b, share_3b = werra_consts
+    # Pre-blend the per-non-HR-hit weight using league shares so each
+    # pitcher's xRA picks up the v2 2B/3B uplift without persisting
+    # hit-type breakdowns on game_pitcher_stats.
+    per_non_hr_weight = (
+        _XRA_W_1B * share_1b + _XRA_W_2B * share_2b + _XRA_W_3B * share_3b
+    )
     if baselines is None:
         baselines = {"era": 0.0}
     for p in rows:
@@ -1347,7 +1393,7 @@ def _aggregate_pitcher_rows(
             non_hr_hits = max(0, h - hr)
             raw_xra = (
                 _XRA_W_HR  * hr
-              + _XRA_W_HIT * non_hr_hits
+              + per_non_hr_weight * non_hr_hits
               + _XRA_W_BB  * bb
               + _XRA_W_HBP * hbp_a
             ) * 27.0 / outs
@@ -2882,9 +2928,29 @@ def stats_browse():
 def leaders():
     games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
     if games_played == 0:
+        # Scouting tables don't depend on games — surface them so a fresh
+        # league still gets the talent census while waiting for sim data.
+        talent_hitters = db.fetchall(
+            """SELECT p.id as player_id, p.name as player_name, p.position,
+                      p.power as r_power, p.contact as r_contact,
+                      p.eye as r_eye, p.speed as r_speed,
+                      t.abbrev as team_abbrev, t.id as team_id
+               FROM players p JOIN teams t ON p.team_id = t.id
+               WHERE p.is_pitcher = 0""",
+        )
+        talent_pitchers = db.fetchall(
+            """SELECT p.id as player_id, p.name as player_name,
+                      p.pitcher_skill as r_stuff, p.command as r_command,
+                      p.movement as r_movement, p.stamina as r_stamina,
+                      t.abbrev as team_abbrev, t.id as team_id
+               FROM players p JOIN teams t ON p.team_id = t.id
+               WHERE p.is_pitcher = 1""",
+        )
         return _serve("leaders.html",
                                games_played=0, batting=[], pitching=[],
-                               min_pa=0, min_outs=0)
+                               min_pa=0, min_outs=0,
+                               talent_hitters=talent_hitters,
+                               talent_pitchers=talent_pitchers)
 
     # Scale qualifying minimums by games-per-team, not by total league games.
     # MLB rule of thumb: 3.1 PA/team-game for batting, 1 IP/team-game for
@@ -3005,6 +3071,29 @@ def leaders():
            LIMIT 25""",
     )
 
+    # Scouting board — every signed player ranked by raw 20-80 tool grades,
+    # independent of playing time. Surfaces hidden depth (reserves with elite
+    # Stamina, bench bats with elite Power) that the qualified-leader views
+    # above filter out.
+    talent_hitters = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.power as r_power, p.contact as r_contact,
+                  p.eye as r_eye, p.speed as r_speed,
+                  t.abbrev as team_abbrev, t.id as team_id
+           FROM players p
+           JOIN teams t ON p.team_id = t.id
+           WHERE p.is_pitcher = 0""",
+    )
+    talent_pitchers = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name,
+                  p.pitcher_skill as r_stuff, p.command as r_command,
+                  p.movement as r_movement, p.stamina as r_stamina,
+                  t.abbrev as team_abbrev, t.id as team_id
+           FROM players p
+           JOIN teams t ON p.team_id = t.id
+           WHERE p.is_pitcher = 1""",
+    )
+
     return _serve(
         "leaders.html",
         games_played=games_played,
@@ -3012,6 +3101,8 @@ def leaders():
         batting=batting, pitching=pitching,
         fielding=fielding, fielding_qual=fielding_qual,
         salaries=salaries,
+        talent_hitters=talent_hitters,
+        talent_pitchers=talent_pitchers,
     )
 
 

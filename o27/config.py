@@ -181,9 +181,14 @@ FATIGUE_FOUL: float     = -0.04   # fewer fouls (was -0.03)
 # Base probabilities for weak / medium / hard contact.
 # Shifted by matchup:  shift = (batter.skill - pitcher.pitcher_skill) * CONTACT_MATCHUP_SHIFT
 
-CONTACT_WEAK_BASE: float     = 0.38
-CONTACT_MEDIUM_BASE: float   = 0.40
-CONTACT_HARD_BASE: float     = 0.22
+# Run-environment calibration step (HANDOFF Bug 1): full-season sim was
+# producing 24.42 R/G (~12.2 per team) vs the design target of 14-18
+# R/G (7-9 per team). Shift contact mass from HARD and MEDIUM into
+# WEAK to cut XBH frequency without retuning per-hit-type weights.
+# Earlier values: WEAK 0.38 / MEDIUM 0.40 / HARD 0.22.
+CONTACT_WEAK_BASE: float     = 0.56
+CONTACT_MEDIUM_BASE: float   = 0.34
+CONTACT_HARD_BASE: float     = 0.10
 CONTACT_MATCHUP_SHIFT: float = 0.25   # max ±0.125 swing per unit matchup
 
 # Second-swing modifier: on the 2nd+ contact event within the same AB

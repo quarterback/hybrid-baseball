@@ -22,12 +22,6 @@
   </div>
 </div>
 
-{% if games_played == 0 %}
-<div class="panel panel-body text-center text-secondary">
-  No games played yet. Use <span class="badge bg-success">Sim Today</span> in the top bar.
-</div>
-{% else %}
-
 {% macro card(label, key, fmt, desc, dataset, tooltip='') %}
 <div class="col-lg-3 col-md-6">
   <div class="panel">
@@ -51,6 +45,12 @@
   </div>
 </div>
 {% endmacro %}
+
+{% if games_played == 0 %}
+<div class="panel panel-body text-center text-secondary mb-4">
+  No games played yet — game-based leaderboards will appear once you sim. The Scouting tables below are roster-based and ready now.
+</div>
+{% else %}
 
 {# ============================================================
    BATTING
@@ -140,6 +140,32 @@
   {{ card('Outs', 'outs', '%d',   true, pitching, tooltip='Outs recorded — pitcher workload (one full O27 game = 27)') }}
   {{ card('WAR',  'war',  '%.2f', true, pitching) }}
 </div>
+
+{% endif %}{# end of games_played > 0 in-season-leaders gate #}
+
+{# ============================================================
+   SCOUTING — every signed player ranked by raw 20-80 grades.
+   No playing-time qualifier; surfaces depth the in-season leader
+   tables filter out (e.g. a 75-Stamina swingman the manager
+   hasn't deployed yet, or a 70-Power bench bat).
+   ============================================================ #}
+<h4 class="mt-4">Scouting · Pitchers (raw 20–80 tools, no PT filter)</h4>
+<div class="row g-3 mb-3">
+  {{ card('Stuff',    'r_stuff',    '%d', true, talent_pitchers, tooltip='Every signed pitcher ranked by Stuff (pitcher_skill), regardless of usage') }}
+  {{ card('Command',  'r_command',  '%d', true, talent_pitchers, tooltip='Every signed pitcher ranked by Command') }}
+  {{ card('Movement', 'r_movement', '%d', true, talent_pitchers, tooltip='Every signed pitcher ranked by Movement') }}
+  {{ card('Stamina',  'r_stamina',  '%d', true, talent_pitchers, tooltip='Every signed pitcher ranked by Stamina — surfaces workhorse depth on the bench') }}
+</div>
+
+<h4>Scouting · Hitters (raw 20–80 tools, no PT filter)</h4>
+<div class="row g-3 mb-3">
+  {{ card('Power',   'r_power',   '%d', true, talent_hitters, tooltip='Every signed position player ranked by Power, regardless of usage') }}
+  {{ card('Contact', 'r_contact', '%d', true, talent_hitters, tooltip='Every signed position player ranked by Contact') }}
+  {{ card('Eye',     'r_eye',     '%d', true, talent_hitters, tooltip='Every signed position player ranked by Eye') }}
+  {{ card('Speed',   'r_speed',   '%d', true, talent_hitters, tooltip='Every signed position player ranked by Speed') }}
+</div>
+
+{% if games_played > 0 %}
 
 {% if salaries %}
 <h4>Wallet · Highest Paid</h4>
