@@ -45,6 +45,52 @@ def _mu_age(age: int) -> float:
     return -1.8                  # sharp decline (37+)
 
 
+# Per-attribute age-curve modifiers. The base _mu_age sets the season's
+# growth-or-decline pressure; these multipliers reshape the curve per
+# attribute so different ratings peak and fade on different schedules.
+# Real-baseball ordering — speed and power crater first, contact holds
+# through the early 30s, plate-discipline is the last to go. On the
+# pitcher side this is what makes Stamina the workhorse moat: the
+# decline magnitude is dampened, so a high-Stamina arm in his mid-30s
+# keeps the durability that's structurally most valuable in O27.
+#   growth   — multiplier on positive μ_age (younger players)
+#   decline  — multiplier on negative μ_age (older players)
+# 1.0 = follow the base curve; > 1 = bigger swings; < 1 = stickier.
+_ATTR_AGE_PROFILE: dict[str, dict[str, float]] = {
+    # Hitters
+    "power":              {"growth": 1.20, "decline": 1.30},
+    "contact":            {"growth": 0.90, "decline": 0.70},
+    "eye":                {"growth": 0.80, "decline": 0.50},
+    "speed":              {"growth": 1.10, "decline": 1.50},
+    "baserunning":        {"growth": 1.00, "decline": 1.20},
+    "run_aggressiveness": {"growth": 0.80, "decline": 0.80},
+    "defense":            {"growth": 1.10, "decline": 1.30},
+    "arm":                {"growth": 1.00, "decline": 1.20},
+    "defense_infield":    {"growth": 1.10, "decline": 1.30},
+    "defense_outfield":   {"growth": 1.10, "decline": 1.30},
+    "defense_catcher":    {"growth": 0.90, "decline": 0.90},
+    # Pitchers — Stamina decline is dampened (workhorse moat per README's
+    # "career arcs are longer because sidearm/submarine" theme).
+    "pitcher_skill":      {"growth": 1.10, "decline": 1.10},
+    "command":            {"growth": 0.80, "decline": 0.50},
+    "movement":           {"growth": 1.00, "decline": 1.00},
+    "stamina":            {"growth": 0.90, "decline": 0.65},
+    # Shared / legacy
+    "skill":              {"growth": 1.00, "decline": 1.00},
+}
+
+
+def _mu_for_attr(attr: str, mu_total: float) -> float:
+    """Apply the per-attribute profile to the season's base μ. Positive
+    μ uses the growth multiplier; negative μ uses the decline multiplier.
+    Attributes without an entry fall back to the unmodulated curve."""
+    profile = _ATTR_AGE_PROFILE.get(attr)
+    if profile is None or mu_total == 0:
+        return mu_total
+    factor = profile["growth"] if mu_total > 0 else profile["decline"]
+    return mu_total * factor
+
+
 # Org bonus (μ_org). Bracketed so the labels stay legible in the AAR.
 def _mu_org(org_strength: int) -> float:
     if org_strength >= 75: return  1.0
@@ -135,7 +181,10 @@ def _develop_player(p: dict, org_strength: int, rng: _random.Random,
         cur = p.get(attr)
         if cur is None:
             continue
-        delta = _draw_delta(rng, mu_total, grit_mod=grit_mod)
+        # Per-attribute curve modulation: Power peaks earlier than
+        # Contact, Speed falls off fastest, Stamina holds longest.
+        mu_attr = _mu_for_attr(attr, mu_total)
+        delta = _draw_delta(rng, mu_attr, grit_mod=grit_mod)
         new_val = round(cur + delta)
         # Clamp to [20, 95] — Elite+ tier is reachable here, that's
         # the whole point of the dev engine.

@@ -411,6 +411,26 @@ CREATE TABLE IF NOT EXISTS season_awards (
     headline_stat TEXT,                 -- one-line stat blurb for the UI
     awarded_at    TEXT
 );
+
+-- BBWAA-style per-voter ballots. Each award has N synthetic voters; each
+-- voter submits a top-10 ranked ballot. Winner is the player with the
+-- highest BBWAA-weighted point total (1st=14, 2nd=9, 3rd=8, …, 10th=1).
+-- The 1st-place row gets a parallel `season_awards` insert for back-compat
+-- with code/templates that only look at the single winner.
+CREATE TABLE IF NOT EXISTS award_ballots (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    season        INTEGER NOT NULL,
+    category      TEXT    NOT NULL,    -- mvp / cy_young / roy / ws_mvp
+    voter_id      INTEGER NOT NULL,    -- synthetic voter index, 1..N
+    rank          INTEGER NOT NULL,    -- 1..10
+    player_id     INTEGER REFERENCES players(id),
+    player_name   TEXT,
+    team_abbrev   TEXT,
+    headline_stat TEXT,
+    UNIQUE(season, category, voter_id, rank)
+);
+CREATE INDEX IF NOT EXISTS idx_ballots_season_cat
+    ON award_ballots(season, category);
 """
 
 
@@ -785,6 +805,7 @@ def drop_all() -> None:
                 DROP TABLE IF EXISTS game_batter_stats;
                 DROP TABLE IF EXISTS team_phase_outs;
                 DROP TABLE IF EXISTS sim_meta;
+                DROP TABLE IF EXISTS award_ballots;
                 DROP TABLE IF EXISTS season_awards;
                 DROP TABLE IF EXISTS games;
                 DROP TABLE IF EXISTS playoff_series;
