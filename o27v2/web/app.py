@@ -1964,12 +1964,14 @@ def game_detail(game_id: int):
     game = db.fetchone(
         """SELECT g.*,
                   ht.name as home_name, ht.abbrev as home_abbrev,
+                  ht.city as home_city,
                   ht.park_name as home_park_name,
                   ht.park_dimensions as home_park_dimensions,
                   ht.park_shape as home_park_shape,
                   ht.park_quirks as home_park_quirks,
                   ht.park_hr as home_park_hr, ht.park_hits as home_park_hits,
                   at.name as away_name, at.abbrev as away_abbrev,
+                  at.city as away_city,
                   wt.name as winner_name
            FROM games g
            JOIN teams ht ON g.home_team_id = ht.id
@@ -2352,6 +2354,23 @@ def game_detail(game_id: int):
             _decisions[pid] = "L"
         elif (prow.get("sv") or 0) > 0:
             _decisions[pid] = "S"
+    # AP-newspaper convention: "HR-Trout (1), off Hernandez". Build a
+    # {batter_player_id_str → [pitcher last names]} map from pa_log.
+    hr_off_map: dict[str, list[str]] = {}
+    for row in db.fetchall(
+        """SELECT pa.batter_id, p.name AS pitcher_name
+           FROM game_pa_log pa
+           JOIN players p ON pa.pitcher_id = p.id
+           WHERE pa.game_id = ? AND pa.hit_type IN ('hr','home_run')
+           ORDER BY pa.ab_seq, pa.swing_idx""",
+        (game_id,),
+    ):
+        full = (row["pitcher_name"] or "").strip()
+        last = full.rsplit(" ", 1)[-1] if full else ""
+        if not last:
+            continue
+        hr_off_map.setdefault(str(row["batter_id"]), []).append(last)
+
     box_score_text = _render_box_score(
         game=game_for_box,
         phases=phases,
@@ -2362,6 +2381,7 @@ def game_detail(game_id: int):
         away_pitching=away_pitching_consolidated,
         home_pitching=home_pitching_consolidated,
         decisions=_decisions,
+        hr_off_pitchers=hr_off_map,
     )
 
     return _serve(
@@ -2412,8 +2432,10 @@ def game_detail_export(game_id: int):
     game = db.fetchone(
         """SELECT g.*,
                   ht.name as home_name, ht.abbrev as home_abbrev,
+                  ht.city as home_city,
                   ht.park_name as home_park_name,
-                  at.name as away_name, at.abbrev as away_abbrev
+                  at.name as away_name, at.abbrev as away_abbrev,
+                  at.city as away_city
            FROM games g
            JOIN teams ht ON g.home_team_id = ht.id
            JOIN teams at ON g.away_team_id = at.id
@@ -2513,12 +2535,29 @@ def game_detail_export(game_id: int):
             "total_e": sum(errs.values()),
         }
 
+    # HR-off-pitcher map from pa_log — same shape as game_detail builds.
+    hr_off_map_md: dict[str, list[str]] = {}
+    for row in db.fetchall(
+        """SELECT pa.batter_id, p.name AS pitcher_name
+           FROM game_pa_log pa
+           JOIN players p ON pa.pitcher_id = p.id
+           WHERE pa.game_id = ? AND pa.hit_type IN ('hr','home_run')
+           ORDER BY pa.ab_seq, pa.swing_idx""",
+        (game_id,),
+    ):
+        full = (row["pitcher_name"] or "").strip()
+        last = full.rsplit(" ", 1)[-1] if full else ""
+        if not last:
+            continue
+        hr_off_map_md.setdefault(str(row["batter_id"]), []).append(last)
+
     return _md_response(text_export.export_box_score(
         dict(game),
         away_p_c, home_p_c,
         away_b_c, home_b_c,
         _line(away_b), _line(home_b),
         phases,
+        hr_off_pitchers=hr_off_map_md,
     ))
 
 
