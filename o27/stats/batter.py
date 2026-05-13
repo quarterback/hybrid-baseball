@@ -66,4 +66,5 @@ class BatterStats:
     # play, NOT to the batter at the plate). Stored on BatterStats since
     # every fielder is also a batter.
     po: int = 0     # Putouts — outs recorded as the primary fielder on a play
+    a:  int = 0     # Assists — credited on throwing outs and DP / TP chains
     e:  int = 0     # Errors committed

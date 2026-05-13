@@ -534,6 +534,34 @@ class Renderer:
             )
         return self._batter_stats[player.player_id]
 
+    def _pick_dp_pivot(self, state_after, exclude_id):
+        """Pick an infielder distinct from `exclude_id` to credit the
+        DP / TP pivot (extra A + extra PO). Walks the fielding team's
+        lineup and prefers the standard middle-infield pivots (2B, SS).
+        Returns the player_id or None if no suitable fielder found.
+        """
+        team = getattr(state_after, "fielding_team", None)
+        if team is None:
+            return None
+        lineup = getattr(team, "lineup", None) or getattr(team, "roster", None) or []
+        # Standard pivot priority: 2B → SS → 3B → 1B → C → anyone else.
+        priority = ("2B", "SS", "3B", "1B", "C")
+        by_position: dict[str, list] = {pos: [] for pos in priority}
+        any_others: list = []
+        for p in lineup:
+            pid = getattr(p, "player_id", None)
+            if not pid or pid == exclude_id:
+                continue
+            pos = (getattr(p, "position", "") or "").upper()
+            if pos in by_position:
+                by_position[pos].append(pid)
+            else:
+                any_others.append(pid)
+        for pos in priority:
+            if by_position[pos]:
+                return by_position[pos][0]
+        return any_others[0] if any_others else None
+
     def _batter_intro(self, batter) -> str:
         tag = " [P]" if batter.is_pitcher else ""
         return f"--- Now batting: {batter.name}{tag} ---"
@@ -990,6 +1018,7 @@ class Renderer:
                 "choice": choice,
                 "quality": quality,
                 "hit_type": hit_type,
+                "pitch_type": event.get("pitch_type"),
                 # was_stay = 1 only on VALID 2C events (matches s.sty); invalid
                 # stays (auto-out caught fly) don't count as 2C events.
                 "was_stay": 1 if (choice == "stay" and disp.get("stay_valid")) else 0,
@@ -1090,10 +1119,26 @@ class Renderer:
                     s.outs_recorded += 1
                     # Credit the putout to the responsible fielder (PO++).
                     # Caught flies still credit a PO (the fielder caught it).
-                    self._credit_fielder(
-                        (event.get("outcome") or {}).get("fielder_id"),
-                        state_after, "po",
-                    )
+                    fielder_id_v = (event.get("outcome") or {}).get("fielder_id")
+                    self._credit_fielder(fielder_id_v, state_after, "po")
+                    # Assist credit on throwing outs. Caught flies and pure
+                    # unassisted putouts don't get an A; ground outs, DPs,
+                    # fielder's choices, and triple plays do. On DP/TP the
+                    # chain credits an extra A to a derived pivot infielder
+                    # (approximate — no spray-angle lookup).
+                    if hit_type in ("ground_out", "fielders_choice",
+                                    "double_play", "triple_play",
+                                    "infield_out"):
+                        self._credit_fielder(fielder_id_v, state_after, "a")
+                    if hit_type in ("double_play", "triple_play"):
+                        # Extra assist + extra putout for the pivot. Pull a
+                        # different infielder from the fielding team's
+                        # lineup — we approximate by walking the lineup and
+                        # picking the first non-fielder_id infield slot.
+                        pivot = self._pick_dp_pivot(state_after, fielder_id_v)
+                        if pivot:
+                            self._credit_fielder(pivot, state_after, "a")
+                            self._credit_fielder(pivot, state_after, "po")
                 if hit_type == "double":
                     s.doubles += 1
                 elif hit_type == "triple":
@@ -1212,7 +1257,7 @@ class Renderer:
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
                   "stay_rbi", "stay_hits", "multi_hit_abs",
                   "sb", "cs", "fo", "roe",
-                  "po", "e"):
+                  "po", "a", "e"):
             setattr(d, f, getattr(end_s, f) - prev_get(f))
         return d
 

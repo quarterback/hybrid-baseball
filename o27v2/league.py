@@ -22,6 +22,7 @@ from typing import Any
 
 from o27v2 import config as v2cfg
 from o27v2 import scout as _scout
+from o27 import config as _engine_cfg
 
 _DATA_DIR     = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _NAMES_DIR    = os.path.join(_DATA_DIR, "names")
@@ -899,6 +900,141 @@ def _make_hitter(
     }
 
 
+# ---------------------------------------------------------------------------
+# Pitch-type repertoire generation
+# ---------------------------------------------------------------------------
+
+_FASTBALL_KEYS = ("four_seam", "sinker", "cutter")
+
+
+def _roll_release_angle(rng: random.Random) -> float:
+    """Roll a pitcher's release angle (0=submarine, 0.5=sidearm, 1.0=3q).
+
+    Distribution biased toward the sidearm spectrum that the O27 setting
+    centers on. ~70% land in [0.30, 0.70] (sidearm-ish); the rest split
+    between submarine specialists and three-quarter outliers.
+    """
+    bucket = rng.random()
+    if bucket < 0.12:
+        return round(rng.uniform(0.05, 0.25), 3)   # submarine
+    if bucket < 0.82:
+        return round(rng.uniform(0.30, 0.70), 3)   # sidearm
+    return round(rng.uniform(0.72, 0.95), 3)        # three-quarter
+
+
+def _pitch_release_fit(release_angle: float, pitch_meta: dict) -> float:
+    """Compatibility score for a pitch given the pitcher's release angle.
+
+    Returns 0.0 if the pitch's `max_release` rules it out, else a weight
+    in (0, 1] that peaks when `release_angle` equals `release_optimal`
+    and decays with distance scaled by `release_window`.
+    """
+    max_release = pitch_meta.get("max_release")
+    if max_release is not None and release_angle > max_release:
+        return 0.0
+    optimal = pitch_meta.get("release_optimal", 0.5)
+    window = max(0.05, pitch_meta.get("release_window", 0.3))
+    distance = abs(release_angle - optimal)
+    # Linear falloff inside the window, exponential outside.
+    if distance <= window:
+        return 1.0 - 0.4 * (distance / window)
+    return max(0.05, 0.6 * (window / max(distance, 1e-6)))
+
+
+def _build_repertoire(
+    rng: random.Random,
+    release_angle: float,
+    team_shift: int,
+) -> list[dict]:
+    """Sample a 3-5 pitch repertoire from PITCH_CATALOG.
+
+    Composition:
+      * exactly one primary fastball (four_seam / sinker / cutter), picked
+        by release-angle fit
+      * 2-4 secondary pitches sampled from the remainder, weighted by
+        release-angle fit
+      * quality is rolled on the same tier ladder as Stuff (20-80 scout
+        grade) and stored as a unit float in [0.2, 0.95]
+      * usage_weight totals roughly to 1.0; primary fastball gets the
+        largest slice
+    """
+    catalog: dict = _engine_cfg.PITCH_CATALOG
+
+    fastball_weights: list[tuple[str, float]] = []
+    for fb in _FASTBALL_KEYS:
+        meta = catalog[fb]
+        fit = _pitch_release_fit(release_angle, meta)
+        if fit > 0:
+            fastball_weights.append((fb, fit))
+    if not fastball_weights:
+        fastball_weights = [(_FASTBALL_KEYS[0], 1.0)]
+    primary = _weighted_pick(rng, fastball_weights)
+
+    secondary_count = rng.choices((2, 3, 4), weights=(0.25, 0.55, 0.20))[0]
+    secondary_pool: list[tuple[str, float]] = []
+    for key, meta in catalog.items():
+        if key == primary or key in _FASTBALL_KEYS:
+            # Skip the primary and rule out duplicate fastball types as
+            # secondaries — a pitcher carries ONE fastball variant.
+            if key != primary and key in _FASTBALL_KEYS:
+                # Allow a second fastball variant occasionally (e.g. SP with
+                # a 4S + cutter pairing). Low rate so it doesn't flatten
+                # the catalog.
+                fit = _pitch_release_fit(release_angle, meta)
+                if fit > 0 and rng.random() < 0.18:
+                    secondary_pool.append((key, fit * 0.5))
+            continue
+        fit = _pitch_release_fit(release_angle, meta)
+        if fit > 0:
+            secondary_pool.append((key, fit))
+
+    secondaries: list[str] = []
+    available = list(secondary_pool)
+    for _ in range(secondary_count):
+        if not available:
+            break
+        pick = _weighted_pick(rng, available)
+        secondaries.append(pick)
+        available = [(k, w) for (k, w) in available if k != pick]
+
+    entries: list[dict] = []
+    primary_quality = _quality_unit(_roll_tier_grade(rng, team_shift))
+    entries.append({
+        "pitch_type":   primary,
+        "quality":      primary_quality,
+        "usage_weight": round(rng.uniform(0.40, 0.55), 3),
+    })
+    remaining_mass = 1.0 - entries[0]["usage_weight"]
+    secondary_qualities = [
+        _quality_unit(_roll_tier_grade(rng, team_shift))
+        for _ in secondaries
+    ]
+    if secondaries:
+        raw_weights = [
+            max(0.05, q + rng.uniform(-0.05, 0.10))
+            for q in secondary_qualities
+        ]
+        total = sum(raw_weights) or 1.0
+        for sec, q, rw in zip(secondaries, secondary_qualities, raw_weights):
+            entries.append({
+                "pitch_type":   sec,
+                "quality":      q,
+                "usage_weight": round(remaining_mass * (rw / total), 3),
+            })
+    return entries
+
+
+def _weighted_pick(rng: random.Random, weighted: list[tuple[str, float]]) -> str:
+    keys = [k for (k, _) in weighted]
+    weights = [w for (_, w) in weighted]
+    return rng.choices(keys, weights=weights)[0]
+
+
+def _quality_unit(grade_20_80: int) -> float:
+    """Map a 20-80 scout grade to a 0.20-0.95 unit float for pitch quality."""
+    return round(0.20 + (max(20, min(80, grade_20_80)) - 20) / 80.0 * 0.75, 3)
+
+
 def _make_pitcher(
     rng: random.Random,
     is_active: int,
@@ -930,6 +1066,16 @@ def _make_pitcher(
     defense_g  = max(20, roll() // 2 + 15)
     arm_g      = max(20, roll() // 2 + 20)
     throws = _roll_throws(rng, is_pitcher=True)
+    # Pitch-type activation: release_angle drives which pitches a pitcher
+    # can throw well (see o27/config.py:PITCH_CATALOG). Repertoire is
+    # stored as JSON; the engine loads it back into Player.repertoire.
+    release_angle = _roll_release_angle(rng)
+    repertoire = _build_repertoire(rng, release_angle, team_shift)
+    # Pitch variance: high = max-effort frayed mechanics (boom/bust pitch
+    # quality); low = consistent. Damped by grit on the per-game form roll.
+    pitch_variance = round(rng.uniform(0.02, 0.14), 3)
+    # Grit: fatigue resistance + per-game form stability. Bounded 0.25-0.75.
+    grit = round(0.25 + rng.random() * 0.50, 3)
     return {
         "name": name,
         "country": country,
@@ -972,6 +1118,11 @@ def _make_pitcher(
         "work_ethic":  roll(),
         "work_habits": roll(),
         "habit_cup":   0.5,
+        # Pitch-type activation (see _build_repertoire above).
+        "release_angle":  release_angle,
+        "pitch_variance": pitch_variance,
+        "grit":           grit,
+        "repertoire":     json.dumps(repertoire),
     }
 
 
@@ -1358,8 +1509,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          defense, arm,
          defense_infield, defense_outfield, defense_catcher,
          baserunning, run_aggressiveness,
-         work_ethic, work_habits, habit_cup, salary)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         work_ethic, work_habits, habit_cup, salary,
+         release_angle, pitch_variance, grit, repertoire)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -1388,7 +1540,11 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("run_aggressiveness", 50),
                 p.get("work_ethic", 50), p.get("work_habits", 50),
                 p.get("habit_cup", 0.5),
-                salary)
+                salary,
+                p.get("release_angle", 0.5),
+                p.get("pitch_variance", 0.0),
+                p.get("grit", 0.5),
+                p.get("repertoire", None))
 
     # Cache team-id → league name so each player's salary uses the
     # right tier cap.

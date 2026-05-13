@@ -12,6 +12,7 @@ Phase 9 additions:
   - All roster moves are logged to the transactions table.
 """
 from __future__ import annotations
+import json
 import random
 import sys
 import os
@@ -22,7 +23,7 @@ _workspace = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _workspace not in sys.path:
     sys.path.insert(0, _workspace)
 
-from o27.engine.state import GameState, Team, Player
+from o27.engine.state import GameState, Team, Player, PitchEntry
 from o27.engine.game import run_game
 from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
@@ -424,6 +425,29 @@ def _db_team_to_engine(
         player.work_ethic  = int(p.get("work_ethic")  or 50)
         player.work_habits = int(p.get("work_habits") or 50)
         player.habit_cup   = float(p.get("habit_cup") if p.get("habit_cup") is not None else 0.5)
+        # Pitch-type activation: load repertoire JSON onto Player so the
+        # engine's _select_pitch() can sample from it. Legacy rows
+        # (NULL repertoire) leave Player.repertoire = [] which the
+        # engine treats as "no typed pitches" and falls back to the
+        # aggregate Stuff/Command/Movement path.
+        if p.get("is_pitcher"):
+            player.release_angle  = float(p.get("release_angle")  if p.get("release_angle")  is not None else 0.5)
+            player.pitch_variance = float(p.get("pitch_variance") if p.get("pitch_variance") is not None else 0.0)
+            player.grit           = float(p.get("grit")           if p.get("grit")           is not None else 0.5)
+            rep_json = p.get("repertoire")
+            if rep_json:
+                try:
+                    raw = json.loads(rep_json) if isinstance(rep_json, str) else rep_json
+                    player.repertoire = [
+                        PitchEntry(
+                            pitch_type=str(e["pitch_type"]),
+                            quality=float(e.get("quality", 0.5)),
+                            usage_weight=float(e.get("usage_weight", 1.0)),
+                        )
+                        for e in raw if e.get("pitch_type")
+                    ]
+                except (ValueError, TypeError, KeyError):
+                    player.repertoire = []
         engine_players.append(player)
         engine_to_db_id[player.player_id] = int(p["id"])
         if bool(p.get("is_joker")):
@@ -726,6 +750,7 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict],
                 "gitp": getattr(bstat, "gitp", 0),
                 "roe": getattr(bstat, "roe", 0),
                 "po": getattr(bstat, "po", 0),
+                "a":  getattr(bstat, "a",  0),
                 "e":  getattr(bstat, "e",  0),
             })
     return rows
@@ -815,6 +840,89 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "is_starter": is_starter,
         })
     return rows
+
+
+def _decorate_pitcher_pitch_mix(renderer, pstats: list[dict]) -> None:
+    """Compute per-pitcher hit-type breakdown + pitch-mix from the renderer
+    PA log and stamp the new columns on each row of `pstats` in place.
+
+    Fields added:
+      singles_allowed / doubles_allowed / triples_allowed (xRA v3 inputs)
+      fastball_pct / breaking_pct / offspeed_pct + primary_pitch
+
+    PA-log rows have pitcher_id (engine string), phase, pitch_type, hit_type.
+    Pitchers without a typed repertoire emit pitch_type=NULL — those rows
+    contribute to hit-type tallies but produce 0.0 mix percentages.
+    """
+    pa_log = getattr(renderer, "_pa_log", []) or []
+    if not pa_log:
+        return
+
+    # Pitch-type → bucket. Matches the buckets exposed on the player page.
+    fb_keys      = {"four_seam", "sinker", "cutter"}
+    breaking_keys = {"slider", "sisko_slider", "walking_slider",
+                     "curveball", "curve_10_to_2", "screwball",
+                     "gyroball", "spitter"}
+    offspeed_keys = {"changeup", "vulcan_changeup", "splitter",
+                     "palmball", "knuckleball", "eephus"}
+
+    # Aggregate by (pitcher_id_int, phase).
+    agg: dict[tuple[int, int], dict] = {}
+    for entry in pa_log:
+        pid_raw = entry.get("pitcher_id")
+        if pid_raw is None:
+            continue
+        try:
+            pid = int(pid_raw)
+        except (ValueError, TypeError):
+            continue
+        phase = int(entry.get("phase", 0) or 0)
+        bucket = agg.setdefault((pid, phase), {
+            "singles": 0, "doubles": 0, "triples": 0,
+            "fb": 0, "br": 0, "off": 0, "any_pitch": 0,
+            "pitch_counts": {},
+        })
+        ht = entry.get("hit_type") or ""
+        # Only true safety hits count toward the H-shape. infield_single
+        # is treated as a single.
+        if ht in ("single", "infield_single"):
+            bucket["singles"] += 1
+        elif ht == "double":
+            bucket["doubles"] += 1
+        elif ht == "triple":
+            bucket["triples"] += 1
+        pt = entry.get("pitch_type")
+        if pt:
+            bucket["any_pitch"] += 1
+            bucket["pitch_counts"][pt] = bucket["pitch_counts"].get(pt, 0) + 1
+            if pt in fb_keys:
+                bucket["fb"] += 1
+            elif pt in breaking_keys:
+                bucket["br"] += 1
+            elif pt in offspeed_keys:
+                bucket["off"] += 1
+
+    for row in pstats:
+        key = (int(row["player_id"]), int(row.get("phase", 0)))
+        b = agg.get(key)
+        if not b:
+            row.setdefault("singles_allowed", 0)
+            row.setdefault("doubles_allowed", 0)
+            row.setdefault("triples_allowed", 0)
+            row.setdefault("fastball_pct", 0.0)
+            row.setdefault("breaking_pct", 0.0)
+            row.setdefault("offspeed_pct", 0.0)
+            row.setdefault("primary_pitch", "")
+            continue
+        row["singles_allowed"] = b["singles"]
+        row["doubles_allowed"] = b["doubles"]
+        row["triples_allowed"] = b["triples"]
+        total_typed = max(1, b["any_pitch"])
+        row["fastball_pct"] = round(b["fb"] / total_typed, 3)
+        row["breaking_pct"] = round(b["br"] / total_typed, 3)
+        row["offspeed_pct"] = round(b["off"] / total_typed, 3)
+        pc = b["pitch_counts"]
+        row["primary_pitch"] = max(pc.items(), key=lambda kv: kv[1])[0] if pc else ""
 
 
 def _compute_team_phase_outs(
@@ -1208,9 +1316,22 @@ def _roll_today_condition(visitors: Team, home: Team, weather, rng: random.Rando
         good performance and drains with bad — so a high-habits
         player on a hot streak gets the full +shift, on a cold streak
         the full -shift)
+      - per-team "hot factor" — a coordinated game-level offense tilt
+        rolled once per team per game. Lineups have hot days and cold
+        days that move TOGETHER (not 9 independent dice), which is the
+        mechanism that widens game-to-game run distribution without
+        flattening individual talent signals. Bounded so it can't drag
+        any player past the broader [0.70, 1.30] condition cap.
     """
     weather_mu = _condition_mu_for_weather(weather)
+    # One hot factor per team per game. Gaussian(1.0, 0.10), clipped to
+    # ±25%. Identity at 1.0 — pre-widening sims reproduce.
+    hot_factors = {
+        id(visitors): max(0.78, min(1.22, rng.gauss(1.0, 0.10))),
+        id(home):     max(0.78, min(1.22, rng.gauss(1.0, 0.10))),
+    }
     for team in (visitors, home):
+        hot = hot_factors[id(team)]
         for p in team.roster:
             ethic_shift  = (getattr(p, "work_ethic",  50) - 50) * _ETHIC_SCALE
             habits_raw   = (getattr(p, "work_habits", 50) - 50) * _HABITS_SCALE
@@ -1220,7 +1341,14 @@ def _roll_today_condition(visitors: Team, home: Team, weather, rng: random.Rando
             habits_shift = habits_raw * cup_factor
             mu = weather_mu + ethic_shift + habits_shift
             cond = rng.gauss(mu, _CONDITION_SIGMA)
-            p.today_condition = max(_CONDITION_MIN, min(_CONDITION_MAX, cond))
+            # Apply the team-wide hot factor only to non-pitchers — the
+            # pitcher's own form variance handles their day-to-day swing.
+            if not getattr(p, "is_pitcher", False):
+                cond *= hot
+            p.today_condition = max(0.70, min(1.30, cond))
+        # Stash the hot factor on the Team so post-game inspectors can
+        # see why a slugfest or a duel happened.
+        team.today_hot_factor = hot
 
 
 # ---------------------------------------------------------------------------
@@ -1346,6 +1474,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                                         engine_team=home_team)
     away_pstats = _extract_pitcher_stats(final_state, away_team_id, all_away_players)
     home_pstats = _extract_pitcher_stats(final_state, home_team_id, all_home_players)
+    # Per-pitcher hit-type + pitch-type breakdown, computed from the PA log.
+    # Decorates each row in away_pstats/home_pstats in place.
+    _decorate_pitcher_pitch_mix(renderer, away_pstats + home_pstats)
     team_phase_outs = _compute_team_phase_outs(
         away_bstats, home_bstats, away_pstats, home_pstats,
         home_team_id, away_team_id,
@@ -1387,8 +1518,8 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                     c2_op_1b, c2_adv_1b, c2_op_2b, c2_adv_2b, c2_op_3b, c2_adv_3b,
                     game_position, entry_type, replaced_player_id,
                     gidp, gitp,
-                    roe, po, e)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    roe, po, a, e)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
@@ -1404,7 +1535,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                  r.get("replaced_player_id"),
                  r.get("gidp", 0), r.get("gitp", 0),
                  r.get("roe", 0),
-                 r.get("po", 0), r.get("e", 0)),
+                 r.get("po", 0), r.get("a", 0), r.get("e", 0)),
             )
         # Phase 11D — per-PA event log (ball_in_play events only).
         # Engine team_ids are role-strings ("home"/"visitors") — see
@@ -1420,17 +1551,18 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
             conn.executemany(
                 """INSERT INTO game_pa_log
                    (game_id, team_id, batter_id, pitcher_id, phase, ab_seq, swing_idx,
-                    choice, quality, hit_type, was_stay, stay_credited,
+                    choice, quality, hit_type, pitch_type, was_stay, stay_credited,
                     runs_scored, rbi_credited,
                     outs_before, bases_before, score_diff_before,
                     outs_after,  bases_after,  score_diff_after)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [(game_id, role_to_db.get(e["team_id"], None),
                   int(e["batter_id"]) if e["batter_id"] is not None else None,
                   int(e["pitcher_id"]) if e["pitcher_id"] is not None else None,
                   e.get("phase", 0),
                   e["ab_seq"], e["swing_idx"],
                   e["choice"], e.get("quality"), e.get("hit_type"),
+                  e.get("pitch_type"),
                   e["was_stay"], e["stay_credited"],
                   e["runs_scored"], e["rbi_credited"],
                   e.get("outs_before"), e.get("bases_before"), e.get("score_diff_before"),
@@ -1449,8 +1581,10 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                     k_arc1,  k_arc2,  k_arc3,
                     fo_arc1, fo_arc2, fo_arc3,
                     bf_arc1, bf_arc2, bf_arc3,
-                    is_starter)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    is_starter,
+                    singles_allowed, doubles_allowed, triples_allowed,
+                    fastball_pct, breaking_pct, offspeed_pct, primary_pitch)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
                  r["runs_allowed"], r.get("er", r["runs_allowed"]),
@@ -1463,7 +1597,11 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                  r.get("k_arc1",  0), r.get("k_arc2",  0), r.get("k_arc3",  0),
                  r.get("fo_arc1", 0), r.get("fo_arc2", 0), r.get("fo_arc3", 0),
                  r.get("bf_arc1", 0), r.get("bf_arc2", 0), r.get("bf_arc3", 0),
-                 r.get("is_starter", 0)),
+                 r.get("is_starter", 0),
+                 r.get("singles_allowed", 0), r.get("doubles_allowed", 0),
+                 r.get("triples_allowed", 0),
+                 r.get("fastball_pct", 0.0), r.get("breaking_pct", 0.0),
+                 r.get("offspeed_pct", 0.0), r.get("primary_pitch", "")),
             )
         for r in team_phase_outs:
             conn.execute(

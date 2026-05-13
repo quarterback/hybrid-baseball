@@ -385,6 +385,42 @@
     </div>
   </div>
 
+  {# ===== Arsenal — pitch-type usage and hit-shape allowed ===== #}
+  {% set fb_pct = pt_totals.fastball_pct or 0 %}
+  {% set br_pct = pt_totals.breaking_pct or 0 %}
+  {% set off_pct = pt_totals.offspeed_pct or 0 %}
+  {% if (fb_pct + br_pct + off_pct) > 0 %}
+  <div class="dense mb-3">
+    <div class="panel-title">Arsenal</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num" title="Share of typed pitches that are fastballs (4-seam / sinker / cutter)">FB%</th>
+        <th class="num" title="Share of typed pitches that are breaking balls (sliders / curves / screwball / gyro / spitter)">BR%</th>
+        <th class="num" title="Share of typed pitches that are off-speed (change / splitter / palmball / knuckle / eephus)">OFF%</th>
+        <th class="num" title="Singles allowed">1B</th>
+        <th class="num" title="Doubles allowed">2B</th>
+        <th class="num" title="Triples allowed">3B</th>
+        <th class="num" title="Home runs allowed">HR</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num fw-bold">{{ (fb_pct * 100)|round|int }}%</td>
+        <td class="num">{{ (br_pct * 100)|round|int }}%</td>
+        <td class="num">{{ (off_pct * 100)|round|int }}%</td>
+        <td class="num">{{ pt_totals.singles_allowed or 0 }}</td>
+        <td class="num">{{ pt_totals.doubles_allowed or 0 }}</td>
+        <td class="num">{{ pt_totals.triples_allowed or 0 }}</td>
+        <td class="num">{{ pt_totals.hr_allowed or 0 }}</td>
+      </tr></tbody>
+    </table>
+    </div>
+    <div class="small text-secondary mt-1">
+      FB/BR/OFF are the pitcher's per-game pitch-mix averaged across appearances.
+      1B/2B/3B/HR are the actual hit shape allowed — driving the per-pitcher xRA v3 split.
+    </div>
+  </div>
+  {% endif %}
+
 </div>
 {% endif %}
 
@@ -397,14 +433,16 @@
       <thead><tr>
         <th>Pos</th>
         <th class="num" title="Putouts — outs recorded as the primary fielder on a play">PO</th>
+        <th class="num" title="Assists — throwing outs and DP/TP pivots">A</th>
         <th class="num" title="Errors committed">E</th>
-        <th class="num" title="Total chances (PO + E)">TC</th>
-        <th class="num" title="Fielding percentage = PO / (PO + E)">FldPct</th>
+        <th class="num" title="Total chances (PO + A + E)">TC</th>
+        <th class="num" title="Fielding percentage = (PO + A) / (PO + A + E)">FldPct</th>
       </tr></thead>
       <tbody>
         <tr>
           <td>{{ player.position }}</td>
           <td class="num fw-bold">{{ fld_totals.po }}</td>
+          <td class="num">{{ fld_totals.a or 0 }}</td>
           <td class="num">{{ fld_totals.e }}</td>
           <td class="num">{{ fld_totals.chances }}</td>
           <td class="num">{% if fld_totals.fld_pct is not none %}{{ '%.3f'|format(fld_totals.fld_pct) }}{% else %}—{% endif %}</td>

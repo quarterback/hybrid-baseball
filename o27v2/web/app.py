@@ -1384,16 +1384,31 @@ def _aggregate_pitcher_rows(
         # --- Result-tier: wERA / xRA / Decay ---
         weighted_er = 0.85 * er1 + 1.00 * er2 + 1.20 * er3
         p["werra"] = (weighted_er * 27.0 / outs) * c_w if outs else 0.0
-        # xRA — expected runs allowed using non-negative seeded
-        # linear-weights coefficients. Multiplicatively anchored to
-        # league wERA via xra_norm so xRA-vs-wERA gap reads as
-        # batted-ball luck, the same way the old xFIP-vs-wERA gap did,
-        # but with mathematically guaranteed non-negative output.
+        # xRA v3 — when per-pitcher hit-type shares are available
+        # (singles_allowed / doubles_allowed / triples_allowed sums on
+        # game_pitcher_stats), use them directly so sinker-heavy arms
+        # and four-seam-heavy arms produce different xRA values for the
+        # same Stuff. Pre-v3 rows (sums all zero) fall back to the
+        # league-share blended weight from v2.
         if outs:
             non_hr_hits = max(0, h - hr)
+            s_allowed = p.get("singles_allowed") or 0
+            d_allowed = p.get("doubles_allowed") or 0
+            t_allowed = p.get("triples_allowed") or 0
+            per_pitcher_hit_sum = s_allowed + d_allowed + t_allowed
+            if per_pitcher_hit_sum > 0 and per_pitcher_hit_sum <= non_hr_hits + 2:
+                # Trust per-pitcher counts (allow tiny rounding tolerance
+                # against the legacy non_hr_hits sum).
+                hit_run_value = (
+                    _XRA_W_1B * s_allowed
+                  + _XRA_W_2B * d_allowed
+                  + _XRA_W_3B * t_allowed
+                )
+            else:
+                hit_run_value = per_non_hr_weight * non_hr_hits
             raw_xra = (
                 _XRA_W_HR  * hr
-              + per_non_hr_weight * non_hr_hits
+              + hit_run_value
               + _XRA_W_BB  * bb
               + _XRA_W_HBP * hbp_a
             ) * 27.0 / outs
@@ -2290,7 +2305,7 @@ def player_detail_export(player_id: int):
                   COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
-        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
@@ -2307,7 +2322,13 @@ def player_detail_export(player_id: int):
                    COALESCE(SUM(k_arc1),0) as k_arc1, COALESCE(SUM(k_arc2),0) as k_arc2, COALESCE(SUM(k_arc3),0) as k_arc3,
                    COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
                    COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
-                   COALESCE(SUM(is_starter),0) as gs
+                   COALESCE(SUM(is_starter),0) as gs,
+                   COALESCE(SUM(singles_allowed),0) as singles_allowed,
+                   COALESCE(SUM(doubles_allowed),0) as doubles_allowed,
+                   COALESCE(SUM(triples_allowed),0) as triples_allowed,
+                   COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
+                   COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     baselines = _league_baselines()
@@ -2329,13 +2350,15 @@ def player_detail_export(player_id: int):
         pt_totals["player_id"] = player_id
         _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
 
+    po_v = (fld["po"] if fld else 0) or 0
+    a_v  = (fld["a"]  if fld and "a" in fld.keys() else 0) or 0
+    e_v  = (fld["e"]  if fld else 0) or 0
     fld_totals = {
-        "po": fld["po"] if fld else 0,
-        "e":  fld["e"]  if fld else 0,
-        "chances": (fld["po"] if fld else 0) + (fld["e"] if fld else 0),
-        "fld_pct": ((fld["po"] / ((fld["po"] or 0) + (fld["e"] or 0)))
-                    if fld and ((fld["po"] or 0) + (fld["e"] or 0)) > 0
-                    else None),
+        "po": po_v,
+        "a":  a_v,
+        "e":  e_v,
+        "chances": po_v + a_v + e_v,
+        "fld_pct": ((po_v + a_v) / (po_v + a_v + e_v)) if (po_v + a_v + e_v) > 0 else None,
     }
 
     batting_log = db.fetchall(
@@ -3016,7 +3039,13 @@ def leaders():
                   COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
                   COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
                   COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
-                  COALESCE(SUM(ps.is_starter),0) as gs
+                  COALESCE(SUM(ps.is_starter),0) as gs,
+                  COALESCE(SUM(ps.singles_allowed),0) as singles_allowed,
+                  COALESCE(SUM(ps.doubles_allowed),0) as doubles_allowed,
+                  COALESCE(SUM(ps.triples_allowed),0) as triples_allowed,
+                  COALESCE(AVG(NULLIF(ps.fastball_pct,0)) * 100,0) as fastball_pct,
+                  COALESCE(AVG(NULLIF(ps.breaking_pct,0)) * 100,0) as breaking_pct,
+                  COALESCE(AVG(NULLIF(ps.offspeed_pct,0)) * 100,0) as offspeed_pct
            FROM {_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
@@ -3046,18 +3075,29 @@ def leaders():
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(bs.game_id) as g,
                   COALESCE(SUM(bs.po),0) as po,
-                  COALESCE(SUM(bs.e),0)  as e
+                  COALESCE(SUM(bs.a),0)  as a,
+                  COALESCE(SUM(bs.e),0)  as e,
+                  COALESCE(SUM(bs.outs_recorded),0) as out_share
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
            GROUP BY p.id
-           HAVING (COALESCE(SUM(bs.po),0) + COALESCE(SUM(bs.e),0)) > 0""",
+           HAVING (COALESCE(SUM(bs.po),0) + COALESCE(SUM(bs.a),0) + COALESCE(SUM(bs.e),0)) > 0""",
     )
     for f in fielding:
         po_v = f.get("po") or 0
+        a_v  = f.get("a")  or 0
         e_v  = f.get("e")  or 0
-        f["chances"] = po_v + e_v
-        f["fld_pct"] = (po_v / (po_v + e_v)) if (po_v + e_v) > 0 else None
+        f["chances"] = po_v + a_v + e_v
+        f["fld_pct"] = ((po_v + a_v) / (po_v + a_v + e_v)) if (po_v + a_v + e_v) > 0 else None
+        # Range factor — (PO + A) per 27 outs. Uses the player's own
+        # outs_recorded as the denominator proxy (their fielding time).
+        # Falls back to chances/9 when out_share is zero (legacy rows).
+        out_share = f.get("out_share") or 0
+        if out_share > 0:
+            f["rf"] = (po_v + a_v) * 27.0 / out_share
+        else:
+            f["rf"] = None
     fielding_qual = [f for f in fielding if f["chances"] >= min_chances]
 
     salaries = db.fetchall(
@@ -3225,7 +3265,7 @@ def _fetch_player_overview(player_id: int,
                   COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
-        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
@@ -3243,7 +3283,13 @@ def _fetch_player_overview(player_id: int,
                    COALESCE(SUM(k_arc1),0)  as k_arc1,  COALESCE(SUM(k_arc2),0)  as k_arc2,  COALESCE(SUM(k_arc3),0)  as k_arc3,
                    COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
                    COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
-                   COALESCE(SUM(is_starter),0) as gs
+                   COALESCE(SUM(is_starter),0) as gs,
+                   COALESCE(SUM(singles_allowed),0) as singles_allowed,
+                   COALESCE(SUM(doubles_allowed),0) as doubles_allowed,
+                   COALESCE(SUM(triples_allowed),0) as triples_allowed,
+                   COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
+                   COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     bt_totals = None
@@ -3263,10 +3309,11 @@ def _fetch_player_overview(player_id: int,
         _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
 
     po = (fld["po"] if fld else 0) or 0
+    a  = (fld["a"]  if fld and "a" in fld.keys() else 0) or 0
     e  = (fld["e"]  if fld else 0) or 0
     fld_totals = {
-        "po": po, "e": e, "chances": po + e,
-        "fld_pct": (po / (po + e)) if (po + e) > 0 else None,
+        "po": po, "a": a, "e": e, "chances": po + a + e,
+        "fld_pct": ((po + a) / (po + a + e)) if (po + a + e) > 0 else None,
     }
 
     return {
@@ -3372,10 +3419,10 @@ def player_detail(player_id: int):
         (player_id,),
     )
     fld = db.fetchone(
-        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
-    ) or {"po": 0, "e": 0}
+    ) or {"po": 0, "a": 0, "e": 0}
 
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
@@ -3394,7 +3441,13 @@ def player_detail(player_id: int):
                    COALESCE(SUM(k_arc1),0)  as k_arc1,  COALESCE(SUM(k_arc2),0)  as k_arc2,  COALESCE(SUM(k_arc3),0)  as k_arc3,
                    COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
                    COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
-                   COALESCE(SUM(is_starter),0) as gs
+                   COALESCE(SUM(is_starter),0) as gs,
+                   COALESCE(SUM(singles_allowed),0) as singles_allowed,
+                   COALESCE(SUM(doubles_allowed),0) as doubles_allowed,
+                   COALESCE(SUM(triples_allowed),0) as triples_allowed,
+                   COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
+                   COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
         (player_id,),
     )
@@ -3415,17 +3468,19 @@ def player_detail(player_id: int):
         bt_totals["defense_catcher"]  = player.get("defense_catcher")
         _aggregate_batter_rows([bt_totals], baselines=baselines)
 
-    # Per-fielder defense totals (PO + E from any game where the player
-    # was credited with a play). Fielding% derives naturally; A is not
-    # tracked separately since the engine doesn't model the throw-vs-catch
-    # split (PO is awarded to whoever the play was attributed to).
+    # Per-fielder defense totals (PO + A + E). Assist crediting was
+    # added when pitch types were activated — the renderer now also
+    # credits A on throwing outs and a pivot-fielder on DPs/TPs. Pre-
+    # activation games have a=0 by migration default.
     po = fld["po"] or 0
+    a  = (fld["a"] if "a" in fld.keys() else 0) or 0
     e  = fld["e"] or 0
     fld_totals = {
         "po": po,
+        "a":  a,
         "e":  e,
-        "chances": po + e,
-        "fld_pct": (po / (po + e)) if (po + e) > 0 else None,
+        "chances": po + a + e,
+        "fld_pct": ((po + a) / (po + a + e)) if (po + a + e) > 0 else None,
     }
 
     pt_totals = None
@@ -4122,7 +4177,13 @@ def distributions():
                   COALESCE(SUM(ps.k_arc1),0) as k_arc1, COALESCE(SUM(ps.k_arc2),0) as k_arc2, COALESCE(SUM(ps.k_arc3),0) as k_arc3,
                   COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
                   COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
-                  COALESCE(SUM(ps.is_starter),0) as gs
+                  COALESCE(SUM(ps.is_starter),0) as gs,
+                  COALESCE(SUM(ps.singles_allowed),0) as singles_allowed,
+                  COALESCE(SUM(ps.doubles_allowed),0) as doubles_allowed,
+                  COALESCE(SUM(ps.triples_allowed),0) as triples_allowed,
+                  COALESCE(AVG(NULLIF(ps.fastball_pct,0)) * 100,0) as fastball_pct,
+                  COALESCE(AVG(NULLIF(ps.breaking_pct,0)) * 100,0) as breaking_pct,
+                  COALESCE(AVG(NULLIF(ps.offspeed_pct,0)) * 100,0) as offspeed_pct
            FROM {_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id

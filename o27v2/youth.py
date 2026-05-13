@@ -551,6 +551,7 @@ def _graduate_to_pro_fa(p: dict) -> int | None:
         "defense_infield", "defense_outfield", "defense_catcher",
         "baserunning", "run_aggressiveness",
         "work_ethic", "work_habits", "habit_cup",
+        "release_angle", "pitch_variance", "grit", "repertoire",
     )
     sql = (
         "INSERT INTO players (" + ", ".join(cols) + ") VALUES ("
@@ -575,6 +576,10 @@ def _graduate_to_pro_fa(p: dict) -> int | None:
         int(p.get("baserunning", 50)), int(p.get("run_aggressiveness", 50)),
         int(p.get("work_ethic", 50)), int(p.get("work_habits", 50)),
         float(p.get("habit_cup", 0.5)),
+        float(p.get("release_angle", 0.5)),
+        float(p.get("pitch_variance", 0.0)),
+        float(p.get("grit", 0.5)),
+        p.get("repertoire", None),
     )
     return db.execute(sql, vals)
 

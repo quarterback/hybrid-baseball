@@ -100,8 +100,10 @@
 </div>
 <div class="row g-3 mb-3">
   {{ card('PO',       'po',      '%d',   true,  fielding,      tooltip='Putouts — outs recorded as the primary fielder on a play') }}
-  {{ card('TC',       'chances', '%d',   true,  fielding,      tooltip='Total chances (PO + E)') }}
-  {{ card('FldPct',   'fld_pct', '%.3f', true,  fielding_qual, tooltip='Fielding % = PO / (PO + E). Min ' ~ min_chances ~ ' chances to qualify.') }}
+  {{ card('A',        'a',       '%d',   true,  fielding,      tooltip='Assists — throwing outs and DP/TP chain pivots') }}
+  {{ card('TC',       'chances', '%d',   true,  fielding,      tooltip='Total chances (PO + A + E)') }}
+  {{ card('RF',       'rf',      '%.2f', true,  fielding_qual, tooltip='Range Factor — (PO + A) × 27 / outs_team_played; higher = more involvement per inning') }}
+  {{ card('FldPct',   'fld_pct', '%.3f', true,  fielding_qual, tooltip='Fielding % = (PO + A) / (PO + A + E). Min ' ~ min_chances ~ ' chances to qualify.') }}
   {{ card('E (low)',  'e',       '%d',   false, fielding_qual, tooltip='Fewest errors among qualified fielders. Min ' ~ min_chances ~ ' chances.') }}
 </div>
 
@@ -139,6 +141,18 @@
   {{ card('K',    'k',    '%d',   true, pitching) }}
   {{ card('Outs', 'outs', '%d',   true, pitching, tooltip='Outs recorded — pitcher workload (one full O27 game = 27)') }}
   {{ card('WAR',  'war',  '%.2f', true, pitching) }}
+</div>
+
+<h4>Pitching · Arsenal mix</h4>
+<div class="text-secondary small mb-2">
+  Pitch-type usage averaged across appearances. Each pitcher's repertoire
+  is sampled per PA (fastball / breaking / off-speed); the catalog and per-
+  pitch K/contact deltas live in <code>o27/config.py:PITCH_CATALOG</code>.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('FB%',  'fastball_pct', '%.0f%%', true, pitching, tooltip='Share of typed pitches that were fastballs (4-seam / sinker / cutter), as a percentage') }}
+  {{ card('BR%',  'breaking_pct', '%.0f%%', true, pitching, tooltip='Share of typed pitches that were breaking balls') }}
+  {{ card('OFF%', 'offspeed_pct', '%.0f%%', true, pitching, tooltip='Share of typed pitches that were off-speed (change / split / palm / knuckle / eephus)') }}
 </div>
 
 {% endif %}{# end of games_played > 0 in-season-leaders gate #}
