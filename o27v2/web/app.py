@@ -2072,6 +2072,32 @@ def game_detail(game_id: int):
         elif d["team_id"] == game["home_team_id"]:
             home_bips.append(d)
 
+    # Park dimensions for the spray-chart fence. Both teams batted at
+    # the home park, so both charts share the same outline. Pre-compute
+    # the 5 fence points (LF → LCF → CF → RCF → RF) in SVG coords so
+    # the template can draw a path directly.
+    import json as _json_loc
+    park_dims = {}
+    try:
+        if game.get("home_park_dimensions"):
+            park_dims = _json_loc.loads(game["home_park_dimensions"]) or {}
+    except (ValueError, TypeError):
+        park_dims = {}
+    fence_points = []
+    if park_dims:
+        # Angles from CF outward — symmetrical around 0°.
+        # Foul lines are ±45°; left-center / right-center sit at ±22.5°.
+        for (angle_deg, key) in (
+            (-45.0, "lf"),
+            (-22.5, "lcf"),
+            (  0.0, "cf"),
+            ( 22.5, "rcf"),
+            ( 45.0, "rf"),
+        ):
+            d_ft = float(park_dims.get(key, 380))
+            x, y = _bip_xy(angle_deg, d_ft)
+            fence_points.append((round(x, 1), round(y, 1)))
+
     # Legacy data (pre-Task-#58) often has duplicate rows for the same
     # (player_id, game_id) because the schema lacked a UNIQUE constraint
     # and re-sims of the same game inserted parallel copies. New rows
@@ -2337,6 +2363,8 @@ def game_detail(game_id: int):
         box_score_text=box_score_text,
         away_bips=away_bips,
         home_bips=home_bips,
+        park_dims=park_dims,
+        fence_points=fence_points,
         prev_game_id=(prev_game["id"] if prev_game else None),
         next_game_id=(next_game["id"] if next_game else None),
     )

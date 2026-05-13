@@ -235,7 +235,37 @@
       'xbh':    '#e67e22',
       'hr':     '#c0392b',
     } -%}
-{% macro spray_svg(rows, team_name) -%}
+{# Build the asymmetric outfield-fence path from the 5 fence points
+   (LF → LCF → CF → RCF → RF). Smooth via quadratic-Bezier control
+   points so it reads as a fence-line, not a polyline. Falls back to
+   a symmetrical 340-ft arc when park_dimensions are missing
+   (legacy rows). #}
+{%- set _HP_X = 280 -%}
+{%- set _HP_Y = 390 -%}
+{%- if fence_points and fence_points|length == 5 -%}
+  {%- set _LF = fence_points[0] -%}
+  {%- set _LCF = fence_points[1] -%}
+  {%- set _CF = fence_points[2] -%}
+  {%- set _RCF = fence_points[3] -%}
+  {%- set _RF = fence_points[4] -%}
+  {%- set _FENCE_D -%}
+    M {{ _HP_X }} {{ _HP_Y }}
+    L {{ _LF[0] }} {{ _LF[1] }}
+    Q {{ (_LF[0] + _LCF[0]) / 2 }} {{ ((_LF[1] + _LCF[1]) / 2) - 12 }} {{ _LCF[0] }} {{ _LCF[1] }}
+    Q {{ (_LCF[0] + _CF[0]) / 2 }} {{ ((_LCF[1] + _CF[1]) / 2) - 14 }} {{ _CF[0] }} {{ _CF[1] }}
+    Q {{ (_CF[0] + _RCF[0]) / 2 }} {{ ((_CF[1] + _RCF[1]) / 2) - 14 }} {{ _RCF[0] }} {{ _RCF[1] }}
+    Q {{ (_RCF[0] + _RF[0]) / 2 }} {{ ((_RCF[1] + _RF[1]) / 2) - 12 }} {{ _RF[0] }} {{ _RF[1] }}
+    L {{ _HP_X }} {{ _HP_Y }} Z
+  {%- endset -%}
+{%- else -%}
+  {# Fallback symmetrical fence — 340 ft radius. #}
+  {%- set _FENCE_D = 'M ' ~ _HP_X ~ ' ' ~ _HP_Y ~ ' L 0 110 A 340 340 0 0 1 560 110 L ' ~ _HP_X ~ ' ' ~ _HP_Y ~ ' Z' -%}
+{%- endif -%}
+{%- set _WALL_H = (park_dims.wall_h if park_dims else 10) or 10 -%}
+{%- set _WALL_STROKE_W = ([1.0, _WALL_H / 12.0] | max) -%}
+
+{% macro spray_svg(rows, team_name, fence_d, hp_x, hp_y, wall_stroke_w, dims) -%}
+{%- set safe_id = team_name|replace(' ','')|replace('.','')|replace("'",'')|replace('"','') -%}
 <div class="dense p-2" style="flex:1 1 0;min-width:340px">
   <div class="panel-title">{{ team_name }} — Batted Balls</div>
   <div class="text-secondary small mb-1">
@@ -247,28 +277,56 @@
   </div>
   <svg viewBox="0 0 560 420" style="width:100%;height:auto;background:#0e1421;border-radius:8px"
        xmlns="http://www.w3.org/2000/svg">
-    {# Fair territory wedge: foul lines from home plate at ±45°,
-       outfield arc out at ~400ft (340px). #}
     <defs>
-      <clipPath id="fair-{{ team_name|replace(' ','') }}">
-        <path d="M 280 390 L 0 110 A 340 340 0 0 1 560 110 L 280 390 Z" />
+      <clipPath id="fair-{{ safe_id }}">
+        <path d="{{ fence_d }}" />
       </clipPath>
     </defs>
-    {# Grass + dirt #}
-    <path d="M 280 390 L 0 110 A 340 340 0 0 1 560 110 L 280 390 Z"
-          fill="#1f3a26" stroke="#2c4f33" stroke-width="1.5"/>
-    {# Infield diamond + dirt #}
-    <circle cx="280" cy="390" r="100" fill="#3a2d1f" clip-path="url(#fair-{{ team_name|replace(' ','') }})"/>
-    <polygon points="280,390 215,325 280,260 345,325"
+    {# Fair territory (grass) filled to the actual fence shape. #}
+    <path d="{{ fence_d }}" fill="#1f3a26"/>
+    {# Infield dirt — circle around home plate, clipped to fair territory. #}
+    <circle cx="{{ hp_x }}" cy="{{ hp_y }}" r="100" fill="#3a2d1f"
+            clip-path="url(#fair-{{ safe_id }})"/>
+    {# Infield diamond outline #}
+    <polygon points="{{ hp_x }},{{ hp_y }} {{ hp_x - 65 }},{{ hp_y - 65 }} {{ hp_x }},{{ hp_y - 130 }} {{ hp_x + 65 }},{{ hp_y - 65 }}"
              fill="#1f3a26" stroke="#cfcfcf" stroke-width="1" opacity="0.85"/>
-    {# Foul lines #}
-    <line x1="280" y1="390" x2="0"   y2="110" stroke="#cfcfcf" stroke-width="1.2" opacity="0.6"/>
-    <line x1="280" y1="390" x2="560" y2="110" stroke="#cfcfcf" stroke-width="1.2" opacity="0.6"/>
+    {# Foul lines — straight from home plate, ±45°. Extend just to the
+       LF / RF corners (fence_points[0] and [4]). #}
+    {% if dims %}
+    <line x1="{{ hp_x }}" y1="{{ hp_y }}"
+          x2="{{ hp_x - dims.lf * 0.85 * 0.7071 }}" y2="{{ hp_y - dims.lf * 0.85 * 0.7071 }}"
+          stroke="#cfcfcf" stroke-width="1.2" opacity="0.6"/>
+    <line x1="{{ hp_x }}" y1="{{ hp_y }}"
+          x2="{{ hp_x + dims.rf * 0.85 * 0.7071 }}" y2="{{ hp_y - dims.rf * 0.85 * 0.7071 }}"
+          stroke="#cfcfcf" stroke-width="1.2" opacity="0.6"/>
+    {% else %}
+    <line x1="{{ hp_x }}" y1="{{ hp_y }}" x2="0"   y2="110"
+          stroke="#cfcfcf" stroke-width="1.2" opacity="0.6"/>
+    <line x1="{{ hp_x }}" y1="{{ hp_y }}" x2="560" y2="110"
+          stroke="#cfcfcf" stroke-width="1.2" opacity="0.6"/>
+    {% endif %}
     {# Distance arcs (200ft, 300ft, 400ft) #}
     {% for r in [170, 255, 340] %}
-    <path d="M {{ 280 - r }} {{ 390 - 0 }} A {{ r }} {{ r }} 0 0 1 {{ 280 + r }} 390"
+    <path d="M {{ hp_x - r }} {{ hp_y }} A {{ r }} {{ r }} 0 0 1 {{ hp_x + r }} {{ hp_y }}"
           fill="none" stroke="#3c5a44" stroke-width="0.6" stroke-dasharray="3,4" opacity="0.5"/>
     {% endfor %}
+    {# Outfield fence — drawn on top, stroke width scaled by wall height
+       (8-12 ft = thin line, 28+ ft = thick prison wall). #}
+    <path d="{{ fence_d }}" fill="none" stroke="#9ad0ec"
+          stroke-width="{{ '%.1f'|format(wall_stroke_w) }}" opacity="0.85"/>
+    {# Park-dimension labels at LF / CF / RF corners #}
+    {% if dims %}
+    <text x="{{ hp_x - dims.lf * 0.85 * 0.7071 - 8 }}" y="{{ hp_y - dims.lf * 0.85 * 0.7071 - 6 }}"
+          fill="#cfcfcf" font-size="10" text-anchor="end">{{ dims.lf }}'</text>
+    <text x="{{ hp_x }}" y="{{ hp_y - dims.cf * 0.85 - 8 }}"
+          fill="#cfcfcf" font-size="10" text-anchor="middle">{{ dims.cf }}'</text>
+    <text x="{{ hp_x + dims.rf * 0.85 * 0.7071 + 8 }}" y="{{ hp_y - dims.rf * 0.85 * 0.7071 - 6 }}"
+          fill="#cfcfcf" font-size="10">{{ dims.rf }}'</text>
+    {% if dims.wall_h and dims.wall_h >= 14 %}
+    <text x="{{ hp_x }}" y="18" fill="#9ad0ec" font-size="11" text-anchor="middle"
+          opacity="0.9">Wall {{ dims.wall_h }}'</text>
+    {% endif %}
+    {% endif %}
     {# BIP dots #}
     {% for b in rows %}
     <circle cx="{{ b.x }}" cy="{{ b.y }}" r="5"
@@ -278,7 +336,8 @@
     </circle>
     {% endfor %}
     {# Home plate marker #}
-    <polygon points="275,393 285,393 287,398 280,402 273,398" fill="#fff" stroke="#000" stroke-width="0.5"/>
+    <polygon points="{{ hp_x - 5 }},{{ hp_y + 3 }} {{ hp_x + 5 }},{{ hp_y + 3 }} {{ hp_x + 7 }},{{ hp_y + 8 }} {{ hp_x }},{{ hp_y + 12 }} {{ hp_x - 7 }},{{ hp_y + 8 }}"
+             fill="#fff" stroke="#000" stroke-width="0.5"/>
   </svg>
 </div>
 {%- endmacro %}
@@ -294,9 +353,15 @@
     <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ _HIT_COLOR.hr }}"></span> HR</span>
     <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ _HIT_COLOR.error }}"></span> Reached on Error</span>
   </div>
+  {% if game.home_park_name %}
+  <div class="text-secondary small mb-2">
+    Charts are drawn to {{ game.home_park_name }}'s actual outfield dimensions
+    {% if park_dims %}(LF {{ park_dims.lf }}' · CF {{ park_dims.cf }}' · RF {{ park_dims.rf }}' · {{ park_dims.wall_h }}' wall){% endif %}.
+  </div>
+  {% endif %}
   <div class="d-flex flex-wrap gap-3">
-    {{ spray_svg(away_bips, game.away_name or 'Away') }}
-    {{ spray_svg(home_bips, game.home_name or 'Home') }}
+    {{ spray_svg(away_bips, game.away_name or 'Away', _FENCE_D, _HP_X, _HP_Y, _WALL_STROKE_W, park_dims) }}
+    {{ spray_svg(home_bips, game.home_name or 'Home', _FENCE_D, _HP_X, _HP_Y, _WALL_STROKE_W, park_dims) }}
   </div>
 </div>
 {% endif %}
