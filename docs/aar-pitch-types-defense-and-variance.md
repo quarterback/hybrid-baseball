@@ -233,7 +233,23 @@ definitions. Verified on a fresh `manage.py resetdb`.
    contribution charts** — user shared screenshots mid-session. Deferred
    to a separate ticket.
 
-6. **HANDOFF.md is still stale** (multiple bugs marked open are fixed).
+6. **Batted-ball physics (EV / LA / spray) — hybrid layer.** Deferred
+   to backlog. The cheap path is NOT to rewrite contact resolution. It
+   is: keep the existing categorical model (`weak`/`medium`/`hard` →
+   `hit_type`) as the canonical engine output, and on top of it sample
+   a synthetic (exit_velocity, launch_angle, spray_angle) per BIP from
+   the bucket + pitch_type + power/movement inputs. Persist on
+   `game_pa_log`. That unlocks spray charts, EV/LA-banded Luck Ledger,
+   and xwOBA-style per-player attribution without touching the engine
+   math the run env is calibrated against. Full physics rewrite (where
+   EV/LA *drive* the fielding outcome) would be phase-scale, would
+   invalidate the existing run-env / Stay / defense calibrations, and
+   would require building an O27-specific probability surface (MLB
+   Statcast surfaces are wrong for the 12-batter / 27-out / sidearm
+   structure). User wants to tackle this after more low-hanging
+   improvements.
+
+7. **HANDOFF.md is still stale** (multiple bugs marked open are fixed).
    Not touched this session.
 
 ---
