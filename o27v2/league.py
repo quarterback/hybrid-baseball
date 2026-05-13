@@ -839,40 +839,228 @@ def _roll_ballpark_name(
     return f"{base} II"
 
 
+# Park shape archetypes — O27's fiat: the cookie-cutter era never
+# happened. Every park is a pre-modern revival or a cricket-ground
+# import, so the dimension distribution is much wider than MLB's
+# 1990s-2000s norm.
+#
+# Each archetype has a label (UI) and a blurb (flavor tooltip).
+_PARK_SHAPES = (
+    ("balanced",        "Balanced",
+     "Symmetric pre-modern park — wedge outfield, even alleys"),
+    ("short_porch_rf",  "Short Porch (Right)",
+     "Foul-line jut: RF dives in under 300 ft, deep CF behind it"),
+    ("short_porch_lf",  "Short Porch (Left)",
+     "Mirror of Yankee Stadium-style RF jut — LF cheats in"),
+    ("cavernous",       "Cavernous",
+     "Forbes Field / old Cleveland Stadium territory — death-valley alleys"),
+    ("bathtub",         "Bathtub",
+     "Polo Grounds shape: 275-ft lines, 480-ft dead-CF chasm"),
+    ("triangle",        "Center-Field Triangle",
+     "Center-field corner juts back another 30 ft from the alleys"),
+    ("oval",            "Oval — Cricket-Ground Revival",
+     "MCG-style elliptical boundary — pull HRs vanish, gappers feast"),
+)
+_PARK_SHAPE_WEIGHTS = (0.40, 0.10, 0.07, 0.13, 0.08, 0.10, 0.12)
+
+
+_QUIRK_CATALOG: tuple[dict, ...] = (
+    {"key": "tals_hill",          "label": "Tal's Hill",
+     "blurb": "30-degree incline rises into deep center field — flag pole in play, outfielders climb the slope to make the catch",
+     "weight": 0.07, "shapes": None},
+    {"key": "the_porch",          "label": "The Porch",
+     "blurb": "second-deck overhang juts out over the short-side foul line — pop flies clear the wall",
+     "weight": 0.08, "shapes": ("short_porch_rf", "short_porch_lf")},
+    {"key": "ivy_wall",           "label": "Ivy Wall",
+     "blurb": "no padding — outfielders read the carom off red brick and ivy; balls lodged in the vines are ground-rule doubles",
+     "weight": 0.10, "shapes": None},
+    {"key": "hand_scoreboard",    "label": "Hand-Operated Scoreboard",
+     "blurb": "scoreboard operators climb in and out the back of the LF wall between innings",
+     "weight": 0.15, "shapes": None},
+    {"key": "crows_nest",         "label": "Crow's Nest",
+     "blurb": "press box perched three decks above the grandstand — typewriters echo all the way to the bullpen",
+     "weight": 0.12, "shapes": None},
+    {"key": "the_triangle",       "label": "The Triangle",
+     "blurb": "deep CF jogs back 30 feet from the alleys — line drives off the corner ricochet at unpredictable angles",
+     "weight": 0.10, "shapes": ("triangle", "cavernous")},
+    {"key": "abe_lincoln",        "label": "Lincoln Statue",
+     "blurb": "ten-foot statue of Abraham Lincoln stands in deep CF, fair-territory landmark",
+     "weight": 0.03, "shapes": None},
+    {"key": "trolley_shed",       "label": "Trolley Shed",
+     "blurb": "abandoned commuter-rail spur cuts across deep CF — ground-rule double if struck on the fly",
+     "weight": 0.03, "shapes": None},
+    {"key": "flagpole_play",      "label": "Flag Pole in Play",
+     "blurb": "60-foot pole stands in fair territory near the CF wall — drives can carom off the standard",
+     "weight": 0.06, "shapes": None},
+    {"key": "bullpens_play",      "label": "Bullpens in Play",
+     "blurb": "visitors' bullpen sits along the LF foul line — relievers warm up in fair territory",
+     "weight": 0.07, "shapes": None},
+    {"key": "knothole_gates",     "label": "Knothole Gates",
+     "blurb": "narrow wooden slats in the LF wall let neighborhood kids press their faces in to watch for free",
+     "weight": 0.05, "shapes": None},
+    {"key": "crescent_grandstand","label": "Crescent Grandstand",
+     "blurb": "fan-shaped wooden grandstand wraps over both foul lines",
+     "weight": 0.07, "shapes": None},
+    {"key": "concrete_crater",    "label": "The Crater",
+     "blurb": "playing field sits 20 ft below street level — every drive looks like a moonshot from the upper deck",
+     "weight": 0.04, "shapes": None},
+    {"key": "wire_basket",        "label": "Wire Basket",
+     "blurb": "wire basket protrudes from the top of the LF wall — robs would-be HRs into doubles",
+     "weight": 0.05, "shapes": None},
+    {"key": "death_valley",       "label": "Death Valley",
+     "blurb": "left-center alley plays 440+ feet from the plate — flyball pitchers thrive, gap doubles die",
+     "weight": 0.08, "shapes": ("cavernous", "bathtub")},
+    {"key": "lima_bean",          "label": "The Lima Bean",
+     "blurb": "asymmetric grandstand wraps the field at odd angles — sun fields shift inning to inning",
+     "weight": 0.03, "shapes": None},
+    {"key": "round_bowl",         "label": "Round Bowl",
+     "blurb": "no foul-line pocket — grandstand wraps the playing field as a uniform curve",
+     "weight": 0.18, "shapes": ("oval",)},
+    {"key": "low_picket",         "label": "Low Picket Fence",
+     "blurb": "cricket-ground tin fence — barely four feet high, fielders vault to rob HRs",
+     "weight": 0.20, "shapes": ("oval",)},
+    {"key": "members_pavilion",   "label": "Members' Pavilion",
+     "blurb": "wood-clad pavilion looms over the LF boundary, hot-tin roof reflects the sun into the batter's eye",
+     "weight": 0.15, "shapes": ("oval",)},
+    {"key": "scoreboard_clock",   "label": "Scoreboard Clock",
+     "blurb": "20-foot clock in deep CF — the only timepiece in the league; ground-rule single on a hit",
+     "weight": 0.05, "shapes": None},
+)
+
+
 def _roll_park_dimensions(rng: random.Random) -> dict:
-    """Generate distinctive outfield dimensions for a ballpark.
+    """Generate distinctive outfield dimensions + a shape archetype.
 
-    Returns a dict with LF / LCF / CF / RCF / RF distances in feet, plus
-    a wall_h for the outfield wall height. Flavor-only — does not drive
-    engine math today (park_hr and park_hits remain the multipliers).
-    Ranges hew to real MLB parks: ~315-355 down the lines, ~390-430 to
-    center, 8-37 ft walls (37 = Green Monster, 8 = typical bullpen wall).
+    O27's fiat is a pre-modern / cricket-revival ballpark world — no
+    cookie-cutter era ever happened. Each park rolls a shape first
+    (balanced / short_porch / cavernous / bathtub / triangle / oval),
+    then dimensions are drawn from that shape's joint distribution.
 
-    Asymmetry is real: pull a left/right "skew" per park so a few yards
-    play short to one side and long to the other (Fenway-style).
+    Returns: {lf, lcf, cf, rcf, rf, wall_h, shape}.
+    Distances in feet. Asymmetric corners are real — a Polo Grounds
+    bathtub produces 270-ft lines + 480-ft CF.
     """
-    skew = rng.uniform(-12.0, 12.0)
-    lf  = int(round(rng.gauss(335, 9.0) - skew))
-    rf  = int(round(rng.gauss(335, 9.0) + skew))
-    lcf = int(round(rng.gauss(380, 7.0) - skew * 0.4))
-    rcf = int(round(rng.gauss(380, 7.0) + skew * 0.4))
-    cf  = int(round(rng.gauss(408, 9.0)))
-    # Wall height: heavy-tailed — most parks 8-12 ft, a handful 16-37 ft.
+    shape = rng.choices(
+        [s[0] for s in _PARK_SHAPES],
+        weights=_PARK_SHAPE_WEIGHTS,
+    )[0]
+
+    if shape == "balanced":
+        skew = rng.uniform(-10, 10)
+        lf  = int(round(rng.gauss(338, 12) - skew))
+        rf  = int(round(rng.gauss(338, 12) + skew))
+        lcf = int(round(rng.gauss(388, 12)))
+        rcf = int(round(rng.gauss(388, 12)))
+        cf  = int(round(rng.gauss(412, 14)))
+    elif shape == "short_porch_rf":
+        # Yankee-Stadium-style short RF.
+        lf  = int(round(rng.gauss(348, 12)))
+        rf  = int(round(rng.gauss(298, 14)))
+        lcf = int(round(rng.gauss(400, 14)))
+        rcf = int(round(rng.gauss(365, 14)))
+        cf  = int(round(rng.gauss(420, 15)))
+    elif shape == "short_porch_lf":
+        lf  = int(round(rng.gauss(298, 14)))
+        rf  = int(round(rng.gauss(348, 12)))
+        lcf = int(round(rng.gauss(365, 14)))
+        rcf = int(round(rng.gauss(400, 14)))
+        cf  = int(round(rng.gauss(420, 15)))
+    elif shape == "cavernous":
+        # Forbes Field / old Cleveland Stadium.
+        skew = rng.uniform(-12, 12)
+        lf  = int(round(rng.gauss(360, 15) - skew))
+        rf  = int(round(rng.gauss(360, 15) + skew))
+        lcf = int(round(rng.gauss(425, 18)))
+        rcf = int(round(rng.gauss(425, 18)))
+        cf  = int(round(rng.gauss(458, 18)))
+    elif shape == "bathtub":
+        # Polo Grounds — super-short lines, super-deep alleys + CF.
+        skew = rng.uniform(-8, 8)
+        lf  = int(round(rng.gauss(280, 12) - skew))
+        rf  = int(round(rng.gauss(280, 12) + skew))
+        lcf = int(round(rng.gauss(430, 18)))
+        rcf = int(round(rng.gauss(430, 18)))
+        cf  = int(round(rng.gauss(478, 16)))
+    elif shape == "triangle":
+        # Fenway-ish CF triangle — alleys normal, dead CF juts.
+        skew = rng.uniform(-10, 10)
+        lf  = int(round(rng.gauss(335, 12) - skew))
+        rf  = int(round(rng.gauss(335, 12) + skew))
+        lcf = int(round(rng.gauss(385, 12)))
+        rcf = int(round(rng.gauss(385, 12)))
+        cf  = int(round(rng.gauss(445, 16)))
+    else:   # oval — cricket-ground revival
+        # Boundary nearly uniform around the whole playing field.
+        # Pull HRs become rare, gappers and Stay-mechanic 2C events
+        # become much more valuable.
+        skew = rng.uniform(-6, 6)
+        lf  = int(round(rng.gauss(380, 10) - skew))
+        rf  = int(round(rng.gauss(380, 10) + skew))
+        lcf = int(round(rng.gauss(398, 9)))
+        rcf = int(round(rng.gauss(398, 9)))
+        cf  = int(round(rng.gauss(418, 10)))
+
+    # Wall height: long tail. Bathtub / short-porch parks get the
+    # tallest walls (Ebbets / Polo Grounds were both 35-40 ft RF).
     wall_roll = rng.random()
-    if wall_roll < 0.06:
-        wall_h = int(round(rng.uniform(28, 37)))   # Green Monster class
-    elif wall_roll < 0.20:
-        wall_h = int(round(rng.uniform(14, 22)))   # high wall
+    if shape in ("bathtub", "short_porch_rf", "short_porch_lf") and wall_roll < 0.45:
+        wall_h = int(round(rng.uniform(28, 50)))
+    elif wall_roll < 0.08:
+        wall_h = int(round(rng.uniform(28, 42)))   # Green Monster class
+    elif wall_roll < 0.22:
+        wall_h = int(round(rng.uniform(15, 26)))
+    elif shape == "oval" and wall_roll < 0.60:
+        # Cricket-ground tin fence — very low.
+        wall_h = int(round(rng.uniform(4, 8)))
     else:
-        wall_h = int(round(rng.uniform(8, 13)))    # standard
+        wall_h = int(round(rng.uniform(8, 14)))
+
     return {
-        "lf":     max(310, lf),
-        "lcf":    max(355, lcf),
-        "cf":     max(385, cf),
-        "rcf":    max(355, rcf),
-        "rf":     max(310, rf),
+        "lf":     max(255, lf),
+        "lcf":    max(330, lcf),
+        "cf":     max(380, cf),
+        "rcf":    max(330, rcf),
+        "rf":     max(255, rf),
         "wall_h": wall_h,
+        "shape":  shape,
     }
+
+
+def _roll_park_quirks(rng: random.Random, shape: str) -> list[dict]:
+    """Roll 0-3 architectural quirks from _QUIRK_CATALOG. Some quirks are
+    shape-gated (e.g. Round Bowl only fires on oval parks, The Porch
+    only on short-porch shapes). Each park's quirks are drawn without
+    replacement.
+    """
+    n_quirks = rng.choices((0, 1, 2, 3), weights=(0.38, 0.40, 0.17, 0.05))[0]
+    if n_quirks == 0:
+        return []
+    eligible = [
+        q for q in _QUIRK_CATALOG
+        if q["shapes"] is None or shape in q["shapes"]
+    ]
+    if not eligible:
+        return []
+    picked: list[dict] = []
+    pool = list(eligible)
+    for _ in range(min(n_quirks, len(pool))):
+        weights = [q["weight"] for q in pool]
+        idx = rng.choices(range(len(pool)), weights=weights)[0]
+        picked.append({
+            "key":   pool[idx]["key"],
+            "label": pool[idx]["label"],
+            "blurb": pool[idx]["blurb"],
+        })
+        pool.pop(idx)
+    return picked
+
+
+def _park_shape_meta(shape_key: str) -> dict:
+    """Return {label, blurb} for a shape key — UI lookup."""
+    for k, label, blurb in _PARK_SHAPES:
+        if k == shape_key:
+            return {"label": label, "blurb": blurb}
+    return {"label": "", "blurb": ""}
 
 
 def _park_surname_pool(rng: random.Random, count: int = 60) -> list[str]:
@@ -1595,7 +1783,10 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
 
         park_hr, park_hits = _roll_park_factors(rng2)
         park_name = _roll_ballpark_name(rng2, city, surname_pool, used_park_names)
-        park_dims = json.dumps(_roll_park_dimensions(rng2))
+        _dim_dict   = _roll_park_dimensions(rng2)
+        park_shape  = _dim_dict.pop("shape", "")
+        park_dims   = json.dumps(_dim_dict)
+        park_quirks = json.dumps(_roll_park_quirks(rng2, park_shape))
         mgr = roll_manager(rng2)
         mgr_name, _mgr_country = mgr_name_picker()
         # Org_strength rolled on the full 9-tier ladder (uncapped at 95) —
@@ -1606,14 +1797,16 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, division, league, "
             "park_hr, park_hits, park_name, park_dimensions, "
+            "park_shape, park_quirks, "
             "manager_archetype, manager_name, "
             "mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
             "mgr_bench_usage, org_strength)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, division, league_name,
              park_hr, park_hits, park_name, park_dims,
+             park_shape, park_quirks,
              mgr["manager_archetype"], mgr_name,
              mgr["mgr_quick_hook"],
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],

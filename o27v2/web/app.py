@@ -145,6 +145,38 @@ def _park_dimensions(value) -> dict:
 app.jinja_env.filters["park_dimensions"] = _park_dimensions
 
 
+def _park_quirks(value) -> list:
+    """Parse the JSON-encoded park_quirks list into a list of dicts."""
+    import json as _json
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        out = _json.loads(value)
+        return out if isinstance(out, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+app.jinja_env.filters["park_quirks"] = _park_quirks
+
+
+def _park_shape_meta(value) -> dict:
+    """Return {label, blurb} for a park_shape key. Empty dict on
+    unknown / legacy values."""
+    if not value:
+        return {"label": "", "blurb": ""}
+    try:
+        from o27v2.league import _park_shape_meta as _impl
+        return _impl(str(value))
+    except Exception:
+        return {"label": "", "blurb": ""}
+
+
+app.jinja_env.filters["park_shape_meta"] = _park_shape_meta
+
+
 def _repertoire(value) -> list:
     """Parse a pitcher's JSON repertoire into a sorted list of dicts.
 
@@ -1934,6 +1966,8 @@ def game_detail(game_id: int):
                   ht.name as home_name, ht.abbrev as home_abbrev,
                   ht.park_name as home_park_name,
                   ht.park_dimensions as home_park_dimensions,
+                  ht.park_shape as home_park_shape,
+                  ht.park_quirks as home_park_quirks,
                   ht.park_hr as home_park_hr, ht.park_hits as home_park_hits,
                   at.name as away_name, at.abbrev as away_abbrev,
                   wt.name as winner_name

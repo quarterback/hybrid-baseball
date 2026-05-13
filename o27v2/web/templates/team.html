@@ -89,31 +89,48 @@
 {# ---- Ballpark card ---- #}
 {% if team.park_name or team.park_hr or team.park_dimensions %}
 {% set dims = team.park_dimensions | park_dimensions %}
-<div class="dense p-2 mb-3 d-flex flex-wrap align-items-center gap-3" style="font-size:.86rem">
-  <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Ballpark</span>
-  {% if team.park_name %}<span class="fw-bold" style="color:var(--text);font-size:1rem">{{ team.park_name }}</span>{% endif %}
+{% set shape_meta = team.park_shape | park_shape_meta %}
+{% set quirks = team.park_quirks | park_quirks %}
+<div class="dense p-2 mb-3" style="font-size:.86rem">
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-1">
+    <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Ballpark</span>
+    {% if team.park_name %}<span class="fw-bold" style="color:var(--text);font-size:1rem">{{ team.park_name }}</span>{% endif %}
+    {% if shape_meta.label %}
+    <span class="text-secondary">·</span>
+    <span title="{{ shape_meta.blurb }}" style="color:#9ad0ec;font-weight:600">{{ shape_meta.label }}</span>
+    {% endif %}
+  </div>
   {% if dims %}
-  <span class="text-secondary">·</span>
-  <span class="text-secondary small" title="Foul-line / left-center / center / right-center / right-line distances in feet">
-    LF <strong style="color:var(--text)">{{ dims.lf }}</strong>
-    · LCF <strong style="color:var(--text)">{{ dims.lcf }}</strong>
-    · CF <strong style="color:var(--text)">{{ dims.cf }}</strong>
-    · RCF <strong style="color:var(--text)">{{ dims.rcf }}</strong>
-    · RF <strong style="color:var(--text)">{{ dims.rf }}</strong>
-  </span>
-  <span class="text-secondary">·</span>
-  <span class="text-secondary small" title="Outfield wall height (feet). 8-12 ft is standard; 14-22 ft is a high wall; 28+ ft is Green Monster class.">
-    Wall <strong style="color:var(--text)">{{ dims.wall_h }}'</strong>
-  </span>
+  <div class="d-flex flex-wrap gap-3 mb-1" style="font-size:.82rem">
+    <span class="text-secondary" title="Foul-line / left-center / center / right-center / right-line distances in feet">
+      LF <strong style="color:var(--text)">{{ dims.lf }}'</strong>
+      · LCF <strong style="color:var(--text)">{{ dims.lcf }}'</strong>
+      · CF <strong style="color:var(--text)">{{ dims.cf }}'</strong>
+      · RCF <strong style="color:var(--text)">{{ dims.rcf }}'</strong>
+      · RF <strong style="color:var(--text)">{{ dims.rf }}'</strong>
+    </span>
+    <span class="text-secondary" title="Outfield wall height (feet). 4-8 ft = cricket-ground tin; 8-14 ft = standard; 15-26 ft = high wall; 28+ ft = Green Monster / Polo Grounds class.">
+      Wall <strong style="color:var(--text)">{{ dims.wall_h }}'</strong>
+    </span>
+    {% if team.park_hr %}
+    <span class="text-secondary" title="HR multiplier on contact (1.00 = neutral). Above 1.00 = hitter-friendly; below = pitcher-friendly.">
+      HR <strong style="color:var(--text)">{{ '%.2f'|format(team.park_hr) }}</strong>
+    </span>
+    <span class="text-secondary" title="Overall hits multiplier (1.00 = neutral).">
+      Hits <strong style="color:var(--text)">{{ '%.2f'|format(team.park_hits) }}</strong>
+    </span>
+    {% endif %}
+  </div>
   {% endif %}
-  {% if team.park_hr %}
-  <span class="text-secondary">·</span>
-  <span class="text-secondary small" title="HR multiplier on contact (1.00 = neutral). Above 1.00 = hitter-friendly; below = pitcher-friendly.">
-    HR <strong style="color:var(--text)">{{ '%.2f'|format(team.park_hr) }}</strong>
-  </span>
-  <span class="text-secondary small" title="Overall hits multiplier (1.00 = neutral).">
-    Hits <strong style="color:var(--text)">{{ '%.2f'|format(team.park_hits) }}</strong>
-  </span>
+  {% if quirks %}
+  <div class="d-flex flex-wrap gap-2 mt-1">
+    {% for q in quirks %}
+    <span title="{{ q.blurb }}"
+          style="background:#3a2d1f;color:#f5b041;border:1px solid #5a4423;border-radius:6px;padding:2px 8px;font-size:.78rem;font-weight:600">
+      {{ q.label }}
+    </span>
+    {% endfor %}
+  </div>
   {% endif %}
 </div>
 {% endif %}

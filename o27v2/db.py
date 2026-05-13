@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS teams (
     -- plus wall_h for the outfield wall height). Flavor-only for now —
     -- park_hr and park_hits remain the mechanical multipliers.
     park_dimensions TEXT DEFAULT '',
+    -- Park shape archetype — narrative key driving the dimension
+    -- distribution. One of: balanced / short_porch_rf / short_porch_lf
+    -- / cavernous / bathtub / triangle / oval. Empty on legacy rows.
+    park_shape      TEXT DEFAULT '',
+    -- Architectural quirks (JSON list of {key, label, blurb}). 0-3
+    -- per park, drawn from a catalog evoking the 1910s-20s ballpark
+    -- revival (Tal's Hill, Wire Basket, Hand-Operated Scoreboard,
+    -- Flag Pole in Play, etc.).
+    park_quirks     TEXT DEFAULT '',
     -- Manager (re-rolled per league seed; not hard-wired to franchise).
     -- See o27v2/managers.py for archetype catalogue and tendency semantics.
     manager_archetype        TEXT  DEFAULT '',
@@ -632,6 +641,12 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        for col in ("park_shape", "park_quirks"):
+            try:
+                conn.execute(f"ALTER TABLE teams ADD COLUMN {col} TEXT DEFAULT ''")
+                conn.commit()
+            except Exception:
+                pass
         # Manager name (rolled at seed time using the league's regional
         # name picker). Empty default keeps legacy rows working — the UI
         # falls back to "(unknown skipper)" when missing.

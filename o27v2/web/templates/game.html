@@ -354,10 +354,25 @@
     <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ _HIT_COLOR.error }}"></span> Reached on Error</span>
   </div>
   {% if game.home_park_name %}
-  <div class="text-secondary small mb-2">
-    Charts are drawn to {{ game.home_park_name }}'s actual outfield dimensions
+  {% set shape_meta = game.home_park_shape | park_shape_meta %}
+  {% set quirks = game.home_park_quirks | park_quirks %}
+  <div class="text-secondary small mb-1">
+    Charts drawn to {{ game.home_park_name }}'s actual outfield dimensions
     {% if park_dims %}(LF {{ park_dims.lf }}' · CF {{ park_dims.cf }}' · RF {{ park_dims.rf }}' · {{ park_dims.wall_h }}' wall){% endif %}.
+    {% if shape_meta.label %}
+    <span style="color:#9ad0ec;font-weight:600" title="{{ shape_meta.blurb }}">{{ shape_meta.label }}</span>.
+    {% endif %}
   </div>
+  {% if quirks %}
+  <div class="d-flex flex-wrap gap-2 mb-2">
+    {% for q in quirks %}
+    <span title="{{ q.blurb }}"
+          style="background:#3a2d1f;color:#f5b041;border:1px solid #5a4423;border-radius:6px;padding:2px 8px;font-size:.78rem;font-weight:600">
+      {{ q.label }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% endif %}
   <div class="d-flex flex-wrap gap-3">
     {{ spray_svg(away_bips, game.away_name or 'Away', _FENCE_D, _HP_X, _HP_Y, _WALL_STROKE_W, park_dims) }}
