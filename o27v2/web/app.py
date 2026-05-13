@@ -1854,6 +1854,7 @@ def game_detail(game_id: int):
     # rows (suitable for the Game Totals section in the template).
     away_batting_rows = db.fetchall(
         """SELECT bs.*, p.name as player_name, p.country as player_country,
+                  p.bats as player_bats, p.throws as player_throws,
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
@@ -1864,6 +1865,7 @@ def game_detail(game_id: int):
         (game_id, game["away_team_id"]))
     home_batting_rows = db.fetchall(
         """SELECT bs.*, p.name as player_name, p.country as player_country,
+                  p.bats as player_bats, p.throws as player_throws,
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
@@ -1873,12 +1875,14 @@ def game_detail(game_id: int):
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["home_team_id"]))
     away_pitching_rows = db.fetchall(
-        """SELECT ps.*, p.name as player_name, p.country as player_country
+        """SELECT ps.*, p.name as player_name, p.country as player_country,
+                  p.throws as player_throws
            FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
            WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.phase, ps.id""",
         (game_id, game["away_team_id"]))
     home_pitching_rows = db.fetchall(
-        """SELECT ps.*, p.name as player_name, p.country as player_country
+        """SELECT ps.*, p.name as player_name, p.country as player_country,
+                  p.throws as player_throws
            FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
            WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.phase, ps.id""",
         (game_id, game["home_team_id"]))
