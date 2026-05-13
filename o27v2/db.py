@@ -34,9 +34,15 @@ CREATE TABLE IF NOT EXISTS teams (
     losses    INTEGER DEFAULT 0,
     park_hr   REAL DEFAULT 1.0,
     park_hits REAL DEFAULT 1.0,
+    park_name TEXT DEFAULT '',
+    -- Generated ballpark dimensions (JSON: lf, lcf, cf, rcf, rf in feet,
+    -- plus wall_h for the outfield wall height). Flavor-only for now —
+    -- park_hr and park_hits remain the mechanical multipliers.
+    park_dimensions TEXT DEFAULT '',
     -- Manager (re-rolled per league seed; not hard-wired to franchise).
     -- See o27v2/managers.py for archetype catalogue and tendency semantics.
     manager_archetype        TEXT  DEFAULT '',
+    manager_name             TEXT  DEFAULT '',
     mgr_quick_hook           REAL  DEFAULT 0.5,
     mgr_bullpen_aggression   REAL  DEFAULT 0.5,
     mgr_leverage_aware       REAL  DEFAULT 0.5,
@@ -603,6 +609,27 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+        # Distinctive ballpark name (generated at seed time). Empty
+        # default keeps legacy rows working — the UI falls back to
+        # "<city> ballpark" when missing.
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN park_name TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN park_dimensions TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        # Manager name (rolled at seed time using the league's regional
+        # name picker). Empty default keeps legacy rows working — the UI
+        # falls back to "(unknown skipper)" when missing.
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN manager_name TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
 
         # Org-strength: 20-95 scout-grade team attribute that drives the
         # additive shift applied to every player attribute roll for the

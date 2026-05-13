@@ -87,7 +87,11 @@ def _rate(num: int, den: int, places: int = 3) -> str:
 # --------------------------------------------------------------------------
 
 def render_header(game: dict, away_total_r: int, home_total_r: int) -> str:
-    """Title line: 'AWAY 12, HOME 11   Date · #id'."""
+    """Title line + venue line:
+
+        AWAY 12, HOME 11                            Date · #id
+        at <Park Name>
+    """
     away = (game.get("away_abbrev") or game.get("away_name") or "AWAY").upper()
     home = (game.get("home_abbrev") or game.get("home_name") or "HOME").upper()
     title = f"{away} {away_total_r}, {home} {home_total_r}"
@@ -98,7 +102,12 @@ def render_header(game: dict, away_total_r: int, home_total_r: int) -> str:
     gid  = f"#{game.get('id', '?')}"
     right = f"{date} · {gid}"
     pad = max(1, RULE_WIDTH - len(title) - len(right))
-    return title + (" " * pad) + right
+    line1 = title + (" " * pad) + right
+    park = (game.get("home_park_name") or "").strip()
+    if park:
+        line2 = f"at {park}"
+        return line1 + "\n" + line2
+    return line1
 
 
 def render_line_score(

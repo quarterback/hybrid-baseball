@@ -385,13 +385,42 @@
     </div>
   </div>
 
+  {# ===== Repertoire chips — scouting view of the actual pitch arsenal ===== #}
+  {% set rep = player.repertoire | repertoire %}
+  {% if rep %}
+  {%- set _tier_colors = {
+        'elite':  ('#9b59ff', '#fff'),
+        'plus':   ('#ffb800', '#000'),
+        'avg':    ('#79c0ff', '#06182b'),
+        'fringe': ('#6c757d', '#fff'),
+        'org':    ('#3a3a3a', '#cfcfcf'),
+      } -%}
+  <div class="dense mb-3">
+    <div class="panel-title">Repertoire</div>
+    <div class="d-flex flex-wrap gap-2 p-2">
+      {% for r in rep %}
+      {%- set bg, fg = _tier_colors[r.tier] -%}
+      <span class="d-inline-flex align-items-center gap-2"
+            style="background:{{ bg }}1a;color:var(--text);border:1px solid {{ bg }};border-radius:6px;padding:4px 10px;font-size:.86rem"
+            title="Usage weight {{ '%.0f'|format(r.usage_weight * 100) }}%; tier {{ r.tier }}">
+        <strong>{{ r.label }}</strong>
+        <span style="background:{{ bg }};color:{{ fg }};border-radius:4px;padding:1px 6px;font-weight:700;font-size:.78rem">{{ r.grade }}</span>
+      </span>
+      {% endfor %}
+    </div>
+    <div class="small text-secondary px-2 pb-2">
+      20-80 scout grades. Primary pitch comes first; usage weight (% of typed pitches in neutral counts) drives ordering. Release angle, count, and platoon further bias which pitch fires each PA — see <code>o27/config.py:PITCH_CATALOG</code>.
+    </div>
+  </div>
+  {% endif %}
+
   {# ===== Arsenal — pitch-type usage and hit-shape allowed ===== #}
   {% set fb_pct = pt_totals.fastball_pct or 0 %}
   {% set br_pct = pt_totals.breaking_pct or 0 %}
   {% set off_pct = pt_totals.offspeed_pct or 0 %}
   {% if (fb_pct + br_pct + off_pct) > 0 %}
   <div class="dense mb-3">
-    <div class="panel-title">Arsenal</div>
+    <div class="panel-title">Arsenal — in-game usage</div>
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
@@ -630,6 +659,91 @@
     (rolling window from the league's most recent played date). All rate stats are
     relativized against full-season league baselines, not split-specific baselines.
   </p>
+
+  {# Handedness splits — derived from game_pa_log, so K and BB are NOT
+     included. Reads as "contact production vs L/R-handed opposition." #}
+  {% if handedness_splits and (handedness_splits.bat_vs_lhp or handedness_splits.bat_vs_rhp or handedness_splits.pit_vs_lhb or handedness_splits.pit_vs_rhb) %}
+  <div class="panel mb-3 mt-4">
+    <div class="panel-head">
+      <span>Handedness Splits</span>
+      <span class="ms-auto sub">contact events only — K and BB not included</span>
+    </div>
+    <div class="table-responsive">
+    {% if handedness_splits.bat_vs_lhp or handedness_splits.bat_vs_rhp %}
+    <table class="table dense-table mb-2">
+      <thead><tr>
+        <th></th>
+        <th class="num" title="Balls in play">BIP</th>
+        <th class="num">H</th>
+        <th class="num">2B</th>
+        <th class="num">3B</th>
+        <th class="num">HR</th>
+        <th class="num">RBI</th>
+        <th class="num" title="Batting average on contact (H / BIP)">BA</th>
+        <th class="num" title="Slugging on contact (TB / BIP)">SLG</th>
+        <th class="num" title="Isolated power on contact ((TB - H) / BIP)">ISO</th>
+      </tr></thead>
+      <tbody>
+        {% for label, key in [('vs LHP', 'bat_vs_lhp'), ('vs RHP', 'bat_vs_rhp')] %}
+        {% set d = handedness_splits[key] %}
+        <tr>
+          <td class="text-secondary">{{ label }}</td>
+          {% if d %}
+          <td class="num">{{ d.bip }}</td>
+          <td class="num fw-bold">{{ d.h }}</td>
+          <td class="num">{{ d.d2 }}</td>
+          <td class="num">{{ d.d3 }}</td>
+          <td class="num">{{ d.hr }}</td>
+          <td class="num">{{ d.rbi }}</td>
+          <td class="num fw-bold">{{ '%.3f'|format(d.ba) }}</td>
+          <td class="num">{{ '%.3f'|format(d.slg) }}</td>
+          <td class="num">{{ '%.3f'|format(d.iso) }}</td>
+          {% else %}
+          <td class="num text-secondary" colspan="9">no contact events yet</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% if handedness_splits.pit_vs_lhb or handedness_splits.pit_vs_rhb %}
+    <table class="table dense-table mb-0">
+      <thead><tr>
+        <th></th>
+        <th class="num" title="Balls in play allowed">BIP</th>
+        <th class="num">H</th>
+        <th class="num">2B</th>
+        <th class="num">3B</th>
+        <th class="num">HR</th>
+        <th class="num" title="Runs scored on those BIPs">R</th>
+        <th class="num" title="Batting average against on contact">BA</th>
+        <th class="num" title="Slugging against on contact">SLG</th>
+      </tr></thead>
+      <tbody>
+        {% for label, key in [('vs LHB', 'pit_vs_lhb'), ('vs RHB', 'pit_vs_rhb')] %}
+        {% set d = handedness_splits[key] %}
+        <tr>
+          <td class="text-secondary">{{ label }}</td>
+          {% if d %}
+          <td class="num">{{ d.bip }}</td>
+          <td class="num fw-bold">{{ d.h }}</td>
+          <td class="num">{{ d.d2 }}</td>
+          <td class="num">{{ d.d3 }}</td>
+          <td class="num">{{ d.hr }}</td>
+          <td class="num">{{ d.r }}</td>
+          <td class="num fw-bold">{{ '%.3f'|format(d.ba) }}</td>
+          <td class="num">{{ '%.3f'|format(d.slg) }}</td>
+          {% else %}
+          <td class="num text-secondary" colspan="8">no contact events yet</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    </div>
+  </div>
+  {% endif %}
 
   {% endif %}
 </div>

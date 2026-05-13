@@ -769,6 +769,125 @@ def _roll_park_factors(rng: random.Random) -> tuple[float, float]:
     return hr, hits
 
 
+# Ballpark name generator. Each park gets a distinctive name so the
+# scoreboard / box score / team page render as "Final at The Oval"
+# rather than the generic city name. Weighted across templates so most
+# parks land in the surname-and-place tradition, with a sprinkle of
+# cricket-ground evocation (The Oval, The Crucible, etc.) — fitting
+# O27's super-inning / sidearm DNA borrowed from cricket.
+_PARK_ADJECTIVES = (
+    "Crescent", "Beacon", "Iron", "Crystal", "Lighthouse", "Tide",
+    "Bridge", "Tower", "Harbor", "Heron", "Cedar", "Granite", "Maple",
+    "Silver", "Copper", "Twilight", "Sunset", "Ember", "North",
+    "Whitestone", "Bayview", "Highland", "Riverside", "Meadow",
+    "Hollow", "Stoneford", "Brookside", "Foxgrove",
+)
+_PARK_NOUNS = (
+    "Field", "Stadium", "Park", "Ground", "Yards", "Grounds", "Bowl",
+    "Coliseum",
+)
+_CRICKET_SINGLETONS = (
+    "The Oval", "The Crucible", "The Pavilion", "The Citadel",
+    "The Bullring", "The Cauldron", "The Pitch", "The Cathedral",
+)
+
+
+def _roll_ballpark_name(
+    rng: random.Random,
+    city: str,
+    surname_pool: list[str],
+    used: set[str],
+) -> str:
+    """Produce a distinctive ballpark name. Reads a surname pool so each
+    park can be tied to a (fictional) founder/owner family. `used` is the
+    set of names already taken in this league seed — we reroll up to a
+    handful of times to avoid duplicates, falling back to a numbered
+    suffix when collisions are stubborn.
+    """
+    def _attempt() -> str:
+        bucket = rng.random()
+        if bucket < 0.45 and surname_pool:
+            # "[Surname] Field" / "Stadium" / "Park" / "Yards"
+            surname = rng.choice(surname_pool)
+            noun = rng.choice(_PARK_NOUNS)
+            return f"{surname} {noun}"
+        if bucket < 0.68:
+            # "[Adjective] Park"
+            adj  = rng.choice(_PARK_ADJECTIVES)
+            noun = rng.choice(_PARK_NOUNS)
+            return f"{adj} {noun}"
+        if bucket < 0.82 and city:
+            # "[City] Coliseum" / "[City] Yards"
+            noun = rng.choice(("Coliseum", "Yards", "Dome", "Bowl", "Park"))
+            return f"{city} {noun}"
+        if bucket < 0.94:
+            # Cricket-evoking singleton.
+            return rng.choice(_CRICKET_SINGLETONS)
+        # Compound — "[Adjective] [Surname] Field"
+        adj  = rng.choice(_PARK_ADJECTIVES)
+        surname = rng.choice(surname_pool) if surname_pool else "Marlow"
+        noun = rng.choice(_PARK_NOUNS)
+        return f"{adj} {surname} {noun}"
+
+    for _ in range(8):
+        name = _attempt()
+        if name not in used:
+            used.add(name)
+            return name
+    # Last-resort: append a Roman-style numeral so it's still flavorful.
+    base = _attempt()
+    return f"{base} II"
+
+
+def _roll_park_dimensions(rng: random.Random) -> dict:
+    """Generate distinctive outfield dimensions for a ballpark.
+
+    Returns a dict with LF / LCF / CF / RCF / RF distances in feet, plus
+    a wall_h for the outfield wall height. Flavor-only — does not drive
+    engine math today (park_hr and park_hits remain the multipliers).
+    Ranges hew to real MLB parks: ~315-355 down the lines, ~390-430 to
+    center, 8-37 ft walls (37 = Green Monster, 8 = typical bullpen wall).
+
+    Asymmetry is real: pull a left/right "skew" per park so a few yards
+    play short to one side and long to the other (Fenway-style).
+    """
+    skew = rng.uniform(-12.0, 12.0)
+    lf  = int(round(rng.gauss(335, 9.0) - skew))
+    rf  = int(round(rng.gauss(335, 9.0) + skew))
+    lcf = int(round(rng.gauss(380, 7.0) - skew * 0.4))
+    rcf = int(round(rng.gauss(380, 7.0) + skew * 0.4))
+    cf  = int(round(rng.gauss(408, 9.0)))
+    # Wall height: heavy-tailed — most parks 8-12 ft, a handful 16-37 ft.
+    wall_roll = rng.random()
+    if wall_roll < 0.06:
+        wall_h = int(round(rng.uniform(28, 37)))   # Green Monster class
+    elif wall_roll < 0.20:
+        wall_h = int(round(rng.uniform(14, 22)))   # high wall
+    else:
+        wall_h = int(round(rng.uniform(8, 13)))    # standard
+    return {
+        "lf":     max(310, lf),
+        "lcf":    max(355, lcf),
+        "cf":     max(385, cf),
+        "rcf":    max(355, rcf),
+        "rf":     max(310, rf),
+        "wall_h": wall_h,
+    }
+
+
+def _park_surname_pool(rng: random.Random, count: int = 60) -> list[str]:
+    """Pull a small pool of surnames from the existing name data to feed
+    the ballpark generator. Kept short to keep generation cheap; the
+    pool is consumed via random.choice, not exhausted."""
+    pools = _load_name_pools().get("surnames", {})
+    flat: list[str] = []
+    for bucket in pools.values():
+        flat.extend(bucket)
+    if not flat:
+        return ["Marlow", "Hadley", "Wendt", "Pellegrini", "Okonkwo"]
+    return rng.sample(flat, k=min(count, len(flat)))
+
+
 # Roster shape — Task #65.
 ACTIVE_FIELDERS  = 12   # 8 starting positions + 4 bench
 ACTIVE_DH        = 3    # 3 DH/utility bats (matches the 3-DH batting lineup)
@@ -1449,6 +1568,18 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     rng2 = random.Random(rng_seed)
     from o27v2.managers import roll_manager
 
+    # Generator scaffolds pulled up once so we can name parks and
+    # managers in the same Phase-1 loop. The manager name picker uses
+    # the league's regional weights so a "Nordic" preset gets Nordic
+    # managers, etc.
+    surname_pool = _park_surname_pool(rng2)
+    used_park_names: set[str] = set()
+    mgr_name_picker = make_name_picker(
+        random.Random(rng_seed ^ 0xA17C0DE),
+        gender         = name_config.get("gender", "male"),
+        region_weights = name_config.get("region_weights"),
+    )
+
     # Phase 1: insert all teams with their rolled org_strength. The
     # value is rolled from the same 9-tier ladder players use (uncapped
     # at 95 here — orgs CAN be Elite+ at seed; only player attributes
@@ -1463,7 +1594,10 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         name   = team_def.get("name", "Team")
 
         park_hr, park_hits = _roll_park_factors(rng2)
+        park_name = _roll_ballpark_name(rng2, city, surname_pool, used_park_names)
+        park_dims = json.dumps(_roll_park_dimensions(rng2))
         mgr = roll_manager(rng2)
+        mgr_name, _mgr_country = mgr_name_picker()
         # Org_strength rolled on the full 9-tier ladder (uncapped at 95) —
         # ~7% of teams genuinely start with Elite+/Elite development orgs,
         # ~12% Excellent, etc. Drives multi-season player growth without
@@ -1471,14 +1605,17 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         org_strength = _roll_org_grade(rng2)
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, division, league, "
-            "park_hr, park_hits, manager_archetype, mgr_quick_hook, "
+            "park_hr, park_hits, park_name, park_dimensions, "
+            "manager_archetype, manager_name, "
+            "mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
             "mgr_bench_usage, org_strength)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, division, league_name,
-             park_hr, park_hits,
-             mgr["manager_archetype"], mgr["mgr_quick_hook"],
+             park_hr, park_hits, park_name, park_dims,
+             mgr["manager_archetype"], mgr_name,
+             mgr["mgr_quick_hook"],
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
              mgr["mgr_joker_aggression"], mgr["mgr_pinch_hit_aggression"],
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],

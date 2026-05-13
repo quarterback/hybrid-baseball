@@ -101,6 +101,115 @@ def _archetype_label(key) -> str:
 app.jinja_env.filters["archetype_label"] = _archetype_label
 
 
+def _rating_stars(value) -> str:
+    """Render a 0..1 float as a 5-dot rating bar. Fog-of-war display —
+    hides the exact internal number while still showing the shape.
+
+    < 0.20 → ●○○○○ ;  0.20-0.39 → ●●○○○ ;  0.40-0.59 → ●●●○○ ;
+    0.60-0.79 → ●●●●○ ;  ≥ 0.80 → ●●●●●
+    """
+    try:
+        v = float(value or 0.0)
+    except (TypeError, ValueError):
+        v = 0.0
+    if v >= 0.80:
+        filled = 5
+    elif v >= 0.60:
+        filled = 4
+    elif v >= 0.40:
+        filled = 3
+    elif v >= 0.20:
+        filled = 2
+    else:
+        filled = 1
+    return "●" * filled + "○" * (5 - filled)
+
+
+app.jinja_env.filters["rating_stars"] = _rating_stars
+
+
+def _park_dimensions(value) -> dict:
+    """Parse a JSON-encoded park_dimensions field into a dict. Returns
+    an empty dict on malformed / legacy rows."""
+    import json as _json
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    try:
+        return _json.loads(value) or {}
+    except (ValueError, TypeError):
+        return {}
+
+
+app.jinja_env.filters["park_dimensions"] = _park_dimensions
+
+
+def _repertoire(value) -> list:
+    """Parse a pitcher's JSON repertoire into a sorted list of dicts.
+
+    Each entry: {pitch_type, quality, usage_weight, grade, label, tier}.
+      grade  = quality mapped to a 20-80 scout grade (the rest of the
+               system uses 20-80, so the chip reads consistently).
+      tier   = 'elite' / 'plus' / 'avg' / 'fringe' / 'org' for chip color.
+      label  = humanized pitch_type (snake_case → Title Case, with a few
+               canon overrides).
+    Sorted by usage_weight desc so the primary pitch comes first.
+    """
+    import json as _json
+    if not value:
+        return []
+    if isinstance(value, str):
+        try:
+            raw = _json.loads(value)
+        except (ValueError, TypeError):
+            return []
+    elif isinstance(value, list):
+        raw = value
+    else:
+        return []
+
+    _OVERRIDES = {
+        "four_seam":       "4-Seam",
+        "sisko_slider":    "Sisko Slider",
+        "vulcan_changeup": "Vulcan Change",
+        "walking_slider":  "Walking Slider",
+        "curve_10_to_2":   "10-to-2 Curve",
+    }
+
+    def _label(pt: str) -> str:
+        if pt in _OVERRIDES:
+            return _OVERRIDES[pt]
+        return pt.replace("_", " ").title()
+
+    def _tier(grade: int) -> str:
+        if grade >= 70: return "elite"
+        if grade >= 60: return "plus"
+        if grade >= 50: return "avg"
+        if grade >= 40: return "fringe"
+        return "org"
+
+    out = []
+    for e in raw:
+        if not isinstance(e, dict) or not e.get("pitch_type"):
+            continue
+        q = float(e.get("quality", 0.5) or 0.5)
+        grade = max(20, min(80, int(round(20 + q * 60))))
+        out.append({
+            "pitch_type":   e["pitch_type"],
+            "label":        _label(e["pitch_type"]),
+            "quality":      q,
+            "usage_weight": float(e.get("usage_weight", 0.0) or 0.0),
+            "grade":        grade,
+            "tier":         _tier(grade),
+        })
+    out.sort(key=lambda r: r["usage_weight"], reverse=True)
+    return out
+
+
+app.jinja_env.filters["repertoire"] = _repertoire
+
+
 from markupsafe import Markup as _Markup  # noqa: E402
 
 
@@ -1823,6 +1932,9 @@ def game_detail(game_id: int):
     game = db.fetchone(
         """SELECT g.*,
                   ht.name as home_name, ht.abbrev as home_abbrev,
+                  ht.park_name as home_park_name,
+                  ht.park_dimensions as home_park_dimensions,
+                  ht.park_hr as home_park_hr, ht.park_hits as home_park_hits,
                   at.name as away_name, at.abbrev as away_abbrev,
                   wt.name as winner_name
            FROM games g
@@ -3150,6 +3262,90 @@ def leaders():
     )
 
 
+def _player_handedness_split_batter(player_id: int, throws: str) -> dict | None:
+    """Batter contact-event split vs pitchers of the given handedness.
+
+    Aggregates `game_pa_log` rows where the batter is the given player
+    and the pitcher's `throws` matches `L` or `R`. K and BB are NOT
+    included (pa_log only captures ball-in-play events), so this reads
+    as "contact production vs L/R-handed pitchers."
+    """
+    row = db.fetchone(
+        """SELECT COUNT(*) AS bip,
+                  SUM(CASE WHEN pa.hit_type IN ('single','infield_single','double','triple','hr','home_run') THEN 1 ELSE 0 END) AS h,
+                  SUM(CASE WHEN pa.hit_type = 'double' THEN 1 ELSE 0 END) AS d2,
+                  SUM(CASE WHEN pa.hit_type = 'triple' THEN 1 ELSE 0 END) AS d3,
+                  SUM(CASE WHEN pa.hit_type IN ('hr','home_run') THEN 1 ELSE 0 END) AS hr,
+                  SUM(CASE WHEN pa.hit_type = 'error' THEN 1 ELSE 0 END) AS roe,
+                  SUM(COALESCE(pa.runs_scored, 0)) AS rbi
+           FROM game_pa_log pa
+           JOIN players pi ON pa.pitcher_id = pi.id
+           WHERE pa.batter_id = ? AND pi.throws = ?""",
+        (player_id, throws),
+    )
+    if not row or not (row.get("bip") or 0):
+        return None
+    bip = row["bip"] or 0
+    h   = row["h"]  or 0
+    d2  = row["d2"] or 0
+    d3  = row["d3"] or 0
+    hr  = row["hr"] or 0
+    singles = max(0, h - d2 - d3 - hr)
+    tb = singles + 2 * d2 + 3 * d3 + 4 * hr
+    return {
+        "bip":  bip,
+        "h":    h,
+        "d2":   d2,
+        "d3":   d3,
+        "hr":   hr,
+        "rbi":  row["rbi"] or 0,
+        "ba":   (h / bip) if bip else 0.0,
+        "iso":  ((tb - h) / bip) if bip else 0.0,
+        "slg":  (tb / bip) if bip else 0.0,
+    }
+
+
+def _player_handedness_split_pitcher(player_id: int, bats: str) -> dict | None:
+    """Pitcher contact-allowed split vs batters of the given handedness.
+
+    `bats='L'` and `bats='R'` are the standard split buckets. Switch
+    hitters (bats='S') are excluded here — they show up in neither L
+    nor R column. Could be folded in once the engine resolves their
+    effective side per AB.
+    """
+    row = db.fetchone(
+        """SELECT COUNT(*) AS bip,
+                  SUM(CASE WHEN pa.hit_type IN ('single','infield_single','double','triple','hr','home_run') THEN 1 ELSE 0 END) AS h,
+                  SUM(CASE WHEN pa.hit_type = 'double' THEN 1 ELSE 0 END) AS d2,
+                  SUM(CASE WHEN pa.hit_type = 'triple' THEN 1 ELSE 0 END) AS d3,
+                  SUM(CASE WHEN pa.hit_type IN ('hr','home_run') THEN 1 ELSE 0 END) AS hr,
+                  SUM(COALESCE(pa.runs_scored, 0)) AS r
+           FROM game_pa_log pa
+           JOIN players ba ON pa.batter_id = ba.id
+           WHERE pa.pitcher_id = ? AND ba.bats = ?""",
+        (player_id, bats),
+    )
+    if not row or not (row.get("bip") or 0):
+        return None
+    bip = row["bip"] or 0
+    h   = row["h"]  or 0
+    d2  = row["d2"] or 0
+    d3  = row["d3"] or 0
+    hr  = row["hr"] or 0
+    singles = max(0, h - d2 - d3 - hr)
+    tb = singles + 2 * d2 + 3 * d3 + 4 * hr
+    return {
+        "bip":  bip,
+        "h":    h,
+        "d2":   d2,
+        "d3":   d3,
+        "hr":   hr,
+        "r":    row["r"] or 0,
+        "ba":   (h / bip) if bip else 0.0,
+        "slg":  (tb / bip) if bip else 0.0,
+    }
+
+
 def _player_batting_split(player_id: int, team_id: int,
                           where_extra: str, params_extra: tuple,
                           baselines: dict) -> dict | None:
@@ -3553,6 +3749,7 @@ def player_detail(player_id: int):
                     player_id, extra, ext_params, wl, baselines)
             splits[label] = split
 
+
     team_row = db.fetchone(
         "SELECT league FROM teams WHERE id = ?", (player["team_id"],),
     )
@@ -3560,6 +3757,14 @@ def player_detail(player_id: int):
     player_est_value = valuation.estimate_player_value(
         dict(player), league_name=league_name,
     )
+
+    handedness_splits: dict = {}
+    if bt_totals:
+        handedness_splits["bat_vs_lhp"] = _player_handedness_split_batter(player_id, "L")
+        handedness_splits["bat_vs_rhp"] = _player_handedness_split_batter(player_id, "R")
+    if pt_totals:
+        handedness_splits["pit_vs_lhb"] = _player_handedness_split_pitcher(player_id, "L")
+        handedness_splits["pit_vs_rhb"] = _player_handedness_split_pitcher(player_id, "R")
 
     return _serve(
         "player.html",
@@ -3570,6 +3775,7 @@ def player_detail(player_id: int):
         pt_totals=pt_totals,
         fld_totals=fld_totals,
         splits=splits,
+        handedness_splits=handedness_splits,
         baselines=baselines,
         player_est_value=player_est_value,
     )
