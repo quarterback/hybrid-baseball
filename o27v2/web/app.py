@@ -2065,21 +2065,12 @@ def game_detail(game_id: int):
         return "out"
 
     def _bip_distance_ft(ev: float, la: float) -> float:
-        """Heuristic batted-ball distance from EV / LA. Not physical —
-        just produces visually plausible spray-chart points.
-        Grounders cluster on the infield; line drives reach the
-        outfield; high LA + high EV reach the wall.
+        """Shared heuristic with o27.engine.park_effects._proxy_distance.
+        Kept in sync deliberately — the SVG dot position and the
+        gameplay HR/double cutoff must agree on where the ball landed.
         """
-        if la is None or ev is None:
-            return 0.0
-        # Below 8° = grounder / chopper — stays in the infield.
-        if la < 8:
-            return max(40.0, ev * 0.9)
-        # Approximate projectile range, with a softening factor so that
-        # a 100mph 28° line drive doesn't fly out of the canvas.
-        rad = la * _math.pi / 180.0
-        d = (ev * ev * _math.sin(2 * rad)) / 36.0
-        return max(60.0, min(d, 430.0))
+        from o27.engine.park_effects import _proxy_distance as _pd
+        return _pd(ev or 0, la or 0)
 
     # SVG layout constants — match the template.
     _SVG_W, _SVG_H = 560.0, 420.0

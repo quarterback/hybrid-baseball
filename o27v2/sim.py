@@ -1434,6 +1434,16 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
     # reads this; everything else passes it through.
     from o27.engine.weather import Weather
     state.weather = Weather.from_row(game)
+    # Stamp the home park's dimensions (lf/lcf/cf/rcf/rf/wall_h). Read
+    # by o27.engine.park_effects.apply_park_effects() after the engine's
+    # categorical hit_type is decided, to reshape outcomes against
+    # actual fence geometry.
+    try:
+        _home_park_dims_raw = home_row.get("park_dimensions") if home_row else None
+        if _home_park_dims_raw:
+            state.park_dimensions = json.loads(_home_park_dims_raw)
+    except (ValueError, TypeError):
+        state.park_dimensions = None
 
     # Phase 3: roll today_condition once per player per game so any player
     # — ace or replacement bat — can have an off day. The roll is centred

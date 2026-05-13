@@ -1510,6 +1510,38 @@ class ProbabilisticProvider:
                     outcome_dict["batter_safe"] = True
                     outcome_dict["runner_advances"] = [1, 1, 1]
 
+        # Batted-ball physics + park-shape gameplay hook. Sample synthetic
+        # (EV, LA, spray) from contact quality + power + pitch metadata,
+        # then mutate the categorical hit_type against the home park's
+        # actual fence geometry. Polo-Grounds bathtub → HR factory down
+        # the lines; oval cricket-ground → pull HRs vanish, gappers
+        # become triples. Identity no-op when state.park_dimensions is
+        # None or hit_type is non-BIP.
+        #
+        # Done BEFORE the Stay decision so the runner sees the final
+        # hit_type (a fly_out → HR upgrade doesn't leave a runner who
+        # decided to stay on a caught fly).
+        from o27.engine.batted_ball import sample_batted_ball as _sample_bb
+        from o27.engine.park_effects import apply_park_effects as _apply_park
+        _pitch_hcs = 0.0
+        if sel_pitch:
+            _pmeta = cfg.PITCH_CATALOG.get(sel_pitch, {}) or {}
+            _pitch_hcs = float(_pmeta.get("hard_contact_shift", 0.0) or 0.0)
+        ev_v, la_v, spray_v = _sample_bb(
+            rng,
+            quality=quality,
+            hit_type=outcome_dict.get("hit_type", "") or "",
+            batter_power=float(getattr(batter, "power", 0.5) or 0.5),
+            pitch_hard_contact_shift=_pitch_hcs,
+            batter_bats=str(getattr(batter, "bats", "") or ""),
+        )
+        _apply_park(
+            rng,
+            outcome_dict,
+            ev=ev_v, la=la_v, spray=spray_v,
+            park_dims=getattr(state, "park_dimensions", None),
+        )
+
         hit_type = outcome_dict["hit_type"]
         caught_fly = outcome_dict["caught_fly"]
 
@@ -1637,24 +1669,6 @@ class ProbabilisticProvider:
                             else 1 if state.bases[1] is not None else 2)
                 outcome_dict["runner_out_idx"] = lead_idx
                 outcome_dict["hit_type"] = "fielders_choice"
-
-        # Batted-ball physics hybrid layer — sample synthetic
-        # (exit_velocity, launch_angle, spray_angle) per BIP. Persisted
-        # on game_pa_log for spray-chart / Luck-Ledger visualization.
-        # Does NOT drive the fielding outcome (engine stays categorical).
-        from o27.engine.batted_ball import sample_batted_ball as _sample_bb
-        _pitch_hcs = 0.0
-        if sel_pitch:
-            _pmeta = cfg.PITCH_CATALOG.get(sel_pitch, {}) or {}
-            _pitch_hcs = float(_pmeta.get("hard_contact_shift", 0.0) or 0.0)
-        ev_v, la_v, spray_v = _sample_bb(
-            rng,
-            quality=quality,
-            hit_type=outcome_dict.get("hit_type", "") or "",
-            batter_power=float(getattr(batter, "power", 0.5) or 0.5),
-            pitch_hard_contact_shift=_pitch_hcs,
-            batter_bats=str(getattr(batter, "bats", "") or ""),
-        )
 
         return {
             "type": "ball_in_play",
