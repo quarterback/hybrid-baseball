@@ -101,6 +101,147 @@ def _archetype_label(key) -> str:
 app.jinja_env.filters["archetype_label"] = _archetype_label
 
 
+def _rating_stars(value) -> str:
+    """Render a 0..1 float as a 5-dot rating bar. Fog-of-war display —
+    hides the exact internal number while still showing the shape.
+
+    < 0.20 → ●○○○○ ;  0.20-0.39 → ●●○○○ ;  0.40-0.59 → ●●●○○ ;
+    0.60-0.79 → ●●●●○ ;  ≥ 0.80 → ●●●●●
+    """
+    try:
+        v = float(value or 0.0)
+    except (TypeError, ValueError):
+        v = 0.0
+    if v >= 0.80:
+        filled = 5
+    elif v >= 0.60:
+        filled = 4
+    elif v >= 0.40:
+        filled = 3
+    elif v >= 0.20:
+        filled = 2
+    else:
+        filled = 1
+    return "●" * filled + "○" * (5 - filled)
+
+
+app.jinja_env.filters["rating_stars"] = _rating_stars
+
+
+def _park_dimensions(value) -> dict:
+    """Parse a JSON-encoded park_dimensions field into a dict. Returns
+    an empty dict on malformed / legacy rows."""
+    import json as _json
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    try:
+        return _json.loads(value) or {}
+    except (ValueError, TypeError):
+        return {}
+
+
+app.jinja_env.filters["park_dimensions"] = _park_dimensions
+
+
+def _park_quirks(value) -> list:
+    """Parse the JSON-encoded park_quirks list into a list of dicts."""
+    import json as _json
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        out = _json.loads(value)
+        return out if isinstance(out, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+app.jinja_env.filters["park_quirks"] = _park_quirks
+
+
+def _park_shape_meta(value) -> dict:
+    """Return {label, blurb} for a park_shape key. Empty dict on
+    unknown / legacy values."""
+    if not value:
+        return {"label": "", "blurb": ""}
+    try:
+        from o27v2.league import _park_shape_meta as _impl
+        return _impl(str(value))
+    except Exception:
+        return {"label": "", "blurb": ""}
+
+
+app.jinja_env.filters["park_shape_meta"] = _park_shape_meta
+
+
+def _repertoire(value) -> list:
+    """Parse a pitcher's JSON repertoire into a sorted list of dicts.
+
+    Each entry: {pitch_type, quality, usage_weight, grade, label, tier}.
+      grade  = quality mapped to a 20-80 scout grade (the rest of the
+               system uses 20-80, so the chip reads consistently).
+      tier   = 'elite' / 'plus' / 'avg' / 'fringe' / 'org' for chip color.
+      label  = humanized pitch_type (snake_case → Title Case, with a few
+               canon overrides).
+    Sorted by usage_weight desc so the primary pitch comes first.
+    """
+    import json as _json
+    if not value:
+        return []
+    if isinstance(value, str):
+        try:
+            raw = _json.loads(value)
+        except (ValueError, TypeError):
+            return []
+    elif isinstance(value, list):
+        raw = value
+    else:
+        return []
+
+    _OVERRIDES = {
+        "four_seam":       "4-Seam",
+        "sisko_slider":    "Sisko Slider",
+        "vulcan_changeup": "Vulcan Change",
+        "walking_slider":  "Walking Slider",
+        "curve_10_to_2":   "10-to-2 Curve",
+    }
+
+    def _label(pt: str) -> str:
+        if pt in _OVERRIDES:
+            return _OVERRIDES[pt]
+        return pt.replace("_", " ").title()
+
+    def _tier(grade: int) -> str:
+        if grade >= 70: return "elite"
+        if grade >= 60: return "plus"
+        if grade >= 50: return "avg"
+        if grade >= 40: return "fringe"
+        return "org"
+
+    out = []
+    for e in raw:
+        if not isinstance(e, dict) or not e.get("pitch_type"):
+            continue
+        q = float(e.get("quality", 0.5) or 0.5)
+        grade = max(20, min(80, int(round(20 + q * 60))))
+        out.append({
+            "pitch_type":   e["pitch_type"],
+            "label":        _label(e["pitch_type"]),
+            "quality":      q,
+            "usage_weight": float(e.get("usage_weight", 0.0) or 0.0),
+            "grade":        grade,
+            "tier":         _tier(grade),
+        })
+    out.sort(key=lambda r: r["usage_weight"], reverse=True)
+    return out
+
+
+app.jinja_env.filters["repertoire"] = _repertoire
+
+
 from markupsafe import Markup as _Markup  # noqa: E402
 
 
@@ -1384,16 +1525,31 @@ def _aggregate_pitcher_rows(
         # --- Result-tier: wERA / xRA / Decay ---
         weighted_er = 0.85 * er1 + 1.00 * er2 + 1.20 * er3
         p["werra"] = (weighted_er * 27.0 / outs) * c_w if outs else 0.0
-        # xRA — expected runs allowed using non-negative seeded
-        # linear-weights coefficients. Multiplicatively anchored to
-        # league wERA via xra_norm so xRA-vs-wERA gap reads as
-        # batted-ball luck, the same way the old xFIP-vs-wERA gap did,
-        # but with mathematically guaranteed non-negative output.
+        # xRA v3 — when per-pitcher hit-type shares are available
+        # (singles_allowed / doubles_allowed / triples_allowed sums on
+        # game_pitcher_stats), use them directly so sinker-heavy arms
+        # and four-seam-heavy arms produce different xRA values for the
+        # same Stuff. Pre-v3 rows (sums all zero) fall back to the
+        # league-share blended weight from v2.
         if outs:
             non_hr_hits = max(0, h - hr)
+            s_allowed = p.get("singles_allowed") or 0
+            d_allowed = p.get("doubles_allowed") or 0
+            t_allowed = p.get("triples_allowed") or 0
+            per_pitcher_hit_sum = s_allowed + d_allowed + t_allowed
+            if per_pitcher_hit_sum > 0 and per_pitcher_hit_sum <= non_hr_hits + 2:
+                # Trust per-pitcher counts (allow tiny rounding tolerance
+                # against the legacy non_hr_hits sum).
+                hit_run_value = (
+                    _XRA_W_1B * s_allowed
+                  + _XRA_W_2B * d_allowed
+                  + _XRA_W_3B * t_allowed
+                )
+            else:
+                hit_run_value = per_non_hr_weight * non_hr_hits
             raw_xra = (
                 _XRA_W_HR  * hr
-              + per_non_hr_weight * non_hr_hits
+              + hit_run_value
               + _XRA_W_BB  * bb
               + _XRA_W_HBP * hbp_a
             ) * 27.0 / outs
@@ -1808,6 +1964,11 @@ def game_detail(game_id: int):
     game = db.fetchone(
         """SELECT g.*,
                   ht.name as home_name, ht.abbrev as home_abbrev,
+                  ht.park_name as home_park_name,
+                  ht.park_dimensions as home_park_dimensions,
+                  ht.park_shape as home_park_shape,
+                  ht.park_quirks as home_park_quirks,
+                  ht.park_hr as home_park_hr, ht.park_hits as home_park_hits,
                   at.name as away_name, at.abbrev as away_abbrev,
                   wt.name as winner_name
            FROM games g
@@ -1839,6 +2000,7 @@ def game_detail(game_id: int):
     # rows (suitable for the Game Totals section in the template).
     away_batting_rows = db.fetchall(
         """SELECT bs.*, p.name as player_name, p.country as player_country,
+                  p.bats as player_bats, p.throws as player_throws,
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
@@ -1849,6 +2011,7 @@ def game_detail(game_id: int):
         (game_id, game["away_team_id"]))
     home_batting_rows = db.fetchall(
         """SELECT bs.*, p.name as player_name, p.country as player_country,
+                  p.bats as player_bats, p.throws as player_throws,
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
@@ -1858,12 +2021,14 @@ def game_detail(game_id: int):
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["home_team_id"]))
     away_pitching_rows = db.fetchall(
-        """SELECT ps.*, p.name as player_name, p.country as player_country
+        """SELECT ps.*, p.name as player_name, p.country as player_country,
+                  p.throws as player_throws
            FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
            WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.phase, ps.id""",
         (game_id, game["away_team_id"]))
     home_pitching_rows = db.fetchall(
-        """SELECT ps.*, p.name as player_name, p.country as player_country
+        """SELECT ps.*, p.name as player_name, p.country as player_country,
+                  p.throws as player_throws
            FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
            WHERE ps.game_id = ? AND ps.team_id = ? ORDER BY ps.phase, ps.id""",
         (game_id, game["home_team_id"]))
@@ -1871,6 +2036,92 @@ def game_detail(game_id: int):
     team_phase_outs_rows = db.fetchall(
         """SELECT team_id, phase, unattributed_outs FROM team_phase_outs
            WHERE game_id = ?""", (game_id,))
+
+    # Batted-ball physics — BIP events with EV/LA/spray for the spray
+    # chart. Joined to players for the hover label. Pre-compute plot
+    # (x, y) for the SVG so the template doesn't need math beyond
+    # cosmetic rendering.
+    spray_bips_raw = db.fetchall(
+        """SELECT pa.team_id, pa.batter_id, pa.exit_velocity AS ev,
+                  pa.launch_angle  AS la, pa.spray_angle  AS spray,
+                  pa.hit_type, p.name AS batter_name
+           FROM game_pa_log pa
+           JOIN players p ON pa.batter_id = p.id
+           WHERE pa.game_id = ?
+             AND pa.exit_velocity IS NOT NULL
+           ORDER BY pa.ab_seq, pa.swing_idx""",
+        (game_id,),
+    )
+
+    import math as _math
+    _OUT_KINDS = {"ground_out", "fly_out", "line_out", "fielders_choice",
+                  "double_play", "triple_play"}
+
+    def _hit_class(ht: str) -> str:
+        if ht in ("hr", "home_run"):           return "hr"
+        if ht in ("double", "triple"):         return "xbh"
+        if ht in ("single", "infield_single"): return "single"
+        if ht == "error":                       return "error"
+        return "out"
+
+    def _bip_distance_ft(ev: float, la: float) -> float:
+        """Shared heuristic with o27.engine.park_effects._proxy_distance.
+        Kept in sync deliberately — the SVG dot position and the
+        gameplay HR/double cutoff must agree on where the ball landed.
+        """
+        from o27.engine.park_effects import _proxy_distance as _pd
+        return _pd(ev or 0, la or 0)
+
+    # SVG layout constants — match the template.
+    _SVG_W, _SVG_H = 560.0, 420.0
+    _HP_X, _HP_Y = _SVG_W / 2.0, _SVG_H - 30.0
+    _FT_TO_PX = 0.85
+
+    def _bip_xy(spray: float, distance_ft: float) -> tuple[float, float]:
+        rad = (spray or 0.0) * _math.pi / 180.0
+        dx = distance_ft * _math.sin(rad)
+        dy = distance_ft * _math.cos(rad)
+        return (_HP_X + dx * _FT_TO_PX, _HP_Y - dy * _FT_TO_PX)
+
+    away_bips, home_bips = [], []
+    for r in spray_bips_raw:
+        d = dict(r)
+        dist = _bip_distance_ft(d.get("ev") or 0, d.get("la") or 0)
+        x, y = _bip_xy(d.get("spray") or 0.0, dist)
+        d["dist_ft"]   = round(dist)
+        d["x"]         = round(x, 1)
+        d["y"]         = round(y, 1)
+        d["hit_class"] = _hit_class(d.get("hit_type") or "")
+        if d["team_id"] == game["away_team_id"]:
+            away_bips.append(d)
+        elif d["team_id"] == game["home_team_id"]:
+            home_bips.append(d)
+
+    # Park dimensions for the spray-chart fence. Both teams batted at
+    # the home park, so both charts share the same outline. Pre-compute
+    # the 5 fence points (LF → LCF → CF → RCF → RF) in SVG coords so
+    # the template can draw a path directly.
+    import json as _json_loc
+    park_dims = {}
+    try:
+        if game.get("home_park_dimensions"):
+            park_dims = _json_loc.loads(game["home_park_dimensions"]) or {}
+    except (ValueError, TypeError):
+        park_dims = {}
+    fence_points = []
+    if park_dims:
+        # Angles from CF outward — symmetrical around 0°.
+        # Foul lines are ±45°; left-center / right-center sit at ±22.5°.
+        for (angle_deg, key) in (
+            (-45.0, "lf"),
+            (-22.5, "lcf"),
+            (  0.0, "cf"),
+            ( 22.5, "rcf"),
+            ( 45.0, "rf"),
+        ):
+            d_ft = float(park_dims.get(key, 380))
+            x, y = _bip_xy(angle_deg, d_ft)
+            fence_points.append((round(x, 1), round(y, 1)))
 
     # Legacy data (pre-Task-#58) often has duplicate rows for the same
     # (player_id, game_id) because the schema lacked a UNIQUE constraint
@@ -2135,6 +2386,10 @@ def game_detail(game_id: int):
         game_notes=notes,
         weather_label=weather_label,
         box_score_text=box_score_text,
+        away_bips=away_bips,
+        home_bips=home_bips,
+        park_dims=park_dims,
+        fence_points=fence_points,
         prev_game_id=(prev_game["id"] if prev_game else None),
         next_game_id=(next_game["id"] if next_game else None),
     )
@@ -2290,7 +2545,7 @@ def player_detail_export(player_id: int):
                   COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
-        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
@@ -2307,7 +2562,13 @@ def player_detail_export(player_id: int):
                    COALESCE(SUM(k_arc1),0) as k_arc1, COALESCE(SUM(k_arc2),0) as k_arc2, COALESCE(SUM(k_arc3),0) as k_arc3,
                    COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
                    COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
-                   COALESCE(SUM(is_starter),0) as gs
+                   COALESCE(SUM(is_starter),0) as gs,
+                   COALESCE(SUM(singles_allowed),0) as singles_allowed,
+                   COALESCE(SUM(doubles_allowed),0) as doubles_allowed,
+                   COALESCE(SUM(triples_allowed),0) as triples_allowed,
+                   COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
+                   COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     baselines = _league_baselines()
@@ -2329,13 +2590,15 @@ def player_detail_export(player_id: int):
         pt_totals["player_id"] = player_id
         _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
 
+    po_v = (fld["po"] if fld else 0) or 0
+    a_v  = (fld["a"]  if fld and "a" in fld.keys() else 0) or 0
+    e_v  = (fld["e"]  if fld else 0) or 0
     fld_totals = {
-        "po": fld["po"] if fld else 0,
-        "e":  fld["e"]  if fld else 0,
-        "chances": (fld["po"] if fld else 0) + (fld["e"] if fld else 0),
-        "fld_pct": ((fld["po"] / ((fld["po"] or 0) + (fld["e"] or 0)))
-                    if fld and ((fld["po"] or 0) + (fld["e"] or 0)) > 0
-                    else None),
+        "po": po_v,
+        "a":  a_v,
+        "e":  e_v,
+        "chances": po_v + a_v + e_v,
+        "fld_pct": ((po_v + a_v) / (po_v + a_v + e_v)) if (po_v + a_v + e_v) > 0 else None,
     }
 
     batting_log = db.fetchall(
@@ -3016,7 +3279,13 @@ def leaders():
                   COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
                   COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
                   COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
-                  COALESCE(SUM(ps.is_starter),0) as gs
+                  COALESCE(SUM(ps.is_starter),0) as gs,
+                  COALESCE(SUM(ps.singles_allowed),0) as singles_allowed,
+                  COALESCE(SUM(ps.doubles_allowed),0) as doubles_allowed,
+                  COALESCE(SUM(ps.triples_allowed),0) as triples_allowed,
+                  COALESCE(AVG(NULLIF(ps.fastball_pct,0)) * 100,0) as fastball_pct,
+                  COALESCE(AVG(NULLIF(ps.breaking_pct,0)) * 100,0) as breaking_pct,
+                  COALESCE(AVG(NULLIF(ps.offspeed_pct,0)) * 100,0) as offspeed_pct
            FROM {_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
@@ -3046,18 +3315,29 @@ def leaders():
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(bs.game_id) as g,
                   COALESCE(SUM(bs.po),0) as po,
-                  COALESCE(SUM(bs.e),0)  as e
+                  COALESCE(SUM(bs.a),0)  as a,
+                  COALESCE(SUM(bs.e),0)  as e,
+                  COALESCE(SUM(bs.outs_recorded),0) as out_share
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
            GROUP BY p.id
-           HAVING (COALESCE(SUM(bs.po),0) + COALESCE(SUM(bs.e),0)) > 0""",
+           HAVING (COALESCE(SUM(bs.po),0) + COALESCE(SUM(bs.a),0) + COALESCE(SUM(bs.e),0)) > 0""",
     )
     for f in fielding:
         po_v = f.get("po") or 0
+        a_v  = f.get("a")  or 0
         e_v  = f.get("e")  or 0
-        f["chances"] = po_v + e_v
-        f["fld_pct"] = (po_v / (po_v + e_v)) if (po_v + e_v) > 0 else None
+        f["chances"] = po_v + a_v + e_v
+        f["fld_pct"] = ((po_v + a_v) / (po_v + a_v + e_v)) if (po_v + a_v + e_v) > 0 else None
+        # Range factor — (PO + A) per 27 outs. Uses the player's own
+        # outs_recorded as the denominator proxy (their fielding time).
+        # Falls back to chances/9 when out_share is zero (legacy rows).
+        out_share = f.get("out_share") or 0
+        if out_share > 0:
+            f["rf"] = (po_v + a_v) * 27.0 / out_share
+        else:
+            f["rf"] = None
     fielding_qual = [f for f in fielding if f["chances"] >= min_chances]
 
     salaries = db.fetchall(
@@ -3104,6 +3384,90 @@ def leaders():
         talent_hitters=talent_hitters,
         talent_pitchers=talent_pitchers,
     )
+
+
+def _player_handedness_split_batter(player_id: int, throws: str) -> dict | None:
+    """Batter contact-event split vs pitchers of the given handedness.
+
+    Aggregates `game_pa_log` rows where the batter is the given player
+    and the pitcher's `throws` matches `L` or `R`. K and BB are NOT
+    included (pa_log only captures ball-in-play events), so this reads
+    as "contact production vs L/R-handed pitchers."
+    """
+    row = db.fetchone(
+        """SELECT COUNT(*) AS bip,
+                  SUM(CASE WHEN pa.hit_type IN ('single','infield_single','double','triple','hr','home_run') THEN 1 ELSE 0 END) AS h,
+                  SUM(CASE WHEN pa.hit_type = 'double' THEN 1 ELSE 0 END) AS d2,
+                  SUM(CASE WHEN pa.hit_type = 'triple' THEN 1 ELSE 0 END) AS d3,
+                  SUM(CASE WHEN pa.hit_type IN ('hr','home_run') THEN 1 ELSE 0 END) AS hr,
+                  SUM(CASE WHEN pa.hit_type = 'error' THEN 1 ELSE 0 END) AS roe,
+                  SUM(COALESCE(pa.runs_scored, 0)) AS rbi
+           FROM game_pa_log pa
+           JOIN players pi ON pa.pitcher_id = pi.id
+           WHERE pa.batter_id = ? AND pi.throws = ?""",
+        (player_id, throws),
+    )
+    if not row or not (row.get("bip") or 0):
+        return None
+    bip = row["bip"] or 0
+    h   = row["h"]  or 0
+    d2  = row["d2"] or 0
+    d3  = row["d3"] or 0
+    hr  = row["hr"] or 0
+    singles = max(0, h - d2 - d3 - hr)
+    tb = singles + 2 * d2 + 3 * d3 + 4 * hr
+    return {
+        "bip":  bip,
+        "h":    h,
+        "d2":   d2,
+        "d3":   d3,
+        "hr":   hr,
+        "rbi":  row["rbi"] or 0,
+        "ba":   (h / bip) if bip else 0.0,
+        "iso":  ((tb - h) / bip) if bip else 0.0,
+        "slg":  (tb / bip) if bip else 0.0,
+    }
+
+
+def _player_handedness_split_pitcher(player_id: int, bats: str) -> dict | None:
+    """Pitcher contact-allowed split vs batters of the given handedness.
+
+    `bats='L'` and `bats='R'` are the standard split buckets. Switch
+    hitters (bats='S') are excluded here — they show up in neither L
+    nor R column. Could be folded in once the engine resolves their
+    effective side per AB.
+    """
+    row = db.fetchone(
+        """SELECT COUNT(*) AS bip,
+                  SUM(CASE WHEN pa.hit_type IN ('single','infield_single','double','triple','hr','home_run') THEN 1 ELSE 0 END) AS h,
+                  SUM(CASE WHEN pa.hit_type = 'double' THEN 1 ELSE 0 END) AS d2,
+                  SUM(CASE WHEN pa.hit_type = 'triple' THEN 1 ELSE 0 END) AS d3,
+                  SUM(CASE WHEN pa.hit_type IN ('hr','home_run') THEN 1 ELSE 0 END) AS hr,
+                  SUM(COALESCE(pa.runs_scored, 0)) AS r
+           FROM game_pa_log pa
+           JOIN players ba ON pa.batter_id = ba.id
+           WHERE pa.pitcher_id = ? AND ba.bats = ?""",
+        (player_id, bats),
+    )
+    if not row or not (row.get("bip") or 0):
+        return None
+    bip = row["bip"] or 0
+    h   = row["h"]  or 0
+    d2  = row["d2"] or 0
+    d3  = row["d3"] or 0
+    hr  = row["hr"] or 0
+    singles = max(0, h - d2 - d3 - hr)
+    tb = singles + 2 * d2 + 3 * d3 + 4 * hr
+    return {
+        "bip":  bip,
+        "h":    h,
+        "d2":   d2,
+        "d3":   d3,
+        "hr":   hr,
+        "r":    row["r"] or 0,
+        "ba":   (h / bip) if bip else 0.0,
+        "slg":  (tb / bip) if bip else 0.0,
+    }
 
 
 def _player_batting_split(player_id: int, team_id: int,
@@ -3225,7 +3589,7 @@ def _fetch_player_overview(player_id: int,
                   COALESCE(SUM(stay_hits),0)    as stay_hits
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
-        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
@@ -3243,7 +3607,13 @@ def _fetch_player_overview(player_id: int,
                    COALESCE(SUM(k_arc1),0)  as k_arc1,  COALESCE(SUM(k_arc2),0)  as k_arc2,  COALESCE(SUM(k_arc3),0)  as k_arc3,
                    COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
                    COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
-                   COALESCE(SUM(is_starter),0) as gs
+                   COALESCE(SUM(is_starter),0) as gs,
+                   COALESCE(SUM(singles_allowed),0) as singles_allowed,
+                   COALESCE(SUM(doubles_allowed),0) as doubles_allowed,
+                   COALESCE(SUM(triples_allowed),0) as triples_allowed,
+                   COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
+                   COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     bt_totals = None
@@ -3263,10 +3633,11 @@ def _fetch_player_overview(player_id: int,
         _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
 
     po = (fld["po"] if fld else 0) or 0
+    a  = (fld["a"]  if fld and "a" in fld.keys() else 0) or 0
     e  = (fld["e"]  if fld else 0) or 0
     fld_totals = {
-        "po": po, "e": e, "chances": po + e,
-        "fld_pct": (po / (po + e)) if (po + e) > 0 else None,
+        "po": po, "a": a, "e": e, "chances": po + a + e,
+        "fld_pct": ((po + a) / (po + a + e)) if (po + a + e) > 0 else None,
     }
 
     return {
@@ -3372,10 +3743,10 @@ def player_detail(player_id: int):
         (player_id,),
     )
     fld = db.fetchone(
-        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(e),0) AS e
+        """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
-    ) or {"po": 0, "e": 0}
+    ) or {"po": 0, "a": 0, "e": 0}
 
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
@@ -3394,7 +3765,13 @@ def player_detail(player_id: int):
                    COALESCE(SUM(k_arc1),0)  as k_arc1,  COALESCE(SUM(k_arc2),0)  as k_arc2,  COALESCE(SUM(k_arc3),0)  as k_arc3,
                    COALESCE(SUM(fo_arc1),0) as fo_arc1, COALESCE(SUM(fo_arc2),0) as fo_arc2, COALESCE(SUM(fo_arc3),0) as fo_arc3,
                    COALESCE(SUM(bf_arc1),0) as bf_arc1, COALESCE(SUM(bf_arc2),0) as bf_arc2, COALESCE(SUM(bf_arc3),0) as bf_arc3,
-                   COALESCE(SUM(is_starter),0) as gs
+                   COALESCE(SUM(is_starter),0) as gs,
+                   COALESCE(SUM(singles_allowed),0) as singles_allowed,
+                   COALESCE(SUM(doubles_allowed),0) as doubles_allowed,
+                   COALESCE(SUM(triples_allowed),0) as triples_allowed,
+                   COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
+                   COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
         (player_id,),
     )
@@ -3415,17 +3792,19 @@ def player_detail(player_id: int):
         bt_totals["defense_catcher"]  = player.get("defense_catcher")
         _aggregate_batter_rows([bt_totals], baselines=baselines)
 
-    # Per-fielder defense totals (PO + E from any game where the player
-    # was credited with a play). Fielding% derives naturally; A is not
-    # tracked separately since the engine doesn't model the throw-vs-catch
-    # split (PO is awarded to whoever the play was attributed to).
+    # Per-fielder defense totals (PO + A + E). Assist crediting was
+    # added when pitch types were activated — the renderer now also
+    # credits A on throwing outs and a pivot-fielder on DPs/TPs. Pre-
+    # activation games have a=0 by migration default.
     po = fld["po"] or 0
+    a  = (fld["a"] if "a" in fld.keys() else 0) or 0
     e  = fld["e"] or 0
     fld_totals = {
         "po": po,
+        "a":  a,
         "e":  e,
-        "chances": po + e,
-        "fld_pct": (po / (po + e)) if (po + e) > 0 else None,
+        "chances": po + a + e,
+        "fld_pct": ((po + a) / (po + a + e)) if (po + a + e) > 0 else None,
     }
 
     pt_totals = None
@@ -3494,6 +3873,7 @@ def player_detail(player_id: int):
                     player_id, extra, ext_params, wl, baselines)
             splits[label] = split
 
+
     team_row = db.fetchone(
         "SELECT league FROM teams WHERE id = ?", (player["team_id"],),
     )
@@ -3501,6 +3881,14 @@ def player_detail(player_id: int):
     player_est_value = valuation.estimate_player_value(
         dict(player), league_name=league_name,
     )
+
+    handedness_splits: dict = {}
+    if bt_totals:
+        handedness_splits["bat_vs_lhp"] = _player_handedness_split_batter(player_id, "L")
+        handedness_splits["bat_vs_rhp"] = _player_handedness_split_batter(player_id, "R")
+    if pt_totals:
+        handedness_splits["pit_vs_lhb"] = _player_handedness_split_pitcher(player_id, "L")
+        handedness_splits["pit_vs_rhb"] = _player_handedness_split_pitcher(player_id, "R")
 
     return _serve(
         "player.html",
@@ -3511,6 +3899,7 @@ def player_detail(player_id: int):
         pt_totals=pt_totals,
         fld_totals=fld_totals,
         splits=splits,
+        handedness_splits=handedness_splits,
         baselines=baselines,
         player_est_value=player_est_value,
     )
@@ -4122,7 +4511,13 @@ def distributions():
                   COALESCE(SUM(ps.k_arc1),0) as k_arc1, COALESCE(SUM(ps.k_arc2),0) as k_arc2, COALESCE(SUM(ps.k_arc3),0) as k_arc3,
                   COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
                   COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
-                  COALESCE(SUM(ps.is_starter),0) as gs
+                  COALESCE(SUM(ps.is_starter),0) as gs,
+                  COALESCE(SUM(ps.singles_allowed),0) as singles_allowed,
+                  COALESCE(SUM(ps.doubles_allowed),0) as doubles_allowed,
+                  COALESCE(SUM(ps.triples_allowed),0) as triples_allowed,
+                  COALESCE(AVG(NULLIF(ps.fastball_pct,0)) * 100,0) as fastball_pct,
+                  COALESCE(AVG(NULLIF(ps.breaking_pct,0)) * 100,0) as breaking_pct,
+                  COALESCE(AVG(NULLIF(ps.offspeed_pct,0)) * 100,0) as offspeed_pct
            FROM {_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id

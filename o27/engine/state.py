@@ -495,6 +495,12 @@ class GameState:
     # only by prob.py; everything else passes it through opaquely.
     weather: Optional[object] = None  # o27.engine.weather.Weather
 
+    # --- Park dimensions (home park, the only one that matters for the
+    # park-shape gameplay hook). Dict shaped like {lf, lcf, cf, rcf,
+    # rf, wall_h}. None / empty = neutral 380-ft fence, no hook
+    # mutations. See o27.engine.park_effects.apply_park_effects.
+    park_dimensions: Optional[dict] = None
+
     # -----------------------------------------------------------------------
     # Properties
     # -----------------------------------------------------------------------

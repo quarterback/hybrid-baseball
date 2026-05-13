@@ -34,9 +34,24 @@ CREATE TABLE IF NOT EXISTS teams (
     losses    INTEGER DEFAULT 0,
     park_hr   REAL DEFAULT 1.0,
     park_hits REAL DEFAULT 1.0,
+    park_name TEXT DEFAULT '',
+    -- Generated ballpark dimensions (JSON: lf, lcf, cf, rcf, rf in feet,
+    -- plus wall_h for the outfield wall height). Flavor-only for now —
+    -- park_hr and park_hits remain the mechanical multipliers.
+    park_dimensions TEXT DEFAULT '',
+    -- Park shape archetype — narrative key driving the dimension
+    -- distribution. One of: balanced / short_porch_rf / short_porch_lf
+    -- / cavernous / bathtub / triangle / oval. Empty on legacy rows.
+    park_shape      TEXT DEFAULT '',
+    -- Architectural quirks (JSON list of {key, label, blurb}). 0-3
+    -- per park, drawn from a catalog evoking the 1910s-20s ballpark
+    -- revival (Tal's Hill, Wire Basket, Hand-Operated Scoreboard,
+    -- Flag Pole in Play, etc.).
+    park_quirks     TEXT DEFAULT '',
     -- Manager (re-rolled per league seed; not hard-wired to franchise).
     -- See o27v2/managers.py for archetype catalogue and tendency semantics.
     manager_archetype        TEXT  DEFAULT '',
+    manager_name             TEXT  DEFAULT '',
     mgr_quick_hook           REAL  DEFAULT 0.5,
     mgr_bullpen_aggression   REAL  DEFAULT 0.5,
     mgr_leverage_aware       REAL  DEFAULT 0.5,
@@ -109,7 +124,24 @@ CREATE TABLE IF NOT EXISTS players (
     -- Persisted salary in guilders (int). Seeded at league creation
     -- via o27v2.valuation. Default 0 lets older rows fall through to
     -- on-the-fly estimation in valuation.estimate_player_value.
-    salary       INTEGER DEFAULT 0
+    salary       INTEGER DEFAULT 0,
+    -- Pitch-type activation: JSON-encoded list of repertoire entries
+    -- ({"pitch_type", "quality", "usage_weight"}). NULL on legacy rows
+    -- and on non-pitchers; the engine treats NULL as "no repertoire"
+    -- and falls back to the aggregate Stuff/Command/Movement path.
+    repertoire   TEXT    DEFAULT NULL,
+    -- Release angle (0=submarine, 0.5=sidearm, 1.0=three-quarter).
+    -- Drives which pitches a pitcher can throw well — see PITCH_CATALOG
+    -- in o27/config.py for per-pitch release_optimal / max_release.
+    release_angle  REAL  DEFAULT 0.5,
+    -- Per-pitch quality jitter (static half-width around central
+    -- Stuff/Command/Movement). High variance = max-effort, frayed
+    -- mechanics arm; low variance = consistent. Default 0 = identity.
+    pitch_variance REAL  DEFAULT 0.0,
+    -- Pitcher fatigue resistance, bounded 0.25-0.75 in roster gen.
+    -- 0.50 = identity (no fatigue ramp change). Also damps today_form
+    -- per-game variance — high-grit arms swing less day-to-day.
+    grit           REAL  DEFAULT 0.5
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -192,6 +224,7 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     roe        INTEGER DEFAULT 0,   -- reached on error (NOT a hit; AB credited)
     -- Per-fielder defensive events (the player as a FIELDER, not as a batter).
     po         INTEGER DEFAULT 0,   -- putouts as primary fielder
+    a          INTEGER DEFAULT 0,   -- assists (intermediate fielder on the play)
     e          INTEGER DEFAULT 0,   -- errors committed
     UNIQUE(player_id, game_id, phase)
 );
@@ -228,7 +261,22 @@ CREATE TABLE IF NOT EXISTS game_pa_log (
     score_diff_before INTEGER DEFAULT NULL,
     outs_after        INTEGER DEFAULT NULL,
     bases_after       INTEGER DEFAULT NULL,
-    score_diff_after  INTEGER DEFAULT NULL
+    score_diff_after  INTEGER DEFAULT NULL,
+    -- Pitch-type activation: the typed pitch selected for this PA from
+    -- the pitcher's repertoire. NULL on legacy rows and on PAs against
+    -- pitchers without a typed repertoire. Drives the per-pitcher pitch-
+    -- mix aggregate stamped on game_pitcher_stats.
+    pitch_type        TEXT    DEFAULT NULL,
+    -- Batted-ball physics hybrid layer. Sampled per BIP from the
+    -- (quality, hit_type, batter.power, pitch.hard_contact_shift)
+    -- joint distribution and stamped here for downstream visualization
+    -- (spray charts, EV/LA-banded Luck Ledger, xwOBA attribution).
+    -- Flavor-only — does NOT drive engine fielding outcomes. Categorical
+    -- hit_type remains the canonical engine output. NULL on non-BIP
+    -- events (K / BB / HBP) and on legacy rows.
+    exit_velocity     REAL    DEFAULT NULL,   -- mph
+    launch_angle      REAL    DEFAULT NULL,   -- degrees, − = grounder
+    spray_angle       REAL    DEFAULT NULL    -- degrees, − = pull / + = oppo
 );
 CREATE INDEX IF NOT EXISTS idx_pa_log_game ON game_pa_log(game_id);
 CREATE INDEX IF NOT EXISTS idx_pa_log_batter ON game_pa_log(batter_id);
@@ -270,6 +318,19 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     bf_arc2        INTEGER DEFAULT 0,
     bf_arc3        INTEGER DEFAULT 0,
     is_starter     INTEGER DEFAULT 0,   -- 1 if this pitcher started the game
+    -- xRA v3 — per-pitcher hit-type breakdown allowed. Lets each
+    -- pitcher's xRA reflect their own batted-ball mix rather than the
+    -- league average. Sums tabulated from the PA log post-game.
+    singles_allowed INTEGER DEFAULT 0,
+    doubles_allowed INTEGER DEFAULT 0,
+    triples_allowed INTEGER DEFAULT 0,
+    -- Pitch-type usage (per-game averages of fastball / breaking /
+    -- offspeed share among typed pitches). Aggregated to season-level
+    -- in the web layer for the Arsenal panel and pitch-mix leaderboards.
+    fastball_pct   REAL    DEFAULT 0.0,
+    breaking_pct   REAL    DEFAULT 0.0,
+    offspeed_pct   REAL    DEFAULT 0.0,
+    primary_pitch  TEXT    DEFAULT '',
     UNIQUE(player_id, game_id, phase)
 );
 
@@ -567,6 +628,33 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+        # Distinctive ballpark name (generated at seed time). Empty
+        # default keeps legacy rows working — the UI falls back to
+        # "<city> ballpark" when missing.
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN park_name TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN park_dimensions TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        for col in ("park_shape", "park_quirks"):
+            try:
+                conn.execute(f"ALTER TABLE teams ADD COLUMN {col} TEXT DEFAULT ''")
+                conn.commit()
+            except Exception:
+                pass
+        # Manager name (rolled at seed time using the league's regional
+        # name picker). Empty default keeps legacy rows working — the UI
+        # falls back to "(unknown skipper)" when missing.
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN manager_name TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
 
         # Org-strength: 20-95 scout-grade team attribute that drives the
         # additive shift applied to every player attribute roll for the
@@ -754,6 +842,56 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+
+        # Pitch-type activation: repertoire JSON on players, pitch_type on
+        # game_pa_log, per-game pitch-mix + hit-shape on game_pitcher_stats,
+        # assists on game_batter_stats.
+        for col, sql_type, defval in (
+            ("repertoire",     "TEXT",    "NULL"),
+            ("release_angle",  "REAL",    "0.5"),
+            ("pitch_variance", "REAL",    "0.0"),
+            ("grit",           "REAL",    "0.5"),
+        ):
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} {sql_type} DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+        try:
+            conn.execute("ALTER TABLE game_pa_log ADD COLUMN pitch_type TEXT DEFAULT NULL")
+            conn.commit()
+        except Exception:
+            pass
+        # Batted-ball physics hybrid layer (EV / LA / spray). NULL on
+        # non-BIP events and legacy rows.
+        for col in ("exit_velocity", "launch_angle", "spray_angle"):
+            try:
+                conn.execute(f"ALTER TABLE game_pa_log ADD COLUMN {col} REAL DEFAULT NULL")
+                conn.commit()
+            except Exception:
+                pass
+        for col in ("singles_allowed", "doubles_allowed", "triples_allowed"):
+            try:
+                conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+        for col in ("fastball_pct", "breaking_pct", "offspeed_pct"):
+            try:
+                conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} REAL DEFAULT 0.0")
+                conn.commit()
+            except Exception:
+                pass
+        try:
+            conn.execute("ALTER TABLE game_pitcher_stats ADD COLUMN primary_pitch TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE game_batter_stats ADD COLUMN a INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
 
         # Task #58: phase column on both stat tables (0 = regulation,
         # N>=1 = super-inning round N). Existing rows are backfilled to

@@ -1255,8 +1255,20 @@ class ProbabilisticProvider:
         if pitcher.player_id == self._last_pitcher_id:
             return
         self._last_pitcher_id = pitcher.player_id
-        form = self.rng.gauss(cfg.TODAY_FORM_MU, cfg.TODAY_FORM_SIGMA)
-        form = max(cfg.TODAY_FORM_MIN, min(cfg.TODAY_FORM_MAX, form))
+        # Pitch-variance widening: high-variance ("max-effort, frayed
+        # mechanics") arms swing wider day-to-day; low-variance arms hold
+        # consistent. Grit damps both ends — a gritty veteran with high
+        # variance still finds his stuff more often than a low-grit
+        # young arm. Identity at pitch_variance=0 and grit=0.5.
+        pv   = float(getattr(pitcher, "pitch_variance", 0.0) or 0.0)
+        grit = float(getattr(pitcher, "grit", 0.5) or 0.5)
+        grit_damp = 1.0 - 0.6 * (grit - 0.5)           # 0.7 (gritty) … 1.3 (fragile)
+        sigma_eff = cfg.TODAY_FORM_SIGMA + pv * 0.50 * grit_damp + max(0.0, (0.5 - grit)) * 0.06
+        widen     = pv * 1.50 * grit_damp
+        min_eff   = cfg.TODAY_FORM_MIN - widen
+        max_eff   = cfg.TODAY_FORM_MAX + widen
+        form = self.rng.gauss(cfg.TODAY_FORM_MU, sigma_eff)
+        form = max(min_eff, min(max_eff, form))
 
         # Multi-game fatigue: scale form down by pitch-debt overrun.
         debt = int(getattr(pitcher, "pitch_debt", 0) or 0)
@@ -1271,7 +1283,7 @@ class ProbabilisticProvider:
                           excess * cfg.FATIGUE_DEBT_PER_PITCH)
             form *= (1.0 - penalty)
 
-        pitcher.today_form = max(cfg.TODAY_FORM_MIN, form)
+        pitcher.today_form = max(min_eff, form)
 
     def __call__(self, state: GameState) -> Optional[dict]:
         # Detect new batter (new PA or batter changed by joker insertion).
@@ -1446,7 +1458,7 @@ class ProbabilisticProvider:
                 state.hit_and_run_active = False
 
         if outcome != "contact":
-            return {"type": outcome}
+            return {"type": outcome, "pitch_type": sel_pitch}
 
         # --- Contact resolution ---
         quality = contact_quality(
@@ -1497,6 +1509,38 @@ class ProbabilisticProvider:
                     outcome_dict["hit_type"] = new_type
                     outcome_dict["batter_safe"] = True
                     outcome_dict["runner_advances"] = [1, 1, 1]
+
+        # Batted-ball physics + park-shape gameplay hook. Sample synthetic
+        # (EV, LA, spray) from contact quality + power + pitch metadata,
+        # then mutate the categorical hit_type against the home park's
+        # actual fence geometry. Polo-Grounds bathtub → HR factory down
+        # the lines; oval cricket-ground → pull HRs vanish, gappers
+        # become triples. Identity no-op when state.park_dimensions is
+        # None or hit_type is non-BIP.
+        #
+        # Done BEFORE the Stay decision so the runner sees the final
+        # hit_type (a fly_out → HR upgrade doesn't leave a runner who
+        # decided to stay on a caught fly).
+        from o27.engine.batted_ball import sample_batted_ball as _sample_bb
+        from o27.engine.park_effects import apply_park_effects as _apply_park
+        _pitch_hcs = 0.0
+        if sel_pitch:
+            _pmeta = cfg.PITCH_CATALOG.get(sel_pitch, {}) or {}
+            _pitch_hcs = float(_pmeta.get("hard_contact_shift", 0.0) or 0.0)
+        ev_v, la_v, spray_v = _sample_bb(
+            rng,
+            quality=quality,
+            hit_type=outcome_dict.get("hit_type", "") or "",
+            batter_power=float(getattr(batter, "power", 0.5) or 0.5),
+            pitch_hard_contact_shift=_pitch_hcs,
+            batter_bats=str(getattr(batter, "bats", "") or ""),
+        )
+        _apply_park(
+            rng,
+            outcome_dict,
+            ev=ev_v, la=la_v, spray=spray_v,
+            park_dims=getattr(state, "park_dimensions", None),
+        )
 
         hit_type = outcome_dict["hit_type"]
         caught_fly = outcome_dict["caught_fly"]
@@ -1630,4 +1674,8 @@ class ProbabilisticProvider:
             "type": "ball_in_play",
             "choice": choice,
             "outcome": outcome_dict,
+            "pitch_type": sel_pitch,
+            "exit_velocity": ev_v,
+            "launch_angle":  la_v,
+            "spray_angle":   spray_v,
         }

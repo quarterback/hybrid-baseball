@@ -50,30 +50,88 @@
   {% endif %}
 </div>
 
-{# ---- Manager card ---- #}
-{% if team.manager_archetype %}
-<div class="dense p-2 mb-3 d-flex flex-wrap align-items-center gap-3" style="font-size:.86rem">
-  <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Manager</span>
-  <span class="fw-bold" style="color:var(--text)">{{ team.manager_archetype | archetype_label }}</span>
-  <span class="text-secondary">·</span>
-  {# Eight tactical axes from o27v2/managers.py. Compact bar/percent form
-     so the whole personality fits on one row. Higher = more aggressive
-     across all eight axes. #}
+{# ---- Manager card (fog-of-war: named character + 5-dot ratings) ---- #}
+{% if team.manager_archetype or team.manager_name %}
+<div class="dense p-2 mb-3" style="font-size:.86rem">
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+    <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Manager</span>
+    {% if team.manager_name %}<span class="fw-bold" style="color:var(--text);font-size:1rem">{{ team.manager_name }}</span>{% endif %}
+    {% if team.manager_archetype %}
+    <span class="text-secondary">·</span>
+    <span class="text-secondary">{{ team.manager_archetype | archetype_label }}</span>
+    {% endif %}
+  </div>
+  {# Eight tactical axes rendered as 5-dot ratings. Internal labels
+     (mgr_quick_hook, mgr_bullpen_aggression, ...) are mapped to
+     customer-facing flavor names to preserve fog of war over the exact
+     mechanism. Hover for the tactical hint. #}
+  <div class="d-flex flex-wrap gap-3" style="font-size:.82rem">
   {% for label, val, hint in [
-        ('Quick hook',    team.mgr_quick_hook,         'Yank starters at the first sign of trouble'),
-        ('Bullpen aggr.', team.mgr_bullpen_aggression, 'Burn multiple relievers in high-leverage spots'),
-        ('Leverage',      team.mgr_leverage_aware,     'Match best reliever to the biggest moments'),
-        ('Joker aggr.',   team.mgr_joker_aggression,   'Spend joker pinch-hitters early and aggressively'),
-        ('Pinch hit',     team.mgr_pinch_hit_aggression,'Permanently PH for weak bats vs platoon mismatches'),
-        ('Platoon',       team.mgr_platoon_aggression, 'LHB-vs-RHP / RHB-vs-LHP matchup hunting'),
-        ('Run game',      team.mgr_run_game,           'SB attempts, hit-and-run frequency'),
-        ('Bench usage',   team.mgr_bench_usage,        'Defensive subs and pinch-runners late')] %}
+        ('Quick Hook',       team.mgr_quick_hook,           'Yanks starters at the first sign of trouble'),
+        ('Bullpen Touch',    team.mgr_bullpen_aggression,   'Burns multiple relievers in high-leverage spots'),
+        ('Reads the Moment', team.mgr_leverage_aware,       'Saves the best arm for the biggest at-bat'),
+        ('Wild Card Energy', team.mgr_joker_aggression,     'Throws joker pinch-hitters early and often'),
+        ('Matchup Hunter',   team.mgr_pinch_hit_aggression, 'Pinch-hits aggressively for the right matchup'),
+        ('Plays the Splits', team.mgr_platoon_aggression,   'Lefty-righty platoon matchups'),
+        ('Greenlight',       team.mgr_run_game,             'Steals, hit-and-runs, takes the extra base'),
+        ('Plays the Bench',  team.mgr_bench_usage,          'Defensive subs and pinch-runners late')] %}
     {% if val is not none %}
-    <span class="text-secondary small" title="{{ hint }}">
-      {{ label }} <strong style="color:var(--text)">{{ '%d'|format((val or 0) * 100) }}</strong>
+    <span class="text-secondary" title="{{ hint }}">
+      {{ label }}
+      <span class="ms-1" style="color:var(--text);letter-spacing:.04em">{{ val | rating_stars }}</span>
     </span>
     {% endif %}
   {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ---- Ballpark card ---- #}
+{% if team.park_name or team.park_hr or team.park_dimensions %}
+{% set dims = team.park_dimensions | park_dimensions %}
+{% set shape_meta = team.park_shape | park_shape_meta %}
+{% set quirks = team.park_quirks | park_quirks %}
+<div class="dense p-2 mb-3" style="font-size:.86rem">
+  <div class="d-flex flex-wrap align-items-center gap-3 mb-1">
+    <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Ballpark</span>
+    {% if team.park_name %}<span class="fw-bold" style="color:var(--text);font-size:1rem">{{ team.park_name }}</span>{% endif %}
+    {% if shape_meta.label %}
+    <span class="text-secondary">·</span>
+    <span title="{{ shape_meta.blurb }}" style="color:#9ad0ec;font-weight:600">{{ shape_meta.label }}</span>
+    {% endif %}
+  </div>
+  {% if dims %}
+  <div class="d-flex flex-wrap gap-3 mb-1" style="font-size:.82rem">
+    <span class="text-secondary" title="Foul-line / left-center / center / right-center / right-line distances in feet">
+      LF <strong style="color:var(--text)">{{ dims.lf }}'</strong>
+      · LCF <strong style="color:var(--text)">{{ dims.lcf }}'</strong>
+      · CF <strong style="color:var(--text)">{{ dims.cf }}'</strong>
+      · RCF <strong style="color:var(--text)">{{ dims.rcf }}'</strong>
+      · RF <strong style="color:var(--text)">{{ dims.rf }}'</strong>
+    </span>
+    <span class="text-secondary" title="Outfield wall height (feet). 4-8 ft = cricket-ground tin; 8-14 ft = standard; 15-26 ft = high wall; 28+ ft = Green Monster / Polo Grounds class.">
+      Wall <strong style="color:var(--text)">{{ dims.wall_h }}'</strong>
+    </span>
+    {% if team.park_hr %}
+    <span class="text-secondary" title="HR multiplier on contact (1.00 = neutral). Above 1.00 = hitter-friendly; below = pitcher-friendly.">
+      HR <strong style="color:var(--text)">{{ '%.2f'|format(team.park_hr) }}</strong>
+    </span>
+    <span class="text-secondary" title="Overall hits multiplier (1.00 = neutral).">
+      Hits <strong style="color:var(--text)">{{ '%.2f'|format(team.park_hits) }}</strong>
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if quirks %}
+  <div class="d-flex flex-wrap gap-2 mt-1">
+    {% for q in quirks %}
+    <span title="{{ q.blurb }}"
+          style="background:#3a2d1f;color:#f5b041;border:1px solid #5a4423;border-radius:6px;padding:2px 8px;font-size:.78rem;font-weight:600">
+      {{ q.label }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -84,7 +142,7 @@
       {% if batters %}
       <table class="table table-sm dense-table sortable mb-0">
         <thead><tr>
-          <th>Name</th><th>Pos</th>
+          <th>Name</th><th>Pos</th><th title="Bats / Throws">B/T</th>
           <th class="num">Age</th>
           <th class="num">GP</th><th class="num">PA</th><th class="num">AB</th>
           <th class="num">H</th><th class="num">HR</th><th class="num">RBI</th><th class="num">R</th><th class="num">BB</th><th class="num">SO</th>
@@ -96,6 +154,7 @@
         <tr {% if p.is_joker %}style="color:#f0883e"{% endif %}>
           <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.is_joker %} <span class="si-badge">JKR</span>{% endif %}</td>
           <td class="text-secondary">{{ p.position }}</td>
+          <td class="text-secondary small">{{ p.bats or '—' }}/{{ p.throws or '—' }}</td>
           <td class="num text-secondary">{{ p.age }}</td>
           <td class="num">{{ p.gp or 0 }}</td>
           <td class="num">{{ p.pa or 0 }}</td>
@@ -128,6 +187,7 @@
       <table class="table table-sm dense-table sortable mb-0">
         <thead><tr>
           <th>Name</th>
+          <th title="Throws">T</th>
           <th class="num">Age</th>
           <th class="num">G</th><th class="num">GS</th><th class="num">W</th><th class="num">L</th>
           <th class="num" title="Weighted ERA">wERA</th>
@@ -140,6 +200,7 @@
         {% for p in pitchers %}
         <tr style="color:#79c0ff">
           <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.pitcher_role %} <span class="text-secondary small">· {{ p.pitcher_role }}</span>{% endif %}</td>
+          <td class="text-secondary small">{{ p.throws or '—' }}</td>
           <td class="num text-secondary">{{ p.age }}</td>
           <td class="num">{{ p.gp or p.g or 0 }}</td>
           <td class="num">{{ p.gs or 0 }}</td>

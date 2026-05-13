@@ -633,16 +633,85 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         rp += min(0.15, pitch_debt / 100.0 * 0.15)
         return rp
 
+    # ─── Pitch-type matchup awareness ──────────────────────────────────
+    # The "modern manager" reads the next chunk of the batting lineup
+    # and prefers an arm whose repertoire matches the threat profile:
+    #   * high-Power / low-Eye lineup ⇒ favor breaking-ball-heavy arms
+    #     (high k_delta) and HR-suppressing pitches (negative
+    #     hard_contact_shift)
+    #   * LHB-heavy lineup ⇒ favor opposite_heavy / cutter / vulcan
+    # Weighting is scaled by mgr_platoon_aggression so a dead-ball
+    # traditionalist barely consults the matchup while a sabermetric
+    # maximalist leans hard on it. Capped at ±0.12 so the matchup never
+    # overrides a meaningful Stuff/Stamina/rest gap.
+    batting   = state.batting_team
+    lineup    = getattr(batting, "lineup", None) or getattr(batting, "roster", [])
+    # Look at the next ~3 batters (the threat coming up); fall back to
+    # the whole lineup if upcoming_idx is unavailable.
+    next_idx  = int(getattr(state, "batter_idx", 0) or 0)
+    upcoming  = []
+    if lineup:
+        for i in range(3):
+            upcoming.append(lineup[(next_idx + i) % len(lineup)])
+    n = len(upcoming) or 1
+    avg_power = sum(float(getattr(b, "power", 0.5) or 0.5) for b in upcoming) / n
+    avg_eye   = sum(float(getattr(b, "eye",   0.5) or 0.5) for b in upcoming) / n
+    pct_l = (sum(1 for b in upcoming if getattr(b, "bats", "") == "L") / n) if upcoming else 0.0
+    power_dev = avg_power - 0.5
+    eye_dev   = 0.5 - avg_eye
+
+    mgr_platoon = float(getattr(fielding, "mgr_platoon_aggression", 0.5) or 0.5)
+    matchup_weight = 0.12 * mgr_platoon   # 0 (no awareness) … 0.12 (full)
+
+    def _matchup_bonus(p: Player) -> float:
+        repertoire = getattr(p, "repertoire", None) or []
+        if not repertoire or matchup_weight <= 0:
+            return 0.0
+        try:
+            from o27 import config as _ecfg
+            catalog = _ecfg.PITCH_CATALOG
+        except Exception:
+            return 0.0
+        total_w = sum(float(getattr(e, "usage_weight", 0.0) or 0.0) for e in repertoire) or 1.0
+        bonus = 0.0
+        for entry in repertoire:
+            meta = catalog.get(getattr(entry, "pitch_type", ""), {})
+            if not meta:
+                continue
+            usage_w = float(getattr(entry, "usage_weight", 0.0) or 0.0) / total_w
+            quality = float(getattr(entry, "quality", 0.5) or 0.5)
+            # K-driving pitches help vs high-Power / low-Eye lineups.
+            k_d = float(meta.get("k_delta", 0.0) or 0.0)
+            # HR-suppressing pitches (negative hard_contact_shift) help vs Power.
+            hcs = float(meta.get("hard_contact_shift", 0.0) or 0.0)
+            # Opposite_heavy / cutter pitches help vs same-side-heavy lineup.
+            platoon_mode  = meta.get("platoon_mode", "neutral")
+            platoon_scale = float(meta.get("platoon_scale", 1.0) or 1.0)
+            pitch_score = (
+                max(0.0, k_d) * (power_dev + eye_dev) * 2.0
+              - hcs * power_dev * 1.5
+            )
+            if platoon_mode == "opposite_heavy":
+                # Bonus vs whichever side is over-represented.
+                same_side_pct = pct_l if getattr(p, "throws", "R") == "L" else (1.0 - pct_l)
+                pitch_score += (0.5 - same_side_pct) * platoon_scale * 0.10
+            pitch_score *= quality
+            bonus += pitch_score * usage_w
+        # Clip to ±matchup_weight.
+        return max(-matchup_weight, min(matchup_weight, bonus * matchup_weight * 2.0))
+
     def _score(p: Player) -> float:
         if outs >= 19:
             # Late / closer — pure Stuff. Tired arms get penalized.
-            return _stuff(p) - _rest_penalty(p)
-        if outs >= 10:
+            base = _stuff(p) - _rest_penalty(p)
+        elif outs >= 10:
             # Middle relief — Stuff dominates, but penalize the highest-
             # Stamina arms so they remain available for starts.
-            return _stuff(p) - 0.25 * max(0.0, _stamina(p) - 0.55) - _rest_penalty(p)
-        # Long relief / spot start — pure Stamina, rest-adjusted.
-        return _stamina(p) - _rest_penalty(p)
+            base = _stuff(p) - 0.25 * max(0.0, _stamina(p) - 0.55) - _rest_penalty(p)
+        else:
+            # Long relief / spot start — pure Stamina, rest-adjusted.
+            base = _stamina(p) - _rest_penalty(p)
+        return base + _matchup_bonus(p)
 
     if pitcher_candidates:
         return max(pitcher_candidates, key=_score)

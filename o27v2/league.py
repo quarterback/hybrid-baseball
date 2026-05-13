@@ -22,6 +22,7 @@ from typing import Any
 
 from o27v2 import config as v2cfg
 from o27v2 import scout as _scout
+from o27 import config as _engine_cfg
 
 _DATA_DIR     = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _NAMES_DIR    = os.path.join(_DATA_DIR, "names")
@@ -768,6 +769,313 @@ def _roll_park_factors(rng: random.Random) -> tuple[float, float]:
     return hr, hits
 
 
+# Ballpark name generator. Each park gets a distinctive name so the
+# scoreboard / box score / team page render as "Final at The Oval"
+# rather than the generic city name. Weighted across templates so most
+# parks land in the surname-and-place tradition, with a sprinkle of
+# cricket-ground evocation (The Oval, The Crucible, etc.) — fitting
+# O27's super-inning / sidearm DNA borrowed from cricket.
+_PARK_ADJECTIVES = (
+    "Crescent", "Beacon", "Iron", "Crystal", "Lighthouse", "Tide",
+    "Bridge", "Tower", "Harbor", "Heron", "Cedar", "Granite", "Maple",
+    "Silver", "Copper", "Twilight", "Sunset", "Ember", "North",
+    "Whitestone", "Bayview", "Highland", "Riverside", "Meadow",
+    "Hollow", "Stoneford", "Brookside", "Foxgrove",
+)
+_PARK_NOUNS = (
+    "Field", "Stadium", "Park", "Ground", "Yards", "Grounds", "Bowl",
+    "Coliseum",
+)
+_CRICKET_SINGLETONS = (
+    "The Oval", "The Crucible", "The Pavilion", "The Citadel",
+    "The Bullring", "The Cauldron", "The Pitch", "The Cathedral",
+)
+
+
+def _roll_ballpark_name(
+    rng: random.Random,
+    city: str,
+    surname_pool: list[str],
+    used: set[str],
+) -> str:
+    """Produce a distinctive ballpark name. Reads a surname pool so each
+    park can be tied to a (fictional) founder/owner family. `used` is the
+    set of names already taken in this league seed — we reroll up to a
+    handful of times to avoid duplicates, falling back to a numbered
+    suffix when collisions are stubborn.
+    """
+    def _attempt() -> str:
+        bucket = rng.random()
+        if bucket < 0.45 and surname_pool:
+            # "[Surname] Field" / "Stadium" / "Park" / "Yards"
+            surname = rng.choice(surname_pool)
+            noun = rng.choice(_PARK_NOUNS)
+            return f"{surname} {noun}"
+        if bucket < 0.68:
+            # "[Adjective] Park"
+            adj  = rng.choice(_PARK_ADJECTIVES)
+            noun = rng.choice(_PARK_NOUNS)
+            return f"{adj} {noun}"
+        if bucket < 0.82 and city:
+            # "[City] Coliseum" / "[City] Yards"
+            noun = rng.choice(("Coliseum", "Yards", "Dome", "Bowl", "Park"))
+            return f"{city} {noun}"
+        if bucket < 0.94:
+            # Cricket-evoking singleton.
+            return rng.choice(_CRICKET_SINGLETONS)
+        # Compound — "[Adjective] [Surname] Field"
+        adj  = rng.choice(_PARK_ADJECTIVES)
+        surname = rng.choice(surname_pool) if surname_pool else "Marlow"
+        noun = rng.choice(_PARK_NOUNS)
+        return f"{adj} {surname} {noun}"
+
+    for _ in range(8):
+        name = _attempt()
+        if name not in used:
+            used.add(name)
+            return name
+    # Last-resort: append a Roman-style numeral so it's still flavorful.
+    base = _attempt()
+    return f"{base} II"
+
+
+# Park shape archetypes — O27's fiat: the cookie-cutter era never
+# happened. Every park is a pre-modern revival or a cricket-ground
+# import, so the dimension distribution is much wider than MLB's
+# 1990s-2000s norm.
+#
+# Each archetype has a label (UI) and a blurb (flavor tooltip).
+_PARK_SHAPES = (
+    ("balanced",        "Balanced",
+     "Symmetric pre-modern park — wedge outfield, even alleys"),
+    ("short_porch_rf",  "Short Porch (Right)",
+     "Foul-line jut: RF dives in under 300 ft, deep CF behind it"),
+    ("short_porch_lf",  "Short Porch (Left)",
+     "Mirror of Yankee Stadium-style RF jut — LF cheats in"),
+    ("cavernous",       "Cavernous",
+     "Forbes Field / old Cleveland Stadium territory — death-valley alleys"),
+    ("bathtub",         "Bathtub",
+     "Polo Grounds shape: 275-ft lines, 480-ft dead-CF chasm"),
+    ("triangle",        "Center-Field Triangle",
+     "Center-field corner juts back another 30 ft from the alleys"),
+    ("oval",            "Oval — Cricket-Ground Revival",
+     "MCG-style elliptical boundary — pull HRs vanish, gappers feast"),
+)
+_PARK_SHAPE_WEIGHTS = (0.40, 0.10, 0.07, 0.13, 0.08, 0.10, 0.12)
+
+
+_QUIRK_CATALOG: tuple[dict, ...] = (
+    {"key": "tals_hill",          "label": "Tal's Hill",
+     "blurb": "30-degree incline rises into deep center field — flag pole in play, outfielders climb the slope to make the catch",
+     "weight": 0.07, "shapes": None},
+    {"key": "the_porch",          "label": "The Porch",
+     "blurb": "second-deck overhang juts out over the short-side foul line — pop flies clear the wall",
+     "weight": 0.08, "shapes": ("short_porch_rf", "short_porch_lf")},
+    {"key": "ivy_wall",           "label": "Ivy Wall",
+     "blurb": "no padding — outfielders read the carom off red brick and ivy; balls lodged in the vines are ground-rule doubles",
+     "weight": 0.10, "shapes": None},
+    {"key": "hand_scoreboard",    "label": "Hand-Operated Scoreboard",
+     "blurb": "scoreboard operators climb in and out the back of the LF wall between innings",
+     "weight": 0.15, "shapes": None},
+    {"key": "crows_nest",         "label": "Crow's Nest",
+     "blurb": "press box perched three decks above the grandstand — typewriters echo all the way to the bullpen",
+     "weight": 0.12, "shapes": None},
+    {"key": "the_triangle",       "label": "The Triangle",
+     "blurb": "deep CF jogs back 30 feet from the alleys — line drives off the corner ricochet at unpredictable angles",
+     "weight": 0.10, "shapes": ("triangle", "cavernous")},
+    {"key": "abe_lincoln",        "label": "Lincoln Statue",
+     "blurb": "ten-foot statue of Abraham Lincoln stands in deep CF, fair-territory landmark",
+     "weight": 0.03, "shapes": None},
+    {"key": "trolley_shed",       "label": "Trolley Shed",
+     "blurb": "abandoned commuter-rail spur cuts across deep CF — ground-rule double if struck on the fly",
+     "weight": 0.03, "shapes": None},
+    {"key": "flagpole_play",      "label": "Flag Pole in Play",
+     "blurb": "60-foot pole stands in fair territory near the CF wall — drives can carom off the standard",
+     "weight": 0.06, "shapes": None},
+    {"key": "bullpens_play",      "label": "Bullpens in Play",
+     "blurb": "visitors' bullpen sits along the LF foul line — relievers warm up in fair territory",
+     "weight": 0.07, "shapes": None},
+    {"key": "knothole_gates",     "label": "Knothole Gates",
+     "blurb": "narrow wooden slats in the LF wall let neighborhood kids press their faces in to watch for free",
+     "weight": 0.05, "shapes": None},
+    {"key": "crescent_grandstand","label": "Crescent Grandstand",
+     "blurb": "fan-shaped wooden grandstand wraps over both foul lines",
+     "weight": 0.07, "shapes": None},
+    {"key": "concrete_crater",    "label": "The Crater",
+     "blurb": "playing field sits 20 ft below street level — every drive looks like a moonshot from the upper deck",
+     "weight": 0.04, "shapes": None},
+    {"key": "wire_basket",        "label": "Wire Basket",
+     "blurb": "wire basket protrudes from the top of the LF wall — robs would-be HRs into doubles",
+     "weight": 0.05, "shapes": None},
+    {"key": "death_valley",       "label": "Death Valley",
+     "blurb": "left-center alley plays 440+ feet from the plate — flyball pitchers thrive, gap doubles die",
+     "weight": 0.08, "shapes": ("cavernous", "bathtub")},
+    {"key": "lima_bean",          "label": "The Lima Bean",
+     "blurb": "asymmetric grandstand wraps the field at odd angles — sun fields shift inning to inning",
+     "weight": 0.03, "shapes": None},
+    {"key": "round_bowl",         "label": "Round Bowl",
+     "blurb": "no foul-line pocket — grandstand wraps the playing field as a uniform curve",
+     "weight": 0.18, "shapes": ("oval",)},
+    {"key": "low_picket",         "label": "Low Picket Fence",
+     "blurb": "cricket-ground tin fence — barely four feet high, fielders vault to rob HRs",
+     "weight": 0.20, "shapes": ("oval",)},
+    {"key": "members_pavilion",   "label": "Members' Pavilion",
+     "blurb": "wood-clad pavilion looms over the LF boundary, hot-tin roof reflects the sun into the batter's eye",
+     "weight": 0.15, "shapes": ("oval",)},
+    {"key": "scoreboard_clock",   "label": "Scoreboard Clock",
+     "blurb": "20-foot clock in deep CF — the only timepiece in the league; ground-rule single on a hit",
+     "weight": 0.05, "shapes": None},
+)
+
+
+def _roll_park_dimensions(rng: random.Random) -> dict:
+    """Generate distinctive outfield dimensions + a shape archetype.
+
+    O27's fiat is a pre-modern / cricket-revival ballpark world — no
+    cookie-cutter era ever happened. Each park rolls a shape first
+    (balanced / short_porch / cavernous / bathtub / triangle / oval),
+    then dimensions are drawn from that shape's joint distribution.
+
+    Returns: {lf, lcf, cf, rcf, rf, wall_h, shape}.
+    Distances in feet. Asymmetric corners are real — a Polo Grounds
+    bathtub produces 270-ft lines + 480-ft CF.
+    """
+    shape = rng.choices(
+        [s[0] for s in _PARK_SHAPES],
+        weights=_PARK_SHAPE_WEIGHTS,
+    )[0]
+
+    if shape == "balanced":
+        skew = rng.uniform(-10, 10)
+        lf  = int(round(rng.gauss(338, 12) - skew))
+        rf  = int(round(rng.gauss(338, 12) + skew))
+        lcf = int(round(rng.gauss(388, 12)))
+        rcf = int(round(rng.gauss(388, 12)))
+        cf  = int(round(rng.gauss(412, 14)))
+    elif shape == "short_porch_rf":
+        # Yankee-Stadium-style short RF.
+        lf  = int(round(rng.gauss(348, 12)))
+        rf  = int(round(rng.gauss(298, 14)))
+        lcf = int(round(rng.gauss(400, 14)))
+        rcf = int(round(rng.gauss(365, 14)))
+        cf  = int(round(rng.gauss(420, 15)))
+    elif shape == "short_porch_lf":
+        lf  = int(round(rng.gauss(298, 14)))
+        rf  = int(round(rng.gauss(348, 12)))
+        lcf = int(round(rng.gauss(365, 14)))
+        rcf = int(round(rng.gauss(400, 14)))
+        cf  = int(round(rng.gauss(420, 15)))
+    elif shape == "cavernous":
+        # Forbes Field / old Cleveland Stadium.
+        skew = rng.uniform(-12, 12)
+        lf  = int(round(rng.gauss(360, 15) - skew))
+        rf  = int(round(rng.gauss(360, 15) + skew))
+        lcf = int(round(rng.gauss(425, 18)))
+        rcf = int(round(rng.gauss(425, 18)))
+        cf  = int(round(rng.gauss(458, 18)))
+    elif shape == "bathtub":
+        # Polo Grounds — super-short lines, super-deep alleys + CF.
+        skew = rng.uniform(-8, 8)
+        lf  = int(round(rng.gauss(280, 12) - skew))
+        rf  = int(round(rng.gauss(280, 12) + skew))
+        lcf = int(round(rng.gauss(430, 18)))
+        rcf = int(round(rng.gauss(430, 18)))
+        cf  = int(round(rng.gauss(478, 16)))
+    elif shape == "triangle":
+        # Fenway-ish CF triangle — alleys normal, dead CF juts.
+        skew = rng.uniform(-10, 10)
+        lf  = int(round(rng.gauss(335, 12) - skew))
+        rf  = int(round(rng.gauss(335, 12) + skew))
+        lcf = int(round(rng.gauss(385, 12)))
+        rcf = int(round(rng.gauss(385, 12)))
+        cf  = int(round(rng.gauss(445, 16)))
+    else:   # oval — cricket-ground revival
+        # Boundary nearly uniform around the whole playing field.
+        # Pull HRs become rare, gappers and Stay-mechanic 2C events
+        # become much more valuable.
+        skew = rng.uniform(-6, 6)
+        lf  = int(round(rng.gauss(380, 10) - skew))
+        rf  = int(round(rng.gauss(380, 10) + skew))
+        lcf = int(round(rng.gauss(398, 9)))
+        rcf = int(round(rng.gauss(398, 9)))
+        cf  = int(round(rng.gauss(418, 10)))
+
+    # Wall height: long tail. Bathtub / short-porch parks get the
+    # tallest walls (Ebbets / Polo Grounds were both 35-40 ft RF).
+    wall_roll = rng.random()
+    if shape in ("bathtub", "short_porch_rf", "short_porch_lf") and wall_roll < 0.45:
+        wall_h = int(round(rng.uniform(28, 50)))
+    elif wall_roll < 0.08:
+        wall_h = int(round(rng.uniform(28, 42)))   # Green Monster class
+    elif wall_roll < 0.22:
+        wall_h = int(round(rng.uniform(15, 26)))
+    elif shape == "oval" and wall_roll < 0.60:
+        # Cricket-ground tin fence — very low.
+        wall_h = int(round(rng.uniform(4, 8)))
+    else:
+        wall_h = int(round(rng.uniform(8, 14)))
+
+    return {
+        "lf":     max(255, lf),
+        "lcf":    max(330, lcf),
+        "cf":     max(380, cf),
+        "rcf":    max(330, rcf),
+        "rf":     max(255, rf),
+        "wall_h": wall_h,
+        "shape":  shape,
+    }
+
+
+def _roll_park_quirks(rng: random.Random, shape: str) -> list[dict]:
+    """Roll 0-3 architectural quirks from _QUIRK_CATALOG. Some quirks are
+    shape-gated (e.g. Round Bowl only fires on oval parks, The Porch
+    only on short-porch shapes). Each park's quirks are drawn without
+    replacement.
+    """
+    n_quirks = rng.choices((0, 1, 2, 3), weights=(0.38, 0.40, 0.17, 0.05))[0]
+    if n_quirks == 0:
+        return []
+    eligible = [
+        q for q in _QUIRK_CATALOG
+        if q["shapes"] is None or shape in q["shapes"]
+    ]
+    if not eligible:
+        return []
+    picked: list[dict] = []
+    pool = list(eligible)
+    for _ in range(min(n_quirks, len(pool))):
+        weights = [q["weight"] for q in pool]
+        idx = rng.choices(range(len(pool)), weights=weights)[0]
+        picked.append({
+            "key":   pool[idx]["key"],
+            "label": pool[idx]["label"],
+            "blurb": pool[idx]["blurb"],
+        })
+        pool.pop(idx)
+    return picked
+
+
+def _park_shape_meta(shape_key: str) -> dict:
+    """Return {label, blurb} for a shape key — UI lookup."""
+    for k, label, blurb in _PARK_SHAPES:
+        if k == shape_key:
+            return {"label": label, "blurb": blurb}
+    return {"label": "", "blurb": ""}
+
+
+def _park_surname_pool(rng: random.Random, count: int = 60) -> list[str]:
+    """Pull a small pool of surnames from the existing name data to feed
+    the ballpark generator. Kept short to keep generation cheap; the
+    pool is consumed via random.choice, not exhausted."""
+    pools = _load_name_pools().get("surnames", {})
+    flat: list[str] = []
+    for bucket in pools.values():
+        flat.extend(bucket)
+    if not flat:
+        return ["Marlow", "Hadley", "Wendt", "Pellegrini", "Okonkwo"]
+    return rng.sample(flat, k=min(count, len(flat)))
+
+
 # Roster shape — Task #65.
 ACTIVE_FIELDERS  = 12   # 8 starting positions + 4 bench
 ACTIVE_DH        = 3    # 3 DH/utility bats (matches the 3-DH batting lineup)
@@ -899,6 +1207,141 @@ def _make_hitter(
     }
 
 
+# ---------------------------------------------------------------------------
+# Pitch-type repertoire generation
+# ---------------------------------------------------------------------------
+
+_FASTBALL_KEYS = ("four_seam", "sinker", "cutter")
+
+
+def _roll_release_angle(rng: random.Random) -> float:
+    """Roll a pitcher's release angle (0=submarine, 0.5=sidearm, 1.0=3q).
+
+    Distribution biased toward the sidearm spectrum that the O27 setting
+    centers on. ~70% land in [0.30, 0.70] (sidearm-ish); the rest split
+    between submarine specialists and three-quarter outliers.
+    """
+    bucket = rng.random()
+    if bucket < 0.12:
+        return round(rng.uniform(0.05, 0.25), 3)   # submarine
+    if bucket < 0.82:
+        return round(rng.uniform(0.30, 0.70), 3)   # sidearm
+    return round(rng.uniform(0.72, 0.95), 3)        # three-quarter
+
+
+def _pitch_release_fit(release_angle: float, pitch_meta: dict) -> float:
+    """Compatibility score for a pitch given the pitcher's release angle.
+
+    Returns 0.0 if the pitch's `max_release` rules it out, else a weight
+    in (0, 1] that peaks when `release_angle` equals `release_optimal`
+    and decays with distance scaled by `release_window`.
+    """
+    max_release = pitch_meta.get("max_release")
+    if max_release is not None and release_angle > max_release:
+        return 0.0
+    optimal = pitch_meta.get("release_optimal", 0.5)
+    window = max(0.05, pitch_meta.get("release_window", 0.3))
+    distance = abs(release_angle - optimal)
+    # Linear falloff inside the window, exponential outside.
+    if distance <= window:
+        return 1.0 - 0.4 * (distance / window)
+    return max(0.05, 0.6 * (window / max(distance, 1e-6)))
+
+
+def _build_repertoire(
+    rng: random.Random,
+    release_angle: float,
+    team_shift: int,
+) -> list[dict]:
+    """Sample a 3-5 pitch repertoire from PITCH_CATALOG.
+
+    Composition:
+      * exactly one primary fastball (four_seam / sinker / cutter), picked
+        by release-angle fit
+      * 2-4 secondary pitches sampled from the remainder, weighted by
+        release-angle fit
+      * quality is rolled on the same tier ladder as Stuff (20-80 scout
+        grade) and stored as a unit float in [0.2, 0.95]
+      * usage_weight totals roughly to 1.0; primary fastball gets the
+        largest slice
+    """
+    catalog: dict = _engine_cfg.PITCH_CATALOG
+
+    fastball_weights: list[tuple[str, float]] = []
+    for fb in _FASTBALL_KEYS:
+        meta = catalog[fb]
+        fit = _pitch_release_fit(release_angle, meta)
+        if fit > 0:
+            fastball_weights.append((fb, fit))
+    if not fastball_weights:
+        fastball_weights = [(_FASTBALL_KEYS[0], 1.0)]
+    primary = _weighted_pick(rng, fastball_weights)
+
+    secondary_count = rng.choices((2, 3, 4), weights=(0.25, 0.55, 0.20))[0]
+    secondary_pool: list[tuple[str, float]] = []
+    for key, meta in catalog.items():
+        if key == primary or key in _FASTBALL_KEYS:
+            # Skip the primary and rule out duplicate fastball types as
+            # secondaries — a pitcher carries ONE fastball variant.
+            if key != primary and key in _FASTBALL_KEYS:
+                # Allow a second fastball variant occasionally (e.g. SP with
+                # a 4S + cutter pairing). Low rate so it doesn't flatten
+                # the catalog.
+                fit = _pitch_release_fit(release_angle, meta)
+                if fit > 0 and rng.random() < 0.18:
+                    secondary_pool.append((key, fit * 0.5))
+            continue
+        fit = _pitch_release_fit(release_angle, meta)
+        if fit > 0:
+            secondary_pool.append((key, fit))
+
+    secondaries: list[str] = []
+    available = list(secondary_pool)
+    for _ in range(secondary_count):
+        if not available:
+            break
+        pick = _weighted_pick(rng, available)
+        secondaries.append(pick)
+        available = [(k, w) for (k, w) in available if k != pick]
+
+    entries: list[dict] = []
+    primary_quality = _quality_unit(_roll_tier_grade(rng, team_shift))
+    entries.append({
+        "pitch_type":   primary,
+        "quality":      primary_quality,
+        "usage_weight": round(rng.uniform(0.40, 0.55), 3),
+    })
+    remaining_mass = 1.0 - entries[0]["usage_weight"]
+    secondary_qualities = [
+        _quality_unit(_roll_tier_grade(rng, team_shift))
+        for _ in secondaries
+    ]
+    if secondaries:
+        raw_weights = [
+            max(0.05, q + rng.uniform(-0.05, 0.10))
+            for q in secondary_qualities
+        ]
+        total = sum(raw_weights) or 1.0
+        for sec, q, rw in zip(secondaries, secondary_qualities, raw_weights):
+            entries.append({
+                "pitch_type":   sec,
+                "quality":      q,
+                "usage_weight": round(remaining_mass * (rw / total), 3),
+            })
+    return entries
+
+
+def _weighted_pick(rng: random.Random, weighted: list[tuple[str, float]]) -> str:
+    keys = [k for (k, _) in weighted]
+    weights = [w for (_, w) in weighted]
+    return rng.choices(keys, weights=weights)[0]
+
+
+def _quality_unit(grade_20_80: int) -> float:
+    """Map a 20-80 scout grade to a 0.20-0.95 unit float for pitch quality."""
+    return round(0.20 + (max(20, min(80, grade_20_80)) - 20) / 80.0 * 0.75, 3)
+
+
 def _make_pitcher(
     rng: random.Random,
     is_active: int,
@@ -930,6 +1373,16 @@ def _make_pitcher(
     defense_g  = max(20, roll() // 2 + 15)
     arm_g      = max(20, roll() // 2 + 20)
     throws = _roll_throws(rng, is_pitcher=True)
+    # Pitch-type activation: release_angle drives which pitches a pitcher
+    # can throw well (see o27/config.py:PITCH_CATALOG). Repertoire is
+    # stored as JSON; the engine loads it back into Player.repertoire.
+    release_angle = _roll_release_angle(rng)
+    repertoire = _build_repertoire(rng, release_angle, team_shift)
+    # Pitch variance: high = max-effort frayed mechanics (boom/bust pitch
+    # quality); low = consistent. Damped by grit on the per-game form roll.
+    pitch_variance = round(rng.uniform(0.02, 0.14), 3)
+    # Grit: fatigue resistance + per-game form stability. Bounded 0.25-0.75.
+    grit = round(0.25 + rng.random() * 0.50, 3)
     return {
         "name": name,
         "country": country,
@@ -972,6 +1425,11 @@ def _make_pitcher(
         "work_ethic":  roll(),
         "work_habits": roll(),
         "habit_cup":   0.5,
+        # Pitch-type activation (see _build_repertoire above).
+        "release_angle":  release_angle,
+        "pitch_variance": pitch_variance,
+        "grit":           grit,
+        "repertoire":     json.dumps(repertoire),
     }
 
 
@@ -1298,6 +1756,18 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     rng2 = random.Random(rng_seed)
     from o27v2.managers import roll_manager
 
+    # Generator scaffolds pulled up once so we can name parks and
+    # managers in the same Phase-1 loop. The manager name picker uses
+    # the league's regional weights so a "Nordic" preset gets Nordic
+    # managers, etc.
+    surname_pool = _park_surname_pool(rng2)
+    used_park_names: set[str] = set()
+    mgr_name_picker = make_name_picker(
+        random.Random(rng_seed ^ 0xA17C0DE),
+        gender         = name_config.get("gender", "male"),
+        region_weights = name_config.get("region_weights"),
+    )
+
     # Phase 1: insert all teams with their rolled org_strength. The
     # value is rolled from the same 9-tier ladder players use (uncapped
     # at 95 here — orgs CAN be Elite+ at seed; only player attributes
@@ -1312,7 +1782,13 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         name   = team_def.get("name", "Team")
 
         park_hr, park_hits = _roll_park_factors(rng2)
+        park_name = _roll_ballpark_name(rng2, city, surname_pool, used_park_names)
+        _dim_dict   = _roll_park_dimensions(rng2)
+        park_shape  = _dim_dict.pop("shape", "")
+        park_dims   = json.dumps(_dim_dict)
+        park_quirks = json.dumps(_roll_park_quirks(rng2, park_shape))
         mgr = roll_manager(rng2)
+        mgr_name, _mgr_country = mgr_name_picker()
         # Org_strength rolled on the full 9-tier ladder (uncapped at 95) —
         # ~7% of teams genuinely start with Elite+/Elite development orgs,
         # ~12% Excellent, etc. Drives multi-season player growth without
@@ -1320,14 +1796,19 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         org_strength = _roll_org_grade(rng2)
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, division, league, "
-            "park_hr, park_hits, manager_archetype, mgr_quick_hook, "
+            "park_hr, park_hits, park_name, park_dimensions, "
+            "park_shape, park_quirks, "
+            "manager_archetype, manager_name, "
+            "mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
             "mgr_bench_usage, org_strength)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, division, league_name,
-             park_hr, park_hits,
-             mgr["manager_archetype"], mgr["mgr_quick_hook"],
+             park_hr, park_hits, park_name, park_dims,
+             park_shape, park_quirks,
+             mgr["manager_archetype"], mgr_name,
+             mgr["mgr_quick_hook"],
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
              mgr["mgr_joker_aggression"], mgr["mgr_pinch_hit_aggression"],
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
@@ -1358,8 +1839,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          defense, arm,
          defense_infield, defense_outfield, defense_catcher,
          baserunning, run_aggressiveness,
-         work_ethic, work_habits, habit_cup, salary)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         work_ethic, work_habits, habit_cup, salary,
+         release_angle, pitch_variance, grit, repertoire)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -1388,7 +1870,11 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("run_aggressiveness", 50),
                 p.get("work_ethic", 50), p.get("work_habits", 50),
                 p.get("habit_cup", 0.5),
-                salary)
+                salary,
+                p.get("release_angle", 0.5),
+                p.get("pitch_variance", 0.0),
+                p.get("grit", 0.5),
+                p.get("repertoire", None))
 
     # Cache team-id → league name so each player's salary uses the
     # right tier cap.
