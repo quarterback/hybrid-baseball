@@ -393,6 +393,9 @@ def render_box_score(
     lines: list[str] = []
     lines.append(rule)
     lines.append(_title_line(game))
+    park = (game.get("home_park_name") or "").strip()
+    if park:
+        lines.append(f"at {park}")
     lines.append(rule)
     lines.append("")
     lines.extend(_line_score(game, phases, away_line, home_line))

@@ -2412,6 +2412,7 @@ def game_detail_export(game_id: int):
     game = db.fetchone(
         """SELECT g.*,
                   ht.name as home_name, ht.abbrev as home_abbrev,
+                  ht.park_name as home_park_name,
                   at.name as away_name, at.abbrev as away_abbrev
            FROM games g
            JOIN teams ht ON g.home_team_id = ht.id
