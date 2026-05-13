@@ -1638,9 +1638,30 @@ class ProbabilisticProvider:
                 outcome_dict["runner_out_idx"] = lead_idx
                 outcome_dict["hit_type"] = "fielders_choice"
 
+        # Batted-ball physics hybrid layer — sample synthetic
+        # (exit_velocity, launch_angle, spray_angle) per BIP. Persisted
+        # on game_pa_log for spray-chart / Luck-Ledger visualization.
+        # Does NOT drive the fielding outcome (engine stays categorical).
+        from o27.engine.batted_ball import sample_batted_ball as _sample_bb
+        _pitch_hcs = 0.0
+        if sel_pitch:
+            _pmeta = cfg.PITCH_CATALOG.get(sel_pitch, {}) or {}
+            _pitch_hcs = float(_pmeta.get("hard_contact_shift", 0.0) or 0.0)
+        ev_v, la_v, spray_v = _sample_bb(
+            rng,
+            quality=quality,
+            hit_type=outcome_dict.get("hit_type", "") or "",
+            batter_power=float(getattr(batter, "power", 0.5) or 0.5),
+            pitch_hard_contact_shift=_pitch_hcs,
+            batter_bats=str(getattr(batter, "bats", "") or ""),
+        )
+
         return {
             "type": "ball_in_play",
             "choice": choice,
             "outcome": outcome_dict,
             "pitch_type": sel_pitch,
+            "exit_velocity": ev_v,
+            "launch_angle":  la_v,
+            "spray_angle":   spray_v,
         }

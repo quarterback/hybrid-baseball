@@ -2003,6 +2003,75 @@ def game_detail(game_id: int):
         """SELECT team_id, phase, unattributed_outs FROM team_phase_outs
            WHERE game_id = ?""", (game_id,))
 
+    # Batted-ball physics — BIP events with EV/LA/spray for the spray
+    # chart. Joined to players for the hover label. Pre-compute plot
+    # (x, y) for the SVG so the template doesn't need math beyond
+    # cosmetic rendering.
+    spray_bips_raw = db.fetchall(
+        """SELECT pa.team_id, pa.batter_id, pa.exit_velocity AS ev,
+                  pa.launch_angle  AS la, pa.spray_angle  AS spray,
+                  pa.hit_type, p.name AS batter_name
+           FROM game_pa_log pa
+           JOIN players p ON pa.batter_id = p.id
+           WHERE pa.game_id = ?
+             AND pa.exit_velocity IS NOT NULL
+           ORDER BY pa.ab_seq, pa.swing_idx""",
+        (game_id,),
+    )
+
+    import math as _math
+    _OUT_KINDS = {"ground_out", "fly_out", "line_out", "fielders_choice",
+                  "double_play", "triple_play"}
+
+    def _hit_class(ht: str) -> str:
+        if ht in ("hr", "home_run"):           return "hr"
+        if ht in ("double", "triple"):         return "xbh"
+        if ht in ("single", "infield_single"): return "single"
+        if ht == "error":                       return "error"
+        return "out"
+
+    def _bip_distance_ft(ev: float, la: float) -> float:
+        """Heuristic batted-ball distance from EV / LA. Not physical —
+        just produces visually plausible spray-chart points.
+        Grounders cluster on the infield; line drives reach the
+        outfield; high LA + high EV reach the wall.
+        """
+        if la is None or ev is None:
+            return 0.0
+        # Below 8° = grounder / chopper — stays in the infield.
+        if la < 8:
+            return max(40.0, ev * 0.9)
+        # Approximate projectile range, with a softening factor so that
+        # a 100mph 28° line drive doesn't fly out of the canvas.
+        rad = la * _math.pi / 180.0
+        d = (ev * ev * _math.sin(2 * rad)) / 36.0
+        return max(60.0, min(d, 430.0))
+
+    # SVG layout constants — match the template.
+    _SVG_W, _SVG_H = 560.0, 420.0
+    _HP_X, _HP_Y = _SVG_W / 2.0, _SVG_H - 30.0
+    _FT_TO_PX = 0.85
+
+    def _bip_xy(spray: float, distance_ft: float) -> tuple[float, float]:
+        rad = (spray or 0.0) * _math.pi / 180.0
+        dx = distance_ft * _math.sin(rad)
+        dy = distance_ft * _math.cos(rad)
+        return (_HP_X + dx * _FT_TO_PX, _HP_Y - dy * _FT_TO_PX)
+
+    away_bips, home_bips = [], []
+    for r in spray_bips_raw:
+        d = dict(r)
+        dist = _bip_distance_ft(d.get("ev") or 0, d.get("la") or 0)
+        x, y = _bip_xy(d.get("spray") or 0.0, dist)
+        d["dist_ft"]   = round(dist)
+        d["x"]         = round(x, 1)
+        d["y"]         = round(y, 1)
+        d["hit_class"] = _hit_class(d.get("hit_type") or "")
+        if d["team_id"] == game["away_team_id"]:
+            away_bips.append(d)
+        elif d["team_id"] == game["home_team_id"]:
+            home_bips.append(d)
+
     # Legacy data (pre-Task-#58) often has duplicate rows for the same
     # (player_id, game_id) because the schema lacked a UNIQUE constraint
     # and re-sims of the same game inserted parallel copies. New rows
@@ -2266,6 +2335,8 @@ def game_detail(game_id: int):
         game_notes=notes,
         weather_label=weather_label,
         box_score_text=box_score_text,
+        away_bips=away_bips,
+        home_bips=home_bips,
         prev_game_id=(prev_game["id"] if prev_game else None),
         next_game_id=(next_game["id"] if next_game else None),
     )

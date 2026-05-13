@@ -1551,11 +1551,13 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
             conn.executemany(
                 """INSERT INTO game_pa_log
                    (game_id, team_id, batter_id, pitcher_id, phase, ab_seq, swing_idx,
-                    choice, quality, hit_type, pitch_type, was_stay, stay_credited,
+                    choice, quality, hit_type, pitch_type,
+                    exit_velocity, launch_angle, spray_angle,
+                    was_stay, stay_credited,
                     runs_scored, rbi_credited,
                     outs_before, bases_before, score_diff_before,
                     outs_after,  bases_after,  score_diff_after)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [(game_id, role_to_db.get(e["team_id"], None),
                   int(e["batter_id"]) if e["batter_id"] is not None else None,
                   int(e["pitcher_id"]) if e["pitcher_id"] is not None else None,
@@ -1563,6 +1565,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                   e["ab_seq"], e["swing_idx"],
                   e["choice"], e.get("quality"), e.get("hit_type"),
                   e.get("pitch_type"),
+                  e.get("exit_velocity"), e.get("launch_angle"), e.get("spray_angle"),
                   e["was_stay"], e["stay_credited"],
                   e["runs_scored"], e["rbi_credited"],
                   e.get("outs_before"), e.get("bases_before"), e.get("score_diff_before"),

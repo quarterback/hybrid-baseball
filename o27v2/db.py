@@ -257,7 +257,17 @@ CREATE TABLE IF NOT EXISTS game_pa_log (
     -- the pitcher's repertoire. NULL on legacy rows and on PAs against
     -- pitchers without a typed repertoire. Drives the per-pitcher pitch-
     -- mix aggregate stamped on game_pitcher_stats.
-    pitch_type        TEXT    DEFAULT NULL
+    pitch_type        TEXT    DEFAULT NULL,
+    -- Batted-ball physics hybrid layer. Sampled per BIP from the
+    -- (quality, hit_type, batter.power, pitch.hard_contact_shift)
+    -- joint distribution and stamped here for downstream visualization
+    -- (spray charts, EV/LA-banded Luck Ledger, xwOBA attribution).
+    -- Flavor-only — does NOT drive engine fielding outcomes. Categorical
+    -- hit_type remains the canonical engine output. NULL on non-BIP
+    -- events (K / BB / HBP) and on legacy rows.
+    exit_velocity     REAL    DEFAULT NULL,   -- mph
+    launch_angle      REAL    DEFAULT NULL,   -- degrees, − = grounder
+    spray_angle       REAL    DEFAULT NULL    -- degrees, − = pull / + = oppo
 );
 CREATE INDEX IF NOT EXISTS idx_pa_log_game ON game_pa_log(game_id);
 CREATE INDEX IF NOT EXISTS idx_pa_log_batter ON game_pa_log(batter_id);
@@ -837,6 +847,14 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        # Batted-ball physics hybrid layer (EV / LA / spray). NULL on
+        # non-BIP events and legacy rows.
+        for col in ("exit_velocity", "launch_angle", "spray_angle"):
+            try:
+                conn.execute(f"ALTER TABLE game_pa_log ADD COLUMN {col} REAL DEFAULT NULL")
+                conn.commit()
+            except Exception:
+                pass
         for col in ("singles_allowed", "doubles_allowed", "triples_allowed"):
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")

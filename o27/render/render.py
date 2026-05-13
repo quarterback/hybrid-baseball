@@ -1019,6 +1019,9 @@ class Renderer:
                 "quality": quality,
                 "hit_type": hit_type,
                 "pitch_type": event.get("pitch_type"),
+                "exit_velocity": event.get("exit_velocity"),
+                "launch_angle":  event.get("launch_angle"),
+                "spray_angle":   event.get("spray_angle"),
                 # was_stay = 1 only on VALID 2C events (matches s.sty); invalid
                 # stays (auto-out caught fly) don't count as 2C events.
                 "was_stay": 1 if (choice == "stay" and disp.get("stay_valid")) else 0,
