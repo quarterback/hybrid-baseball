@@ -130,11 +130,18 @@ def _join_names(items: list[tuple[str, int]]) -> str:
 # ---------------------------------------------------------------------------
 
 def _title_line(game: dict) -> str:
-    away = (game.get("away_name") or "").upper()
-    home = (game.get("home_name") or "").upper()
+    """Newspaper-style headline — winner first, mascot only, title case."""
+    away_n = game.get("away_name") or "Away"
+    home_n = game.get("home_name") or "Home"
     away_s = game.get("away_score") or 0
     home_s = game.get("home_score") or 0
-    left  = f"{away} {away_s}, {home} {home_s}"
+    if home_s >= away_s:
+        winner_n, winner_s = home_n, home_s
+        loser_n,  loser_s  = away_n, away_s
+    else:
+        winner_n, winner_s = away_n, away_s
+        loser_n,  loser_s  = home_n, home_s
+    left  = f"{winner_n} {winner_s}, {loser_n} {loser_s}"
     right = f"{_format_date(game.get('game_date'))} · #{game.get('id')}"
     pad = _RULE_WIDTH - len(left) - len(right)
     if pad < 1:
@@ -153,9 +160,13 @@ def _line_score(game: dict, phases: list[int],
     header_rhe = f"{'R':>5}{'H':>5}{'E':>5}"
     out = [header_left + header_phases + header_rhe]
 
+    # Line-score row labels use CITY when available (newspaper
+    # convention) — the headline up top carries the mascot.
+    away_label = game.get("away_city") or game.get("away_name") or ""
+    home_label = game.get("home_city") or game.get("home_name") or ""
     for nm, line in (
-        (game.get("away_name") or "", away_line),
-        (game.get("home_name") or "", home_line),
+        (away_label, away_line),
+        (home_label, home_line),
     ):
         row = nm[:18].ljust(18)
         for p in phases:
@@ -222,8 +233,15 @@ def _batting_block(team_name: str, rows: list[dict]) -> list[str]:
     return out
 
 
-def _batting_annotations(rows: list[dict]) -> list[str]:
-    """2B/3B/HR/SB lines, indented two spaces, period-terminated."""
+def _batting_annotations(
+    rows: list[dict],
+    hr_off_pitchers: dict | None = None,
+) -> list[str]:
+    """2B/3B/HR/SB lines, indented two spaces, period-terminated.
+
+    hr_off_pitchers maps batter_player_id_str → [pitcher last names] so
+    HR notes render AP-style: "HR: Smith (1), off Hernandez".
+    """
     def _collect(field: str) -> list[tuple[str, int]]:
         items = []
         for r in rows:
@@ -232,13 +250,35 @@ def _batting_annotations(rows: list[dict]) -> list[str]:
                 items.append((_short_name(r.get("player_name", "?")), n))
         return items
 
+    def _hr_items() -> list[str]:
+        out_items: list[str] = []
+        for r in rows:
+            n = r.get("hr") or 0
+            if n <= 0:
+                continue
+            name = _short_name(r.get("player_name", "?"))
+            base = f"{name} {n}" if n > 1 else name
+            if hr_off_pitchers:
+                pid = str(r.get("player_id") or "")
+                pitchers = hr_off_pitchers.get(pid) or []
+                uniq: list[str] = []
+                for p in pitchers:
+                    if p and p not in uniq:
+                        uniq.append(p)
+                if uniq:
+                    base += f", off {', '.join(uniq)}"
+            out_items.append(base)
+        return out_items
+
     out = []
     parts = []
-    for label, field in (("2B", "doubles"), ("3B", "triples"),
-                         ("HR", "hr"), ("SB", "sb")):
+    for label, field in (("2B", "doubles"), ("3B", "triples"), ("SB", "sb")):
         items = _collect(field)
         if items:
             parts.append(f"{label}: {_join_names(items)}")
+    hr_items = _hr_items()
+    if hr_items:
+        parts.append("HR: " + "; ".join(hr_items))
     if parts:
         out.append("  " + " ".join(parts))
     return out
@@ -377,6 +417,7 @@ def render_box_score(
     away_pitching: list[dict],
     home_pitching: list[dict],
     weather,  # o27.engine.weather.Weather
+    hr_off_pitchers: dict | None = None,
 ) -> str:
     rule = "=" * _RULE_WIDTH
 
@@ -393,15 +434,18 @@ def render_box_score(
     lines: list[str] = []
     lines.append(rule)
     lines.append(_title_line(game))
+    park = (game.get("home_park_name") or "").strip()
+    if park:
+        lines.append(f"at {park}")
     lines.append(rule)
     lines.append("")
     lines.extend(_line_score(game, phases, away_line, home_line))
     lines.append("")
     lines.extend(_batting_block(game.get("away_name", ""), away_batting))
-    lines.extend(_batting_annotations(away_batting))
+    lines.extend(_batting_annotations(away_batting, hr_off_pitchers))
     lines.append("")
     lines.extend(_batting_block(game.get("home_name", ""), home_batting))
-    lines.extend(_batting_annotations(home_batting))
+    lines.extend(_batting_annotations(home_batting, hr_off_pitchers))
     lines.append("")
     lines.extend(_pitching_block(
         game.get("away_name", ""), away_pitching, win_pid, lose_pid, pitch_denom,

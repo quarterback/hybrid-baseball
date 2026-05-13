@@ -87,14 +87,25 @@ def _rate(num: int, den: int, places: int = 3) -> str:
 # --------------------------------------------------------------------------
 
 def render_header(game: dict, away_total_r: int, home_total_r: int) -> str:
-    """Title line + venue line:
+    """Title line + venue line — newspaper-style.
 
-        AWAY 12, HOME 11                            Date · #id
+        Mariners 4, Angels 1                           Date · #id
         at <Park Name>
+
+    Winner team comes first (real AP/BR convention). Team mascot only
+    on the headline; city/full identifier appears in the line score
+    rows below so the headline reads as the league knows them.
     """
-    away = (game.get("away_abbrev") or game.get("away_name") or "AWAY").upper()
-    home = (game.get("home_abbrev") or game.get("home_name") or "HOME").upper()
-    title = f"{away} {away_total_r}, {home} {home_total_r}"
+    away_mascot = game.get("away_name") or game.get("away_abbrev") or "Away"
+    home_mascot = game.get("home_name") or game.get("home_abbrev") or "Home"
+    # Winner first.
+    if home_total_r >= away_total_r:
+        winner_n, winner_r = home_mascot, home_total_r
+        loser_n,  loser_r  = away_mascot, away_total_r
+    else:
+        winner_n, winner_r = away_mascot, away_total_r
+        loser_n,  loser_r  = home_mascot, home_total_r
+    title = f"{winner_n} {winner_r}, {loser_n} {loser_r}"
     si = int(game.get("super_inning") or 0)
     if si:
         title += f"  ({si} SI)"
@@ -132,8 +143,13 @@ def render_line_score(
         row += f"{line['total_r']:>5}{line['total_h']:>5}{line['total_e']:>5}"
         return row
 
-    return header + "\n" + _row(game.get("away_name", "Away"), away_line) \
-                  + "\n" + _row(game.get("home_name", "Home"), home_line)
+    # Line-score row label is the team's CITY (newspaper convention) when
+    # available, falling back to the team name. Headline up top already
+    # carries the mascot, so the line score gets the city for variety.
+    away_label = game.get("away_city") or game.get("away_name", "Away")
+    home_label = game.get("home_city") or game.get("home_name", "Home")
+    return header + "\n" + _row(away_label, away_line) \
+                  + "\n" + _row(home_label, home_line)
 
 
 def _ordered_rows_with_indent(rows: list[dict]) -> list[tuple[dict, int]]:
@@ -253,15 +269,23 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
     return "\n".join(out)
 
 
-def render_batting_annotations(rows: Iterable[dict]) -> str:
+def render_batting_annotations(
+    rows: Iterable[dict],
+    hr_off_pitchers: Optional[dict] = None,
+) -> str:
     """  2B: Lopez, Fletcher.
-         HR: Smith (12).
+         HR: Smith (12), off Hernandez; Trout (1), off Weaver.
          SB: ...
          E: Edwards.
     Each line indented two spaces. Multi-event same-player formatted as
     'Smith 2 (12)' = "two HR, season totals 12 and 13" → we collapse to
     "Smith 2 (12)" because we only track the running season HR count, not
-    the per-event sequence."""
+    the per-event sequence.
+
+    hr_off_pitchers — optional map of {batter_player_id_str → [pitcher
+    last names, in order]}, used to append "off Pitcher" to each HR
+    note in AP/newspaper style.
+    """
     rows = list(rows)
     lines: list[str] = []
 
@@ -296,11 +320,24 @@ def render_batting_annotations(rows: Iterable[dict]) -> str:
         last = _last_name(r.get("player_name") or "")
         season = r.get("season_hr") or n
         if n > 1:
-            hr_items.append(f"{last} {n} ({season})")
+            item = f"{last} {n} ({season})"
         else:
-            hr_items.append(f"{last} ({season})")
+            item = f"{last} ({season})"
+        # Newspaper convention: "off Hernandez" appended to each HR.
+        if hr_off_pitchers:
+            pid = str(r.get("player_id") or "")
+            pitchers = hr_off_pitchers.get(pid) or []
+            if pitchers:
+                # If batter hit 2 HRs off two different pitchers, join the
+                # surnames; if all off the same pitcher, list once.
+                uniq = []
+                for p in pitchers:
+                    if p and p not in uniq:
+                        uniq.append(p)
+                item += f", off {', '.join(uniq)}"
+        hr_items.append(item)
     if hr_items:
-        lines.append(f"  HR: {', '.join(hr_items)}.")
+        lines.append(f"  HR: {'; '.join(hr_items)}.")
     pairs = _pick("sb")
     if pairs:
         lines.append(f"  SB: {_items(pairs)}.")
@@ -400,6 +437,7 @@ def render_box_score(
     away_pitching: list[dict],
     home_pitching: list[dict],
     decisions: Optional[dict[int, str]] = None,
+    hr_off_pitchers: Optional[dict] = None,
 ) -> str:
     rule = "=" * RULE_WIDTH
 
@@ -411,10 +449,10 @@ def render_box_score(
         render_line_score(game, phases, away_line, home_line),
         "",
         render_batting_table(game.get("away_name", "Away"), away_batting),
-        render_batting_annotations(away_batting),
+        render_batting_annotations(away_batting, hr_off_pitchers),
         "",
         render_batting_table(game.get("home_name", "Home"), home_batting),
-        render_batting_annotations(home_batting),
+        render_batting_annotations(home_batting, hr_off_pitchers),
         "",
         render_pitching_table(game.get("away_name", "Away"), away_pitching, decisions),
         "",
