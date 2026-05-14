@@ -184,7 +184,7 @@
   <table class="table dense-table sortable mb-0">
     <thead><tr>
       <th>Name</th><th>Tm</th><th>Pos</th><th class="num">Age</th>
-      <th class="num" title="Overall hitter rating">Skill</th>
+      <th title="Whole-player overall on a 6-diamond scale. Baby bottles show projected upside for prospects (age ≤ 26).">Overall</th>
       <th class="num">Power</th>
       <th class="num">Contact</th>
       <th class="num">Eye</th>
@@ -193,7 +193,7 @@
       <th class="num">Command</th>
       <th class="num">Move</th>
       <th class="num">Stamina</th>
-      <th class="num">Defense</th>
+      <th class="num" title="Position-aware defense overall">Def Ovr</th>
       <th class="num">Arm</th>
       <th class="num" title="Defensive sub-rating: infield">Def-IF</th>
       <th class="num" title="Defensive sub-rating: outfield">Def-OF</th>
@@ -202,12 +202,14 @@
     </tr></thead>
     <tbody>
     {% for p in ratings_rows %}
+    {% set p_ovr = player_overall(p) %}
+    {% set d_ovr = defense_overall(p) %}
     <tr>
       <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.is_joker %} <span class="si-badge">JKR</span>{% endif %}</td>
       <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
       <td class="text-secondary">{{ p.position }}</td>
       <td class="num text-secondary">{{ p.age }}</td>
-      <td class="num{% if p.skill and p.skill >= 70 %} fw-bold{% endif %}">{{ p.skill if p.skill is not none else '—' }}</td>
+      <td data-sort-value="{{ p_ovr }}">{{ overall_chip(p) }}</td>
       <td class="num{% if p.power and p.power >= 70 %} fw-bold{% endif %}">{{ p.power if p.power is not none else '—' }}</td>
       <td class="num{% if p.contact and p.contact >= 70 %} fw-bold{% endif %}">{{ p.contact if p.contact is not none else '—' }}</td>
       <td class="num{% if p.eye and p.eye >= 70 %} fw-bold{% endif %}">{{ p.eye if p.eye is not none else '—' }}</td>
@@ -216,7 +218,7 @@
       <td class="num{% if p.command and p.command >= 70 %} fw-bold{% endif %}">{{ p.command if p.command is not none else '—' }}</td>
       <td class="num{% if p.movement and p.movement >= 70 %} fw-bold{% endif %}">{{ p.movement if p.movement is not none else '—' }}</td>
       <td class="num{% if p.stamina and p.stamina >= 70 %} fw-bold{% endif %}">{{ p.stamina if p.stamina is not none else '—' }}</td>
-      <td class="num{% if p.defense and p.defense >= 70 %} fw-bold{% endif %}">{{ p.defense if p.defense is not none else '—' }}</td>
+      <td class="num{% if d_ovr >= 70 %} fw-bold{% endif %}">{{ d_ovr }}</td>
       <td class="num{% if p.arm and p.arm >= 70 %} fw-bold{% endif %}">{{ p.arm if p.arm is not none else '—' }}</td>
       <td class="num">{{ p.defense_infield if p.defense_infield is not none else '—' }}</td>
       <td class="num">{{ p.defense_outfield if p.defense_outfield is not none else '—' }}</td>

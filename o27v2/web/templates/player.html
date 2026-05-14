@@ -484,6 +484,7 @@
     <div class="panel-title">Defensive Profile (rated)</div>
     <table class="table table-sm dense-table mb-0">
       <tbody>
+        {{ rating_row("Defense (overall)", defense_overall(player), "Position-aware blend of general defense, arm, and position-specific glove") }}
         {{ rating_row("General defense", player.defense, "Glove / surehandedness — applied at any position") }}
         {{ rating_row("Arm",             player.arm,     "Throwing strength — matters most at C / OF / SS") }}
         {{ rating_row("Infield (1B/2B/3B/SS)", player.defense_infield, "Position-group sub-rating") }}
@@ -750,13 +751,32 @@
 
 {# ======================== RATINGS TAB ======================== #}
 <div class="tab-pane fade" id="tab-ratings">
+  <div class="dense mb-3">
+    <div class="panel-title">Overall</div>
+    <table class="table table-sm dense-table mb-0">
+      <tbody>
+        <tr title="Position-weighted blend of hitting, defense, and speed (or pitching attributes for pitchers). Baby bottles show projected upside for prospects (age ≤ 26).">
+          <td class="text-secondary">Player overall</td>
+          <td>{{ overall_chip(player) }}</td>
+          <td class="text-secondary small">
+            {% set _ovr = player_overall(player) %}
+            {% if (player.age or 30) <= 26 and project_peak_overall(player) > _ovr %}
+              Now {{ _ovr }} · projected peak {{ project_peak_overall(player) }}
+            {% else %}
+              {{ _ovr }}
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
   <div class="row g-3">
     <div class="col-md-6">
       <div class="dense">
         <div class="panel-title">Hitting</div>
         <table class="table table-sm dense-table mb-0">
           <tbody>
-            {{ rating_row("Skill (overall)", player.skill, "Generalized hitter rating") }}
+            {{ rating_row("Hitting (overall)", hitting_overall(player), "Mean of contact, power, eye, and at-bat skill") }}
             {{ rating_row("Power",           player.power, "Bias contact toward hard / boost HR weight") }}
             {{ rating_row("Contact",         player.contact, "Lower whiff rate; more fouls / in-play") }}
             {{ rating_row("Eye",             player.eye, "Discipline — more balls taken, fewer called Ks") }}
@@ -770,6 +790,7 @@
         <div class="panel-title">Pitching</div>
         <table class="table table-sm dense-table mb-0">
           <tbody>
+            {{ rating_row("Pitching (overall)",    pitching_overall(player), "Weighted blend of stuff, command, movement, and stamina") }}
             {{ rating_row("Stuff (pitcher_skill)", player.pitcher_skill, "Whiffs / swinging strikes") }}
             {{ rating_row("Command",               player.command, "Lower P(ball) — Maddux archetype") }}
             {{ rating_row("Movement",              player.movement, "Bias contact toward weak / ground-out") }}
@@ -783,6 +804,7 @@
         <div class="panel-title">Defense</div>
         <table class="table table-sm dense-table mb-0">
           <tbody>
+            {{ rating_row("Defense (overall)", defense_overall(player), "Position-aware blend of general defense, arm, and position-specific glove") }}
             {{ rating_row("General defense", player.defense, "Range / glove") }}
             {{ rating_row("Arm",             player.arm) }}
             {{ rating_row("Infield",         player.defense_infield) }}

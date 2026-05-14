@@ -333,15 +333,29 @@
         {% endfor %}
       </tr>
       {% endmacro %}
-      {{ rating_row('Skill (overall hitter)', 'skill') }}
+      {% macro computed_row(label, fn, tooltip='', bold=False) %}
+      <tr {% if tooltip %}title="{{ tooltip }}"{% endif %}>
+        <td class="text-secondary">{{ label }}</td>
+        {% for o in players %}
+          <td class="num{% if bold %} fw-bold{% endif %}">{{ fn(o.player) }}</td>
+        {% endfor %}
+      </tr>
+      {% endmacro %}
+      <tr title="Position-weighted whole-player overall on a 6-diamond scale. Baby bottles show projected upside for prospects (age ≤ 26).">
+        <td class="text-secondary">Player overall</td>
+        {% for o in players %}<td>{{ overall_chip(o.player) }}</td>{% endfor %}
+      </tr>
+      {{ computed_row('Hitting (overall)', hitting_overall, 'Mean of contact, power, eye, and at-bat skill') }}
       {{ rating_row('Power',   'power') }}
       {{ rating_row('Contact', 'contact') }}
       {{ rating_row('Eye',     'eye') }}
       {{ rating_row('Speed',   'speed') }}
+      {{ computed_row('Pitching (overall)', pitching_overall, 'Weighted blend of stuff, command, movement, and stamina') }}
       {{ rating_row('Stuff (pitcher_skill)', 'pitcher_skill') }}
       {{ rating_row('Command',  'command') }}
       {{ rating_row('Movement', 'movement') }}
       {{ rating_row('Stamina',  'stamina') }}
+      {{ computed_row('Defense (overall)', defense_overall, 'Position-aware blend of general defense, arm, and position-specific glove') }}
       {{ rating_row('Defense (general)', 'defense') }}
       {{ rating_row('Arm', 'arm') }}
       {{ rating_row('Defense — Infield',  'defense_infield') }}
