@@ -184,7 +184,7 @@
   <table class="table dense-table sortable mb-0">
     <thead><tr>
       <th>Name</th><th>Tm</th><th>Pos</th><th class="num">Age</th>
-      <th class="num" title="Whole-player overall: position-weighted blend of hitting, defense, and speed (or pitching for pitchers)">Overall</th>
+      <th title="Whole-player overall on a 6-diamond scale. Baby bottles show projected upside for prospects (age ≤ 26).">Overall</th>
       <th class="num">Power</th>
       <th class="num">Contact</th>
       <th class="num">Eye</th>
@@ -209,7 +209,7 @@
       <td><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
       <td class="text-secondary">{{ p.position }}</td>
       <td class="num text-secondary">{{ p.age }}</td>
-      <td class="num{% if p_ovr >= 70 %} fw-bold{% endif %}">{{ p_ovr }}</td>
+      <td data-sort-value="{{ p_ovr }}">{{ overall_chip(p) }}</td>
       <td class="num{% if p.power and p.power >= 70 %} fw-bold{% endif %}">{{ p.power if p.power is not none else '—' }}</td>
       <td class="num{% if p.contact and p.contact >= 70 %} fw-bold{% endif %}">{{ p.contact if p.contact is not none else '—' }}</td>
       <td class="num{% if p.eye and p.eye >= 70 %} fw-bold{% endif %}">{{ p.eye if p.eye is not none else '—' }}</td>

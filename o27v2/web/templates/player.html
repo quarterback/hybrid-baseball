@@ -755,7 +755,18 @@
     <div class="panel-title">Overall</div>
     <table class="table table-sm dense-table mb-0">
       <tbody>
-        {{ rating_row("Player overall", player_overall(player), "Position-weighted blend of hitting, defense, and speed (or pitching attributes for pitchers)") }}
+        <tr title="Position-weighted blend of hitting, defense, and speed (or pitching attributes for pitchers). Baby bottles show projected upside for prospects (age ≤ 26).">
+          <td class="text-secondary">Player overall</td>
+          <td>{{ overall_chip(player) }}</td>
+          <td class="text-secondary small">
+            {% set _ovr = player_overall(player) %}
+            {% if (player.age or 30) <= 26 and project_peak_overall(player) > _ovr %}
+              Now {{ _ovr }} · projected peak {{ project_peak_overall(player) }}
+            {% else %}
+              {{ _ovr }}
+            {% endif %}
+          </td>
+        </tr>
       </tbody>
     </table>
   </div>

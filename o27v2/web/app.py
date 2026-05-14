@@ -789,6 +789,78 @@ app.jinja_env.globals["defense_overall"]  = _defense_overall_display
 app.jinja_env.globals["pitching_overall"] = _pitching_overall_display
 
 
+# ---------------------------------------------------------------------------
+# Diamond + baby-bottle chip for the headline overall.
+#
+# Visual: 1-6 diamonds for current overall, plus baby bottles for the gap
+# between current and projected peak (only computed for age <= 26 — older
+# players plateau or decline). Inspired by OOTP's star scale.
+# ---------------------------------------------------------------------------
+
+def _overall_to_diamonds(overall: int) -> int:
+    """Map overall (20-95+) to the 1-6 diamond bands. Aligned with the
+    existing tier-label thresholds so a "6-diamond" player is also Elite."""
+    if overall >= 80: return 6
+    if overall >= 70: return 5
+    if overall >= 60: return 4
+    if overall >= 50: return 3
+    if overall >= 40: return 2
+    if overall >= 30: return 1
+    return 0
+
+
+def _project_peak_overall(p) -> int:
+    """Project a player's peak overall, used to surface upside on the
+    chip. Per the user's spec: only computed for age <= 26 — older
+    players plateau or decline, so peak == current.
+
+    Basis is the engine's `_mu_age` curve (development.py), but with a
+    higher per-year coefficient (3.0/yr) than the engine median (~1.5)
+    because this is a scout *ceiling* projection rather than expected
+    median. Modulated linearly by work_ethic (50 = neutral)."""
+    age = int(p.get("age") or 30)
+    current = _player_overall_display(p)
+    if age > 26:
+        return current
+    we = float(p.get("work_ethic") or 50)
+    years_left = max(0, 28 - age)
+    per_year = 3.0
+    work_mod = 1.0 + (we - 50.0) / 100.0
+    bump = years_left * per_year * work_mod
+    return min(95, int(round(current + bump)))
+
+
+def _overall_chip(p) -> "Markup":
+    """Render the player's overall as 1-6 diamonds (current) plus baby
+    bottles for any projected upside above current. Number is exposed
+    via the title attribute so power users still see the underlying
+    rating on hover."""
+    from markupsafe import Markup, escape
+    overall = _player_overall_display(p)
+    current_d = _overall_to_diamonds(overall)
+    age = int(p.get("age") or 30)
+    if age <= 26:
+        peak = _project_peak_overall(p)
+        peak_d = _overall_to_diamonds(peak)
+        bottles = max(0, peak_d - current_d)
+    else:
+        peak = overall
+        bottles = 0
+    title = f"Overall: {overall}"
+    if bottles > 0:
+        title += f" · projected peak: {peak}"
+    diamonds = '<span class="ovr-diamond">◆</span>' * current_d
+    bottles_html = '<span class="ovr-bottle">\U0001F37C</span>' * bottles
+    return Markup(
+        f'<span class="ovr-chip" title="{escape(title)}">{diamonds}{bottles_html}</span>'
+    )
+
+
+app.jinja_env.globals["overall_chip"] = _overall_chip
+app.jinja_env.globals["overall_to_diamonds"] = _overall_to_diamonds
+app.jinja_env.globals["project_peak_overall"] = _project_peak_overall
+
+
 def _pitcher_per_game_decay_map() -> dict[int, dict[str, float]]:
     """Per-pitcher per-appearance Decay map and arc-3 reach rate.
 
@@ -3024,6 +3096,7 @@ def players():
                    p.skill, p.power, p.contact, p.eye, p.speed,
                    p.pitcher_skill, p.command, p.movement, p.stamina,
                    p.defense, p.arm, p.defense_infield, p.defense_outfield, p.defense_catcher,
+                   p.work_ethic,
                    p.archetype,
                    t.abbrev AS team_abbrev
             FROM players p JOIN teams t ON p.team_id = t.id

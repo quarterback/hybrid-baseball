@@ -341,7 +341,10 @@
         {% endfor %}
       </tr>
       {% endmacro %}
-      {{ computed_row('Player overall', player_overall, 'Position-weighted blend of hitting, defense, and speed (or pitching attributes for pitchers)', True) }}
+      <tr title="Position-weighted whole-player overall on a 6-diamond scale. Baby bottles show projected upside for prospects (age ≤ 26).">
+        <td class="text-secondary">Player overall</td>
+        {% for o in players %}<td>{{ overall_chip(o.player) }}</td>{% endfor %}
+      </tr>
       {{ computed_row('Hitting (overall)', hitting_overall, 'Mean of contact, power, eye, and at-bat skill') }}
       {{ rating_row('Power',   'power') }}
       {{ rating_row('Contact', 'contact') }}
