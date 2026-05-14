@@ -798,15 +798,18 @@ app.jinja_env.globals["pitching_overall"] = _pitching_overall_display
 # ---------------------------------------------------------------------------
 
 def _overall_to_diamonds(overall: int) -> int:
-    """Map overall (20-95+) to the 1-6 diamond bands. Aligned with the
-    existing tier-label thresholds so a "6-diamond" player is also Elite."""
-    if overall >= 80: return 6
-    if overall >= 70: return 5
-    if overall >= 60: return 4
-    if overall >= 50: return 3
-    if overall >= 40: return 2
-    if overall >= 30: return 1
-    return 0
+    """Map overall to the 1-6 diamond bands.
+
+    6 ◆ is reserved for 90+ (truly transcendent — Trout-tier), 5 ◆ is
+    for legit stars (80-89). Floor is 1 ◆ which covers everything
+    below 50; there's no "0 diamond" — even sub-replacement players
+    show one filled diamond so the scale is always visually anchored."""
+    if overall >= 90: return 6
+    if overall >= 80: return 5
+    if overall >= 70: return 4
+    if overall >= 60: return 3
+    if overall >= 50: return 2
+    return 1
 
 
 def _project_peak_overall(p) -> int:
