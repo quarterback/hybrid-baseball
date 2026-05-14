@@ -682,6 +682,113 @@ def _position_defense_for_row(row: dict) -> float:
     return 0.6 * sub + 0.4 * general
 
 
+# ---------------------------------------------------------------------------
+# Display-overall ratings
+#
+# These power the "Overall" rows in the Ratings UI (player detail, players
+# list ratings view, compare, free-agents). Kept separate from the engine's
+# `_player_overall` (used for draft/auction/waiver ranking) — that function
+# stays a simple symmetric average to preserve existing ranking behavior;
+# changing it would shift sim outcomes. These display functions, on the
+# other hand, can be tuned freely without engine impact.
+#
+# All inputs come from a player row (dict-like). Outputs are on the same
+# 20-95 grade scale as the sub-ratings, so the existing tier-label chips
+# ("Average", "Good", "Elite", ...) work without changes.
+# ---------------------------------------------------------------------------
+
+# Position weights for the whole-player hitter overall: (hit, def, spd).
+# Up-the-middle positions weight defense more; corner / DH lean offensive.
+_HITTER_POS_OVR_WEIGHTS: dict[str, tuple[float, float, float]] = {
+    "C":  (0.40, 0.55, 0.05),
+    "SS": (0.45, 0.45, 0.10),
+    "2B": (0.50, 0.40, 0.10),
+    "CF": (0.50, 0.40, 0.10),
+    "3B": (0.55, 0.35, 0.10),
+    "RF": (0.60, 0.30, 0.10),
+    "LF": (0.65, 0.25, 0.10),
+    "1B": (0.75, 0.20, 0.05),
+    "DH": (0.90, 0.00, 0.10),
+    "UT": (0.50, 0.40, 0.10),
+}
+_DEFAULT_HITTER_OVR_WEIGHTS = (0.55, 0.35, 0.10)
+
+
+def _as_grade(v, default: int = 50) -> float:
+    """Coerce a sub-rating to a float on the 20-95 grade scale."""
+    if v is None:
+        return float(default)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _hitting_overall_display(row) -> int:
+    """Hitting-only aggregate: simple mean of skill + contact + power + eye.
+    Matches the engine's `_player_overall` shape so this number lines up
+    with draft/auction/waiver ranking."""
+    skill   = _as_grade(row.get("skill"))
+    contact = _as_grade(row.get("contact"))
+    power   = _as_grade(row.get("power"))
+    eye     = _as_grade(row.get("eye"))
+    return int(round((skill + contact + power + eye) / 4.0))
+
+
+def _defense_overall_display(row) -> int:
+    """Position-aware defense aggregate: blends general defense, arm, and
+    the position-relevant sub-rating. Weights mirror the engine's
+    intuition (catchers lean on the position sub; OFs care about arm)."""
+    pos     = str(row.get("position") or "")
+    general = _as_grade(row.get("defense"))
+    arm     = _as_grade(row.get("arm"))
+    inf     = _as_grade(row.get("defense_infield"))
+    of      = _as_grade(row.get("defense_outfield"))
+    cat     = _as_grade(row.get("defense_catcher"))
+
+    if pos == "C":
+        return int(round(0.30 * general + 0.25 * arm + 0.45 * cat))
+    if pos in _INFIELD_POS_SET:
+        return int(round(0.45 * general + 0.20 * arm + 0.35 * inf))
+    if pos in _OUTFIELD_POS_SET:
+        return int(round(0.40 * general + 0.30 * arm + 0.30 * of))
+    if pos == "UT":
+        sub_max = max(inf, of, cat)
+        return int(round(0.45 * general + 0.25 * arm + 0.30 * sub_max))
+    # DH / P / unknown — defense barely matters; report general only.
+    return int(round(general))
+
+
+def _pitching_overall_display(row) -> int:
+    """Pitcher aggregate: stuff > command/movement > stamina."""
+    pskill   = _as_grade(row.get("pitcher_skill"))
+    command  = _as_grade(row.get("command"))
+    movement = _as_grade(row.get("movement"))
+    stamina  = _as_grade(row.get("stamina"))
+    return int(round(0.40 * pskill + 0.25 * command + 0.25 * movement + 0.10 * stamina))
+
+
+def _player_overall_display(row) -> int:
+    """Whole-player overall. For hitters, position-weighted blend of the
+    hitting / defense / speed components. For pitchers, the pitching
+    aggregate (defense and bat skills are negligible for pitchers in
+    this engine)."""
+    if row.get("is_pitcher"):
+        return _pitching_overall_display(row)
+    pos = str(row.get("position") or "")
+    hit_w, def_w, spd_w = _HITTER_POS_OVR_WEIGHTS.get(pos, _DEFAULT_HITTER_OVR_WEIGHTS)
+    hit = _hitting_overall_display(row)
+    dfn = _defense_overall_display(row)
+    spd = _as_grade(row.get("speed"))
+    return int(round(hit_w * hit + def_w * dfn + spd_w * spd))
+
+
+app.jinja_env.globals["player_overall"]   = _player_overall_display
+app.jinja_env.globals["hitting_overall"]  = _hitting_overall_display
+app.jinja_env.globals["defense_overall"]  = _defense_overall_display
+app.jinja_env.globals["pitching_overall"] = _pitching_overall_display
+
+
 def _pitcher_per_game_decay_map() -> dict[int, dict[str, float]]:
     """Per-pitcher per-appearance Decay map and arc-3 reach rate.
 
@@ -4976,7 +5083,7 @@ def free_agents():
     """Browse the free-agent pool. Players in this list have team_id NULL
     and are eligible to be claimed by the weekly Sunday match-day sweep
     (see o27v2/waivers.py)."""
-    from o27v2.waivers import _player_overall, _last_sweep_date
+    from o27v2.waivers import _last_sweep_date
 
     pos_filter = (request.args.get("pos") or "").strip().upper()
     kind       = (request.args.get("kind") or "all").strip().lower()  # all|hitters|pitchers
@@ -4997,7 +5104,7 @@ def free_agents():
         tuple(params),
     )
     for r in rows:
-        r["overall"] = _player_overall(r)
+        r["overall"] = _player_overall_display(r)
 
     if sort == "name":
         rows.sort(key=lambda r: r["name"])
