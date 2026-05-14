@@ -83,6 +83,7 @@
     {% if player.is_pitcher %}<span class="badge bg-info">PITCHER</span>{% endif %}
     <span class="text-secondary">{{ player.position }}</span>
     <a href="{{ url_for('team_detail', team_id=player.team_id) }}" class="team-abbrev" style="font-size:1rem">{{ player.team_abbrev }}</a>
+    <span class="text-secondary small" style="font-size:1rem">{{ overall_chip(player) }}</span>
     <span class="text-secondary small">Age <strong class="text-dark">{{ player.age }}</strong></span>
     <span class="text-secondary small">Bats <strong class="text-dark">{{ player.bats or '—' }}</strong> · Throws <strong class="text-dark">{{ player.throws or '—' }}</strong></span>
     {% if player.salary %}
