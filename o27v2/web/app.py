@@ -614,7 +614,9 @@ _PSTATS_DEDUP_SQL = """(
            k_arc1,  k_arc2,  k_arc3,
            fo_arc1, fo_arc2, fo_arc3,
            bf_arc1, bf_arc2, bf_arc3,
-           is_starter
+           is_starter,
+           singles_allowed, doubles_allowed, triples_allowed,
+           fastball_pct, breaking_pct, offspeed_pct, primary_pitch
     FROM (
         SELECT *,
                ROW_NUMBER() OVER (
