@@ -236,8 +236,8 @@ HARD_CONTACT: list = [
     ("single",   True,  False, 0.20),
     ("double",   True,  False, 0.24),
     ("triple",   True,  False, 0.08),
-    ("hr",       True,  False, 0.14),   # raised from 0.12, then trimmed to 0.14 for mean control
-    ("fly_out",  False, True,  0.19),   # compensates HR weight adjustment
+    ("hr",       True,  False, 0.22),
+    ("fly_out",  False, True,  0.19),
     ("line_out", False, False, 0.15),
 ]
 

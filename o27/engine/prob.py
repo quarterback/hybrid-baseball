@@ -1064,12 +1064,12 @@ def should_stay_prob(
     # Removing these hard rules lets the AI take the strategically right
     # action in late-count / late-half situations.
 
-    # Medium contact gate: only eligible to stay if RNG < contact_quality_threshold.
-    if quality == "medium":
-        if rng.random() > batter.contact_quality_threshold:
-            return False
-
-    # Final probabilistic gate: stay_aggressiveness.
+    # Probabilistic gate: stay_aggressiveness alone drives 2C frequency
+    # on weak/medium contact. The medium contact_quality_threshold gate
+    # was removed to lift 2C event rate (5.47% → target ~10%) without
+    # flattening per-player traits — stay_aggressiveness still varies
+    # by player. contact_quality_threshold remains in the schema and
+    # may be used for other gating in future.
     return rng.random() < batter.stay_aggressiveness
 
 
