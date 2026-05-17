@@ -22,6 +22,7 @@ from typing import Any
 
 from o27v2 import config as v2cfg
 from o27v2 import scout as _scout
+from o27v2.archetypes import classify_position_player
 from o27 import config as _engine_cfg
 
 _DATA_DIR     = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -1180,7 +1181,7 @@ def _make_hitter(
             if_g, of_g, cat_g = spec_low_a, spec_low_b, spec_high
     # Pitcher_skill on a position player is only used in emergencies.
     pskill_g = roll() // 2 + 10  # cap fielder-pitching at low grades
-    return {
+    result = {
         "name": name,
         "country": country,
         "position": pos,
@@ -1237,6 +1238,8 @@ def _make_hitter(
         "work_habits": roll(),
         "habit_cup":   0.5,
     }
+    result["archetype"] = classify_position_player(result)
+    return result
 
 
 # ---------------------------------------------------------------------------

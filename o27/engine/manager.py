@@ -768,6 +768,12 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     if score_diff > cfg.PINCH_HIT_SCORE_DIFF_MAX + 2 and not late:
         return None
 
+    # Signed score from the batting team's perspective — needed to tell
+    # "trailing late, need a homer" from "ahead late, working a count."
+    bat_role = "visitors" if state.half in ("top", "super_top") else "home"
+    fld_role = "home" if bat_role == "visitors" else "visitors"
+    trail_runs = state.score.get(fld_role, 0) - state.score.get(bat_role, 0)
+
     # Tendency gates. mgr_pinch_hit_aggression scales the per-spot trigger
     # probability; mgr_leverage_aware sharpens the response when the score
     # is close. A neutral manager (0.5) fires in maybe 20% of qualifying
@@ -807,8 +813,29 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
         # Opposite-handed batter vs pitcher = platoon edge.
         return b != p_throws
 
+    def _archetype_bonus(p) -> float:
+        """Situational nudge on top of skill for bench-bat selection.
+
+        Power archetypes get a bump when trailing late (need a homer);
+        contact archetypes get a smaller bump with runners in scoring
+        position. Bonuses are deliberately smaller than the skill-edge
+        gate (cfg.PINCH_HIT_SKILL_EDGE) so a worse hitter doesn't beat
+        a meaningfully better one — they only break near-ties.
+        """
+        a = (getattr(p, "archetype", "") or "")
+        if not a:
+            return 0.0
+        bonus = 0.0
+        if late and trail_runs >= 2 and runners_on:
+            if a in ("Slugger", "Power-Hitting Corner"):
+                bonus += 0.08
+        if tight and runners_on:
+            if a in ("Contact Hitter", "Five-Tool Star"):
+                bonus += 0.06
+        return bonus
+
     # Skill upgrade pick.
-    skill_best = max(candidates, key=lambda p: p.skill)
+    skill_best = max(candidates, key=lambda p: p.skill + _archetype_bonus(p))
     skill_edge = skill_best.skill - batter.skill
 
     # Platoon upgrade pick: best bench bat with the edge, when the current
@@ -1154,7 +1181,19 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     ]
     if not bench:
         return None
-    best = max(bench, key=lambda pl: float(getattr(pl, "defense", 0.5) or 0.5))
+
+    def _defense_score(pl) -> float:
+        """Defense plus a small archetype nudge so glove-first identities
+        win near-ties over generic bench bats."""
+        base = float(getattr(pl, "defense", 0.5) or 0.5)
+        a = (getattr(pl, "archetype", "") or "")
+        if a == "Defensive Specialist":
+            base += 0.06
+        elif a == "Utility Infielder":
+            base += 0.04
+        return base
+
+    best = max(bench, key=_defense_score)
 
     # Only swap if best is meaningfully better. 0.05 is the same edge
     # the pinch-hit logic uses for skill upgrades.

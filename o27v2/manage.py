@@ -8,6 +8,7 @@ Usage:
     python o27v2/manage.py sim [N]
     python o27v2/manage.py backfill_arc          — replay played games via stored seeds to populate arc-bucketed pitcher stats
     python o27v2/manage.py backfill_salaries     — recompute every player's salary in guilders from current attributes
+    python o27v2/manage.py backfill_archetypes   — classify every non-pitcher / non-joker player's archetype from current grades
     python o27v2/manage.py smoke
     python o27v2/manage.py configs              — list available league configs
     python o27v2/manage.py tune [SEASON_GAMES]  — sim a full season, verify Phase 9 targets
@@ -195,6 +196,37 @@ def cmd_backfill_salaries():
     print(f"Backfilled salaries on {len(updates)} player rows.")
 
 
+def cmd_backfill_archetypes():
+    """Classify every existing player's archetype from current attributes
+    via o27v2.archetypes.classify_position_player. Idempotent — safe to
+    re-run. Use after deploying the archetype system to a live DB whose
+    `archetype` column is empty for legacy rows. New players seeded by
+    league.seed_league() already get classified at insert time, so a
+    fresh DB does not need this step."""
+    from o27v2 import db
+    from o27v2.archetypes import classify_position_player
+
+    rows = db.fetchall("SELECT * FROM players")
+    if not rows:
+        print("No players in DB — nothing to backfill.")
+        return
+
+    updates: list[tuple[str, int]] = []
+    for p in rows:
+        label = classify_position_player(p)
+        if label != (p.get("archetype") or ""):
+            updates.append((label, p["id"]))
+
+    if not updates:
+        print("All archetypes already up to date.")
+        return
+
+    with db.get_conn() as conn:
+        conn.executemany("UPDATE players SET archetype = ? WHERE id = ?", updates)
+        conn.commit()
+    print(f"Updated {len(updates)} player archetype label(s).")
+
+
 def cmd_configs():
     configs = get_league_configs()
     print(f"{'ID':<12} {'Label':<30} {'Teams':>5} {'GPT':>5} {'Level':<5}")
@@ -344,6 +376,8 @@ def main():
         cmd_backfill_arc()
     elif args[0] == "backfill_salaries":
         cmd_backfill_salaries()
+    elif args[0] == "backfill_archetypes":
+        cmd_backfill_archetypes()
     elif args[0] == "configs":
         cmd_configs()
     elif args[0] == "tune":
