@@ -584,20 +584,20 @@ def _resolve_contact(
     if stay_thrown_out_id is not None:
         log += _record_out(state, stay_thrown_out_id)
 
-    # 2C hit credit (§2.7 reframed): credit a hit ONLY when a run scored
-    # on the play — the 2C is RBI-single semantics, not a free hit for
-    # any movement. Pure runner advancement (e.g. 1B→2B with no run)
-    # is still a successful 2C event, it just doesn't pad the batter's
-    # BA. This matches the design intent: 2C is about advancing runners
-    # and bringing them home, not creating hits for hits' sake.
+    # 2C hit credit (§2.7): a 2C that advances a runner IS a hit — the
+    # batter delivered contact that moved the chain. Movement-only 2Cs
+    # (1B→2B, no run) and run-scoring 2Cs both credit a hit. Only a
+    # failed 2C (talent gate produced adv=0, no runner moved) skips
+    # the hit credit. The design intent is "advance runners or bring
+    # them home"; both of those produce a hit.
     runner_successfully_advanced = runs > 0 or any(
         new_bases[i] is not None and new_bases[i] != original_bases[i]
         for i in range(3)
     )
-    if runs > 0:
+    if runner_successfully_advanced:
         stay_mod.credit_stay_hit(state)
         state.pitcher_h_this_spell += 1    # stay-credited hit counts against pitcher
-        log.append(f"  Hit credited to {batter.name} (stay drove in {runs} run). "
+        log.append(f"  Hit credited to {batter.name} (stay). "
                    f"Total this AB: {state.current_at_bat_hits}.")
 
     # Strike-burn is skill-conditional: a 2C that successfully advanced
