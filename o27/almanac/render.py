@@ -78,7 +78,7 @@ def render_site(
     top_wera  = sorted([r for r in views.pitching_season if r.get("qualified")],
                        key=lambda r: r["wera"])[:10]
     _write(env, "index.html.j2", os.path.join(out_dir, "index.html"),
-           {**base_ctx, "section": "home", "depth": 0,
+           {**base_ctx, "section": "home", "base_path": "",
             "recent_games": schedule_newest[:12],
             "top_woba": top_woba,
             "top_wera": top_wera})
@@ -86,11 +86,11 @@ def render_site(
 
     # ------- standings / schedule -------
     _write(env, "standings.html.j2", os.path.join(out_dir, "standings.html"),
-           {**base_ctx, "section": "standings", "depth": 0})
+           {**base_ctx, "section": "standings", "base_path": ""})
     pages_written += 1
 
     _write(env, "schedule.html.j2", os.path.join(out_dir, "schedule.html"),
-           {**base_ctx, "section": "schedule", "depth": 0})
+           {**base_ctx, "section": "schedule", "base_path": ""})
     pages_written += 1
 
     # ------- leaders -------
@@ -99,39 +99,39 @@ def render_site(
     always_show = not any(r.get("qualified") for r in views.batting_season)
     _write(env, "leaders_batting.html.j2",
            os.path.join(leaders_dir, "batting.html"),
-           {**base_ctx, "section": "leaders", "depth": 1,
+           {**base_ctx, "section": "leaders", "base_path": "../",
             "min_pa": MIN_PA_QUALIFIED, "always_show_all": always_show})
     always_show_p = not any(r.get("qualified") for r in views.pitching_season)
     _write(env, "leaders_pitching.html.j2",
            os.path.join(leaders_dir, "pitching.html"),
-           {**base_ctx, "section": "leaders", "depth": 1,
+           {**base_ctx, "section": "leaders", "base_path": "../",
             "min_outs": MIN_OUTS_QUALIFIED, "always_show_all": always_show_p})
     _write(env, "leaders_stays.html.j2",
            os.path.join(leaders_dir, "stays.html"),
-           {**base_ctx, "section": "leaders", "depth": 1})
+           {**base_ctx, "section": "leaders", "base_path": "../"})
     _write(env, "leaders_fielding.html.j2",
            os.path.join(leaders_dir, "fielding.html"),
-           {**base_ctx, "section": "leaders", "depth": 1})
+           {**base_ctx, "section": "leaders", "base_path": "../"})
     _write(env, "leaders_value.html.j2",
            os.path.join(leaders_dir, "value.html"),
-           {**base_ctx, "section": "leaders", "depth": 1})
+           {**base_ctx, "section": "leaders", "base_path": "../"})
     _write(env, "leaders_situational.html.j2",
            os.path.join(leaders_dir, "situational.html"),
-           {**base_ctx, "section": "leaders", "depth": 1})
+           {**base_ctx, "section": "leaders", "base_path": "../"})
     pages_written += 6
 
     # ------- awards + parks (top-level pages) -------
     _write(env, "awards.html.j2", os.path.join(out_dir, "awards.html"),
-           {**base_ctx, "section": "awards", "depth": 0})
+           {**base_ctx, "section": "awards", "base_path": ""})
     _write(env, "parks.html.j2", os.path.join(out_dir, "parks.html"),
-           {**base_ctx, "section": "parks", "depth": 0})
+           {**base_ctx, "section": "parks", "base_path": ""})
     pages_written += 2
 
     # ------- teams -------
     teams_dir = os.path.join(out_dir, "teams")
     os.makedirs(teams_dir, exist_ok=True)
     _write(env, "teams_index.html.j2", os.path.join(teams_dir, "index.html"),
-           {**base_ctx, "section": "teams", "depth": 1})
+           {**base_ctx, "section": "teams", "base_path": "../"})
     pages_written += 1
 
     standings_by_abb = {r["abbrev"]: r for r in views.standings}
@@ -159,7 +159,7 @@ def render_site(
         })
         _write(env, "team.html.j2",
                os.path.join(teams_dir, f"{abb.lower()}.html"),
-               {**base_ctx, "section": "teams", "depth": 1,
+               {**base_ctx, "section": "teams", "base_path": "../",
                 "team_row": team_row, "record": record,
                 "batters":  views.batting_by_team.get(abb, []),
                 "pitchers": views.pitching_by_team.get(abb, []),
@@ -206,7 +206,7 @@ def render_site(
     index_rows.sort(key=lambda r: (r["team"], r["name"]))
     _write(env, "players_index.html.j2",
            os.path.join(players_dir, "index.html"),
-           {**base_ctx, "section": "players", "depth": 1,
+           {**base_ctx, "section": "players", "base_path": "../",
             "players": index_rows})
     pages_written += 1
 
@@ -239,7 +239,7 @@ def render_site(
         attrs = _attribute_panel(p)
         out_file = os.path.join(players_dir, f"{team_abb.lower()}_{slug}.html")
         _write(env, "player.html.j2", out_file,
-               {**base_ctx, "section": "players", "depth": 1,
+               {**base_ctx, "section": "players", "base_path": "../",
                 "player": player_ctx, "season": season,
                 "fielding": fielding, "attrs": attrs,
                 "game_log": bat_log, "pitcher_log": pit_log})
@@ -284,7 +284,7 @@ def render_site(
 
         _write(env, "game.html.j2",
                os.path.join(games_dir, f"{g['id']}.html"),
-               {**base_ctx, "section": "schedule", "depth": 1,
+               {**base_ctx, "section": "schedule", "base_path": "../",
                 "game": g,
                 "away_batting":  away_batting,
                 "home_batting":  home_batting,
@@ -300,7 +300,7 @@ def render_site(
     dataset_rows = _exports_index_rows(dataset, views, export_manifest)
     _write(env, "exports_index.html.j2",
            os.path.join(exports_dir, "index.html"),
-           {**base_ctx, "section": "exports", "depth": 1,
+           {**base_ctx, "section": "exports", "base_path": "../",
             "datasets": dataset_rows})
     pages_written += 1
 

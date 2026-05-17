@@ -148,11 +148,14 @@ python o27v2/manage.py smoke                 # 10-seed engine smoke test
 make test-invariants                         # stat-invariant suite against o27v2.db
 
 # Almanac (static stats site, Fangraphs-style):
-python -m o27.almanac build --source o27v2/o27v2.db --out site/   # build
-python -m o27.almanac build --source season-bundle.json --out site/  # rebuild from a JSON bundle
-python -m o27.almanac serve --out site/                           # local preview
-python -m o27.almanac ingest --source <path>                      # validate / inspect a source
+make almanac                                                        # build into o27v2/web/static/almanac (linked from the topbar)
+make almanac-serve                                                  # build + preview standalone on :8765
+python -m o27.almanac build --source o27v2/o27v2.db --out site/     # custom build path
+python -m o27.almanac build --source season-bundle.json --out site/ # rebuild from a JSON bundle
+python -m o27.almanac ingest --source <path>                        # validate / inspect a source
 ```
+
+Once `make almanac` has run, the live web app surfaces it as an **Almanac ↗** entry in the topbar nav (served at `/static/almanac/index.html`). Re-run `make almanac` after each sim batch to refresh.
 
 Deployment to Fly.io (`hybrid-baseball` app, `ams` region, `o27v2_data` volume mounted at `/data`) is documented in [`DEPLOY.md`](DEPLOY.md).
 
