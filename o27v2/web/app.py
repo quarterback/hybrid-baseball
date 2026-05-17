@@ -5049,6 +5049,11 @@ def transactions():
     teams = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
 
     event_types = ["injury", "return", "promotion", "penalty",
+                   "trade_block_breaking", "trade_injury_backfill",
+                   "trade_deadline_buyer", "trade_deadline_seller",
+                   "trade_salary_dump", "trade_rebuild_fire_sale",
+                   "trade_win_now_overpay", "trade_gm_noise",
+                   "trade_star_demand",
                    "deadline_trade", "inseason_trade",
                    "waiver_claim", "waiver_release"]
     selected_team = None

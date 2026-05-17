@@ -1775,6 +1775,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
 
     rng2 = random.Random(rng_seed)
     from o27v2.managers import roll_manager
+    from o27v2.front_office import roll_fo
 
     # Generator scaffolds pulled up once so we can name parks and
     # managers in the same Phase-1 loop. The manager name picker uses
@@ -1808,6 +1809,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         park_dims   = json.dumps(_dim_dict)
         park_quirks = json.dumps(_roll_park_quirks(rng2, park_shape))
         mgr = roll_manager(rng2)
+        fo  = roll_fo(rng2)
         mgr_name, _mgr_country = mgr_name_picker()
         # Org_strength rolled on the full 9-tier ladder (uncapped at 95) —
         # ~7% of teams genuinely start with Elite+/Elite development orgs,
@@ -1822,8 +1824,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
             "mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
-            "mgr_bench_usage, mgr_shift_aggression, org_strength)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "mgr_bench_usage, mgr_shift_aggression, org_strength, "
+            "fo_strategy, fo_aggression, fo_archetype_bias)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, division, league_name,
              park_hr, park_hits, park_name, park_dims,
              park_shape, park_quirks,
@@ -1834,7 +1837,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
              mgr["mgr_bench_usage"],
              mgr.get("mgr_shift_aggression", 0.5),
-             org_strength),
+             org_strength,
+             fo["fo_strategy"], fo["fo_aggression"], fo["fo_archetype_bias"]),
         )
         team_ids.append(team_id)
 
