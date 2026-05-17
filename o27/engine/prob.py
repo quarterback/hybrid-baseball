@@ -972,6 +972,60 @@ def resolve_contact(
             batter_safe = True
             caught_fly = False
 
+    # Defensive shift outcome. Two alignments handled separately:
+    #   infield  — pull-side single → ground_out, oppo grounder → single
+    #   outfield — pull-side XBH → single,        oppo grounder → single
+    # Direction is rolled per event using batter.pull_pct as the bias.
+    # Adaptability erosion: if the manager has called the SAME alignment
+    # against this batter multiple consecutive ABs, the batter's
+    # adaptability rating progressively reads the gaps and the shift
+    # probabilities erode (capped at 3 streak steps).
+    shift_effect = None
+    shift_type = getattr(state, "current_ab_shift_type", "none")
+    if shift_type != "none":
+        pull = float(getattr(batter, "pull_pct", 0.5) or 0.5)
+        went_pull = rng.random() < pull
+        # Adaptation factor — non-negative reduction applied to both
+        # shift-effective probabilities. Streak=1 (first AB of this
+        # alignment) contributes 0; streak=2 contributes 1*scale; etc.
+        adapt_dev = (float(getattr(batter, "adaptability", 0.5) or 0.5) - 0.5) * 2.0
+        streak = max(0, getattr(batter, "shift_streak", 1) - 1)
+        streak = min(streak, 3)                # cap erosion at 3 streak steps
+        adapt_reduction = max(0.0, adapt_dev * streak * cfg.ADAPTABILITY_SCALE)
+
+        if shift_type == "infield" and hit_type in (
+            "single", "ground_out", "fielders_choice"
+        ):
+            p_out = max(0.05, cfg.SHIFT_PULL_OUT_PROB - adapt_reduction)
+            p_hit = max(0.05, cfg.SHIFT_OPPO_HIT_PROB - adapt_reduction)
+            if went_pull and hit_type == "single":
+                if rng.random() < p_out:
+                    hit_type = "ground_out"
+                    batter_safe = False
+                    caught_fly = False
+                    shift_effect = "out_added"
+            elif not went_pull and hit_type == "ground_out":
+                if rng.random() < p_hit:
+                    hit_type = "single"
+                    batter_safe = True
+                    caught_fly = False
+                    shift_effect = "hit_lost"
+        elif shift_type == "outfield":
+            p_xbh = max(0.05, cfg.SHIFT_OF_XBH_HELD_PROB - adapt_reduction)
+            p_hit = max(0.05, cfg.SHIFT_OF_OPPO_HIT_PROB - adapt_reduction)
+            if went_pull and hit_type in ("double", "triple"):
+                if rng.random() < p_xbh:
+                    hit_type = "single"
+                    batter_safe = True
+                    caught_fly = False
+                    shift_effect = "out_added"   # bookkeeping: defensive gain
+            elif not went_pull and hit_type == "ground_out":
+                if rng.random() < p_hit:
+                    hit_type = "single"
+                    batter_safe = True
+                    caught_fly = False
+                    shift_effect = "hit_lost"
+
     # Error chance — only on plays that resolved as an out. Worse defense =
     # higher error rate. Caught flies don't generate errors at this layer
     # (they're clean catches by the time we get here).
@@ -1014,6 +1068,7 @@ def resolve_contact(
         "is_error": is_error,
         "fielder_id": fielder_id,
         "quality": quality,
+        "shift_effect": shift_effect,
     }
 
 
@@ -1064,13 +1119,34 @@ def should_stay_prob(
     # Removing these hard rules lets the AI take the strategically right
     # action in late-count / late-half situations.
 
-    # Probabilistic gate: stay_aggressiveness alone drives 2C frequency
-    # on weak/medium contact. The medium contact_quality_threshold gate
-    # was removed to lift 2C event rate (5.47% → target ~10%) without
-    # flattening per-player traits — stay_aggressiveness still varies
-    # by player. contact_quality_threshold remains in the schema and
-    # may be used for other gating in future.
-    return rng.random() < batter.stay_aggressiveness
+    # Probabilistic gate: stay_aggressiveness scaled by leverage signals.
+    # 2C is the engine's "advance runners / bring them home" mechanic,
+    # plus a "work the count / foul off pitches" mechanic for skilled
+    # hitters. Frequency lifts compose multiplicatively from:
+    #   - RISP leverage (real run-driving opportunity)
+    #   - Count state (patient hitter hunting; 2-strike protect)
+    #   - Late game push (manufacture runs even without RISP)
+    stay_p = batter.stay_aggressiveness
+
+    # RISP leverage.
+    if state.bases[1] is not None or state.bases[2] is not None:
+        stay_p *= cfg.STAY_RISP_MULT
+    elif state.bases[0] is not None:
+        stay_p *= cfg.STAY_1B_ONLY_MULT
+
+    # Count awareness: patient hitter ahead in the count is "waiting for
+    # his pitch" — more inclined to stay on marginal contact and get
+    # another swing. NB: no 2-strike lift — O27 has no foul-off survival
+    # mechanic (3 fouls = FOUL OUT), so the MLB protect-mode metaphor
+    # doesn't apply.
+    if state.count.balls > state.count.strikes:
+        stay_p *= cfg.STAY_AHEAD_IN_COUNT_MULT
+
+    # Late-game push: last third of the half, manufacture-runs mode.
+    if state.outs >= cfg.LATE_GAME_OUTS_THRESHOLD:
+        stay_p *= cfg.STAY_LATE_GAME_MULT
+
+    return rng.random() < stay_p
 
 
 # ---------------------------------------------------------------------------
@@ -1291,6 +1367,57 @@ class ProbabilisticProvider:
         if current_batter_id != self._last_batter_id:
             self._last_batter_id = current_batter_id
             self._manager_checked = False
+            state.current_ab_shift_decided = False
+            state.current_ab_shift_type = "none"
+
+        # Defensive shift decision — fires once per AB before the first
+        # pitch. Two alignments available:
+        #   infield  — standard pull-shift; convert pull GBs to outs
+        #   outfield — 4-man OF; convert pull XBHs to singles, sacrifices
+        #              infield coverage on oppo grounders
+        # Alignment picked from batter's power: pull-heavy + high power
+        # invites outfield shift; pull-heavy + low power invites infield.
+        # Probability scales with batter's spray extremity, manager's
+        # mgr_shift_aggression, and a leverage multiplier (RISP +
+        # late-arc) — shifts are a prevent-defense tool that ratchets
+        # in critical moments, matching the tennis-scoring design.
+        if not state.current_ab_shift_decided:
+            state.current_ab_shift_decided = True
+            batter = state.current_batter
+            mgr_shift = float(getattr(state.fielding_team,
+                                      "mgr_shift_aggression", 0.5) or 0.5)
+            batter_pull = float(getattr(batter, "pull_pct", 0.5) or 0.5)
+            extremity = abs(batter_pull - 0.5) * 2.0
+            shift_p = extremity * mgr_shift * cfg.SHIFT_DECISION_SCALE
+
+            # Leverage ratchet — RISP AND late arc both fire, the shift
+            # decision lifts to "prevent defense" mode. Either alone is
+            # routine; both together is when the game gets decided.
+            risp = state.bases[1] is not None or state.bases[2] is not None
+            late = state.outs >= cfg.LATE_GAME_OUTS_THRESHOLD
+            if risp and late:
+                shift_p *= cfg.SHIFT_LEVERAGE_MULT
+
+            if self.rng.random() < shift_p:
+                power = float(getattr(batter, "power", 0.5) or 0.5)
+                if power >= cfg.SHIFT_OF_POWER_THRESHOLD:
+                    state.current_ab_shift_type = "outfield"
+                else:
+                    state.current_ab_shift_type = "infield"
+            else:
+                state.current_ab_shift_type = "none"
+
+            # Adaptation streak — count consecutive ABs the manager has
+            # called the SAME alignment against this batter. High-streak +
+            # high-adaptability erodes the shift's effectiveness in
+            # resolve_contact. Manager who wants to keep the shift live
+            # has to vary it occasionally to reset the streak.
+            last = getattr(batter, "last_shift_alignment", "none")
+            if state.current_ab_shift_type == last:
+                batter.shift_streak = getattr(batter, "shift_streak", 0) + 1
+            else:
+                batter.shift_streak = 1
+                batter.last_shift_alignment = state.current_ab_shift_type
 
         # Refresh today_form whenever the pitcher changes (half start or
         # mid-game change). Cheap; a single deterministic gauss draw.
@@ -1577,22 +1704,21 @@ class ProbabilisticProvider:
             # Talent-driven fractional advance. talent_factor maps to an
             # EXPECTED advance value (continuous, talent-diverse), then
             # one rng draw resolves the fractional part to an integer.
-            #   weak quality   expected ≈ 0.5*(1 + talent_factor)
-            #     → low-talent  (factor ≈ -1):  expected ~0   → mostly no advance
-            #       neutral     (factor ≈  0):  expected ~0.5 → ~50% credit
-            #       high-talent (factor ≈ +2):  expected ~1.5 → always credit, sometimes 2
-            #   medium quality expected ≈ 1.0 + 0.5*talent_factor
-            #     → low-talent:  expected ~0.5 → mostly 1 (credit), sometimes 0
-            #       neutral:     expected ~1.0 → always 1
-            #       high-talent: expected ~2.0 → 2, sometimes 3
-            # Even low-talent batters can occasionally drive runners on a 2C;
-            # stars are reliably better. Talent flows continuously through
-            # the expected-value formula; the rng draw is purely fractional
-            # resolution, not a gate on whether talent matters.
+            #   weak quality   expected ≈ 1.0 + 0.5*talent_factor
+            #     → low-talent  (factor ≈ -1):  expected ~0.5 → ~50% credit
+            #       neutral     (factor ≈  0):  expected ~1.0 → always +1
+            #       high-talent (factor ≈ +2):  expected ~2.0 → always +2
+            #   medium quality expected ≈ 1.5 + 0.75*talent_factor
+            #     → low-talent:  expected ~0.75 → mostly 1, sometimes 0
+            #       neutral:     expected ~1.5  → 50/50 between 1 and 2
+            #       high-talent: expected ~3.0  → always max (score from 1B)
+            # Floors are higher than Path A originals — earned 2Cs reliably
+            # move runners, so chained hits produce runs instead of just
+            # credit-only "free" hits. Pitchers pay via pitch count.
             if quality == "weak":
-                expected = 0.5 * (1.0 + talent_factor)
-            else:  # medium
                 expected = 1.0 + 0.5 * talent_factor
+            else:  # medium
+                expected = 1.5 + 0.75 * talent_factor
             expected = max(0.0, min(3.0, expected))
             floor_v = int(expected)
             frac = expected - floor_v

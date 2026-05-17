@@ -1250,14 +1250,33 @@ def should_bunt(state: GameState, rng=None) -> Optional[dict]:
     """
     if state.is_super_inning:
         return None
+
+    batter = state.current_batter
     bases = state.bases
+
+    # Bunt-against-shift path. When the defense calls an infield shift
+    # against a fast batter, a push the other way is an easy hit —
+    # NO 1B runner required. Different conditions from the canonical
+    # sac-bunt path below.
+    if (getattr(state, "current_ab_shift_type", "none") == "infield"
+            and state.outs < 24
+            and not getattr(batter, "is_pitcher", False)):
+        speed = float(getattr(batter, "speed", 0.5) or 0.5)
+        if speed > 0.55 and rng is not None:
+            shift_bunt_p = cfg.BUNT_AGAINST_SHIFT_BASE_PROB * (speed - 0.5) * 2.0
+            shift_bunt_p = max(0.0, min(0.30, shift_bunt_p))
+            if rng.random() < shift_bunt_p:
+                # Cheap hit — batter pushes the bunt into the vacated side.
+                # Bypasses the standard fail/sacrifice rolls; the open
+                # infield is the whole point.
+                return {"type": "sac_bunt", "outcome": "hit"}
+
     # Need at least a 1B runner (the canonical bunt setup).
     if bases[0] is None:
         return None
     if state.outs >= 18:
         return None
 
-    batter = state.current_batter
     if batter.is_pitcher:
         return None
     power = float(getattr(batter, "power", 0.5) or 0.5)

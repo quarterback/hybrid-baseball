@@ -477,6 +477,19 @@ def _resolve_contact(
     batter_safe = outcome.get("batter_safe", True)
     hit_type = outcome.get("hit_type", "")
 
+    # Shift telemetry — credit the fielding team for outs added or hits lost
+    # by their shift call. The flip itself already happened in resolve_contact;
+    # here we accumulate the season-game counter and surface it in the log.
+    shift_effect = outcome.get("shift_effect")
+    if shift_effect == "out_added":
+        state.fielding_team.shift_outs_added += 1
+        log.append("  Shift converts single → ground out. "
+                   "(Defense reads the pull tendency.)")
+    elif shift_effect == "hit_lost":
+        state.fielding_team.shift_hits_lost += 1
+        log.append("  Shift exposed — ground ball through the vacated side. "
+                   "(Batter beat the alignment.)")
+
     # PRD §2.6: stay does not apply to home runs — batter must run.
     # fielding.py emits hit_type "hr" for home runs.
     if hit_type in ("hr", "home_run") and choice == "stay":
@@ -584,9 +597,12 @@ def _resolve_contact(
     if stay_thrown_out_id is not None:
         log += _record_out(state, stay_thrown_out_id)
 
-    # Award hit credit (§2.7): only when a runner successfully advanced to a higher
-    # base or scored — NOT when the only change was a runner being thrown out.
-    # new_bases[i] is not None and ≠ original means a runner ARRIVED at that base.
+    # 2C hit credit (§2.7): a 2C that advances a runner IS a hit — the
+    # batter delivered contact that moved the chain. Movement-only 2Cs
+    # (1B→2B, no run) and run-scoring 2Cs both credit a hit. Only a
+    # failed 2C (talent gate produced adv=0, no runner moved) skips
+    # the hit credit. The design intent is "advance runners or bring
+    # them home"; both of those produce a hit.
     runner_successfully_advanced = runs > 0 or any(
         new_bases[i] is not None and new_bases[i] != original_bases[i]
         for i in range(3)
@@ -597,15 +613,20 @@ def _resolve_contact(
         log.append(f"  Hit credited to {batter.name} (stay). "
                    f"Total this AB: {state.current_at_bat_hits}.")
 
-    # Spend one strike from the batter's 3-strike budget and check whether
-    # the AB has used all 3. If so, the AB ends — but NOT as a batter-out:
-    # the hits are credited, runners advanced, RBIs counted; the batter
-    # just doesn't get to bat again this trip.
-    log += _stay_credit_strike(state)
-    if state.count.strikes >= 3:
-        log.append(f"  At-bat ends — {batter.name} used all 3 strikes "
-                   f"(max-hits stay sequence; no batter-out).")
-        log += _end_at_bat(state)
+    # Strike-burn is skill-conditional: a 2C that successfully advanced
+    # runners (the talent gate in prob.py passed) costs nothing on the
+    # count — the batter earned it. A 2C where no runner moved (gate
+    # failed) burns a strike, ending the AB at 3. Pitchers still pay
+    # via pitch count (ball_in_play always increments pitches), so a
+    # chain of earned 2Cs runs the pitcher's count up.
+    if runner_successfully_advanced:
+        log.append(f"  Stay successful — count unchanged. Count: {state.count}.")
+    else:
+        log += _stay_credit_strike(state)
+        if state.count.strikes >= 3:
+            log.append(f"  At-bat ends — {batter.name} used all 3 strikes "
+                       f"(failed-stay sequence; no batter-out).")
+            log += _end_at_bat(state)
     # Note: when AB doesn't end, do NOT call _end_at_bat — the at-bat is
     # still in progress with the new (carried-forward) count.
     return log

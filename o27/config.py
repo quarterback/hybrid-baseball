@@ -484,6 +484,77 @@ PLAYER_DEFAULT_PITCHER_SKILL: float            = 0.50
 PLAYER_DEFAULT_STAY_AGGRESSIVENESS: float      = 0.40   # 0.0–1.0 tendency to choose stay
 PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD: float = 0.45  # P(stay | medium contact) gate
 
+# RISP-aware 2C frequency. 2C is "bring-them-home" mechanic — favor it
+# when runners are in scoring position (2B/3B), discount it when only
+# 1B is occupied (less leverage to convert a hit credit into a run).
+STAY_RISP_MULT: float          = 1.40   # 2B or 3B occupied
+STAY_1B_ONLY_MULT: float       = 0.70   # only 1B occupied
+
+# Count-aware 2C frequency. A patient hitter ahead in the count is
+# selective — he's "waiting for his pitch." If marginal contact comes
+# while he's still hunting, he stays so runners move and he gets
+# another swing at a better pitch. Note: 2-strike counts do NOT get
+# a "foul-off" lift in O27 — 3 fouls is a FOUL OUT, not survival, so
+# the MLB foul-off metaphor doesn't apply here.
+STAY_AHEAD_IN_COUNT_MULT: float    = 1.15   # balls > strikes (patient, waiting)
+
+# Late-game push: in the last third of the half (outs ≥ 18), the batting
+# team plays aggressively to manufacture runs. Lift is large enough that
+# it OVERCOMES the 1B-only damper — late game with only 1B occupied
+# (0.70 × 1.55 ≈ 1.09) ends up slightly above baseline, modeling the
+# "get this runner into scoring position somehow" tactic.
+LATE_GAME_OUTS_THRESHOLD: int      = 20     # 20+ outs = late arc (matches
+                                            # the user's "20-27 outs" frame)
+STAY_LATE_GAME_MULT: float         = 1.55
+
+# ---------------------------------------------------------------------------
+# Defensive shifts. O27 design philosophy: offense is aggressive (lots of
+# contact, lots of 2C), and defense's counter is being nimble — including
+# defensive shifts. Shifts are decided per-AB at AB start based on the
+# batter's spray (pull_pct) and the fielding manager's mgr_shift_aggression.
+#
+# Mechanic:
+#   shift fires when:   rng < |pull_pct - 0.5| * 2 * mgr_shift_aggression
+#   on contact, direction roll: rng < batter.pull_pct → pull-side, else oppo
+#   if shifted + ground-ball outcome + pull-side: single → ground_out
+#       at SHIFT_PULL_OUT_PROB
+#   if shifted + ground-ball outcome + oppo-side:  ground_out → single
+#       at SHIFT_OPPO_HIT_PROB
+# Telemetry: state.fielding_team.shift_outs_added / shift_hits_lost
+# accumulate per game, so we can see exactly how much each shift call
+# contributed.
+SHIFT_PULL_OUT_PROB: float       = 0.30   # infield shift: pull single → out
+SHIFT_OPPO_HIT_PROB: float       = 0.25   # infield shift: oppo gnd_out → single
+SHIFT_DECISION_SCALE: float      = 1.0    # tunable knob on decision frequency
+
+# Outfield shift (4-man OF / infielders shallow). Trades infield coverage
+# for outfield range against pull-power FB hitters. Effects:
+#   pull-side double/triple → single   (the 4th OFer cuts off the gap)
+#   pull-side fly_out stays            (already an out)
+#   oppo-side ground_out → single      (one fewer IFer = more gaps)
+SHIFT_OF_XBH_HELD_PROB: float    = 0.30   # OF shift: pull double → single
+SHIFT_OF_OPPO_HIT_PROB: float    = 0.35   # OF shift: oppo gnd_out → single
+# Threshold for picking outfield shift over infield shift: pull-heavy
+# batter with this much power or more goes to outfield shift.
+SHIFT_OF_POWER_THRESHOLD: float  = 0.55
+
+# Leverage multiplier: shifts are a "prevent defense" tool the manager
+# leans on harder in critical situations (RISP + late game). Models the
+# tennis-scoring leverage: shifts are routine all game, but they ratchet
+# in the moments that decide the result.
+SHIFT_LEVERAGE_MULT: float       = 1.45   # RISP + late-arc combined boost
+
+# Adaptability erosion. When the manager keeps the SAME shift alignment
+# against the SAME batter across consecutive ABs, the batter's adaptability
+# rating progressively reads the gaps. Each streak step subtracts this
+# fraction from the shift's effective probability (capped at streak=3).
+ADAPTABILITY_SCALE: float        = 0.10
+
+# Bunt-against-shift. When an infield shift is on, a speedy batter can
+# push a bunt the other way for an easy hit. This adds a no-runner bunt
+# path on top of the existing sac-bunt logic.
+BUNT_AGAINST_SHIFT_BASE_PROB: float = 0.18   # baseline scaled by speed dev
+
 # ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------
