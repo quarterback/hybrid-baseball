@@ -645,6 +645,31 @@ OPENER_CHANGE_BASE:  int = 7
 OPENER_CHANGE_SCALE: int = 3
 
 # ---------------------------------------------------------------------------
+# Declared Seconds — declaration mechanics
+# ---------------------------------------------------------------------------
+SECONDS_MIN_DECLARE_OUT: int = 22       # earliest out (out 22 = bank up to 5)
+SECONDS_MAX_DECLARE_OUT: int = 26       # latest out that still banks at least 1
+SECONDS_MAX_BANKED:      int = 6        # cap; declared at out 22 banks 5, etc.
+SECONDS_MAX_ROUNDS_PER_TEAM: int = 2    # initial half + at most one seconds
+
+# Declaration AI thresholds for hard-accept / hard-reject branches
+SECONDS_INSURMOUNTABLE: int = 25        # lead at out <= 21 triggers insurance declare
+SECONDS_BLOWOUT_MARGIN: int = 20        # |score_diff| >= this → game decided
+
+# Declaration AI — soft probability formula (marginal cases)
+DECLARE_BASE:          float = 0.04
+DECLARE_LEAD_SCALE:    float = 0.18
+DECLARE_PERSONA_SCALE: float = 0.25
+
+# Pre-game bat-order choice — home manager. BAT_FIRST_BASE intentionally
+# biased above 0.5 so home defaults to batting first more often than not;
+# this is the retcon for the league's existing home-scores-more asymmetry.
+BAT_FIRST_BASE:          float = 0.65
+BAT_FIRST_PARK_SCALE:    float = 0.15
+BAT_FIRST_STARTER_SCALE: float = 0.20
+BAT_FIRST_PERSONA_SCALE: float = 0.30
+
+# ---------------------------------------------------------------------------
 # Manager heuristics — situational joker insertion (Phase 8 archetype triggers)
 # ---------------------------------------------------------------------------
 # Evaluation order (power first — it dominates when down ≥ JOKER_POWER_DEFICIT):

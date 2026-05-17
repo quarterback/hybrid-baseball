@@ -667,6 +667,8 @@ def _db_team_to_engine(
     team.mgr_run_game             = float(team_row.get("mgr_run_game") or 0.5)
     team.mgr_bench_usage          = float(team_row.get("mgr_bench_usage") or 0.5)
     team.mgr_shift_aggression     = float(team_row.get("mgr_shift_aggression") or 0.5)
+    team.mgr_declare_aggression   = float(team_row.get("mgr_declare_aggression") or 0.5)
+    team.mgr_bat_first_pref       = float(team_row.get("mgr_bat_first_pref") or 0.5)
     # Stamp the catcher's arm rating on the Team for SB-success scaling.
     pos_by_id = {str(r["id"]): str(r.get("position") or "") for r in players}
     catcher_arm = 0.5
@@ -1522,11 +1524,47 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
         conn.execute("DELETE FROM game_pitcher_stats WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM game_pa_log        WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM team_phase_outs    WHERE game_id = ?", (game_id,))
+        # Declared Seconds: project the engine's first/second-batting team
+        # state onto away/home columns. Away maps to visitors; home to home.
+        h_bats_first  = bool(getattr(final_state, "home_bats_first", False))
+        h_declared_at = final_state.home.declared_at_out
+        v_declared_at = final_state.visitors.declared_at_out
+        h_seconds_used = int(getattr(final_state.home,     "seconds_outs_used", 0) or 0)
+        v_seconds_used = int(getattr(final_state.visitors, "seconds_outs_used", 0) or 0)
+        # Compute the declare-context (leading/trailing/tied) snapshot from
+        # the final scores. A more accurate snapshot would be at the moment
+        # of declare, but the engine doesn't currently capture that — using
+        # the final delta is a reasonable proxy until we plumb event state.
+        def _ctx_at_declare(team_score, opp_score, declared_at):
+            if declared_at is None:
+                return None
+            if team_score > opp_score:
+                return "leading"
+            if team_score < opp_score:
+                return "trailing"
+            return "tied"
+        h_ctx = _ctx_at_declare(home_score, away_score, h_declared_at)
+        v_ctx = _ctx_at_declare(away_score, home_score, v_declared_at)
+        seconds_used_any = (h_seconds_used > 0) or (v_seconds_used > 0)
+        any_walkoff = (h_declared_at is None and v_declared_at is None
+                       and not seconds_used_any
+                       and final_state.super_inning_number == 0)
+        if seconds_used_any:
+            outcome = "seconds_fired"
+        elif any_walkoff and (home_score != away_score):
+            outcome = "walkoff" if h_bats_first else "regulation_walkoff"
+        else:
+            outcome = "no_seconds"
         conn.execute(
             """UPDATE games SET home_score=?, away_score=?, winner_id=?,
                super_inning=?, played=1, seed=?,
                home_shift_outs_added=?, home_shift_hits_lost=?,
-               away_shift_outs_added=?, away_shift_hits_lost=?
+               away_shift_outs_added=?, away_shift_hits_lost=?,
+               home_bats_first=?,
+               away_declared_at=?, home_declared_at=?,
+               away_seconds_used=?, home_seconds_used=?,
+               away_declare_context=?, home_declare_context=?,
+               seconds_outcome=?
                WHERE id=?""",
             (home_score, away_score, winner_team_id,
              final_state.super_inning_number, seed,
@@ -1534,6 +1572,11 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
              int(getattr(final_state.home,     "shift_hits_lost",  0) or 0),
              int(getattr(final_state.visitors, "shift_outs_added", 0) or 0),
              int(getattr(final_state.visitors, "shift_hits_lost",  0) or 0),
+             1 if h_bats_first else 0,
+             v_declared_at, h_declared_at,
+             v_seconds_used, h_seconds_used,
+             v_ctx, h_ctx,
+             outcome,
              game_id),
         )
         if winner_team_id is not None and not game.get("is_playoff"):

@@ -1763,6 +1763,13 @@ class ProbabilisticProvider:
                     # May need another check after the change.
                     self._manager_checked = False
                 return mgr_event
+            # Declared-Seconds short-circuit: the declaration handler in
+            # _try_manager_action returns None but mutates state.outs=27
+            # to end the half. If the half is now over, return None so
+            # run_half exits BEFORE we fall through to pitch generation
+            # (which would otherwise process a phantom PA at out 27+).
+            if state.is_half_over():
+                return None
 
         # Between-pitch chance (stolen base, wild pitch).
         bp = between_pitch_event(self.rng, state)
@@ -1785,6 +1792,22 @@ class ProbabilisticProvider:
           3. Pinch hit (fallback when jokers exhausted and pitcher is up in
              a tie-game, runners-in-scoring-position situation).
         """
+        # Declared Seconds — checked first so a declaration doesn't waste
+        # a pitching change / joker / pinch hit. Recomputed every PA in
+        # the eligible window (out 22+); fires when the AI's target save
+        # count meets the current outs-remaining.
+        declared, banked = mgr.evaluate_declaration(state, rng=self.rng)
+        if declared:
+            state.events.append({
+                "type": "declaration",
+                "team": state.batting_team.team_id,
+                "at_out": state.outs,
+                "outs_banked": banked,
+            })
+            # Terminate the half cleanly via the existing is_half_over path.
+            state.outs = 27
+            return None
+
         # Pitching change check.
         if mgr.should_change_pitcher(state):
             new_p = mgr.pick_new_pitcher(state)

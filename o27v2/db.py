@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS teams (
     mgr_run_game             REAL  DEFAULT 0.5,
     mgr_bench_usage          REAL  DEFAULT 0.5,
     mgr_shift_aggression     REAL  DEFAULT 0.5,
+    -- Declared Seconds — two new persona axes. mgr_declare_aggression
+    -- governs willingness to bank outs for a rebuttal half;
+    -- mgr_bat_first_pref is the home-team bat-first/bat-second bias.
+    mgr_declare_aggression   REAL  DEFAULT 0.5,
+    mgr_bat_first_pref       REAL  DEFAULT 0.5,
     org_strength             INTEGER DEFAULT 50,
     -- Front-office persona (see o27v2/front_office.py). Drives trade
     -- motivations and acceptance thresholds; drifts year over year.
@@ -185,7 +190,19 @@ CREATE TABLE IF NOT EXISTS games (
     -- Playoff hookup. NULL `series_id` ⇒ regular-season game.
     -- `is_playoff` is the cheap flag the UI / queries filter on.
     series_id        INTEGER REFERENCES playoff_series(id),
-    is_playoff       INTEGER DEFAULT 0
+    is_playoff       INTEGER DEFAULT 0,
+    -- Declared Seconds: home_bats_first is the pre-game choice; each side's
+    -- declared_at and seconds_used capture the in-game decisions. NULL declared_at
+    -- = no declaration; seconds_used > 0 = the team came back for a seconds
+    -- inning. declare_context records the score state when each declared.
+    home_bats_first       INTEGER DEFAULT NULL,
+    away_declared_at      INTEGER DEFAULT NULL,
+    home_declared_at      INTEGER DEFAULT NULL,
+    away_seconds_used     INTEGER DEFAULT 0,
+    home_seconds_used     INTEGER DEFAULT 0,
+    away_declare_context  TEXT    DEFAULT NULL,
+    home_declare_context  TEXT    DEFAULT NULL,
+    seconds_outcome       TEXT    DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS game_batter_stats (
@@ -629,6 +646,24 @@ def init_db() -> None:
             except Exception:
                 pass
 
+        # Declared Seconds: per-game decision telemetry on `games`.
+        # Idempotent — re-running init_db on a migrated DB is a no-op.
+        for col, sql_type, defval in [
+            ("home_bats_first",       "INTEGER", "NULL"),
+            ("away_declared_at",      "INTEGER", "NULL"),
+            ("home_declared_at",      "INTEGER", "NULL"),
+            ("away_seconds_used",     "INTEGER", "0"),
+            ("home_seconds_used",     "INTEGER", "0"),
+            ("away_declare_context",  "TEXT",    "NULL"),
+            ("home_declare_context",  "TEXT",    "NULL"),
+            ("seconds_outcome",       "TEXT",    "NULL"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE games ADD COLUMN {col} {sql_type} DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
         # Phase 5e: work-ethic / work-habits / habit-cup columns on
         # players. Idempotent.
         for col, sql_type, defval in [
@@ -732,7 +767,8 @@ def init_db() -> None:
         for col in ("mgr_quick_hook", "mgr_bullpen_aggression",
                     "mgr_leverage_aware", "mgr_joker_aggression",
                     "mgr_pinch_hit_aggression", "mgr_platoon_aggression",
-                    "mgr_run_game", "mgr_bench_usage"):
+                    "mgr_run_game", "mgr_bench_usage",
+                    "mgr_declare_aggression", "mgr_bat_first_pref"):
             try:
                 conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL DEFAULT 0.5")
                 conn.commit()

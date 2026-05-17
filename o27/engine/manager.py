@@ -1386,3 +1386,335 @@ def should_bunt(state: GameState, rng=None) -> Optional[dict]:
         kind = "sacrifice"
 
     return {"type": "sac_bunt", "outcome": kind}
+
+
+# ===========================================================================
+# Declared Seconds
+# ===========================================================================
+
+def _opp_team(state: GameState):
+    """Return the opposing team (the one not currently batting)."""
+    return state.fielding_team
+
+
+def _team_score_diff(state: GameState) -> int:
+    """Runs by which the batting team leads (negative = trailing)."""
+    bat = state.batting_team
+    opp = _opp_team(state)
+    return state.score.get(bat.team_id, 0) - state.score.get(opp.team_id, 0)
+
+
+def _pitcher_fatigue_tier(pitcher) -> str:
+    """Categorize pitcher's fatigue state: 'fresh' | 'near_cliff' | 'in_decay'."""
+    if pitcher is None:
+        return "fresh"
+    stamina = float(getattr(pitcher, "stamina", getattr(pitcher, "pitcher_skill", 0.5)) or 0.5)
+    # No live spell stats on the pitcher object — read off the state instead
+    # via the calling helper. Conservative default if we can't tell.
+    return "fresh"
+
+
+def _pitcher_fatigue_tier_for_state(state: GameState, pitcher) -> str:
+    """Tier the pitcher's fatigue using GameState spell counters.
+
+    Maps onto the same role-derived thresholds used by should_change_pitcher
+    so the declaration AI's "cliff" is calibrated to the same point at which
+    the manager would otherwise pull the arm.
+    """
+    if pitcher is None:
+        return "fresh"
+    bf = int(getattr(state, "pitcher_spell_count", 0) or 0)
+    stamina = float(getattr(pitcher, "stamina", getattr(pitcher, "pitcher_skill", 0.5)) or 0.5)
+    if stamina >= cfg.WORKHORSE_STAMINA_THRESHOLD:
+        base, scale = cfg.WORKHORSE_CHANGE_BASE, cfg.WORKHORSE_CHANGE_SCALE
+    elif stamina <= cfg.OPENER_STAMINA_THRESHOLD:
+        base, scale = cfg.OPENER_CHANGE_BASE, cfg.OPENER_CHANGE_SCALE
+    else:
+        base, scale = cfg.PITCHER_CHANGE_BASE, cfg.PITCHER_CHANGE_SCALE
+    threshold = max(base, base + round(float(getattr(pitcher, "pitcher_skill", 0.5)) * scale))
+    if bf >= threshold + 4:
+        return "in_decay"
+    if bf >= threshold - 2:
+        return "near_cliff"
+    return "fresh"
+
+
+def _bullpen_depth_remaining(team) -> float:
+    """0..1: fraction of usable pitching arms still available.
+
+    Counts pitchers who have not yet been used (no spell logged). Falls back
+    to a neutral 0.5 when the roster lacks pitcher metadata.
+    """
+    if team is None:
+        return 0.5
+    roster = list(getattr(team, "roster", []) or [])
+    pitchers = [p for p in roster if getattr(p, "pitcher_skill", None) is not None]
+    if not pitchers:
+        return 0.5
+    used = set()
+    for rec in getattr(team, "_used_pitcher_ids", []) or []:
+        used.add(rec)
+    # Best-effort: count rostered pitchers minus those known used.
+    available = max(0, len(pitchers) - len(used))
+    return max(0.0, min(1.0, available / max(1, len(pitchers))))
+
+
+def _lineup_locked_in(state: GameState) -> bool:
+    """Proxy for a 'rally going' lineup: partnership runs accumulating."""
+    return int(getattr(state, "partnership_runs", 0) or 0) >= 3
+
+
+def _heart_of_order_coming_up(state: GameState, n: int = 3) -> bool:
+    """True if any of the next n batters is in the team's top-3 by skill."""
+    team = state.batting_team
+    lineup = list(getattr(team, "lineup", []) or [])
+    if len(lineup) < 3:
+        return False
+    ranked = sorted(lineup, key=lambda p: float(getattr(p, "skill", 0.5) or 0.5), reverse=True)
+    heart_ids = {p.player_id for p in ranked[:3]}
+    pos = int(getattr(team, "lineup_position", 0) or 0)
+    L = len(lineup)
+    for i in range(n):
+        b = lineup[(pos + i) % L]
+        if b.player_id in heart_ids:
+            return True
+    return False
+
+
+def _bottom_of_order_coming_up(state: GameState, n: int = 3) -> bool:
+    """True if any of the next n batters is in the team's bottom-3 by skill."""
+    team = state.batting_team
+    lineup = list(getattr(team, "lineup", []) or [])
+    if len(lineup) < 3:
+        return False
+    ranked = sorted(lineup, key=lambda p: float(getattr(p, "skill", 0.5) or 0.5))
+    weak_ids = {p.player_id for p in ranked[:3]}
+    pos = int(getattr(team, "lineup_position", 0) or 0)
+    L = len(lineup)
+    for i in range(n):
+        b = lineup[(pos + i) % L]
+        if b.player_id in weak_ids:
+            return True
+    return False
+
+
+def _opp_starter_dealing(state: GameState) -> bool:
+    """Crude check: opp pitcher has allowed few runs/hits this spell."""
+    runs = int(getattr(state, "pitcher_runs_this_spell", 0) or 0)
+    hits = int(getattr(state, "pitcher_h_this_spell", 0) or 0)
+    bf   = int(getattr(state, "pitcher_spell_count", 0) or 0)
+    return bf >= 10 and runs <= 1 and hits <= 4
+
+
+def _opponent_declared_at(state: GameState):
+    """Return the opp team's declared_at_out (int) or None."""
+    opp = _opp_team(state)
+    return getattr(opp, "declared_at_out", None)
+
+
+def _weather_shift_pending(state: GameState) -> bool:
+    """Best-effort: weather model doesn't track in-game shifts yet."""
+    return False
+
+
+def _park_offense_skew(state: GameState) -> float:
+    """-0.2..+0.2: hitter-friendly parks skew positive."""
+    park_hits = float(getattr(state.home, "park_hits", 1.0) or 1.0)
+    return max(-0.2, min(0.2, (park_hits - 1.0)))
+
+
+def _starter_drag(state: GameState) -> float:
+    """0..1: lower = stronger starter (less reason to bat first for insurance)."""
+    pitcher = state.get_current_pitcher()
+    if pitcher is None:
+        return 0.5
+    skill = float(getattr(pitcher, "pitcher_skill", 0.5) or 0.5)
+    return max(0.0, min(1.0, 1.0 - skill))
+
+
+def _weather_offense_skew(state: GameState) -> float:
+    """-0.2..+0.2: shorthand offense-friendliness from weather, if available."""
+    w = getattr(state, "weather", None)
+    if w is None:
+        return 0.0
+    raw = float(getattr(w, "offense_skew", 0.0) or 0.0)
+    return max(-0.2, min(0.2, raw))
+
+
+def should_bat_first(state: GameState, rng=None) -> bool:
+    """Pre-game decision by the HOME manager: bat first or second?
+
+    Default-biased above 0.5 so home usually elects to bat first — the
+    retcon for the league's existing home-scores-more asymmetry.
+    """
+    home = state.home
+    pref = float(getattr(home, "mgr_bat_first_pref", 0.5) or 0.5)
+    park = _park_offense_skew(state)
+    starter_drag = _starter_drag(state)
+    opp_pen_drag = 1.0 - _bullpen_depth_remaining(state.visitors)
+    weather = _weather_offense_skew(state)
+
+    p = (cfg.BAT_FIRST_BASE
+         + cfg.BAT_FIRST_PARK_SCALE      * park
+         + cfg.BAT_FIRST_STARTER_SCALE   * starter_drag
+         + cfg.BAT_FIRST_PERSONA_SCALE   * (pref - 0.5)
+         + 0.10 * opp_pen_drag
+         + 0.05 * weather)
+    p = max(0.02, min(0.98, p))
+
+    if rng is None:
+        import random as _r
+        roll = _r.random()
+    else:
+        roll = rng.random()
+    return roll < p
+
+
+def evaluate_declaration(state: GameState, rng=None) -> tuple[bool, int]:
+    """Two-layer Declared Seconds decision.
+
+    Returns (declare_now, outs_banked):
+      - (False, 0) if not declaring this PA.
+      - (True, K)  if declaring now and banking K outs.
+
+    The target save (1..6) is recomputed every PA from situational factors;
+    the team declares the moment outs_remaining drops to (or below) the target.
+    """
+    # ---- Hard eligibility gates ----
+    if state.is_super_inning or state.in_seconds_phase:
+        return False, 0
+    if state.outs < cfg.SECONDS_MIN_DECLARE_OUT - 1:
+        return False, 0
+    if state.outs >= 27:
+        return False, 0
+    team = state.batting_team
+    if team.declared_at_out is not None:
+        return False, 0
+
+    # ---- Context ----
+    diff      = _team_score_diff(state)
+    outs_left = 27 - state.outs
+    is_first  = (team is state.first_batting_team) if state.first_batting_team else (state.half == "top")
+    agg       = float(getattr(team, "mgr_declare_aggression", 0.5) or 0.5)
+
+    # The pitcher in danger of cliffing in OPP's half is the one currently
+    # ON THE MOUND (state.fielding_team's current pitcher), because they'll
+    # keep pitching when the half ends and the opp comes to bat. But we
+    # actually want THIS team's defensive arm: that's also state.fielding_team
+    # right now in regulation — wait, no. In regulation, team-batting is bat,
+    # opp is field. When OPP bats next, OPP becomes batter, batter becomes
+    # field. So the relevant "preserve our pitcher" check is the current
+    # FIELDING team's pitcher relative to a future half. But that doesn't
+    # apply since the fielder is the opponent during our half. The real
+    # signal here is "is OUR pitcher going to defend the opp's half?" —
+    # YES, because our pitcher (the one who will pitch when opp bats) is
+    # the current fielding team's pitcher, which IS us when roles flip.
+    # Reading the current state: state.fielding_team is opp. Their pitcher
+    # is the one shutting us down. Our defending pitcher is whichever arm
+    # WE will deploy when we field. We don't have a clean way to get that
+    # without picking a pitcher; treat the current ON-MOUND pitcher's
+    # tier as a proxy (a generic fatigue signal across the game).
+    pitcher = state.get_current_pitcher()
+    fatigue_tier      = _pitcher_fatigue_tier_for_state(state, pitcher)
+    own_bullpen_depth = _bullpen_depth_remaining(team)
+    heart_due         = _heart_of_order_coming_up(state, n=3)
+    weak_due          = _bottom_of_order_coming_up(state, n=3)
+    opp_pen_depth     = _bullpen_depth_remaining(state.fielding_team)
+    opp_starter_dealing = _opp_starter_dealing(state)
+    opp_declared_at   = _opponent_declared_at(state)
+    weather_shifting  = _weather_shift_pending(state)
+    park_skew         = _park_offense_skew(state)
+
+    # ---- Build target_save (continuous; rounded at end) ----
+    # Starts deeply negative so declaration requires MULTIPLE compounding
+    # signals rather than any single trigger. A team that's merely trailing
+    # by 2 runs with a fresh pitcher should NOT declare — there must also
+    # be lineup / bullpen / fatigue pressure piling on.
+    target = -3.0
+
+    # Score differential (non-linear tiers; small individual weights so the
+    # score alone never crosses target > 0).
+    if diff >= 10:
+        target += 3.0    # comfortable lead — bank insurance (lone strong signal)
+    elif diff >= 4:
+        target += 1.5
+    elif 1 <= diff <= 3:
+        target += 0.0
+    elif diff == 0:
+        if is_first:
+            target += 1.0
+    elif -3 <= diff <= -1:
+        target += 1.5 if is_first else 0.5
+    elif diff <= -4:
+        target += 2.5    # need full reset
+
+    # Pitcher fatigue state — the biggest individual driver. A truly cooked
+    # pitcher can push declaration on its own; a fresh one strongly suppresses.
+    if fatigue_tier == "near_cliff":
+        target += 1.5
+    elif fatigue_tier == "in_decay":
+        target += 2.5
+    elif fatigue_tier == "fresh":
+        target -= 0.5
+
+    # Lineup position pressure (next 3 batters)
+    if heart_due:
+        target -= 1.5
+    elif weak_due:
+        target += 0.8
+
+    # Bullpen state
+    if own_bullpen_depth >= 0.6:
+        target += 0.3
+    elif own_bullpen_depth < 0.25:
+        target -= 0.5
+
+    # Opponent state
+    if opp_starter_dealing:
+        target += 0.8
+    if opp_pen_depth < 0.30:
+        target -= 0.8
+    if opp_declared_at is not None:
+        # If the opp banked outs, we want to at least match their bank so
+        # they don't get the last word. Override pulls target up sharply.
+        opp_banked = 27 - int(opp_declared_at)
+        target = max(target, opp_banked * 0.8)
+
+    # Ballpark / weather
+    if park_skew > 0.10:
+        target += 0.3
+    elif park_skew < -0.10:
+        target -= 0.3
+    if weather_shifting:
+        target += 0.6
+
+    # Persona scaling: 0.5x (patient) .. 1.5x (aggressive). Neutral mgr (0.5)
+    # gives 1.0x (no change).
+    target *= (0.5 + agg)
+
+    # Small Gaussian noise — gated to marginal cases only so we don't
+    # consume game RNG on every PA from out 21+ (which shifts the rest of
+    # the per-PA sequence and silently changes outcomes elsewhere). For
+    # targets that are clearly negative (won't declare) or clearly above
+    # max banked (always declares the full bank), noise can't change the
+    # integer result anyway.
+    if -0.6 <= target <= float(cfg.SECONDS_MAX_BANKED) + 0.6:
+        if rng is None:
+            import random as _r
+            target += _r.gauss(0.0, 0.3)
+        else:
+            target += rng.gauss(0.0, 0.3)
+
+    target_int = max(0, min(int(cfg.SECONDS_MAX_BANKED), int(round(target))))
+
+    # Declare now iff the current outs_remaining is at-or-below target
+    declare_now = (target_int > 0) and (outs_left <= target_int)
+    if not declare_now:
+        return False, 0
+
+    team.declared_at_out = state.outs
+    # Actual banked = outs_left (capped by SECONDS_MAX_BANKED). This is the
+    # number that gets recorded; target_int was the AI's preference.
+    banked = min(outs_left, int(cfg.SECONDS_MAX_BANKED))
+    team.outs_banked = banked
+    return True, banked

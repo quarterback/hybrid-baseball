@@ -59,8 +59,50 @@ def _game_filter_clause(table_alias: str = "") -> tuple[str, tuple]:
     return f" AND {prefix}game_id IN ({placeholders})", tuple(sorted(ids))
 
 
-def _phase_cap(phase: int) -> int:
-    return REGULATION_PHASE_CAP if phase == 0 else SI_PHASE_CAP
+# Declared Seconds: per-game phase>=1 cap. In a seconds round the cap is
+# whoever-is-batting's banked outs — and BOTH the batting and the fielding
+# (pitcher) team's phase>=1 rows are bounded by that value, since they
+# belong to the same half.
+def _load_seconds_caps() -> dict[int, int]:
+    """Return {game_id: max_seconds_outs} for every game where a seconds
+    round fired. The value is the MAX of away_seconds_used and
+    home_seconds_used (in a double-seconds game both rounds may have
+    different caps; max is conservative and avoids false-positive failures
+    until per-round phase numbers are wired through the writer).
+    """
+    try:
+        rows = db.fetchall(
+            "SELECT id, away_seconds_used, home_seconds_used FROM games"
+        )
+    except Exception:
+        return {}
+    out: dict[int, int] = {}
+    for r in rows:
+        aw = int(r.get("away_seconds_used") or 0)
+        hm = int(r.get("home_seconds_used") or 0)
+        if aw > 0 or hm > 0:
+            out[r["id"]] = max(aw, hm)
+    return out
+
+
+_SECONDS_CAPS = _load_seconds_caps()
+
+
+def _phase_cap(phase: int, game_id: int | None = None,
+               team_id: int | None = None) -> int:
+    """Per-(game, team, phase) outs cap.
+
+    - phase 0  → 27 (regulation)
+    - phase >= 1 + seconds round → banked outs for the batting team
+    - phase >= 1 + super-inning  → 5 (legacy SI fixed cap)
+    """
+    if phase == 0:
+        return REGULATION_PHASE_CAP
+    if game_id is not None:
+        banked = _SECONDS_CAPS.get(game_id)
+        if banked is not None:
+            return banked
+    return SI_PHASE_CAP
 
 
 @pytest.fixture(scope="module")
@@ -98,14 +140,14 @@ def test_invariant_1_phase_outs_cap(played_game_ids):
     )
     over = [
         r for r in rows
-        if (r["outs"] or 0) > _phase_cap(r["phase"] or 0)
+        if (r["outs"] or 0) > _phase_cap(r["phase"] or 0, r["game_id"], r["team_id"])
     ]
     assert not over, (
         f"phase-outs cap exceeded on {len(over)} (game, team, phase) "
         f"groups; first 5: "
         + "; ".join(
             f"game={r['game_id']} team={r['team_id']} phase={r['phase']} "
-            f"outs={r['outs']} cap={_phase_cap(r['phase'] or 0)}"
+            f"outs={r['outs']} cap={_phase_cap(r['phase'] or 0, r['game_id'], r['team_id'])}"
             for r in over[:5]
         )
     )
@@ -179,7 +221,7 @@ def test_invariant_2_or_reconciliation(played_game_ids):
         b = batter_outs.get((gid, tid, ph), 0)
         u = unattr.get((gid, tid, ph), 0)
         opp = opp_outs.get((gid, tid, ph), 0)
-        cap = _phase_cap(ph or 0)
+        cap = _phase_cap(ph or 0, gid, tid)
         total = b + u
 
         # (a) Cross-check with opposing pitcher outs (rules out paired
@@ -191,11 +233,14 @@ def test_invariant_2_or_reconciliation(played_game_ids):
             )
             continue
 
-        # (b) Cap reconciliation. A walk-off home half in the game's
-        #     last phase is the only legitimate undershoot.
+        # (b) Cap reconciliation. A walk-off in the game's last phase is
+        #     the only legitimate undershoot. With Declared Seconds the
+        #     "winner takes the lead in the last phase" can be either team
+        #     (not always the home team), so we widen the condition: any
+        #     team that's the winner AND is batting in the game's last
+        #     phase is allowed to fall short of the cap.
         is_walkoff = (
-            tid == home_id.get(gid)
-            and winner.get(gid) == tid
+            winner.get(gid) == tid
             and (ph or 0) == last_phase.get(gid, 0)
         )
         if total > cap:
@@ -206,7 +251,7 @@ def test_invariant_2_or_reconciliation(played_game_ids):
         elif total < cap and not is_walkoff:
             bad.append(
                 f"game={gid} team={tid} phase={ph}: total_outs={total} "
-                f"< cap={cap} and not a walk-off home half "
+                f"< cap={cap} and not a walk-off "
                 f"(winner={winner.get(gid)} home={home_id.get(gid)} "
                 f"last_phase={last_phase.get(gid, 0)})"
             )
@@ -295,14 +340,14 @@ def test_invariant_4_os_pct_bound(played_game_ids):
     )
     over = [
         r for r in rows
-        if (r["outs_recorded"] or 0) > _phase_cap(r["phase"] or 0)
+        if (r["outs_recorded"] or 0) > _phase_cap(r["phase"] or 0, r["game_id"], r["team_id"])
     ]
     assert not over, (
         f"OS% > 100% on {len(over)} pitcher rows; first 5: "
         + "; ".join(
             f"game={r['game_id']} team={r['team_id']} pid={r['player_id']} "
             f"phase={r['phase']} outs={r['outs_recorded']} "
-            f"cap={_phase_cap(r['phase'] or 0)}"
+            f"cap={_phase_cap(r['phase'] or 0, r['game_id'], r['team_id'])}"
             for r in over[:5]
         )
     )

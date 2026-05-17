@@ -129,7 +129,7 @@ class Renderer:
             "bases_list": list(state.bases),          # copy — safe after mutation
             "score": dict(state.score),               # copy
             "batting_team_id": batting_tid,
-            "phase": getattr(state, "super_inning_number", 0),
+            "phase": getattr(state, "phase_number", 0) or getattr(state, "super_inning_number", 0),
             "batting_team_name": state.batting_team.name,
             "fielding_team_name": state.fielding_team.name,
             "visitors_name": state.visitors.name,
@@ -1003,6 +1003,12 @@ class Renderer:
                 if out_id is not None:
                     stats_obj.replaced_player_id = str(out_id)
                 self._batter_stats[in_id] = stats_obj
+
+        elif etype == "declaration":
+            # Declared Seconds — manager banks remaining outs for a rebuttal
+            # half. Per-PA rendering is intentionally minimal; the box-score
+            # "Declared at out N — banked K outs" line carries the narrative.
+            pass
 
         elif etype == "joker_to_field":
             # Rare: a joker is moved from the bench (DH-pool) into a
