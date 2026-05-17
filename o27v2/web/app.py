@@ -5380,6 +5380,32 @@ def new_league_post():
                   config=custom_cfg)
     set_active_league_meta(rng_seed, meta_cfg_id)
 
+    # Optional pre-season auction. Opt-in at league creation via the
+    # checkbox on new_league.html; works for any preset or custom config
+    # (the auction module is mode-agnostic — it reads teams off the DB).
+    # If the picked config has no `auction:` block, we synthesize one so
+    # apply_auction picks up its built-in defaults.
+    if request.form.get("run_auction_on_start"):
+        from o27v2 import auction as _auction
+        from o27v2.league import get_config
+        cfg_for_auction = custom_cfg if custom_cfg is not None else get_config(meta_cfg_id)
+        if cfg_for_auction is not None:
+            cfg_for_auction = dict(cfg_for_auction)
+            cfg_for_auction.setdefault("auction", {"enabled": True})
+            try:
+                report = _auction.apply_auction(
+                    cfg_for_auction, rng_seed=rng_seed, season=1,
+                )
+                if report.get("ok") is False:
+                    flash(f"Pre-season auction skipped: {report.get('reason', 'unknown')}", "warning")
+                else:
+                    sold = sum(1 for r in (report.get("results") or []) if r.get("winner_team_id"))
+                    flash(f"Pre-season auction complete: {sold} players sold across "
+                          f"{len(report.get('results') or [])} lots.", "info")
+            except Exception as e:
+                app.logger.exception("pre-season auction failed: %s", e)
+                flash(f"Pre-season auction failed: {e}", "error")
+
     # Surface a schedule-quality report so the user sees imbalance
     # warnings (uneven opponent counts, off-day spread, etc.) before
     # they get deep into a season and notice a lopsided play sample.
@@ -6129,10 +6155,9 @@ def auction_view():
     from o27v2 import auction as _auction
     summary = _auction.get_auction()
     cfg = _active_config()
-    is_tiered = bool(cfg and cfg.get("schedule_mode") == "tiered")
     return _serve("auction.html",
                   auction=summary,
-                  is_tiered=is_tiered,
+                  has_league=bool(cfg),
                   config_summary=(cfg.get("auction") if cfg else None))
 
 
@@ -6141,10 +6166,9 @@ def auction_live_view():
     from o27v2 import auction as _auction
     feed = _auction.get_live_auction()
     cfg = _active_config()
-    is_tiered = bool(cfg and cfg.get("schedule_mode") == "tiered")
     return _serve("auction_live.html",
                   feed=feed,
-                  is_tiered=is_tiered)
+                  has_league=bool(cfg))
 
 
 @app.route("/api/auction/live")
@@ -6158,15 +6182,18 @@ def api_auction_live():
 
 @app.route("/api/auction/run", methods=["POST"])
 def api_auction_run():
-    """Run the Vickrey auction against the current league state. Tiered
-    configs only; refuses on non-tiered."""
+    """Run the Vickrey auction against the current league state. Works
+    for any league config; if the config has no `auction:` block we
+    synthesize a minimal one so apply_auction's built-in defaults apply."""
     from o27v2 import auction as _auction
     cfg = _active_config()
-    if not cfg or cfg.get("schedule_mode") != "tiered":
+    if not cfg:
         return jsonify({
             "ok": False,
-            "error": "Auction is only available for tiered configs.",
+            "error": "No active league. Create one from /new-league first.",
         }), 400
+    cfg = dict(cfg)
+    cfg.setdefault("auction", {"enabled": True})
     data = request.get_json(silent=True) or {}
     rng_seed = int(data.get("rng_seed") or 0)
     try:

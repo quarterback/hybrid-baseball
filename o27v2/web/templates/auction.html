@@ -14,7 +14,7 @@
         ▶ Watch the auction
       </a>
     {% endif %}
-    {% if is_tiered %}
+    {% if has_league %}
       <button id="run-auction-btn" class="btn btn-warning btn-sm">
         {% if auction %}Re-run Auction{% else %}Run Auction{% endif %}
       </button>
@@ -22,18 +22,22 @@
   </div>
 </div>
 
-{% if not is_tiered %}
+{% if not has_league %}
 <div class="dense" style="padding:18px;text-align:center">
-  <div class="text-secondary">Auction is only available for tiered league configs (e.g. <strong>O27 Tiered (56 teams)</strong>). Pick one from <a href="{{ url_for('new_league_get') }}">+ League</a> to enable.</div>
+  <div class="text-secondary">No active league. Create one from <a href="{{ url_for('new_league_get') }}">+ League</a> to enable the auction.</div>
 </div>
 {% elif not auction %}
 <div class="dense" style="padding:18px;text-align:center">
   <div class="text-secondary mb-2">No auction has been run yet for this season.</div>
   {% if config_summary %}
   <div class="small text-secondary">
-    Config: <strong>{{ config_summary.keepers_per_team }}</strong> keepers/team
-      &nbsp;·&nbsp; {{ config_summary.team_purse | money }} purse
-      &nbsp;·&nbsp; min bid {{ config_summary.min_bid | money }}
+    Config: <strong>{{ config_summary.keepers_per_team or 3 }}</strong> keepers/team
+      &nbsp;·&nbsp; {{ (config_summary.team_purse or 2000000000) | money }} purse
+      &nbsp;·&nbsp; min bid {{ (config_summary.min_bid or 5000000) | money }}
+  </div>
+  {% else %}
+  <div class="small text-secondary">
+    Using default auction settings (3 keepers/team, ƒ200 cr purse, ƒ50 lakh min bid).
   </div>
   {% endif %}
 </div>
