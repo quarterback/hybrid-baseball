@@ -485,9 +485,214 @@ f286e3c  Lift HR rate and remove medium-contact 2C gate
          shift_aggression + mechanic + telemetry
 58b61f8  Shifts phase 2: outfield shift, adaptability rating,
          leverage ratchet, bunt-against-shift
+7b8b2a9  Fix bulk-sim "Load failed" on iOS Safari (shorter chunks +
+         JS retry on transient fetch failures)
+35caa09  Per-PA per-base advancement stats (pesäpallo-style)
+2668497  Per-base advancement UI (player + leaders) + scoring
+         events log
+841229e  Rename advancement labels to base positions + add RAD
+         (graded total bases)
 ```
 
 The `4b7efdb`/`136cd1f` pair is the visible record of the
 "credit hit only on runs" misinterpretation — kept in history
 rather than squashed, because it documents the conceptual
 correction the user made ("every one of those 2C hits is a hit").
+
+---
+
+## Arc 3 — Pesäpallo-style runner-advancement analytics
+
+### Context
+
+After two re-sim cycles confirmed the offensive lifts were
+landing (R/half lifted from 9.94 to 10.51 → 10.61 across two
+later snapshots) the user surfaced a structural observation
+from the analytics page: **1B run value sat below BB run value**
+(0.456 vs 0.671) because stay-credited "1B" events don't move
+the batter to a base, so the empirical RV of "1B" became a
+mixed bag — real singles plus stay credits with structurally
+lower RV.
+
+The user shared screenshots from pesistulokset.fi (the Finnish
+pesäpallo stat site) showing how the source sport handles this:
+**pesäpallo box scores headline per-base runner advancement**
+(1V%/2V%/3V% conversion rates from runners on first / second /
+third). They don't compute an aggregated "1B RV" because the
+per-base columns ARE the headline measure. Adding the same
+surface to O27 makes the 1B<BB collapse irrelevant — readers
+go straight to the per-base data instead of asking why 1B's
+average RV is below BB's analytical value.
+
+The user then drew a tighter parallel: **MLB Total Bases**
+(batter's own bases gained from his hit type) is the conceptual
+mirror of pesäpallo's per-base runner advancement (bases gained
+by RUNNERS during his PA). Together they describe the full
+offensive contribution — batter movement plus runner movement.
+
+### What was built (Arc 3)
+
+**Per-PA per-base advancement (binary)** — `35caa09`:
+
+`BatterStats` gains six fields, mirroring the existing
+`c2_op_/c2_adv_` 2C-event tracking but applied across the
+entire PA (run-chosen contact, 2C, BB-force, sac bunt all
+count):
+
+```python
+adv_op_1b / adv_adv_1b      # runner was on 1B; did they advance?
+adv_op_2b / adv_adv_2b
+adv_op_3b / adv_adv_3b      # 3B "advance" = scored
+```
+
+Renderer mechanism (pure observation, no engine behavior change):
+
+1. PA-boundary detected on batter change. Before resetting,
+   call `_credit_pa_advancement(prev_batter)`.
+2. `_pa_start_bases` snapshot (taken at the previous PA's end
+   = this PA's start) vs `_last_bases` (snapshot updated after
+   every event = bases at PA end) tells us each runner's start
+   and end positions.
+3. `_pa_runners_out` set accumulates runner_ids retired during
+   the PA (`runner_out_idx` + `extra_runner_outs` from each
+   event's outcome). Runners departed AND in this set = got
+   out (not advancement). Runners departed AND not in this set
+   = scored (advancement).
+
+Schema: 6 INTEGER columns on `game_batter_stats` + ALTER
+migrations + INSERT statement extensions (per-phase and
+per-game variants).
+
+**Scoring events log** — `2668497`:
+
+A free byproduct of the PA-boundary diff: knowing which runners
+departed and weren't retired tells us exactly who scored and
+when. New table:
+
+```sql
+game_scoring_events {
+    game_id, seq, half, outs_before,
+    batter_id, runner_id, runner_from_base,
+    visitors_score, home_score
+}
+```
+
+Renderer's `_credit_pa_advancement` extended to walk scoring
+runners highest-base-first (3B → 2B → 1B in conceptual scoring
+order) and tick the score backwards from PA-end totals so each
+row shows cumulative score at the moment of that run. Matches
+the Finnish UI's behavior of showing `0-4 → 0-5 → 0-6 → 0-7`
+when a 4-RBI play scrolls.
+
+Surfaced on game-detail page as `Half | Outs | Batter | Runner
+(from base) | Score`. Both names click-through to player pages.
+
+**UI on player + leaders** — `2668497`:
+
+Player page gains a "Runner Advancement" panel showing
+1V%/2V%/3V% conversion rates with `success/opportunities`
+counts. Leaders page gains a card grid in the same shape.
+
+**Renamed labels + RAD (graded bases)** — `841229e`:
+
+The user objected to the direct pesäpallo "V" label carry-over
+(pesäpallo *vaihto* = base, but in MLB language "V" reads as
+nothing). Renamed all columns to use base positions:
+**1B%/2B%/3B%** with tooltips clarifying these refer to the
+RUNNER'S STARTING BASE, not the hit type.
+
+Then added the MLB-Total-Bases-analog **Runners Advanced
+(RAD)** — a *graded* version of the binary advancement
+columns. Where `adv_adv_1b` is binary (advanced or didn't),
+`rad_1b` counts the *bases* the runner gained:
+
+- 1B → 2B: +1 base
+- 1B → 3B: +2 bases
+- 1B → home: +3 bases
+- 2B → 3B: +1 base
+- 2B → home: +2 bases
+- 3B → home: +1 base
+- Out: 0 bases
+
+Total RAD = `rad_1b + rad_2b + rad_3b`. Mirrors MLB Total Bases
+for the batter's own movement, but applied to runner movement
+instead. Together (TB for batter + RAD for runners) they
+describe complete offensive contribution.
+
+### Arc 3 — files touched
+
+| File | Change |
+|---|---|
+| `o27/stats/batter.py` | `adv_op_*` / `adv_adv_*` / `rad_*` fields on BatterStats |
+| `o27/render/render.py` | PA-boundary diff in `_credit_pa_advancement`; `_pa_start_bases` / `_last_bases` / `_pa_runners_out` / `_scoring_log` instance state; `_accumulate_pa_runners_out` helper; `_totals` aggregation extended |
+| `o27v2/db.py` | New `game_scoring_events` table + indexes; 9 new columns on `game_batter_stats` (6 binary + 3 graded) + ALTER migrations |
+| `o27v2/sim.py` | Extracts new fields from BatterStats; DELETE+INSERT scoring log; both INSERT statements extended |
+| `o27v2/web/app.py` | Leaders + player_detail queries SUM the new columns; computes `adv_*_pct` and `rad_total` post-aggregate; scoring_events query joined to players for display names |
+| `o27v2/web/templates/player.html` | "Runner Advancement" panel with 1B%/2B%/3B%/All%/RAD columns |
+| `o27v2/web/templates/leaders.html` | Card grid for 1B%/2B%/3B%/All%/RAD |
+| `o27v2/web/templates/game.html` | "Scoring Events" panel above spray chart |
+
+### Out-of-scope (Arc 3 follow-ups)
+
+1. **Spray-chart / hit-location heatmap** — needs per-event location
+   data rolled by the engine. The `pull_pct` rating already gives
+   us the 1D pull/oppo axis to start from. Pesäpallo box scores
+   show 8-zone heatmaps; that's the next visualization piece.
+
+2. **Filterable hit categories** — the pesäpallo dropdown surfaces
+   `Onnistuneet kärkilyönnit` / `Haavat` / `Takaetenemiset` / etc.
+   Some of these map to O27 stats (Runs, Palot = outs, Home Runs)
+   but others are pesäpallo-specific kärkilyönti (leadoff hits) /
+   haavat (multi-base safe-hit categories) that don't directly
+   translate.
+
+3. **TB column placement** — MLB Total Bases is already implicit
+   in `hits + doubles + 2·triples + 3·hr`. Could surface as an
+   explicit column adjacent to RAD on the leaderboard so the
+   two analogous concepts sit side by side.
+
+4. **Bulk-sim resilience** — `7b8b2a9` cut chunk size 8s → 4.5s
+   and added a JS retry on transient fetch failures. Treatment
+   not cure; iOS Safari can still kill fetches on backgrounded
+   tabs. If the issue recurs in normal use, consider:
+   AbortController with longer timeout, progressive notification
+   instead of alert dialog, or server-side queueing for the
+   "Sim Season" case.
+
+### Verification
+
+Two analytics-page snapshots seen during the work confirm:
+
+- R/half lifted from 9.94 (pre-session floor) to **10.61** (post
+  Arc 1 + Arc 2 across 942 games, 1884 halves)
+- Pythag k* settled at **2.864** (down from 3.126 smaller-sample
+  but still far above MLB 1.83 — appropriate to high-RPG env)
+- BaseRuns refit SSE cut **36.7%** vs MLB defaults
+- 1B<BB linear-weight pattern persistent and structural per the
+  "every 2C is a hit" design — Arc 3 surfaces per-base data
+  directly so this stops mattering as a headline
+- League wOBA = 0.407, league xwOBA = 0.407 (calibration check)
+- GSc starter mean = 50.45 (auto-tune target 50, on the money)
+
+Arc 3 new fields haven't been queried in the analytics pages
+yet — they're per-batter stats that surface on /player and
+/leaders, not on the aggregate sabermetric pages. After the
+next sim cycle, the data is queryable via:
+
+```sql
+-- Top RAD batters
+SELECT p.name, SUM(bs.rad_1b + bs.rad_2b + bs.rad_3b) AS rad
+FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
+GROUP BY p.id ORDER BY rad DESC LIMIT 20;
+
+-- Top 3B% (runners-driven-in-from-third rate)
+SELECT p.name,
+       SUM(bs.adv_adv_3b) AS adv,
+       SUM(bs.adv_op_3b) AS op,
+       1.0 * SUM(bs.adv_adv_3b) / NULLIF(SUM(bs.adv_op_3b), 0) AS pct
+FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
+WHERE bs.adv_op_3b > 0
+GROUP BY p.id HAVING op >= 20 ORDER BY pct DESC LIMIT 20;
+```
+
+The /leaders page surfaces these directly with sortable cards.
