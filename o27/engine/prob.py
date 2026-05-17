@@ -1079,10 +1079,12 @@ def should_stay_prob(
     elif state.bases[0] is not None:
         stay_p *= cfg.STAY_1B_ONLY_MULT
 
-    # Count awareness: 2-strike protect mode OR ahead-in-count selectivity.
-    if state.count.strikes >= 2:
-        stay_p *= cfg.STAY_TWO_STRIKE_MULT
-    elif state.count.balls > state.count.strikes:
+    # Count awareness: patient hitter ahead in the count is "waiting for
+    # his pitch" — more inclined to stay on marginal contact and get
+    # another swing. NB: no 2-strike lift — O27 has no foul-off survival
+    # mechanic (3 fouls = FOUL OUT), so the MLB protect-mode metaphor
+    # doesn't apply.
+    if state.count.balls > state.count.strikes:
         stay_p *= cfg.STAY_AHEAD_IN_COUNT_MULT
 
     # Late-game push: last third of the half, manufacture-runs mode.
