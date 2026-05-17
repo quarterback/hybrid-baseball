@@ -470,23 +470,20 @@ def test_invariant_5_w_bound(played_game_ids):
 # ---------------------------------------------------------------------------
 
 def test_invariant_6_pa_identity(played_game_ids):
-    """pa == ab + bb on every batter row.
+    """pa == ab + bb + hbp on every batter row.
 
-    The o27v2 schema does NOT persist HBP / SF / SH on
-    game_batter_stats, so the full identity
-    `pa == ab + bb + hbp + sf + sh` collapses to `pa == ab + bb`
-    per the Task #59 spec. Any deviation is either:
-      - a real engine bug (e.g. AB > PA), or
-      - an HBP/SF/SH being silently dropped on persistence; either way
-        a regression the harness should surface.
+    SF/SH aren't persisted on game_batter_stats yet (sacrifice events
+    fall through the renderer's leftover-out path and don't credit a
+    batter PA at all, so they don't break this identity — they leak as
+    a separate counted-vs-recorded mismatch tracked by other invariants).
 
-    See follow-up Task #61 (track HBP/SF/SH on per-game batter rows)
-    to lift the invariant to the full identity once the columns exist.
+    Any deviation is either a real engine bug (AB > PA) or a stat path
+    that increments PA without crediting the matching AB/BB/HBP.
     """
     extra, params = _game_filter_clause("bs")
     rows = db.fetchall(
         f"""SELECT bs.game_id, bs.team_id, bs.player_id, bs.phase,
-                   bs.pa, bs.ab, bs.bb
+                   bs.pa, bs.ab, bs.bb, bs.hbp
               FROM game_batter_stats bs
               JOIN games g ON g.id = bs.game_id
              WHERE g.played = 1{extra}""",
@@ -494,14 +491,13 @@ def test_invariant_6_pa_identity(played_game_ids):
     )
     bad = [
         r for r in rows
-        if (r["pa"] or 0) != ((r["ab"] or 0) + (r["bb"] or 0))
+        if (r["pa"] or 0) != ((r["ab"] or 0) + (r["bb"] or 0) + (r["hbp"] or 0))
     ]
     assert not bad, (
-        f"PA != AB+BB on {len(bad)} batter rows (HBP/SF/SH not stored "
-        f"on game_batter_stats — see follow-up Task #61); first 5: "
+        f"PA != AB+BB+HBP on {len(bad)} batter rows; first 5: "
         + "; ".join(
             f"game={r['game_id']} pid={r['player_id']} phase={r['phase']} "
-            f"PA={r['pa']} AB={r['ab']} BB={r['bb']}"
+            f"PA={r['pa']} AB={r['ab']} BB={r['bb']} HBP={r['hbp']}"
             for r in bad[:5]
         )
     )
