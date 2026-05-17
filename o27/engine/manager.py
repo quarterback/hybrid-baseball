@@ -181,7 +181,11 @@ def pitching_change(
             out_when_pulled=state.outs,
             start_batter_num=state.pitcher_start_pa + 1,
             half=state.half,
-            super_inning_number=state.super_inning_number,
+            # Use the unified phase index so a pitching change DURING a
+            # seconds round tags the closing spell with the correct phase
+            # (otherwise it falls back to raw super_inning_number=0 and the
+            # spell's stats end up in phase=0 mixed with regulation).
+            super_inning_number=getattr(state, "phase_number", 0) or state.super_inning_number,
             sb_allowed=state.pitcher_sb_allowed_this_spell,
             cs_caught=state.pitcher_cs_caught_this_spell,
             fo_induced=state.pitcher_fo_induced_this_spell,

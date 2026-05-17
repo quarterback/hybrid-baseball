@@ -149,6 +149,11 @@ def run_game(
         full_log.append("\n=== TIE — SUPER-INNING TIEBREAKER ===")
 
     while not state.winner:
+        # If a seconds round already wrote to phase=1 (because the seconds
+        # round tied the score and SI fires after), bump SI's phase index
+        # past it so SI rounds don't collide on UNIQUE(player, game, phase).
+        if state.super_inning_number == 0 and state.seconds_phase_number > 0:
+            state.super_inning_number = state.seconds_phase_number
         state.super_inning_number += 1
 
         if super_selector:

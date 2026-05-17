@@ -59,20 +59,23 @@ def _game_filter_clause(table_alias: str = "") -> tuple[str, tuple]:
     return f" AND {prefix}game_id IN ({placeholders})", tuple(sorted(ids))
 
 
-# Declared Seconds: per-game phase>=1 cap. In a seconds round the cap is
-# whoever-is-batting's banked outs — and BOTH the batting and the fielding
-# (pitcher) team's phase>=1 rows are bounded by that value, since they
-# belong to the same half.
+# Declared Seconds: per-game phase>=1 cap.
+#
+# In a seconds round the cap is the batting team's banked outs — and BOTH
+# the batting and fielding (pitcher) team's phase>=1 rows are bounded by
+# that value since they belong to the same half.
+#
+# Edge case: when a seconds round ends in a tie, the engine then fires SI
+# rounds AFTER seconds and bumps super_inning_number past seconds_phase_number
+# so the two don't share a phase index. The SI rounds still write phase>=1
+# rows (just at a different number). To keep this cap helper safe, we widen
+# the cap to MAX(banked, SI_PHASE_CAP=5) for any game that ran both.
 def _load_seconds_caps() -> dict[int, int]:
-    """Return {game_id: max_seconds_outs} for every game where a seconds
-    round fired. The value is the MAX of away_seconds_used and
-    home_seconds_used (in a double-seconds game both rounds may have
-    different caps; max is conservative and avoids false-positive failures
-    until per-round phase numbers are wired through the writer).
-    """
+    """Return {game_id: phase>=1 cap} for every game with seconds activity."""
     try:
         rows = db.fetchall(
-            "SELECT id, away_seconds_used, home_seconds_used FROM games"
+            "SELECT id, away_seconds_used, home_seconds_used, super_inning "
+            "FROM games"
         )
     except Exception:
         return {}
@@ -80,8 +83,15 @@ def _load_seconds_caps() -> dict[int, int]:
     for r in rows:
         aw = int(r.get("away_seconds_used") or 0)
         hm = int(r.get("home_seconds_used") or 0)
+        si = int(r.get("super_inning") or 0)
         if aw > 0 or hm > 0:
-            out[r["id"]] = max(aw, hm)
+            banked_cap = max(aw, hm)
+            if si > 0:
+                # Game also ran SI after the seconds round — phase>=1 rows
+                # may be either the seconds cap or the SI cap (5).
+                out[r["id"]] = max(banked_cap, SI_PHASE_CAP)
+            else:
+                out[r["id"]] = banked_cap
     return out
 
 

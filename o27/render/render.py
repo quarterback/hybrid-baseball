@@ -911,7 +911,13 @@ class Renderer:
             d["new_bases"] = state_after.bases_summary()
 
             if choice == "stay":
-                stay_out = (ctx["count_strikes"] == 2) or caught_fly
+                # The engine's stay rule (see o27/engine/stay.py) treats a
+                # caught fly as the ONLY thing that retires the batter on a
+                # stay — a 2-strike stay still credits a hit and burns the
+                # final strike but does NOT make a batter-out. Mirror that
+                # here so the renderer doesn't over-charge batter OR for
+                # 2-strike stays that the engine never recorded as outs.
+                stay_out = bool(caught_fly)
                 d["stay_batter_out"] = stay_out
                 d["stay_valid"] = not stay_out
                 if not stay_out:
