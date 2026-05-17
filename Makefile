@@ -1,4 +1,4 @@
-.PHONY: test-invariants test-invariants-fresh almanac almanac-serve
+.PHONY: test-invariants test-invariants-fresh almanac-build almanac-serve
 
 # Run the o27v2 stat-invariant suite against the default DB
 # (o27v2/o27v2.db). Override the target via env var:
@@ -13,16 +13,14 @@ test-invariants:
 test-invariants-fresh:
 	python3 -m pytest tests/test_stat_invariants.py -v
 
-# Build the static stats almanac into o27v2/web/static/almanac/ so the
-# running web app serves it at /static/almanac/index.html (linked from
-# the topbar nav). Re-run after each sim batch to refresh the data.
-#   ALMANAC_SOURCE=/path/to/other.db make almanac
-almanac:
+# The almanac is normally served live by the o27v2 web app at /almanac
+# (see o27.almanac.blueprint). These targets are for standalone export
+# / preview only — useful for ad-hoc snapshots.
+almanac-build:
 	python3 -m o27.almanac build \
 		--source $${ALMANAC_SOURCE:-o27v2/o27v2.db} \
-		--out    o27v2/web/static/almanac
+		--out    $${ALMANAC_OUT:-site}
 
-# Build + serve the almanac standalone on a local port for preview.
 almanac-serve:
 	python3 -m o27.almanac build \
 		--source $${ALMANAC_SOURCE:-o27v2/o27v2.db} \
