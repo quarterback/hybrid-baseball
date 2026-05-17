@@ -224,6 +224,22 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     c2_adv_2b  INTEGER DEFAULT 0,
     c2_op_3b   INTEGER DEFAULT 0,
     c2_adv_3b  INTEGER DEFAULT 0,
+    -- Per-PA advancement: did this batter move the runner who started
+    -- on each base during his PA? (Inclusive of 2C, run-chosen, BB-force,
+    -- sac bunt.) Binary success conversion% = adv / op.
+    adv_op_1b   INTEGER DEFAULT 0,
+    adv_adv_1b  INTEGER DEFAULT 0,
+    adv_op_2b   INTEGER DEFAULT 0,
+    adv_adv_2b  INTEGER DEFAULT 0,
+    adv_op_3b   INTEGER DEFAULT 0,
+    adv_adv_3b  INTEGER DEFAULT 0,
+    -- Runners Advanced (RAD) — graded per-base advancement. Counts the
+    -- bases each runner gained (not binary success). Sum is the "total
+    -- runner bases advanced" — MLB Total Bases concept applied to
+    -- runner movement rather than batter movement.
+    rad_1b      INTEGER DEFAULT 0,
+    rad_2b      INTEGER DEFAULT 0,
+    rad_3b      INTEGER DEFAULT 0,
     -- Per-game fielding position. Distinct from `players.position` (the
     -- player's primary), this is the actual spot they played that day.
     -- Utility (UT) players land on a concrete slot at lineup build time;
@@ -298,6 +314,27 @@ CREATE TABLE IF NOT EXISTS game_pa_log (
 );
 CREATE INDEX IF NOT EXISTS idx_pa_log_game ON game_pa_log(game_id);
 CREATE INDEX IF NOT EXISTS idx_pa_log_batter ON game_pa_log(batter_id);
+
+-- Pesäpallo-style scoring events log. One row per run that crosses the
+-- plate: the batter at bat when it happened, the runner who scored, the
+-- starting base of that runner at the PA's start, and the score after.
+-- Produces the "Inn / Batter / Runner / Situation" log seen on the
+-- Finnish pesistulokset.fi event listings.
+CREATE TABLE IF NOT EXISTS game_scoring_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id         INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL,        -- order within the game (0-indexed)
+    half            TEXT NOT NULL,           -- "top" | "bottom" | "super_top" | "super_bottom"
+    outs_before     INTEGER NOT NULL,        -- outs in this half BEFORE the scoring play
+    batter_id       INTEGER NOT NULL REFERENCES players(id),
+    runner_id       INTEGER NOT NULL REFERENCES players(id),
+    runner_from_base INTEGER NOT NULL,        -- 0 = 1B, 1 = 2B, 2 = 3B (where the runner started the PA)
+    visitors_score  INTEGER NOT NULL,        -- score after this run
+    home_score      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scoring_game   ON game_scoring_events(game_id);
+CREATE INDEX IF NOT EXISTS idx_scoring_batter ON game_scoring_events(batter_id);
+CREATE INDEX IF NOT EXISTS idx_scoring_runner ON game_scoring_events(runner_id);
 
 CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -803,7 +840,10 @@ def init_db() -> None:
         # Counting-stat columns persisted post-realism (Stage 1 of stats expansion).
         # Defaults of 0 leave pre-existing rows neutral; new games populate fully.
         for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits",
-                    "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b", "c2_op_3b", "c2_adv_3b"):
+                    "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b", "c2_op_3b", "c2_adv_3b",
+                    "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
+                    "adv_op_3b", "adv_adv_3b",
+                    "rad_1b", "rad_2b", "rad_3b"):
             try:
                 conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()

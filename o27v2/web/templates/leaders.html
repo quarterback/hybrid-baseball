@@ -83,6 +83,15 @@
   {{ card('DRS',   'drs',      '%+.1f',true,  batting, tooltip='Defensive runs saved') }}
 </div>
 
+<h4>Batting · Runner Advancement</h4>
+<div class="row g-3 mb-3">
+  {{ card('1B%',  'adv_1b_pct',    '%.3f', true, batting, tooltip='Rate at which the runner who started on FIRST BASE advanced to a higher base or scored during this batter\'s PA. NB: refers to the runner\'s starting base, NOT the hit type "1B".') }}
+  {{ card('2B%',  'adv_2b_pct',    '%.3f', true, batting, tooltip='Rate at which the runner who started on SECOND BASE advanced to third or scored during this batter\'s PA.') }}
+  {{ card('3B%',  'adv_3b_pct',    '%.3f', true, batting, tooltip='Rate at which the runner who started on THIRD BASE scored during this batter\'s PA. The pure RBI-conversion metric.') }}
+  {{ card('All%', 'adv_total_pct', '%.3f', true, batting, tooltip='Overall advancement rate across all PAs with any runner on base. Composite of 1B%/2B%/3B% weighted by opportunity.') }}
+  {{ card('RAD',  'rad_total',     '%d',   true, batting, tooltip='Runners Advanced — total bases gained by runners during this batter\'s PAs. Mirrors MLB Total Bases (which counts the batter\'s own bases) but applied to runner movement instead. Sum of bases gained from 1B/2B/3B starting positions.') }}
+</div>
+
 <h4>Batting · Tools (talent ratings)</h4>
 <div class="row g-3 mb-3">
   {{ card('Power',   'r_power',   '%d', true, batting, tooltip='Power rating — bias contact toward hard, more HR weight') }}

@@ -747,6 +747,15 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict],
                 "c2_adv_2b": getattr(bstat, "c2_adv_2b", 0),
                 "c2_op_3b":  getattr(bstat, "c2_op_3b", 0),
                 "c2_adv_3b": getattr(bstat, "c2_adv_3b", 0),
+                "adv_op_1b":  getattr(bstat, "adv_op_1b", 0),
+                "adv_adv_1b": getattr(bstat, "adv_adv_1b", 0),
+                "adv_op_2b":  getattr(bstat, "adv_op_2b", 0),
+                "adv_adv_2b": getattr(bstat, "adv_adv_2b", 0),
+                "adv_op_3b":  getattr(bstat, "adv_op_3b", 0),
+                "adv_adv_3b": getattr(bstat, "adv_adv_3b", 0),
+                "rad_1b":     getattr(bstat, "rad_1b", 0),
+                "rad_2b":     getattr(bstat, "rad_2b", 0),
+                "rad_3b":     getattr(bstat, "rad_3b", 0),
                 "game_position": str(getattr(
                     engine_players_by_id.get(str(engine_pid)),
                     "game_position", "") or ""),
@@ -1542,10 +1551,12 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                     doubles, triples, hr, rbi, bb, k, stays, outs_recorded,
                     hbp, sb, cs, fo, multi_hit_abs, stay_rbi, stay_hits,
                     c2_op_1b, c2_adv_1b, c2_op_2b, c2_adv_2b, c2_op_3b, c2_adv_3b,
+                    adv_op_1b, adv_adv_1b, adv_op_2b, adv_adv_2b, adv_op_3b, adv_adv_3b,
+                    rad_1b, rad_2b, rad_3b,
                     game_position, entry_type, replaced_player_id,
                     gidp, gitp,
                     roe, po, a, e)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
@@ -1556,6 +1567,10 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                  r.get("c2_op_1b", 0), r.get("c2_adv_1b", 0),
                  r.get("c2_op_2b", 0), r.get("c2_adv_2b", 0),
                  r.get("c2_op_3b", 0), r.get("c2_adv_3b", 0),
+                 r.get("adv_op_1b", 0), r.get("adv_adv_1b", 0),
+                 r.get("adv_op_2b", 0), r.get("adv_adv_2b", 0),
+                 r.get("adv_op_3b", 0), r.get("adv_adv_3b", 0),
+                 r.get("rad_1b", 0), r.get("rad_2b", 0), r.get("rad_3b", 0),
                  r.get("game_position", ""),
                  r.get("entry_type", "starter"),
                  r.get("replaced_player_id"),
@@ -1598,6 +1613,34 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                   e.get("outs_after"),  e.get("bases_after"),  e.get("score_diff_after"))
                  for e in pa_log
                  if e["team_id"] in role_to_db],
+            )
+        # Pesäpallo-style scoring events log — one row per run that crossed
+        # the plate. Idempotent: delete prior rows for this game before
+        # inserting (matches the pa_log pattern; protects against retries).
+        scoring_log = getattr(renderer, "_scoring_log", []) or []
+        conn.execute("DELETE FROM game_scoring_events WHERE game_id = ?", (game_id,))
+        if scoring_log:
+            # batter_id / runner_id in the engine are player_id STRINGS that
+            # match players.id when stringified. Coerce to int for the FK.
+            def _to_int_or_none(v):
+                try:
+                    return int(v) if v is not None else None
+                except (TypeError, ValueError):
+                    return None
+            conn.executemany(
+                """INSERT INTO game_scoring_events
+                   (game_id, seq, half, outs_before,
+                    batter_id, runner_id, runner_from_base,
+                    visitors_score, home_score)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                [(game_id, e["seq"], e["half"], e["outs_before"],
+                  _to_int_or_none(e["batter_id"]),
+                  _to_int_or_none(e["runner_id"]),
+                  e["runner_from_base"],
+                  e["visitors_score"], e["home_score"])
+                 for e in scoring_log
+                 if _to_int_or_none(e["batter_id"]) is not None
+                 and _to_int_or_none(e["runner_id"]) is not None],
             )
         for r in away_pstats + home_pstats:
             conn.execute(
@@ -1781,8 +1824,10 @@ def _insert_batter_stats(game_id: int, rows: list[dict]) -> None:
             hr, rbi, bb, k, stays, outs_recorded,
             hbp, sb, cs, fo, multi_hit_abs, stay_rbi, stay_hits,
             c2_op_1b, c2_adv_1b, c2_op_2b, c2_adv_2b, c2_op_3b, c2_adv_3b,
+            adv_op_1b, adv_adv_1b, adv_op_2b, adv_adv_2b, adv_op_3b, adv_adv_3b,
+            rad_1b, rad_2b, rad_3b,
             roe, po, e)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["pa"], r["ab"], r["runs"],
           r["hits"], r["doubles"], r["triples"], r["hr"], r["rbi"],
           r["bb"], r["k"], r["stays"], r.get("outs_recorded", 0),
@@ -1792,6 +1837,10 @@ def _insert_batter_stats(game_id: int, rows: list[dict]) -> None:
           r.get("c2_op_1b", 0), r.get("c2_adv_1b", 0),
           r.get("c2_op_2b", 0), r.get("c2_adv_2b", 0),
           r.get("c2_op_3b", 0), r.get("c2_adv_3b", 0),
+          r.get("adv_op_1b", 0), r.get("adv_adv_1b", 0),
+          r.get("adv_op_2b", 0), r.get("adv_adv_2b", 0),
+          r.get("adv_op_3b", 0), r.get("adv_adv_3b", 0),
+          r.get("rad_1b", 0), r.get("rad_2b", 0), r.get("rad_3b", 0),
           r.get("roe", 0),
           r.get("po", 0), r.get("e", 0))
          for r in rows],

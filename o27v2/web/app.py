@@ -2574,6 +2574,21 @@ def game_detail(game_id: int):
         hr_off_pitchers=hr_off_map,
     )
 
+    # Pesäpallo-style scoring events log — one row per run that crossed
+    # the plate during this game. Joined to players for display names.
+    scoring_events = db.fetchall(
+        """SELECT se.seq, se.half, se.outs_before, se.runner_from_base,
+                  se.visitors_score, se.home_score,
+                  b.name AS batter_name, b.id AS batter_id,
+                  r.name AS runner_name, r.id AS runner_id
+           FROM game_scoring_events se
+           JOIN players b ON se.batter_id = b.id
+           JOIN players r ON se.runner_id = r.id
+           WHERE se.game_id = ?
+           ORDER BY se.seq""",
+        (game_id,),
+    )
+
     return _serve(
         "game.html",
         game=game,
@@ -2600,6 +2615,7 @@ def game_detail(game_id: int):
         home_bips=home_bips,
         park_dims=park_dims,
         fence_points=fence_points,
+        scoring_events=scoring_events,
         prev_game_id=(prev_game["id"] if prev_game else None),
         next_game_id=(next_game["id"] if next_game else None),
     )
@@ -3472,6 +3488,15 @@ def leaders():
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.adv_op_1b),0)   as adv_op_1b,
+                  COALESCE(SUM(bs.adv_adv_1b),0)  as adv_adv_1b,
+                  COALESCE(SUM(bs.adv_op_2b),0)   as adv_op_2b,
+                  COALESCE(SUM(bs.adv_adv_2b),0)  as adv_adv_2b,
+                  COALESCE(SUM(bs.adv_op_3b),0)   as adv_op_3b,
+                  COALESCE(SUM(bs.adv_adv_3b),0)  as adv_adv_3b,
+                  COALESCE(SUM(bs.rad_1b),0)      as rad_1b,
+                  COALESCE(SUM(bs.rad_2b),0)      as rad_2b,
+                  COALESCE(SUM(bs.rad_3b),0)      as rad_3b,
                   COALESCE(SUM(bs.roe),0)          as roe,
                   COALESCE(SUM(bs.po),0)           as po,
                   COALESCE(SUM(bs.e),0)            as e
@@ -3484,6 +3509,25 @@ def leaders():
     )
     baselines = _league_baselines()
     _aggregate_batter_rows(batting, baselines=baselines)
+    # Per-base advancement conversion %, computed post-aggregate so the
+    # leaderboard template can render them without the Jinja2 having to
+    # do division. Returns None when no opportunity (don't display 0%).
+    for row in batting:
+        for base in ("1b", "2b", "3b"):
+            op  = int(row.get(f"adv_op_{base}") or 0)
+            adv = int(row.get(f"adv_adv_{base}") or 0)
+            row[f"adv_{base}_pct"] = (adv / op) if op else None
+        tot_op  = sum(int(row.get(f"adv_op_{b}") or 0) for b in ("1b", "2b", "3b"))
+        tot_adv = sum(int(row.get(f"adv_adv_{b}") or 0) for b in ("1b", "2b", "3b"))
+        row["adv_total_pct"] = (tot_adv / tot_op) if tot_op else None
+        # RAD total — graded bases gained by runners. MLB Total Bases for
+        # the batter's own movement; RAD is the same concept applied to
+        # runners. Headline value for the new leaderboard column.
+        row["rad_total"] = (
+            int(row.get("rad_1b") or 0)
+            + int(row.get("rad_2b") or 0)
+            + int(row.get("rad_3b") or 0)
+        )
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
@@ -3969,7 +4013,16 @@ def player_detail(player_id: int):
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
                   COALESCE(SUM(stay_rbi),0)     as stay_rbi,
-                  COALESCE(SUM(stay_hits),0)    as stay_hits
+                  COALESCE(SUM(stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(adv_op_1b),0)   as adv_op_1b,
+                  COALESCE(SUM(adv_adv_1b),0)  as adv_adv_1b,
+                  COALESCE(SUM(adv_op_2b),0)   as adv_op_2b,
+                  COALESCE(SUM(adv_adv_2b),0)  as adv_adv_2b,
+                  COALESCE(SUM(adv_op_3b),0)   as adv_op_3b,
+                  COALESCE(SUM(adv_adv_3b),0)  as adv_adv_3b,
+                  COALESCE(SUM(rad_1b),0)      as rad_1b,
+                  COALESCE(SUM(rad_2b),0)      as rad_2b,
+                  COALESCE(SUM(rad_3b),0)      as rad_3b
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
     )
@@ -4022,6 +4075,27 @@ def player_detail(player_id: int):
         bt_totals["defense_outfield"] = player.get("defense_outfield")
         bt_totals["defense_catcher"]  = player.get("defense_catcher")
         _aggregate_batter_rows([bt_totals], baselines=baselines)
+        # Pesäpallo-style per-base advancement conversion. NULL = no
+        # opportunity (don't display as 0%). Total% rolls all three bases
+        # into one bucket, weighted by opportunity count.
+        _adv_op1 = int(bt_totals.get("adv_op_1b") or 0)
+        _adv_op2 = int(bt_totals.get("adv_op_2b") or 0)
+        _adv_op3 = int(bt_totals.get("adv_op_3b") or 0)
+        _adv_ad1 = int(bt_totals.get("adv_adv_1b") or 0)
+        _adv_ad2 = int(bt_totals.get("adv_adv_2b") or 0)
+        _adv_ad3 = int(bt_totals.get("adv_adv_3b") or 0)
+        bt_totals["adv_1b_pct"]    = (_adv_ad1 / _adv_op1) if _adv_op1 else None
+        bt_totals["adv_2b_pct"]    = (_adv_ad2 / _adv_op2) if _adv_op2 else None
+        bt_totals["adv_3b_pct"]    = (_adv_ad3 / _adv_op3) if _adv_op3 else None
+        _adv_op_total = _adv_op1 + _adv_op2 + _adv_op3
+        _adv_ad_total = _adv_ad1 + _adv_ad2 + _adv_ad3
+        bt_totals["adv_total_pct"] = (_adv_ad_total / _adv_op_total) if _adv_op_total else None
+        # RAD — total bases gained by runners across all PAs.
+        bt_totals["rad_total"] = (
+            int(bt_totals.get("rad_1b") or 0)
+            + int(bt_totals.get("rad_2b") or 0)
+            + int(bt_totals.get("rad_3b") or 0)
+        )
 
     # Per-fielder defense totals (PO + A + E). Assist crediting was
     # added when pitch types were activated — the renderer now also

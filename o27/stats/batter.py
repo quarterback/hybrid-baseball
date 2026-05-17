@@ -38,6 +38,32 @@ class BatterStats:
     c2_op_3b: int = 0
     c2_adv_3b: int = 0      # 3B "advance" = scored
 
+    # Per-base PA advancement stats. Where c2_* tracks advancement during
+    # 2C events only, adv_* tracks advancement across the WHOLE plate
+    # appearance — runs from 2C events PLUS run-chosen contact PLUS
+    # BB-force PLUS sac-bunt all roll up here. Displayed as 1B%/2B%/3B%
+    # conversion rates on the player page (note: 1B here means "runner
+    # who started on first base," not the hit type).
+    #   adv_op_Xb  — runner was on Xb at PA start
+    #   adv_adv_Xb — that runner moved to a higher base OR scored (binary)
+    # A runner thrown out during the PA counts as an opportunity but not
+    # a successful advance. Conversion% = adv / op displayed per-batter.
+    adv_op_1b: int = 0
+    adv_adv_1b: int = 0
+    adv_op_2b: int = 0
+    adv_adv_2b: int = 0
+    adv_op_3b: int = 0
+    adv_adv_3b: int = 0
+    # Runners Advanced (RAD) — graded advancement, counting the BASES
+    # each runner gained instead of binary success/fail. 1B → 2B = +1,
+    # 1B → 3B = +2, 1B → home = +3, etc. Mirrors MLB's Total Bases
+    # concept but applied to RUNNER movement rather than the batter's
+    # own movement. Total RAD = rad_1b + rad_2b + rad_3b — the
+    # headline "runners advanced" metric for the batter.
+    rad_1b: int = 0
+    rad_2b: int = 0
+    rad_3b: int = 0
+
     # Box-score entry classification. Set by the render pipeline:
     #   "starter" — batted at the start of the game (default)
     #   "PH"       — entered as a pinch hitter for `replaced_player_id`

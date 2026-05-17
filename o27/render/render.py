@@ -84,6 +84,25 @@ class Renderer:
         self._pa_log: list[dict] = []
         self._batter_current_ab: dict = {}      # batter_id -> in-progress ab number
         self._batter_swing_idx: dict = {}       # batter_id -> swing_idx within current ab
+        # Pesäpallo-style per-PA advancement tracking. At PA start we
+        # snapshot which runners were on which bases; during the PA we
+        # accumulate which of those runners got out (FC, TOOTBLAN, etc.);
+        # at PA end (= next PA start) we diff against current bases to
+        # credit each per-base advancement (1B→higher, 2B→higher, 3B→home).
+        # Snapshots are tuples so they don't track in-place list mutations.
+        self._last_bases: tuple = (None, None, None)   # bases at END of last event
+        self._last_score_v: int = 0   # visitors' score at END of last event
+        self._last_score_h: int = 0   # home's score at END of last event
+        self._last_half: str = "top"  # half at END of last event
+        self._last_outs: int = 0      # outs at END of last event
+        self._pa_start_bases: tuple = (None, None, None)  # bases at START of current PA
+        self._pa_runners_out: set = set()       # runner_ids retired during current PA
+        # Pesäpallo-style scoring log — one entry per run that crosses the
+        # plate. Captures batter, runner, runner's starting base in the
+        # PA, the score-after-this-run, outs, and half. Populated at PA
+        # boundary in _credit_pa_advancement; persisted by sim.py at game
+        # end via the game_scoring_events table.
+        self._scoring_log: list[dict] = []
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -134,6 +153,17 @@ class Renderer:
         # between-pitch events that fire without changing the batter.
         is_pa_event = etype not in _NON_PA_EVENTS
         if is_pa_event and batter.player_id != self._current_pa_batter_id:
+            # PA boundary — credit the previous batter for per-base
+            # advancement that occurred during their PA. self._last_bases
+            # holds bases at end of the previous PA's terminal event;
+            # diff vs self._pa_start_bases plus self._pa_runners_out tells
+            # us which starting-base runners advanced vs were retired.
+            if self._current_pa_batter_id is not None:
+                self._credit_pa_advancement(self._current_pa_batter_id)
+            # Reset PA-scoped state for the incoming batter. The new PA's
+            # starting bases = whatever was on base at end of previous PA.
+            self._pa_start_bases = self._last_bases
+            self._pa_runners_out = set()
             self._on_new_pa(batter)
             lines.append(self._batter_intro(batter))
             self._current_pa_batter_id = batter.player_id
@@ -153,6 +183,18 @@ class Renderer:
         # Append runner advancement narrative computed from state delta.
         runner_lines = self._compute_runner_lines(ctx, state_after, etype, disp, event)
         lines.extend(runner_lines)
+
+        # Per-PA advancement bookkeeping — accumulate runners retired during
+        # this PA (any outcome with runner_out_idx / extra_runner_outs), and
+        # snapshot bases / score / half / outs at end of this event so the
+        # next PA boundary can diff against them.
+        if is_pa_event:
+            self._accumulate_pa_runners_out(event, ctx)
+        self._last_bases    = tuple(state_after.bases)
+        self._last_score_v  = int(state_after.score.get("visitors", 0) or 0)
+        self._last_score_h  = int(state_after.score.get("home", 0) or 0)
+        self._last_half     = str(getattr(state_after, "half", "top") or "top")
+        self._last_outs     = int(getattr(state_after, "outs", 0) or 0)
 
         return lines
 
@@ -238,6 +280,15 @@ class Renderer:
                 t.stay_rbi     += r.stay_rbi
                 t.stay_hits    += r.stay_hits
                 t.multi_hit_abs += r.multi_hit_abs
+                t.adv_op_1b    += r.adv_op_1b
+                t.adv_adv_1b   += r.adv_adv_1b
+                t.adv_op_2b    += r.adv_op_2b
+                t.adv_adv_2b   += r.adv_adv_2b
+                t.adv_op_3b    += r.adv_op_3b
+                t.adv_adv_3b   += r.adv_adv_3b
+                t.rad_1b       += r.rad_1b
+                t.rad_2b       += r.rad_2b
+                t.rad_3b       += r.rad_3b
             return t
 
         # Build per-pitcher aggregates from spell_log (includes H/BB/K/HBP).
@@ -503,6 +554,110 @@ class Renderer:
         # 0-0). This hook stays as a "first time we see this batter at
         # the plate" marker — the actual stat increment happens elsewhere.
         return
+
+    def _accumulate_pa_runners_out(self, event, ctx) -> None:
+        """Track runners retired during the current PA. Called per-event
+        AFTER stat updates so the data is available to the credit logic
+        at the next PA boundary."""
+        outcome = event.get("outcome")
+        if not isinstance(outcome, dict):
+            return
+        out_idxs: list[int] = []
+        if outcome.get("runner_out_idx") is not None:
+            out_idxs.append(outcome["runner_out_idx"])
+        out_idxs.extend(outcome.get("extra_runner_outs") or [])
+        if not out_idxs:
+            return
+        # ctx.bases_list is the PRE-event snapshot — the runners standing
+        # on the bases that out_idxs reference. Resolve idx → runner_id
+        # and add to the per-PA out set.
+        pre_bases = ctx.get("bases_list") or [None, None, None]
+        for idx in out_idxs:
+            if 0 <= idx < 3 and pre_bases[idx] is not None:
+                self._pa_runners_out.add(pre_bases[idx])
+
+    def _credit_pa_advancement(self, batter_id: str) -> None:
+        """Credit per-base advancement at PA end. Pesäpallo-style: each
+        runner standing on 1B/2B/3B at PA start = opportunity; runner ending
+        at a HIGHER base OR scored (= departed without being recorded as
+        retired during this PA) = successful advancement.
+
+        Also emits one row into self._scoring_log per runner who scored —
+        captured here because we have all the per-PA bookkeeping in one
+        place (starting bases, retired-runner set, score deltas).
+        """
+        s = self._stats_for_id(batter_id)
+        start_bases = self._pa_start_bases or (None, None, None)
+        end_bases   = self._last_bases or (None, None, None)
+        scored_runners: list[tuple[int, str]] = []   # (src_idx, runner_id), highest base first
+        for src_idx in (0, 1, 2):
+            runner_id = start_bases[src_idx]
+            if runner_id is None:
+                continue
+            # Opportunity.
+            if s is not None:
+                if src_idx == 0:   s.adv_op_1b += 1
+                elif src_idx == 1: s.adv_op_2b += 1
+                else:              s.adv_op_3b += 1
+            # Three terminal cases per starting-base runner:
+            #   - still on bases at higher idx → advanced N-src_idx bases
+            #   - departed and NOT in retired-set → scored → gained (3-src_idx) bases
+            #   - departed and in retired-set → out → no advancement, no bases
+            advanced = False
+            scored   = False
+            bases_gained = 0
+            if runner_id in end_bases:
+                new_idx = end_bases.index(runner_id)
+                if new_idx > src_idx:
+                    advanced = True
+                    bases_gained = new_idx - src_idx
+            elif runner_id not in self._pa_runners_out:
+                advanced = True
+                scored   = True
+                bases_gained = 3 - src_idx
+            if advanced and s is not None:
+                if src_idx == 0:   s.adv_adv_1b += 1
+                elif src_idx == 1: s.adv_adv_2b += 1
+                else:              s.adv_adv_3b += 1
+            if bases_gained and s is not None:
+                # RAD — graded total advancement bases gained by this
+                # starting-base runner. Mirrors MLB Total Bases for batters,
+                # applied to runner movement instead.
+                if src_idx == 0:   s.rad_1b += bases_gained
+                elif src_idx == 1: s.rad_2b += bases_gained
+                else:              s.rad_3b += bases_gained
+            if scored:
+                scored_runners.append((src_idx, runner_id))
+
+        # Emit one scoring-log entry per scoring runner. Walk highest base
+        # first (closest to home → scored first conceptually), ticking
+        # the score backwards from the PA-end total so each row shows
+        # the cumulative score at the moment of that run.
+        if not scored_runners:
+            return
+        scored_runners.sort(key=lambda x: -x[0])   # 3B-runner first
+        is_visitors = self._last_half in ("top", "super_top")
+        n_total = len(scored_runners)
+        for i, (src_idx, runner_id) in enumerate(scored_runners):
+            runs_remaining_after = n_total - 1 - i
+            v_now = self._last_score_v - (runs_remaining_after if is_visitors else 0)
+            h_now = self._last_score_h - (runs_remaining_after if not is_visitors else 0)
+            self._scoring_log.append({
+                "seq":              len(self._scoring_log),
+                "half":             self._last_half,
+                "outs_before":      self._last_outs,
+                "batter_id":        batter_id,
+                "runner_id":        runner_id,
+                "runner_from_base": src_idx,
+                "visitors_score":   v_now,
+                "home_score":       h_now,
+            })
+
+    def _stats_for_id(self, batter_id: str):
+        """Look up an existing BatterStats by player_id. Returns None if
+        the batter never accumulated any stats this game (no PA, no
+        defensive credit, no pinch role)."""
+        return self._batter_stats.get(batter_id)
 
     def _credit_fielder(self, fielder_id, state_after, attr: str) -> None:
         """Increment a per-fielder stat (po / e) for the player who made
