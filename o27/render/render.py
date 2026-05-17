@@ -286,6 +286,9 @@ class Renderer:
                 t.adv_adv_2b   += r.adv_adv_2b
                 t.adv_op_3b    += r.adv_op_3b
                 t.adv_adv_3b   += r.adv_adv_3b
+                t.rad_1b       += r.rad_1b
+                t.rad_2b       += r.rad_2b
+                t.rad_3b       += r.rad_3b
             return t
 
         # Build per-pitcher aggregates from spell_log (includes H/BB/K/HBP).
@@ -596,23 +599,33 @@ class Renderer:
                 if src_idx == 0:   s.adv_op_1b += 1
                 elif src_idx == 1: s.adv_op_2b += 1
                 else:              s.adv_op_3b += 1
-            # Did the runner advance? Three cases:
-            #   - still on bases at higher idx → advanced
-            #   - departed and NOT in retired-set → scored → advanced
-            #   - departed and in retired-set → out → not advanced
-            #   - still on same base (rare) → not advanced
+            # Three terminal cases per starting-base runner:
+            #   - still on bases at higher idx → advanced N-src_idx bases
+            #   - departed and NOT in retired-set → scored → gained (3-src_idx) bases
+            #   - departed and in retired-set → out → no advancement, no bases
             advanced = False
             scored   = False
+            bases_gained = 0
             if runner_id in end_bases:
                 new_idx = end_bases.index(runner_id)
-                advanced = new_idx > src_idx
+                if new_idx > src_idx:
+                    advanced = True
+                    bases_gained = new_idx - src_idx
             elif runner_id not in self._pa_runners_out:
                 advanced = True
                 scored   = True
+                bases_gained = 3 - src_idx
             if advanced and s is not None:
                 if src_idx == 0:   s.adv_adv_1b += 1
                 elif src_idx == 1: s.adv_adv_2b += 1
                 else:              s.adv_adv_3b += 1
+            if bases_gained and s is not None:
+                # RAD — graded total advancement bases gained by this
+                # starting-base runner. Mirrors MLB Total Bases for batters,
+                # applied to runner movement instead.
+                if src_idx == 0:   s.rad_1b += bases_gained
+                elif src_idx == 1: s.rad_2b += bases_gained
+                else:              s.rad_3b += bases_gained
             if scored:
                 scored_runners.append((src_idx, runner_id))
 

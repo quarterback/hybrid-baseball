@@ -3488,6 +3488,9 @@ def leaders():
                   COALESCE(SUM(bs.adv_adv_2b),0)  as adv_adv_2b,
                   COALESCE(SUM(bs.adv_op_3b),0)   as adv_op_3b,
                   COALESCE(SUM(bs.adv_adv_3b),0)  as adv_adv_3b,
+                  COALESCE(SUM(bs.rad_1b),0)      as rad_1b,
+                  COALESCE(SUM(bs.rad_2b),0)      as rad_2b,
+                  COALESCE(SUM(bs.rad_3b),0)      as rad_3b,
                   COALESCE(SUM(bs.roe),0)          as roe,
                   COALESCE(SUM(bs.po),0)           as po,
                   COALESCE(SUM(bs.e),0)            as e
@@ -3511,6 +3514,14 @@ def leaders():
         tot_op  = sum(int(row.get(f"adv_op_{b}") or 0) for b in ("1b", "2b", "3b"))
         tot_adv = sum(int(row.get(f"adv_adv_{b}") or 0) for b in ("1b", "2b", "3b"))
         row["adv_total_pct"] = (tot_adv / tot_op) if tot_op else None
+        # RAD total — graded bases gained by runners. MLB Total Bases for
+        # the batter's own movement; RAD is the same concept applied to
+        # runners. Headline value for the new leaderboard column.
+        row["rad_total"] = (
+            int(row.get("rad_1b") or 0)
+            + int(row.get("rad_2b") or 0)
+            + int(row.get("rad_3b") or 0)
+        )
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
@@ -4002,7 +4013,10 @@ def player_detail(player_id: int):
                   COALESCE(SUM(adv_op_2b),0)   as adv_op_2b,
                   COALESCE(SUM(adv_adv_2b),0)  as adv_adv_2b,
                   COALESCE(SUM(adv_op_3b),0)   as adv_op_3b,
-                  COALESCE(SUM(adv_adv_3b),0)  as adv_adv_3b
+                  COALESCE(SUM(adv_adv_3b),0)  as adv_adv_3b,
+                  COALESCE(SUM(rad_1b),0)      as rad_1b,
+                  COALESCE(SUM(rad_2b),0)      as rad_2b,
+                  COALESCE(SUM(rad_3b),0)      as rad_3b
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
     )
@@ -4070,6 +4084,12 @@ def player_detail(player_id: int):
         _adv_op_total = _adv_op1 + _adv_op2 + _adv_op3
         _adv_ad_total = _adv_ad1 + _adv_ad2 + _adv_ad3
         bt_totals["adv_total_pct"] = (_adv_ad_total / _adv_op_total) if _adv_op_total else None
+        # RAD — total bases gained by runners across all PAs.
+        bt_totals["rad_total"] = (
+            int(bt_totals.get("rad_1b") or 0)
+            + int(bt_totals.get("rad_2b") or 0)
+            + int(bt_totals.get("rad_3b") or 0)
+        )
 
     # Per-fielder defense totals (PO + A + E). Assist crediting was
     # added when pitch types were activated — the renderer now also
