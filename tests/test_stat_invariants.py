@@ -59,8 +59,60 @@ def _game_filter_clause(table_alias: str = "") -> tuple[str, tuple]:
     return f" AND {prefix}game_id IN ({placeholders})", tuple(sorted(ids))
 
 
-def _phase_cap(phase: int) -> int:
-    return REGULATION_PHASE_CAP if phase == 0 else SI_PHASE_CAP
+# Declared Seconds: per-game phase>=1 cap.
+#
+# In a seconds round the cap is the batting team's banked outs — and BOTH
+# the batting and fielding (pitcher) team's phase>=1 rows are bounded by
+# that value since they belong to the same half.
+#
+# Edge case: when a seconds round ends in a tie, the engine then fires SI
+# rounds AFTER seconds and bumps super_inning_number past seconds_phase_number
+# so the two don't share a phase index. The SI rounds still write phase>=1
+# rows (just at a different number). To keep this cap helper safe, we widen
+# the cap to MAX(banked, SI_PHASE_CAP=5) for any game that ran both.
+def _load_seconds_caps() -> dict[int, int]:
+    """Return {game_id: phase>=1 cap} for every game with seconds activity."""
+    try:
+        rows = db.fetchall(
+            "SELECT id, away_seconds_used, home_seconds_used, super_inning "
+            "FROM games"
+        )
+    except Exception:
+        return {}
+    out: dict[int, int] = {}
+    for r in rows:
+        aw = int(r.get("away_seconds_used") or 0)
+        hm = int(r.get("home_seconds_used") or 0)
+        si = int(r.get("super_inning") or 0)
+        if aw > 0 or hm > 0:
+            banked_cap = max(aw, hm)
+            if si > 0:
+                # Game also ran SI after the seconds round — phase>=1 rows
+                # may be either the seconds cap or the SI cap (5).
+                out[r["id"]] = max(banked_cap, SI_PHASE_CAP)
+            else:
+                out[r["id"]] = banked_cap
+    return out
+
+
+_SECONDS_CAPS = _load_seconds_caps()
+
+
+def _phase_cap(phase: int, game_id: int | None = None,
+               team_id: int | None = None) -> int:
+    """Per-(game, team, phase) outs cap.
+
+    - phase 0  → 27 (regulation)
+    - phase >= 1 + seconds round → banked outs for the batting team
+    - phase >= 1 + super-inning  → 5 (legacy SI fixed cap)
+    """
+    if phase == 0:
+        return REGULATION_PHASE_CAP
+    if game_id is not None:
+        banked = _SECONDS_CAPS.get(game_id)
+        if banked is not None:
+            return banked
+    return SI_PHASE_CAP
 
 
 @pytest.fixture(scope="module")
@@ -98,14 +150,14 @@ def test_invariant_1_phase_outs_cap(played_game_ids):
     )
     over = [
         r for r in rows
-        if (r["outs"] or 0) > _phase_cap(r["phase"] or 0)
+        if (r["outs"] or 0) > _phase_cap(r["phase"] or 0, r["game_id"], r["team_id"])
     ]
     assert not over, (
         f"phase-outs cap exceeded on {len(over)} (game, team, phase) "
         f"groups; first 5: "
         + "; ".join(
             f"game={r['game_id']} team={r['team_id']} phase={r['phase']} "
-            f"outs={r['outs']} cap={_phase_cap(r['phase'] or 0)}"
+            f"outs={r['outs']} cap={_phase_cap(r['phase'] or 0, r['game_id'], r['team_id'])}"
             for r in over[:5]
         )
     )
@@ -179,7 +231,7 @@ def test_invariant_2_or_reconciliation(played_game_ids):
         b = batter_outs.get((gid, tid, ph), 0)
         u = unattr.get((gid, tid, ph), 0)
         opp = opp_outs.get((gid, tid, ph), 0)
-        cap = _phase_cap(ph or 0)
+        cap = _phase_cap(ph or 0, gid, tid)
         total = b + u
 
         # (a) Cross-check with opposing pitcher outs (rules out paired
@@ -191,11 +243,14 @@ def test_invariant_2_or_reconciliation(played_game_ids):
             )
             continue
 
-        # (b) Cap reconciliation. A walk-off home half in the game's
-        #     last phase is the only legitimate undershoot.
+        # (b) Cap reconciliation. A walk-off in the game's last phase is
+        #     the only legitimate undershoot. With Declared Seconds the
+        #     "winner takes the lead in the last phase" can be either team
+        #     (not always the home team), so we widen the condition: any
+        #     team that's the winner AND is batting in the game's last
+        #     phase is allowed to fall short of the cap.
         is_walkoff = (
-            tid == home_id.get(gid)
-            and winner.get(gid) == tid
+            winner.get(gid) == tid
             and (ph or 0) == last_phase.get(gid, 0)
         )
         if total > cap:
@@ -206,7 +261,7 @@ def test_invariant_2_or_reconciliation(played_game_ids):
         elif total < cap and not is_walkoff:
             bad.append(
                 f"game={gid} team={tid} phase={ph}: total_outs={total} "
-                f"< cap={cap} and not a walk-off home half "
+                f"< cap={cap} and not a walk-off "
                 f"(winner={winner.get(gid)} home={home_id.get(gid)} "
                 f"last_phase={last_phase.get(gid, 0)})"
             )
@@ -295,14 +350,14 @@ def test_invariant_4_os_pct_bound(played_game_ids):
     )
     over = [
         r for r in rows
-        if (r["outs_recorded"] or 0) > _phase_cap(r["phase"] or 0)
+        if (r["outs_recorded"] or 0) > _phase_cap(r["phase"] or 0, r["game_id"], r["team_id"])
     ]
     assert not over, (
         f"OS% > 100% on {len(over)} pitcher rows; first 5: "
         + "; ".join(
             f"game={r['game_id']} team={r['team_id']} pid={r['player_id']} "
             f"phase={r['phase']} outs={r['outs_recorded']} "
-            f"cap={_phase_cap(r['phase'] or 0)}"
+            f"cap={_phase_cap(r['phase'] or 0, r['game_id'], r['team_id'])}"
             for r in over[:5]
         )
     )
@@ -415,23 +470,20 @@ def test_invariant_5_w_bound(played_game_ids):
 # ---------------------------------------------------------------------------
 
 def test_invariant_6_pa_identity(played_game_ids):
-    """pa == ab + bb on every batter row.
+    """pa == ab + bb + hbp on every batter row.
 
-    The o27v2 schema does NOT persist HBP / SF / SH on
-    game_batter_stats, so the full identity
-    `pa == ab + bb + hbp + sf + sh` collapses to `pa == ab + bb`
-    per the Task #59 spec. Any deviation is either:
-      - a real engine bug (e.g. AB > PA), or
-      - an HBP/SF/SH being silently dropped on persistence; either way
-        a regression the harness should surface.
+    SF/SH aren't persisted on game_batter_stats yet (sacrifice events
+    fall through the renderer's leftover-out path and don't credit a
+    batter PA at all, so they don't break this identity — they leak as
+    a separate counted-vs-recorded mismatch tracked by other invariants).
 
-    See follow-up Task #61 (track HBP/SF/SH on per-game batter rows)
-    to lift the invariant to the full identity once the columns exist.
+    Any deviation is either a real engine bug (AB > PA) or a stat path
+    that increments PA without crediting the matching AB/BB/HBP.
     """
     extra, params = _game_filter_clause("bs")
     rows = db.fetchall(
         f"""SELECT bs.game_id, bs.team_id, bs.player_id, bs.phase,
-                   bs.pa, bs.ab, bs.bb
+                   bs.pa, bs.ab, bs.bb, bs.hbp
               FROM game_batter_stats bs
               JOIN games g ON g.id = bs.game_id
              WHERE g.played = 1{extra}""",
@@ -439,14 +491,13 @@ def test_invariant_6_pa_identity(played_game_ids):
     )
     bad = [
         r for r in rows
-        if (r["pa"] or 0) != ((r["ab"] or 0) + (r["bb"] or 0))
+        if (r["pa"] or 0) != ((r["ab"] or 0) + (r["bb"] or 0) + (r["hbp"] or 0))
     ]
     assert not bad, (
-        f"PA != AB+BB on {len(bad)} batter rows (HBP/SF/SH not stored "
-        f"on game_batter_stats — see follow-up Task #61); first 5: "
+        f"PA != AB+BB+HBP on {len(bad)} batter rows; first 5: "
         + "; ".join(
             f"game={r['game_id']} pid={r['player_id']} phase={r['phase']} "
-            f"PA={r['pa']} AB={r['ab']} BB={r['bb']}"
+            f"PA={r['pa']} AB={r['ab']} BB={r['bb']} HBP={r['hbp']}"
             for r in bad[:5]
         )
     )

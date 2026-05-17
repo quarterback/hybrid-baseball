@@ -70,8 +70,20 @@ def run_game(
     """
     full_log: list[str] = []
 
-    # === TOP HALF ===
-    state.half = "top"
+    # === PRE-GAME: home manager picks bat-first / bat-second ===
+    if state.home_bats_first is None:
+        state.home_bats_first = bool(mgr.should_bat_first(state))
+    if state.home_bats_first:
+        state.first_batting_team  = state.home
+        state.second_batting_team = state.visitors
+        first_half_label, second_half_label = "bottom", "top"
+    else:
+        state.first_batting_team  = state.visitors
+        state.second_batting_team = state.home
+        first_half_label, second_half_label = "top", "bottom"
+
+    # === FIRST HALF (whichever team bats first) ===
+    state.half = first_half_label
     state.total_pa_this_half = 0
     state.batting_team.reset_half()
     _set_fielding_pitcher(state)
@@ -79,14 +91,15 @@ def run_game(
     half_log = run_half(state, event_provider, renderer)
     full_log += half_log
     _close_current_spell(state)
-    full_log += _half_summary(state, "top", renderer)
+    _finalize_declaration(state.first_batting_team, state)
+    full_log += _half_summary(state, first_half_label, renderer)
 
     # === HALFTIME ===
     ht_log = halftime(state, renderer)
     full_log += ht_log
 
-    # === BOTTOM HALF ===
-    state.half = "bottom"
+    # === SECOND HALF ===
+    state.half = second_half_label
     state.outs = 0
     state.bases = [None, None, None]
     state.count.reset()
@@ -99,7 +112,8 @@ def run_game(
     half_log = run_half(state, event_provider, renderer)
     full_log += half_log
     _close_current_spell(state)
-    full_log += _half_summary(state, "bottom", renderer)
+    _finalize_declaration(state.second_batting_team, state)
+    full_log += _half_summary(state, second_half_label, renderer)
 
     # Task #58: snapshot end of regulation (phase 0) so per-phase batter
     # rows can be computed after the game finishes.
@@ -108,7 +122,16 @@ def run_game(
 
     # === WINNER CHECK ===
     winner = check_winner(state)
-    if winner:
+    if winner is not None:
+        # === DECLARED SECONDS (if the loser has banked outs) ===
+        seconds_log = _run_seconds_rounds(state, event_provider, renderer)
+        full_log += seconds_log
+        # Re-check the winner after any seconds round(s). A seconds round
+        # can return the score to a tie, in which case we fall through
+        # to the super-inning tiebreaker just like a regulation tie.
+        winner = check_winner(state)
+
+    if winner is not None:
         state.winner = winner
         full_log += _game_over(state, renderer)
         if renderer:
@@ -119,13 +142,18 @@ def run_game(
                 full_log += renderer.render_super_inning_log(state)
         return state, full_log
 
-    # === SUPER-INNING (tie) ===
+    # === SUPER-INNING (tie, possibly after seconds) ===
     if renderer:
         full_log += renderer.render_super_inning_tie()
     else:
         full_log.append("\n=== TIE — SUPER-INNING TIEBREAKER ===")
 
     while not state.winner:
+        # If a seconds round already wrote to phase=1 (because the seconds
+        # round tied the score and SI fires after), bump SI's phase index
+        # past it so SI rounds don't collide on UNIQUE(player, game, phase).
+        if state.super_inning_number == 0 and state.seconds_phase_number > 0:
+            state.super_inning_number = state.seconds_phase_number
         state.super_inning_number += 1
 
         if super_selector:
@@ -386,7 +414,11 @@ def _close_current_spell(state: GameState) -> None:
         out_when_pulled=state.outs,
         start_batter_num=state.pitcher_start_pa + 1,
         half=state.half,
-        super_inning_number=state.super_inning_number,
+        # Use the unified phase number so seconds-round spells get phase>=1
+        # instead of phase=0. SI and seconds are mutually exclusive within
+        # one game, so this stays consistent with the existing SI-round
+        # behavior (super_inning_number was already the phase index there).
+        super_inning_number=getattr(state, "phase_number", 0) or state.super_inning_number,
         sb_allowed=state.pitcher_sb_allowed_this_spell,
         cs_caught=state.pitcher_cs_caught_this_spell,
         fo_induced=state.pitcher_fo_induced_this_spell,
@@ -414,6 +446,90 @@ def _close_current_spell(state: GameState) -> None:
     state.pitcher_k_arc_this_spell  = [0, 0, 0]
     state.pitcher_fo_arc_this_spell = [0, 0, 0]
     state.pitcher_bf_arc_this_spell = [0, 0, 0]
+
+
+def _finalize_declaration(team: Team, state: GameState) -> None:
+    """After a half ends, record what the team banked.
+
+    If the team declared mid-half, evaluate_declaration already stamped
+    declared_at_out and outs_banked. If they played the full half (no
+    declaration), banked stays 0. This helper exists so any future
+    bookkeeping (analytics hooks, log lines) has a single anchor point.
+    """
+    if team.declared_at_out is None:
+        team.outs_banked = 0
+        return
+    # The actual outs banked = 27 - declared_at_out (already set by
+    # evaluate_declaration as min(outs_left, cap), which equals 27 - declared_at_out
+    # since state.outs == declared_at_out at the moment of stamping).
+    banked = max(0, min(int(__import__("o27").config.SECONDS_MAX_BANKED),
+                         27 - int(team.declared_at_out)))
+    team.outs_banked = banked
+
+
+def _run_seconds_rounds(state, event_provider, renderer) -> list[str]:
+    """Drive the post-regulation declared-seconds loop.
+
+    The team that is currently trailing comes back for a "seconds" round
+    using their banked outs (if any) and if they haven't already used
+    their seconds. This can loop at most once per team (cap enforced by
+    seconds_used flag).
+    """
+    full_log: list[str] = []
+    rounds_played = 0
+    # Bound: 2 teams × 1 seconds round each = 2 rounds max.
+    while rounds_played < 2:
+        winner = check_winner(state)
+        if winner is None:
+            # Tie at this point would never trigger seconds (seconds requires
+            # a non-tie). Defensive fallback.
+            break
+        # The team that should come back is the one NOT currently leading.
+        winner_team = state.first_batting_team if winner == state.first_batting_team.team_id else state.second_batting_team
+        trailer_team = state.second_batting_team if winner_team is state.first_batting_team else state.first_batting_team
+
+        if int(trailer_team.outs_banked or 0) <= 0 or trailer_team.seconds_used:
+            break  # no eligibility → done
+
+        # Setup the seconds half.
+        state.in_seconds_phase = True
+        state.seconds_phase_number += 1   # 1 for first round, 2 if a second fires
+        state.half = "seconds_first" if trailer_team is state.first_batting_team else "seconds_second"
+        state.outs = 0
+        state.bases = [None, None, None]
+        state.count.reset()
+        state.total_pa_this_half = 0
+        state.partnership_runs = 0
+        state.partnership_first_batter_id = None
+        # Lineup position is NOT reset — picks up where regulation left off.
+        # Pitcher stays on; fatigue intact. The fielding team's pitcher is
+        # whoever was on the mound, but we still need current_pitcher_id
+        # to point at the FIELDING team's pitcher (which has flipped if
+        # the team that took the lead is now defending). Set it.
+        _set_fielding_pitcher(state)
+
+        full_log.append(_half_header(state, renderer))
+        half_log = run_half(state, event_provider, renderer)
+        full_log += half_log
+        _close_current_spell(state)
+
+        trailer_team.seconds_used = True
+        trailer_team.seconds_outs_used = state.outs
+
+        # Snapshot end of this seconds round. Each round gets its own phase
+        # number so a double-seconds (both teams come back) doesn't collide
+        # on UNIQUE(player_id, game_id, phase). Round 1 → phase 1, round 2 → phase 2.
+        if renderer:
+            renderer.end_phase(state.seconds_phase_number)
+
+        rounds_played += 1
+        # Loop: if the comeback flipped the lead AND the opposing team has
+        # banked outs AND hasn't used seconds, they get THEIR seconds round.
+
+    # Done with seconds. Reset the phase flag so any downstream readers
+    # see "game over, not in seconds."
+    state.in_seconds_phase = False
+    return full_log
 
 
 def _set_fielding_pitcher(state: GameState) -> None:
@@ -470,11 +586,15 @@ def _set_fielding_pitcher(state: GameState) -> None:
 def _half_header(state: GameState, renderer=None) -> str:
     if renderer:
         return renderer.render_half_header(state)
+    bat = state.batting_team
+    banked = int(getattr(bat, "outs_banked", 0) or 0)
     half_labels = {
         "top": "TOP HALF",
         "bottom": "BOTTOM HALF",
         "super_top": f"SUPER-INNING R{state.super_inning_number} — VISITORS",
         "super_bottom": f"SUPER-INNING R{state.super_inning_number} — HOME",
+        "seconds_first":  f"SECONDS — {bat.name} (banked {banked} outs)",
+        "seconds_second": f"SECONDS — {bat.name} (banked {banked} outs)",
     }
     label = half_labels.get(state.half, state.half.upper())
     batting = state.batting_team.name
@@ -499,7 +619,15 @@ def _game_over(state: GameState, renderer=None) -> list[str]:
         return renderer.render_game_over(state)
     winner = state.winner
     other = "home" if winner == "visitors" else "visitors"
-    suffix = " (super-inning)" if state.super_inning_number > 0 else ""
+    if state.super_inning_number > 0:
+        suffix = " (super-inning)"
+    elif (state.visitors.seconds_used or state.home.seconds_used):
+        suffix = " (declared seconds)"
+    elif (state.visitors.declared_at_out is not None
+          or state.home.declared_at_out is not None):
+        suffix = " (declared)"
+    else:
+        suffix = ""
     return [
         f"\n=== GAME OVER{suffix}: {winner.upper()} WIN "
         f"{state.score[winner]}–{state.score[other]} ==="

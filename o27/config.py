@@ -582,9 +582,23 @@ PLAYER_DEFAULT_GRIT: float     = 0.50   # identity
 # Manager heuristics — joker insertion (§4.6)
 # ---------------------------------------------------------------------------
 
-JOKER_WEAK_BATTER_THRESHOLD: float = 0.44   # batter.skill < this → weak hitter (contact trigger gate)
+JOKER_WEAK_BATTER_THRESHOLD: float = 0.44   # batter.skill < this → weak hitter
 JOKER_SCORE_DIFF_MAX: int          = 4      # |score_diff| ≤ this → high leverage
 JOKER_OUTS_CEILING: int            = 22     # state.outs < this → not too late
+
+# Weak-hitter override — applied in should_insert_joker() when the next
+# batter's skill is below JOKER_WEAK_BATTER_THRESHOLD AND an eligible
+# joker exists with strictly higher skill. With unlimited joker
+# insertions, gating substitutions behind leverage was leftover logic
+# from the 3-per-game cap era — a 0.30-skill 9-spot hitter shouldn't
+# stand at the plate while a better bat sits on the bench. Insert
+# probability for the override:
+#     insert_p = JOKER_WEAK_INSERT_BASE + JOKER_WEAK_INSERT_AGG_SCALE * mgr_joker_aggression
+# Cautious manager (agg=0): 0.75. Aggressive (agg=1.0): 0.95. The
+# remaining ~5-25% slack preserves some variance — occasionally the
+# weak hitter still bats, which keeps games from feeling deterministic.
+JOKER_WEAK_INSERT_BASE: float       = 0.75
+JOKER_WEAK_INSERT_AGG_SCALE: float  = 0.20
 
 # ---------------------------------------------------------------------------
 # Manager heuristics — pitching change
@@ -629,6 +643,31 @@ OPENER_STAMINA_THRESHOLD:    float = 0.40  # <= this → opener (pulled fast)
 # strategically viable rather than just bad.
 OPENER_CHANGE_BASE:  int = 7
 OPENER_CHANGE_SCALE: int = 3
+
+# ---------------------------------------------------------------------------
+# Declared Seconds — declaration mechanics
+# ---------------------------------------------------------------------------
+SECONDS_MIN_DECLARE_OUT: int = 22       # earliest out (out 22 = bank up to 5)
+SECONDS_MAX_DECLARE_OUT: int = 26       # latest out that still banks at least 1
+SECONDS_MAX_BANKED:      int = 6        # cap; declared at out 22 banks 5, etc.
+SECONDS_MAX_ROUNDS_PER_TEAM: int = 2    # initial half + at most one seconds
+
+# Declaration AI thresholds for hard-accept / hard-reject branches
+SECONDS_INSURMOUNTABLE: int = 25        # lead at out <= 21 triggers insurance declare
+SECONDS_BLOWOUT_MARGIN: int = 20        # |score_diff| >= this → game decided
+
+# Declaration AI — soft probability formula (marginal cases)
+DECLARE_BASE:          float = 0.04
+DECLARE_LEAD_SCALE:    float = 0.18
+DECLARE_PERSONA_SCALE: float = 0.25
+
+# Pre-game bat-order choice — home manager. BAT_FIRST_BASE intentionally
+# biased above 0.5 so home defaults to batting first more often than not;
+# this is the retcon for the league's existing home-scores-more asymmetry.
+BAT_FIRST_BASE:          float = 0.65
+BAT_FIRST_PARK_SCALE:    float = 0.15
+BAT_FIRST_STARTER_SCALE: float = 0.20
+BAT_FIRST_PERSONA_SCALE: float = 0.30
 
 # ---------------------------------------------------------------------------
 # Manager heuristics — situational joker insertion (Phase 8 archetype triggers)

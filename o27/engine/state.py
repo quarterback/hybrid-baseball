@@ -345,6 +345,15 @@ class Team:
     mgr_run_game:             float = 0.5
     mgr_bench_usage:          float = 0.5
     mgr_shift_aggression:     float = 0.5
+    # Declared Seconds — two new persona axes
+    mgr_declare_aggression:   float = 0.5
+    mgr_bat_first_pref:       float = 0.5
+
+    # Declared Seconds — per-game state (reset between games via dataclass defaults)
+    outs_banked:       int = 0       # 27 - declared_at_out if declared, else 0
+    declared_at_out:   Optional[int] = None
+    seconds_used:      bool = False
+    seconds_outs_used: int = 0
 
     # Shift telemetry (per-game, accumulates over the game). Stamped on
     # the FIELDING team for the play that produced the effect.
@@ -437,8 +446,15 @@ class GameState:
     home: Team = field(default_factory=lambda: Team("home", "Home"))
 
     # --- Game structure ---
-    half: str = "top"              # "top" | "bottom" | "super_top" | "super_bottom"
+    half: str = "top"              # "top" | "bottom" | "super_top" | "super_bottom" | "seconds_first" | "seconds_second"
     super_inning_number: int = 0   # 0 = regulation; increments each super tiebreaker
+
+    # --- Declared Seconds ---
+    home_bats_first:     Optional[bool] = None   # None until the home manager picks pre-game
+    in_seconds_phase:    bool = False            # mutually exclusive with is_super_inning
+    seconds_phase_number: int = 0                # 0 = not in seconds; 1+ = which seconds round
+    first_batting_team:  Optional["Team"] = None # set at game start (top/bottom of 1st)
+    second_batting_team: Optional["Team"] = None
 
     # --- Current half state ---
     outs: int = 0                  # 0–27 in regulation, 0–5 in super
@@ -553,12 +569,23 @@ class GameState:
 
     @property
     def batting_team(self) -> Team:
+        # Seconds halves dispatch via first/second_batting_team because the
+        # comeback team isn't necessarily home or visitors — it's whichever
+        # team batted first/second in regulation.
+        if self.half == "seconds_first":
+            return self.first_batting_team or self.visitors
+        if self.half == "seconds_second":
+            return self.second_batting_team or self.home
         if self.half in ("top", "super_top"):
             return self.visitors
         return self.home
 
     @property
     def fielding_team(self) -> Team:
+        if self.half == "seconds_first":
+            return self.second_batting_team or self.home
+        if self.half == "seconds_second":
+            return self.first_batting_team or self.visitors
         if self.half in ("top", "super_top"):
             return self.home
         return self.visitors
@@ -602,12 +629,67 @@ class GameState:
     def is_super_inning(self) -> bool:
         return self.half in ("super_top", "super_bottom")
 
+    @property
+    def phase_number(self) -> int:
+        """Unified phase index. 0 = regulation. Positive = the round number
+        of either an SI tiebreaker or a Declared Seconds round (which are
+        mutually exclusive within a single game). The renderer uses this as
+        the `phase` stamp on per-event rows so stats split correctly into
+        game_*_stats.phase buckets.
+        """
+        if self.is_super_inning:
+            return int(self.super_inning_number or 0)
+        if self.in_seconds_phase:
+            return int(self.seconds_phase_number or 0)
+        return 0
+
     def is_half_over(self) -> bool:
         """True when the current half has ended."""
         if self.is_super_inning:
             # Super half: ends when 5 batters from the selected lineup are dismissed
             return len(self.batting_team.super_dismissed) >= 5
-        return self.outs >= 27
+        if self.in_seconds_phase:
+            # Seconds round: ends when the team has used its banked outs OR
+            # the comeback walk-off fires (lead change with opp out of options).
+            cap = max(0, int(self.batting_team.outs_banked or 0))
+            return self.outs >= cap or self._seconds_walkoff()
+        return self.outs >= 27 or self._regulation_walkoff()
+
+    def _regulation_walkoff(self) -> bool:
+        """Walk-off in regulation: only valid in the SECOND half (the half
+        belonging to second_batting_team), when the currently batting team
+        has taken the lead AND the first-batting team has no banked outs
+        to come back with. Walk-off PAs are normal PAs — this check fires
+        *after* the PA completes, so the half just ends at the current out
+        count rather than being truncated mid-PA.
+        """
+        first  = self.first_batting_team
+        second = self.second_batting_team
+        if first is None or second is None:
+            return False
+        # Must be in the half where the second-batting team is hitting.
+        if self.batting_team is not second:
+            return False
+        # Lead must belong to the team batting now (second).
+        if self.score.get(second.team_id, 0) <= self.score.get(first.team_id, 0):
+            return False
+        # And the first-batting team must have no banked outs to use.
+        return int(first.outs_banked or 0) <= 0
+
+    def _seconds_walkoff(self) -> bool:
+        """Walk-off in a seconds round: the comeback team has taken the lead
+        AND the now-trailing team has no further eligibility (already used
+        seconds OR banked 0 outs).
+        """
+        if not self.in_seconds_phase:
+            return False
+        bat = self.batting_team
+        fld = self.fielding_team
+        if self.score.get(bat.team_id, 0) <= self.score.get(fld.team_id, 0):
+            return False
+        # Fielding team can rebut iff they have banked outs AND haven't used seconds yet.
+        can_rebut = (int(fld.outs_banked or 0) > 0) and (not fld.seconds_used)
+        return not can_rebut
 
     def is_game_over(self) -> bool:
         return self.winner is not None

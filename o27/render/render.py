@@ -129,7 +129,7 @@ class Renderer:
             "bases_list": list(state.bases),          # copy — safe after mutation
             "score": dict(state.score),               # copy
             "batting_team_id": batting_tid,
-            "phase": getattr(state, "super_inning_number", 0),
+            "phase": getattr(state, "phase_number", 0) or getattr(state, "super_inning_number", 0),
             "batting_team_name": state.batting_team.name,
             "fielding_team_name": state.fielding_team.name,
             "visitors_name": state.visitors.name,
@@ -911,7 +911,13 @@ class Renderer:
             d["new_bases"] = state_after.bases_summary()
 
             if choice == "stay":
-                stay_out = (ctx["count_strikes"] == 2) or caught_fly
+                # The engine's stay rule (see o27/engine/stay.py) treats a
+                # caught fly as the ONLY thing that retires the batter on a
+                # stay — a 2-strike stay still credits a hit and burns the
+                # final strike but does NOT make a batter-out. Mirror that
+                # here so the renderer doesn't over-charge batter OR for
+                # 2-strike stays that the engine never recorded as outs.
+                stay_out = bool(caught_fly)
                 d["stay_batter_out"] = stay_out
                 d["stay_valid"] = not stay_out
                 if not stay_out:
@@ -1003,6 +1009,12 @@ class Renderer:
                 if out_id is not None:
                     stats_obj.replaced_player_id = str(out_id)
                 self._batter_stats[in_id] = stats_obj
+
+        elif etype == "declaration":
+            # Declared Seconds — manager banks remaining outs for a rebuttal
+            # half. Per-PA rendering is intentionally minimal; the box-score
+            # "Declared at out N — banked K outs" line carries the narrative.
+            pass
 
         elif etype == "joker_to_field":
             # Rare: a joker is moved from the bench (DH-pool) into a
@@ -1193,11 +1205,13 @@ class Renderer:
 
             if choice == "stay":
                 if disp.get("stay_valid"):
-                    # Stay: 1 PA. At-bat MAY end if strikes hits 3 — engine
-                    # tracks that. The hit / RBI credit happens here. AB
-                    # increment only happens when the AB actually ends
-                    # (signaled by strikes == 3 in the post-event count).
-                    s.pa += 1
+                    # Stay event: credit the stay attempt (sty), the hit
+                    # if applicable, and runner-movement opportunities.
+                    # PA increments ONLY when the AB actually ends (i.e.,
+                    # the stay pushes strikes to 3 and terminates the AB),
+                    # so the standard identity PA == AB + BB + HBP holds —
+                    # intermediate stays accumulate sty without counting
+                    # as a separate plate appearance each.
                     s.sty += 1
                     if disp.get("stay_hit_credited"):
                         s.hits += 1
@@ -1242,11 +1256,14 @@ class Renderer:
                             else:              s.c2_adv_3b += 1
                     # If the stay's strike-credit pushed the count to 3
                     # strikes, the AB ends — count as an AB (max-hits stay
-                    # sequence terminates the AB without a batter-out).
+                    # sequence terminates the AB without a batter-out) and
+                    # credit the PA at the terminal event.
                     if state_after.count.strikes >= 3:
+                        s.pa += 1
                         s.ab += 1
                         _check_multi_hit(terminal_hit=disp.get("stay_hit_credited", False))
-                    # Otherwise AB CONTINUES — do NOT check multi_hit_abs yet.
+                    # Otherwise AB CONTINUES — do NOT check multi_hit_abs yet
+                    # and do NOT credit a PA (intermediate stay only).
                 elif disp.get("stay_batter_out"):
                     # Stay results in out → AB ends. The only path that
                     # reaches here now is caught_fly (the rule was simplified
