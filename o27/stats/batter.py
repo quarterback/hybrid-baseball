@@ -38,6 +38,23 @@ class BatterStats:
     c2_op_3b: int = 0
     c2_adv_3b: int = 0      # 3B "advance" = scored
 
+    # Pesäpallo-style per-base PA advancement stats. Where c2_* tracks
+    # advancement during 2C events only, adv_* tracks advancement across
+    # the WHOLE plate appearance — runs from 2C events PLUS run-chosen
+    # contact PLUS BB-force PLUS sac-bunt all roll up here. Mirrors the
+    # 1%/2%/3% columns on Finnish pesäpallo box scores: did this batter
+    # successfully move the 1B/2B/3B runner during his PA?
+    #   adv_op_Xb  — runner was on Xb at PA start
+    #   adv_adv_Xb — that runner moved to a higher base OR scored
+    # A runner thrown out during the PA counts as an opportunity but not
+    # a successful advance. Conversion% = adv / op displayed per-batter.
+    adv_op_1b: int = 0
+    adv_adv_1b: int = 0
+    adv_op_2b: int = 0
+    adv_adv_2b: int = 0
+    adv_op_3b: int = 0
+    adv_adv_3b: int = 0
+
     # Box-score entry classification. Set by the render pipeline:
     #   "starter" — batted at the start of the game (default)
     #   "PH"       — entered as a pinch hitter for `replaced_player_id`

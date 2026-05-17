@@ -216,6 +216,15 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     c2_adv_2b  INTEGER DEFAULT 0,
     c2_op_3b   INTEGER DEFAULT 0,
     c2_adv_3b  INTEGER DEFAULT 0,
+    -- Pesäpallo-style per-PA advancement: did this batter move the
+    -- runner who started on each base during his PA? (Inclusive of 2C,
+    -- run-chosen, BB-force, sac bunt.) Conversion% = adv / op.
+    adv_op_1b   INTEGER DEFAULT 0,
+    adv_adv_1b  INTEGER DEFAULT 0,
+    adv_op_2b   INTEGER DEFAULT 0,
+    adv_adv_2b  INTEGER DEFAULT 0,
+    adv_op_3b   INTEGER DEFAULT 0,
+    adv_adv_3b  INTEGER DEFAULT 0,
     -- Per-game fielding position. Distinct from `players.position` (the
     -- player's primary), this is the actual spot they played that day.
     -- Utility (UT) players land on a concrete slot at lineup build time;
@@ -760,7 +769,9 @@ def init_db() -> None:
         # Counting-stat columns persisted post-realism (Stage 1 of stats expansion).
         # Defaults of 0 leave pre-existing rows neutral; new games populate fully.
         for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits",
-                    "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b", "c2_op_3b", "c2_adv_3b"):
+                    "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b", "c2_op_3b", "c2_adv_3b",
+                    "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
+                    "adv_op_3b", "adv_adv_3b"):
             try:
                 conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()
