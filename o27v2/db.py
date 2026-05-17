@@ -1085,6 +1085,28 @@ def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
 
+    # Step 4: one-shot backfill — recompute batter PA on rows generated
+    # before the renderer's PA semantics were corrected. The old code
+    # counted every contact event (including intermediate stays) as a
+    # separate PA; the corrected definition matches MLB
+    # (PA == AB + BB + HBP). Newly-generated rows already satisfy this
+    # identity, so the UPDATE is a no-op on those. Idempotent.
+    try:
+        with get_conn() as conn:
+            n_bad = conn.execute(
+                "SELECT COUNT(*) FROM game_batter_stats "
+                "WHERE pa != COALESCE(ab,0) + COALESCE(bb,0) + COALESCE(hbp,0)"
+            ).fetchone()[0]
+            if n_bad:
+                conn.execute(
+                    "UPDATE game_batter_stats "
+                    "SET pa = COALESCE(ab,0) + COALESCE(bb,0) + COALESCE(hbp,0) "
+                    "WHERE pa != COALESCE(ab,0) + COALESCE(bb,0) + COALESCE(hbp,0)"
+                )
+                conn.commit()
+    except Exception:
+        pass  # game_batter_stats may not exist on a fresh DB
+
 
 def drop_all() -> None:
     """Drop all tables (for re-seeding)."""
