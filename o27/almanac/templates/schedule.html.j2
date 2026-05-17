@@ -1,0 +1,40 @@
+{% extends "_base.html.j2" %}
+{% block title %}Schedule — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Schedule</h1>
+<p class="page-subtitle">{{ views.schedule|length }} games · newest first</p>
+
+<div class="btn-row" style="margin-bottom:8px;">
+  <input class="search-box" data-filter-table="#schedule-tbl" data-filter-cols="1,3" placeholder="Filter by team…">
+  <button class="btn" data-export-csv="#schedule-tbl" data-filename="schedule.csv">Download CSV</button>
+  <a class="btn" href="exports/schedule.csv">Pre-rendered CSV</a>
+</div>
+
+<div class="tablewrap">
+  <table id="schedule-tbl" class="stat-table">
+    <thead><tr>
+      <th class="sticky-col" data-type="text">Date</th>
+      <th data-type="text">Away</th><th>R</th>
+      <th data-type="text">Home</th><th>R</th>
+      <th data-type="text">Box</th>
+      <th data-type="text">Notes</th>
+    </tr></thead>
+    <tbody>
+      {% for g in views.schedule|reverse %}
+      <tr>
+        <td class="sticky-col t-left">{{ g.date }}</td>
+        <td class="t-left"><a href="teams/{{ g.away_abbrev|lower }}.html"><span class="chip">{{ g.away_abbrev }}</span></a> {{ g.away_name }}</td>
+        <td>{{ g.away_score }}</td>
+        <td class="t-left"><a href="teams/{{ g.home_abbrev|lower }}.html"><span class="chip">{{ g.home_abbrev }}</span></a> {{ g.home_name }}</td>
+        <td>{{ g.home_score }}</td>
+        <td class="t-left"><a href="games/{{ g.id }}.html">Box</a></td>
+        <td class="t-left">
+          {% if g.super_inning %}<span class="pill">SI</span>{% endif %}
+          {% if g.is_playoff %}<span class="pill">POST</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

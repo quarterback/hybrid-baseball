@@ -1,0 +1,179 @@
+{% extends "_base.html.j2" %}
+{% block title %}Box · {{ game.away_abbrev }} @ {{ game.home_abbrev }} — {{ site_title }}{% endblock %}
+{% block content %}
+
+<div class="boxscore-headline">
+  <div class="boxscore-side {{ 'win' if game.away_score > game.home_score else 'loss' }}">
+    <span class="chip lg">{{ game.away_abbrev }}</span>
+    <span>{{ game.away_name }}</span>
+    <span class="score">{{ game.away_score }}</span>
+  </div>
+  <div class="muted">@</div>
+  <div class="boxscore-side {{ 'win' if game.home_score > game.away_score else 'loss' }}">
+    <span class="chip lg">{{ game.home_abbrev }}</span>
+    <span>{{ game.home_name }}</span>
+    <span class="score">{{ game.home_score }}</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="muted small">
+    {{ game.date }}
+    {% if game.super_inning %} · <span class="pill">SUPER INNINGS</span>{% endif %}
+    {% if game.is_playoff %} · <span class="pill">POSTSEASON</span>{% endif %}
+    {% if weather %} · {{ weather }}{% endif %}
+  </div>
+</div>
+
+<section>
+  <div class="section-bar"><h2>{{ game.away_name }} · Batting</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Player</th>
+        <th data-type="text">Pos</th>
+        <th>PA</th><th>AB</th><th>R</th><th>H</th>
+        <th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
+        <th>BB</th><th>K</th><th>STY</th>
+      </tr></thead>
+      <tbody>
+        {% for r in away_batting %}
+        <tr>
+          <td class="sticky-col t-left"><a href="../players/{{ game.away_abbrev|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td class="t-left"><span class="pos-badge">{{ r.game_position or '' }}</span></td>
+          <td>{{ r.pa or 0 }}</td>
+          <td>{{ r.ab or 0 }}</td>
+          <td>{{ r.runs or 0 }}</td>
+          <td>{{ r.hits or 0 }}</td>
+          <td>{{ r.doubles or 0 }}</td>
+          <td>{{ r.triples or 0 }}</td>
+          <td>{{ r.hr or 0 }}</td>
+          <td>{{ r.rbi or 0 }}</td>
+          <td>{{ r.bb or 0 }}</td>
+          <td>{{ r.k or 0 }}</td>
+          <td>{{ r.stays or 0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>{{ game.away_name }} · Pitching</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Pitcher</th>
+        <th>BF</th><th>OUT</th>
+        <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>HR</th>
+      </tr></thead>
+      <tbody>
+        {% for r in away_pitching %}
+        <tr>
+          <td class="sticky-col t-left"><a href="../players/{{ game.away_abbrev|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td>{{ r.batters_faced or 0 }}</td>
+          <td>{{ r.outs_recorded or 0 }}</td>
+          <td>{{ r.hits_allowed or 0 }}</td>
+          <td>{{ r.runs_allowed or 0 }}</td>
+          <td>{{ r.er or 0 }}</td>
+          <td>{{ r.bb or 0 }}</td>
+          <td>{{ r.k or 0 }}</td>
+          <td>{{ r.hr_allowed or 0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>{{ game.home_name }} · Batting</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Player</th>
+        <th data-type="text">Pos</th>
+        <th>PA</th><th>AB</th><th>R</th><th>H</th>
+        <th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
+        <th>BB</th><th>K</th><th>STY</th>
+      </tr></thead>
+      <tbody>
+        {% for r in home_batting %}
+        <tr>
+          <td class="sticky-col t-left"><a href="../players/{{ game.home_abbrev|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td class="t-left"><span class="pos-badge">{{ r.game_position or '' }}</span></td>
+          <td>{{ r.pa or 0 }}</td>
+          <td>{{ r.ab or 0 }}</td>
+          <td>{{ r.runs or 0 }}</td>
+          <td>{{ r.hits or 0 }}</td>
+          <td>{{ r.doubles or 0 }}</td>
+          <td>{{ r.triples or 0 }}</td>
+          <td>{{ r.hr or 0 }}</td>
+          <td>{{ r.rbi or 0 }}</td>
+          <td>{{ r.bb or 0 }}</td>
+          <td>{{ r.k or 0 }}</td>
+          <td>{{ r.stays or 0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>{{ game.home_name }} · Pitching</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Pitcher</th>
+        <th>BF</th><th>OUT</th>
+        <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>HR</th>
+      </tr></thead>
+      <tbody>
+        {% for r in home_pitching %}
+        <tr>
+          <td class="sticky-col t-left"><a href="../players/{{ game.home_abbrev|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td>{{ r.batters_faced or 0 }}</td>
+          <td>{{ r.outs_recorded or 0 }}</td>
+          <td>{{ r.hits_allowed or 0 }}</td>
+          <td>{{ r.runs_allowed or 0 }}</td>
+          <td>{{ r.er or 0 }}</td>
+          <td>{{ r.bb or 0 }}</td>
+          <td>{{ r.k or 0 }}</td>
+          <td>{{ r.hr_allowed or 0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if scoring_events %}
+<section>
+  <div class="section-bar"><h2>Scoring Events</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th>Seq</th><th data-type="text">Half</th><th>Outs</th>
+        <th data-type="text">Batter</th><th data-type="text">Runner</th>
+        <th>From</th><th>V</th><th>H</th>
+      </tr></thead>
+      <tbody>
+        {% for e in scoring_events %}
+        <tr>
+          <td>{{ e.seq }}</td>
+          <td class="t-left">{{ e.half }}</td>
+          <td>{{ e.outs_before }}</td>
+          <td class="t-left">{{ e.batter_name or e.batter_id }}</td>
+          <td class="t-left">{{ e.runner_name or e.runner_id }}</td>
+          <td>{{ ['1B','2B','3B'][e.runner_from_base] if e.runner_from_base is not none else '—' }}</td>
+          <td>{{ e.visitors_score }}</td>
+          <td>{{ e.home_score }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

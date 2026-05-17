@@ -1,0 +1,62 @@
+{% extends "_base.html.j2" %}
+{% block title %}Exports — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Export Center</h1>
+<p class="page-subtitle">Everything in the almanac as machine-readable files. The JSON bundle is the wire format — drop it into a fresh almanac build to rebuild the site against the same data.</p>
+
+<section>
+  <div class="section-bar"><h2>Bulk Bundles</h2></div>
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Season Bundle · ZIP</div>
+      <div class="card-value" style="font-size:14px;"><a class="btn primary" href="season-bundle.zip">Download .zip</a></div>
+      <p class="small muted">All CSVs + JSON bundle + the source SQLite DB (if available). One file you can hand to anyone.</p>
+    </div>
+    <div class="card">
+      <div class="card-label">Season Bundle · JSON</div>
+      <div class="card-value" style="font-size:14px;"><a class="btn" href="season-bundle.json">Download .json</a></div>
+      <p class="small muted">The almanac's <b>wire format</b>. Re-ingest with <code>python -m o27.almanac build --source season-bundle.json --out new-site/</code>.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>Per-Dataset CSVs</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th data-type="text" class="sticky-col">Dataset</th>
+        <th data-type="text">Rows</th>
+        <th data-type="text">File</th>
+        <th data-type="text">Notes</th>
+      </tr></thead>
+      <tbody>
+        {% for row in datasets %}
+        <tr>
+          <td class="sticky-col t-left">{{ row.name }}</td>
+          <td>{{ row.rows }}</td>
+          <td class="t-left"><a href="{{ row.file }}">{{ row.file.split('/')|last }}</a></td>
+          <td class="t-left muted">{{ row.notes }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>How to Wire a New Season In</h2></div>
+  <div class="card" style="max-width:760px;">
+<pre style="margin:0;font-family:var(--font-mono);font-size:12px;line-height:1.55;white-space:pre-wrap;">
+# From a live o27v2 SQLite DB:
+python -m o27.almanac build --source o27v2/o27v2.db --out site/
+
+# From a season-archive JSON bundle (this site's wire format):
+python -m o27.almanac build --source path/to/season-bundle.json --out site/
+
+# Preview locally:
+python -m o27.almanac serve --out site/
+</pre>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "_base.html.j2" %}
+{% block title %}Stay Leaders — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Stay Mechanic Leaders</h1>
+<p class="page-subtitle">O27-specific second-chance AB metrics · the rate at which batters work the stay to drive runners</p>
+
+<div class="section-bar">
+  <div class="tabs">
+    <a href="batting.html">Batting</a>
+    <a href="pitching.html">Pitching</a>
+    <a class="active" href="stays.html">Stays</a>
+  </div>
+  <div class="btn-row">
+    <input class="search-box" data-filter-table="#stays-tbl" data-filter-cols="0,1" placeholder="Find batter…">
+    <button class="btn" data-export-csv="#stays-tbl" data-filename="stay-leaders.csv">CSV</button>
+  </div>
+</div>
+
+<div class="tablewrap">
+  <table id="stays-tbl" class="stat-table heatmap">
+    <thead><tr>
+      <th class="sticky-col" data-type="text">Player</th>
+      <th data-type="text">Team</th>
+      <th>PA</th><th>AB</th>
+      <th data-heat="hi">STY</th>
+      <th data-heat="hi">STAY_H</th>
+      <th data-heat="hi">STAY_RBI</th>
+      <th data-heat="hi">MHAB</th>
+      <th data-heat="hi">STAY%</th>
+      <th data-heat="hi">STAY_CONV%</th>
+      <th data-heat="hi">STAY_RBI%</th>
+      <th data-heat="hi">RAD</th>
+      <th data-heat="hi">RAD/PA</th>
+      <th data-heat="hi">BAVG</th>
+      <th data-heat="hi">Δ (BAVG−AVG)</th>
+      <th data-heat="lo">FO</th>
+      <th data-heat="lo">FO%</th>
+    </tr></thead>
+    <tbody>
+      {% for r in views.batting_season if r.qualified %}
+      <tr>
+        <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+        <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+        <td>{{ r.pa }}</td>
+        <td>{{ r.ab }}</td>
+        <td>{{ r.stays }}</td>
+        <td>{{ r.stay_hits }}</td>
+        <td>{{ r.stay_rbi }}</td>
+        <td>{{ r.multi_hit_abs }}</td>
+        <td data-val="{{ r.stay_pct }}">{{ '%.1f'|format(r.stay_pct * 100) }}%</td>
+        <td data-val="{{ r.stay_conv }}">{{ '%.1f'|format(r.stay_conv * 100) }}%</td>
+        <td data-val="{{ r.stay_rbi_pct }}">{{ '%.1f'|format(r.stay_rbi_pct * 100) }}%</td>
+        <td>{{ r.rad }}</td>
+        <td data-val="{{ r.rad_pa }}">{{ '%.3f'|format(r.rad_pa) }}</td>
+        <td data-val="{{ r.bavg }}">{{ '%.3f'|format(r.bavg) }}</td>
+        <td data-val="{{ r.stay_diff }}">{{ '%+.3f'|format(r.stay_diff) }}</td>
+        <td>{{ r.fo }}</td>
+        <td data-val="{{ r.fo_pct }}">{{ '%.1f'|format(r.fo_pct * 100) }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

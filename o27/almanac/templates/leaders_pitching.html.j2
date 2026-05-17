@@ -1,0 +1,113 @@
+{% extends "_base.html.j2" %}
+{% block title %}Pitching Leaders — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Pitching Leaders</h1>
+<p class="page-subtitle">All qualified pitchers · click any column to re-sort · lower-is-better cells inverted</p>
+
+<div class="section-bar">
+  <div class="tabs">
+    <a href="batting.html">Batting</a>
+    <a class="active" href="pitching.html">Pitching</a>
+    <a href="fielding.html">Fielding</a>
+    <a href="value.html">Value (WAR)</a>
+    <a href="stays.html">Stays</a>
+    <a href="situational.html">Situational</a>
+  </div>
+  <div class="btn-row">
+    <input class="search-box" data-filter-table="#pitching-tbl" data-filter-cols="0,1" placeholder="Find pitcher…">
+    <button class="btn" data-export-csv="#pitching-tbl" data-filename="pitching-leaders.csv">CSV</button>
+    <a class="btn" href="../exports/pitching_season.csv">Pre-rendered CSV</a>
+  </div>
+</div>
+
+<div class="tablewrap">
+  <table id="pitching-tbl" class="stat-table heatmap">
+    <thead><tr>
+      <th class="sticky-col" data-type="text">Pitcher</th>
+      <th data-type="text">Team</th>
+      <th data-type="text">T</th>
+      <th>Age</th>
+      <th>G</th><th>GS</th>
+      <th data-heat="hi">WS%</th>
+      <th data-heat="hi">IP</th><th data-heat="hi">OUT</th>
+      <th data-heat="hi">BF</th>
+      <th data-heat="lo">H</th><th data-heat="lo">R</th><th data-heat="lo">ER</th>
+      <th data-heat="lo">UER</th>
+      <th data-heat="lo">HR</th><th data-heat="lo">BB</th><th data-heat="hi">K</th>
+      <th data-heat="hi">FO</th>
+      <th data-heat="lo">ERA</th><th data-heat="lo">wERA</th>
+      <th data-heat="lo">WHIP</th><th data-heat="lo">FIP</th><th data-heat="lo">xFIP</th>
+      <th data-heat="hi">K/9</th><th data-heat="lo">BB/9</th><th data-heat="lo">HR/9</th>
+      <th data-heat="hi">K%</th><th data-heat="lo">BB%</th><th data-heat="hi">K−BB%</th>
+      <th data-heat="hi">K/BB</th>
+      <th data-heat="hi">GSc</th>
+      <th data-heat="lo">OAVG</th><th data-heat="lo">OBABIP</th>
+      <th data-heat="lo">OOBP</th><th data-heat="lo">OSLG</th><th data-heat="lo">OOPS</th>
+      <th data-heat="hi">AOR</th><th data-heat="hi">OS%</th><th data-heat="hi">OS+</th>
+      <th data-heat="lo">Decay</th><th data-heat="hi">Late K%</th>
+      <th data-heat="hi">Arc3%</th>
+      <th data-heat="lo">P/BF</th><th data-heat="hi">O/P</th>
+      <th data-heat="hi">ERA+</th><th data-heat="hi">FIP+</th>
+      <th data-heat="hi">pWAR</th>
+    </tr></thead>
+    <tbody>
+      {% for r in views.pitching_season if r.qualified or always_show_all %}
+      <tr>
+        <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+        <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+        <td class="t-left"><span class="pos-badge">{{ r.throws }}</span></td>
+        <td>{{ r.age or '—' }}</td>
+        <td>{{ r.g }}</td>
+        <td>{{ r.gs }}</td>
+        <td data-val="{{ r.ws_pct }}">{{ '%.0f'|format(r.ws_pct * 100) }}%</td>
+        <td data-val="{{ r.ip }}">{{ r.ip_disp }}</td>
+        <td>{{ r.outs_recorded }}</td>
+        <td>{{ r.batters_faced }}</td>
+        <td>{{ r.hits_allowed }}</td>
+        <td>{{ r.runs_allowed }}</td>
+        <td>{{ r.er }}</td>
+        <td>{{ r.unearned_runs }}</td>
+        <td>{{ r.hr_allowed }}</td>
+        <td>{{ r.bb }}</td>
+        <td>{{ r.k }}</td>
+        <td>{{ r.fo_induced }}</td>
+        <td data-val="{{ r.era }}">{{ '%.2f'|format(r.era) }}</td>
+        <td data-val="{{ r.wera }}">{{ '%.2f'|format(r.wera) }}</td>
+        <td data-val="{{ r.whip }}">{{ '%.2f'|format(r.whip) }}</td>
+        <td data-val="{{ r.fip }}">{{ '%.2f'|format(r.fip) }}</td>
+        <td data-val="{{ r.xfip }}">{{ '%.2f'|format(r.xfip) }}</td>
+        <td data-val="{{ r.k9 }}">{{ '%.2f'|format(r.k9) }}</td>
+        <td data-val="{{ r.bb9 }}">{{ '%.2f'|format(r.bb9) }}</td>
+        <td data-val="{{ r.hr9 }}">{{ '%.2f'|format(r.hr9) }}</td>
+        <td data-val="{{ r.k_pct }}">{{ '%.1f'|format(r.k_pct * 100) }}%</td>
+        <td data-val="{{ r.bb_pct }}">{{ '%.1f'|format(r.bb_pct * 100) }}%</td>
+        <td data-val="{{ r.k_minus_bb_pct }}">{{ '%.1f'|format(r.k_minus_bb_pct * 100) }}%</td>
+        <td data-val="{{ r.k_bb }}">{{ '%.2f'|format(r.k_bb) }}</td>
+        <td data-val="{{ r.gsc_total }}">{{ '%.1f'|format(r.gsc_total) }}</td>
+        <td data-val="{{ r.oavg }}">{{ '%.3f'|format(r.oavg) }}</td>
+        <td data-val="{{ r.obabip }}">{{ '%.3f'|format(r.obabip) }}</td>
+        <td data-val="{{ r.oobp }}">{{ '%.3f'|format(r.oobp) }}</td>
+        <td data-val="{{ r.oslg }}">{{ '%.3f'|format(r.oslg) }}</td>
+        <td data-val="{{ r.oops }}">{{ '%.3f'|format(r.oops) }}</td>
+        <td data-val="{{ r.aor }}">{{ '%.1f'|format(r.aor) }}</td>
+        <td data-val="{{ r.os_pct }}">{{ '%.1f'|format(r.os_pct * 100) }}%</td>
+        <td>{{ r.os_plus }}</td>
+        <td data-val="{{ r.decay }}">{{ '%+.1f'|format(r.decay) }}</td>
+        <td data-val="{{ r.late_k_pct }}">{{ '%.1f'|format(r.late_k_pct * 100) }}%</td>
+        <td data-val="{{ r.arc3_reach_pct }}">{{ '%.0f'|format(r.arc3_reach_pct * 100) }}%</td>
+        <td data-val="{{ r.p_per_bf }}">{{ '%.1f'|format(r.p_per_bf) }}</td>
+        <td data-val="{{ r.op_per_pitch }}">{{ '%.2f'|format(r.op_per_pitch) }}</td>
+        <td>{{ r.era_plus }}</td>
+        <td>{{ r.fip_plus }}</td>
+        <td data-val="{{ r.pwar }}">{{ '%+.2f'|format(r.pwar) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="page-subtitle" style="margin-top:10px;">
+  Minimum {{ min_outs }} outs (20 IP) to qualify. League ERA/wERA-baseline/WHIP/FIP:
+  <b>{{ '%.2f'|format(views.league_totals.era) }} / — / {{ '%.2f'|format(views.league_totals.whip) }} / {{ '%.2f'|format(views.league_totals.fip) }}</b>.
+  WS% = workhorse start rate (≥18 outs + ≤6 ER on a start).
+</p>
+{% endblock %}

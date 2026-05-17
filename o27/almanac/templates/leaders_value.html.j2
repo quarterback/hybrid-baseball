@@ -1,0 +1,94 @@
+{% extends "_base.html.j2" %}
+{% block title %}Value (WAR) Leaders — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Value Leaders · WAR Board</title</h1>
+<p class="page-subtitle">Top contributors by VORP / WAR across hitting, pitching, and fielding. Replacement = {{ '%.0f'|format(100 * 0.85) }}% of league wOBA / {{ '%.0f'|format(100 * 1.20) }}% of league ERA. Runs per win in this run environment: <b>{{ '%.2f'|format(views.runs_per_win) }}</b>.</p>
+
+<div class="section-bar">
+  <div class="tabs">
+    <a href="batting.html">Batting</a>
+    <a href="pitching.html">Pitching</a>
+    <a href="fielding.html">Fielding</a>
+    <a class="active" href="value.html">Value (WAR)</a>
+    <a href="stays.html">Stays</a>
+    <a href="situational.html">Situational</a>
+  </div>
+  <div class="btn-row">
+    <button class="btn" data-export-csv="#war-tbl-bat" data-filename="bwar-leaders.csv">Bat CSV</button>
+    <button class="btn" data-export-csv="#war-tbl-pit" data-filename="pwar-leaders.csv">Pitch CSV</button>
+  </div>
+</div>
+
+<section>
+  <div class="section-bar"><h2>Position Players · bWAR</h2></div>
+  <div class="tablewrap">
+    <table id="war-tbl-bat" class="stat-table heatmap">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Player</th>
+        <th data-type="text">Team</th><th data-type="text">Pos</th>
+        <th>G</th><th>PA</th>
+        <th data-heat="hi">AVG</th><th data-heat="hi">OBP</th><th data-heat="hi">SLG</th><th data-heat="hi">OPS</th>
+        <th data-heat="hi">wOBA</th><th data-heat="hi">wOBA+</th>
+        <th data-heat="hi">bVORP</th>
+        <th data-heat="hi">WAR_off</th>
+        <th data-heat="hi">bWAR</th>
+      </tr></thead>
+      <tbody>
+        {% for r in views.batting_season if r.qualified and not r.is_pitcher %}
+        <tr>
+          <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+          <td class="t-left"><span class="pos-badge {% if r.is_joker %}joker{% endif %}">{{ r.position }}</span></td>
+          <td>{{ r.g }}</td>
+          <td>{{ r.pa }}</td>
+          <td data-val="{{ r.pavg }}">{{ '%.3f'|format(r.pavg) }}</td>
+          <td data-val="{{ r.obp }}">{{ '%.3f'|format(r.obp) }}</td>
+          <td data-val="{{ r.slg }}">{{ '%.3f'|format(r.slg) }}</td>
+          <td data-val="{{ r.ops }}">{{ '%.3f'|format(r.ops) }}</td>
+          <td data-val="{{ r.woba }}">{{ '%.3f'|format(r.woba) }}</td>
+          <td>{{ r.woba_plus }}</td>
+          <td data-val="{{ r.bvorp }}">{{ '%+.1f'|format(r.bvorp) }}</td>
+          <td data-val="{{ r.war_off }}">{{ '%+.2f'|format(r.war_off) }}</td>
+          <td data-val="{{ r.bwar }}">{{ '%+.2f'|format(r.bwar) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>Pitchers · pWAR</h2></div>
+  <div class="tablewrap">
+    <table id="war-tbl-pit" class="stat-table heatmap">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Pitcher</th>
+        <th data-type="text">Team</th>
+        <th>G</th><th>GS</th><th>IP</th>
+        <th data-heat="lo">ERA</th><th data-heat="lo">wERA</th>
+        <th data-heat="lo">FIP</th><th data-heat="lo">xFIP</th>
+        <th data-heat="hi">ERA+</th>
+        <th data-heat="hi">pVORP</th><th data-heat="hi">pWAR</th>
+      </tr></thead>
+      <tbody>
+        {% for r in views.pitching_season if r.qualified %}
+        <tr>
+          <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+          <td>{{ r.g }}</td>
+          <td>{{ r.gs }}</td>
+          <td data-val="{{ r.ip }}">{{ r.ip_disp }}</td>
+          <td data-val="{{ r.era }}">{{ '%.2f'|format(r.era) }}</td>
+          <td data-val="{{ r.wera }}">{{ '%.2f'|format(r.wera) }}</td>
+          <td data-val="{{ r.fip }}">{{ '%.2f'|format(r.fip) }}</td>
+          <td data-val="{{ r.xfip }}">{{ '%.2f'|format(r.xfip) }}</td>
+          <td>{{ r.era_plus }}</td>
+          <td data-val="{{ r.pvorp }}">{{ '%+.1f'|format(r.pvorp) }}</td>
+          <td data-val="{{ r.pwar }}">{{ '%+.2f'|format(r.pwar) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

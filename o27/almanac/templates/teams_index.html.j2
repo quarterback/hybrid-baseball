@@ -1,0 +1,54 @@
+{% extends "_base.html.j2" %}
+{% block title %}Teams — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Teams</h1>
+<p class="page-subtitle">{{ views.standings|length }} clubs · click for full team page</p>
+
+<div class="btn-row" style="margin-bottom:8px;">
+  <button class="btn" data-export-csv="#teams-tbl" data-filename="team_totals.csv">CSV</button>
+  <a class="btn" href="../exports/team_totals_batting.csv">Team batting CSV</a>
+  <a class="btn" href="../exports/team_totals_pitching.csv">Team pitching CSV</a>
+</div>
+
+<div class="tablewrap">
+  <table id="teams-tbl" class="stat-table heatmap">
+    <thead><tr>
+      <th class="sticky-col" data-type="text">Team</th>
+      <th data-type="text">Lg</th><th data-type="text">Div</th>
+      <th>W</th><th>L</th><th data-heat="hi">PCT</th>
+      <th data-heat="hi">R/G</th><th data-heat="lo">RA/G</th>
+      <th data-heat="hi">AVG</th><th data-heat="hi">OBP</th>
+      <th data-heat="hi">SLG</th><th data-heat="hi">OPS</th>
+      <th data-heat="hi">HR</th><th data-heat="hi">STY</th>
+      <th data-heat="lo">ERA</th><th data-heat="lo">WHIP</th>
+      <th data-heat="hi">K/9</th><th data-heat="lo">BB/9</th>
+    </tr></thead>
+    <tbody>
+      {% for r in views.standings %}
+      {% set b = views.team_totals_bat.get(r.abbrev) or {} %}
+      {% set p = views.team_totals_pit.get(r.abbrev) or {} %}
+      <tr>
+        <td class="sticky-col t-left"><a href="{{ r.abbrev|lower }}.html"><span class="chip">{{ r.abbrev }}</span> {{ r.city }} {{ r.name }}</a></td>
+        <td class="t-left">{{ r.league }}</td>
+        <td class="t-left">{{ r.division }}</td>
+        <td>{{ r.w }}</td>
+        <td>{{ r.l }}</td>
+        <td data-val="{{ r.pct }}">{{ '%.3f'|format(r.pct) }}</td>
+        <td data-val="{{ r.rpg }}">{{ '%.2f'|format(r.rpg) }}</td>
+        <td data-val="{{ r.rapg }}">{{ '%.2f'|format(r.rapg) }}</td>
+        <td data-val="{{ b.pavg or 0 }}">{{ '%.3f'|format(b.pavg or 0) }}</td>
+        <td data-val="{{ b.obp or 0 }}">{{ '%.3f'|format(b.obp or 0) }}</td>
+        <td data-val="{{ b.slg or 0 }}">{{ '%.3f'|format(b.slg or 0) }}</td>
+        <td data-val="{{ b.ops or 0 }}">{{ '%.3f'|format(b.ops or 0) }}</td>
+        <td>{{ b.hr or 0 }}</td>
+        <td>{{ b.stays or 0 }}</td>
+        <td data-val="{{ p.era or 0 }}">{{ '%.2f'|format(p.era or 0) }}</td>
+        <td data-val="{{ p.whip or 0 }}">{{ '%.2f'|format(p.whip or 0) }}</td>
+        <td data-val="{{ p.k9 or 0 }}">{{ '%.2f'|format(p.k9 or 0) }}</td>
+        <td data-val="{{ p.bb9 or 0 }}">{{ '%.2f'|format(p.bb9 or 0) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "_base.html.j2" %}
+{% block title %}Players — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Players</h1>
+<p class="page-subtitle">{{ players|length }} players across {{ views.teams|length }} teams</p>
+
+<div class="btn-row" style="margin-bottom:8px;">
+  <input class="search-box" data-filter-table="#player-index" data-filter-cols="0,1,2" placeholder="Search name / team / pos…" style="width:260px;">
+  <button class="btn" data-export-csv="#player-index" data-filename="players.csv">CSV</button>
+  <a class="btn" href="../exports/players.csv">Pre-rendered CSV</a>
+</div>
+
+<div class="tablewrap">
+  <table id="player-index" class="stat-table">
+    <thead><tr>
+      <th class="sticky-col" data-type="text">Player</th>
+      <th data-type="text">Team</th>
+      <th data-type="text">Pos</th>
+      <th>Age</th>
+      <th data-type="text">B/T</th>
+      <th>G</th><th>PA / IP</th>
+      <th>AVG / ERA</th>
+      <th>OPS / WHIP</th>
+      <th>HR / K</th>
+    </tr></thead>
+    <tbody>
+      {% for p in players %}
+      <tr>
+        <td class="sticky-col t-left"><a href="{{ p.team|lower }}_{{ p.slug }}.html">{{ p.name }}</a></td>
+        <td class="t-left"><a href="../teams/{{ p.team|lower }}.html"><span class="chip">{{ p.team }}</span></a></td>
+        <td class="t-left"><span class="pos-badge {% if p.is_joker %}joker{% elif p.is_pitcher %}pitcher{% endif %}">{{ p.position }}</span></td>
+        <td>{{ p.age or '—' }}</td>
+        <td>{{ p.bats }}/{{ p.throws }}</td>
+        <td>{{ p.g or 0 }}</td>
+        <td>{% if p.is_pitcher %}{{ p.ip_disp or '0.0' }}{% else %}{{ p.pa or 0 }}{% endif %}</td>
+        <td>{% if p.is_pitcher %}{{ '%.2f'|format(p.era or 0) }}{% else %}{{ '%.3f'|format(p.avg or 0) }}{% endif %}</td>
+        <td>{% if p.is_pitcher %}{{ '%.2f'|format(p.whip or 0) }}{% else %}{{ '%.3f'|format(p.ops or 0) }}{% endif %}</td>
+        <td>{% if p.is_pitcher %}{{ p.k or 0 }}{% else %}{{ p.hr or 0 }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

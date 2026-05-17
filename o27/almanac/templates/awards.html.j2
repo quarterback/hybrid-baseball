@@ -1,0 +1,71 @@
+{% extends "_base.html.j2" %}
+{% block title %}Awards — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Awards</h1>
+<p class="page-subtitle">Season awards from the o27v2 voting system. Empty if the source DB hasn't run the awards pass yet.</p>
+
+{% if views.awards %}
+<div class="tablewrap">
+  <table class="stat-table">
+    <thead><tr>
+      <th data-type="text">Season</th>
+      <th data-type="text">Category</th>
+      <th data-type="text">League</th>
+      <th data-type="text">Player</th>
+      <th data-type="text">Team</th>
+      <th data-type="text">Headline Stat</th>
+      <th data-type="text">Awarded</th>
+    </tr></thead>
+    <tbody>
+      {% for a in views.awards %}
+      <tr>
+        <td class="t-left">{{ a.season or '—' }}</td>
+        <td class="t-left">{{ a.category }}</td>
+        <td class="t-left">{{ a.league or '—' }}</td>
+        <td class="t-left">{{ a.player_name }}</td>
+        <td class="t-left">{% if a.team_abbrev %}<a href="teams/{{ a.team_abbrev|lower }}.html"><span class="chip">{{ a.team_abbrev }}</span></a>{% endif %}</td>
+        <td class="t-left">{{ a.headline_stat or '' }}</td>
+        <td class="t-left muted">{{ a.awarded_at or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert info">No awards on record for this dataset.</div>
+{% endif %}
+
+{% if views.playoff_series %}
+<section style="margin-top:24px;">
+  <div class="section-bar"><h2>Playoff Series</h2></div>
+  <div class="tablewrap">
+    <table class="stat-table">
+      <thead><tr>
+        <th data-type="text">Round</th>
+        <th data-type="text">Bracket Pos</th>
+        <th data-type="text">High</th>
+        <th>Wins</th>
+        <th data-type="text">Low</th>
+        <th>Wins</th>
+        <th>Best Of</th>
+        <th data-type="text">Winner</th>
+      </tr></thead>
+      <tbody>
+        {% for s in views.playoff_series %}
+        <tr>
+          <td class="t-left">R{{ s.round_idx }}{% if s.rounds_to_final == 0 %} · FINAL{% endif %}</td>
+          <td>{{ s.bracket_position }}</td>
+          <td class="t-left">{{ s.high_seed }} ({{ s.high_seed_team_id }})</td>
+          <td>{{ s.high_wins }}</td>
+          <td class="t-left">{% if s.low_seed_team_id %}{{ s.low_seed }} ({{ s.low_seed_team_id }}){% else %}<span class="muted">— bye —</span>{% endif %}</td>
+          <td>{{ s.low_wins }}</td>
+          <td>{{ s.best_of }}</td>
+          <td class="t-left">{{ s.winner_team_id or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
