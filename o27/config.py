@@ -484,6 +484,12 @@ PLAYER_DEFAULT_PITCHER_SKILL: float            = 0.50
 PLAYER_DEFAULT_STAY_AGGRESSIVENESS: float      = 0.40   # 0.0–1.0 tendency to choose stay
 PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD: float = 0.45  # P(stay | medium contact) gate
 
+# RISP-aware 2C frequency. 2C is "bring-them-home" mechanic — favor it
+# when runners are in scoring position (2B/3B), discount it when only
+# 1B is occupied (less leverage to convert a hit credit into a run).
+STAY_RISP_MULT: float          = 1.40   # 2B or 3B occupied
+STAY_1B_ONLY_MULT: float       = 0.70   # only 1B occupied
+
 # ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------

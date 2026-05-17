@@ -1064,13 +1064,17 @@ def should_stay_prob(
     # Removing these hard rules lets the AI take the strategically right
     # action in late-count / late-half situations.
 
-    # Probabilistic gate: stay_aggressiveness alone drives 2C frequency
-    # on weak/medium contact. The medium contact_quality_threshold gate
-    # was removed to lift 2C event rate (5.47% → target ~10%) without
-    # flattening per-player traits — stay_aggressiveness still varies
-    # by player. contact_quality_threshold remains in the schema and
-    # may be used for other gating in future.
-    return rng.random() < batter.stay_aggressiveness
+    # Probabilistic gate: stay_aggressiveness scaled by RISP leverage.
+    # 2C is the engine's "advance runners / bring them home" mechanic,
+    # so it should fire more often when there's a runner to drive in
+    # (2B/3B occupied) and less when only 1B is on (less leverage —
+    # the 2C just moves the runner into RISP for the NEXT batter).
+    stay_p = batter.stay_aggressiveness
+    if state.bases[1] is not None or state.bases[2] is not None:
+        stay_p *= cfg.STAY_RISP_MULT
+    elif state.bases[0] is not None:
+        stay_p *= cfg.STAY_1B_ONLY_MULT
+    return rng.random() < stay_p
 
 
 # ---------------------------------------------------------------------------
