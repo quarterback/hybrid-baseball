@@ -304,7 +304,7 @@ def _pitch_probs(
     # noticeable late-half degradation.
     fatigue_threshold = max(
         cfg.FATIGUE_THRESHOLD_BASE,
-        cfg.FATIGUE_THRESHOLD_BASE + round(pitcher.stamina * cfg.FATIGUE_THRESHOLD_SCALE),
+        cfg.FATIGUE_THRESHOLD_BASE + round((pitcher.stamina ** 2) * cfg.FATIGUE_THRESHOLD_SCALE),
     )
     if spell_count > fatigue_threshold:
         # Weather scales how fast fatigue accumulates — hot/humid wears

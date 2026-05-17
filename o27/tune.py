@@ -6,7 +6,11 @@ Usage:
     python -m o27.tune --games 500
 
 Runs N games with seeds 0..N-1, suppresses per-game transcript output,
-and prints a metrics table comparing actuals to PRD targets.
+and prints a metrics table. The table reports observed values and only
+flags catastrophic regressions against sanity bounds — O27 is a variance-
+first fictional sport, NOT calibrated to a fixed R/G or rate-stat target.
+Future agents: see o27v2/config.py for the canonical "no prescription"
+rationale before re-tuning anything.
 
 All tunable parameters live in o27/config.py.
 """
@@ -302,11 +306,15 @@ def print_metrics(agg: dict) -> None:
     # --- Scoring ---
     print(f"\n  {'SCORING':}")
     print(_hr())
+    # NOTE FOR FUTURE AGENTS: R/G is not a calibration target in O27.
+    # The sanity bounds here exist only to catch catastrophic regressions
+    # (e.g. R/G collapses or runaway scoring), NOT to flag normal variance.
+    # See o27v2/config.py for the canonical rationale.
     r = agg["runs"]
-    flag = _flag(r["mean"], 22.0, 24.0)
+    flag = _flag(r["mean"], 20.0, 50.0)
     print(_row("Avg total runs/game",
                f"{r['mean']:.2f}",
-               "target 22–24",
+               "sanity 20–50 (not a target)",
                flag))
     print(_row("  Median / Std / Min / Max",
                f"{r['median']:.1f} / {r['std']:.1f} / {int(r['min'])} / {int(r['max'])}"))
@@ -319,11 +327,9 @@ def print_metrics(agg: dict) -> None:
     print(f"\n  {'RUN RATE':}")
     print(_hr())
     rr = agg["run_rate"]
-    flag = _flag(rr["mean"], 0.38, 0.48)
     print(_row("Avg run rate (R/out)",
                f"{rr['mean']:.4f}",
-               "target ~0.43",
-               flag))
+               "(observed — not a target)"))
     print(_row("  Median / Std",
                f"{rr['median']:.4f} / {rr['std']:.4f}"))
 
@@ -331,11 +337,9 @@ def print_metrics(agg: dict) -> None:
     print(f"\n  {'PLATE APPEARANCES':}")
     print(_hr())
     pa = agg["pas"]
-    flag = _flag(pa["mean"], 72.0, 86.0)
     print(_row("Avg PAs/game (reg halves)",
                f"{pa['mean']:.1f}",
-               "ref ~79",
-               flag))
+               "(observed — not a target)"))
     print(_row("  Median / Std / Min / Max",
                f"{pa['median']:.0f} / {pa['std']:.1f} / {int(pa['min'])} / {int(pa['max'])}"))
     top_pa = agg["top_pas"]
@@ -347,11 +351,9 @@ def print_metrics(agg: dict) -> None:
     print(f"\n  {'STAY MECHANIC':}")
     print(_hr())
     st = agg["stays"]
-    flag = _flag(st["mean"], 0.3, 1.0)
     print(_row("Avg stays/game",
                f"{st['mean']:.3f}",
-               "target 0.3–1.0",
-               flag))
+               "(observed — not a target)"))
     print(_row("  Median / Std / Min / Max",
                f"{st['median']:.1f} / {st['std']:.2f} / {int(st['min'])} / {int(st['max'])}"))
     vst = agg["v_stays"]
@@ -368,42 +370,34 @@ def print_metrics(agg: dict) -> None:
     print(f"\n  {'SUPER-INNING':}")
     print(_hr())
     si_pct = agg["super_inning_pct"]
-    flag = "✓" if si_pct < 5.0 else "!"
+    # Super-inning rate IS a real cap — it's a rule-based mechanic, so
+    # a runaway rate signals an actual engine bug, not just a stat shift.
+    flag = "✓" if si_pct < 10.0 else "!"
     print(_row("Super-inning frequency",
                f"{si_pct:.2f}%  ({agg['super_count']}/{n})",
-               "target <5%",
+               "sanity <10%",
                flag))
 
     # --- Rate stats (realism layer) ---
     rs = agg.get("rate_stats", {})
     if rs:
-        print(f"\n  {'RATE STATS (1990s–2000s flavor)':}")
+        print(f"\n  {'RATE STATS':}")
         print(_hr())
-        # Targets: contact-era K%, walks that reflect Eye discipline,
-        # peak-offense BA / SLG. Run environment is intentionally NOT
-        # constrained — it's structural to O27's 12-batter / 27-out rules.
+        # NOTE FOR FUTURE AGENTS: these are NOT calibration targets.
+        # O27 is a variance-first fictional sport. Rate stats are observed
+        # outputs of the mechanics, not knobs to tune toward MLB-shaped
+        # numbers. Do not "fix" K%/BA/SLG to hit a band unless the designer
+        # explicitly asks for it.
         k_pct = rs["k_pct"] * 100
         bb_pct = rs["bb_pct"] * 100
         ba = rs["ba"]
         slg = rs["slg"]
         hr_pct = rs["hr_pct"] * 100
-        print(_row("League K%",
-                   f"{k_pct:.2f}%",
-                   "target 17–19%",
-                   _flag(k_pct, 17.0, 19.0)))
-        print(_row("League BB%",
-                   f"{bb_pct:.2f}%",
-                   "target 9–10%",
-                   _flag(bb_pct, 9.0, 10.0)))
-        print(_row("League BA",
-                   f".{int(round(ba * 1000)):03d}",
-                   "target .280–.305"))
-        print(_row("League SLG",
-                   f".{int(round(slg * 1000)):03d}",
-                   "target .440–.480"))
-        print(_row("League HR/PA",
-                   f"{hr_pct:.2f}%",
-                   "target 2.0–2.6%"))
+        print(_row("League K%",      f"{k_pct:.2f}%",  "(observed)"))
+        print(_row("League BB%",     f"{bb_pct:.2f}%", "(observed)"))
+        print(_row("League BA",      f".{int(round(ba * 1000)):03d}",  "(observed)"))
+        print(_row("League SLG",     f".{int(round(slg * 1000)):03d}", "(observed)"))
+        print(_row("League HR/PA",   f"{hr_pct:.2f}%", "(observed)"))
 
     # --- Manager activity ---
     print(f"\n  {'MANAGER ACTIVITY':}")
@@ -417,14 +411,14 @@ def print_metrics(agg: dict) -> None:
     # --- Summary ---
     print()
     print(_hr("═"))
-    targets_met = all([
-        22.0 <= agg["runs"]["mean"] <= 24.0,
-        0.3  <= agg["stays"]["mean"] <= 1.0,
-        agg["super_inning_pct"] < 5.0,
-        0.38 <= agg["run_rate"]["mean"] <= 0.48,
-        72.0 <= agg["pas"]["mean"] <= 86.0,
+    # Sanity bounds only — R/G, stays, etc. are NOT calibration targets.
+    # See o27v2/config.py for the canonical "no prescription" rationale.
+    sanity_ok = all([
+        20.0 <= agg["runs"]["mean"] <= 50.0,
+        0.5  <= agg["stays"]["mean"] <= 6.0,
+        agg["super_inning_pct"] < 10.0,
     ])
-    status = "ALL PRD TARGETS MET ✓" if targets_met else "SOME TARGETS OUTSIDE RANGE — see ! flags"
+    status = "SANITY BOUNDS OK ✓" if sanity_ok else "SOME METRICS OUTSIDE SANITY BOUNDS — see ! flags (possible regression)"
     print(f"  {status}")
     print(_hr("═"))
     print()

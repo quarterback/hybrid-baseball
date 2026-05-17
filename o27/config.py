@@ -133,8 +133,8 @@ PITCH_BASE: dict[tuple, tuple] = {
 # this is what lets aces actually pitch like aces.
 
 PITCHER_DOM_BALL: float     = -0.07   # fewer balls when pitcher dominant
-PITCHER_DOM_CALLED: float   = +0.03   # more called strikes
-PITCHER_DOM_SWINGING: float = +0.06   # more swinging strikes (matches BATTER_CONTACT_SWINGING magnitude)
+PITCHER_DOM_CALLED: float   = +0.015  # K-reduction pass: 0.03 → 0.015 to target 16-18% league K%
+PITCHER_DOM_SWINGING: float = +0.025  # K-reduction pass: 0.06 → 0.025; recent bump to 0.06 was the main K-inflation driver
 PITCHER_DOM_CONTACT: float  = -0.06   # fewer contact events (exceeds batter's +0.05 promotion)
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ PITCHER_DOM_CONTACT: float  = -0.06   # fewer contact events (exceeds batter's +
 # ---------------------------------------------------------------------------
 # Applied as:  b_dom = (batter.skill - 0.5) * 2   →  −1.0 to +1.0
 
-BATTER_DOM_SWINGING: float = -0.03   # fewer swinging strikes (better contact)
+BATTER_DOM_SWINGING: float = -0.05   # K-reduction pass: -0.03 → -0.05; high-skill batters whiff materially less
 BATTER_DOM_CONTACT: float  = +0.03   # more contact events
 
 # ---------------------------------------------------------------------------
@@ -153,27 +153,24 @@ BATTER_DOM_CONTACT: float  = +0.03   # more contact events
 #                   FATIGUE_THRESHOLD_BASE + round(pitcher_skill * FATIGUE_THRESHOLD_SCALE))
 # Fatigue factor grows linearly beyond threshold, capped at FATIGUE_MAX.
 
-FATIGUE_THRESHOLD_BASE: int  = 24    # Phase 10/11 pitcher retune: workhorses fatigue much later
-# Bumped 20 → 40 so Stamina actually moats the workhorse archetype.
-# Math: an elite-Stamina (0.85) pitcher fatigues at 24 + round(0.85*40) = 58 BF
-# threshold — i.e. effectively never within a 27-out half. A sub-replacement
-# (0.25) Stamina pitcher fatigues at 24 + 10 = 34 BF, visibly tiring through
-# the order. This is what makes Stamina disproportionately valuable in O27.
-#
-# Earlier branch (Phase 10.2 Decay work) ran BASE=6 to make K%_arc1−arc3
-# differentiate between workhorse starters and short relievers. Phase 11
-# pitcher retune walked it back to BASE=24 to preserve the workhorse moat;
-# the Decay diagnostic is muted as a result but still visible at the
-# extremes. Keep an eye on Decay regression in future tuning passes.
-FATIGUE_THRESHOLD_SCALE: int = 40    # higher-stamina pitchers get longer spells
+FATIGUE_THRESHOLD_BASE: int  = 10    # Fatigue-dominance pass: 24 → 10; everyone enters the fatigue zone in a long outing
+# Quadratic stamina (see prob.py): threshold = BASE + round(stamina**2 * SCALE).
+# With BASE=10 and SCALE=65 this gives:
+#   stamina 0.81 → 10 + round(0.656 * 65) = 53 BF (still goes deep)
+#   stamina 0.73 → 10 + round(0.533 * 65) = 45 BF (cracks in arc3)
+#   stamina 0.50 → 10 + round(0.250 * 65) = 26 BF (cracks in arc2)
+#   stamina 0.30 → 10 + round(0.090 * 65) = 16 BF (opener / one-time-through)
+# The quadratic shape makes elite stamina disproportionately valuable — the
+# moat between 73 and 81 is now ~8 BF (was ~3 BF under linear formula).
+FATIGUE_THRESHOLD_SCALE: int = 65    # higher-stamina pitchers get longer spells (40 → 65)
 FATIGUE_MAX: float           = 1.00  # uncapped collapse for low-stamina arms past their limit
-FATIGUE_SCALE: float         = 20.0  # spell_count divisor for ramp-up
+FATIGUE_SCALE: float         = 10.0  # spell_count divisor for ramp-up (20 → 10; steeper post-threshold cliff)
 
-FATIGUE_BALL: float     = +0.06   # more balls as fatigue grows
-FATIGUE_CONTACT: float  = +0.06   # more contact (was +0.04 — sharper late-arc slap-hit profile)
-FATIGUE_CALLED: float   = -0.04   # fewer called strikes
-FATIGUE_SWINGING: float = -0.06   # fewer swinging strikes (was -0.03 — the K-suppression term)
-FATIGUE_FOUL: float     = -0.04   # fewer fouls (was -0.03)
+FATIGUE_BALL: float     = +0.09   # fatigue-dominance: +0.06 → +0.09
+FATIGUE_CONTACT: float  = +0.10   # fatigue-dominance: +0.06 → +0.10 (more hard contact when tired)
+FATIGUE_CALLED: float   = -0.06   # fatigue-dominance: -0.04 → -0.06
+FATIGUE_SWINGING: float = -0.09   # fatigue-dominance: -0.06 → -0.09 (gassed pitchers lose whiffs)
+FATIGUE_FOUL: float     = -0.06   # fatigue-dominance: -0.04 → -0.06
 
 # ---------------------------------------------------------------------------
 # Contact quality distribution
@@ -181,10 +178,10 @@ FATIGUE_FOUL: float     = -0.04   # fewer fouls (was -0.03)
 # Base probabilities for weak / medium / hard contact.
 # Shifted by matchup:  shift = (batter.skill - pitcher.pitcher_skill) * CONTACT_MATCHUP_SHIFT
 
-CONTACT_WEAK_BASE: float     = 0.38
-CONTACT_MEDIUM_BASE: float   = 0.40
-CONTACT_HARD_BASE: float     = 0.22
-CONTACT_MATCHUP_SHIFT: float = 0.25   # max ±0.125 swing per unit matchup
+CONTACT_WEAK_BASE: float     = 0.18   # offense pass: 0.38 → 0.18; far fewer weak singles
+CONTACT_MEDIUM_BASE: float   = 0.50   # offense pass: 0.40 → 0.50
+CONTACT_HARD_BASE: float     = 0.32   # offense pass: 0.22 → 0.32; more XBH / HR potential
+CONTACT_MATCHUP_SHIFT: float = 0.25   # max ±0.125 swing per unit matchup (unchanged — preserves pitcher differentiation)
 
 # Second-swing modifier: on the 2nd+ contact event within the same AB
 # (i.e., after a non-terminal 2C), tilt the contact_quality distribution
@@ -578,7 +575,7 @@ PITCH_VARIANCE_MEAN: float = 0.06  # league mean used by roster generators
 # unravel quicker than the raw Stamina ramp would suggest.
 GRIT_BOUND_MIN: float          = 0.25
 GRIT_BOUND_MAX: float          = 0.75
-GRIT_FATIGUE_RESIST: float     = 0.60   # max grit dampens 30% of fatigue; min grit amplifies 30%
+GRIT_FATIGUE_RESIST: float     = 0.30   # fatigue-dominance: 0.60 → 0.30; grit now caps at ±15% modifier so stamina drives the variance
 PLAYER_DEFAULT_GRIT: float     = 0.50   # identity
 
 # ---------------------------------------------------------------------------
@@ -675,7 +672,7 @@ BATTER_EYE_CALLED:  float = -0.03   # subtracted from p_called_strike
 
 # --- Batter contact: bat-on-ball ability ----------------------------------
 # Higher contact → fewer swinging strikes, more fouls / balls in play.
-BATTER_CONTACT_SWINGING: float = -0.05
+BATTER_CONTACT_SWINGING: float = -0.08   # K-reduction pass: -0.05 → -0.08; high-contact batters now rarely whiff
 BATTER_CONTACT_FOUL:     float = +0.02
 BATTER_CONTACT_CONTACT:  float = +0.02
 
@@ -743,9 +740,9 @@ PLATOON_BONUS_SWITCH:   float = 0.0   # switch hitters always face advantage
 # --- Daily pitcher form ---------------------------------------------------
 # Per-spell N(mu, sigma) clipped roll. today_form = 1.0 ⇒ legacy parity.
 TODAY_FORM_MU:    float = 1.00
-TODAY_FORM_SIGMA: float = 0.04   # was 0.10 — slashed so daily-form noise stops overriding talent
-TODAY_FORM_MIN:   float = 0.92   # was 0.80 — tight bounds keep ratings (not RNG) in charge of outcomes
-TODAY_FORM_MAX:   float = 1.08   # was 1.20
+TODAY_FORM_SIGMA: float = 0.25   # variance pass v2: 0.10 → 0.25; required for the wide 0.71-1.84 clamp band to be reachable rather than theoretical
+TODAY_FORM_MIN:   float = 0.71   # variance pass v2: 0.82 → 0.71; deep off-days are real
+TODAY_FORM_MAX:   float = 1.84   # variance pass v2: 1.18 → 1.84; transcendent days possible (rare; Gaussian sampling makes upper-clamp hits ~3.4σ)
 
 # Multi-game fatigue (workload-debt) penalty applied on top of today_form.
 # Identity invariant: at pitch_debt = 0, all of these collapse to no penalty.
@@ -798,7 +795,7 @@ RELEASE_PLATOON_AMP_SCALE: float = 0.60   # submarine adds 30% more platoon effe
 
 # Arm-stress reducer: lower arm slot less taxing on the shoulder/elbow.
 # Only fires for release_angle < 0.5 (sub side); identity at 0.5+.
-RELEASE_FATIGUE_SCALE: float = 0.20   # submarine (0.0) cuts fatigue by 10%
+RELEASE_FATIGUE_SCALE: float = 0.10   # fatigue-dominance: 0.20 → 0.10; submarine bonus halved so stamina dominates
 
 # ---------------------------------------------------------------------------
 # Pitch catalog — O27 pitch types
