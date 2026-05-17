@@ -1064,16 +1064,31 @@ def should_stay_prob(
     # Removing these hard rules lets the AI take the strategically right
     # action in late-count / late-half situations.
 
-    # Probabilistic gate: stay_aggressiveness scaled by RISP leverage.
+    # Probabilistic gate: stay_aggressiveness scaled by leverage signals.
     # 2C is the engine's "advance runners / bring them home" mechanic,
-    # so it should fire more often when there's a runner to drive in
-    # (2B/3B occupied) and less when only 1B is on (less leverage —
-    # the 2C just moves the runner into RISP for the NEXT batter).
+    # plus a "work the count / foul off pitches" mechanic for skilled
+    # hitters. Frequency lifts compose multiplicatively from:
+    #   - RISP leverage (real run-driving opportunity)
+    #   - Count state (patient hitter hunting; 2-strike protect)
+    #   - Late game push (manufacture runs even without RISP)
     stay_p = batter.stay_aggressiveness
+
+    # RISP leverage.
     if state.bases[1] is not None or state.bases[2] is not None:
         stay_p *= cfg.STAY_RISP_MULT
     elif state.bases[0] is not None:
         stay_p *= cfg.STAY_1B_ONLY_MULT
+
+    # Count awareness: 2-strike protect mode OR ahead-in-count selectivity.
+    if state.count.strikes >= 2:
+        stay_p *= cfg.STAY_TWO_STRIKE_MULT
+    elif state.count.balls > state.count.strikes:
+        stay_p *= cfg.STAY_AHEAD_IN_COUNT_MULT
+
+    # Late-game push: last third of the half, manufacture-runs mode.
+    if state.outs >= cfg.LATE_GAME_OUTS_THRESHOLD:
+        stay_p *= cfg.STAY_LATE_GAME_MULT
+
     return rng.random() < stay_p
 
 

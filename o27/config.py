@@ -490,6 +490,19 @@ PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD: float = 0.45  # P(stay | medium contac
 STAY_RISP_MULT: float          = 1.40   # 2B or 3B occupied
 STAY_1B_ONLY_MULT: float       = 0.70   # only 1B occupied
 
+# Count-aware 2C frequency. A patient hitter ahead in the count is
+# selective — more contact attempts hunting for his pitch. A 2-strike
+# hitter is in foul-off mode — extending the AB until he gets a pitch
+# he can drive or the pitcher misses. Both lift 2C frequency.
+STAY_TWO_STRIKE_MULT: float        = 1.30   # 2 strikes: protect / foul-off
+STAY_AHEAD_IN_COUNT_MULT: float    = 1.15   # balls > strikes (non-2-strike)
+
+# Late-game push: in the last third of the half (outs ≥ 18), 2C frequency
+# lifts regardless of RISP — the batting team is trying to manufacture
+# runs, get a runner into scoring position even from 1B, work counts.
+LATE_GAME_OUTS_THRESHOLD: int      = 18     # 18+ outs = late game
+STAY_LATE_GAME_MULT: float         = 1.25
+
 # ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------
