@@ -1,0 +1,47 @@
+{% extends "_base.html.j2" %}
+{% block title %}Standings — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Standings</h1>
+<p class="page-subtitle">{{ views.meta.team_count }} teams · {{ views.meta.game_count }} games played</p>
+
+<div class="btn-row" style="margin-bottom:8px;">
+  <button class="btn" data-export-csv="#standings-tbl" data-filename="standings.csv">Download CSV</button>
+  <a class="btn" href="exports/standings.csv">Pre-rendered CSV</a>
+  <a class="btn" href="exports/season-bundle.json">JSON bundle</a>
+</div>
+
+<div class="tablewrap">
+  <table id="standings-tbl" class="stat-table heatmap">
+    <thead><tr>
+      <th class="sticky-col" data-type="text">Team</th>
+      <th data-type="text">Lg</th><th data-type="text">Div</th>
+      <th>W</th><th>L</th><th data-heat="hi">PCT</th>
+      <th data-heat="lo">GB</th>
+      <th data-heat="hi">RS</th><th data-heat="lo">RA</th>
+      <th data-heat="hi">Rd</th>
+      <th data-heat="hi">R/G</th><th data-heat="lo">RA/G</th>
+      <th>L10</th><th data-type="text">Strk</th>
+    </tr></thead>
+    <tbody>
+      {% for r in views.standings %}
+      <tr>
+        <td class="sticky-col t-left"><a href="teams/{{ r.abbrev|lower }}.html"><span class="chip">{{ r.abbrev }}</span> {{ r.city }} {{ r.name }}</a></td>
+        <td class="t-left">{{ r.league }}</td>
+        <td class="t-left">{{ r.division }}</td>
+        <td>{{ r.w }}</td>
+        <td>{{ r.l }}</td>
+        <td data-val="{{ r.pct }}">{{ '%.3f'|format(r.pct) }}</td>
+        <td data-val="{{ 0 if r.gb == '—' else r.gb }}">{{ r.gb }}</td>
+        <td>{{ r.rs }}</td>
+        <td>{{ r.ra }}</td>
+        <td data-val="{{ r.rd }}">{{ '+' if r.rd > 0 else '' }}{{ r.rd }}</td>
+        <td data-val="{{ r.rpg }}">{{ '%.2f'|format(r.rpg) }}</td>
+        <td data-val="{{ r.rapg }}">{{ '%.2f'|format(r.rapg) }}</td>
+        <td>{{ r.l10_w }}-{{ r.l10_l }}</td>
+        <td class="streak-{{ r.streak[0] if r.streak != '—' else 'N' }}">{{ r.streak }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

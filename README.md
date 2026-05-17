@@ -103,6 +103,7 @@ Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoni
   - `engine/` — game loop, plate-appearance resolution, manager AI, baserunning, batted-ball physics, fielding, park effects, weather, pitch-by-pitch probabilities, stay mechanic, per-game state.
   - `stats/`, `render/` — batter/pitcher/team stat accumulators and Jinja2 play-by-play renderer.
   - `web/`, `stats_site/` — the operational Flask GUI and the stats-browsing blueprint mounted at `/stats`.
+  - `almanac/` — standalone Fangraphs-style static stats site generator. Reads from the o27v2 SQLite DB or a season-bundle JSON; emits a self-contained HTML/CSS/JS archive with sortable heatmap leaderboards and a downloadable CSV/JSON/ZIP bundle for every dataset. `python -m o27.almanac build --source o27v2/o27v2.db --out site/`.
   - `tests/test_rules.py` — 100+ rule-verification tests.
   - `config.py` — every tunable constant in one file.
   - `tune.py` — batch tuner for calibration runs.
@@ -145,6 +146,12 @@ python o27v2/manage.py backfill_arc          # replay played games via stored se
 python o27v2/manage.py backfill_salaries     # recompute every player's guilder salary
 python o27v2/manage.py smoke                 # 10-seed engine smoke test
 make test-invariants                         # stat-invariant suite against o27v2.db
+
+# Almanac (static stats site, Fangraphs-style):
+python -m o27.almanac build --source o27v2/o27v2.db --out site/   # build
+python -m o27.almanac build --source season-bundle.json --out site/  # rebuild from a JSON bundle
+python -m o27.almanac serve --out site/                           # local preview
+python -m o27.almanac ingest --source <path>                      # validate / inspect a source
 ```
 
 Deployment to Fly.io (`hybrid-baseball` app, `ams` region, `o27v2_data` volume mounted at `/data`) is documented in [`DEPLOY.md`](DEPLOY.md).

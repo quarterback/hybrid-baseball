@@ -1,0 +1,249 @@
+{% extends "_base.html.j2" %}
+{% block title %}{{ player.name }} — {{ site_title }}{% endblock %}
+{% block content %}
+
+<div class="player-header">
+  <div>
+    <span class="chip lg">{{ player.team }}</span>
+  </div>
+  <div>
+    <h1>{{ player.name }}</h1>
+    <div class="subline">
+      <span class="pos-badge {% if player.is_joker %}joker{% elif player.is_pitcher %}pitcher{% endif %}">{{ player.position }}</span>
+      · Age {{ player.age or '—' }}
+      · Bats {{ player.bats }}/Throws {{ player.throws }}
+      · {{ player.team_name }}
+      {% if player.archetype %}· {{ player.archetype }}{% endif %}
+    </div>
+  </div>
+  <div>
+    {% if season %}
+    <div class="kv-grid" style="grid-template-columns: auto auto auto auto;">
+      {% if not player.is_pitcher %}
+      <div><div class="k">G</div><div class="v">{{ season.g }}</div></div>
+      <div><div class="k">PA</div><div class="v">{{ season.pa }}</div></div>
+      <div><div class="k">AVG</div><div class="v">{{ '%.3f'|format(season.pavg) }}</div></div>
+      <div><div class="k">OPS</div><div class="v">{{ '%.3f'|format(season.ops) }}</div></div>
+      <div><div class="k">HR</div><div class="v">{{ season.hr }}</div></div>
+      <div><div class="k">RBI</div><div class="v">{{ season.rbi }}</div></div>
+      <div><div class="k">wOBA</div><div class="v">{{ '%.3f'|format(season.woba) }}</div></div>
+      <div><div class="k">wOBA+</div><div class="v">{{ season.woba_plus }}</div></div>
+      {% else %}
+      <div><div class="k">G</div><div class="v">{{ season.g }}</div></div>
+      <div><div class="k">IP</div><div class="v">{{ season.ip_disp }}</div></div>
+      <div><div class="k">ERA</div><div class="v">{{ '%.2f'|format(season.era) }}</div></div>
+      <div><div class="k">FIP</div><div class="v">{{ '%.2f'|format(season.fip) }}</div></div>
+      <div><div class="k">WHIP</div><div class="v">{{ '%.2f'|format(season.whip) }}</div></div>
+      <div><div class="k">K/9</div><div class="v">{{ '%.2f'|format(season.k9) }}</div></div>
+      <div><div class="k">ERA+</div><div class="v">{{ season.era_plus }}</div></div>
+      <div><div class="k">OS%</div><div class="v">{{ '%.1f'|format(season.os_pct * 100) }}%</div></div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if season and not player.is_pitcher %}
+<section>
+  <div class="section-bar">
+    <h2>Batting · Season</h2>
+    <div class="btn-row"><button class="btn" data-export-csv="#bat-row" data-filename="{{ player.slug }}-batting.csv">CSV</button></div>
+  </div>
+  <div class="tablewrap short">
+    <table id="bat-row" class="stat-table">
+      <thead><tr>
+        <th>G</th><th>PA</th><th>AB</th><th>R</th><th>H</th>
+        <th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
+        <th>BB</th><th>K</th><th>HBP</th><th>SB</th><th>CS</th>
+        <th>STY</th><th>FO</th>
+        <th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th>
+        <th>ISO</th><th>BABIP</th>
+        <th>BB%</th><th>K%</th>
+        <th>wOBA</th><th>wOBA+</th><th>OPS+</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>{{ season.g }}</td>
+          <td>{{ season.pa }}</td>
+          <td>{{ season.ab }}</td>
+          <td>{{ season.runs }}</td>
+          <td>{{ season.hits }}</td>
+          <td>{{ season.doubles }}</td>
+          <td>{{ season.triples }}</td>
+          <td>{{ season.hr }}</td>
+          <td>{{ season.rbi }}</td>
+          <td>{{ season.bb }}</td>
+          <td>{{ season.k }}</td>
+          <td>{{ season.hbp }}</td>
+          <td>{{ season.sb }}</td>
+          <td>{{ season.cs }}</td>
+          <td>{{ season.stays }}</td>
+          <td>{{ season.fo }}</td>
+          <td>{{ '%.3f'|format(season.pavg) }}</td>
+          <td>{{ '%.3f'|format(season.obp) }}</td>
+          <td>{{ '%.3f'|format(season.slg) }}</td>
+          <td>{{ '%.3f'|format(season.ops) }}</td>
+          <td>{{ '%.3f'|format(season.iso) }}</td>
+          <td>{{ '%.3f'|format(season.babip) }}</td>
+          <td>{{ '%.1f'|format(season.bb_pct * 100) }}%</td>
+          <td>{{ '%.1f'|format(season.k_pct * 100) }}%</td>
+          <td>{{ '%.3f'|format(season.woba) }}</td>
+          <td>{{ season.woba_plus }}</td>
+          <td>{{ season.ops_plus }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>Stay Mechanic</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th>STY</th><th>STAY_H</th><th>STAY_RBI</th><th>MHAB</th>
+        <th>STAY%</th><th>STAY_CONV%</th><th>STAY_RBI%</th>
+        <th>RAD</th><th>RAD/PA</th><th>BAVG</th><th>Δ</th>
+        <th>FO</th><th>FO%</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>{{ season.stays }}</td>
+          <td>{{ season.stay_hits }}</td>
+          <td>{{ season.stay_rbi }}</td>
+          <td>{{ season.multi_hit_abs }}</td>
+          <td>{{ '%.1f'|format(season.stay_pct * 100) }}%</td>
+          <td>{{ '%.1f'|format(season.stay_conv * 100) }}%</td>
+          <td>{{ '%.1f'|format(season.stay_rbi_pct * 100) }}%</td>
+          <td>{{ season.rad }}</td>
+          <td>{{ '%.3f'|format(season.rad_pa) }}</td>
+          <td>{{ '%.3f'|format(season.bavg) }}</td>
+          <td>{{ '%+.3f'|format(season.stay_diff) }}</td>
+          <td>{{ season.fo }}</td>
+          <td>{{ '%.1f'|format(season.fo_pct * 100) }}%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>Game Log · Batting</h2></div>
+  <div class="tablewrap">
+    <table class="stat-table">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Date</th>
+        <th data-type="text">Opp</th>
+        <th>PA</th><th>AB</th><th>R</th><th>H</th>
+        <th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
+        <th>BB</th><th>K</th><th>STY</th>
+        <th data-type="text">Box</th>
+      </tr></thead>
+      <tbody>
+        {% for g in game_log %}
+        <tr>
+          <td class="sticky-col t-left">{{ g.date }}</td>
+          <td class="t-left">{{ g.ha }} <span class="chip">{{ g.opp }}</span></td>
+          <td>{{ g.pa or 0 }}</td>
+          <td>{{ g.ab or 0 }}</td>
+          <td>{{ g.runs or 0 }}</td>
+          <td>{{ g.hits or 0 }}</td>
+          <td>{{ g.doubles or 0 }}</td>
+          <td>{{ g.triples or 0 }}</td>
+          <td>{{ g.hr or 0 }}</td>
+          <td>{{ g.rbi or 0 }}</td>
+          <td>{{ g.bb or 0 }}</td>
+          <td>{{ g.k or 0 }}</td>
+          <td>{{ g.stays or 0 }}</td>
+          <td class="t-left"><a href="../games/{{ g.game_id }}.html">Box</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if season and player.is_pitcher %}
+<section>
+  <div class="section-bar"><h2>Pitching · Season</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th>G</th><th>GS</th><th>IP</th><th>BF</th>
+        <th>H</th><th>R</th><th>ER</th><th>HR</th><th>BB</th><th>K</th>
+        <th>ERA</th><th>wERA</th><th>WHIP</th><th>FIP</th>
+        <th>K/9</th><th>BB/9</th><th>HR/9</th>
+        <th>K%</th><th>BB%</th>
+        <th>OAVG</th><th>OS%</th>
+        <th>ERA+</th><th>FIP+</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>{{ season.g }}</td>
+          <td>{{ season.gs }}</td>
+          <td>{{ season.ip_disp }}</td>
+          <td>{{ season.batters_faced }}</td>
+          <td>{{ season.hits_allowed }}</td>
+          <td>{{ season.runs_allowed }}</td>
+          <td>{{ season.er }}</td>
+          <td>{{ season.hr_allowed }}</td>
+          <td>{{ season.bb }}</td>
+          <td>{{ season.k }}</td>
+          <td>{{ '%.2f'|format(season.era) }}</td>
+          <td>{{ '%.2f'|format(season.wera) }}</td>
+          <td>{{ '%.2f'|format(season.whip) }}</td>
+          <td>{{ '%.2f'|format(season.fip) }}</td>
+          <td>{{ '%.2f'|format(season.k9) }}</td>
+          <td>{{ '%.2f'|format(season.bb9) }}</td>
+          <td>{{ '%.2f'|format(season.hr9) }}</td>
+          <td>{{ '%.1f'|format(season.k_pct * 100) }}%</td>
+          <td>{{ '%.1f'|format(season.bb_pct * 100) }}%</td>
+          <td>{{ '%.3f'|format(season.oavg) }}</td>
+          <td>{{ '%.1f'|format(season.os_pct * 100) }}%</td>
+          <td>{{ season.era_plus }}</td>
+          <td>{{ season.fip_plus }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>Game Log · Pitching</h2></div>
+  <div class="tablewrap">
+    <table class="stat-table">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Date</th>
+        <th data-type="text">Opp</th>
+        <th>BF</th><th>OUT</th>
+        <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>HR</th>
+        <th data-type="text">Box</th>
+      </tr></thead>
+      <tbody>
+        {% for g in pitcher_log %}
+        <tr>
+          <td class="sticky-col t-left">{{ g.date }}</td>
+          <td class="t-left">{{ g.ha }} <span class="chip">{{ g.opp }}</span></td>
+          <td>{{ g.batters_faced or 0 }}</td>
+          <td>{{ g.outs_recorded or 0 }}</td>
+          <td>{{ g.hits_allowed or 0 }}</td>
+          <td>{{ g.runs_allowed or 0 }}</td>
+          <td>{{ g.er or 0 }}</td>
+          <td>{{ g.bb or 0 }}</td>
+          <td>{{ g.k or 0 }}</td>
+          <td>{{ g.hr_allowed or 0 }}</td>
+          <td class="t-left"><a href="../games/{{ g.game_id }}.html">Box</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if not season %}
+<div class="alert info">No game appearances on record for this player in the current dataset.</div>
+{% endif %}
+
+{% endblock %}

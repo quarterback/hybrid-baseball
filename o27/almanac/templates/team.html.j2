@@ -1,0 +1,190 @@
+{% extends "_base.html.j2" %}
+{% block title %}{{ team_row.abbrev }} — {{ site_title }}{% endblock %}
+{% block content %}
+
+<div class="team-header">
+  <div>
+    <span class="chip lg">{{ team_row.abbrev }}</span>
+  </div>
+  <div>
+    <h1>{{ team_row.city }} {{ team_row.name }}</h1>
+    <div class="subline">{{ team_row.league }} · {{ team_row.division }} · Park: {{ team_row.park_name or '—' }} · Mgr: {{ team_row.manager_name or '—' }}</div>
+  </div>
+  <div>
+    <div class="kv-grid" style="grid-template-columns: auto auto auto auto;">
+      <div><div class="k">W</div><div class="v">{{ record.w }}</div></div>
+      <div><div class="k">L</div><div class="v">{{ record.l }}</div></div>
+      <div><div class="k">PCT</div><div class="v">{{ '%.3f'|format(record.pct) }}</div></div>
+      <div><div class="k">Streak</div><div class="v streak-{{ record.streak[0] if record.streak != '—' else 'N' }}">{{ record.streak }}</div></div>
+      <div><div class="k">RS</div><div class="v">{{ record.rs }}</div></div>
+      <div><div class="k">RA</div><div class="v">{{ record.ra }}</div></div>
+      <div><div class="k">Rd</div><div class="v">{{ '+' if record.rd > 0 else '' }}{{ record.rd }}</div></div>
+      <div><div class="k">L10</div><div class="v">{{ record.l10_w }}-{{ record.l10_l }}</div></div>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="section-bar">
+    <h2>Team Batting</h2>
+    <div class="btn-row">
+      <button class="btn" data-export-csv="#tbat" data-filename="{{ team_row.abbrev }}-batting.csv">CSV</button>
+    </div>
+  </div>
+  <div class="tablewrap">
+    <table id="tbat" class="stat-table heatmap">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Player</th>
+        <th data-type="text">Pos</th>
+        <th>G</th><th>PA</th><th>AB</th>
+        <th data-heat="hi">R</th><th data-heat="hi">H</th>
+        <th data-heat="hi">2B</th><th data-heat="hi">3B</th><th data-heat="hi">HR</th>
+        <th data-heat="hi">RBI</th><th data-heat="hi">BB</th><th data-heat="lo">K</th>
+        <th data-heat="hi">STY</th>
+        <th data-heat="hi">AVG</th><th data-heat="hi">OBP</th><th data-heat="hi">SLG</th>
+        <th data-heat="hi">OPS</th><th data-heat="hi">wOBA</th>
+      </tr></thead>
+      <tbody>
+        {% for r in batters %}
+        <tr>
+          <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td class="t-left"><span class="pos-badge {% if r.is_joker %}joker{% elif r.is_pitcher %}pitcher{% endif %}">{{ r.position }}</span></td>
+          <td>{{ r.g }}</td>
+          <td>{{ r.pa }}</td>
+          <td>{{ r.ab }}</td>
+          <td>{{ r.runs }}</td>
+          <td>{{ r.hits }}</td>
+          <td>{{ r.doubles }}</td>
+          <td>{{ r.triples }}</td>
+          <td>{{ r.hr }}</td>
+          <td>{{ r.rbi }}</td>
+          <td>{{ r.bb }}</td>
+          <td>{{ r.k }}</td>
+          <td>{{ r.stays }}</td>
+          <td data-val="{{ r.pavg }}">{{ '%.3f'|format(r.pavg) }}</td>
+          <td data-val="{{ r.obp }}">{{ '%.3f'|format(r.obp) }}</td>
+          <td data-val="{{ r.slg }}">{{ '%.3f'|format(r.slg) }}</td>
+          <td data-val="{{ r.ops }}">{{ '%.3f'|format(r.ops) }}</td>
+          <td data-val="{{ r.woba }}">{{ '%.3f'|format(r.woba) }}</td>
+        </tr>
+        {% endfor %}
+        {% if totals_bat %}
+        <tr style="border-top:2px solid var(--border-strong); font-weight:600; background:var(--bg-alt);">
+          <td class="sticky-col t-left">TOTAL</td>
+          <td></td>
+          <td></td>
+          <td>{{ totals_bat.pa }}</td>
+          <td>{{ totals_bat.ab }}</td>
+          <td></td>
+          <td>{{ totals_bat.h }}</td>
+          <td>{{ totals_bat.doubles }}</td>
+          <td>{{ totals_bat.triples }}</td>
+          <td>{{ totals_bat.hr }}</td>
+          <td></td>
+          <td>{{ totals_bat.bb }}</td>
+          <td>{{ totals_bat.k }}</td>
+          <td>{{ totals_bat.stays }}</td>
+          <td>{{ '%.3f'|format(totals_bat.pavg) }}</td>
+          <td>{{ '%.3f'|format(totals_bat.obp) }}</td>
+          <td>{{ '%.3f'|format(totals_bat.slg) }}</td>
+          <td>{{ '%.3f'|format(totals_bat.ops) }}</td>
+          <td>—</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar">
+    <h2>Team Pitching</h2>
+    <div class="btn-row">
+      <button class="btn" data-export-csv="#tpit" data-filename="{{ team_row.abbrev }}-pitching.csv">CSV</button>
+    </div>
+  </div>
+  <div class="tablewrap">
+    <table id="tpit" class="stat-table heatmap">
+      <thead><tr>
+        <th class="sticky-col" data-type="text">Pitcher</th>
+        <th>G</th><th>GS</th><th>IP</th>
+        <th data-heat="lo">H</th><th data-heat="lo">R</th><th data-heat="lo">ER</th>
+        <th data-heat="lo">HR</th><th data-heat="lo">BB</th><th data-heat="hi">K</th>
+        <th data-heat="lo">ERA</th><th data-heat="lo">wERA</th>
+        <th data-heat="lo">WHIP</th><th data-heat="lo">FIP</th>
+        <th data-heat="hi">K/9</th><th data-heat="lo">BB/9</th>
+        <th data-heat="hi">OS%</th>
+      </tr></thead>
+      <tbody>
+        {% for r in pitchers %}
+        <tr>
+          <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td>{{ r.g }}</td>
+          <td>{{ r.gs }}</td>
+          <td data-val="{{ r.ip }}">{{ r.ip_disp }}</td>
+          <td>{{ r.hits_allowed }}</td>
+          <td>{{ r.runs_allowed }}</td>
+          <td>{{ r.er }}</td>
+          <td>{{ r.hr_allowed }}</td>
+          <td>{{ r.bb }}</td>
+          <td>{{ r.k }}</td>
+          <td data-val="{{ r.era }}">{{ '%.2f'|format(r.era) }}</td>
+          <td data-val="{{ r.wera }}">{{ '%.2f'|format(r.wera) }}</td>
+          <td data-val="{{ r.whip }}">{{ '%.2f'|format(r.whip) }}</td>
+          <td data-val="{{ r.fip }}">{{ '%.2f'|format(r.fip) }}</td>
+          <td data-val="{{ r.k9 }}">{{ '%.2f'|format(r.k9) }}</td>
+          <td data-val="{{ r.bb9 }}">{{ '%.2f'|format(r.bb9) }}</td>
+          <td data-val="{{ r.os_pct }}">{{ '%.1f'|format(r.os_pct * 100) }}%</td>
+        </tr>
+        {% endfor %}
+        {% if totals_pit %}
+        <tr style="border-top:2px solid var(--border-strong); font-weight:600; background:var(--bg-alt);">
+          <td class="sticky-col t-left">TOTAL</td>
+          <td></td>
+          <td></td>
+          <td>{{ totals_pit.ip_disp }}</td>
+          <td>{{ totals_pit.h }}</td>
+          <td></td>
+          <td>{{ totals_pit.er }}</td>
+          <td>{{ totals_pit.hr }}</td>
+          <td>{{ totals_pit.bb }}</td>
+          <td>{{ totals_pit.k }}</td>
+          <td>{{ '%.2f'|format(totals_pit.era) }}</td>
+          <td>—</td>
+          <td>{{ '%.2f'|format(totals_pit.whip) }}</td>
+          <td>—</td>
+          <td>{{ '%.2f'|format(totals_pit.k9) }}</td>
+          <td>{{ '%.2f'|format(totals_pit.bb9) }}</td>
+          <td>—</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>Recent Games</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr><th data-type="text">Date</th><th data-type="text">Opp</th><th>For</th><th>Against</th><th data-type="text">Result</th><th data-type="text">Box</th></tr></thead>
+      <tbody>
+        {% for g in recent_games %}
+        {% set is_home = g.home_abbrev == team_row.abbrev %}
+        {% set rf = g.home_score if is_home else g.away_score %}
+        {% set ra = g.away_score if is_home else g.home_score %}
+        <tr>
+          <td class="t-left">{{ g.date }}</td>
+          <td class="t-left">{{ 'vs' if is_home else '@' }} <a href="{{ (g.away_abbrev if is_home else g.home_abbrev)|lower }}.html"><span class="chip">{{ g.away_abbrev if is_home else g.home_abbrev }}</span></a></td>
+          <td>{{ rf }}</td>
+          <td>{{ ra }}</td>
+          <td class="t-left"><span class="chip {{ 'win' if rf > ra else 'loss' }}">{{ 'W' if rf > ra else 'L' }}</span></td>
+          <td class="t-left"><a href="../games/{{ g.id }}.html">Box</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}
