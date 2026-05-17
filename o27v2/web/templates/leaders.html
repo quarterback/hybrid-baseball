@@ -83,6 +83,15 @@
   {{ card('DRS',   'drs',      '%+.1f',true,  batting, tooltip='Defensive runs saved') }}
 </div>
 
+<h4>Batting · Runner Advancement <span class="small text-muted">(pesäpallo-style)</span></h4>
+<div class="row g-3 mb-3">
+  {{ card('1V%',  'adv_1b_pct',    '%.3f', true, batting, tooltip='1B-runner advancement rate — share of PAs that started with a runner on 1B where the runner advanced to 2B+ or scored. Pesäpallo 1V column equivalent.') }}
+  {{ card('2V%',  'adv_2b_pct',    '%.3f', true, batting, tooltip='2B-runner advancement rate — share of PAs that started with a runner on 2B where the runner advanced to 3B or scored.') }}
+  {{ card('3V%',  'adv_3b_pct',    '%.3f', true, batting, tooltip='3B-runner scoring rate — share of PAs that started with a runner on 3B where the runner scored. The pure RBI-conversion metric.') }}
+  {{ card('All%', 'adv_total_pct', '%.3f', true, batting, tooltip='Overall advancement rate across all PAs with any runner on base. Composite of 1V/2V/3V weighted by opportunity.') }}
+  {{ card('Advs', 'adv_adv_1b',    '%d',   true, batting, tooltip='Successful 1B-runner advances (count, not rate)') }}
+</div>
+
 <h4>Batting · Tools (talent ratings)</h4>
 <div class="row g-3 mb-3">
   {{ card('Power',   'r_power',   '%d', true, batting, tooltip='Power rating — bias contact toward hard, more HR weight') }}

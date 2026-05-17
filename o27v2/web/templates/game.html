@@ -225,6 +225,41 @@
             color:var(--fg, inherit); background:transparent;
             padding:1rem; margin:0; overflow-x:auto;">{{ box_score_text }}</pre>
 
+{# ───── Scoring Events (pesäpallo-style log) ─────
+   One row per run that crossed the plate: batter, runner, runner's
+   starting base, and the score after this run.
+   ────────────────────────────────────────────────────────────── #}
+{% if scoring_events %}
+{%- set _BASE_LABEL = {0: '1B', 1: '2B', 2: '3B'} %}
+{%- set _HALF_LABEL = {'top': 'T', 'bottom': 'B', 'super_top': 'ST', 'super_bottom': 'SB'} %}
+<div class="dense mb-3">
+  <div class="panel-title">Scoring Events</div>
+  <div class="table-responsive">
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th>Half</th>
+      <th>Outs</th>
+      <th>Batter</th>
+      <th>Runner (from)</th>
+      <th class="num">Score</th>
+    </tr></thead>
+    <tbody>
+    {% for ev in scoring_events %}
+      <tr>
+        <td>{{ _HALF_LABEL.get(ev.half, ev.half) }}</td>
+        <td>{{ ev.outs_before }}</td>
+        <td><a href="/player/{{ ev.batter_id }}">{{ ev.batter_name }}</a></td>
+        <td><a href="/player/{{ ev.runner_id }}">{{ ev.runner_name }}</a>
+            <span class="text-muted small">({{ _BASE_LABEL.get(ev.runner_from_base, '?') }})</span></td>
+        <td class="num">{{ ev.visitors_score }}–{{ ev.home_score }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
 {# ───── Spray Chart (batted-ball physics hybrid layer) ───── #}
 {% if away_bips or home_bips %}
 {# Color palette — outcomes. Tuned for dark backgrounds. #}

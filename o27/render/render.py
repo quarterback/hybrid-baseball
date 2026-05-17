@@ -91,8 +91,18 @@ class Renderer:
         # credit each per-base advancement (1B→higher, 2B→higher, 3B→home).
         # Snapshots are tuples so they don't track in-place list mutations.
         self._last_bases: tuple = (None, None, None)   # bases at END of last event
+        self._last_score_v: int = 0   # visitors' score at END of last event
+        self._last_score_h: int = 0   # home's score at END of last event
+        self._last_half: str = "top"  # half at END of last event
+        self._last_outs: int = 0      # outs at END of last event
         self._pa_start_bases: tuple = (None, None, None)  # bases at START of current PA
         self._pa_runners_out: set = set()       # runner_ids retired during current PA
+        # Pesäpallo-style scoring log — one entry per run that crosses the
+        # plate. Captures batter, runner, runner's starting base in the
+        # PA, the score-after-this-run, outs, and half. Populated at PA
+        # boundary in _credit_pa_advancement; persisted by sim.py at game
+        # end via the game_scoring_events table.
+        self._scoring_log: list[dict] = []
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -176,11 +186,15 @@ class Renderer:
 
         # Per-PA advancement bookkeeping — accumulate runners retired during
         # this PA (any outcome with runner_out_idx / extra_runner_outs), and
-        # snapshot bases at end of this event so the next PA boundary can
-        # diff against it. ctx.bases_list is the PRE-event base state.
+        # snapshot bases / score / half / outs at end of this event so the
+        # next PA boundary can diff against them.
         if is_pa_event:
             self._accumulate_pa_runners_out(event, ctx)
-        self._last_bases = tuple(state_after.bases)
+        self._last_bases    = tuple(state_after.bases)
+        self._last_score_v  = int(state_after.score.get("visitors", 0) or 0)
+        self._last_score_h  = int(state_after.score.get("home", 0) or 0)
+        self._last_half     = str(getattr(state_after, "half", "top") or "top")
+        self._last_outs     = int(getattr(state_after, "outs", 0) or 0)
 
         return lines
 
@@ -564,35 +578,67 @@ class Renderer:
         runner standing on 1B/2B/3B at PA start = opportunity; runner ending
         at a HIGHER base OR scored (= departed without being recorded as
         retired during this PA) = successful advancement.
+
+        Also emits one row into self._scoring_log per runner who scored —
+        captured here because we have all the per-PA bookkeeping in one
+        place (starting bases, retired-runner set, score deltas).
         """
         s = self._stats_for_id(batter_id)
-        if s is None:
-            return
         start_bases = self._pa_start_bases or (None, None, None)
         end_bases   = self._last_bases or (None, None, None)
+        scored_runners: list[tuple[int, str]] = []   # (src_idx, runner_id), highest base first
         for src_idx in (0, 1, 2):
             runner_id = start_bases[src_idx]
             if runner_id is None:
                 continue
             # Opportunity.
-            if src_idx == 0:   s.adv_op_1b += 1
-            elif src_idx == 1: s.adv_op_2b += 1
-            else:              s.adv_op_3b += 1
+            if s is not None:
+                if src_idx == 0:   s.adv_op_1b += 1
+                elif src_idx == 1: s.adv_op_2b += 1
+                else:              s.adv_op_3b += 1
             # Did the runner advance? Three cases:
             #   - still on bases at higher idx → advanced
             #   - departed and NOT in retired-set → scored → advanced
             #   - departed and in retired-set → out → not advanced
             #   - still on same base (rare) → not advanced
             advanced = False
+            scored   = False
             if runner_id in end_bases:
                 new_idx = end_bases.index(runner_id)
                 advanced = new_idx > src_idx
             elif runner_id not in self._pa_runners_out:
                 advanced = True
-            if advanced:
+                scored   = True
+            if advanced and s is not None:
                 if src_idx == 0:   s.adv_adv_1b += 1
                 elif src_idx == 1: s.adv_adv_2b += 1
                 else:              s.adv_adv_3b += 1
+            if scored:
+                scored_runners.append((src_idx, runner_id))
+
+        # Emit one scoring-log entry per scoring runner. Walk highest base
+        # first (closest to home → scored first conceptually), ticking
+        # the score backwards from the PA-end total so each row shows
+        # the cumulative score at the moment of that run.
+        if not scored_runners:
+            return
+        scored_runners.sort(key=lambda x: -x[0])   # 3B-runner first
+        is_visitors = self._last_half in ("top", "super_top")
+        n_total = len(scored_runners)
+        for i, (src_idx, runner_id) in enumerate(scored_runners):
+            runs_remaining_after = n_total - 1 - i
+            v_now = self._last_score_v - (runs_remaining_after if is_visitors else 0)
+            h_now = self._last_score_h - (runs_remaining_after if not is_visitors else 0)
+            self._scoring_log.append({
+                "seq":              len(self._scoring_log),
+                "half":             self._last_half,
+                "outs_before":      self._last_outs,
+                "batter_id":        batter_id,
+                "runner_id":        runner_id,
+                "runner_from_base": src_idx,
+                "visitors_score":   v_now,
+                "home_score":       h_now,
+            })
 
     def _stats_for_id(self, batter_id: str):
         """Look up an existing BatterStats by player_id. Returns None if

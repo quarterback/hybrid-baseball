@@ -1604,6 +1604,34 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                  for e in pa_log
                  if e["team_id"] in role_to_db],
             )
+        # Pesäpallo-style scoring events log — one row per run that crossed
+        # the plate. Idempotent: delete prior rows for this game before
+        # inserting (matches the pa_log pattern; protects against retries).
+        scoring_log = getattr(renderer, "_scoring_log", []) or []
+        conn.execute("DELETE FROM game_scoring_events WHERE game_id = ?", (game_id,))
+        if scoring_log:
+            # batter_id / runner_id in the engine are player_id STRINGS that
+            # match players.id when stringified. Coerce to int for the FK.
+            def _to_int_or_none(v):
+                try:
+                    return int(v) if v is not None else None
+                except (TypeError, ValueError):
+                    return None
+            conn.executemany(
+                """INSERT INTO game_scoring_events
+                   (game_id, seq, half, outs_before,
+                    batter_id, runner_id, runner_from_base,
+                    visitors_score, home_score)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                [(game_id, e["seq"], e["half"], e["outs_before"],
+                  _to_int_or_none(e["batter_id"]),
+                  _to_int_or_none(e["runner_id"]),
+                  e["runner_from_base"],
+                  e["visitors_score"], e["home_score"])
+                 for e in scoring_log
+                 if _to_int_or_none(e["batter_id"]) is not None
+                 and _to_int_or_none(e["runner_id"]) is not None],
+            )
         for r in away_pstats + home_pstats:
             conn.execute(
                 """INSERT INTO game_pitcher_stats

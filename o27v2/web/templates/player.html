@@ -232,6 +232,36 @@
     </div>
   </div>
 
+  {# Pesäpallo-style per-base advancement (1V/2V/3V conversion rates).
+     Mirrors the Finnish box-score columns: how often did this batter
+     move the runner who started on each base during his PA? Rolls in
+     advancement from 2C, run-chosen hits, BB-force, and sac bunts. #}
+  <div class="dense mb-3">
+    <div class="panel-title">Runner Advancement</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num" title="1B-runner advancement rate — share of PAs that started with a runner on 1B where that runner advanced to 2B+ or scored">1V%</th>
+        <th class="num" title="Successful 1B advances / opportunities with runner on 1B">1V</th>
+        <th class="num" title="2B-runner advancement rate — share of PAs that started with a runner on 2B where that runner advanced to 3B or scored">2V%</th>
+        <th class="num" title="Successful 2B advances / opportunities with runner on 2B">2V</th>
+        <th class="num" title="3B-runner scoring rate — share of PAs that started with a runner on 3B where that runner scored">3V%</th>
+        <th class="num" title="Successful 3B advances / opportunities with runner on 3B">3V</th>
+        <th class="num" title="Overall runner advancement rate across all PAs with a runner on base">All%</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num fw-bold">{% if bt_totals.adv_1b_pct is not none %}{{ '%.1f'|format(bt_totals.adv_1b_pct * 100) }}%{% else %}—{% endif %}</td>
+        <td class="num">{{ bt_totals.adv_adv_1b or 0 }}/{{ bt_totals.adv_op_1b or 0 }}</td>
+        <td class="num fw-bold">{% if bt_totals.adv_2b_pct is not none %}{{ '%.1f'|format(bt_totals.adv_2b_pct * 100) }}%{% else %}—{% endif %}</td>
+        <td class="num">{{ bt_totals.adv_adv_2b or 0 }}/{{ bt_totals.adv_op_2b or 0 }}</td>
+        <td class="num fw-bold">{% if bt_totals.adv_3b_pct is not none %}{{ '%.1f'|format(bt_totals.adv_3b_pct * 100) }}%{% else %}—{% endif %}</td>
+        <td class="num">{{ bt_totals.adv_adv_3b or 0 }}/{{ bt_totals.adv_op_3b or 0 }}</td>
+        <td class="num fw-bold">{% if bt_totals.adv_total_pct is not none %}{{ '%.1f'|format(bt_totals.adv_total_pct * 100) }}%{% else %}—{% endif %}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
   <div class="dense mb-3">
     <div class="panel-title">Value (Batting)</div>
     <div class="table-responsive">

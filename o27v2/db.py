@@ -300,6 +300,27 @@ CREATE TABLE IF NOT EXISTS game_pa_log (
 CREATE INDEX IF NOT EXISTS idx_pa_log_game ON game_pa_log(game_id);
 CREATE INDEX IF NOT EXISTS idx_pa_log_batter ON game_pa_log(batter_id);
 
+-- Pesäpallo-style scoring events log. One row per run that crosses the
+-- plate: the batter at bat when it happened, the runner who scored, the
+-- starting base of that runner at the PA's start, and the score after.
+-- Produces the "Inn / Batter / Runner / Situation" log seen on the
+-- Finnish pesistulokset.fi event listings.
+CREATE TABLE IF NOT EXISTS game_scoring_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id         INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL,        -- order within the game (0-indexed)
+    half            TEXT NOT NULL,           -- "top" | "bottom" | "super_top" | "super_bottom"
+    outs_before     INTEGER NOT NULL,        -- outs in this half BEFORE the scoring play
+    batter_id       INTEGER NOT NULL REFERENCES players(id),
+    runner_id       INTEGER NOT NULL REFERENCES players(id),
+    runner_from_base INTEGER NOT NULL,        -- 0 = 1B, 1 = 2B, 2 = 3B (where the runner started the PA)
+    visitors_score  INTEGER NOT NULL,        -- score after this run
+    home_score      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scoring_game   ON game_scoring_events(game_id);
+CREATE INDEX IF NOT EXISTS idx_scoring_batter ON game_scoring_events(batter_id);
+CREATE INDEX IF NOT EXISTS idx_scoring_runner ON game_scoring_events(runner_id);
+
 CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id        INTEGER NOT NULL REFERENCES games(id),
