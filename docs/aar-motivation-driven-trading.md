@@ -281,6 +281,72 @@ is a known sampling-noise flake. Confirmed unrelated and left as-is.
 
 ---
 
+## Analytics baseline (pre-rewrite snapshot)
+
+The analytics dashboard at session-end captures the league state the
+new trade engine will perturb. Re-run the same dashboard after a
+fresh-seed sim with the new engine to see what moved.
+
+**Environment** — 36 teams, 1068 games played, 61592 BIP events,
+2136 halves, **10.65 R/half (~22 R/G)**. Qualifying batters: 447.
+
+**RE24-O27 anchor values** (bases, outs-done bucket midpoint):
+
+| State | RE @ 0 outs | RE @ 9 outs | RE @ 18 outs | RE @ 24 outs |
+|---|---|---|---|---|
+| `___` | 10.42 | 5.65 | 2.73 | 1.53 |
+| `1__` | 10.89 | 6.38 | 3.85 | 2.26 |
+| `_2_` | 10.85 | 6.46 | 3.82 | 2.47 |
+| `12_` | 11.84 | 7.08 | 4.23 | 2.83 |
+| `__3` | 10.26 | 6.07 | 3.58 | 2.51 |
+| `123` | 11.77 | 7.53 | 4.96 | 3.14 |
+
+One-D outs-remaining curve: RE @ 0 outs done = **11.03**, RE @ 26
+outs done = **2.00**.
+
+**Linear weights** (O27 refit vs. MLB default):
+
+| Event | RV (runs) | wOBA (O27) | wOBA (MLB) | Δ% |
+|---|---|---|---|---|
+| HR | +1.240 | 1.623 | 2.050 | −21% |
+| 2B | +0.894 | 1.271 | 1.300 | −2% |
+| 3B | +0.842 | 1.219 | 1.700 | −28% |
+| BB | +0.658 | 1.032 | 0.720 | **+43%** |
+| HBP | +0.658 | 1.032 | 0.740 | **+39%** |
+| 1B | +0.457 | 0.828 | 0.950 | −13% |
+| out | −0.359 | — | — | — |
+
+League wOBA = league xwOBA = **0.408** (calibration check pinned).
+
+**Pythag exponent** — fitted `k* = 2.887` (vs MLB 1.83), RMSE cut
+**54.2%** across 36 teams. Game Score base auto-tuned to 57.21 to
+land starter GSc mean at 50.44 (target 50).
+
+**BaseRuns refit** — fitted B = `2.264·TB − 0.593·H − 3.883·HR +
+0.439·(BB+HBP)` (vs MLB `1.4·TB − 0.6·H − 3·HR + 0.1·(BB+HBP)`),
+SSE cut **37.9%** across 30 teams × 2 sides.
+
+**Two known artifacts (not bugs, watch for them):**
+
+1. `RV(1B) +0.457 < RV(BB) +0.658` — "1B" includes stay-credited
+   non-advancing events that dilute the true single's RV. Documented
+   in `aar-2c-reframe-and-shifts.md`; expected to close as 2C tuning
+   settles.
+2. `RV(3B) +0.842 < RV(2B) +0.894` — same stay-credit contamination.
+   Triples should sit above doubles by ~0.10 runs once event taxonomy
+   is clean.
+
+**Trade-engine implication.** The refit wOBA weights say walks are
+worth ~43% more than the MLB-default pricing assumes, and HR worth
+~21% less. The existing `trade_value` formula uses an archetype
+bonus of `+0.06` for `power` vs `+0.05` for `contact` — under this
+environment, contact/eye-driven bats are arguably underpriced
+relative to power. Out of scope for this rewrite (changing
+`trade_value` re-tiers every salary via `valuation.py:_BANDS`),
+but worth a follow-up pass once the trade volume baseline is set.
+
+---
+
 ## Verification plan
 
 1. **Unit tests** — `pytest o27v2/tests/test_trades.py -v` → 11/11 green.
@@ -301,6 +367,19 @@ is a known sampling-noise flake. Confirmed unrelated and left as-is.
    Page renders; only rebuild trades shown.
 5. **Offseason drift** — run `development.run_offseason()` on a sim'd
    season. Inspect `fo_strategy` deltas in the returned `fo_moves` list.
+6. **Analytics-diff vs. baseline** — recompute the analytics
+   dashboard after the post-rewrite sim and compare against the
+   snapshot in the previous section:
+
+   | Metric | Pre-rewrite | Post-rewrite target |
+   |---|---|---|
+   | League R/half | 10.65 | within ±5% (trades shouldn't move the run environment much) |
+   | League wOBA / xwOBA | 0.408 / 0.408 | within ±0.005, still equal |
+   | Pythag k* | 2.887 | within ±0.10 (the run-distribution shape is environment, not trade activity) |
+   | RV(BB) − RV(1B) | +0.201 | should *narrow* if more strategic trades make 1B events more advancing-heavy |
+   | BaseRuns Net (refit), |Net| > 50 teams | CHW +80, SDP −78, BAL −73 (the three biggest sequencing outliers) | should not show team-identity drift driven by trade activity — outliers should be roster-mix driven |
+   | Top-15 xwOBA roster turnover | — | ≥ 3 of the 15 listed names should appear on a different team than they started (validates "trades distribute talent") |
+   | Highest-trade-volume teams | — | should cluster on `fo_aggression > 0.7`; report top-5 by trade count and their FO strategy mix |
 
 ---
 
