@@ -514,14 +514,15 @@ def _resolve_risp_pressure(
 
     Stage 1 — does the moment fire? Probability composes from the
     situation (RISP vs. RISP+3 vs. bases-loaded), the pitcher's
-    composure (`(command + grit) / 2`), and the batter's leadership.
-    A clutch batter facing a low-composure pitcher with bases loaded
-    fires often; a non-clutch batter facing a poised veteran almost
-    never does. Returns None if pressure doesn't manifest.
+    composure `(command + grit) / 2`, and the batter's clutch
+    `(eye + contact) / 2`. A clutch batter facing a low-composure
+    pitcher with bases loaded fires often; a non-clutch batter facing
+    a poised veteran almost never does. Returns None if pressure
+    doesn't manifest.
 
     Stage 2 — which manifestation fires? A talent-weighted draw between
     {hit, error, leave_up}, mutually exclusive (no stacking). Weights:
-        hit       ∝ batter leadership + batter contact-and-eye
+        hit       ∝ batter clutch (eye + contact)
         error     ∝ defensive frailty (1 - team_defense_rating)
         leave_up  ∝ pitcher uncomposure (1 - composure)
 
@@ -535,6 +536,12 @@ def _resolve_risp_pressure(
     BECAUSE the 2C stay mechanic lets a batter iteratively clear bases
     without needing a grand slam — a 2C+1 chain plates two runs by
     itself, so the pressure-event payoff is even larger than MLB.
+
+    Note on talent inputs: everything here derives from EXISTING player
+    attributes (eye, contact, command, grit, defense_rating). No new
+    schema. A separate "leadership" attribute would let bench-tier
+    talent express clutch independently of hard skills; deferred until
+    we see if the derived shape needs it.
     """
     bases = state.bases
     on1 = bases[0] is not None
@@ -552,11 +559,12 @@ def _resolve_risp_pressure(
 
     composure  = (float(getattr(pitcher, "command", 0.5) or 0.5)
                   + float(getattr(pitcher, "grit",    0.5) or 0.5)) / 2.0
-    leadership = float(getattr(batter, "leadership", 0.5) or 0.5)
+    clutch     = (float(getattr(batter,  "eye",     0.5) or 0.5)
+                  + float(getattr(batter,  "contact", 0.5) or 0.5)) / 2.0
     # Pitcher vulnerability and batter pressure-creation, both centered
     # at 0 for neutral attributes. ±0.5 at the player rating extremes.
     pitch_vuln  = (0.5 - composure)
-    bat_press   = (leadership - 0.5)
+    bat_press   = (clutch - 0.5)
     p_fires = situational * (1.0 + 2.0 * pitch_vuln) * (1.0 + 2.0 * bat_press)
     p_fires = max(0.0, min(0.9, p_fires))
     if rng.random() >= p_fires:
@@ -564,9 +572,7 @@ def _resolve_risp_pressure(
 
     # Stage 2 — talent-weighted manifestation pick.
     team_def = float(getattr(state.fielding_team, "defense_rating", 0.5) or 0.5)
-    contact_eye = ((float(getattr(batter, "contact", 0.5) or 0.5)
-                    + float(getattr(batter, "eye", 0.5) or 0.5)) / 2.0)
-    hit_w      = max(0.0, 0.5 * leadership + 0.5 * contact_eye)
+    hit_w      = max(0.0, clutch)
     error_w    = max(0.0, 1.0 - team_def)
     leave_up_w = max(0.0, 1.0 - composure)
     total_w    = hit_w + error_w + leave_up_w
@@ -1720,13 +1726,16 @@ class ProbabilisticProvider:
             con_dev_run = (batter.contact - 0.5) * 2
             cmd_dev_run = (pitcher.command - 0.5) * 2
             talent_run  = eye_dev_run + con_dev_run - cmd_dev_run
-            # "hit" manifestation — high-leadership batter sees the
-            # mistake pitch and capitalizes. Lift scales with the batter's
-            # own leadership so the boost varies by personnel even within
-            # the manifestation; a 0.85-leadership joker adds ~+0.7 to
-            # talent_run, doubling the hit-bonus magnitude downstream.
+            # "hit" manifestation — clutch batter sees the mistake pitch
+            # and capitalizes. Lift scales with the batter's own clutch
+            # `(eye + contact) / 2` so the boost varies by personnel
+            # even within the manifestation; an elite eye+contact bat
+            # adds ~+0.7 to talent_run, roughly doubling the downstream
+            # hit-bonus magnitude.
             if risp_event == "hit":
-                talent_run += 2.0 * (float(getattr(batter, "leadership", 0.5) or 0.5) - 0.5)
+                _clutch = ((float(getattr(batter, "eye",     0.5) or 0.5)
+                            + float(getattr(batter, "contact", 0.5) or 0.5)) / 2.0)
+                talent_run += 2.0 * (_clutch - 0.5)
             # Bonus is bidirectional: positive shifts toward more hits,
             # negative toward more outs. Weak gets a wider swing because
             # the underlying outcome is more often borderline; medium has

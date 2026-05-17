@@ -165,14 +165,6 @@ class Player:
     # batter's adaptability erodes the shift's effectiveness. 0.5 =
     # neutral (no erosion); 1.0 = elite shift-reader.
     adaptability: float = 0.5
-    # Leadership — "shows up in clutch moments" rating, independent of
-    # hard skills. Drives the RISP-pressure manifestation roll in
-    # prob._resolve_risp_pressure: a high-leadership batter makes the
-    # pressure event fire more often, and the magnitude of the resulting
-    # hit/error/leave-up boost scales with leadership too. This is how
-    # a low-stats bench guy can still tip a bases-loaded AB — the joker
-    # archetype. 0.5 = neutral identity.
-    leadership: float = 0.5
 
     # Transient per-game shift memory — reset to defaults each new
     # game (Player rebuilt from DB at game start). NOT persisted.

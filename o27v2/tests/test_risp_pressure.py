@@ -2,10 +2,14 @@
 Tests for the talent-driven RISP pressure model
 (o27.engine.prob._resolve_risp_pressure).
 
-The pressure roll is two-stage:
+The pressure roll is two-stage and reads from EXISTING player
+attributes — no new schema, no new rolled rating. Batter clutch is
+derived from (eye + contact) / 2; pitcher composure is derived from
+(command + grit) / 2.
+
   1. Stage 1 — does the moment manifest? Probability composes from
-     situational pressure (RISP / RISP+3rd / loaded), pitcher composure
-     (command + grit), and batter leadership.
+     situational pressure (RISP / RISP+3rd / loaded), pitcher composure,
+     and batter clutch.
   2. Stage 2 — which manifestation? Talent-weighted draw between
      {hit, error, leave_up}, mutually exclusive.
 
@@ -17,7 +21,6 @@ are mutually exclusive (never both hit AND error on the same PA)."
 from __future__ import annotations
 
 import random
-import pytest
 
 from o27.engine.state import Player, Team
 from o27.engine.prob import _resolve_risp_pressure
@@ -31,9 +34,9 @@ class _FakeState:
         self.fielding_team = fielding_team
 
 
-def _new_batter(leadership: float = 0.5, contact: float = 0.5, eye: float = 0.5) -> Player:
+def _new_batter(eye: float = 0.5, contact: float = 0.5) -> Player:
     return Player(player_id="b", name="B", is_pitcher=False,
-                  leadership=leadership, contact=contact, eye=eye)
+                  eye=eye, contact=contact)
 
 
 def _new_pitcher(command: float = 0.5, grit: float = 0.5) -> Player:
@@ -58,8 +61,8 @@ def test_no_risp_never_fires():
     """Bases empty or runner on 1B only — no RISP, pressure never
     manifests (returns None on every roll)."""
     fielding = _new_fielding()
-    batter = _new_batter(leadership=0.85)   # max-clutch
-    pitcher = _new_pitcher(command=0.15, grit=0.15)  # min-composure
+    batter = _new_batter(eye=0.85, contact=0.85)         # max-clutch
+    pitcher = _new_pitcher(command=0.15, grit=0.15)      # min-composure
     for bases in ([None, None, None], ["r1", None, None]):
         state = _FakeState(bases, fielding)
         rate = _fire_rate(state, batter, pitcher, n=5000)
@@ -72,7 +75,7 @@ def test_loaded_pressure_strictly_above_risp_only():
     — bases loaded is the highest situational tier because the 2C stay
     mechanic compounds the payoff."""
     fielding = _new_fielding()
-    batter = _new_batter(leadership=0.65)
+    batter = _new_batter(eye=0.65, contact=0.65)
     pitcher = _new_pitcher(command=0.40, grit=0.40)
     risp_alone = _fire_rate(_FakeState([None, "r2", None], fielding), batter, pitcher)
     loaded     = _fire_rate(_FakeState(["r1", "r2", "r3"], fielding), batter, pitcher)
@@ -84,19 +87,21 @@ def test_loaded_pressure_strictly_above_risp_only():
 
 
 def test_clutch_batter_fires_more_than_anti_clutch():
-    """At identical situation + pitcher, a high-leadership batter
-    manifests pressure more often than a low-leadership one. This is
-    why a low-skill bench guy with high leadership can tip a big AB."""
+    """At identical situation + pitcher, a high-clutch batter (good
+    eye + contact) manifests pressure more often than a flat one. This
+    is the derived-clutch channel — a star hitter's plate discipline
+    makes the pressure event fire more often, no separate attribute
+    needed."""
     fielding = _new_fielding()
     pitcher = _new_pitcher(command=0.40, grit=0.40)
     bases = ["r1", "r2", "r3"]
     clutch_rate = _fire_rate(_FakeState(bases, fielding),
-                             _new_batter(leadership=0.85), pitcher)
+                             _new_batter(eye=0.85, contact=0.85), pitcher)
     flat_rate   = _fire_rate(_FakeState(bases, fielding),
-                             _new_batter(leadership=0.15), pitcher)
+                             _new_batter(eye=0.15, contact=0.15), pitcher)
     assert clutch_rate > flat_rate, (
-        f"clutch (lead=0.85) fire rate {clutch_rate:.3f} should exceed "
-        f"non-clutch (lead=0.15) rate {flat_rate:.3f}"
+        f"clutch (eye/con=0.85) fire rate {clutch_rate:.3f} should exceed "
+        f"non-clutch (eye/con=0.15) rate {flat_rate:.3f}"
     )
 
 
@@ -105,7 +110,7 @@ def test_uncomposed_pitcher_fires_more_than_veteran():
     (poor command + low grit) yields more pressure events than a
     high-composure veteran. The talent gate cuts both ways."""
     fielding = _new_fielding()
-    batter = _new_batter(leadership=0.60)
+    batter = _new_batter(eye=0.60, contact=0.60)
     bases = [None, "r2", None]
     weak_pitcher   = _new_pitcher(command=0.20, grit=0.20)
     sharp_pitcher  = _new_pitcher(command=0.80, grit=0.80)
@@ -119,7 +124,7 @@ def test_manifestation_set_is_constrained():
     canonical pathways. This is the mutual-exclusion guarantee — at
     most one of {hit, error, leave_up} per PA, never a stacked combo."""
     fielding = _new_fielding(defense_rating=0.4)
-    batter = _new_batter(leadership=0.85, contact=0.6, eye=0.6)
+    batter = _new_batter(eye=0.85, contact=0.85)
     pitcher = _new_pitcher(command=0.30, grit=0.30)
     state = _FakeState(["r1", "r2", "r3"], fielding)
     rng = random.Random(7)
@@ -140,7 +145,7 @@ def test_weak_defense_skews_to_error_path():
     share of `error` manifestations among the events that fire. This is
     the talent-driven Stage-2 weighting — the team's defense_rating
     pulls the manifestation mix, not a flat constant."""
-    batter = _new_batter(leadership=0.70)
+    batter = _new_batter(eye=0.65, contact=0.65)
     pitcher = _new_pitcher(command=0.50, grit=0.50)
     bases = ["r1", "r2", "r3"]
 

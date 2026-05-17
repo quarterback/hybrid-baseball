@@ -340,32 +340,36 @@ stay-credit leak), but the underlying RE matrix showed `RE(__3) <
 RE(_2_)` at low outs — runners on 3rd stranded too often because
 the engine had no "pressure event" lift: no clutch-batter mistake
 exploitation, no defender bobble under RISP, no pitcher leaving one
-up. Added `Player.leadership` (rolled at seed time, independent of
-hard skills so bench-tier guys can still be joker types) plus
-`prob._resolve_risp_pressure`, a two-stage roll:
+up. Added `prob._resolve_risp_pressure`, a two-stage roll driven
+entirely by EXISTING player attributes (no new schema):
 
 1. **Stage 1 — does the moment manifest?** Probability composes
    from situational pressure (RISP / RISP+3 / bases-loaded), pitcher
-   composure (`(command + grit) / 2`), and batter leadership. At
-   neutral attributes a loaded bag fires ~35% of the time; an
-   elite-leadership batter against a low-composure pitcher with
-   bases loaded fires ~84%; a low-leadership batter against an
-   elite pitcher in the same spot fires ~3%.
+   composure `(command + grit) / 2`, and batter clutch derived from
+   `(eye + contact) / 2`. At neutral attributes a loaded bag fires
+   ~35% of the time; an elite-eye/contact batter against a
+   low-composure pitcher with bases loaded fires ~84%; a flat
+   batter against an elite pitcher in the same spot fires ~3%.
 2. **Stage 2 — which manifestation?** Mutually-exclusive draw
    (no stacking) between `hit` (batter exploits the mistake →
-   talent_run bump on the post-contact hit-vs-out gate), `error`
-   (defender bobbles a routine out → flip to reach-on-error,
-   weighted by `1 - team_defense_rating`), and `leave_up` (pitcher
-   leaves a mistake pitch in the zone → contact-quality re-rolls
-   one tier up before fielding resolution, weighted by
-   `1 - composure`).
+   talent_run bump on the post-contact hit-vs-out gate, scaled by
+   the batter's own clutch), `error` (defender bobbles a routine
+   out → flip to reach-on-error, weighted by `1 - team_defense_rating`),
+   and `leave_up` (pitcher leaves a mistake pitch in the zone →
+   contact-quality re-rolls one tier up before fielding resolution,
+   weighted by `1 - composure`).
 
 The bases-loaded situational tier is the highest BY DESIGN — in
 O27, the 2C stay mechanic lets a batter iteratively clear bases
 without needing a grand slam (a 2C+1 chain plates two runs by
 itself), so the pressure-event payoff is even larger than MLB.
-That's why the joker-deploy at bases-loaded is a real tactical
-lever, not just flavor.
+
+A separate "leadership" attribute (rolled at seed time, independent
+of hard skills, so a bench-tier guy can still be a joker) would let
+clutch decouple from raw eye+contact. Deferred — the derived shape
+should fix the immediate RE(__3) issue, and we'll see if the joker
+archetype needs explicit attribute backing once the post-rewrite
+sim runs.
 
 **Trade-engine implication.** The refit wOBA weights say walks are
 worth ~43% more than the MLB-default pricing assumes, and HR worth
@@ -375,9 +379,6 @@ environment, contact/eye-driven bats are arguably underpriced
 relative to power. Out of scope for this rewrite (changing
 `trade_value` re-tiers every salary via `valuation.py:_BANDS`),
 but worth a follow-up pass once the trade volume baseline is set.
-The new `leadership` attribute is another candidate input —
-high-leadership bench guys may be undervalued by the current
-formula, which doesn't see the joker-archetype clutch lift at all.
 
 ---
 
