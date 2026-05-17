@@ -26,21 +26,21 @@ from o27 import config as cfg
 def can_insert_joker(state: GameState, joker: Player) -> tuple[bool, str]:
     """Check whether a joker can be inserted right now.
 
-    Per the corrected joker rule:
+    Joker insertion rules:
       - Joker must be in team.jokers_available (game-time pool of 3).
-      - Joker must NOT have already been inserted this cycle through
-        the order (tracked via Team.jokers_used_this_cycle, which
-        advance_lineup resets when the lineup wraps).
       - Super-innings disable joker insertion (the 5-batter format
         has its own selection mechanic).
+
+    Jokers are unrestricted on rate: any joker in the pool can be
+    inserted in any PA, any number of times per game. The on-base
+    safety check (a joker on base can't also be batting) is enforced
+    in should_insert_joker.
     """
     if state.is_super_inning:
         return False, "Joker insertion not allowed in super-innings."
     team = state.batting_team
     if joker.player_id not in {j.player_id for j in team.jokers_available}:
         return False, "Joker not in available pool."
-    if joker.player_id in team.jokers_used_this_cycle:
-        return False, "Joker already used this cycle."
     return True, ""
 
 
@@ -49,9 +49,9 @@ def insert_joker(state: GameState, joker: Player, lineup_position: int = -1) -> 
 
     The joker bats in place of the base-lineup batter for ONE plate
     appearance, then returns to the bench. The base lineup position is
-    NOT advanced by the joker AB (handled in pa._end_at_bat). Insertion
-    is marked on team.jokers_used_this_cycle so the same joker can't be
-    inserted twice in the same cycle through the order.
+    NOT advanced by the joker AB (handled in pa._end_at_bat). The same
+    joker can be re-inserted in any later PA — there is no per-cycle
+    or per-game cap on insertions.
 
     `lineup_position` is accepted for back-compat but ignored — the
     joker insertion is always "before the next scheduled batter."
@@ -62,7 +62,6 @@ def insert_joker(state: GameState, joker: Player, lineup_position: int = -1) -> 
         return [f"  [Joker insert rejected: {reason}]"]
     team = state.batting_team
     state.batter_override = joker
-    team.jokers_used_this_cycle.add(joker.player_id)
     state.events.append({
         "type": "joker_inserted",
         "joker_id": joker.player_id,
@@ -277,12 +276,9 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     """Leverage-aware joker insertion decision.
 
     Per-PA call: returns a Player from the team's joker pool to insert,
-    or None to let the base lineup proceed normally. Constraints:
-      - Each joker can be inserted at most ONCE PER CYCLE through the
-        lineup (tracked on Team.jokers_used_this_cycle, reset by
-        advance_lineup when the lineup wraps).
-      - Insertion is always optional. A manager who never inserts is
-        leaving offense on the table but not breaking any rule.
+    or None to let the base lineup proceed normally. Jokers can be
+    inserted any number of times per game — the manager picks based on
+    leverage alone, with no per-cycle or per-game cap.
 
     Decision logic: probability of insertion scales with leverage —
     score-gap-tightness × outs-remaining × runners-on. At max leverage
@@ -300,15 +296,11 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     team = state.batting_team
     if not team.jokers_available:
         return None
-    # A joker can't be inserted if (a) already used this cycle, or (b)
-    # currently on base from a prior PA. Without (b), Bonds could be at
-    # 2B and "also" inserted to bat again — physically impossible.
+    # A joker on base from a prior PA can't physically also be at bat —
+    # Bonds can't be at 2B and "also" inserted to bat again.
     on_base_ids = {pid for pid in state.bases if pid is not None}
-    eligible = [
-        j for j in team.jokers_available
-        if j.player_id not in team.jokers_used_this_cycle
-        and j.player_id not in on_base_ids
-    ]
+    eligible = [j for j in team.jokers_available
+                if j.player_id not in on_base_ids]
     if not eligible:
         return None
 
@@ -984,7 +976,6 @@ def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
     # Find the fastest available bench bat (not in current lineup, not a
     # joker — jokers stay in the joker pool unless joker_to_field fires).
     in_lineup = set(p.player_id for p in batting.lineup)
-    used_jokers = batting.jokers_used_this_cycle
     bench_pool = [p for p in batting.roster
                   if p.player_id not in in_lineup
                   and not getattr(p, "is_pitcher", False)
