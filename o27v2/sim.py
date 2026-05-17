@@ -236,7 +236,8 @@ def _ordered_lineup(
 
     Base lineup = 8 fielders + SP. DHs are NOT in the base lineup — they
     live in the joker pool (jokers_available) and are inserted tactically
-    by the manager AI per PA, subject to once-per-cycle.
+    by the manager AI per PA. Any joker can be inserted any number of
+    times per game.
 
     Pitchers almost always hit 9th. Exception: a pitcher whose hitting
     `skill` clears 0.50 (top ~5-10% of arms in a fresh seed) slots in by
@@ -263,8 +264,9 @@ def _pick_jokers(non_starter_bats: list, n: int = 3) -> list:
     as today's joker pool. Sorted by composite hitting talent.
 
     These are the manager's tactical pinch-hitters — three pinch-hits-
-    with-no-cost, each available once per cycle. They are NOT in the
-    base lineup; they enter via per-PA insertion when leverage warrants.
+    with-no-cost, each available for unlimited re-use per game. They are
+    NOT in the base lineup; they enter via per-PA insertion when leverage
+    warrants.
     """
     sorted_bats = sorted(non_starter_bats, key=_bat_score, reverse=True)
     return sorted_bats[:n]
@@ -624,8 +626,8 @@ def _db_team_to_engine(
 
     # Pick today's 3 jokers from the non-starter bat pool (all DHs + any
     # bench fielders not in the starting 8). These are tactical pinch-
-    # hitters — manager AI inserts them per PA based on leverage, each
-    # at most once per cycle through the order.
+    # hitters — manager AI inserts them per PA based on leverage, with
+    # no per-cycle or per-game cap on how often each can be re-used.
     bench_pool = list(dhs) + list(fielders[8:])
     jokers     = _pick_jokers(bench_pool, n=3)
     # Force-stamp every joker with game_position="J" — the per-bench-

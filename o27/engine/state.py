@@ -18,11 +18,12 @@ Public state contract (convenience entry points):
   state.is_super_inning       → bool
 
 Active-lineup model:
-  Each Team stores an active lineup (9 position players + jokers) in Team.lineup.
-  The v2 roster carries 9 jokers (3 per archetype); the v1 baseline uses 3 jokers.
-  Jokers are part of the lineup from the start; once a joker bats they are
-  added to Team.jokers_used_this_half and skipped by Team.advance_lineup().
-  In super-innings Team.super_lineup (5 players) is used instead.
+  Each Team stores an active lineup (9 position players) in Team.lineup.
+  Jokers are NOT in the base lineup — they live in Team.jokers_available
+  (3 per game) and are inserted tactically by the manager AI per PA.
+  Any joker can be inserted any number of times per game (no per-cycle
+  or per-game cap). In super-innings Team.super_lineup (5 players) is
+  used instead.
 """
 
 from __future__ import annotations
@@ -351,14 +352,14 @@ class Team:
     shift_hits_lost:   int = 0   # hits the shift gave up (oppo through the gap)
 
     # Joker pool — 3 tactical pinch-hitters available per game. They are
-    # NOT in the base lineup; the manager AI inserts them per-rotation
-    # subject to "each joker can only be inserted once per cycle through
-    # the order." Insertions add an extra PA to the rotation; the joker
-    # bats then returns to the bench without taking a roster slot or a
-    # field position.
+    # NOT in the base lineup; the manager AI inserts them per-PA based on
+    # leverage. Any joker can be inserted any number of times per game —
+    # there is no per-cycle or per-game cap. Insertions add an extra PA
+    # to the rotation; the joker bats then returns to the bench without
+    # taking a roster slot or a field position.
     jokers_available: list = field(default_factory=list)
-    jokers_used_this_cycle: set = field(default_factory=set)
-    jokers_used_this_half: set = field(default_factory=set)   # legacy alias
+    jokers_used_this_cycle: set = field(default_factory=set)   # legacy, unused
+    jokers_used_this_half: set = field(default_factory=set)    # legacy alias
     lineup_cycle_number: int = 0   # increments when lineup_position wraps
 
     # Super-inning
@@ -397,9 +398,7 @@ class Team:
             new_pos = (self.lineup_position + 1) % n
             if new_pos == 0 and n > 0:
                 # Lineup wrapped to top of order — start of a new cycle.
-                # Each joker is once-per-cycle, so clear the used set.
                 self.lineup_cycle_number += 1
-                self.jokers_used_this_cycle = set()
             self.lineup_position = new_pos
 
     def reset_half(self) -> None:
