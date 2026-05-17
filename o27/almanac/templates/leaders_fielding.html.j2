@@ -1,0 +1,53 @@
+{% extends "_base.html.j2" %}
+{% block title %}Fielding Leaders — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Fielding Leaders</h1>
+<p class="page-subtitle">Per-position fielding lines · putouts + assists - errors. dDRS scales by position group.</p>
+
+<div class="section-bar">
+  <div class="tabs">
+    <a href="batting.html">Batting</a>
+    <a href="pitching.html">Pitching</a>
+    <a class="active" href="fielding.html">Fielding</a>
+    <a href="value.html">Value (WAR)</a>
+    <a href="stays.html">Stays</a>
+    <a href="situational.html">Situational</a>
+  </div>
+  <div class="btn-row">
+    <input class="search-box" data-filter-table="#fld-tbl" data-filter-cols="0,1,2" placeholder="Find fielder…">
+    <button class="btn" data-export-csv="#fld-tbl" data-filename="fielding-leaders.csv">CSV</button>
+  </div>
+</div>
+
+<div class="tablewrap">
+  <table id="fld-tbl" class="stat-table heatmap">
+    <thead><tr>
+      <th class="sticky-col" data-type="text">Player</th>
+      <th data-type="text">Team</th>
+      <th data-type="text">Pos</th>
+      <th>G</th>
+      <th data-heat="hi">PO</th><th data-heat="hi">A</th>
+      <th data-heat="lo">E</th><th data-heat="hi">CH</th>
+      <th data-heat="hi">FLD%</th>
+      <th data-heat="hi">dDRS</th><th data-heat="hi">dWAR</th>
+    </tr></thead>
+    <tbody>
+      {% for r in views.fielding_season %}
+      <tr>
+        <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+        <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+        <td class="t-left"><span class="pos-badge">{{ r.position }}</span></td>
+        <td>{{ r.g }}</td>
+        <td>{{ r.po }}</td>
+        <td>{{ r.a }}</td>
+        <td>{{ r.e }}</td>
+        <td>{{ r.ch }}</td>
+        <td data-val="{{ r.fld_pct }}">{{ '%.3f'|format(r.fld_pct) }}</td>
+        <td data-val="{{ r.ddrs }}">{{ '%+.1f'|format(r.ddrs) }}</td>
+        <td data-val="{{ r.dwar }}">{{ '%+.2f'|format(r.dwar) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

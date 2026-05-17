@@ -1,0 +1,37 @@
+{% extends "_base.html.j2" %}
+{% block title %}Parks — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Park Factors</h1>
+<p class="page-subtitle">Per-team park HR / hits multipliers, shape archetypes, and architectural quirks.</p>
+
+<div class="btn-row" style="margin-bottom:8px;">
+  <button class="btn" data-export-csv="#parks-tbl" data-filename="parks.csv">CSV</button>
+</div>
+
+<div class="tablewrap">
+  <table id="parks-tbl" class="stat-table heatmap">
+    <thead><tr>
+      <th class="sticky-col" data-type="text">Team</th>
+      <th data-type="text">Park</th>
+      <th data-type="text">Shape</th>
+      <th data-heat="hi">Park HR</th>
+      <th data-heat="hi">Park Hits</th>
+      <th data-type="text">Quirks</th>
+      <th data-type="text">Manager</th>
+    </tr></thead>
+    <tbody>
+      {% for t in views.teams %}
+      <tr>
+        <td class="sticky-col t-left"><a href="teams/{{ t.abbrev|lower }}.html"><span class="chip">{{ t.abbrev }}</span> {{ t.city }} {{ t.name }}</a></td>
+        <td class="t-left">{{ t.park_name or '—' }}</td>
+        <td class="t-left">{{ t.park_shape or '—' }}</td>
+        <td data-val="{{ t.park_hr or 1.0 }}">{{ '%.2f'|format(t.park_hr or 1.0) }}</td>
+        <td data-val="{{ t.park_hits or 1.0 }}">{{ '%.2f'|format(t.park_hits or 1.0) }}</td>
+        <td class="t-left muted">{{ t.park_quirks or '' }}</td>
+        <td class="t-left">{{ t.manager_name or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

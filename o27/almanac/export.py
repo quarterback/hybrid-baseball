@@ -92,6 +92,26 @@ def write_exports(views: Views, dataset: dict, out_dir: str) -> dict[str, str]:
     _write_csv(os.path.join(exp_dir, "pitching_season.csv"), views.pitching_season)
     manifest["pitching_season"] = "exports/pitching_season.csv"
 
+    _write_csv(os.path.join(exp_dir, "fielding_season.csv"), views.fielding_season)
+    manifest["fielding_season"] = "exports/fielding_season.csv"
+
+    _write_csv(os.path.join(exp_dir, "team_pythag.csv"),
+               [{"abbrev": k, **v} for k, v in views.team_pythag.items()])
+    manifest["team_pythag"] = "exports/team_pythag.csv"
+
+    _write_csv(os.path.join(exp_dir, "monthly_splits.csv"), views.monthly_splits)
+    manifest["monthly_splits"] = "exports/monthly_splits.csv"
+
+    _write_csv(os.path.join(exp_dir, "scoring_events.csv"), views.scoring_events)
+    manifest["scoring_events"] = "exports/scoring_events.csv"
+
+    _write_csv(os.path.join(exp_dir, "pa_log.csv"), views.pa_log)
+    manifest["pa_log"] = "exports/pa_log.csv"
+
+    if views.playoff_series:
+        _write_csv(os.path.join(exp_dir, "playoff_series.csv"), views.playoff_series)
+        manifest["playoff_series"] = "exports/playoff_series.csv"
+
     _write_csv(os.path.join(exp_dir, "team_totals_batting.csv"),
                list(views.team_totals_bat.values()))
     manifest["team_totals_batting"] = "exports/team_totals_batting.csv"
@@ -135,6 +155,14 @@ def write_exports(views: Views, dataset: dict, out_dir: str) -> dict[str, str]:
         "pitching": dataset.get("pitching") or [],
         "seasons":  dataset.get("seasons")  or [],
         "awards":   dataset.get("awards")   or [],
+        "scoring_events":  dataset.get("scoring_events")  or [],
+        "pa_log":          dataset.get("pa_log")          or [],
+        "team_phase_outs": dataset.get("team_phase_outs") or [],
+        "playoff_series":  dataset.get("playoff_series")  or [],
+        "award_ballots":   dataset.get("award_ballots")   or [],
+        "season_standings_archive":  dataset.get("season_standings_archive")  or [],
+        "season_batting_leaders_archive":  dataset.get("season_batting_leaders_archive")  or [],
+        "season_pitching_leaders_archive": dataset.get("season_pitching_leaders_archive") or [],
     }
     with open(bundle_path, "w") as f:
         json.dump(bundle, f, indent=2, default=str)

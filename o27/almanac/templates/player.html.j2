@@ -12,6 +12,7 @@
       <span class="pos-badge {% if player.is_joker %}joker{% elif player.is_pitcher %}pitcher{% endif %}">{{ player.position }}</span>
       · Age {{ player.age or '—' }}
       · Bats {{ player.bats }}/Throws {{ player.throws }}
+      {% if player.country %}· {{ player.country }}{% endif %}
       · {{ player.team_name }}
       {% if player.archetype %}· {{ player.archetype }}{% endif %}
     </div>
@@ -27,21 +28,40 @@
       <div><div class="k">HR</div><div class="v">{{ season.hr }}</div></div>
       <div><div class="k">RBI</div><div class="v">{{ season.rbi }}</div></div>
       <div><div class="k">wOBA</div><div class="v">{{ '%.3f'|format(season.woba) }}</div></div>
-      <div><div class="k">wOBA+</div><div class="v">{{ season.woba_plus }}</div></div>
+      <div><div class="k">bWAR</div><div class="v">{{ '%+.2f'|format(season.bwar) }}</div></div>
       {% else %}
       <div><div class="k">G</div><div class="v">{{ season.g }}</div></div>
       <div><div class="k">IP</div><div class="v">{{ season.ip_disp }}</div></div>
       <div><div class="k">ERA</div><div class="v">{{ '%.2f'|format(season.era) }}</div></div>
+      <div><div class="k">wERA</div><div class="v">{{ '%.2f'|format(season.wera) }}</div></div>
       <div><div class="k">FIP</div><div class="v">{{ '%.2f'|format(season.fip) }}</div></div>
       <div><div class="k">WHIP</div><div class="v">{{ '%.2f'|format(season.whip) }}</div></div>
       <div><div class="k">K/9</div><div class="v">{{ '%.2f'|format(season.k9) }}</div></div>
-      <div><div class="k">ERA+</div><div class="v">{{ season.era_plus }}</div></div>
-      <div><div class="k">OS%</div><div class="v">{{ '%.1f'|format(season.os_pct * 100) }}%</div></div>
+      <div><div class="k">pWAR</div><div class="v">{{ '%+.2f'|format(season.pwar) }}</div></div>
       {% endif %}
     </div>
     {% endif %}
   </div>
 </div>
+
+<!-- Scout grades panel -->
+{% if attrs %}
+<section>
+  <div class="section-bar"><h2>Scout Grades · 20–80</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table heatmap">
+      <thead><tr>
+        {% for k, _v in attrs %}<th data-heat="hi">{{ k }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        <tr>
+          {% for _k, v in attrs %}<td data-val="{{ v }}">{{ v }}</td>{% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 
 {% if season and not player.is_pitcher %}
 <section>
@@ -53,13 +73,15 @@
     <table id="bat-row" class="stat-table">
       <thead><tr>
         <th>G</th><th>PA</th><th>AB</th><th>R</th><th>H</th>
-        <th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
-        <th>BB</th><th>K</th><th>HBP</th><th>SB</th><th>CS</th>
-        <th>STY</th><th>FO</th>
+        <th>1B</th><th>2B</th><th>3B</th><th>HR</th><th>TB</th><th>XBH</th>
+        <th>RBI</th><th>BB</th><th>K</th><th>HBP</th>
+        <th>SB</th><th>CS</th><th>SB%</th>
+        <th>STY</th><th>FO</th><th>ROE</th><th>GIDP</th>
         <th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th>
         <th>ISO</th><th>BABIP</th>
-        <th>BB%</th><th>K%</th>
+        <th>BB%</th><th>K%</th><th>HR%</th><th>BB/K</th>
         <th>wOBA</th><th>wOBA+</th><th>OPS+</th>
+        <th>RAD</th><th>bVORP</th><th>bWAR</th>
       </tr></thead>
       <tbody>
         <tr>
@@ -68,17 +90,23 @@
           <td>{{ season.ab }}</td>
           <td>{{ season.runs }}</td>
           <td>{{ season.hits }}</td>
+          <td>{{ season.singles }}</td>
           <td>{{ season.doubles }}</td>
           <td>{{ season.triples }}</td>
           <td>{{ season.hr }}</td>
+          <td>{{ season.tb }}</td>
+          <td>{{ season.xbh }}</td>
           <td>{{ season.rbi }}</td>
           <td>{{ season.bb }}</td>
           <td>{{ season.k }}</td>
           <td>{{ season.hbp }}</td>
           <td>{{ season.sb }}</td>
           <td>{{ season.cs }}</td>
+          <td>{{ '%.0f'|format(season.sb_pct * 100) }}%</td>
           <td>{{ season.stays }}</td>
           <td>{{ season.fo }}</td>
+          <td>{{ season.roe }}</td>
+          <td>{{ season.gidp }}</td>
           <td>{{ '%.3f'|format(season.pavg) }}</td>
           <td>{{ '%.3f'|format(season.obp) }}</td>
           <td>{{ '%.3f'|format(season.slg) }}</td>
@@ -87,9 +115,14 @@
           <td>{{ '%.3f'|format(season.babip) }}</td>
           <td>{{ '%.1f'|format(season.bb_pct * 100) }}%</td>
           <td>{{ '%.1f'|format(season.k_pct * 100) }}%</td>
+          <td>{{ '%.1f'|format(season.hr_pct * 100) }}%</td>
+          <td>{{ '%.2f'|format(season.bb_k) }}</td>
           <td>{{ '%.3f'|format(season.woba) }}</td>
           <td>{{ season.woba_plus }}</td>
           <td>{{ season.ops_plus }}</td>
+          <td>{{ season.rad }}</td>
+          <td>{{ '%+.1f'|format(season.bvorp) }}</td>
+          <td>{{ '%+.2f'|format(season.bwar) }}</td>
         </tr>
       </tbody>
     </table>
@@ -97,14 +130,17 @@
 </section>
 
 <section>
-  <div class="section-bar"><h2>Stay Mechanic</h2></div>
+  <div class="section-bar"><h2>Stay Mechanic + Advancement</h2></div>
   <div class="tablewrap short">
     <table class="stat-table">
       <thead><tr>
         <th>STY</th><th>STAY_H</th><th>STAY_RBI</th><th>MHAB</th>
-        <th>STAY%</th><th>STAY_CONV%</th><th>STAY_RBI%</th>
+        <th>STAY%</th><th>CONV%</th><th>STAY_RBI%</th>
         <th>RAD</th><th>RAD/PA</th><th>BAVG</th><th>Δ</th>
         <th>FO</th><th>FO%</th>
+        <th>2C·1B</th><th>2C·2B</th><th>2C·3B</th>
+        <th>ADV·1B</th><th>ADV·2B</th><th>ADV·3B</th>
+        <th>CONV·ALL</th>
       </tr></thead>
       <tbody>
         <tr>
@@ -121,11 +157,45 @@
           <td>{{ '%+.3f'|format(season.stay_diff) }}</td>
           <td>{{ season.fo }}</td>
           <td>{{ '%.1f'|format(season.fo_pct * 100) }}%</td>
+          <td>{{ '%.0f'|format(season.c2_conv_1b * 100) }}%</td>
+          <td>{{ '%.0f'|format(season.c2_conv_2b * 100) }}%</td>
+          <td>{{ '%.0f'|format(season.c2_conv_3b * 100) }}%</td>
+          <td>{{ '%.0f'|format(season.adv_conv_1b * 100) }}%</td>
+          <td>{{ '%.0f'|format(season.adv_conv_2b * 100) }}%</td>
+          <td>{{ '%.0f'|format(season.adv_conv_3b * 100) }}%</td>
+          <td>{{ '%.0f'|format(season.adv_conv_total * 100) }}%</td>
         </tr>
       </tbody>
     </table>
   </div>
 </section>
+
+{% if fielding %}
+<section>
+  <div class="section-bar"><h2>Fielding</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th>Pos</th><th>G</th><th>PO</th><th>A</th><th>E</th><th>CH</th>
+        <th>FLD%</th><th>dDRS</th><th>dWAR</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>{{ fielding.position }}</td>
+          <td>{{ fielding.g }}</td>
+          <td>{{ fielding.po }}</td>
+          <td>{{ fielding.a }}</td>
+          <td>{{ fielding.e }}</td>
+          <td>{{ fielding.ch }}</td>
+          <td>{{ '%.3f'|format(fielding.fld_pct) }}</td>
+          <td>{{ '%+.1f'|format(fielding.ddrs) }}</td>
+          <td>{{ '%+.2f'|format(fielding.dwar) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 
 <section>
   <div class="section-bar"><h2>Game Log · Batting</h2></div>
@@ -170,44 +240,115 @@
   <div class="tablewrap short">
     <table class="stat-table">
       <thead><tr>
-        <th>G</th><th>GS</th><th>IP</th><th>BF</th>
-        <th>H</th><th>R</th><th>ER</th><th>HR</th><th>BB</th><th>K</th>
-        <th>ERA</th><th>wERA</th><th>WHIP</th><th>FIP</th>
+        <th>G</th><th>GS</th><th>WS%</th><th>IP</th><th>BF</th>
+        <th>H</th><th>R</th><th>ER</th><th>UER</th><th>HR</th><th>BB</th><th>K</th><th>FO</th>
+        <th>ERA</th><th>wERA</th><th>WHIP</th><th>FIP</th><th>xFIP</th>
         <th>K/9</th><th>BB/9</th><th>HR/9</th>
-        <th>K%</th><th>BB%</th>
-        <th>OAVG</th><th>OS%</th>
+        <th>K%</th><th>BB%</th><th>K-BB%</th>
+        <th>OAVG</th><th>OBABIP</th><th>OOBP</th><th>OSLG</th><th>OOPS</th>
+        <th>AOR</th><th>OS%</th><th>OS+</th>
+        <th>Decay</th><th>Late K%</th><th>Arc3%</th>
+        <th>P/BF</th><th>O/P</th>
+        <th>GSc</th>
         <th>ERA+</th><th>FIP+</th>
+        <th>pVORP</th><th>pWAR</th>
       </tr></thead>
       <tbody>
         <tr>
           <td>{{ season.g }}</td>
           <td>{{ season.gs }}</td>
+          <td>{{ '%.0f'|format(season.ws_pct * 100) }}%</td>
           <td>{{ season.ip_disp }}</td>
           <td>{{ season.batters_faced }}</td>
           <td>{{ season.hits_allowed }}</td>
           <td>{{ season.runs_allowed }}</td>
           <td>{{ season.er }}</td>
+          <td>{{ season.unearned_runs }}</td>
           <td>{{ season.hr_allowed }}</td>
           <td>{{ season.bb }}</td>
           <td>{{ season.k }}</td>
+          <td>{{ season.fo_induced }}</td>
           <td>{{ '%.2f'|format(season.era) }}</td>
           <td>{{ '%.2f'|format(season.wera) }}</td>
           <td>{{ '%.2f'|format(season.whip) }}</td>
           <td>{{ '%.2f'|format(season.fip) }}</td>
+          <td>{{ '%.2f'|format(season.xfip) }}</td>
           <td>{{ '%.2f'|format(season.k9) }}</td>
           <td>{{ '%.2f'|format(season.bb9) }}</td>
           <td>{{ '%.2f'|format(season.hr9) }}</td>
           <td>{{ '%.1f'|format(season.k_pct * 100) }}%</td>
           <td>{{ '%.1f'|format(season.bb_pct * 100) }}%</td>
+          <td>{{ '%.1f'|format(season.k_minus_bb_pct * 100) }}%</td>
           <td>{{ '%.3f'|format(season.oavg) }}</td>
+          <td>{{ '%.3f'|format(season.obabip) }}</td>
+          <td>{{ '%.3f'|format(season.oobp) }}</td>
+          <td>{{ '%.3f'|format(season.oslg) }}</td>
+          <td>{{ '%.3f'|format(season.oops) }}</td>
+          <td>{{ '%.1f'|format(season.aor) }}</td>
           <td>{{ '%.1f'|format(season.os_pct * 100) }}%</td>
+          <td>{{ season.os_plus }}</td>
+          <td>{{ '%+.1f'|format(season.decay) }}</td>
+          <td>{{ '%.1f'|format(season.late_k_pct * 100) }}%</td>
+          <td>{{ '%.0f'|format(season.arc3_reach_pct * 100) }}%</td>
+          <td>{{ '%.1f'|format(season.p_per_bf) }}</td>
+          <td>{{ '%.2f'|format(season.op_per_pitch) }}</td>
+          <td>{{ '%.1f'|format(season.gsc_total) }}</td>
           <td>{{ season.era_plus }}</td>
           <td>{{ season.fip_plus }}</td>
+          <td>{{ '%+.1f'|format(season.pvorp) }}</td>
+          <td>{{ '%+.2f'|format(season.pwar) }}</td>
         </tr>
       </tbody>
     </table>
   </div>
 </section>
+
+<section>
+  <div class="section-bar"><h2>Arc Buckets (1-9 / 10-18 / 19-27+SI)</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th>Arc</th><th>BF</th><th>K</th><th>FO</th><th>ER</th>
+        <th>K%</th><th>K+FO%</th><th>ER (R/9-ish)</th>
+      </tr></thead>
+      <tbody>
+        {% for i in [1,2,3] %}
+        {% set bf  = season['bf_arc'~i] or 0 %}
+        {% set k   = season['k_arc'~i]  or 0 %}
+        {% set fo  = season['fo_arc'~i] or 0 %}
+        {% set er  = season['er_arc'~i] or 0 %}
+        <tr>
+          <td class="t-left">Arc {{ i }}</td>
+          <td>{{ bf }}</td>
+          <td>{{ k }}</td>
+          <td>{{ fo }}</td>
+          <td>{{ er }}</td>
+          <td>{% if bf %}{{ '%.1f'|format(100*k/bf) }}%{% else %}—{% endif %}</td>
+          <td>{% if bf %}{{ '%.1f'|format(100*(k+fo)/bf) }}%{% else %}—{% endif %}</td>
+          <td>{{ '%.2f'|format(season['arc'~i~'_era']) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if season.fastball_pct or season.breaking_pct or season.offspeed_pct or season.primary_pitch %}
+<section>
+  <div class="section-bar"><h2>Pitch Mix</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr><th>Fastball %</th><th>Breaking %</th><th>Offspeed %</th><th>Primary Pitch</th></tr></thead>
+      <tbody><tr>
+        <td>{{ '%.0f'|format(season.fastball_pct * 100) }}%</td>
+        <td>{{ '%.0f'|format(season.breaking_pct * 100) }}%</td>
+        <td>{{ '%.0f'|format(season.offspeed_pct * 100) }}%</td>
+        <td class="t-left">{{ season.primary_pitch or '—' }}</td>
+      </tr></tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 
 <section>
   <div class="section-bar"><h2>Game Log · Pitching</h2></div>
@@ -216,8 +357,9 @@
       <thead><tr>
         <th class="sticky-col" data-type="text">Date</th>
         <th data-type="text">Opp</th>
-        <th>BF</th><th>OUT</th>
+        <th>BF</th><th>IP</th>
         <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>HR</th>
+        <th>GSc</th>
         <th data-type="text">Box</th>
       </tr></thead>
       <tbody>
@@ -226,13 +368,14 @@
           <td class="sticky-col t-left">{{ g.date }}</td>
           <td class="t-left">{{ g.ha }} <span class="chip">{{ g.opp }}</span></td>
           <td>{{ g.batters_faced or 0 }}</td>
-          <td>{{ g.outs_recorded or 0 }}</td>
+          <td>{{ g.ip_disp or '0.0' }}</td>
           <td>{{ g.hits_allowed or 0 }}</td>
           <td>{{ g.runs_allowed or 0 }}</td>
           <td>{{ g.er or 0 }}</td>
           <td>{{ g.bb or 0 }}</td>
           <td>{{ g.k or 0 }}</td>
           <td>{{ g.hr_allowed or 0 }}</td>
+          <td>{{ '%.1f'|format(g.gsc or 0) }}</td>
           <td class="t-left"><a href="../games/{{ g.game_id }}.html">Box</a></td>
         </tr>
         {% endfor %}

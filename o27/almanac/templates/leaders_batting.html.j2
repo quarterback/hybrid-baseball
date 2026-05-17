@@ -2,13 +2,16 @@
 {% block title %}Batting Leaders — {{ site_title }}{% endblock %}
 {% block content %}
 <h1 class="page-title">Batting Leaders</h1>
-<p class="page-subtitle">All qualified batters · click any column to re-sort · cells are heatmap-shaded by percentile</p>
+<p class="page-subtitle">All qualified batters · click any column to re-sort · cells heatmap-shaded by percentile</p>
 
 <div class="section-bar">
   <div class="tabs">
     <a class="active" href="batting.html">Batting</a>
     <a href="pitching.html">Pitching</a>
+    <a href="fielding.html">Fielding</a>
+    <a href="value.html">Value (WAR)</a>
     <a href="stays.html">Stays</a>
+    <a href="situational.html">Situational</a>
   </div>
   <div class="btn-row">
     <input class="search-box" data-filter-table="#batting-tbl" data-filter-cols="0,1" placeholder="Find batter…">
@@ -24,38 +27,54 @@
       <th data-type="text">Team</th>
       <th data-type="text">Pos</th>
       <th>Age</th>
+      <th data-type="text">B/T</th>
       <th>G</th><th>PA</th><th>AB</th>
-      <th data-heat="hi">R</th><th data-heat="hi">H</th><th data-heat="hi">2B</th>
-      <th data-heat="hi">3B</th><th data-heat="hi">HR</th><th data-heat="hi">RBI</th>
-      <th data-heat="hi">BB</th><th data-heat="lo">K</th><th data-heat="hi">SB</th>
-      <th data-heat="hi">STY</th>
+      <th data-heat="hi">R</th><th data-heat="hi">H</th>
+      <th data-heat="hi">1B</th><th data-heat="hi">2B</th>
+      <th data-heat="hi">3B</th><th data-heat="hi">HR</th>
+      <th data-heat="hi">TB</th><th data-heat="hi">XBH</th>
+      <th data-heat="hi">RBI</th>
+      <th data-heat="hi">BB</th><th data-heat="lo">K</th>
+      <th>HBP</th><th>SB</th><th>CS</th>
+      <th data-heat="hi">STY</th><th>ROE</th><th data-heat="lo">GIDP</th>
       <th data-heat="hi">AVG</th><th data-heat="hi">OBP</th><th data-heat="hi">SLG</th>
       <th data-heat="hi">OPS</th><th data-heat="hi">ISO</th><th data-heat="hi">BABIP</th>
-      <th data-heat="hi">BB%</th><th data-heat="lo">K%</th>
+      <th data-heat="hi">BB%</th><th data-heat="lo">K%</th><th data-heat="hi">HR%</th>
+      <th data-heat="hi">BB/K</th>
       <th data-heat="hi">wOBA</th><th data-heat="hi">wOBA+</th>
       <th data-heat="hi">OPS+</th>
+      <th data-heat="hi">RAD</th><th data-heat="hi">RAD/PA</th>
+      <th data-heat="hi">bWAR</th>
       <th data-heat="hi">Δ</th>
     </tr></thead>
     <tbody>
-      {% for r in views.batting_season if r.qualified or always_show_all %}
+      {% for r in views.batting_season if (r.qualified or always_show_all) and not r.is_pitcher %}
       <tr>
         <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
         <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
         <td class="t-left"><span class="pos-badge {% if r.is_joker %}joker{% elif r.is_pitcher %}pitcher{% endif %}">{{ r.position }}</span></td>
         <td>{{ r.age or '—' }}</td>
+        <td>{{ r.bats }}/{{ r.throws }}</td>
         <td>{{ r.g }}</td>
         <td>{{ r.pa }}</td>
         <td>{{ r.ab }}</td>
         <td>{{ r.runs }}</td>
         <td>{{ r.hits }}</td>
+        <td>{{ r.singles }}</td>
         <td>{{ r.doubles }}</td>
         <td>{{ r.triples }}</td>
         <td>{{ r.hr }}</td>
+        <td>{{ r.tb }}</td>
+        <td>{{ r.xbh }}</td>
         <td>{{ r.rbi }}</td>
         <td>{{ r.bb }}</td>
         <td>{{ r.k }}</td>
+        <td>{{ r.hbp }}</td>
         <td>{{ r.sb }}</td>
+        <td>{{ r.cs }}</td>
         <td>{{ r.stays }}</td>
+        <td>{{ r.roe }}</td>
+        <td>{{ r.gidp }}</td>
         <td data-val="{{ r.pavg }}">{{ '%.3f'|format(r.pavg) }}</td>
         <td data-val="{{ r.obp }}">{{ '%.3f'|format(r.obp) }}</td>
         <td data-val="{{ r.slg }}">{{ '%.3f'|format(r.slg) }}</td>
@@ -64,14 +83,22 @@
         <td data-val="{{ r.babip }}">{{ '%.3f'|format(r.babip) }}</td>
         <td data-val="{{ r.bb_pct }}">{{ '%.1f'|format(r.bb_pct * 100) }}%</td>
         <td data-val="{{ r.k_pct }}">{{ '%.1f'|format(r.k_pct * 100) }}%</td>
+        <td data-val="{{ r.hr_pct }}">{{ '%.1f'|format(r.hr_pct * 100) }}%</td>
+        <td data-val="{{ r.bb_k }}">{{ '%.2f'|format(r.bb_k) }}</td>
         <td data-val="{{ r.woba }}">{{ '%.3f'|format(r.woba) }}</td>
         <td>{{ r.woba_plus }}</td>
         <td>{{ r.ops_plus }}</td>
+        <td>{{ r.rad }}</td>
+        <td data-val="{{ r.rad_pa }}">{{ '%.3f'|format(r.rad_pa) }}</td>
+        <td data-val="{{ r.bwar }}">{{ '%+.2f'|format(r.bwar) }}</td>
         <td data-val="{{ r.stay_diff }}">{{ '%+.3f'|format(r.stay_diff) }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-<p class="page-subtitle" style="margin-top:10px;">Minimum {{ min_pa }} PA to qualify. League AVG/OBP/SLG/OPS/wOBA: <b>{{ '%.3f'|format(views.league_totals.pavg) }} / {{ '%.3f'|format(views.league_totals.obp) }} / {{ '%.3f'|format(views.league_totals.slg) }} / {{ '%.3f'|format(views.league_totals.ops) }} / {{ '%.3f'|format(views.league_totals.woba) }}</b></p>
+<p class="page-subtitle" style="margin-top:10px;">
+  Minimum {{ min_pa }} PA to qualify. League AVG/OBP/SLG/OPS/wOBA:
+  <b>{{ '%.3f'|format(views.league_totals.pavg) }} / {{ '%.3f'|format(views.league_totals.obp) }} / {{ '%.3f'|format(views.league_totals.slg) }} / {{ '%.3f'|format(views.league_totals.ops) }} / {{ '%.3f'|format(views.league_totals.woba) }}</b>
+</p>
 {% endblock %}

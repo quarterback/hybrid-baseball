@@ -35,6 +35,35 @@ ARC_W_1 = 0.85
 ARC_W_2 = 1.00
 ARC_W_3 = 1.20
 
+# Game Score coefficients (mirrors o27v2/web/app.py:_pitcher_game_score).
+GSC_BASE   = 50.0
+GSC_OUT    = 1.0
+GSC_K_BONUS_OVER_3 = 2.0   # +2 per K beyond 3 (MLB convention preserved)
+GSC_FO_BONUS       = 1.0   # O27 foul-out bonus
+GSC_H_COST         = 2.0
+GSC_HR_OVER_H_COST = 2.0   # additional cost for HR vs generic hit
+GSC_BB_COST        = 1.0
+GSC_ER_COST        = 4.0
+GSC_UER_COST       = 2.0
+
+# Workhorse start threshold: >=18 outs AND <=6 ER on a start.
+WORKHORSE_MIN_OUTS = 18
+WORKHORSE_MAX_ER   = 6
+
+# Replacement-level baselines (anchored to league).
+REPL_WOBA_PCT = 0.85   # 85% of league wOBA
+REPL_ERA_PCT  = 1.20   # 120% of league ERA
+
+# Runs-per-win (Pythagorean-derived; updated at compute time once
+# league_totals is known).
+DEFAULT_RUNS_PER_WIN = 10.0
+
+# Defensive position-group DRS ranges (rough, mirrors web app).
+POS_DRS_RANGE = {
+    "C": 18, "SS": 22, "2B": 18, "CF": 22, "3B": 16,
+    "RF": 14, "LF": 12, "1B": 10, "DH": 0, "UT": 12, "P": 0,
+}
+
 
 # ---------------------------------------------------------------------------
 # Output container
@@ -53,20 +82,33 @@ class Views:
 
     batting_season:   list[dict]     = field(default_factory=list)
     pitching_season:  list[dict]     = field(default_factory=list)
+    fielding_season:  list[dict]     = field(default_factory=list)
 
     batting_by_team:  dict[str, list[dict]] = field(default_factory=dict)
     pitching_by_team: dict[str, list[dict]] = field(default_factory=dict)
 
-    batting_by_player:  dict[int, dict] = field(default_factory=dict)
-    pitching_by_player: dict[int, dict] = field(default_factory=dict)
+    batting_by_player:  dict[int, dict]       = field(default_factory=dict)
+    pitching_by_player: dict[int, dict]       = field(default_factory=dict)
+    fielding_by_player: dict[int, dict]       = field(default_factory=dict)
     game_logs_batter:   dict[int, list[dict]] = field(default_factory=dict)
     game_logs_pitcher:  dict[int, list[dict]] = field(default_factory=dict)
 
     team_totals_bat:  dict[str, dict] = field(default_factory=dict)
     team_totals_pit:  dict[str, dict] = field(default_factory=dict)
+    team_pythag:      dict[str, dict] = field(default_factory=dict)
+    pythag_summary:   dict[str, float] = field(default_factory=dict)
 
     league_totals:    dict[str, float] = field(default_factory=dict)
+    runs_per_win:     float            = DEFAULT_RUNS_PER_WIN
+
     awards:           list[dict]      = field(default_factory=list)
+    playoff_series:   list[dict]      = field(default_factory=list)
+    scoring_events:   list[dict]      = field(default_factory=list)
+
+    monthly_splits:   list[dict]      = field(default_factory=list)
+    pa_log:           list[dict]      = field(default_factory=list)
+    pa_log_by_game:   dict[int, list[dict]] = field(default_factory=dict)
+    scoring_by_game:  dict[int, list[dict]] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +122,9 @@ def compute_views(dataset: dict[str, Any]) -> Views:
     v.players = list(dataset.get("players") or [])
     v.games   = list(dataset.get("games") or [])
     v.awards  = list(dataset.get("awards") or [])
+    v.playoff_series = list(dataset.get("playoff_series") or [])
+    v.scoring_events = list(dataset.get("scoring_events") or [])
+    v.pa_log         = list(dataset.get("pa_log") or [])
 
     teams_by_id  = {t["id"]: t for t in v.teams}
     players_by_id = {p["id"]: p for p in v.players}
@@ -94,11 +139,12 @@ def compute_views(dataset: dict[str, Any]) -> Views:
     pit_agg = _aggregate_pitchers(dataset.get("pitching") or [],
                                   players_by_id, teams_by_id)
 
-    # League denominators (for OPS+, wOBA+, ERA+, FIP+).
+    # League denominators + runs-per-win.
     v.league_totals = _league_totals(bat_agg, pit_agg)
+    v.runs_per_win  = _runs_per_win(v.league_totals)
 
-    _augment_batters(bat_agg,  v.league_totals)
-    _augment_pitchers(pit_agg, v.league_totals)
+    _augment_batters(bat_agg,  v.league_totals, v.runs_per_win)
+    _augment_pitchers(pit_agg, v.league_totals, v.runs_per_win)
 
     v.batting_season  = sorted(bat_agg,  key=lambda r: -r["pa"])
     v.pitching_season = sorted(pit_agg, key=lambda r: -r["outs_recorded"])
@@ -109,8 +155,17 @@ def compute_views(dataset: dict[str, Any]) -> Views:
     v.batting_by_team  = _group_by_team(bat_agg)
     v.pitching_by_team = _group_by_team(pit_agg, sort_key=lambda r: -r["outs_recorded"])
 
+    # Fielding aggregation (PO/A/E per defensive appearance).
+    v.fielding_season = _aggregate_fielders(
+        dataset.get("batting") or [], players_by_id, teams_by_id,
+    )
+    v.fielding_by_player = {r["player_id"]: r for r in v.fielding_season}
+
     v.team_totals_bat = _team_totals(bat_agg, v.standings, teams_by_id, kind="batting")
     v.team_totals_pit = _team_totals(pit_agg, v.standings, teams_by_id, kind="pitching")
+
+    # Pythagorean (fitted + MLB-default) per team.
+    v.team_pythag, v.pythag_summary = _compute_pythag(v.standings)
 
     # Per-player game logs (newest-first).
     v.game_logs_batter  = _build_game_logs(
@@ -119,6 +174,18 @@ def compute_views(dataset: dict[str, Any]) -> Views:
     v.game_logs_pitcher = _build_game_logs(
         dataset.get("pitching") or [], v.games, teams_by_id, kind="pitching"
     )
+    _augment_pitcher_game_logs(v.game_logs_pitcher)
+
+    # Per-game indices for box-score augmentation.
+    for r in v.scoring_events:
+        v.scoring_by_game.setdefault(r["game_id"], []).append(r)
+    for r in v.pa_log:
+        v.pa_log_by_game.setdefault(r["game_id"], []).append(r)
+
+    # Monthly splits.
+    v.monthly_splits = _monthly_splits(dataset.get("batting") or [],
+                                       dataset.get("pitching") or [],
+                                       v.games)
 
     return v
 
@@ -288,9 +355,11 @@ def _empty_batter_slot(pid, players_by_id, teams_by_id, sample_row) -> dict:
     }
 
 
-def _augment_batters(rows: list[dict], league: dict[str, float]) -> None:
-    lg_ops  = league.get("ops", 0.0) or 0.0
-    lg_woba = league.get("woba", 0.0) or 0.0
+def _augment_batters(rows: list[dict], league: dict[str, float],
+                     runs_per_win: float) -> None:
+    lg_ops    = league.get("ops", 0.0) or 0.0
+    lg_woba   = league.get("woba", 0.0) or 0.0
+    repl_woba = lg_woba * REPL_WOBA_PCT
 
     for r in rows:
         pa  = r.get("pa")  or 0
@@ -306,15 +375,20 @@ def _augment_batters(rows: list[dict], league: dict[str, float]) -> None:
         sb  = r.get("sb") or 0
         cs  = r.get("cs") or 0
         fo  = r.get("fo") or 0
+        roe       = r.get("roe") or 0
+        gidp      = r.get("gidp") or 0
+        gitp      = r.get("gitp") or 0
         stay_h    = r.get("stay_hits") or 0
         stay_rbi  = r.get("stay_rbi")  or 0
         mhab      = r.get("multi_hit_abs") or 0
 
         singles = max(0, h - d - t - hr)
         tb      = singles + 2 * d + 3 * t + 4 * hr
+        xbh     = d + t + hr
 
         r["singles"] = singles
         r["tb"]      = tb
+        r["xbh"]     = xbh
 
         r["pavg"]  = (h / pa) if pa else 0.0
         r["avg"]   = r["pavg"]
@@ -353,9 +427,48 @@ def _augment_batters(rows: list[dict], league: dict[str, float]) -> None:
         r["ops_plus"]  = round(100.0 * r["ops"]  / lg_ops)  if lg_ops  else 100
         r["woba_plus"] = round(100.0 * r["woba"] / lg_woba) if lg_woba else 100
 
-        rad = (r.get("rad_1b") or 0) + (r.get("rad_2b") or 0) + (r.get("rad_3b") or 0)
-        r["rad"] = rad
-        r["rad_pa"] = (rad / pa) if pa else 0.0
+        # Per-base RAD breakdown + total + per-PA.
+        rad_1b = r.get("rad_1b") or 0
+        rad_2b = r.get("rad_2b") or 0
+        rad_3b = r.get("rad_3b") or 0
+        rad    = rad_1b + rad_2b + rad_3b
+        r["rad"]     = rad
+        r["rad_pa"]  = (rad / pa) if pa else 0.0
+
+        # 2C per-base conversion (move-runner success rate per stay opp).
+        for base in ("1b", "2b", "3b"):
+            op  = r.get(f"c2_op_{base}") or 0
+            adv = r.get(f"c2_adv_{base}") or 0
+            r[f"c2_conv_{base}"] = (adv / op) if op else 0.0
+        c2_op_total  = sum(r.get(f"c2_op_{b}")  or 0 for b in ("1b", "2b", "3b"))
+        c2_adv_total = sum(r.get(f"c2_adv_{b}") or 0 for b in ("1b", "2b", "3b"))
+        r["c2_op_total"]  = c2_op_total
+        r["c2_adv_total"] = c2_adv_total
+        r["c2_conv_total"] = (c2_adv_total / c2_op_total) if c2_op_total else 0.0
+
+        # Per-PA runner-advancement (any cause).
+        for base in ("1b", "2b", "3b"):
+            op  = r.get(f"adv_op_{base}") or 0
+            adv = r.get(f"adv_adv_{base}") or 0
+            r[f"adv_conv_{base}"] = (adv / op) if op else 0.0
+        adv_op_total  = sum(r.get(f"adv_op_{b}")  or 0 for b in ("1b", "2b", "3b"))
+        adv_adv_total = sum(r.get(f"adv_adv_{b}") or 0 for b in ("1b", "2b", "3b"))
+        r["adv_op_total"]  = adv_op_total
+        r["adv_adv_total"] = adv_adv_total
+        r["adv_conv_total"] = (adv_adv_total / adv_op_total) if adv_op_total else 0.0
+
+        # ROE / GIDP / GITP rates.
+        r["roe_pct"]  = (roe  / pa) if pa else 0.0
+        r["gidp_pct"] = (gidp / ab) if ab else 0.0
+        r["gitp_pct"] = (gitp / ab) if ab else 0.0
+
+        # bVORP / WAR (offense only; defensive piece folded in later).
+        bvorp = ((r["woba"] - repl_woba) * pa / 1.20) if pa else 0.0
+        r["bvorp"]   = bvorp
+        r["war_off"] = (bvorp / runs_per_win) if runs_per_win else 0.0
+
+        # Fielding components live in fielding_season; bWAR adds dDRS there.
+        r["bwar"] = r["war_off"]
 
         r["qualified"] = pa >= MIN_PA_QUALIFIED
 
@@ -373,6 +486,7 @@ _PITCHING_SUM_FIELDS = [
     "fo_arc1", "fo_arc2", "fo_arc3",
     "bf_arc1", "bf_arc2", "bf_arc3",
     "singles_allowed", "doubles_allowed", "triples_allowed",
+    "fastball_pct", "breaking_pct", "offspeed_pct",
 ]
 
 
@@ -384,7 +498,8 @@ def _aggregate_pitchers(
     agg: dict[int, dict] = {}
     games_seen: dict[int, set[int]] = {}
     starts: dict[int, int] = {}
-    wins: dict[int, int] = {}
+    workhorse_starts: dict[int, int] = {}
+    primary_counts: dict[int, dict[str, int]] = {}
 
     for r in rows:
         pid = r["player_id"]
@@ -394,11 +509,22 @@ def _aggregate_pitchers(
         games_seen.setdefault(pid, set()).add(r["game_id"])
         if r.get("is_starter"):
             starts[pid] = starts.get(pid, 0) + 1
+            if (r.get("outs_recorded") or 0) >= WORKHORSE_MIN_OUTS and \
+               (r.get("er") or 0) <= WORKHORSE_MAX_ER:
+                workhorse_starts[pid] = workhorse_starts.get(pid, 0) + 1
+        pp = (r.get("primary_pitch") or "").strip()
+        if pp:
+            primary_counts.setdefault(pid, {})[pp] = \
+                primary_counts.setdefault(pid, {}).get(pp, 0) + 1
 
     out = []
     for pid, slot in agg.items():
         slot["g"]  = len(games_seen.get(pid, set()))
         slot["gs"] = starts.get(pid, 0)
+        slot["ws"] = workhorse_starts.get(pid, 0)
+        slot["ws_pct"] = (slot["ws"] / slot["gs"]) if slot["gs"] else 0.0
+        counts = primary_counts.get(pid, {})
+        slot["primary_pitch"] = max(counts.items(), key=lambda x: x[1])[0] if counts else ""
         out.append(slot)
     return out
 
@@ -422,21 +548,38 @@ def _empty_pitcher_slot(pid, players_by_id, teams_by_id, sample_row) -> dict:
     }
 
 
-def _augment_pitchers(rows: list[dict], league: dict[str, float]) -> None:
-    lg_era = league.get("era", 0.0)
-    lg_fip = league.get("fip", 0.0)
+def _augment_pitchers(rows: list[dict], league: dict[str, float],
+                      runs_per_win: float) -> None:
+    lg_era    = league.get("era", 0.0) or 0.0
+    lg_fip    = league.get("fip", 0.0) or 0.0
+    lg_gsc    = league.get("gsc_avg", 50.0) or 50.0
+    lg_outs_g = league.get("outs_per_game", 13.5) or 13.5
+    lg_decay  = league.get("decay_raw_mean", 0.0) or 0.0
+    repl_era  = lg_era * REPL_ERA_PCT
+
+    # League non-HR hit shares (used for opponent SLG estimation when the
+    # pitcher table doesn't break hits-allowed into 1B/2B/3B).
+    share_1b = league.get("nonhr_1b_share", 0.85)
+    share_2b = league.get("nonhr_2b_share", 0.12)
+    share_3b = league.get("nonhr_3b_share", 0.03)
 
     for r in rows:
         outs = r.get("outs_recorded") or 0
         bf   = r.get("batters_faced") or 0
         h    = r.get("hits_allowed")  or 0
         er   = r.get("er") or r.get("runs_allowed") or 0
+        uer  = r.get("unearned_runs") or 0
         ra   = r.get("runs_allowed") or 0
         bb   = r.get("bb") or 0
         k    = r.get("k")  or 0
         hr   = r.get("hr_allowed") or 0
         hbp  = r.get("hbp_allowed") or 0
+        pitches = r.get("pitches") or 0
+        fo_ind  = r.get("fo_induced") or 0
+        sb_a    = r.get("sb_allowed") or 0
+        cs_c    = r.get("cs_caught") or 0
         g    = r.get("g")  or 0
+        gs   = r.get("gs") or 0
 
         ip = outs / 3.0
         r["ip"] = ip
@@ -447,31 +590,93 @@ def _augment_pitchers(rows: list[dict], league: dict[str, float]) -> None:
         r["bb9"]  = (bb * 9.0  / ip)   if ip   else 0.0
         r["hr9"]  = (hr * 9.0  / ip)   if ip   else 0.0
         r["fip"]  = ((13 * hr + 3 * (bb + hbp) - 2 * k) / ip + 3.10) if ip else 0.0
-        r["k_pct"]  = (k  / bf) if bf else 0.0
-        r["bb_pct"] = (bb / bf) if bf else 0.0
-        r["k_bb"]   = (k / bb)  if bb else float(k)
-        r["oavg"]   = (h / (bf - bb - hbp)) if (bf - bb - hbp) > 0 else 0.0
+        # xFIP — K% includes foul-outs as documented (uses K+FO as "K-equivalent")
+        r["xfip"] = (
+            (13 * hr + 3 * (bb + hbp) - 2 * (k + fo_ind)) * 27.0 / outs + 3.10
+        ) if outs else 0.0
+
+        # Rate stats (BF-denominated, per spec).
+        r["k_pct"]   = ((k + fo_ind) / bf) if bf else 0.0      # K% includes FO per docs
+        r["k_pct_pure"] = (k / bf) if bf else 0.0
+        r["bb_pct"]  = (bb / bf) if bf else 0.0
+        r["hr_pct"]  = (hr / bf) if bf else 0.0
+        r["k_bb"]    = (k / bb)  if bb else float(k)
+        r["k_minus_bb_pct"] = ((k - bb) / bf) if bf else 0.0
+        r["fo_pct_pit"]     = (fo_ind / bf) if bf else 0.0
+        r["op_per_pitch"]   = (outs / pitches) if pitches else 0.0
+        r["p_per_bf"]       = (pitches / bf) if bf else 0.0
+        r["cs_pct"]         = (cs_c / (sb_a + cs_c)) if (sb_a + cs_c) else 0.0
+
+        # Opponent slash (oAVG/oBABIP/oOBP/oSLG/oOPS).
+        ab_face = max(0, bf - bb - hbp)
+        r["oavg"]   = (h / ab_face) if ab_face > 0 else 0.0
+        bip_face   = max(0, bf - bb - hbp - k - hr)
+        r["obabip"] = ((h - hr) / bip_face) if bip_face > 0 else 0.0
+        r["oobp"]   = ((h + bb + hbp) / bf) if bf else 0.0
+        non_hr_h   = max(0, h - hr)
+        est_1b = non_hr_h * share_1b
+        est_2b = non_hr_h * share_2b
+        est_3b = non_hr_h * share_3b
+        est_tb = est_1b + 2 * est_2b + 3 * est_3b + 4 * hr
+        r["oslg"] = (est_tb / ab_face) if ab_face > 0 else 0.0
+        r["oops"] = r["oobp"] + r["oslg"]
 
         r["os_pct"] = (outs / (g * 27.0)) if g else 0.0
+        r["aor"]    = (outs / g) if g else 0.0
+        r["os_plus"]= round(100.0 * r["aor"] / lg_outs_g) if (lg_outs_g and r["aor"]) else 100
 
-        # wERA — arc-weighted earned-run rate.
+        # Arc-bucket rates.
         bf1, bf2, bf3 = r.get("bf_arc1") or 0, r.get("bf_arc2") or 0, r.get("bf_arc3") or 0
         er1, er2, er3 = r.get("er_arc1") or 0, r.get("er_arc2") or 0, r.get("er_arc3") or 0
+        k1, k2, k3    = r.get("k_arc1")  or 0, r.get("k_arc2")  or 0, r.get("k_arc3")  or 0
+        fo1, fo2, fo3 = r.get("fo_arc1") or 0, r.get("fo_arc2") or 0, r.get("fo_arc3") or 0
+
         weighted_er  = ARC_W_1 * er1 + ARC_W_2 * er2 + ARC_W_3 * er3
         weighted_bf  = ARC_W_1 * bf1 + ARC_W_2 * bf2 + ARC_W_3 * bf3
-        # Convert weighted ER to a per-9-out rate, mirroring ERA's per-27.
-        # Use total outs as the denominator's "outs share" to keep units sane.
         r["wera"] = (weighted_er * 27.0 / outs) * (
             (bf / weighted_bf) if weighted_bf else 1.0
         ) if outs and bf else 0.0
 
-        # Decay = K-rate drop from arc 1 → arc 3 (positive = fades late).
-        k1_rate = (er1 and 0) or ((r.get("k_arc1") or 0) / bf1 if bf1 else 0.0)
-        k3_rate = ((r.get("k_arc3") or 0) / bf3) if bf3 else 0.0
-        r["decay"] = k1_rate - k3_rate
+        k1_rate = (k1 / bf1) if bf1 else 0.0
+        k3_rate = (k3 / bf3) if bf3 else 0.0
+        r["decay_raw"]   = (k1_rate - k3_rate) * 100.0      # in % points
+        r["decay"]       = r["decay_raw"] - lg_decay        # drift-corrected
+        r["late_k_pct"]  = ((k3 + fo3) / bf3) if bf3 else 0.0
+        r["early_k_pct"] = ((k1 + fo1) / bf1) if bf1 else 0.0
+        r["arc3_reach_pct"] = (1.0 if bf3 > 0 else 0.0)
+
+        # Per-arc ER rates (R/9-style)
+        r["arc1_era"] = (er1 * 27.0 / (bf1 * (outs / bf))) if (bf and bf1) else 0.0
+        r["arc2_era"] = (er2 * 27.0 / (bf2 * (outs / bf))) if (bf and bf2) else 0.0
+        r["arc3_era"] = (er3 * 27.0 / (bf3 * (outs / bf))) if (bf and bf3) else 0.0
+
+        # Game Score (per appearance — averaged via game logs; here, season summary)
+        r["gsc_total"] = _pitcher_game_score(
+            outs=outs, k=k, h=h, er=er, uer=uer, bb=bb, hr=hr, fo=fo_ind,
+        )
+        # gsc_avg is set later via _augment_pitcher_game_logs once we have per-game lines.
 
         r["era_plus"] = round(100.0 * lg_era / r["era"]) if (r["era"] and lg_era) else 100
         r["fip_plus"] = round(100.0 * lg_fip / r["fip"]) if (r["fip"] and lg_fip) else 100
+        r["xfip_plus"] = round(100.0 * lg_fip / r["xfip"]) if (r["xfip"] and lg_fip) else 100
+
+        # pVORP / pWAR (replacement = REPL_ERA_PCT * league ERA).
+        if outs:
+            run_diff = (repl_era - r["wera"]) * (outs / 27.0)
+            r["pvorp"] = run_diff
+            r["pwar"]  = run_diff / runs_per_win if runs_per_win else 0.0
+        else:
+            r["pvorp"] = 0.0
+            r["pwar"]  = 0.0
+
+        # Pitch mix shares (already on the row per-game; here we surface them
+        # as the season aggregate — assume rows already carry per-game means
+        # because we summed them in _aggregate_pitchers; normalize by g).
+        for fld in ("fastball_pct", "breaking_pct", "offspeed_pct"):
+            tot = r.get(fld) or 0.0
+            r[fld] = (tot / g) if g else 0.0
+        prim = r.get("primary_pitch") or ""
+        r["primary_pitch"] = prim
 
         r["qualified"] = outs >= MIN_OUTS_QUALIFIED
 
@@ -536,7 +741,83 @@ def _league_totals(bat: list[dict], pit: list[dict]) -> dict[str, float]:
     out["p_k_pct"]  = (p_k  / p_bf) if p_bf else 0.0
     out["p_bb_pct"] = (p_bb / p_bf) if p_bf else 0.0
 
+    # Non-HR hit shares (1B/2B/3B share within non-HR hits). Used by
+    # opponent SLG estimation in _augment_pitchers.
+    non_hr_h = max(0, h - hr)
+    out["nonhr_1b_share"] = (singles / non_hr_h) if non_hr_h else 0.85
+    out["nonhr_2b_share"] = (d       / non_hr_h) if non_hr_h else 0.12
+    out["nonhr_3b_share"] = (t       / non_hr_h) if non_hr_h else 0.03
+
+    # League AOR / GSc baselines — computed in a second pass against the
+    # already-augmented pitcher rows. Placeholders here; _augment_pitchers
+    # reads what's present and falls back to defaults.
+    g_total = sum(r.get("g") or 0 for r in pit)
+    out["outs_per_game"] = (p_outs / g_total) if g_total else 13.5
+    # decay_raw_mean — computed in second pass too; pre-set neutral.
+    out["decay_raw_mean"] = 0.0
+    # League GSc placeholder — defaults to 50 (clamp midpoint) until
+    # _augment_pitcher_game_logs computes per-appearance lines and we can
+    # average them.
+    out["gsc_avg"] = 50.0
+
     return out
+
+
+# ---------------------------------------------------------------------------
+# Runs-per-win + Game Score + Pitcher game-log augmentation
+# ---------------------------------------------------------------------------
+
+def _runs_per_win(league: dict[str, float]) -> float:
+    """Approximate runs-per-win from league run environment.
+
+    For MLB ~ 4.5 R/G we get ~10; O27's higher run env nudges this up.
+    Formula: sqrt((R/G) * (RA/G)) × 2 — Pete Palmer-style derivation,
+    O27-tuned by replacing 10 with the league's actual scoring rate.
+    """
+    rpg  = ((league.get("runs") or 0) /
+            max(1, (league.get("pa") or 1) / 38.0))  # ~38 PA/team-game
+    base = max(DEFAULT_RUNS_PER_WIN, rpg * 2)
+    return base
+
+
+def _pitcher_game_score(*, outs, k, h, er, uer, bb, hr, fo) -> float:
+    score = (
+        GSC_BASE
+        + GSC_OUT * outs
+        + GSC_K_BONUS_OVER_3 * max(0, k - 3)
+        + GSC_FO_BONUS * fo
+        - GSC_H_COST * h
+        - GSC_HR_OVER_H_COST * hr
+        - GSC_BB_COST * bb
+        - GSC_ER_COST * er
+        - GSC_UER_COST * uer
+    )
+    if score < 0:
+        return 0.0
+    if score > 100:
+        return 100.0
+    return float(score)
+
+
+def _augment_pitcher_game_logs(game_logs: dict[int, list[dict]]) -> None:
+    """Stamp per-appearance Game Score + IP_disp onto each pitcher log
+    entry, and roll up gsc_avg / decay_pg / arc3_reach_rate onto the
+    season row by mutating it through `season_ref` (not done here — the
+    log just gets enriched in place)."""
+    for pid, log in game_logs.items():
+        for entry in log:
+            outs = entry.get("outs_recorded") or 0
+            entry["ip_disp"] = _format_ip(outs)
+            entry["gsc"] = _pitcher_game_score(
+                outs=outs,
+                k=entry.get("k") or 0,
+                h=entry.get("hits_allowed") or 0,
+                er=entry.get("er") or 0,
+                uer=entry.get("unearned_runs") or 0,
+                bb=entry.get("bb") or 0,
+                hr=entry.get("hr_allowed") or 0,
+                fo=entry.get("fo_induced") or 0,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -663,6 +944,209 @@ def _slugify(name: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Percentile shading helper used by the renderer
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Fielding aggregation
+# ---------------------------------------------------------------------------
+
+def _aggregate_fielders(rows, players_by_id, teams_by_id) -> list[dict]:
+    """One row per (player, position-played). Computes PO/A/E/CH/FLD%
+    plus a coarse dDRS / dWAR estimate from POS_DRS_RANGE."""
+    agg: dict[tuple[int, str], dict] = {}
+    games_seen: dict[tuple[int, str], set[int]] = {}
+
+    for r in rows:
+        pid = r["player_id"]
+        pos = (r.get("game_position") or "").upper().strip() or "—"
+        # Strip secondary positions like "SS-2B" → "SS" for grouping.
+        primary = pos.split("-")[0]
+        key = (pid, primary)
+        slot = agg.setdefault(key, _empty_fielder_slot(pid, primary,
+                                                      players_by_id, teams_by_id, r))
+        slot["po"] += (r.get("po") or 0)
+        slot["a"]  += (r.get("a")  or 0)
+        slot["e"]  += (r.get("e")  or 0)
+        if (r.get("pa") or 0) > 0 or (r.get("po") or 0) > 0:
+            games_seen.setdefault(key, set()).add(r["game_id"])
+
+    out = []
+    for key, slot in agg.items():
+        g = len(games_seen.get(key, set()))
+        slot["g"] = g
+        po, a, e = slot["po"], slot["a"], slot["e"]
+        ch = po + a + e
+        slot["ch"]   = ch
+        slot["fld_pct"] = ((po + a) / ch) if ch else 0.0
+        # dDRS — coarse: (FLD% - 0.970) × position DRS range × games-share.
+        range_pts = POS_DRS_RANGE.get(slot["position"], 8)
+        league_baseline = 0.970
+        dDRS = (slot["fld_pct"] - league_baseline) * 2 * range_pts * (g / 162.0)
+        slot["ddrs"] = dDRS
+        slot["dwar"] = dDRS / DEFAULT_RUNS_PER_WIN
+        out.append(slot)
+
+    out.sort(key=lambda r: -(r["po"] + r["a"]))
+    return out
+
+
+def _empty_fielder_slot(pid, position, players_by_id, teams_by_id, sample_row):
+    p = players_by_id.get(pid) or {}
+    t = teams_by_id.get(sample_row.get("team_id")) or {}
+    return {
+        "player_id": pid,
+        "name":      p.get("name", "?"),
+        "slug":      _slugify(p.get("name", str(pid))),
+        "position":  position,
+        "team":      t.get("abbrev", "?"),
+        "team_id":   sample_row.get("team_id"),
+        "po": 0, "a": 0, "e": 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pythagorean
+# ---------------------------------------------------------------------------
+
+def _compute_pythag(standings: list[dict]) -> tuple[dict[str, dict], dict[str, float]]:
+    """Fit the Pythagorean exponent across teams and return per-team
+    luck (fitted + MLB-default) plus a small summary dict."""
+    if len(standings) < 2:
+        return {}, {"fitted_exponent": 1.83, "n_teams": len(standings),
+                    "rmse_fit": 0.0, "rmse_default": 0.0}
+
+    teams_in = [r for r in standings if (r["gp"] or 0) > 0
+                and ((r["rs"] or 0) > 0 or (r["ra"] or 0) > 0)]
+    if not teams_in:
+        return {}, {"fitted_exponent": 1.83, "n_teams": 0,
+                    "rmse_fit": 0.0, "rmse_default": 0.0}
+
+    def pct(r, ra, k):
+        if r <= 0 and ra <= 0:
+            return 0.5
+        return (r ** k) / (r ** k + ra ** k)
+
+    def sse(k):
+        s = 0.0
+        for r in teams_in:
+            actual = r["w"] / r["gp"]
+            s += (actual - pct(r["rs"], r["ra"], k)) ** 2
+        return s
+
+    # Ternary search for k* in [1.0, 4.0].
+    a, b = 1.0, 4.0
+    for _ in range(60):
+        m1 = a + (b - a) / 3
+        m2 = b - (b - a) / 3
+        if sse(m1) < sse(m2):
+            b = m2
+        else:
+            a = m1
+    k_star = (a + b) / 2
+
+    out: dict[str, dict] = {}
+    for r in teams_in:
+        gp = r["gp"]
+        p_fit  = pct(r["rs"], r["ra"], k_star)
+        p_def  = pct(r["rs"], r["ra"], 1.83)
+        w_fit  = p_fit * gp
+        w_def  = p_def * gp
+        out[r["abbrev"]] = {
+            "pythag_pct_fit":     p_fit,
+            "pythag_pct_default": p_def,
+            "pythag_w_fit":       w_fit,
+            "pythag_w_default":   w_def,
+            "luck_fit":           r["w"] - w_fit,
+            "luck_default":       r["w"] - w_def,
+        }
+
+    n = len(teams_in)
+    rmse_fit = (sse(k_star) / n) ** 0.5
+    rmse_def = (sse(1.83)   / n) ** 0.5
+    summary = {
+        "fitted_exponent": k_star,
+        "mlb_default":     1.83,
+        "n_teams":         n,
+        "rmse_fit":        rmse_fit,
+        "rmse_default":    rmse_def,
+        "improvement_pct": ((rmse_def - rmse_fit) / rmse_def * 100.0) if rmse_def else 0.0,
+    }
+    return out, summary
+
+
+# ---------------------------------------------------------------------------
+# Monthly splits (league-wide partition)
+# ---------------------------------------------------------------------------
+
+def _monthly_splits(batting_rows: list[dict],
+                    pitching_rows: list[dict],
+                    games: list[dict]) -> list[dict]:
+    """For each calendar month present in the schedule, sum league-wide
+    counters and compute the bedrock rates (AVG/OBP/SLG/OPS/ERA/WHIP)."""
+    game_month = {}
+    for g in games:
+        d = g.get("game_date") or ""
+        if len(d) >= 7:
+            game_month[g["id"]] = d[:7]   # YYYY-MM
+
+    months: dict[str, dict] = {}
+    for r in batting_rows:
+        m = game_month.get(r["game_id"])
+        if not m:
+            continue
+        slot = months.setdefault(m, _new_month_bucket(m))
+        for f in ("pa", "ab", "hits", "doubles", "triples", "hr",
+                  "bb", "hbp", "k", "stays", "runs", "rbi"):
+            slot[f] += r.get(f) or 0
+        slot["games"].add(r["game_id"])
+    for r in pitching_rows:
+        m = game_month.get(r["game_id"])
+        if not m:
+            continue
+        slot = months.setdefault(m, _new_month_bucket(m))
+        slot["p_outs"] += r.get("outs_recorded") or 0
+        slot["p_er"]   += r.get("er") or 0
+        slot["p_bb"]   += r.get("bb") or 0
+        slot["p_h"]    += r.get("hits_allowed") or 0
+
+    out = []
+    for m, slot in sorted(months.items()):
+        pa, ab, h, d, t, hr, bb, hbp, k = (
+            slot["pa"], slot["ab"], slot["hits"],
+            slot["doubles"], slot["triples"], slot["hr"],
+            slot["bb"], slot["hbp"], slot["k"],
+        )
+        singles = max(0, h - d - t - hr)
+        tb = singles + 2 * d + 3 * t + 4 * hr
+        ip = slot["p_outs"] / 3.0
+        out.append({
+            "month": m,
+            "g":     len(slot["games"]),
+            "pa": pa, "ab": ab, "h": h, "hr": hr, "bb": bb, "k": k, "stays": slot["stays"],
+            "runs": slot["runs"], "rbi": slot["rbi"],
+            "avg":  (h / ab) if ab else 0.0,
+            "obp":  ((h + bb + hbp) / pa) if pa else 0.0,
+            "slg":  (tb / pa) if pa else 0.0,
+            "ops":  (((h + bb + hbp) / pa) if pa else 0.0)
+                    + ((tb / pa) if pa else 0.0),
+            "era":  (slot["p_er"] * 27.0 / slot["p_outs"]) if slot["p_outs"] else 0.0,
+            "whip": ((slot["p_bb"] + slot["p_h"]) / ip) if ip else 0.0,
+        })
+    return out
+
+
+def _new_month_bucket(month: str) -> dict:
+    return {
+        "month": month, "games": set(),
+        "pa": 0, "ab": 0, "hits": 0, "doubles": 0, "triples": 0,
+        "hr": 0, "bb": 0, "hbp": 0, "k": 0, "stays": 0,
+        "runs": 0, "rbi": 0,
+        "p_outs": 0, "p_er": 0, "p_bb": 0, "p_h": 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Percentile helper (unchanged)
 # ---------------------------------------------------------------------------
 
 def percentile_ranks(values: list[float]) -> list[float]:

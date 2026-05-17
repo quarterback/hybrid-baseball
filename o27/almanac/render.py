@@ -109,7 +109,23 @@ def render_site(
     _write(env, "leaders_stays.html.j2",
            os.path.join(leaders_dir, "stays.html"),
            {**base_ctx, "section": "leaders", "depth": 1})
-    pages_written += 3
+    _write(env, "leaders_fielding.html.j2",
+           os.path.join(leaders_dir, "fielding.html"),
+           {**base_ctx, "section": "leaders", "depth": 1})
+    _write(env, "leaders_value.html.j2",
+           os.path.join(leaders_dir, "value.html"),
+           {**base_ctx, "section": "leaders", "depth": 1})
+    _write(env, "leaders_situational.html.j2",
+           os.path.join(leaders_dir, "situational.html"),
+           {**base_ctx, "section": "leaders", "depth": 1})
+    pages_written += 6
+
+    # ------- awards + parks (top-level pages) -------
+    _write(env, "awards.html.j2", os.path.join(out_dir, "awards.html"),
+           {**base_ctx, "section": "awards", "depth": 0})
+    _write(env, "parks.html.j2", os.path.join(out_dir, "parks.html"),
+           {**base_ctx, "section": "parks", "depth": 0})
+    pages_written += 2
 
     # ------- teams -------
     teams_dir = os.path.join(out_dir, "teams")
@@ -219,10 +235,13 @@ def render_site(
         }
         bat_log = views.game_logs_batter.get(p["id"], [])
         pit_log = views.game_logs_pitcher.get(p["id"], [])
+        fielding = views.fielding_by_player.get(p["id"])
+        attrs = _attribute_panel(p)
         out_file = os.path.join(players_dir, f"{team_abb.lower()}_{slug}.html")
         _write(env, "player.html.j2", out_file,
                {**base_ctx, "section": "players", "depth": 1,
                 "player": player_ctx, "season": season,
+                "fielding": fielding, "attrs": attrs,
                 "game_log": bat_log, "pitcher_log": pit_log})
         pages_written += 1
 
@@ -237,6 +256,8 @@ def render_site(
         pitching_by_game.setdefault(r["game_id"], []).append(r)
     players_by_id = {p["id"]: p for p in views.players}
 
+    game_meta = {g["id"]: g for g in dataset.get("games") or []}
+
     for g in views.schedule:
         a_rows = batting_by_game.get(g["id"], [])
         p_rows = pitching_by_game.get(g["id"], [])
@@ -250,6 +271,17 @@ def render_site(
             lst.sort(key=lambda r: (-(r.get("pa") or 0), r.get("name") or ""))
         for lst in (away_pitching, home_pitching):
             lst.sort(key=lambda r: -(r.get("outs_recorded") or 0))
+
+        # Scoring events with player names resolved.
+        events = []
+        for e in views.scoring_by_game.get(g["id"], []):
+            ee = dict(e)
+            ee["batter_name"] = (players_by_id.get(e["batter_id"]) or {}).get("name")
+            ee["runner_name"] = (players_by_id.get(e["runner_id"]) or {}).get("name")
+            events.append(ee)
+
+        weather = _format_weather(game_meta.get(g["id"]) or {})
+
         _write(env, "game.html.j2",
                os.path.join(games_dir, f"{g['id']}.html"),
                {**base_ctx, "section": "schedule", "depth": 1,
@@ -257,7 +289,9 @@ def render_site(
                 "away_batting":  away_batting,
                 "home_batting":  home_batting,
                 "away_pitching": away_pitching,
-                "home_pitching": home_pitching})
+                "home_pitching": home_pitching,
+                "scoring_events": events,
+                "weather": weather})
         pages_written += 1
 
     # ------- exports index -------
@@ -309,6 +343,69 @@ def _box_row(r: dict, players_by_id: dict[int, dict]) -> dict:
         "name": p.get("name", f"#{r['player_id']}"),
         "slug": _slugify(p.get("name") or str(r["player_id"])),
     }
+
+
+def _attribute_panel(p: dict) -> list[tuple[str, int]]:
+    """Return the (label, value) tuples for the scout-grade panel.
+    Skips fields that are missing or zero on the raw player row."""
+    if p.get("is_pitcher"):
+        keys = [
+            ("Stuff",    "pitcher_skill"),
+            ("Command",  "command"),
+            ("Movement", "movement"),
+            ("Stamina",  "stamina"),
+            ("Grit",     "grit"),
+            ("Defense",  "defense"),
+            ("Arm",      "arm"),
+        ]
+    else:
+        keys = [
+            ("Skill",    "skill"),
+            ("Contact",  "contact"),
+            ("Power",    "power"),
+            ("Eye",      "eye"),
+            ("Speed",    "speed"),
+            ("Baserun",  "baserunning"),
+            ("Run Aggr", "run_aggressiveness"),
+            ("Defense",  "defense"),
+            ("Arm",      "arm"),
+            ("Def·IF",   "defense_infield"),
+            ("Def·OF",   "defense_outfield"),
+            ("Def·C",    "defense_catcher"),
+            ("Adapt",    "adaptability"),
+            ("Leader",   "leadership"),
+            ("WorkEth",  "work_ethic"),
+        ]
+    out: list[tuple[str, int]] = []
+    for label, field in keys:
+        v = p.get(field)
+        if v is None:
+            continue
+        try:
+            iv = int(round(float(v)))
+        except (TypeError, ValueError):
+            continue
+        if iv <= 0:
+            continue
+        out.append((label, iv))
+    return out
+
+
+def _format_weather(g: dict) -> str:
+    if not g:
+        return ""
+    bits = []
+    for fld, label in (
+        ("temperature_tier", "temp"),
+        ("wind_tier", "wind"),
+        ("humidity_tier", "humid"),
+        ("precip_tier", "precip"),
+        ("cloud_tier", "sky"),
+    ):
+        v = (g.get(fld) or "").strip()
+        if v and v not in ("neutral", "normal", "none", "mild", "clear"):
+            bits.append(f"{label} {v}")
+    return " · ".join(bits)
 
 
 def _source_label(views: Views, dataset: dict) -> str:

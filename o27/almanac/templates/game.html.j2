@@ -19,6 +19,7 @@
     {{ game.date }}
     {% if game.super_inning %} · <span class="pill">SUPER INNINGS</span>{% endif %}
     {% if game.is_playoff %} · <span class="pill">POSTSEASON</span>{% endif %}
+    {% if weather %} · {{ weather }}{% endif %}
   </div>
 </div>
 
@@ -145,5 +146,34 @@
     </table>
   </div>
 </section>
+
+{% if scoring_events %}
+<section>
+  <div class="section-bar"><h2>Scoring Events</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th>Seq</th><th data-type="text">Half</th><th>Outs</th>
+        <th data-type="text">Batter</th><th data-type="text">Runner</th>
+        <th>From</th><th>V</th><th>H</th>
+      </tr></thead>
+      <tbody>
+        {% for e in scoring_events %}
+        <tr>
+          <td>{{ e.seq }}</td>
+          <td class="t-left">{{ e.half }}</td>
+          <td>{{ e.outs_before }}</td>
+          <td class="t-left">{{ e.batter_name or e.batter_id }}</td>
+          <td class="t-left">{{ e.runner_name or e.runner_id }}</td>
+          <td>{{ ['1B','2B','3B'][e.runner_from_base] if e.runner_from_base is not none else '—' }}</td>
+          <td>{{ e.visitors_score }}</td>
+          <td>{{ e.home_score }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 
 {% endblock %}
