@@ -17,6 +17,7 @@ Public API
 from __future__ import annotations
 import math
 import random
+from contextlib import contextmanager
 from typing import Optional
 
 from .state import GameState, Player
@@ -504,7 +505,7 @@ def contact_quality(
 # Runner advancement model
 # ---------------------------------------------------------------------------
 
-def _batter_clutch(batter: "Player", lift: float = 0.0) -> float:
+def _batter_clutch(batter: "Player") -> float:
     """Combined batter-side clutch for the RISP-pressure roll.
 
     Hard skills (eye + contact) give a baseline; the two mental
@@ -512,23 +513,140 @@ def _batter_clutch(batter: "Player", lift: float = 0.0) -> float:
     above neutral. A low-eye/contact bench guy with maxed
     leadership + grit lifts to roughly the same clutch as a star
     hitter with neutral mental — that's the joker archetype the
-    sport rewards.
+    sport rewards. Returns a value in [0.0, 1.0].
 
-    `lift` is the per-PA leadership flare (see _apply_leadership_lift)
-    — a transient bump to the eye/contact baseline that stacks with
-    the always-on mental contribution. Stacking is intentional: a
-    high-leadership batter who has ALSO triggered the flare on this
-    PA gets BOTH the base mental lift AND the transient eye/contact
-    bump, so clutch moments compound the way the design wants.
-
-    Returns a value in [0.0, 1.0].
+    When a leadership flare is active (`leadership_flare_scope`), the
+    batter's eye/contact have already been mutated upward, so the
+    `base` calculation here picks up the lift automatically — no
+    explicit lift parameter needed. That's how the flare broadens its
+    impact: every read of every rating during the PA sees the lifted
+    value.
     """
     base   = (float(getattr(batter, "eye",     0.5) or 0.5)
               + float(getattr(batter, "contact", 0.5) or 0.5)) / 2.0
     lead   = float(getattr(batter, "leadership", 0.5) or 0.5)
     bgrit  = float(getattr(batter, "grit",       0.5) or 0.5)
     mental = (lead - 0.5) + (bgrit - 0.5)   # ±1; stacks both attrs
-    return max(0.0, min(1.0, base + lift + 0.5 * mental))
+    return max(0.0, min(1.0, base + 0.5 * mental))
+
+
+# Rating attributes the per-PA leadership flare temporarily lifts.
+# When a flare fires, EVERY downstream system that reads these fields
+# sees the lifted value for the duration of the PA — that's how the
+# lift broadens beyond just offense (pitch_probs / contact_quality
+# / fielding rolls all read the same fields). At PA end the context
+# manager restores originals via try/finally, so no state leaks.
+_BATTER_LIFT_ATTRS    = ("eye", "contact", "power", "skill")
+_PITCHER_LIFT_ATTRS   = ("command", "pitcher_skill", "movement", "grit")
+_DEFENSE_LIFT_ATTRS   = ("defense_rating",)
+
+
+def _lift_attr(obj, attr: str, delta: float) -> None:
+    cur = getattr(obj, attr, None)
+    if cur is None:
+        return
+    try:
+        setattr(obj, attr, max(0.0, min(1.0, float(cur) + float(delta))))
+    except (TypeError, ValueError):
+        return
+
+
+def apply_pa_leadership_flares(
+    rng: random.Random,
+    state: "GameState",
+    batter: "Player",
+    pitcher: "Player",
+) -> None:
+    """Called once at PA start. Rolls leadership flares for both the
+    batter and the pitcher and, if either fires, mutates the relevant
+    rating fields in-place so EVERY downstream system reads the
+    lifted values for the duration of the PA. Originals are stashed
+    on `state.flare_originals` so `release_pa_leadership_flares` can
+    restore them at PA end.
+
+    Affected fields (when the corresponding side's flare fires):
+      Batter — eye, contact, power, skill
+      Pitcher — command, pitcher_skill (Stuff), movement, grit
+      Fielding team — defense_rating (rallied by the pitcher's flare)
+
+    Skipped attrs (intentional): `leadership` itself and (batter-side)
+    `grit` are the meta-attributes that DRIVE the flare; lifting them
+    would be circular. Pitcher-side `grit` IS lifted because there
+    grit reads as fatigue resistance, not a mental-flare input.
+
+    This is what makes leadership impact the WHOLE GAME, not just
+    offense. A high-leadership pitcher whose flare fires gets better
+    pitches (lifted Stuff/movement/command), bears down through
+    fatigue (lifted grit), AND lifts the fielders behind him
+    (lifted defense_rating) — for that single PA.
+
+    Idempotent on already-active flares (no-op if state.flare_lift_active
+    is already True) — guards against accidental double-application
+    across re-entrant pitch calls inside the same PA.
+    """
+    if state.flare_lift_active:
+        return
+
+    batter_lift  = _apply_leadership_lift(rng, state, batter)
+    pitcher_lift = _apply_leadership_lift(rng, state, pitcher)
+    if batter_lift <= 0.0 and pitcher_lift <= 0.0:
+        return
+
+    originals: list = []
+    if batter_lift > 0.0:
+        for a in _BATTER_LIFT_ATTRS:
+            if hasattr(batter, a):
+                originals.append((batter, a, getattr(batter, a)))
+                _lift_attr(batter, a, batter_lift)
+    if pitcher_lift > 0.0:
+        for a in _PITCHER_LIFT_ATTRS:
+            if hasattr(pitcher, a):
+                originals.append((pitcher, a, getattr(pitcher, a)))
+                _lift_attr(pitcher, a, pitcher_lift)
+        fld = getattr(state, "fielding_team", None)
+        if fld is not None:
+            for a in _DEFENSE_LIFT_ATTRS:
+                if hasattr(fld, a):
+                    originals.append((fld, a, getattr(fld, a)))
+                    _lift_attr(fld, a, pitcher_lift)
+
+    state.flare_originals = originals
+    state.flare_lift_active = True
+
+
+def release_pa_leadership_flares(state: "GameState") -> None:
+    """Called at PA end (`pa._end_at_bat`). Restores all originally-stored
+    rating values from `state.flare_originals`. Safe to call when no
+    flare is active — no-op in that case. Always called via try/finally
+    semantics so a mid-PA exception still rolls back the mutations."""
+    if not state.flare_lift_active and not state.flare_originals:
+        return
+    for obj, attr, val in state.flare_originals:
+        try:
+            setattr(obj, attr, val)
+        except Exception:
+            pass
+    state.flare_originals = []
+    state.flare_lift_active = False
+
+
+@contextmanager
+def leadership_flare_scope(
+    rng: random.Random,
+    state: "GameState",
+    batter: "Player",
+    pitcher: "Player",
+):
+    """Test/utility context manager — wrap a block in the same per-PA
+    flare semantics that production uses. Mostly for tests; production
+    drives flares via apply_pa_leadership_flares (PA start) and
+    release_pa_leadership_flares (PA end) so the lifts persist across
+    multiple pitches in the same PA."""
+    try:
+        apply_pa_leadership_flares(rng, state, batter, pitcher)
+        yield
+    finally:
+        release_pa_leadership_flares(state)
 
 
 def _apply_leadership_lift(
@@ -641,8 +759,6 @@ def _resolve_risp_pressure(
     state: "GameState",
     batter: "Player",
     pitcher: "Player",
-    leadership_lift: float = 0.0,
-    pitcher_lift: float = 0.0,
 ) -> Optional[str]:
     """Two-stage talent-driven RISP-pressure roll.
 
@@ -686,14 +802,13 @@ def _resolve_risp_pressure(
     else:
         situational = 0.16     # _2_ or __3 alone, the baseline RISP case
 
+    # composure & clutch read the player's CURRENT field values; the
+    # caller's leadership_flare_scope (if active) has already lifted
+    # those fields transiently, so the flare effects propagate without
+    # needing parameters here.
     composure = (float(getattr(pitcher, "command", 0.5) or 0.5)
                  + float(getattr(pitcher, "grit",    0.5) or 0.5)) / 2.0
-    # Pitcher's leadership flare lifts composure transiently — a clutch
-    # pitcher who bears down in a jam suppresses the pressure event.
-    composure = max(0.0, min(1.0, composure + pitcher_lift))
-    # Per-PA batter leadership flare stacks into the same clutch the
-    # static mental attrs feed — see _apply_leadership_lift design.
-    clutch    = _batter_clutch(batter, lift=leadership_lift)
+    clutch    = _batter_clutch(batter)
     # Pitcher vulnerability and batter pressure-creation, both centered
     # at 0 for neutral attributes. ±0.5 at the player rating extremes.
     pitch_vuln  = (0.5 - composure)
@@ -1758,6 +1873,21 @@ class ProbabilisticProvider:
         strikes = state.count.strikes
         spell   = state.pitcher_spell_count
 
+        # Per-PA leadership flare — fired ONCE at PA start (first pitch
+        # of the PA, before pitch_outcome or contact_quality run). The
+        # flare mutates rating fields IN PLACE on the batter and pitcher
+        # (and the fielding team) so every downstream read this PA — the
+        # pitch model, the contact model, the talent gate, the RISP
+        # pressure roll, the fielding rolls — picks up the lifted value
+        # uniformly. Restored at PA end in pa._end_at_bat. This is the
+        # mechanism that makes leadership impact the WHOLE game for
+        # whichever side flares, not just offense. See
+        # apply_pa_leadership_flares / release_pa_leadership_flares.
+        if (balls == 0 and strikes == 0
+                and state.current_at_bat_swings == 0
+                and not state.flare_lift_active):
+            apply_pa_leadership_flares(rng, state, batter, pitcher)
+
         weather = getattr(state, "weather", None)
 
         # Select one pitch from the repertoire (if the pitcher has one).
@@ -1811,34 +1941,17 @@ class ProbabilisticProvider:
         is_hr     = False
         is_triple = False
 
-        # Per-PA leadership flare — transient one-off ratings bumps
-        # triggered by leverage conditions (RISP, loaded, late, close
-        # game). Both batter AND pitcher can flare on the same PA;
-        # leadership is leverage-symmetric, not batter-only. Computed
-        # ONCE at PA start and threaded into every downstream system
-        # that consults the player's ratings. The flares ARE allowed
-        # to stack with the RISP pressure event below — a high-
-        # leadership batter who triggers BOTH on the same PA is the
-        # decisive "took over the game" moment; a high-leadership
-        # pitcher's flare fights back through composure. See
-        # _apply_leadership_lift for the trigger conditions.
-        lead_lift     = _apply_leadership_lift(rng, state, batter)
-        pitcher_lift  = _apply_leadership_lift(rng, state, pitcher)
-
         # RISP pressure — two-stage talent-driven roll. Pitcher composure
-        # (command + grit + flare lift) vs. batter clutch (eye+contact
-        # baseline + leadership/grit mental stack + batter flare lift)
-        # drives whether the moment manifests; if it does, exactly one
-        # of {hit, error, leave_up} fires — those three are mutually
-        # exclusive, but the leadership flares CAN fire concurrently
-        # with the RISP event. See _resolve_risp_pressure docstring.
-        # "leave_up" must fire BEFORE resolve_contact so the mistake
-        # pitch actually changes the contact-quality bucket.
-        risp_event = _resolve_risp_pressure(
-            rng, state, batter, pitcher,
-            leadership_lift=lead_lift,
-            pitcher_lift=pitcher_lift,
-        )
+        # vs. batter clutch drives whether the moment manifests; if it
+        # does, exactly one of {hit, error, leave_up} fires — those
+        # three are mutually exclusive. The per-PA leadership flares
+        # (rolled at PA start via apply_pa_leadership_flares above) have
+        # already mutated the relevant ratings in place, so composure
+        # and clutch read the LIFTED values automatically here — no
+        # parameter threading needed. See _resolve_risp_pressure
+        # docstring. "leave_up" must fire BEFORE resolve_contact so
+        # the mistake pitch actually changes the contact-quality bucket.
+        risp_event = _resolve_risp_pressure(rng, state, batter, pitcher)
         if risp_event == "leave_up":
             if quality == "weak":
                 quality = "medium"
@@ -1876,30 +1989,18 @@ class ProbabilisticProvider:
         # − command — so a single coherent talent signal flows through every
         # contact event in O27, not just stays.
         if quality in ("weak", "medium"):
-            # Effective ratings = base + per-PA leadership flare. The
-            # flare is the "captain's moment" lift; when it fires the
-            # talent gate treats that side's hard skills as briefly
-            # higher. Both flares contribute on the same PA — a
-            # batter-flare bumps eye/contact while a pitcher-flare
-            # bumps command, and the talent_run formula subtracts
-            # cmd_dev_run, so they pull in opposite directions, which
-            # is the dueling-clutch behavior the design wants.
-            eye_eff     = float(batter.eye)      + lead_lift
-            con_eff     = float(batter.contact)  + lead_lift
-            cmd_eff     = float(pitcher.command) + pitcher_lift
-            eye_dev_run = (eye_eff - 0.5) * 2
-            con_dev_run = (con_eff - 0.5) * 2
-            cmd_dev_run = (cmd_eff - 0.5) * 2
+            # The leadership flares (if any) have already mutated
+            # batter.eye / batter.contact / pitcher.command at PA start,
+            # so the reads below pick up the lifted values uniformly.
+            eye_dev_run = (batter.eye - 0.5) * 2
+            con_dev_run = (batter.contact - 0.5) * 2
+            cmd_dev_run = (pitcher.command - 0.5) * 2
             talent_run  = eye_dev_run + con_dev_run - cmd_dev_run
             # "hit" manifestation — clutch batter sees the mistake pitch
             # and capitalizes. Lift scales with the batter's own clutch
-            # (eye+contact baseline + leadership flare lift) so the
-            # boost varies by personnel even within the manifestation;
-            # an elite eye+contact bat whose flare also fired adds
-            # ~+0.9 to talent_run, more than doubling the downstream
-            # hit-bonus magnitude.
+            # (already includes flare lift since eye/contact are mutated).
             if risp_event == "hit":
-                _clutch = ((eye_eff + con_eff) / 2.0)
+                _clutch = (batter.eye + batter.contact) / 2.0
                 talent_run += 2.0 * (_clutch - 0.5)
             # Bonus is bidirectional: positive shifts toward more hits,
             # negative toward more outs. Weak gets a wider swing because

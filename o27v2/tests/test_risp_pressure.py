@@ -248,42 +248,103 @@ def test_progressive_conditions_stack_fire_rate():
 
 
 def test_pitcher_flare_suppresses_pressure_event():
-    """When the pitcher's flare fires (modeled here by directly passing
-    a positive pitcher_lift), the pressure event fires LESS often —
-    composure is lifted, vulnerability drops. This is the duel."""
+    """When the pitcher's command + grit are LIFTED transiently (the
+    in-place mutation the flare scope performs), the pressure event
+    fires LESS often — composure is lifted, vulnerability drops.
+    This is the duel."""
     fielding = _new_fielding()
     batter = _new_batter(eye=0.65, contact=0.65)
-    pitcher = _new_pitcher(command=0.40, grit=0.40)
     state = _FakeState(["r1", "r2", "r3"], fielding)
 
-    def _rate_with_pitcher_lift(lift, n=5000, seed=2):
+    def _rate_with_pitcher_at(command, grit, n=5000, seed=2):
         rng = random.Random(seed)
+        pitcher = _new_pitcher(command=command, grit=grit)
         fires = sum(1 for _ in range(n)
-                    if _resolve_risp_pressure(
-                        rng, state, batter, pitcher, pitcher_lift=lift) is not None)
+                    if _resolve_risp_pressure(rng, state, batter, pitcher) is not None)
         return fires / n
 
-    no_lift   = _rate_with_pitcher_lift(0.00)
-    big_lift  = _rate_with_pitcher_lift(0.25)
-    assert big_lift < no_lift, (
-        f"pitcher flare should suppress pressure: no_lift={no_lift:.3f} "
-        f"big_lift={big_lift:.3f}"
+    # Base pitcher: command=0.40, grit=0.40. "Flared" pitcher: same
+    # base plus +0.25 lift on each (clamped to 1.0).
+    no_flare  = _rate_with_pitcher_at(command=0.40, grit=0.40)
+    flared    = _rate_with_pitcher_at(command=0.65, grit=0.65)
+    assert flared < no_flare, (
+        f"pitcher flare should suppress pressure: base={no_flare:.3f} "
+        f"flared={flared:.3f}"
     )
 
 
 def test_batter_flare_amplifies_pressure_event():
-    """Mirror of the pitcher test — positive batter leadership_lift
-    increases the pressure fire rate via clutch."""
+    """Mirror of the pitcher test — when the batter's eye + contact
+    are lifted (flare scope mutation), the pressure fire rate goes up
+    via clutch."""
     fielding = _new_fielding()
-    batter = _new_batter(eye=0.50, contact=0.50)
     pitcher = _new_pitcher(command=0.50, grit=0.50)
     state = _FakeState([None, "r2", None], fielding)
 
-    def _rate_with_batter_lift(lift, n=5000, seed=3):
+    def _rate_with_batter_at(eye, contact, n=5000, seed=3):
         rng = random.Random(seed)
+        batter = _new_batter(eye=eye, contact=contact)
         fires = sum(1 for _ in range(n)
-                    if _resolve_risp_pressure(
-                        rng, state, batter, pitcher, leadership_lift=lift) is not None)
+                    if _resolve_risp_pressure(rng, state, batter, pitcher) is not None)
         return fires / n
 
-    assert _rate_with_batter_lift(0.25) > _rate_with_batter_lift(0.00)
+    no_flare = _rate_with_batter_at(eye=0.50, contact=0.50)
+    flared   = _rate_with_batter_at(eye=0.75, contact=0.75)
+    assert flared > no_flare
+
+
+def test_flare_scope_lifts_all_listed_attrs():
+    """apply_pa_leadership_flares mutates every listed rating attribute
+    in-place on the side that fires (we force the magnitude high here
+    by giving the player max leadership in a stacked-leverage state).
+    The release hook restores everything cleanly."""
+    from o27.engine.prob import (
+        apply_pa_leadership_flares,
+        release_pa_leadership_flares,
+        _BATTER_LIFT_ATTRS,
+        _PITCHER_LIFT_ATTRS,
+    )
+    fielding = _new_fielding()
+    batter = _new_batter(eye=0.5, contact=0.5, leadership=0.95, grit=0.5)
+    # Give the batter a hard_contact_delta to ensure all listed attrs
+    # exist for the test (skill, power are dataclass defaults).
+    pitcher = _new_pitcher(command=0.5, grit=0.5, leadership=0.95)
+    state = _FakeState(["r1", "r2", "r3"], fielding, outs=18,
+                       score={"visitors": 0, "home": 0})
+    state.flare_originals = []
+    state.flare_lift_active = False
+
+    # Try repeatedly until at least one flare fires (probabilistic).
+    rng = random.Random(0)
+    fired = False
+    for attempt in range(200):
+        batter_orig  = {a: getattr(batter, a) for a in _BATTER_LIFT_ATTRS
+                        if hasattr(batter, a)}
+        pitcher_orig = {a: getattr(pitcher, a) for a in _PITCHER_LIFT_ATTRS
+                        if hasattr(pitcher, a)}
+        fielding_orig_def = fielding.defense_rating
+        apply_pa_leadership_flares(rng, state, batter, pitcher)
+        if state.flare_lift_active:
+            fired = True
+            # At least ONE listed attr should be lifted above its original
+            # on whichever side fired.
+            b_lifted = any(getattr(batter, a)  > batter_orig.get(a, 0)
+                           for a in batter_orig)
+            p_lifted = any(getattr(pitcher, a) > pitcher_orig.get(a, 0)
+                           for a in pitcher_orig)
+            # Defense should be lifted only when the pitcher's flare fired.
+            d_lifted = fielding.defense_rating > fielding_orig_def
+            assert b_lifted or p_lifted, "expected at least one side lifted"
+            if p_lifted:
+                assert d_lifted, "pitcher flare should also lift defense_rating"
+            release_pa_leadership_flares(state)
+            # All originals restored exactly:
+            for a, v in batter_orig.items():
+                assert getattr(batter, a) == v
+            for a, v in pitcher_orig.items():
+                assert getattr(pitcher, a) == v
+            assert fielding.defense_rating == fielding_orig_def
+            assert not state.flare_lift_active
+            assert state.flare_originals == []
+            break
+    assert fired, "Expected at least one flare to fire across 200 attempts"

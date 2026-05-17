@@ -360,11 +360,12 @@ talent-driven roll.
   the 2C stay mechanic compounds the payoff — a 2C+1 chain plates
   two runs by itself.
 
-**2. Leadership flare (`prob._apply_leadership_lift`)** — per-PA
-one-off ratings bump triggered by accumulated leverage conditions.
-This is the "progressive temporary stat boost" mechanic: leadership
-isn't a static input to one formula, it's a flare that fires under
-pressure and lifts ratings transiently for that PA.
+**2. Leadership flare (`prob._apply_leadership_lift` +
+`apply_pa_leadership_flares`)** — per-PA one-off ratings bump
+triggered by accumulated leverage conditions. This is the
+"progressive temporary stat boost" mechanic: leadership isn't a
+static input to one formula, it's a flare that fires under pressure
+and lifts ratings transiently for the PA.
 
   *Triggers* (each adds to fire probability; progressive): RISP
   +0.06, bases loaded +0.06, late game +0.04, close game +0.03,
@@ -372,17 +373,28 @@ pressure and lifts ratings transiently for that PA.
   high-leadership players fire more often AND lift bigger.
 
   *Side-symmetric.* The flare fires for BOTH batters and pitchers.
-  A high-leadership pitcher facing a jam bears down and lifts
-  composure; a high-leadership batter in the same spot lifts
-  eye/contact. They duel through the downstream systems.
 
-  *Stacking.* The lift is threaded as an offset (no mutation) into:
-  `_batter_clutch` (Stage 1 firing prob), composure (suppresses
-  firing when pitcher flares), the post-contact `talent_run` gate
-  (lifted eye/contact vs lifted command), and the `hit`-manifestation
-  magnitude bump. A clutch slugger whose flare AND whose pressure
-  event both fire on the same PA gets every lift at once — that's
-  the decisive "took over the game" moment.
+  *Broad in-place mutation.* When a side's flare fires,
+  `apply_pa_leadership_flares` mutates that side's relevant rating
+  fields IN PLACE at PA start and stashes the originals on
+  `state.flare_originals`. `pa._end_at_bat` calls
+  `release_pa_leadership_flares` to restore. Every downstream
+  system that reads those fields during the PA — `pitch_outcome`,
+  `contact_quality`, the RISP pressure roll, the talent gate, the
+  fielding rolls — automatically sees the lifted values, no plumbing
+  needed. Affected fields:
+    - Batter — eye, contact, power, skill
+    - Pitcher — command, pitcher_skill (Stuff), movement, grit
+    - Fielding team — defense_rating (the pitcher rallies the defense)
+
+  This makes leadership impact the WHOLE GAME for whichever side
+  flares, not just offense. A high-leadership pitcher's flare lifts
+  his pitches (Stuff/movement/command), his fatigue resistance
+  (grit), AND his fielders (defense_rating) for that PA.
+
+  *Stacking.* A clutch slugger whose flare AND whose pressure event
+  both fire on the same PA gets every lift at once — that's the
+  decisive "took over the game" moment.
 
   *Magnitude.* Uniform band [0.05, 0.20] at neutral leadership,
   scaled by `1 + 1.5 × (leadership − 0.5)` so an 0.85-leadership
