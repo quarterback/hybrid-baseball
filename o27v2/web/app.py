@@ -49,6 +49,9 @@ import datetime as _dt
 app = Flask(__name__, template_folder="templates")
 app.config["SECRET_KEY"] = "o27v2-dev-key"
 
+from o27.almanac.blueprint import almanac_bp
+app.register_blueprint(almanac_bp)
+
 
 def _scout(val) -> int:
     """Render a stored attribute as a 20–80 scout grade.

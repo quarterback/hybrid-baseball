@@ -53,6 +53,5 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Almanac static-site build output (rebuild with `make almanac`)
-o27v2/web/static/almanac/
+# Standalone almanac builds (live almanac is served by Flask at /almanac)
 site/

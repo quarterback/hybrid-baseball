@@ -735,7 +735,7 @@
         <a class="nav-link {% if request.endpoint == 'auction_view' %}active{% endif %}" href="{{ url_for('auction_view') }}">Auction</a>
         <a class="nav-link {% if request.endpoint in ('youth_view','youth_team_view','youth_tournament_view') %}active{% endif %}" href="{{ url_for('youth_view') }}">Youth</a>
         <a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a>
-        <a class="nav-link" href="/static/almanac/index.html" target="_blank" rel="noopener" title="Static stats almanac built by `make almanac`">Almanac ↗</a>
+        <a class="nav-link {% if request.path.startswith('/almanac') %}active{% endif %}" href="/almanac/" title="Live stats almanac">Almanac</a>
         <a class="nav-link accent {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">+ League</a>
       </div>
     </div>
