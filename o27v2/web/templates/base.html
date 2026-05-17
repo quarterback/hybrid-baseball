@@ -870,17 +870,45 @@
       // Bulk endpoints chunk their work and return done=false when more
       // remains. Loop until done so a Sim Month / Sim Season click is one
       // user action, not 30. Each round-trip is bounded server-side
-      // (~8s) so iOS Safari and Fly proxy don't drop it as "Load failed".
+      // (~4.5s) so iOS Safari and Fly proxy don't drop it as "Load failed".
       // Safety cap prevents an infinite loop if the server keeps returning
       // done=false without making progress.
+      //
+      // iOS Safari throws "Load failed" on any of: connection drop, tab
+      // backgrounded mid-fetch, proxy stall. The per-chunk fetch is wrapped
+      // in a small retry loop (3 attempts with 250-500-1000ms backoff)
+      // so a single dropped fetch doesn't abort an entire Sim Month/Season.
+      // Real errors (HTTP 4xx/5xx, parse failures) still bail immediately.
+      async function _fetchChunkWithRetry() {
+        const backoffs = [250, 500, 1000];
+        let lastErr = null;
+        for (let i = 0; i < backoffs.length + 1; i++) {
+          try {
+            const r = await fetch(ENDPOINTS[kind], {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: '{}',
+            });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return await r.json().catch(() => ({}));
+          } catch (e) {
+            lastErr = e;
+            const msg = (e && e.message) || '';
+            // Only retry transient fetch failures — HTTP-status errors
+            // should fail fast (they won't go away on retry).
+            const retriable = msg.includes('Load failed')
+              || msg.includes('NetworkError')
+              || msg.includes('Failed to fetch')
+              || msg.includes('network')
+              || msg.includes('timed out');
+            if (!retriable || i >= backoffs.length) break;
+            await new Promise(res => setTimeout(res, backoffs[i]));
+          }
+        }
+        throw lastErr;
+      }
       for (let attempts = 0; attempts < 500; attempts++) {
-        const r = await fetch(ENDPOINTS[kind], {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: '{}',
-        });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const data = await r.json().catch(() => ({}));
+        const data = await _fetchChunkWithRetry();
         lastData = data;
         if (data.errored && data.errored > 0) {
           // Sim ran but some games crashed — surface the cause and don't
