@@ -28,6 +28,7 @@ import random as _random
 from typing import Optional
 
 from o27v2 import db
+from o27v2.archetypes import classify_position_player
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +212,13 @@ def _develop_player(p: dict, org_strength: int, rng: _random.Random,
     # Reset habit_cup to neutral (0.5) at season start regardless.
     # Stored as REAL so cast to float.
     updated["habit_cup"] = 0.5
+
+    # Re-derive position-player archetype against post-development grades.
+    # Pitchers and jokers carry their own archetype dimension elsewhere
+    # and the classifier already short-circuits on them.
+    if not is_pitcher and not p.get("is_joker"):
+        merged = {**p, **updated}
+        updated["archetype"] = classify_position_player(merged)
 
     return updated, new_age
 

@@ -73,6 +73,7 @@
       <tr>
         <th>Name</th>
         <th>Pos</th>
+        <th>Archetype</th>
         <th class="text-end">Ovr</th>
         <th class="text-end">Skill / Stuff</th>
         <th class="text-end">Contact / Cmd</th>
@@ -87,6 +88,7 @@
       <tr>
         <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}{{ p.name }}</td>
         <td><span class="badge bg-secondary">{{ p.position }}</span></td>
+        <td class="text-secondary small">{{ p.archetype or '—' }}</td>
         <td class="text-end" data-sort-value="{{ p.overall }}">{{ overall_chip(p) }}</td>
         {% if p.is_pitcher %}
         <td class="text-end num">{{ p.pitcher_skill }}</td>
