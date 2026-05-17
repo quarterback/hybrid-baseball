@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS players (
     contact_quality_threshold REAL DEFAULT 0.45,
     pull_pct REAL DEFAULT 0.5,
     adaptability INTEGER DEFAULT 50,
+    leadership   INTEGER DEFAULT 50,   -- "shows up in clutch moments" attribute. Drives the RISP-pressure manifestation roll in prob.py — a low-skill bench guy with high leadership can still tip a high-leverage AB. Independent of hard skills.
     archetype             TEXT DEFAULT '',
     pitcher_role          TEXT DEFAULT '',
     hard_contact_delta    REAL DEFAULT 0.0,
@@ -763,6 +764,15 @@ def init_db() -> None:
         # ABs against this batter. 20-80 scale like other ratings.
         try:
             conn.execute("ALTER TABLE players ADD COLUMN adaptability INTEGER DEFAULT 50")
+            conn.commit()
+        except Exception:
+            pass
+        # Leadership — soft skill that drives the RISP-pressure manifestation
+        # roll. Independent of hard ratings so a low-stats bench guy with
+        # high leadership can still tip a high-leverage AB (joker / clutch
+        # archetype). 20-80 scale; identity at 50.
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN leadership INTEGER DEFAULT 50")
             conn.commit()
         except Exception:
             pass

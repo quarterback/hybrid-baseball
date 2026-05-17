@@ -504,6 +504,82 @@ def contact_quality(
 # Runner advancement model
 # ---------------------------------------------------------------------------
 
+def _resolve_risp_pressure(
+    rng: random.Random,
+    state: "GameState",
+    batter: "Player",
+    pitcher: "Player",
+) -> Optional[str]:
+    """Two-stage talent-driven RISP-pressure roll.
+
+    Stage 1 — does the moment fire? Probability composes from the
+    situation (RISP vs. RISP+3 vs. bases-loaded), the pitcher's
+    composure (`(command + grit) / 2`), and the batter's leadership.
+    A clutch batter facing a low-composure pitcher with bases loaded
+    fires often; a non-clutch batter facing a poised veteran almost
+    never does. Returns None if pressure doesn't manifest.
+
+    Stage 2 — which manifestation fires? A talent-weighted draw between
+    {hit, error, leave_up}, mutually exclusive (no stacking). Weights:
+        hit       ∝ batter leadership + batter contact-and-eye
+        error     ∝ defensive frailty (1 - team_defense_rating)
+        leave_up  ∝ pitcher uncomposure (1 - composure)
+
+    Caller applies the chosen manifestation:
+      - "hit"      → bumps the post-contact talent gate's hit_bonus
+      - "error"    → forces an outed BIP to flip into a reach-on-error
+      - "leave_up" → re-rolls the contact quality one tier up BEFORE
+                     `resolve_contact` is invoked (mistake-pitch hit)
+
+    O27 design note: bases loaded is the highest situational tier
+    BECAUSE the 2C stay mechanic lets a batter iteratively clear bases
+    without needing a grand slam — a 2C+1 chain plates two runs by
+    itself, so the pressure-event payoff is even larger than MLB.
+    """
+    bases = state.bases
+    on1 = bases[0] is not None
+    on2 = bases[1] is not None
+    on3 = bases[2] is not None
+    if not (on2 or on3):
+        return None
+
+    if on1 and on2 and on3:
+        situational = 0.35     # bases loaded — see design note above
+    elif on2 and on3:
+        situational = 0.24
+    else:
+        situational = 0.16     # _2_ or __3 alone, the baseline RISP case
+
+    composure  = (float(getattr(pitcher, "command", 0.5) or 0.5)
+                  + float(getattr(pitcher, "grit",    0.5) or 0.5)) / 2.0
+    leadership = float(getattr(batter, "leadership", 0.5) or 0.5)
+    # Pitcher vulnerability and batter pressure-creation, both centered
+    # at 0 for neutral attributes. ±0.5 at the player rating extremes.
+    pitch_vuln  = (0.5 - composure)
+    bat_press   = (leadership - 0.5)
+    p_fires = situational * (1.0 + 2.0 * pitch_vuln) * (1.0 + 2.0 * bat_press)
+    p_fires = max(0.0, min(0.9, p_fires))
+    if rng.random() >= p_fires:
+        return None
+
+    # Stage 2 — talent-weighted manifestation pick.
+    team_def = float(getattr(state.fielding_team, "defense_rating", 0.5) or 0.5)
+    contact_eye = ((float(getattr(batter, "contact", 0.5) or 0.5)
+                    + float(getattr(batter, "eye", 0.5) or 0.5)) / 2.0)
+    hit_w      = max(0.0, 0.5 * leadership + 0.5 * contact_eye)
+    error_w    = max(0.0, 1.0 - team_def)
+    leave_up_w = max(0.0, 1.0 - composure)
+    total_w    = hit_w + error_w + leave_up_w
+    if total_w <= 0.0:
+        return None
+    r = rng.random() * total_w
+    if r < hit_w:
+        return "hit"
+    if r < hit_w + error_w:
+        return "error"
+    return "leave_up"
+
+
 def _runner_advance(
     rng: random.Random,
     base_advance: int,
@@ -1596,8 +1672,39 @@ class ProbabilisticProvider:
         is_hr     = False
         is_triple = False
 
+        # RISP pressure — two-stage talent-driven roll. Pitcher composure
+        # (command + grit) vs. batter leadership drives whether the moment
+        # manifests; if it does, exactly one of {hit, error, leave_up}
+        # fires — no stacking. See _resolve_risp_pressure docstring.
+        # "leave_up" must fire BEFORE resolve_contact so the mistake pitch
+        # actually changes the contact-quality bucket the table draws from.
+        risp_event = _resolve_risp_pressure(rng, state, batter, pitcher)
+        if risp_event == "leave_up":
+            if quality == "weak":
+                quality = "medium"
+            elif quality == "medium":
+                quality = "hard"
+
         # Resolve fielding outcome.
         outcome_dict = resolve_contact(rng, quality, batter, state)
+
+        # "error" manifestation — if the contact resolved as a routine
+        # out, the defender bobbles it under pressure and the batter
+        # reaches. Skipped on caught flies (the catch already happened)
+        # and on fielders' choice (the lead runner is already out).
+        if (risp_event == "error"
+                and not outcome_dict.get("batter_safe", True)
+                and outcome_dict.get("hit_type") in ("ground_out", "fly_out", "line_out")
+                and not outcome_dict.get("caught_fly")):
+            outcome_dict["hit_type"] = "error"
+            outcome_dict["batter_safe"] = True
+            outcome_dict["is_error"] = True
+            outcome_dict["runner_out_idx"] = None
+            # Errors advance runners like a single; re-roll the advance
+            # vector against the now-cleared state of the BIP.
+            outcome_dict["runner_advances"], _br_out = runner_advances_for_hit(
+                rng, "single", state.bases, state
+            )
 
         # Talent-weighted hit-vs-out resolution (applies BEFORE the run/stay
         # decision so it affects both paths). On weak / medium contact, the
@@ -1613,6 +1720,13 @@ class ProbabilisticProvider:
             con_dev_run = (batter.contact - 0.5) * 2
             cmd_dev_run = (pitcher.command - 0.5) * 2
             talent_run  = eye_dev_run + con_dev_run - cmd_dev_run
+            # "hit" manifestation — high-leadership batter sees the
+            # mistake pitch and capitalizes. Lift scales with the batter's
+            # own leadership so the boost varies by personnel even within
+            # the manifestation; a 0.85-leadership joker adds ~+0.7 to
+            # talent_run, doubling the hit-bonus magnitude downstream.
+            if risp_event == "hit":
+                talent_run += 2.0 * (float(getattr(batter, "leadership", 0.5) or 0.5) - 0.5)
             # Bonus is bidirectional: positive shifts toward more hits,
             # negative toward more outs. Weak gets a wider swing because
             # the underlying outcome is more often borderline; medium has

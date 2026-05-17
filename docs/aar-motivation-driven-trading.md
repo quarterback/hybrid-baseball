@@ -334,12 +334,38 @@ a separate `STAY` weight in the output, and `expected_woba` +
 `_aggregate_batter_rows` route stays through the new weight.
 Re-run `/analytics` to confirm the new ordering (`RV(1B) > RV(BB)`).
 
-`RV(3B) +0.842 < RV(2B) +0.894` is **not** stay-credit contamination
-— 3B classification was clean. The underlying issue is in the RE
-matrix itself: `RE(__3) < RE(_2_)` at low outs (e.g., 10.26 vs 10.85
-at 0–2 outs). Runners on 3rd are stranding at higher rates than
-runners on 2nd. That's an engine runner-advancement issue, not a
-linear-weights bug, and is left for a separate session.
+**`RV(3B) +0.842 < RV(2B) +0.894` — addressed via a talent-driven
+RISP pressure model.** The 3B classification itself was clean (no
+stay-credit leak), but the underlying RE matrix showed `RE(__3) <
+RE(_2_)` at low outs — runners on 3rd stranded too often because
+the engine had no "pressure event" lift: no clutch-batter mistake
+exploitation, no defender bobble under RISP, no pitcher leaving one
+up. Added `Player.leadership` (rolled at seed time, independent of
+hard skills so bench-tier guys can still be joker types) plus
+`prob._resolve_risp_pressure`, a two-stage roll:
+
+1. **Stage 1 — does the moment manifest?** Probability composes
+   from situational pressure (RISP / RISP+3 / bases-loaded), pitcher
+   composure (`(command + grit) / 2`), and batter leadership. At
+   neutral attributes a loaded bag fires ~35% of the time; an
+   elite-leadership batter against a low-composure pitcher with
+   bases loaded fires ~84%; a low-leadership batter against an
+   elite pitcher in the same spot fires ~3%.
+2. **Stage 2 — which manifestation?** Mutually-exclusive draw
+   (no stacking) between `hit` (batter exploits the mistake →
+   talent_run bump on the post-contact hit-vs-out gate), `error`
+   (defender bobbles a routine out → flip to reach-on-error,
+   weighted by `1 - team_defense_rating`), and `leave_up` (pitcher
+   leaves a mistake pitch in the zone → contact-quality re-rolls
+   one tier up before fielding resolution, weighted by
+   `1 - composure`).
+
+The bases-loaded situational tier is the highest BY DESIGN — in
+O27, the 2C stay mechanic lets a batter iteratively clear bases
+without needing a grand slam (a 2C+1 chain plates two runs by
+itself), so the pressure-event payoff is even larger than MLB.
+That's why the joker-deploy at bases-loaded is a real tactical
+lever, not just flavor.
 
 **Trade-engine implication.** The refit wOBA weights say walks are
 worth ~43% more than the MLB-default pricing assumes, and HR worth
@@ -349,6 +375,9 @@ environment, contact/eye-driven bats are arguably underpriced
 relative to power. Out of scope for this rewrite (changing
 `trade_value` re-tiers every salary via `valuation.py:_BANDS`),
 but worth a follow-up pass once the trade volume baseline is set.
+The new `leadership` attribute is another candidate input —
+high-leadership bench guys may be undervalued by the current
+formula, which doesn't see the joker-archetype clutch lift at all.
 
 ---
 
