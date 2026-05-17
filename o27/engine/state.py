@@ -159,6 +159,17 @@ class Player:
     # the defensive shift) and the per-event contact-direction roll
     # when shifted. Default 0.5 keeps legacy rosters shift-immune.
     pull_pct: float = 0.5
+    # Adaptability — how quickly the batter reads a sustained defensive
+    # alignment and finds the holes. When a manager keeps the SAME shift
+    # call across consecutive ABs against this batter (streak), the
+    # batter's adaptability erodes the shift's effectiveness. 0.5 =
+    # neutral (no erosion); 1.0 = elite shift-reader.
+    adaptability: float = 0.5
+
+    # Transient per-game shift memory — reset to defaults each new
+    # game (Player rebuilt from DB at game start). NOT persisted.
+    last_shift_alignment: str = "none"  # "none" | "infield" | "outfield"
+    shift_streak: int = 0               # consecutive ABs with same alignment
 
     # Handedness — drives platoon split. Default '' means "unknown handedness"
     # and bypasses the platoon adjustment, preserving the identity invariant
@@ -484,8 +495,9 @@ class GameState:
     current_at_bat_swings: int = 0
 
     # Shift state — set once at AB start by the defense's shift decision
-    # (prob.py), consumed during contact resolution. Reset on _end_at_bat.
-    current_ab_shifted: bool = False
+    # (prob.py), consumed during contact resolution. Reset at new-batter
+    # detection in ProbabilisticProvider.__call__.
+    current_ab_shift_type: str = "none"     # "none" | "infield" | "outfield"
     current_ab_shift_decided: bool = False  # have we rolled this AB?
 
     # --- Joker insertion override ---

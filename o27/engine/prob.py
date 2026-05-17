@@ -972,32 +972,59 @@ def resolve_contact(
             batter_safe = True
             caught_fly = False
 
-    # Defensive shift outcome. When the AB is shifted (decided at AB start
-    # by the fielding manager based on batter.pull_pct), a ground-ball
-    # outcome flips probabilistically based on which way the batter went:
-    #   pull-side into the shift  → single may flip to ground_out (out gained)
-    #   opposite-field            → ground_out may flip to single (gap exposed)
-    # Direction is rolled per event using batter.pull_pct as the bias —
-    # a pure-pull batter (1.0) goes pull-side ~100% of the time.
-    # Fly outs / line outs untouched (first-cut scope: ground balls only).
+    # Defensive shift outcome. Two alignments handled separately:
+    #   infield  — pull-side single → ground_out, oppo grounder → single
+    #   outfield — pull-side XBH → single,        oppo grounder → single
+    # Direction is rolled per event using batter.pull_pct as the bias.
+    # Adaptability erosion: if the manager has called the SAME alignment
+    # against this batter multiple consecutive ABs, the batter's
+    # adaptability rating progressively reads the gaps and the shift
+    # probabilities erode (capped at 3 streak steps).
     shift_effect = None
-    if getattr(state, "current_ab_shifted", False) and hit_type in (
-        "single", "ground_out", "fielders_choice"
-    ):
+    shift_type = getattr(state, "current_ab_shift_type", "none")
+    if shift_type != "none":
         pull = float(getattr(batter, "pull_pct", 0.5) or 0.5)
         went_pull = rng.random() < pull
-        if went_pull and hit_type == "single":
-            if rng.random() < cfg.SHIFT_PULL_OUT_PROB:
-                hit_type = "ground_out"
-                batter_safe = False
-                caught_fly = False
-                shift_effect = "out_added"
-        elif not went_pull and hit_type == "ground_out":
-            if rng.random() < cfg.SHIFT_OPPO_HIT_PROB:
-                hit_type = "single"
-                batter_safe = True
-                caught_fly = False
-                shift_effect = "hit_lost"
+        # Adaptation factor — non-negative reduction applied to both
+        # shift-effective probabilities. Streak=1 (first AB of this
+        # alignment) contributes 0; streak=2 contributes 1*scale; etc.
+        adapt_dev = (float(getattr(batter, "adaptability", 0.5) or 0.5) - 0.5) * 2.0
+        streak = max(0, getattr(batter, "shift_streak", 1) - 1)
+        streak = min(streak, 3)                # cap erosion at 3 streak steps
+        adapt_reduction = max(0.0, adapt_dev * streak * cfg.ADAPTABILITY_SCALE)
+
+        if shift_type == "infield" and hit_type in (
+            "single", "ground_out", "fielders_choice"
+        ):
+            p_out = max(0.05, cfg.SHIFT_PULL_OUT_PROB - adapt_reduction)
+            p_hit = max(0.05, cfg.SHIFT_OPPO_HIT_PROB - adapt_reduction)
+            if went_pull and hit_type == "single":
+                if rng.random() < p_out:
+                    hit_type = "ground_out"
+                    batter_safe = False
+                    caught_fly = False
+                    shift_effect = "out_added"
+            elif not went_pull and hit_type == "ground_out":
+                if rng.random() < p_hit:
+                    hit_type = "single"
+                    batter_safe = True
+                    caught_fly = False
+                    shift_effect = "hit_lost"
+        elif shift_type == "outfield":
+            p_xbh = max(0.05, cfg.SHIFT_OF_XBH_HELD_PROB - adapt_reduction)
+            p_hit = max(0.05, cfg.SHIFT_OF_OPPO_HIT_PROB - adapt_reduction)
+            if went_pull and hit_type in ("double", "triple"):
+                if rng.random() < p_xbh:
+                    hit_type = "single"
+                    batter_safe = True
+                    caught_fly = False
+                    shift_effect = "out_added"   # bookkeeping: defensive gain
+            elif not went_pull and hit_type == "ground_out":
+                if rng.random() < p_hit:
+                    hit_type = "single"
+                    batter_safe = True
+                    caught_fly = False
+                    shift_effect = "hit_lost"
 
     # Error chance — only on plays that resolved as an out. Worse defense =
     # higher error rate. Caught flies don't generate errors at this layer
@@ -1341,19 +1368,56 @@ class ProbabilisticProvider:
             self._last_batter_id = current_batter_id
             self._manager_checked = False
             state.current_ab_shift_decided = False
-            state.current_ab_shifted = False
+            state.current_ab_shift_type = "none"
 
         # Defensive shift decision — fires once per AB before the first
-        # pitch. Probability scales with the batter's spray extremity
-        # (|pull_pct - 0.5| * 2) and the fielding manager's tendency.
+        # pitch. Two alignments available:
+        #   infield  — standard pull-shift; convert pull GBs to outs
+        #   outfield — 4-man OF; convert pull XBHs to singles, sacrifices
+        #              infield coverage on oppo grounders
+        # Alignment picked from batter's power: pull-heavy + high power
+        # invites outfield shift; pull-heavy + low power invites infield.
+        # Probability scales with batter's spray extremity, manager's
+        # mgr_shift_aggression, and a leverage multiplier (RISP +
+        # late-arc) — shifts are a prevent-defense tool that ratchets
+        # in critical moments, matching the tennis-scoring design.
         if not state.current_ab_shift_decided:
             state.current_ab_shift_decided = True
             batter = state.current_batter
             mgr_shift = float(getattr(state.fielding_team,
                                       "mgr_shift_aggression", 0.5) or 0.5)
-            extremity = abs(getattr(batter, "pull_pct", 0.5) - 0.5) * 2.0
+            batter_pull = float(getattr(batter, "pull_pct", 0.5) or 0.5)
+            extremity = abs(batter_pull - 0.5) * 2.0
             shift_p = extremity * mgr_shift * cfg.SHIFT_DECISION_SCALE
-            state.current_ab_shifted = self.rng.random() < shift_p
+
+            # Leverage ratchet — RISP AND late arc both fire, the shift
+            # decision lifts to "prevent defense" mode. Either alone is
+            # routine; both together is when the game gets decided.
+            risp = state.bases[1] is not None or state.bases[2] is not None
+            late = state.outs >= cfg.LATE_GAME_OUTS_THRESHOLD
+            if risp and late:
+                shift_p *= cfg.SHIFT_LEVERAGE_MULT
+
+            if self.rng.random() < shift_p:
+                power = float(getattr(batter, "power", 0.5) or 0.5)
+                if power >= cfg.SHIFT_OF_POWER_THRESHOLD:
+                    state.current_ab_shift_type = "outfield"
+                else:
+                    state.current_ab_shift_type = "infield"
+            else:
+                state.current_ab_shift_type = "none"
+
+            # Adaptation streak — count consecutive ABs the manager has
+            # called the SAME alignment against this batter. High-streak +
+            # high-adaptability erodes the shift's effectiveness in
+            # resolve_contact. Manager who wants to keep the shift live
+            # has to vary it occasionally to reset the streak.
+            last = getattr(batter, "last_shift_alignment", "none")
+            if state.current_ab_shift_type == last:
+                batter.shift_streak = getattr(batter, "shift_streak", 0) + 1
+            else:
+                batter.shift_streak = 1
+                batter.last_shift_alignment = state.current_ab_shift_type
 
         # Refresh today_form whenever the pitcher changes (half start or
         # mid-game change). Cheap; a single deterministic gauss draw.

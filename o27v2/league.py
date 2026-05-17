@@ -1124,6 +1124,9 @@ def _make_hitter(
         rng.gauss(0.5, 0.12) + _power_dev * 0.30 + _bats_nudge,
         0.05, 0.95,
     )
+    # Adaptability — independent tier roll; uncorrelated with other ratings
+    # so a slugger and a slap hitter can both land high or low on it.
+    adaptability_g = roll()
     # Defense layer — general glove + arm independently tier-rolled.
     # A great-glove no-bat archetype (low skill, elite defense) is a
     # real type in this sport.
@@ -1187,6 +1190,7 @@ def _make_hitter(
         # more on average — easier to turn on inside pitching from a
         # natural-stride swing). Clamped [0.05, 0.95].
         "pull_pct": round(pull_pct_g, 3),
+        "adaptability": adaptability_g,
         "archetype": "",
         "pitcher_role": "",
         "hard_contact_delta": 0.0,
@@ -1413,6 +1417,7 @@ def _make_pitcher(
         "stay_aggressiveness": round(_clamp(rng.gauss(0.20, 0.06)), 3),
         "contact_quality_threshold": round(_clamp(rng.gauss(0.40, 0.08)), 3),
         "pull_pct": 0.5,   # pitchers bat too rarely for spray to matter
+        "adaptability": 50,   # neutral; pitchers don't see enough ABs to adapt
         "archetype": "",
         "pitcher_role": "",   # Task #65: live derivation only — never stored.
         "hard_contact_delta": 0.0,
@@ -1858,8 +1863,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          baserunning, run_aggressiveness,
          work_ethic, work_habits, habit_cup, salary,
          release_angle, pitch_variance, grit, repertoire,
-         pull_pct)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         pull_pct, adaptability)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -1893,7 +1898,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("pitch_variance", 0.0),
                 p.get("grit", 0.5),
                 p.get("repertoire", None),
-                p.get("pull_pct", 0.5))
+                p.get("pull_pct", 0.5),
+                p.get("adaptability", 50))
 
     # Cache team-id → league name so each player's salary uses the
     # right tier cap.

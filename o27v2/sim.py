@@ -390,6 +390,7 @@ def _db_team_to_engine(
             stay_aggressiveness=float(p["stay_aggressiveness"]),
             contact_quality_threshold=float(p["contact_quality_threshold"]),
             pull_pct=float(p.get("pull_pct") or 0.5),
+            adaptability=_scout.to_unit(p.get("adaptability") or 50),
             archetype=str(p.get("archetype") or ""),
             pitcher_role=str(p.get("pitcher_role") or ""),
             hard_contact_delta=float(p.get("hard_contact_delta") or 0.0),

@@ -503,7 +503,8 @@ STAY_AHEAD_IN_COUNT_MULT: float    = 1.15   # balls > strikes (patient, waiting)
 # it OVERCOMES the 1B-only damper — late game with only 1B occupied
 # (0.70 × 1.55 ≈ 1.09) ends up slightly above baseline, modeling the
 # "get this runner into scoring position somehow" tactic.
-LATE_GAME_OUTS_THRESHOLD: int      = 18     # 18+ outs = late game
+LATE_GAME_OUTS_THRESHOLD: int      = 20     # 20+ outs = late arc (matches
+                                            # the user's "20-27 outs" frame)
 STAY_LATE_GAME_MULT: float         = 1.55
 
 # ---------------------------------------------------------------------------
@@ -522,9 +523,37 @@ STAY_LATE_GAME_MULT: float         = 1.55
 # Telemetry: state.fielding_team.shift_outs_added / shift_hits_lost
 # accumulate per game, so we can see exactly how much each shift call
 # contributed.
-SHIFT_PULL_OUT_PROB: float       = 0.30   # pull-into-shift: single → out
-SHIFT_OPPO_HIT_PROB: float       = 0.25   # oppo gap: ground_out → single
+SHIFT_PULL_OUT_PROB: float       = 0.30   # infield shift: pull single → out
+SHIFT_OPPO_HIT_PROB: float       = 0.25   # infield shift: oppo gnd_out → single
 SHIFT_DECISION_SCALE: float      = 1.0    # tunable knob on decision frequency
+
+# Outfield shift (4-man OF / infielders shallow). Trades infield coverage
+# for outfield range against pull-power FB hitters. Effects:
+#   pull-side double/triple → single   (the 4th OFer cuts off the gap)
+#   pull-side fly_out stays            (already an out)
+#   oppo-side ground_out → single      (one fewer IFer = more gaps)
+SHIFT_OF_XBH_HELD_PROB: float    = 0.30   # OF shift: pull double → single
+SHIFT_OF_OPPO_HIT_PROB: float    = 0.35   # OF shift: oppo gnd_out → single
+# Threshold for picking outfield shift over infield shift: pull-heavy
+# batter with this much power or more goes to outfield shift.
+SHIFT_OF_POWER_THRESHOLD: float  = 0.55
+
+# Leverage multiplier: shifts are a "prevent defense" tool the manager
+# leans on harder in critical situations (RISP + late game). Models the
+# tennis-scoring leverage: shifts are routine all game, but they ratchet
+# in the moments that decide the result.
+SHIFT_LEVERAGE_MULT: float       = 1.45   # RISP + late-arc combined boost
+
+# Adaptability erosion. When the manager keeps the SAME shift alignment
+# against the SAME batter across consecutive ABs, the batter's adaptability
+# rating progressively reads the gaps. Each streak step subtracts this
+# fraction from the shift's effective probability (capped at streak=3).
+ADAPTABILITY_SCALE: float        = 0.10
+
+# Bunt-against-shift. When an infield shift is on, a speedy batter can
+# push a bunt the other way for an easy hit. This adds a no-runner bunt
+# path on top of the existing sac-bunt logic.
+BUNT_AGAINST_SHIFT_BASE_PROB: float = 0.18   # baseline scaled by speed dev
 
 # ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)

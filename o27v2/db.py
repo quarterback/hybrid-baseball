@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS players (
     stay_aggressiveness REAL DEFAULT 0.4,
     contact_quality_threshold REAL DEFAULT 0.45,
     pull_pct REAL DEFAULT 0.5,
+    adaptability INTEGER DEFAULT 50,
     archetype             TEXT DEFAULT '',
     pitcher_role          TEXT DEFAULT '',
     hard_contact_delta    REAL DEFAULT 0.0,
@@ -721,6 +722,14 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE teams ADD COLUMN mgr_shift_aggression REAL DEFAULT 0.5")
+            conn.commit()
+        except Exception:
+            pass
+        # Adaptability — batter rating that erodes shift effectiveness
+        # when the manager keeps the same alignment for multiple consecutive
+        # ABs against this batter. 20-80 scale like other ratings.
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN adaptability INTEGER DEFAULT 50")
             conn.commit()
         except Exception:
             pass
