@@ -273,20 +273,24 @@ def _needed_archetype(state: GameState) -> Optional[str]:
 
 
 def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
-    """Leverage-aware joker insertion decision.
+    """Joker insertion decision: weak-hitter override + leverage path.
 
     Per-PA call: returns a Player from the team's joker pool to insert,
-    or None to let the base lineup proceed normally. Jokers can be
-    inserted any number of times per game — the manager picks based on
-    leverage alone, with no per-cycle or per-game cap.
+    or None to let the base lineup proceed normally. Two decision paths:
 
-    Decision logic: probability of insertion scales with leverage —
-    score-gap-tightness × outs-remaining × runners-on. At max leverage
-    (close game, late, runners-on) the per-PA insert probability tops
-    out around 35%. At low leverage (blowout, early, bases empty) it's
-    near zero. Manager AI quality is then a real differentiator: a
-    league-leading manager's joker leverage index — share of insertions
-    that landed in high-leverage spots — is itself a stat.
+      1. Weak-hitter override: if the current batter's skill is below
+         JOKER_WEAK_BATTER_THRESHOLD AND at least one eligible joker
+         has strictly higher skill, insert at probability
+         JOKER_WEAK_INSERT_BASE + JOKER_WEAK_INSERT_AGG_SCALE × agg
+         (0.75-0.95 across manager personas). Leverage is ignored here —
+         with unlimited jokers, leaving a weak hitter in the lineup
+         while a better bat sits available is a UI-era artifact, not a
+         strategic choice.
+
+      2. Leverage path: for non-weak batters, fall back to the legacy
+         leverage-aware roll (capped at 35%). This still creates the
+         "managers shoot in the right spots" stat that differentiates
+         persona quality.
     """
     if state.is_super_inning:
         return None
@@ -304,7 +308,35 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     if not eligible:
         return None
 
-    # Leverage components.
+    joker_agg = float(getattr(team, "mgr_joker_aggression", 0.5))
+
+    # --- Path 1: weak-hitter override ----------------------------------
+    # Skip leverage entirely if the upcoming batter is below replacement
+    # and a strictly better joker is available.
+    batter = state.current_batter
+    if batter is not None:
+        batter_skill    = float(getattr(batter, "skill", 0.5) or 0.5)
+        best_joker_skill = max(
+            float(getattr(j, "skill", 0.5) or 0.5) for j in eligible
+        )
+        if (batter_skill < cfg.JOKER_WEAK_BATTER_THRESHOLD
+                and best_joker_skill > batter_skill):
+            weak_p = (cfg.JOKER_WEAK_INSERT_BASE
+                      + cfg.JOKER_WEAK_INSERT_AGG_SCALE * joker_agg)
+            if rng is None:
+                import random as _r
+                roll = _r.random()
+            else:
+                roll = rng.random()
+            if roll < weak_p:
+                return max(
+                    eligible,
+                    key=lambda j: float(getattr(j, "skill", 0.5) or 0.5),
+                )
+            # Roll missed — fall through to the leverage path. Don't
+            # short-circuit to None; leverage can still pick this up.
+
+    # --- Path 2: leverage-aware roll (legacy path) ---------------------
     score_gap = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
     outs_left = max(1, 27 - state.outs)
     runners   = state.runner_count
@@ -315,12 +347,7 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     runner_factor = (runners + 1) / 4.0                # 0.25..1.0
     leverage = gap_factor * late_factor * runner_factor
 
-    # Per-PA insertion probability. Cap at 35% even in peak leverage —
-    # manager shouldn't burn all 3 jokers on the first eligible PA.
-    # Manager persona scales the willingness: a "fiery" skipper with
-    # high joker_aggression shoots earlier; a patient one waits for
-    # near-peak leverage before spending a joker.
-    joker_agg = float(getattr(team, "mgr_joker_aggression", 0.5))
+    # Per-PA insertion probability for non-weak batters.
     insert_p = min(0.35, leverage * (0.25 + 0.5 * joker_agg))
     if rng is None:
         import random as _r
