@@ -1,229 +1,197 @@
 # O27v2 Handoff Document
 
-**Prepared:** 2026-05-03  
-**For:** Claude Code (or next agent taking over)  
-**From:** Replit Agent (Tasks #47–#65)  
-**DB path (default):** `o27v2/o27v2.db`  
-**Deploy target:** Fly.io app `hybrid-baseball`, region `ams`, volume `o27v2_data`
+**Prepared:** 2026-05-17
+**For:** Next agent picking up the simulator
+**Supersedes:** `docs/HANDOFF-archive-2026-05-03.md` (Task #65 era; preserved for context)
+**DB path (default):** `o27v2/o27v2.db`
+**Active branch:** `claude/tune-scoring-simulator-fZr2I`
+
+---
+
+## 0. READ THIS FIRST
+
+**O27 is variance-first. There is no R/G calibration target.**
+
+The previous handoff treated 22-26 R/G as a target band. That band came from an earlier tuning pass and was never the designer's intent. As of the May 17 tuning pass:
+
+- Run environment is whatever the mechanics produce. Currently ~33 R/G (200-game sample), min 15 / max 66, std 9.2. Wild variance is the design.
+- Rate stats (K%, BB%, BA, SLG, HR/PA) are observed outputs of the mechanics, not knobs to tune toward. Do not "fix" them to land in an MLB-shaped band.
+- The `TARGET_*` constants in `o27v2/config.py` are permissive sanity bounds for catching catastrophic regressions, not calibration targets. They are deliberately wide. Do not narrow them.
+- Tooling reflects this: `o27/tune.py` reports values as "(observed)" and only flags genuine sanity failures.
+
+If you find yourself thinking "the K% / BA / R/G is wrong, let me tune it back to MLB shape" — stop and confirm with the designer. The shape is deliberate.
 
 ---
 
 ## 1. CURRENT STATE
 
-### What works end-to-end
+### What's working
 
-- **Engine → stats pipeline is real.** Every stat row in the DB comes from an actual simulated at-bat. The chain is: `o27/engine/prob.py` resolves pitch outcomes using player attributes → `o27/render/render.py` accumulates per-batter and per-pitcher stats → `o27v2/sim.py` extracts and writes to `game_batter_stats` / `game_pitcher_stats`. Nothing is generated outside gameplay.
-- **Player attributes feed probability calculations.** `batter.skill` shifts contact rate; `pitcher.pitcher_skill` shifts strike rate and fatigue threshold; `speed` controls baserunning; `stamina` (where populated) controls long-relief preference in the manager AI.
-- **Schedule generation** produces a full 162-game season for 30 teams (162 games/team confirmed equal across all teams).
-- **Standings, W/L, game logs, player stat pages** all render in the web layer. FIP, ERA, WHIP, K/27, BB/27 are computed in `app.py:_aggregate_pitcher_rows()`.
-- **W/L attribution** (`app.py:_pitcher_wl_map()`, lines 155–197) correctly assigns decisions to the pitcher who recorded the most outs on the winning/losing team per game. The `seen` set prevents double-counting even when duplicate stat rows exist.
-- **FIP calibration** (`app.py:_league_fip_const()`, lines 242–265) re-anchors the FIP constant to league ERA each render cycle, so league-average FIP equals league-average ERA regardless of the K/HR/BB mix.
-- **Dedup SQL view** (`app.py:_PSTATS_DEDUP_SQL`, line 147) exists and is used in ERA/WHIP/FIP/leaderboard queries, mitigating the duplicate-rows bug for display purposes.
-- **Injury system, trade system, waiver logic** all run post-game without crashing.
-- **`teams.wins` / `teams.losses`** are correctly balanced: 1,502 each across 1,502 played games, zero NULL `winner_id` rows.
-- **Task #65 code** (expanded rosters, tier-rolled attributes, live pitcher roles) is fully in place in the Python source. The DB has not been reseeded to activate it yet — see DB STATE section.
+- **Engine → stats pipeline** is real and end-to-end. Every stat row in `o27v2.db` traces back to a simulated PA via `o27/engine/prob.py` → `o27/render/render.py` → `o27v2/sim.py`. Nothing is generated outside gameplay.
+- **30-team league + 162-game schedule** generation, standings, W/L attribution, FIP/ERA/WHIP/K-27/BB-27 in the web layer (`app.py:_aggregate_pitcher_rows`).
+- **O27-specific stats** all persisted: `stays`, `stay_hits`, `stay_rbi`, `fo` / `fo_induced` (foul-outs), `multi_hit_abs`, `arc1/arc2/arc3` bucket splits, runner-advancement analytics (`rad_*`), batted-ball physics (EV / LA / spray).
+- **Empirical analytics suite** (`o27v2/analytics/`): Pythagorean exponent (`pythag.py`), wOBA / Game Score weights (`linear_weights.py`), BaseRuns shape (`base_runs.py`) — all refit at runtime from league data via ternary search / coordinate descent. They auto-adapt to whatever run environment the config produces; no recalibration needed when the sim is retuned.
+- **Joker insertions** uncapped (commit `87b7d0f`). Manager AI inserts based on leverage × persona, with no per-cycle or per-game cap.
+- **Fatigue model** is the dominant pitcher axis:
+  - Quadratic stamina scaling (`prob.py:307`): `threshold = FATIGUE_THRESHOLD_BASE + (stamina ** 2) * FATIGUE_THRESHOLD_SCALE`
+  - Cocktail of stamina + grit + release_angle + pitch_debt + form modulates the slope
+  - 81-stamina vs 73-stamina pitcher: ~8 batters of runway difference, not 3
+- **Form variance** widened to give blowouts breathing room. Daily form clamped to [0.71, 1.84] with σ=0.25; the asymmetric upper clamp is rare-but-real (~3.4σ Gaussian event).
 
-### What is confirmed broken (with evidence)
+### What broke / what's still wonky
 
-**1. Run environment: 12.21 runs/team/game.**
-League average across 1,502 games: 24.42 total runs/game (min 5, max 59). MLB baseline is ~4.5/team. BA is .295, SLG is .465, HR rate is 0.88/team/game (roughly correct). The excess scoring is almost entirely in extra-base hits and aggressive baserunning, not walks. The probability tables in `o27/config.py` are miscalibrated for the O27 structural rules (27 outs per side, 12-batter lineups cycling more plate appearances per game than a 9-batter MLB lineup).
-
-**2. Duplicate `game_pitcher_stats` rows.**
-184 of 1,502 games (12.2%) have at least one pitcher appearing more than once for the same `(game_id, player_id, team_id)`. There are 260 extra rows in a table of 6,316 (4.1% inflation). Stat aggregation queries that bypass `_PSTATS_DEDUP_SQL` will overcount K, BB, and outs for affected pitchers.
-
-**3. FIP goes negative for individual pitchers.**
-104 of 185 pitchers have a negative raw FIP component `(13*HR + 3*BB − 2*K) * 27/outs`. Example: a pitcher with 1 K, 0 HR, 0 BB, 2 outs recorded gets raw FIP component = −27.0. The league-level calibration constant prevents the league *average* from going negative, but individual pitcher FIP values can be deeply negative and are not meaningful.
-
-**4. `game_batter_stats.outs_recorded` = 0 for 497 rows where `ab > 0`.**
-497 batter rows exist where the player had at least one at-bat but zero outs credited. This suggests the renderer's out-attribution loop (`render.py:_update_stats()`, lines 736–824) is missing some outs in complex multi-runner play sequences. The field is not currently displayed, but it will matter if per-batter out tallies are used for lineup rendering.
-
-**5. Super-inning assertion fires in extended sims.**
-`game.py:162` and `game.py:191` contain `assert state.outs <= 5` for super-inning halves. This assertion can fire with exit code 1, crashing the calling process. 6 of 1,502 games have `super_inning >= 4`, indicating deep-SI games that stress the boundary condition.
-
-**6. `stamina` and `is_active` columns not in the live DB.**
-The live `o27v2/o27v2.db` does not have `stamina` or `is_active` columns — confirmed with `PRAGMA table_info(players)`. The columns are in the `CREATE TABLE` statement and ALTER TABLE migration path in `db.py:56–57, 262–276`, but the live DB predates Task #65. Running `init_db()` will add them with defaults (stamina=50, is_active=1). Task #65 code handles the absence gracefully via `COALESCE` and fallbacks — no crash occurs — but the expanded-roster and live-role logic won't fully activate until a fresh reseed.
-
-### What was changed recently (Task #65)
-
-**Committed:** 2026-05-03, commits d4a85c6 and 6c21a12.
-
-| File | What changed |
-|------|-------------|
-| `o27v2/league.py` | Added `_TALENT_TIERS` (9-tier 20–80 scout grade ladder), `_roll_tier_grade()`, `_make_hitter()`, `_make_pitcher()`. Rewrote `generate_players()` to produce 47 players/team: 12 fielders + 3 DH + 19 active pitchers + 13 reserves. No `pitcher_role` set at generation. |
-| `o27v2/db.py` | Added `stamina INTEGER DEFAULT 50` and `is_active INTEGER DEFAULT 1` to CREATE TABLE and ALTER TABLE migration path. |
-| `o27/engine/state.py` | Added `stamina: float` field to `Player` dataclass (defaults to `pitcher_skill` for back-compat). |
-| `o27/engine/manager.py` | Rewrote `pick_new_pitcher()`: no `pitcher_role` read; scores candidates by `state.outs` bracket: outs ≥ 19 → max Stuff, outs 10–18 → Stuff dominant, outs < 10 → max Stamina. |
-| `o27v2/sim.py` | `_db_team_to_engine()`: SP selected as highest-Stamina arm not used in last 4 days. Added `_recently_used_pitcher_ids()`. Simplified `_promote_pitcher_role()`. |
-| `o27v2/injuries.py` | `get_active_players()`: returns `is_active=1` healthy players; promotes reserves one-for-one to fill injuries back to 19P / 15 position-player target. |
+- **DB migration tests fail** (`o27v2/tests/test_phase8_db_migration.py::test_init_db_wipes_stale_and_reseeds`, `test_init_db_idempotent_on_phase8_db`). Players seeded into the DB get empty `role` strings instead of "workhorse" / etc. Pre-existing, not caused by the May 17 tuning pass. Investigate `o27v2/league.py` `_make_pitcher()` role assignment.
+- **`game_pitcher_stats` duplicate rows** (from prior handoff, may still be live). 184/1,502 games (12.2%) had duplicate `(game_id, player_id, team_id)` pitcher rows. Mitigated by `_PSTATS_DEDUP_SQL` view but should be hard-fixed with a `UNIQUE` constraint + `INSERT OR IGNORE`. Verify against current DB before assuming present.
+- **`game_batter_stats.outs_recorded = 0` with `ab > 0`** for some rows. From prior handoff. Renderer's out-attribution misses outs in complex multi-runner plays. Not surfaced in any UI currently.
+- **Super-inning assertion** at `game.py:162` and `game.py:191` (`assert state.outs <= 5`) can still crash on extreme SI halves. From prior handoff. Replace with `if state.outs > 5: break` + log.
+- **Stale 22-26 R/G references in docs** (`docs/aar-*.md`, README sections). Not load-bearing — they're historical AAR documents. Won't mislead the engine, may mislead a future reader. Update opportunistically if you're editing those files for other reasons.
 
 ---
 
-## 2. KNOWN BUGS WITH FILE/LINE REFERENCES
+## 2. MAY 17 TUNING PASS — WHAT CHANGED
 
-### Bug 1: Run environment 3× too high
+**Commits:** `7512522`, `abfe793` on branch `claude/tune-scoring-simulator-fZr2I`.
 
-- **Symptom:** 12.21 runs/team/game measured. SLG .465 (MLB .410). BA .295 (MLB .250). K% 25.5% and BB% 7.1% are near-MLB; the excess comes from extra-base hits and baserunning.
-- **Root cause:** Base contact and advancement probabilities in `o27/config.py` were tuned without accounting for O27's 12-batter lineup (vs. 9-batter MLB). More lineup spots cycling through 27 outs means more plate appearances per game — roughly 50% more — and the "Stay" mechanic credits additional hits without ending at-bats, compounding it.
-- **Files and lines:**
-  - `o27/config.py:128–165` — `CONTACT_WEAK_BASE = 0.38`, `CONTACT_MEDIUM_BASE = 0.40`, `CONTACT_HARD_BASE = 0.22` and the `WEAK_CONTACT`, `MEDIUM_CONTACT`, `HARD_CONTACT` hit-type weight tables. The single/double weights in HARD_CONTACT are the most likely culprit.
-  - `o27/config.py:90–101` — `PITCHER_DOM_CONTACT = -0.03`, `BATTER_DOM_CONTACT = +0.03` dominance modifiers.
-  - `o27/engine/prob.py` — `_runner_advance()` function: extra-base chance formula uses `speed - 0.5` as a linear addend; scale may be too generous.
-- **Fix approach:** Reduce `CONTACT_HARD_BASE` and `CONTACT_MEDIUM_BASE`. Re-sim a full season and check runs/game. Target: 14–18 total runs/game (7–9 per team — O27's structural rules produce more than MLB by design; 24 is not defensible).
+See `docs/aar-scoring-variance-and-fatigue-dominance.md` for the full AAR.
 
-### Bug 2: Duplicate `game_pitcher_stats` rows
+### Offense (more contact, more damage)
 
-- **Symptom:** 260 extra rows across 184 games. Any raw query against `game_pitcher_stats` without the dedup view overcounts pitcher stats.
-- **Root cause:** The `simulate_game()` guard at `sim.py:353` raises `ValueError` for already-played games when called directly, but the batch helper `simulate_next_n()` at `sim.py:598` calls `simulate_game()` inside a loop without re-verifying `played=1` status after each commit. A concurrent web request or retry during a batch run can insert stat rows twice for the same game. A secondary path also exists: `_insert_pitcher_stats()` at `sim.py:570–582` writes phase-less rows as a fallback; if both the phase-aware path (line 454) and this path fire for the same game, rows multiply.
-- **Files and lines:**
-  - `o27v2/sim.py:353` — already-played guard.
-  - `o27v2/sim.py:454–467` — primary phase-aware pitcher stat INSERT.
-  - `o27v2/sim.py:570–582` — `_insert_pitcher_stats()` secondary path.
-  - `o27v2/web/app.py:147–158` — `_PSTATS_DEDUP_SQL` view (mitigation, not fix).
-- **Fix approach:** Add `UNIQUE(game_id, player_id, team_id, phase)` constraint to `game_pitcher_stats`. Change both INSERT paths to `INSERT OR IGNORE`. Run a one-time cleanup: `DELETE FROM game_pitcher_stats WHERE rowid NOT IN (SELECT MIN(rowid) FROM game_pitcher_stats GROUP BY game_id, player_id, team_id, phase)`.
+`o27/config.py`:
+- `CONTACT_WEAK_BASE`   0.38 → 0.18 (far fewer weak singles)
+- `CONTACT_MEDIUM_BASE` 0.40 → 0.50
+- `CONTACT_HARD_BASE`   0.22 → 0.32
 
-### Bug 3: Individual pitcher FIP goes negative
+### K-rate suppression
 
-- **Symptom:** 104/185 pitchers have a negative raw FIP component. Worst case: 1 K, 0 HR, 0 BB → component = −27.0.
-- **Root cause:** K% (25.5%) is high relative to HR% (2.2% per PA). FIP as a formula assumes an MLB-typical K/HR ratio. In this sim, strikeouts dominate so severely that the `−2*K` term outweighs `13*HR + 3*BB` even at normal K totals. The calibrated constant (`_league_fip_const()`) keeps the league average non-negative, but it cannot fix individual pitcher values.
-- **Files and lines:**
-  - `o27v2/web/app.py:242–265` — `_league_fip_const()`.
-  - `o27v2/web/app.py:297` — per-pitcher FIP: `p["fip"] = ((13*hr) + (3*bb) - (2*k)) * 27.0 / outs + fip_const`.
-  - `o27/config.py:90–101` — dominance modifiers that set relative K rate.
-- **Fix approach:** Primary fix is Bug 1 (calibration). Short-term display guard: floor `p["fip"]` at 0.0 at line 297. The formula itself is correct; the inputs are wrong.
+`o27/config.py`:
+- `PITCHER_DOM_SWINGING`    0.06  → 0.025 (was the K-inflation driver)
+- `PITCHER_DOM_CALLED`      0.03  → 0.015
+- `BATTER_DOM_SWINGING`    -0.03  → -0.05
+- `BATTER_CONTACT_SWINGING` -0.05 → -0.08
 
-### Bug 4: `game_batter_stats.outs_recorded` zero for batters with at-bats
+### Fatigue dominance (`o27/config.py` + `o27/engine/prob.py:307`)
 
-- **Symptom:** 497 rows have `outs_recorded = 0` with `ab > 0`. Some are legitimate (a 1-for-1 hitter who only produced a hit and no out), but the volume suggests genuine misses.
-- **Root cause:** The renderer's out-attribution in `_update_stats()` uses a leftover reconciliation at line 824: `s.outs_recorded += leftover`. This fires only when `_or_before` fails to detect the out earlier in the same event. When a runner is thrown out on the bases during a hit (e.g., first-to-third on a single, thrown out at third), the out may land in the unattributed pool in `_compute_team_phase_outs()` rather than in the batter's row.
-- **Files and lines:**
-  - `o27/render/render.py:736–824` — `_update_stats()`, out-attribution block. Lines 762, 768, 795, 804 increment directly; line 824 handles leftovers.
-  - `o27v2/sim.py:238–280` — `_compute_team_phase_outs()` unattributed-out reconciliation.
-- **Fix approach:** Add logging to `_compute_team_phase_outs()` that prints `(game_id, team_id, phase, unattributed)` whenever `unattributed > 0`. Cross-reference with batter rows having `outs_recorded = 0` in the same phase to isolate the play type.
+- `FATIGUE_THRESHOLD_BASE`  24 → 10
+- `FATIGUE_THRESHOLD_SCALE` 40 → 65
+- Linear stamina → **quadratic stamina** (`stamina ** 2`)
+- `FATIGUE_SCALE` 20.0 → 10.0 (steeper post-threshold cliff)
+- All `FATIGUE_*` penalty coefficients ~1.5× stronger
+- `GRIT_FATIGUE_RESIST` 0.60 → 0.30 (cocktail modifiers demoted)
+- `RELEASE_FATIGUE_SCALE` 0.20 → 0.10
 
-### Bug 5: Super-inning assertion crash
+### Game variance (`o27/config.py`)
 
-- **Symptom:** `AssertionError: SI super_bottom overrun for home round N: outs=6` terminates the process.
-- **Root cause:** The SI half-end condition in `game.py:run_half()` relies on the dismissal count reaching 5 before the outer loop checks the assertion. Under specific combinations of Stay + baserunning, the outs counter reaches 6 before the `break` fires.
-- **Files and lines:**
-  - `o27/engine/game.py:162` — `assert state.outs <= 5` (super_top).
-  - `o27/engine/game.py:191` — same assertion (super_bottom).
-- **Fix approach:** Replace both assertions with:
-  ```python
-  if state.outs > 5:
-      # log warning; treat as normal half-end
-      break
-  ```
-  The safety invariant is preserved as a log, not a crash.
+- `TODAY_FORM_SIGMA` 0.10 → 0.25 (required for wide clamps to be reachable)
+- `TODAY_FORM_MIN`   0.82 → 0.71
+- `TODAY_FORM_MAX`   1.18 → 1.84 (asymmetric — transcendent days are rare ~3.4σ events)
 
-### Bug 6: `_find_pitcher_id()` dead branch after Task #65
+### Documentation hygiene
 
-- **Symptom:** Not a crash; a misleading dead code path.
-- **Root cause:** Task #65 cleared all `pitcher_role` values. The first branch at `sim.py:567` (`if p.pitcher_role in ("starter", "workhorse")`) never fires. The fallback at `sim.py:569` handles it correctly.
-- **File and lines:** `o27v2/sim.py:565–579` — `_find_pitcher_id()`.
-- **Fix approach:** Remove lines 567–568. Leave only the `if p.is_pitcher` fallback.
+- `HANDOFF.md` (this file) replaces the May 3 handoff (archived to `docs/HANDOFF-archive-2026-05-03.md`)
+- `o27v2/config.py`: `TARGET_RUNS_LO/HI` 22-26 → 20-50 as permissive sanity bounds with prominent "NOT a prescription" comment
+- `o27/tune.py`: removed "target X" labels, replaced with "(observed)"; sanity bounds only
+- Analytics docstrings (`pythag.py`, `linear_weights.py`, `base_runs.py`) updated to remove "~22 R/G" anchors; the formulas already auto-refit
+- `o27v2/web/app.py`: RPW/WAR comments updated to reflect variance-first design
 
----
+### 200-game tune output post-changes
 
-## 3. DATABASE STATE
-
-### Current schema (confirmed via PRAGMA)
-
-**`players`** — 185 rows (pre-Task-65 seed, 18/team old generator)
 ```
-id, team_id, name, position, is_pitcher, is_joker,
-skill (stored as REAL 0.0–1.0; new seed would store INTEGER 20–80),
-speed REAL, pitcher_skill REAL,
-stay_aggressiveness REAL, contact_quality_threshold REAL,
-archetype TEXT, pitcher_role TEXT,
-hard_contact_delta REAL, hr_weight_bonus REAL,
-age INTEGER, injured_until TEXT, il_tier TEXT
-```
-**MISSING from live DB:** `stamina INTEGER DEFAULT 50`, `is_active INTEGER DEFAULT 1`
-
-**`teams`** — 30 rows
-```
-id, name, abbrev, city, division, league, wins INTEGER, losses INTEGER
-```
-
-**`games`** — 4,500+ rows (full 162-game season scheduled)
-```
-id, season INTEGER, game_date TEXT, home_team_id, away_team_id,
-home_score, away_score, winner_id, super_inning INTEGER, played INTEGER, seed INTEGER
-```
-
-**`game_batter_stats`** — ~32,000 rows
-```
-id, game_id, team_id, player_id, phase INTEGER,
-pa, ab, runs, hits, doubles, triples, hr, rbi, bb, k, stays, outs_recorded
-```
-No uniqueness constraint. No known widespread duplicate issue here (pitcher stats are the duplicate problem).
-
-**`game_pitcher_stats`** — 6,316 rows (260 are duplicates)
-```
-id, game_id, team_id, player_id, phase INTEGER,
-batters_faced, outs_recorded, hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches
-```
-No uniqueness constraint. **This is what allows duplicate rows.**
-
-### Integrity issues
-
-| Issue | Count | Impact |
-|-------|-------|--------|
-| Duplicate pitcher stat rows | 260 extra rows in 184 games | Raw queries overcount; mitigated by `_PSTATS_DEDUP_SQL` |
-| `batter.outs_recorded = 0` with `ab > 0` | 497 rows | No displayed stat affected yet |
-| `stamina`, `is_active` absent | All 185 players | Task #65 live-role logic uses fallback silently |
-| `skill`/`speed`/`pitcher_skill` stored as floats | All 185 players | `scout.to_unit()` handles both formats; no functional issue |
-
-### Is the existing season salvageable?
-
-No, not for tuning purposes. The run environment (12.21 R/G/T) is wrong enough that any calibration decision made against this dataset will be meaningless. After Bug 1 is fixed, do a full reseed (`seed_league()` → `seed_schedule()`) and re-sim a fresh season before evaluating any stats. The existing data can be preserved in a backup but should not be the reference dataset for calibration.
-
-To apply Task #65 columns to the current DB without a full reseed (for code compatibility only, not roster expansion):
-```sql
-ALTER TABLE players ADD COLUMN stamina INTEGER DEFAULT 50;
-ALTER TABLE players ADD COLUMN is_active INTEGER DEFAULT 1;
+Avg total runs/game              33.73  sanity 20–50 ✓
+  Median / Std / Min / Max       33.0 / 9.3 / 15 / 66
+Avg run rate (R/out)             0.6247   (observed)
+Avg PAs/game (reg halves)        90.7     (observed)
+Avg stays/game                   1.860    (observed)
+Super-inning frequency           2.50%    sanity <10% ✓
+League K%                        13.07%   (observed)
+League BB%                       8.49%    (observed)
+League BA                        .386     (observed)
+League SLG                       .667     (observed)
+League HR/PA                     4.18%    (observed)
 ```
 
 ---
 
-## 4. WHAT NOT TO TOUCH
+## 3. WHAT NOT TO TOUCH
 
-These are working and settled. Do not relitigate.
-
-- **Engine architecture.** `o27/engine/` is a clean state-machine game engine. The event→renderer→DB pipeline is correct in structure. Calibration problems are constant values in `o27/config.py`, not design flaws.
-- **47-player rosters (34 active + 13 reserve).** Composition: 12 fielders + 3 DH + 19 active pitchers + 13 reserves. Settled in Task #65.
-- **12-batter lineups.** 8 fielders + SP + 3 DH = 12. This is structural to O27 rules. Do not reduce to 9.
-- **Stay mechanic.** The "Stay" plate appearance outcome is a core O27 rule. The `stays` column accounting in `game_batter_stats` is correct.
-- **No stored `pitcher_role`.** Task #65 decision. Manager AI derives role live from Stuff and Stamina at each appearance. Do not add back a persisted role field.
-- **Dedicated pitchers only.** Non-pitchers (`is_pitcher=0`) never relieve. Enforced in `pick_new_pitcher()`. Two-way exceptions are not implemented and not needed.
-- **Single Flask app, `/stats` blueprint.** One process, one DB file. `o27v2/web/app.py` and its templates. Do not split.
-- **Fly.io: `hybrid-baseball`, region `ams`, volume `o27v2_data`.** The `O27V2_DB_PATH` env var on Fly points to `/data/o27v2.db`. Do not change the volume mount path.
-- **Per-27-outs stat scale.** ERA, WHIP, K, BB are all per 27 outs (one O27 game). Consistent throughout `app.py:_aggregate_pitcher_rows()`. Do not convert to per-9-IP.
-- **FIP constant calibration.** `_league_fip_const()` re-fits each render cycle. Do not hardcode a constant.
-- **`_PSTATS_DEDUP_SQL` view.** Keep this in place until the `UNIQUE` constraint is added to `game_pitcher_stats`. Do not remove it early.
-- **`scout.to_unit()` dual-format handling.** The function accepts both legacy floats (≤ 1.0, passed through) and 20–80 integer grades. Both the old DB (floats) and new seed (integers) work correctly. Do not change the branch logic.
+- **Engine architecture.** `o27/engine/` state machine is clean. Calibration values live in `o27/config.py`, not in the engine.
+- **12-batter lineups** (8 fielders + SP + 3 DH). Structural to O27.
+- **Stay mechanic.** Core rule. `stays`, `stay_hits`, `stay_rbi` columns in `game_batter_stats` are correct.
+- **No stored `pitcher_role`.** Task #65 decision. Manager AI derives role live.
+- **Joker insertions are uncapped.** Designer call (commit `87b7d0f`). Manager AI gates by leverage × persona.
+- **Per-27-outs stat scale.** ERA, WHIP, K, BB are all per 27 outs (one O27 game). Do not convert to per-9-IP.
+- **FIP constant calibration.** `_league_fip_const()` re-fits per render cycle. Do not hardcode.
+- **`_PSTATS_DEDUP_SQL` view.** Keep until a `UNIQUE` constraint replaces it.
+- **Empirical analytics refits.** `pythag.refit_pythag_exponent()`, `linear_weights.derive_linear_weights()`, `base_runs._refit_coeffs()` all run on every web request. Do not hardcode constants — they self-adjust to whatever R/G environment the sim produces.
+- **`TARGET_*` constants in `o27v2/config.py`.** These are deliberately permissive. Do not narrow them to "tighter targets" — the comment at the top explains why.
 
 ---
 
-## 5. OUTSTANDING DESIGN QUESTIONS
+## 4. OPEN THREADS
 
-**Run environment target.**
-What is the intended runs/game/team for O27? The structural rules (12-batter lineups, Stay mechanic, 27 outs/side) produce more scoring than MLB by design, but no numeric target has been set. A target is required before any calibration attempt. Suggested starting point: 7–9 total runs/game (3.5–4.5 per team). This is a design decision, not a code question.
+**3TO (third-time-through-order) tracking.**
+Not currently a first-class concept in the engine. The arc1/arc2/arc3 bucketing is the closest proxy and works for a 12-man lineup with starters going the distance. A real per-(pitcher, batter) look-count tracker plus `era_tto1/2/3` stat columns would expose lineup-adaptation effects as proper splits. Discussed in the May 17 design conversation but not implemented.
 
-**Aging and attribute drift.**
-Task #65 set up `stamina` and `pitcher_skill` as independently rolled attributes but added no year-over-year drift. The design intent was that a stamina-decaying arm naturally drifts from the rotation into the bullpen. No aging loop exists. Needs: a per-offseason drift function (±1–3 grade points/year, age-curve weighted for peak at 27–29 and decline after 32).
+**Pitcher evaluation framework (cricket / pesäpallo flavored).**
+ERA is a context stat in O27, not the headline. The designer is interested in a composite — proposed name **PEFF** — weighting:
+- OS+% (outs share normalized to league)
+- CCR (Clean Contact Rate — weak / total contact)
+- TTO Decay (OPS_against tto3 − tto1; needs 3TO tracking first)
+- LDR (Leverage Damage Resistance — leverage-weighted ERA)
+- Arsenal Index (repertoire depth × avg pitch quality)
 
-**Reserve promotion visibility.**
-When an active player is injured, the highest-Stamina reserve is promoted ephemerally (in-memory only, no DB flag flip). The web UI shows no indication that a reserve is playing that day. Either accept invisible depth or add a per-game `playing_today` record.
+All derivable from existing schema except TTO Decay. Web layer should lead pitcher tables with PEFF / wERA / CCR / OS+%; ERA becomes secondary. Not yet implemented.
 
-**Super-inning scoring rules.**
-Whether SI halves should hard-cap at 5 outs (crashing if exceeded) or soft-cap (log and continue) is unresolved. The assertion-to-crash behavior is clearly wrong; the question is whether 6+ outs in a single SI half should be a logged anomaly or a corrected bug in the half-end detection.
+**Arsenal depth in the fatigue cocktail.**
+The fatigue model uses stamina + grit + release_angle + form + pitch_debt. It does NOT use repertoire depth. Pitchers with 5-pitch arsenals should resist third-time-through-order decay more than 2-pitch relievers. Proposed addition in `prob.py:307` area:
 
-**Schedule inter/intra-division split.**
-The schedule generator uses weighted round-robin with division preference (`schedule.py:186`). Whether the actual inter/intra-division game distribution matches the intended design (e.g., 4× vs. 3× series) has not been formally verified. A query checking game counts by same-division vs. cross-division team pairs would confirm or deny.
+```python
+arsenal_size = len(getattr(pitcher, "repertoire", []) or [])
+arsenal_mult = 1.0 - max(0, arsenal_size - 2) * cfg.ARSENAL_FATIGUE_RESIST
+fatigue *= arsenal_mult
+```
 
-**FIP replacement formula.**
-Standard FIP was designed for MLB conditions. With O27's 12-batter lineups, Stay mechanic, and different K/HR/BB ratios, an O27-native expected-runs metric may be more meaningful long-term. This is a research question; FIP with the calibration constant is adequate as a placeholder.
+Plus a new `ARSENAL_FATIGUE_RESIST` constant (~0.05). Discussed but not landed.
 
-**Leaderboard by attribute tier.**
-Now that every attribute is on the 20–80 scout scale, a "Top Arms by Stuff" and "Top Arms by Stamina" leaderboard is structurally available. No decision has been made on whether to surface this in the `/stats` page.
+**Form variance symmetry.**
+The current asymmetric clamp (0.71-1.84 around mean 1.0) intentionally makes deep off-days more common than transcendent days. Gaussian sampling means the 1.84 upper bound is a ~3.4σ event — rare but reachable. If the designer wants symmetric extreme upside (more common transcendent days), this requires a sampling-shape change (skewed dist), not just a clamp tweak.
+
+**DB migration test failures.**
+`test_init_db_wipes_stale_and_reseeds` and `test_init_db_idempotent_on_phase8_db` fail because seeded players get empty `role` strings. Pre-existing. Lives in `o27v2/league.py` `_make_pitcher()`.
+
+**`docs/aar-*.md` references to 22-26 R/G.**
+Multiple historical AARs reference the old target band. Not load-bearing but could mislead a future reader who treats AAR documents as canon. Update opportunistically.
+
+---
+
+## 5. DATABASE STATE
+
+(Most of section 3 from the prior handoff still applies — schema is unchanged. The live DB may have been reseeded since; verify `players` row count and `stamina` / `is_active` column presence via `PRAGMA table_info(players)`.)
+
+If the live DB is stale (still at the 12.21 R/G era), the new config will produce drastically different stat distributions. **Do a full reseed before evaluating any aggregated stats**: `db.init_db()` → `league.seed_league()` → `schedule.seed_schedule()` → `sim.simulate_next_n(...)`.
+
+---
+
+## 6. WHERE THINGS LIVE
+
+| Concept | File |
+|---|---|
+| All tunable constants | `o27/config.py` |
+| Pitch outcome resolution | `o27/engine/prob.py` |
+| Fatigue model | `o27/engine/prob.py:300-335` |
+| Daily form roll | `o27/engine/prob.py:1644-1692` |
+| Stay mechanic | `o27/engine/stay.py` |
+| Park effects (geometric) | `o27/engine/park_effects.py` |
+| Manager AI (pitching, jokers) | `o27/engine/manager.py` |
+| Single-game CLI | `o27/main.py` |
+| Batch metrics runner | `o27/tune.py` |
+| 30-team league wrapper | `o27v2/sim.py`, `o27v2/manage.py` |
+| DB schema | `o27v2/db.py` |
+| League seeding | `o27v2/league.py` |
+| Empirical analytics | `o27v2/analytics/{pythag,linear_weights,base_runs}.py` |
+| Web layer | `o27v2/web/app.py` |
+| Invariant tests | `tests/test_stat_invariants.py` |
+| Realism identity tests | `tests/test_realism_identity.py` |
+
+---
+
+**End of handoff. When in doubt, read the AAR for the most recent tuning pass and confirm design intent with the designer before retuning anything.**
