@@ -1577,22 +1577,21 @@ class ProbabilisticProvider:
             # Talent-driven fractional advance. talent_factor maps to an
             # EXPECTED advance value (continuous, talent-diverse), then
             # one rng draw resolves the fractional part to an integer.
-            #   weak quality   expected ≈ 0.5*(1 + talent_factor)
-            #     → low-talent  (factor ≈ -1):  expected ~0   → mostly no advance
-            #       neutral     (factor ≈  0):  expected ~0.5 → ~50% credit
-            #       high-talent (factor ≈ +2):  expected ~1.5 → always credit, sometimes 2
-            #   medium quality expected ≈ 1.0 + 0.5*talent_factor
-            #     → low-talent:  expected ~0.5 → mostly 1 (credit), sometimes 0
-            #       neutral:     expected ~1.0 → always 1
-            #       high-talent: expected ~2.0 → 2, sometimes 3
-            # Even low-talent batters can occasionally drive runners on a 2C;
-            # stars are reliably better. Talent flows continuously through
-            # the expected-value formula; the rng draw is purely fractional
-            # resolution, not a gate on whether talent matters.
+            #   weak quality   expected ≈ 1.0 + 0.5*talent_factor
+            #     → low-talent  (factor ≈ -1):  expected ~0.5 → ~50% credit
+            #       neutral     (factor ≈  0):  expected ~1.0 → always +1
+            #       high-talent (factor ≈ +2):  expected ~2.0 → always +2
+            #   medium quality expected ≈ 1.5 + 0.75*talent_factor
+            #     → low-talent:  expected ~0.75 → mostly 1, sometimes 0
+            #       neutral:     expected ~1.5  → 50/50 between 1 and 2
+            #       high-talent: expected ~3.0  → always max (score from 1B)
+            # Floors are higher than Path A originals — earned 2Cs reliably
+            # move runners, so chained hits produce runs instead of just
+            # credit-only "free" hits. Pitchers pay via pitch count.
             if quality == "weak":
-                expected = 0.5 * (1.0 + talent_factor)
-            else:  # medium
                 expected = 1.0 + 0.5 * talent_factor
+            else:  # medium
+                expected = 1.5 + 0.75 * talent_factor
             expected = max(0.0, min(3.0, expected))
             floor_v = int(expected)
             frac = expected - floor_v

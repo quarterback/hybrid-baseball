@@ -597,15 +597,20 @@ def _resolve_contact(
         log.append(f"  Hit credited to {batter.name} (stay). "
                    f"Total this AB: {state.current_at_bat_hits}.")
 
-    # Spend one strike from the batter's 3-strike budget and check whether
-    # the AB has used all 3. If so, the AB ends — but NOT as a batter-out:
-    # the hits are credited, runners advanced, RBIs counted; the batter
-    # just doesn't get to bat again this trip.
-    log += _stay_credit_strike(state)
-    if state.count.strikes >= 3:
-        log.append(f"  At-bat ends — {batter.name} used all 3 strikes "
-                   f"(max-hits stay sequence; no batter-out).")
-        log += _end_at_bat(state)
+    # Strike-burn is skill-conditional: a 2C that successfully advanced
+    # runners (the talent gate in prob.py passed) costs nothing on the
+    # count — the batter earned it. A 2C where no runner moved (gate
+    # failed) burns a strike, ending the AB at 3. Pitchers still pay
+    # via pitch count (ball_in_play always increments pitches), so a
+    # chain of earned 2Cs runs the pitcher's count up.
+    if runner_successfully_advanced:
+        log.append(f"  Stay successful — count unchanged. Count: {state.count}.")
+    else:
+        log += _stay_credit_strike(state)
+        if state.count.strikes >= 3:
+            log.append(f"  At-bat ends — {batter.name} used all 3 strikes "
+                       f"(failed-stay sequence; no batter-out).")
+            log += _end_at_bat(state)
     # Note: when AB doesn't end, do NOT call _end_at_bat — the at-bat is
     # still in progress with the new (carried-forward) count.
     return log
