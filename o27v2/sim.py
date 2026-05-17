@@ -427,6 +427,12 @@ def _db_team_to_engine(
         player.work_ethic  = int(p.get("work_ethic")  or 50)
         player.work_habits = int(p.get("work_habits") or 50)
         player.habit_cup   = float(p.get("habit_cup") if p.get("habit_cup") is not None else 0.5)
+        # Grit is loaded on every player. On pitchers it reads as fatigue
+        # resistance; on hitters it reads as "doesn't flinch with the
+        # bases loaded" and stacks with leadership in the RISP-pressure
+        # bonus. Default 0.5 keeps legacy DB rows engine-identical.
+        player.grit        = float(p.get("grit")       if p.get("grit")       is not None else 0.5)
+        player.leadership  = _scout.to_unit(p.get("leadership") or 50)
         # Pitch-type activation: load repertoire JSON onto Player so the
         # engine's _select_pitch() can sample from it. Legacy rows
         # (NULL repertoire) leave Player.repertoire = [] which the
@@ -435,7 +441,6 @@ def _db_team_to_engine(
         if p.get("is_pitcher"):
             player.release_angle  = float(p.get("release_angle")  if p.get("release_angle")  is not None else 0.5)
             player.pitch_variance = float(p.get("pitch_variance") if p.get("pitch_variance") is not None else 0.0)
-            player.grit           = float(p.get("grit")           if p.get("grit")           is not None else 0.5)
             rep_json = p.get("repertoire")
             if rep_json:
                 try:

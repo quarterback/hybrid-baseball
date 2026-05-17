@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS players (
     contact_quality_threshold REAL DEFAULT 0.45,
     pull_pct REAL DEFAULT 0.5,
     adaptability INTEGER DEFAULT 50,
+    leadership   INTEGER DEFAULT 50,   -- batter mental attribute. Stacks with `grit` in the RISP-pressure bonus so a low-eye/contact bench guy with elite leadership+grit can still tip a high-leverage AB (joker archetype).
     archetype             TEXT DEFAULT '',
     pitcher_role          TEXT DEFAULT '',
     hard_contact_delta    REAL DEFAULT 0.0,
@@ -763,6 +764,15 @@ def init_db() -> None:
         # ABs against this batter. 20-80 scale like other ratings.
         try:
             conn.execute("ALTER TABLE players ADD COLUMN adaptability INTEGER DEFAULT 50")
+            conn.commit()
+        except Exception:
+            pass
+        # Leadership — batter mental rating. Stacks with grit in the
+        # RISP-pressure bonus so high-mental bench guys can still tip
+        # high-leverage ABs even without elite hard skills. Independent
+        # 20-80 roll at seed time.
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN leadership INTEGER DEFAULT 50")
             conn.commit()
         except Exception:
             pass

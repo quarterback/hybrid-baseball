@@ -165,6 +165,12 @@ class Player:
     # batter's adaptability erodes the shift's effectiveness. 0.5 =
     # neutral (no erosion); 1.0 = elite shift-reader.
     adaptability: float = 0.5
+    # Leadership — batter-side mental attribute, independent of hard
+    # skills (eye, contact). Stacks with `grit` to lift the RISP-pressure
+    # bonus in prob._resolve_risp_pressure: a high-leadership AND
+    # high-grit batter gets both lifts at once, so a low-eye/contact
+    # bench guy can still tip a big AB (the joker archetype). 0.5 = neutral.
+    leadership: float = 0.5
 
     # Transient per-game shift memory — reset to defaults each new
     # game (Player rebuilt from DB at game start). NOT persisted.

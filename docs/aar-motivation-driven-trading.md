@@ -334,51 +334,79 @@ a separate `STAY` weight in the output, and `expected_woba` +
 `_aggregate_batter_rows` route stays through the new weight.
 Re-run `/analytics` to confirm the new ordering (`RV(1B) > RV(BB)`).
 
-**`RV(3B) +0.842 < RV(2B) +0.894` — addressed via a talent-driven
-RISP pressure model.** The 3B classification itself was clean (no
+**`RV(3B) +0.842 < RV(2B) +0.894` — addressed via two layered
+clutch mechanics.** The 3B classification itself was clean (no
 stay-credit leak), but the underlying RE matrix showed `RE(__3) <
 RE(_2_)` at low outs — runners on 3rd stranded too often because
-the engine had no "pressure event" lift: no clutch-batter mistake
-exploitation, no defender bobble under RISP, no pitcher leaving one
-up. Added `prob._resolve_risp_pressure`, a two-stage roll driven
-entirely by EXISTING player attributes (no new schema):
+the engine had no "pressure event" lift. Added:
 
-1. **Stage 1 — does the moment manifest?** Probability composes
-   from situational pressure (RISP / RISP+3 / bases-loaded), pitcher
-   composure `(command + grit) / 2`, and batter clutch derived from
-   `(eye + contact) / 2`. At neutral attributes a loaded bag fires
-   ~35% of the time; an elite-eye/contact batter against a
-   low-composure pitcher with bases loaded fires ~84%; a flat
-   batter against an elite pitcher in the same spot fires ~3%.
-2. **Stage 2 — which manifestation?** Mutually-exclusive draw
-   (no stacking) between `hit` (batter exploits the mistake →
-   talent_run bump on the post-contact hit-vs-out gate, scaled by
-   the batter's own clutch), `error` (defender bobbles a routine
-   out → flip to reach-on-error, weighted by `1 - team_defense_rating`),
-   and `leave_up` (pitcher leaves a mistake pitch in the zone →
-   contact-quality re-rolls one tier up before fielding resolution,
-   weighted by `1 - composure`).
+**1. RISP pressure (`prob._resolve_risp_pressure`)** — two-stage
+talent-driven roll.
 
-The bases-loaded situational tier is the highest BY DESIGN — in
-O27, the 2C stay mechanic lets a batter iteratively clear bases
-without needing a grand slam (a 2C+1 chain plates two runs by
-itself), so the pressure-event payoff is even larger than MLB.
+  *Stage 1 — does the moment manifest?* Probability composes from
+  situational pressure (RISP / RISP+3 / bases-loaded), pitcher
+  composure `(command + grit) / 2`, and batter clutch (see
+  `_batter_clutch`: hard-skill baseline `(eye + contact) / 2` PLUS
+  a stacking mental contribution `0.5 × ((leadership − 0.5) +
+  (grit − 0.5))`). The mental attrs STACK with each other and with
+  the hard-skill baseline, so a low-eye/contact bench guy with elite
+  leadership AND elite grit lifts to roughly the same clutch as a
+  star hitter with neutral mental — the joker archetype.
 
-A separate "leadership" attribute (rolled at seed time, independent
-of hard skills, so a bench-tier guy can still be a joker) would let
-clutch decouple from raw eye+contact. Deferred — the derived shape
-should fix the immediate RE(__3) issue, and we'll see if the joker
-archetype needs explicit attribute backing once the post-rewrite
-sim runs.
+  *Stage 2 — which manifestation?* Mutually-exclusive draw between
+  `hit`, `error`, `leave_up`, talent-weighted by clutch /
+  `(1 − defense_rating)` / `(1 − composure)`. Bases-loaded gets the
+  largest situational coefficient (0.35 vs 0.16 plain-RISP) because
+  the 2C stay mechanic compounds the payoff — a 2C+1 chain plates
+  two runs by itself.
+
+**2. Leadership flare (`prob._apply_leadership_lift`)** — per-PA
+one-off ratings bump triggered by accumulated leverage conditions.
+This is the "progressive temporary stat boost" mechanic: leadership
+isn't a static input to one formula, it's a flare that fires under
+pressure and lifts ratings transiently for that PA.
+
+  *Triggers* (each adds to fire probability; progressive): RISP
+  +0.06, bases loaded +0.06, late game +0.04, close game +0.03,
+  tied +0.03. Fire probability is scaled by leadership rating;
+  high-leadership players fire more often AND lift bigger.
+
+  *Side-symmetric.* The flare fires for BOTH batters and pitchers.
+  A high-leadership pitcher facing a jam bears down and lifts
+  composure; a high-leadership batter in the same spot lifts
+  eye/contact. They duel through the downstream systems.
+
+  *Stacking.* The lift is threaded as an offset (no mutation) into:
+  `_batter_clutch` (Stage 1 firing prob), composure (suppresses
+  firing when pitcher flares), the post-contact `talent_run` gate
+  (lifted eye/contact vs lifted command), and the `hit`-manifestation
+  magnitude bump. A clutch slugger whose flare AND whose pressure
+  event both fire on the same PA gets every lift at once — that's
+  the decisive "took over the game" moment.
+
+  *Magnitude.* Uniform band [0.05, 0.20] at neutral leadership,
+  scaled by `1 + 1.5 × (leadership − 0.5)` so an 0.85-leadership
+  flare peaks ~+0.30 to ratings; a 0.15-leadership flare caps
+  near +0.05.
+
+**Why both layers.** RISP pressure handles the "this moment is
+big" coupling (situation → event), with talent gating which event
+fires. The leadership flare handles the "this player rises to the
+moment" coupling (leverage → ratings bump), independent of whether
+the pressure event fires. They compose: the flare's lift feeds the
+pressure roll's clutch input, so high leadership + high leverage
++ matching personnel is the path to maximum compounding.
 
 **Trade-engine implication.** The refit wOBA weights say walks are
-worth ~43% more than the MLB-default pricing assumes, and HR worth
+worth ~43% more than MLB-default pricing assumes, and HR worth
 ~21% less. The existing `trade_value` formula uses an archetype
 bonus of `+0.06` for `power` vs `+0.05` for `contact` — under this
 environment, contact/eye-driven bats are arguably underpriced
-relative to power. Out of scope for this rewrite (changing
-`trade_value` re-tiers every salary via `valuation.py:_BANDS`),
-but worth a follow-up pass once the trade volume baseline is set.
+relative to power. Leadership is also unpriced — a bench-tier
+joker with maxed leadership now has real in-game value via the
+flare mechanic, but `trade_value` doesn't see it. Out of scope for
+this rewrite, but both are worth a follow-up pass once the trade
+volume baseline is set.
 
 ---
 
