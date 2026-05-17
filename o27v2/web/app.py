@@ -5363,7 +5363,7 @@ def api_sim_today():
 # `done=False` so the JS can immediately POST the same endpoint again.
 # Keeps each round-trip well under both the Fly proxy idle window and
 # mobile Safari's fetch timeout (the original "Load failed" symptom).
-_BULK_SIM_MAX_SECONDS = 8.0
+_BULK_SIM_MAX_SECONDS = 4.5
 
 
 def _run_bulk_sim_chunk(current: str, target: str) -> tuple[list, bool]:
