@@ -163,7 +163,7 @@
             <tr><th>Event</th><th class="num">RV (runs)</th></tr>
           </thead>
           <tbody>
-            {% for evt in ['HR','3B','2B','BB','HBP','1B','K_over_out','out'] %}
+            {% for evt in ['HR','3B','2B','1B','BB','HBP','STAY','K_over_out','out'] %}
               {% if rv.get(evt) is not none %}
               <tr>
                 <td>{{ evt }}</td>
@@ -177,10 +177,10 @@
           </tbody>
         </table>
         <div class="text-secondary small">
-          Out RV is negative (an out costs the offense ~0.4 runs vs prior
-          expectation). BB ≥ 1B happens when stay-credited "1B" events
-          (which don't advance runners) dilute the 1B average; true 1B run
-          value sits above BB.
+          Out RV is negative (an out costs the offense ~0.4 runs vs
+          prior expectation). STAY is the empirical RV of a credited
+          2C stay event — broken out from 1B so the single's value
+          reflects true singles only.
         </div>
       </div>
       <div class="col-md-4">
@@ -196,20 +196,28 @@
           </thead>
           <tbody>
             {% set mlb_woba = {'BB': 0.72, 'HBP': 0.74, '1B': 0.95,
-                               '2B': 1.30, '3B': 1.70, 'HR': 2.05} %}
-            {% for evt in ['BB', 'HBP', '1B', '2B', '3B', 'HR'] %}
-              {% set fit = ww[evt] %}
-              {% set mlb = mlb_woba[evt] %}
-              {% set delta_pct = (fit - mlb) / mlb * 100 %}
-              <tr>
-                <td>{{ evt }}</td>
-                <td class="num fw-bold">{{ '%.3f' | format(fit) }}</td>
-                <td class="num text-secondary">{{ '%.3f' | format(mlb) }}</td>
-                <td class="num"
-                    style="color:{% if delta_pct > 5 %}var(--good){% elif delta_pct < -5 %}var(--bad){% else %}inherit{% endif %}">
-                  {{ '%+.0f' | format(delta_pct) }}%
-                </td>
-              </tr>
+                               '2B': 1.30, '3B': 1.70, 'HR': 2.05,
+                               'STAY': None} %}
+            {% for evt in ['BB', 'HBP', '1B', '2B', '3B', 'HR', 'STAY'] %}
+              {% if ww.get(evt) is not none %}
+                {% set fit = ww[evt] %}
+                {% set mlb = mlb_woba.get(evt) %}
+                <tr>
+                  <td>{{ evt }}</td>
+                  <td class="num fw-bold">{{ '%.3f' | format(fit) }}</td>
+                  {% if mlb is none %}
+                    <td class="num text-secondary">—</td>
+                    <td class="num text-secondary">—</td>
+                  {% else %}
+                    {% set delta_pct = (fit - mlb) / mlb * 100 %}
+                    <td class="num text-secondary">{{ '%.3f' | format(mlb) }}</td>
+                    <td class="num"
+                        style="color:{% if delta_pct > 5 %}var(--good){% elif delta_pct < -5 %}var(--bad){% else %}inherit{% endif %}">
+                      {{ '%+.0f' | format(delta_pct) }}%
+                    </td>
+                  {% endif %}
+                </tr>
+              {% endif %}
             {% endfor %}
           </tbody>
         </table>

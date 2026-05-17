@@ -326,15 +326,20 @@ land starter GSc mean at 50.44 (target 50).
 0.439·(BB+HBP)` (vs MLB `1.4·TB − 0.6·H − 3·HR + 0.1·(BB+HBP)`),
 SSE cut **37.9%** across 30 teams × 2 sides.
 
-**Two known artifacts (not bugs, watch for them):**
+**`RV(1B) +0.457 < RV(BB) +0.658` — fixed in this AAR's commit
+trail.** The "1B" bucket was being polluted by stay-credited 2C
+events that don't advance runners. `linear_weights._classify_bip`
+now returns `STAY` for those events, `derive_linear_weights` carries
+a separate `STAY` weight in the output, and `expected_woba` +
+`_aggregate_batter_rows` route stays through the new weight.
+Re-run `/analytics` to confirm the new ordering (`RV(1B) > RV(BB)`).
 
-1. `RV(1B) +0.457 < RV(BB) +0.658` — "1B" includes stay-credited
-   non-advancing events that dilute the true single's RV. Documented
-   in `aar-2c-reframe-and-shifts.md`; expected to close as 2C tuning
-   settles.
-2. `RV(3B) +0.842 < RV(2B) +0.894` — same stay-credit contamination.
-   Triples should sit above doubles by ~0.10 runs once event taxonomy
-   is clean.
+`RV(3B) +0.842 < RV(2B) +0.894` is **not** stay-credit contamination
+— 3B classification was clean. The underlying issue is in the RE
+matrix itself: `RE(__3) < RE(_2_)` at low outs (e.g., 10.26 vs 10.85
+at 0–2 outs). Runners on 3rd are stranding at higher rates than
+runners on 2nd. That's an engine runner-advancement issue, not a
+linear-weights bug, and is left for a separate session.
 
 **Trade-engine implication.** The refit wOBA weights say walks are
 worth ~43% more than the MLB-default pricing assumes, and HR worth
