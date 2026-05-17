@@ -1243,10 +1243,16 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         # (NOT AB+BB+HBP) since each PA represents one opportunity;
         # stays inside an AB are separate PAs.
         ww = _linear_weights()["woba_weights"]
-        singles = h - d2 - d3 - hr
+        # `stay_hits` is a subset of `hits`; keep it out of the 1B
+        # bucket so the wOBA contribution reflects true singles vs.
+        # the (lower-RV) stay-credited events separately.
+        stay_h_for_woba = b.get("stay_hits") or 0
+        true_singles = h - d2 - d3 - hr - stay_h_for_woba
+        stay_w = ww.get("STAY", ww["1B"])
         woba_num = (
-            ww["BB"] * bb + ww["HBP"] * hbp + ww["1B"] * singles +
-            ww["2B"] * d2 + ww["3B"]  * d3  + ww["HR"] * hr
+            ww["BB"] * bb + ww["HBP"] * hbp + ww["1B"] * true_singles +
+            ww["2B"] * d2 + ww["3B"]  * d3  + ww["HR"] * hr +
+            stay_w   * stay_h_for_woba
         )
         b["woba"] = (woba_num / pa) if pa else 0.0
 
@@ -5049,6 +5055,11 @@ def transactions():
     teams = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
 
     event_types = ["injury", "return", "promotion", "penalty",
+                   "trade_block_breaking", "trade_injury_backfill",
+                   "trade_deadline_buyer", "trade_deadline_seller",
+                   "trade_salary_dump", "trade_rebuild_fire_sale",
+                   "trade_win_now_overpay", "trade_gm_noise",
+                   "trade_star_demand",
                    "deadline_trade", "inseason_trade",
                    "waiver_claim", "waiver_release"]
     selected_team = None

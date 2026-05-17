@@ -61,7 +61,14 @@ CREATE TABLE IF NOT EXISTS teams (
     mgr_run_game             REAL  DEFAULT 0.5,
     mgr_bench_usage          REAL  DEFAULT 0.5,
     mgr_shift_aggression     REAL  DEFAULT 0.5,
-    org_strength             INTEGER DEFAULT 50
+    org_strength             INTEGER DEFAULT 50,
+    -- Front-office persona (see o27v2/front_office.py). Drives trade
+    -- motivations and acceptance thresholds; drifts year over year.
+    fo_strategy        TEXT    DEFAULT 'balanced',
+    fo_aggression      REAL    DEFAULT 0.5,
+    fo_archetype_bias  TEXT    DEFAULT '',
+    fo_losing_streak   INTEGER DEFAULT 0,
+    fo_last_trade_date TEXT    DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -79,6 +86,7 @@ CREATE TABLE IF NOT EXISTS players (
     contact_quality_threshold REAL DEFAULT 0.45,
     pull_pct REAL DEFAULT 0.5,
     adaptability INTEGER DEFAULT 50,
+    leadership   INTEGER DEFAULT 50,   -- batter mental attribute. Stacks with `grit` in the RISP-pressure bonus so a low-eye/contact bench guy with elite leadership+grit can still tip a high-leverage AB (joker archetype).
     archetype             TEXT DEFAULT '',
     pitcher_role          TEXT DEFAULT '',
     hard_contact_delta    REAL DEFAULT 0.0,
@@ -694,6 +702,32 @@ def init_db() -> None:
             except Exception:
                 pass
 
+        # Front-office persona columns (see o27v2/front_office.py). Drives
+        # trade behavior; re-rolled on reseed; drifts year-over-year via
+        # development.run_offseason -> front_office.drift_fo_strategies.
+        for col, sql_type, defval in (
+            ("fo_strategy",        "TEXT",    "'balanced'"),
+            ("fo_archetype_bias",  "TEXT",    "''"),
+            ("fo_last_trade_date", "TEXT",    "''"),
+        ):
+            try:
+                conn.execute(
+                    f"ALTER TABLE teams ADD COLUMN {col} {sql_type} DEFAULT {defval}"
+                )
+                conn.commit()
+            except Exception:
+                pass
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN fo_aggression REAL DEFAULT 0.5")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN fo_losing_streak INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+
         # Baserunning skill + aggressiveness (independent of speed).
         for col in ("baserunning", "run_aggressiveness"):
             try:
@@ -730,6 +764,15 @@ def init_db() -> None:
         # ABs against this batter. 20-80 scale like other ratings.
         try:
             conn.execute("ALTER TABLE players ADD COLUMN adaptability INTEGER DEFAULT 50")
+            conn.commit()
+        except Exception:
+            pass
+        # Leadership — batter mental rating. Stacks with grit in the
+        # RISP-pressure bonus so high-mental bench guys can still tip
+        # high-leverage ABs even without elite hard skills. Independent
+        # 20-80 roll at seed time.
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN leadership INTEGER DEFAULT 50")
             conn.commit()
         except Exception:
             pass

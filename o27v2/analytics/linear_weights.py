@@ -59,14 +59,17 @@ _WALK_TRANSITION = {
 
 def _classify_bip(hit_type: str | None,
                   was_stay: int, stay_credited: int) -> str | None:
-    """Map a BIP-event row to one of {1B, 2B, 3B, HR, out}.
+    """Map a BIP-event row to one of {1B, 2B, 3B, HR, STAY, out}.
 
-    Mirrors expected_woba.py's stay-credit treatment: a credited 2C
-    stay counts as a single; an uncredited stay counts as an out.
+    Stay-credit events get their own STAY bucket — they are NOT real
+    singles and conflating them with 1B drags the empirical RV of a
+    true single below the walk RV. With them separated, RV(1B) sits
+    above RV(BB) as it should.
+
     Returns None if the row is uninterpretable (legacy NULL hit_type).
     """
     if was_stay and stay_credited:
-        return "1B"
+        return "STAY"
     if was_stay and not stay_credited:
         return "out"
     if hit_type in ("hr", "home_run"):
@@ -263,7 +266,7 @@ def derive_linear_weights() -> dict:
     # no data → no signal) so this entire derivation is safe to call
     # before any games have been simmed. /team/<id>, /player/<id>,
     # /standings, etc. all funnel through here via _aggregate_batter_rows.
-    for _et in ("out", "1B", "2B", "3B", "HR"):
+    for _et in ("out", "1B", "2B", "3B", "HR", "STAY"):
         rv.setdefault(_et, 0.0)
     rv["BB"]  = _walk_run_value(re_map, state_p)
     rv["HBP"] = rv["BB"]   # same state transition
@@ -279,20 +282,24 @@ def derive_linear_weights() -> dict:
 
     # ---- wOBA weights: OBP-scaled wRAA-per-PA.
     rv_out = rv.get("out", 0.0)
-    raw = {et: rv[et] - rv_out for et in ("BB", "HBP", "1B", "2B", "3B", "HR")}
+    raw = {et: rv[et] - rv_out for et in ("BB", "HBP", "1B", "2B", "3B", "HR", "STAY")}
 
     # Compute league counts to derive the OBP-scale factor and to
-    # validate league wOBA == league OBP.
+    # validate league wOBA == league OBP. `stay_hits` is a subset of
+    # `hits` (engine credits a stay-event 2C hit as a hit in
+    # game_batter_stats), so `true_singles = singles_total - stay_hits`
+    # to keep the 1B bucket free of stay-credit contamination.
     counts = db.fetchone(
         """
-        SELECT COALESCE(SUM(pa), 0)      AS pa,
-               COALESCE(SUM(ab), 0)      AS ab,
-               COALESCE(SUM(hits), 0)    AS h,
-               COALESCE(SUM(doubles), 0) AS d2,
-               COALESCE(SUM(triples), 0) AS d3,
-               COALESCE(SUM(hr), 0)      AS hr,
-               COALESCE(SUM(bb), 0)      AS bb,
-               COALESCE(SUM(hbp), 0)     AS hbp
+        SELECT COALESCE(SUM(pa), 0)         AS pa,
+               COALESCE(SUM(ab), 0)         AS ab,
+               COALESCE(SUM(hits), 0)       AS h,
+               COALESCE(SUM(doubles), 0)    AS d2,
+               COALESCE(SUM(triples), 0)    AS d3,
+               COALESCE(SUM(hr), 0)         AS hr,
+               COALESCE(SUM(bb), 0)         AS bb,
+               COALESCE(SUM(hbp), 0)        AS hbp,
+               COALESCE(SUM(stay_hits), 0)  AS stay_h
         FROM game_batter_stats
         WHERE phase = 0
         """
@@ -300,14 +307,16 @@ def derive_linear_weights() -> dict:
     pa = counts.get("pa") or 0
     h, hr_ct, d2, d3 = counts.get("h", 0), counts.get("hr", 0), counts.get("d2", 0), counts.get("d3", 0)
     bb_ct, hbp_ct = counts.get("bb", 0), counts.get("hbp", 0)
-    singles = h - d2 - d3 - hr_ct
+    stay_ct = counts.get("stay_h", 0)
+    true_singles = h - d2 - d3 - hr_ct - stay_ct
     league_obp = (h + bb_ct + hbp_ct) / pa if pa > 0 else 0.0
 
     # Aggregate raw wRAA-per-PA across the league:
     raw_total = (
-        raw["BB"]  * bb_ct  + raw["HBP"] * hbp_ct +
-        raw["1B"]  * singles + raw["2B"]  * d2 +
-        raw["3B"]  * d3      + raw["HR"]  * hr_ct
+        raw["BB"]  * bb_ct      + raw["HBP"] * hbp_ct +
+        raw["1B"]  * true_singles + raw["2B"]  * d2 +
+        raw["3B"]  * d3         + raw["HR"]  * hr_ct +
+        raw["STAY"]* stay_ct
     )
     raw_per_pa = (raw_total / pa) if pa > 0 else 0.0
     scale = (league_obp / raw_per_pa) if raw_per_pa > 0 else 1.0
@@ -318,9 +327,10 @@ def derive_linear_weights() -> dict:
     # ---- Game Score coefficients (1 pt ≈ 0.5 runs).
     PTS_PER_RUN = 2.0  # MLB convention preserved
     avg_h_rv = (
-        rv["1B"] * singles + rv["2B"] * d2 +
-        rv["3B"] * d3      + rv["HR"] * hr_ct
-    ) / (singles + d2 + d3 + hr_ct) if (singles + d2 + d3 + hr_ct) > 0 else 0.0
+        rv["1B"] * true_singles + rv["2B"] * d2 +
+        rv["3B"] * d3           + rv["HR"] * hr_ct +
+        rv["STAY"] * stay_ct
+    ) / (true_singles + d2 + d3 + hr_ct + stay_ct) if (true_singles + d2 + d3 + hr_ct + stay_ct) > 0 else 0.0
     gsc = {
         "out":          1.0,
         "K_over_out":   round(rv["K_over_out"] * PTS_PER_RUN, 2),

@@ -34,7 +34,10 @@ def _bip_woba_points(weights: dict,
                      was_stay: int, stay_credited: int) -> float:
     """wOBA points credited for one BIP event under the given weights."""
     if was_stay and stay_credited:
-        return weights["1B"]    # stay-credited hit ≈ single
+        # Stay-credited events have their own weight in the refit table;
+        # fall back to the 1B weight only if a legacy weight dict is
+        # missing the STAY key.
+        return weights.get("STAY", weights["1B"])
     if was_stay and not stay_credited:
         return 0.0              # stay event without credit (auto-out)
     if hit_type in ("hr", "home_run"):
@@ -127,11 +130,14 @@ def build_xwoba_table(min_pa: int = 162) -> dict:
     for r in bip_rows:
         pid = r["player_id"]
         q = r["quality"]
-        # Actual: rebuild from event mix
+        # Actual: rebuild from event mix. Stays use their own STAY
+        # weight rather than being lumped into 1B (legacy fallback only
+        # if a stale weight dict is missing the key).
+        stay_w = weights.get("STAY", weights["1B"])
         actual_pts[pid] += (
             weights["HR"] * r["hr"] + weights["3B"] * r["d3"] +
             weights["2B"] * r["d2"] + weights["1B"] * r["d1"] +
-            weights["1B"] * r["stay_h"]
+            stay_w        * r["stay_h"]
         )
         bip_count[pid] += r["n_bip"]
         expected_pts[pid] += bip_xwoba.get(q, 0.0) * r["n_bip"]

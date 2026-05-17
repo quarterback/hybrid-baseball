@@ -165,6 +165,12 @@ class Player:
     # batter's adaptability erodes the shift's effectiveness. 0.5 =
     # neutral (no erosion); 1.0 = elite shift-reader.
     adaptability: float = 0.5
+    # Leadership — batter-side mental attribute, independent of hard
+    # skills (eye, contact). Stacks with `grit` to lift the RISP-pressure
+    # bonus in prob._resolve_risp_pressure: a high-leadership AND
+    # high-grit batter gets both lifts at once, so a low-eye/contact
+    # bench guy can still tip a big AB (the joker archetype). 0.5 = neutral.
+    leadership: float = 0.5
 
     # Transient per-game shift memory — reset to defaults each new
     # game (Player rebuilt from DB at game start). NOT persisted.
@@ -510,6 +516,18 @@ class GameState:
 
     # --- Halftime target ---
     target_score: Optional[int] = None         # visitors' score; set at halftime
+
+    # --- Per-PA leadership flare ---
+    # When the per-PA flare fires for the batter and/or pitcher, the
+    # engine MUTATES their rating fields in place at PA start (so every
+    # downstream read — pitch_probs, contact_quality, fielding rolls,
+    # talent gate — sees the lifted value uniformly, no plumbing needed).
+    # `flare_originals` holds (object, attr_name, original_value) tuples
+    # so `_end_at_bat` can restore everything via try/finally semantics
+    # at PA boundary. `flare_lift_active` is True between PA start and
+    # PA end while a flare is in effect.
+    flare_originals: list = field(default_factory=list)
+    flare_lift_active: bool = False
 
     # --- Super-inning rounds ---
     super_inning_rounds: list = field(default_factory=list)

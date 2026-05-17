@@ -1127,6 +1127,18 @@ def _make_hitter(
     # Adaptability — independent tier roll; uncorrelated with other ratings
     # so a slugger and a slap hitter can both land high or low on it.
     adaptability_g = roll()
+    # Leadership — independent tier roll, decoupled from hard skills.
+    # Stacks with grit in the RISP-pressure bonus, so a bench-tier
+    # hitter who lands high on BOTH leadership and grit becomes a real
+    # clutch threat (the joker archetype). A star hitter who lands low
+    # on leadership stays flat in big moments — hard skills alone don't
+    # carry pressure events.
+    leadership_g = roll()
+    # Hitter grit — same scale as pitcher grit (0.25-0.75 in roster gen).
+    # On hitters grit reads as "doesn't flinch with the bases loaded"
+    # rather than pitcher fatigue resistance. Stacks with leadership in
+    # the RISP-pressure bonus. Identity at 0.50.
+    hitter_grit = round(0.25 + rng.random() * 0.50, 3)
     # Defense layer — general glove + arm independently tier-rolled.
     # A great-glove no-bat archetype (low skill, elite defense) is a
     # real type in this sport.
@@ -1191,6 +1203,8 @@ def _make_hitter(
         # natural-stride swing). Clamped [0.05, 0.95].
         "pull_pct": round(pull_pct_g, 3),
         "adaptability": adaptability_g,
+        "leadership": leadership_g,
+        "grit": hitter_grit,
         "archetype": "",
         "pitcher_role": "",
         "hard_contact_delta": 0.0,
@@ -1418,6 +1432,7 @@ def _make_pitcher(
         "contact_quality_threshold": round(_clamp(rng.gauss(0.40, 0.08)), 3),
         "pull_pct": 0.5,   # pitchers bat too rarely for spray to matter
         "adaptability": 50,   # neutral; pitchers don't see enough ABs to adapt
+        "leadership": 50,     # neutral; pitchers don't use the batter-side pressure roll
         "archetype": "",
         "pitcher_role": "",   # Task #65: live derivation only — never stored.
         "hard_contact_delta": 0.0,
@@ -1775,6 +1790,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
 
     rng2 = random.Random(rng_seed)
     from o27v2.managers import roll_manager
+    from o27v2.front_office import roll_fo
 
     # Generator scaffolds pulled up once so we can name parks and
     # managers in the same Phase-1 loop. The manager name picker uses
@@ -1808,6 +1824,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         park_dims   = json.dumps(_dim_dict)
         park_quirks = json.dumps(_roll_park_quirks(rng2, park_shape))
         mgr = roll_manager(rng2)
+        fo  = roll_fo(rng2)
         mgr_name, _mgr_country = mgr_name_picker()
         # Org_strength rolled on the full 9-tier ladder (uncapped at 95) —
         # ~7% of teams genuinely start with Elite+/Elite development orgs,
@@ -1822,8 +1839,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
             "mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
-            "mgr_bench_usage, mgr_shift_aggression, org_strength)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "mgr_bench_usage, mgr_shift_aggression, org_strength, "
+            "fo_strategy, fo_aggression, fo_archetype_bias)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, division, league_name,
              park_hr, park_hits, park_name, park_dims,
              park_shape, park_quirks,
@@ -1834,7 +1852,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
              mgr["mgr_bench_usage"],
              mgr.get("mgr_shift_aggression", 0.5),
-             org_strength),
+             org_strength,
+             fo["fo_strategy"], fo["fo_aggression"], fo["fo_archetype_bias"]),
         )
         team_ids.append(team_id)
 
@@ -1863,8 +1882,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          baserunning, run_aggressiveness,
          work_ethic, work_habits, habit_cup, salary,
          release_angle, pitch_variance, grit, repertoire,
-         pull_pct, adaptability)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         pull_pct, adaptability, leadership)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -1899,7 +1918,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("grit", 0.5),
                 p.get("repertoire", None),
                 p.get("pull_pct", 0.5),
-                p.get("adaptability", 50))
+                p.get("adaptability", 50),
+                p.get("leadership", 50))
 
     # Cache team-id → league name so each player's salary uses the
     # right tier cap.

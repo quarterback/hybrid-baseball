@@ -318,6 +318,9 @@ def run_offseason(season: int, rng_seed: Optional[int] = None) -> dict:
     fa_count = develop_free_agents(rng)
     org_moves = update_org_strengths(rng)
 
+    from o27v2.front_office import drift_fo_strategies
+    fo_moves = drift_fo_strategies(rng)
+
     return {
         "season":         season,
         "teams_developed":  len(team_summary),
@@ -326,5 +329,9 @@ def run_offseason(season: int, rng_seed: Optional[int] = None) -> dict:
         "org_moves":      [
             {"team_id": tid, "old": old, "new": new}
             for tid, (old, new) in org_moves.items()
+        ],
+        "fo_moves":       [
+            {"team_id": tid, "old": old, "new": new}
+            for tid, (old, new) in fo_moves.items()
         ],
     }

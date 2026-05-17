@@ -43,6 +43,7 @@ from . import stay as stay_mod
 from . import manager as mgr
 from .baserunning import advance_runners, wild_pitch_advance
 from . import fielding as fld
+from . import prob as _prob
 from typing import Optional
 
 
@@ -145,6 +146,11 @@ def _end_at_bat(state: GameState) -> list[str]:
     state.current_at_bat_swings = 0
     # Hit-and-run protection clears at PA boundary — the play is over.
     state.hit_and_run_active = False
+    # Per-PA leadership flares — restore all mutated rating fields to
+    # their original values before the next batter steps in. Safe no-op
+    # when no flare was active this PA. See prob.apply_pa_leadership_flares
+    # for the matching PA-start hook.
+    _prob.release_pa_leadership_flares(state)
     # Joker AB: clear the override and DO NOT advance the base lineup.
     # The joker insertion was an EXTRA PA — the base lineup position
     # stays the same so the originally-scheduled batter takes the next
