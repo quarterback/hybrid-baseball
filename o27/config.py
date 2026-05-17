@@ -507,6 +507,26 @@ LATE_GAME_OUTS_THRESHOLD: int      = 18     # 18+ outs = late game
 STAY_LATE_GAME_MULT: float         = 1.55
 
 # ---------------------------------------------------------------------------
+# Defensive shifts. O27 design philosophy: offense is aggressive (lots of
+# contact, lots of 2C), and defense's counter is being nimble — including
+# defensive shifts. Shifts are decided per-AB at AB start based on the
+# batter's spray (pull_pct) and the fielding manager's mgr_shift_aggression.
+#
+# Mechanic:
+#   shift fires when:   rng < |pull_pct - 0.5| * 2 * mgr_shift_aggression
+#   on contact, direction roll: rng < batter.pull_pct → pull-side, else oppo
+#   if shifted + ground-ball outcome + pull-side: single → ground_out
+#       at SHIFT_PULL_OUT_PROB
+#   if shifted + ground-ball outcome + oppo-side:  ground_out → single
+#       at SHIFT_OPPO_HIT_PROB
+# Telemetry: state.fielding_team.shift_outs_added / shift_hits_lost
+# accumulate per game, so we can see exactly how much each shift call
+# contributed.
+SHIFT_PULL_OUT_PROB: float       = 0.30   # pull-into-shift: single → out
+SHIFT_OPPO_HIT_PROB: float       = 0.25   # oppo gap: ground_out → single
+SHIFT_DECISION_SCALE: float      = 1.0    # tunable knob on decision frequency
+
+# ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------
 # Each pitch samples uniformly in [rating - pitch_variance, rating + pitch_variance]

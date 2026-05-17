@@ -389,6 +389,7 @@ def _db_team_to_engine(
             stamina=_scout.to_unit(stamina_grade),
             stay_aggressiveness=float(p["stay_aggressiveness"]),
             contact_quality_threshold=float(p["contact_quality_threshold"]),
+            pull_pct=float(p.get("pull_pct") or 0.5),
             archetype=str(p.get("archetype") or ""),
             pitcher_role=str(p.get("pitcher_role") or ""),
             hard_contact_delta=float(p.get("hard_contact_delta") or 0.0),
@@ -657,6 +658,7 @@ def _db_team_to_engine(
     team.mgr_platoon_aggression   = float(team_row.get("mgr_platoon_aggression") or 0.5)
     team.mgr_run_game             = float(team_row.get("mgr_run_game") or 0.5)
     team.mgr_bench_usage          = float(team_row.get("mgr_bench_usage") or 0.5)
+    team.mgr_shift_aggression     = float(team_row.get("mgr_shift_aggression") or 0.5)
     # Stamp the catcher's arm rating on the Team for SB-success scaling.
     pos_by_id = {str(r["id"]): str(r.get("position") or "") for r in players}
     catcher_arm = 0.5
@@ -1505,9 +1507,17 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
         conn.execute("DELETE FROM team_phase_outs    WHERE game_id = ?", (game_id,))
         conn.execute(
             """UPDATE games SET home_score=?, away_score=?, winner_id=?,
-               super_inning=?, played=1, seed=? WHERE id=?""",
+               super_inning=?, played=1, seed=?,
+               home_shift_outs_added=?, home_shift_hits_lost=?,
+               away_shift_outs_added=?, away_shift_hits_lost=?
+               WHERE id=?""",
             (home_score, away_score, winner_team_id,
-             final_state.super_inning_number, seed, game_id),
+             final_state.super_inning_number, seed,
+             int(getattr(final_state.home,     "shift_outs_added", 0) or 0),
+             int(getattr(final_state.home,     "shift_hits_lost",  0) or 0),
+             int(getattr(final_state.visitors, "shift_outs_added", 0) or 0),
+             int(getattr(final_state.visitors, "shift_hits_lost",  0) or 0),
+             game_id),
         )
         if winner_team_id is not None and not game.get("is_playoff"):
             # Regular-season W-L only — playoff results are tracked on

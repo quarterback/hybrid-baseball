@@ -69,6 +69,11 @@ class Archetype:
     platoon_aggression: float
     run_game: float
     bench_usage: float
+    # Shift aggression — how often the skipper calls a defensive shift
+    # against an extreme-spray batter. Old-school archetypes shift less,
+    # modern / saber archetypes shift more. Defaulted on the dataclass
+    # so legacy archetype defs don't all need updating.
+    shift_aggression: float = 0.50
     # Per-archetype noise band. Wide by design — we WANT visible
     # within-archetype variation so two old-school skippers don't feel
     # like the same guy. Default 0.22 covers a ~0.45-wide window per
@@ -87,18 +92,21 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.08, bullpen_aggression=0.10, leverage_aware=0.20,
         joker_aggression=0.10, pinch_hit_aggression=0.08,
         platoon_aggression=0.05, run_game=0.55, bench_usage=0.05,
+        shift_aggression=0.10,
     ),
     "iron_manager": Archetype(
         key="iron_manager", label="Iron Manager",
         quick_hook=0.18, bullpen_aggression=0.20, leverage_aware=0.30,
         joker_aggression=0.20, pinch_hit_aggression=0.18,
         platoon_aggression=0.15, run_game=0.50, bench_usage=0.12,
+        shift_aggression=0.20,
     ),
     "old_school": Archetype(
         key="old_school", label="Old-School Skipper",
         quick_hook=0.28, bullpen_aggression=0.32, leverage_aware=0.42,
         joker_aggression=0.30, pinch_hit_aggression=0.30,
         platoon_aggression=0.25, run_game=0.45, bench_usage=0.22,
+        shift_aggression=0.30,
     ),
     "small_ball": Archetype(
         key="small_ball", label="Small-Ball Tactician",
@@ -151,6 +159,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.80, bullpen_aggression=0.80, leverage_aware=0.85,
         joker_aggression=0.65, pinch_hit_aggression=0.70,
         platoon_aggression=0.70, run_game=0.50, bench_usage=0.70,
+        shift_aggression=0.80,
     ),
 
     # ----- unorthodox / high-variance personas -----
@@ -159,6 +168,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.92, bullpen_aggression=0.95, leverage_aware=0.95,
         joker_aggression=0.75, pinch_hit_aggression=0.85,
         platoon_aggression=0.90, run_game=0.40, bench_usage=0.85,
+        shift_aggression=0.95,
     ),
     "mad_scientist": Archetype(
         # Maddon-coded / Rays-coded chaos. Even wider noise so two mad
@@ -207,6 +217,7 @@ def roll_manager(rng: random.Random) -> dict:
         "mgr_platoon_aggression": _clamp(arch.platoon_aggression   + rng.uniform(-n, n)),
         "mgr_run_game":           _clamp(arch.run_game             + rng.uniform(-n, n)),
         "mgr_bench_usage":        _clamp(arch.bench_usage          + rng.uniform(-n, n)),
+        "mgr_shift_aggression":   _clamp(arch.shift_aggression     + rng.uniform(-n, n)),
     }
 
 

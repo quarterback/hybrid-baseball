@@ -1115,6 +1115,15 @@ def _make_hitter(
     contact_g  = roll()
     power_g    = roll()
     eye_g      = roll()
+    bats_roll  = _roll_bats(rng)
+    # Spray tendency: base N(0.5, 0.12), nudged toward pull by power
+    # (sluggers turn on the ball) and by LHB tendency. Clamped [0.05, 0.95].
+    _power_dev = (power_g - 50) / 100.0            # ~±0.30 at extremes
+    _bats_nudge = 0.04 if bats_roll == "L" else 0.0
+    pull_pct_g = _clamp(
+        rng.gauss(0.5, 0.12) + _power_dev * 0.30 + _bats_nudge,
+        0.05, 0.95,
+    )
     # Defense layer — general glove + arm independently tier-rolled.
     # A great-glove no-bat archetype (low skill, elite defense) is a
     # real type in this sport.
@@ -1173,6 +1182,11 @@ def _make_hitter(
         # contact-quality gate and bumping aggressiveness.
         "stay_aggressiveness": round(_clamp(rng.gauss(0.30, 0.10)), 3),
         "contact_quality_threshold": round(_clamp(rng.gauss(0.50, 0.10)), 3),
+        # Spray tendency (pull_pct): base N(0.5, 0.12), nudged by power
+        # (sluggers tend pull-heavy) and handedness (LHB pull slightly
+        # more on average — easier to turn on inside pitching from a
+        # natural-stride swing). Clamped [0.05, 0.95].
+        "pull_pct": round(pull_pct_g, 3),
         "archetype": "",
         "pitcher_role": "",
         "hard_contact_delta": 0.0,
@@ -1186,7 +1200,7 @@ def _make_hitter(
         "eye":      eye_g,
         "command":  50,   # pitcher-only attr; neutral on hitters
         "movement": 50,   # pitcher-only attr; neutral on hitters
-        "bats":     _roll_bats(rng),
+        "bats":     bats_roll,
         "throws":   _roll_throws(rng, is_pitcher=False),
         "defense":  defense_g,
         "arm":      arm_g,
@@ -1398,6 +1412,7 @@ def _make_pitcher(
         # second-chance mechanic.
         "stay_aggressiveness": round(_clamp(rng.gauss(0.20, 0.06)), 3),
         "contact_quality_threshold": round(_clamp(rng.gauss(0.40, 0.08)), 3),
+        "pull_pct": 0.5,   # pitchers bat too rarely for spray to matter
         "archetype": "",
         "pitcher_role": "",   # Task #65: live derivation only — never stored.
         "hard_contact_delta": 0.0,
@@ -1802,8 +1817,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
             "mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
-            "mgr_bench_usage, org_strength)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "mgr_bench_usage, mgr_shift_aggression, org_strength)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, division, league_name,
              park_hr, park_hits, park_name, park_dims,
              park_shape, park_quirks,
@@ -1812,7 +1827,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
              mgr["mgr_bullpen_aggression"], mgr["mgr_leverage_aware"],
              mgr["mgr_joker_aggression"], mgr["mgr_pinch_hit_aggression"],
              mgr["mgr_platoon_aggression"], mgr["mgr_run_game"],
-             mgr["mgr_bench_usage"], org_strength),
+             mgr["mgr_bench_usage"],
+             mgr.get("mgr_shift_aggression", 0.5),
+             org_strength),
         )
         team_ids.append(team_id)
 
@@ -1840,8 +1857,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          defense_infield, defense_outfield, defense_catcher,
          baserunning, run_aggressiveness,
          work_ethic, work_habits, habit_cup, salary,
-         release_angle, pitch_variance, grit, repertoire)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         release_angle, pitch_variance, grit, repertoire,
+         pull_pct)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -1874,7 +1892,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("release_angle", 0.5),
                 p.get("pitch_variance", 0.0),
                 p.get("grit", 0.5),
-                p.get("repertoire", None))
+                p.get("repertoire", None),
+                p.get("pull_pct", 0.5))
 
     # Cache team-id → league name so each player's salary uses the
     # right tier cap.

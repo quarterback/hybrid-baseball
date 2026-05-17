@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS teams (
     mgr_platoon_aggression   REAL  DEFAULT 0.5,
     mgr_run_game             REAL  DEFAULT 0.5,
     mgr_bench_usage          REAL  DEFAULT 0.5,
+    mgr_shift_aggression     REAL  DEFAULT 0.5,
     org_strength             INTEGER DEFAULT 50
 );
 
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS players (
     pitcher_skill INTEGER DEFAULT 50,
     stay_aggressiveness REAL DEFAULT 0.4,
     contact_quality_threshold REAL DEFAULT 0.45,
+    pull_pct REAL DEFAULT 0.5,
     archetype             TEXT DEFAULT '',
     pitcher_role          TEXT DEFAULT '',
     hard_contact_delta    REAL DEFAULT 0.0,
@@ -164,6 +166,13 @@ CREATE TABLE IF NOT EXISTS games (
     humidity_tier    TEXT DEFAULT 'normal',
     precip_tier      TEXT DEFAULT 'none',
     cloud_tier       TEXT DEFAULT 'clear',
+    -- Defensive-shift telemetry (per-team, per-game). Stamped from the
+    -- engine at game end so the value of each manager's shift calls is
+    -- visible at the game level — sums to season-level shift impact.
+    home_shift_outs_added INTEGER DEFAULT 0,
+    home_shift_hits_lost  INTEGER DEFAULT 0,
+    away_shift_outs_added INTEGER DEFAULT 0,
+    away_shift_hits_lost  INTEGER DEFAULT 0,
     -- Playoff hookup. NULL `series_id` ⇒ regular-season game.
     -- `is_playoff` is the cheap flag the UI / queries filter on.
     series_id        INTEGER REFERENCES playoff_series(id),
@@ -700,6 +709,32 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+
+        # Defensive-shift layer: per-batter spray rating + per-manager
+        # shift-aggression tendency. Defaults of 0.5 keep legacy rosters
+        # shift-immune (neutral spray = never shifted; neutral manager
+        # combined with neutral batter = zero shift probability).
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN pull_pct REAL DEFAULT 0.5")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN mgr_shift_aggression REAL DEFAULT 0.5")
+            conn.commit()
+        except Exception:
+            pass
+        # Per-game shift telemetry (defense's outs gained / hits lost via
+        # the shift call). Aggregates roll up per-team-season at query time.
+        for col in (
+            "home_shift_outs_added", "home_shift_hits_lost",
+            "away_shift_outs_added", "away_shift_hits_lost",
+        ):
+            try:
+                conn.execute(f"ALTER TABLE games ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
 
         # Defense layer columns. Defaults of 50 = neutral.
         # Per-position sub-ratings (infield / outfield / catcher) let a

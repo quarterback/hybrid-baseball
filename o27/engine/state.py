@@ -154,6 +154,12 @@ class Player:
     defense_outfield:  float = 0.5   # LF / CF / RF specific glove
     defense_catcher:   float = 0.5   # catcher-specific framing / blocking
 
+    # Spray tendency — 0.0 = pure opposite-field, 0.5 = neutral spray,
+    # 1.0 = pure pull. Drives the shift decision (extreme values invite
+    # the defensive shift) and the per-event contact-direction roll
+    # when shifted. Default 0.5 keeps legacy rosters shift-immune.
+    pull_pct: float = 0.5
+
     # Handedness — drives platoon split. Default '' means "unknown handedness"
     # and bypasses the platoon adjustment, preserving the identity invariant
     # for legacy callers that don't set these fields. League-generated rosters
@@ -320,6 +326,12 @@ class Team:
     mgr_platoon_aggression:   float = 0.5
     mgr_run_game:             float = 0.5
     mgr_bench_usage:          float = 0.5
+    mgr_shift_aggression:     float = 0.5
+
+    # Shift telemetry (per-game, accumulates over the game). Stamped on
+    # the FIELDING team for the play that produced the effect.
+    shift_outs_added:  int = 0   # outs the shift converted from singles
+    shift_hits_lost:   int = 0   # hits the shift gave up (oppo through the gap)
 
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-rotation
@@ -470,6 +482,11 @@ class GameState:
     # at AB end. Read by contact_quality on subsequent swings to apply
     # the eye/command second-swing modifier.
     current_at_bat_swings: int = 0
+
+    # Shift state — set once at AB start by the defense's shift decision
+    # (prob.py), consumed during contact resolution. Reset on _end_at_bat.
+    current_ab_shifted: bool = False
+    current_ab_shift_decided: bool = False  # have we rolled this AB?
 
     # --- Joker insertion override ---
     # When the manager inserts a joker, this field holds the joker Player

@@ -477,6 +477,19 @@ def _resolve_contact(
     batter_safe = outcome.get("batter_safe", True)
     hit_type = outcome.get("hit_type", "")
 
+    # Shift telemetry — credit the fielding team for outs added or hits lost
+    # by their shift call. The flip itself already happened in resolve_contact;
+    # here we accumulate the season-game counter and surface it in the log.
+    shift_effect = outcome.get("shift_effect")
+    if shift_effect == "out_added":
+        state.fielding_team.shift_outs_added += 1
+        log.append("  Shift converts single → ground out. "
+                   "(Defense reads the pull tendency.)")
+    elif shift_effect == "hit_lost":
+        state.fielding_team.shift_hits_lost += 1
+        log.append("  Shift exposed — ground ball through the vacated side. "
+                   "(Batter beat the alignment.)")
+
     # PRD §2.6: stay does not apply to home runs — batter must run.
     # fielding.py emits hit_type "hr" for home runs.
     if hit_type in ("hr", "home_run") and choice == "stay":

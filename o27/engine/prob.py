@@ -972,6 +972,33 @@ def resolve_contact(
             batter_safe = True
             caught_fly = False
 
+    # Defensive shift outcome. When the AB is shifted (decided at AB start
+    # by the fielding manager based on batter.pull_pct), a ground-ball
+    # outcome flips probabilistically based on which way the batter went:
+    #   pull-side into the shift  → single may flip to ground_out (out gained)
+    #   opposite-field            → ground_out may flip to single (gap exposed)
+    # Direction is rolled per event using batter.pull_pct as the bias —
+    # a pure-pull batter (1.0) goes pull-side ~100% of the time.
+    # Fly outs / line outs untouched (first-cut scope: ground balls only).
+    shift_effect = None
+    if getattr(state, "current_ab_shifted", False) and hit_type in (
+        "single", "ground_out", "fielders_choice"
+    ):
+        pull = float(getattr(batter, "pull_pct", 0.5) or 0.5)
+        went_pull = rng.random() < pull
+        if went_pull and hit_type == "single":
+            if rng.random() < cfg.SHIFT_PULL_OUT_PROB:
+                hit_type = "ground_out"
+                batter_safe = False
+                caught_fly = False
+                shift_effect = "out_added"
+        elif not went_pull and hit_type == "ground_out":
+            if rng.random() < cfg.SHIFT_OPPO_HIT_PROB:
+                hit_type = "single"
+                batter_safe = True
+                caught_fly = False
+                shift_effect = "hit_lost"
+
     # Error chance — only on plays that resolved as an out. Worse defense =
     # higher error rate. Caught flies don't generate errors at this layer
     # (they're clean catches by the time we get here).
@@ -1014,6 +1041,7 @@ def resolve_contact(
         "is_error": is_error,
         "fielder_id": fielder_id,
         "quality": quality,
+        "shift_effect": shift_effect,
     }
 
 
@@ -1312,6 +1340,20 @@ class ProbabilisticProvider:
         if current_batter_id != self._last_batter_id:
             self._last_batter_id = current_batter_id
             self._manager_checked = False
+            state.current_ab_shift_decided = False
+            state.current_ab_shifted = False
+
+        # Defensive shift decision — fires once per AB before the first
+        # pitch. Probability scales with the batter's spray extremity
+        # (|pull_pct - 0.5| * 2) and the fielding manager's tendency.
+        if not state.current_ab_shift_decided:
+            state.current_ab_shift_decided = True
+            batter = state.current_batter
+            mgr_shift = float(getattr(state.fielding_team,
+                                      "mgr_shift_aggression", 0.5) or 0.5)
+            extremity = abs(getattr(batter, "pull_pct", 0.5) - 0.5) * 2.0
+            shift_p = extremity * mgr_shift * cfg.SHIFT_DECISION_SCALE
+            state.current_ab_shifted = self.rng.random() < shift_p
 
         # Refresh today_form whenever the pitcher changes (half start or
         # mid-game change). Cheap; a single deterministic gauss draw.
