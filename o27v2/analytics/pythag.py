@@ -1,9 +1,12 @@
 """Pythagorean exponent re-fit for O27.
 
 Bill James's Pythagorean win expectancy uses an exponent of 1.83 fit to
-MLB's ~9 R/G run environment. O27 sits at ~22 R/G, so the optimal
-exponent is empirically different. This module fits the exponent that
-minimises league-wide squared error in win-percentage prediction.
+MLB's ~9 R/G run environment. O27's run environment is intentionally
+much higher and variance-first — no fixed R/G target — so the optimal
+exponent is empirically different and shifts with the active config.
+This module fits the exponent that minimises league-wide squared error
+in win-percentage prediction at runtime, so it auto-adapts to whatever
+run environment the current mechanics produce.
 
 Method:
   W%_team ≈ R^k / (R^k + RA^k)

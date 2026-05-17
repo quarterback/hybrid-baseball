@@ -21,8 +21,9 @@ Formula (Smyth standard form, with HBP via Tango):
     BsR = A · B / (B + C)  +  D
 
 MLB-fit canonical coefficients are c = (1.4, −0.6, −3.0, 0.1). O27's
-~22 R/G run environment shifts the optimal *shape* of B, not just its
-scale. We do two passes:
+higher, variance-first run environment shifts the optimal *shape* of B,
+not just its scale — and that shape moves as the config evolves, so
+hardcoded coefficients would drift out of calibration. We do two passes:
 
   1. Default coefficients + multiplicative league re-center (so the
      league means match). Residuals here include both shape mis-fit

@@ -2,10 +2,13 @@
 
 The FanGraphs / Tango wOBA constants (BB 0.72, 1B 0.95, … HR 2.05) and
 the Bill James Game Score coefficients (-2 per H, -4 per ER, …) were
-both calibrated to MLB's ~9 R/G environment. O27 sits at ~22 R/G —
+both calibrated to MLB's ~9 R/G environment. O27 runs much higher and
+intentionally — no fixed R/G target, variance is the design — so
 every event is worth more in raw run-expectancy units, and the
 relative weights drift (walks gain value vs. HR because the bases are
-fuller more often, etc.).
+fuller more often, etc.). These shifts compound as the run environment
+changes; the derivation below recomputes from the actual league data
+on every call, so the weights stay correct without retuning.
 
 This module derives empirical event run values from `game_pa_log`'s
 state stamps, then exports two consumer-facing tables:

@@ -1238,10 +1238,12 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         # wOBA with linear weights empirically derived from the league's
         # RE matrix (see `o27v2.analytics.linear_weights`), normalized so
         # league wOBA == league OBP. Walks gain value vs MLB because the
-        # bases are fuller more often in 22 R/G; HR loses relative value
-        # because singles + walks already clear them. Denominator is PA
-        # (NOT AB+BB+HBP) since each PA represents one opportunity;
-        # stays inside an AB are separate PAs.
+        # bases are fuller more often in O27's high-scoring environment;
+        # HR loses relative value because singles + walks already clear
+        # them. Weights recompute per-render, so they track whatever the
+        # current run environment is. Denominator is PA (NOT AB+BB+HBP)
+        # since each PA represents one opportunity; stays inside an AB
+        # are separate PAs.
         ww = _linear_weights()["woba_weights"]
         # `stay_hits` is a subset of `hits`; keep it out of the 1B
         # bucket so the wOBA contribution reflects true singles vs.
@@ -1636,9 +1638,11 @@ def _league_baselines() -> dict[str, float]:
                 (pit.get("fo") or 0) / g,
             )
 
-    # Runs-per-win for WAR. Pythagorean-flavored heuristic: in MLB
-    # (~9 R/G total), it's ~10. In O27 (~25 R/G total) it's ~18.
-    # Formula 9 + sqrt(R/G - per-team) lands roughly correct for both.
+    # Runs-per-win for WAR. Pythagorean-flavored heuristic computed
+    # from the league's actual r_per_game on each render, so it auto-
+    # adapts to whatever run environment the current config produces.
+    # In MLB (~9 R/G total) it lands ~10; O27 currently runs much higher
+    # and the formula scales with sqrt(R/G/4) * 3.5 + 9 (min 8).
     if pit_outs:
         # Total runs across all teams over all games / games-played.
         games_played = db.fetchone("SELECT COUNT(*) AS n FROM games WHERE played=1")["n"] or 0
@@ -3107,8 +3111,8 @@ def players():
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
 
     # Hoisted up so the batter loop below sees baselines too — without
-    # this, _aggregate_batter_rows fell through to runs_per_win=10.0
-    # and inflated WAR by ~75% in O27's 24-R/G environment.
+    # this, _aggregate_batter_rows fell through to runs_per_win=10.0,
+    # which dramatically inflates WAR in O27's high run environment.
     baselines = _league_baselines()
 
     total_row = db.fetchone(f"SELECT COUNT(*) AS n FROM players p{where_sql}", tuple(params))
