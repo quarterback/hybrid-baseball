@@ -740,9 +740,9 @@ PLATOON_BONUS_SWITCH:   float = 0.0   # switch hitters always face advantage
 # --- Daily pitcher form ---------------------------------------------------
 # Per-spell N(mu, sigma) clipped roll. today_form = 1.0 ⇒ legacy parity.
 TODAY_FORM_MU:    float = 1.00
-TODAY_FORM_SIGMA: float = 0.10   # variance pass: 0.04 → 0.10 to widen game-to-game outcome spread; tight bounds were producing too many close games
-TODAY_FORM_MIN:   float = 0.82   # variance pass: 0.92 → 0.82
-TODAY_FORM_MAX:   float = 1.18   # variance pass: 1.08 → 1.18
+TODAY_FORM_SIGMA: float = 0.25   # variance pass v2: 0.10 → 0.25; required for the wide 0.71-1.84 clamp band to be reachable rather than theoretical
+TODAY_FORM_MIN:   float = 0.71   # variance pass v2: 0.82 → 0.71; deep off-days are real
+TODAY_FORM_MAX:   float = 1.84   # variance pass v2: 1.18 → 1.84; transcendent days possible (rare; Gaussian sampling makes upper-clamp hits ~3.4σ)
 
 # Multi-game fatigue (workload-debt) penalty applied on top of today_form.
 # Identity invariant: at pitch_debt = 0, all of these collapse to no penalty.

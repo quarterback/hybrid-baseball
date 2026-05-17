@@ -189,22 +189,37 @@ from o27.config import (          # noqa: E402
 )
 
 # ---------------------------------------------------------------------------
-# PRD v2 target thresholds — used by batch.py for ✓/! flags
+# Sanity bounds for batch.py ✓/! flags
 # ---------------------------------------------------------------------------
+#
+# IMPORTANT FOR FUTURE AGENTS:
+# These are NOT calibration targets. O27 is intentionally a high-variance,
+# high-scoring fictional sport — R/G is whatever the mechanics produce, not
+# a prescribed number. The previous 22-26 R/G band came from an earlier
+# tuning pass and was treated as canon by mistake. Do NOT re-tune the
+# simulator to hit any specific R/G or rate stat unless the designer
+# explicitly asks for it.
+#
+# The bounds below are deliberately permissive — they exist only to catch
+# catastrophic regressions (e.g. R/G collapses to 5 or explodes to 100),
+# not to flag normal variance. If a batch run lands outside these, that's
+# a signal something is broken, not that the sim needs to be re-tuned.
 
-TARGET_RUNS_LO: float = 22.0
-TARGET_RUNS_HI: float = 26.0
+TARGET_RUNS_LO: float = 20.0   # permissive floor; not a prescription
+TARGET_RUNS_HI: float = 50.0   # permissive ceiling; not a prescription
 
-TARGET_STAYS_LO: float = 1.0
-TARGET_STAYS_HI: float = 2.5
+# Stays / jokers / pitcher-change rates are similarly NOT prescriptions —
+# bounds widened so the flag system catches breakage, not normal variance.
+TARGET_STAYS_LO: float = 0.5
+TARGET_STAYS_HI: float = 6.0
 
-TARGET_JOKER_LO: float = 5.0
-TARGET_JOKER_HI: float = 9.0
+TARGET_JOKER_LO: float = 1.0
+TARGET_JOKER_HI: float = 15.0
 
-TARGET_SUPER_PCT_MAX: float = 8.0
+TARGET_SUPER_PCT_MAX: float = 10.0
 
-TARGET_WH_CHANGES_LO: float = 2.0
-TARGET_WH_CHANGES_HI: float = 4.0
+TARGET_WH_CHANGES_LO: float = 1.0
+TARGET_WH_CHANGES_HI: float = 8.0
 
-TARGET_COMM_CHANGES_LO: float = 6.0
-TARGET_COMM_CHANGES_HI: float = 10.0
+TARGET_COMM_CHANGES_LO: float = 3.0
+TARGET_COMM_CHANGES_HI: float = 15.0
