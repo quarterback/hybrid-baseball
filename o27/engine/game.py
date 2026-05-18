@@ -359,6 +359,17 @@ def run_half(
             log += renderer.render_event(event, ctx, state)
         else:
             log += raw_log
+
+    # LOB on half-end: any runners still on base when the half closes are
+    # stranded. The declaration branch already handles its own LOB credit
+    # (and clears the bases via state.outs = 27), so don't double-count —
+    # only credit here if no declaration fired this half.
+    if (not state.is_super_inning
+            and not state.in_seconds_phase
+            and state.batting_team.declared_at_out is None):
+        stranded = sum(1 for r in state.bases if r is not None)
+        if stranded:
+            state.batting_team.lob = int(getattr(state.batting_team, "lob", 0) or 0) + stranded
     return log
 
 

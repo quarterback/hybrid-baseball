@@ -968,17 +968,88 @@ def _get_baserunning(pid: Optional[str], state: GameState) -> tuple[float, float
     )
 
 
+def _avg_outfielder_arm(state: GameState) -> float:
+    """Average `arm` rating across the fielding team's LF / CF / RF.
+
+    Falls back to 0.5 (neutral) when game_position isn't stamped (legacy
+    engine-only paths) — the DB-driven sim plays via _assign_game_positions
+    so every fielder carries a position string.
+    """
+    arms = []
+    for p in getattr(state.fielding_team, "lineup", None) or []:
+        gp = (getattr(p, "game_position", "") or getattr(p, "position", "") or "")
+        if any(tag in gp for tag in ("LF", "CF", "RF")):
+            arms.append(float(getattr(p, "arm", 0.5) or 0.5))
+    if not arms:
+        return 0.5
+    return sum(arms) / len(arms)
+
+
+def _resolve_table(
+    rng: random.Random,
+    table: list[tuple[str, float]],
+    speed_dev: float,
+    arm_dev: float,
+    has_out: bool,
+) -> str:
+    """Pick an outcome from a (label, base_prob) table after applying
+    speed (raises the first/score outcome) and arm (raises the out
+    outcome where present) modifiers.
+
+    Identity: speed_dev = arm_dev = 0 returns the base table draw.
+    """
+    speed_shift = speed_dev * cfg.SPEED_ADVANCE_MOD * 2.0  # ±0.12 at extremes
+    arm_shift   = arm_dev   * cfg.ARM_ADVANCE_MOD   * 2.0  # ±0.11 at extremes
+
+    # First entry is the "score" outcome — speed pushes it up, arm down.
+    # Last entry is "out" (if has_out) — arm pushes it up, speed down.
+    adjusted = [(name, p) for name, p in table]
+    score_name, score_p = adjusted[0]
+    score_p_adj = score_p + speed_shift - arm_shift
+    score_p_adj = max(0.02, min(0.97, score_p_adj))
+    adjusted[0] = (score_name, score_p_adj)
+
+    if has_out:
+        out_name, out_p = adjusted[-1]
+        out_p_adj = out_p + arm_shift - 0.5 * speed_shift
+        out_p_adj = max(0.0, min(0.30, out_p_adj))
+        adjusted[-1] = (out_name, out_p_adj)
+
+    # Whatever is left between score and out goes to the middle "hold"
+    # buckets, distributed proportionally to their original weights so
+    # a three-way table (e.g. 1B-on-double SCORE/TO-3B/HOLD-2B) keeps
+    # its mid-bucket shape.
+    fixed_total = adjusted[0][1] + (adjusted[-1][1] if has_out else 0.0)
+    remaining = max(0.0, 1.0 - fixed_total)
+    mid_start = 1
+    mid_end   = len(adjusted) - 1 if has_out else len(adjusted)
+    mid_slice = adjusted[mid_start:mid_end]
+    mid_base_sum = sum(p for _, p in mid_slice) or 1.0
+    for i, (name, p) in enumerate(mid_slice):
+        adjusted[mid_start + i] = (name, remaining * (p / mid_base_sum))
+
+    # Sample.
+    r = rng.random()
+    cum = 0.0
+    for name, p in adjusted:
+        cum += p
+        if r < cum:
+            return name
+    return adjusted[-1][0]
+
+
 def runner_advances_for_hit(
     rng: random.Random,
     hit_type: str,
     bases: list,
     state: GameState,
-) -> tuple[list, Optional[int]]:
-    """Return ([adv_1B, adv_2B, adv_3B], runner_out_idx).
+) -> tuple[list, list[int]]:
+    """Return ([adv_1B, adv_2B, adv_3B], runner_out_idxs).
 
-    runner_out_idx is the base index (0=1B, 1=2B, 2=3B) of a runner who
-    was thrown out trying for the extra base, or None if all advancements
-    were clean.
+    runner_out_idxs is a list of base indices (0=1B, 1=2B, 2=3B) of runners
+    thrown out advancing on this play. Empty list when all advancements
+    were clean. Multiple TOAs on the same play are allowed (e.g. 2B-runner
+    nailed at home AND 1B-runner nailed at second).
     """
     s1 = _get_speed(bases[0], state)
     s2 = _get_speed(bases[1], state)
@@ -987,37 +1058,85 @@ def runner_advances_for_hit(
     br2, ag2 = _get_baserunning(bases[1], state)
     br3, ag3 = _get_baserunning(bases[2], state)
 
-    out_idx: Optional[int] = None
+    out_idxs: list[int] = []
+    of_arm = _avg_outfielder_arm(state)
+    arm_dev = of_arm - 0.5
 
-    def _resolve(idx: int, base: int, speed: float, extra: float, br: float, ag: float) -> int:
-        nonlocal out_idx
-        adv, thrown_out = _runner_advance(rng, base, speed, extra_chance=extra,
-                                          baserunning=br, aggressiveness=ag)
-        if thrown_out and out_idx is None and bases[idx] is not None:
-            out_idx = idx
-        return adv
+    def _spd_dev(idx: int) -> float:
+        return [s1, s2, s3][idx] - 0.5
 
     if hit_type == "single":
-        adv1 = _resolve(0, 1, s1, 0.10, br1, ag1)
-        adv2 = _resolve(1, 2, s2, 0.0,  br2, ag2)
-        adv3 = 1   # 3B always scores on a single (90 ft, routine)
-        # Runner from 2B trying to score on a single is the classic
-        # close play at the plate. If the throw beats them, mark them
-        # out (priority: prefer this over a 1B-runner extra-base out
-        # since the play at the plate is the lead runner).
-        if (bases[1] is not None and adv2 >= 2
-                and _thrown_out_at_home(rng, s2, br2)):
-            out_idx = 1
-            adv2 = 1   # held at 3B in the log; pid is cleared by advance_runners
-        return [adv1, adv2, adv3], out_idx
+        # Resolve each runner independently with the probability tables.
+        # Order: 3B (closest to home, easiest call) → 2B → 1B.
+        adv = [0, 0, 0]
+        if bases[2] is not None:
+            outcome = _resolve_table(
+                rng,
+                [("score", cfg.ADVANCE_3B_ON_1B_SCORE),
+                 ("hold",  cfg.ADVANCE_3B_ON_1B_HOLD)],
+                _spd_dev(2), arm_dev, has_out=False,
+            )
+            adv[2] = 1 if outcome == "score" else 0
+        if bases[1] is not None:
+            outcome = _resolve_table(
+                rng,
+                [("score",   cfg.ADVANCE_2B_ON_1B_SCORE),
+                 ("hold_3b", cfg.ADVANCE_2B_ON_1B_HOLD_3B),
+                 ("out",     cfg.ADVANCE_2B_ON_1B_OUT)],
+                _spd_dev(1), arm_dev, has_out=True,
+            )
+            if outcome == "score":
+                adv[1] = 2
+            elif outcome == "hold_3b":
+                adv[1] = 1
+            else:
+                out_idxs.append(1)
+                adv[1] = 1   # cleared by advance_runners via out_idx
+        if bases[0] is not None:
+            outcome = _resolve_table(
+                rng,
+                [("to_3b", cfg.ADVANCE_1B_ON_1B_TO_3B),
+                 ("to_2b", cfg.ADVANCE_1B_ON_1B_TO_2B),
+                 ("out",   cfg.ADVANCE_1B_ON_1B_OUT)],
+                _spd_dev(0), arm_dev, has_out=True,
+            )
+            if outcome == "to_3b":
+                adv[0] = 2
+            elif outcome == "to_2b":
+                adv[0] = 1
+            else:
+                out_idxs.append(0)
+                adv[0] = 1
+        return adv, out_idxs
 
     elif hit_type == "double":
-        # Runner on 1B: typically pulls up at 3B, but speed/baserunning/
-        # aggressiveness can drive them home. Without this draw, every
-        # double yielded an identical [2, 2, 1] line and runs scored
-        # tracked hit count too tightly.
-        adv1 = _resolve(0, 2, s1, cfg.RUNNER_EXTRA_DOUBLE_FROM_1B, br1, ag1)
-        return [adv1, 2, 1], out_idx
+        adv = [0, 0, 0]
+        # 3B runner on a double — almost auto-scores. Keep deterministic.
+        if bases[2] is not None:
+            adv[2] = 1
+        if bases[1] is not None:
+            outcome = _resolve_table(
+                rng,
+                [("score",   cfg.ADVANCE_2B_ON_2B_SCORE),
+                 ("hold_3b", cfg.ADVANCE_2B_ON_2B_HOLD_3B)],
+                _spd_dev(1), arm_dev, has_out=False,
+            )
+            adv[1] = 2 if outcome == "score" else 1
+        if bases[0] is not None:
+            outcome = _resolve_table(
+                rng,
+                [("score",     cfg.ADVANCE_1B_ON_2B_SCORE),
+                 ("to_3b",     cfg.ADVANCE_1B_ON_2B_TO_3B),
+                 ("hold_2b",   cfg.ADVANCE_1B_ON_2B_HOLD_2B)],
+                _spd_dev(0), arm_dev, has_out=False,
+            )
+            if outcome == "score":
+                adv[0] = 3
+            elif outcome == "to_3b":
+                adv[0] = 2
+            else:
+                adv[0] = 1
+        return adv, out_idxs
 
     elif hit_type == "triple":
         # 1B runner is the close play at the plate on a triple. Almost
@@ -1025,31 +1144,43 @@ def runner_advances_for_hit(
         # a strong relay throw.
         adv1 = 3
         if bases[0] is not None and _thrown_out_at_home(rng, s1, br1):
-            out_idx = 0
-            adv1 = 2   # presented as held; advance_runners clears the slot
-        return [adv1, 3, 3], out_idx
+            out_idxs.append(0)
+            adv1 = 2   # cleared by advance_runners via out_idxs
+        return [adv1, 3, 3], out_idxs
 
     elif hit_type == "hr":
-        return [3, 3, 3], None
+        return [3, 3, 3], []
 
     elif hit_type in ("ground_out", "fielders_choice"):
+        def _resolve(idx: int, base: int, speed: float, extra: float, br: float, ag: float) -> int:
+            adv_n, thrown_out = _runner_advance(
+                rng, base, speed, extra_chance=extra,
+                baserunning=br, aggressiveness=ag,
+            )
+            if thrown_out and bases[idx] is not None:
+                out_idxs.append(idx)
+            return adv_n
+
         adv1 = 1   # 1B runner always forced to 2B on ground ball
         adv2 = _resolve(1, 0, s2, 0.25, br2, ag2)
         adv3 = _resolve(2, 0, s3, 0.35, br3, ag3)
-        return [adv1, adv2, adv3], out_idx
+        return [adv1, adv2, adv3], out_idxs
 
     elif hit_type == "fly_out":
-        adv1 = 0
-        adv2 = 0
         # Sac fly: skill matters as much as speed (timing the tag-up).
-        adv3 = _resolve(2, 0, s3, 0.55, br3, ag3)
-        return [adv1, adv2, adv3], out_idx
+        adv3, thrown_out = _runner_advance(
+            rng, 0, s3, extra_chance=0.55,
+            baserunning=br3, aggressiveness=ag3,
+        )
+        if thrown_out and bases[2] is not None:
+            out_idxs.append(2)
+        return [0, 0, adv3], out_idxs
 
     elif hit_type == "line_out":
-        return [0, 0, 0], None   # runners freeze
+        return [0, 0, 0], []   # runners freeze
 
     else:
-        return [1, 1, 1], None   # default
+        return [1, 1, 1], []   # default
 
 
 # ---------------------------------------------------------------------------
@@ -1372,17 +1503,26 @@ def resolve_contact(
     # Compute runner advances based on (possibly flipped) hit type.
     # An "error" advances runners like a single — same conservative shape.
     advance_type = "single" if hit_type == "error" else hit_type
-    runner_adv, br_out_idx = runner_advances_for_hit(rng, advance_type, state.bases, state)
+    runner_adv, br_out_idxs = runner_advances_for_hit(rng, advance_type, state.bases, state)
 
-    # For fielder's choice: throw out the lead runner. TOOTBLAN
-    # (thrown-out-on-bases from the runner_advances roll) shows up via
-    # br_out_idx and takes precedence on plays that wouldn't otherwise
-    # produce a runner out.
-    runner_out_idx = None
+    # For fielder's choice: throw out the lead runner. TOA outs from the
+    # probabilistic advancement table get mapped onto runner_out_idx /
+    # extra_runner_outs and are flagged via toa_runner_idxs so the
+    # renderer can credit each runner with the TOA stat (distinct from
+    # FC, GIDP-style force-outs).
+    runner_out_idx: Optional[int] = None
+    extra_runner_outs: list[int] = []
+    toa_runner_idxs: list[int] = []
     if hit_type == "fielders_choice" and state.runners_on_base:
         runner_out_idx = _lead_runner_idx(state.bases)
-    elif br_out_idx is not None:
-        runner_out_idx = br_out_idx
+        # Any extra TOAs from the advancement roll still apply (e.g.
+        # trail runner trying to take an extra base on the FC throw).
+        extra_runner_outs = [i for i in br_out_idxs if i != runner_out_idx]
+        toa_runner_idxs = list(extra_runner_outs)
+    elif br_out_idxs:
+        runner_out_idx = br_out_idxs[0]
+        extra_runner_outs = br_out_idxs[1:]
+        toa_runner_idxs = list(br_out_idxs)
 
     # Per-fielder play attribution. Stamps the fielder_id of the player
     # credited with this play (PO for outs, E for errors). Returns None
@@ -1395,6 +1535,8 @@ def resolve_contact(
         "caught_fly": caught_fly,
         "runner_advances": runner_adv,
         "runner_out_idx": runner_out_idx,
+        "extra_runner_outs": extra_runner_outs,
+        "toa_runner_idxs": toa_runner_idxs,
         "is_error": is_error,
         "fielder_id": fielder_id,
         "quality": quality,
@@ -1997,11 +2139,18 @@ class ProbabilisticProvider:
             outcome_dict["batter_safe"] = True
             outcome_dict["is_error"] = True
             outcome_dict["runner_out_idx"] = None
+            outcome_dict["extra_runner_outs"] = []
+            outcome_dict["toa_runner_idxs"] = []
             # Errors advance runners like a single; re-roll the advance
             # vector against the now-cleared state of the BIP.
-            outcome_dict["runner_advances"], _br_out = runner_advances_for_hit(
+            adv, outs = runner_advances_for_hit(
                 rng, "single", state.bases, state
             )
+            outcome_dict["runner_advances"] = adv
+            if outs:
+                outcome_dict["runner_out_idx"] = outs[0]
+                outcome_dict["extra_runner_outs"] = outs[1:]
+                outcome_dict["toa_runner_idxs"] = list(outs)
 
         # Talent-weighted hit-vs-out resolution (applies BEFORE the run/stay
         # decision so it affects both paths). On weak / medium contact, the

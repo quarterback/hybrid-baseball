@@ -88,6 +88,9 @@ class BatterStats:
     cs: int = 0     # Caught-stealing outs charged to this runner
     fo: int = 0     # Foul-outs (3-foul rule) — subset of outs_recorded
     roe: int = 0    # Reached on error (NOT a hit; AB credited; defensive miscue)
+    toa: int = 0    # Thrown out advancing — runner cut down on a batted ball
+                    # (distinct from CS; happens to baserunners when the
+                    # advancement-table roll lands on the out outcome).
     # Per-fielder defense events (credited to the player who fielded the
     # play, NOT to the batter at the plate). Stored on BatterStats since
     # every fielder is also a batter.

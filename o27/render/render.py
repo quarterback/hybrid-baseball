@@ -1431,13 +1431,35 @@ class Renderer:
                 # don't count toward multi-hit (they aren't hits).
                 _check_multi_hit(terminal_hit=is_safety_hit)
 
+        # TOA (thrown out advancing) — credit the RUNNER who was nailed
+        # on the bases, not the batter at the plate. The advancement-table
+        # outs from prob.runner_advances_for_hit propagate here via the
+        # outcome's toa_runner_idxs list. Each TOA marks its runner with
+        # outs_recorded += 1 AND toa += 1; we tally these so the leftover-
+        # out reconciliation below doesn't double-charge the batter for
+        # them.
+        toa_credited = 0
+        if etype == "ball_in_play":
+            outcome = event.get("outcome") or {}
+            toa_idxs = outcome.get("toa_runner_idxs") or []
+            if toa_idxs:
+                bases_before = ctx.get("bases_list") or [None, None, None]
+                for idx in toa_idxs:
+                    if 0 <= idx < 3:
+                        runner_pid = bases_before[idx]
+                        if runner_pid is not None and runner_pid in self._batter_stats:
+                            rs = self._batter_stats[runner_pid]
+                            rs.outs_recorded += 1
+                            rs.toa += 1
+                            toa_credited += 1
+
         # Task #49: universal leftover-out charge. Any out the engine recorded
         # for this event that the per-event branches above didn't already
         # credit (CS, successful pickoff, FC runner out, DP runner-trail out,
         # runner thrown out on a stay, etc.) is charged to the current batter
         # so the per-batter OR column sums to 27 per half.
         engine_outs_delta = (state_after.outs or 0) - (ctx.get("outs") or 0)
-        already_charged = s.outs_recorded - _or_before
+        already_charged = s.outs_recorded - _or_before + toa_credited
         leftover = engine_outs_delta - already_charged
         if leftover > 0:
             s.outs_recorded += leftover

@@ -357,6 +357,13 @@ class Team:
     seconds_used:      bool = False
     seconds_outs_used: int = 0
 
+    # Left-on-base counter — runners stranded when a half ends (out 27)
+    # or when this team declares Seconds with runners still on the bags.
+    # Resets to 0 at game start via dataclass defaults; accumulated by the
+    # half-end / declaration hooks. Surfaced in the box score so a 15 H /
+    # 12 R / 6 LOB line reads differently from 12 H / 15 R / 1 LOB.
+    lob: int = 0
+
     # Shift telemetry (per-game, accumulates over the game). Stamped on
     # the FIELDING team for the play that produced the effect.
     shift_outs_added:  int = 0   # outs the shift converted from singles

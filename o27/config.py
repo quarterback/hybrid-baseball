@@ -241,6 +241,47 @@ HARD_CONTACT: list = [
 # ---------------------------------------------------------------------------
 # Runner advancement model
 # ---------------------------------------------------------------------------
+# Per-base advancement probabilities on a batted hit. Previously every
+# runner auto-advanced (3B/2B always scored on a single; 2B/1B always
+# scored on a double), which collapsed H ≈ R and stripped the box score
+# of any "wasted runners" signal. These tables drive a probabilistic
+# resolution: each runner on base rolls independently for what happens
+# to them on contact. Fuzzy off-round percentages intentional — keeps
+# the numbers looking observed rather than designed.
+
+# Single, runner on 3B (no-out: runner is 90 ft from home, almost
+# always scores; tiny throw-out path only fires for elite arms).
+ADVANCE_3B_ON_1B_SCORE: float    = 0.73
+ADVANCE_3B_ON_1B_HOLD: float     = 0.27
+
+# Single, runner on 2B — the classic close play at the plate.
+ADVANCE_2B_ON_1B_SCORE: float    = 0.58
+ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.34
+ADVANCE_2B_ON_1B_OUT: float      = 0.08
+
+# Double, runner on 2B (almost auto, occasionally held with a deep relay).
+ADVANCE_2B_ON_2B_SCORE: float    = 0.88
+ADVANCE_2B_ON_2B_HOLD_3B: float  = 0.12
+
+# Double, runner on 1B — 1B-to-home on a double is the lever everyone
+# wants. Around half score, a third stop at 3B, the slow ones get held
+# at 2B because the throw beats them.
+ADVANCE_1B_ON_2B_SCORE: float    = 0.47
+ADVANCE_1B_ON_2B_TO_3B: float    = 0.36
+ADVANCE_1B_ON_2B_HOLD_2B: float  = 0.17
+
+# Single, runner on 1B — almost always 1B → 2B; some 1B → 3B; rare TOA.
+ADVANCE_1B_ON_1B_TO_3B: float    = 0.13
+ADVANCE_1B_ON_1B_TO_2B: float    = 0.81
+ADVANCE_1B_ON_1B_OUT: float      = 0.06
+
+# Player-modifier scale on the SCORE probability. Speed pushes score up
+# (and hold down); outfielder arm pushes score down (and out up). Mods
+# are signed deviations from the 0.5 neutral attribute, multiplied by
+# 2 so the full range hits the configured limits.
+SPEED_ADVANCE_MOD: float         = 0.12
+ARM_ADVANCE_MOD: float           = 0.11
+
 # Extra-base probability: chance += max(0, (speed - 0.5) * RUNNER_EXTRA_SPEED_SCALE)
 
 RUNNER_EXTRA_SPEED_SCALE: float = 0.35
