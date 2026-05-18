@@ -352,6 +352,15 @@ class Renderer:
             home_pitchers=h_pitchers,
             required_rr=required_rr,
             target_runs=target_runs,
+            # Declared Seconds — surface each team's declaration + seconds-round
+            # outcome under the line score. None for teams that played to 27.
+            visitors_declared_at=state.visitors.declared_at_out,
+            visitors_outs_banked=int(state.visitors.outs_banked or 0),
+            visitors_seconds_used=int(state.visitors.seconds_outs_used or 0),
+            home_declared_at=state.home.declared_at_out,
+            home_outs_banked=int(state.home.outs_banked or 0),
+            home_seconds_used=int(state.home.seconds_outs_used or 0),
+            home_bats_first=bool(getattr(state, "home_bats_first", False)),
         ).rstrip("\n")
         return rendered.split("\n") if rendered else []
 

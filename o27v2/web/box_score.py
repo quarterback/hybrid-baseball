@@ -405,11 +405,48 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
 
 
 def render_game_notes(game: dict) -> str:
-    """Footer: weather, attendance, super-innings, seed."""
+    """Footer: weather, attendance, super-innings, declarations / seconds, seed."""
     parts: list[str] = []
     si = int(game.get("super_inning") or 0)
     if si:
         parts.append(f"  Super-innings: {si}.")
+
+    # Declared Seconds: surface pre-game bat-order choice, each side's
+    # declaration if any, and the seconds-round outcome if one fired.
+    home_bats_first = game.get("home_bats_first")
+    away_decl = game.get("away_declared_at")
+    home_decl = game.get("home_declared_at")
+    away_sec  = int(game.get("away_seconds_used") or 0)
+    home_sec  = int(game.get("home_seconds_used") or 0)
+    has_decl_info = (home_bats_first is not None
+                     or away_decl is not None or home_decl is not None
+                     or away_sec or home_sec)
+    if has_decl_info:
+        away_name = game.get("away_abbrev") or "AWAY"
+        home_name = game.get("home_abbrev") or "HOME"
+        decl_lines: list[str] = ["  Declared Seconds:"]
+        if home_bats_first is not None:
+            first = home_name if home_bats_first else away_name
+            decl_lines.append(f"    First at bat: {first}.")
+        if away_decl is not None:
+            banked = max(0, 27 - int(away_decl))
+            decl_lines.append(
+                f"    {away_name} declared at out {away_decl} — banked {banked} out(s)."
+            )
+        if home_decl is not None:
+            banked = max(0, 27 - int(home_decl))
+            decl_lines.append(
+                f"    {home_name} declared at out {home_decl} — banked {banked} out(s)."
+            )
+        if away_sec:
+            decl_lines.append(
+                f"    {away_name} seconds round: {away_sec} out(s) used."
+            )
+        if home_sec:
+            decl_lines.append(
+                f"    {home_name} seconds round: {home_sec} out(s) used."
+            )
+        parts.append("\n".join(decl_lines))
 
     bits = []
     weather = game.get("weather") or game.get("weather_label")
