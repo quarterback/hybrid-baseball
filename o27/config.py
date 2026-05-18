@@ -441,11 +441,15 @@ SB_SUCCESS_MAX: float             = 0.92   # ceiling on steal success
 DEFENSE_RANGE_SHIFT_SCALE: float = 0.10   # max ±10% out↔single conversion swing
 
 # Error rate — share of would-be-out plays that become a "reached on
-# error" instead. Scales inversely with team defense.
-DEFENSE_ERROR_BASE: float        = 0.018   # ~1.8% of would-be-outs at neutral D
-DEFENSE_ERROR_SCALE: float       = 0.025   # (0.5 - team_def) * this adds to E rate
-DEFENSE_ERROR_MIN: float         = 0.003
-DEFENSE_ERROR_MAX: float         = 0.045
+# error" instead. Scales inversely with team defense. The earlier ~1.8%
+# baseline left league-wide fielding pct essentially at 1.000 because so
+# few BIPs ever resolve to a would-be-out (Pesäpallo-style 2C drives the
+# safe-rate up); this floor was lifted so visible errors actually appear
+# on the leaderboard.
+DEFENSE_ERROR_BASE: float        = 0.045   # ~4.5% of would-be-outs at neutral D
+DEFENSE_ERROR_SCALE: float       = 0.060   # (0.5 - team_def) * this adds to E rate
+DEFENSE_ERROR_MIN: float         = 0.010
+DEFENSE_ERROR_MAX: float         = 0.090
 
 # ---------------------------------------------------------------------------
 # Emergency position-player pitcher (PP-pitching)
