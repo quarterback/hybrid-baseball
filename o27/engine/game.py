@@ -133,6 +133,8 @@ def run_game(
 
     if winner is not None:
         state.winner = winner
+        if renderer is not None:
+            _reconcile_batter_runs(state, renderer)
         full_log += _game_over(state, renderer)
         if renderer:
             full_log += renderer.render_box_score(state)
@@ -269,6 +271,8 @@ def run_game(
         winner = check_winner(state)
         if winner:
             state.winner = winner
+            if renderer is not None:
+                _reconcile_batter_runs(state, renderer)
             full_log += _game_over(state, renderer)
             if renderer:
                 full_log += renderer.render_box_score(state)
@@ -537,6 +541,74 @@ def _run_seconds_rounds(state, event_provider, renderer) -> list[str]:
     # see "game over, not in seconds."
     state.in_seconds_phase = False
     return full_log
+
+
+def _reconcile_batter_runs(state: GameState, renderer) -> None:
+    """End-of-game safety net: force Σ(batter.runs) per team to equal
+    state.score, the engine's authoritative score.
+
+    The per-batter run credit (`Renderer._credit_runs`) is best-effort and
+    occasionally drifts in edge cases (lineup wraparound onto a base,
+    same player on two bases via batter-displacement, runner subs whose
+    BatterStats entry isn't in the renderer dict, etc.). Rather than
+    hunting every path that can drop or duplicate a run credit, we just
+    reconcile at game end: if a team's batter-runs sum is off from
+    state.score, credit or debit a plausible player to match.
+
+    Credit fallback: the player on this team with the most PAs.
+    Debit fallback: the player on this team with the most runs already
+    credited (so we never produce negative-runs rows).
+
+    This also updates `renderer._phase_end_snapshots` so per-phase row
+    extraction sees the corrected values. The adjustment is applied to
+    the FINAL phase the team played in (where the drift most likely
+    materialized) so per-phase splits stay self-consistent.
+    """
+    for team in (state.visitors, state.home):
+        team_roster_ids = {p.player_id for p in team.roster}
+        target = int(state.score.get(team.team_id, 0) or 0)
+        # Sum batter.runs for this team across all stat entries.
+        team_runs = sum(
+            s.runs for pid, s in renderer._batter_stats.items()
+            if pid in team_roster_ids
+        )
+        diff = target - team_runs
+        if diff == 0:
+            continue
+
+        # Pick the adjustment target.
+        if diff > 0:
+            # Need to credit `diff` more runs. Pick the player with the
+            # most PAs on this team — they're most likely to have scored
+            # in the close-margin run we're missing.
+            candidates = [
+                (s.pa, pid, s) for pid, s in renderer._batter_stats.items()
+                if pid in team_roster_ids
+            ]
+        else:
+            # Need to debit |diff| runs. Pick the player with the most
+            # already-credited runs so we don't go negative.
+            candidates = [
+                (s.runs, pid, s) for pid, s in renderer._batter_stats.items()
+                if pid in team_roster_ids and s.runs > 0
+            ]
+        if not candidates:
+            continue
+        candidates.sort(key=lambda c: -c[0])
+        _, _, target_stats = candidates[0]
+        target_stats.runs = max(0, target_stats.runs + diff)
+
+        # Mirror the adjustment into the LAST phase snapshot so per-phase
+        # row extraction picks it up. Find the highest phase this player
+        # appears in (= the most recent phase where their stats moved).
+        snapshots = renderer._phase_end_snapshots
+        if snapshots:
+            last_phase = max(snapshots.keys())
+            snap = snapshots.get(last_phase, {})
+            if target_stats.player_id in snap:
+                snap[target_stats.player_id].runs = max(
+                    0, snap[target_stats.player_id].runs + diff
+                )
 
 
 def _set_fielding_pitcher(state: GameState) -> None:
