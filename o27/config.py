@@ -249,31 +249,37 @@ HARD_CONTACT: list = [
 # to them on contact. Fuzzy off-round percentages intentional — keeps
 # the numbers looking observed rather than designed.
 
-# Single, runner on 3B (no-out: runner is 90 ft from home, almost
-# always scores; tiny throw-out path only fires for elite arms).
-ADVANCE_3B_ON_1B_SCORE: float    = 0.73
-ADVANCE_3B_ON_1B_HOLD: float     = 0.27
+# Single, runner on 3B (rarely cut down — runner is 90 ft from home —
+# but elite-arm corner OFs still nail one occasionally on a contact
+# play with the throw home).
+ADVANCE_3B_ON_1B_SCORE: float    = 0.71
+ADVANCE_3B_ON_1B_HOLD: float     = 0.25
+ADVANCE_3B_ON_1B_OUT: float      = 0.04
 
 # Single, runner on 2B — the classic close play at the plate.
-ADVANCE_2B_ON_1B_SCORE: float    = 0.58
-ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.34
-ADVANCE_2B_ON_1B_OUT: float      = 0.08
+ADVANCE_2B_ON_1B_SCORE: float    = 0.54
+ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.32
+ADVANCE_2B_ON_1B_OUT: float      = 0.14
 
-# Double, runner on 2B (almost auto, occasionally held with a deep relay).
-ADVANCE_2B_ON_2B_SCORE: float    = 0.88
-ADVANCE_2B_ON_2B_HOLD_3B: float  = 0.12
+# Double, runner on 2B (almost auto, occasionally held with a deep relay
+# and the rare turn-2 chase that catches the runner short).
+ADVANCE_2B_ON_2B_SCORE: float    = 0.83
+ADVANCE_2B_ON_2B_HOLD_3B: float  = 0.13
+ADVANCE_2B_ON_2B_OUT: float      = 0.04
 
 # Double, runner on 1B — 1B-to-home on a double is the lever everyone
 # wants. Around half score, a third stop at 3B, the slow ones get held
-# at 2B because the throw beats them.
-ADVANCE_1B_ON_2B_SCORE: float    = 0.47
-ADVANCE_1B_ON_2B_TO_3B: float    = 0.36
-ADVANCE_1B_ON_2B_HOLD_2B: float  = 0.17
+# at 2B because the throw beats them, occasionally the throw nails 'em.
+ADVANCE_1B_ON_2B_SCORE: float    = 0.43
+ADVANCE_1B_ON_2B_TO_3B: float    = 0.34
+ADVANCE_1B_ON_2B_HOLD_2B: float  = 0.16
+ADVANCE_1B_ON_2B_OUT: float      = 0.07
 
-# Single, runner on 1B — almost always 1B → 2B; some 1B → 3B; rare TOA.
-ADVANCE_1B_ON_1B_TO_3B: float    = 0.13
-ADVANCE_1B_ON_1B_TO_2B: float    = 0.81
-ADVANCE_1B_ON_1B_OUT: float      = 0.06
+# Single, runner on 1B — almost always 1B → 2B; some 1B → 3B; TOA risk
+# meaningful when the OF charges in to throw behind the runner.
+ADVANCE_1B_ON_1B_TO_3B: float    = 0.12
+ADVANCE_1B_ON_1B_TO_2B: float    = 0.77
+ADVANCE_1B_ON_1B_OUT: float      = 0.11
 
 # Player-modifier scale on the SCORE probability. Speed pushes score up
 # (and hold down); outfielder arm pushes score down (and out up). Mods

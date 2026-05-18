@@ -1210,6 +1210,11 @@ class Renderer:
                 else:
                     rs.cs += 1
                     rs.outs_recorded += 1
+                    # CS = baserunner erased without scoring → LOB.
+                    bt = ctx.get("batting_team_id")
+                    if bt == "visitors" or bt == "home":
+                        tm = state_after.visitors if bt == "visitors" else state_after.home
+                        tm.lob = int(getattr(tm, "lob", 0) or 0) + 1
             # Don't fall through to the leftover-out reconciliation below —
             # the at-bat is still in progress and the only out (if any) was
             # already charged to the runner above. Falling through would
@@ -1437,11 +1442,20 @@ class Renderer:
         # outcome's toa_runner_idxs list. Each TOA marks its runner with
         # outs_recorded += 1 AND toa += 1; we tally these so the leftover-
         # out reconciliation below doesn't double-charge the batter for
-        # them.
+        # them. Also: every TOA is a baserunner erased without scoring →
+        # increment the batting team's LOB by the same count, plus count
+        # any other base-outs the play recorded (FC lead-runner, GIDP-
+        # runner, pickoff caught mid-PA — anyone who was on base and is
+        # now an out without crossing the plate).
         toa_credited = 0
         if etype == "ball_in_play":
             outcome = event.get("outcome") or {}
             toa_idxs = outcome.get("toa_runner_idxs") or []
+            non_toa_out_idxs: list[int] = []
+            if outcome.get("runner_out_idx") is not None:
+                non_toa_out_idxs.append(int(outcome["runner_out_idx"]))
+            non_toa_out_idxs.extend(int(i) for i in (outcome.get("extra_runner_outs") or []))
+            non_toa_out_idxs = [i for i in non_toa_out_idxs if i not in toa_idxs]
             if toa_idxs:
                 bases_before = ctx.get("bases_list") or [None, None, None]
                 for idx in toa_idxs:
@@ -1452,6 +1466,15 @@ class Renderer:
                             rs.outs_recorded += 1
                             rs.toa += 1
                             toa_credited += 1
+            # All base-runner erasures on this play (TOA + FC + GIDP-runner
+            # + pickoff caught here) count toward LOB — they were on base
+            # and won't cross the plate.
+            erased_total = len(set(toa_idxs)) + len(set(non_toa_out_idxs))
+            if erased_total:
+                bt = ctx.get("batting_team_id")
+                if bt in ("visitors", "home"):
+                    tm = state_after.visitors if bt == "visitors" else state_after.home
+                    tm.lob = int(getattr(tm, "lob", 0) or 0) + erased_total
 
         # Task #49: universal leftover-out charge. Any out the engine recorded
         # for this event that the per-event branches above didn't already

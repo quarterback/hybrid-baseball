@@ -1073,10 +1073,17 @@ def runner_advances_for_hit(
             outcome = _resolve_table(
                 rng,
                 [("score", cfg.ADVANCE_3B_ON_1B_SCORE),
-                 ("hold",  cfg.ADVANCE_3B_ON_1B_HOLD)],
-                _spd_dev(2), arm_dev, has_out=False,
+                 ("hold",  cfg.ADVANCE_3B_ON_1B_HOLD),
+                 ("out",   cfg.ADVANCE_3B_ON_1B_OUT)],
+                _spd_dev(2), arm_dev, has_out=True,
             )
-            adv[2] = 1 if outcome == "score" else 0
+            if outcome == "score":
+                adv[2] = 1
+            elif outcome == "hold":
+                adv[2] = 0
+            else:
+                out_idxs.append(2)
+                adv[2] = 0
         if bases[1] is not None:
             outcome = _resolve_table(
                 rng,
@@ -1118,23 +1125,34 @@ def runner_advances_for_hit(
             outcome = _resolve_table(
                 rng,
                 [("score",   cfg.ADVANCE_2B_ON_2B_SCORE),
-                 ("hold_3b", cfg.ADVANCE_2B_ON_2B_HOLD_3B)],
-                _spd_dev(1), arm_dev, has_out=False,
+                 ("hold_3b", cfg.ADVANCE_2B_ON_2B_HOLD_3B),
+                 ("out",     cfg.ADVANCE_2B_ON_2B_OUT)],
+                _spd_dev(1), arm_dev, has_out=True,
             )
-            adv[1] = 2 if outcome == "score" else 1
+            if outcome == "score":
+                adv[1] = 2
+            elif outcome == "hold_3b":
+                adv[1] = 1
+            else:
+                out_idxs.append(1)
+                adv[1] = 1
         if bases[0] is not None:
             outcome = _resolve_table(
                 rng,
                 [("score",     cfg.ADVANCE_1B_ON_2B_SCORE),
                  ("to_3b",     cfg.ADVANCE_1B_ON_2B_TO_3B),
-                 ("hold_2b",   cfg.ADVANCE_1B_ON_2B_HOLD_2B)],
-                _spd_dev(0), arm_dev, has_out=False,
+                 ("hold_2b",   cfg.ADVANCE_1B_ON_2B_HOLD_2B),
+                 ("out",       cfg.ADVANCE_1B_ON_2B_OUT)],
+                _spd_dev(0), arm_dev, has_out=True,
             )
             if outcome == "score":
                 adv[0] = 3
             elif outcome == "to_3b":
                 adv[0] = 2
+            elif outcome == "hold_2b":
+                adv[0] = 1
             else:
+                out_idxs.append(0)
                 adv[0] = 1
         return adv, out_idxs
 
