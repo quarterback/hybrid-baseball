@@ -119,18 +119,82 @@ The structural home advantage that remains is something else. Best guess: a comb
 
 ---
 
-## Open items
+## Addendum — Home/visitor follow-up: items 1/2/3, edge cap, and the fixture-artifact reveal
 
-1. **Home advantage beyond bat order.** Even with 50/50 bat-first, home wins ~70%. Forced-bat-first testing isolated the residual advantage to something other than batting order. Walk-off mechanics or the home-only bat-order choice are the leading hypotheses but neither has been confirmed.
-2. **User's dial recommendations for the advancement tables.** The user proposed dropping `ADVANCE_2B_ON_1B_SCORE` further into 0.48-0.52 and `ADVANCE_1B_ON_2B_SCORE` to 0.38-0.42. Pending confirmation that those values are still wanted now that the starting point is 0.54 / 0.43 (post-bump), not the brief's original 0.58 / 0.47.
-3. **Historical data backfill.** The situational-stats DB fix only applies going forward. Pre-fix rows still have zeroed advancement / 2C / RAD / gidp / gitp columns. A re-sim would backfill them; alternatively the almanac could read zeros as "no data" and present accordingly.
-4. **The pre-existing home-scores-more asymmetry** that BAT_FIRST_BASE was originally retconning. The retcon is gone now but the underlying asymmetry hasn't been hunted down.
+After the initial AAR, the user asked for items 2 and 3 from a follow-up brief (target pressure + fielding fatigue), then item 1 (rebuttal-phase offense tilt), then a 1% cap on the home strategic edge in `should_bat_first`. All implemented as symmetric-by-role nudges that route through the existing `contact_quality` shift and `def_dev` paths:
+
+- **Target pressure** (`TARGET_PRESSURE_SHIFT=0.030`, fades to 0 by PA 13): contact-quality tilt for the team batting second during their early PAs. Fires in regulation only.
+- **Fielding fatigue** (`FIELDING_FATIGUE_PENALTY=0.030`, gate at `state.outs >= 20`): `def_dev` penalty applied to the first-batting team's defense in the late arc of the second half — they've been on the field longer.
+- **Rebuttal offense** (`REBUTTAL_OFFENSE_SHIFT=0.035`): contact-quality tilt during seconds rounds and super-innings, capturing "pitchers cool off during the declaration pause, batter timing stays sharp."
+- **`BAT_FIRST_HOME_EDGE_CAP=0.01`**: clamps the situational scalars (park / starter / persona / bullpen / weather) so the home bat-order decision can never deviate from `BAT_FIRST_BASE` by more than ±1%. Removes the strategic asymmetry where home is the only team with a tactical bat-order lever.
+- **`should_swap_offensive_for_defense` symmetric**: was gated on `state.half == "top"` (the cricket "visitor bats first then fields" assumption). With bat-order now coin-flip, that silently fired only for visitors. Rewired to fire for the first-batting team regardless of identity.
+- The bat-first test that asserted `home_bat_first > 50%` (per the old 0.65 retcon) was updated to assert "near-50% with binomial CI" — the new design intent.
+
+### The diagnostic that mattered
+
+After all of the above, foxes-vs-bears smoke tests still showed home winning 73% with a ~4 R/g gap and home converting 30% more runs per PA. Score-state splitting ruled out a "leading vs trailing pitcher composure" effect — home was more productive in every bucket. The trace pass instrumented `contact_quality`, `resolve_contact`, and `runner_advances_for_hit` to capture per-call inputs and outputs grouped by `state.batting_team.team_id`, and the result was definitive:
+
+```
+PITCHER STUFF facing each batting team:
+  home      avg pitcher_stuff faced: 0.5268    (= make_foxes()'s pitcher)
+  visitors  avg pitcher_stuff faced: 0.6264    (= make_bears()'s pitcher)
+```
+
+Then on the supposed "swap" (visitors=make_bears, home=make_foxes), the trace showed home STILL facing 0.5268 stuff and visitor STILL facing 0.6264. The swap was a no-op.
+
+The cause: `make_foxes()` hardcodes `team_id="visitors"` and `make_bears()` hardcodes `team_id="home"`. The engine routes batting/fielding via the `team_id` *string*, not by which slot the team object occupies on `GameState`. So `state.batting_team` (which checks `state.half`) looks up by slot, but `_score_run` writes to `state.score[team_id]` keyed on the team's intrinsic id. With the fixture's hardcoded ids, swapping the GameState slots semantically did nothing — bears stayed routed as "home", foxes stayed routed as "visitors", and the test was running the same matchup 200 times with different labels.
+
+Properly swapping (reassigning `foxes.team_id = "home"` and `bears.team_id = "visitors"`):
+
+```
+home(foxes)    32% wins   12.20 R/g
+visitor(bears) 68% wins   15.50 R/g
+gap -3.30 (home scoring 3.30 LESS than visitor)
+```
+
+Bears as visitors still won 68%. The "home advantage" was always just the team-strength gap between two unbalanced fixtures.
+
+Confirming with two genuinely identical teams built inline (same pitcher_skill, same speed, same everything):
+
+```
+=== 300 BALANCED games ===
+  W-L:  home 152 (50.7%) / visitor 148 (49.3%)
+  R/g:  home 14.94  visitor 14.79  gap +0.16
+  HBF:  51.7%
+```
+
+The engine has no structural home bias. The 4 R/g gap I was chasing for hours was a phantom created by:
+1. The two test fixtures having a +0.10 `pitcher_skill` differential (bears 0.62 vs foxes 0.52)
+2. The fixtures hardcoding `team_id` strings, which silently prevented any of my "swap" tests from actually testing what they purported to test
+
+### What stays from the home/visitor follow-up
+
+All the items-2/3/1 mechanics, the edge cap, and the `should_swap_offensive_for_defense` symmetry fix remain committed. They're good engineering on their own terms:
+- The symmetric-by-role tilts make bat-order strategy more interesting and the seconds-round arc feel different from regulation.
+- The edge cap removes a strategic asymmetry that *would* favor home if the persona/park/starter scalars ever produced strong signals.
+- The `should_swap_offensive_for_defense` fix was a genuine cricket-logic gate that no longer matched the bat-order reality.
+
+None of them needed to exist to "fix the home advantage" because that advantage was never there. But they're net-positive for the engine regardless.
+
+### Where this points for the production app
+
+If the deployed league shows home winning more often, the question to ask is **whether the league's home teams have meaningfully stronger rotations than the road teams in aggregate**. A simple league-balance audit (mean pitcher_skill across each team's projected starters, plotted against home record) would surface that quickly. Without that audit, "home advantage" in production stats is indistinguishable from "the better team is more often the home team in the games we sampled."
 
 ---
 
-## Things to remember
+## Open items (revised)
+
+1. **Production league balance audit.** If home teams consistently outscore visitors in the deployed app, check whether the rotation strength is balanced league-wide before assuming an engine bias.
+2. **User's dial recommendations for the advancement tables.** Still pending: the user proposed `ADVANCE_2B_ON_1B_SCORE` to 0.48-0.52 (currently 0.54) and `ADVANCE_1B_ON_2B_SCORE` to 0.38-0.42 (currently 0.43). Suggested when they thought the baseline was 0.58 / 0.47; needs confirmation with the actual current values.
+3. **Historical data backfill.** The situational-stats DB fix only applies going forward. Pre-fix rows still have zeroed advancement / 2C / RAD / gidp / gitp columns. A re-sim would backfill them; alternatively the almanac could read zeros as "no data" and present accordingly.
+4. **`make_foxes()` / `make_bears()` hardcode `team_id` strings.** This makes the fixtures unsuitable for testing home/visitor symmetry. Should be parameterized or renamed so the `team_id` follows the slot they're placed in. A test-only ergonomics issue but cost hours of diagnostic work to discover, so worth flagging.
+
+---
+
+## Things to remember (updated)
 
 - The user does not want MLB-target chasing. Knobs should be tuned by what plays right in the engine on its own terms, not by what MLB looks like.
 - The user can't watch games on the deployed app directly — diagnostic numbers need to be surfaced via the smoke tests or commit messages so they can make tuning calls without playing through games themselves.
 - The user is willing to commit fuzzy off-round numbers in config when the alternative reads "designed" too obviously (e.g. 73/27 instead of 75/25, 13% instead of 15%).
 - The user wants the brief / spec to be authoritative *only* if they wrote it. AI-suggested specs are treated as suggestions; the user's instinct on what feels right beats the spec.
+- **Always verify test fixtures before running a long diagnostic on them.** `state.batting_team`, `state.fielding_team`, and the `state.score` dict are all keyed off `team_id` *strings*, not the GameState slots. Test fixtures that hardcode `team_id="home"` or `team_id="visitors"` can't be swapped at the GameState level — they have to be rebuilt with new ids. Burning hours hunting a "structural home advantage" that was actually a fixture-strength gap is the cautionary tale.
