@@ -1232,10 +1232,11 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
     after they've banked a PA, bring in a defensive specialist who'll
     cover the rest of the team's fielding half.
 
-    O27-specific tactic — only meaningful for the road team in the top
-    half, since they bat first and then field. The home team bats last
-    so their fielding half is already done by the time they're at the
-    plate, and there's no defense to lock in.
+    O27-specific tactic — only meaningful for whichever team bats FIRST,
+    since they still have a fielding stint ahead. Symmetric by role:
+    fires for visitors when visitors bat first, fires for home when
+    home bats first. The team batting second has already fielded by the
+    time they're at the plate, so there's no defense to lock in.
 
     Conditions:
       - Regulation half (no super-innings).
@@ -1256,7 +1257,16 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
     """
     if state.is_super_inning:
         return None
-    if state.half != "top":
+    # Symmetric by role: fires for the FIRST-batting team during their
+    # batting half — they're the ones who still have a fielding stint
+    # ahead. The old `state.half != "top"` restriction was the cricket
+    # assumption "visitors bat first then field", but with the bat-order
+    # decision now near-coin-flip that gate would silently only ever fire
+    # for visitors (= a hidden home advantage worth ~0.5 R/g of the gap
+    # in 300-game samples). first_batting_team is set by run_game before
+    # the first half starts.
+    if (state.first_batting_team is None
+            or state.batting_team is not state.first_batting_team):
         return None
 
     team = state.batting_team
