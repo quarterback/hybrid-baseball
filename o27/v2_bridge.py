@@ -498,7 +498,10 @@ def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
         """SELECT p.name AS name, t.abbrev AS team,
                   SUM(bs.pa) AS pa, SUM(bs.ab) AS ab,
                   SUM(bs.hits) AS hits, SUM(bs.hr) AS hr,
+                  SUM(bs.doubles) AS d2,
+                  SUM(bs.triples) AS d3,
                   SUM(bs.rbi) AS rbi, SUM(bs.bb) AS bb,
+                  COALESCE(SUM(bs.hbp),0) AS hbp,
                   SUM(bs.k) AS k, SUM(bs.runs) AS runs
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
@@ -514,11 +517,27 @@ def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
         r["hr"]   = r["hr"] or 0
         r["rbi"]  = r["rbi"] or 0
         r["bb"]   = r["bb"] or 0
+        r["hbp"]  = r["hbp"] or 0
         r["k"]    = r["k"] or 0
         r["runs"] = r["runs"] or 0
+        d2 = r["d2"] or 0
+        d3 = r["d3"] or 0
+        r["d2"] = d2
+        r["d3"] = d3
         r["or_"]  = 0
         r["avg"]  = (hits / ab) if ab > 0 else 0.0
         r["h_ab"] = r["avg"]
+        # wOBA — O27-tuned weights, PA-denominated (matches the o27v2
+        # analytics-page convention so the two views agree). Singles
+        # derived from hits minus extra-base hits.
+        singles = max(0, hits - d2 - d3 - r["hr"])
+        pa = r["pa"] or 0
+        if pa > 0:
+            woba_num = (1.00 * r["bb"] + 1.00 * r["hbp"] + 1.20 * singles
+                        + 1.20 * d2 + 1.20 * d3 + 1.40 * r["hr"])
+            r["woba"] = woba_num / pa
+        else:
+            r["woba"] = 0.0
 
     if stat == "avg":
         rows = [r for r in rows if r["ab"] >= 3]
@@ -526,6 +545,9 @@ def get_leaders(stat: str = "hits", limit: int = 10) -> list[dict]:
     elif stat == "h_ab":
         rows = [r for r in rows if r["ab"] >= 3]
         rows.sort(key=lambda x: -x["h_ab"])
+    elif stat == "woba":
+        rows = [r for r in rows if (r["pa"] or 0) >= 10]
+        rows.sort(key=lambda x: -x["woba"])
     else:
         rows.sort(key=lambda x: -x.get(stat, 0))
     return rows[:limit]
@@ -539,6 +561,15 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
                   SUM(ps.outs_recorded)  AS outs,
                   SUM(ps.hits_allowed)   AS h,
                   SUM(ps.runs_allowed)   AS r,
+                  COALESCE(SUM(ps.er),0) AS er,
+                  COALESCE(SUM(ps.er_arc1),0) AS er_arc1,
+                  COALESCE(SUM(ps.er_arc2),0) AS er_arc2,
+                  COALESCE(SUM(ps.er_arc3),0) AS er_arc3,
+                  COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1,
+                  COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2,
+                  COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
+                  COALESCE(SUM(ps.hr_allowed),0) AS hr_allowed,
+                  COALESCE(SUM(ps.hbp_allowed),0) AS hbp_allowed,
                   SUM(ps.bb) AS bb,
                   SUM(ps.k)  AS k
            FROM game_pitcher_stats ps
@@ -568,11 +599,39 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
         r["k9"]     = round(k  / outs * 27, 2) if outs > 0 else 0.0
         r["bb9"]    = round(bb / outs * 27, 2) if outs > 0 else 0.0
         ip = outs / 3.0
-        r["fip"] = round((3 * bb - 2 * k) / ip + 11.50, 2) if ip > 0 else 0.0
+        # FIP — the HR term was previously missing here, which silently broke
+        # FIP values for every pitcher path that went through v2_bridge.
+        # Constant calibrated to the O27 ~11.50 league-ERA environment;
+        # the almanac uses a dynamically computed constant for tighter
+        # per-season accuracy (see o27/almanac/compute.py).
+        hr_allowed = r.get("hr_allowed") or 0
+        hbp = r.get("hbp_allowed") or 0
+        r["fip"] = round((13 * hr_allowed + 3 * (bb + hbp) - 2 * k) / ip + 11.50, 2) if ip > 0 else 0.0
+        # wERA — arc-weighted ER per 27 outs. Weights 0.85/1.00/1.20 across
+        # arc1/2/3 (matches the almanac and analytics suite formulas).
+        # Falls back to raw ER/27 when arc counters are absent (legacy rows).
+        if outs > 0:
+            er_total = r["er"] or 0
+            era1 = r["er_arc1"] or 0
+            era2 = r["er_arc2"] or 0
+            era3 = r["er_arc3"] or 0
+            bfa1 = r["bf_arc1"] or 0
+            bfa2 = r["bf_arc2"] or 0
+            bfa3 = r["bf_arc3"] or 0
+            if (bfa1 + bfa2 + bfa3) > 0 and er_total > 0:
+                weighted_er = 0.85 * era1 + 1.00 * era2 + 1.20 * era3
+                r["wera"] = round(weighted_er * 27.0 / outs, 2)
+            else:
+                r["wera"] = round(er_total * 27.0 / outs, 2)
+        else:
+            r["wera"] = 99.99
 
     if stat == "era":
         rows = [r for r in rows if r["outs"] >= 9]
         rows.sort(key=lambda x: x["era"])
+    elif stat == "wera":
+        rows = [r for r in rows if r["outs"] >= 9]
+        rows.sort(key=lambda x: x["wera"])
     elif stat == "whip":
         rows = [r for r in rows if r["outs"] >= 9]
         rows.sort(key=lambda x: x["whip"])
@@ -699,7 +758,9 @@ def get_team_pitching(abbrev: str) -> list[dict]:
                   SUM(ps.outs_recorded) AS outs,
                   SUM(ps.hits_allowed)  AS h,
                   SUM(ps.runs_allowed)  AS r,
-                  SUM(ps.bb) AS bb, SUM(ps.k) AS k
+                  SUM(ps.bb) AS bb, SUM(ps.k) AS k,
+                  SUM(ps.hr_allowed) AS hr_allowed,
+                  SUM(ps.hbp_allowed) AS hbp_allowed
            FROM game_pitcher_stats ps
            JOIN players p ON ps.player_id = p.id
            WHERE ps.team_id = ?
@@ -731,7 +792,7 @@ def get_team_pitching(abbrev: str) -> list[dict]:
             "aor":  "—",
             "k9":   f"{k  / outs * 27:.2f}" if outs > 0 else "—",
             "bb9":  f"{bb / outs * 27:.2f}" if outs > 0 else "—",
-            "fip":  f"{(3 * bb - 2 * k) / ip + 11.50:.2f}" if ip > 0 else "—",
+            "fip":  f"{(13 * (r['hr_allowed'] or 0) + 3 * (bb + (r['hbp_allowed'] or 0)) - 2 * k) / ip + 11.50:.2f}" if ip > 0 else "—",
         })
     return out
 

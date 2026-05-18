@@ -599,9 +599,12 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
         r["k9"]     = round(r["k"]  / outs * 27, 2) if outs > 0 else 0.0
         r["bb9"]    = round(r["bb"] / outs * 27, 2) if outs > 0 else 0.0
         # FIP recalibrated to O27 baseline (~11.50 league ERA).
-        # FIP = (13*HR + 3*BB - 2*K) / IP + C, where IP = outs/3 and C ≈ 11.50.
+        # FIP = (13*HR + 3*(BB+HBP) - 2*K) / IP + C, where IP = outs/3 and C ≈ 11.50.
+        # HBP added here so it matches the canonical formula and the almanac's
+        # per-season dynamically calibrated FIP.
         ip = outs / 3.0
-        r["fip"] = round((13 * r["hr"] + 3 * r["bb"] - 2 * r["k"]) / ip + 11.50, 2) if ip > 0 else 0.0
+        hbp_p = r.get("hbp") or r.get("hbp_allowed") or 0
+        r["fip"] = round((13 * r["hr"] + 3 * (r["bb"] + hbp_p) - 2 * r["k"]) / ip + 11.50, 2) if ip > 0 else 0.0
 
     rows = list(agg.values())
     if stat == "era":
@@ -694,7 +697,8 @@ def get_team_pitching(abbrev: str) -> list[dict]:
         r["aor"]    = f"{r['out_sum'] / g:.1f}" if g > 0 else "—"
         r["k9"]     = f"{r['k']  / outs * 27:.2f}" if outs > 0 else "—"
         r["bb9"]    = f"{r['bb'] / outs * 27:.2f}" if outs > 0 else "—"
-        r["fip"]    = f"{(13 * r['hr'] + 3 * r['bb'] - 2 * r['k']) / ip + 11.50:.2f}" if ip > 0 else "—"
+        hbp_p = r.get("hbp") or r.get("hbp_allowed") or 0
+        r["fip"]    = f"{(13 * r['hr'] + 3 * (r['bb'] + hbp_p) - 2 * r['k']) / ip + 11.50:.2f}" if ip > 0 else "—"
     rows.sort(key=lambda x: (-x["outs"], x["name"]))
     return rows
 

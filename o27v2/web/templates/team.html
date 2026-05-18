@@ -183,6 +183,22 @@
   <div class="col-lg-5">
     <div class="dense">
       <div class="panel-title">Pitching</div>
+      {% if staff_wera and staff_wera.staff_wera_mean is not none %}
+      <div class="d-flex flex-wrap gap-3 mb-2 pb-2" style="border-bottom:1px solid var(--border-soft); font-size:0.85rem">
+        <div>
+          <span class="text-secondary">Staff wERA:</span>
+          <span class="num fw-bold">{{ '%.2f'|format(staff_wera.staff_wera_mean) }}</span>
+        </div>
+        <div title="Outs-weighted stdev of per-pitcher wERA. Higher = more cascade-prone — the 21-18 blowouts come from one pitcher melting down. Lower = more stable, fewer floor-collapse losses.">
+          <span class="text-secondary">σ:</span>
+          <span class="num fw-bold">{{ '%.2f'|format(staff_wera.staff_wera_std) }}</span>
+          <span class="text-secondary small">
+            ({{ '%.2f'|format(staff_wera.staff_wera_min) }}–{{ '%.2f'|format(staff_wera.staff_wera_max) }})
+          </span>
+        </div>
+        <div class="text-secondary small">{{ staff_wera.n_pitchers }} pitchers</div>
+      </div>
+      {% endif %}
       {% if pitchers %}
       <table class="table table-sm dense-table sortable mb-0">
         <thead><tr>

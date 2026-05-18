@@ -35,12 +35,23 @@
       <th data-heat="lo">UER</th>
       <th data-heat="lo">HR</th><th data-heat="lo">BB</th><th data-heat="hi">K</th>
       <th data-heat="hi">FO</th>
-      <th data-heat="lo">ERA</th><th data-heat="lo">wERA</th>
-      <th data-heat="lo">WHIP</th><th data-heat="lo">FIP</th><th data-heat="lo">xFIP</th>
+      {# === Primary O27-empirical run-prevention stats — lead with these.
+           wERA = run-environment-weighted ERA (calibrated to this league's
+           actual run shape, not MLB's). GSc = Game Score, refit with
+           O27-empirical coefficients. Both come from the analytics-suite
+           run-value framework. Old MLB-tuned ERA / FIP / xFIP appear after
+           as comparison columns; FIP's constant is now calibrated per-
+           season so league_FIP == league_ERA by construction, but the
+           stat still isn't quite right for an O27 run environment so it
+           sits in the secondary group. === #}
+      <th data-heat="lo">wERA</th>
+      <th data-heat="hi">GSc</th>
+      <th data-heat="lo">WHIP</th>
+      <th data-heat="lo">ERA</th>
+      <th data-heat="lo">FIP</th><th data-heat="lo">xFIP</th>
       <th data-heat="hi">K/9</th><th data-heat="lo">BB/9</th><th data-heat="lo">HR/9</th>
       <th data-heat="hi">K%</th><th data-heat="lo">BB%</th><th data-heat="hi">K−BB%</th>
       <th data-heat="hi">K/BB</th>
-      <th data-heat="hi">GSc</th>
       <th data-heat="lo">OAVG</th><th data-heat="lo">OBABIP</th>
       <th data-heat="lo">OOBP</th><th data-heat="lo">OSLG</th><th data-heat="lo">OOPS</th>
       <th data-heat="hi">AOR</th><th data-heat="hi">OS%</th><th data-heat="hi">OS+</th>
@@ -71,9 +82,12 @@
         <td>{{ r.bb }}</td>
         <td>{{ r.k }}</td>
         <td>{{ r.fo_induced }}</td>
-        <td data-val="{{ r.era }}">{{ '%.2f'|format(r.era) }}</td>
+        {# === Primary O27-empirical run-prevention stats === #}
         <td data-val="{{ r.wera }}">{{ '%.2f'|format(r.wera) }}</td>
+        <td data-val="{{ r.gsc_total }}">{{ '%.1f'|format(r.gsc_total) }}</td>
         <td data-val="{{ r.whip }}">{{ '%.2f'|format(r.whip) }}</td>
+        {# === Secondary / comparison stats === #}
+        <td data-val="{{ r.era }}">{{ '%.2f'|format(r.era) }}</td>
         <td data-val="{{ r.fip }}">{{ '%.2f'|format(r.fip) }}</td>
         <td data-val="{{ r.xfip }}">{{ '%.2f'|format(r.xfip) }}</td>
         <td data-val="{{ r.k9 }}">{{ '%.2f'|format(r.k9) }}</td>
@@ -83,7 +97,6 @@
         <td data-val="{{ r.bb_pct }}">{{ '%.1f'|format(r.bb_pct * 100) }}%</td>
         <td data-val="{{ r.k_minus_bb_pct }}">{{ '%.1f'|format(r.k_minus_bb_pct * 100) }}%</td>
         <td data-val="{{ r.k_bb }}">{{ '%.2f'|format(r.k_bb) }}</td>
-        <td data-val="{{ r.gsc_total }}">{{ '%.1f'|format(r.gsc_total) }}</td>
         <td data-val="{{ r.oavg }}">{{ '%.3f'|format(r.oavg) }}</td>
         <td data-val="{{ r.obabip }}">{{ '%.3f'|format(r.obabip) }}</td>
         <td data-val="{{ r.oobp }}">{{ '%.3f'|format(r.oobp) }}</td>
@@ -106,8 +119,16 @@
   </table>
 </div>
 <p class="page-subtitle" style="margin-top:10px;">
-  Minimum {{ min_outs }} outs (20 IP) to qualify. League ERA/wERA-baseline/WHIP/FIP:
-  <b>{{ '%.2f'|format(views.league_totals.era) }} / — / {{ '%.2f'|format(views.league_totals.whip) }} / {{ '%.2f'|format(views.league_totals.fip) }}</b>.
+  Minimum {{ min_outs }} outs (20 IP) to qualify. Headline stats are
+  <b>wERA</b> (run-environment-weighted ERA, calibrated to this league's
+  actual scoring shape) and <b>GSc</b> (Game Score with O27-empirical
+  refit coefficients — see the <a href="../analytics.html">analytics
+  page</a> for the derivation). Traditional ERA and FIP appear for
+  comparison; FIP's constant is now computed dynamically so league_FIP
+  collapses to league_ERA by construction, but neither is the right
+  primary metric for an O27 run environment.
+  League ERA / WHIP / FIP:
+  <b>{{ '%.2f'|format(views.league_totals.era) }} / {{ '%.2f'|format(views.league_totals.whip) }} / {{ '%.2f'|format(views.league_totals.fip) }}</b>.
   WS% = workhorse start rate (≥18 outs + ≤6 ER on a start).
 </p>
 {% endblock %}

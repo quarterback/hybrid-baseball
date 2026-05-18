@@ -1161,7 +1161,12 @@ def _qualifying_thresholds(games_played: int) -> tuple[int, int]:
     return min_pa, min_outs
 
 
-def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> None:
+def _aggregate_batter_rows(
+    rows: list[dict],
+    baselines: dict | None = None,
+    baselines_by_league: dict[str, dict] | None = None,
+    team_league_map: dict[int, str] | None = None,
+) -> None:
     """Mutates rows in place to add classical, advanced, and O27-native
     sabermetrics.
 
@@ -1169,12 +1174,35 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
     Adds (advanced):   iso, babip, k_pct, bb_pct, hr_pct, bb_k, sb_pct
     Adds (O27-native): woba, stay_pct, stay_rbi_per_stay, fo_pct, mhab_pct
     Adds (relative):   ops_plus, woba_plus    [if baselines provided]
+    Stamps:            ops_plus_scope, woba_plus_scope ("global"/tier name)
 
-    Pass `baselines=_league_baselines()` to enable OPS+ / wOBA+. Without
-    baselines the row keys are still set (to 100.0) for templating sanity.
+    Pass `baselines=_league_baselines()` to enable OPS+ / wOBA+ against a
+    single league-wide baseline.
+
+    For cross-tier / cross-config comparability of the "+" stats — i.e.
+    so OPS+ = 120 means "20% above the offense this player actually
+    played in" regardless of whether they're in an 8-team 35-R/G config
+    or a 56-team 22-R/G tiered config — also pass `baselines_by_league`
+    (from `_league_baselines_by_league()`) and `team_league_map` (from
+    `_team_league_map()`). Each row's "+" stats then look up the
+    player's `team_id` → tier → tier-scoped baseline. Falls back to
+    the global `baselines` arg for any row whose tier lookup misses.
     """
     if baselines is None:
-        baselines = {"obp": 0.0, "slg": 0.0, "ops": 0.0, "woba": 0.0}
+        baselines = {"obp": 0.0, "slg": 0.0, "ops": 0.0, "woba": 0.0, "league": ""}
+    # Auto-build the per-tier dispatch if not provided. Costs one extra
+    # DB roundtrip per league when needed; skipped entirely if rows don't
+    # carry team_id or if the caller already provided the maps. The
+    # `_TIER_DISPATCH_AVAILABLE` guard avoids re-fetching when the maps
+    # exist but a single-league config makes per-tier identical to global.
+    if (baselines_by_league is None and team_league_map is None
+            and rows and rows[0].get("team_id") is not None):
+        try:
+            team_league_map = _team_league_map()
+            baselines_by_league = _league_baselines_by_league()
+        except Exception:
+            team_league_map = None
+            baselines_by_league = None
     # O27 stat semantics:
     #   AVG, SLG, ISO are PA-denominated (NOT AB-denominated). Stays inside
     #   an AB make AB-denominated rates produce strange numbers (you can put
@@ -1291,11 +1319,32 @@ def _aggregate_batter_rows(rows: list[dict], baselines: dict | None = None) -> N
         mhab = b.get("mhab") or 0
         b["mhab_pct"] = (mhab / ab) if ab else 0.0
 
-        # OPS+ / wOBA+ — relativized to live league baselines.
-        league_ops  = baselines.get("ops")  or 0
-        league_woba = baselines.get("woba") or 0
+        # OPS+ / wOBA+ — relativized to live league baselines. When a
+        # per-tier baseline map is provided AND the row carries team_id
+        # (so we can identify the player's tier), normalize against THAT
+        # tier's baseline so 120 means "20% above this player's actual
+        # competitive environment" — cross-config and cross-tier
+        # comparable. Falls back to the global `baselines` argument if
+        # the per-tier lookup misses.
+        scoped = baselines
+        if baselines_by_league and team_league_map:
+            tid = b.get("team_id")
+            if tid is not None:
+                lg_name = team_league_map.get(int(tid), "")
+                tier_baselines = baselines_by_league.get(lg_name)
+                if tier_baselines and (tier_baselines.get("ops") or 0):
+                    scoped = tier_baselines
+        league_ops  = scoped.get("ops")  or 0
+        league_woba = scoped.get("woba") or 0
         b["ops_plus"]  = (b["ops"]  / league_ops  * 100.0) if league_ops  else 100.0
         b["woba_plus"] = (b["woba"] / league_woba * 100.0) if league_woba else 100.0
+        # Provenance — surface which baseline the "+" stats are scoped to.
+        # Empty string = global (single-league config); otherwise the
+        # tier/league name (e.g. "Galactic", "Association"). Templates
+        # render this near the stat so readers know the comparison group.
+        scope = scoped.get("league", "")
+        b["ops_plus_scope"]  = scope
+        b["woba_plus_scope"] = scope
 
         # bVORP — value over replacement, in runs.
         # (wOBA - replacement_wOBA) × PA / wOBA_scale ≈ runs above replacement.
@@ -1502,12 +1551,18 @@ def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
     return c_w, xra_norm, league_outs_per_g, share_1b, share_2b, share_3b
 
 
-def _league_baselines() -> dict[str, float]:
+def _league_baselines(league: str | None = None) -> dict[str, float]:
     """Compute league baselines for OPS+/ERA+/wOBA+/WAR/VORP relativization.
 
     Refit every render cycle so the baselines track wherever the live league
     has actually settled — same pattern as the FIP constant. Falls back to
     sensible defaults if no games have been played yet.
+
+    `league` (optional): when provided, restrict baselines to teams whose
+    `teams.league` column matches. Used by `_league_baselines_by_league`
+    below to compute per-tier baselines so OPS+/wOBA+ are normalized within
+    the offensive context a player ACTUALLY played in (cross-tier and
+    cross-config comparability). Pass None to get the all-teams baseline.
 
     Returns:
       obp, slg, ops, woba         — league-average rate stats
@@ -1516,18 +1571,33 @@ def _league_baselines() -> dict[str, float]:
       replacement_era             — ~120% of league ERA (replacement pitcher)
       runs_per_win                — Pythagorean-derived; ~18 for O27 vs ~10 MLB
       total_pa, total_outs        — for sample-size sanity in callers
+      league                      — the league/tier name this baseline scopes
+                                    ("" for the global all-teams baseline)
     """
+    # Optional tier filter — joins through the teams table on team_id.
+    if league is None:
+        bat_where  = ""
+        pit_where  = ""
+        bat_params = ()
+        pit_params = ()
+    else:
+        bat_where  = " WHERE team_id IN (SELECT id FROM teams WHERE league = ?)"
+        pit_where  = " WHERE ps.team_id IN (SELECT id FROM teams WHERE league = ?)"
+        bat_params = (league,)
+        pit_params = (league,)
+
     bat = db.fetchone(
-        """SELECT COALESCE(SUM(pa),0)  AS pa,
-                  COALESCE(SUM(ab),0)  AS ab,
-                  COALESCE(SUM(hits),0) AS h,
-                  COALESCE(SUM(doubles),0) AS d2,
-                  COALESCE(SUM(triples),0) AS d3,
-                  COALESCE(SUM(hr),0)   AS hr,
-                  COALESCE(SUM(bb),0)   AS bb,
-                  COALESCE(SUM(hbp),0)  AS hbp,
-                  COALESCE(SUM(runs),0) AS r
-             FROM game_batter_stats"""
+        f"""SELECT COALESCE(SUM(pa),0)  AS pa,
+                   COALESCE(SUM(ab),0)  AS ab,
+                   COALESCE(SUM(hits),0) AS h,
+                   COALESCE(SUM(doubles),0) AS d2,
+                   COALESCE(SUM(triples),0) AS d3,
+                   COALESCE(SUM(hr),0)   AS hr,
+                   COALESCE(SUM(bb),0)   AS bb,
+                   COALESCE(SUM(hbp),0)  AS hbp,
+                   COALESCE(SUM(runs),0) AS r
+             FROM game_batter_stats{bat_where}""",
+        bat_params,
     ) or {}
     pit = db.fetchone(
         f"""SELECT COALESCE(SUM(er),0)            AS er,
@@ -1550,7 +1620,8 @@ def _league_baselines() -> dict[str, float]:
                    COALESCE(SUM(bf_arc1),0)       AS bfa1,
                    COALESCE(SUM(bf_arc3),0)       AS bfa3,
                    COUNT(*)                       AS g
-              FROM {_PSTATS_DEDUP_SQL} ps"""
+              FROM {_PSTATS_DEDUP_SQL} ps{pit_where}""",
+        pit_params,
     ) or {}
 
     out: dict[str, float] = {
@@ -1560,6 +1631,11 @@ def _league_baselines() -> dict[str, float]:
         "total_pa": 0.0, "total_outs": 0.0,
         # New league-level baselines for the wERA / xRA / GSc+ stack.
         "league_werra": 5.00, "league_xra": 5.00, "gsc_avg": 50.0,
+        # Provenance — which tier this baseline reflects. "" means global
+        # (all-teams) baseline; otherwise the tier/league name. Templates
+        # surface this so wOBA+ / OPS+ readers know what they're normalized
+        # against.
+        "league": (league or ""),
     }
 
     pa = bat.get("pa", 0) or 0
@@ -1656,11 +1732,47 @@ def _league_baselines() -> dict[str, float]:
     return out
 
 
+def _league_baselines_by_league() -> dict[str, dict[str, float]]:
+    """Return per-league baselines so OPS+ / wOBA+ are normalized within
+    the offensive context each player actually played in.
+
+    Multi-tier configs assign each team to a tier via `teams.league`.
+    In an 8-team config the column is the single league name, so the
+    output dict carries one entry. In a tiered config (e.g. Galactic +
+    Association) there's one entry per tier — and OPS+ = 120 means
+    "20% above this tier's offense" for both tiers, regardless of how
+    much the two tiers' raw scoring environments differ.
+
+    Result keys are league/tier names; values are baseline dicts. The
+    special key "" holds the all-teams global baseline as a fallback
+    for players whose `teams.league` lookup fails.
+    """
+    leagues = [
+        (r["league"] or "")
+        for r in db.fetchall("SELECT DISTINCT league FROM teams")
+        if r["league"]
+    ]
+    out: dict[str, dict[str, float]] = {"": _league_baselines(league=None)}
+    for lg in leagues:
+        out[lg] = _league_baselines(league=lg)
+    return out
+
+
+def _team_league_map() -> dict[int, str]:
+    """Map team_id → league name (the tier-scoped key for baselines)."""
+    return {
+        int(r["id"]): (r["league"] or "")
+        for r in db.fetchall("SELECT id, league FROM teams")
+    }
+
+
 def _aggregate_pitcher_rows(
     rows: list[dict],
     wl: dict[int, dict[str, int]] | None = None,
     werra_consts: tuple[float, float, float] | None = None,
     baselines: dict | None = None,
+    baselines_by_league: dict[str, dict] | None = None,
+    team_league_map: dict[int, str] | None = None,
 ) -> None:
     """Compute the O27 pitcher-stat suite onto each row in place.
 
@@ -1691,7 +1803,16 @@ def _aggregate_pitcher_rows(
         _XRA_W_1B * share_1b + _XRA_W_2B * share_2b + _XRA_W_3B * share_3b
     )
     if baselines is None:
-        baselines = {"era": 0.0}
+        baselines = {"era": 0.0, "league": ""}
+    # Auto-build per-tier dispatch (same pattern as _aggregate_batter_rows).
+    if (baselines_by_league is None and team_league_map is None
+            and rows and rows[0].get("team_id") is not None):
+        try:
+            team_league_map = _team_league_map()
+            baselines_by_league = _league_baselines_by_league()
+        except Exception:
+            team_league_map = None
+            baselines_by_league = None
     for p in rows:
         outs = p.get("outs") or 0
         h = p.get("h") or 0
@@ -1841,11 +1962,23 @@ def _aggregate_pitcher_rows(
         p["fo_pct_pit"] = (fo / bf) if bf else 0.0
 
         # --- GSc+ (league-relative; replaces ERA+ as headline index) ---
-        league_gsc = baselines.get("gsc_avg") or 0.0
+        # Tier-scope the baseline if a per-league map was passed, so a
+        # GSc+ of 120 means "20% above this player's competitive
+        # context" rather than against a cross-tier aggregate.
+        scoped_p = baselines
+        if baselines_by_league and team_league_map:
+            tid_p = p.get("team_id")
+            if tid_p is not None:
+                lg_name_p = team_league_map.get(int(tid_p), "")
+                tier_baselines_p = baselines_by_league.get(lg_name_p)
+                if tier_baselines_p and (tier_baselines_p.get("gsc_avg") or 0):
+                    scoped_p = tier_baselines_p
+        league_gsc = scoped_p.get("gsc_avg") or 0.0
         if league_gsc > 0 and p["gsc_avg"] > 0:
             p["gsc_plus"] = (p["gsc_avg"] / league_gsc) * 100.0
         else:
             p["gsc_plus"] = 100.0
+        p["gsc_plus_scope"] = scoped_p.get("league", "")
 
         # --- VORP / WAR rebased to wERA ---
         # Replacement wERA = league_werra × 1.2 (carries the existing
@@ -4297,6 +4430,90 @@ def _team_batting_rows(baselines: dict) -> list[dict]:
     return rows
 
 
+def _staff_wera_dispersion(baselines: dict) -> dict[int, dict]:
+    """Per-team staff wERA mean + variance, weighted by outs recorded.
+
+    Captures cascade fragility — two teams with identical mean staff wERA
+    but different variance have very different floors. In O27's 27-out
+    arc, a high-variance staff produces those 21-18 blowouts where a
+    single pitcher melts down catastrophically; a low-variance staff
+    might allow more average-level damage but doesn't cascade.
+
+    Returns {team_id: {staff_wera_mean, staff_wera_std, staff_wera_cv,
+                       staff_wera_min, staff_wera_max, n_pitchers}}.
+
+    Outs-weighted mean and stdev: a starter who pitched 200 outs counts
+    more than a mop-up reliever with 6 outs.
+    """
+    # Per (team, pitcher) wERA — aggregate one row per pitcher per team.
+    rows = db.fetchall(
+        f"""SELECT ps.team_id AS team_id,
+                   ps.player_id AS player_id,
+                   COUNT(DISTINCT ps.game_id) AS g,
+                   SUM(ps.batters_faced) AS bf,
+                   SUM(ps.outs_recorded) AS outs,
+                   SUM(ps.hits_allowed) AS h,
+                   SUM(ps.runs_allowed) AS r,
+                   SUM(ps.er) AS er,
+                   SUM(ps.bb) AS bb, SUM(ps.k) AS k,
+                   COALESCE(SUM(ps.hr_allowed),0)    AS hr_allowed,
+                   COALESCE(SUM(ps.hbp_allowed),0)   AS hbp_allowed,
+                   COALESCE(SUM(ps.unearned_runs),0) AS unearned_runs,
+                   COALESCE(SUM(ps.sb_allowed),0)    AS sb_allowed,
+                   COALESCE(SUM(ps.cs_caught),0)     AS cs_caught,
+                   COALESCE(SUM(ps.fo_induced),0)    AS fo_induced,
+                   COALESCE(SUM(ps.pitches),0)       AS pitches,
+                   COALESCE(SUM(ps.er_arc1),0) AS er_arc1,
+                   COALESCE(SUM(ps.er_arc2),0) AS er_arc2,
+                   COALESCE(SUM(ps.er_arc3),0) AS er_arc3,
+                   COALESCE(SUM(ps.k_arc1),0)  AS k_arc1,
+                   COALESCE(SUM(ps.k_arc2),0)  AS k_arc2,
+                   COALESCE(SUM(ps.k_arc3),0)  AS k_arc3,
+                   COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1,
+                   COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2,
+                   COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
+                   COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1,
+                   COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2,
+                   COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
+                   COALESCE(SUM(ps.is_starter),0) AS gs
+             FROM {_PSTATS_DEDUP_SQL} ps
+             GROUP BY ps.team_id, ps.player_id
+             HAVING outs > 0"""
+    )
+    rows = [dict(r) for r in rows]
+    _aggregate_pitcher_rows(rows, wl=None, baselines=baselines)
+
+    # Bucket pitchers per team, then compute outs-weighted mean / stdev.
+    from collections import defaultdict
+    import math
+    per_team: dict[int, list[tuple[float, int]]] = defaultdict(list)
+    for r in rows:
+        wera = r.get("werra")
+        outs = r.get("outs") or 0
+        if wera is None or outs <= 0:
+            continue
+        per_team[int(r["team_id"])].append((float(wera), int(outs)))
+
+    out: dict[int, dict] = {}
+    for tid, vals in per_team.items():
+        total_outs = sum(o for _, o in vals)
+        if total_outs <= 0:
+            continue
+        mean = sum(w * o for w, o in vals) / total_outs
+        var  = sum(o * (w - mean) ** 2 for w, o in vals) / total_outs
+        std  = math.sqrt(var)
+        cv   = (std / mean) if mean > 0 else 0.0
+        out[tid] = {
+            "staff_wera_mean":  mean,
+            "staff_wera_std":   std,
+            "staff_wera_cv":    cv,
+            "staff_wera_min":   min(w for w, _ in vals),
+            "staff_wera_max":   max(w for w, _ in vals),
+            "n_pitchers":       len(vals),
+        }
+    return out
+
+
 def _team_pitching_rows(baselines: dict) -> list[dict]:
     """Per-team pitching aggregate, decorated with the wERA / xFIP / Decay
     suite."""
@@ -4335,6 +4552,20 @@ def _team_pitching_rows(baselines: dict) -> list[dict]:
     )
     rows = [dict(r) for r in rows]
     _aggregate_pitcher_rows(rows, wl=None, baselines=baselines)
+    # Stamp staff wERA dispersion (mean / stdev / coefficient of variation
+    # of per-pitcher wERA within the team, outs-weighted). Surfaces
+    # cascade fragility — high-variance staffs produce the 21-18
+    # blowouts that mean alone can't predict.
+    dispersion = _staff_wera_dispersion(baselines)
+    for r in rows:
+        tid = int(r.get("team_id") or 0)
+        d = dispersion.get(tid, {})
+        r["staff_wera_mean"] = d.get("staff_wera_mean")
+        r["staff_wera_std"]  = d.get("staff_wera_std")
+        r["staff_wera_cv"]   = d.get("staff_wera_cv")
+        r["staff_wera_min"]  = d.get("staff_wera_min")
+        r["staff_wera_max"]  = d.get("staff_wera_max")
+        r["staff_n_pitchers"] = d.get("n_pitchers")
     return rows
 
 
@@ -4475,12 +4706,23 @@ def _league_team_aggregate(baselines: dict) -> tuple[list[dict], list[dict], lis
             "bb_pct_pit":  pit.get("bb_pct") or 0,
             "k_minus_bb_pct": pit.get("k_minus_bb_pct") or 0,
             "war_pit":     pit.get("war") or 0,
+            # Cascade-fragility — outs-weighted dispersion of staff wERA.
+            # Two teams with the same mean wERA can be very different
+            # win-floor stories if their variance differs. See
+            # _staff_wera_dispersion().
+            "staff_wera_std":   pit.get("staff_wera_std"),
+            "staff_wera_cv":    pit.get("staff_wera_cv"),
+            "staff_wera_min":   pit.get("staff_wera_min"),
+            "staff_wera_max":   pit.get("staff_wera_max"),
+            "staff_n_pitchers": pit.get("staff_n_pitchers"),
         })
     for k, lower_better in [
         ("ops", False), ("ops_plus", False), ("pavg", False),
         ("woba", False), ("iso", False), ("war_bat", False),
         ("werra", True), ("xra", True), ("gsc_avg", False), ("gsc_plus", False),
         ("war_pit", False), ("rdiff", False), ("pythag_pct", False),
+        # Lower staff wERA σ = more stable; rank low-is-better.
+        ("staff_wera_std", True),
     ]:
         _percentile_ranks(teams_combined, k, reverse=lower_better)
     return records, batting, pitching, teams_combined
@@ -5037,13 +5279,17 @@ def team_detail(team_id: int):
         (team_id, team_id),
     )
     team_payroll = valuation.estimate_team_payroll(team_id)
+    # Staff wERA mean + variance — cascade-fragility read. Computed once
+    # league-wide; we pull this team's row out for display.
+    staff_disp = _staff_wera_dispersion(_league_baselines()).get(int(team_id), {})
     return _serve("team.html",
                            team=team,
                            batters=batters,
                            pitchers=pitchers,
                            recent=recent,
                            win_pct=_win_pct,
-                           team_payroll=team_payroll)
+                           team_payroll=team_payroll,
+                           staff_wera=staff_disp)
 
 
 @app.route("/team/<int:team_id>/edit", methods=["GET"])

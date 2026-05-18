@@ -19,8 +19,33 @@
 
 <div class="grid-2">
 
+{# === Headline batting board: wOBA — O27 linear weights, PA-denominated.
+     The right offensive-value summary for this run environment. AVG board
+     still rendered below as a comparison rate. === #}
+<div>
+  <h2>Batting — wOBA</h2>
+  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">O27-tuned linear weights, PA-denominated. Min. 10 PA to qualify.</p>
+  {% if by_woba %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">wOBA</th><th class="num">PA</th></tr></thead>
+    <tbody>
+    {% for r in by_woba %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ "%.3f"|format(r.woba) }}</td>
+      <td class="num" style="color:var(--fg-dim)">{{ r.pa }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
 <div>
   <h2>Batting — AVG</h2>
+  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">Traditional batting average (H / AB). Listed here for comparison; wOBA above is the recommended summary stat for O27.</p>
   {% if by_avg %}
   <table>
     <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">AVG</th><th class="num">H</th><th class="num">AB</th></tr></thead>
@@ -118,9 +143,33 @@
   {% else %}<div class="empty">No data yet.</div>{% endif %}
 </div>
 
+{# === Headline pitching board: wERA — arc-weighted ER per 27 outs.
+     The O27 run-prevention summary; ERA board still rendered below as
+     the familiar comparison rate. === #}
+<div>
+  <h2>Pitching — wERA</h2>
+  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">Arc-weighted ER × 27 / outs (arc1 ×0.85, arc2 ×1.00, arc3 ×1.20). Recommended over ERA for O27. Min. 9 outs recorded.</p>
+  {% if by_pit_wera %}
+  <table>
+    <thead><tr><th class="num">#</th><th>Pitcher</th><th>Team</th><th class="num">wERA</th><th class="num">IP</th></tr></thead>
+    <tbody>
+    {% for r in by_pit_wera %}
+    <tr>
+      <td class="num rank">{{ loop.index }}</td>
+      <td><a href="/stats/player/{{ r.team }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a></td>
+      <td><a href="/stats/team/{{ r.team }}">{{ r.team }}</a></td>
+      <td class="num {% if loop.index == 1 %}stat-elite{% elif loop.index <= 3 %}stat-good{% endif %}">{{ "%.2f"|format(r.wera) }}</td>
+      <td class="num" style="color:var(--fg-dim)">{{ (r.outs // 3)|string + '.' + (r.outs % 3)|string }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="empty">No data yet.</div>{% endif %}
+</div>
+
 <div>
   <h2>Pitching — ERA</h2>
-  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">Min. 9 outs recorded.</p>
+  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">Min. 9 outs recorded. wERA above is the recommended summary for O27.</p>
   {% if by_pit_era %}
   <table>
     <thead><tr><th class="num">#</th><th>Pitcher</th><th>Team</th><th class="num">ERA</th><th class="num">IP</th></tr></thead>
