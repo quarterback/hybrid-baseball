@@ -724,10 +724,15 @@ DECLARE_BASE:          float = 0.04
 DECLARE_LEAD_SCALE:    float = 0.18
 DECLARE_PERSONA_SCALE: float = 0.25
 
-# Pre-game bat-order choice — home manager. BAT_FIRST_BASE intentionally
-# biased above 0.5 so home defaults to batting first more often than not;
-# this is the retcon for the league's existing home-scores-more asymmetry.
-BAT_FIRST_BASE:          float = 0.65
+# Pre-game bat-order choice — home manager. Held at 0.50 so the bat-first
+# decision is genuinely close-to-even at neutral inputs; the park / starter
+# / persona scalars below still let strong situational signals push it
+# one way or the other. The earlier 0.65 baseline was a "retcon" for the
+# pre-Declared-Seconds home-scores-more asymmetry, but with the new
+# baserunning friction in place that retcon now bakes in a 71% home
+# bat-first rate, which translates into a ~4 R/g home advantage in
+# practice. 0.50 lets bat-first be a genuine choice driven by context.
+BAT_FIRST_BASE:          float = 0.50
 BAT_FIRST_PARK_SCALE:    float = 0.15
 BAT_FIRST_STARTER_SCALE: float = 0.20
 BAT_FIRST_PERSONA_SCALE: float = 0.30
