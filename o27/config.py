@@ -483,7 +483,12 @@ SB_SUCCESS_MAX: float             = 0.86   # ceiling on steal success
 # advanced runners unopposed; now the defense gets a real shot at the
 # baserunner. Scales with team defense and catcher arm so elite defenses
 # meaningfully suppress the 2C running game.
-STAY_DEFENSE_READ_BASE: float          = 0.10   # baseline lead-runner-out rate
+STAY_DEFENSE_READ_BASE: float          = 0.07   # baseline lead-runner-out rate
+                                                # (was 0.10 — trimmed so the
+                                                # 2C average RV moves closer
+                                                # to neutral; mechanic stays
+                                                # high-variance but no longer
+                                                # ~as bad as taking an out)
 STAY_DEFENSE_READ_TEAM_SCALE: float    = 0.20   # (team_def - 0.5) * this
 STAY_DEFENSE_READ_CATCHER_SCALE: float = 0.20   # (catcher_arm - 0.5) * this
 STAY_DEFENSE_READ_MIN: float           = 0.03

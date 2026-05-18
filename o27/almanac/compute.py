@@ -591,10 +591,14 @@ def _augment_pitchers(rows: list[dict], league: dict[str, float],
         r["k9"]   = (k  * 9.0  / ip)   if ip   else 0.0
         r["bb9"]  = (bb * 9.0  / ip)   if ip   else 0.0
         r["hr9"]  = (hr * 9.0  / ip)   if ip   else 0.0
-        r["fip"]  = ((13 * hr + 3 * (bb + hbp) - 2 * k) / ip + 3.10) if ip else 0.0
+        # FIP constant calibrated per-league so league_FIP == league_ERA.
+        # See _league_totals — fip_const stuffed there. Falls back to 3.10
+        # (MLB default) if the league dict didn't carry one through.
+        fip_const = league.get("fip_const", 3.10) or 3.10
+        r["fip"]  = ((13 * hr + 3 * (bb + hbp) - 2 * k) / ip + fip_const) if ip else 0.0
         # xFIP — K% includes foul-outs as documented (uses K+FO as "K-equivalent")
         r["xfip"] = (
-            (13 * hr + 3 * (bb + hbp) - 2 * (k + fo_ind)) * 27.0 / outs + 3.10
+            (13 * hr + 3 * (bb + hbp) - 2 * (k + fo_ind)) * 27.0 / outs + fip_const
         ) if outs else 0.0
 
         # Rate stats (BF-denominated, per spec).
@@ -739,7 +743,20 @@ def _league_totals(bat: list[dict], pit: list[dict]) -> dict[str, float]:
 
     out["era"]  = (p_er * 27.0 / p_outs) if p_outs else 0.0
     out["whip"] = ((p_bb + p_h) / p_ip)  if p_ip   else 0.0
-    out["fip"]  = ((13 * p_hr + 3 * (p_bb + p_hbp) - 2 * p_k) / p_ip + 3.10) if p_ip else 0.0
+    # FIP constant is *defined* such that league_FIP == league_ERA. The
+    # MLB-default 3.10 is wrong for O27's high-RPG environment (league
+    # FIP would land ~8 runs below league ERA, making cross-pitcher FIP
+    # comparisons against ERA nonsensical). Compute it dynamically from
+    # this season's actual league totals — then league FIP collapses to
+    # league ERA by construction and individual pitcher FIPs are
+    # calibrated against the live environment.
+    if p_ip:
+        fip_kernel_league = (13 * p_hr + 3 * (p_bb + p_hbp) - 2 * p_k) / p_ip
+        out["fip_const"]  = out["era"] - fip_kernel_league
+        out["fip"]        = out["era"]    # by construction
+    else:
+        out["fip_const"] = 0.0
+        out["fip"]       = 0.0
     out["p_k_pct"]  = (p_k  / p_bf) if p_bf else 0.0
     out["p_bb_pct"] = (p_bb / p_bf) if p_bf else 0.0
 

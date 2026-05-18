@@ -568,7 +568,14 @@ def get_pitching_leaders(stat: str = "k", limit: int = 10) -> list[dict]:
         r["k9"]     = round(k  / outs * 27, 2) if outs > 0 else 0.0
         r["bb9"]    = round(bb / outs * 27, 2) if outs > 0 else 0.0
         ip = outs / 3.0
-        r["fip"] = round((3 * bb - 2 * k) / ip + 11.50, 2) if ip > 0 else 0.0
+        # FIP — the HR term was previously missing here, which silently broke
+        # FIP values for every pitcher path that went through v2_bridge.
+        # Constant calibrated to the O27 ~11.50 league-ERA environment;
+        # the almanac uses a dynamically computed constant for tighter
+        # per-season accuracy (see o27/almanac/compute.py).
+        hr_allowed = r.get("hr_allowed") or 0
+        hbp = r.get("hbp_allowed") or 0
+        r["fip"] = round((13 * hr_allowed + 3 * (bb + hbp) - 2 * k) / ip + 11.50, 2) if ip > 0 else 0.0
 
     if stat == "era":
         rows = [r for r in rows if r["outs"] >= 9]
@@ -699,7 +706,9 @@ def get_team_pitching(abbrev: str) -> list[dict]:
                   SUM(ps.outs_recorded) AS outs,
                   SUM(ps.hits_allowed)  AS h,
                   SUM(ps.runs_allowed)  AS r,
-                  SUM(ps.bb) AS bb, SUM(ps.k) AS k
+                  SUM(ps.bb) AS bb, SUM(ps.k) AS k,
+                  SUM(ps.hr_allowed) AS hr_allowed,
+                  SUM(ps.hbp_allowed) AS hbp_allowed
            FROM game_pitcher_stats ps
            JOIN players p ON ps.player_id = p.id
            WHERE ps.team_id = ?
@@ -731,7 +740,7 @@ def get_team_pitching(abbrev: str) -> list[dict]:
             "aor":  "—",
             "k9":   f"{k  / outs * 27:.2f}" if outs > 0 else "—",
             "bb9":  f"{bb / outs * 27:.2f}" if outs > 0 else "—",
-            "fip":  f"{(3 * bb - 2 * k) / ip + 11.50:.2f}" if ip > 0 else "—",
+            "fip":  f"{(13 * (r['hr_allowed'] or 0) + 3 * (bb + (r['hbp_allowed'] or 0)) - 2 * k) / ip + 11.50:.2f}" if ip > 0 else "—",
         })
     return out
 

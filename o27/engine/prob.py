@@ -2342,9 +2342,16 @@ class ProbabilisticProvider:
             # move runners, so chained hits produce runs instead of just
             # credit-only "free" hits. Pitchers pay via pitch count.
             if quality == "weak":
-                expected = 0.55 + 0.5 * talent_factor
+                # Floor lifted from 0.55 → 0.70: successful weak stays now
+                # average ~0.7 bases of advancement (vs ~0.55), bringing the
+                # mechanic's mean RV closer to neutral. Successful 2Cs are
+                # supposed to move runners; the previous floor underdelivered.
+                expected = 0.70 + 0.5 * talent_factor
             else:  # medium
-                expected = 1.05 + 0.75 * talent_factor
+                # Floor lifted from 1.05 → 1.20 for the same reason — a medium-
+                # contact 2C should reliably move runners more than one base
+                # when it succeeds.
+                expected = 1.20 + 0.75 * talent_factor
             expected = max(0.0, min(3.0, expected))
             floor_v = int(expected)
             frac = expected - floor_v
