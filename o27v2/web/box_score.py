@@ -178,12 +178,8 @@ def render_line_score(
                        + "".join(f"{c:>{final_w}}" for c in ("R", "H", "E"))
 
     def _cell(line: dict, bucket: str) -> str:
-        runs, outs, played = _collapse(line, bucket)
-        if not played:
-            return "-"
-        if bucket == "1":
-            return f"{runs}"
-        return f"{runs}({outs})"
+        runs, _outs, played = _collapse(line, bucket)
+        return "-" if not played else f"{runs}"
 
     def _row(team_name: str, line: dict) -> str:
         row = f"{team_name:<18}"

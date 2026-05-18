@@ -13,8 +13,7 @@
 {%- set _cell_w = 7 %}
 {%- macro _phase_cell(played, runs, outs, label) -%}
 {%- if not played -%}{{ "%*s" | format(_cell_w, "-") }}
-{%- elif label == "1" -%}{{ "%*d" | format(_cell_w, runs) }}
-{%- else -%}{{ "%*s" | format(_cell_w, runs|string ~ "(" ~ outs|string ~ ")") }}
+{%- else -%}{{ "%*d" | format(_cell_w, runs) }}
 {%- endif -%}
 {%- endmacro -%}
 ============================================================
