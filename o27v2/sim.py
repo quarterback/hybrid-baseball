@@ -1531,6 +1531,17 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
         v_declared_at = final_state.visitors.declared_at_out
         h_seconds_used = int(getattr(final_state.home,     "seconds_outs_used", 0) or 0)
         v_seconds_used = int(getattr(final_state.visitors, "seconds_outs_used", 0) or 0)
+        # Score at the moment of declaration — only meaningful when the team
+        # actually declared. NULL otherwise so the renderer can skip the
+        # parenthetical.
+        h_decl_for  = (int(final_state.home.declare_score_for)
+                       if h_declared_at is not None else None)
+        h_decl_agst = (int(final_state.home.declare_score_against)
+                       if h_declared_at is not None else None)
+        v_decl_for  = (int(final_state.visitors.declare_score_for)
+                       if v_declared_at is not None else None)
+        v_decl_agst = (int(final_state.visitors.declare_score_against)
+                       if v_declared_at is not None else None)
         # Compute the declare-context (leading/trailing/tied) snapshot from
         # the final scores. A more accurate snapshot would be at the moment
         # of declare, but the engine doesn't currently capture that — using
@@ -1564,6 +1575,8 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                away_declared_at=?, home_declared_at=?,
                away_seconds_used=?, home_seconds_used=?,
                away_declare_context=?, home_declare_context=?,
+               away_declare_score_for=?, away_declare_score_against=?,
+               home_declare_score_for=?, home_declare_score_against=?,
                seconds_outcome=?
                WHERE id=?""",
             (home_score, away_score, winner_team_id,
@@ -1576,6 +1589,8 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
              v_declared_at, h_declared_at,
              v_seconds_used, h_seconds_used,
              v_ctx, h_ctx,
+             v_decl_for, v_decl_agst,
+             h_decl_for, h_decl_agst,
              outcome,
              game_id),
         )

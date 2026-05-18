@@ -2471,9 +2471,12 @@ def game_detail(game_id: int):
     phases = sorted(all_phases)
     si_rounds = max(0, max(phases) if phases else 0)
 
-    # Line score: runs/hits per phase, plus team errors-committed.
+    # Line score: runs/hits/outs per phase, plus team errors-committed.
     # Errors are stored per-player in game_batter_stats.e (player as a
     # fielder), so the team's E = sum of `e` across that team's batter rows.
+    # Outs per phase show how many outs that team used in that round —
+    # implicit at 27 for regulation but meaningful for SD/SI rounds where
+    # the cap is the banked-outs count.
     def _line_score(b_by_phase: dict) -> dict:
         runs_per = {ph: sum(r["runs"] or 0 for r in rows)
                     for ph, rows in b_by_phase.items()}
@@ -2481,10 +2484,13 @@ def game_detail(game_id: int):
                     for ph, rows in b_by_phase.items()}
         errs_per = {ph: sum((r["e"] or 0) for r in rows)
                     for ph, rows in b_by_phase.items()}
+        outs_per = {ph: sum((r["outs_recorded"] or 0) for r in rows)
+                    for ph, rows in b_by_phase.items()}
         return {
             "runs":   runs_per,
             "hits":   hits_per,
             "errors": errs_per,
+            "outs":   outs_per,
             "total_r": sum(runs_per.values()),
             "total_h": sum(hits_per.values()),
             "total_e": sum(errs_per.values()),

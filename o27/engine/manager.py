@@ -1717,6 +1717,13 @@ def evaluate_declaration(state: GameState, rng=None) -> tuple[bool, int]:
         return False, 0
 
     team.declared_at_out = state.outs
+    # Stamp the score at the moment of declaration so the box score can
+    # render `TEAM declares Seconds at oN, (X-Y)` — derived later via the
+    # game writer rather than recomputed from the final score (which is
+    # an unreliable proxy once a seconds round has fired).
+    opp = _opp_team(state)
+    team.declare_score_for     = int(state.score.get(team.team_id, 0) or 0)
+    team.declare_score_against = int(state.score.get(opp.team_id, 0) or 0)
     # Actual banked = outs_left (capped by SECONDS_MAX_BANKED). This is the
     # number that gets recorded; target_int was the AI's preference.
     banked = min(outs_left, int(cfg.SECONDS_MAX_BANKED))

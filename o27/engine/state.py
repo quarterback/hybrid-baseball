@@ -352,6 +352,8 @@ class Team:
     # Declared Seconds — per-game state (reset between games via dataclass defaults)
     outs_banked:       int = 0       # 27 - declared_at_out if declared, else 0
     declared_at_out:   Optional[int] = None
+    declare_score_for:     int = 0   # team's own score at moment of declaration
+    declare_score_against: int = 0   # opp's score at moment of declaration
     seconds_used:      bool = False
     seconds_outs_used: int = 0
 

@@ -470,26 +470,33 @@ def _finalize_declaration(team: Team, state: GameState) -> None:
 def _run_seconds_rounds(state, event_provider, renderer) -> list[str]:
     """Drive the post-regulation declared-seconds loop.
 
-    The team that is currently trailing comes back for a "seconds" round
-    using their banked outs (if any) and if they haven't already used
-    their seconds. This can loop at most once per team (cap enforced by
-    seconds_used flag).
+    Rule: a team's banked outs are used only if the OTHER team has more
+    runs (i.e. this team is trailing). Tied or leading teams leave their
+    banked outs unused — the insurance simply wasn't needed. Each team
+    can come back at most once.
+
+    If the comeback flips the lead, the now-trailing team gets a turn
+    (subject to the same rule). If the score stays tied or stays decided
+    in the same direction, the loop exits and SI fires (for ties) or the
+    game ends (for a confirmed winner).
     """
     full_log: list[str] = []
     rounds_played = 0
-    # Bound: 2 teams × 1 seconds round each = 2 rounds max.
     while rounds_played < 2:
         winner = check_winner(state)
         if winner is None:
-            # Tie at this point would never trigger seconds (seconds requires
-            # a non-tie). Defensive fallback.
+            # Tied at this point — neither team is trailing, so neither
+            # uses banked outs. Loop exits and the engine falls through
+            # to SI if appropriate.
             break
-        # The team that should come back is the one NOT currently leading.
-        winner_team = state.first_batting_team if winner == state.first_batting_team.team_id else state.second_batting_team
-        trailer_team = state.second_batting_team if winner_team is state.first_batting_team else state.first_batting_team
-
+        winner_team = (state.first_batting_team
+                       if winner == state.first_batting_team.team_id
+                       else state.second_batting_team)
+        trailer_team = (state.second_batting_team
+                        if winner_team is state.first_batting_team
+                        else state.first_batting_team)
         if int(trailer_team.outs_banked or 0) <= 0 or trailer_team.seconds_used:
-            break  # no eligibility → done
+            break
 
         # Setup the seconds half.
         state.in_seconds_phase = True

@@ -203,6 +203,19 @@ def test_invariant_2_or_reconciliation(played_game_ids):
         "SELECT game_id, team_id, phase, unattributed_outs FROM team_phase_outs"
     )
 
+    # Declared Seconds: per-(game, team) declaration markers. A team that
+    # declared mid-half legitimately ends its regulation half short of 27
+    # outs (the declaration banked the rest for a seconds round).
+    declared_at: dict[tuple[int, int], int] = {}
+    for r in db.fetchall(
+        "SELECT id, home_team_id, away_team_id, "
+        "home_declared_at, away_declared_at FROM games WHERE played=1"
+    ):
+        if r.get("home_declared_at") is not None:
+            declared_at[(r["id"], r["home_team_id"])] = int(r["home_declared_at"])
+        if r.get("away_declared_at") is not None:
+            declared_at[(r["id"], r["away_team_id"])] = int(r["away_declared_at"])
+
     # Build helpers
     home_id: dict[int, int] = {}
     winner: dict[int, int | None] = {}
@@ -243,25 +256,33 @@ def test_invariant_2_or_reconciliation(played_game_ids):
             )
             continue
 
-        # (b) Cap reconciliation. A walk-off in the game's last phase is
-        #     the only legitimate undershoot. With Declared Seconds the
-        #     "winner takes the lead in the last phase" can be either team
-        #     (not always the home team), so we widen the condition: any
-        #     team that's the winner AND is batting in the game's last
-        #     phase is allowed to fall short of the cap.
+        # (b) Cap reconciliation. Two legitimate undershoots:
+        #     - Walk-off in the game's last phase (either team can be the
+        #       comeback winner under Declared Seconds, not just home).
+        #     - Phase 0 of a team that DECLARED — they banked outs and
+        #       ended their regulation half early on purpose.
         is_walkoff = (
             winner.get(gid) == tid
             and (ph or 0) == last_phase.get(gid, 0)
+        )
+        is_declared = (
+            (ph or 0) == 0
+            and (gid, tid) in declared_at
+            and total == declared_at[(gid, tid)]
         )
         if total > cap:
             bad.append(
                 f"game={gid} team={tid} phase={ph}: total_outs={total} "
                 f"exceeds cap={cap}"
             )
-        elif total < cap and not is_walkoff:
+        elif total < cap and (ph or 0) == 0 and not (is_walkoff or is_declared):
+            # Phase 0 undershoots need a reason (walk-off or declaration).
+            # Phase>0 rounds (seconds / SI) can legitimately end early via
+            # walk-off in the round itself, and we don't track those
+            # boundaries in the schema, so don't flag under-cap there.
             bad.append(
                 f"game={gid} team={tid} phase={ph}: total_outs={total} "
-                f"< cap={cap} and not a walk-off "
+                f"< cap={cap} and not a walk-off / declaration "
                 f"(winner={winner.get(gid)} home={home_id.get(gid)} "
                 f"last_phase={last_phase.get(gid, 0)})"
             )

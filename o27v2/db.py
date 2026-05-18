@@ -195,14 +195,18 @@ CREATE TABLE IF NOT EXISTS games (
     -- declared_at and seconds_used capture the in-game decisions. NULL declared_at
     -- = no declaration; seconds_used > 0 = the team came back for a seconds
     -- inning. declare_context records the score state when each declared.
-    home_bats_first       INTEGER DEFAULT NULL,
-    away_declared_at      INTEGER DEFAULT NULL,
-    home_declared_at      INTEGER DEFAULT NULL,
-    away_seconds_used     INTEGER DEFAULT 0,
-    home_seconds_used     INTEGER DEFAULT 0,
-    away_declare_context  TEXT    DEFAULT NULL,
-    home_declare_context  TEXT    DEFAULT NULL,
-    seconds_outcome       TEXT    DEFAULT NULL
+    home_bats_first              INTEGER DEFAULT NULL,
+    away_declared_at             INTEGER DEFAULT NULL,
+    home_declared_at             INTEGER DEFAULT NULL,
+    away_seconds_used            INTEGER DEFAULT 0,
+    home_seconds_used            INTEGER DEFAULT 0,
+    away_declare_context         TEXT    DEFAULT NULL,
+    home_declare_context         TEXT    DEFAULT NULL,
+    away_declare_score_for       INTEGER DEFAULT NULL,
+    away_declare_score_against   INTEGER DEFAULT NULL,
+    home_declare_score_for       INTEGER DEFAULT NULL,
+    home_declare_score_against   INTEGER DEFAULT NULL,
+    seconds_outcome              TEXT    DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS game_batter_stats (
@@ -649,14 +653,18 @@ def init_db() -> None:
         # Declared Seconds: per-game decision telemetry on `games`.
         # Idempotent — re-running init_db on a migrated DB is a no-op.
         for col, sql_type, defval in [
-            ("home_bats_first",       "INTEGER", "NULL"),
-            ("away_declared_at",      "INTEGER", "NULL"),
-            ("home_declared_at",      "INTEGER", "NULL"),
-            ("away_seconds_used",     "INTEGER", "0"),
-            ("home_seconds_used",     "INTEGER", "0"),
-            ("away_declare_context",  "TEXT",    "NULL"),
-            ("home_declare_context",  "TEXT",    "NULL"),
-            ("seconds_outcome",       "TEXT",    "NULL"),
+            ("home_bats_first",             "INTEGER", "NULL"),
+            ("away_declared_at",            "INTEGER", "NULL"),
+            ("home_declared_at",            "INTEGER", "NULL"),
+            ("away_seconds_used",           "INTEGER", "0"),
+            ("home_seconds_used",           "INTEGER", "0"),
+            ("away_declare_context",        "TEXT",    "NULL"),
+            ("home_declare_context",        "TEXT",    "NULL"),
+            ("away_declare_score_for",      "INTEGER", "NULL"),
+            ("away_declare_score_against",  "INTEGER", "NULL"),
+            ("home_declare_score_for",      "INTEGER", "NULL"),
+            ("home_declare_score_against",  "INTEGER", "NULL"),
+            ("seconds_outcome",             "TEXT",    "NULL"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE games ADD COLUMN {col} {sql_type} DEFAULT {defval}")

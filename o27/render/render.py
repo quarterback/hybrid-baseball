@@ -251,6 +251,80 @@ class Renderer:
             ),
         ]
 
+    def _line_score_phases(self, state) -> list[dict]:
+        """Collapsed per-team line-score columns: 1 (regulation), 2 (a
+        team's seconds round if any), S (a team's super-inning round if
+        any). Each team has at most one cell in 2 and at most one in S.
+
+        Returns a list of column rows in display order. Each row:
+          {label, visitors_runs, visitors_outs, visitors_played,
+                  home_runs, home_outs, home_played}
+        """
+        seconds_count = (1 if state.visitors.seconds_used else 0) \
+                      + (1 if state.home.seconds_used else 0)
+        v_ids = {p.player_id for p in state.visitors.roster}
+        h_ids = {p.player_id for p in state.home.roster}
+
+        def _per_phase_runs_outs(ph: int):
+            # batter_stats_for_phase returns the per-phase delta — for
+            # phase 0 that's the regulation totals (no prev snapshot),
+            # for phase>0 it's cumulative[phase] - cumulative[phase-1].
+            stats = self.batter_stats_for_phase(ph)
+            v_r = v_o = h_r = h_o = 0
+            for pid, s in stats.items():
+                if pid in v_ids:
+                    v_r += int(getattr(s, "runs", 0) or 0)
+                    v_o += int(getattr(s, "outs_recorded", 0) or 0)
+                elif pid in h_ids:
+                    h_r += int(getattr(s, "runs", 0) or 0)
+                    h_o += int(getattr(s, "outs_recorded", 0) or 0)
+            return v_r, v_o, h_r, h_o
+
+        all_phases = sorted(set(self.phases_seen()) | {0})
+
+        # Bucket phases: 0 = regulation, 1..seconds_count = seconds rounds,
+        # rest = SI rounds. Collapse each bucket into ONE column.
+        reg_v_r, reg_v_o, reg_h_r, reg_h_o = _per_phase_runs_outs(0)
+        rows: list[dict] = [{
+            "label": "1",
+            "visitors_runs": reg_v_r, "visitors_outs": reg_v_o,
+            "visitors_played": (reg_v_o > 0 or reg_v_r > 0),
+            "home_runs": reg_h_r, "home_outs": reg_h_o,
+            "home_played": (reg_h_o > 0 or reg_h_r > 0),
+        }]
+
+        # Seconds column: sum across the seconds-bucket phases. Each team
+        # batted in at most one seconds round, so summing is a safe collapse.
+        seconds_phases = [p for p in all_phases if 0 < p <= seconds_count]
+        if seconds_phases:
+            v_r = v_o = h_r = h_o = 0
+            for p in seconds_phases:
+                a, b, c, d = _per_phase_runs_outs(p)
+                v_r += a; v_o += b; h_r += c; h_o += d
+            rows.append({
+                "label": "2",
+                "visitors_runs": v_r, "visitors_outs": v_o,
+                "visitors_played": (v_o > 0 or v_r > 0),
+                "home_runs": h_r, "home_outs": h_o,
+                "home_played": (h_o > 0 or h_r > 0),
+            })
+
+        # SI column: sum across SI-bucket phases (rounds where BOTH teams bat).
+        si_phases = [p for p in all_phases if p > seconds_count]
+        if si_phases:
+            v_r = v_o = h_r = h_o = 0
+            for p in si_phases:
+                a, b, c, d = _per_phase_runs_outs(p)
+                v_r += a; v_o += b; h_r += c; h_o += d
+            rows.append({
+                "label": "S",
+                "visitors_runs": v_r, "visitors_outs": v_o,
+                "visitors_played": (v_o > 0 or v_r > 0),
+                "home_runs": h_r, "home_outs": h_o,
+                "home_played": (h_o > 0 or h_r > 0),
+            })
+        return rows
+
     def render_box_score(self, state) -> list[str]:
         """Render the full dual-team box score, including pitcher lines and required RR."""
         def _rows(team):
@@ -352,6 +426,20 @@ class Renderer:
             home_pitchers=h_pitchers,
             required_rr=required_rr,
             target_runs=target_runs,
+            # Declared Seconds — surface each team's declaration under the
+            # line score. Score values are the runs FOR/AGAINST that team at
+            # the moment of declaration, captured in evaluate_declaration.
+            visitors_declared_at=state.visitors.declared_at_out,
+            visitors_declare_score_for=int(state.visitors.declare_score_for or 0),
+            visitors_declare_score_against=int(state.visitors.declare_score_against or 0),
+            home_declared_at=state.home.declared_at_out,
+            home_declare_score_for=int(state.home.declare_score_for or 0),
+            home_declare_score_against=int(state.home.declare_score_against or 0),
+            home_bats_first=bool(getattr(state, "home_bats_first", False)),
+            # Per-phase runs/outs for the line score. Each phase>0 row is
+            # rendered as `runs(outs)` so the seconds / SI rounds carry their
+            # banked-outs context. Phase 0 always renders just runs.
+            line_phases=self._line_score_phases(state),
         ).rstrip("\n")
         return rendered.split("\n") if rendered else []
 
@@ -1346,35 +1434,72 @@ class Renderer:
 
     def _credit_runs(self, ctx: dict, state_after, runs_scored: int,
                      etype: str, disp: dict) -> None:
+        """Credit the 'R' stat to runners who scored.
+
+        Edge cases handled:
+          - Same player_id appears on multiple bases simultaneously
+            (engine bug where the batter-as-runner advances AND batter-as-batter
+            takes a base at the same time). The before/after multiset diff
+            counts those as scores.
+          - Lineup wrapped to a player who was still on base — they're both
+            the batter AND a runner. Their PA scores them as runner; the
+            batter-position is from their hit. Detected by same-count before
+            and after.
+          - HR batter scores even though never on base before.
+          - Unrecoverable case (runner's pid not in _batter_stats — e.g. a
+            sub path that didn't register stats): we fall back to crediting
+            the batter so Σ batter.runs == state.score and the box-score R
+            column stays consistent.
         """
-        Approximately credit the 'R' stat to runners who scored.
-        Identifies player_ids that were on base before the event and are no
-        longer on base after (they either scored or were put out).  We prefer
-        runners furthest along (3B → 2B → 1B) since they're most likely to
-        have scored rather than been retired.
-        """
+        from collections import Counter
+
         bases_before = ctx["bases_list"]
         bases_after = list(state_after.bases)
+        before_count = Counter(p for p in bases_before if p is not None)
+        after_count  = Counter(p for p in bases_after  if p is not None)
+        batter_pid   = ctx["batter"].player_id
 
-        # Collect player_ids that left the bases (3B → 2B → 1B order).
-        after_set = {pid for pid in bases_after if pid is not None}
+        # 3B → 2B → 1B order so the furthest-along runner is credited first.
+        # `seen` prevents double-counting when the same pid appears at multiple
+        # base indices (the count-diff already captures the multiplicity).
         left_ids: list[str] = []
+        seen: set[str] = set()
         for i in (2, 1, 0):
             pid = bases_before[i]
-            if pid is not None and pid not in after_set:
+            if pid is None or pid in seen:
+                continue
+            seen.add(pid)
+            scored = max(0, before_count[pid] - after_count.get(pid, 0))
+            for _ in range(scored):
                 left_ids.append(pid)
 
-        # If batter hit a HR, they score too.
+        # Lineup-wrap case: batter was on base before, still on base after
+        # with the same multiplicity → the runner-instance of them crossed
+        # home (then they re-occupied a base as the batter).
+        if (batter_pid in before_count
+                and before_count[batter_pid] == after_count.get(batter_pid, 0)):
+            left_ids.append(batter_pid)
+
+        # HR: batter scores too (only if not already accounted for above).
         hit_type = disp.get("hit_type", "")
         if etype == "ball_in_play" and hit_type in ("hr", "home_run"):
-            batter_pid = ctx["batter"].player_id
-            if batter_pid not in left_ids:
+            if left_ids.count(batter_pid) == 0:
                 left_ids.append(batter_pid)
 
-        # Credit the first `runs_scored` departing players with a run.
+        # Credit the first `runs_scored` from left_ids.
+        credited = 0
         for pid in left_ids[:runs_scored]:
             if pid in self._batter_stats:
                 self._batter_stats[pid].runs += 1
+                credited += 1
+
+        # Fallback: any uncredited runs go to the batter so the per-batter
+        # R column sums to state.score. This isn't always semantically
+        # right (a phantom runner might have actually scored), but
+        # mis-attribution is better than the totals drifting apart.
+        remaining = runs_scored - credited
+        if remaining > 0 and batter_pid in self._batter_stats:
+            self._batter_stats[batter_pid].runs += remaining
 
     # -----------------------------------------------------------------------
     # Public accessor — structured stats for web display
