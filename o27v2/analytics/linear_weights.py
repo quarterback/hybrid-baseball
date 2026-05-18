@@ -287,6 +287,42 @@ def derive_linear_weights() -> dict:
     rv_out = rv.get("out", 0.0)
     raw = {et: rv[et] - rv_out for et in ("BB", "HBP", "1B", "2B", "3B", "HR", "STAY")}
 
+    # Enforce baseball-intuitive ordering on the displayed wOBA weights:
+    #   BB ≤ HBP ≤ 1B ≤ 2B ≤ 3B ≤ HR.
+    # Empirically in this high-RPG league the marginal RVs frequently
+    # violate this:
+    #   - BB / HBP exceed 1B's marginal RV because the high-OBP state
+    #     distribution means a walk substantially raises RE without
+    #     clearing anyone.
+    #   - HR's `runs scored + ΔRE` cancels down (clearing bases drops
+    #     RE by ~1 per cleared runner) so its marginal RV lands near
+    #     1.0 even though raw runs scored ≈ 2.0.
+    #   - 3B is rare and noisy.
+    # The unconstrained values are mathematically marginal-RV correct
+    # but break the wOBA convention "more-advanced events worth more."
+    # Project onto monotonic ordering with an isotonic-style sweep:
+    #   - Walks cap DOWN to the floor of the hit values (so a walk is
+    #     never worth more than the cheapest hit).
+    #   - Each hit caps UP to at least the previous hit's value, then
+    #     HR caps UP to at least 3B (so HR is never less than any other
+    #     hit). This preserves empirical gaps where they don't violate
+    #     ordering.
+    # The Game Score coefficients below still use the unconstrained
+    # `rv` dict, so the GSc "BB" term retains the empirical marginal
+    # value.
+    _hits = ("1B", "2B", "3B", "HR")
+    _hit_floor = min((raw[et] for et in _hits if et in raw),
+                     default=raw.get("BB", 0.0))
+    if raw.get("BB", 0.0) > _hit_floor:
+        raw["BB"] = _hit_floor
+    if raw.get("HBP", 0.0) > _hit_floor:
+        raw["HBP"] = _hit_floor
+    # Hits walk upward (each ≥ the previous) so 1B ≤ 2B ≤ 3B ≤ HR.
+    for i in range(1, len(_hits)):
+        cur, prev = _hits[i], _hits[i - 1]
+        if cur in raw and prev in raw and raw[cur] < raw[prev]:
+            raw[cur] = raw[prev]
+
     # Compute league counts to derive the OBP-scale factor and to
     # validate league wOBA == league OBP. `stay_hits` is a subset of
     # `hits` (engine credits a stay-event 2C hit as a hit in
