@@ -222,10 +222,15 @@
           </tbody>
         </table>
         <div class="text-secondary small">
-          Walks gain ~31% vs MLB (high-RPG environment fills bases more
-          often). HR loses ~28% — singles + walks already clear the
-          bases, shrinking HR's marginal advantage. Drives every wOBA
-          / xwOBA value on /leaders and /analytics.
+          High-RPG environment: walks and singles gain ground over MLB
+          (bases are full more often, so each free baserunner is worth
+          more). HR's marginal value shrinks because singles + walks
+          already clear the bases. The empirical BB/HBP marginal RV
+          exceeds 1B's here (a HR clears bases and drops RE by ~1 per
+          baserunner, while a walk only adds RE without losing anyone);
+          we cap BB/HBP at the 1B weight so the displayed ordering
+          stays BB ≤ 1B ≤ 2B ≤ 3B ≤ HR. Drives every wOBA / xwOBA
+          value on /leaders and /analytics.
         </div>
       </div>
       <div class="col-md-4">
