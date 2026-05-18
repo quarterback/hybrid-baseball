@@ -375,6 +375,19 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         log += mgr.pitching_change(state, new_pitcher)
         return log
 
+    if etype == "declaration":
+        # Declared Seconds: the batting team's manager has chosen to bank
+        # the remaining outs for a rebuttal half. Setting state.outs = 27
+        # makes is_half_over True so run_half exits cleanly after this
+        # event is rendered. The actual team/score stamping is already
+        # done in manager.evaluate_declaration; this just terminates the
+        # half and emits a play-by-play line.
+        team_name = state.batting_team.name
+        at_out = int(event.get("at_out", state.outs))
+        log.append(f"  >> {team_name} DECLARES SECONDS at out {at_out}.")
+        state.outs = 27
+        return log
+
     if etype == "defensive_sub":
         out_p = event["player_out"]
         in_p  = event["player_in"]

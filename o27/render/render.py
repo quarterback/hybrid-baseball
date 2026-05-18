@@ -1099,10 +1099,15 @@ class Renderer:
                 self._batter_stats[in_id] = stats_obj
 
         elif etype == "declaration":
-            # Declared Seconds — manager banks remaining outs for a rebuttal
-            # half. Per-PA rendering is intentionally minimal; the box-score
-            # "Declared at out N — banked K outs" line carries the narrative.
-            pass
+            # Declared Seconds — surface a play-by-play line via the template.
+            # The team that just declared is the BATTING team at this point;
+            # the score values come from the team object (stamped in
+            # evaluate_declaration at the moment of declaration).
+            team_obj = state_after.batting_team
+            d["declaring_team_name"] = team_obj.name
+            d["declared_at"] = int(event.get("at_out", state_after.outs))
+            d["declare_score_for"] = int(getattr(team_obj, "declare_score_for", 0) or 0)
+            d["declare_score_against"] = int(getattr(team_obj, "declare_score_against", 0) or 0)
 
         elif etype == "joker_to_field":
             # Rare: a joker is moved from the bench (DH-pool) into a
