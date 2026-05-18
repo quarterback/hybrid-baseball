@@ -134,3 +134,55 @@ def test_static_asset_passthrough(client):
     resp = client.get("/almanac/static/almanac.css")
     assert resp.status_code == 200
     assert b"body" in resp.data or len(resp.data) > 0
+
+
+# ---------------------------------------------------------------------------
+# Empty-DB regression: when a fresh deploy seeds the league but no games
+# have been played yet, every page must still render (don't 500).
+# Caught one bug where pythag_summary's early-return path omitted
+# `improvement_pct` that standings.html.j2 references.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def empty_client():
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.config["ALMANAC_SOURCE"] = "fixture://empty"
+    empty_dataset = {
+        "teams": [], "players": [], "games": [],
+        "batting": [], "pitching": [], "fielding": [],
+        "scoring_events": [], "pa_log": [],
+        "parks": [], "awards": [], "playoff_series": [],
+        "seasons": [], "season": None,
+    }
+    original_load = loader.load
+    loader.load = lambda source: empty_dataset  # type: ignore[assignment]
+    bp_module.invalidate_cache()
+    app.register_blueprint(bp_module.almanac_bp)
+    try:
+        with app.test_client() as c:
+            yield c
+    finally:
+        loader.load = original_load
+        bp_module.invalidate_cache()
+
+
+def test_empty_db_renders_every_top_level_page(empty_client):
+    """Regression for the standings.html `improvement_pct` crash. Every
+    non-detail page must render against an empty dataset."""
+    for path in ("/almanac/",
+                 "/almanac/standings.html",
+                 "/almanac/schedule.html",
+                 "/almanac/awards.html",
+                 "/almanac/parks.html",
+                 "/almanac/leaders/batting.html",
+                 "/almanac/leaders/pitching.html",
+                 "/almanac/leaders/stays.html",
+                 "/almanac/leaders/fielding.html",
+                 "/almanac/leaders/value.html",
+                 "/almanac/leaders/situational.html",
+                 "/almanac/teams/index.html",
+                 "/almanac/players/index.html",
+                 "/almanac/exports/index.html"):
+        r = empty_client.get(path)
+        assert r.status_code == 200, f"{path} crashed on empty DB ({r.status_code})"
