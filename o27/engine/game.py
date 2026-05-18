@@ -472,40 +472,30 @@ def _finalize_declaration(team: Team, state: GameState) -> None:
 
 
 def _run_seconds_rounds(state, event_provider, renderer) -> list[str]:
-    """Drive the post-regulation declared-seconds loop.
+    """Drive the post-regulation declared-seconds phase.
 
-    Rule: a team's banked outs are used only if the OTHER team has more
-    runs (i.e. this team is trailing). Tied or leading teams leave their
-    banked outs unused — the insurance simply wasn't needed. Each team
-    can come back at most once.
-
-    If the comeback flips the lead, the now-trailing team gets a turn
-    (subject to the same rule). If the score stays tied or stays decided
-    in the same direction, the loop exits and SI fires (for ties) or the
-    game ends (for a confirmed winner).
+    Rule (symmetric to regulation top/bottom):
+      - The first-batting team always uses ALL their banked outs in their
+        seconds half if they have any, regardless of score — analogous to
+        the top of the 9th, where the visitors bat their full half even
+        when leading.
+      - The second-batting team then uses their banked outs UNLESS they
+        are already ahead at that point — analogous to the bottom of the
+        9th, where the home team skips its turn when already winning.
+        The seconds-second half also walks off the moment they retake the
+        lead, since the first-batting team has already exhausted theirs
+        and cannot rebut.
+      - A team with 0 banked outs simply has no seconds half. Each team
+        plays at most one seconds half per game.
     """
     full_log: list[str] = []
-    rounds_played = 0
-    while rounds_played < 2:
-        winner = check_winner(state)
-        if winner is None:
-            # Tied at this point — neither team is trailing, so neither
-            # uses banked outs. Loop exits and the engine falls through
-            # to SI if appropriate.
-            break
-        winner_team = (state.first_batting_team
-                       if winner == state.first_batting_team.team_id
-                       else state.second_batting_team)
-        trailer_team = (state.second_batting_team
-                        if winner_team is state.first_batting_team
-                        else state.first_batting_team)
-        if int(trailer_team.outs_banked or 0) <= 0 or trailer_team.seconds_used:
-            break
+    first = state.first_batting_team
+    second = state.second_batting_team
 
-        # Setup the seconds half.
+    def _play_seconds_half(team, half_label: str) -> None:
         state.in_seconds_phase = True
-        state.seconds_phase_number += 1   # 1 for first round, 2 if a second fires
-        state.half = "seconds_first" if trailer_team is state.first_batting_team else "seconds_second"
+        state.seconds_phase_number += 1
+        state.half = half_label
         state.outs = 0
         state.bases = [None, None, None]
         state.count.reset()
@@ -513,32 +503,37 @@ def _run_seconds_rounds(state, event_provider, renderer) -> list[str]:
         state.partnership_runs = 0
         state.partnership_first_batter_id = None
         # Lineup position is NOT reset — picks up where regulation left off.
-        # Pitcher stays on; fatigue intact. The fielding team's pitcher is
-        # whoever was on the mound, but we still need current_pitcher_id
-        # to point at the FIELDING team's pitcher (which has flipped if
-        # the team that took the lead is now defending). Set it.
+        # The fielding team has flipped, so re-point current_pitcher_id.
         _set_fielding_pitcher(state)
 
         full_log.append(_half_header(state, renderer))
-        half_log = run_half(state, event_provider, renderer)
-        full_log += half_log
+        full_log.extend(run_half(state, event_provider, renderer))
         _close_current_spell(state)
-
-        trailer_team.seconds_used = True
-        trailer_team.seconds_outs_used = state.outs
-
-        # Snapshot end of this seconds round. Each round gets its own phase
-        # number so a double-seconds (both teams come back) doesn't collide
-        # on UNIQUE(player_id, game_id, phase). Round 1 → phase 1, round 2 → phase 2.
+        team.seconds_used = True
+        team.seconds_outs_used = state.outs
+        # Each seconds half gets its own phase number so the renderer's
+        # UNIQUE(player_id, game_id, phase) holds across the two halves.
         if renderer:
             renderer.end_phase(state.seconds_phase_number)
 
-        rounds_played += 1
-        # Loop: if the comeback flipped the lead AND the opposing team has
-        # banked outs AND hasn't used seconds, they get THEIR seconds round.
+    # First-batting team's seconds half: always played if they have banked
+    # outs (no walk-off — they finish their full allotment even if leading).
+    if (first is not None
+            and not first.seconds_used
+            and int(first.outs_banked or 0) > 0):
+        _play_seconds_half(first, "seconds_first")
 
-    # Done with seconds. Reset the phase flag so any downstream readers
-    # see "game over, not in seconds."
+    # Second-batting team's seconds half: skipped if they are already
+    # winning at this point (walk-off shortcut). Otherwise played, and the
+    # half itself can walk off if they retake the lead mid-half.
+    if (second is not None
+            and not second.seconds_used
+            and int(second.outs_banked or 0) > 0):
+        sb_score = int(state.score.get(second.team_id, 0) or 0)
+        fb_score = int(state.score.get(first.team_id, 0) or 0) if first else 0
+        if sb_score <= fb_score:
+            _play_seconds_half(second, "seconds_second")
+
     state.in_seconds_phase = False
     return full_log
 

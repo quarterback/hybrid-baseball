@@ -293,3 +293,131 @@ def test_finalize_declaration_caps_at_max_banked():
     state.visitors.declared_at_out = 22
     _finalize_declaration(state.visitors, state)
     assert state.visitors.outs_banked == min(5, cfg.SECONDS_MAX_BANKED)
+
+
+# ---------------------------------------------------------------------------
+# Seconds inning ordering / walk-off (symmetric to regulation top/bottom)
+# ---------------------------------------------------------------------------
+
+def test_seconds_walkoff_never_fires_in_seconds_first():
+    """The first-batting team always uses their full banked-outs allotment
+    in seconds, even when leading — analogous to the visitors batting the
+    full top of the 9th."""
+    state = _mk_state()
+    state.first_batting_team = state.visitors
+    state.second_batting_team = state.home
+    state.in_seconds_phase = True
+    state.half = "seconds_first"
+    # Visitors are batting and crushing it — no walk-off should fire.
+    state.score = {"visitors": 20, "home": 1}
+    state.visitors.outs_banked = 3
+    assert state._seconds_walkoff() is False
+
+
+def test_seconds_walkoff_fires_in_seconds_second_when_batting_team_takes_lead():
+    """The second-batting team's seconds half walks off the moment they
+    retake the lead — the first-batting team has already used theirs and
+    cannot rebut."""
+    state = _mk_state()
+    state.first_batting_team = state.visitors
+    state.second_batting_team = state.home
+    state.in_seconds_phase = True
+    state.half = "seconds_second"
+    state.score = {"visitors": 4, "home": 5}     # home (batting) just took lead
+    state.visitors.seconds_used = True            # already used theirs
+    assert state._seconds_walkoff() is True
+
+
+def test_seconds_walkoff_does_not_fire_in_seconds_second_when_still_trailing():
+    state = _mk_state()
+    state.first_batting_team = state.visitors
+    state.second_batting_team = state.home
+    state.in_seconds_phase = True
+    state.half = "seconds_second"
+    state.score = {"visitors": 6, "home": 4}     # home still trails
+    state.visitors.seconds_used = True
+    assert state._seconds_walkoff() is False
+
+
+def test_run_seconds_rounds_first_batting_team_bats_even_when_leading():
+    """If the first-batting team has banked outs, they always bat in the
+    seconds_first half — even if they're already winning."""
+    from o27.engine.game import _run_seconds_rounds
+
+    state = _mk_state()
+    state.home_bats_first = False
+    state.first_batting_team = state.visitors
+    state.second_batting_team = state.home
+    # Visitors lead and have banked outs; home has none.
+    state.score = {"visitors": 7, "home": 3}
+    state.visitors.outs_banked = 3
+    state.home.outs_banked = 0
+    state.current_pitcher_id = state.home.roster[0].player_id
+
+    rng = random.Random(0)
+    prov = ProbabilisticProvider(rng=rng)
+    _run_seconds_rounds(state, prov, renderer=None)
+
+    # Visitors (first-batting) batted their seconds half even while leading.
+    assert state.visitors.seconds_used is True
+    # Home (second-batting) was already winning's mirror — they were
+    # losing and have no banked outs, so they don't bat. No walk-off ambiguity.
+    assert state.home.seconds_used is False
+
+
+def test_run_seconds_rounds_second_batting_team_skipped_when_already_ahead():
+    """If the second-batting team is already ahead after the first-batting
+    team's seconds turn, the second-batting team skips its turn — the
+    walk-off shortcut, analogous to bottom-of-9th."""
+    from o27.engine.game import _run_seconds_rounds
+
+    state = _mk_state()
+    state.home_bats_first = False
+    state.first_batting_team = state.visitors
+    state.second_batting_team = state.home
+    # Home leads going in; visitors have no banked outs to come back.
+    # Home has banked outs but is already ahead, so they should skip.
+    state.score = {"visitors": 3, "home": 7}
+    state.visitors.outs_banked = 0
+    state.home.outs_banked = 3
+    state.current_pitcher_id = state.visitors.roster[0].player_id
+
+    rng = random.Random(0)
+    prov = ProbabilisticProvider(rng=rng)
+    _run_seconds_rounds(state, prov, renderer=None)
+
+    # Home (second-batting) skipped — already winning, no need to bat.
+    assert state.home.seconds_used is False
+    assert state.visitors.seconds_used is False
+
+
+def test_run_seconds_rounds_half_order_is_first_then_second():
+    """In a game where BOTH teams have banked outs, the first-batting
+    team's seconds half runs before the second-batting team's, regardless
+    of which side is trailing."""
+    from o27.engine.game import _run_seconds_rounds
+
+    state = _mk_state()
+    state.home_bats_first = False
+    state.first_batting_team = state.visitors
+    state.second_batting_team = state.home
+    # Tight game so neither team gets to skip; both have banked outs.
+    state.score = {"visitors": 4, "home": 5}
+    state.visitors.outs_banked = 2
+    state.home.outs_banked = 2
+    state.current_pitcher_id = state.home.roster[0].player_id
+
+    # Track the order of `state.half` values observed as seconds halves run.
+    halves_seen: list[str] = []
+    original_provider = ProbabilisticProvider(rng=random.Random(1))
+
+    def tracking_provider(s):
+        if s.in_seconds_phase and (not halves_seen or halves_seen[-1] != s.half):
+            halves_seen.append(s.half)
+        return original_provider(s)
+
+    _run_seconds_rounds(state, tracking_provider, renderer=None)
+
+    # seconds_first must precede seconds_second if both halves ran.
+    if "seconds_first" in halves_seen and "seconds_second" in halves_seen:
+        assert halves_seen.index("seconds_first") < halves_seen.index("seconds_second")

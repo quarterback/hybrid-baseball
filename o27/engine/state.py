@@ -679,19 +679,25 @@ class GameState:
         return int(first.outs_banked or 0) <= 0
 
     def _seconds_walkoff(self) -> bool:
-        """Walk-off in a seconds round: the comeback team has taken the lead
-        AND the now-trailing team has no further eligibility (already used
-        seconds OR banked 0 outs).
+        """Walk-off in a seconds half.
+
+        - `seconds_first` (first-batting team): never walks off. They bat
+          their full banked-outs allotment, analogous to the top of the
+          9th where visitors finish even when leading.
+        - `seconds_second` (second-batting team): walks off the moment
+          they retake the lead. The first-batting team has already used
+          their seconds, so they cannot rebut — analogous to a
+          bottom-of-9th walk-off.
         """
         if not self.in_seconds_phase:
+            return False
+        if self.half == "seconds_first":
             return False
         bat = self.batting_team
         fld = self.fielding_team
         if self.score.get(bat.team_id, 0) <= self.score.get(fld.team_id, 0):
             return False
-        # Fielding team can rebut iff they have banked outs AND haven't used seconds yet.
-        can_rebut = (int(fld.outs_banked or 0) > 0) and (not fld.seconds_used)
-        return not can_rebut
+        return True
 
     def is_game_over(self) -> bool:
         return self.winner is not None
