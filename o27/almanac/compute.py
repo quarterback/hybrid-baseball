@@ -308,6 +308,8 @@ _BATTING_SUM_FIELDS = [
     "rad_1b", "rad_2b", "rad_3b",
     "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b",
     "c2_op_3b", "c2_adv_3b",
+    "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
+    "adv_op_3b", "adv_adv_3b",
 ]
 
 

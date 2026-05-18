@@ -1562,7 +1562,13 @@ class Renderer:
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
                   "stay_rbi", "stay_hits", "multi_hit_abs",
                   "sb", "cs", "fo", "roe",
-                  "po", "a", "e"):
+                  "po", "a", "e",
+                  "gidp", "gitp",
+                  "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b",
+                  "c2_op_3b", "c2_adv_3b",
+                  "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
+                  "adv_op_3b", "adv_adv_3b",
+                  "rad_1b", "rad_2b", "rad_3b"):
             setattr(d, f, getattr(end_s, f) - prev_get(f))
         return d
 
