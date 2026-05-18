@@ -43,6 +43,16 @@ from . import manager as mgr
 from typing import Callable, Iterator, Optional
 
 
+# Hard ceiling on super-inning rounds. Without this, two evenly-matched
+# lineups that keep producing identical 5-dismissal totals lock the engine
+# into an unbounded while-loop inside simulate_game() — the bulk-sim
+# per-game deadline only fires between games, so a hung game silently
+# eats every chunk and the day's clock never advances. After this many
+# tied SI rounds we force a winner from the running score's run pattern
+# (deterministic, seeded off game state) and end the game.
+SI_MAX_ROUNDS = 8
+
+
 # ---------------------------------------------------------------------------
 # Game entry point
 # ---------------------------------------------------------------------------
@@ -150,7 +160,36 @@ def run_game(
     else:
         full_log.append("\n=== TIE — SUPER-INNING TIEBREAKER ===")
 
+    si_rounds_played = 0
     while not state.winner:
+        if si_rounds_played >= SI_MAX_ROUNDS:
+            # Force a winner so the game terminates. Deterministic from the
+            # current state: pick whichever team has more partnership-runs
+            # (proxy for offensive performance) across the whole game; if
+            # that's also tied, fall back to a hash of team ids so the
+            # outcome is stable across re-runs of the same seed.
+            v_score = state.score.get("visitors", 0)
+            h_score = state.score.get("home", 0)
+            if v_score != h_score:
+                state.winner = "visitors" if v_score > h_score else "home"
+            else:
+                v_id = str(getattr(state.visitors, "team_id", "v"))
+                h_id = str(getattr(state.home, "team_id", "h"))
+                state.winner = "visitors" if hash((v_id, h_id, state.super_inning_number)) & 1 else "home"
+            full_log.append(
+                f"[warn] SI round cap ({SI_MAX_ROUNDS}) hit — forcing winner "
+                f"{state.winner} to terminate."
+            )
+            if renderer is not None:
+                _reconcile_batter_runs(state, renderer)
+            full_log += _game_over(state, renderer)
+            if renderer:
+                full_log += renderer.render_box_score(state)
+                full_log += renderer.render_partnership_log(state)
+                full_log += renderer.render_spell_log(state)
+                full_log += renderer.render_super_inning_log(state)
+            break
+        si_rounds_played += 1
         # If a seconds round already wrote to phase=1 (because the seconds
         # round tied the score and SI fires after), bump SI's phase index
         # past it so SI rounds don't collide on UNIQUE(player, game, phase).
