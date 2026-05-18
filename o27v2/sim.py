@@ -1450,6 +1450,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
     )
 
     state = GameState(visitors=visitors_team, home=home_team)
+    state.is_playoff = bool(game.get("is_playoff"))
     state.current_pitcher_id = _find_pitcher_id(home_team)
     # Stamp the per-game weather context (drawn at schedule time). prob.py
     # reads this; everything else passes it through.

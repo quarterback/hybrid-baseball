@@ -534,15 +534,24 @@ class Renderer:
     def render_game_over(self, state) -> list[str]:
         """Render the final game-over banner."""
         winner = state.winner
+        sep = "=" * 60
         if not winner:
-            return []
+            # Regular-season tie after the SI round cap. Both halves are still
+            # closed out properly above; this just emits the banner.
+            v_score = state.score.get("visitors", 0)
+            h_score = state.score.get("home", 0)
+            return [
+                f"\n{sep}",
+                f"GAME OVER (tie after SI cap): {state.visitors.name} {v_score}, "
+                f"{state.home.name} {h_score}",
+                sep,
+            ]
         other = "home" if winner == "visitors" else "visitors"
         w_team = state.visitors if winner == "visitors" else state.home
         o_team = state.home if winner == "visitors" else state.visitors
         w_score = state.score[winner]
         o_score = state.score[other]
         suffix = " (super-inning)" if state.super_inning_number > 0 else ""
-        sep = "=" * 60
         return [
             f"\n{sep}",
             f"GAME OVER{suffix}: {w_team.name.upper()} WIN {w_score}–{o_score}",
@@ -1201,6 +1210,11 @@ class Renderer:
                 else:
                     rs.cs += 1
                     rs.outs_recorded += 1
+                    # CS = baserunner erased without scoring → LOB.
+                    bt = ctx.get("batting_team_id")
+                    if bt == "visitors" or bt == "home":
+                        tm = state_after.visitors if bt == "visitors" else state_after.home
+                        tm.lob = int(getattr(tm, "lob", 0) or 0) + 1
             # Don't fall through to the leftover-out reconciliation below —
             # the at-bat is still in progress and the only out (if any) was
             # already charged to the runner above. Falling through would
@@ -1422,13 +1436,53 @@ class Renderer:
                 # don't count toward multi-hit (they aren't hits).
                 _check_multi_hit(terminal_hit=is_safety_hit)
 
+        # TOA (thrown out advancing) — credit the RUNNER who was nailed
+        # on the bases, not the batter at the plate. The advancement-table
+        # outs from prob.runner_advances_for_hit propagate here via the
+        # outcome's toa_runner_idxs list. Each TOA marks its runner with
+        # outs_recorded += 1 AND toa += 1; we tally these so the leftover-
+        # out reconciliation below doesn't double-charge the batter for
+        # them. Also: every TOA is a baserunner erased without scoring →
+        # increment the batting team's LOB by the same count, plus count
+        # any other base-outs the play recorded (FC lead-runner, GIDP-
+        # runner, pickoff caught mid-PA — anyone who was on base and is
+        # now an out without crossing the plate).
+        toa_credited = 0
+        if etype == "ball_in_play":
+            outcome = event.get("outcome") or {}
+            toa_idxs = outcome.get("toa_runner_idxs") or []
+            non_toa_out_idxs: list[int] = []
+            if outcome.get("runner_out_idx") is not None:
+                non_toa_out_idxs.append(int(outcome["runner_out_idx"]))
+            non_toa_out_idxs.extend(int(i) for i in (outcome.get("extra_runner_outs") or []))
+            non_toa_out_idxs = [i for i in non_toa_out_idxs if i not in toa_idxs]
+            if toa_idxs:
+                bases_before = ctx.get("bases_list") or [None, None, None]
+                for idx in toa_idxs:
+                    if 0 <= idx < 3:
+                        runner_pid = bases_before[idx]
+                        if runner_pid is not None and runner_pid in self._batter_stats:
+                            rs = self._batter_stats[runner_pid]
+                            rs.outs_recorded += 1
+                            rs.toa += 1
+                            toa_credited += 1
+            # All base-runner erasures on this play (TOA + FC + GIDP-runner
+            # + pickoff caught here) count toward LOB — they were on base
+            # and won't cross the plate.
+            erased_total = len(set(toa_idxs)) + len(set(non_toa_out_idxs))
+            if erased_total:
+                bt = ctx.get("batting_team_id")
+                if bt in ("visitors", "home"):
+                    tm = state_after.visitors if bt == "visitors" else state_after.home
+                    tm.lob = int(getattr(tm, "lob", 0) or 0) + erased_total
+
         # Task #49: universal leftover-out charge. Any out the engine recorded
         # for this event that the per-event branches above didn't already
         # credit (CS, successful pickoff, FC runner out, DP runner-trail out,
         # runner thrown out on a stay, etc.) is charged to the current batter
         # so the per-batter OR column sums to 27 per half.
         engine_outs_delta = (state_after.outs or 0) - (ctx.get("outs") or 0)
-        already_charged = s.outs_recorded - _or_before
+        already_charged = s.outs_recorded - _or_before + toa_credited
         leftover = engine_outs_delta - already_charged
         if leftover > 0:
             s.outs_recorded += leftover

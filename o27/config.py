@@ -241,6 +241,53 @@ HARD_CONTACT: list = [
 # ---------------------------------------------------------------------------
 # Runner advancement model
 # ---------------------------------------------------------------------------
+# Per-base advancement probabilities on a batted hit. Previously every
+# runner auto-advanced (3B/2B always scored on a single; 2B/1B always
+# scored on a double), which collapsed H ≈ R and stripped the box score
+# of any "wasted runners" signal. These tables drive a probabilistic
+# resolution: each runner on base rolls independently for what happens
+# to them on contact. Fuzzy off-round percentages intentional — keeps
+# the numbers looking observed rather than designed.
+
+# Single, runner on 3B (rarely cut down — runner is 90 ft from home —
+# but elite-arm corner OFs still nail one occasionally on a contact
+# play with the throw home).
+ADVANCE_3B_ON_1B_SCORE: float    = 0.71
+ADVANCE_3B_ON_1B_HOLD: float     = 0.25
+ADVANCE_3B_ON_1B_OUT: float      = 0.04
+
+# Single, runner on 2B — the classic close play at the plate.
+ADVANCE_2B_ON_1B_SCORE: float    = 0.49
+ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.37
+ADVANCE_2B_ON_1B_OUT: float      = 0.14
+
+# Double, runner on 2B (almost auto, occasionally held with a deep relay
+# and the rare turn-2 chase that catches the runner short).
+ADVANCE_2B_ON_2B_SCORE: float    = 0.83
+ADVANCE_2B_ON_2B_HOLD_3B: float  = 0.13
+ADVANCE_2B_ON_2B_OUT: float      = 0.04
+
+# Double, runner on 1B — 1B-to-home on a double is the lever everyone
+# wants. Around half score, a third stop at 3B, the slow ones get held
+# at 2B because the throw beats them, occasionally the throw nails 'em.
+ADVANCE_1B_ON_2B_SCORE: float    = 0.40
+ADVANCE_1B_ON_2B_TO_3B: float    = 0.37
+ADVANCE_1B_ON_2B_HOLD_2B: float  = 0.16
+ADVANCE_1B_ON_2B_OUT: float      = 0.07
+
+# Single, runner on 1B — almost always 1B → 2B; some 1B → 3B; TOA risk
+# meaningful when the OF charges in to throw behind the runner.
+ADVANCE_1B_ON_1B_TO_3B: float    = 0.12
+ADVANCE_1B_ON_1B_TO_2B: float    = 0.77
+ADVANCE_1B_ON_1B_OUT: float      = 0.11
+
+# Player-modifier scale on the SCORE probability. Speed pushes score up
+# (and hold down); outfielder arm pushes score down (and out up). Mods
+# are signed deviations from the 0.5 neutral attribute, multiplied by
+# 2 so the full range hits the configured limits.
+SPEED_ADVANCE_MOD: float         = 0.12
+ARM_ADVANCE_MOD: float           = 0.11
+
 # Extra-base probability: chance += max(0, (speed - 0.5) * RUNNER_EXTRA_SPEED_SCALE)
 
 RUNNER_EXTRA_SPEED_SCALE: float = 0.35
@@ -262,10 +309,10 @@ RUNNER_EXTRA_DOUBLE_FROM_1B: float = 0.30
 #   fast/skilled (0.95):   ~2%   — never automatic, floor enforced
 #   neutral      (0.50):   ~9%
 #   slow/raw     (0.10):  ~25%
-RUNNER_THROWN_OUT_AT_HOME_BASE: float        = 0.09
-RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.20
-RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.20
-RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.02
+RUNNER_THROWN_OUT_AT_HOME_BASE: float        = 0.18
+RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.22
+RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.22
+RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.05
 
 # GIDP — ground-ball double plays. With at least one runner on base
 # and < 2 outs, a share of ground outs become double plays. The exact
@@ -330,11 +377,11 @@ TRIPLE_PLAY_BASERUNNING_BONUS: float   = 0.06   # added when lead runner is belo
 # whether the slide beats the throw. Identity preserved at neutral inputs:
 # at speed = baserunning = aggressiveness = 0.5 the attempt probability
 # from RUNNER_EXTRA_SPEED_SCALE is already 0, so TOOTBLAN never fires.
-TOOTBLAN_SAFE_BASE: float  = 0.78   # baseline safe rate when an attempt fires
+TOOTBLAN_SAFE_BASE: float  = 0.62   # baseline safe rate when an attempt fires
 TOOTBLAN_SKILL_SCALE: float = 0.40  # +(baserunning - 0.5) * this
 TOOTBLAN_SPEED_SCALE: float = 0.20  # +(speed       - 0.5) * this
-TOOTBLAN_SAFE_MIN: float    = 0.45  # floor — even bad runners aren't always out
-TOOTBLAN_SAFE_MAX: float    = 0.96  # ceiling — even elite runners aren't auto-safe
+TOOTBLAN_SAFE_MIN: float    = 0.32  # floor — even bad runners aren't always out
+TOOTBLAN_SAFE_MAX: float    = 0.88  # ceiling — even elite runners aren't auto-safe
 
 # ---------------------------------------------------------------------------
 # Pickoff model — pitcher attempts to back-pick a runner. Fires as a
@@ -420,15 +467,27 @@ SAC_BUNT_FAIL_RATE: float          = 0.10   # popups / runner forced at lead
 
 SB_ATTEMPT_SPEED_THRESHOLD: float = 0.52   # was 0.62 — lower gate so above-avg speed attempts
 SB_ATTEMPT_PROB_PER_PITCH: float  = 0.045  # was 0.015 — ~3x MLB attempt rate
-SB_SUCCESS_BASE: float            = 0.72   # was 0.62 — pulled up to match MLB ~75% success
+SB_SUCCESS_BASE: float            = 0.58   # baseline success — catchers now win meaningfully
 SB_SUCCESS_SPEED_SCALE: float     = 0.50   # (speed - 0.5) * this adds to success
-SB_SUCCESS_PITCHER_SCALE: float   = 0.15   # pitcher_skill * this subtracts from success
+SB_SUCCESS_PITCHER_SCALE: float   = 0.20   # pitcher_skill * this subtracts from success
 SB_SUCCESS_DEBT_SCALE: float      = 0.0008 # pitcher.pitch_debt * this ADDS to success
                                            # — tired battery = easier steal
-SB_SUCCESS_CATCHER_ARM_SCALE: float = 0.20 # catcher.arm * this SUBTRACTS from success
+SB_SUCCESS_CATCHER_ARM_SCALE: float = 0.35 # catcher.arm * this SUBTRACTS from success
                                            # — elite catcher arm shuts down the running game
-SB_SUCCESS_MIN: float             = 0.25   # floor on steal success
-SB_SUCCESS_MAX: float             = 0.92   # ceiling on steal success
+SB_SUCCESS_MIN: float             = 0.18   # floor on steal success
+SB_SUCCESS_MAX: float             = 0.86   # ceiling on steal success
+
+# 2C / stay defense-read — chance the defense breaks up a valid stay by
+# nailing the lead runner. Catcher pickoff at second, OF charge-and-throw,
+# IF rotation catching the runner napping. Without this, every valid 2C
+# advanced runners unopposed; now the defense gets a real shot at the
+# baserunner. Scales with team defense and catcher arm so elite defenses
+# meaningfully suppress the 2C running game.
+STAY_DEFENSE_READ_BASE: float          = 0.10   # baseline lead-runner-out rate
+STAY_DEFENSE_READ_TEAM_SCALE: float    = 0.20   # (team_def - 0.5) * this
+STAY_DEFENSE_READ_CATCHER_SCALE: float = 0.20   # (catcher_arm - 0.5) * this
+STAY_DEFENSE_READ_MIN: float           = 0.03
+STAY_DEFENSE_READ_MAX: float           = 0.28
 
 # ---------------------------------------------------------------------------
 # Defense model
@@ -665,10 +724,61 @@ DECLARE_BASE:          float = 0.04
 DECLARE_LEAD_SCALE:    float = 0.18
 DECLARE_PERSONA_SCALE: float = 0.25
 
-# Pre-game bat-order choice — home manager. BAT_FIRST_BASE intentionally
-# biased above 0.5 so home defaults to batting first more often than not;
-# this is the retcon for the league's existing home-scores-more asymmetry.
-BAT_FIRST_BASE:          float = 0.65
+# Pre-game bat-order choice — home manager. Held at 0.50 so the bat-first
+# decision is genuinely close-to-even at neutral inputs; the park / starter
+# / persona scalars below still let strong situational signals push it
+# one way or the other. The earlier 0.65 baseline was a "retcon" for the
+# pre-Declared-Seconds home-scores-more asymmetry, but with the new
+# baserunning friction in place that retcon now bakes in a 71% home
+# bat-first rate, which translates into a ~4 R/g home advantage in
+# practice. 0.50 lets bat-first be a genuine choice driven by context.
+BAT_FIRST_BASE:          float = 0.50
+# Tight cap on how far the persona / park / starter / bullpen / weather
+# scalars are allowed to push the home manager's bat-first probability
+# away from BAT_FIRST_BASE. With a wide range, those scalars become a
+# strategic lever ONLY the home manager gets — visitors have no
+# equivalent — and that hidden tactical edge re-creates the home
+# advantage even when the base is symmetric. Holding the deviation
+# under 1 percentage point makes the bat-order call essentially a coin
+# flip with vanishing situational influence.
+BAT_FIRST_HOME_EDGE_CAP: float = 0.01
+
+# -----------------------------------------------------------------------
+# Bat-second viability — symmetric-by-role nudges
+# -----------------------------------------------------------------------
+# Without these, batting first is a near-solved strategy in O27: the
+# first-batting team sets a target and declares with a lead, while the
+# second-batting team chases from behind. The mechanics are symmetric
+# but the context isn't, so bat-second is ~4 R/g worse in practice.
+# These two knobs make the environment marginally friendlier to whoever
+# is in the bat-second role (regardless of home/visitor identity).
+
+# (1) Target pressure — the team batting second knows the number to
+# beat. Their first cycle through the order gets a small contact-quality
+# tilt (locked-in, target-aware hitters). Fades to zero over the next
+# few PAs as the half becomes routine.
+TARGET_PRESSURE_SHIFT:     float = 0.030   # added to contact-quality shift
+                                           # (positive = harder contact)
+TARGET_PRESSURE_FADE_PAS:  int   = 12      # bonus is full at PA 1, 0 by PA 13
+
+# (1b) Rebuttal-phase offense tilt — when the game pauses for a
+# declaration, pitchers cool off but batters keep their timing. So the
+# seconds round (and any super-inning rebuttal where the same pause
+# logic applies) is a slightly higher-offense environment than
+# regulation. Implemented as a small contact-quality shift active for
+# every PA in a seconds round. Helps the trailing team marginally more
+# (they're the ones needing the rebuttal runs), without making any
+# rule asymmetric — leading teams that come into seconds for insurance
+# get the same tilt, they just need it less.
+REBUTTAL_OFFENSE_SHIFT:    float = 0.035   # added to contact-quality shift
+                                           # during seconds (and SI) phases
+
+# (2) Fielding fatigue — the team that batted first must field the
+# entire second half. By the late arc of that fielding stint, their
+# range / glovework / arm have slipped. Subtracted from defense_rating
+# for the would-be-out / error rolls when state.outs hits this threshold.
+FIELDING_FATIGUE_PENALTY:  float = 0.030   # subtracted from def_dev late half
+FIELDING_FATIGUE_OUT_GATE: int   = 20      # applies once state.outs ≥ this
 BAT_FIRST_PARK_SCALE:    float = 0.15
 BAT_FIRST_STARTER_SCALE: float = 0.20
 BAT_FIRST_PERSONA_SCALE: float = 0.30

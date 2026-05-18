@@ -385,6 +385,14 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         team_name = state.batting_team.name
         at_out = int(event.get("at_out", state.outs))
         log.append(f"  >> {team_name} DECLARES SECONDS at out {at_out}.")
+        # LOB: runners on base at declaration are stranded — they don't
+        # carry over to the rebuttal half. Count them onto the team's
+        # season LOB stat so the declaration decision visibly costs
+        # something when there are runners aboard.
+        stranded = sum(1 for r in state.bases if r is not None)
+        if stranded:
+            state.batting_team.lob = int(getattr(state.batting_team, "lob", 0) or 0) + stranded
+            log.append(f"  >> {stranded} runner(s) stranded on declaration.")
         state.outs = 27
         return log
 
