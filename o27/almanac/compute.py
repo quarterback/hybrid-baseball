@@ -646,9 +646,9 @@ def _augment_pitchers(rows: list[dict], league: dict[str, float],
         r["arc3_reach_pct"] = (1.0 if bf3 > 0 else 0.0)
 
         # Per-arc ER rates (R/9-style)
-        r["arc1_era"] = (er1 * 27.0 / (bf1 * (outs / bf))) if (bf and bf1) else 0.0
-        r["arc2_era"] = (er2 * 27.0 / (bf2 * (outs / bf))) if (bf and bf2) else 0.0
-        r["arc3_era"] = (er3 * 27.0 / (bf3 * (outs / bf))) if (bf and bf3) else 0.0
+        r["arc1_era"] = (er1 * 27.0 / (bf1 * (outs / bf))) if (bf and bf1 and outs) else 0.0
+        r["arc2_era"] = (er2 * 27.0 / (bf2 * (outs / bf))) if (bf and bf2 and outs) else 0.0
+        r["arc3_era"] = (er3 * 27.0 / (bf3 * (outs / bf))) if (bf and bf3 and outs) else 0.0
 
         # Game Score (per appearance — averaged via game logs; here, season summary)
         r["gsc_total"] = _pitcher_game_score(
