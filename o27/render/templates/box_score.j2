@@ -10,11 +10,18 @@
 {%- set div = "────────────────────────────────────────────────────────────────────────────────────────────────" -%}
 {%- set p_div = "──────────────────────────────────────────────────────" -%}
 
+{%- set _cell_w = 7 %}
+{%- macro _phase_cell(played, runs, outs, label) -%}
+{%- if not played -%}{{ "%*s" | format(_cell_w, "-") }}
+{%- elif label == "1" -%}{{ "%*d" | format(_cell_w, runs) }}
+{%- else -%}{{ "%*s" | format(_cell_w, runs|string ~ "(" ~ outs|string ~ ")") }}
+{%- endif -%}
+{%- endmacro -%}
 ============================================================
 LINE SCORE
-                  1      R
-{{ "%-18s" | format(visitors_name) }}  {{ "%2d" | format(visitors_runs) }}     {{ "%2d" | format(visitors_runs) }}
-{{ "%-18s" | format(home_name) }}  {{ "%2d" | format(home_runs) }}     {{ "%2d" | format(home_runs) }}
+{{ "%-18s" | format("") }}{% for p in line_phases %}{{ "%*s" | format(_cell_w, p.label) }}{% endfor %}{{ "%*s" | format(_cell_w, "R") }}
+{{ "%-18s" | format(visitors_name) }}{% for p in line_phases %}{{ _phase_cell(p.visitors_played, p.visitors_runs, p.visitors_outs, p.label) }}{% endfor %}{{ "%*d" | format(_cell_w, visitors_runs) }}
+{{ "%-18s" | format(home_name) }}{% for p in line_phases %}{{ _phase_cell(p.home_played, p.home_runs, p.home_outs, p.label) }}{% endfor %}{{ "%*d" | format(_cell_w, home_runs) }}
 
 ============================================================
 {{ visitors_name | upper }} BATTING
@@ -58,18 +65,12 @@ Stays:     {{ visitors_name }}  {{ visitors_stays }}    {{ home_name }}  {{ home
 {% if required_rr is not none %}
 Required run rate ({{ home_name }}): {{ "%.3f" | format(required_rr) }} R/out (needed {{ target_runs }} runs in 27 outs)
 {% endif %}
-{% if home_bats_first or visitors_declared_at is not none or home_declared_at is not none or visitors_seconds_used or home_seconds_used %}
-Declared Seconds
-{% if home_bats_first %}  First at bat:  {{ home_name }}
-{% else %}  First at bat:  {{ visitors_name }}
-{% endif %}
-{% if visitors_declared_at is not none %}  {{ visitors_name }} declared at out {{ visitors_declared_at }} — banked {{ visitors_outs_banked }} out(s)
-{% endif %}
-{% if home_declared_at is not none %}  {{ home_name }} declared at out {{ home_declared_at }} — banked {{ home_outs_banked }} out(s)
-{% endif %}
-{% if visitors_seconds_used %}  {{ visitors_name }} seconds round: {{ visitors_seconds_used }} out(s) used
-{% endif %}
-{% if home_seconds_used %}  {{ home_name }} seconds round: {{ home_seconds_used }} out(s) used
+{% if visitors_declared_at is not none or home_declared_at is not none %}
+{% set _vs = visitors_name ~ " o" ~ visitors_declared_at|string ~ " (" ~ visitors_declare_score_for|string ~ "-" ~ visitors_declare_score_against|string ~ ")" %}
+{% set _hs = home_name ~ " o" ~ home_declared_at|string ~ " (" ~ home_declare_score_for|string ~ "-" ~ home_declare_score_against|string ~ ")" %}
+{% if visitors_declared_at is not none and home_declared_at is not none %}Seconds: {{ _vs }}, {{ _hs }}
+{% elif visitors_declared_at is not none %}Seconds: {{ _vs }}
+{% else %}Seconds: {{ _hs }}
 {% endif %}
 {% endif %}
 ============================================================

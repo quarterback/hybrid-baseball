@@ -127,25 +127,71 @@ def render_line_score(
     away_line: dict,
     home_line: dict,
 ) -> str:
-    """Line score rows. Phase 0 is 'REG'; phase 1+ is 'SI1', 'SI2', ..."""
-    # Column labels.
-    cols = []
-    for ph in phases:
-        cols.append("REG" if ph == 0 else f"SI{ph}")
-    cols += ["R", "H", "E"]
+    """Line score rows. Three possible columns:
 
-    header = " " * 18 + "".join(f"{c:>5}" for c in cols)
+    - "1"  — regulation (phase 0).
+    - "2"  — seconds round. Each team batted in at most one seconds round
+             per game, so the values across seconds phases collapse into a
+             single per-team cell.
+    - "S"  — super-inning. Both teams bat in every SI round; values
+             collapse across SI phases into a single per-team cell.
+
+    Non-regulation cells render as `runs(outs)` so the round's out-budget
+    is visible (a team's 5(3) means 5 runs in 3 banked outs). A team that
+    didn't bat in that bucket renders as `-`.
+    """
+    seconds_count = int(bool(game.get("away_seconds_used"))) \
+                  + int(bool(game.get("home_seconds_used")))
+
+    def _bucket(ph: int) -> str:
+        if ph == 0:
+            return "1"
+        if ph <= seconds_count:
+            return "2"
+        return "S"
+
+    def _collapse(line: dict, bucket: str):
+        runs = outs = 0
+        played = False
+        for ph in phases:
+            if _bucket(ph) != bucket:
+                continue
+            r = line["runs"].get(ph)
+            o = line.get("outs", {}).get(ph) or 0
+            if r is None and not o:
+                continue
+            played = True
+            runs += int(r or 0)
+            outs += int(o or 0)
+        return runs, outs, played
+
+    # Decide which columns to show.
+    show_buckets = ["1"]
+    if seconds_count > 0:
+        show_buckets.append("2")
+    if int(game.get("super_inning") or 0) > 0:
+        show_buckets.append("S")
+
+    phase_w = 7
+    final_w = 5
+    header = " " * 18 + "".join(f"{c:>{phase_w}}" for c in show_buckets) \
+                       + "".join(f"{c:>{final_w}}" for c in ("R", "H", "E"))
+
+    def _cell(line: dict, bucket: str) -> str:
+        runs, outs, played = _collapse(line, bucket)
+        if not played:
+            return "-"
+        if bucket == "1":
+            return f"{runs}"
+        return f"{runs}({outs})"
 
     def _row(team_name: str, line: dict) -> str:
         row = f"{team_name:<18}"
-        for ph in phases:
-            row += f"{(line['runs'].get(ph) or 0):>5}"
-        row += f"{line['total_r']:>5}{line['total_h']:>5}{line['total_e']:>5}"
+        for b in show_buckets:
+            row += f"{_cell(line, b):>{phase_w}}"
+        row += f"{line['total_r']:>{final_w}}{line['total_h']:>{final_w}}{line['total_e']:>{final_w}}"
         return row
 
-    # Line-score row label is the team's CITY (newspaper convention) when
-    # available, falling back to the team name. Headline up top already
-    # carries the mascot, so the line score gets the city for variety.
     away_label = game.get("away_city") or game.get("away_name", "Away")
     home_label = game.get("home_city") or game.get("home_name", "Home")
     return header + "\n" + _row(away_label, away_line) \
@@ -411,42 +457,27 @@ def render_game_notes(game: dict) -> str:
     if si:
         parts.append(f"  Super-innings: {si}.")
 
-    # Declared Seconds: surface pre-game bat-order choice, each side's
-    # declaration if any, and the seconds-round outcome if one fired.
-    home_bats_first = game.get("home_bats_first")
+    # Declared Seconds: balk-style one-liner. Each declaration formats as
+    #   `TEAM oN (X-Y)`
+    # where the score is (team_referred-opponent), team_referred always first.
+    # Multiple declarations comma-separated under one "Seconds:" prefix.
     away_decl = game.get("away_declared_at")
     home_decl = game.get("home_declared_at")
-    away_sec  = int(game.get("away_seconds_used") or 0)
-    home_sec  = int(game.get("home_seconds_used") or 0)
-    has_decl_info = (home_bats_first is not None
-                     or away_decl is not None or home_decl is not None
-                     or away_sec or home_sec)
-    if has_decl_info:
+    if away_decl is not None or home_decl is not None:
         away_name = game.get("away_abbrev") or "AWAY"
         home_name = game.get("home_abbrev") or "HOME"
-        decl_lines: list[str] = ["  Declared Seconds:"]
-        if home_bats_first is not None:
-            first = home_name if home_bats_first else away_name
-            decl_lines.append(f"    First at bat: {first}.")
+        entries: list[str] = []
         if away_decl is not None:
-            banked = max(0, 27 - int(away_decl))
-            decl_lines.append(
-                f"    {away_name} declared at out {away_decl} — banked {banked} out(s)."
-            )
+            sf = game.get("away_declare_score_for")
+            sa = game.get("away_declare_score_against")
+            score = f" ({sf}-{sa})" if sf is not None and sa is not None else ""
+            entries.append(f"{away_name} o{away_decl}{score}")
         if home_decl is not None:
-            banked = max(0, 27 - int(home_decl))
-            decl_lines.append(
-                f"    {home_name} declared at out {home_decl} — banked {banked} out(s)."
-            )
-        if away_sec:
-            decl_lines.append(
-                f"    {away_name} seconds round: {away_sec} out(s) used."
-            )
-        if home_sec:
-            decl_lines.append(
-                f"    {home_name} seconds round: {home_sec} out(s) used."
-            )
-        parts.append("\n".join(decl_lines))
+            sf = game.get("home_declare_score_for")
+            sa = game.get("home_declare_score_against")
+            score = f" ({sf}-{sa})" if sf is not None and sa is not None else ""
+            entries.append(f"{home_name} o{home_decl}{score}")
+        parts.append("  Seconds: " + ", ".join(entries) + ".")
 
     bits = []
     weather = game.get("weather") or game.get("weather_label")
