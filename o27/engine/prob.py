@@ -412,6 +412,7 @@ def contact_quality(
     swings_in_ab: int = 0,
     pitch_type: Optional[str] = None,
     pitch_quality: float = 0.5,
+    target_pressure_shift: float = 0.0,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
@@ -444,6 +445,12 @@ def contact_quality(
     # in the matchup, hot batters gain.
     matchup = (batter.skill * plat * b_cond) - stuff_eff   # +ve → batter advantage
     shift = matchup * cfg.CONTACT_MATCHUP_SHIFT    # up to ±0.125 swing
+
+    # Target-pressure tilt (symmetric by role). Whichever team bats second
+    # gets a small early-half contact bonus: they know the number to beat,
+    # they're locked in. Identity at 0.0 so first-batting teams or PAs past
+    # the fade window see no change.
+    shift += target_pressure_shift
 
     # Second-swing modifier: on swings 2+ within the same AB, tilt the
     # contact distribution by eye-vs-command. High-eye batter reads the
@@ -1434,6 +1441,21 @@ def resolve_contact(
     fielding = state.fielding_team
     team_def = float(getattr(fielding, "defense_rating", 0.5) or 0.5)
     def_dev = team_def - 0.5   # neutral 0; +0.35 for elite team; -0.35 for awful
+
+    # Fielding fatigue (item 3 from the bat-second viability pass):
+    # the team that batted FIRST has now been in the field for the
+    # entire second half. By the late arc (out 20+ of regulation), their
+    # range / arm / glovework slips. Symmetric by role — if the visitor
+    # batted first they get the penalty in the bottom; if home batted
+    # first they get it in the top. Identity preserved in super-innings
+    # and seconds rounds (separate phases, lineups reset).
+    if (not state.is_super_inning
+            and not state.in_seconds_phase
+            and state.first_batting_team is not None
+            and fielding is state.first_batting_team
+            and state.outs >= cfg.FIELDING_FATIGUE_OUT_GATE):
+        def_dev -= cfg.FIELDING_FATIGUE_PENALTY
+
     is_error = False
 
     # Range shift: probabilistically flip a single-or-out outcome.
@@ -2117,10 +2139,25 @@ class ProbabilisticProvider:
             return {"type": outcome, "pitch_type": sel_pitch}
 
         # --- Contact resolution ---
+        # Target pressure (item 2 from the bat-second viability pass):
+        # whichever team bats second gets a small contact tilt for their
+        # first ~12 PAs of the half — they know the number to beat. Fades
+        # to zero linearly. Symmetric by role: doesn't matter whether home
+        # or visitor is in the bat-second seat.
+        tp_shift = 0.0
+        if (not state.is_super_inning
+                and not state.in_seconds_phase
+                and state.second_batting_team is not None
+                and state.batting_team is state.second_batting_team):
+            pa_idx = int(state.total_pa_this_half or 0)
+            fade = max(0.0, 1.0 - pa_idx / max(1, cfg.TARGET_PRESSURE_FADE_PAS))
+            tp_shift = cfg.TARGET_PRESSURE_SHIFT * fade
+
         quality = contact_quality(
             rng, batter, pitcher, weather,
             swings_in_ab=state.current_at_bat_swings,
             pitch_type=sel_pitch, pitch_quality=sel_quality,
+            target_pressure_shift=tp_shift,
         )
         is_hr     = False
         is_triple = False

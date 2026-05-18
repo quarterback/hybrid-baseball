@@ -733,6 +733,31 @@ DECLARE_PERSONA_SCALE: float = 0.25
 # bat-first rate, which translates into a ~4 R/g home advantage in
 # practice. 0.50 lets bat-first be a genuine choice driven by context.
 BAT_FIRST_BASE:          float = 0.50
+
+# -----------------------------------------------------------------------
+# Bat-second viability — symmetric-by-role nudges
+# -----------------------------------------------------------------------
+# Without these, batting first is a near-solved strategy in O27: the
+# first-batting team sets a target and declares with a lead, while the
+# second-batting team chases from behind. The mechanics are symmetric
+# but the context isn't, so bat-second is ~4 R/g worse in practice.
+# These two knobs make the environment marginally friendlier to whoever
+# is in the bat-second role (regardless of home/visitor identity).
+
+# (1) Target pressure — the team batting second knows the number to
+# beat. Their first cycle through the order gets a small contact-quality
+# tilt (locked-in, target-aware hitters). Fades to zero over the next
+# few PAs as the half becomes routine.
+TARGET_PRESSURE_SHIFT:     float = 0.030   # added to contact-quality shift
+                                           # (positive = harder contact)
+TARGET_PRESSURE_FADE_PAS:  int   = 12      # bonus is full at PA 1, 0 by PA 13
+
+# (2) Fielding fatigue — the team that batted first must field the
+# entire second half. By the late arc of that fielding stint, their
+# range / glovework / arm have slipped. Subtracted from defense_rating
+# for the would-be-out / error rolls when state.outs hits this threshold.
+FIELDING_FATIGUE_PENALTY:  float = 0.030   # subtracted from def_dev late half
+FIELDING_FATIGUE_OUT_GATE: int   = 20      # applies once state.outs ≥ this
 BAT_FIRST_PARK_SCALE:    float = 0.15
 BAT_FIRST_STARTER_SCALE: float = 0.20
 BAT_FIRST_PERSONA_SCALE: float = 0.30
