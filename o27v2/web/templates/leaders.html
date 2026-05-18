@@ -31,7 +31,8 @@
     </div>
     <table class="table dense-table mb-0">
       <tbody>
-        {% set sorted = dataset | sort(attribute=key, reverse=desc) %}
+        {% set rows_with_value = dataset | selectattr(key, 'ne', None) | list %}
+        {% set sorted = rows_with_value | sort(attribute=key, reverse=desc) %}
         {% for r in sorted[:10] %}
         <tr>
           <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
