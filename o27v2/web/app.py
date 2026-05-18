@@ -1166,6 +1166,7 @@ def _aggregate_batter_rows(
     baselines: dict | None = None,
     baselines_by_league: dict[str, dict] | None = None,
     team_league_map: dict[int, str] | None = None,
+    park_map: dict[int, float] | None = None,
 ) -> None:
     """Mutates rows in place to add classical, advanced, and O27-native
     sabermetrics.
@@ -1203,6 +1204,11 @@ def _aggregate_batter_rows(
         except Exception:
             team_league_map = None
             baselines_by_league = None
+    if park_map is None and rows and rows[0].get("team_id") is not None:
+        try:
+            park_map = _team_park_map()
+        except Exception:
+            park_map = None
     # O27 stat semantics:
     #   AVG, SLG, ISO are PA-denominated (NOT AB-denominated). Stays inside
     #   an AB make AB-denominated rates produce strange numbers (you can put
@@ -1345,6 +1351,23 @@ def _aggregate_batter_rows(
         scope = scoped.get("league", "")
         b["ops_plus_scope"]  = scope
         b["woba_plus_scope"] = scope
+
+        # wRC+ — park-adjusted, FanGraphs-style:
+        #   wRC+ = ((wOBA − lg_wOBA) / wOBA_scale + lg_R/PA)
+        #          / (lg_R/PA × PF) × 100
+        # where PF is the player's effective park factor (half home / half
+        # road approximation). 100 = league average AT THAT PARK; >100 =
+        # better than the league after stripping park bias. The wOBA_scale
+        # is the same 1.20 used elsewhere (FanGraphs convention).
+        tid_b = b.get("team_id")
+        pf_b  = (park_map.get(int(tid_b)) if tid_b is not None and park_map else None) or 1.0
+        lg_rpa = scoped.get("runs_per_pa") or baselines.get("runs_per_pa") or 0.0
+        if lg_rpa > 0 and pf_b > 0:
+            wrc_per_pa = (b["woba"] - league_woba) / 1.20 + lg_rpa
+            b["wrc_plus"] = (wrc_per_pa / (lg_rpa * pf_b)) * 100.0
+        else:
+            b["wrc_plus"] = 100.0
+        b["park_factor"] = pf_b
 
         # bVORP — value over replacement, in runs.
         # (wOBA - replacement_wOBA) × PA / wOBA_scale ≈ runs above replacement.
@@ -1631,6 +1654,12 @@ def _league_baselines(league: str | None = None) -> dict[str, float]:
         "total_pa": 0.0, "total_outs": 0.0,
         # New league-level baselines for the wERA / xRA / GSc+ stack.
         "league_werra": 5.00, "league_xra": 5.00, "gsc_avg": 50.0,
+        # Stdev of per-pitcher Game Score averages (qualifiers only). Drives
+        # the z-score-based GSc Index so a 130 means the same "+2 stdev"
+        # regardless of league size.
+        "gsc_std": 10.0,
+        # League runs-per-PA — wRC+ numerator anchor (FanGraphs convention).
+        "runs_per_pa": 0.15,
         # Provenance — which tier this baseline reflects. "" means global
         # (all-teams) baseline; otherwise the tier/league name. Templates
         # surface this so wOBA+ / OPS+ readers know what they're normalized
@@ -1662,6 +1691,10 @@ def _league_baselines(league: str | None = None) -> dict[str, float]:
         # FanGraphs uses, and it's an easy mental anchor for users.
         out["replacement_woba"] = out["woba"] * 0.85
         out["total_pa"] = float(pa)
+        # League runs per PA — wRC+ anchor. Runs scored by batters from
+        # this scope, divided by PAs. Used in: wRC+ = ((wOBA − lg_wOBA)/scale + lg_R/PA) / (lg_R/PA × PF) × 100.
+        bat_r = bat.get("r", 0) or 0
+        out["runs_per_pa"] = (bat_r / pa) if pa else 0.0
 
     pit_outs = pit.get("outs", 0) or 0
     if pit_outs:
@@ -1717,6 +1750,47 @@ def _league_baselines(league: str | None = None) -> dict[str, float]:
                 (pit.get("fo") or 0) / g,
             )
 
+        # Stdev of per-pitcher GSc averages — used by the GSc Index
+        # (z-score-based "+ index" that's cross-league-size comparable
+        # in spread, not just mean). Restrict to pitchers who recorded
+        # at least one game's worth of outs (≥ 9) so single-batter cameos
+        # don't blow up the distribution.
+        per_pitcher = db.fetchall(
+            f"""SELECT ps.player_id,
+                       COUNT(*) AS g,
+                       SUM(ps.outs_recorded) AS outs,
+                       SUM(ps.k)             AS k,
+                       SUM(ps.hits_allowed)  AS h,
+                       SUM(ps.er)            AS er,
+                       SUM(ps.unearned_runs) AS uer,
+                       SUM(ps.bb)            AS bb,
+                       SUM(ps.hr_allowed)    AS hr,
+                       SUM(ps.fo_induced)    AS fo
+                FROM {_PSTATS_DEDUP_SQL} ps{pit_where}
+                GROUP BY ps.player_id
+                HAVING SUM(ps.outs_recorded) >= 9""",
+            pit_params,
+        )
+        gsc_values: list[float] = []
+        for pp in per_pitcher:
+            pg = pp.get("g") or 0
+            if pg <= 0:
+                continue
+            gsc_values.append(_pitcher_game_score(
+                (pp.get("outs") or 0) / pg,
+                (pp.get("k")    or 0) / pg,
+                (pp.get("h")    or 0) / pg,
+                (pp.get("er")   or 0) / pg,
+                (pp.get("uer")  or 0) / pg,
+                (pp.get("bb")   or 0) / pg,
+                (pp.get("hr")   or 0) / pg,
+                (pp.get("fo")   or 0) / pg,
+            ))
+        if len(gsc_values) >= 2:
+            mean = sum(gsc_values) / len(gsc_values)
+            var  = sum((v - mean) ** 2 for v in gsc_values) / len(gsc_values)
+            out["gsc_std"] = max(1.0, var ** 0.5)
+
     # Runs-per-win for WAR. Pythagorean-flavored heuristic computed
     # from the league's actual r_per_game on each render, so it auto-
     # adapts to whatever run environment the current config produces.
@@ -1766,6 +1840,26 @@ def _team_league_map() -> dict[int, str]:
     }
 
 
+def _team_park_map() -> dict[int, float]:
+    """Map team_id → combined park factor PF.
+
+    Standard "player park factor" approximation: each player plays
+    roughly half home games and half road games. The road games
+    average to PF=1.0 (the league as a whole), so the player's
+    effective PF is `(home_PF + 1) / 2`. PF here is the average of
+    park_hr and park_hits — both are sub-1 = pitcher-friendly,
+    above-1 = hitter-friendly. Sentinel 1.0 keeps zero-division-safe
+    callers neutral.
+    """
+    out: dict[int, float] = {}
+    for r in db.fetchall("SELECT id, park_hr, park_hits FROM teams"):
+        ph = float(r["park_hr"]   if r["park_hr"]   is not None else 1.0)
+        pi = float(r["park_hits"] if r["park_hits"] is not None else 1.0)
+        home_pf = (ph + pi) / 2.0
+        out[int(r["id"])] = (home_pf + 1.0) / 2.0  # half home, half road
+    return out
+
+
 def _aggregate_pitcher_rows(
     rows: list[dict],
     wl: dict[int, dict[str, int]] | None = None,
@@ -1773,6 +1867,7 @@ def _aggregate_pitcher_rows(
     baselines: dict | None = None,
     baselines_by_league: dict[str, dict] | None = None,
     team_league_map: dict[int, str] | None = None,
+    park_map: dict[int, float] | None = None,
 ) -> None:
     """Compute the O27 pitcher-stat suite onto each row in place.
 
@@ -1804,6 +1899,13 @@ def _aggregate_pitcher_rows(
     )
     if baselines is None:
         baselines = {"era": 0.0, "league": ""}
+    # Lazy-build the park-factor map if the caller didn't pass one.
+    # Skipped if the rows don't carry team_id (legacy callers).
+    if park_map is None and rows and rows[0].get("team_id") is not None:
+        try:
+            park_map = _team_park_map()
+        except Exception:
+            park_map = None
     # Auto-build per-tier dispatch (same pattern as _aggregate_batter_rows).
     if (baselines_by_league is None and team_league_map is None
             and rows and rows[0].get("team_id") is not None):
@@ -1979,6 +2081,33 @@ def _aggregate_pitcher_rows(
         else:
             p["gsc_plus"] = 100.0
         p["gsc_plus_scope"] = scoped_p.get("league", "")
+
+        # GSc Index — z-score normalization with 100 mean, 15 stdev (IQ
+        # scale, matches the spread-normalized "+" stat family). GSc+ tells
+        # you how a pitcher ranks against THIS league's mean; GSc Index
+        # additionally accounts for the spread of pitcher talent, so a
+        # 130 in an 8-team league means the same `+2 σ` as a 130 in a
+        # 56-team league regardless of how concentrated the talent pool is.
+        league_std = scoped_p.get("gsc_std") or 10.0
+        if league_std > 0 and p["gsc_avg"] > 0:
+            p["gsc_index"] = 100.0 + 15.0 * (p["gsc_avg"] - league_gsc) / league_std
+        else:
+            p["gsc_index"] = 100.0
+
+        # wERA+ — park-adjusted league-relative wERA on the ERA+ scale
+        # (100 = league avg, >100 = better than league at this park).
+        # Convention: a hitter's park has PF > 1, so we credit pitchers
+        # in those parks by multiplying league_wERA by PF in the
+        # numerator (a pitcher in Coors gets a boost). Sentinel 100 for
+        # no-sample edge cases keeps templates render-safe.
+        league_werra_b = scoped_p.get("league_werra") or scoped_p.get("era") or 0.0
+        tid = p.get("team_id")
+        pf  = (park_map.get(int(tid)) if tid is not None and park_map else None) or 1.0
+        if p["werra"] > 0 and league_werra_b > 0:
+            p["wera_plus"] = (league_werra_b * pf / p["werra"]) * 100.0
+        else:
+            p["wera_plus"] = 100.0
+        p["park_factor"] = pf
 
         # --- VORP / WAR rebased to wERA ---
         # Replacement wERA = league_werra × 1.2 (carries the existing
@@ -3590,6 +3719,166 @@ def stats_browse():
     )
 
 
+def _batter_game_score(
+    pa: float, h: float, d2: float, d3: float, hr: float,
+    rbi: float, r: float, bb: float, k: float,
+) -> float:
+    """O27 single-game batter score (bGSc).
+
+    Hitter analogue of the pitcher Game Score: a single-number summary
+    of a batter's day, clamped to [0, 100], anchored so a 1-for-4 with
+    no other production sits near 50. Weights echo wOBA's structure
+    (singles ~0.95, doubles 1.30, triples 1.70, HR 2.05 in run terms)
+    but the result is a 0–100 readout rather than a rate stat. RBI and
+    Runs reward integration with the offense; K penalizes empty outs.
+    """
+    singles = max(0.0, h - d2 - d3 - hr)
+    score = (
+        50.0
+        + 4.0  * singles
+        + 7.0  * d2
+        + 10.0 * d3
+        + 13.0 * hr
+        + 2.0  * bb
+        + 2.0  * rbi
+        + 1.5  * r
+        - 1.5  * k
+        - 2.0  * (pa - h - bb)   # outs in the box (rough; PA−H−BB)
+    )
+    if score < 0:   return 0.0
+    if score > 100: return 100.0
+    return float(score)
+
+
+def _top_pitcher_outings(top_n: int = 10) -> list[dict]:
+    """Top per-appearance Game Scores of the season (regulation only).
+
+    Returns rows ready for template rendering: player + team labels, the
+    pitching line (IP, H, BB, K, ER), the GSc, and the box-score link.
+    Computed in Python so we share the canonical `_pitcher_game_score()`
+    formula with the season aggregator.
+    """
+    rows = db.fetchall(
+        """
+        SELECT ps.player_id, ps.team_id, ps.game_id,
+               ps.outs_recorded, ps.hits_allowed, ps.bb, ps.k,
+               ps.er, ps.unearned_runs, ps.hr_allowed, ps.fo_induced,
+               ps.hbp_allowed, ps.batters_faced,
+               g.game_date, g.home_team_id, g.away_team_id,
+               g.home_score, g.away_score,
+               p.name AS player_name,
+               t.abbrev AS team_abbrev,
+               ht.abbrev AS home_abbrev,
+               at.abbrev AS away_abbrev
+        FROM game_pitcher_stats ps
+        JOIN games  g  ON ps.game_id = g.id
+        JOIN players p ON ps.player_id = p.id
+        JOIN teams   t ON ps.team_id   = t.id
+        JOIN teams   ht ON g.home_team_id = ht.id
+        JOIN teams   at ON g.away_team_id = at.id
+        WHERE ps.phase = 0 AND g.played = 1 AND ps.outs_recorded > 0
+        """
+    )
+    enriched: list[dict] = []
+    for r in rows:
+        outs = float(r["outs_recorded"] or 0)
+        gsc = _pitcher_game_score(
+            outs,
+            float(r["k"]            or 0),
+            float(r["hits_allowed"] or 0),
+            float(r["er"]           or 0),
+            float(r["unearned_runs"] or 0),
+            float(r["bb"]           or 0),
+            float(r["hr_allowed"]   or 0),
+            float(r["fo_induced"]   or 0),
+        )
+        enriched.append({
+            "player_id":   int(r["player_id"]),
+            "player_name": r["player_name"],
+            "team_id":     int(r["team_id"]),
+            "team_abbrev": r["team_abbrev"],
+            "game_id":     int(r["game_id"]),
+            "game_date":   r["game_date"],
+            "home_abbrev": r["home_abbrev"],
+            "away_abbrev": r["away_abbrev"],
+            "home_score":  r["home_score"],
+            "away_score":  r["away_score"],
+            "outs":        int(outs),
+            "ip_display":  f"{int(outs // 3)}.{int(outs % 3)}",
+            "h":           int(r["hits_allowed"] or 0),
+            "bb":          int(r["bb"] or 0),
+            "k":           int(r["k"]  or 0),
+            "er":          int(r["er"] or 0),
+            "hr":          int(r["hr_allowed"] or 0),
+            "bf":          int(r["batters_faced"] or 0),
+            "gsc":         round(gsc, 1),
+        })
+    enriched.sort(key=lambda d: (-d["gsc"], -d["outs"], d["game_id"]))
+    return enriched[:top_n]
+
+
+def _top_batter_games(top_n: int = 10) -> list[dict]:
+    """Top per-game batter Game Scores of the season (regulation only)."""
+    rows = db.fetchall(
+        """
+        SELECT bs.player_id, bs.team_id, bs.game_id,
+               bs.pa, bs.ab, bs.hits, bs.doubles, bs.triples, bs.hr,
+               bs.rbi, bs.runs, bs.bb, bs.k,
+               g.game_date, g.home_team_id, g.away_team_id,
+               g.home_score, g.away_score,
+               p.name AS player_name,
+               t.abbrev AS team_abbrev,
+               ht.abbrev AS home_abbrev,
+               at.abbrev AS away_abbrev
+        FROM game_batter_stats bs
+        JOIN games  g  ON bs.game_id = g.id
+        JOIN players p ON bs.player_id = p.id
+        JOIN teams   t ON bs.team_id   = t.id
+        JOIN teams   ht ON g.home_team_id = ht.id
+        JOIN teams   at ON g.away_team_id = at.id
+        WHERE bs.phase = 0 AND g.played = 1 AND bs.pa > 0
+        """
+    )
+    enriched: list[dict] = []
+    for r in rows:
+        bgsc = _batter_game_score(
+            float(r["pa"]      or 0),
+            float(r["hits"]    or 0),
+            float(r["doubles"] or 0),
+            float(r["triples"] or 0),
+            float(r["hr"]      or 0),
+            float(r["rbi"]     or 0),
+            float(r["runs"]    or 0),
+            float(r["bb"]      or 0),
+            float(r["k"]       or 0),
+        )
+        enriched.append({
+            "player_id":   int(r["player_id"]),
+            "player_name": r["player_name"],
+            "team_id":     int(r["team_id"]),
+            "team_abbrev": r["team_abbrev"],
+            "game_id":     int(r["game_id"]),
+            "game_date":   r["game_date"],
+            "home_abbrev": r["home_abbrev"],
+            "away_abbrev": r["away_abbrev"],
+            "home_score":  r["home_score"],
+            "away_score":  r["away_score"],
+            "pa":          int(r["pa"]   or 0),
+            "ab":          int(r["ab"]   or 0),
+            "h":           int(r["hits"] or 0),
+            "d2":          int(r["doubles"] or 0),
+            "d3":          int(r["triples"] or 0),
+            "hr":          int(r["hr"]   or 0),
+            "rbi":         int(r["rbi"]  or 0),
+            "r":           int(r["runs"] or 0),
+            "bb":          int(r["bb"]   or 0),
+            "k":           int(r["k"]    or 0),
+            "bgsc":        round(bgsc, 1),
+        })
+    enriched.sort(key=lambda d: (-d["bgsc"], -d["h"], d["game_id"]))
+    return enriched[:top_n]
+
+
 @app.route("/leaders")
 def leaders():
     games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
@@ -3782,6 +4071,78 @@ def leaders():
            LIMIT 25""",
     )
 
+    # ----- Game-log Top 10 (per-outing / per-game) -----------------
+    # Each row is one appearance (pitcher) or one game (batter).
+    # We compute the per-event Game Score in Python so the pitcher
+    # formula stays single-sourced through `_pitcher_game_score`.
+    top_outings = _top_pitcher_outings(top_n=10)
+    top_games   = _top_batter_games(top_n=10)
+
+    # ----- Streaks & milestones (hit streaks, no-hitters, perfect) -
+    from o27v2.analytics.streaks import (
+        longest_hit_streaks, no_hitters_and_perfect_games,
+    )
+    hit_streaks = longest_hit_streaks(top_n=10)
+    nohit_data  = no_hitters_and_perfect_games()
+
+    # ----- WPA / Leverage Index leaderboard ------------------------
+    # Empirical WP built from this league's own outcomes (no MLB
+    # crutch). Templates render top 10 by WPA for batters/pitchers
+    # and the highest-leverage PA-of-the-season list.
+    from o27v2.analytics.wpa import build_player_wpa
+    wpa_data = build_player_wpa()
+    # Join WPA / LI onto the batting + pitching rows so the existing
+    # `card()` macro can render them like any other stat.
+    for b in batting:
+        pid = b.get("player_id")
+        w = wpa_data["by_batter"].get(pid) if pid is not None else None
+        b["wpa"]    = w["wpa"]    if w else None
+        b["li_avg"] = w["li_avg"] if w else None
+    for p in pitching:
+        pid = p.get("player_id")
+        w = wpa_data["by_pitcher"].get(pid) if pid is not None else None
+        p["wpa"]    = w["wpa"]    if w else None
+        p["li_avg"] = w["li_avg"] if w else None
+    # Top-WPA narrative rows: stamp player + game labels so the
+    # template doesn't need a second lookup pass.
+    pname_map = {
+        int(r["id"]): r for r in db.fetchall(
+            "SELECT id, name FROM players"
+        )
+    }
+    game_meta_for_wpa = {}
+    if wpa_data["top_pa"]:
+        gids = sorted({int(e["game_id"]) for e in wpa_data["top_pa"]})
+        placeholders = ",".join("?" * len(gids))
+        game_meta_for_wpa = {
+            int(g["id"]): g for g in db.fetchall(
+                f"""SELECT g.id, g.game_date, ht.abbrev AS home_abbrev,
+                           at.abbrev AS away_abbrev
+                    FROM games g
+                    JOIN teams ht ON g.home_team_id = ht.id
+                    JOIN teams at ON g.away_team_id = at.id
+                    WHERE g.id IN ({placeholders})""",
+                tuple(gids),
+            )
+        }
+    top_wpa_events = []
+    for e in wpa_data["top_pa"][:10]:
+        bid = e["batter_id"]
+        pid = e["pitcher_id"]
+        gmeta = game_meta_for_wpa.get(int(e["game_id"]), {})
+        top_wpa_events.append({
+            "game_id":     e["game_id"],
+            "game_date":   gmeta.get("game_date", ""),
+            "home_abbrev": gmeta.get("home_abbrev", ""),
+            "away_abbrev": gmeta.get("away_abbrev", ""),
+            "batter_id":   bid,
+            "batter_name": (pname_map.get(int(bid), {}) or {}).get("name", f"#{bid}"),
+            "pitcher_id":  pid,
+            "pitcher_name": (pname_map.get(int(pid), {}) or {}).get("name", f"#{pid}") if pid else "",
+            "wpa":         e["wpa"],
+            "li":          e["li"],
+        })
+
     # Scouting board — every signed player ranked by raw 20-80 tool grades,
     # independent of playing time. Surfaces hidden depth (reserves with elite
     # Stamina, bench bats with elite Power) that the qualified-leader views
@@ -3814,6 +4175,13 @@ def leaders():
         salaries=salaries,
         talent_hitters=talent_hitters,
         talent_pitchers=talent_pitchers,
+        top_outings=top_outings,
+        top_games=top_games,
+        hit_streaks=hit_streaks,
+        no_hitters=nohit_data["no_hitters"],
+        perfect_games=nohit_data["perfect_games"],
+        top_wpa_events=top_wpa_events,
+        wpa_n_games=wpa_data.get("n_games", 0),
     )
 
 

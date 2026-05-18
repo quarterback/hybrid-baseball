@@ -89,6 +89,8 @@ The "stay" is O27's second-chance hit mechanic — a batter can elect to stay in
 | Weighted On-Base Avg | wOBA | Linear-weights offense, O27-tuned | `(0.72·BB + 0.74·HBP + 0.95·1B + 1.30·2B + 1.70·3B + 2.05·HR) / PA` | `o27v2/web/app.py:761-765` |
 | OPS+ | OPS+ | League-relative OPS (100 = avg) | `(OPS / league_OPS) × 100` | `o27v2/web/app.py:800` |
 | wOBA+ | wOBA+ | League-relative wOBA (100 = avg) | `(wOBA / league_wOBA) × 100` | `o27v2/web/app.py:801` |
+| wRC+ | wRC+ | Park-adjusted, league-relative runs created. 100 = league avg at this park. | `((wOBA − lg_wOBA)/1.20 + lg_R/PA) / (lg_R/PA × PF) × 100` | `o27v2/web/app.py:1349-1364` |
+| Park Factor | PF | Player's effective park factor (half home / half road) | `((park_hr + park_hits)/2 + 1) / 2` from team's home park | `o27v2/web/app.py:_team_park_map` |
 | Batting VORP | bVORP | Runs above replacement, batting | `(wOBA − replacement_wOBA) × PA / 1.20` | `o27v2/web/app.py:808` |
 | Offensive WAR | WAR_OFF | Batting wins | `bVORP / runs_per_win` | `o27v2/web/app.py:823` |
 | Batting WAR | bWAR | Total batting+def wins for position players | `(bVORP + dDRS) / runs_per_win` | `o27v2/web/app.py:825` |
@@ -170,6 +172,7 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 | Stat | Abbr | Meaning | Formula | Source |
 |---|---|---|---|---|
 | Game Score | GSc | Single-number outing summary, clamped to [0, 100] | `clamp(0, 100, 50 + outs + 2·max(0, K−3) − 2H − 4ER − 2UER − BB − 4HR + 1·FO)` | `o27v2/web/app.py:839-864` |
+| Batter Game Score | bGSc | Single-number per-game batter summary, clamped to [0, 100] | `clamp(0, 100, 50 + 4·1B + 7·2B + 10·3B + 13·HR + 2·BB + 2·RBI + 1.5·R − 1.5·K − 2·(PA−H−BB))` | `o27v2/web/app.py:_batter_game_score` |
 | Outs Share % | OS% | Pct of the team's 27 outs the pitcher recorded | `outs / 27 × 100` | `o27v2/web/app.py:1207` |
 
 ---
@@ -180,6 +183,8 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 |---|---|---|---|---|
 | Game Score Avg | GSc_AVG | Mean Game Score across appearances | `Σ GSc / G` | `o27v2/web/app.py:1215-1219` |
 | Game Score Plus | GSc+ | League-relative Game Score | `(GSc_AVG / league_GSc_AVG) × 100` | `o27v2/web/app.py:1254` |
+| Game Score Index | GSc Index | Z-score-normalized Game Score on IQ-style 100/15 scale. Cross-league-size comparable in BOTH mean and spread (unlike GSc+, which only normalizes mean). | `100 + 15·(GSc_AVG − league_GSc_AVG) / league_GSc_STD` | `o27v2/web/app.py:_aggregate_pitcher_rows` |
+| Weighted ERA Plus | wERA+ | Park-adjusted, league-relative wERA (ERA+ scale; 100 = avg) | `(league_wERA × PF / wERA) × 100` | `o27v2/web/app.py:_aggregate_pitcher_rows` |
 | Avg Outs Reached | AOR | Mean outs per appearance | `outs / G` | `o27v2/web/app.py:1207` |
 | Outs Share Plus | OS+ | League-relative AOR | `(AOR / league_AOR) × 100` | `o27v2/web/app.py:1209-1211` |
 | Workhorse Start % | WS% | Share of starts with ≥18 outs and ≤6 ER | `count(qualifying starts) / starts` | `o27v2/web/app.py:1223` |
@@ -264,6 +269,28 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 | Luck (fitted) | Over/underperformance | `Actual_W − Pythag_W_fitted` | `o27v2/analytics/pythag.py:126` |
 | Pythag Win % (MLB 1.83) | MLB-default exponent reference | `R^1.83 / (R^1.83 + RA^1.83)` | `o27v2/analytics/pythag.py:110-111` |
 | Luck (MLB) | Over/under vs MLB-default | `Actual_W − Pythag_W_default` | `o27v2/analytics/pythag.py:125` |
+
+---
+
+### Streaks & Milestones
+
+| Metric | Meaning | Definition | Source |
+|---|---|---|---|
+| Hit Streak | Consecutive games with ≥ 1 hit | A 0-AB game (pinch run / rest) leaves the streak intact; an 0-for game with ≥ 1 AB breaks it. | `o27v2/analytics/streaks.py:longest_hit_streaks` |
+| No-Hitter | Single pitcher records all 27 outs of regulation with 0 hits allowed | Walks / HBP / errors are allowed (just no hits). | `o27v2/analytics/streaks.py:no_hitters_and_perfect_games` |
+| Perfect Game | No-hitter + 0 BB + 0 HBP + 0 UER + 0 ROE | 27 up, 27 down. | `o27v2/analytics/streaks.py:no_hitters_and_perfect_games` |
+
+### Win Probability & Leverage
+
+Empirical: WP at each (batting_is_home, outs_bucket, bases, score_diff) is the observed win frequency among games containing that state. Coarsens via marginal cells when per-cell sample is < 8.
+
+| Metric | Meaning | Computation | Source |
+|---|---|---|---|
+| WP Table | Win probability lookup, derived from this league's own games | One pass over `game_pa_log` ∪ `games`, indexed by state | `o27v2/analytics/wpa.py:build_wp_table` |
+| WPA (per PA) | Win Probability Added by the batting team | `WP(state_after) − WP(state_before)` | `o27v2/analytics/wpa.py:build_player_wpa` |
+| Player WPA | Season sum of WPA per batter / pitcher (pitcher = negation of opponents' gain) | Σ WPA over the player's PAs | `o27v2/analytics/wpa.py:build_player_wpa` |
+| Leverage Index | How big the WP swing typically is at a state, normalized so league avg LI = 1.0 | `RMS(WPA at state) / mean(RMS across all states)` | `o27v2/analytics/wpa.py:build_player_wpa` |
+| LI avg | Mean Leverage Index over a player's PAs (batter or pitcher) | `Σ LI / N_PA` | `o27v2/analytics/wpa.py:build_player_wpa` |
 
 ---
 
