@@ -182,12 +182,58 @@ If the deployed league shows home winning more often, the question to ask is **w
 
 ---
 
+## Production audit + the actual home-advantage source
+
+After the balanced-team test confirmed the *o27 engine* is fair, the user asked for a league-balance audit on the deployed-app database to check whether the production home-team-wins-more pattern is a rotation-deployment artifact or something real.
+
+The audit ran against the live `o27v2.db` schema (30 teams, 1974 players, 2430-game schedule, fresh state — 0 games played):
+
+```
+SCHEDULE BALANCE (per team across 30 teams):
+  home games:  mean=81.0  stdev=5.20  range=73-91
+  away games:  mean=81.0  stdev=5.20  range=71-89
+```
+
+Schedule is balanced to within sampling noise — each team plays ~81 home / ~81 away across a 162-game season.
+
+But the pitching-strength scan turned up something else entirely. Looking at `o27v2/sim.py:_db_team_to_engine`:
+
+```python
+home_bonus = (
+    v2cfg.HOME_ADVANTAGE_SKILL
+    if team_role == "home"
+    else 0.0
+)
+...
+skill=_scout.to_unit(p["skill"]) + home_bonus,
+```
+
+`HOME_ADVANTAGE_SKILL = 0.08` in `o27v2/config.py:166`. Every non-joker home batter's `skill` rating was bumped by an absolute +0.08 (on the 0-1 normalized scale) at DB-to-engine conversion time, *every game in production*. That's the actual source of the deployed-app home-team-wins-more pattern. It happens to land at roughly the same magnitude as the make_foxes/make_bears fixture gap that the earlier diagnostic series mis-attributed to engine bias.
+
+The o27/ engine itself was fair the whole time. The o27v2/ production sim layer was injecting this constant. Per user direction, removed (set to 0.0). The comment on the config constant was updated to record the rationale and the symmetric-by-role mechanics that now stand in its place.
+
+Combined with the advancement-table dial drop (`ADVANCE_2B_ON_1B_SCORE` 0.54 → 0.49, `ADVANCE_1B_ON_2B_SCORE` 0.43 → 0.40 — the user's earlier suggestion applied with the now-correct baseline), a final 300-game balanced-fixture smoke produced:
+
+```
+=== 300 games (identical inline teams) ===
+  W-L:    home 147 (49.0%) / visitor 153 (51.0%)
+  R/g:    home 15.06  visitor 14.87  gap +0.19
+  H/g:    home 19.41  visitor 19.44
+  TOA/g:  home 2.06   visitor 2.11
+  LOB/g:  home 4.84   visitor 4.78
+  HBF:    52.3%
+  H/R:    1.30  (hits exceed runs by ~30%, more LOB texture)
+```
+
+Engine is fair under genuinely identical teams. Per-game H/R ratio is now 1.30 (was ~1.0 before the friction pass and dial adjustments) — more hits than runs across the league, matching the user's "lots of hits that don't generate runs" target without chasing a specific number.
+
+---
+
 ## Open items (revised)
 
-1. **Production league balance audit.** If home teams consistently outscore visitors in the deployed app, check whether the rotation strength is balanced league-wide before assuming an engine bias.
-2. **User's dial recommendations for the advancement tables.** Still pending: the user proposed `ADVANCE_2B_ON_1B_SCORE` to 0.48-0.52 (currently 0.54) and `ADVANCE_1B_ON_2B_SCORE` to 0.38-0.42 (currently 0.43). Suggested when they thought the baseline was 0.58 / 0.47; needs confirmation with the actual current values.
-3. **Historical data backfill.** The situational-stats DB fix only applies going forward. Pre-fix rows still have zeroed advancement / 2C / RAD / gidp / gitp columns. A re-sim would backfill them; alternatively the almanac could read zeros as "no data" and present accordingly.
-4. **`make_foxes()` / `make_bears()` hardcode `team_id` strings.** This makes the fixtures unsuitable for testing home/visitor symmetry. Should be parameterized or renamed so the `team_id` follows the slot they're placed in. A test-only ergonomics issue but cost hours of diagnostic work to discover, so worth flagging.
+1. **Production data backfill.** With `HOME_ADVANTAGE_SKILL=0.0`, all historical games played at the old value carry that ~+0.08 home-batter skill in their stats. Re-sim or treat the prior data as a different rule set.
+2. **Historical situational-stats backfill.** Separately, the DB rows written before the `_stat_delta` fix have zeroed advancement / 2C / RAD / gidp / gitp columns. Same option: re-sim or accept stale rows for completed games.
+3. **`make_foxes()` / `make_bears()` hardcode `team_id` strings.** Test-only ergonomics issue. Cost hours of diagnostic work to discover. Worth either parameterizing or renaming so `team_id` follows the slot the fixture is placed in.
 
 ---
 

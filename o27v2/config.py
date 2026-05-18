@@ -163,7 +163,16 @@ JOKERS_PER_ARCHETYPE: int = 1   # Phase 10: 3 jokers per team total (one per arc
 # Applied to non-joker batters on the home team in both batch.py and sim.py.
 # ---------------------------------------------------------------------------
 
-HOME_ADVANTAGE_SKILL: float = 0.08
+# Held at 0.0 — the production sim used to bump every non-joker home batter's
+# `skill` by an absolute +0.08 at DB-to-engine conversion time. That single
+# constant was the dominant source of the deployed-app home-team-wins-more
+# pattern (matched the magnitude of the make_foxes/make_bears fixture gap that
+# masqueraded as a home advantage in earlier diagnostics). Removed at the
+# user's request — keeping the engine genuinely home/visitor-symmetric, with
+# any home edge emerging organically from rotation deployment, park effects,
+# travel/wellness, and the role-symmetric mechanics added in the bat-second
+# viability pass (target pressure, fielding fatigue, rebuttal-offense tilt).
+HOME_ADVANTAGE_SKILL: float = 0.0
 
 # ---------------------------------------------------------------------------
 # Re-exports of Phase 8 engine constants

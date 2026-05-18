@@ -257,8 +257,8 @@ ADVANCE_3B_ON_1B_HOLD: float     = 0.25
 ADVANCE_3B_ON_1B_OUT: float      = 0.04
 
 # Single, runner on 2B — the classic close play at the plate.
-ADVANCE_2B_ON_1B_SCORE: float    = 0.54
-ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.32
+ADVANCE_2B_ON_1B_SCORE: float    = 0.49
+ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.37
 ADVANCE_2B_ON_1B_OUT: float      = 0.14
 
 # Double, runner on 2B (almost auto, occasionally held with a deep relay
@@ -270,8 +270,8 @@ ADVANCE_2B_ON_2B_OUT: float      = 0.04
 # Double, runner on 1B — 1B-to-home on a double is the lever everyone
 # wants. Around half score, a third stop at 3B, the slow ones get held
 # at 2B because the throw beats them, occasionally the throw nails 'em.
-ADVANCE_1B_ON_2B_SCORE: float    = 0.43
-ADVANCE_1B_ON_2B_TO_3B: float    = 0.34
+ADVANCE_1B_ON_2B_SCORE: float    = 0.40
+ADVANCE_1B_ON_2B_TO_3B: float    = 0.37
 ADVANCE_1B_ON_2B_HOLD_2B: float  = 0.16
 ADVANCE_1B_ON_2B_OUT: float      = 0.07
 
