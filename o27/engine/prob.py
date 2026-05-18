@@ -2153,6 +2153,15 @@ class ProbabilisticProvider:
             fade = max(0.0, 1.0 - pa_idx / max(1, cfg.TARGET_PRESSURE_FADE_PAS))
             tp_shift = cfg.TARGET_PRESSURE_SHIFT * fade
 
+        # Rebuttal-phase offense tilt (item 1): seconds rounds (and super-
+        # innings, same pause logic) are a slightly higher-offense
+        # environment because the pitcher cools off during the declaration
+        # break while the batter's timing stays sharp. Adds to the same
+        # contact-quality shift. Symmetric by role — applies to whichever
+        # team is batting in the seconds / super phase.
+        if state.in_seconds_phase or state.is_super_inning:
+            tp_shift += cfg.REBUTTAL_OFFENSE_SHIFT
+
         quality = contact_quality(
             rng, batter, pitcher, weather,
             swings_in_ab=state.current_at_bat_swings,

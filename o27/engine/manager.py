@@ -1564,7 +1564,15 @@ def should_bat_first(state: GameState, rng=None) -> bool:
          + cfg.BAT_FIRST_PERSONA_SCALE   * (pref - 0.5)
          + 0.10 * opp_pen_drag
          + 0.05 * weather)
-    p = max(0.02, min(0.98, p))
+    # Cap the home strategic edge tight to the base. Home is the only
+    # team that gets to make this call — visitors have no equivalent
+    # tactical lever — so a wide swing range turns it into a hidden
+    # home advantage on top of any role-symmetric mechanics. Keeping
+    # the deviation under ±1% means the decision is essentially a coin
+    # flip with the tiniest situational nudge, removing it as a source
+    # of structural home-team edge.
+    edge_cap = cfg.BAT_FIRST_HOME_EDGE_CAP
+    p = max(cfg.BAT_FIRST_BASE - edge_cap, min(cfg.BAT_FIRST_BASE + edge_cap, p))
 
     if rng is None:
         import random as _r

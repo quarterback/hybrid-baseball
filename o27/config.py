@@ -733,6 +733,15 @@ DECLARE_PERSONA_SCALE: float = 0.25
 # bat-first rate, which translates into a ~4 R/g home advantage in
 # practice. 0.50 lets bat-first be a genuine choice driven by context.
 BAT_FIRST_BASE:          float = 0.50
+# Tight cap on how far the persona / park / starter / bullpen / weather
+# scalars are allowed to push the home manager's bat-first probability
+# away from BAT_FIRST_BASE. With a wide range, those scalars become a
+# strategic lever ONLY the home manager gets — visitors have no
+# equivalent — and that hidden tactical edge re-creates the home
+# advantage even when the base is symmetric. Holding the deviation
+# under 1 percentage point makes the bat-order call essentially a coin
+# flip with vanishing situational influence.
+BAT_FIRST_HOME_EDGE_CAP: float = 0.01
 
 # -----------------------------------------------------------------------
 # Bat-second viability — symmetric-by-role nudges
@@ -751,6 +760,18 @@ BAT_FIRST_BASE:          float = 0.50
 TARGET_PRESSURE_SHIFT:     float = 0.030   # added to contact-quality shift
                                            # (positive = harder contact)
 TARGET_PRESSURE_FADE_PAS:  int   = 12      # bonus is full at PA 1, 0 by PA 13
+
+# (1b) Rebuttal-phase offense tilt — when the game pauses for a
+# declaration, pitchers cool off but batters keep their timing. So the
+# seconds round (and any super-inning rebuttal where the same pause
+# logic applies) is a slightly higher-offense environment than
+# regulation. Implemented as a small contact-quality shift active for
+# every PA in a seconds round. Helps the trailing team marginally more
+# (they're the ones needing the rebuttal runs), without making any
+# rule asymmetric — leading teams that come into seconds for insurance
+# get the same tilt, they just need it less.
+REBUTTAL_OFFENSE_SHIFT:    float = 0.035   # added to contact-quality shift
+                                           # during seconds (and SI) phases
 
 # (2) Fielding fatigue — the team that batted first must field the
 # entire second half. By the late arc of that fielding stint, their

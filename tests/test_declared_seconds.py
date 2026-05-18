@@ -221,16 +221,21 @@ def test_phase_number_property():
 # Bat-first persona
 # ---------------------------------------------------------------------------
 
-def test_should_bat_first_biased_above_50pct():
+def test_should_bat_first_near_coin_flip():
     """The default home manager (mgr_bat_first_pref=0.5) should pick bat-first
-    more than 50% of the time, per BAT_FIRST_BASE=0.65."""
+    close to 50% of the time. The earlier 0.65 retcon was removed once
+    other engine-level fixes addressed the home-scores-more asymmetry,
+    and BAT_FIRST_HOME_EDGE_CAP clamps the situational scalars tight so
+    the call is essentially a coin flip with vanishing strategic edge."""
     yes = 0
     rng = random.Random(2026)
-    for _ in range(200):
+    n = 200
+    for _ in range(n):
         state = _mk_state()
         if should_bat_first(state, rng=rng):
             yes += 1
-    assert yes >= 100, f"home bat-first rate {yes}/200 is below 50%"
+    # 95% binomial CI around 50% is roughly [43%, 57%] for n=200.
+    assert 80 < yes < 120, f"home bat-first rate {yes}/{n} is outside the near-50% band"
 
 
 # ---------------------------------------------------------------------------
