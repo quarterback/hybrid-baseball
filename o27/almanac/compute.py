@@ -1011,15 +1011,17 @@ def _empty_fielder_slot(pid, position, players_by_id, teams_by_id, sample_row):
 def _compute_pythag(standings: list[dict]) -> tuple[dict[str, dict], dict[str, float]]:
     """Fit the Pythagorean exponent across teams and return per-team
     luck (fitted + MLB-default) plus a small summary dict."""
+    empty_summary = {
+        "fitted_exponent": 1.83, "mlb_default": 1.83, "n_teams": 0,
+        "rmse_fit": 0.0, "rmse_default": 0.0, "improvement_pct": 0.0,
+    }
     if len(standings) < 2:
-        return {}, {"fitted_exponent": 1.83, "n_teams": len(standings),
-                    "rmse_fit": 0.0, "rmse_default": 0.0}
+        return {}, {**empty_summary, "n_teams": len(standings)}
 
     teams_in = [r for r in standings if (r["gp"] or 0) > 0
                 and ((r["rs"] or 0) > 0 or (r["ra"] or 0) > 0)]
     if not teams_in:
-        return {}, {"fitted_exponent": 1.83, "n_teams": 0,
-                    "rmse_fit": 0.0, "rmse_default": 0.0}
+        return {}, empty_summary
 
     def pct(r, ra, k):
         if r <= 0 and ra <= 0:
