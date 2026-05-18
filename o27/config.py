@@ -262,10 +262,10 @@ RUNNER_EXTRA_DOUBLE_FROM_1B: float = 0.30
 #   fast/skilled (0.95):   ~2%   — never automatic, floor enforced
 #   neutral      (0.50):   ~9%
 #   slow/raw     (0.10):  ~25%
-RUNNER_THROWN_OUT_AT_HOME_BASE: float        = 0.09
-RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.20
-RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.20
-RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.02
+RUNNER_THROWN_OUT_AT_HOME_BASE: float        = 0.18
+RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.22
+RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.22
+RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.05
 
 # GIDP — ground-ball double plays. With at least one runner on base
 # and < 2 outs, a share of ground outs become double plays. The exact
@@ -330,11 +330,11 @@ TRIPLE_PLAY_BASERUNNING_BONUS: float   = 0.06   # added when lead runner is belo
 # whether the slide beats the throw. Identity preserved at neutral inputs:
 # at speed = baserunning = aggressiveness = 0.5 the attempt probability
 # from RUNNER_EXTRA_SPEED_SCALE is already 0, so TOOTBLAN never fires.
-TOOTBLAN_SAFE_BASE: float  = 0.78   # baseline safe rate when an attempt fires
+TOOTBLAN_SAFE_BASE: float  = 0.62   # baseline safe rate when an attempt fires
 TOOTBLAN_SKILL_SCALE: float = 0.40  # +(baserunning - 0.5) * this
 TOOTBLAN_SPEED_SCALE: float = 0.20  # +(speed       - 0.5) * this
-TOOTBLAN_SAFE_MIN: float    = 0.45  # floor — even bad runners aren't always out
-TOOTBLAN_SAFE_MAX: float    = 0.96  # ceiling — even elite runners aren't auto-safe
+TOOTBLAN_SAFE_MIN: float    = 0.32  # floor — even bad runners aren't always out
+TOOTBLAN_SAFE_MAX: float    = 0.88  # ceiling — even elite runners aren't auto-safe
 
 # ---------------------------------------------------------------------------
 # Pickoff model — pitcher attempts to back-pick a runner. Fires as a
@@ -420,15 +420,27 @@ SAC_BUNT_FAIL_RATE: float          = 0.10   # popups / runner forced at lead
 
 SB_ATTEMPT_SPEED_THRESHOLD: float = 0.52   # was 0.62 — lower gate so above-avg speed attempts
 SB_ATTEMPT_PROB_PER_PITCH: float  = 0.045  # was 0.015 — ~3x MLB attempt rate
-SB_SUCCESS_BASE: float            = 0.72   # was 0.62 — pulled up to match MLB ~75% success
+SB_SUCCESS_BASE: float            = 0.58   # baseline success — catchers now win meaningfully
 SB_SUCCESS_SPEED_SCALE: float     = 0.50   # (speed - 0.5) * this adds to success
-SB_SUCCESS_PITCHER_SCALE: float   = 0.15   # pitcher_skill * this subtracts from success
+SB_SUCCESS_PITCHER_SCALE: float   = 0.20   # pitcher_skill * this subtracts from success
 SB_SUCCESS_DEBT_SCALE: float      = 0.0008 # pitcher.pitch_debt * this ADDS to success
                                            # — tired battery = easier steal
-SB_SUCCESS_CATCHER_ARM_SCALE: float = 0.20 # catcher.arm * this SUBTRACTS from success
+SB_SUCCESS_CATCHER_ARM_SCALE: float = 0.35 # catcher.arm * this SUBTRACTS from success
                                            # — elite catcher arm shuts down the running game
-SB_SUCCESS_MIN: float             = 0.25   # floor on steal success
-SB_SUCCESS_MAX: float             = 0.92   # ceiling on steal success
+SB_SUCCESS_MIN: float             = 0.18   # floor on steal success
+SB_SUCCESS_MAX: float             = 0.86   # ceiling on steal success
+
+# 2C / stay defense-read — chance the defense breaks up a valid stay by
+# nailing the lead runner. Catcher pickoff at second, OF charge-and-throw,
+# IF rotation catching the runner napping. Without this, every valid 2C
+# advanced runners unopposed; now the defense gets a real shot at the
+# baserunner. Scales with team defense and catcher arm so elite defenses
+# meaningfully suppress the 2C running game.
+STAY_DEFENSE_READ_BASE: float          = 0.10   # baseline lead-runner-out rate
+STAY_DEFENSE_READ_TEAM_SCALE: float    = 0.20   # (team_def - 0.5) * this
+STAY_DEFENSE_READ_CATCHER_SCALE: float = 0.20   # (catcher_arm - 0.5) * this
+STAY_DEFENSE_READ_MIN: float           = 0.03
+STAY_DEFENSE_READ_MAX: float           = 0.28
 
 # ---------------------------------------------------------------------------
 # Defense model

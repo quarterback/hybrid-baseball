@@ -2129,15 +2129,39 @@ class ProbabilisticProvider:
             # move runners, so chained hits produce runs instead of just
             # credit-only "free" hits. Pitchers pay via pitch count.
             if quality == "weak":
-                expected = 1.0 + 0.5 * talent_factor
+                expected = 0.55 + 0.5 * talent_factor
             else:  # medium
-                expected = 1.5 + 0.75 * talent_factor
+                expected = 1.05 + 0.75 * talent_factor
             expected = max(0.0, min(3.0, expected))
             floor_v = int(expected)
             frac = expected - floor_v
             adv = floor_v + (1 if rng.random() < frac else 0)
             adv = max(0, min(3, adv))
             outcome_dict["runner_advances"] = [adv, adv, adv]
+
+            # Defense-read on the 2C: a fraction of valid stays get
+            # broken up by the defense reading the play — catcher snaps
+            # a throw down, OF charges in to nip the lead runner at a
+            # bag, infielders rotate to a tag at second. Probability
+            # scales with team defense rating so good defenses make
+            # the 2C feel risky; bad defenses let it run wild.
+            if adv > 0 and any(state.bases):
+                team_def = float(getattr(state.fielding_team, "defense_rating", 0.5) or 0.5)
+                cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
+                p_read = (cfg.STAY_DEFENSE_READ_BASE
+                          + (team_def - 0.5) * cfg.STAY_DEFENSE_READ_TEAM_SCALE
+                          + (cat_arm  - 0.5) * cfg.STAY_DEFENSE_READ_CATCHER_SCALE)
+                p_read = max(cfg.STAY_DEFENSE_READ_MIN,
+                             min(cfg.STAY_DEFENSE_READ_MAX, p_read))
+                if rng.random() < p_read:
+                    # Pick the lead runner (highest occupied base) — that's
+                    # the one most likely to get nailed on a heads-up play.
+                    lead_idx = next(
+                        (i for i in (2, 1, 0) if state.bases[i] is not None),
+                        None,
+                    )
+                    if lead_idx is not None:
+                        outcome_dict["runner_out_idx"] = lead_idx
 
         # GIDP / triple play. A ground out with at least one runner on base
         # and < 2 outs can become a double play. Probability composes:
