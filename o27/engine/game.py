@@ -470,26 +470,45 @@ def _finalize_declaration(team: Team, state: GameState) -> None:
 def _run_seconds_rounds(state, event_provider, renderer) -> list[str]:
     """Drive the post-regulation declared-seconds loop.
 
-    The team that is currently trailing comes back for a "seconds" round
-    using their banked outs (if any) and if they haven't already used
-    their seconds. This can loop at most once per team (cap enforced by
-    seconds_used flag).
+    A team that DECLARED gets to bat their banked outs whenever they're
+    not already winning — i.e. they're trailing OR the score is tied. If
+    they're already leading, banking was unnecessary insurance and no
+    seconds round fires for them. Each team comes back at most once.
     """
     full_log: list[str] = []
     rounds_played = 0
     # Bound: 2 teams × 1 seconds round each = 2 rounds max.
     while rounds_played < 2:
-        winner = check_winner(state)
-        if winner is None:
-            # Tie at this point would never trigger seconds (seconds requires
-            # a non-tie). Defensive fallback.
+        # Find the next team eligible to bat. Candidates must:
+        #   - have banked outs (declared this game)
+        #   - not have used their seconds yet
+        #   - not currently be leading (winning teams don't need to come back)
+        # Prefer the team that's trailing by more; if both are tied, take
+        # the FIRST-batting team (matches the original "they declared first,
+        # they get to break the tie first" reading).
+        candidates = []
+        for team in (state.first_batting_team, state.second_batting_team):
+            if team is None or team.seconds_used:
+                continue
+            if int(team.outs_banked or 0) <= 0:
+                continue
+            opp = (state.second_batting_team if team is state.first_batting_team
+                   else state.first_batting_team)
+            team_score = state.score.get(team.team_id, 0)
+            opp_score  = state.score.get(opp.team_id, 0) if opp else 0
+            if team_score < opp_score:
+                # Trailing — definitely should come back.
+                candidates.append((team, opp_score - team_score, 0))
+            elif team_score == opp_score:
+                # Tied — should come back to try to break the tie.
+                candidates.append((team, 0, 1 if team is state.second_batting_team else 0))
+            # else: leading, skip
+        if not candidates:
             break
-        # The team that should come back is the one NOT currently leading.
-        winner_team = state.first_batting_team if winner == state.first_batting_team.team_id else state.second_batting_team
-        trailer_team = state.second_batting_team if winner_team is state.first_batting_team else state.first_batting_team
-
-        if int(trailer_team.outs_banked or 0) <= 0 or trailer_team.seconds_used:
-            break  # no eligibility → done
+        # Sort by (priority: trailing first, tied second) and "tie-break by
+        # who batted first" so the order is deterministic.
+        candidates.sort(key=lambda c: (-c[1], c[2]))
+        trailer_team = candidates[0][0]
 
         # Setup the seconds half.
         state.in_seconds_phase = True
