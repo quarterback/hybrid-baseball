@@ -68,4 +68,6 @@
   PITCHING CHANGE: {{ old_pitcher_name }} exits ({{ old_spell_count }} BF this spell).
 {% elif event_type == "pinch_hit" %}
   PINCH HIT: {{ replacement_name }} bats for {{ replaced_name }}.
+{% elif event_type == "declaration" %}
+  >> {{ declaring_team_name }} DECLARES SECONDS at out {{ declared_at }} ({{ declare_score_for }}-{{ declare_score_against }}).
 {% endif %}

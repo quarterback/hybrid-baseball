@@ -1795,18 +1795,19 @@ class ProbabilisticProvider:
         # Declared Seconds — checked first so a declaration doesn't waste
         # a pitching change / joker / pinch hit. Recomputed every PA in
         # the eligible window (out 22+); fires when the AI's target save
-        # count meets the current outs-remaining.
+        # count meets the current outs-remaining. Returns a "declaration"
+        # event so run_half processes it through apply_event + render_event
+        # like any other event (gets a play-by-play line, then the half
+        # ends naturally because apply_event sets state.outs = 27).
         declared, banked = mgr.evaluate_declaration(state, rng=self.rng)
         if declared:
-            state.events.append({
+            return {
                 "type": "declaration",
                 "team": state.batting_team.team_id,
+                "team_name": state.batting_team.name,
                 "at_out": state.outs,
                 "outs_banked": banked,
-            })
-            # Terminate the half cleanly via the existing is_half_over path.
-            state.outs = 27
-            return None
+            }
 
         # Pitching change check.
         if mgr.should_change_pitcher(state):
