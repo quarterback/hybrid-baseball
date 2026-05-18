@@ -293,6 +293,10 @@ def leaders():
         "stats_site/leaders.html",
         section="leaders",
         any_data=any_data,
+        # O27-empirical headline boards lead.
+        by_woba=data.get_leaders("woba", 10),
+        by_pit_wera=data.get_pitching_leaders("wera", 10),
+        # Traditional rate-stat boards still rendered for comparison.
         by_avg=data.get_leaders("avg", 10),
         by_hits=data.get_leaders("hits", 10),
         by_rbi=data.get_leaders("rbi", 10),

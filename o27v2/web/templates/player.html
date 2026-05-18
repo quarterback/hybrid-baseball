@@ -102,7 +102,16 @@
   <div class="d-flex flex-wrap gap-4 mt-3 pt-3" style="border-top:1px solid var(--border-soft)">
     {% if bt_totals %}
     <div><div class="score-label">PAVG</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.3f'|format(bt_totals.pavg) }}</div></div>
-    <div><div class="score-label">OPS+</div><div class="num fw-bold" style="font-size:1.35rem">{{ bt_totals.ops_plus|round|int }}</div></div>
+    <div>
+      <div class="score-label">OPS+</div>
+      <div class="num fw-bold" style="font-size:1.35rem"
+           title="OPS+ normalized within {{ bt_totals.ops_plus_scope or 'league' }} this season — 100 = league/tier average, 120 = 20% above the offense this player actually played in.">
+        {{ bt_totals.ops_plus|round|int }}
+      </div>
+      {% if bt_totals.ops_plus_scope %}
+      <div class="score-label" style="font-size:0.7rem; opacity:0.6">vs {{ bt_totals.ops_plus_scope }} avg</div>
+      {% endif %}
+    </div>
     <div><div class="score-label">HR</div><div class="num fw-bold" style="font-size:1.35rem">{{ bt_totals.hr }}</div></div>
     <div><div class="score-label">RBI</div><div class="num fw-bold" style="font-size:1.35rem">{{ bt_totals.rbi }}</div></div>
     <div><div class="score-label">bWAR</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(bt_totals.war) }}</div></div>
