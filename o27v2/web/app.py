@@ -2678,18 +2678,28 @@ def game_detail(game_id: int):
     from .box_score import render_box_score as _render_box_score
     game_for_box = dict(game)
     game_for_box["weather_label"] = weather_label
-    # Decisions map: pitcher_id → "W" / "L" / "S".
+    # Decisions map: pitcher_id → "W" / "L". Per-game decision, not season
+    # totals: the `w`/`l` fields decorated by _aggregate_pitcher_rows hold
+    # career W/L counts, so reading those tags nearly every pitcher.
+    # Heuristic: W = last pitcher on the winning side who recorded an out;
+    # L = pitcher on the losing side with the most runs allowed.
     _decisions: dict[int, str] = {}
-    for prow in away_pitching_consolidated + home_pitching_consolidated:
-        pid = prow.get("player_id")
-        if pid is None:
-            continue
-        if (prow.get("w") or 0) > 0:
-            _decisions[pid] = "W"
-        elif (prow.get("l") or 0) > 0:
-            _decisions[pid] = "L"
-        elif (prow.get("sv") or 0) > 0:
-            _decisions[pid] = "S"
+    _winner_id = game.get("winner_id")
+    if _winner_id is not None:
+        if _winner_id == game.get("away_team_id"):
+            _win_rows, _lose_rows = away_pitching_consolidated, home_pitching_consolidated
+        elif _winner_id == game.get("home_team_id"):
+            _win_rows, _lose_rows = home_pitching_consolidated, away_pitching_consolidated
+        else:
+            _win_rows, _lose_rows = [], []
+        for r in reversed(_win_rows):
+            if (r.get("outs_recorded") or 0) > 0:
+                _decisions[r["player_id"]] = "W"
+                break
+        if _lose_rows:
+            _worst = max(_lose_rows, key=lambda r: (r.get("runs_allowed") or 0))
+            if (_worst.get("runs_allowed") or 0) > 0:
+                _decisions[_worst["player_id"]] = "L"
     # AP-newspaper convention: "HR-Trout (1), off Hernandez". Build a
     # {batter_player_id_str → [pitcher last names]} map from pa_log.
     hr_off_map: dict[str, list[str]] = {}
