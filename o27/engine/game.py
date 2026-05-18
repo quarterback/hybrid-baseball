@@ -47,10 +47,12 @@ from typing import Callable, Iterator, Optional
 # lineups that keep producing identical 5-dismissal totals lock the engine
 # into an unbounded while-loop inside simulate_game() — the bulk-sim
 # per-game deadline only fires between games, so a hung game silently
-# eats every chunk and the day's clock never advances. After this many
-# tied SI rounds we force a winner from the running score's run pattern
-# (deterministic, seeded off game state) and end the game.
-SI_MAX_ROUNDS = 8
+# eats every chunk and the day's clock never advances.
+#
+# Regular-season games are allowed to end in a tie after this many
+# tied SI rounds. Playoff games can't tie (the bracket needs a winner)
+# so the loop will force a deterministic outcome instead — see below.
+SI_MAX_ROUNDS = 4
 
 
 # ---------------------------------------------------------------------------
@@ -161,25 +163,31 @@ def run_game(
         full_log.append("\n=== TIE — SUPER-INNING TIEBREAKER ===")
 
     si_rounds_played = 0
+    is_playoff = bool(getattr(state, "is_playoff", False))
     while not state.winner:
         if si_rounds_played >= SI_MAX_ROUNDS:
-            # Force a winner so the game terminates. Deterministic from the
-            # current state: pick whichever team has more partnership-runs
-            # (proxy for offensive performance) across the whole game; if
-            # that's also tied, fall back to a hash of team ids so the
-            # outcome is stable across re-runs of the same seed.
-            v_score = state.score.get("visitors", 0)
-            h_score = state.score.get("home", 0)
-            if v_score != h_score:
-                state.winner = "visitors" if v_score > h_score else "home"
-            else:
+            # Regular-season game: let it end in a genuine tie. Sim writes
+            # winner_id=NULL and the standings update guard already skips
+            # W/L bookkeeping on a None winner. Playoff games can't tie —
+            # the bracket would never advance — so we force a deterministic
+            # winner from a stable hash of the team-id pair.
+            if is_playoff:
                 v_id = str(getattr(state.visitors, "team_id", "v"))
                 h_id = str(getattr(state.home, "team_id", "h"))
-                state.winner = "visitors" if hash((v_id, h_id, state.super_inning_number)) & 1 else "home"
-            full_log.append(
-                f"[warn] SI round cap ({SI_MAX_ROUNDS}) hit — forcing winner "
-                f"{state.winner} to terminate."
-            )
+                state.winner = (
+                    "visitors"
+                    if hash((v_id, h_id, state.super_inning_number)) & 1
+                    else "home"
+                )
+                full_log.append(
+                    f"[warn] Playoff SI cap ({SI_MAX_ROUNDS}) reached — "
+                    f"forcing winner {state.winner} to keep the bracket moving."
+                )
+            else:
+                full_log.append(
+                    f"  >> Game ends in a TIE after {SI_MAX_ROUNDS} "
+                    f"super-inning rounds."
+                )
             if renderer is not None:
                 _reconcile_batter_runs(state, renderer)
             full_log += _game_over(state, renderer)
@@ -736,6 +744,13 @@ def _game_over(state: GameState, renderer=None) -> list[str]:
     if renderer:
         return renderer.render_game_over(state)
     winner = state.winner
+    if winner is None:
+        v_score = state.score.get("visitors", 0)
+        h_score = state.score.get("home", 0)
+        return [
+            f"\n=== GAME OVER (tie): {state.visitors.name} {v_score}, "
+            f"{state.home.name} {h_score} ==="
+        ]
     other = "home" if winner == "visitors" else "visitors"
     if state.super_inning_number > 0:
         suffix = " (super-inning)"

@@ -534,15 +534,24 @@ class Renderer:
     def render_game_over(self, state) -> list[str]:
         """Render the final game-over banner."""
         winner = state.winner
+        sep = "=" * 60
         if not winner:
-            return []
+            # Regular-season tie after the SI round cap. Both halves are still
+            # closed out properly above; this just emits the banner.
+            v_score = state.score.get("visitors", 0)
+            h_score = state.score.get("home", 0)
+            return [
+                f"\n{sep}",
+                f"GAME OVER (tie after SI cap): {state.visitors.name} {v_score}, "
+                f"{state.home.name} {h_score}",
+                sep,
+            ]
         other = "home" if winner == "visitors" else "visitors"
         w_team = state.visitors if winner == "visitors" else state.home
         o_team = state.home if winner == "visitors" else state.visitors
         w_score = state.score[winner]
         o_score = state.score[other]
         suffix = " (super-inning)" if state.super_inning_number > 0 else ""
-        sep = "=" * 60
         return [
             f"\n{sep}",
             f"GAME OVER{suffix}: {w_team.name.upper()} WIN {w_score}–{o_score}",
