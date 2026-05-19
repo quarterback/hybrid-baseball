@@ -136,7 +136,8 @@ def export_player_card(player: dict,
         out.append("")
         out.append(_md_table(
             ["G", "PA", "AB", "R", "H", "2B", "3B", "HR", "RBI", "BB", "SO",
-             "SB", "2C", "PAVG", "OBP", "SLG", "OPS", "OPS+", "wOBA", "WAR"],
+             "SB", "2C", "PAVG", "OBP", "SLG", "OPS", "OPS+", "wOBA", "wRC+",
+             "WPA", "LI", "WAR"],
             [[
                 _fmt_num(bt_totals.get("g")),
                 _fmt_num(bt_totals.get("pa")),
@@ -157,9 +158,12 @@ def export_player_card(player: dict,
                 _fmt_num(bt_totals.get("ops"), "%.3f"),
                 _fmt_num(bt_totals.get("ops_plus"), "%d"),
                 _fmt_num(bt_totals.get("woba"), "%.3f"),
+                _fmt_num(bt_totals.get("wrc_plus"), "%d"),
+                _fmt_num(bt_totals.get("wpa"), "%+.2f"),
+                _fmt_num(bt_totals.get("li_avg"), "%.2f"),
                 _fmt_num(bt_totals.get("war"), "%.2f"),
             ]],
-            ["r"] * 20,
+            ["r"] * 23,
         ))
         out.append("")
 
@@ -169,8 +173,8 @@ def export_player_card(player: dict,
         out.append("")
         out.append(_md_table(
             ["G", "GS", "W", "L", "BF", "Outs", "H", "R", "ER", "BB", "SO",
-             "HR", "FO", "P", "wERA", "xRA", "Decay", "GSc", "GSc+",
-             "OS+", "K%", "BB%", "K-BB%", "WAR"],
+             "HR", "FO", "P", "wERA", "wERA+", "xRA", "Decay", "GSc", "GSc+",
+             "GScIdx", "OS+", "WPA", "LI", "K%", "BB%", "K-BB%", "WAR"],
             [[
                 _fmt_num(pt_totals.get("g")),
                 _fmt_num(pt_totals.get("gs")),
@@ -187,17 +191,21 @@ def export_player_card(player: dict,
                 _fmt_num(pt_totals.get("fo_induced")),
                 _fmt_num(pt_totals.get("pitches")),
                 _fmt_num(pt_totals.get("werra"), "%.2f"),
+                _fmt_num(pt_totals.get("wera_plus"), "%d"),
                 _fmt_num(pt_totals.get("xra"), "%.2f"),
                 ("%+.1f" % pt_totals["decay"]) if pt_totals.get("decay_known") else "—",
                 _fmt_num(pt_totals.get("gsc_avg"), "%.1f"),
                 _fmt_num(pt_totals.get("gsc_plus"), "%d"),
+                _fmt_num(pt_totals.get("gsc_index"), "%d"),
                 _fmt_num(pt_totals.get("os_plus"), "%d"),
+                _fmt_num(pt_totals.get("wpa"), "%+.2f"),
+                _fmt_num(pt_totals.get("li_avg"), "%.2f"),
                 _fmt_num((pt_totals.get("k_pct") or 0) * 100, "%.1f%%"),
                 _fmt_num((pt_totals.get("bb_pct") or 0) * 100, "%.1f%%"),
                 _fmt_num((pt_totals.get("k_minus_bb_pct") or 0) * 100, "%.1f%%"),
                 _fmt_num(pt_totals.get("war"), "%.2f"),
             ]],
-            ["r"] * 24,
+            ["r"] * 28,
         ))
         out.append("")
 
@@ -369,8 +377,10 @@ def export_leaders(batting: list[dict], pitching: list[dict]) -> str:
     _table("PAVG",  batting, "pavg",     "%.3f")
     _table("OPS",   batting, "ops",      "%.3f")
     _table("OPS+",  batting, "ops_plus", "%d")
+    _table("wRC+",  batting, "wrc_plus", "%d")
     _table("HR",    batting, "hr",       "%d")
     _table("RBI",   batting, "rbi",      "%d")
+    _table("WPA",   batting, "wpa",      "%+.2f")
     _table("WAR",   batting, "war",      "%.2f")
 
     out.append("## Fielding")
@@ -382,11 +392,14 @@ def export_leaders(batting: list[dict], pitching: list[dict]) -> str:
     out.append("## Pitching")
     out.append("")
     _table("wERA (low)",      pitching, "werra",    "%.2f", reverse=False)
+    _table("wERA+",           pitching, "wera_plus","%d")
     _table("xRA (low)",      pitching, "xra",     "%.2f", reverse=False)
     _table("Decay (low)",     pitching, "decay",    "%+.1f", reverse=False)
     _table("GSc avg",         pitching, "gsc_avg",  "%.1f")
     _table("GSc+",            pitching, "gsc_plus", "%d")
+    _table("GSc Idx",         pitching, "gsc_index","%d")
     _table("OS+",             pitching, "os_plus",  "%d")
+    _table("WPA",             pitching, "wpa",      "%+.2f")
     _table("K",               pitching, "k",        "%d")
     _table("WAR",             pitching, "war",      "%.2f")
 

@@ -158,7 +158,7 @@ def _snapshot_leaders(season_id: int) -> None:
 
     batting = db.fetchall(
         """SELECT p.id as player_id, p.name as player_name,
-                  t.abbrev as team_abbrev,
+                  t.id as team_id, t.abbrev as team_abbrev,
                   COUNT(bs.game_id) as g,
                   SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
                   SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
@@ -172,29 +172,52 @@ def _snapshot_leaders(season_id: int) -> None:
     )
     _aggregate_batter_rows(batting)
 
+    # Stamp WPA / LI onto the rows so the persisted leaders carry the
+    # win-probability columns alongside the rate-stat columns. WPA needs
+    # the empirical WP model rebuilt here (one walk through game_pa_log).
+    try:
+        from o27v2.analytics.wpa import build_player_wpa
+        _wpa_data = build_player_wpa()
+    except Exception:
+        _wpa_data = {"by_batter": {}, "by_pitcher": {}}
+    for r in batting:
+        pid = r.get("player_id")
+        wb = _wpa_data["by_batter"].get(pid) if pid is not None else None
+        r["wpa"]    = wb["wpa"]    if wb else 0.0
+        r["li_avg"] = wb["li_avg"] if wb else 0.0
+
     def _save_batting(category: str, ranked: list[dict]) -> None:
         for i, r in enumerate(ranked[:10], start=1):
             db.execute(
                 """INSERT OR REPLACE INTO season_batting_leaders
                    (season_id, category, rank, player_name, team_abbrev,
-                    g, pa, ab, h, hr, rbi, bb, avg, obp, slg, ops)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    g, pa, ab, h, hr, rbi, bb, avg, obp, slg, ops,
+                    wrc_plus, wpa, li_avg)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                           ?, ?, ?)""",
                 (season_id, category, i, r["player_name"], r["team_abbrev"],
                  r.get("g") or 0, r.get("pa") or 0, r.get("ab") or 0,
                  r.get("h") or 0, r.get("hr") or 0, r.get("rbi") or 0,
                  r.get("bb") or 0,
                  float(r.get("avg") or 0), float(r.get("obp") or 0),
-                 float(r.get("slg") or 0), float(r.get("ops") or 0)),
+                 float(r.get("slg") or 0), float(r.get("ops") or 0),
+                 float(r.get("wrc_plus") or 100),
+                 float(r.get("wpa") or 0),
+                 float(r.get("li_avg") or 0)),
             )
 
     _save_batting("avg", sorted(batting, key=lambda x: x["avg"], reverse=True))
     _save_batting("hr",  sorted(batting, key=lambda x: x["hr"] or 0, reverse=True))
     _save_batting("rbi", sorted(batting, key=lambda x: x["rbi"] or 0, reverse=True))
     _save_batting("ops", sorted(batting, key=lambda x: x["ops"], reverse=True))
+    _save_batting("wrc_plus",
+                  sorted(batting, key=lambda x: x.get("wrc_plus") or 0, reverse=True))
+    _save_batting("wpa",
+                  sorted(batting, key=lambda x: x.get("wpa") or 0, reverse=True))
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
-                   t.abbrev as team_abbrev,
+                   t.id as team_id, t.abbrev as team_abbrev,
                    COUNT(ps.game_id) as g,
                    SUM(ps.outs_recorded) as outs,
                    SUM(ps.hits_allowed)  as h,
@@ -222,30 +245,53 @@ def _snapshot_leaders(season_id: int) -> None:
         denom = outs + h
         r["oavg"] = (h / denom) if denom > 0 else 0.0
 
+    # Stamp WPA / LI onto pitcher rows from the same model built above.
+    for r in pitching:
+        pid = r.get("player_id")
+        wp = _wpa_data["by_pitcher"].get(pid) if pid is not None else None
+        r["wpa"]    = wp["wpa"]    if wp else 0.0
+        r["li_avg"] = wp["li_avg"] if wp else 0.0
+
     def _save_pitching(category: str, ranked: list[dict]) -> None:
         for i, r in enumerate(ranked[:10], start=1):
-            # Schema's `era`/`fip`/`whip` columns are reused as the wERA /
-            # xFIP / GSc avg slots for go-forward archives. Old seasons
-            # keep their original ERA/FIP/WHIP values; new seasons store
-            # wERA/xFIP/GSc-avg under the same column names.
+            # Schema's `era` / `fip` / `whip` columns are reused as the
+            # wERA / xRA / GSc-avg slots for go-forward archives. Old
+            # seasons keep their original ERA/FIP/WHIP semantics; new
+            # seasons store wERA / xRA / GSc-avg under the same column
+            # names. (Pre-fix versions of this writer tried to read
+            # `xfip` off the aggregated row, which `_aggregate_pitcher_rows`
+            # doesn't stamp — only `xra` is — so the writer crashed
+            # with KeyError on the xfip sort.)
             db.execute(
                 """INSERT OR REPLACE INTO season_pitching_leaders
                    (season_id, category, rank, player_name, team_abbrev,
-                    g, w, l, outs, er, k, bb, era, fip, whip, oavg)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    g, w, l, outs, er, k, bb, era, fip, whip, oavg,
+                    wera_plus, gsc_index, wpa, li_avg)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                           ?, ?, ?, ?)""",
                 (season_id, category, i, r["player_name"], r["team_abbrev"],
                  r.get("g") or 0, r.get("w") or 0, r.get("l") or 0,
                  r.get("outs") or 0, r.get("er") or 0,
                  r.get("k") or 0, r.get("bb") or 0,
-                 float(r.get("werra") or 0), float(r.get("xfip") or 0),
-                 float(r.get("gsc_avg") or 0), float(r.get("oavg") or 0)),
+                 float(r.get("werra") or 0), float(r.get("xra") or 0),
+                 float(r.get("gsc_avg") or 0), float(r.get("oavg") or 0),
+                 float(r.get("wera_plus") or 100),
+                 float(r.get("gsc_index") or 100),
+                 float(r.get("wpa") or 0),
+                 float(r.get("li_avg") or 0)),
             )
 
     _save_pitching("w",     sorted(pitching, key=lambda x: x["w"], reverse=True))
     _save_pitching("werra", sorted(pitching, key=lambda x: x["werra"]))
-    _save_pitching("xfip",  sorted(pitching, key=lambda x: x["xfip"]))
+    _save_pitching("xra",   sorted(pitching, key=lambda x: x.get("xra") or 0))
     _save_pitching("k",     sorted(pitching, key=lambda x: x["k"] or 0, reverse=True))
     _save_pitching("oavg",  sorted(pitching, key=lambda x: x["oavg"]))
+    _save_pitching("wera_plus",
+                   sorted(pitching, key=lambda x: x.get("wera_plus") or 0, reverse=True))
+    _save_pitching("gsc_index",
+                   sorted(pitching, key=lambda x: x.get("gsc_index") or 0, reverse=True))
+    _save_pitching("wpa",
+                   sorted(pitching, key=lambda x: x.get("wpa") or 0, reverse=True))
 
 
 def _derive_year() -> int | None:

@@ -62,6 +62,7 @@
   {{ card('OPS',   'ops',      '%.3f', true, batting) }}
   {{ card('OPS+',  'ops_plus', '%d',   true, batting, tooltip='OPS relative to league avg (100 = avg)') }}
   {{ card('wOBA',  'woba',     '%.3f', true, batting, tooltip='O27-tuned linear weights, PA-denominated') }}
+  {{ card('wRC+',  'wrc_plus', '%d',   true, batting, tooltip='Park-adjusted, league-relative offense. 100 = league average AT THIS PARK; >100 = better than league after stripping park bias. Uses ((wOBA − lg_wOBA)/1.20 + lg_R/PA) / (lg_R/PA × PF) × 100, where PF averages the team\'s park_hr and park_hits factors with the home/road split.') }}
 </div>
 
 <h4>Batting · Power &amp; Counting</h4>
@@ -127,6 +128,8 @@
   {{ card('Decay (low)', 'decay',    '%+.1f', false, pitching, tooltip='Drift-corrected late-arc fade (points). 0 = matches league norm; positive = fades worse than the natural lineup-cycling lift; negative = holds up better than league. Subtracts the league arc-1→arc-3 K% delta to isolate fatigue from O27 lineup-cycling.') }}
   {{ card('LateK%',      'late_k_pct_pct', '%.1f%%', true, pitching, tooltip='Arc-3 K% (outs 19-27, incl foul-outs). The short-relief sibling to Decay — closers and back-of-arc specialists who never see arc-1 sample appear here.') }}
   {{ card('GSc+',        'gsc_plus', '%d',    true,  pitching, tooltip='League-relative Game Score (100 = league avg, higher = better)') }}
+  {{ card('GSc Index',   'gsc_index','%d',    true,  pitching, tooltip='Z-score-normalized Game Score on an IQ-style 100 / 15 scale. Unlike GSc+ (mean-only), GSc Index also accounts for the spread of pitcher talent — a 130 reads as "+2 σ above average" in a deep 56-team league the same as in an 8-team league.') }}
+  {{ card('wERA+',       'wera_plus','%d',    true,  pitching, tooltip='Park-adjusted, league-relative wERA on the ERA+ scale (100 = avg). Boosts pitchers in hitter\'s parks (PF > 1) and discounts pitchers in pitcher\'s parks. Formula: (league_wERA × PF / wERA) × 100, where PF averages park_hr / park_hits with the home/road split.') }}
 </div>
 
 <h4>Pitching · Workload &amp; Stuff</h4>
@@ -163,6 +166,246 @@
   {{ card('FB%',  'fastball_pct', '%.0f%%', true, pitching, tooltip='Share of typed pitches that were fastballs (4-seam / sinker / cutter), as a percentage') }}
   {{ card('BR%',  'breaking_pct', '%.0f%%', true, pitching, tooltip='Share of typed pitches that were breaking balls') }}
   {{ card('OFF%', 'offspeed_pct', '%.0f%%', true, pitching, tooltip='Share of typed pitches that were off-speed (change / split / palm / knuckle / eephus)') }}
+</div>
+
+{# ============================================================
+   GAME LOGS — Top 10 outings (pitchers) and games (hitters).
+   Each row links to the box score so the single greatest line of
+   the season is one click from the leaderboard.
+   ============================================================ #}
+<h4 class="mt-4">Game Logs · Top 10 of the Season</h4>
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="panel">
+      <div class="panel-head" title="Best single-appearance Game Scores of the season (regulation only). GSc is computed via the league-derived linear weights — same formula as the season GSc avg.">
+        <span>Pitching · Top 10 Outings (GSc)</span>
+      </div>
+      <table class="table dense-table mb-0">
+        <thead>
+          <tr>
+            <th style="width:24px"></th>
+            <th>Pitcher</th>
+            <th>Tm</th>
+            <th>Game</th>
+            <th class="num">IP</th>
+            <th class="num">H</th>
+            <th class="num">BB</th>
+            <th class="num">K</th>
+            <th class="num">ER</th>
+            <th class="num fw-bold">GSc</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in top_outings %}
+          <tr>
+            <td class="text-secondary num">{{ loop.index }}</td>
+            <td><a href="{{ url_for('player_detail', player_id=o.player_id) }}">{{ o.player_name }}</a></td>
+            <td><a href="{{ url_for('team_detail', team_id=o.team_id) }}" class="team-abbrev">{{ o.team_abbrev }}</a></td>
+            <td>
+              <a href="{{ url_for('game_detail', game_id=o.game_id) }}" title="{{ o.game_date }}">
+                {{ o.away_abbrev }}@{{ o.home_abbrev }}
+              </a>
+            </td>
+            <td class="num">{{ o.ip_display }}</td>
+            <td class="num">{{ o.h }}</td>
+            <td class="num">{{ o.bb }}</td>
+            <td class="num">{{ o.k }}</td>
+            <td class="num">{{ o.er }}</td>
+            <td class="num fw-bold">{{ '%.1f'|format(o.gsc) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="text-secondary text-center">No outings yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="panel">
+      <div class="panel-head" title="Best single-game batter Game Scores (regulation only). bGSc is a 0-100 hitter analogue of the pitcher GSc — singles ×4, doubles ×7, triples ×10, HR ×13, BB/RBI ×2, R ×1.5, minus 1.5 per K and 2 per out in the box. Anchored at 50 ≈ a quiet 1-for-4.">
+        <span>Batting · Top 10 Games (bGSc)</span>
+      </div>
+      <table class="table dense-table mb-0">
+        <thead>
+          <tr>
+            <th style="width:24px"></th>
+            <th>Batter</th>
+            <th>Tm</th>
+            <th>Game</th>
+            <th class="num">H-AB</th>
+            <th class="num">HR</th>
+            <th class="num">RBI</th>
+            <th class="num">R</th>
+            <th class="num">K</th>
+            <th class="num fw-bold">bGSc</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in top_games %}
+          <tr>
+            <td class="text-secondary num">{{ loop.index }}</td>
+            <td><a href="{{ url_for('player_detail', player_id=g.player_id) }}">{{ g.player_name }}</a></td>
+            <td><a href="{{ url_for('team_detail', team_id=g.team_id) }}" class="team-abbrev">{{ g.team_abbrev }}</a></td>
+            <td>
+              <a href="{{ url_for('game_detail', game_id=g.game_id) }}" title="{{ g.game_date }}">
+                {{ g.away_abbrev }}@{{ g.home_abbrev }}
+              </a>
+            </td>
+            <td class="num">{{ g.h }}-{{ g.ab }}</td>
+            <td class="num">{{ g.hr }}</td>
+            <td class="num">{{ g.rbi }}</td>
+            <td class="num">{{ g.r }}</td>
+            <td class="num">{{ g.k }}</td>
+            <td class="num fw-bold">{{ '%.1f'|format(g.bgsc) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="text-secondary text-center">No games yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ============================================================
+   STREAKS & MILESTONES — hit streaks, no-hitters, perfect games
+   ============================================================ #}
+<h4 class="mt-4">Streaks &amp; Milestones</h4>
+<div class="row g-3 mb-3">
+  <div class="col-lg-4">
+    <div class="panel">
+      <div class="panel-head" title="Longest consecutive-game hit streaks of the season. A 0-AB day (pinch run, rested) leaves the streak intact; an 0-for game breaks it. ★ marks active streaks running into the latest league date.">
+        <span>Longest Hit Streaks</span>
+      </div>
+      <table class="table dense-table mb-0">
+        <tbody>
+          {% for s in hit_streaks %}
+          <tr>
+            <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
+            <td>
+              <a href="{{ url_for('player_detail', player_id=s.player_id) }}">{{ s.player_name }}</a>
+              {% if s.active %}<span title="Active streak" class="text-warning">★</span>{% endif %}
+            </td>
+            <td><a href="{{ url_for('team_detail', team_id=s.team_id) }}" class="team-abbrev">{{ s.team_abbrev }}</a></td>
+            <td class="num fw-bold">{{ s.length }} G</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-secondary text-center">No streaks ≥ 2 yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="panel">
+      <div class="panel-head" title="A single pitcher recorded all 27 outs of regulation without allowing a hit. The opponent could still reach via walk, HBP, or error.">
+        <span>No-Hitters</span>
+      </div>
+      <table class="table dense-table mb-0">
+        <tbody>
+          {% for n in no_hitters %}
+          <tr>
+            <td><a href="{{ url_for('player_detail', player_id=n.player_id) }}">{{ n.player_name }}</a></td>
+            <td><a href="{{ url_for('team_detail', team_id=n.team_id) }}" class="team-abbrev">{{ n.team_abbrev if n.team_abbrev is defined else '' }}</a></td>
+            <td class="text-secondary">vs {{ n.opp_abbrev }}</td>
+            <td><a href="{{ url_for('game_detail', game_id=n.game_id) }}" title="{{ n.game_date }}">Box</a></td>
+            <td class="num">{{ n.k }}K</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-secondary text-center">None yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="panel">
+      <div class="panel-head" title="Single pitcher faced exactly 27 batters and retired all of them — no hits, no walks, no HBP, no unearned runs, no reaches on error.">
+        <span>Perfect Games</span>
+      </div>
+      <table class="table dense-table mb-0">
+        <tbody>
+          {% for n in perfect_games %}
+          <tr>
+            <td><a href="{{ url_for('player_detail', player_id=n.player_id) }}">{{ n.player_name }}</a></td>
+            <td class="text-secondary">vs {{ n.opp_abbrev }}</td>
+            <td><a href="{{ url_for('game_detail', game_id=n.game_id) }}" title="{{ n.game_date }}">Box</a></td>
+            <td class="num">{{ n.k }}K</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-secondary text-center">None yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ============================================================
+   WPA — Win Probability Added & Leverage Index
+   ============================================================ #}
+<h4 class="mt-4">Win Probability &amp; Leverage</h4>
+<div class="text-secondary small mb-2">
+  Win probability is fit empirically from this league's own outcomes —
+  every PA's pre/post state stamped in <code>game_pa_log</code> is joined
+  to the final <code>winner_id</code> on <code>games</code>, so WP(state)
+  = observed-win-frequency at that state. WPA per PA = WP<sub>after</sub>
+  − WP<sub>before</sub>; Leverage Index normalizes RMS swing at each
+  state so league-average LI = 1.0.
+  <br>Built from {{ wpa_n_games }} game{{ '' if wpa_n_games == 1 else 's' }}.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('WPA (bat)',     'wpa',    '%+.2f', true, batting,  tooltip='Sum of Win Probability Added across the batter\'s PAs. Positive = his bat moved the needle for his team.') }}
+  {{ card('LI avg (bat)',  'li_avg', '%.2f',  true, batting,  tooltip='Average Leverage Index across the batter\'s PAs. 1.0 = league norm; >1 = the batter sees disproportionately high-stakes PAs (lineup spot + role).') }}
+  {{ card('WPA (pit)',     'wpa',    '%+.2f', true, pitching, tooltip='Sum of Win Probability Added from the pitcher\'s side (= negation of opposing batters\' WPA). Positive = his arm moved the needle for his team.') }}
+  {{ card('LI avg (pit)',  'li_avg', '%.2f',  true, pitching, tooltip='Average Leverage Index across the pitcher\'s PAs faced. 1.0 = league norm; >1 = he\'s used in higher-stakes spots than average (e.g. closer pattern).') }}
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="panel">
+      <div class="panel-head" title="The 10 single plate appearances of the season with the biggest absolute Win Probability swing. Click to open the box score.">
+        <span>Biggest PAs of the Season (by |WPA|)</span>
+      </div>
+      <table class="table dense-table mb-0">
+        <thead>
+          <tr>
+            <th style="width:24px"></th>
+            <th>Batter</th>
+            <th>Pitcher</th>
+            <th>Game</th>
+            <th class="num">LI</th>
+            <th class="num fw-bold">WPA</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in top_wpa_events %}
+          <tr>
+            <td class="text-secondary num">{{ loop.index }}</td>
+            <td><a href="{{ url_for('player_detail', player_id=e.batter_id) }}">{{ e.batter_name }}</a></td>
+            <td>
+              {% if e.pitcher_id %}
+              <a href="{{ url_for('player_detail', player_id=e.pitcher_id) }}">{{ e.pitcher_name }}</a>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('game_detail', game_id=e.game_id) }}" title="{{ e.game_date }}">
+                {{ e.away_abbrev }}@{{ e.home_abbrev }}
+              </a>
+            </td>
+            <td class="num">{{ '%.2f'|format(e.li) }}</td>
+            <td class="num fw-bold">{{ '%+.3f'|format(e.wpa) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-secondary text-center">Need more games for a WPA model</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 {% endif %}{# end of games_played > 0 in-season-leaders gate #}

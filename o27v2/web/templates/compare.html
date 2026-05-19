@@ -195,6 +195,7 @@
       {{ stat_row('OPS+',  'bt_totals', 'ops_plus', '%d') }}
       {{ stat_row('wOBA',  'bt_totals', 'woba', '%.3f') }}
       {{ stat_row('wOBA+', 'bt_totals', 'woba_plus', '%d') }}
+      {{ stat_row('wRC+',  'bt_totals', 'wrc_plus', '%d', 'fw-bold', 'Park-adjusted league-relative runs created (100 = league avg at this park)') }}
       {{ stat_row('BAVG',  'bt_totals', 'bavg', '%.3f', '', 'H/AB — second-chance-AB profile metric') }}
       {{ stat_row('Δstay', 'bt_totals', 'stay_diff', '%+.3f') }}
       {{ stat_row('ISO',   'bt_totals', 'iso',  '%.3f') }}
@@ -247,6 +248,7 @@
       {{ stat_row('FO',   'pt_totals', 'fo_induced', '%d', '', 'O27 — foul-outs induced') }}
       {{ stat_row('P',    'pt_totals', 'pitches') }}
       {{ stat_row('wERA', 'pt_totals', 'werra', '%.2f', 'fw-bold', 'arc-weighted ERA — outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20') }}
+      {{ stat_row('wERA+', 'pt_totals', 'wera_plus', '%d', 'fw-bold', 'Park-adjusted league-relative wERA (100 = league avg at this park, higher = better)') }}
       {{ stat_row('xRA', 'pt_totals', 'xra',  '%.2f', '', 'O27 expected FIP') }}
       <tr title="K%_arc1 - K%_arc3 — late-arc fade signal">
         <td class="text-secondary">Decay</td>
@@ -261,6 +263,7 @@
       </tr>
       {{ stat_row('GSc avg', 'pt_totals', 'gsc_avg', '%.1f') }}
       {{ stat_row('GSc+',    'pt_totals', 'gsc_plus', '%d') }}
+      {{ stat_row('GSc Idx', 'pt_totals', 'gsc_index', '%d', 'fw-bold', 'Z-score-normalized Game Score (100 / 15 scale) — cross-league-size comparable in mean AND spread.') }}
       {{ stat_row('OS+',     'pt_totals', 'os_plus',  '%d') }}
       {{ pct_row('K%',       'pt_totals', 'k_pct', '(K + foul-outs) / BF') }}
       {{ pct_row('BB%',      'pt_totals', 'bb_pct') }}
