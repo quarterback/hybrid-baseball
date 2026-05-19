@@ -519,6 +519,8 @@ def _close_current_spell(state: GameState) -> None:
         k_arc=list(state.pitcher_k_arc_this_spell),
         fo_arc=list(state.pitcher_fo_arc_this_spell),
         bf_arc=list(state.pitcher_bf_arc_this_spell),
+        wb_faced=state.pitcher_wb_faced_this_spell,
+        wb_runs=state.pitcher_wb_runs_this_spell,
     )
     state.spell_log.append(spell)
     state.pitcher_spell_count = 0
@@ -539,6 +541,8 @@ def _close_current_spell(state: GameState) -> None:
     state.pitcher_k_arc_this_spell  = [0, 0, 0]
     state.pitcher_fo_arc_this_spell = [0, 0, 0]
     state.pitcher_bf_arc_this_spell = [0, 0, 0]
+    state.pitcher_wb_faced_this_spell = 0
+    state.pitcher_wb_runs_this_spell = 0
 
 
 def _finalize_declaration(team: Team, state: GameState) -> None:
@@ -720,6 +724,8 @@ def _set_fielding_pitcher(state: GameState) -> None:
         state.pitcher_k_arc_this_spell  = [0, 0, 0]
         state.pitcher_fo_arc_this_spell = [0, 0, 0]
         state.pitcher_bf_arc_this_spell = [0, 0, 0]
+        state.pitcher_wb_faced_this_spell = 0
+        state.pitcher_wb_runs_this_spell = 0
         state.pa_start_outs = state.outs
         state.pitcher_start_pa = state.total_pa_this_half
 

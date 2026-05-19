@@ -879,6 +879,38 @@ POWER_REDIST_MED_S2D:   float = 0.20
 POWER_REDIST_MED_GO2FO: float = 0.15
 POWER_REDIST_WEAK_S2FO: float = 0.20
 
+# ---------------------------------------------------------------------------
+# Walk-Back sponsorship
+# ---------------------------------------------------------------------------
+# The Walk-Back rule (HR → next batter can drive in the HR-hitter from 3B
+# for a bonus run) creates a ~15-second dead-time ritual after every HR
+# where the HR-hitter physically walks back from home to third. In a sport
+# this commodified, that's unsold inventory; the rule manufactures a
+# sponsorable moment. This list seeds the rotating sponsor pool the
+# play-by-play log uses to caption each Walk-Back.
+#
+# Purely cosmetic — no stat impact. Picked deterministically per PA
+# from (game_id, total_pa_this_half) so the sponsor a fan sees on a
+# given Walk-Back is stable across renders.
+WALK_BACK_SPONSORS: list[str] = [
+    "Eden Ice Cream",
+    "Bittermilk Co.",
+    "Solenoid Premium Vapor",
+    "Pareto Brand Lager",
+    "Ostrava Industrial Coffee",
+    "Sintered Holdings",
+    "The Guilder Trust",
+    "Aurelian Mutual",
+    "Foundry & Brace",
+    "Nightline Mercantile",
+    "Wermuth Pen Co.",
+    "Quad-City Notary",
+    "Salient Press",
+    "Stoltzfus Cathodic",
+    "Ratchet & Plait",
+    "Mariposa Almanac",
+]
+
 # Legacy alias kept for the archetype `hr_weight_bonus` field, which the
 # data layer hands in for joker / slugger archetypes. Now applied as a
 # redistribute scalar (line_out → HR) on top of the power axis.

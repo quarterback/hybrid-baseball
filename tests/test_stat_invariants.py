@@ -665,3 +665,57 @@ def test_invariant_8_fip_anchored_to_era(played_game_ids):
             for r in bad[:5]
         )
     )
+
+
+def test_invariant_9_walk_back_runs_le_faced(played_game_ids):
+    """Walk-Back invariant: per pitcher (and aggregate), the number of
+    Walk-Back runs allowed cannot exceed the number of Walk-Back PAs faced.
+    Holds because every Walk-Back run must come from a Walk-Back PA.
+
+    Also asserts wb_runs is a subset of unearned_runs at the per-game-team
+    level (Walk-Back runs are by rule unearned — Manfred-runner precedent).
+    """
+    from o27v2.web.app import _PSTATS_DEDUP_SQL
+
+    extra, params = _game_filter_clause("ps")
+    rows = db.fetchall(
+        f"""SELECT ps.player_id,
+                   COALESCE(SUM(ps.wb_faced), 0) AS faced,
+                   COALESCE(SUM(ps.wb_runs),  0) AS runs
+              FROM {_PSTATS_DEDUP_SQL} ps
+              JOIN games g ON g.id = ps.game_id
+             WHERE g.played = 1{extra}
+             GROUP BY ps.player_id""",
+        params,
+    )
+    if not rows:
+        pytest.skip("no pitcher rows in scope")
+
+    bad = [r for r in rows if (r["runs"] or 0) > (r["faced"] or 0)]
+    assert not bad, (
+        f"wb_runs > wb_faced for {len(bad)} pitchers; first 5: "
+        + "; ".join(
+            f"player_id={r['player_id']} faced={r['faced']} runs={r['runs']}"
+            for r in bad[:5]
+        )
+    )
+
+    # Walk-Back runs must be a subset of unearned_runs per (game, team).
+    rows2 = db.fetchall(
+        f"""SELECT ps.game_id, ps.team_id,
+                   COALESCE(SUM(ps.wb_runs), 0)      AS wb,
+                   COALESCE(SUM(ps.unearned_runs),0) AS uer
+              FROM {_PSTATS_DEDUP_SQL} ps
+              JOIN games g ON g.id = ps.game_id
+             WHERE g.played = 1{extra}
+             GROUP BY ps.game_id, ps.team_id""",
+        params,
+    )
+    bad2 = [r for r in rows2 if (r["wb"] or 0) > (r["uer"] or 0)]
+    assert not bad2, (
+        f"wb_runs > unearned_runs on {len(bad2)} (game, team) groups; first 5: "
+        + "; ".join(
+            f"game={r['game_id']} team={r['team_id']} wb={r['wb']} uer={r['uer']}"
+            for r in bad2[:5]
+        )
+    )

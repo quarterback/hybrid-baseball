@@ -216,6 +216,9 @@
           <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA">xRA</th>
           <th class="num">ER</th><th class="num">OUT</th><th class="num">K</th>
           <th class="num" title="(K + foul-outs) / BF">K%</th>
+          <th class="num" title="Walk-Back Stop% — strand rate for the post-HR rule-placed runner on 3B (Manfred-runner analog). Higher = better.">WB%</th>
+          <th class="num" title="XO Crossover ERA — MLB-readable z-anchored to league mean+sd">XO-ERA</th>
+          <th class="num" title="XO Crossover WHIP — MLB-readable z-anchored to league mean+sd">XO-WHIP</th>
           <th class="num" title="Persisted salary (the wage ledger). Toggle the pill to view in USD or EUR.">Salary</th>
         </tr></thead>
         <tbody>
@@ -236,6 +239,9 @@
           <td class="num" data-sort-value="{{ p.outs or 0 }}">{{ p.outs or 0 }}</td>
           <td class="num">{{ p.k or 0 }}</td>
           <td class="num" data-sort-value="{{ '%.4f'|format(p.k_pct or 0) }}">{{ '%.1f'|format((p.k_pct or 0) * 100) }}%</td>
+          <td class="num{% if not p.wb_faced %} text-secondary{% endif %}" data-sort-value="{{ '%.3f'|format(p.wb_stop_pct or 0) }}">{% if p.wb_faced %}{{ '%.0f'|format((p.wb_stop_pct or 0) * 100) }}%{% else %}—{% endif %}</td>
+          <td class="num" data-sort-value="{{ '%.3f'|format((p.xo.era if p.xo else 0) or 0) }}">{{ '%.2f'|format((p.xo.era if p.xo else 0) or 0) }}</td>
+          <td class="num" data-sort-value="{{ '%.3f'|format((p.xo.whip if p.xo else 0) or 0) }}">{{ '%.2f'|format((p.xo.whip if p.xo else 0) or 0) }}</td>
           <td class="num text-secondary" data-sort-value="{{ p.salary or 0 }}">{% if p.salary %}{{ p.salary | money }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}

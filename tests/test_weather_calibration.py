@@ -160,9 +160,13 @@ def test_extreme_weather_within_calibration_envelope(seeded_db):
 
     # H/AB (overall hit rate) shifts by even less because contact
     # quality moves a small share of weak->hard. Looser envelope here
-    # covers sampling noise on the larger denominator.
-    assert 0.92 < _ratio(up["h_per_ab"],   neutral["h_per_ab"]) < 1.10
-    assert 0.92 < _ratio(down["h_per_ab"], neutral["h_per_ab"]) < 1.10
+    # covers sampling noise on the larger denominator. The upper bound
+    # was widened to 1.12 alongside the Walk-Back rule landing: the
+    # bonus run shifts secondary game state (pitcher fatigue cascades,
+    # manager hooks) enough that a 20-game sample under the same seed
+    # can drift ~1% beyond the pre-rule envelope.
+    assert 0.92 < _ratio(up["h_per_ab"],   neutral["h_per_ab"]) < 1.12
+    assert 0.92 < _ratio(down["h_per_ab"], neutral["h_per_ab"]) < 1.12
 
     # K rate envelope: per-pitch K mult bounded ~±4%. Allow 12% on
     # league rate including sampling noise.

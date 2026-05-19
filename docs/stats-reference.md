@@ -366,3 +366,88 @@ These shift probabilities and feed into the stats above; they don't appear direc
 - **PAVG vs BAVG** — PAVG is per-PA (cleanest "true" rate); BAVG is per-AB and can exceed 1.0 because of multi-hit ABs from stays. Their gap (`STAY_DIFF`) is an O27-native productivity signal.
 - **Replacement level** — Used in VORP/WAR; computed from league offense/defense with O27-tuned constants.
 - **`runs_per_win`** — Conversion factor from runs to wins, derived from O27's run environment (see `o27v2/analytics/pythag.py`).
+- **Walk-Back** — The post-HR rule-placed runner on 3B (see "Walk-Back Rule" below).
+- **XO** — Crossover stats: O27 rate stats translated to MLB-readable values via z-anchoring (see "Crossover (XO) Stats" below).
+
+---
+
+## Walk-Back Rule
+
+After a home run, the batter rounds the bases and physically scores (all the usual MLB-equivalent run/RBI/HR/R credits land identically). Then, with the ball dead and out of play and the next batter still getting set, the HR-hitter **walks back from home plate out to third base** and stands there as the Walk-Back runner for the next batter's PA only.
+
+- If the next batter drives him in **with the bat** (single, double, triple, HR, or sac fly / productive ground out that scores from 3B), **+1 team run scores**, the driver gets +1 RBI, and the inning continues with bases empty.
+- If the next batter strikes out, walks, foul-outs, lines out, or otherwise fails to drive the Walk-Back runner home with the bat, the runner **evaporates** — no LOB, no R credit, no presence in the box score after the play.
+
+### Stat treatment
+
+The Walk-Back run is **unearned**, applying the MLB Manfred-runner (extra-innings automatic runner) precedent: a runner placed on base by **rule** rather than allowed by the pitcher, who scores and counts toward the score and the decision but is excluded from ERA because the run is a rule artifact.
+
+- **Excluded from ERA** (consistent with the Manfred-runner precedent; the HR-hitter's run-prevention failure was already charged on the HR PA).
+- **Included in wERA, runs allowed (R), team score, and decisions** — wERA is the true run-prevention value stat; a run that scored is a run the run-prevention did not stop.
+- Charged to whoever is on the mound for the NEXT batter, not necessarily the pitcher who threw the HR (substitution-aware).
+
+### Persisted counters
+
+| Column | Where | Meaning |
+|---|---|---|
+| `wb_faced` | `game_pitcher_stats` | PAs this pitcher pitched with a Walk-Back runner pending |
+| `wb_runs`  | `game_pitcher_stats` | PAs (subset of `wb_faced`) where the Walk-Back runner scored |
+
+### Derived stat
+
+**Walk-Back Stop%** = `(wb_faced − wb_runs) / wb_faced` — the rate at which the pitcher strands the Walk-Back runner. Surfaces on the pitcher card, the leaders page, and the team page. **Strikeout and weak-contact pitchers post the highest Stop%**: the bonus only scores on a batted ball that drives the runner home, so a K is the cleanest defense.
+
+There's no MLB analog; Walk-Back Stop% stays on native scale across both the Native and XO toggles.
+
+### Sponsorship (worldbuilding)
+
+The ~15-second walk-back stroll is dead-time inventory the rule manufactures. Each Walk-Back PA carries a sponsor line in the play-by-play log, drawn from `o27/config.py:WALK_BACK_SPONSORS` (canonical: "Eden Ice Cream"). Purely cosmetic — no stat impact.
+
+---
+
+## Crossover (XO) Stats
+
+XO is a thin **display layer** on top of native O27 rate stats that translates them to MLB-readable values via **z-anchoring**:
+
+    xo = MLB_mean + ((value − O27_mean) / O27_sd) × MLB_sd
+
+Properties:
+
+- **Rank-preserving.** The map is affine and strictly increasing in `value`, so XO leaderboards are the same player order as Native — only the displayed numbers translate.
+- **Spread-preserving.** A player N σ above the O27 league mean lands N σ above the MLB anchor mean, so a true O27 ace shows up as a recognisable MLB-elite number rather than bunched at the league anchor.
+
+**Linear-ratio rescaling was considered and rejected** for spread collapse: under linear ratio every player gets pulled toward the league anchor (the elite outliers get blunted), defeating the readability goal. Z-anchoring is locked.
+
+### Method
+
+- **Means and SDs come from two places:**
+  - MLB anchors live in `o27v2/analytics/crossover.py:MLB_ANCHOR_MEAN` and `MLB_ANCHOR_SD` — the **single retune point**. They reflect a recent-MLB qualified-player composite (seed values approximate; confirm against your chosen reference season via the blocking calibration panel).
+  - O27 means and SDs are **derived per render** from `_league_baselines()` over qualified players (≥ 50 PA for batters, ≥ 9 outs for pitchers), keyed `xo_<stat>_mean` and `xo_<stat>_sd`.
+- **Season-relative.** XO re-derives from the current league baselines each season, so historical seasons translate against their own league distribution.
+- **Directionality.** For lower-is-better stats (ERA, WHIP, BB/9, HR/9, opponent slash) the z-anchor map still works correctly — a pitcher below O27 mean ERA gets a negative z and lands below the MLB mean ERA. No sign flip needed.
+
+### Covered stats
+
+| Pitching | Batting |
+|---|---|
+| ERA, WHIP, K/9, BB/9, HR/9 | AVG, OBP, SLG, OPS |
+| oAVG, oOBP, oSLG, oOPS | wOBA, BABIP |
+
+The "+" stats (ERA+, OPS+, wOBA+, wERA+, GSc+) are NOT XO-anchored: they already encode league-relative position on their own scales.
+
+### Calibration panel (blocking)
+
+`/analytics` renders an "XO Crossover · Calibration" table showing, per stat, O27 mean+sd vs MLB anchor mean+sd. By construction the XO league mean maps to the MLB anchor mean exactly and the spread match holds; the visible health check is that each stat has ≥ 2 qualifying players (non-zero O27 sd). Stats with no qualifying players fall through to native value.
+
+### Skew exception (reactive fallback)
+
+Z-anchoring matches the first two moments (mean + sd). If a specific stat's XO distribution comes back materially lopsided versus MLB's known shape for that stat, that single stat falls back to full percentile-rank mapping against the static MLB reference distribution while everything else stays on z-anchor. Hybrid-by-exception — do not pre-emptively implement percentile mapping for all stats; convert only when the calibration panel flags it.
+
+### Where it appears
+
+| Surface | Behaviour |
+|---|---|
+| `/player/<id>` | "XO Crossover" tab listing Native vs XO for every covered stat |
+| `/leaders` | Top-of-page Native ↔ XO toggle; player order unchanged across the toggle (rank-preserving) |
+| `/team/<id>` | Per-pitcher XO-ERA and XO-WHIP columns alongside native wERA |
+| `/analytics` | XO Calibration panel (blocking check) |

@@ -13,6 +13,14 @@
     </div>
   </div>
   <div class="d-flex gap-2 align-items-center flex-wrap">
+    <div class="btn-group btn-group-sm" role="group" aria-label="Stat scale">
+      <a href="{{ url_for('leaders') }}"
+         class="btn {% if scale != 'xo' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+         title="Native O27 scale (default)">Native</a>
+      <a href="{{ url_for('leaders', scale='xo') }}"
+         class="btn {% if scale == 'xo' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
+         title="Crossover (XO): z-anchored to MLB mean and spread. Same player order as Native; only the numbers translate.">XO Crossover</a>
+    </div>
     <button class="copy-md btn btn-sm btn-outline-secondary"
             data-md-url="{{ url_for('leaders_export') }}"
             title="Copy leaders as markdown">Copy as MD</button>
@@ -22,11 +30,35 @@
   </div>
 </div>
 
+{% if scale == 'xo' %}
+<div class="panel panel-body mb-3" style="background:rgba(13,110,253,0.08); border-color:rgba(13,110,253,0.4)">
+  <div class="d-flex align-items-start gap-2">
+    <span style="font-weight:600">XO Crossover scale.</span>
+    <span class="text-secondary small">
+      Rate stats are z-anchored to MLB league mean and spread, so the numbers read
+      like MLB stats while preserving rank order exactly. Player ordering in each
+      card is identical to Native — only the values translate. Counting stats
+      (HR, RBI, K, etc.) are unchanged.
+    </span>
+  </div>
+</div>
+{% endif %}
+
+{# Helper macro: rate-stat card with native ↔ XO toggle. For stats with
+   no XO equivalent (counting stats), pass xo_key=None and the macro
+   ignores `scale`. #}
+
+{# `card` renders a Top-10 leaderboard. When `scale == 'xo'` AND the row
+   carries an `xo` sub-dict containing `key`, the displayed value is the
+   z-anchored MLB-readable version. Ordering is unchanged (the z-anchor
+   map is monotonic), so the player list reads the same — only the
+   numbers translate. Counting-stat keys (hr, rbi, k, …) never appear in
+   `r.xo` so they pass through untouched even on the XO toggle. #}
 {% macro card(label, key, fmt, desc, dataset, tooltip='') %}
 <div class="col-lg-3 col-md-6">
   <div class="panel">
     <div class="panel-head" {% if tooltip %}title="{{ tooltip }}"{% endif %}>
-      <span>{{ label }}</span>
+      <span>{{ label }}{% if scale == 'xo' and dataset and dataset[0] is defined and dataset[0].xo is defined and dataset[0].xo and key in dataset[0].xo %} <span class="badge bg-primary" style="font-size:0.55rem;vertical-align:middle">XO</span>{% endif %}</span>
       <span class="ms-auto sub">Top 10</span>
     </div>
     <table class="table dense-table mb-0">
@@ -34,11 +66,13 @@
         {% set rows_with_value = dataset | selectattr(key, 'ne', None) | list %}
         {% set sorted = rows_with_value | sort(attribute=key, reverse=desc) %}
         {% for r in sorted[:10] %}
+        {% set use_xo = (scale == 'xo' and r.xo is defined and r.xo and key in r.xo) %}
+        {% set val = (r.xo[key] if use_xo else r[key]) %}
         <tr>
           <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
           <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
           <td><a href="{{ url_for('team_detail', team_id=r.team_id) }}" class="team-abbrev">{{ r.team_abbrev }}</a></td>
-          <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
+          <td class="num fw-bold">{{ fmt|format(val) }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -154,6 +188,21 @@
   {{ card('K',    'k',    '%d',   true, pitching) }}
   {{ card('Outs', 'outs', '%d',   true, pitching, tooltip='Outs recorded — pitcher workload (one full O27 game = 27)') }}
   {{ card('WAR',  'war',  '%.2f', true, pitching) }}
+</div>
+
+<h4>Pitching · Walk-Back &amp; MLB-Readable Rates</h4>
+<div class="text-secondary small mb-2" style="padding:0 0.25rem">
+  Walk-Back Stop% is O27-rule-specific (no MLB analog) and stays on
+  native scale across both toggles. ERA / WHIP / K/9 / BB/9 / HR/9
+  honor the XO toggle when active.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('Walk-Back Stop%', 'wb_stop_pct', '%.1f%%' , true, pitching, tooltip='Strand rate for the rule-placed Walk-Back runner. After every HR, the next batter\'s PA can drive home the HR-hitter from 3B for an extra unearned team run. Walk-Back Stop% = 1 − (wb_runs / wb_faced). Strikeout/weak-contact arms post the highest values.') }}
+  {{ card('ERA (low)',  'era',  '%.2f', false, pitching, tooltip='Raw ERA — er × 27 / outs. Native O27 scale by default; XO toggle rescales to MLB mean+sd.') }}
+  {{ card('WHIP (low)', 'whip', '%.2f', false, pitching, tooltip='Walks + hits per IP (per-9-IP MLB convention).') }}
+  {{ card('K/9',        'k9',   '%.1f', true,  pitching) }}
+  {{ card('BB/9 (low)', 'bb9',  '%.1f', false, pitching) }}
+  {{ card('HR/9 (low)', 'hr9',  '%.2f', false, pitching) }}
 </div>
 
 <h4>Pitching · Arsenal mix</h4>

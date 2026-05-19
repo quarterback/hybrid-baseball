@@ -44,12 +44,108 @@ from . import manager as mgr
 from .baserunning import advance_runners, wild_pitch_advance
 from . import fielding as fld
 from . import prob as _prob
+from .. import config as _cfg
 from typing import Optional
+
+
+def _pick_walk_back_sponsor(state: GameState) -> str:
+    """Pick a deterministic Walk-Back sponsor from the rotating pool.
+
+    Deterministic per (game-event-position) so the same Walk-Back shows
+    the same sponsor across re-renders. Falls back to an empty string if
+    no sponsor pool is configured.
+    """
+    pool = getattr(_cfg, "WALK_BACK_SPONSORS", None) or []
+    if not pool:
+        return ""
+    # Stable index from the half + PA counter — no RNG dependency.
+    idx = (state.total_pa_this_half + len(state.events)) % len(pool)
+    return pool[idx]
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Walk-Back helpers (post-HR rule-placed runner — see docs/stats-reference.md
+# "Walk-Back Rule"). The flag lives on GameState (walk_back_pending) and is
+# set after an HR resolves; the NEXT PA captures + clears it, increments
+# the current pitcher's wb_faced counter exactly once, and fires the bonus
+# run (always unearned) iff the PA drove a runner home from 3B with the bat.
+# ---------------------------------------------------------------------------
+
+# Hit types that drive a runner home from 3B with the bat regardless of
+# fielding detail (a base hit always scores the trail runner from 3B).
+_WALK_BACK_BAT_DRIVES = frozenset((
+    "single", "infield_single",
+    "double", "triple",
+    "hr", "home_run",
+))
+
+
+def _walk_back_should_fire(hit_type: str, batted_advance_from_3b: int = 0) -> bool:
+    """True if the Walk-Back runner is driven home with the bat by this PA.
+
+    Fires on: any base hit (1B/2B/3B/HR), OR any batted ball whose
+    runner-advance semantic would have scored a runner from 3B (sac fly,
+    productive ground out). Walks, strikeouts, foul-outs, line-outs that
+    freeze runners, WP / PB / SB / pickoffs / errors-on-non-balls do NOT
+    qualify — the runner must be batted home.
+    """
+    if hit_type in _WALK_BACK_BAT_DRIVES:
+        return True
+    # Sac fly / productive ground out: the play's runner_advances[2] is the
+    # advance amount that WOULD apply to a runner on 3B. Any positive value
+    # scores from 3B.
+    if hit_type in ("fly_out", "ground_out", "fielders_choice"):
+        return batted_advance_from_3b >= 1
+    return False
+
+
+def _resolve_walk_back_at_pa_end(
+    state: GameState,
+    hit_type: str = "",
+    batted_advance_from_3b: int = 0,
+) -> list[str]:
+    """Resolve any pending Walk-Back at a TRUE PA terminus.
+
+    Call this at every PA-ending event AFTER the play's own run/out
+    accounting has been applied but BEFORE _end_at_bat(). For stays that
+    do NOT end the PA (multi-hit continuation), do NOT call this — the
+    PA is still in progress.
+
+    Behaviour:
+      - If state.walk_back_pending is None: no-op, returns [].
+      - If set: increments the current pitcher's wb_faced counter exactly
+        once (Manfred-runner-faced measurement), then either fires the
+        +1 unearned bonus run (if `_walk_back_should_fire(hit_type, ...)`)
+        or evaporates the runner. Clears state.walk_back_pending.
+
+    The bonus run, when it fires:
+      - bumps state.score (driver RBI is credited downstream by render.py
+        via runs_scored delta — so we do NOT call any RBI helper here)
+      - bumps pitcher_runs_this_spell AND pitcher_unearned_runs_this_spell
+        (Manfred-runner precedent: always unearned, never arc-bucketed
+        as earned). pitcher_wb_runs_this_spell increments alongside.
+      - bumps partnership_runs (it's still a run that scored this AB).
+    """
+    pending = state.walk_back_pending
+    if pending is None:
+        return []
+    state.walk_back_pending = None
+    state.pitcher_wb_faced_this_spell += 1
+    if _walk_back_should_fire(hit_type, batted_advance_from_3b):
+        team_id = state.batting_team.team_id
+        state.score[team_id] += 1
+        state.partnership_runs += 1
+        state.pitcher_runs_this_spell += 1
+        state.pitcher_unearned_runs_this_spell += 1
+        state.pitcher_wb_runs_this_spell += 1
+        return [f"  Walk-Back: {pending} is batted home — +1 run (unearned). "
+                f"{state.batting_team.name} {state.score[team_id]}."]
+    return [f"  Walk-Back: {pending} evaporates — not driven in."]
 
 
 def _arc_index(outs: int) -> int:
@@ -237,6 +333,8 @@ def apply_event(state: GameState, event: dict) -> list[str]:
             state.pitcher_fo_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
             batter_id = state.current_batter.player_id
             log += _record_out(state, batter_id)
+            # Walk-Back terminus: foul-out evaporates the bonus.
+            log += _resolve_walk_back_at_pa_end(state, hit_type="foul_out")
             log += _end_at_bat(state)
             return log
         if state.count.strikes < 2:
@@ -251,6 +349,8 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         state.pitcher_k_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
         batter_id = state.current_batter.player_id
         log += _record_out(state, batter_id)
+        # Walk-Back terminus: K evaporates the bonus.
+        log += _resolve_walk_back_at_pa_end(state, hit_type="k")
         log += _end_at_bat(state)
         return log
 
@@ -263,6 +363,8 @@ def apply_event(state: GameState, event: dict) -> list[str]:
         log += advance_log
         if runs:
             log += _score_run(state, runs)
+        # Walk-Back terminus: HBP is not "batted home" — evaporates.
+        log += _resolve_walk_back_at_pa_end(state, hit_type="hbp")
         log += _end_at_bat(state)
         return log
 
@@ -520,7 +622,7 @@ def _resolve_contact(
     # PRD §2.6: stay does not apply to home runs — batter must run.
     # fielding.py emits hit_type "hr" for home runs.
     if hit_type in ("hr", "home_run") and choice == "stay":
-        log.append("  [Home run — stay not applicable. Batter must run.]")
+        log.append("  [Home run — stay not applicable.]")
         choice = "run"
 
     # ---- RUN CHOSEN ----
@@ -561,6 +663,22 @@ def _resolve_contact(
         if not batter_safe:
             log.append(f"  {batter.name} is out.")
             log += _record_out(state, batter_id)
+        # Walk-Back terminus: resolve any pending Walk-Back from the prior
+        # PA. The 3B advance value drives sac-fly / productive-ground-out
+        # detection.
+        advances = outcome.get("runner_advances") or [0, 0, 0]
+        adv_from_3b = advances[2] if len(advances) > 2 else 0
+        log += _resolve_walk_back_at_pa_end(state, hit_type=hit_type,
+                                            batted_advance_from_3b=adv_from_3b)
+        # Walk-Back arming: an HR resolves MLB-exactly above; AFTER all
+        # bookkeeping for this PA finishes, arm the Walk-Back for the
+        # next batter's PA only. The HR-hitter is the bonus runner.
+        if hit_type in ("hr", "home_run"):
+            state.walk_back_pending = batter_id
+            log.append(f"  [Walk-Back armed — {batter.name} can be batted home by the next hitter for +1.]")
+            sponsor = _pick_walk_back_sponsor(state)
+            if sponsor:
+                log.append(f"  [The Walk-Back is brought to you by {sponsor}.]")
         log += _end_at_bat(state)
         return log
 
@@ -592,6 +710,12 @@ def _resolve_contact(
         if thrown_out_id is not None:
             log += _record_out(state, thrown_out_id)
         log += _record_out(state, batter_id)
+        # Walk-Back terminus on a stay-out: the stay played as the
+        # fielding outcome it was, so use its hit_type + 3B-advance.
+        advances = outcome.get("runner_advances") or [0, 0, 0]
+        adv_from_3b = advances[2] if len(advances) > 2 else 0
+        log += _resolve_walk_back_at_pa_end(state, hit_type=hit_type,
+                                            batted_advance_from_3b=adv_from_3b)
         log += _end_at_bat(state)
         return log
 
@@ -676,6 +800,10 @@ def _walk(state: GameState) -> list[str]:
     log += adv_log
     if runs:
         log += _score_run(state, runs)
+    # Walk-Back terminus: walks do not drive a runner home (force advance
+    # only scores from 3B if bases were loaded, which can't be true after
+    # an HR cleared them; walk-back-pending sees a "bb" hit_type → evap).
+    log += _resolve_walk_back_at_pa_end(state, hit_type="bb")
     log += _end_at_bat(state)
     return log
 
@@ -717,5 +845,7 @@ def _strike(state: GameState, log: list, swinging: bool) -> list[str]:
         state.pitcher_k_this_spell += 1
         state.pitcher_k_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
         log += _record_out(state, batter_id)
+        # Walk-Back terminus: K evaporates the bonus.
+        log += _resolve_walk_back_at_pa_end(state, hit_type="k")
         log += _end_at_bat(state)
     return log

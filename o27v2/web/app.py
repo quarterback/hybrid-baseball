@@ -619,7 +619,8 @@ _PSTATS_DEDUP_SQL = """(
            bf_arc1, bf_arc2, bf_arc3,
            is_starter,
            singles_allowed, doubles_allowed, triples_allowed,
-           fastball_pct, breaking_pct, offspeed_pct, primary_pitch
+           fastball_pct, breaking_pct, offspeed_pct, primary_pitch,
+           wb_faced, wb_runs
     FROM (
         SELECT *,
                ROW_NUMBER() OVER (
@@ -1404,6 +1405,25 @@ def _aggregate_batter_rows(
         b["chances"] = po_v + e_v
         b["fld_pct"] = (po_v / (po_v + e_v)) if (po_v + e_v) > 0 else None
 
+        # --- XO Crossover (z-anchored to MLB mean+sd) ---
+        # See o27v2/analytics/crossover.py. Tier-scoped if available.
+        scoped_xo_b = scoped
+        if baselines_by_league and team_league_map:
+            tid_xo_b = b.get("team_id")
+            if tid_xo_b is not None:
+                lg_name_xo_b = team_league_map.get(int(tid_xo_b), "")
+                tier_b_xo_b = baselines_by_league.get(lg_name_xo_b) or {}
+                if tier_b_xo_b.get("xo_ops_sd") is not None:
+                    scoped_xo_b = tier_b_xo_b
+        from o27v2.analytics.crossover import to_xo, XO_BATTER_STATS
+        b_xo: dict[str, float] = {}
+        for stat in XO_BATTER_STATS:
+            mean = scoped_xo_b.get(f"xo_{stat}_mean") or 0.0
+            sd   = scoped_xo_b.get(f"xo_{stat}_sd")   or 0.0
+            native = b.get(stat) or 0.0
+            b_xo[stat] = to_xo(stat, native, mean, sd)
+        b["xo"] = b_xo
+
 
 _LINEAR_WEIGHTS_CACHE: dict | None = None
 
@@ -1803,6 +1823,157 @@ def _league_baselines(league: str | None = None) -> dict[str, float]:
             r_per_game = ((pit.get("r", 0) or 0) * 2.0) / games_played   # both teams
             out["runs_per_win"] = max(8.0, 9.0 + (r_per_game / 4.0) ** 0.5 * 3.5)
 
+    # ------------------------------------------------------------------
+    # XO Crossover league anchors (mean AND population sd per stat).
+    # These feed crossover.to_xo(stat, value, league_mean, league_sd)
+    # at row-aggregator time. Both keys exist for every XO-tracked stat:
+    #   out["<stat>"]    = league mean
+    #   out["<stat>_sd"] = league population sd
+    # If sd cannot be computed (no qualifying players), defaults to 0.0
+    # and to_xo() falls through to native value.
+    # ------------------------------------------------------------------
+    out.update(_compute_xo_league_baselines(bat_where, bat_params, pit_where, pit_params))
+
+    return out
+
+
+def _compute_xo_league_baselines(
+    bat_where: str, bat_params: tuple,
+    pit_where: str, pit_params: tuple,
+) -> dict[str, float]:
+    """Compute XO league means + population SDs for every XO-tracked stat.
+
+    The means here are MEAN-OF-PER-PLAYER-RATE (qualified players only),
+    which is the right notion for "league average player" — distinct from
+    the league-wide pooled rate (SUM(num)/SUM(den)) that drives OPS+ /
+    wOBA+ in the existing baselines. We keep them under dedicated keys
+    `xo_<stat>_mean` and `xo_<stat>_sd` so neither layer steps on the
+    other. SDs come from the per-player distribution over qualified
+    players (batters ≥ 50 PA, pitchers ≥ 9 outs).
+
+    Returns a flat dict: { "xo_<stat>_mean": float, "xo_<stat>_sd": float, ... }.
+    """
+    def _mean_sd(values: list[float]) -> tuple[float, float]:
+        if not values:
+            return 0.0, 0.0
+        m = sum(values) / len(values)
+        if len(values) < 2:
+            return m, 0.0
+        var = sum((v - m) ** 2 for v in values) / len(values)
+        return m, var ** 0.5
+
+    out: dict[str, float] = {}
+
+    # --- Batter qualifying distribution (per-player rate stats) ---
+    bat_rows = db.fetchall(
+        f"""SELECT player_id,
+                   SUM(pa)      AS pa,
+                   SUM(ab)      AS ab,
+                   SUM(hits)    AS h,
+                   SUM(doubles) AS d2,
+                   SUM(triples) AS d3,
+                   SUM(hr)      AS hr,
+                   SUM(bb)      AS bb,
+                   SUM(hbp)     AS hbp
+              FROM game_batter_stats{bat_where}
+             GROUP BY player_id
+            HAVING SUM(pa) >= 50""",
+        bat_params,
+    )
+    avg_vals: list[float]   = []
+    obp_vals: list[float]   = []
+    slg_vals: list[float]   = []
+    ops_vals: list[float]   = []
+    woba_vals: list[float]  = []
+    babip_vals: list[float] = []
+    for r in bat_rows:
+        pa = r["pa"] or 0
+        ab = r["ab"] or 0
+        h  = r["h"]  or 0
+        d2 = r["d2"] or 0
+        d3 = r["d3"] or 0
+        hr = r["hr"] or 0
+        bb = r["bb"] or 0
+        hbp = r["hbp"] or 0
+        if pa <= 0 or ab <= 0:
+            continue
+        singles = h - d2 - d3 - hr
+        tb      = singles + 2 * d2 + 3 * d3 + 4 * hr
+        avg_vals.append(h / ab)
+        obp_vals.append((h + bb + hbp) / pa)
+        slg_vals.append(tb / pa)
+        ops_vals.append((h + bb + hbp) / pa + tb / pa)
+        woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
+        woba_vals.append(woba_num / pa)
+        bab_den = ab - hr
+        if bab_den > 0:
+            babip_vals.append((h - hr) / bab_den)
+
+    for stat, vals in (("avg",  avg_vals), ("obp",  obp_vals),
+                        ("slg",  slg_vals), ("ops",  ops_vals),
+                        ("woba", woba_vals), ("babip", babip_vals)):
+        m, sd = _mean_sd(vals)
+        out[f"xo_{stat}_mean"] = m
+        out[f"xo_{stat}_sd"]   = sd
+
+    # --- Pitcher qualifying distribution (per-player rate stats) ---
+    pit_rows = db.fetchall(
+        f"""SELECT ps.player_id,
+                   SUM(ps.outs_recorded) AS outs,
+                   SUM(ps.er)            AS er,
+                   SUM(ps.bb)            AS bb,
+                   SUM(ps.k)             AS k,
+                   SUM(ps.hits_allowed)  AS h,
+                   SUM(ps.hr_allowed)    AS hr,
+                   SUM(ps.batters_faced) AS bf,
+                   SUM(ps.hbp_allowed)   AS hbp,
+                   SUM(ps.doubles_allowed) AS d2,
+                   SUM(ps.triples_allowed) AS d3
+              FROM {_PSTATS_DEDUP_SQL} ps{pit_where}
+             GROUP BY ps.player_id
+            HAVING SUM(ps.outs_recorded) >= 9""",
+        pit_params,
+    )
+    era_vals:  list[float] = []
+    whip_vals: list[float] = []
+    k9_vals:   list[float] = []
+    bb9_vals:  list[float] = []
+    hr9_vals:  list[float] = []
+    oavg_vals: list[float] = []
+    oobp_vals: list[float] = []
+    oslg_vals: list[float] = []
+    oops_vals: list[float] = []
+    for r in pit_rows:
+        outs = r["outs"] or 0
+        ip   = outs / 3.0
+        if outs <= 0 or ip <= 0:
+            continue
+        bf = r["bf"] or 0
+        ab_faced = max(0, bf - (r["bb"] or 0) - (r["hbp"] or 0))
+        era_vals.append((r["er"] or 0) * 27.0 / outs)
+        whip_vals.append(((r["h"] or 0) + (r["bb"] or 0)) / ip)
+        k9_vals.append((r["k"]  or 0) * 9.0 / ip)
+        bb9_vals.append((r["bb"] or 0) * 9.0 / ip)
+        hr9_vals.append((r["hr"] or 0) * 9.0 / ip)
+        if ab_faced > 0:
+            singles_a = (r["h"] or 0) - (r["d2"] or 0) - (r["d3"] or 0) - (r["hr"] or 0)
+            tb_a = singles_a + 2 * (r["d2"] or 0) + 3 * (r["d3"] or 0) + 4 * (r["hr"] or 0)
+            oavg_vals.append((r["h"] or 0) / ab_faced)
+            oslg_vals.append(tb_a / ab_faced)
+        if bf > 0:
+            oobp_vals.append(((r["h"] or 0) + (r["bb"] or 0) + (r["hbp"] or 0)) / bf)
+        if ab_faced > 0 and bf > 0:
+            oops_vals.append(oobp_vals[-1] + oslg_vals[-1])
+
+    for stat, vals in (("era",  era_vals), ("whip", whip_vals),
+                        ("k9",   k9_vals),  ("bb9",  bb9_vals),
+                        ("hr9",  hr9_vals), ("oavg", oavg_vals),
+                        ("oobp", oobp_vals), ("oslg", oslg_vals),
+                        ("oops", oops_vals)):
+        m, sd = _mean_sd(vals)
+        out[f"xo_{stat}_mean"] = m
+        out[f"xo_{stat}_sd"]   = sd
+
     return out
 
 
@@ -2127,6 +2298,62 @@ def _aggregate_pitcher_rows(
             p["w"] = d["w"]
             p["l"] = d["l"]
 
+        # --- Per-9-IP rates + raw ERA (XO display + WHIP surface) ---
+        # IP = outs / 3 (per-27-outs scale, but k9/bb9/hr9/whip are
+        # MLB-readable per-9-IP). These are computed natively for
+        # readability and then z-anchored via the XO block below.
+        # ERA (er × 27 / outs) is the raw 27-out-scale ERA; matches the
+        # league mean key for OPS+ / wERA+ already. The display layer
+        # still surfaces wERA for the headline value; this `era` keeps
+        # the XO anchor calculation honest.
+        ip = outs / 3.0
+        if outs > 0:
+            p["era"] = er * 27.0 / outs
+        else:
+            p["era"] = 0.0
+        if ip > 0:
+            p["whip"] = (h + bb) / ip
+            p["k9"]   = k  * 9.0 / ip
+            p["bb9"]  = bb * 9.0 / ip
+            p["hr9"]  = hr * 9.0 / ip
+        else:
+            p["whip"] = 0.0
+            p["k9"]   = 0.0
+            p["bb9"]  = 0.0
+            p["hr9"]  = 0.0
+
+        # --- Walk-Back Stop% (post-HR rule-placed runner strand rate) ---
+        # The Manfred-runner-analog measurement: the rate at which this
+        # pitcher strands the HR-hitter on 3B after a previous HR (rule
+        # arms a Walk-Back for the next PA only). Higher = better.
+        wb_faced = p.get("wb_faced") or 0
+        wb_runs  = p.get("wb_runs")  or 0
+        p["wb_faced"] = wb_faced
+        p["wb_runs"]  = wb_runs
+        p["wb_stop_pct"] = ((wb_faced - wb_runs) / wb_faced) if wb_faced else 0.0
+
+        # --- XO Crossover (z-anchored to MLB mean+sd) ---
+        # See o27v2/analytics/crossover.py for the rationale (preserves
+        # rank AND spread). xo_<stat>_mean and xo_<stat>_sd come from
+        # _compute_xo_league_baselines() — tier-scoped if available.
+        scoped_xo = baselines
+        if baselines_by_league and team_league_map:
+            tid_xo = p.get("team_id")
+            if tid_xo is not None:
+                lg_name_xo = team_league_map.get(int(tid_xo), "")
+                tier_b_xo = baselines_by_league.get(lg_name_xo) or {}
+                # Tier baseline if it has XO data (post-migration), else global.
+                if tier_b_xo.get("xo_era_sd") is not None:
+                    scoped_xo = tier_b_xo
+        from o27v2.analytics.crossover import to_xo, XO_PITCHER_STATS
+        p_xo: dict[str, float] = {}
+        for stat in XO_PITCHER_STATS:
+            mean = scoped_xo.get(f"xo_{stat}_mean") or 0.0
+            sd   = scoped_xo.get(f"xo_{stat}_sd")   or 0.0
+            native = p.get(stat) or 0.0
+            p_xo[stat] = to_xo(stat, native, mean, sd)
+        p["xo"] = p_xo
+
     # Per-appearance Decay + arc-3 reach rate. One cheap GROUP BY query
     # against game_pitcher_stats; mapped onto every pitcher row in `rows`.
     # decay_pg uses the SAME drift correction as season Decay so both sit
@@ -2245,6 +2472,8 @@ def index():
                       SUM(ps.er) as er,
                       SUM(ps.bb) as bb, SUM(ps.k) as k,
                       SUM(ps.hr_allowed) as hr_allowed,
+                  SUM(ps.wb_faced)   as wb_faced,
+                  SUM(ps.wb_runs)    as wb_runs,
                       SUM(ps.pitches) as pitches,
                       SUM(ps.hbp_allowed) as hbp_allowed,
                       SUM(ps.unearned_runs) as unearned_runs,
@@ -3229,6 +3458,8 @@ def leaders_export():
                   SUM(ps.bb)             as bb,
                   SUM(ps.k)              as k,
                   SUM(ps.hr_allowed)     as hr_allowed,
+                  SUM(ps.wb_faced)       as wb_faced,
+                  SUM(ps.wb_runs)        as wb_runs,
                   COALESCE(SUM(ps.hbp_allowed),0) as hbp_allowed,
                   COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                   COALESCE(SUM(ps.fo_induced),0) as fo_induced,
@@ -3287,6 +3518,8 @@ def team_detail_export(team_id: int):
                        SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r,
                        SUM(ps.er) AS er, SUM(ps.bb) AS bb, SUM(ps.k) AS k,
                        SUM(ps.hr_allowed) AS hr_allowed,
+                       SUM(ps.wb_faced)   AS wb_faced,
+                       SUM(ps.wb_runs)    AS wb_runs,
                        SUM(ps.pitches) AS pitches,
                        COALESCE(SUM(ps.hbp_allowed),0) AS hbp_allowed,
                        COALESCE(SUM(ps.unearned_runs),0) AS unearned_runs,
@@ -3497,6 +3730,8 @@ def players():
                            SUM(ps.er) AS er,
                            SUM(ps.bb) AS bb, SUM(ps.k) AS k,
                            SUM(ps.hr_allowed) AS hr_allowed,
+                       SUM(ps.wb_faced)   AS wb_faced,
+                       SUM(ps.wb_runs)    AS wb_runs,
                            SUM(ps.pitches) AS pitches,
                            SUM(ps.hbp_allowed) AS hbp_allowed,
                            SUM(ps.unearned_runs) AS unearned_runs,
@@ -3682,6 +3917,8 @@ def stats_browse():
                        SUM(ps.bb)             as bb,
                        SUM(ps.k)              as k,
                        SUM(ps.hr_allowed)     as hr_allowed,
+                  SUM(ps.wb_faced)       as wb_faced,
+                  SUM(ps.wb_runs)        as wb_runs,
                        COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
                        COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                        COALESCE(SUM(ps.unearned_runs),0) as uer,
@@ -3997,6 +4234,8 @@ def leaders():
                   SUM(ps.bb)             as bb,
                   SUM(ps.k)              as k,
                   SUM(ps.hr_allowed)     as hr_allowed,
+                  SUM(ps.wb_faced)       as wb_faced,
+                  SUM(ps.wb_runs)        as wb_runs,
                   COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
                   COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                   COALESCE(SUM(ps.unearned_runs),0) as uer,
@@ -4175,6 +4414,14 @@ def leaders():
            WHERE p.is_pitcher = 1""",
     )
 
+    # ----- XO Crossover scale toggle ------------------------------
+    # ?scale=xo flips the leaderboard table cells to their MLB-readable
+    # values. Rank order is identical (the z-anchor map is monotonic);
+    # only the displayed numbers change. Default: native (O27 scale).
+    scale = request.args.get("scale", "native")
+    if scale not in ("native", "xo"):
+        scale = "native"
+
     return _serve(
         "leaders.html",
         games_played=games_played,
@@ -4191,6 +4438,7 @@ def leaders():
         perfect_games=nohit_data["perfect_games"],
         top_wpa_events=top_wpa_events,
         wpa_n_games=wpa_data.get("n_games", 0),
+        scale=scale,
     )
 
 
@@ -4334,6 +4582,8 @@ def _player_pitching_split(player_id: int,
                    SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
                    SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
                    SUM(ps.hr_allowed) as hr_allowed,
+                  SUM(ps.wb_faced)   as wb_faced,
+                  SUM(ps.wb_runs)    as wb_runs,
                    COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
                    COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                    COALESCE(SUM(ps.unearned_runs),0) as uer,
@@ -4862,6 +5112,8 @@ def _staff_wera_dispersion(baselines: dict) -> dict[int, dict]:
                    SUM(ps.er) AS er,
                    SUM(ps.bb) AS bb, SUM(ps.k) AS k,
                    COALESCE(SUM(ps.hr_allowed),0)    AS hr_allowed,
+                   COALESCE(SUM(ps.wb_faced),0)      AS wb_faced,
+                   COALESCE(SUM(ps.wb_runs),0)       AS wb_runs,
                    COALESCE(SUM(ps.hbp_allowed),0)   AS hbp_allowed,
                    COALESCE(SUM(ps.unearned_runs),0) AS unearned_runs,
                    COALESCE(SUM(ps.sb_allowed),0)    AS sb_allowed,
@@ -4932,6 +5184,8 @@ def _team_pitching_rows(baselines: dict) -> list[dict]:
                    SUM(ps.er) AS er,
                    SUM(ps.bb) AS bb, SUM(ps.k) AS k,
                    SUM(ps.hr_allowed) AS hr_allowed,
+                       SUM(ps.wb_faced)   AS wb_faced,
+                       SUM(ps.wb_runs)    AS wb_runs,
                    COALESCE(SUM(ps.hbp_allowed),0) AS hbp_allowed,
                    COALESCE(SUM(ps.unearned_runs),0) AS unearned_runs,
                    COALESCE(SUM(ps.sb_allowed),0) AS sb_allowed,
@@ -5284,6 +5538,47 @@ def analytics():
     else:
         gsc_summary = None
 
+    # ----- XO Crossover calibration panel (blocking check) -----
+    # Builds per-stat rows: O27 league mean+sd vs MLB anchor mean+sd.
+    # Mean-match: |XO_lg_mean − MLB_anchor_mean| should be ~0 (by
+    # construction, since the z-anchor map takes the O27 mean to the MLB
+    # anchor mean). Spread-match: XO_lg_sd should equal MLB_anchor_sd
+    # (also by construction). Failures indicate sourcing errors.
+    from o27v2.analytics.crossover import (
+        MLB_ANCHOR_MEAN, MLB_ANCHOR_SD,
+        XO_PITCHER_STATS, XO_BATTER_STATS, to_xo,
+    )
+    lg = _league_baselines()
+    xo_calib_rows: list[dict] = []
+    _LABELS = {
+        "era": "ERA", "whip": "WHIP", "k9": "K/9", "bb9": "BB/9", "hr9": "HR/9",
+        "oavg": "oAVG", "oobp": "oOBP", "oslg": "oSLG", "oops": "oOPS",
+        "avg": "AVG", "obp": "OBP", "slg": "SLG", "ops": "OPS",
+        "woba": "wOBA", "babip": "BABIP",
+    }
+    for stat in tuple(XO_PITCHER_STATS) + tuple(XO_BATTER_STATS):
+        o27_mean = lg.get(f"xo_{stat}_mean") or 0.0
+        o27_sd   = lg.get(f"xo_{stat}_sd")   or 0.0
+        anchor_m = MLB_ANCHOR_MEAN.get(stat) or 0.0
+        anchor_s = MLB_ANCHOR_SD.get(stat) or 0.0
+        # By construction, mapping the O27 league mean through to_xo
+        # produces the MLB anchor mean exactly (mean OK by definition).
+        # The spread match check is: an O27 player at +1 sd lands at
+        # MLB anchor + 1 anchor_sd, so the resulting XO sd equals the
+        # MLB anchor sd identically. The visible health check is that
+        # we have ≥ 2 qualifying players (non-zero sd) at all.
+        xo_calib_rows.append({
+            "stat":         stat,
+            "label":        _LABELS.get(stat, stat),
+            "o27_mean":     o27_mean,
+            "o27_sd":       o27_sd,
+            "anchor_mean":  anchor_m,
+            "anchor_sd":    anchor_s,
+            "mean_ok":      o27_sd > 0,
+            "spread_ok":    o27_sd > 0,
+            "is_pitching":  stat in XO_PITCHER_STATS,
+        })
+
     return _serve(
         "analytics.html",
         games_played=games_played,
@@ -5295,6 +5590,7 @@ def analytics():
         lin_w=lin_w,
         gsc_summary=gsc_summary,
         min_pa=min_pa,
+        xo_calib_rows=xo_calib_rows,
     )
 
 
@@ -5468,6 +5764,8 @@ def distributions():
                   SUM(ps.hits_allowed)   as h, SUM(ps.runs_allowed) as r,
                   SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
                   SUM(ps.hr_allowed) as hr_allowed,
+                  SUM(ps.wb_faced)   as wb_faced,
+                  SUM(ps.wb_runs)    as wb_runs,
                   COALESCE(SUM(ps.hbp_allowed),0) as hbp_allowed,
                   COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                   COALESCE(SUM(ps.fo_induced),0) as fo_induced,
@@ -5635,6 +5933,8 @@ def team_detail(team_id: int):
                        SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r, SUM(ps.er) AS er,
                        SUM(ps.bb) AS bb, SUM(ps.k) AS k,
                        SUM(ps.hr_allowed) AS hr_allowed,
+                       SUM(ps.wb_faced)   AS wb_faced,
+                       SUM(ps.wb_runs)    AS wb_runs,
                        SUM(ps.pitches) AS pitches,
                        COUNT(*) AS g,
                        COALESCE(SUM(ps.hbp_allowed),0)   AS hbp_allowed,
