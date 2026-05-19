@@ -135,3 +135,31 @@ def test_season_archive_schema_has_new_columns(tiny_db_app):
         "SELECT name FROM pragma_table_info('season_pitching_leaders')"
     )}
     assert {"wera_plus", "gsc_index", "wpa", "li_avg"} <= pcols
+
+
+def test_season_archive_writer_runs_end_to_end(tiny_db_app):
+    """Snapshotting a season must not raise (regression: pre-fix code
+    sorted pitching rows by `xfip`, which `_aggregate_pitcher_rows`
+    never stamps — it stamps `xra`. The writer crashed with KeyError).
+    """
+    from o27v2 import db
+    from o27v2 import season_archive
+    db.execute(
+        "INSERT INTO seasons(id, season_number, year) VALUES (?, ?, ?)",
+        (1, 1, 2026),
+    )
+    # Should not raise.
+    season_archive._snapshot_leaders(season_id=1)
+
+    bat = db.fetchall("SELECT * FROM season_batting_leaders WHERE season_id = 1")
+    pit = db.fetchall("SELECT * FROM season_pitching_leaders WHERE season_id = 1")
+    assert bat, "writer produced no batting leaders"
+    assert pit, "writer produced no pitching leaders"
+    # New sort categories are present.
+    bat_cats = {r["category"] for r in bat}
+    pit_cats = {r["category"] for r in pit}
+    assert "wrc_plus" in bat_cats
+    assert "wera_plus" in pit_cats
+    assert "gsc_index" in pit_cats
+    assert "xra"       in pit_cats   # renamed from "xfip"
+    assert "xfip"     not in pit_cats

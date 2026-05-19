@@ -254,10 +254,14 @@ def _snapshot_leaders(season_id: int) -> None:
 
     def _save_pitching(category: str, ranked: list[dict]) -> None:
         for i, r in enumerate(ranked[:10], start=1):
-            # Schema's `era`/`fip`/`whip` columns are reused as the wERA /
-            # xFIP / GSc avg slots for go-forward archives. Old seasons
-            # keep their original ERA/FIP/WHIP values; new seasons store
-            # wERA/xFIP/GSc-avg under the same column names.
+            # Schema's `era` / `fip` / `whip` columns are reused as the
+            # wERA / xRA / GSc-avg slots for go-forward archives. Old
+            # seasons keep their original ERA/FIP/WHIP semantics; new
+            # seasons store wERA / xRA / GSc-avg under the same column
+            # names. (Pre-fix versions of this writer tried to read
+            # `xfip` off the aggregated row, which `_aggregate_pitcher_rows`
+            # doesn't stamp — only `xra` is — so the writer crashed
+            # with KeyError on the xfip sort.)
             db.execute(
                 """INSERT OR REPLACE INTO season_pitching_leaders
                    (season_id, category, rank, player_name, team_abbrev,
@@ -269,7 +273,7 @@ def _snapshot_leaders(season_id: int) -> None:
                  r.get("g") or 0, r.get("w") or 0, r.get("l") or 0,
                  r.get("outs") or 0, r.get("er") or 0,
                  r.get("k") or 0, r.get("bb") or 0,
-                 float(r.get("werra") or 0), float(r.get("xfip") or 0),
+                 float(r.get("werra") or 0), float(r.get("xra") or 0),
                  float(r.get("gsc_avg") or 0), float(r.get("oavg") or 0),
                  float(r.get("wera_plus") or 100),
                  float(r.get("gsc_index") or 100),
@@ -279,7 +283,7 @@ def _snapshot_leaders(season_id: int) -> None:
 
     _save_pitching("w",     sorted(pitching, key=lambda x: x["w"], reverse=True))
     _save_pitching("werra", sorted(pitching, key=lambda x: x["werra"]))
-    _save_pitching("xfip",  sorted(pitching, key=lambda x: x["xfip"]))
+    _save_pitching("xra",   sorted(pitching, key=lambda x: x.get("xra") or 0))
     _save_pitching("k",     sorted(pitching, key=lambda x: x["k"] or 0, reverse=True))
     _save_pitching("oavg",  sorted(pitching, key=lambda x: x["oavg"]))
     _save_pitching("wera_plus",
