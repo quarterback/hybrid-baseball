@@ -263,6 +263,46 @@ def test_pr_with_ab_but_no_pa_raises():
         render_batting_table("PawSox", rows)
 
 
+def test_phase_delta_preserves_entry_type_tags():
+    """Regression: _stat_delta() must propagate entry_type,
+    replaced_player_id, and entered_inning from the cumulative bstat to
+    the per-phase delta row, not just the counter fields. Previously
+    the delta was constructed as a fresh BatterStats — losing every
+    PH/PR/DEF/joker tag between the renderer's _batter_stats dict and
+    the rows o27v2/sim.py persists to the DB."""
+    from dataclasses import replace
+    from o27.stats.batter import BatterStats
+    from o27.render.render import Renderer
+
+    end = BatterStats(player_id="42", name="Hobby")
+    end.entry_type = "joker"
+    end.replaced_player_id = "17"
+    end.entered_inning = 5
+    end.pa = 8
+    end.ab = 7
+    end.hits = 3
+
+    delta = Renderer._stat_delta(end, None)
+    assert delta.entry_type == "joker"
+    assert delta.replaced_player_id == "17"
+    assert delta.entered_inning == 5
+    # Counter fields should still diff correctly.
+    assert delta.pa == 8
+    assert delta.ab == 7
+
+    # And against a prior snapshot (mid-game): counter fields diff,
+    # identity tags keep the current value (entry_type can flip a player
+    # from 'starter' to 'PH' partway through but never back).
+    prev = replace(end)
+    prev.entry_type = "starter"   # mid-PA snapshot before they were subbed
+    prev.pa = 0
+    prev.ab = 0
+    prev.hits = 0
+    delta2 = Renderer._stat_delta(end, prev)
+    assert delta2.entry_type == "joker"   # current tag, not prev
+    assert delta2.pa == 8
+
+
 def test_starter_with_no_entry_has_no_letter():
     """Starters never get a footnote letter. Subs without lineup
     indentation context (legacy rows missing replaced_player_id) still

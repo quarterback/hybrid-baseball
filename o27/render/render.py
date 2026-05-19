@@ -1664,6 +1664,15 @@ class Renderer:
     @staticmethod
     def _stat_delta(end_s: BatterStats, prev_s: Optional[BatterStats]) -> BatterStats:
         d = BatterStats(player_id=end_s.player_id, name=end_s.name)
+        # Identity tags (set once when the player entered the game, never
+        # incremented) must be propagated as-is, not subtracted as deltas.
+        # The for-loop below only handles counter fields; without these
+        # three lines every PH/PR/DEF/joker stamp gets stripped between
+        # the cumulative bstat and the per-phase delta that o27v2/sim.py
+        # persists to game_batter_stats.
+        d.entry_type         = end_s.entry_type
+        d.replaced_player_id = end_s.replaced_player_id
+        d.entered_inning     = end_s.entered_inning
         prev_get = (lambda f: getattr(prev_s, f)) if prev_s else (lambda f: 0)
         for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
