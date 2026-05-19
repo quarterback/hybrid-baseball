@@ -435,6 +435,26 @@ def _db_team_to_engine(
         # bonus. Default 0.5 keeps legacy DB rows engine-identical.
         player.grit        = float(p.get("grit")       if p.get("grit")       is not None else 0.5)
         player.leadership  = _scout.to_unit(p.get("leadership") or 50)
+        # Substitution-economy role tags. Legacy DB rows (NULL columns)
+        # fall through to the Player defaults (deployable as both bat and
+        # field — the safest behavior for a player without classifier
+        # output). Once `resetdb` runs the new league seed, every row
+        # carries real tags.
+        rs = p.get("roster_slot")
+        if rs:
+            player.roster_slot = str(rs)
+        rh = p.get("role_hit")
+        if rh is not None:
+            player.role_hit = bool(int(rh))
+        rr = p.get("role_run")
+        if rr is not None:
+            player.role_run = bool(int(rr))
+        rtw = p.get("role_two_way")
+        if rtw is not None:
+            player.role_two_way = bool(int(rtw))
+        rfp = p.get("role_field_pos")
+        if rfp is not None:
+            player.role_field_pos = str(rfp)
         # Pitch-type activation: load repertoire JSON onto Player so the
         # engine's _select_pitch() can sample from it. Legacy rows
         # (NULL repertoire) leave Player.repertoire = [] which the
@@ -654,6 +674,18 @@ def _db_team_to_engine(
         park_hr=float(team_row.get("park_hr") or 1.0),
         park_hits=float(team_row.get("park_hits") or 1.0),
     )
+    # Populate Team.bench (substitution-economy Item 3). Bench =
+    # everyone on the active roster MINUS the starting lineup MINUS the
+    # joker pool MINUS pitchers. The substitution candidate-pickers walk
+    # this list rather than iterating the full roster each PA.
+    lineup_ids = {p.player_id for p in lineup}
+    joker_ids  = {j.player_id for j in jokers}
+    team.bench = [
+        p for p in engine_players
+        if not p.is_pitcher
+        and p.player_id not in lineup_ids
+        and p.player_id not in joker_ids
+    ]
     # Compute aggregate defense rating from the lineup's fielding 8.
     team.defense_rating = _team_defense_rating(lineup, players)
     # Stamp manager persona — bias hook/joker/PH/run-game decisions.

@@ -22,7 +22,14 @@ from typing import Any
 
 from o27v2 import config as v2cfg
 from o27v2 import scout as _scout
-from o27v2.archetypes import classify_position_player
+from o27v2.archetypes import (
+    classify_position_player,
+    classify_roster_slot,
+    is_hit_capable,
+    is_run_capable,
+    is_two_way,
+    encode_field_positions,
+)
 from o27 import config as _engine_cfg
 
 _DATA_DIR     = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -1077,14 +1084,31 @@ def _park_surname_pool(rng: random.Random, count: int = 60) -> list[str]:
     return rng.sample(flat, k=min(count, len(flat)))
 
 
-# Roster shape — Task #65.
-ACTIVE_FIELDERS  = 12   # 8 starting positions + 4 bench
-ACTIVE_DH        = 3    # 3 DH/utility bats (matches the 3-DH batting lineup)
-ACTIVE_PITCHERS  = 19   # full active pitching staff (rotation + bullpen, no roles)
-RESERVE_HITTERS  = 8    # reserve position-player pool (covers IL fill-ins)
-RESERVE_PITCHERS = 5    # reserve arms (top up the active pitching staff on IL)
-# Active = 12 + 3 + 19 = 34. Total = 34 + 8 + 5 = 47 players/team.
-ACTIVE_POSITION_TOTAL = ACTIVE_FIELDERS + ACTIVE_DH  # 15 — fill target on IL
+# Roster shape — substitution-economy 42-player baseline (Item 2).
+#
+# Up from 34 (Task #65 shape) to reflect the brief's recipe:
+#   - 10 bat-first (good bat, weak glove; best 3 are jokers)
+#   -  7 glove-first (weak bat, elite glove)
+#   -  5 two-way (competent both — bridge players)
+#   - 17 pitchers (bulk + leverage + emergency)
+#   -  3 situational specialists (1 pure-speed PR + 2 matchup PH)
+# Total active: 42 (band 42–45 ± manager tilt; this is the baseline).
+#
+# The bat_first / glove_first / two_way split falls out of the role-tag
+# classifier in archetypes.py — those slots are filled organically by
+# the rolls on the 8 canonical starter slots, 7 fielder backups, and
+# DH slots. The 3 situational specialists are drafted EXPLICITLY by
+# _make_specialist (Item 4 follow-up #6) so every team has dedicated
+# pure-speed / pure-bat bench bodies rather than relying on the
+# classifier to surface them as a by-product.
+ACTIVE_FIELDERS    = 15   # 8 starting positions + 7 fielder backups (filtered into glove-first / two-way)
+ACTIVE_DH          = 7    # bat-first slots (best 3 emerge as jokers via the existing joker pool)
+ACTIVE_SPECIALISTS = 3    # 1 PR + 2 PH, drafted explicitly by _make_specialist
+ACTIVE_PITCHERS    = 17   # balanced against the deeper position pool
+RESERVE_HITTERS    = 3    # smaller reserve pool — the active roster is now deep enough
+RESERVE_PITCHERS   = 3    # smaller reserve arm pool — active staff is bigger
+# Active = 15 + 7 + 3 + 17 = 42. Total = 42 + 3 + 3 = 48 players/team.
+ACTIVE_POSITION_TOTAL = ACTIVE_FIELDERS + ACTIVE_DH + ACTIVE_SPECIALISTS  # 25 — fill target on IL
 
 
 def _make_hitter(
@@ -1161,6 +1185,15 @@ def _make_hitter(
         if_g  = roll()
         of_g  = roll()
         cat_g = roll()
+    elif pos == "DH":
+        # DH = pure bat slot; no defensive primary. All three position
+        # groups roll low (replacement-ish). Without this branch a DH
+        # would default to "primary=if" and get a full infield roll,
+        # silently making DHs field-capable and undermining the
+        # bat_first / two_way classification balance.
+        if_g  = max(20, roll() // 2 + 10)
+        of_g  = max(20, roll() // 2 + 10)
+        cat_g = max(20, roll() // 2 + 10)
     else:
         # Pick a primary specialty group based on the canonical position.
         primary = "if"
@@ -1239,6 +1272,152 @@ def _make_hitter(
         "habit_cup":   0.5,
     }
     result["archetype"] = classify_position_player(result)
+    # Substitution-economy role tags (Item 1). Derived from the same
+    # grades that drive the archetype; written to the DB so the
+    # substitution candidate-pickers can filter cheaply in SQL.
+    result["role_hit"]       = 1 if is_hit_capable(result) else 0
+    result["role_run"]       = 1 if is_run_capable(result) else 0
+    result["role_two_way"]   = 1 if is_two_way(result) else 0
+    result["role_field_pos"] = encode_field_positions(result)
+    result["roster_slot"]    = classify_roster_slot(result)
+    return result
+
+
+# Pseudo-position labels for the explicit specialist draft slots
+# (substitution-economy Item 4 follow-up #6). They appear only in the
+# draft pool keying — the resulting player rows carry canonical
+# positions ("CF" for PR specialists, "DH" for PH specialists) so the
+# engine and box-score renderers don't need new vocabulary.
+SPEC_PR = "PR_SPEC"
+SPEC_PH = "PH_SPEC"
+
+
+def _make_specialist(
+    rng: random.Random,
+    kind: str,
+    name: str,
+    team_shift: int = 0,
+    country: str = "",
+) -> dict:
+    """Build a single-tool specialist player.
+
+    `kind` is "pr_specialist" (pure-speed pinch runner) or
+    "ph_specialist" (loud-bat pinch hitter). The result is shaped so
+    classify_roster_slot lands it on the intended slot — strong in the
+    specialist's dimension, intentionally weak elsewhere so it doesn't
+    leak into bat_first / glove_first / two_way.
+
+    PR specialists carry canonical position "CF" (a speed-friendly
+    spot for cosmetic display); PH specialists carry "DH". Neither
+    has a defensive role in practice — the field thresholds in
+    o27v2/archetypes._FIELD_THRESHOLDS are deliberately not cleared.
+    """
+    def low_roll() -> int:
+        # Replacement to slightly-below-average. Tight band so the
+        # specialist's weak dimensions stay weak.
+        return rng.randint(25, 42)
+
+    def high_roll() -> int:
+        # Forced high — elite for the specialist's tool.
+        return rng.randint(65, 80)
+
+    if kind == "pr_specialist":
+        position   = "CF"
+        speed_g    = high_roll()
+        baserunning_g = high_roll()
+        contact_g  = low_roll()
+        power_g    = low_roll()
+        eye_g      = low_roll()
+        defense_g  = low_roll()
+        arm_g      = low_roll()
+        if_g       = low_roll()
+        of_g       = low_roll()
+        cat_g      = low_roll()
+        skill_g    = max(30, low_roll() + 5)
+        ra_g       = high_roll()
+    else:  # ph_specialist
+        position   = "DH"
+        power_g    = high_roll()
+        contact_g  = rng.randint(48, 65)
+        eye_g      = rng.randint(45, 65)
+        speed_g    = low_roll()
+        baserunning_g = low_roll()
+        defense_g  = low_roll()
+        arm_g      = low_roll()
+        if_g       = low_roll()
+        of_g       = low_roll()
+        cat_g      = low_roll()
+        skill_g    = rng.randint(58, 75)
+        ra_g       = rng.randint(40, 60)
+
+    bats_roll = _roll_bats(rng)
+    _power_dev = (power_g - 50) / 100.0
+    _bats_nudge = 0.04 if bats_roll == "L" else 0.0
+    pull_pct_g = _clamp(
+        rng.gauss(0.5, 0.12) + _power_dev * 0.30 + _bats_nudge,
+        0.05, 0.95,
+    )
+
+    result = {
+        "name": name,
+        "country": country,
+        "position": position,
+        "is_pitcher": 0,
+        "is_joker": 0,
+        "skill": skill_g,
+        "speed": speed_g,
+        "pitcher_skill": max(20, min(35, low_roll())),
+        "stay_aggressiveness": round(_clamp(rng.gauss(0.30, 0.10)), 3),
+        "contact_quality_threshold": round(_clamp(rng.gauss(0.50, 0.10)), 3),
+        "pull_pct": round(pull_pct_g, 3),
+        "adaptability": rng.randint(40, 60),
+        "leadership": rng.randint(40, 65),
+        "grit": round(0.25 + rng.random() * 0.50, 3),
+        "archetype": "",
+        "pitcher_role": "",
+        "hard_contact_delta": 0.0,
+        "hr_weight_bonus":    0.0,
+        "age": _player_age(rng),
+        "stamina": low_roll(),
+        "is_active": 1,
+        "contact": contact_g,
+        "power":   power_g,
+        "eye":     eye_g,
+        "command": 50,
+        "movement": 50,
+        "bats": bats_roll,
+        "throws": _roll_throws(rng, is_pitcher=False),
+        "defense": defense_g,
+        "arm":     arm_g,
+        "defense_infield":  if_g,
+        "defense_outfield": of_g,
+        "defense_catcher":  cat_g,
+        "baserunning":        baserunning_g,
+        "run_aggressiveness": ra_g,
+        "work_ethic":  rng.randint(40, 70),
+        "work_habits": rng.randint(40, 70),
+        "habit_cup":   0.5,
+    }
+    result["archetype"]      = classify_position_player(result)
+    result["role_hit"]       = 1 if is_hit_capable(result) else 0
+    result["role_run"]       = 1 if is_run_capable(result) else 0
+    result["role_two_way"]   = 1 if is_two_way(result) else 0
+    result["role_field_pos"] = encode_field_positions(result)
+    result["roster_slot"]    = classify_roster_slot(result)
+    # If the classifier didn't land on the intended slot (a corner case
+    # where the random rolls leaked into a different bucket), force-tag
+    # it. The draft slot represents *intent*; the role flags should
+    # reflect that even if the random profile is a near-miss.
+    if kind == "pr_specialist":
+        result["roster_slot"] = "pr_specialist"
+        result["role_hit"]    = 0
+        result["role_run"]    = 1
+    else:
+        result["roster_slot"] = "ph_specialist"
+        result["role_hit"]    = 1
+        result["role_run"]    = 0
+    result["role_two_way"]   = 0
+    result["role_field_pos"] = ""
     return result
 
 
@@ -1468,6 +1647,14 @@ def _make_pitcher(
         "pitch_variance": pitch_variance,
         "grit":           grit,
         "repertoire":     json.dumps(repertoire),
+        # Substitution-economy role tags. Pitchers always land on the
+        # pitcher slot; the other role flags are False for pitchers
+        # (they don't sub in as bats, runners, or fielders).
+        "roster_slot":    "pitcher",
+        "role_hit":       0,
+        "role_run":       0,
+        "role_two_way":   0,
+        "role_field_pos": "",
     }
 
 
@@ -1478,15 +1665,18 @@ def generate_players(
     org_strength: int = 50,
     name_config: dict | None = None,
 ) -> list[dict]:
-    """Generate ~47 players for a single team (legacy helper).
+    """Generate ~48 players for a single team (legacy helper).
 
-    Composition (active = 34, reserve = 13, total = 47):
-      - 12 active position players (8 starters at canonical positions
-        CF/SS/2B/3B/RF/LF/1B/C plus 4 utility bench)
-      -  3 active DH/utility bats
-      - 19 active pitchers
-      -  8 reserve position players (is_active=0)
-      -  5 reserve pitchers (is_active=0)
+    Composition (substitution-economy 42-baseline):
+      - 15 active fielders (8 canonical starters + 7 backups across CF/
+        SS/2B/C plus corner IF/OF — classified into glove-first / two-way
+        / bat-first by the role-tag classifier)
+      -  7 active DH bats (bat-first; best 3 emerge as jokers)
+      -  1 active PR specialist (pure-speed pinch runner)
+      -  2 active PH specialists (loud-bat pinch hitters)
+      - 17 active pitchers
+      -  3 reserve position players
+      -  3 reserve pitchers
 
     Every attribute is rolled independently against the talent-tier
     distribution (`_TALENT_TIERS`).
@@ -1515,28 +1705,36 @@ def generate_players(
         nm, country = _name()
         return _make_pitcher(rng, is_active=is_active, name=nm, country=country)
 
-    # ---- Active position players: 8 starting positions + 4 bench ----
+    def _spec(kind: str) -> dict:
+        nm, country = _name()
+        return _make_specialist(rng, kind, name=nm, country=country)
+
+    # ---- Active position players: 8 canonical starters + 7 fielder backups ----
     for pos in FIELDER_POSITIONS:
         players.append(_hitter(pos, is_active=1))
-    # Active bench: 4 backups at high-rotation positions (catchers rest
-    # a lot, middle infield rotates, CF backup is near-everyday).
-    # No "UT" position — every bench guy carries a canonical position.
+    # Active backups at high-rotation positions.
     for pos in ("CF", "SS", "2B", "C"):
         players.append(_hitter(pos, is_active=1))
+    # Corner backups (one body per spot so the substitution candidate-pool
+    # has a glove at every position).
+    for pos in ("3B", "1B", "LF"):
+        players.append(_hitter(pos, is_active=1))
 
-    # ---- Active DH/utility bats ----
+    # ---- Active DH/utility bats (bat-first slots) ----
     for _ in range(ACTIVE_DH):
         players.append(_hitter("DH", is_active=1))
+
+    # ---- Active situational specialists ----
+    players.append(_spec("pr_specialist"))
+    players.append(_spec("ph_specialist"))
+    players.append(_spec("ph_specialist"))
 
     # ---- Active pitching staff (no role buckets) ----
     for _ in range(ACTIVE_PITCHERS):
         players.append(_pitcher(is_active=1))
 
-    # ---- Reserve pool: bench-level depth, promoted on injury ----
-    # Round-robin one reserve at each canonical fielding position, then
-    # cycle if RESERVE_HITTERS exceeds 8. No "UT" — every reserve guy
-    # carries a canonical position.
-    _RESERVE_POSITIONS = ("CF", "SS", "2B", "3B", "RF", "LF", "1B", "C")
+    # ---- Reserve pool (slimmer than the 13-deep Task-#65 shape) ----
+    _RESERVE_POSITIONS = ("RF", "CF", "SS")
     for i in range(RESERVE_HITTERS):
         pos = _RESERVE_POSITIONS[i % len(_RESERVE_POSITIONS)]
         players.append(_hitter(pos, is_active=0))
@@ -1578,17 +1776,30 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     # 8 canonical starters (1 active each).
     ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0), ("3B", 1, 0),
     ("RF", 1, 0), ("LF", 1, 0), ("1B", 1, 0), ("C",  1, 0),
-    # DH (3 active).
-    ("DH", 3, 0),
+    # DH (7 active) — bat-first slots. Down from 10 to make room for
+    # the explicitly-drafted specialist slots below. Best 3 still
+    # emerge as jokers via the existing joker pool.
+    ("DH", 7, 0),
     # Active backups at high-rotation positions: catchers rest a lot,
-    # middle infield rotates, CF backup is a near-everyday role.
-    # Each entry adds 1 active + 1 reserve at the given position.
-    ("CF", 1, 1), ("SS", 1, 1), ("2B", 1, 1), ("C",  1, 1),
-    # Reserve depth at corners + outfield (less rotation needed): 1
-    # reserve body per position so injury fill-ins are position-typed.
-    ("3B", 0, 1), ("1B", 0, 1), ("LF", 0, 1), ("RF", 0, 1),
-    # Pitchers (19 active + 5 reserve).
-    ("P", 19, 5),
+    # middle infield rotates, CF backup is a near-everyday role. The
+    # role classifier sorts these into glove-first or two-way based on
+    # the bat/glove profile that landed.
+    ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0), ("C",  1, 0),
+    # Corner-IF / corner-OF fielder backups — 1 active body per position,
+    # so the substitution candidate-pool has a glove at every spot. The
+    # classifier sorts these into glove-first / two-way / bat-first.
+    ("3B", 1, 0), ("1B", 1, 0), ("LF", 1, 0),
+    # Situational specialists drafted explicitly (Item 4 follow-up #6):
+    # 1 PR specialist + 2 PH specialists per team = 3 specialists
+    # guaranteed in every roster. Built by _make_specialist with tight
+    # role-tag enforcement so they actually land as pr_specialist /
+    # ph_specialist rather than spilling into the bat_first pool.
+    (SPEC_PR, 1, 0),
+    (SPEC_PH, 2, 0),
+    # Reserve depth (slim — active is 42).
+    ("RF", 0, 1), ("CF", 0, 1), ("SS", 0, 1),
+    # Pitchers (17 active + 3 reserve).
+    ("P", 17, 3),
 ]
 
 _DRAFT_OVERSAMPLE = 1.4   # generate 40% more players than rosters need
@@ -1635,6 +1846,10 @@ def _generate_draft_pool(
             nm, country = name_picker()
             if pos == "P":
                 bucket.append(_make_pitcher(rng, is_active=0, name=nm, country=country))
+            elif pos == SPEC_PR:
+                bucket.append(_make_specialist(rng, "pr_specialist", name=nm, country=country))
+            elif pos == SPEC_PH:
+                bucket.append(_make_specialist(rng, "ph_specialist", name=nm, country=country))
             else:
                 bucket.append(_make_hitter(rng, pos, is_active=0, name=nm, country=country))
         pool[pos] = bucket
@@ -1708,6 +1923,63 @@ def _run_snake_draft(
             fa["is_active"] = 0
             free_agents.append(fa)
     return assignments, free_agents
+
+
+_ARCHETYPE_EXTRA_ACTIVE: dict[str, int] = {
+    # Per-archetype roster-shape tilt within the 42-45 band (Item 4
+    # follow-up). Promotes N reserves into the active roster so a
+    # platoon manager's bench has actually-more specialists, not just
+    # more-aggressive deployment of the same 42-active baseline.
+    "platoon_manager": 3,    # 42 → 45
+    "special_teams":   2,    # 42 → 44
+}
+
+
+def _promotion_score(p: dict) -> int:
+    """Score reserves for archetype-tilt promotion. Specialists rank
+    highest (they're the slot a platoon/special-teams manager values
+    most), then bat_first, then glove_first; everyone else falls back
+    to player overall."""
+    slot = p.get("roster_slot", "")
+    if slot in ("ph_specialist", "pr_specialist"):
+        bonus = 30
+    elif slot == "bat_first":
+        bonus = 15
+    elif slot == "glove_first":
+        bonus = 10
+    else:
+        bonus = 0
+    return bonus + _player_overall(p)
+
+
+def apply_archetype_roster_tilt(roster: list[dict], manager_archetype: str) -> int:
+    """Promote reserves to active based on the team's manager archetype.
+
+    Operates in place on the roster list. Returns the count of players
+    promoted (0 for archetypes that don't tilt).
+
+    `platoon_manager` and `special_teams` skippers run deeper benches —
+    they want more specialists available for situational deployment. A
+    `platoon_manager` team lands at 45 active; `special_teams` at 44.
+    Every other archetype stays at the 42 baseline. Promoted reserves
+    are picked by specialist value (PH/PR specialists first, then
+    bat_first, then glove_first) — this is what makes a Platoon
+    Manager's roster *look* different at the slot-mix level rather than
+    just play differently through the substitution trigger.
+    """
+    extra = _ARCHETYPE_EXTRA_ACTIVE.get(manager_archetype, 0)
+    if extra <= 0:
+        return 0
+    reserves = sorted(
+        (p for p in roster if not p.get("is_active")),
+        key=_promotion_score,
+        reverse=True,
+    )
+    promoted = 0
+    for p in reserves[:extra]:
+        p["is_active"] = 1
+        promoted += 1
+    return promoted
 
 
 def _team_org_strength_from_roster(players: list[dict]) -> int:
@@ -1885,8 +2157,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          baserunning, run_aggressiveness,
          work_ethic, work_habits, habit_cup, salary,
          release_angle, pitch_variance, grit, repertoire,
-         pull_pct, adaptability, leadership)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         pull_pct, adaptability, leadership,
+         roster_slot, role_hit, role_run, role_two_way, role_field_pos)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -1922,14 +2195,27 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("repertoire", None),
                 p.get("pull_pct", 0.5),
                 p.get("adaptability", 50),
-                p.get("leadership", 50))
+                p.get("leadership", 50),
+                p.get("roster_slot", ""),
+                int(p.get("role_hit", 1)),
+                int(p.get("role_run", 0)),
+                int(p.get("role_two_way", 1)),
+                p.get("role_field_pos", ""))
 
     # Cache team-id → league name so each player's salary uses the
-    # right tier cap.
-    team_league = {
-        row["id"]: row["league"]
-        for row in db.fetchall("SELECT id, league FROM teams")
+    # right tier cap. Also pull manager_archetype for the per-archetype
+    # roster tilt (Item 4 follow-up).
+    team_meta_rows = db.fetchall("SELECT id, league, manager_archetype FROM teams")
+    team_league = {row["id"]: row["league"] for row in team_meta_rows}
+    team_archetype = {
+        row["id"]: (row["manager_archetype"] or "") for row in team_meta_rows
     }
+
+    for team_id in team_ids:
+        apply_archetype_roster_tilt(
+            assignments.get(team_id, []),
+            team_archetype.get(team_id, ""),
+        )
 
     for team_id in team_ids:
         roster = assignments.get(team_id, [])
