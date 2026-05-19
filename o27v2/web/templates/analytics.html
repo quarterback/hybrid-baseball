@@ -571,6 +571,69 @@
 </div>
 {% endif %}
 
+{# ============================================================
+   XO CROSSOVER · Calibration panel (BLOCKING)
+   ============================================================ #}
+{% if xo_calib_rows %}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>XO Crossover · Calibration</span>
+    <span class="ms-auto sub">
+      MLB-anchor mean + sd vs O27 league mean + sd. By construction the
+      XO map sends O27 league mean → MLB anchor mean exactly and matches
+      the spread — these rows are the sourcing health check.
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="text-secondary small mb-2">
+      Method: <code>xo = MLB_mean + ((value − O27_mean) / O27_sd) · MLB_sd</code>.
+      The linear-ratio rescaling was rejected for spread collapse — z-anchoring
+      preserves rank AND spread. If any row's O27 sd is 0 (insufficient
+      qualifying players), that stat falls through to the native value.
+    </div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table sortable mb-0">
+      <thead><tr>
+        <th>Stat</th>
+        <th class="num" title="O27 league mean (mean-of-per-player-rate, qualified players)">O27 mean</th>
+        <th class="num" title="O27 league population sd over qualified players">O27 sd</th>
+        <th class="num" title="MLB anchor mean (target of the z-anchor map)">MLB mean</th>
+        <th class="num" title="MLB anchor sd (target spread of the z-anchor map)">MLB sd</th>
+        <th class="num" title="OK if at least 2 qualifying players (otherwise XO falls through to native value)">Health</th>
+      </tr></thead>
+      <tbody>
+        {% set _grouped = ([("Pitching", true)] + [("Batting", false)]) %}
+        {% for group_name, is_pit in _grouped %}
+        <tr class="text-secondary small"><td colspan="6" style="background:rgba(255,255,255,0.03)"><strong>{{ group_name }}</strong></td></tr>
+        {% for r in xo_calib_rows if r.is_pitching == is_pit %}
+        <tr>
+          <td><strong>{{ r.label }}</strong></td>
+          <td class="num mono">{{ '%.3f'|format(r.o27_mean) }}</td>
+          <td class="num mono">{{ '%.3f'|format(r.o27_sd) }}</td>
+          <td class="num mono">{{ '%.3f'|format(r.anchor_mean) }}</td>
+          <td class="num mono">{{ '%.3f'|format(r.anchor_sd) }}</td>
+          <td class="num">
+            {% if r.mean_ok %}
+              <span style="color:#3fb950">OK</span>
+            {% else %}
+              <span class="text-secondary">N/A</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="text-secondary small mt-2">
+      <strong>Walk-Back Stop% has no MLB analog</strong> and is therefore not
+      z-anchored. It's surfaced natively on the pitcher card and the leaders
+      page as the O27-rule strand rate for the post-HR rule-placed runner.
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% endif %}{# /games_played > 0 #}
 
 {% endblock %}

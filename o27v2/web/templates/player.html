@@ -157,6 +157,14 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-splits">Splits</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ratings">Ratings</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-gamelog">Game Log</button></li>
+  {% if (bt_totals and bt_totals.xo) or (pt_totals and pt_totals.xo) %}
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-xo"
+            title="Crossover (XO): O27 rate stats z-anchored to MLB mean and spread. Same rank as native — only the numbers translate.">
+      XO Crossover
+    </button>
+  </li>
+  {% endif %}
 </ul>
 
 <div class="tab-content">
@@ -424,6 +432,40 @@
         <td class="num">{{ '%.3f'|format(pt_totals.outs_per_pitch) }}</td>
         <td class="num">{{ '%.2f'|format(pt_totals.p_per_bf) }}</td>
         <td class="num">{{ '%.1f'|format(pt_totals.fo_pct_pit * 100) }}%</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="dense mb-3">
+    <div class="panel-title">Walk-Back &amp; MLB-Readable Rates</div>
+    <p class="text-secondary small mb-2" style="padding:0 1rem">
+      Walk-Back Stop% measures how often this pitcher strands the
+      post-HR rule-placed runner on 3B. The bonus run, when it scores,
+      is unearned (Manfred-runner precedent) and is excluded from ERA
+      but charged to runs allowed (and thus to wERA).
+    </p>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num" title="Walk-Back PAs faced (one per HR allowed by this pitching staff while this pitcher was on the mound for the next PA)">WB-F</th>
+        <th class="num" title="Walk-Back runs allowed (subset of WB-F where the bonus runner was driven home)">WB-R</th>
+        <th class="num" title="(WB-F − WB-R) / WB-F. Strand rate for the rule-placed Walk-Back runner; higher = better. Skews to K/weak-contact arms.">Stop%</th>
+        <th class="num" title="MLB-readable ERA (raw er × 27 / outs; same as XO-anchor input but pre-rescale)">ERA</th>
+        <th class="num" title="MLB-readable WHIP">WHIP</th>
+        <th class="num" title="MLB-readable K/9">K/9</th>
+        <th class="num" title="MLB-readable BB/9">BB/9</th>
+        <th class="num" title="MLB-readable HR/9">HR/9</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num mono">{{ pt_totals.wb_faced or 0 }}</td>
+        <td class="num mono">{{ pt_totals.wb_runs or 0 }}</td>
+        <td class="num mono">{% if pt_totals.wb_faced %}{{ '%.0f'|format((pt_totals.wb_stop_pct or 0) * 100) }}%{% else %}—{% endif %}</td>
+        <td class="num mono">{{ '%.2f'|format(pt_totals.era or 0) }}</td>
+        <td class="num mono">{{ '%.2f'|format(pt_totals.whip or 0) }}</td>
+        <td class="num mono">{{ '%.1f'|format(pt_totals.k9 or 0) }}</td>
+        <td class="num mono">{{ '%.1f'|format(pt_totals.bb9 or 0) }}</td>
+        <td class="num mono">{{ '%.1f'|format(pt_totals.hr9 or 0) }}</td>
       </tr></tbody>
     </table>
     </div>
@@ -1027,6 +1069,97 @@
   <div class="dense p-4 text-center"><div class="text-secondary">No game stats yet for this player.</div></div>
   {% endif %}
 </div>
+
+{# ======================== XO CROSSOVER TAB ======================== #}
+{% if (bt_totals and bt_totals.xo) or (pt_totals and pt_totals.xo) %}
+<div class="tab-pane fade" id="tab-xo">
+  <div class="dense mb-3">
+    <div class="panel-title">Crossover (XO) Stats</div>
+    <p class="text-secondary small mb-3" style="padding:0 1rem">
+      O27 rate stats translated to MLB-readable values via mean-and-spread
+      z-anchoring (formula: <code>xo = MLB_mean + ((value − O27_mean) / O27_sd) · MLB_sd</code>).
+      The map preserves rank order exactly — XO leaderboards are the same
+      player order as native — and preserves spread, so an elite O27 player
+      shows up as an elite MLB-equivalent number rather than bunched at the
+      league anchor. Read these the way you would read MLB stats; if a
+      pitcher's XO ERA is 3.10, that's the MLB-equivalent of a 3.10 ERA.
+    </p>
+
+    {% if pt_totals and pt_totals.xo %}
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th>Pitching</th>
+        <th class="num">Native (O27)</th>
+        <th class="num">XO (MLB-readable)</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>ERA</td>
+            <td class="num mono">{{ '%.2f'|format(pt_totals.era or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.2f'|format(pt_totals.xo.era) }}</td></tr>
+        <tr><td>WHIP</td>
+            <td class="num mono">{{ '%.2f'|format(pt_totals.whip or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.2f'|format(pt_totals.xo.whip) }}</td></tr>
+        <tr><td>K/9</td>
+            <td class="num mono">{{ '%.1f'|format(pt_totals.k9 or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.1f'|format(pt_totals.xo.k9) }}</td></tr>
+        <tr><td>BB/9</td>
+            <td class="num mono">{{ '%.1f'|format(pt_totals.bb9 or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.1f'|format(pt_totals.xo.bb9) }}</td></tr>
+        <tr><td>HR/9</td>
+            <td class="num mono">{{ '%.1f'|format(pt_totals.hr9 or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.1f'|format(pt_totals.xo.hr9) }}</td></tr>
+        <tr><td>oAVG</td>
+            <td class="num mono">{{ '%.3f'|format(pt_totals.oavg or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(pt_totals.xo.oavg) }}</td></tr>
+        <tr><td>oOBP</td>
+            <td class="num mono">{{ '%.3f'|format(pt_totals.oobp or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(pt_totals.xo.oobp) }}</td></tr>
+        <tr><td>oSLG</td>
+            <td class="num mono">{{ '%.3f'|format(pt_totals.oslg or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(pt_totals.xo.oslg) }}</td></tr>
+        <tr><td>oOPS</td>
+            <td class="num mono">{{ '%.3f'|format(pt_totals.oops or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(pt_totals.xo.oops) }}</td></tr>
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    {% if bt_totals and bt_totals.xo %}
+    <div class="table-responsive mt-3">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th>Batting</th>
+        <th class="num">Native (O27)</th>
+        <th class="num">XO (MLB-readable)</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>AVG</td>
+            <td class="num mono">{{ '%.3f'|format(bt_totals.avg or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(bt_totals.xo.avg) }}</td></tr>
+        <tr><td>OBP</td>
+            <td class="num mono">{{ '%.3f'|format(bt_totals.obp or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(bt_totals.xo.obp) }}</td></tr>
+        <tr><td>SLG</td>
+            <td class="num mono">{{ '%.3f'|format(bt_totals.slg or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(bt_totals.xo.slg) }}</td></tr>
+        <tr><td>OPS</td>
+            <td class="num mono">{{ '%.3f'|format(bt_totals.ops or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(bt_totals.xo.ops) }}</td></tr>
+        <tr><td>wOBA</td>
+            <td class="num mono">{{ '%.3f'|format(bt_totals.woba or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(bt_totals.xo.woba) }}</td></tr>
+        <tr><td>BABIP</td>
+            <td class="num mono">{{ '%.3f'|format(bt_totals.babip or 0) }}</td>
+            <td class="num mono fw-bold">{{ '%.3f'|format(bt_totals.xo.babip) }}</td></tr>
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 
 </div> {# /tab-content #}
 

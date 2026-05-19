@@ -407,6 +407,12 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     bf_arc2        INTEGER DEFAULT 0,
     bf_arc3        INTEGER DEFAULT 0,
     is_starter     INTEGER DEFAULT 0,   -- 1 if this pitcher started the game
+    -- Walk-Back rule (post-HR rule-placed runner). wb_faced = PAs this
+    -- pitcher pitched with a Walk-Back runner pending. wb_runs = subset
+    -- where the runner scored (always unearned). Walk-Back Stop% =
+    -- (wb_faced - wb_runs) / wb_faced. See docs/stats-reference.md.
+    wb_faced       INTEGER DEFAULT 0,
+    wb_runs        INTEGER DEFAULT 0,
     -- xRA v3 — per-pitcher hit-type breakdown allowed. Lets each
     -- pitcher's xRA reflect their own batted-ball mix rather than the
     -- league average. Sums tabulated from the PA log post-game.
@@ -1131,6 +1137,14 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        # Walk-Back rule columns — added when the rule landed. Historical
+        # rows get 0 (no Walk-Back PAs existed before the rule).
+        for col in ("wb_faced", "wb_runs"):
+            try:
+                conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
         try:
             conn.execute("ALTER TABLE game_batter_stats ADD COLUMN a INTEGER DEFAULT 0")
             conn.commit()

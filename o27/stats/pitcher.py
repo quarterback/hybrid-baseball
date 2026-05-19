@@ -29,6 +29,12 @@ class PitcherStats:
     sb_allowed: int = 0  # Stolen bases successful against this pitcher
     cs_caught: int = 0   # Runners caught stealing while this pitcher was on
     fo_induced: int = 0  # Foul-outs charged against this pitcher
+    # Walk-Back rule (post-HR rule-placed runner on 3B; see
+    # docs/stats-reference.md). wb_faced = PAs this pitcher pitched with
+    # a Walk-Back runner pending. wb_runs = subset where the runner scored.
+    # Walk-Back Stop% = (wb_faced - wb_runs) / wb_faced.
+    wb_faced: int = 0
+    wb_runs:  int = 0
 
     @classmethod
     def from_spell_log(cls, spell_log: list, pitcher_id: str, name: str) -> "PitcherStats":
@@ -46,6 +52,8 @@ class PitcherStats:
                 s.hbp            += rec.hbp
                 s.hr_allowed     += getattr(rec, "hr_allowed", 0)
                 s.pitches_thrown += getattr(rec, "pitches_thrown", 0)
+                s.wb_faced       += getattr(rec, "wb_faced", 0)
+                s.wb_runs        += getattr(rec, "wb_runs", 0)
                 s.spell_count    += 1
                 if rec.batters_faced > s.max_spell:
                     s.max_spell = rec.batters_faced

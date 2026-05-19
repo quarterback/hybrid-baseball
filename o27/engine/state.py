@@ -313,6 +313,13 @@ class SpellRecord:
     sb_allowed: int = 0   # successful stolen bases against this pitcher
     cs_caught:  int = 0   # caught-stealing outs while this pitcher was on
     fo_induced: int = 0   # foul-outs (3-foul rule) ending an AB on this pitcher
+    # Walk-Back: PAs where this pitcher faced a hitter with a Walk-Back
+    # runner pending on 3B (Manfred-runner analog). wb_runs is the subset
+    # of those PAs where the Walk-Back runner scored. Used by the
+    # Walk-Back Stop% pitcher rate stat and by the ERA-exclusion logic
+    # (the Walk-Back run is always unearned).
+    wb_faced: int = 0
+    wb_runs:  int = 0
     # Arc-bucketed counters for wERA / xFIP / Decay. Indices 0/1/2 cover
     # outs 1-9 / 10-18 / 19-27 of the defending team's running 27-out half.
     # Super-innings outs roll into arc 3 (treat as continuation).
@@ -557,6 +564,11 @@ class GameState:
     pitcher_fo_induced_this_spell: int = 0  # foul-outs in current spell
     pitcher_errors_this_spell: int = 0      # defensive errors during current spell
                                             # (post-error runs in the spell charge UER)
+    # Walk-Back: rule-placed-runner PAs this pitcher has faced this spell,
+    # and the subset where the Walk-Back runner scored. Flushed to
+    # SpellRecord at spell end (manager.pick_new_pitcher / game._close_spell).
+    pitcher_wb_faced_this_spell: int = 0
+    pitcher_wb_runs_this_spell:  int = 0
     # Arc-bucketed per-spell counters (indices 0/1/2 → arc 1/2/3 of the
     # defending team's 27-out running half). Reset at spell start.
     pitcher_er_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
@@ -575,6 +587,17 @@ class GameState:
     # (batter is swinging to protect). Cleared at PA boundaries.
     hit_and_run_active: bool = False
     spell_log: list = field(default_factory=list)
+
+    # --- Walk-Back (post-HR rule-placed runner) ---
+    # Set immediately after an HR PA resolves; consumed by the very next PA.
+    # When set, contains the player_id of the HR-hitter (display only —
+    # the runner is the HR-hitter himself, not a separate ghost). The next
+    # batter's PA, regardless of outcome, increments the pitcher's wb_faced
+    # counter exactly once; if the next batter drives the runner home with
+    # the bat (1B/2B/3B/HR/sac-fly), the team scores +1 unearned run, the
+    # driver gets +1 RBI, and the pitcher's wb_runs counter increments.
+    # The flag is cleared at the start of the next PA after being captured.
+    walk_back_pending: Optional[str] = None
 
     # --- Multi-hit tracking (within one at-bat) ---
     current_at_bat_hits: int = 0

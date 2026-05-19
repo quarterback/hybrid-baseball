@@ -879,6 +879,8 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             if getattr(first, "start_batter_num", 0) == 1:
                 is_starter = 1
 
+        wb_faced = sum(getattr(rec, "wb_faced", 0) for rec in spells)
+        wb_runs  = sum(getattr(rec, "wb_runs",  0) for rec in spells)
         rows.append({
             "team_id": team_id,
             "player_id": db_pid,
@@ -887,7 +889,11 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "outs_recorded": ps.outs_recorded,
             "hits_allowed": ps.hits_allowed,
             "runs_allowed": ps.runs_allowed,
-            # Task #48: ER = runs_allowed - passed-ball-charged unearned runs.
+            # ER = runs_allowed − (passed-ball/error UER + Walk-Back unearned).
+            # The spell's `unearned_runs` counter already includes both
+            # sources (see o27/engine/pa.py:_resolve_walk_back_at_pa_end),
+            # so this subtraction excludes the Walk-Back run from ERA
+            # exactly as required by the Manfred-runner precedent.
             "er": max(0, ps.runs_allowed - getattr(ps, "unearned_runs", 0)),
             "bb": ps.bb,
             "k": ps.k,
@@ -903,6 +909,8 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "fo_arc1": fo_a1, "fo_arc2": fo_a2, "fo_arc3": fo_a3,
             "bf_arc1": bf_a1, "bf_arc2": bf_a2, "bf_arc3": bf_a3,
             "is_starter": is_starter,
+            "wb_faced": wb_faced,
+            "wb_runs":  wb_runs,
         })
     return rows
 
@@ -1761,8 +1769,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                     bf_arc1, bf_arc2, bf_arc3,
                     is_starter,
                     singles_allowed, doubles_allowed, triples_allowed,
-                    fastball_pct, breaking_pct, offspeed_pct, primary_pitch)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    fastball_pct, breaking_pct, offspeed_pct, primary_pitch,
+                    wb_faced, wb_runs)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
                  r["runs_allowed"], r.get("er", r["runs_allowed"]),
@@ -1779,7 +1788,8 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                  r.get("singles_allowed", 0), r.get("doubles_allowed", 0),
                  r.get("triples_allowed", 0),
                  r.get("fastball_pct", 0.0), r.get("breaking_pct", 0.0),
-                 r.get("offspeed_pct", 0.0), r.get("primary_pitch", "")),
+                 r.get("offspeed_pct", 0.0), r.get("primary_pitch", ""),
+                 r.get("wb_faced", 0), r.get("wb_runs", 0)),
             )
         for r in team_phase_outs:
             conn.execute(
@@ -1965,8 +1975,9 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
             k_arc1,  k_arc2,  k_arc3,
             fo_arc1, fo_arc2, fo_arc3,
             bf_arc1, bf_arc2, bf_arc3,
-            is_starter)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            is_starter,
+            wb_faced, wb_runs)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["batters_faced"],
           r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
           r.get("er", r["runs_allowed"]),
@@ -1978,7 +1989,8 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
           r.get("k_arc1",  0), r.get("k_arc2",  0), r.get("k_arc3",  0),
           r.get("fo_arc1", 0), r.get("fo_arc2", 0), r.get("fo_arc3", 0),
           r.get("bf_arc1", 0), r.get("bf_arc2", 0), r.get("bf_arc3", 0),
-          r.get("is_starter", 0))
+          r.get("is_starter", 0),
+          r.get("wb_faced", 0), r.get("wb_runs", 0))
          for r in rows],
     )
 
