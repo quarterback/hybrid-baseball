@@ -1060,6 +1060,10 @@ class Renderer:
                 rs.entry_type = "PH"
                 if replaced is not None:
                     rs.replaced_player_id = str(replaced.player_id)
+                # Inning = state.outs // 3 + 1. Stamped only on first
+                # entry (no-reentry — preserves original inning).
+                if not rs.entered_inning:
+                    rs.entered_inning = state_after.outs // 3 + 1
 
         elif etype in ("joker_inserted", "joker_insertion"):
             # Joker entered for one PA. They get game_position="J" elsewhere;
@@ -1070,18 +1074,24 @@ class Renderer:
             # to state.events with joker_id/joker_name keys. Handle both
             # shapes here for back-compat.
             joker = event.get("joker")
+            inning = state_after.outs // 3 + 1
             if joker is not None:
                 stats_obj = self._get_stats(joker)
                 stats_obj.entry_type = "joker"
+                if not stats_obj.entered_inning:
+                    stats_obj.entered_inning = inning
             else:
                 joker_id = event.get("joker_id")
                 joker_name = event.get("joker_name", "")
                 if joker_id and joker_id in self._batter_stats:
-                    self._batter_stats[joker_id].entry_type = "joker"
+                    js = self._batter_stats[joker_id]
+                    js.entry_type = "joker"
+                    if not js.entered_inning:
+                        js.entered_inning = inning
                 elif joker_id:
                     self._batter_stats[joker_id] = BatterStats(
                         player_id=str(joker_id), name=joker_name,
-                        entry_type="joker",
+                        entry_type="joker", entered_inning=inning,
                     )
 
         elif etype == "defensive_sub":
@@ -1101,6 +1111,8 @@ class Renderer:
                 stats_obj.entry_type = "DEF"
                 if player_out is not None:
                     stats_obj.replaced_player_id = str(player_out.player_id)
+                if not stats_obj.entered_inning:
+                    stats_obj.entered_inning = state_after.outs // 3 + 1
 
         elif etype == "pinch_runner":
             # Pinch runner takes over for the runner on `base_idx`. They
@@ -1118,6 +1130,8 @@ class Renderer:
             if runner_in is not None:
                 stats_obj = self._get_stats(runner_in)
                 stats_obj.entry_type = "PR"
+                if not stats_obj.entered_inning:
+                    stats_obj.entered_inning = state_after.outs // 3 + 1
                 # Recover the replaced runner from the just-appended
                 # substitution_log entry — keyed on this in_player_id.
                 log = getattr(state_after, "substitution_log", None) or []
@@ -1143,6 +1157,8 @@ class Renderer:
                 # but tagged DEF for the box-score's purposes.
                 if stats_obj.entry_type in ("", "starter"):
                     stats_obj.entry_type = "DEF"
+                if not stats_obj.entered_inning:
+                    stats_obj.entered_inning = state_after.outs // 3 + 1
 
         elif etype == "declaration":
             # Declared Seconds — surface a play-by-play line via the template.
@@ -1172,6 +1188,8 @@ class Renderer:
                 stats_obj.entry_type = "joker_field"
                 if player_out is not None:
                     stats_obj.replaced_player_id = str(player_out.player_id)
+                if not stats_obj.entered_inning:
+                    stats_obj.entered_inning = state_after.outs // 3 + 1
 
         return d
 

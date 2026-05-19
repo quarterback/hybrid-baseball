@@ -163,3 +163,119 @@ def test_season_archive_writer_runs_end_to_end(tiny_db_app):
     assert "gsc_index" in pit_cats
     assert "xra"       in pit_cats   # renamed from "xfip"
     assert "xfip"     not in pit_cats
+
+
+# ---------------------------------------------------------------------------
+# Substitution model — schema, renderer, and footnote tests
+# ---------------------------------------------------------------------------
+
+def test_entered_inning_column_migrated(tiny_db_app):
+    """The substitution model adds entered_inning to game_batter_stats.
+    Init must run the ALTER for existing DBs, not just CREATE."""
+    from o27v2 import db
+    cols = {r["name"] for r in db.fetchall(
+        "SELECT name FROM pragma_table_info('game_batter_stats')"
+    )}
+    assert "entered_inning" in cols
+    assert "entry_type" in cols
+    assert "replaced_player_id" in cols
+
+
+def _row(pid, name, pos, **kw):
+    """Minimal batting row stub for renderer tests."""
+    base = dict(
+        player_id=pid, player_name=name, position=pos, box_position=pos,
+        ab=0, runs=0, hits=0, doubles=0, triples=0, hr=0, rbi=0, bb=0,
+        k=0, stays=0, pa=0, entry_type="starter", replaced_player_id=None,
+        entered_inning=0,
+    )
+    base.update(kw)
+    return base
+
+
+def test_box_score_indents_ph_with_footnote():
+    """A PH row indents under the replaced starter, shows position 'ph',
+    gets a footnote letter prefix 'a-', and the footnote block emits
+    the outcome (struck out / singled / walked) + replaced player + inning."""
+    from o27v2.web.box_score import render_batting_table, _sub_footnotes_for
+    rows = [
+        _row(1, "Rodriguez", "3b", ab=3, hits=1, pa=3),
+        _row(2, "Matsui", "3b", ab=1, k=1, pa=1,
+             entry_type="PH", replaced_player_id=1, entered_inning=7),
+        _row(3, "Sheffield", "rf", ab=4, hits=2, pa=4),
+    ]
+    out = render_batting_table("Yankees", rows)
+    assert "Rodriguez" in out
+    # PH row indented and labeled "ph", lettered 'a-'.
+    assert "  a-Matsui" in out
+    assert " ph " in out
+
+    fn = _sub_footnotes_for(rows)
+    assert "a-Struck out for Rodriguez in the 7th." in fn
+
+
+def test_box_score_pr_row_labeled_and_footnoted():
+    """A PR with 0 AB renders position 'pr' and the footnote reads
+    'Ran for X in the Yth.' Sanity: lineup-order letter assignment."""
+    from o27v2.web.box_score import render_batting_table, _sub_footnotes_for
+    rows = [
+        _row(10, "Skanes", "cf", ab=2, hits=1, pa=2),
+        _row(11, "Vargas", "cf", ab=0, pa=0, sb=1,
+             entry_type="PR", replaced_player_id=10, entered_inning=8),
+    ]
+    out = render_batting_table("PawSox", rows)
+    assert "  a-Vargas" in out
+    assert " pr " in out
+    fn = _sub_footnotes_for(rows)
+    assert fn == "  a-Ran for Skanes in the 8th."
+
+
+def test_box_score_multiple_subs_get_sequential_letters():
+    """Two subs on the same team get a-, b- in lineup order."""
+    from o27v2.web.box_score import _sub_footnotes_for
+    rows = [
+        _row(1, "Jeter", "ss", ab=4, hits=2, pa=4),
+        _row(2, "Rodriguez", "3b", ab=3, pa=3),
+        _row(3, "Matsui", "3b", ab=1, hits=1, pa=1,
+             entry_type="PH", replaced_player_id=2, entered_inning=7),
+        _row(4, "Sheffield", "rf", ab=3, hits=1, pa=4),
+        _row(5, "Posada", "c", ab=2, pa=2),
+        _row(6, "Stinnett", "c", ab=0, pa=0,
+             entry_type="DEF", replaced_player_id=5, entered_inning=9),
+    ]
+    fn = _sub_footnotes_for(rows)
+    assert "a-Singled for Rodriguez in the 7th." in fn
+    assert "b-Replaced Posada at C in the 9th." in fn
+
+
+def test_pr_with_ab_but_no_pa_raises():
+    """The PR=AB=0 invariant: a PR with ab>0 but pa==0 indicates a
+    sim-side stat-accounting bug. Renderer must surface this loudly
+    rather than silently emit a corrupt box score."""
+    import pytest
+    from o27v2.web.box_score import render_batting_table
+    rows = [
+        _row(10, "Skanes", "cf", ab=2, hits=1, pa=2),
+        _row(11, "Vargas", "cf", ab=3, pa=0,  # corrupt: AB without PA
+             entry_type="PR", replaced_player_id=10, entered_inning=8),
+    ]
+    with pytest.raises(AssertionError, match="ab=3 but pa=0"):
+        render_batting_table("PawSox", rows)
+
+
+def test_starter_with_no_entry_has_no_letter():
+    """Starters never get a footnote letter. Subs without lineup
+    indentation context (legacy rows missing replaced_player_id) still
+    get assigned a letter so the indent-block reads consistently."""
+    from o27v2.web.box_score import render_batting_table, _sub_footnotes_for
+    rows = [
+        _row(1, "Jeter", "ss", ab=4, hits=2, pa=4),
+        _row(2, "Cano", "2b", ab=4, hits=1, pa=4),
+    ]
+    out = render_batting_table("Yankees", rows)
+    # Starters should NOT have "a-" or "b-" prefixes.
+    for line in out.splitlines():
+        assert not line.lstrip().startswith("a-")
+        assert not line.lstrip().startswith("b-")
+    fn = _sub_footnotes_for(rows)
+    assert fn == ""

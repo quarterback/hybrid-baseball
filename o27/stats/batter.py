@@ -75,6 +75,9 @@ class BatterStats:
     # player they replaced so the lineup ordering reads naturally.
     entry_type: str = "starter"
     replaced_player_id: str = ""
+    # Inning (1-indexed: outs // 3 + 1) at which this row entered the game.
+    # 0 = starter. Footnote rendering reads this to emit "in the 5th."
+    entered_inning: int = 0
 
     # Grounded into double / triple play — for box-score annotations.
     # Incremented in the run path of contact resolution when the engine

@@ -52,15 +52,22 @@ def _pos_short(pos: str) -> str:
     return (pos or "").lower()
 
 
-def _name_pos_with_dots(name: str, pos: str, indent: int = 0) -> str:
+def _name_pos_with_dots(name: str, pos: str, indent: int = 0,
+                        footnote: str = "") -> str:
     """'Biggio       ss .......' — name + position followed by dot leaders
     out to NAME_POS_WIDTH. `indent` (0 or 2) shifts the name right by that
     many spaces while preserving total prefix width — the stat columns
-    still align under any starter."""
+    still align under any starter.
+
+    `footnote` (e.g. "a") prefixes the name as 'a-' for substitutes whose
+    role is summarized in a footnote line below the table. The footnote
+    prefix consumes part of the indent allowance so column alignment is
+    preserved."""
     last = _last_name(name)
     pos_s = _pos_short(pos)
-    name_cap = max(4, 11 - indent)
-    head = (" " * indent) + f"{last[:name_cap]:<{name_cap}} {pos_s:<2}"
+    fn = f"{footnote}-" if footnote else ""
+    name_cap = max(4, 11 - indent - len(fn))
+    head = (" " * indent) + fn + f"{last[:name_cap]:<{name_cap}} {pos_s:<2}"
     if len(head) >= NAME_POS_WIDTH - 1:
         head = head[: NAME_POS_WIDTH - 2]
     pad = NAME_POS_WIDTH - len(head) - 1
@@ -236,6 +243,129 @@ def _ordered_rows_with_indent(rows: list[dict]) -> list[tuple[dict, int]]:
     return out
 
 
+def _assign_footnotes(ordered: list[tuple[dict, int]]) -> dict[int, str]:
+    """Walk the lineup-ordered rows top to bottom; assign a, b, c, ... to
+    each sub row (entry_type in PH/PR/DEF/joker/joker_field). Keyed by
+    `id(row)` so callers can look up the letter for a given row dict.
+    Letters run a..z then aa, ab, ... (a 12-batter team with one slot
+    cycled twice can reach 6+ subs theoretically; cap is courtesy)."""
+    out: dict[int, str] = {}
+    n = 0
+    for r, indent in ordered:
+        if not indent:
+            continue
+        et = r.get("entry_type", "starter")
+        if et not in ("PH", "PR", "DEF", "joker", "joker_field"):
+            continue
+        # a, b, ... z, aa, ab, ...
+        if n < 26:
+            letter = chr(ord("a") + n)
+        else:
+            letter = chr(ord("a") + (n // 26) - 1) + chr(ord("a") + (n % 26))
+        out[id(r)] = letter
+        n += 1
+    return out
+
+
+def _ordinal(n: int) -> str:
+    """1 → 1st, 2 → 2nd, 3 → 3rd, 4 → 4th, ..."""
+    if 10 <= (n % 100) <= 20:
+        suf = "th"
+    else:
+        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suf}"
+
+
+def _sub_outcome_phrase(r: dict) -> str:
+    """Compose the verb phrase for a PH footnote from cumulative stats.
+    Works because a pinch-hitter typically has exactly one PA; multi-PA
+    PHs (lineup cycled) get a generic 'batted' phrasing."""
+    pa  = int(r.get("pa", 0) or 0)
+    ab  = int(r.get("ab", 0) or 0)
+    h   = int(r.get("hits", 0) or 0)
+    hr  = int(r.get("hr", 0) or 0)
+    d3  = int(r.get("triples", 0) or 0)
+    d2  = int(r.get("doubles", 0) or 0)
+    bb  = int(r.get("bb", 0) or 0)
+    k   = int(r.get("k", 0) or 0)
+    hbp = int(r.get("hbp", 0) or 0)
+    if pa == 0:
+        return "Pinch-hit"   # never came to bat (rare — game ended first)
+    if pa == 1:
+        if hr:  return "Homered"
+        if d3:  return "Tripled"
+        if d2:  return "Doubled"
+        if h:   return "Singled"
+        if bb:  return "Walked"
+        if hbp: return "Was hit by a pitch"
+        if k:   return "Struck out"
+        return "Grounded out"
+    return "Batted"
+
+
+def _render_sub_footnotes(
+    rows: Iterable[dict],
+    footnotes: dict[int, str],
+    starter_by_id: dict[int, dict],
+) -> str:
+    """Emit the footnote block:
+        a-Singled for Skanes in the 5th.
+        b-Ran for Rosas in the 7th.
+    `starter_by_id` maps replaced_player_id → starter row so we can name
+    who the sub came in for. Indented two spaces, matching the
+    annotations block convention."""
+    lines: list[str] = []
+    for r in rows:
+        letter = footnotes.get(id(r))
+        if not letter:
+            continue
+        et = r.get("entry_type", "starter")
+        replaced_pid = r.get("replaced_player_id")
+        replaced_name = "—"
+        if replaced_pid is not None:
+            rep = starter_by_id.get(int(replaced_pid))
+            if rep is not None:
+                replaced_name = _last_name(rep.get("player_name", "")) or "—"
+        inning = int(r.get("entered_inning", 0) or 0)
+        inning_phrase = f" in the {_ordinal(inning)}" if inning else ""
+        if et == "PH":
+            verb = _sub_outcome_phrase(r)
+            lines.append(f"  {letter}-{verb} for {replaced_name}{inning_phrase}.")
+        elif et == "PR":
+            lines.append(f"  {letter}-Ran for {replaced_name}{inning_phrase}.")
+        elif et == "DEF":
+            pos = (r.get("box_position") or r.get("position") or "").upper()
+            slot = f" at {pos}" if pos else ""
+            lines.append(f"  {letter}-Replaced {replaced_name}{slot}{inning_phrase}.")
+        elif et == "joker":
+            lines.append(f"  {letter}-Pinch-hit (joker) for {replaced_name}{inning_phrase}.")
+        elif et == "joker_field":
+            pos = (r.get("box_position") or r.get("position") or "").upper()
+            slot = f" at {pos}" if pos else ""
+            lines.append(f"  {letter}-Replaced {replaced_name}{slot} (joker to field){inning_phrase}.")
+    return "\n".join(lines)
+
+
+def _validate_pr_no_ab(rows: Iterable[dict]) -> None:
+    """Sanity check: a pure pinch-runner who never came to bat (lineup
+    didn't cycle back) must have AB=0. The MLB no-reentry rule plus
+    the sim's PR handling (PR takes the lifted runner's lineup slot,
+    they only get an AB if their slot's turn comes up later) keeps
+    this honest; failure indicates either a sim bug or a hand-edited
+    row. Asserts in debug — a violation is corrupt data."""
+    for r in rows:
+        if r.get("entry_type") != "PR":
+            continue
+        pa = int(r.get("pa", 0) or 0)
+        ab = int(r.get("ab", 0) or 0)
+        # PR with PA == 0 means they only ran; AB must also be 0.
+        if pa == 0 and ab != 0:
+            raise AssertionError(
+                f"PR {r.get('player_name')!r} has ab={ab} but pa=0 — "
+                f"stat accounting bug."
+            )
+
+
 def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
     """Per-team batting block: TEAM NAME, header row, player rows w/ dot
     leaders, totals row. PA is intentionally omitted (implied; box-score
@@ -250,6 +380,8 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
 
     totals = {k.lower(): 0 for k in cols}
     ordered = _ordered_rows_with_indent(rows)
+    footnotes = _assign_footnotes(ordered)
+    _validate_pr_no_ab(rows)
 
     for r, indent in ordered:
         ab  = r.get("ab", 0) or 0
@@ -281,6 +413,7 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
         prefix = _name_pos_with_dots(
             r.get("player_name", ""), pos,
             indent=2 if indent else 0,
+            footnote=footnotes.get(id(r), ""),
         )
 
         line = (
@@ -491,6 +624,25 @@ def render_game_notes(game: dict) -> str:
 # Top-level
 # --------------------------------------------------------------------------
 
+def _sub_footnotes_for(rows: list[dict]) -> str:
+    """Public-facing helper: re-derive footnote letters + starter map from
+    rows so render_box_score can emit the footnote lines beneath each
+    team's annotations block. Returns "" if no subs."""
+    ordered = _ordered_rows_with_indent(list(rows))
+    footnotes = _assign_footnotes(ordered)
+    if not footnotes:
+        return ""
+    starter_by_id: dict[int, dict] = {}
+    for r, indent in ordered:
+        if not indent:
+            pid = r.get("player_id")
+            if pid is not None:
+                starter_by_id[int(pid)] = r
+    # Emit in lineup order so a precedes b precedes c.
+    lineup_ordered = [r for r, _ in ordered if id(r) in footnotes]
+    return _render_sub_footnotes(lineup_ordered, footnotes, starter_by_id)
+
+
 def render_box_score(
     game: dict,
     phases: list[int],
@@ -514,9 +666,11 @@ def render_box_score(
         "",
         render_batting_table(game.get("away_name", "Away"), away_batting),
         render_batting_annotations(away_batting, hr_off_pitchers),
+        _sub_footnotes_for(away_batting),
         "",
         render_batting_table(game.get("home_name", "Home"), home_batting),
         render_batting_annotations(home_batting, hr_off_pitchers),
+        _sub_footnotes_for(home_batting),
         "",
         render_pitching_table(game.get("away_name", "Away"), away_pitching, decisions),
         "",
