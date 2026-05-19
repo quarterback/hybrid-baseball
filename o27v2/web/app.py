@@ -2465,7 +2465,13 @@ def game_detail(game_id: int):
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
-                  COALESCE(bs.entry_type, 'starter') AS entry_type,
+                  -- Joker-identity fallback: legacy rows from before the
+                  -- renderer key-mismatch fix have entry_type='starter' on
+                  -- joker insertions. Recover the joker tag from
+                  -- players.is_joker so the box score still groups them
+                  -- correctly (trailing, not mixed in lineup order).
+                  CASE WHEN p.is_joker = 1 THEN 'joker'
+                       ELSE COALESCE(bs.entry_type, 'starter') END AS entry_type,
                   bs.replaced_player_id AS replaced_player_id,
                   COALESCE(bs.entered_inning, 0) AS entered_inning
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
@@ -2477,7 +2483,8 @@ def game_detail(game_id: int):
                   CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END as position,
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
-                  COALESCE(bs.entry_type, 'starter') AS entry_type,
+                  CASE WHEN p.is_joker = 1 THEN 'joker'
+                       ELSE COALESCE(bs.entry_type, 'starter') END AS entry_type,
                   bs.replaced_player_id AS replaced_player_id,
                   COALESCE(bs.entered_inning, 0) AS entered_inning
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
