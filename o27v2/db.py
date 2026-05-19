@@ -157,7 +157,15 @@ CREATE TABLE IF NOT EXISTS players (
     -- Pitcher fatigue resistance, bounded 0.25-0.75 in roster gen.
     -- 0.50 = identity (no fatigue ramp change). Also damps today_form
     -- per-game variance — high-grit arms swing less day-to-day.
-    grit           REAL  DEFAULT 0.5
+    grit           REAL  DEFAULT 0.5,
+    -- Substitution-economy role tags (see o27v2/archetypes.py). Stamped at
+    -- generation, re-derived in development. `roster_slot` drives roster
+    -- composition; `role_*` flags drive substitution candidate filtering.
+    roster_slot    TEXT  DEFAULT '',
+    role_hit       INTEGER DEFAULT 1,
+    role_run       INTEGER DEFAULT 0,
+    role_two_way   INTEGER DEFAULT 1,
+    role_field_pos TEXT  DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -995,6 +1003,29 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+
+        # Substitution-economy role tags (see o27v2/archetypes.py and the
+        # substitution_economy AAR). Stamped at generation, re-derived on
+        # off-season development. `roster_slot` is the deployment slot
+        # (bat_first / glove_first / two_way / pitcher / joker /
+        # pr_specialist / ph_specialist). `role_field_pos` is the comma-
+        # joined list of positions a player can defend (e.g., "2B,SS,3B").
+        # Defaults are NULL/empty so legacy rows fall through to "any
+        # deployment" semantics rather than being silently excluded.
+        for col, sql_type, defval in (
+            ("roster_slot",    "TEXT",    "''"),
+            ("role_hit",       "INTEGER", "1"),
+            ("role_run",       "INTEGER", "0"),
+            ("role_two_way",   "INTEGER", "1"),
+            ("role_field_pos", "TEXT",    "''"),
+        ):
+            try:
+                conn.execute(
+                    f"ALTER TABLE players ADD COLUMN {col} {sql_type} DEFAULT {defval}"
+                )
+                conn.commit()
+            except Exception:
+                pass
 
         # Weather model columns on games (stamped at schedule time).
         for col, defval in (

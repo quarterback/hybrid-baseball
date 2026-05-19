@@ -234,14 +234,14 @@ def _ordered_lineup(
 ) -> list:
     """Order the 9-batter base lineup by hitting talent.
 
-    Base lineup = 8 fielders + SP. DHs are NOT in the base lineup — they
-    live in the joker pool (jokers_available) and are inserted tactically
-    by the manager AI per PA. Any joker can be inserted any number of
-    times per game.
+    Base lineup = 8 fielders + SP. The pitcher bats — this is an
+    explicit part of O27's batting order. The 3 jokers are NOT in
+    the base lineup; they live in Team.jokers_available and are
+    inserted tactically by the manager AI per PA (no per-game cap).
 
-    Pitchers almost always hit 9th. Exception: a pitcher whose hitting
-    `skill` clears 0.50 (top ~5-10% of arms in a fresh seed) slots in by
-    talent like everyone else.
+    Pitchers almost always hit 9th. Exception: a pitcher whose
+    hitting `skill` clears 0.50 (top ~5-10% of arms in a fresh
+    seed) slots in by talent like everyone else.
     """
     non_pitchers = list(starting_fielders)
     non_pitchers.sort(key=_bat_score, reverse=True)
@@ -250,8 +250,6 @@ def _ordered_lineup(
     if sp is None:
         return non_pitchers
 
-    # Pitchers ≥ this hitting `skill` slot in by talent like a non-pitcher.
-    # Default 0.50 catches the top ~5-10% of pitchers per the tier ladder.
     if float(sp.skill) >= 0.50:
         combined = non_pitchers + [sp]
         combined.sort(key=_bat_score, reverse=True)
@@ -435,6 +433,26 @@ def _db_team_to_engine(
         # bonus. Default 0.5 keeps legacy DB rows engine-identical.
         player.grit        = float(p.get("grit")       if p.get("grit")       is not None else 0.5)
         player.leadership  = _scout.to_unit(p.get("leadership") or 50)
+        # Substitution-economy role tags. Legacy DB rows (NULL columns)
+        # fall through to the Player defaults (deployable as both bat and
+        # field — the safest behavior for a player without classifier
+        # output). Once `resetdb` runs the new league seed, every row
+        # carries real tags.
+        rs = p.get("roster_slot")
+        if rs:
+            player.roster_slot = str(rs)
+        rh = p.get("role_hit")
+        if rh is not None:
+            player.role_hit = bool(int(rh))
+        rr = p.get("role_run")
+        if rr is not None:
+            player.role_run = bool(int(rr))
+        rtw = p.get("role_two_way")
+        if rtw is not None:
+            player.role_two_way = bool(int(rtw))
+        rfp = p.get("role_field_pos")
+        if rfp is not None:
+            player.role_field_pos = str(rfp)
         # Pitch-type activation: load repertoire JSON onto Player so the
         # engine's _select_pitch() can sample from it. Legacy rows
         # (NULL repertoire) leave Player.repertoire = [] which the
@@ -459,11 +477,21 @@ def _db_team_to_engine(
                     player.repertoire = []
         engine_players.append(player)
         engine_to_db_id[player.player_id] = int(p["id"])
-        if bool(p.get("is_joker")):
+        # Joker detection: the new substitution-economy model tags
+        # roster_slot="joker" on the 3 explicitly-drafted jokers per
+        # team. Fall back to the legacy is_joker flag for old DB rows.
+        is_joker_player = (
+            p.get("roster_slot") == "joker"
+            or bool(p.get("is_joker"))
+        )
+        if is_joker_player:
             jokers.append(player)
         elif player.is_pitcher:
             pitchers.append(player)
         elif p.get("position") == "DH":
+            # Legacy bat-first slot (pre-substitution-economy DBs).
+            # New leagues won't see any of these — DH is now the
+            # joker role and is filtered above.
             dhs.append(player)
         else:
             fielders.append(player)
@@ -616,25 +644,28 @@ def _db_team_to_engine(
                 idx = starting_fielders.index(rested)
                 starting_fielders[idx] = bench_sorted[i]
 
-    # Stamp per-game fielding positions BEFORE building the lineup so the
-    # ordering pass already sees concrete positions on every player. Jokers
-    # picked from the DH pool below get their "J" tag here too.
-    _assign_game_positions(starting_fielders, todays_sp, dhs)
+    # Stamp per-game fielding positions BEFORE building the lineup.
+    # The 3 jokers (drafted explicitly via roster_slot="joker") are
+    # the team's tactical pinch-hit pool — they live in jokers_available
+    # and are NOT in the batting order. _assign_game_positions stamps
+    # them with game_position="J" via the dhs arg (with no roster_slot
+    # tag in legacy DB rows, dhs falls back to the per-game DH pool).
+    _assign_game_positions(starting_fielders, todays_sp,
+                           jokers if jokers else dhs)
 
-    # Build the 9-batter base lineup: 8 fielders + SP, ordered by talent.
-    lineup = _ordered_lineup(starting_fielders, todays_sp)
-
-    # Pick today's 3 jokers from the non-starter bat pool (all DHs + any
-    # bench fielders not in the starting 8). These are tactical pinch-
-    # hitters — manager AI inserts them per PA based on leverage, with
-    # no per-cycle or per-game cap on how often each can be re-used.
-    bench_pool = list(dhs) + list(fielders[8:])
-    jokers     = _pick_jokers(bench_pool, n=3)
-    # Force-stamp every joker with game_position="J" — the per-bench-
-    # source picker can pull a non-DH (e.g. utility infielder) so we
-    # can't rely on `_assign_game_positions(... dhs)` having tagged them.
+    # Joker pool: prefer the explicitly-drafted jokers (roster_slot tag).
+    # If a legacy DB row leaves jokers empty, fall back to picking the
+    # 3 best bats from the DH/bench pool — same behavior as before.
+    if not jokers:
+        legacy_bench_pool = list(dhs) + list(fielders[8:])
+        jokers = _pick_jokers(legacy_bench_pool, n=3)
     for j in jokers:
         j.game_position = "J"
+
+    # Build the 9-batter base lineup: 8 fielders + SP. Jokers stay in
+    # jokers_available for batter_override insertions — they're NOT
+    # part of the batting order itself.
+    lineup = _ordered_lineup(starting_fielders, todays_sp)
 
     # Reorder the roster so today's SP is the first pitcher. The engine's
     # `_set_fielding_pitcher` picks the first is_pitcher in roster order,
@@ -654,6 +685,18 @@ def _db_team_to_engine(
         park_hr=float(team_row.get("park_hr") or 1.0),
         park_hits=float(team_row.get("park_hits") or 1.0),
     )
+    # Populate Team.bench (substitution-economy Item 3). Bench =
+    # everyone on the active roster MINUS the starting lineup MINUS the
+    # joker pool MINUS pitchers. The substitution candidate-pickers walk
+    # this list rather than iterating the full roster each PA.
+    lineup_ids = {p.player_id for p in lineup}
+    joker_ids  = {j.player_id for j in jokers}
+    team.bench = [
+        p for p in engine_players
+        if not p.is_pitcher
+        and p.player_id not in lineup_ids
+        and p.player_id not in joker_ids
+    ]
     # Compute aggregate defense rating from the lineup's fielding 8.
     team.defense_rating = _team_defense_rating(lineup, players)
     # Stamp manager persona — bias hook/joker/PH/run-game decisions.

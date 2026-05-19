@@ -14,9 +14,185 @@ All tunable thresholds are imported from o27.config.
 """
 
 from __future__ import annotations
-from .state import GameState, Player, SpellRecord
+from .state import GameState, Player, SpellRecord, Substitution
 from typing import Optional
 from o27 import config as cfg
+
+
+# ---------------------------------------------------------------------------
+# Substitution-trigger evaluation (Item 3)
+# ---------------------------------------------------------------------------
+#
+# Single unified scorer that every new substitution decision routes through.
+# Returns a [0, 1] leverage score; the manager fires when score >= threshold
+# (where threshold = 1.0 - mgr_platoon_aggression, so a passive manager
+# only swaps when the spot is overwhelming and an aggressive one swaps
+# freely). The legacy `should_*` paths keep their inline scoring for now;
+# Item 4 follow-up migrates them through this function and tunes the
+# weights.
+#
+# Factors (each in [0, 1]):
+#   score_gap_f     — tighter games score higher (max at tie)
+#   late_arc_f      — later in the half scores higher (max at out 27)
+#   runner_f        — runners on base raise PH / PR leverage
+#   upgrade_f       — skill delta between candidate and outgoing player
+#                     in the relevant dimension (hit / run / field)
+#   conservation_f  — penalty proportional to bench depletion at the
+#                     relevant role; deliberately simple in v1
+
+
+def _has_platoon_edge(bats: str, p_throws: str) -> bool:
+    """True if the batter has the platoon advantage against this pitcher.
+
+    Switch hitters always have it; otherwise opposite-handed = edge.
+    Empty handedness fields (legacy DB rows) return False.
+    """
+    if not bats or not p_throws:
+        return False
+    if bats == "S":
+        return True
+    return bats != p_throws
+
+
+def score_substitution(
+    state: GameState,
+    candidate: Player,
+    kind: str,
+    out_player: Optional[Player] = None,
+) -> float:
+    """Score a candidate substitution against current game leverage.
+
+    `kind` is one of "pinch_hit" / "pinch_run" / "pinch_field". Returns a
+    score in [0, 1]; callers compare against a manager-derived threshold
+    (`substitution_threshold(team)`).
+
+    Factors (each in [0, 1], averaged):
+      score_gap_f  — tighter games favor subs (1.0 at tie, 0.0 at 10+ gap)
+      late_arc_f   — later in the half raises leverage (out/27)
+      runner_f     — runners on raise PH/PR (PF is runner-independent)
+      upgrade_f    — skill delta candidate vs outgoing in relevant dimension
+      matchup_f    — handedness platoon edge for PH (neutral 0.5 otherwise)
+    """
+    if out_player is None:
+        return 0.0
+
+    # Score-gap factor — tighter games favor substitutions.
+    v = state.score.get("visitors", 0)
+    h = state.score.get("home", 0)
+    score_gap = abs(v - h)
+    score_gap_f = max(0.0, 1.0 - score_gap / 10.0)
+
+    # Late-arc factor — late in the half raises leverage.
+    late_arc_f = state.outs / 27.0 if state.outs < 27 else 1.0
+
+    # Runner factor — PH / PR weight heavier with runners on; PF lighter.
+    runners = state.runner_count
+    if kind == "pinch_field":
+        runner_f = 0.5    # defense leverage less runner-dependent
+    else:
+        runner_f = (runners + 1) / 4.0
+
+    # Upgrade factor — skill delta in the relevant dimension.
+    if kind == "pinch_hit":
+        delta = float(getattr(candidate, "skill", 0.5)) - float(getattr(out_player, "skill", 0.5))
+    elif kind == "pinch_run":
+        delta = float(getattr(candidate, "speed", 0.5)) - float(getattr(out_player, "speed", 0.5))
+    elif kind == "pinch_field":
+        delta = float(getattr(candidate, "defense", 0.5)) - float(getattr(out_player, "defense", 0.5))
+    else:
+        delta = 0.0
+    # Map delta from [-1, 1] to [0, 1], clipped.
+    upgrade_f = max(0.0, min(1.0, 0.5 + delta))
+
+    # Matchup factor — handedness platoon edge for pinch_hit. Replaces
+    # the inline platoon-pool logic in the legacy should_pinch_hit (Item
+    # 2 follow-up: handedness migrates into the trigger function).
+    matchup_f = 0.5
+    if kind == "pinch_hit":
+        pitcher = state.get_current_pitcher()
+        if pitcher is not None:
+            p_throws = getattr(pitcher, "throws", "") or ""
+            cand_edge = _has_platoon_edge(getattr(candidate,  "bats", "") or "", p_throws)
+            out_edge  = _has_platoon_edge(getattr(out_player, "bats", "") or "", p_throws)
+            if cand_edge and not out_edge:
+                matchup_f = 0.85
+            elif out_edge and not cand_edge:
+                matchup_f = 0.15
+
+    # Combine — equal-weighted average over five factors.
+    score = (score_gap_f + late_arc_f + runner_f + upgrade_f + matchup_f) / 5.0
+    return max(0.0, min(1.0, score))
+
+
+def substitution_threshold(team) -> float:
+    """Convert manager platoon aggression to a substitution threshold.
+
+    The trigger function returns a leverage score in roughly [0.2, 0.9]
+    depending on the spot; a manager fires when that score clears their
+    threshold. Mapped to [0.55, 0.85] across the persona ladder so the
+    different archetypes play visibly differently — not so they hit any
+    particular volume target.
+
+    Persona ladder (validated against 20-game batches at each fixed
+    aggression):
+      0.05  → threshold 0.835 → ~0.03 subs/team/game (a "never subs"
+                                 dead-ball traditionalist)
+      0.50  → threshold 0.700 → ~2.6  subs/team/game (mid-band)
+      0.92  → threshold 0.574 → ~12.5 subs/team/game (platoon manager,
+                                 cycles the bench aggressively)
+
+    Substitutions remain situational throughout — the trigger only fires
+    when the score-gap, late-arc, runner, upgrade, and matchup factors
+    *combine* into enough leverage to clear the threshold. The threshold
+    sets the bar for what each manager considers "enough leverage."
+    """
+    agg = float(getattr(team, "mgr_platoon_aggression", 0.5) or 0.5)
+    return max(0.0, min(1.0, 0.85 - 0.30 * agg))
+
+
+def _log_substitution(
+    state: GameState,
+    *,
+    kind: str,
+    team_id: str,
+    in_player_id: str,
+    out_player_id: str,
+    lineup_index: Optional[int] = None,
+    trigger_score: float = 0.0,
+    reason: str = "",
+) -> None:
+    """Append a Substitution to state.substitution_log and add the
+    outgoing player to the team's one-way exit set.
+
+    Centralized so every substitution path stamps the invariant. Callers
+    that pass an empty out_player_id (e.g., joker insertion where the
+    "out" player is the one whose lineup spot is hijacked for a PA only)
+    skip the one-way enforcement — those callers are responsible for
+    handling re-entry rules themselves.
+    """
+    score_for = state.score.get(team_id, 0)
+    other_id = "home" if team_id == "visitors" else "visitors"
+    score_against = state.score.get(other_id, 0)
+    state.substitution_log.append(Substitution(
+        half=state.half,
+        outs_at_sub=state.outs,
+        kind=kind,
+        team_id=team_id,
+        in_player_id=in_player_id,
+        out_player_id=out_player_id,
+        lineup_index=lineup_index,
+        score_for=int(score_for),
+        score_against=int(score_against),
+        trigger_score=float(trigger_score),
+        reason=reason,
+    ))
+    # One-way enforcement — the outgoing player is gone for the rest of
+    # the game. Look up which team owns them.
+    if out_player_id:
+        for t in (state.visitors, state.home):
+            if t.team_id == team_id:
+                t.substituted_out.add(out_player_id)
+                break
 
 
 # ---------------------------------------------------------------------------
@@ -128,8 +304,6 @@ def pinch_hit(state: GameState, replacement: Player) -> list[str]:
     pos = team.lineup_position % len(team.lineup)
     replaced = team.lineup[pos]
     team.lineup[pos] = replacement
-    # No-reentry: lifted starter is done for the game.
-    team.removed_player_ids.add(replaced.player_id)
     # Inherit the replaced player's fielding slot so the box score has
     # something to render. If the PH later actually plays the field
     # (mid-game, after their PA), they'll be at this position.
@@ -144,6 +318,15 @@ def pinch_hit(state: GameState, replacement: Player) -> list[str]:
         "replacement_id": replacement.player_id,
         "replacement_name": replacement.name,
     })
+    _log_substitution(
+        state,
+        kind="pinch_hit",
+        team_id=team.team_id,
+        in_player_id=replacement.player_id,
+        out_player_id=replaced.player_id,
+        lineup_index=pos,
+        reason="manager_ph",
+    )
     return log
 
 
@@ -228,6 +411,19 @@ def pitching_change(
         "new_pitcher_id": new_pitcher.player_id,
         "new_pitcher_name": new_pitcher.name,
     })
+    # Stamp the one-way invariant on the old pitcher. A pulled arm doesn't
+    # return mid-game (existing pick_new_pitcher already excludes them via
+    # `already_pitched`; this just promotes that to a hard cross-game-state
+    # check so super-innings and Declared Seconds also respect it).
+    if old_pitcher_id:
+        _log_substitution(
+            state,
+            kind="pitching",
+            team_id=state.fielding_team.team_id,
+            in_player_id=new_pitcher.player_id,
+            out_player_id=old_pitcher_id,
+            reason="pitching_change",
+        )
     return log
 
 
@@ -584,6 +780,7 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         and p.player_id != current_id
         and p.player_id not in restricted
         and p.player_id not in already_pitched
+        and fielding.is_available(p.player_id)
     ]
 
     outs = getattr(state, "outs", 0) or 0
@@ -756,23 +953,40 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
     return None
 
 
+def _is_joker(player) -> bool:
+    """True if this player is one of the team's 3 jokers.
+
+    Jokers are a finite tactical resource — 3 per team, fixed
+    pre-game, in `jokers_available` (NOT in the batting order). They
+    can be inserted as a pinch-hitter via batter_override for any PA
+    where they aren't currently on base, but they CANNOT be subbed
+    out (pulled from the joker pool or pinch-run for when on base).
+    This helper is the single source of truth for that check.
+    """
+    if player is None:
+        return False
+    return (getattr(player, "roster_slot", "") == "joker"
+            or getattr(player, "game_position", "") == "J")
+
+
 def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
-    """Manager-tendency-driven pinch hit decision.
+    """Pinch-hit decision routed through the unified leverage trigger.
 
-    Sends up a permanent replacement for the scheduled batter when the
-    situation is high-leverage AND the replacement materially upgrades the
-    spot. Two upgrade paths:
+    Item 4 migration: the old multi-path logic (skill upgrade + platoon
+    upgrade, separate probability rolls) collapses to a single decision:
 
-      * Skill upgrade — bench bat is meaningfully better than the scheduled
-        hitter (covers the classic "weak hitter, big spot" case).
-      * Platoon upgrade — bench bat has the platoon advantage vs the current
-        pitcher and the scheduled batter does not. Gated by the manager's
-        platoon_aggression so a dead-ball traditionalist won't swap for
-        platoon reasons but a bullpen-innovator-coded skipper will.
+      1. Build the candidate pool (bench bats, available, hit-capable).
+      2. Score each via score_substitution(kind="pinch_hit").
+      3. Pick the best and fire iff score >= substitution_threshold(team).
 
-    The decision is also gated by mgr_pinch_hit_aggression: a passive
-    skipper barely uses the bench; an aggressive one will spend bench bats
-    in the middle of close games.
+    The handedness/platoon advantage is now baked into the matchup
+    factor of score_substitution. The persona-derived threshold absorbs
+    the legacy probability rolls.
+
+    Jokers are NOT in the batting order — they live in jokers_available
+    as a tactical pinch-hit pool. The current_batter at any PA is one
+    of the 9 lineup spots (8 fielders + SP), so this function never
+    targets a joker as the out_player.
     """
     if state.is_super_inning:
         return None
@@ -780,132 +994,36 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     batter = state.current_batter
     team   = state.batting_team
 
-    # Only consider a pinch hit when the spot is non-trivial — the manager
-    # shouldn't burn a bench bat in a 9-run blowout. "Meaningful spot"
-    # means runners on, OR within striking range mid-to-late, OR late in
-    # a tight game (last third of the half).
-    score_diff = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
-    runners_on = bool(state.runners_on_base)
-    midgame    = state.outs >= 12           # past the second arc
-    late       = state.outs >= 18           # last third of the half
-    tight      = score_diff <= cfg.PINCH_HIT_SCORE_DIFF_MAX
-    if not (runners_on or (tight and midgame) or late):
-        return None
-    # In blowouts past the midgame mark, still let the trailing team try
-    # to start a rally — but only with runners on or in the last third.
-    if score_diff > cfg.PINCH_HIT_SCORE_DIFF_MAX + 3 and not late and not runners_on:
-        return None
-
-    # Signed score from the batting team's perspective — needed to tell
-    # "trailing late, need a homer" from "ahead late, working a count."
-    bat_role = "visitors" if state.half in ("top", "super_top") else "home"
-    fld_role = "home" if bat_role == "visitors" else "visitors"
-    trail_runs = state.score.get(fld_role, 0) - state.score.get(bat_role, 0)
-
-    # Tendency gates. mgr_pinch_hit_aggression scales the per-spot trigger
-    # probability; mgr_leverage_aware sharpens the response when the score
-    # is close. A neutral manager (0.5) fires in maybe 20% of qualifying
-    # spots; an aggressive one (0.9) fires in ~50%.
-    ph_agg  = float(getattr(team, "mgr_pinch_hit_aggression", 0.5))
-    lev_aw  = float(getattr(team, "mgr_leverage_aware", 0.5))
-    plat_ag = float(getattr(team, "mgr_platoon_aggression", 0.5))
-    # Per-spot fire rate. A neutral skipper (0.5) fires ~40% of
-    # qualifying spots; an aggressive one (0.9) ~70%.
-    base_p  = 0.15 + 0.60 * ph_agg
-    if tight:
-        base_p += 0.15 * lev_aw
-    if late and tight:
-        base_p += 0.10
-    base_p = max(0.0, min(0.85, base_p))
-
     # Candidate pool: non-pitchers on the roster who aren't already in the
-    # lineup AND haven't been removed earlier in the game (no-reentry).
+    # lineup AND haven't been subbed out earlier in the game (one-way
+    # invariant — pinch hitters can't pinch-hit a second time). Jokers
+    # are EXCLUDED — they're a separate tactical pool deployed only via
+    # the joker insertion mechanic (batter_override), not as regular
+    # pinch hitters.
     lineup_ids = {p.player_id for p in team.lineup}
-    removed = getattr(team, "removed_player_ids", set())
     candidates = [
         p for p in team.roster
         if not p.is_pitcher
         and p.player_id not in lineup_ids
-        and p.player_id not in removed
+        and team.is_available(p.player_id)
+        and not _is_joker(p)
+        and bool(getattr(p, "role_hit", True))
     ]
     if not candidates:
         return None
 
-    pitcher = state.get_current_pitcher()
-    p_throws = (getattr(pitcher, "throws", "") or "") if pitcher else ""
+    threshold = substitution_threshold(team)
+    best_score = 0.0
+    best_cand: Optional[Player] = None
+    for cand in candidates:
+        s = score_substitution(state, cand, "pinch_hit", batter)
+        if s > best_score:
+            best_score = s
+            best_cand = cand
 
-    def _has_platoon_edge(player) -> bool:
-        if not p_throws:
-            return False
-        b = (getattr(player, "bats", "") or "")
-        if not b:
-            return False
-        # Switch hitters always have the platoon advantage.
-        if b == "S":
-            return True
-        # Opposite-handed batter vs pitcher = platoon edge.
-        return b != p_throws
-
-    def _archetype_bonus(p) -> float:
-        """Situational nudge on top of skill for bench-bat selection.
-
-        Power archetypes get a bump when trailing late (need a homer);
-        contact archetypes get a smaller bump with runners in scoring
-        position. Bonuses are deliberately smaller than the skill-edge
-        gate (cfg.PINCH_HIT_SKILL_EDGE) so a worse hitter doesn't beat
-        a meaningfully better one — they only break near-ties.
-        """
-        a = (getattr(p, "archetype", "") or "")
-        if not a:
-            return 0.0
-        bonus = 0.0
-        if late and trail_runs >= 2 and runners_on:
-            if a in ("Slugger", "Power-Hitting Corner"):
-                bonus += 0.08
-        if tight and runners_on:
-            if a in ("Contact Hitter", "Five-Tool Star"):
-                bonus += 0.06
-        return bonus
-
-    # Skill upgrade pick.
-    skill_best = max(candidates, key=lambda p: p.skill + _archetype_bonus(p))
-    skill_edge = skill_best.skill - batter.skill
-
-    # Platoon upgrade pick: best bench bat with the edge, when the current
-    # batter doesn't already have it.
-    cur_has_edge = _has_platoon_edge(batter)
-    platoon_pool = [c for c in candidates if _has_platoon_edge(c)]
-    platoon_best = (
-        max(platoon_pool, key=lambda p: p.skill) if platoon_pool else None
-    )
-
-    # Decide which upgrade path (if any) clears the bar.
-    use_skill   = skill_edge >= cfg.PINCH_HIT_SKILL_EDGE
-    use_platoon = (
-        platoon_best is not None
-        and not cur_has_edge
-        and plat_ag >= 0.45
-        and (platoon_best.skill + 0.05) >= batter.skill - cfg.PINCH_HIT_SKILL_EDGE
-    )
-    if not (use_skill or use_platoon):
+    if best_cand is None or best_score < threshold:
         return None
-
-    # Roll against the tendency-scaled probability. Falls through silently
-    # most of the time even when an upgrade exists, so a single bench bat
-    # isn't burned on the first eligible spot.
-    if rng is None:
-        import random as _r
-        roll = _r.random()
-    else:
-        roll = rng.random()
-    if roll >= base_p:
-        return None
-
-    # Prefer the platoon edge for a platoon-aggressive skipper, otherwise
-    # the skill upgrade.
-    if use_platoon and (not use_skill or plat_ag >= 0.7):
-        return platoon_best
-    return skill_best
+    return best_cand
 
 
 def defensive_sub(
@@ -931,11 +1049,6 @@ def defensive_sub(
         return [f"  [MANAGER ERROR] {player_out.name} not in fielding lineup."]
     idx = fielding.lineup.index(player_out)
     fielding.lineup[idx] = player_in
-    fielding.removed_player_ids.add(player_out.player_id)
-    # Replacement inherits the position they're taking over, so the box
-    # score shows the right slot label.
-    if getattr(player_out, "game_position", ""):
-        player_in.game_position = player_out.game_position
     log = [
         f"  DEFENSIVE SUB: {player_in.name} replaces {player_out.name} "
         f"in the field (and takes their lineup slot)."
@@ -945,8 +1058,16 @@ def defensive_sub(
         "team_id": fielding.team_id,
         "out_id":  player_out.player_id,
         "in_id":   player_in.player_id,
-        "in_name": player_in.name,
     })
+    _log_substitution(
+        state,
+        kind="pinch_field",
+        team_id=fielding.team_id,
+        in_player_id=player_in.player_id,
+        out_player_id=player_out.player_id,
+        lineup_index=idx,
+        reason="defensive_sub",
+    )
     return log
 
 
@@ -970,16 +1091,6 @@ def pinch_run(state: GameState, base_idx: int, runner_in: Player) -> list[str]:
     if out_player is not None and out_player in batting.lineup:
         idx = batting.lineup.index(out_player)
         batting.lineup[idx] = runner_in
-    # No-reentry: original runner is done. Even if the lineup cycles
-    # back around to that slot, the PR is the one batting — never the
-    # lifted player.
-    batting.removed_player_ids.add(out_id)
-    # PR who later takes the field inherits the lifted player's slot so
-    # the box score has a concrete position to fall back on if/when the
-    # lineup cycles around and they actually bat.
-    if out_player is not None and getattr(out_player, "game_position", ""):
-        if not getattr(runner_in, "game_position", ""):
-            runner_in.game_position = out_player.game_position
     state.bases[base_idx] = runner_in.player_id
     out_name = out_player.name if out_player else out_id
     log = [f"  PINCH RUN: {runner_in.name} replaces {out_name} at "
@@ -991,72 +1102,85 @@ def pinch_run(state: GameState, base_idx: int, runner_in: Player) -> list[str]:
         "out_id":  out_id,
         "base_idx": base_idx,
     })
+    _log_substitution(
+        state,
+        kind="pinch_run",
+        team_id=batting.team_id,
+        in_player_id=runner_in.player_id,
+        out_player_id=out_id,
+        reason="pinch_runner",
+    )
     return log
 
 
 def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
-    """Late-game pinch-runner check. Conservative gate: only fires when
-    the score is close, an inning of work remains, and the runner on
-    base is meaningfully slower than the available bench's best speed.
+    """Pinch-runner decision routed through the unified leverage trigger.
+
+    Item 4 migration: the old "late + close + slow runner + fast bench"
+    multi-gate logic collapses into a single score_substitution call
+    against the slowest baserunner. Critical structural gates preserved:
+
+      - Must be on-base (PR is by definition a baserunner swap).
+      - No PR in super-innings.
+
+    Score factors via score_substitution(kind="pinch_run") capture the
+    leverage gates: late_arc_f handles "late game", score_gap_f handles
+    "close game", upgrade_f handles the speed delta.
 
     Returns {'base_idx': int, 'runner_in': Player} or None.
     """
     if state.is_super_inning:
         return None
-    # Late-game leverage. Lowered from 18 outs to 15 — the back-half of
-    # the half-of-baseball is fair game when the score is close.
-    fielding_outs = state.outs
-    if fielding_outs < 15:
-        return None
-    # Score close — within 2 runs either way (widened from 1 — managers
-    # do PR for a tying or go-ahead run, not just walk-off setups).
-    bat_role = "visitors" if state.half in ("top", "super_top") else "home"
-    fld_role = "home" if bat_role == "visitors" else "visitors"
-    score_diff = state.score.get(bat_role, 0) - state.score.get(fld_role, 0)
-    if abs(score_diff) > 2:
-        return None
+
     batting = state.batting_team
-    # Pick the slowest runner on base as the candidate.
-    cand_idx = None
-    cand_speed = 1.0
+    # PR requires a runner on base — the brief explicitly scopes PR to
+    # on-base situations.
+    if not any(b is not None for b in state.bases):
+        return None
+
+    # Pick the slowest runner on base as the candidate-to-replace.
+    # Jokers fill the DH role and can't be subbed — skip them when
+    # they're on base; the manager has to live with the joker's speed.
+    out_idx = None
+    out_runner: Optional[Player] = None
+    slowest_speed = 1.0
     for i, pid in enumerate(state.bases):
         if pid is None:
             continue
         p = batting.get_player(pid) if hasattr(batting, "get_player") else None
-        if p is None:
+        if p is None or _is_joker(p):
             continue
         s = float(getattr(p, "speed", 0.5) or 0.5)
-        if s < cand_speed:
-            cand_speed = s
-            cand_idx = i
-    # Speed gate widened from 0.40 → 0.45 so genuinely slow runners
-    # qualify (was excluding mid-pack runners who'd still benefit from
-    # a PR with elite wheels).
-    if cand_idx is None or cand_speed >= 0.45:
+        if s < slowest_speed:
+            slowest_speed = s
+            out_idx = i
+            out_runner = p
+    if out_runner is None:
         return None
-    # Find the fastest available bench bat (not in current lineup, not a
-    # joker, not already lifted earlier — no-reentry).
+
+    # Bench candidates — non-pitchers not in lineup, not jokers, available.
     in_lineup = set(p.player_id for p in batting.lineup)
-    removed = getattr(batting, "removed_player_ids", set())
+    joker_ids = {j.player_id for j in batting.jokers_available}
     bench_pool = [p for p in batting.roster
                   if p.player_id not in in_lineup
-                  and p.player_id not in removed
                   and not getattr(p, "is_pitcher", False)
-                  and p.player_id not in {j.player_id for j in batting.jokers_available}]
+                  and p.player_id not in joker_ids
+                  and batting.is_available(p.player_id)]
     if not bench_pool:
         return None
-    bench_pool.sort(key=lambda p: -float(getattr(p, "speed", 0.5) or 0.5))
-    runner_in = bench_pool[0]
-    # Required speed delta (+0.15): a 0.30→0.45 speed swap is meaningful
-    # and worth burning a roster spot for.
-    if float(getattr(runner_in, "speed", 0.5) or 0.5) <= cand_speed + 0.15:
+
+    threshold = substitution_threshold(batting)
+    best_score = 0.0
+    best_cand: Optional[Player] = None
+    for cand in bench_pool:
+        s = score_substitution(state, cand, "pinch_run", out_runner)
+        if s > best_score:
+            best_score = s
+            best_cand = cand
+
+    if best_cand is None or best_score < threshold:
         return None
-    # Probabilistic fire — manager run-game tendency biases the rate.
-    p_fire = 0.35 + (float(getattr(batting, "mgr_run_game", 0.5) or 0.5) - 0.5) * 0.40
-    rng = rng or _local_rng()
-    if rng.random() >= p_fire:
-        return None
-    return {"base_idx": cand_idx, "runner_in": runner_in}
+    return {"base_idx": out_idx, "runner_in": best_cand}
 
 
 def joker_to_field(state: GameState, joker: Player, player_out: Player) -> list[str]:
@@ -1075,7 +1199,6 @@ def joker_to_field(state: GameState, joker: Player, player_out: Player) -> list[
         return [f"  [JOKER FIELD ERROR] {player_out.name} not in lineup."]
     idx = fielding.lineup.index(player_out)
     fielding.lineup[idx] = joker
-    fielding.removed_player_ids.add(player_out.player_id)
     fielding.jokers_available = [
         j for j in fielding.jokers_available if j.player_id != joker.player_id
     ]
@@ -1095,6 +1218,15 @@ def joker_to_field(state: GameState, joker: Player, player_out: Player) -> list[
         "out_id":    player_out.player_id,
         "position":  out_pos,
     })
+    _log_substitution(
+        state,
+        kind="joker",
+        team_id=fielding.team_id,
+        in_player_id=joker.player_id,
+        out_player_id=player_out.player_id,
+        lineup_index=idx,
+        reason="joker_to_field",
+    )
     return log
 
 
@@ -1169,64 +1301,31 @@ def _local_rng():
 
 
 def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
-    """Tactical defensive substitution by the FIELDING team's manager.
+    """Defensive substitution by the FIELDING team — routed through the
+    unified leverage trigger.
 
-    O27's structure (one 27-out half per team) lets a manager bank
-    offense early, then swap weak-defense bats out for defensive
-    specialists who'll cover the rest of the fielding half. The road
-    team's classic version: bat power up top, then load the field
-    with glove-first guys for the bottom half — those guys won't bat
-    again unless the game goes to a super-inning.
+    Item 4 migration: the legacy "prob roll scaled by mgr_bench_usage +
+    static 0.05 defense-edge" path collapses to per-candidate scoring
+    against the worst-defense fielder. Critical structural gates kept:
 
-    Conditions:
-      - Regulation half, not super-inning.
-      - We've banked some defense already (state.outs >= 6) so this
-        isn't a first-batter overreaction.
-      - The fielding team has a meaningfully-better-defense bench bat
-        available (not in the current lineup).
+      - Regulation half only (no super-innings).
+      - state.outs >= 6 so this isn't a first-batter overreaction.
+      - Catchers and DHs are protected (catcher arm is stamped on the
+        team; DH has no defensive slot to upgrade).
 
-    No hard cap on subs per game — real teams cycle through the bench,
-    and O27's continuous-half structure creates more spots, not fewer.
-    The mechanic naturally throttles itself: each successful sub
-    removes a bench bat from the candidate pool, and the worst-defense
-    starter changes dynamically as the lineup shifts.
-
-    Probability scales with mgr_bench_usage. A 0.5 manager fires this
-    around 1.5% per opportunity check; a 0.9 manager around 4%. Over
-    a 27-out half that's roughly 0.5–2 subs per team per game for
-    average managers, more for aggressive ones.
+    Returns {'player_out': Player, 'player_in': Player} or None.
     """
     if state.is_super_inning:
         return None
-    # Drop the early-game lockout from 6 to 3 outs — O27 halves are 27
-    # outs of continuous defense, so the "give it a few PAs before
-    # swapping" instinct from 9-inning baseball is too conservative.
-    # Once we're past the first arc, the manager is free to start using
-    # the bench.
-    if state.outs < 3:
+    if state.outs < 6:
         return None
 
     fielding = state.fielding_team
 
-    bench_usage = float(getattr(fielding, "mgr_bench_usage", 0.5))
-    # Per-opportunity fire rate. O27 design intent: with 27 outs per half
-    # and no inning breaks for the defense, fielders are under sustained
-    # workload — and expanded rosters were sized specifically so teams
-    # could lean on defensive specialists for big chunks of the
-    # second/third arcs. Neutral skipper (0.5) checks fire at 10% per
-    # opportunity; an aggressive bench-user (0.9) at 14%.
-    p = 0.05 + 0.10 * bench_usage
-    if rng is None:
-        import random as _r
-        roll = _r.random()
-    else:
-        roll = rng.random()
-    if roll >= p:
-        return None
-
-    # Find the worst-defense lineup player (excluding pitcher and catcher;
-    # catcher swaps need different handling because the catcher arm rating
-    # is stamped on the team).
+    # Identify the weakest-defense lineup spot (the candidate to-replace).
+    # Excluded: pitchers (the catcher_arm is stamped on the team so a
+    # catcher swap needs its own handling). Jokers aren't in the
+    # batting lineup so they don't appear here.
     lineup = list(fielding.lineup)
     candidates_out = [
         pl for pl in lineup
@@ -1241,97 +1340,59 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     )
 
     # Bench candidates: roster non-pitchers not currently in the lineup
-    # and not already removed earlier in the game.
+    # AND not already substituted out. Jokers excluded — they're a
+    # separate tactical pool, not defensive replacements.
     lineup_ids = {pl.player_id for pl in lineup}
-    removed = getattr(fielding, "removed_player_ids", set())
     bench = [
         pl for pl in fielding.roster
         if not pl.is_pitcher
         and pl.player_id not in lineup_ids
-        and pl.player_id not in removed
+        and fielding.is_available(pl.player_id)
+        and not _is_joker(pl)
     ]
     if not bench:
         return None
 
-    def _defense_score(pl) -> float:
-        """Defense plus a small archetype nudge so glove-first identities
-        win near-ties over generic bench bats."""
-        base = float(getattr(pl, "defense", 0.5) or 0.5)
-        a = (getattr(pl, "archetype", "") or "")
-        if a == "Defensive Specialist":
-            base += 0.06
-        elif a == "Utility Infielder":
-            base += 0.04
-        return base
+    threshold = substitution_threshold(fielding)
+    best_score = 0.0
+    best_cand: Optional[Player] = None
+    for cand in bench:
+        s = score_substitution(state, cand, "pinch_field", worst)
+        if s > best_score:
+            best_score = s
+            best_cand = cand
 
-    best = max(bench, key=_defense_score)
-
-    # Edge threshold: 0.03 (lowered from 0.05). The original mirrored the
-    # pinch-hit skill-edge gate, but defense and offense aren't symmetric
-    # in O27 — even small glove upgrades compound across the long
-    # second/third arc, so a wider net of swaps is intended.
-    edge = (float(getattr(best,  "defense", 0.5) or 0.5)
-          - float(getattr(worst, "defense", 0.5) or 0.5))
-    if edge < 0.03:
+    if best_cand is None or best_score < threshold:
         return None
-
-    return {"player_out": worst, "player_in": best}
+    return {"player_out": worst, "player_in": best_cand}
 
 
 def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Player]:
-    """Mid-batting-half tactical swap: pull the current scheduled batter
-    after they've banked a PA, bring in a defensive specialist who'll
-    cover the rest of the team's fielding half.
+    """Mid-batting-half offensive→defensive swap — routed through the
+    unified leverage trigger.
 
-    O27-specific tactic — only meaningful for whichever team bats FIRST,
-    since they still have a fielding stint ahead. Symmetric by role:
-    fires for visitors when visitors bat first, fires for home when
-    home bats first. The team batting second has already fielded by the
-    time they're at the plate, so there's no defense to lock in.
+    Pulls the current scheduled batter after they've banked a PA and
+    brings in a defensive specialist who'll cover the rest of the
+    team's fielding half. O27-specific tactic: only meaningful for
+    whichever team bats FIRST.
 
-    Conditions:
-      - Regulation half (no super-innings).
-      - state.half == "top" — visitors batting, will field next.
-      - Lineup has cycled at least once (cycle_number >= 1) so the
-        slugger has already had at least one AB to bank.
-      - Current batter has notably worse defense than the best bench bat.
-
-    No hard cap — the candidate pool naturally depletes as bench bats
-    enter the lineup. Probability scales 0.5% .. 4.5% with
-    mgr_bench_usage. Sluggish skippers basically never do this;
-    aggressive ones cycle multiple gloves in across the back half of
-    their batting block.
+    Critical structural gates kept:
+      - Regulation half only.
+      - Only the first-batting team fires this (they still field).
+      - Lineup must have cycled at least once.
+      - Batter can't be a pitcher.
 
     Returns the replacement Player or None. Caller wraps in a
-    tactical_def_swap event (logged separately from leverage-driven
-    pinch hits for stat-tracking purposes).
+    tactical_def_swap event.
     """
     if state.is_super_inning:
         return None
-    # Symmetric by role: fires for the FIRST-batting team during their
-    # batting half — they're the ones who still have a fielding stint
-    # ahead. The old `state.half != "top"` restriction was the cricket
-    # assumption "visitors bat first then field", but with the bat-order
-    # decision now near-coin-flip that gate would silently only ever fire
-    # for visitors (= a hidden home advantage worth ~0.5 R/g of the gap
-    # in 300-game samples). first_batting_team is set by run_game before
-    # the first half starts.
     if (state.first_batting_team is None
             or state.batting_team is not state.first_batting_team):
         return None
 
     team = state.batting_team
     if team.lineup_cycle_number < 1:
-        return None
-
-    bench_usage = float(getattr(team, "mgr_bench_usage", 0.5))
-    p = 0.005 + 0.040 * bench_usage   # 0.5% .. 4.5% per PA past first cycle
-    if rng is None:
-        import random as _r
-        roll = _r.random()
-    else:
-        roll = rng.random()
-    if roll >= p:
         return None
 
     batter = state.current_batter
@@ -1341,16 +1402,26 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
     lineup_ids = {pl.player_id for pl in team.lineup}
     bench = [
         pl for pl in team.roster
-        if not pl.is_pitcher and pl.player_id not in lineup_ids
+        if not pl.is_pitcher
+        and pl.player_id not in lineup_ids
+        and team.is_available(pl.player_id)
+        and not _is_joker(pl)
     ]
     if not bench:
         return None
-    best = max(bench, key=lambda pl: float(getattr(pl, "defense", 0.5) or 0.5))
-    edge = (float(getattr(best,   "defense", 0.5) or 0.5)
-          - float(getattr(batter, "defense", 0.5) or 0.5))
-    if edge < 0.05:
+
+    threshold = substitution_threshold(team)
+    best_score = 0.0
+    best_cand: Optional[Player] = None
+    for cand in bench:
+        s = score_substitution(state, cand, "pinch_field", batter)
+        if s > best_score:
+            best_score = s
+            best_cand = cand
+
+    if best_cand is None or best_score < threshold:
         return None
-    return best
+    return best_cand
 
 
 def should_bunt(state: GameState, rng=None) -> Optional[dict]:

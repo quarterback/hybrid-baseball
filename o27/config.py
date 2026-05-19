@@ -806,7 +806,7 @@ JOKER_MAX_PER_HALF: int     = 9     # cap: JOKERS_PER_ARCHETYPE(3) × archetypes
 # Manager heuristics — pinch hit (fallback when jokers exhausted)
 # ---------------------------------------------------------------------------
 
-PINCH_HIT_SCORE_DIFF_MAX: int  = 3     # PH "tight" gate — games within 3 runs
+PINCH_HIT_SCORE_DIFF_MAX: int  = 1     # only PH in very tight games
 PINCH_HIT_SKILL_EDGE: float    = 0.05  # replacement must be this much better
 
 # ===========================================================================

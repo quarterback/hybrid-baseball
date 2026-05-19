@@ -1060,85 +1060,105 @@ class Renderer:
                 rs.entry_type = "PH"
                 if replaced is not None:
                     rs.replaced_player_id = str(replaced.player_id)
-                # Inning = outs // 3 + 1 (O27 half = 27 outs → innings 1..9).
-                # Stamp only on first entry — guards against any future
-                # re-entry attempt overwriting the original inning.
+                # Inning = state.outs // 3 + 1. Stamped only on first
+                # entry (no-reentry — preserves original inning).
                 if not rs.entered_inning:
                     rs.entered_inning = state_after.outs // 3 + 1
 
-        elif etype == "joker_inserted":
+        elif etype in ("joker_inserted", "joker_insertion"):
             # Joker entered for one PA. They get game_position="J" elsewhere;
             # here we mark entry_type so the box score can group them.
-            joker_id = event.get("joker_id")
-            joker_name = event.get("joker_name", "")
+            #
+            # The provider emits {"type": "joker_insertion", "joker": Player};
+            # the engine's insert_joker also appends a "joker_inserted" event
+            # to state.events with joker_id/joker_name keys. Handle both
+            # shapes here for back-compat.
+            joker = event.get("joker")
             inning = state_after.outs // 3 + 1
-            if joker_id and joker_id in self._batter_stats:
-                js = self._batter_stats[joker_id]
-                js.entry_type = "joker"
-                if not js.entered_inning:
-                    js.entered_inning = inning
-            elif joker_id:
-                self._batter_stats[joker_id] = BatterStats(
-                    player_id=str(joker_id), name=joker_name,
-                    entry_type="joker", entered_inning=inning,
-                )
+            if joker is not None:
+                stats_obj = self._get_stats(joker)
+                stats_obj.entry_type = "joker"
+                if not stats_obj.entered_inning:
+                    stats_obj.entered_inning = inning
+            else:
+                joker_id = event.get("joker_id")
+                joker_name = event.get("joker_name", "")
+                if joker_id and joker_id in self._batter_stats:
+                    js = self._batter_stats[joker_id]
+                    js.entry_type = "joker"
+                    if not js.entered_inning:
+                        js.entered_inning = inning
+                elif joker_id:
+                    self._batter_stats[joker_id] = BatterStats(
+                        player_id=str(joker_id), name=joker_name,
+                        entry_type="joker", entered_inning=inning,
+                    )
 
         elif etype == "defensive_sub":
             # Mid-game defensive substitution. The substitute takes the
             # outgoing player's lineup slot — they may bat later. Mark them
             # with entry_type="DEF" so the box score indents them under the
             # player they replaced.
-            # The provider event carries Player objects (player_in /
-            # player_out); the manager's emitted state.events entry has
-            # in_id / out_id. Accept either shape.
-            p_in  = event.get("player_in")
-            p_out = event.get("player_out")
-            in_id  = event.get("in_id")  or (p_in.player_id  if p_in  else None)
-            out_id = event.get("out_id") or (p_out.player_id if p_out else None)
-            in_name = event.get("in_name", "") or (p_in.name if p_in else "")
-            inning = state_after.outs // 3 + 1
-            if in_id is not None:
-                stats_obj = self._batter_stats.get(in_id) or BatterStats(
-                    player_id=str(in_id), name=in_name
-                )
+            #
+            # The provider intent emits Player objects under
+            # `player_in` / `player_out`. (state.events later carries an
+            # `in_id` / `out_id` form, but the renderer sees the provider
+            # intent — those keys are unused here.)
+            player_in  = event.get("player_in")
+            player_out = event.get("player_out")
+            if player_in is not None:
+                stats_obj = self._get_stats(player_in)
                 stats_obj.entry_type = "DEF"
-                if out_id is not None:
-                    stats_obj.replaced_player_id = str(out_id)
+                if player_out is not None:
+                    stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
-                    stats_obj.entered_inning = inning
-                self._batter_stats[in_id] = stats_obj
+                    stats_obj.entered_inning = state_after.outs // 3 + 1
 
         elif etype == "pinch_runner":
-            # Pinch runner takes over for `out_id` on the basepaths. They
+            # Pinch runner takes over for the runner on `base_idx`. They
             # don't get a PA/AB unless they later come up to bat (their
             # lineup slot replaces the outgoing player). For box-score
             # purposes mark with entry_type="PR".
-            # Provider event has `runner_in` (Player) + `base_idx`; the
-            # manager's emitted state.events entry has in_id / out_id.
+            #
+            # Provider intent: {runner_in: Player, base_idx: int}. The
+            # outgoing player is whoever held `base_idx` BEFORE the sub —
+            # we read it off state_after.bases (the engine already
+            # advanced it to runner_in.player_id, so we recover the
+            # outgoing id by inspecting the substitution_log).
             runner_in = event.get("runner_in")
-            in_id  = event.get("in_id")  or (runner_in.player_id if runner_in else None)
-            in_name = event.get("in_name", "") or (runner_in.name if runner_in else "")
-            # Replaced runner's id: by the time the renderer runs, the
-            # state's bases have already been mutated (the PR is on base
-            # now). Read the original out_id from ctx["bases_list"], which
-            # captures bases as they were when the event provider returned.
-            out_id = event.get("out_id")
-            if out_id is None:
-                bi = event.get("base_idx")
-                bases_before = ctx.get("bases_list") or []
-                if bi is not None and 0 <= bi < len(bases_before):
-                    out_id = bases_before[bi]
-            inning = state_after.outs // 3 + 1
-            if in_id is not None:
-                stats_obj = self._batter_stats.get(in_id) or BatterStats(
-                    player_id=str(in_id), name=in_name
-                )
+            base_idx  = event.get("base_idx")
+            if runner_in is not None:
+                stats_obj = self._get_stats(runner_in)
                 stats_obj.entry_type = "PR"
-                if out_id is not None:
-                    stats_obj.replaced_player_id = str(out_id)
                 if not stats_obj.entered_inning:
-                    stats_obj.entered_inning = inning
-                self._batter_stats[in_id] = stats_obj
+                    stats_obj.entered_inning = state_after.outs // 3 + 1
+                # Recover the replaced runner from the just-appended
+                # substitution_log entry — keyed on this in_player_id.
+                log = getattr(state_after, "substitution_log", None) or []
+                for rec in reversed(log):
+                    if (rec.kind == "pinch_run"
+                            and rec.in_player_id == runner_in.player_id):
+                        stats_obj.replaced_player_id = str(rec.out_player_id)
+                        break
+
+        elif etype == "tactical_def_swap":
+            # Mid-batting-half offensive→defensive swap. Reuses pinch_hit
+            # semantics in the engine but is logged separately so the box
+            # score can distinguish a leverage-driven PH from a strategic
+            # def-swap. Provider intent: {replacement: Player}; the
+            # outgoing player is the current scheduled batter (same as
+            # pinch_hit). Mark entry_type="DEF" so the row reads as a
+            # defensive insertion rather than a PH.
+            replacement = event.get("replacement")
+            if replacement is not None:
+                stats_obj = self._get_stats(replacement)
+                # tactical_def_swap is a defensive intent; the player is
+                # in the lineup permanently from here on, just like PH,
+                # but tagged DEF for the box-score's purposes.
+                if stats_obj.entry_type in ("", "starter"):
+                    stats_obj.entry_type = "DEF"
+                if not stats_obj.entered_inning:
+                    stats_obj.entered_inning = state_after.outs // 3 + 1
 
         elif etype == "declaration":
             # Declared Seconds — surface a play-by-play line via the template.
@@ -1159,24 +1179,17 @@ class Renderer:
             # joker with entry_type="joker_field" so the box score lists
             # them with the position they took, separately from the
             # tactical-PH joker pool.
-            # Provider event carries Player objects (joker / player_out);
-            # the manager's emitted state.events entry has joker_id / out_id.
-            joker = event.get("joker")
-            p_out = event.get("player_out")
-            joker_id = event.get("joker_id") or (joker.player_id if joker else None)
-            joker_name = event.get("joker_name", "") or (joker.name if joker else "")
-            out_id = event.get("out_id") or (p_out.player_id if p_out else None)
-            inning = state_after.outs // 3 + 1
-            if joker_id is not None:
-                stats_obj = self._batter_stats.get(joker_id) or BatterStats(
-                    player_id=str(joker_id), name=joker_name
-                )
+            #
+            # Provider intent: {joker: Player, player_out: Player}.
+            joker      = event.get("joker")
+            player_out = event.get("player_out")
+            if joker is not None:
+                stats_obj = self._get_stats(joker)
                 stats_obj.entry_type = "joker_field"
-                if out_id is not None:
-                    stats_obj.replaced_player_id = str(out_id)
+                if player_out is not None:
+                    stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
-                    stats_obj.entered_inning = inning
-                self._batter_stats[joker_id] = stats_obj
+                    stats_obj.entered_inning = state_after.outs // 3 + 1
 
         return d
 

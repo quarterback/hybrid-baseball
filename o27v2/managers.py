@@ -5,16 +5,29 @@ Each team is assigned a manager when the league is seeded. Managers are
 re-rolled on every reseed (a different rng_seed produces a different set of
 managers — they are NOT bound to the franchise).
 
-A baker's-dozen archetypes span eras and styles, from 1900s dead-ball
-purists who'd let a starter throw 180 pitches, through 1970s iron managers,
+The archetype set spans eras and styles, from 1900s dead-ball purists
+who'd let a starter throw 180 pitches, through 1970s iron managers,
 mid-2000s LaRussa-style bullpen specialists, and modern Rays-coded
 analytics shops that open with a reliever and never platoon the same way
-twice. The intra-archetype noise band is intentionally wide (0.22 by
-default, 0.30+ for the unorthodox personas) so two managers nominally
-sharing the same key still routinely diverge enough that the league
-produces visibly weird seasons -- a "set-and-forget" who happens to roll
-high on run_game, an old-school skipper with surprising bullpen aggression,
-and so on.
+twice. Two newer entries -- `platoon_manager` and `special_teams` --
+sit on top of the substitution economy the O27 phase-split mechanic
+enables (see Plan: Manager Policy Layer). The intra-archetype noise band
+is intentionally wide (0.22 by default, 0.30+ for the unorthodox
+personas) so two managers nominally sharing the same key still routinely
+diverge enough that the league produces visibly weird seasons -- a
+"set-and-forget" who happens to roll high on run_game, an old-school
+skipper with surprising bullpen aggression, and so on.
+
+Manager type vs. platoon-aggressiveness rating are separate axes.
+The archetype key (manager_archetype column) expresses substitution
+*philosophy and structure* -- how a manager builds and deploys the
+roster. The `platoon_aggression` field expresses *frequency / trigger
+threshold* on the universal substitution-trigger evaluation. The two
+new types both carry the universal rating like every other archetype;
+their type shapes deployment beyond what the knob alone does (the
+platoon manager runs the standard sub toolkit heavily; the special-
+teams manager builds two near-disjoint units and swaps them wholesale
+at the offense/defense phase transition).
 
 Tendencies are floats in [0.0, 1.0]:
   quick_hook            propensity to pull a pitcher who's getting tagged
@@ -27,9 +40,14 @@ Tendencies are floats in [0.0, 1.0]:
   pinch_hit_aggression  willingness to permanently pinch-hit for a weak
                         bat in a leverage spot (separate mechanic from
                         the per-cycle joker insertion).
-  platoon_aggression    bias toward LHB-vs-RHP / RHB-vs-LHP matchups via
-                        late-game pinch hitters (consumes pinch_hit budget
-                        but with a platoon target instead of a skill upgrade).
+  platoon_aggression    today: bias toward LHB-vs-RHP / RHB-vs-LHP
+                        matchups via late-game pinch hitters (consumes
+                        pinch_hit budget but with a platoon target instead
+                        of a skill upgrade). Slated to broaden into the
+                        universal substitution-trigger threshold as the
+                        platoon/substitution subsystem lands; handedness
+                        matchup biasing folds in as one factor of the
+                        unified trigger evaluation.
   run_game              SB attempt rate, hit-and-run aggression. High
                         managers will run with average speed; low managers
                         only run with elite speed.
@@ -42,7 +60,11 @@ Tendencies are floats in [0.0, 1.0]:
 The first four ship live as decision biases today. pinch_hit_aggression,
 platoon_aggression, and run_game have schema/seed/stamp wired and are
 consumed where engine hooks already exist (pinch hits, SB attempt rate);
-deeper platoon-aware substitution is the next layer.
+deeper platoon-aware substitution is the next layer (Items 1-3 of the
+substitution-economy subsystem -- player role tags, 42-45 platoon
+roster, one-way substitution + phase-swap mechanics -- followed by Item
+4's universal substitution-trigger evaluation function that this
+field's broadened semantics will key off of).
 
 Stored on the `teams` table (re-rolled per seed) and stamped onto the
 engine's Team object at game time so the engine's manager.py can read them
@@ -205,6 +227,39 @@ ARCHETYPES: dict[str, Archetype] = {
         joker_aggression=0.88, pinch_hit_aggression=0.80,
         platoon_aggression=0.55, run_game=0.85, bench_usage=0.60, noise=0.30,
         declare_aggression=0.85, bat_first_pref=0.55,
+    ),
+
+    # ----- substitution-economy types (O27 phase-split native) -----
+    # Both rely on the platoon/substitution subsystem (Items 1-3) for
+    # their defining behavior to manifest end-to-end. The archetype
+    # values land now so seeding produces them; deployment behavior
+    # comes online as the foundation pieces land.
+    "platoon_manager": Archetype(
+        # Heavy use of the substitution economy across the phase split as
+        # standard practice. Sits high on platoon_aggression by default
+        # (top of the substitution-trigger threshold band); roster trends
+        # specialist-heavy toward the top of the 42-45 active band.
+        key="platoon_manager", label="Platoon Manager",
+        quick_hook=0.62, bullpen_aggression=0.70, leverage_aware=0.80,
+        joker_aggression=0.78, pinch_hit_aggression=0.88,
+        platoon_aggression=0.92, run_game=0.55, bench_usage=0.88,
+        shift_aggression=0.70,
+        declare_aggression=0.60, bat_first_pref=0.50,
+    ),
+    "special_teams": Archetype(
+        # Aggressive "special teams" / two-unit skipper. Defining identity
+        # is the structural choice -- roster built as two near-disjoint
+        # units (offensive lineup, defensive lineup) that swap wholesale
+        # at the offense/defense phase transition. Rating remains a
+        # separate, tunable axis; type expresses philosophy, not
+        # frequency. In practice trends high on platoon_aggression but
+        # is not derived from it.
+        key="special_teams", label="Special-Teams Skipper",
+        quick_hook=0.72, bullpen_aggression=0.75, leverage_aware=0.78,
+        joker_aggression=0.65, pinch_hit_aggression=0.78,
+        platoon_aggression=0.85, run_game=0.55, bench_usage=0.92,
+        shift_aggression=0.65,
+        declare_aggression=0.55, bat_first_pref=0.50,
     ),
 }
 

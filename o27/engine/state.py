@@ -230,6 +230,19 @@ class Player:
     days_rest: int = 99      # days since last appearance (99 = fully rested)
     pitch_debt: int = 0      # rolling 5-day pitch count (recovery-decayed)
 
+    # Substitution-economy role tags (derived; see o27v2/archetypes.py).
+    # `roster_slot` is one of "bat_first" / "glove_first" / "two_way" /
+    # "pitcher" / "joker" / "pr_specialist" / "ph_specialist". Empty on
+    # legacy DB rows (treated as "two_way" for the safest fallback in
+    # deployment logic). Role flags are bools — True if the player clears
+    # the deployment threshold for that role. `role_field_pos` is the
+    # comma-joined list of positions they can defend at (e.g., "2B,SS,3B").
+    roster_slot:    str  = ""
+    role_hit:       bool = True   # default True keeps legacy bench bats deployable
+    role_run:       bool = False
+    role_two_way:   bool = True   # default True keeps legacy players viable in both halves
+    role_field_pos: str  = ""     # comma-joined positions
+
     def __hash__(self) -> int:
         return hash(self.player_id)
 
@@ -249,6 +262,33 @@ class Player:
 # ---------------------------------------------------------------------------
 # Log records (populated by game loop; rendered in Phases 3–4)
 # ---------------------------------------------------------------------------
+
+@dataclass
+class Substitution:
+    """One position-player substitution event.
+
+    Stored in GameState.substitution_log in the order they fired so the
+    one-way invariant can be walked (no out_player_id should later appear
+    as an in_player_id) and so the AAR / box score can render
+    substitution-volume stats per game.
+
+    `kind` is one of: "pinch_hit" / "pinch_run" / "pinch_field" / "joker"
+    / "pitching". `trigger_score` is the score_substitution() output that
+    cleared the manager's threshold (0.0 for legacy paths that bypass the
+    unified trigger).
+    """
+    half: str
+    outs_at_sub: int
+    kind: str
+    team_id: str
+    in_player_id: str
+    out_player_id: str
+    lineup_index: Optional[int] = None
+    score_for: int = 0
+    score_against: int = 0
+    trigger_score: float = 0.0
+    reason: str = ""
+
 
 @dataclass
 class SpellRecord:
@@ -380,17 +420,20 @@ class Team:
     jokers_used_this_half: set = field(default_factory=set)    # legacy alias
     lineup_cycle_number: int = 0   # increments when lineup_position wraps
 
-    # No-reentry: any player removed via pinch_hit, pinch_run,
-    # defensive_sub, or joker_to_field lands here and is permanently
-    # ineligible to re-enter for the rest of the game. The should_*
-    # heuristics filter their candidate pools by this set; bypassing it
-    # would let a manager illegally rotate a lifted starter back in.
-    removed_player_ids: set = field(default_factory=set)
-
     # Super-inning
     super_lineup: list = field(default_factory=list)        # 5 selected Player objects
     super_dismissed: set = field(default_factory=set)       # player_ids dismissed in current super round
     super_lineup_position: int = 0
+
+    # Substitution economy — bench pool + one-way exit set. `bench` is the
+    # active roster MINUS the starting nine (8 fielders + starting DH/SP)
+    # and the joker pool. Populated by sim.py at game start. Substitution
+    # candidate-pickers filter on `bench` to avoid pulling the current
+    # starters; the one-way invariant is enforced by `substituted_out` —
+    # any player ID in this set is gone for the rest of the game, including
+    # super-innings and Declared Seconds.
+    bench: list = field(default_factory=list)
+    substituted_out: set = field(default_factory=set)
 
     def current_batter(self) -> Player:
         """Get the current batter from the appropriate active lineup."""
@@ -447,6 +490,16 @@ class Team:
             if p.player_id == player_id:
                 return p
         return None
+
+    def is_available(self, player_id: str) -> bool:
+        """True if the player has not been substituted out this game.
+
+        The one-way invariant: once a position player exits, they're done
+        — they don't come back for super-innings or Declared Seconds.
+        Every substitution candidate-pick must call this. Pitchers are
+        also included so a pulled pitcher can't return to the mound.
+        """
+        return player_id not in self.substituted_out
 
 
 # ---------------------------------------------------------------------------
@@ -565,6 +618,15 @@ class GameState:
 
     # --- Raw event log ---
     events: list = field(default_factory=list)
+
+    # --- Structured substitution log ---
+    # One Substitution record per position-player swap (PH / PR / PF /
+    # joker / pitching change). Walked by tests to assert the one-way
+    # invariant and by the AAR / box-score render to surface substitution
+    # volume per game. Distinct from `events` (renderer-shaped dicts) so
+    # the substitution invariant doesn't depend on the renderer being
+    # plumbed in.
+    substitution_log: list = field(default_factory=list)
 
     # --- Winner ---
     winner: Optional[str] = None    # "visitors" | "home" | None
