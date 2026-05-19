@@ -28,7 +28,14 @@ import random as _random
 from typing import Optional
 
 from o27v2 import db
-from o27v2.archetypes import classify_position_player
+from o27v2.archetypes import (
+    classify_position_player,
+    classify_roster_slot,
+    is_hit_capable,
+    is_run_capable,
+    is_two_way,
+    encode_field_positions,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +226,14 @@ def _develop_player(p: dict, org_strength: int, rng: _random.Random,
     if not is_pitcher and not p.get("is_joker"):
         merged = {**p, **updated}
         updated["archetype"] = classify_position_player(merged)
+        # Re-derive substitution-economy role tags off the same merged
+        # post-development view so a player who drifted past a defense
+        # threshold lands in the right deployment slot for the new season.
+        updated["role_hit"]       = 1 if is_hit_capable(merged) else 0
+        updated["role_run"]       = 1 if is_run_capable(merged) else 0
+        updated["role_two_way"]   = 1 if is_two_way(merged) else 0
+        updated["role_field_pos"] = encode_field_positions(merged)
+        updated["roster_slot"]    = classify_roster_slot(merged)
 
     return updated, new_age
 

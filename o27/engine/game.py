@@ -209,8 +209,12 @@ def run_game(
             v5 = super_selector(state, "visitors")
             h5 = super_selector(state, "home")
         else:
-            v5 = state.visitors.roster[:5]
-            h5 = state.home.roster[:5]
+            # Fallback selector — first 5 available position players from
+            # the roster (filtering out subbed-out and pitchers). Honors
+            # the one-way invariant: anyone the manager pulled mid-game is
+            # gone for super-innings too.
+            v5 = _default_super_lineup(state.visitors)
+            h5 = _default_super_lineup(state.home)
 
         si_log = setup_super_inning(state, v5, h5, renderer)
         full_log += si_log
@@ -421,6 +425,33 @@ def check_winner(state: GameState) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Super-inning setup
 # ---------------------------------------------------------------------------
+
+def _default_super_lineup(team) -> list:
+    """Default super-inning 5: first 5 available non-pitcher roster
+    players. Respects the substitution-economy one-way invariant — any
+    player in `team.substituted_out` is gone for super-innings too.
+
+    Falls back to including subbed-out players if fewer than 5 remain
+    (e.g., a freak game with many position-player subs); the engine still
+    needs 5 bodies to fill the round, and crashing on this would be
+    worse than the rules nuance.
+    """
+    eligible = [
+        p for p in team.roster
+        if not getattr(p, "is_pitcher", False)
+        and team.is_available(p.player_id)
+    ]
+    if len(eligible) >= 5:
+        return eligible[:5]
+    # Fallback: top up from subbed-out players. Shouldn't happen with a
+    # well-shaped 42-45 roster but the engine has to produce a lineup.
+    extras = [
+        p for p in team.roster
+        if not getattr(p, "is_pitcher", False)
+        and not team.is_available(p.player_id)
+    ]
+    return (eligible + extras)[:5]
+
 
 def setup_super_inning(
     state: GameState,

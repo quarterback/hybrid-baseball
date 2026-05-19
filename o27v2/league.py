@@ -22,7 +22,14 @@ from typing import Any
 
 from o27v2 import config as v2cfg
 from o27v2 import scout as _scout
-from o27v2.archetypes import classify_position_player
+from o27v2.archetypes import (
+    classify_position_player,
+    classify_roster_slot,
+    is_hit_capable,
+    is_run_capable,
+    is_two_way,
+    encode_field_positions,
+)
 from o27 import config as _engine_cfg
 
 _DATA_DIR     = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -1077,14 +1084,28 @@ def _park_surname_pool(rng: random.Random, count: int = 60) -> list[str]:
     return rng.sample(flat, k=min(count, len(flat)))
 
 
-# Roster shape — Task #65.
-ACTIVE_FIELDERS  = 12   # 8 starting positions + 4 bench
-ACTIVE_DH        = 3    # 3 DH/utility bats (matches the 3-DH batting lineup)
-ACTIVE_PITCHERS  = 19   # full active pitching staff (rotation + bullpen, no roles)
-RESERVE_HITTERS  = 8    # reserve position-player pool (covers IL fill-ins)
-RESERVE_PITCHERS = 5    # reserve arms (top up the active pitching staff on IL)
-# Active = 12 + 3 + 19 = 34. Total = 34 + 8 + 5 = 47 players/team.
-ACTIVE_POSITION_TOTAL = ACTIVE_FIELDERS + ACTIVE_DH  # 15 — fill target on IL
+# Roster shape — substitution-economy 42-player baseline (Item 2).
+#
+# Up from 34 (Task #65 shape) to reflect the brief's recipe:
+#   - 10 bat-first (good bat, weak glove; best 3 are jokers)
+#   -  7 glove-first (weak bat, elite glove)
+#   -  5 two-way (competent both — bridge players)
+#   - 17 pitchers (bulk + leverage + emergency)
+#   -  3 situational specialists (pure-speed PR / matchup PH)
+# Total active: 42 (band 42–45 ± manager tilt; this is the baseline).
+#
+# The role-tag classifier in archetypes.py classifies each generated
+# player into one of these slots post-hoc based on attribute profile,
+# so the draft only needs to control headcount per canonical position;
+# the slot tagging falls out of the same skill rolls that drive the
+# legacy `archetype` field.
+ACTIVE_FIELDERS  = 15   # 8 starting positions + 7 fielder backups (filtered into glove-first / two-way)
+ACTIVE_DH        = 10   # bat-first slots (best 3 emerge as jokers via the existing joker pool)
+ACTIVE_PITCHERS  = 17   # down from 19; balanced against the larger position pool
+RESERVE_HITTERS  = 3    # smaller reserve pool — the active roster is now deep enough
+RESERVE_PITCHERS = 3    # smaller reserve arm pool — active staff is bigger
+# Active = 15 + 10 + 17 = 42. Total = 42 + 3 + 3 = 48 players/team.
+ACTIVE_POSITION_TOTAL = ACTIVE_FIELDERS + ACTIVE_DH  # 25 — fill target on IL
 
 
 def _make_hitter(
@@ -1239,6 +1260,14 @@ def _make_hitter(
         "habit_cup":   0.5,
     }
     result["archetype"] = classify_position_player(result)
+    # Substitution-economy role tags (Item 1). Derived from the same
+    # grades that drive the archetype; written to the DB so the
+    # substitution candidate-pickers can filter cheaply in SQL.
+    result["role_hit"]       = 1 if is_hit_capable(result) else 0
+    result["role_run"]       = 1 if is_run_capable(result) else 0
+    result["role_two_way"]   = 1 if is_two_way(result) else 0
+    result["role_field_pos"] = encode_field_positions(result)
+    result["roster_slot"]    = classify_roster_slot(result)
     return result
 
 
@@ -1468,6 +1497,14 @@ def _make_pitcher(
         "pitch_variance": pitch_variance,
         "grit":           grit,
         "repertoire":     json.dumps(repertoire),
+        # Substitution-economy role tags. Pitchers always land on the
+        # pitcher slot; the other role flags are False for pitchers
+        # (they don't sub in as bats, runners, or fielders).
+        "roster_slot":    "pitcher",
+        "role_hit":       0,
+        "role_run":       0,
+        "role_two_way":   0,
+        "role_field_pos": "",
     }
 
 
@@ -1478,15 +1515,16 @@ def generate_players(
     org_strength: int = 50,
     name_config: dict | None = None,
 ) -> list[dict]:
-    """Generate ~47 players for a single team (legacy helper).
+    """Generate ~48 players for a single team (legacy helper).
 
-    Composition (active = 34, reserve = 13, total = 47):
-      - 12 active position players (8 starters at canonical positions
-        CF/SS/2B/3B/RF/LF/1B/C plus 4 utility bench)
-      -  3 active DH/utility bats
-      - 19 active pitchers
-      -  8 reserve position players (is_active=0)
-      -  5 reserve pitchers (is_active=0)
+    Composition (substitution-economy 42-baseline):
+      - 15 active fielders (8 canonical starters + 7 backups across CF/
+        SS/2B/C plus corner IF/OF — classified into glove-first / two-way
+        / bat-first by the role-tag classifier)
+      - 10 active DH/utility bats (bat-first; best 3 become jokers)
+      - 17 active pitchers
+      -  3 reserve position players
+      -  3 reserve pitchers
 
     Every attribute is rolled independently against the talent-tier
     distribution (`_TALENT_TIERS`).
@@ -1515,16 +1553,18 @@ def generate_players(
         nm, country = _name()
         return _make_pitcher(rng, is_active=is_active, name=nm, country=country)
 
-    # ---- Active position players: 8 starting positions + 4 bench ----
+    # ---- Active position players: 8 canonical starters + 7 fielder backups ----
     for pos in FIELDER_POSITIONS:
         players.append(_hitter(pos, is_active=1))
-    # Active bench: 4 backups at high-rotation positions (catchers rest
-    # a lot, middle infield rotates, CF backup is near-everyday).
-    # No "UT" position — every bench guy carries a canonical position.
+    # Active backups at high-rotation positions.
     for pos in ("CF", "SS", "2B", "C"):
         players.append(_hitter(pos, is_active=1))
+    # Corner backups (one body per spot so the substitution candidate-pool
+    # has a glove at every position).
+    for pos in ("3B", "1B", "LF"):
+        players.append(_hitter(pos, is_active=1))
 
-    # ---- Active DH/utility bats ----
+    # ---- Active DH/utility bats (bat-first slots) ----
     for _ in range(ACTIVE_DH):
         players.append(_hitter("DH", is_active=1))
 
@@ -1532,11 +1572,8 @@ def generate_players(
     for _ in range(ACTIVE_PITCHERS):
         players.append(_pitcher(is_active=1))
 
-    # ---- Reserve pool: bench-level depth, promoted on injury ----
-    # Round-robin one reserve at each canonical fielding position, then
-    # cycle if RESERVE_HITTERS exceeds 8. No "UT" — every reserve guy
-    # carries a canonical position.
-    _RESERVE_POSITIONS = ("CF", "SS", "2B", "3B", "RF", "LF", "1B", "C")
+    # ---- Reserve pool (slimmer than the 13-deep Task-#65 shape) ----
+    _RESERVE_POSITIONS = ("RF", "CF", "SS")
     for i in range(RESERVE_HITTERS):
         pos = _RESERVE_POSITIONS[i % len(_RESERVE_POSITIONS)]
         players.append(_hitter(pos, is_active=0))
@@ -1578,17 +1615,23 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     # 8 canonical starters (1 active each).
     ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0), ("3B", 1, 0),
     ("RF", 1, 0), ("LF", 1, 0), ("1B", 1, 0), ("C",  1, 0),
-    # DH (3 active).
-    ("DH", 3, 0),
+    # DH (10 active) — bat-first slots. Best 3 emerge as jokers via the
+    # existing joker pool; the rest are subbable PH-eligible bench bats.
+    ("DH", 10, 0),
     # Active backups at high-rotation positions: catchers rest a lot,
-    # middle infield rotates, CF backup is a near-everyday role.
-    # Each entry adds 1 active + 1 reserve at the given position.
-    ("CF", 1, 1), ("SS", 1, 1), ("2B", 1, 1), ("C",  1, 1),
-    # Reserve depth at corners + outfield (less rotation needed): 1
-    # reserve body per position so injury fill-ins are position-typed.
-    ("3B", 0, 1), ("1B", 0, 1), ("LF", 0, 1), ("RF", 0, 1),
-    # Pitchers (19 active + 5 reserve).
-    ("P", 19, 5),
+    # middle infield rotates, CF backup is a near-everyday role. The
+    # role classifier sorts these into glove-first or two-way based on
+    # the bat/glove profile that landed.
+    ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0), ("C",  1, 0),
+    # Corner-IF / corner-OF fielder backups — 1 active body per position,
+    # so the substitution candidate-pool has a glove at every spot. The
+    # classifier sorts these into glove-first / two-way / bat-first.
+    ("3B", 1, 0), ("1B", 1, 0), ("LF", 1, 0),
+    # Reserve depth (smaller now that active is 25 position players).
+    ("RF", 0, 1), ("CF", 0, 1), ("SS", 0, 1),
+    # Pitchers (17 active + 3 reserve) — down from 19/5. The active pool
+    # absorbs more of the workload since the position bench is deeper.
+    ("P", 17, 3),
 ]
 
 _DRAFT_OVERSAMPLE = 1.4   # generate 40% more players than rosters need
@@ -1885,8 +1928,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          baserunning, run_aggressiveness,
          work_ethic, work_habits, habit_cup, salary,
          release_angle, pitch_variance, grit, repertoire,
-         pull_pct, adaptability, leadership)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         pull_pct, adaptability, leadership,
+         roster_slot, role_hit, role_run, role_two_way, role_field_pos)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -1922,7 +1966,12 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("repertoire", None),
                 p.get("pull_pct", 0.5),
                 p.get("adaptability", 50),
-                p.get("leadership", 50))
+                p.get("leadership", 50),
+                p.get("roster_slot", ""),
+                int(p.get("role_hit", 1)),
+                int(p.get("role_run", 0)),
+                int(p.get("role_two_way", 1)),
+                p.get("role_field_pos", ""))
 
     # Cache team-id → league name so each player's salary uses the
     # right tier cap.

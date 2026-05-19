@@ -14,9 +14,139 @@ All tunable thresholds are imported from o27.config.
 """
 
 from __future__ import annotations
-from .state import GameState, Player, SpellRecord
+from .state import GameState, Player, SpellRecord, Substitution
 from typing import Optional
 from o27 import config as cfg
+
+
+# ---------------------------------------------------------------------------
+# Substitution-trigger evaluation (Item 3)
+# ---------------------------------------------------------------------------
+#
+# Single unified scorer that every new substitution decision routes through.
+# Returns a [0, 1] leverage score; the manager fires when score >= threshold
+# (where threshold = 1.0 - mgr_platoon_aggression, so a passive manager
+# only swaps when the spot is overwhelming and an aggressive one swaps
+# freely). The legacy `should_*` paths keep their inline scoring for now;
+# Item 4 follow-up migrates them through this function and tunes the
+# weights.
+#
+# Factors (each in [0, 1]):
+#   score_gap_f     — tighter games score higher (max at tie)
+#   late_arc_f      — later in the half scores higher (max at out 27)
+#   runner_f        — runners on base raise PH / PR leverage
+#   upgrade_f       — skill delta between candidate and outgoing player
+#                     in the relevant dimension (hit / run / field)
+#   conservation_f  — penalty proportional to bench depletion at the
+#                     relevant role; deliberately simple in v1
+
+
+def score_substitution(
+    state: GameState,
+    candidate: Player,
+    kind: str,
+    out_player: Optional[Player] = None,
+) -> float:
+    """Score a candidate substitution against current game leverage.
+
+    `kind` is one of "pinch_hit" / "pinch_run" / "pinch_field". Returns a
+    score in [0, 1]; callers compare against a manager-derived threshold.
+
+    The function is deliberately simple in this first cut — Item 4
+    migrates the existing should_* inline scoring to land here and tunes
+    the weights against measured substitution-volume data.
+    """
+    if out_player is None:
+        return 0.0
+
+    # Score-gap factor — tighter games favor substitutions.
+    v = state.score.get("visitors", 0)
+    h = state.score.get("home", 0)
+    score_gap = abs(v - h)
+    score_gap_f = max(0.0, 1.0 - score_gap / 10.0)
+
+    # Late-arc factor — late in the half raises leverage.
+    late_arc_f = state.outs / 27.0 if state.outs < 27 else 1.0
+
+    # Runner factor — PH / PR weight heavier with runners on; PF lighter.
+    runners = state.runner_count
+    if kind == "pinch_field":
+        runner_f = 0.5    # defense leverage less runner-dependent
+    else:
+        runner_f = (runners + 1) / 4.0
+
+    # Upgrade factor — skill delta in the relevant dimension.
+    if kind == "pinch_hit":
+        delta = float(getattr(candidate, "skill", 0.5)) - float(getattr(out_player, "skill", 0.5))
+    elif kind == "pinch_run":
+        delta = float(getattr(candidate, "speed", 0.5)) - float(getattr(out_player, "speed", 0.5))
+    elif kind == "pinch_field":
+        delta = float(getattr(candidate, "defense", 0.5)) - float(getattr(out_player, "defense", 0.5))
+    else:
+        delta = 0.0
+    # Map delta from [-1, 1] to [0, 1], clipped.
+    upgrade_f = max(0.0, min(1.0, 0.5 + delta))
+
+    # Combine. Equal-weighted sum (each in [0, 1]) divided by 4. The result
+    # already sits in [0, 1] without further normalization.
+    score = (score_gap_f + late_arc_f + runner_f + upgrade_f) / 4.0
+    return max(0.0, min(1.0, score))
+
+
+def substitution_threshold(team) -> float:
+    """Convert manager platoon aggression to a substitution threshold.
+
+    threshold = 1.0 - mgr_platoon_aggression. A passive manager (0.05)
+    only fires on overwhelming spots (0.95+); an aggressive one (0.92)
+    fires on most reasonable spots (0.08+).
+    """
+    agg = float(getattr(team, "mgr_platoon_aggression", 0.5) or 0.5)
+    return max(0.0, min(1.0, 1.0 - agg))
+
+
+def _log_substitution(
+    state: GameState,
+    *,
+    kind: str,
+    team_id: str,
+    in_player_id: str,
+    out_player_id: str,
+    lineup_index: Optional[int] = None,
+    trigger_score: float = 0.0,
+    reason: str = "",
+) -> None:
+    """Append a Substitution to state.substitution_log and add the
+    outgoing player to the team's one-way exit set.
+
+    Centralized so every substitution path stamps the invariant. Callers
+    that pass an empty out_player_id (e.g., joker insertion where the
+    "out" player is the one whose lineup spot is hijacked for a PA only)
+    skip the one-way enforcement — those callers are responsible for
+    handling re-entry rules themselves.
+    """
+    score_for = state.score.get(team_id, 0)
+    other_id = "home" if team_id == "visitors" else "visitors"
+    score_against = state.score.get(other_id, 0)
+    state.substitution_log.append(Substitution(
+        half=state.half,
+        outs_at_sub=state.outs,
+        kind=kind,
+        team_id=team_id,
+        in_player_id=in_player_id,
+        out_player_id=out_player_id,
+        lineup_index=lineup_index,
+        score_for=int(score_for),
+        score_against=int(score_against),
+        trigger_score=float(trigger_score),
+        reason=reason,
+    ))
+    # One-way enforcement — the outgoing player is gone for the rest of
+    # the game. Look up which team owns them.
+    if out_player_id:
+        for t in (state.visitors, state.home):
+            if t.team_id == team_id:
+                t.substituted_out.add(out_player_id)
+                break
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +272,15 @@ def pinch_hit(state: GameState, replacement: Player) -> list[str]:
         "replacement_id": replacement.player_id,
         "replacement_name": replacement.name,
     })
+    _log_substitution(
+        state,
+        kind="pinch_hit",
+        team_id=team.team_id,
+        in_player_id=replacement.player_id,
+        out_player_id=replaced.player_id,
+        lineup_index=pos,
+        reason="manager_ph",
+    )
     return log
 
 
@@ -226,6 +365,19 @@ def pitching_change(
         "new_pitcher_id": new_pitcher.player_id,
         "new_pitcher_name": new_pitcher.name,
     })
+    # Stamp the one-way invariant on the old pitcher. A pulled arm doesn't
+    # return mid-game (existing pick_new_pitcher already excludes them via
+    # `already_pitched`; this just promotes that to a hard cross-game-state
+    # check so super-innings and Declared Seconds also respect it).
+    if old_pitcher_id:
+        _log_substitution(
+            state,
+            kind="pitching",
+            team_id=state.fielding_team.team_id,
+            in_player_id=new_pitcher.player_id,
+            out_player_id=old_pitcher_id,
+            reason="pitching_change",
+        )
     return log
 
 
@@ -582,6 +734,7 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         and p.player_id != current_id
         and p.player_id not in restricted
         and p.player_id not in already_pitched
+        and fielding.is_available(p.player_id)
     ]
 
     outs = getattr(state, "outs", 0) or 0
@@ -812,11 +965,15 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     base_p = max(0.0, min(0.7, base_p))
 
     # Candidate pool: non-pitchers on the roster who aren't already in the
-    # lineup (true bench bats; lineup players would otherwise duplicate).
+    # lineup AND haven't been subbed out earlier in the game (one-way
+    # invariant — pinch hitters can't pinch-hit a second time).
     lineup_ids = {p.player_id for p in team.lineup}
     candidates = [
         p for p in team.roster
-        if not p.is_pitcher and p.player_id not in lineup_ids
+        if not p.is_pitcher
+        and p.player_id not in lineup_ids
+        and team.is_available(p.player_id)
+        and bool(getattr(p, "role_hit", True))
     ]
     if not candidates:
         return None
@@ -931,6 +1088,15 @@ def defensive_sub(
         "out_id":  player_out.player_id,
         "in_id":   player_in.player_id,
     })
+    _log_substitution(
+        state,
+        kind="pinch_field",
+        team_id=fielding.team_id,
+        in_player_id=player_in.player_id,
+        out_player_id=player_out.player_id,
+        lineup_index=idx,
+        reason="defensive_sub",
+    )
     return log
 
 
@@ -965,6 +1131,14 @@ def pinch_run(state: GameState, base_idx: int, runner_in: Player) -> list[str]:
         "out_id":  out_id,
         "base_idx": base_idx,
     })
+    _log_substitution(
+        state,
+        kind="pinch_run",
+        team_id=batting.team_id,
+        in_player_id=runner_in.player_id,
+        out_player_id=out_id,
+        reason="pinch_runner",
+    )
     return log
 
 
@@ -1005,12 +1179,14 @@ def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
     if cand_idx is None or cand_speed >= 0.40:
         return None
     # Find the fastest available bench bat (not in current lineup, not a
-    # joker — jokers stay in the joker pool unless joker_to_field fires).
+    # joker — jokers stay in the joker pool unless joker_to_field fires —
+    # and not already subbed out earlier in the game).
     in_lineup = set(p.player_id for p in batting.lineup)
     bench_pool = [p for p in batting.roster
                   if p.player_id not in in_lineup
                   and not getattr(p, "is_pitcher", False)
-                  and p.player_id not in {j.player_id for j in batting.jokers_available}]
+                  and p.player_id not in {j.player_id for j in batting.jokers_available}
+                  and batting.is_available(p.player_id)]
     if not bench_pool:
         return None
     bench_pool.sort(key=lambda p: -float(getattr(p, "speed", 0.5) or 0.5))
@@ -1061,6 +1237,15 @@ def joker_to_field(state: GameState, joker: Player, player_out: Player) -> list[
         "out_id":    player_out.player_id,
         "position":  out_pos,
     })
+    _log_substitution(
+        state,
+        kind="joker",
+        team_id=fielding.team_id,
+        in_player_id=joker.player_id,
+        out_player_id=player_out.player_id,
+        lineup_index=idx,
+        reason="joker_to_field",
+    )
     return log
 
 
@@ -1195,11 +1380,14 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
         key=lambda pl: float(getattr(pl, "defense", 0.5) or 0.5),
     )
 
-    # Bench candidates: roster non-pitchers not currently in the lineup.
+    # Bench candidates: roster non-pitchers not currently in the lineup
+    # AND not already substituted out.
     lineup_ids = {pl.player_id for pl in lineup}
     bench = [
         pl for pl in fielding.roster
-        if not pl.is_pitcher and pl.player_id not in lineup_ids
+        if not pl.is_pitcher
+        and pl.player_id not in lineup_ids
+        and fielding.is_available(pl.player_id)
     ]
     if not bench:
         return None
@@ -1290,7 +1478,9 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
     lineup_ids = {pl.player_id for pl in team.lineup}
     bench = [
         pl for pl in team.roster
-        if not pl.is_pitcher and pl.player_id not in lineup_ids
+        if not pl.is_pitcher
+        and pl.player_id not in lineup_ids
+        and team.is_available(pl.player_id)
     ]
     if not bench:
         return None
