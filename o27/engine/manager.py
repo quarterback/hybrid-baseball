@@ -953,6 +953,22 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
     return None
 
 
+def _is_joker(player) -> bool:
+    """True if this player is one of the team's 3 jokers.
+
+    Jokers are a finite tactical resource — 3 per team, fixed
+    pre-game, in `jokers_available` (NOT in the batting order). They
+    can be inserted as a pinch-hitter via batter_override for any PA
+    where they aren't currently on base, but they CANNOT be subbed
+    out (pulled from the joker pool or pinch-run for when on base).
+    This helper is the single source of truth for that check.
+    """
+    if player is None:
+        return False
+    return (getattr(player, "roster_slot", "") == "joker"
+            or getattr(player, "game_position", "") == "J")
+
+
 def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     """Pinch-hit decision routed through the unified leverage trigger.
 
@@ -965,9 +981,12 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
 
     The handedness/platoon advantage is now baked into the matchup
     factor of score_substitution. The persona-derived threshold absorbs
-    the legacy probability rolls — an aggressive skipper has a low
-    threshold (fires often), a passive one has a high threshold (only
-    overwhelming spots).
+    the legacy probability rolls.
+
+    Jokers are NOT in the batting order — they live in jokers_available
+    as a tactical pinch-hit pool. The current_batter at any PA is one
+    of the 9 lineup spots (8 fielders + SP), so this function never
+    targets a joker as the out_player.
     """
     if state.is_super_inning:
         return None
@@ -977,13 +996,17 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
 
     # Candidate pool: non-pitchers on the roster who aren't already in the
     # lineup AND haven't been subbed out earlier in the game (one-way
-    # invariant — pinch hitters can't pinch-hit a second time).
+    # invariant — pinch hitters can't pinch-hit a second time). Jokers
+    # are EXCLUDED — they're a separate tactical pool deployed only via
+    # the joker insertion mechanic (batter_override), not as regular
+    # pinch hitters.
     lineup_ids = {p.player_id for p in team.lineup}
     candidates = [
         p for p in team.roster
         if not p.is_pitcher
         and p.player_id not in lineup_ids
         and team.is_available(p.player_id)
+        and not _is_joker(p)
         and bool(getattr(p, "role_hit", True))
     ]
     if not candidates:
@@ -1116,6 +1139,8 @@ def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
         return None
 
     # Pick the slowest runner on base as the candidate-to-replace.
+    # Jokers fill the DH role and can't be subbed — skip them when
+    # they're on base; the manager has to live with the joker's speed.
     out_idx = None
     out_runner: Optional[Player] = None
     slowest_speed = 1.0
@@ -1123,7 +1148,7 @@ def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
         if pid is None:
             continue
         p = batting.get_player(pid) if hasattr(batting, "get_player") else None
-        if p is None:
+        if p is None or _is_joker(p):
             continue
         s = float(getattr(p, "speed", 0.5) or 0.5)
         if s < slowest_speed:
@@ -1298,6 +1323,9 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     fielding = state.fielding_team
 
     # Identify the weakest-defense lineup spot (the candidate to-replace).
+    # Excluded: pitchers (the catcher_arm is stamped on the team so a
+    # catcher swap needs its own handling). Jokers aren't in the
+    # batting lineup so they don't appear here.
     lineup = list(fielding.lineup)
     candidates_out = [
         pl for pl in lineup
@@ -1312,15 +1340,15 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     )
 
     # Bench candidates: roster non-pitchers not currently in the lineup
-    # AND not already substituted out. Glove-first / two-way slot tags
-    # are preferred but not strictly required — a bat-first with
-    # passable defense can still upgrade a true butcher.
+    # AND not already substituted out. Jokers excluded — they're a
+    # separate tactical pool, not defensive replacements.
     lineup_ids = {pl.player_id for pl in lineup}
     bench = [
         pl for pl in fielding.roster
         if not pl.is_pitcher
         and pl.player_id not in lineup_ids
         and fielding.is_available(pl.player_id)
+        and not _is_joker(pl)
     ]
     if not bench:
         return None
@@ -1377,6 +1405,7 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
         if not pl.is_pitcher
         and pl.player_id not in lineup_ids
         and team.is_available(pl.player_id)
+        and not _is_joker(pl)
     ]
     if not bench:
         return None

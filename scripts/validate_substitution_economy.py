@@ -70,25 +70,36 @@ def _make_team(role: str, name: str, players: list[dict],
                manager_platoon_aggression: float = 0.5) -> Team:
     actives = [p for p in players if p.get("is_active", 1)]
     hydrated = [_hydrate(p, role) for p in actives]
-    # Starting nine: 8 canonical fielders + the SP. Heuristic — pick the
-    # first non-pitcher at each position + the first pitcher.
+    # Starting fielders: 8 canonical positions, prefer non-jokers /
+    # non-specialists. Pick the first eligible at each position.
     by_pos: dict[str, Player] = {}
-    starting: list[Player] = []
+    fielders: list[Player] = []
     for player in hydrated:
+        if player.is_pitcher:
+            continue
+        if player.roster_slot in ("joker", "pr_specialist", "ph_specialist"):
+            continue
         pos = player.position
-        if not player.is_pitcher and pos in (
-            "CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"
-        ) and pos not in by_pos:
+        if pos in ("CF", "SS", "2B", "3B", "RF", "LF", "1B", "C") and pos not in by_pos:
             by_pos[pos] = player
-            starting.append(player)
-    # Pick the first pitcher as SP and put in lineup slot 9.
+            fielders.append(player)
+    # SP bats 9th — pitcher is an explicit part of O27's batting order.
     sp = next((p for p in hydrated if p.is_pitcher), None)
+    starting = list(fielders)
     if sp:
         starting.append(sp)
+    # Jokers: 3 players with roster_slot=="joker" — a FIXED tactical
+    # pool, NOT in the batting order. Can be inserted via
+    # batter_override (existing joker mechanic) but cannot be subbed
+    # out of the pool.
+    jokers = [p for p in hydrated if p.roster_slot == "joker"][:3]
+    for j in jokers:
+        j.game_position = "J"
     team = Team(
         team_id=role, name=name,
         roster=hydrated,
         lineup=starting,
+        jokers_available=list(jokers),
     )
     team.mgr_platoon_aggression = manager_platoon_aggression
     team.mgr_bench_usage = 0.6
@@ -98,15 +109,15 @@ def _make_team(role: str, name: str, players: list[dict],
     team.mgr_run_game = 0.5
     team.mgr_leverage_aware = 0.5
     team.mgr_joker_aggression = 0.5
-    # Bench: all active non-pitcher non-lineup.
-    starting_ids = {p.player_id for p in starting}
+    # Bench: all active non-pitcher non-lineup non-joker.
+    lineup_ids = {p.player_id for p in starting}
+    joker_ids  = {j.player_id for j in jokers}
     team.bench = [
         p for p in hydrated
-        if not p.is_pitcher and p.player_id not in starting_ids
+        if not p.is_pitcher
+        and p.player_id not in lineup_ids
+        and p.player_id not in joker_ids
     ]
-    # Jokers: best 3 bench bats by skill.
-    bench_sorted = sorted(team.bench, key=lambda p: -p.skill)
-    team.jokers_available = bench_sorted[:3]
     return team
 
 
