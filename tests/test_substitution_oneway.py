@@ -280,6 +280,58 @@ def test_archetype_roster_tilt_no_op_for_default():
 # Matchup factor (Item 2 follow-up)
 # ---------------------------------------------------------------------------
 
+def test_make_specialist_pr_lands_on_pr_slot():
+    """PR specialist generation produces a player that classifies onto
+    the pr_specialist slot — not bat_first or any other category."""
+    import random as _r
+    from o27v2.league import _make_specialist
+
+    rng = _r.Random(0)
+    p = _make_specialist(rng, "pr_specialist", name="Speedy Joe")
+    assert p["roster_slot"] == "pr_specialist"
+    assert p["role_run"] == 1
+    assert p["role_hit"] == 0
+    assert p["role_two_way"] == 0
+    assert p["role_field_pos"] == ""
+    # Specialist's strong dimension is speed/baserunning.
+    assert p["speed"] >= 60
+    assert p["baserunning"] >= 60
+
+
+def test_make_specialist_ph_lands_on_ph_slot():
+    """PH specialist generation produces a player that classifies onto
+    the ph_specialist slot — loud bat, no glove."""
+    import random as _r
+    from o27v2.league import _make_specialist
+
+    rng = _r.Random(1)
+    p = _make_specialist(rng, "ph_specialist", name="Big Bat Bart")
+    assert p["roster_slot"] == "ph_specialist"
+    assert p["role_run"] == 0
+    assert p["role_hit"] == 1
+    assert p["role_two_way"] == 0
+    assert p["role_field_pos"] == ""
+    # Specialist's strong dimension is power.
+    assert p["power"] >= 60
+
+
+def test_generate_players_includes_explicit_specialists():
+    """generate_players (the legacy helper exercised by the validator
+    and smoke tests) must include the 3 drafted specialists per team."""
+    import random as _r
+    from o27v2.league import generate_players
+
+    players = generate_players(0, _r.Random(42))
+    active = [p for p in players if p.get("is_active") == 1]
+    assert len(active) == 42, f"expected 42 active, got {len(active)}"
+    pr_specs = [p for p in active if p.get("roster_slot") == "pr_specialist"]
+    ph_specs = [p for p in active if p.get("roster_slot") == "ph_specialist"]
+    # 1 PR + 2 PH drafted explicitly (organic emergence may add more
+    # from the DH / backup pool).
+    assert len(pr_specs) >= 1
+    assert len(ph_specs) >= 2
+
+
 def test_score_substitution_matchup_factor_favors_platoon_edge():
     """Pinch-hit candidate with the platoon edge scores higher than one
     without, holding skill constant."""

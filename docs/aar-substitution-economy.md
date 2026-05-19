@@ -37,6 +37,15 @@ function scaffold. A second commit covered the AAR follow-ups:
   clears the bar) — the threshold sets what each manager considers
   "enough leverage."
 
+- **Explicit specialist drafting (third pass)** — `_make_specialist`
+  helper now builds tight pure-speed PR and loud-bat PH players;
+  `_DRAFT_SLOTS` reserves 1 PR + 2 PH per team via the new `SPEC_PR`
+  / `SPEC_PH` pseudo-positions. Every roster has guaranteed
+  situational specialists rather than relying on the classifier to
+  surface them as a by-product of the DH pool. DH slot count went
+  from 10 → 7 to absorb the new specialist headcount and keep the
+  active total at 42.
+
 **Variety report (20-game batches at fixed aggression):**
 
 | Manager personality                | platoon_aggression | Avg subs / team / game |
@@ -363,12 +372,18 @@ are recorded below as either deferred or still-open.
    active until reseed. Migration tooling (auto-promote reserves
    until active = 42) would smooth this transition for users with
    long-running saves but isn't required for the mechanic to land.
-6. **Specialist slot allocation in the draft.** Deferred. Today
-   specialists emerge organically from the classifier — and that
-   produces enough specialists per team that the substitution
-   mechanic isn't starved. Explicit specialist draft slots could
-   be added later if a future archetype needs more deliberate
-   shape control.
+6. **Specialist slot allocation in the draft.** ✅ Done (third pass).
+   New `_make_specialist(rng, kind, ...)` helper builds tight
+   single-tool players (PR: high speed/baserunning + low everything
+   else; PH: high power + mid contact + low defense). Two new
+   pseudo-positions in `_DRAFT_SLOTS`: `SPEC_PR` (1 active per team)
+   and `SPEC_PH` (2 active per team). Every team is now guaranteed
+   1 dedicated pure-speed pinch runner + 2 dedicated loud-bat pinch
+   hitters in addition to any organic specialists that emerge from
+   the classifier on the DH / backup pool. DH count was trimmed from
+   10 → 7 to make room while keeping the active roster at 42. Active
+   roster shape now: 8 starters + 7 fielder backups + 7 DH +
+   1 PR_SPEC + 2 PH_SPEC + 17 P = 42.
 7. **Manager threshold calibration.** ✅ Done.
    `substitution_threshold = 0.85 - 0.30 * mgr_platoon_aggression`,
    producing a 0.55–0.85 band across the persona ladder. The point
