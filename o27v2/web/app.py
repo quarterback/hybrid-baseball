@@ -2466,7 +2466,8 @@ def game_detail(game_id: int):
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
                   COALESCE(bs.entry_type, 'starter') AS entry_type,
-                  bs.replaced_player_id AS replaced_player_id
+                  bs.replaced_player_id AS replaced_player_id,
+                  COALESCE(bs.entered_inning, 0) AS entered_inning
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["away_team_id"]))
@@ -2477,7 +2478,8 @@ def game_detail(game_id: int):
                   COALESCE(NULLIF(bs.game_position, ''),
                            CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END) AS box_position,
                   COALESCE(bs.entry_type, 'starter') AS entry_type,
-                  bs.replaced_player_id AS replaced_player_id
+                  bs.replaced_player_id AS replaced_player_id,
+                  COALESCE(bs.entered_inning, 0) AS entered_inning
            FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
            WHERE bs.game_id = ? AND bs.team_id = ? ORDER BY bs.phase, bs.id""",
         (game_id, game["home_team_id"]))
@@ -6756,6 +6758,7 @@ def youth_game_view(game_id: int):
     # the defaults that affect layout (position label, season HR caption).
     for r in away_batting + home_batting:
         r.setdefault("entry_type", "starter")
+        r.setdefault("entered_inning", 0)
         r.setdefault("box_position", r.get("position") or "")
         r["season_hr"] = r.get("hr") or 0
     line_for = lambda rows: {

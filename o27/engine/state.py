@@ -380,6 +380,13 @@ class Team:
     jokers_used_this_half: set = field(default_factory=set)    # legacy alias
     lineup_cycle_number: int = 0   # increments when lineup_position wraps
 
+    # No-reentry: any player removed via pinch_hit, pinch_run,
+    # defensive_sub, or joker_to_field lands here and is permanently
+    # ineligible to re-enter for the rest of the game. The should_*
+    # heuristics filter their candidate pools by this set; bypassing it
+    # would let a manager illegally rotate a lifted starter back in.
+    removed_player_ids: set = field(default_factory=set)
+
     # Super-inning
     super_lineup: list = field(default_factory=list)        # 5 selected Player objects
     super_dismissed: set = field(default_factory=set)       # player_ids dismissed in current super round

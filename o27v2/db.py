@@ -273,6 +273,11 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     -- for, used to indent the box-score row directly under the starter
     -- they replaced.
     replaced_player_id INTEGER DEFAULT NULL,
+    -- Inning (1..9, derived as outs // 3 + 1) at which this row entered
+    -- the game. 0 for starters. Footnote rendering reads this to emit
+    -- "Pinch-hit for Skanes in the 5th." Once set, never overwritten
+    -- (no-reentry — a removed player can't come back).
+    entered_inning INTEGER DEFAULT 0,
     -- Grounded into double / triple play counters.
     gidp INTEGER DEFAULT 0,
     gitp INTEGER DEFAULT 0,
@@ -917,6 +922,11 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE game_batter_stats ADD COLUMN replaced_player_id INTEGER DEFAULT NULL")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE game_batter_stats ADD COLUMN entered_inning INTEGER DEFAULT 0")
             conn.commit()
         except Exception:
             pass
