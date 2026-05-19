@@ -112,6 +112,10 @@
       <div class="score-label" style="font-size:0.7rem; opacity:0.6">vs {{ bt_totals.ops_plus_scope }} avg</div>
       {% endif %}
     </div>
+    <div title="Park-adjusted league-relative runs created — 100 = league avg AT THIS PARK; strips park bias from the readout. PF {{ '%.3f'|format(bt_totals.park_factor or 1.0) }}.">
+      <div class="score-label">wRC+</div>
+      <div class="num fw-bold" style="font-size:1.35rem">{{ (bt_totals.wrc_plus or 100)|round|int }}</div>
+    </div>
     <div><div class="score-label">HR</div><div class="num fw-bold" style="font-size:1.35rem">{{ bt_totals.hr }}</div></div>
     <div><div class="score-label">RBI</div><div class="num fw-bold" style="font-size:1.35rem">{{ bt_totals.rbi }}</div></div>
     <div><div class="score-label">bWAR</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(bt_totals.war) }}</div></div>
@@ -120,6 +124,14 @@
     {% if bt_totals %}<div style="border-left:1px solid var(--border-soft)"></div>{% endif %}
     <div><div class="score-label">W-L</div><div class="num fw-bold" style="font-size:1.35rem">{{ pt_totals.w or 0 }}-{{ pt_totals.l or 0 }}</div></div>
     <div title="Weighted ERA"><div class="score-label">wERA</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.werra) }}</div></div>
+    <div title="Park-adjusted league-relative wERA — 100 = league avg AT THIS PARK; higher = better. PF {{ '%.3f'|format(pt_totals.park_factor or 1.0) }}.">
+      <div class="score-label">wERA+</div>
+      <div class="num fw-bold" style="font-size:1.35rem">{{ (pt_totals.wera_plus or 100)|round|int }}</div>
+    </div>
+    <div title="Z-score-normalized Game Score (100 / 15 scale). Cross-league-size comparable in both mean AND spread.">
+      <div class="score-label">GSc Idx</div>
+      <div class="num fw-bold" style="font-size:1.35rem">{{ (pt_totals.gsc_index or 100)|round|int }}</div>
+    </div>
     <div title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA"><div class="score-label">xRA</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.xra) }}</div></div>
     <div><div class="score-label">K</div><div class="num fw-bold" style="font-size:1.35rem">{{ pt_totals.k }}</div></div>
     <div><div class="score-label">pWAR</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.war) }}</div></div>
@@ -205,6 +217,7 @@
         <th class="num">wOBA</th>
         <th class="num" title="OPS relative to league avg (100 = avg)">OPS+</th>
         <th class="num" title="wOBA relative to league avg (100 = avg)">wOBA+</th>
+        <th class="num" title="Park-adjusted league-relative runs created (100 = league avg at this park)">wRC+</th>
         <th class="num" title="Second-Chance ABs — chose 2C over run on contact">2C</th>
         <th class="num" title="Hits credited on 2C events">2C-H</th>
         <th class="num" title="2C events that produced a credited hit. Talent-weighted via eye vs pitcher.command on 2nd+ swing.">2C-Conv%</th>
@@ -227,6 +240,7 @@
         <td class="num fw-bold">{{ '%.3f'|format(bt_totals.woba) }}</td>
         <td class="num">{{ bt_totals.ops_plus|round|int }}</td>
         <td class="num">{{ bt_totals.woba_plus|round|int }}</td>
+        <td class="num fw-bold">{{ (bt_totals.wrc_plus or 100)|round|int }}</td>
         <td class="num">{{ bt_totals.stays or 0 }}</td>
         <td class="num">{{ bt_totals.stay_hits or 0 }}</td>
         <td class="num">{{ '%.1f'|format(bt_totals.stay_conv_pct * 100) }}%</td>
@@ -285,6 +299,8 @@
         <th class="num" title="Position-aware defense rating (0-1)">Def</th>
         <th class="num" title="Defensive Runs Saved (extrapolated to position-value baseline)">DRS</th>
         <th class="num" title="Defensive WAR contribution">dWAR</th>
+        <th class="num" title="WPA — sum of Win Probability Added across his PAs. Positive = his bat moved the needle.">WPA</th>
+        <th class="num" title="Average Leverage Index across his PAs. 1.0 = league norm; >1 = sees disproportionately high-stakes PAs.">LI</th>
         <th class="num" title="Total WAR (offense + defense)">WAR</th>
       </tr></thead>
       <tbody><tr>
@@ -293,6 +309,8 @@
         <td class="num">{{ '%.3f'|format(bt_totals.pos_def) }}</td>
         <td class="num">{{ '%+.1f'|format(bt_totals.drs) }}</td>
         <td class="num">{{ '%+.2f'|format(bt_totals.dwar) }}</td>
+        <td class="num">{% if bt_totals.wpa is not none %}{{ '%+.2f'|format(bt_totals.wpa) }}{% else %}—{% endif %}</td>
+        <td class="num">{% if bt_totals.li_avg is not none %}{{ '%.2f'|format(bt_totals.li_avg) }}{% else %}—{% endif %}</td>
         <td class="num fw-bold">{{ '%.2f'|format(bt_totals.war) }}</td>
       </tr></tbody>
     </table>
@@ -417,11 +435,19 @@
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
         <th class="num" title="GSc relative to league average (100 = avg, higher = better)">GSc+</th>
+        <th class="num" title="Z-score-normalized Game Score on a 100 / 15 (IQ) scale — cross-league-size comparable in both mean AND spread (unlike GSc+, which only normalizes mean)">GSc Idx</th>
+        <th class="num" title="Park-adjusted league-relative wERA (ERA+ scale; 100 = league avg AT THIS PARK, higher = better)">wERA+</th>
+        <th class="num" title="WPA — sum of Win Probability Added across PAs faced (pitcher's side = negation of opposing batters' gains). Positive = his arm moved the needle.">WPA</th>
+        <th class="num" title="Average Leverage Index across PAs faced. 1.0 = league norm; >1 = high-stakes usage pattern (closer / bridge).">LI</th>
         <th class="num" title="Runs saved vs replacement-level pitcher (rebased to wERA)">VORP</th>
         <th class="num" title="Wins above replacement">WAR</th>
       </tr></thead>
       <tbody><tr>
         <td class="num">{{ (pt_totals.gsc_plus or 100)|round|int }}</td>
+        <td class="num fw-bold">{{ (pt_totals.gsc_index or 100)|round|int }}</td>
+        <td class="num fw-bold">{{ (pt_totals.wera_plus or 100)|round|int }}</td>
+        <td class="num">{% if pt_totals.wpa is not none %}{{ '%+.2f'|format(pt_totals.wpa) }}{% else %}—{% endif %}</td>
+        <td class="num">{% if pt_totals.li_avg is not none %}{{ '%.2f'|format(pt_totals.li_avg) }}{% else %}—{% endif %}</td>
         <td class="num">{{ '%.1f'|format(pt_totals.vorp) }}</td>
         <td class="num fw-bold">{{ '%.2f'|format(pt_totals.war) }}</td>
       </tr></tbody>
@@ -611,6 +637,7 @@
         {{ brow('OPS',   'ops',  '%.3f', 'fw-bold') }}
         {{ brow('OPS+',  'ops_plus', '%d') }}
         {{ brow('wOBA',  'woba', '%.3f') }}
+        {{ brow('wRC+',  'wrc_plus', '%d') }}
         {{ brow('BAVG',  'bavg', '%.3f') }}
         <tr>
           <td class="text-secondary" title="Second-Chance ABs (count, O27)">2C</td>
@@ -673,6 +700,8 @@
         </tr>
         {{ prow('GSc avg', 'gsc_avg', '%.1f') }}
         {{ prow('GSc+',    'gsc_plus', '%d') }}
+        {{ prow('GSc Idx', 'gsc_index', '%d', 'fw-bold') }}
+        {{ prow('wERA+',   'wera_plus', '%d', 'fw-bold') }}
         {{ prow('OS+',     'os_plus',  '%d') }}
         <tr>
           <td class="text-secondary" title="(K + foul-outs) / BF">K%</td>

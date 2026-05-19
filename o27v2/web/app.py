@@ -4719,6 +4719,24 @@ def player_detail(player_id: int):
         handedness_splits["pit_vs_lhb"] = _player_handedness_split_pitcher(player_id, "L")
         handedness_splits["pit_vs_rhb"] = _player_handedness_split_pitcher(player_id, "R")
 
+    # Stamp WPA / Leverage on the totals dicts so the player page can
+    # render them. The WPA model is rebuilt per request — same shape
+    # as the /leaders route. Cold-start leagues (n_games < ~50) will
+    # have all-None lookups, which the template renders as "—".
+    try:
+        from o27v2.analytics.wpa import build_player_wpa
+        wpa_data = build_player_wpa()
+    except Exception:
+        wpa_data = {"by_batter": {}, "by_pitcher": {}}
+    if bt_totals is not None:
+        wb = wpa_data["by_batter"].get(player_id)
+        bt_totals["wpa"]    = wb["wpa"]    if wb else None
+        bt_totals["li_avg"] = wb["li_avg"] if wb else None
+    if pt_totals is not None:
+        wp = wpa_data["by_pitcher"].get(player_id)
+        pt_totals["wpa"]    = wp["wpa"]    if wp else None
+        pt_totals["li_avg"] = wp["li_avg"] if wp else None
+
     return _serve(
         "player.html",
         player=player,

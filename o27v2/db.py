@@ -488,6 +488,12 @@ CREATE TABLE IF NOT EXISTS season_batting_leaders (
     obp         REAL,
     slg         REAL,
     ops         REAL,
+    -- Park-adjusted league-relative offense + win probability.
+    -- Added in the GSc-normalization batch; legacy archive rows have
+    -- 100 / 0 / 0 defaults so display code doesn't need to NULL-check.
+    wrc_plus    REAL DEFAULT 100,
+    wpa         REAL DEFAULT 0,
+    li_avg      REAL DEFAULT 0,
     PRIMARY KEY (season_id, category, rank)
 );
 
@@ -508,6 +514,12 @@ CREATE TABLE IF NOT EXISTS season_pitching_leaders (
     fip         REAL,
     whip        REAL,
     oavg        REAL DEFAULT 0,   -- opponent batting average (H / (BF - BB))
+    -- Park-adjusted + z-score normalized pitching + win probability.
+    -- Same defaults convention as the batting variant.
+    wera_plus   REAL DEFAULT 100,
+    gsc_index   REAL DEFAULT 100,
+    wpa         REAL DEFAULT 0,
+    li_avg      REAL DEFAULT 0,
     PRIMARY KEY (season_id, category, rank)
 );
 
@@ -996,6 +1008,26 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+
+        # GSc-normalization batch: park-adjusted + z-score-normalized
+        # stats persisted into season archive. Idempotent — silently
+        # no-ops on already-migrated DBs.
+        for (table, col, default) in (
+            ("season_batting_leaders",  "wrc_plus",   100),
+            ("season_batting_leaders",  "wpa",        0),
+            ("season_batting_leaders",  "li_avg",     0),
+            ("season_pitching_leaders", "wera_plus",  100),
+            ("season_pitching_leaders", "gsc_index",  100),
+            ("season_pitching_leaders", "wpa",        0),
+            ("season_pitching_leaders", "li_avg",     0),
+        ):
+            try:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {col} REAL DEFAULT {default}"
+                )
+                conn.commit()
+            except Exception:
+                pass
         # Task #62: add year column to existing seasons table.
         try:
             conn.execute("ALTER TABLE seasons ADD COLUMN year INTEGER")

@@ -155,6 +155,8 @@
     {{ bat_table('HR',  batting.get('hr',  []), 'hr',  '%d') }}
     {{ bat_table('RBI', batting.get('rbi', []), 'rbi', '%d') }}
     {{ bat_table('OPS', batting.get('ops', []), 'ops', '%.3f') }}
+    {{ bat_table('wRC+',batting.get('wrc_plus', []), 'wrc_plus', '%d') }}
+    {{ bat_table('WPA', batting.get('wpa', []), 'wpa', '%+.2f') }}
   </div>
   <div class="col-lg-6">
     <h5 class="text-secondary text-uppercase small">Pitching Leaders</h5>
@@ -163,9 +165,12 @@
        Old archived seasons keep their original ERA/FIP semantics. #}
     {{ pit_table('W',     pitching.get('w',     []), 'w',     '%d') }}
     {{ pit_table('wERA',  pitching.get('werra', pitching.get('era', [])), 'era', '%.2f') }}
+    {{ pit_table('wERA+', pitching.get('wera_plus', []), 'wera_plus', '%d') }}
     {{ pit_table('xRA',  pitching.get('xra',  pitching.get('fip', [])), 'fip', '%.2f') }}
     {{ pit_table('K',     pitching.get('k',     []), 'k',     '%d') }}
     {{ pit_table('OAVG',  pitching.get('oavg',  []), 'oavg',  '%.3f') }}
+    {{ pit_table('GSc Idx', pitching.get('gsc_index', []), 'gsc_index', '%d') }}
+    {{ pit_table('WPA',   pitching.get('wpa',   []), 'wpa',   '%+.2f') }}
   </div>
 </div>
 

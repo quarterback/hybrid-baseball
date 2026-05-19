@@ -181,26 +181,49 @@ but it's a separate commit.
 
 ---
 
-## Punch list for the follow-up
+## Punch list — resolved
 
-1. **Player page** — add GSc Index + wERA+ to the pitcher totals card;
-   add wRC+ to the batter totals card. Add the per-game GSc to the
-   pitching log row (we already compute it for the leaders top-10,
-   so reuse `_pitcher_game_score` per row).
-2. **Stats browse** — add sortable columns for `gsc_index`, `wera_plus`,
-   `wrc_plus`.
-3. **Team page** — same columns on the roster tables.
-4. **Compare page** — surface in the side-by-side header.
-5. **Markdown / text exports** — add the new fields to
-   `text_export.py:player_export` and `box_text.py` per-pitcher line.
-6. **Season archive** — schema migration + writer updates for
-   `season_batting_leaders` / `season_pitching_leaders`.
-7. **WPA surfacing beyond `/leaders`** — decide whether to stamp WPA
-   on the player_detail page (one extra `build_player_wpa()` call
-   per render is cheap; the table is built once per request anyway).
+All seven items shipped in the follow-up commit. Summary:
 
-Items 1–3 are the highest-value cosmetic follow-ups; 6–7 are
-architectural choices that need the user's call.
+1. ✅ **Player page** — headline stat strip carries wRC+ (batters) and
+   wERA+ + GSc Idx (pitchers); the sabermetric row gained wRC+; the
+   pitcher Value table gained GSc Idx, wERA+, WPA, LI; the splits
+   tables gained matching rows. Per-game GSc was already inline-computed
+   in the pitching log (locked formula), so left as-is.
+2. ✅ **Stats browse** — `gsc_index`, `wera_plus`, `wrc_plus` columns
+   added to all four sortable views (batter default + all,
+   pitcher advanced + all).
+3. ✅ **Team page** — OPS+ / wRC+ on the batter roster table; wERA+ +
+   GSc Idx on the pitcher roster table.
+4. ✅ **Compare page** — wRC+ row on the batting block; wERA+ + GSc Idx
+   on the pitching block.
+5. ✅ **Markdown / text exports** — `text_export.py`: player_export
+   gained wRC+ / WPA / LI on the batting line and wERA+ / GSc Idx /
+   WPA / LI on the pitching line. leaders_export gained wRC+ / wERA+ /
+   GSc Idx / WPA tables. (box_text.py per-pitcher line was already
+   surfacing per-game GSc, so untouched.)
+6. ✅ **Season archive** — DB schema gained 7 new columns across
+   `season_batting_leaders` (`wrc_plus`, `wpa`, `li_avg`) and
+   `season_pitching_leaders` (`wera_plus`, `gsc_index`, `wpa`, `li_avg`).
+   Idempotent migrations added to `init_db()` so existing live DBs
+   pick them up on next boot. `_snapshot_leaders()` writer now stamps
+   WPA / LI on every row (one shared `build_player_wpa()` call serves
+   batters + pitchers) and persists the new columns. Three new
+   archive categories: `wrc_plus`, `wera_plus`, `gsc_index`, `wpa`.
+   `season_detail.html` renders all of them. Pre-existing bug noted:
+   `_save_pitching("xfip", ...)` sorts by `xfip` which the aggregator
+   doesn't stamp (only `xra` is) — left untouched, separate fix.
+7. ✅ **WPA on player page** — `player_detail()` builds the WP table
+   per render (one `build_player_wpa()` call), stamps `wpa` / `li_avg`
+   on both `bt_totals` and `pt_totals`. Cold-start leagues render as
+   "—" via the same Jinja gates used elsewhere.
+
+### Tests
+`tests/test_template_renders.py` — 7 new tests that actually render
+every modified page through the Flask test client against the
+in-memory fixture and assert the new field labels appear. Plus a
+schema-migration test confirming `init_db()` adds all 7 new
+season-archive columns on a fresh DB. 81/81 deterministic tests green.
 
 ---
 
