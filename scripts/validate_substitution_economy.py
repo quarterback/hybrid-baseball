@@ -70,8 +70,8 @@ def _make_team(role: str, name: str, players: list[dict],
                manager_platoon_aggression: float = 0.5) -> Team:
     actives = [p for p in players if p.get("is_active", 1)]
     hydrated = [_hydrate(p, role) for p in actives]
-    # Starting fielders: 8 canonical positions, prefer non-jokers / non-
-    # specialists. Pick the first eligible at each position.
+    # Starting fielders: 8 canonical positions, prefer non-jokers /
+    # non-specialists. Pick the first eligible at each position.
     by_pos: dict[str, Player] = {}
     fielders: list[Player] = []
     for player in hydrated:
@@ -83,13 +83,18 @@ def _make_team(role: str, name: str, players: list[dict],
         if pos in ("CF", "SS", "2B", "3B", "RF", "LF", "1B", "C") and pos not in by_pos:
             by_pos[pos] = player
             fielders.append(player)
-    # Jokers: 3 players with roster_slot=="joker". Stamp game_position="J".
+    # SP bats 9th — pitcher is an explicit part of O27's batting order.
+    sp = next((p for p in hydrated if p.is_pitcher), None)
+    starting = list(fielders)
+    if sp:
+        starting.append(sp)
+    # Jokers: 3 players with roster_slot=="joker" — a FIXED tactical
+    # pool, NOT in the batting order. Can be inserted via
+    # batter_override (existing joker mechanic) but cannot be subbed
+    # out of the pool.
     jokers = [p for p in hydrated if p.roster_slot == "joker"][:3]
     for j in jokers:
         j.game_position = "J"
-    # 11-batter lineup: 8 fielders + 3 jokers (no SP — jokers fill the
-    # DH role and pitcher does NOT bat).
-    starting = fielders + jokers
     team = Team(
         team_id=role, name=name,
         roster=hydrated,

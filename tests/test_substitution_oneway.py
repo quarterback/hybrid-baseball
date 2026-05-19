@@ -354,24 +354,26 @@ def test_make_joker_is_pure_bat_no_glove():
     assert p["contact"] >= 65
 
 
-def test_joker_cannot_be_pinch_hit_for():
-    """Jokers are fixed in the lineup pre-game and the substitution
-    trigger must refuse to fire on them."""
+def test_joker_on_base_cannot_be_pinch_run_for():
+    """Jokers are a finite tactical resource — 3 per team, fixed
+    pre-game. Once a joker is on base, the manager cannot pinch-run
+    for them (that would effectively sub them out of the pool)."""
     import random as _r
-    from o27.engine.manager import should_pinch_hit
+    from o27.engine.manager import should_pinch_run
 
     state = _mk_state()
     state.half = "top"
-    state.outs = 20
-    # Tag the current batter as a joker.
-    cur = state.visitors.lineup[state.visitors.lineup_position]
-    cur.roster_slot = "joker"
-    cur.game_position = "J"
-    # Even with a strong bench candidate, the trigger should not pick
-    # one — jokers can't be subbed out.
-    state.visitors.bench[0].skill = 0.95
-    result = should_pinch_hit(state, rng=_r.Random(0))
-    assert result is None
+    state.outs = 22
+    # Put a joker on first.
+    joker = state.visitors.lineup[0]
+    joker.roster_slot = "joker"
+    joker.game_position = "J"
+    joker.speed = 0.3   # slow enough that PR leverage would normally fire
+    state.bases = [joker.player_id, None, None]
+    # Bench has a fast runner ready.
+    state.visitors.bench[0].speed = 0.95
+    result = should_pinch_run(state, rng=_r.Random(0))
+    assert result is None, "joker on base must not be pinch-run-for"
 
 
 def test_score_substitution_matchup_factor_favors_platoon_edge():
