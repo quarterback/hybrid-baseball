@@ -208,3 +208,98 @@ def test_substitution_threshold_inverse_of_aggression():
     state.visitors.mgr_platoon_aggression = 0.92    # platoon_manager
     state.home.mgr_platoon_aggression     = 0.05    # workhorse-traditionalist
     assert substitution_threshold(state.visitors) < substitution_threshold(state.home)
+
+
+def test_substitution_threshold_neutral_band():
+    """The threshold curve covers a non-degenerate range across the
+    persona ladder (Item 4 calibration). Validates that the formula
+    actually discriminates between manager types."""
+    state = _mk_state()
+    state.visitors.mgr_platoon_aggression = 0.05
+    passive = substitution_threshold(state.visitors)
+    state.visitors.mgr_platoon_aggression = 0.50
+    neutral = substitution_threshold(state.visitors)
+    state.visitors.mgr_platoon_aggression = 0.92
+    aggressive = substitution_threshold(state.visitors)
+    # Neutral should sit between passive and aggressive.
+    assert aggressive < neutral < passive
+    # Spread should be meaningful (>= 0.20 from passive to aggressive).
+    assert (passive - aggressive) >= 0.20
+
+
+# ---------------------------------------------------------------------------
+# Per-archetype roster tilt (Item 4 follow-up)
+# ---------------------------------------------------------------------------
+
+def test_archetype_roster_tilt_platoon_manager():
+    """platoon_manager promotes 3 reserves to active; others stay flat."""
+    from o27v2.league import apply_archetype_roster_tilt
+
+    roster = (
+        [{"is_active": 1, "roster_slot": "bat_first", "skill": 60} for _ in range(42)]
+        + [{"is_active": 0, "roster_slot": "ph_specialist", "skill": 55} for _ in range(3)]
+        + [{"is_active": 0, "roster_slot": "bat_first", "skill": 40} for _ in range(2)]
+    )
+    promoted = apply_archetype_roster_tilt(roster, "platoon_manager")
+    assert promoted == 3
+    active_count = sum(1 for p in roster if p["is_active"])
+    assert active_count == 45
+    # PH specialists should have been promoted first (their promotion
+    # score is highest among reserves).
+    promoted_ph = [p for p in roster if p["is_active"] and p["roster_slot"] == "ph_specialist"]
+    assert len(promoted_ph) == 3
+
+
+def test_archetype_roster_tilt_special_teams():
+    """special_teams adds 2."""
+    from o27v2.league import apply_archetype_roster_tilt
+
+    roster = (
+        [{"is_active": 1, "roster_slot": "bat_first", "skill": 60} for _ in range(42)]
+        + [{"is_active": 0, "roster_slot": "pr_specialist", "skill": 50} for _ in range(3)]
+    )
+    promoted = apply_archetype_roster_tilt(roster, "special_teams")
+    assert promoted == 2
+    assert sum(1 for p in roster if p["is_active"]) == 44
+
+
+def test_archetype_roster_tilt_no_op_for_default():
+    """Untilted archetypes leave the roster alone."""
+    from o27v2.league import apply_archetype_roster_tilt
+
+    roster = (
+        [{"is_active": 1, "roster_slot": "bat_first", "skill": 60} for _ in range(42)]
+        + [{"is_active": 0, "roster_slot": "ph_specialist", "skill": 55} for _ in range(3)]
+    )
+    promoted = apply_archetype_roster_tilt(roster, "dead_ball")
+    assert promoted == 0
+    assert sum(1 for p in roster if p["is_active"]) == 42
+
+
+# ---------------------------------------------------------------------------
+# Matchup factor (Item 2 follow-up)
+# ---------------------------------------------------------------------------
+
+def test_score_substitution_matchup_factor_favors_platoon_edge():
+    """Pinch-hit candidate with the platoon edge scores higher than one
+    without, holding skill constant."""
+    state = _mk_state()
+    state.half = "top"
+    state.outs = 20
+    # Stamp a current pitcher with throws='R'.
+    pitcher = _mk_player("p", "Pitcher", is_pitcher=True)
+    pitcher.throws = "R"
+    state.home.roster.append(pitcher)
+    state.current_pitcher_id = pitcher.player_id
+
+    out_player = _mk_player("o", "Out", skill=0.5)
+    out_player.bats = "R"   # no edge vs RHP
+
+    cand_no_edge = _mk_player("nope", "NoEdge", skill=0.5)
+    cand_no_edge.bats = "R"
+    cand_has_edge = _mk_player("yes", "HasEdge", skill=0.5)
+    cand_has_edge.bats = "L"   # LHB vs RHP — has the edge
+
+    s_no_edge = score_substitution(state, cand_no_edge,  "pinch_hit", out_player)
+    s_has_edge = score_substitution(state, cand_has_edge, "pinch_hit", out_player)
+    assert s_has_edge > s_no_edge

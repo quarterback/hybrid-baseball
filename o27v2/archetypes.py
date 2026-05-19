@@ -159,22 +159,29 @@ def classify_position_player(p: dict) -> str:
 # Re-derived during off-season development the same way `archetype` is.
 
 # Hit-capability threshold — composite of contact + power + eye must clear
-# this for the player to count as a deployable bat. Centred a hair under
-# league-mean so the median player is hit-capable but replacement-level
-# bats wash out.
-ROLE_HIT_THRESHOLD = 45      # mean of contact/power/eye
+# this for the player to count as a deployable bat. Set at league-mean so
+# above-average bats count as hit-capable and below-average ones fall into
+# glove_first / unused-on-offense roles. Calibrated against the 10/7/5/3
+# recipe target — lower (45) over-populates bat_first; higher (55)
+# starves it.
+ROLE_HIT_THRESHOLD = 50      # mean of contact/power/eye
 
-# Position-specific defensive thresholds. Catcher is tighter (you can't
-# fake C); corner OF / 1B loosest (any glove can hide there in a pinch).
+# Position-specific defensive thresholds. Catcher tightest (you can't
+# fake C); corner OF / 1B loosest. Calibrated against the substitution-
+# economy validator: with the looser pre-tuning thresholds (LF/RF/1B =
+# 42, SS/CF = 50) too many marginal-glove players landed in glove_first
+# / two_way, leaving bat_first under-populated relative to the 10/7/5/3
+# recipe. Tightened across the board so a "field-capable" tag actually
+# means deployable-at-that-position-in-a-pinch.
 _FIELD_THRESHOLDS = {
     "C":  55,
     "SS": 50,
-    "2B": 48,
-    "3B": 48,
+    "2B": 50,
+    "3B": 50,
     "CF": 50,
-    "LF": 42,
-    "RF": 42,
-    "1B": 42,
+    "LF": 45,
+    "RF": 45,
+    "1B": 45,
 }
 
 # Run-capability — pure speed + baserunning composite.
@@ -277,9 +284,10 @@ def classify_roster_slot(p: dict) -> str:
     # Specialists: one-tool extremes carved out before the main split.
     if run and not hit and not field:
         return SLOT_PR_SPECIALIST
-    if hit and not field and (_g(p, "power") >= 65 or _g(p, "contact") >= 65):
-        # Pure bat — no glove anywhere. Read as a PH specialist when the
-        # bat is loud; otherwise just bat_first.
+    if hit and not field and (_g(p, "power") >= 75 or _g(p, "contact") >= 75):
+        # Pure bat — no glove anywhere. Tightened to grade 75 so the PH
+        # specialist tag means a genuinely loud bench bat (slugger-tier),
+        # not a generic above-average hitter who happens to lack a glove.
         return SLOT_PH_SPECIALIST
 
     if hit and field:

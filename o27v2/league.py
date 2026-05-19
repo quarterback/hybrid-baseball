@@ -1182,6 +1182,15 @@ def _make_hitter(
         if_g  = roll()
         of_g  = roll()
         cat_g = roll()
+    elif pos == "DH":
+        # DH = pure bat slot; no defensive primary. All three position
+        # groups roll low (replacement-ish). Without this branch a DH
+        # would default to "primary=if" and get a full infield roll,
+        # silently making DHs field-capable and undermining the
+        # bat_first / two_way classification balance.
+        if_g  = max(20, roll() // 2 + 10)
+        of_g  = max(20, roll() // 2 + 10)
+        cat_g = max(20, roll() // 2 + 10)
     else:
         # Pick a primary specialty group based on the canonical position.
         primary = "if"
@@ -1753,6 +1762,63 @@ def _run_snake_draft(
     return assignments, free_agents
 
 
+_ARCHETYPE_EXTRA_ACTIVE: dict[str, int] = {
+    # Per-archetype roster-shape tilt within the 42-45 band (Item 4
+    # follow-up). Promotes N reserves into the active roster so a
+    # platoon manager's bench has actually-more specialists, not just
+    # more-aggressive deployment of the same 42-active baseline.
+    "platoon_manager": 3,    # 42 → 45
+    "special_teams":   2,    # 42 → 44
+}
+
+
+def _promotion_score(p: dict) -> int:
+    """Score reserves for archetype-tilt promotion. Specialists rank
+    highest (they're the slot a platoon/special-teams manager values
+    most), then bat_first, then glove_first; everyone else falls back
+    to player overall."""
+    slot = p.get("roster_slot", "")
+    if slot in ("ph_specialist", "pr_specialist"):
+        bonus = 30
+    elif slot == "bat_first":
+        bonus = 15
+    elif slot == "glove_first":
+        bonus = 10
+    else:
+        bonus = 0
+    return bonus + _player_overall(p)
+
+
+def apply_archetype_roster_tilt(roster: list[dict], manager_archetype: str) -> int:
+    """Promote reserves to active based on the team's manager archetype.
+
+    Operates in place on the roster list. Returns the count of players
+    promoted (0 for archetypes that don't tilt).
+
+    `platoon_manager` and `special_teams` skippers run deeper benches —
+    they want more specialists available for situational deployment. A
+    `platoon_manager` team lands at 45 active; `special_teams` at 44.
+    Every other archetype stays at the 42 baseline. Promoted reserves
+    are picked by specialist value (PH/PR specialists first, then
+    bat_first, then glove_first) — this is what makes a Platoon
+    Manager's roster *look* different at the slot-mix level rather than
+    just play differently through the substitution trigger.
+    """
+    extra = _ARCHETYPE_EXTRA_ACTIVE.get(manager_archetype, 0)
+    if extra <= 0:
+        return 0
+    reserves = sorted(
+        (p for p in roster if not p.get("is_active")),
+        key=_promotion_score,
+        reverse=True,
+    )
+    promoted = 0
+    for p in reserves[:extra]:
+        p["is_active"] = 1
+        promoted += 1
+    return promoted
+
+
 def _team_org_strength_from_roster(players: list[dict]) -> int:
     """Recompute a team's org_strength as the mean composite rating of
     its active roster, clamped to the 20-95 grade range. The persisted
@@ -1974,11 +2040,19 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("role_field_pos", ""))
 
     # Cache team-id → league name so each player's salary uses the
-    # right tier cap.
-    team_league = {
-        row["id"]: row["league"]
-        for row in db.fetchall("SELECT id, league FROM teams")
+    # right tier cap. Also pull manager_archetype for the per-archetype
+    # roster tilt (Item 4 follow-up).
+    team_meta_rows = db.fetchall("SELECT id, league, manager_archetype FROM teams")
+    team_league = {row["id"]: row["league"] for row in team_meta_rows}
+    team_archetype = {
+        row["id"]: (row["manager_archetype"] or "") for row in team_meta_rows
     }
+
+    for team_id in team_ids:
+        apply_archetype_roster_tilt(
+            assignments.get(team_id, []),
+            team_archetype.get(team_id, ""),
+        )
 
     for team_id in team_ids:
         roster = assignments.get(team_id, [])
