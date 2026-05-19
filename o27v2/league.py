@@ -1086,29 +1086,32 @@ def _park_surname_pool(rng: random.Random, count: int = 60) -> list[str]:
 
 # Roster shape — substitution-economy 42-player baseline (Item 2).
 #
-# Up from 34 (Task #65 shape) to reflect the brief's recipe:
-#   - 10 bat-first (good bat, weak glove; best 3 are jokers)
-#   -  7 glove-first (weak bat, elite glove)
-#   -  5 two-way (competent both — bridge players)
-#   - 17 pitchers (bulk + leverage + emergency)
-#   -  3 situational specialists (1 pure-speed PR + 2 matchup PH)
-# Total active: 42 (band 42–45 ± manager tilt; this is the baseline).
+# Per the operator's clarification: in O27, the 3 jokers ARE the DH
+# role (analogous to MLB's 1 DH, just with 3 of them). There is NO
+# separate DH player class. The lineup is 8 fielders + 3 jokers = 11
+# batters; the pitcher does NOT bat (jokers replace pitcher batting,
+# same way MLB's DH does). Jokers are FIXED in the lineup pre-game and
+# CANNOT be substituted out.
 #
-# The bat_first / glove_first / two_way split falls out of the role-tag
-# classifier in archetypes.py — those slots are filled organically by
-# the rolls on the 8 canonical starter slots, 7 fielder backups, and
-# DH slots. The 3 situational specialists are drafted EXPLICITLY by
-# _make_specialist (Item 4 follow-up #6) so every team has dedicated
-# pure-speed / pure-bat bench bodies rather than relying on the
-# classifier to surface them as a by-product.
-ACTIVE_FIELDERS    = 15   # 8 starting positions + 7 fielder backups (filtered into glove-first / two-way)
-ACTIVE_DH          = 7    # bat-first slots (best 3 emerge as jokers via the existing joker pool)
-ACTIVE_SPECIALISTS = 3    # 1 PR + 2 PH, drafted explicitly by _make_specialist
-ACTIVE_PITCHERS    = 17   # balanced against the deeper position pool
-RESERVE_HITTERS    = 3    # smaller reserve pool — the active roster is now deep enough
-RESERVE_PITCHERS   = 3    # smaller reserve arm pool — active staff is bigger
-# Active = 15 + 7 + 3 + 17 = 42. Total = 42 + 3 + 3 = 48 players/team.
-ACTIVE_POSITION_TOTAL = ACTIVE_FIELDERS + ACTIVE_DH + ACTIVE_SPECIALISTS  # 25 — fill target on IL
+#   -  8 fielders (canonical starters, 1 each at C/1B/2B/3B/SS/LF/CF/RF)
+#   - 11 fielder backups (depth at every position for PH/PR/DEF subs)
+#   -  3 jokers (drafted explicitly as elite-bat / no-glove; the DH role)
+#   -  3 situational specialists (1 PR + 2 PH for bench leverage)
+#   - 17 pitchers (bulk + leverage + emergency)
+# Total active: 42.
+#
+# The bat_first / glove_first / two_way classifier mix falls out of
+# the 19 fielders (8 starters + 11 backups). Jokers and specialists
+# are drafted explicitly so every team is guaranteed dedicated
+# situational weapons.
+ACTIVE_FIELDERS    = 19   # 8 canonical starters + 11 fielder backups
+ACTIVE_JOKERS      = 3    # the DH role — fixed in lineup, not subbable
+ACTIVE_SPECIALISTS = 3    # 1 PR + 2 PH, drafted explicitly
+ACTIVE_PITCHERS    = 17
+RESERVE_HITTERS    = 3
+RESERVE_PITCHERS   = 3
+# Active = 19 + 3 + 3 + 17 = 42. Total = 42 + 3 + 3 = 48 players/team.
+ACTIVE_POSITION_TOTAL = ACTIVE_FIELDERS + ACTIVE_JOKERS + ACTIVE_SPECIALISTS  # 25
 
 
 def _make_hitter(
@@ -1286,10 +1289,12 @@ def _make_hitter(
 # Pseudo-position labels for the explicit specialist draft slots
 # (substitution-economy Item 4 follow-up #6). They appear only in the
 # draft pool keying — the resulting player rows carry canonical
-# positions ("CF" for PR specialists, "DH" for PH specialists) so the
-# engine and box-score renderers don't need new vocabulary.
-SPEC_PR = "PR_SPEC"
-SPEC_PH = "PH_SPEC"
+# positions ("CF" for PR specialists, "DH" for PH specialists, "DH"
+# for jokers) so the engine and box-score renderers don't need new
+# vocabulary.
+SPEC_PR    = "PR_SPEC"
+SPEC_PH    = "PH_SPEC"
+SPEC_JOKER = "JOKER"
 
 
 def _make_specialist(
@@ -1301,16 +1306,17 @@ def _make_specialist(
 ) -> dict:
     """Build a single-tool specialist player.
 
-    `kind` is "pr_specialist" (pure-speed pinch runner) or
-    "ph_specialist" (loud-bat pinch hitter). The result is shaped so
-    classify_roster_slot lands it on the intended slot — strong in the
-    specialist's dimension, intentionally weak elsewhere so it doesn't
-    leak into bat_first / glove_first / two_way.
+    `kind` is "pr_specialist" (pure-speed pinch runner), "ph_specialist"
+    (loud-bat pinch hitter), or "joker" (best-of-the-best bat with no
+    defensive role, fixed in the lineup for the whole game). The result
+    is shaped so classify_roster_slot lands it on the intended slot —
+    strong in the specialist's dimension, intentionally weak elsewhere
+    so it doesn't leak into bat_first / glove_first / two_way.
 
-    PR specialists carry canonical position "CF" (a speed-friendly
-    spot for cosmetic display); PH specialists carry "DH". Neither
-    has a defensive role in practice — the field thresholds in
-    o27v2/archetypes._FIELD_THRESHOLDS are deliberately not cleared.
+    PR specialists carry canonical position "CF"; PH specialists and
+    jokers carry "DH". Neither has a defensive role — the field
+    thresholds in o27v2/archetypes._FIELD_THRESHOLDS are deliberately
+    not cleared.
     """
     def low_roll() -> int:
         # Replacement to slightly-below-average. Tight band so the
@@ -1320,6 +1326,11 @@ def _make_specialist(
     def high_roll() -> int:
         # Forced high — elite for the specialist's tool.
         return rng.randint(65, 80)
+
+    def elite_roll() -> int:
+        # Joker-tier — best-of-the-best bat. Tighter, higher than the
+        # PH specialist roll because jokers are the team's *best* bats.
+        return rng.randint(70, 85)
 
     if kind == "pr_specialist":
         position   = "CF"
@@ -1335,6 +1346,23 @@ def _make_specialist(
         cat_g      = low_roll()
         skill_g    = max(30, low_roll() + 5)
         ra_g       = high_roll()
+    elif kind == "joker":
+        # Joker = pure bat, no glove. Stronger than ph_specialist on
+        # average because jokers are fixed in the lineup and need to
+        # carry their slot every PA, not just situational appearances.
+        position   = "DH"
+        power_g    = elite_roll()
+        contact_g  = elite_roll()
+        eye_g      = rng.randint(55, 75)
+        speed_g    = low_roll()
+        baserunning_g = low_roll()
+        defense_g  = low_roll()
+        arm_g      = low_roll()
+        if_g       = low_roll()
+        of_g       = low_roll()
+        cat_g      = low_roll()
+        skill_g    = rng.randint(65, 82)
+        ra_g       = rng.randint(40, 60)
     else:  # ph_specialist
         position   = "DH"
         power_g    = high_roll()
@@ -1404,14 +1432,18 @@ def _make_specialist(
     result["role_two_way"]   = 1 if is_two_way(result) else 0
     result["role_field_pos"] = encode_field_positions(result)
     result["roster_slot"]    = classify_roster_slot(result)
-    # If the classifier didn't land on the intended slot (a corner case
-    # where the random rolls leaked into a different bucket), force-tag
-    # it. The draft slot represents *intent*; the role flags should
-    # reflect that even if the random profile is a near-miss.
+    # Force-tag the intent. The draft slot expresses *intent*; the role
+    # flags should reflect that even if a near-miss random profile would
+    # land it elsewhere by the generic classifier.
     if kind == "pr_specialist":
         result["roster_slot"] = "pr_specialist"
         result["role_hit"]    = 0
         result["role_run"]    = 1
+    elif kind == "joker":
+        result["roster_slot"] = "joker"
+        result["is_joker"]    = 1   # legacy flag for back-compat
+        result["role_hit"]    = 1
+        result["role_run"]    = 0
     else:
         result["roster_slot"] = "ph_specialist"
         result["role_hit"]    = 1
@@ -1667,26 +1699,21 @@ def generate_players(
 ) -> list[dict]:
     """Generate ~48 players for a single team (legacy helper).
 
-    Composition (substitution-economy 42-baseline):
-      - 15 active fielders (8 canonical starters + 7 backups across CF/
-        SS/2B/C plus corner IF/OF — classified into glove-first / two-way
-        / bat-first by the role-tag classifier)
-      -  7 active DH bats (bat-first; best 3 emerge as jokers)
-      -  1 active PR specialist (pure-speed pinch runner)
-      -  2 active PH specialists (loud-bat pinch hitters)
+    Composition (substitution-economy 42-baseline, jokers-as-DH):
+      - 19 active fielders (8 canonical starters + 11 backups)
+      -  3 active jokers (drafted explicitly; the DH role in O27 —
+         fixed in lineup, not subbable)
+      -  1 active PR specialist
+      -  2 active PH specialists
       - 17 active pitchers
       -  3 reserve position players
       -  3 reserve pitchers
 
-    Every attribute is rolled independently against the talent-tier
-    distribution (`_TALENT_TIERS`).
+    The pitcher does NOT bat; jokers fill the DH role (slots #9-11 in
+    the 11-batter lineup).
 
     `org_strength`, `team_idx`, and `home_bonus` are accepted for
-    backward compatibility but no longer bias the rolls — the league
-    is seeded via a snake draft over a flat, team-blind player pool
-    (see `_run_snake_draft`), which is what produces realistic
-    parity. This helper is kept for non-league callers (smoke tests,
-    one-off batch sims).
+    backward compatibility but no longer bias the rolls.
     """
     cfg = name_config or {}
     _name = make_name_picker(
@@ -1709,31 +1736,33 @@ def generate_players(
         nm, country = _name()
         return _make_specialist(rng, kind, name=nm, country=country)
 
-    # ---- Active position players: 8 canonical starters + 7 fielder backups ----
+    # ---- Active position players: 8 canonical starters + 11 fielder backups ----
     for pos in FIELDER_POSITIONS:
         players.append(_hitter(pos, is_active=1))
-    # Active backups at high-rotation positions.
+    # High-rotation backups (each gets a starter-equivalent body).
     for pos in ("CF", "SS", "2B", "C"):
         players.append(_hitter(pos, is_active=1))
-    # Corner backups (one body per spot so the substitution candidate-pool
-    # has a glove at every position).
+    # Corner backups.
     for pos in ("3B", "1B", "LF"):
         players.append(_hitter(pos, is_active=1))
+    # Extra-depth backups (for PH/PR/DEF substitution pool).
+    for pos in ("RF", "CF", "SS", "2B"):
+        players.append(_hitter(pos, is_active=1))
 
-    # ---- Active DH/utility bats (bat-first slots) ----
-    for _ in range(ACTIVE_DH):
-        players.append(_hitter("DH", is_active=1))
+    # ---- Active jokers (the DH role; 3 drafted explicitly) ----
+    for _ in range(ACTIVE_JOKERS):
+        players.append(_spec("joker"))
 
     # ---- Active situational specialists ----
     players.append(_spec("pr_specialist"))
     players.append(_spec("ph_specialist"))
     players.append(_spec("ph_specialist"))
 
-    # ---- Active pitching staff (no role buckets) ----
+    # ---- Active pitching staff ----
     for _ in range(ACTIVE_PITCHERS):
         players.append(_pitcher(is_active=1))
 
-    # ---- Reserve pool (slimmer than the 13-deep Task-#65 shape) ----
+    # ---- Reserve pool ----
     _RESERVE_POSITIONS = ("RF", "CF", "SS")
     for i in range(RESERVE_HITTERS):
         pos = _RESERVE_POSITIONS[i % len(_RESERVE_POSITIONS)]
@@ -1776,10 +1805,12 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     # 8 canonical starters (1 active each).
     ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0), ("3B", 1, 0),
     ("RF", 1, 0), ("LF", 1, 0), ("1B", 1, 0), ("C",  1, 0),
-    # DH (7 active) — bat-first slots. Down from 10 to make room for
-    # the explicitly-drafted specialist slots below. Best 3 still
-    # emerge as jokers via the existing joker pool.
-    ("DH", 7, 0),
+    # 3 jokers — the O27 analog of MLB's DH. Drafted as explicit
+    # bat-only slots with elite contact/power and no defensive role.
+    # They are FIXED in the batting lineup for the whole game (slots
+    # #9-11) and CANNOT be substituted out. They can still be inserted
+    # as batter_override on top of any other slot for extra leverage PAs.
+    (SPEC_JOKER, 3, 0),
     # Active backups at high-rotation positions: catchers rest a lot,
     # middle infield rotates, CF backup is a near-everyday role. The
     # role classifier sorts these into glove-first or two-way based on
@@ -1789,6 +1820,10 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     # so the substitution candidate-pool has a glove at every spot. The
     # classifier sorts these into glove-first / two-way / bat-first.
     ("3B", 1, 0), ("1B", 1, 0), ("LF", 1, 0),
+    # Extra depth (4 more backups across high-rotation + outfield) so
+    # the substitution candidate pool has bodies to spend on PH/PR/DEF
+    # without leaving the team a defensive replacement short.
+    ("RF", 1, 0), ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0),
     # Situational specialists drafted explicitly (Item 4 follow-up #6):
     # 1 PR specialist + 2 PH specialists per team = 3 specialists
     # guaranteed in every roster. Built by _make_specialist with tight
@@ -1850,6 +1885,8 @@ def _generate_draft_pool(
                 bucket.append(_make_specialist(rng, "pr_specialist", name=nm, country=country))
             elif pos == SPEC_PH:
                 bucket.append(_make_specialist(rng, "ph_specialist", name=nm, country=country))
+            elif pos == SPEC_JOKER:
+                bucket.append(_make_specialist(rng, "joker", name=nm, country=country))
             else:
                 bucket.append(_make_hitter(rng, pos, is_active=0, name=nm, country=country))
         pool[pos] = bucket

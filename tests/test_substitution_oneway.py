@@ -315,21 +315,63 @@ def test_make_specialist_ph_lands_on_ph_slot():
     assert p["power"] >= 60
 
 
-def test_generate_players_includes_explicit_specialists():
+def test_generate_players_includes_explicit_specialists_and_jokers():
     """generate_players (the legacy helper exercised by the validator
-    and smoke tests) must include the 3 drafted specialists per team."""
+    and smoke tests) must include the 3 drafted jokers + 3 specialists
+    per team."""
     import random as _r
     from o27v2.league import generate_players
 
     players = generate_players(0, _r.Random(42))
     active = [p for p in players if p.get("is_active") == 1]
     assert len(active) == 42, f"expected 42 active, got {len(active)}"
+    jokers   = [p for p in active if p.get("roster_slot") == "joker"]
     pr_specs = [p for p in active if p.get("roster_slot") == "pr_specialist"]
     ph_specs = [p for p in active if p.get("roster_slot") == "ph_specialist"]
-    # 1 PR + 2 PH drafted explicitly (organic emergence may add more
-    # from the DH / backup pool).
+    # 3 jokers + 1 PR + 2 PH drafted explicitly.
+    assert len(jokers) == 3, f"expected 3 jokers, got {len(jokers)}"
     assert len(pr_specs) >= 1
     assert len(ph_specs) >= 2
+
+
+def test_make_joker_is_pure_bat_no_glove():
+    """Joker generation produces an elite-bat, no-glove player tagged
+    as roster_slot='joker'. They're the DH role and stay in the lineup
+    for the whole game."""
+    import random as _r
+    from o27v2.league import _make_specialist
+
+    rng = _r.Random(2)
+    p = _make_specialist(rng, "joker", name="Big Joker Joe")
+    assert p["roster_slot"] == "joker"
+    assert p["is_joker"] == 1
+    assert p["role_hit"] == 1
+    assert p["role_run"] == 0
+    assert p["role_two_way"] == 0
+    assert p["role_field_pos"] == ""
+    # Joker rolls are elite-tier in the bat dimensions.
+    assert p["power"] >= 65
+    assert p["contact"] >= 65
+
+
+def test_joker_cannot_be_pinch_hit_for():
+    """Jokers are fixed in the lineup pre-game and the substitution
+    trigger must refuse to fire on them."""
+    import random as _r
+    from o27.engine.manager import should_pinch_hit
+
+    state = _mk_state()
+    state.half = "top"
+    state.outs = 20
+    # Tag the current batter as a joker.
+    cur = state.visitors.lineup[state.visitors.lineup_position]
+    cur.roster_slot = "joker"
+    cur.game_position = "J"
+    # Even with a strong bench candidate, the trigger should not pick
+    # one — jokers can't be subbed out.
+    state.visitors.bench[0].skill = 0.95
+    result = should_pinch_hit(state, rng=_r.Random(0))
+    assert result is None
 
 
 def test_score_substitution_matchup_factor_favors_platoon_edge():
