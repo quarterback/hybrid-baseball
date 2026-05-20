@@ -1430,7 +1430,13 @@ def _aggregate_batter_rows(
         for stat in XO_BATTER_STATS:
             mean = scoped_xo_b.get(f"xo_{stat}_mean") or 0.0
             sd   = scoped_xo_b.get(f"xo_{stat}_sd")   or 0.0
-            native = b.get(stat) or 0.0
+            # The AVG crossover must anchor on traditional batting average
+            # (H/AB = bavg), the true 1:1 analog to MLB AVG and the same
+            # quantity the league baseline uses (see _compute_xo_league_
+            # baselines: avg_vals = h/ab). b["avg"] is O27's headline PAVG
+            # (H/PA) — a different denominator — so feeding it here would
+            # z-score a plate average against a batting-average distribution.
+            native = (b.get("bavg") if stat == "avg" else b.get(stat)) or 0.0
             b_xo[stat] = to_xo(stat, native, mean, sd)
         b["xo"] = b_xo
 
