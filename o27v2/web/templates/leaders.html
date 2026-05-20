@@ -53,20 +53,30 @@
    z-anchored MLB-readable version. Ordering is unchanged (the z-anchor
    map is monotonic), so the player list reads the same — only the
    numbers translate. Counting-stat keys (hr, rbi, k, …) never appear in
-   `r.xo` so they pass through untouched even on the XO toggle. #}
-{% macro card(label, key, fmt, desc, dataset, tooltip='') %}
+   `r.xo` so they pass through untouched even on the XO toggle.
+
+   `force_xo=true` makes the card always read the XO sub-dict regardless
+   of the toggle — used by the dedicated MLB-Equivalent sections that
+   always surface the crossover view. #}
+{% macro card(label, key, fmt, desc, dataset, tooltip='', force_xo=false) %}
 <div class="col-lg-3 col-md-6">
   <div class="panel">
     <div class="panel-head" {% if tooltip %}title="{{ tooltip }}"{% endif %}>
-      <span>{{ label }}{% if scale == 'xo' and dataset and dataset[0] is defined and dataset[0].xo is defined and dataset[0].xo and key in dataset[0].xo %} <span class="badge bg-primary" style="font-size:0.55rem;vertical-align:middle">XO</span>{% endif %}</span>
+      <span>{{ label }}{% if force_xo %} <span class="badge bg-primary" style="font-size:0.55rem;vertical-align:middle">XO</span>{% elif scale == 'xo' and dataset and dataset[0] is defined and dataset[0].xo is defined and dataset[0].xo and key in dataset[0].xo %} <span class="badge bg-primary" style="font-size:0.55rem;vertical-align:middle">XO</span>{% endif %}</span>
       <span class="ms-auto sub">Top 10</span>
     </div>
     <table class="table dense-table mb-0">
       <tbody>
-        {% set rows_with_value = dataset | selectattr(key, 'ne', None) | list %}
-        {% set sorted = rows_with_value | sort(attribute=key, reverse=desc) %}
+        {% if force_xo %}
+          {% set rows_with_value = dataset | selectattr('xo', 'defined') | rejectattr('xo', 'none') | list %}
+          {% set rows_with_value = rows_with_value | selectattr('xo') | list %}
+          {% set sorted = rows_with_value | sort(attribute='xo.' ~ key, reverse=desc) %}
+        {% else %}
+          {% set rows_with_value = dataset | selectattr(key, 'ne', None) | list %}
+          {% set sorted = rows_with_value | sort(attribute=key, reverse=desc) %}
+        {% endif %}
         {% for r in sorted[:10] %}
-        {% set use_xo = (scale == 'xo' and r.xo is defined and r.xo and key in r.xo) %}
+        {% set use_xo = force_xo or (scale == 'xo' and r.xo is defined and r.xo and key in r.xo) %}
         {% set val = (r.xo[key] if use_xo else r[key]) %}
         <tr>
           <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
@@ -83,7 +93,7 @@
 
 {% if games_played == 0 %}
 <div class="panel panel-body text-center text-secondary mb-4">
-  No games played yet — game-based leaderboards will appear once you sim. The Scouting tables below are roster-based and ready now.
+  No games played yet — leaderboards will appear once you sim. Player ratings and rosters are available on team and player pages.
 </div>
 {% else %}
 
@@ -128,11 +138,20 @@
   {{ card('RAD',  'rad_total',     '%d',   true, batting, tooltip='Runners Advanced — total bases gained by runners during this batter\'s PAs. Mirrors MLB Total Bases (which counts the batter\'s own bases) but applied to runner movement instead. Sum of bases gained from 1B/2B/3B starting positions.') }}
 </div>
 
-<h4>Batting · Tools (talent ratings)</h4>
+<h4>Batting · MLB-Equivalent Rates (XO Crossover)</h4>
+<div class="text-secondary small mb-2" style="padding:0 0.25rem">
+  O27 rate stats z-anchored to MLB league mean and spread, so the numbers
+  read like MLB stats. Rank order is identical to the Native cards above —
+  only the numbers translate. Always shown; the toggle at the top affects
+  the Native cards only.
+</div>
 <div class="row g-3 mb-3">
-  {{ card('Power',   'r_power',   '%d', true, batting, tooltip='Power rating — bias contact toward hard, more HR weight') }}
-  {{ card('Contact', 'r_contact', '%d', true, batting, tooltip='Contact rating — drives talent gate on every contact event (run + 2C)') }}
-  {{ card('Eye',     'r_eye',     '%d', true, batting, tooltip='Eye rating — plate discipline + 2C swing-2 read; drives talent gate on contact events') }}
+  {{ card('AVG',   'avg',   '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent batting average (XO z-anchor of O27 PAVG/AVG)') }}
+  {{ card('OBP',   'obp',   '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent on-base percentage') }}
+  {{ card('SLG',   'slg',   '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent slugging') }}
+  {{ card('OPS',   'ops',   '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent OPS') }}
+  {{ card('wOBA',  'woba',  '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent wOBA') }}
+  {{ card('BABIP', 'babip', '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent BABIP') }}
 </div>
 
 {# ============================================================
@@ -174,12 +193,22 @@
   {{ card('BB% (low)', 'bb_pct',  '%.3f', false, pitching) }}
 </div>
 
-<h4>Pitching · Tools (talent ratings)</h4>
+<h4>Pitching · MLB-Equivalent Rates (XO Crossover)</h4>
+<div class="text-secondary small mb-2" style="padding:0 0.25rem">
+  O27 pitcher rates z-anchored to MLB league mean and spread, so the numbers
+  read like MLB stats. Rank order is identical to the Native cards above —
+  only the numbers translate. Always shown; the toggle at the top affects
+  the Native cards only.
+</div>
 <div class="row g-3 mb-3">
-  {{ card('Stuff',    'r_stuff',    '%d', true, pitching, tooltip='Stuff (pitcher_skill) — swing-and-miss / contact dominance') }}
-  {{ card('Command',  'r_command',  '%d', true, pitching, tooltip='Command — control; drives talent gate on contact events from the pitcher side') }}
-  {{ card('Movement', 'r_movement', '%d', true, pitching, tooltip='Movement — bias contact toward weak / ground-out') }}
-  {{ card('Stamina',  'r_stamina',  '%d', true, pitching, tooltip='Stamina — durability across the arc') }}
+  {{ card('ERA (low)',  'era',  '%.2f', false, pitching, force_xo=true, tooltip='MLB-equivalent ERA') }}
+  {{ card('WHIP (low)', 'whip', '%.2f', false, pitching, force_xo=true, tooltip='MLB-equivalent WHIP') }}
+  {{ card('K/9',        'k9',   '%.1f', true,  pitching, force_xo=true, tooltip='MLB-equivalent K/9') }}
+  {{ card('BB/9 (low)', 'bb9',  '%.1f', false, pitching, force_xo=true, tooltip='MLB-equivalent BB/9') }}
+  {{ card('HR/9 (low)', 'hr9',  '%.2f', false, pitching, force_xo=true, tooltip='MLB-equivalent HR/9') }}
+  {{ card('OAVG (low)', 'oavg', '%.3f', false, pitching, force_xo=true, tooltip='MLB-equivalent opponent batting average') }}
+  {{ card('OOBP (low)', 'oobp', '%.3f', false, pitching, force_xo=true, tooltip='MLB-equivalent opponent on-base') }}
+  {{ card('OOPS (low)', 'oops', '%.3f', false, pitching, force_xo=true, tooltip='MLB-equivalent opponent OPS') }}
 </div>
 
 <h4>Pitching · Counting &amp; Value</h4>
@@ -459,27 +488,9 @@
 
 {% endif %}{# end of games_played > 0 in-season-leaders gate #}
 
-{# ============================================================
-   SCOUTING — every signed player ranked by raw 20-80 grades.
-   No playing-time qualifier; surfaces depth the in-season leader
-   tables filter out (e.g. a 75-Stamina swingman the manager
-   hasn't deployed yet, or a 70-Power bench bat).
-   ============================================================ #}
-<h4 class="mt-4">Scouting · Pitchers (raw 20–80 tools, no PT filter)</h4>
-<div class="row g-3 mb-3">
-  {{ card('Stuff',    'r_stuff',    '%d', true, talent_pitchers, tooltip='Every signed pitcher ranked by Stuff (pitcher_skill), regardless of usage') }}
-  {{ card('Command',  'r_command',  '%d', true, talent_pitchers, tooltip='Every signed pitcher ranked by Command') }}
-  {{ card('Movement', 'r_movement', '%d', true, talent_pitchers, tooltip='Every signed pitcher ranked by Movement') }}
-  {{ card('Stamina',  'r_stamina',  '%d', true, talent_pitchers, tooltip='Every signed pitcher ranked by Stamina — surfaces workhorse depth on the bench') }}
-</div>
-
-<h4>Scouting · Hitters (raw 20–80 tools, no PT filter)</h4>
-<div class="row g-3 mb-3">
-  {{ card('Power',   'r_power',   '%d', true, talent_hitters, tooltip='Every signed position player ranked by Power, regardless of usage') }}
-  {{ card('Contact', 'r_contact', '%d', true, talent_hitters, tooltip='Every signed position player ranked by Contact') }}
-  {{ card('Eye',     'r_eye',     '%d', true, talent_hitters, tooltip='Every signed position player ranked by Eye') }}
-  {{ card('Speed',   'r_speed',   '%d', true, talent_hitters, tooltip='Every signed position player ranked by Speed') }}
-</div>
+{# Scouting raw-rating tables intentionally omitted from the leaderboard.
+   Player ratings (20–80 tools) live on team and player pages; the
+   leaderboard surfaces only earned, relative-performance stats. #}
 
 {% if games_played > 0 %}
 

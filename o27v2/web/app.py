@@ -4129,29 +4129,9 @@ def _top_batter_games(top_n: int = 10) -> list[dict]:
 def leaders():
     games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
     if games_played == 0:
-        # Scouting tables don't depend on games — surface them so a fresh
-        # league still gets the talent census while waiting for sim data.
-        talent_hitters = db.fetchall(
-            """SELECT p.id as player_id, p.name as player_name, p.position,
-                      p.power as r_power, p.contact as r_contact,
-                      p.eye as r_eye, p.speed as r_speed,
-                      t.abbrev as team_abbrev, t.id as team_id
-               FROM players p JOIN teams t ON p.team_id = t.id
-               WHERE p.is_pitcher = 0""",
-        )
-        talent_pitchers = db.fetchall(
-            """SELECT p.id as player_id, p.name as player_name,
-                      p.pitcher_skill as r_stuff, p.command as r_command,
-                      p.movement as r_movement, p.stamina as r_stamina,
-                      t.abbrev as team_abbrev, t.id as team_id
-               FROM players p JOIN teams t ON p.team_id = t.id
-               WHERE p.is_pitcher = 1""",
-        )
         return _serve("leaders.html",
                                games_played=0, batting=[], pitching=[],
-                               min_pa=0, min_outs=0,
-                               talent_hitters=talent_hitters,
-                               talent_pitchers=talent_pitchers)
+                               min_pa=0, min_outs=0)
 
     # Scale qualifying minimums by games-per-team, not by total league games.
     # MLB rule of thumb: 3.1 PA/team-game for batting, 1 IP/team-game for
@@ -4391,29 +4371,6 @@ def leaders():
             "li":          e["li"],
         })
 
-    # Scouting board — every signed player ranked by raw 20-80 tool grades,
-    # independent of playing time. Surfaces hidden depth (reserves with elite
-    # Stamina, bench bats with elite Power) that the qualified-leader views
-    # above filter out.
-    talent_hitters = db.fetchall(
-        """SELECT p.id as player_id, p.name as player_name, p.position,
-                  p.power as r_power, p.contact as r_contact,
-                  p.eye as r_eye, p.speed as r_speed,
-                  t.abbrev as team_abbrev, t.id as team_id
-           FROM players p
-           JOIN teams t ON p.team_id = t.id
-           WHERE p.is_pitcher = 0""",
-    )
-    talent_pitchers = db.fetchall(
-        """SELECT p.id as player_id, p.name as player_name,
-                  p.pitcher_skill as r_stuff, p.command as r_command,
-                  p.movement as r_movement, p.stamina as r_stamina,
-                  t.abbrev as team_abbrev, t.id as team_id
-           FROM players p
-           JOIN teams t ON p.team_id = t.id
-           WHERE p.is_pitcher = 1""",
-    )
-
     # ----- XO Crossover scale toggle ------------------------------
     # ?scale=xo flips the leaderboard table cells to their MLB-readable
     # values. Rank order is identical (the z-anchor map is monotonic);
@@ -4429,8 +4386,6 @@ def leaders():
         batting=batting, pitching=pitching,
         fielding=fielding, fielding_qual=fielding_qual,
         salaries=salaries,
-        talent_hitters=talent_hitters,
-        talent_pitchers=talent_pitchers,
         top_outings=top_outings,
         top_games=top_games,
         hit_streaks=hit_streaks,
