@@ -53,6 +53,10 @@ GLOSSARY_SECTIONS: list[dict] = [
             {"key": "h", "abbr": "H", "name": "Hits", "desc": "Total hits."},
             {"key": "r", "abbr": "R", "name": "Runs", "desc": "Runs scored."},
             {"key": "sb", "abbr": "SB", "name": "Stolen Bases", "desc": "Bases stolen successfully."},
+            {"key": "fo", "abbr": "FO", "name": "Foul-Outs",
+             "desc": "Times the batter was retired under the O27 3-foul rule (three fouls in a PA = out). A subset of total outs, tracked separately from strikeouts."},
+            {"key": "fo_pct", "abbr": "FO%", "name": "Foul-Out Rate",
+             "desc": "Foul-outs per plate appearance (FO / PA) — how often a hitter fouls himself out. O27-specific; lower is better for the batter."},
         ],
     },
     {
@@ -139,6 +143,8 @@ GLOSSARY_SECTIONS: list[dict] = [
              "desc": "Walks per batter faced. Lower is better."},
             {"key": "k_minus_bb_pct", "abbr": "K-BB%", "name": "K minus BB Rate",
              "desc": "(K − BB) / batters faced. A quick-read dominance signal."},
+            {"key": "fo_pct_pit", "abbr": "FO%", "name": "Foul-Out Rate",
+             "desc": "Foul-outs induced per batter faced (FO / BF) — how often a pitcher fouls hitters out. The foul-out slice of the K% blend; higher is better."},
         ],
     },
     {
@@ -147,6 +153,8 @@ GLOSSARY_SECTIONS: list[dict] = [
         "entries": [
             {"key": "w", "abbr": "W", "name": "Wins", "desc": "Wins credited. An SP earns it with ≥12 outs and the lead; otherwise the most-effective reliever."},
             {"key": "k", "abbr": "K", "name": "Strikeouts", "desc": "Strikeouts recorded."},
+            {"key": "fo_induced", "abbr": "FO", "name": "Foul-Outs Induced",
+             "desc": "Batters the pitcher retired under the O27 3-foul rule. Tracked separately from strikeouts, though K% folds the two together."},
             {"key": "outs", "abbr": "Outs", "name": "Outs Recorded", "desc": "Pitcher workload in outs (one full O27 game = 27)."},
             {"key": "war", "abbr": "WAR", "name": "Wins Above Replacement",
              "desc": "Total value over a replacement-level player, in wins. Uses an O27-fitted runs-per-win factor (~21 vs MLB's ~10)."},

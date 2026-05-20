@@ -115,6 +115,8 @@
   {{ card('RBI', 'rbi', '%d', true, batting) }}
   {{ card('H',   'h',   '%d', true, batting) }}
   {{ card('R',   'r',   '%d', true, batting) }}
+  {{ card('FO',  'fo',  '%d',   true, batting, tooltip='Foul-outs — times retired under the 3-foul rule (O27)') }}
+  {{ card('FO%', 'fo_pct', '%.3f', true, batting, tooltip='Foul-outs per PA — how often a hitter fouls himself out (O27)') }}
 </div>
 
 <h4>Batting · O27-Native &amp; Value</h4>
@@ -190,6 +192,7 @@
   {{ card('GSc avg',   'gsc_avg', '%.1f', true,  pitching, tooltip='Avg per-appearance Game Score') }}
   {{ card('OS+',       'os_plus', '%d',   true,  pitching, tooltip='Outs Share Plus — league-relative outs per appearance (100 = avg)') }}
   {{ card('K%',        'k_pct',   '%.3f', true,  pitching, tooltip='(K + foul-outs) / BF — O27 K% includes foul-outs') }}
+  {{ card('FO%',       'fo_pct_pit', '%.3f', true, pitching, tooltip='Foul-outs induced per BF — the foul-out slice of K% (O27)') }}
   {{ card('BB% (low)', 'bb_pct',  '%.3f', false, pitching) }}
 </div>
 
@@ -216,6 +219,7 @@
 <div class="row g-3 mb-3">
   {{ card('W',    'w',    '%d',   true, pitching) }}
   {{ card('K',    'k',    '%d',   true, pitching) }}
+  {{ card('FO',   'fo_induced', '%d', true, pitching, tooltip='Foul-outs induced — batters retired under the 3-foul rule (O27)') }}
   {{ card('Outs', 'outs', '%d',   true, pitching, tooltip='Outs recorded — pitcher workload (one full O27 game = 27)') }}
   {{ card('WAR',  'war',  '%.2f', true, pitching) }}
 </div>
