@@ -870,6 +870,16 @@ app.jinja_env.globals["overall_to_diamonds"] = _overall_to_diamonds
 app.jinja_env.globals["project_peak_overall"] = _project_peak_overall
 
 
+def _has_glossary(key) -> bool:
+    """True when `key` has a glossary entry, so templates can decide whether
+    to wrap a stat label in a deep-link to /glossary#g-<key>."""
+    from o27v2.web.glossary import GLOSSARY_BY_KEY
+    return key in GLOSSARY_BY_KEY
+
+
+app.jinja_env.globals["has_glossary"] = _has_glossary
+
+
 def _pitcher_per_game_decay_map() -> dict[int, dict[str, float]]:
     """Per-pitcher per-appearance Decay map and arc-3 reach rate.
 
@@ -3790,7 +3800,7 @@ def stats_browse():
     """
     side       = (request.args.get("side") or "bat").lower()
     view       = (request.args.get("view") or "standard").lower()
-    if view not in ("standard", "advanced", "all"):
+    if view not in ("standard", "advanced", "all", "xo"):
         view = "standard"
     team_arg   = request.args.get("team")  or "all"
     pos_arg    = request.args.get("pos") or "all"
@@ -4123,6 +4133,14 @@ def _top_batter_games(top_n: int = 10) -> list[dict]:
         })
     enriched.sort(key=lambda d: (-d["bgsc"], -d["h"], d["game_id"]))
     return enriched[:top_n]
+
+
+@app.route("/glossary")
+def glossary():
+    """Stats glossary — definitions for every abbreviation used across the
+    app. Leaders-page stat labels deep-link here via `#g-<key>` anchors."""
+    from o27v2.web.glossary import GLOSSARY_SECTIONS
+    return _serve("glossary.html", sections=GLOSSARY_SECTIONS)
 
 
 @app.route("/leaders")

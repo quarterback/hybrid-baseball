@@ -58,11 +58,11 @@
    `force_xo=true` makes the card always read the XO sub-dict regardless
    of the toggle — used by the dedicated MLB-Equivalent sections that
    always surface the crossover view. #}
-{% macro card(label, key, fmt, desc, dataset, tooltip='', force_xo=false) %}
-<div class="col-lg-3 col-md-6">
+{% macro card(label, key, fmt, desc, dataset, tooltip='', force_xo=false, col='col-lg-3 col-md-6') %}
+<div class="{{ col }}">
   <div class="panel">
     <div class="panel-head" {% if tooltip %}title="{{ tooltip }}"{% endif %}>
-      <span>{{ label }}{% if force_xo %} <span class="badge bg-primary" style="font-size:0.55rem;vertical-align:middle">XO</span>{% elif scale == 'xo' and dataset and dataset[0] is defined and dataset[0].xo is defined and dataset[0].xo and key in dataset[0].xo %} <span class="badge bg-primary" style="font-size:0.55rem;vertical-align:middle">XO</span>{% endif %}</span>
+      <span>{% if has_glossary(key) %}<a class="glossary-link" href="{{ url_for('glossary') }}#g-{{ key }}" title="What is {{ label }}? View glossary">{{ label }}</a>{% else %}{{ label }}{% endif %}{% if force_xo %} <span class="badge bg-primary" style="font-size:0.55rem;vertical-align:middle">XO</span>{% elif scale == 'xo' and dataset and dataset[0] is defined and dataset[0].xo is defined and dataset[0].xo and key in dataset[0].xo %} <span class="badge bg-primary" style="font-size:0.55rem;vertical-align:middle">XO</span>{% endif %}</span>
       <span class="ms-auto sub">Top 10</span>
     </div>
     <table class="table dense-table mb-0">
@@ -146,12 +146,12 @@
   the Native cards only.
 </div>
 <div class="row g-3 mb-3">
-  {{ card('AVG',   'avg',   '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent batting average (XO z-anchor of O27 PAVG/AVG)') }}
-  {{ card('OBP',   'obp',   '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent on-base percentage') }}
-  {{ card('SLG',   'slg',   '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent slugging') }}
-  {{ card('OPS',   'ops',   '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent OPS') }}
-  {{ card('wOBA',  'woba',  '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent wOBA') }}
-  {{ card('BABIP', 'babip', '%.3f', true, batting, force_xo=true, tooltip='MLB-equivalent BABIP') }}
+  {{ card('AVG',   'avg',   '%.3f', true, batting, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent batting average (XO z-anchor of O27 PAVG/AVG)') }}
+  {{ card('OBP',   'obp',   '%.3f', true, batting, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent on-base percentage') }}
+  {{ card('SLG',   'slg',   '%.3f', true, batting, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent slugging') }}
+  {{ card('OPS',   'ops',   '%.3f', true, batting, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent OPS') }}
+  {{ card('wOBA',  'woba',  '%.3f', true, batting, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent wOBA') }}
+  {{ card('BABIP', 'babip', '%.3f', true, batting, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent BABIP') }}
 </div>
 
 {# ============================================================
@@ -201,14 +201,15 @@
   the Native cards only.
 </div>
 <div class="row g-3 mb-3">
-  {{ card('ERA (low)',  'era',  '%.2f', false, pitching, force_xo=true, tooltip='MLB-equivalent ERA') }}
-  {{ card('WHIP (low)', 'whip', '%.2f', false, pitching, force_xo=true, tooltip='MLB-equivalent WHIP') }}
-  {{ card('K/9',        'k9',   '%.1f', true,  pitching, force_xo=true, tooltip='MLB-equivalent K/9') }}
-  {{ card('BB/9 (low)', 'bb9',  '%.1f', false, pitching, force_xo=true, tooltip='MLB-equivalent BB/9') }}
-  {{ card('HR/9 (low)', 'hr9',  '%.2f', false, pitching, force_xo=true, tooltip='MLB-equivalent HR/9') }}
-  {{ card('OAVG (low)', 'oavg', '%.3f', false, pitching, force_xo=true, tooltip='MLB-equivalent opponent batting average') }}
-  {{ card('OOBP (low)', 'oobp', '%.3f', false, pitching, force_xo=true, tooltip='MLB-equivalent opponent on-base') }}
-  {{ card('OOPS (low)', 'oops', '%.3f', false, pitching, force_xo=true, tooltip='MLB-equivalent opponent OPS') }}
+  {{ card('ERA (low)',  'era',  '%.2f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent ERA') }}
+  {{ card('WHIP (low)', 'whip', '%.2f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent WHIP') }}
+  {{ card('K/9',        'k9',   '%.1f', true,  pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent K/9') }}
+  {{ card('BB/9 (low)', 'bb9',  '%.1f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent BB/9') }}
+  {{ card('HR/9 (low)', 'hr9',  '%.2f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent HR/9') }}
+  {{ card('OAVG (low)', 'oavg', '%.3f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent opponent batting average') }}
+  {{ card('OOBP (low)', 'oobp', '%.3f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent opponent on-base') }}
+  {{ card('OSLG (low)', 'oslg', '%.3f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent opponent slugging') }}
+  {{ card('OOPS (low)', 'oops', '%.3f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent opponent OPS') }}
 </div>
 
 <h4>Pitching · Counting &amp; Value</h4>

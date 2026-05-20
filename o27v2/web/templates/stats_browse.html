@@ -39,6 +39,7 @@
        ('standard', 'Standard',  'Most useful columns at a glance'),
        ('advanced', 'Advanced',  'Adds rate stats, league-relative indices, opponent profile'),
        ('all',      'All',       'Every persisted column, including raw arc-bucketed counters'),
+       ('xo',       'XO Crossover', 'MLB-equivalent rate stats — O27 rates z-anchored to MLB mean and spread'),
      ] %}
   <a class="btn btn-sm {% if view == v %}btn-primary{% else %}btn-outline-secondary{% endif %}"
      href="{{ url_for('stats_browse', side=side, view=v, team=team_arg, pos=pos_arg, qualified='1' if qualified else '0', q=name_query, min_pa=min_pa or '', min_outs=min_outs or '') }}"
@@ -230,6 +231,39 @@
       <td class="num" data-sort-value="{{ '%.2f'|format(b.drs) }}">{{ '%+.1f'|format(b.drs) }}</td>
       <td class="num" data-sort-value="{{ '%.3f'|format(b.dwar) }}">{{ '%+.2f'|format(b.dwar) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(b.war) }}">{{ '%.2f'|format(b.war) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% elif view == 'xo' %}
+  {# XO Crossover — MLB-equivalent rate stats. Each value is the O27 rate
+     z-anchored to MLB mean+spread; rank order matches the native stat. #}
+  <table class="table dense-table sortable mb-0">
+    <thead><tr>
+      <th>Name</th><th>Tm</th><th class="col-group-end">Pos</th>
+      <th class="num">G</th><th class="num col-group-end">PA</th>
+      <th class="num" title="MLB-equivalent batting average">AVG</th>
+      <th class="num" title="MLB-equivalent on-base percentage">OBP</th>
+      <th class="num" title="MLB-equivalent slugging">SLG</th>
+      <th class="num fw-bold" title="MLB-equivalent OPS">OPS</th>
+      <th class="num" title="MLB-equivalent wOBA">wOBA</th>
+      <th class="num" title="MLB-equivalent BABIP">BABIP</th>
+    </tr></thead>
+    <tbody>
+    {% for b in batters %}
+    <tr>
+      <td><a href="{{ url_for('player_detail', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
+      <td><a href="{{ url_for('team_detail', team_id=b.team_id) }}" class="team-abbrev">{{ b.team_abbrev }}</a></td>
+      <td class="text-secondary col-group-end">{{ b.position }}</td>
+      <td class="num">{{ b.g or 0 }}</td>
+      <td class="num col-group-end">{{ b.pa or 0 }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.xo.avg or 0) }}">{{ '%.3f'|format(b.xo.avg or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.xo.obp or 0) }}">{{ '%.3f'|format(b.xo.obp or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.xo.slg or 0) }}">{{ '%.3f'|format(b.xo.slg or 0) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.xo.ops or 0) }}">{{ '%.3f'|format(b.xo.ops or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.xo.woba or 0) }}">{{ '%.3f'|format(b.xo.woba or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.xo.babip or 0) }}">{{ '%.3f'|format(b.xo.babip or 0) }}</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -451,6 +485,44 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(p.fo_pct_pit) }}">{{ '%.1f'|format(p.fo_pct_pit * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.vorp) }}">{{ '%.1f'|format(p.vorp) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.war) }}">{{ '%.2f'|format(p.war) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% elif view == 'xo' %}
+  {# XO Crossover — MLB-equivalent pitcher rate stats. Each value is the
+     O27 rate z-anchored to MLB mean+spread; rank order matches native. #}
+  <table class="table dense-table sortable mb-0">
+    <thead><tr>
+      <th>Name</th><th class="col-group-end">Tm</th>
+      <th class="num">G</th><th class="num col-group-end">Outs</th>
+      <th class="num fw-bold" title="MLB-equivalent ERA">ERA</th>
+      <th class="num" title="MLB-equivalent WHIP">WHIP</th>
+      <th class="num" title="MLB-equivalent K/9">K/9</th>
+      <th class="num" title="MLB-equivalent BB/9">BB/9</th>
+      <th class="num col-group-end" title="MLB-equivalent HR/9">HR/9</th>
+      <th class="num" title="MLB-equivalent opponent batting average">oAVG</th>
+      <th class="num" title="MLB-equivalent opponent on-base">oOBP</th>
+      <th class="num" title="MLB-equivalent opponent slugging">oSLG</th>
+      <th class="num" title="MLB-equivalent opponent OPS">oOPS</th>
+    </tr></thead>
+    <tbody>
+    {% for p in pitchers %}
+    <tr>
+      <td><a href="{{ url_for('player_detail', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
+      <td class="col-group-end"><a href="{{ url_for('team_detail', team_id=p.team_id) }}" class="team-abbrev">{{ p.team_abbrev }}</a></td>
+      <td class="num">{{ p.g or 0 }}</td>
+      <td class="num col-group-end">{{ p.outs or 0 }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.xo.era or 0) }}">{{ '%.2f'|format(p.xo.era or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xo.whip or 0) }}">{{ '%.2f'|format(p.xo.whip or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xo.k9 or 0) }}">{{ '%.1f'|format(p.xo.k9 or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xo.bb9 or 0) }}">{{ '%.1f'|format(p.xo.bb9 or 0) }}</td>
+      <td class="num col-group-end" data-sort-value="{{ '%.4f'|format(p.xo.hr9 or 0) }}">{{ '%.2f'|format(p.xo.hr9 or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xo.oavg or 0) }}">{{ '%.3f'|format(p.xo.oavg or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xo.oobp or 0) }}">{{ '%.3f'|format(p.xo.oobp or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xo.oslg or 0) }}">{{ '%.3f'|format(p.xo.oslg or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(p.xo.oops or 0) }}">{{ '%.3f'|format(p.xo.oops or 0) }}</td>
     </tr>
     {% endfor %}
     </tbody>
