@@ -163,29 +163,6 @@ def test_oneway_invariant_no_reentry():
 
 
 # ---------------------------------------------------------------------------
-# Super-innings depletion: substituted_out players excluded
-# ---------------------------------------------------------------------------
-
-def test_super_lineup_skips_subbed_out_players():
-    """The default super-innings picker must filter out anyone who was
-    pulled mid-game."""
-    from o27.engine.game import _default_super_lineup
-
-    state = _mk_state()
-    state.half = "top"
-    state.outs = 8
-    out_player = state.visitors.lineup[0]
-    pinch_hit(state, state.visitors.bench[0])
-    # Sanity: the replaced player is in substituted_out.
-    assert not state.visitors.is_available(out_player.player_id)
-
-    v5 = _default_super_lineup(state.visitors)
-    out_ids = {p.player_id for p in v5}
-    assert out_player.player_id not in out_ids
-    assert len(v5) == 5
-
-
-# ---------------------------------------------------------------------------
 # Trigger function: monotonicity sanity
 # ---------------------------------------------------------------------------
 

@@ -297,9 +297,6 @@ def pinch_hit(state: GameState, replacement: Player) -> list[str]:
 
     Returns log lines.
     """
-    if state.is_super_inning:
-        return ["[MANAGER ERROR] No pinch hit during super-inning."]
-
     team = state.batting_team
     pos = team.lineup_position % len(team.lineup)
     replaced = team.lineup[pos]
@@ -644,11 +641,9 @@ def should_intentional_walk(state: GameState, rng=None) -> bool:
       - Never with 1B occupied (would just give a free base ahead).
       - Skip with 2 outs and bases empty (no leverage to walk anyone).
       - Skip in blowouts (score gap > IBB_MAX_SCORE_GAP).
-      - Skip during super-innings (separate format).
+      - Allowed in super-innings (normal extra-inning baseball).
     """
     if not getattr(cfg, "IBB_ENABLE", True):
-        return False
-    if state.is_super_inning:
         return False
     batter = state.current_batter
     if batter is None:
@@ -830,8 +825,6 @@ def should_change_pitcher(state: GameState) -> bool:
 
     Threshold = max(base, base + round(pitcher_skill * scale))
     """
-    if state.is_super_inning:
-        return False
     pitcher = state.get_current_pitcher()
     if pitcher is None:
         return False
@@ -1129,9 +1122,6 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     of the 9 lineup spots (8 fielders + SP), so this function never
     targets a joker as the out_player.
     """
-    if state.is_super_inning:
-        return None
-
     batter = state.current_batter
     team   = state.batting_team
 
@@ -1183,8 +1173,6 @@ def defensive_sub(
     already banked PAs and lock in defensive specialists for the rest
     of the fielding half.
     """
-    if state.is_super_inning:
-        return ["[MANAGER ERROR] No defensive sub during super-inning."]
     fielding = state.fielding_team
     if player_out not in fielding.lineup:
         return [f"  [MANAGER ERROR] {player_out.name} not in fielding lineup."]
@@ -1270,9 +1258,6 @@ def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
 
     Returns {'base_idx': int, 'runner_in': Player} or None.
     """
-    if state.is_super_inning:
-        return None
-
     batting = state.batting_team
     # PR requires a runner on base — the brief explicitly scopes PR to
     # on-base situations.
@@ -1456,8 +1441,6 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
 
     Returns {'player_out': Player, 'player_in': Player} or None.
     """
-    if state.is_super_inning:
-        return None
     if state.outs < 6:
         return None
 
@@ -1582,9 +1565,6 @@ def should_bunt(state: GameState, rng=None) -> Optional[dict]:
       - manager call rate scales with mgr_run_game and inversely with
         mgr_leverage_aware (modern analytics skippers don't bunt)
     """
-    if state.is_super_inning:
-        return None
-
     batter = state.current_batter
     bases = state.bases
 

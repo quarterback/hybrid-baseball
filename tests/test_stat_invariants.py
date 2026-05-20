@@ -40,7 +40,7 @@ from o27v2 import db
 # ---------------------------------------------------------------------------
 
 REGULATION_PHASE_CAP = 27
-SI_PHASE_CAP = 5
+SI_PHASE_CAP = 3   # super-innings are normal 3-out innings
 
 
 def _scoped_game_ids() -> set[int] | None:

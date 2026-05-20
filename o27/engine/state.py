@@ -22,8 +22,8 @@ Active-lineup model:
   Jokers are NOT in the base lineup — they live in Team.jokers_available
   (3 per game) and are inserted tactically by the manager AI per PA.
   Any joker can be inserted any number of times per game (no per-cycle
-  or per-game cap). In super-innings Team.super_lineup (5 players) is
-  used instead.
+  or per-game cap). Super-innings are normal 3-out innings that continue
+  the regular batting order (no separate selected lineup).
 """
 
 from __future__ import annotations
@@ -349,13 +349,9 @@ class PartnershipRecord:
 
 @dataclass
 class SuperInningRound:
-    """One team's turn in a super-inning round."""
+    """One team's half in a super-inning round (a normal 3-out inning)."""
     team_name: str
-    selected_batter_ids: list = field(default_factory=list)
-    selected_batter_names: list = field(default_factory=list)
     runs: int = 0
-    dismissals: int = 0          # outs recorded (max 5)
-    batter_outcomes: list = field(default_factory=list)  # brief per-batter outcome strings
 
 
 # ---------------------------------------------------------------------------
@@ -438,11 +434,6 @@ class Team:
     jokers_used_this_half: set = field(default_factory=set)    # legacy alias
     lineup_cycle_number: int = 0   # increments when lineup_position wraps
 
-    # Super-inning
-    super_lineup: list = field(default_factory=list)        # 5 selected Player objects
-    super_dismissed: set = field(default_factory=set)       # player_ids dismissed in current super round
-    super_lineup_position: int = 0
-
     # Substitution economy — bench pool + one-way exit set. `bench` is the
     # active roster MINUS the starting nine (8 fielders + starting DH/SP)
     # and the joker pool. Populated by sim.py at game start. Substitution
@@ -454,10 +445,7 @@ class Team:
     substituted_out: set = field(default_factory=set)
 
     def current_batter(self) -> Player:
-        """Get the current batter from the appropriate active lineup."""
-        if self.super_lineup:
-            pos = self.super_lineup_position % len(self.super_lineup)
-            return self.super_lineup[pos]
+        """Get the current batter from the active lineup."""
         if not self.lineup:
             raise ValueError(f"Team {self.name} has no active lineup.")
         return self.lineup[self.lineup_position % len(self.lineup)]
@@ -465,27 +453,15 @@ class Team:
     def advance_lineup(self) -> None:
         """Advance the lineup position (wraps around).
 
-        In super-inning mode: skip over any batters already dismissed so that
-        dismissed batters are never sent back to the plate.  The caller must
-        check is_half_over() before calling current_batter() again — once all
-        5 are dismissed the skip loop will cycle without finding anyone, but
-        is_half_over() will return True first, ending the half.
+        Super-innings continue the regular batting order from wherever it
+        left off — they are normal innings, not a separate selected lineup.
         """
-        if self.super_lineup:
-            n = len(self.super_lineup)
-            pos = (self.super_lineup_position + 1) % n
-            for _ in range(n):
-                if self.super_lineup[pos].player_id not in self.super_dismissed:
-                    break
-                pos = (pos + 1) % n
-            self.super_lineup_position = pos
-        else:
-            n = len(self.lineup)
-            new_pos = (self.lineup_position + 1) % n
-            if new_pos == 0 and n > 0:
-                # Lineup wrapped to top of order — start of a new cycle.
-                self.lineup_cycle_number += 1
-            self.lineup_position = new_pos
+        n = len(self.lineup)
+        new_pos = (self.lineup_position + 1) % n
+        if new_pos == 0 and n > 0:
+            # Lineup wrapped to top of order — start of a new cycle.
+            self.lineup_cycle_number += 1
+        self.lineup_position = new_pos
 
     def reset_half(self) -> None:
         """Reset intra-half tracking at the start of a new half.
@@ -495,12 +471,6 @@ class Team:
         compatibility with the engine.
         """
         return
-
-    def reset_super(self) -> None:
-        """Reset super-inning tracking for a new round."""
-        self.super_lineup = []
-        self.super_dismissed = set()
-        self.super_lineup_position = 0
 
     def get_player(self, player_id: str) -> Optional[Player]:
         """Look up a player by ID anywhere in the roster."""
@@ -535,6 +505,7 @@ class GameState:
     # --- Game structure ---
     half: str = "top"              # "top" | "bottom" | "super_top" | "super_bottom" | "seconds_first" | "seconds_second"
     super_inning_number: int = 0   # 0 = regulation; increments each super tiebreaker
+    super_outs_target: int = 30    # cumulative out count that ends the current super half (27 + 3*round)
 
     # --- Declared Seconds ---
     home_bats_first:     Optional[bool] = None   # None until the home manager picks pre-game
@@ -723,16 +694,12 @@ class GameState:
 
     @property
     def active_lineup(self) -> list:
-        """Return the list that is currently active for the batting team.
+        """Return the lineup currently active for the batting team.
 
-        In super-innings this is the 5-player super_lineup; in regulation it
-        is the 12-batter Team.lineup (jokers already included, used ones
-        skipped by advance_lineup).
+        Always the regular Team.lineup — super-innings continue the same
+        batting order rather than using a separate selected lineup.
         """
-        team = self.batting_team
-        if team.super_lineup:
-            return list(team.super_lineup)
-        return list(team.lineup)
+        return list(self.batting_team.lineup)
 
     @property
     def runners_on_base(self) -> bool:
@@ -779,8 +746,11 @@ class GameState:
     def is_half_over(self) -> bool:
         """True when the current half has ended."""
         if self.is_super_inning:
-            # Super half: ends when 5 batters from the selected lineup are dismissed
-            return len(self.batting_team.super_dismissed) >= 5
+            # Super-innings are normal 3-out innings, measured in cumulative
+            # outs (the first super out is #28, so each round's half ends at
+            # super_outs_target = 27 + 3*round). The bottom half also ends
+            # early on a walk-off — the moment the second-batting team leads.
+            return self.outs >= self.super_outs_target or self._super_walkoff()
         if self.in_seconds_phase:
             # Seconds round: ends when the team has used its banked outs OR
             # the comeback walk-off fires (lead change with opp out of options).
@@ -829,6 +799,22 @@ class GameState:
         if self.score.get(bat.team_id, 0) <= self.score.get(fld.team_id, 0):
             return False
         return True
+
+    def _super_walkoff(self) -> bool:
+        """Walk-off in a super-inning round.
+
+        Mirrors the seconds-phase rule. The visitors bat the top of the
+        round to their full 5-dismissal allotment (no walk-off, like the
+        top of the 9th). The home team, batting the bottom, walks off the
+        instant they take the lead — the visitors have already used their
+        round and cannot rebut. Fires after the PA completes, so the half
+        ends at the current dismissal count rather than mid-PA.
+        """
+        if self.half != "super_bottom":
+            return False
+        bat = self.batting_team
+        fld = self.fielding_team
+        return self.score.get(bat.team_id, 0) > self.score.get(fld.team_id, 0)
 
     def is_game_over(self) -> bool:
         return self.winner is not None
