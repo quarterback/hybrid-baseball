@@ -1530,7 +1530,8 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
     renderer = Renderer()
     provider = ProbabilisticProvider(rng)
 
-    final_state, _log = run_game(state, provider, renderer)
+    final_state, full_log = run_game(state, provider, renderer)
+    pbp_text = "\n".join(full_log)
 
     away_score = final_state.score["visitors"]
     home_score = final_state.score["home"]
@@ -1577,6 +1578,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
         conn.execute("DELETE FROM game_pitcher_stats WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM game_pa_log        WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM team_phase_outs    WHERE game_id = ?", (game_id,))
+        conn.execute("DELETE FROM game_pbp           WHERE game_id = ?", (game_id,))
         # Declared Seconds: project the engine's first/second-batting team
         # state onto away/home columns. Away maps to visitors; home to home.
         h_bats_first  = bool(getattr(final_state, "home_bats_first", False))
@@ -1727,6 +1729,14 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
                   e.get("outs_after"),  e.get("bases_after"),  e.get("score_diff_after"))
                  for e in pa_log
                  if e["team_id"] in role_to_db],
+            )
+        # Full text play-by-play blob (sponsor captions and all). Discarded
+        # before this landed; now persisted for the read-only /game/<id>/pbp
+        # view. DELETE above keeps it idempotent on retries.
+        if pbp_text:
+            conn.execute(
+                "INSERT INTO game_pbp (game_id, pbp_text) VALUES (?, ?)",
+                (game_id, pbp_text),
             )
         # Pesäpallo-style scoring events log — one row per run that crossed
         # the plate. Idempotent: delete prior rows for this game before

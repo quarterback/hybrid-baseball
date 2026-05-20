@@ -370,6 +370,15 @@ CREATE INDEX IF NOT EXISTS idx_scoring_game   ON game_scoring_events(game_id);
 CREATE INDEX IF NOT EXISTS idx_scoring_batter ON game_scoring_events(batter_id);
 CREATE INDEX IF NOT EXISTS idx_scoring_runner ON game_scoring_events(runner_id);
 
+-- Full text play-by-play, one blob per game. Stored in its own table
+-- (not a games column) so SELECT * on games stays lean. Written by
+-- o27v2/sim.py from the engine's rendered log; surfaced read-only at
+-- /game/<id>/pbp. Legacy games simulated before this landed have no row.
+CREATE TABLE IF NOT EXISTS game_pbp (
+    game_id   INTEGER PRIMARY KEY REFERENCES games(id) ON DELETE CASCADE,
+    pbp_text  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id        INTEGER NOT NULL REFERENCES games(id),

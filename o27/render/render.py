@@ -26,6 +26,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from o27.stats.batter import BatterStats
 from o27.stats.pitcher import PitcherStats
 from o27.stats.team import TeamStats
+from o27.engine.pa import _pick_walk_back_sponsor
 
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -853,6 +854,17 @@ class Renderer:
                 if bases_before[i] is not None:
                     lines.append(f"  Runner scores.")
             lines.append("  Batter scores (HR).")
+            # Walk-Back arming caption. The HR PA sets walk_back_pending in
+            # the engine; the raw-log path in o27/engine/pa.py emits these
+            # lines, but render_event bypasses that log, so mirror them here.
+            if getattr(state_after, "walk_back_pending", None) is not None:
+                lines.append(
+                    f"  [Walk-Back armed — {ctx['batter'].name} can be "
+                    f"batted home by the next hitter for +1.]"
+                )
+                sponsor = _pick_walk_back_sponsor(state_after)
+                if sponsor:
+                    lines.append(f"  [The Walk-Back is brought to you by {sponsor}.]")
             return lines
 
         # --- Identify runner thrown out (fielder's choice / stay play) ---
