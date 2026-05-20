@@ -172,3 +172,87 @@ column intact.
   count continues from 27 (28–33 reads as "late game"), but the heuristics were
   not re-tuned specifically for short 3-out extra frames — a possible future
   calibration item.
+
+---
+
+## Follow-up fixes (same session)
+
+Testing the new extra-innings box scores surfaced a cluster of bugs in the
+**scoring-events log** (the per-run `HALF / OUTS / BATTER / RUNNER (FROM) / SCORE`
+table) and the Walk-Back rule. Most were pre-existing — the extra-innings work
+just made them visible — but all are now fixed.
+
+### 1. Cross-half runner leak
+
+**Symptom:** a box score showed a *home* player credited as the baserunner who
+scored during the *visitors'* super-top half (e.g. `ST 28 Lambert | Isaac Grant
+(2B)`), with the score not advancing.
+
+**Cause:** at a plate-appearance boundary the renderer set the new PA's start
+bases to the *previous* PA's end bases. That's fine within a half, but across a
+half / super-inning boundary the engine clears the bases without a rendered
+event — so a runner stranded at the end of one half was credited as "scored" in
+the next half, attributed to the wrong team.
+
+**Fix (`o27/render/render.py`):** use the PA's actual pre-event base snapshot
+(`ctx["bases_list"]`), which is empty at a half boundary and identical to the
+prior behavior within a half. *(Superseded in spirit by fix #5, but still
+correct for the per-base advancement metrics.)*
+
+### 2. Dropped final plate appearance
+
+**Cause:** runner advancement (and any runner-from-base run) was only credited
+at the *next* batter's boundary, so the game's final PA — frequently the
+walk-off — was never credited.
+
+**Fix:** flush the final PA once at game end (`_flush_final_pa`, called from
+`render_box_score`). Idempotent; doesn't touch run totals.
+
+### 3. Batter's own home-run runs were never logged
+
+**Symptom:** a solo home run produced *zero* scoring-log rows — the log only
+tracked runners advancing home from a base, never the batter scoring himself.
+
+**Fix:** the batter's own run on a home run now emits a row, tagged with a
+`runner_from_base` sentinel `3` rendered as **HR** (web `_BASE_LABEL`).
+
+### 4. No Walk-Back on a walk-off
+
+**Rule clarified by the user:** *"on a walkoff there is no walkback, the game
+ends."*
+
+The Walk-Back rule places a phantom post-home-run runner that can score a bonus
+(unearned) run on a later PA. **Fix (`o27/engine/pa.py`):** in the last-batting
+team's walk-off-eligible half (`super_bottom`, `seconds_second`, or the
+second-batting team's regulation half with the first team out of banked outs),
+once that team is tied or ahead the pending Walk-Back is **waved off** — it can
+neither pad an already-won game nor manufacture the winning run. If the team
+still trails, the Walk-Back resolves normally (a +1 can't be a walk-off).
+
+### 5. Scoring log now reconciles exactly to the final score
+
+**Symptom:** the scoring log over-counted runs — it had more rows than runs
+actually scored. Root cause: it was built from a heuristic base-diff
+(`_credit_pa_advancement`) that mistook any runner who left a base without
+scoring (force out, fielder's choice, caught stealing not captured in the
+retired set) for a run.
+
+**Fix:** derive the log from `_credit_runs`, the single authoritative
+run-attribution path every run already flows through exactly once. Each run
+emits exactly one row with an exact per-event score progression, tagged by
+origin: `0/1/2` = 1B/2B/3B, `3` = batter's HR, `4` = `—` (a Walk-Back / phantom
+run with no starting base). `_credit_pa_advancement` now only computes the
+per-base advancement metrics. Net result removed code.
+
+**Schema/display:** `game_scoring_events.runner_from_base` comment updated;
+web `game.html` `_BASE_LABEL` extended with `3: 'HR'`, `4: '—'`.
+
+### Verification (800-game sweep)
+
+- scoring-log rows **== total runs, exactly** (no over- or under-count)
+- **0** cross-team runners
+- box-score R column still reconciles to the engine score
+- `HR` rows **== home-run count**
+- the final log row's score **== the final game score**
+- the walk-off guard waves off the Walk-Back in all hand-built walk-off cases
+  and leaves it intact when the team still trails
