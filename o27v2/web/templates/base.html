@@ -2,8 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}O27 League{% endblock %} — O27 Baseball</title>
+
+  {# ---- PWA / installability ---- #}
+  <meta name="theme-color" content="#0a3a73">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="O27">
+  <link rel="manifest" href="{{ url_for('webmanifest') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('app_icon') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('app_icon') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet"
@@ -692,6 +702,78 @@
     @media (max-width: 575px) {
       .cmp-add { display: none; }
     }
+
+    /* ============================================================
+       Horizontal scroll — tabs and tables. The two things that
+       "don't slide on mobile". Make both swipe horizontally with
+       momentum, a thin styled scrollbar on desktop, and an edge
+       affordance so it's obvious there's more off-screen.
+       ============================================================ */
+
+    /* Tab strips: never wrap, swipe sideways instead. Applies on every
+       viewport so wide tab sets (player page has 7) behave consistently. */
+    .nav-tabs {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+    }
+    .nav-tabs .nav-item { flex: 0 0 auto; }
+    .nav-tabs .nav-link { white-space: nowrap; }
+    .nav-tabs::-webkit-scrollbar { height: 5px; }
+    .nav-tabs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    .nav-tabs::-webkit-scrollbar-track { background: transparent; }
+
+    /* Any wide table — whether hand-wrapped in .table-responsive or
+       auto-wrapped by JS in .o27-scroll-x — swipes sideways with
+       momentum and shows a thin scrollbar instead of blowing out the
+       page width. */
+    .table-responsive,
+    .o27-scroll-x {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      max-width: 100%;
+    }
+    .table-responsive::-webkit-scrollbar,
+    .o27-scroll-x::-webkit-scrollbar { height: 8px; }
+    .table-responsive::-webkit-scrollbar-thumb,
+    .o27-scroll-x::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    .table-responsive::-webkit-scrollbar-track,
+    .o27-scroll-x::-webkit-scrollbar-track { background: var(--bg-soft); border-radius: 99px; }
+
+    /* Edge affordance: a soft right-side fade hinting "more →", shown
+       only while the container can still scroll right (toggled in JS via
+       the .scroll-more class). Sits above the table but ignores pointer
+       events so taps fall through to the row. */
+    .o27-scroll-x { position: relative; }
+    .o27-scroll-x.scroll-more::after {
+      content: "";
+      position: absolute;
+      top: 0; right: 0; bottom: 0;
+      width: 28px;
+      pointer-events: none;
+      background: linear-gradient(to left, rgba(0,0,0,.10), rgba(0,0,0,0));
+      z-index: 3;
+    }
+
+    /* Touch ergonomics on phones: roomier tap targets where taps land —
+       tabs, topbar links, pagination/pill buttons. 44px is the iOS/Android
+       minimum comfortable target. */
+    @media (max-width: 768px) {
+      .nav-tabs .nav-link { padding: 9px 14px; font-size: .9rem; }
+      .topbar .navbar-collapse .nav-link { padding: 8px 10px !important; }
+      .btn, .btn-pill, .sim-btn { min-height: 34px; }
+      /* Stop long unbroken tokens (player names, park names) forcing the
+         whole page to scroll sideways. */
+      body { overflow-wrap: break-word; }
+    }
+
+    /* Keep the page itself from scrolling sideways — only the inner
+       scroll containers should. Guards against a stray wide element. */
+    html, body { max-width: 100%; }
+    body { overflow-x: hidden; }
   </style>
 </head>
 <body>
@@ -1257,6 +1339,63 @@
       });
     });
   });
+})();
+
+/* -- Make every wide table swipeable on mobile. Many tables in the app
+      aren't hand-wrapped in .table-responsive, so their rows overflow the
+      viewport with no way to reach the right-hand columns. Wrap any bare
+      table in a horizontal-scroll container, and flag containers that can
+      still scroll right so the CSS edge-fade ("more →") shows. -- */
+(function () {
+  function alreadyScrollable(el) {
+    // Walk up to the nearest few ancestors; bail if one is already a
+    // horizontal scroll container (hand-written .table-responsive or an
+    // inline overflow-x style on a parent div, e.g. play-by-play).
+    let n = el.parentElement, hops = 0;
+    while (n && hops < 4) {
+      if (n.classList && (n.classList.contains('table-responsive') || n.classList.contains('o27-scroll-x'))) {
+        return true;
+      }
+      const ox = getComputedStyle(n).overflowX;
+      if (ox === 'auto' || ox === 'scroll') return true;
+      n = n.parentElement; hops++;
+    }
+    return false;
+  }
+
+  const wrappers = [];
+  document.querySelectorAll('table').forEach(table => {
+    if (alreadyScrollable(table)) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'o27-scroll-x';
+    table.parentNode.insertBefore(wrap, table);
+    wrap.appendChild(table);
+    wrappers.push(wrap);
+  });
+
+  // Existing .table-responsive wrappers get the same edge-fade treatment.
+  document.querySelectorAll('.table-responsive').forEach(w => {
+    w.classList.add('o27-scroll-x');
+    wrappers.push(w);
+  });
+
+  function refresh(w) {
+    const more = w.scrollWidth - w.clientWidth - w.scrollLeft > 2;
+    w.classList.toggle('scroll-more', more);
+  }
+  wrappers.forEach(w => {
+    refresh(w);
+    w.addEventListener('scroll', () => refresh(w), {passive: true});
+  });
+  let raf = null;
+  window.addEventListener('resize', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = null; wrappers.forEach(refresh); });
+  }, {passive: true});
+
+  // Re-evaluate after a sort (row count/width can change) and when a
+  // Bootstrap tab is shown (hidden panes report zero width until visible).
+  document.addEventListener('shown.bs.tab', () => wrappers.forEach(refresh));
 })();
 </script>
 {% block scripts %}{% endblock %}
