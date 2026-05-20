@@ -930,28 +930,55 @@ POWER_REDIST_WEAK_S2FO: float = 0.20
 # where the HR-hitter physically walks back from home to third. In a sport
 # this commodified, that's unsold inventory; the rule manufactures a
 # sponsorable moment. This list seeds the rotating sponsor pool the
-# play-by-play log uses to caption each Walk-Back.
+# play-by-play log uses to caption each Walk-Back. The pool is drawn from
+# real defunct / dormant consumer brands and companies — the joke being
+# that dead brands sponsor the dead-time ritual of a HR-hitter trudging
+# back to third.
 #
 # Purely cosmetic — no stat impact. Picked deterministically per PA
 # from (game_id, total_pa_this_half) so the sponsor a fan sees on a
 # given Walk-Back is stable across renders.
 WALK_BACK_SPONSORS: list[str] = [
-    "Eden Ice Cream",
-    "Bittermilk Co.",
-    "Solenoid Premium Vapor",
-    "Pareto Brand Lager",
-    "Ostrava Industrial Coffee",
-    "Sintered Holdings",
-    "The Guilder Trust",
-    "Aurelian Mutual",
-    "Foundry & Brace",
-    "Nightline Mercantile",
-    "Wermuth Pen Co.",
-    "Quad-City Notary",
-    "Salient Press",
-    "Stoltzfus Cathodic",
-    "Ratchet & Plait",
-    "Mariposa Almanac",
+    "Oldsmobile",
+    "Pontiac",
+    "Saturn",
+    "Plymouth",
+    "De Soto",
+    "Studebaker",
+    "Packard",
+    "American Motors",
+    "Blockbuster Video",
+    "Borders Books",
+    "Circuit City",
+    "CompUSA",
+    "RadioShack",
+    "Montgomery Ward",
+    "Toys “R” Us",
+    "Compaq",
+    "Commodore",
+    "Gateway 2000",
+    "Zune",
+    "Beatrice Foods",
+    "Borden",
+    "Burger Chef",
+    "ShowBiz Pizza",
+    "Crystal Pepsi",
+    "OK Soda",
+    "Jolt Cola",
+    "TaB",
+    "Surge",
+    "Quisp Cereal",
+    "King Vitaman",
+    "Burma-Shave",
+    "Wisk",
+    "Coleco",
+    "Kenner",
+    "Pan American World Airways",
+    "Enron",
+    "Lehman Brothers",
+    "Bear Stearns",
+    "Washington Mutual",
+    "Arthur Andersen",
 ]
 
 # Legacy POWER_HR_WEIGHT_SCALE retained as a stub. The archetype

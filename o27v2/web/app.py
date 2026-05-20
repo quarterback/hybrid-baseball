@@ -3154,6 +3154,31 @@ def game_detail(game_id: int):
     )
 
 
+@app.route("/game/<int:game_id>/pbp")
+def game_pbp(game_id: int):
+    """Read-only full text play-by-play for a completed game. The blob is
+    rendered by the engine at sim time and stored in game_pbp; games
+    simulated before that landed have no row and get a friendly notice."""
+    game = db.fetchone(
+        """SELECT g.id, g.played, g.game_date,
+                  ht.abbrev as home_abbrev, at.abbrev as away_abbrev,
+                  ht.name as home_name, at.name as away_name,
+                  g.home_score, g.away_score
+           FROM games g
+           JOIN teams ht ON g.home_team_id = ht.id
+           JOIN teams at ON g.away_team_id = at.id
+           WHERE g.id = ?""", (game_id,)
+    )
+    if not game:
+        abort(404)
+    row = db.fetchone("SELECT pbp_text FROM game_pbp WHERE game_id = ?", (game_id,))
+    return _serve(
+        "pbp.html",
+        game=game,
+        pbp_text=(row["pbp_text"] if row else None),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Markdown text-export endpoints — for forum / GitHub / LLM paste.
 # Each returns Content-Type: text/plain; charset=utf-8 so browsers display
