@@ -409,6 +409,21 @@ class Renderer:
             target_runs = home_ts.target_runs
             required_rr = home_ts.required_run_rate_full
 
+        # IBB notes (MLB box-score convention: footnote with player names
+        # and counts, NOT a column on the batting line). Format per team:
+        # "Last, F. (2); Other, P." — same shape as 2B/3B/HR notes lines.
+        def _ibb_note(rows):
+            parts = []
+            for r in rows:
+                n = int(getattr(r, "ibb", 0) or 0)
+                if n <= 0:
+                    continue
+                if n == 1:
+                    parts.append(r.name)
+                else:
+                    parts.append(f"{r.name} ({n})")
+            return "; ".join(parts)
+
         tmpl = self._env.get_template("box_score.j2")
         rendered = tmpl.render(
             visitors_name=state.visitors.name,
@@ -423,6 +438,8 @@ class Renderer:
             home_rr=h_runs / 27,
             visitors_stays=sum(s.sty for s in v_rows),
             home_stays=sum(s.sty for s in h_rows),
+            visitors_ibb_note=_ibb_note(v_rows),
+            home_ibb_note=_ibb_note(h_rows),
             visitors_pitchers=v_pitchers,
             home_pitchers=h_pitchers,
             required_rr=required_rr,
