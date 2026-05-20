@@ -63,9 +63,11 @@ walk-offs, separate selected lineups, no bullpen usage).
 
 ## What changed
 
-The mechanic was replaced with **normal 3-out extra innings, measured in
-cumulative outs**, while keeping every super-inning name, label, phase bucket,
-and DB column intact.
+The mechanic was replaced with **normal 3-out extra innings, still measured in
+outs per team** (each team continues its own out count from 27 — so each team
+has its own out 28, 29, 30 in the first super inning, then 31–33 in the next,
+and so on), while keeping every super-inning name, label, phase bucket, and DB
+column intact.
 
 ### Engine
 
@@ -76,8 +78,8 @@ and DB column intact.
     instant the home team leads — the visitors already took their top half and
     can't rebut. The visitors' top half never walks off (like the top of an
     extra inning).
-  - Added `GameState.super_outs_target` (= `27 + 3*round`), since the game is
-    measured in cumulative outs.
+  - Added `GameState.super_outs_target` (= `27 + 3*round`), since each team's
+    out count continues from its regulation 27.
   - Removed the super-lineup machinery from `Team` (`super_lineup`,
     `super_dismissed`, `super_lineup_position`, `reset_super()`). Super innings
     now continue the **regular batting order** from where it left off.
@@ -87,9 +89,10 @@ and DB column intact.
 
 - **`o27/engine/game.py`** — rewrote the super-inning loop: no super-lineup
   selection, no `setup_super_inning`, no 5-dismissal caps/asserts. Each round
-  plays a 3-out top half then a 3-out (or walk-off) bottom half. The out
-  counter is set so **the first super out is #28** (`out_base = 27 + 3*(r-1)`,
-  target `out_base + 3`): round 1 = outs 28–30, round 2 = 31–33, etc. Deleted
+  plays a 3-out top half then a 3-out (or walk-off) bottom half. Each half
+  starts its team's own out counter at `out_base = 27 + 3*(r-1)` and ends at
+  `out_base + 3`, so **each team's first super out is #28**: round 1 = each
+  team's outs 28–30, round 2 = 31–33, etc. Deleted
   the now-unused `_default_super_lineup`/`setup_super_inning` helpers and the
   `super_selector` parameter.
 
@@ -100,9 +103,10 @@ and DB column intact.
   the normal-baseball actions so they fire in extras: `pinch_hit`,
   `should_pinch_hit`, `should_pinch_run`, `defensive_sub`,
   `should_defensive_sub`, `should_change_pitcher`, `should_intentional_walk`,
-  `should_bunt`. With cumulative outs at 28–33, the manager's late-game
-  out-count gates (e.g. `outs >= 18`, `outs < 6`) correctly treat extras as
-  "very late game," so these tactics activate appropriately. Kept blocked:
+  `should_bunt`. With each team's out count at 28–33 in extras, the manager's
+  late-game out-count gates (e.g. `outs >= 18`, `outs < 6`) correctly treat
+  extras as "very late game," so these tactics activate appropriately. Kept
+  blocked:
   jokers (`can_insert_joker`, `should_insert_joker`, the legacy joker picker,
   `should_joker_to_field`), the exotic offense→defense bank
   (`should_swap_offensive_for_defense`), and `evaluate_declaration`.
@@ -145,8 +149,8 @@ and DB column intact.
   inning); zero halves exceeded 5. Every home win was by exactly +1 (walk-off
   the moment they led), while visitor wins varied (home batted its full 3 outs
   without catching up) — exactly correct.
-- **Out counting:** spell records confirm super innings start at out #28 — round
-  1 halves end at `out_when_pulled=30`, round 2 at 33.
+- **Out counting:** spell records confirm each team's super innings start at its
+  own out #28 — round 1 halves end at `out_when_pulled=30`, round 2 at 33.
 - **Walk-off:** observed a round-2 bottom-half walk-off ending 16–15 at out 32
   (2 outs), and bullpen changes firing inside super innings (relievers pulled
   mid-half), confirming the re-enabled managing works end to end.
@@ -164,7 +168,7 @@ and DB column intact.
   on reload, so no pre-switch games persist to violate the new
   `SI_PHASE_CAP=3` invariant.
 - **Small-ball tuning.** The manager's out-count gates were calibrated for the
-  27-out regulation. They now behave sensibly in extras because outs are
-  cumulative (28–33 reads as "late game"), but the heuristics were not
-  re-tuned specifically for short 3-out extra frames — a possible future
+  27-out regulation. They now behave sensibly in extras because each team's out
+  count continues from 27 (28–33 reads as "late game"), but the heuristics were
+  not re-tuned specifically for short 3-out extra frames — a possible future
   calibration item.
