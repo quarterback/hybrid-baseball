@@ -59,6 +59,11 @@ _HIT_TYPE_DISPLAY: dict[str, str] = {
     "itp_out":         "deep drive — thrown out at home",
 }
 
+# Sentinel `runner_from_base` value for a batter who scored himself (home
+# run) — distinct from the real base indices 0/1/2 (1B/2B/3B). The web/box
+# renderers map this to "HR".
+BATTER_HR_FROM_BASE = 3
+
 
 class Renderer:
     """Jinja2 renderer for O27 play-by-play and structured output."""
@@ -99,6 +104,7 @@ class Renderer:
         self._last_outs: int = 0      # outs at END of last event
         self._pa_start_bases: tuple = (None, None, None)  # bases at START of current PA
         self._pa_runners_out: set = set()       # runner_ids retired during current PA
+        self._pa_batter_runs: int = 0           # times the batter scored himself this PA (home runs)
         # Pesäpallo-style scoring log — one entry per run that crosses the
         # plate. Captures batter, runner, runner's starting base in the
         # PA, the score-after-this-run, outs, and half. Populated at PA
@@ -170,6 +176,7 @@ class Renderer:
             # than leaking the prior half's stranded runners into this PA.
             self._pa_start_bases = tuple(ctx.get("bases_list") or (None, None, None))
             self._pa_runners_out = set()
+            self._pa_batter_runs = 0
             self._on_new_pa(batter)
             lines.append(self._batter_intro(batter))
             self._current_pa_batter_id = batter.player_id
@@ -677,16 +684,20 @@ class Renderer:
             if scored:
                 scored_runners.append((src_idx, runner_id))
 
-        # Emit one scoring-log entry per scoring runner. Walk highest base
-        # first (closest to home → scored first conceptually), ticking
-        # the score backwards from the PA-end total so each row shows
-        # the cumulative score at the moment of that run.
-        if not scored_runners:
-            return
+        # Emit one scoring-log entry per run that crossed: runners who scored
+        # from a base (highest base first — closest to home → scored first),
+        # then the batter's own run(s) on a home run (he crosses last, behind
+        # any runners ahead of him). Tick the score backwards from the PA-end
+        # total so each row shows the cumulative score at the moment of that run.
         scored_runners.sort(key=lambda x: -x[0])   # 3B-runner first
+        emit: list[tuple[int, str]] = list(scored_runners)
+        for _ in range(self._pa_batter_runs):
+            emit.append((BATTER_HR_FROM_BASE, batter_id))
+        if not emit:
+            return
         is_visitors = self._last_half in ("top", "super_top")
-        n_total = len(scored_runners)
-        for i, (src_idx, runner_id) in enumerate(scored_runners):
+        n_total = len(emit)
+        for i, (src_idx, runner_id) in enumerate(emit):
             runs_remaining_after = n_total - 1 - i
             v_now = self._last_score_v - (runs_remaining_after if is_visitors else 0)
             h_now = self._last_score_h - (runs_remaining_after if not is_visitors else 0)
@@ -1570,6 +1581,10 @@ class Renderer:
         if etype == "ball_in_play" and hit_type in ("hr", "home_run"):
             if left_ids.count(batter_pid) == 0:
                 left_ids.append(batter_pid)
+            # The batter scored himself on this home run — record it so the
+            # scoring log gets an entry for the batter's own run (otherwise
+            # solo HRs produce no scoring-log row at all).
+            self._pa_batter_runs += 1
 
         # Credit the first `runs_scored` from left_ids.
         credited = 0

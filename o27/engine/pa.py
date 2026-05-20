@@ -107,6 +107,36 @@ def _walk_back_should_fire(hit_type: str, batted_advance_from_3b: int = 0) -> bo
     return False
 
 
+def _walkoff_blocks_walk_back(state: GameState) -> bool:
+    """True if a pending Walk-Back must be waved off because the batting team
+    is winning (or about to win) a walk-off.
+
+    The Walk-Back is a post-HR bonus run resolved at the *next* PA terminus.
+    On a walk-off the game ends the instant the last-batting team takes the
+    lead, so the bonus must not pad an already-won game nor manufacture the
+    winning run. We block it whenever the batting team is the last to bat in
+    a walk-off-eligible half AND is already tied-or-ahead (firing the +1 would
+    either pad a lead or turn a tie into the walk-off). If they still trail,
+    the +1 can't win it, so the Walk-Back resolves normally.
+    """
+    bat = state.batting_team
+    fld = state.fielding_team
+    if state.score.get(bat.team_id, 0) < state.score.get(fld.team_id, 0):
+        return False
+    half = state.half
+    if half in ("super_bottom", "seconds_second"):
+        return True
+    if half in ("top", "bottom"):
+        # Regulation: only the second-batting team's half walks off, and only
+        # when the first-batting team has no banked outs left to answer with.
+        second = state.second_batting_team
+        first = state.first_batting_team
+        if (second is not None and bat is second
+                and int(getattr(first, "outs_banked", 0) or 0) <= 0):
+            return True
+    return False
+
+
 def _resolve_walk_back_at_pa_end(
     state: GameState,
     hit_type: str = "",
@@ -137,6 +167,13 @@ def _resolve_walk_back_at_pa_end(
     pending = state.walk_back_pending
     if pending is None:
         return []
+    # Walk-off override: the Walk-Back never creates or pads a walk-off. In
+    # the last-batting team's walk-off-eligible half, once that team is tied
+    # or ahead the game is decided the moment they take the lead — the
+    # post-HR bonus runner is simply waved off (no run, not counted as faced).
+    if _walkoff_blocks_walk_back(state):
+        state.walk_back_pending = None
+        return [f"  Walk-Back: {pending} waved off — walk-off ends the game."]
     state.walk_back_pending = None
     state.pitcher_wb_faced_this_spell += 1
     if _walk_back_should_fire(hit_type, batted_advance_from_3b):
