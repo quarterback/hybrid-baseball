@@ -467,9 +467,6 @@ def contact_quality(
 
     Base distribution from config.CONTACT_*_BASE.
     Adjusted by batter.skill vs pitcher.pitcher_skill matchup.
-    Phase 8: further shifted by batter.hard_contact_delta (joker archetype modifier).
-      Positive delta → more hard contact / fewer weak contacts.
-      Sourced from o27v2.config.ARCHETYPE_PA_MODIFIERS via Player.hard_contact_delta.
 
     Realism layer:
       - Today's form multiplies effective Stuff for the matchup term.
@@ -511,8 +508,6 @@ def contact_quality(
         shift += (eye_dev * cfg.SECOND_SWING_EYE_SCALE
                   - cmd_dev * cfg.SECOND_SWING_COMMAND_SCALE)
 
-    arch_delta = getattr(batter, "hard_contact_delta", 0.0)
-
     # Power → harder contact (collapses to 0 at power=0.5).
     power_tilt = (batter.power - 0.5) * 2 * plat * b_cond * cfg.CONTACT_POWER_TILT
     # Movement → weaker contact (collapses to 0 at movement=0.5).
@@ -522,8 +517,8 @@ def contact_quality(
     # 0.01; lowered again to 0.001 to remove the last soft talent gate. An
     # elite-Stuff / elite-movement pitcher should be able to push hard-contact
     # rate vanishingly low against a replacement bat, and vice-versa.
-    weak_p   = max(0.001, cfg.CONTACT_WEAK_BASE   - shift - arch_delta - power_tilt + move_tilt)
-    hard_p   = max(0.001, cfg.CONTACT_HARD_BASE   + shift + arch_delta + power_tilt - move_tilt)
+    weak_p   = max(0.001, cfg.CONTACT_WEAK_BASE   - shift - power_tilt + move_tilt)
+    hard_p   = max(0.001, cfg.CONTACT_HARD_BASE   + shift + power_tilt - move_tilt)
 
     # Pitch-type contact-quality shifts — applied quality-scaled, release-matched.
     if pitch_type is not None:

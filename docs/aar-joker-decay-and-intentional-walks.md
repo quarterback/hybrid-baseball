@@ -384,21 +384,64 @@ before designing the UI.
 
 ---
 
-## Open questions / follow-ups
+## Follow-ups (resolved — commit `<pending>`)
 
-- **`hard_contact_delta`** is the other legacy archetype field. The
-  user explicitly named `hr_weight_bonus` for removal but didn't
-  mention this one. It still flows through `contact_quality()` and
-  may be doing useful work; flagging as a follow-up question for the
-  user before touching it.
-- **IBB rate is on the high side** (~2/game vs MLB's ~0.3/game). The
-  decision to leave it at this rate was driven by the user's
-  baseline ("the engine was using them 0 times") — visibility over
-  realism. If the user wants the rate to feel more like real
-  baseball, drop `IBB_MAX_PROB` from 0.55 to ~0.30 or
-  `IBB_AGG_SCALE` from 0.60 to ~0.40.
-- **Auction valuation** in `o27v2/auction.py` reads
-  `mgr_joker_aggression` to value jokers. Now that jokers decay
-  hard with usage, the auction's value model may overpay for them.
-  Worth a recheck of the joker valuation pass once the new mechanic
-  has been seen in a few seasons.
+All three follow-ups from the original pass were addressed in a
+second round.
+
+### 1. `hard_contact_delta` removed
+
+The other legacy Phase-8 archetype field. `contact_quality()` read it
+as `arch_delta` and added it directly to `hard_p` / subtracted from
+`weak_p` — the same shape of unscaled additive boost as
+`hr_weight_bonus`, and like that field it bypassed the per-game joker
+decay entirely (a decayed joker still got the full hard-contact
+bump). Removed the `arch_delta` read and its two terms in the
+`weak_p` / `hard_p` calculation. Field retained as a zeroed legacy
+stub on `Player` (same treatment as `hr_weight_bonus`) so v2 DB rows
+keep loading. Identity-preserving for any player with the default
+0.0 value, so `test_realism_identity` and friends stay green.
+
+### 2. IBB rate dialed down
+
+Was ~2.2 IBBs/game at neutral aggression — read as spammy. Tuned the
+config:
+
+| Constant | Before | After |
+|---|---|---|
+| `IBB_MAX_PROB` | 0.55 | 0.35 |
+| `IBB_HOT_HITS_BONUS` | 0.35 | 0.30 |
+| `IBB_AVG_FLOOR` | 0.300 | 0.350 |
+| `IBB_HOT_SCALE` | 0.80 | 0.70 |
+| `IBB_SKILL_FLOOR` | 0.65 | 0.70 |
+| `IBB_SKILL_SCALE` | 0.50 | 0.40 |
+| `IBB_AGG_FLOOR` | 0.20 | 0.12 |
+| `IBB_AGG_SCALE` | 0.60 | 0.45 |
+
+Measured rates (40-game samples) after the change:
+
+| `mgr_ibb_aggression` | Before | After |
+|---|---|---|
+| 0.10 | 1.40 | 0.82 |
+| 0.50 | 2.17 | 1.32 |
+| 0.90 | 2.70 | 2.25 |
+
+Still above MLB's ~0.3/game by design (visibility over strict
+realism), but no longer fires every other half at neutral. Persona
+spread is preserved and slightly widened.
+
+### 3. Auction valuation — rechecked, no change needed
+
+`o27v2/auction.py` reads `mgr_joker_aggression` only to set a team's
+general *bid aggression* (0.85-1.35 multiplier), not a joker-specific
+valuation. `o27v2/trades.py:trade_value` scores jokers by their raw
+per-AB `skill` (via the position-player branch) — and per-AB skill is
+exactly what the decay leaves untouched; only aggregate per-game
+output sags. So the auction values a joker as "an elite bat for their
+first several PAs," which is still accurate. No joker-specific
+overvaluation exists to correct. (Pre-existing second-order point: a
+joker provides no defense and limited PAs vs. a full-time regular of
+equal skill, so jokers are arguably modestly overvalued in the
+abstract — but that's a pre-existing modeling choice unrelated to the
+decay change, and not worth a joker-specific penalty that could
+destabilize the trade/auction balance.)

@@ -694,16 +694,22 @@ JOKER_DECAY_STEEP_BREAKPOINT_PA: int = 7  # steeper drop from here
 
 IBB_ENABLE: bool             = True
 IBB_BASE_PROB: float         = 0.00   # bare-context IBB rate (rises with hot+leverage)
-IBB_MAX_PROB: float          = 0.55   # ceiling per-PA
+IBB_MAX_PROB: float          = 0.35   # ceiling per-PA (tuned down from 0.55 — see below)
 IBB_HOT_HITS_THRESHOLD: int  = 3      # 3+ hits today triggers multi-hit bonus
-IBB_HOT_HITS_BONUS: float    = 0.35   # added to "hot" factor when threshold met
-IBB_AVG_FLOOR: float         = 0.300  # only in-game AVG above this contributes
-IBB_HOT_SCALE: float         = 0.80   # scales (avg − floor) → hot factor
-IBB_SKILL_FLOOR: float       = 0.65   # only batter.skill above this contributes
-IBB_SKILL_SCALE: float       = 0.50   # scales (skill − floor) → elite factor
-IBB_AGG_FLOOR: float         = 0.20   # baseline aggression multiplier
-IBB_AGG_SCALE: float         = 0.60   # additional from mgr_ibb_aggression
+IBB_HOT_HITS_BONUS: float    = 0.30   # added to "hot" factor when threshold met
+IBB_AVG_FLOOR: float         = 0.350  # only in-game AVG above this contributes
+IBB_HOT_SCALE: float         = 0.70   # scales (avg − floor) → hot factor
+IBB_SKILL_FLOOR: float       = 0.70   # only batter.skill above this contributes
+IBB_SKILL_SCALE: float       = 0.40   # scales (skill − floor) → elite factor
+IBB_AGG_FLOOR: float         = 0.12   # baseline aggression multiplier
+IBB_AGG_SCALE: float         = 0.45   # additional from mgr_ibb_aggression
 IBB_MAX_SCORE_GAP: int       = 6      # skip IBB beyond this score gap (blowout)
+# Rate note (measured over 40-game samples): ~0.8 IBBs/game at
+# mgr_ibb_aggression=0.1, ~1.3 at 0.5 (neutral), ~2.2 at 0.9. Still
+# above MLB's ~0.3/game, but the design intent is "the mechanic is
+# visibly present and persona-differentiated," not strict real-world
+# frequency. The original 0.55 ceiling / wider scales produced
+# ~2.2/game even at neutral, which read as spammy.
 
 # ---------------------------------------------------------------------------
 # Manager heuristics — pitching change
