@@ -19,6 +19,13 @@ def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(_DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # synchronous=NORMAL is per-connection (not persisted like journal_mode).
+    # Paired with WAL (set once in init_db) it keeps each commit() from
+    # fsync'ing the whole DB — the dominant cost when bulk-simming hundreds
+    # of games, each of which commits several times. NORMAL is crash-safe
+    # under WAL (only a power/OS crash can lose the last txn, acceptable for
+    # a game sim).
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 
@@ -649,6 +656,13 @@ def init_db() -> None:
     db_dir = os.path.dirname(_DB_PATH)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
+
+    # WAL mode is a persistent, on-disk setting — set it once here. It lets
+    # readers and the writer proceed without blocking each other and makes
+    # commits cheap (paired with synchronous=NORMAL in get_conn). Big win
+    # for bulk simulation, which commits per game across many connections.
+    with get_conn() as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
 
     # Step 1: column migrations (no-op if tables absent or columns present)
     with get_conn() as conn:

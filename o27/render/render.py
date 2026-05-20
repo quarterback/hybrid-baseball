@@ -30,6 +30,33 @@ from o27.engine.pa import _pick_walk_back_sponsor
 
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
+# Jinja2 Environments are reusable and their compiled-template cache is the
+# expensive part to build. A fresh Renderer is created per game (see
+# o27v2/sim.py), so without sharing, every game re-parses and re-compiles
+# every template — the dominant cost when simulating a whole month/season.
+# Cache one Environment per template dir; Renderer instances keep their own
+# per-game state but share the (immutable, thread-safe) template cache.
+_ENV_CACHE: dict[str, "Environment"] = {}
+
+
+def _get_environment(tdir: str) -> "Environment":
+    env = _ENV_CACHE.get(tdir)
+    if env is None:
+        env = Environment(
+            loader=FileSystemLoader(tdir),
+            undefined=StrictUndefined,
+            trim_blocks=True,
+            lstrip_blocks=True,
+            keep_trailing_newline=False,
+            # Templates are static at runtime. auto_reload (default True)
+            # re-stats the template file on every get_template() call, which
+            # is wasteful given render_event() fetches a template per pitch.
+            auto_reload=False,
+            cache_size=-1,
+        )
+        _ENV_CACHE[tdir] = env
+    return env
+
 # Manager / between-pitch event types that do NOT start a new plate appearance.
 _NON_PA_EVENTS = frozenset(
     {"joker_insertion", "pitching_change", "pinch_hit",
@@ -72,13 +99,7 @@ class Renderer:
 
     def __init__(self, template_dir: Optional[str] = None) -> None:
         tdir = template_dir or _TEMPLATE_DIR
-        self._env = Environment(
-            loader=FileSystemLoader(tdir),
-            undefined=StrictUndefined,
-            trim_blocks=True,
-            lstrip_blocks=True,
-            keep_trailing_newline=False,
-        )
+        self._env = _get_environment(tdir)
         self._batter_stats: dict[str, BatterStats] = {}
         self._current_pa_batter_id: Optional[str] = None
         # Task #58: end-of-phase cumulative snapshots used to derive
