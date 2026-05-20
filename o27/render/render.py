@@ -786,13 +786,14 @@ class Renderer:
                 lines.append("  Batter scores — INSIDE-THE-PARK HOME RUN!")
             else:
                 lines.append("  Batter scores (HR).")
-            # Walk-Back arming caption. The HR PA sets walk_back_pending in
-            # the engine; the raw-log path in o27/engine/pa.py emits these
-            # lines, but render_event bypasses that log, so mirror them here.
-            if getattr(state_after, "walk_back_pending", None) is not None:
+            # Walk-Back caption. The HR PA places the hitter on 3B as a live
+            # bonus runner (state.walk_back_runner_ids); the raw-log path in
+            # o27/engine/pa.py emits these lines, but render_event bypasses
+            # that log, so mirror them here.
+            if ctx['batter'].player_id in getattr(state_after, "walk_back_runner_ids", set()):
                 lines.append(
-                    f"  [Walk-Back armed — {ctx['batter'].name} can be "
-                    f"batted home by the next hitter for +1.]"
+                    f"  [Walk-Back — {ctx['batter'].name} retreats to 3B "
+                    f"as the bonus runner.]"
                 )
                 sponsor = _pick_walk_back_sponsor(state_after)
                 if sponsor:

@@ -37,7 +37,7 @@ from __future__ import annotations
 from .state import (
     GameState, Team, Player, SpellRecord, SuperInningRound
 )
-from .pa import apply_event
+from .pa import apply_event, resolve_stranded_walk_backs
 from . import manager as mgr
 from typing import Callable, Iterator, Optional
 
@@ -312,6 +312,11 @@ def run_half(
             log += renderer.render_event(event, ctx, state)
         else:
             log += raw_log
+
+    # Walk-Back runners still on base when the half closes are stranded —
+    # a successful stop for the pitcher who left them there. Settle them
+    # (tick wb_faced, no run) before the next half clears the bases.
+    log += resolve_stranded_walk_backs(state)
 
     # LOB on half-end: any runners still on base when the half closes are
     # stranded. The declaration branch already handles its own LOB credit

@@ -1214,6 +1214,12 @@ def pinch_run(state: GameState, base_idx: int, runner_in: Player) -> list[str]:
     if out_id is None:
         return [f"  [PINCH RUN ERROR] no runner at "
                 f"{'1B 2B 3B'.split()[base_idx]}."]
+    # A Walk-Back bonus runner can't be pinch-run for: he's a free post-HR
+    # runner, and swapping him would needlessly burn a bench player and pull
+    # the HR-hitter's bat from the lineup. The rule simply disallows it.
+    if out_id in state.walk_back_runner_ids:
+        return [f"  [PINCH RUN] Walk-Back bonus runner cannot be replaced — "
+                f"the HR-hitter stays on the bag."]
     batting = state.batting_team
     out_player = batting.get_player(out_id) if hasattr(batting, "get_player") else None
     # Replace in lineup: PR takes the outgoing runner's slot.
@@ -1275,6 +1281,9 @@ def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
             continue
         p = batting.get_player(pid) if hasattr(batting, "get_player") else None
         if p is None or _is_joker(p):
+            continue
+        # Walk-Back bonus runners are not eligible to be pinch-run for.
+        if pid in state.walk_back_runner_ids:
             continue
         s = float(getattr(p, "speed", 0.5) or 0.5)
         if s < slowest_speed:
