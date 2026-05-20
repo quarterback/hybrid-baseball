@@ -203,6 +203,50 @@ def _platoon_factor(batter: Player, pitcher: Player) -> float:
     return 1.0
 
 
+def _joker_decay_factor(prior_pa_count: int) -> float:
+    """Joker effectiveness multiplier in [0.5, 1.0].
+
+    Applied to a joker batter's rating-deviation scalar (so skill, eye,
+    contact, and power all decay together). Identity (1.0) on their
+    first use; floors at 0.50 from the 10th use onward.
+
+    Curve:
+      use #1 (count=0):   1.00   fresh
+      use #2-4:           0.98 → 0.91   small dip
+      use #5 (count=4):   0.85   light penalty
+      use #6 (count=5):   0.78   K penalty kicks up
+      use #7 (count=6):   0.70
+      use #8 (count=7):   0.62   much steeper
+      use #9 (count=8):   0.55
+      use #10+ (count>=9):0.50   floor — anomaly territory
+    """
+    if prior_pa_count <= 0:  return 1.00
+    if prior_pa_count == 1:  return 0.98
+    if prior_pa_count == 2:  return 0.95
+    if prior_pa_count == 3:  return 0.91
+    if prior_pa_count == 4:  return 0.85
+    if prior_pa_count == 5:  return 0.78
+    if prior_pa_count == 6:  return 0.70
+    if prior_pa_count == 7:  return 0.62
+    if prior_pa_count == 8:  return 0.55
+    return 0.50
+
+
+def _resolve_joker_decay(state: "GameState", batter: Player) -> float:
+    """Return the joker-decay multiplier for the current AB.
+
+    Returns 1.0 (no decay) unless the batter is up via joker insertion
+    (state.batter_override is set to this batter). Reads the prior
+    joker_pa count from state.batter_game_stats — counter increments
+    AFTER the AB in pa._end_at_bat, so during the AB it reflects the
+    joker's PRIOR usage this game.
+    """
+    if getattr(state, "batter_override", None) is not batter:
+        return 1.0
+    prior = state.bgs(batter.player_id).get("joker_pa", 0)
+    return _joker_decay_factor(prior)
+
+
 def _pitch_probs(
     pitcher: Player,
     batter: Player,
@@ -213,6 +257,7 @@ def _pitch_probs(
     rng: Optional[random.Random] = None,
     pitch_type: Optional[str] = None,
     pitch_quality: float = 0.5,
+    joker_decay: float = 1.0,
 ) -> tuple:
     """Return adjusted pitch-outcome probability tuple (sums to 1.0)."""
     base = list(cfg.PITCH_BASE.get((balls, strikes), cfg.PITCH_BASE[(0, 0)]))
@@ -261,7 +306,7 @@ def _pitch_probs(
     # `(rating - 0.5) * 2 * cond` shape keeps identity at cond=1.0 and
     # symmetrically shrinks both positive and negative dominance toward
     # league-average on bad days (0.85) or amplifies it on good days (1.15).
-    b_cond = getattr(batter, "today_condition", 1.0)
+    b_cond = getattr(batter, "today_condition", 1.0) * joker_decay
     b_dom = (batter.skill - 0.5) * 2 * plat * b_cond  # −1.0 to +1.0
     base[2] += b_dom * cfg.BATTER_DOM_SWINGING
     base[4] += b_dom * cfg.BATTER_DOM_CONTACT
@@ -385,11 +430,13 @@ def pitch_outcome(
     weather: Optional[object] = None,
     pitch_type: Optional[str] = None,
     pitch_quality: float = 0.5,
+    joker_decay: float = 1.0,
 ) -> str:
     """Draw one pitch outcome. Returns a string matching one of _PITCH_NAMES."""
     probs = _pitch_probs(
         pitcher, batter, balls, strikes, spell_count, weather,
         rng=rng, pitch_type=pitch_type, pitch_quality=pitch_quality,
+        joker_decay=joker_decay,
     )
     r = rng.random()
     cumulative = 0.0
@@ -413,6 +460,7 @@ def contact_quality(
     pitch_type: Optional[str] = None,
     pitch_quality: float = 0.5,
     target_pressure_shift: float = 0.0,
+    joker_decay: float = 1.0,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
@@ -431,8 +479,10 @@ def contact_quality(
     plat = _platoon_factor(batter, pitcher)
     form = getattr(pitcher, "today_form", 1.0)
     # Phase 3: per-game wellness multipliers (see _pitch_probs above).
+    # Joker decay folds into b_cond so power_tilt and matchup both feel
+    # the rating sag from successive joker insertions in one game.
     p_cond = getattr(pitcher, "today_condition", 1.0)
-    b_cond = getattr(batter,  "today_condition", 1.0)
+    b_cond = getattr(batter,  "today_condition", 1.0) * joker_decay
     # Per-pitch quality draws — same model as _pitch_probs. Each batted-
     # ball event samples within the pitcher's static stuff/movement range.
     pv = float(getattr(pitcher, "pitch_variance", 0.0) or 0.0)
@@ -1390,33 +1440,20 @@ def resolve_contact(
       - Total table weight is invariant under this redistribution, so
         league-wide event totals stay stable while per-player profiles
         diverge with their power rating.
-      - The legacy archetype `hr_weight_bonus` field is folded into the
-        same line_out → HR redistribution (one consistent mechanism for
-        both archetype and rating).
-
     Park factors are applied separately as multipliers (parks really do
     create / destroy events, so they're multiplicative by design).
     """
     table = _CONTACT_TABLES.get(quality, cfg.WEAK_CONTACT)
 
-    # Combined power axis: rating-driven (-1..+1) plus archetype legacy
-    # bonus (typically tiny). Both flow through the SAME line_out → HR edge
-    # via _redistribute, so the joker archetype's HR boost is now sum-
-    # preserving instead of additive.
-    power_dev    = (batter.power - 0.5) * 2.0
-    legacy_bonus = getattr(batter, "hr_weight_bonus", 0.0)
-    # Archetype bonus translated to a power_dev contribution on the HR
-    # edge only. Scale: each unit of legacy_bonus ≈ 1.0 of POWER_REDIST_HR.
-    archetype_dev_hr = legacy_bonus / max(0.01, cfg.POWER_REDIST_HR)
+    # Power-axis redistribution driven purely by the rating. The legacy
+    # archetype `hr_weight_bonus` boost was removed — its HR inflation
+    # double-counted what the modern `power` rating already models.
+    # Joker decay shrinks the deviation as the joker accumulates ABs
+    # this game, so a tired joker stops driving extra power outcomes.
+    power_dev = (batter.power - 0.5) * 2.0 * _resolve_joker_decay(state, batter)
 
-    # Apply power-axis redistribution per quality.
     if quality == "hard":
-        # HR edge gets both rating and archetype contributions.
-        edges = list(_hard_edges())
-        # Boost the HR edge by the archetype contribution.
-        edges[0] = ("line_out", "hr",
-                    cfg.POWER_REDIST_HR + archetype_dev_hr * cfg.POWER_REDIST_HR)
-        table = _redistribute(table, edges, power_dev)
+        table = _redistribute(table, _hard_edges(), power_dev)
     elif quality == "medium":
         table = _redistribute(table, _medium_edges(), power_dev)
     elif quality == "weak":
@@ -2004,6 +2041,14 @@ class ProbabilisticProvider:
         if joker is not None:
             return {"type": "joker_insertion", "joker": joker}
 
+        # Intentional walk — fielding team refuses to pitch to a hot or
+        # elite batter. Decided AFTER joker insertion so the IBB call
+        # reflects who is actually batting (including a just-inserted
+        # joker). The pa.apply_event handler routes through _walk so BB
+        # stats and force-advances behave identically to a 4-ball walk.
+        if mgr.should_intentional_walk(state, rng=self.rng):
+            return {"type": "intentional_walk"}
+
         # Pinch hit check (separate mechanic; permanently replaces a
         # regular hitter — survives joker insertions).
         replacement = mgr.should_pinch_hit(state, rng=self.rng)
@@ -2102,9 +2147,15 @@ class ProbabilisticProvider:
         # return (None, 0.5) and the aggregate Stuff/Command/Movement path fires.
         sel_pitch, sel_quality = _select_pitch(rng, pitcher, balls, strikes)
 
+        # Joker decay — looked up once per pitch (cheap dict read). Applied
+        # to both pitch-outcome and contact-quality so the joker's effective
+        # ratings sag together as their PA count climbs this game.
+        joker_decay = _resolve_joker_decay(state, batter)
+
         outcome = pitch_outcome(
             rng, pitcher, batter, balls, strikes, spell, weather,
             pitch_type=sel_pitch, pitch_quality=sel_quality,
+            joker_decay=joker_decay,
         )
 
         # HBP: a fraction of balls become hit-by-pitches, scaled by pitcher
@@ -2167,6 +2218,7 @@ class ProbabilisticProvider:
             swings_in_ab=state.current_at_bat_swings,
             pitch_type=sel_pitch, pitch_quality=sel_quality,
             target_pressure_shift=tp_shift,
+            joker_decay=joker_decay,
         )
         is_hr     = False
         is_triple = False

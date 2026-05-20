@@ -247,6 +247,17 @@ def _end_at_bat(state: GameState) -> list[str]:
     # when no flare was active this PA. See prob.apply_pa_leadership_flares
     # for the matching PA-start hook.
     _prob.release_pa_leadership_flares(state)
+    # Per-game batter stat bookkeeping. PA counter ticks every AB. If
+    # this AB was a joker insertion, the joker_pa counter ticks too —
+    # the joker's effective ratings in prob.py decay against this count
+    # on their NEXT joker insertion.
+    batter = state.current_batter
+    if batter is not None:
+        bgs = state.bgs(batter.player_id)
+        bgs["pa"] += 1
+        if state.batter_override is not None:
+            bgs["joker_pa"] += 1
+
     # Joker AB: clear the override and DO NOT advance the base lineup.
     # The joker insertion was an EXTRA PA — the base lineup position
     # stays the same so the originally-scheduled batter takes the next
@@ -307,6 +318,15 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     # ------------------------------------------------------------------
     # Pitch events
     # ------------------------------------------------------------------
+
+    if etype == "intentional_walk":
+        # Manager-issued free pass. Bypasses the 4-pitch sim and routes
+        # straight through _walk so BB stats, force-advances, and the AB
+        # boundary are all handled the same as a 4-ball walk.
+        batter = state.current_batter
+        log.append(f"  INTENTIONAL WALK — {batter.name} given a free pass.")
+        log += _walk(state)
+        return log
 
     if etype == "ball":
         state.count.balls += 1
@@ -638,6 +658,7 @@ def _resolve_contact(
         # Errors are NOT hits — pitcher's H allowed does not increment.
         if hit_type in ("single", "infield_single", "double", "triple", "hr", "home_run"):
             state.pitcher_h_this_spell += 1
+            state.bgs(batter.player_id)["h"] += 1
         if hit_type in ("hr", "home_run"):
             state.pitcher_hr_this_spell += 1
         # Capture runners at runner_out_idx + extra_runner_outs (TP) BEFORE
@@ -761,6 +782,7 @@ def _resolve_contact(
     if runner_successfully_advanced:
         stay_mod.credit_stay_hit(state)
         state.pitcher_h_this_spell += 1    # stay-credited hit counts against pitcher
+        state.bgs(batter.player_id)["h"] += 1
         log.append(f"  Hit credited to {batter.name} (stay). "
                    f"Total this AB: {state.current_at_bat_hits}.")
 
@@ -792,6 +814,7 @@ def _walk(state: GameState) -> list[str]:
     batter = state.current_batter
     log = [f"  WALK — {batter.name} awarded 1B."]
     state.pitcher_bb_this_spell += 1
+    state.bgs(batter.player_id)["bb"] += 1
     # No bb_arc tracking yet — current spec uses BB only as a per-pitcher
     # season counter (xFIP / K%-BB%); arc-bucketing it would add cost
     # without serving the trio. Revisit if a per-arc walk-rate metric

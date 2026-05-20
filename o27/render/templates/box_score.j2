@@ -61,6 +61,12 @@ LINE SCORE
 ============================================================
 Run rate:  {{ visitors_name }}  {{ "%.3f" | format(visitors_rr) }}    {{ home_name }}  {{ "%.3f" | format(home_rr) }}
 Stays:     {{ visitors_name }}  {{ visitors_stays }}    {{ home_name }}  {{ home_stays }}
+{% if visitors_ibb_note %}
+IBB ({{ visitors_name }}): {{ visitors_ibb_note }}.
+{% endif %}
+{% if home_ibb_note %}
+IBB ({{ home_name }}): {{ home_ibb_note }}.
+{% endif %}
 {% if required_rr is not none %}
 Required run rate ({{ home_name }}): {{ "%.3f" | format(required_rr) }} R/out (needed {{ target_runs }} runs in 27 outs)
 {% endif %}

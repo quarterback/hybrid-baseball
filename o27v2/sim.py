@@ -710,6 +710,9 @@ def _db_team_to_engine(
     team.mgr_run_game             = float(team_row.get("mgr_run_game") or 0.5)
     team.mgr_bench_usage          = float(team_row.get("mgr_bench_usage") or 0.5)
     team.mgr_shift_aggression     = float(team_row.get("mgr_shift_aggression") or 0.5)
+    # mgr_ibb_aggression may be missing on legacy DB rows seeded before the
+    # IBB persona dimension landed — `or 0.5` falls back to neutral.
+    team.mgr_ibb_aggression       = float(team_row.get("mgr_ibb_aggression") or 0.5)
     team.mgr_declare_aggression   = float(team_row.get("mgr_declare_aggression") or 0.5)
     team.mgr_bat_first_pref       = float(team_row.get("mgr_bat_first_pref") or 0.5)
     # Stamp the catcher's arm rating on the Team for SB-success scaling.
