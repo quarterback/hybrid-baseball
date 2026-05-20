@@ -160,10 +160,9 @@ and DB column intact.
   `games.super_inning`. This was deliberate (minimize blast radius; the user
   still calls them super innings). A future cosmetic pass could rename to
   "extra innings" if desired.
-- **Historical games.** Games simulated before this switch were played under the
-  old 5-dismissal rules and will violate the new `SI_PHASE_CAP=3` invariant.
-  The schema is unchanged, so they remain readable; re-simulate if strict
-  invariant checking across the whole DB is needed.
+- **Historical games.** Not a concern — the DB is always cleared and reseeded
+  on reload, so no pre-switch games persist to violate the new
+  `SI_PHASE_CAP=3` invariant.
 - **Small-ball tuning.** The manager's out-count gates were calibrated for the
   27-out regulation. They now behave sensibly in extras because outs are
   cumulative (28–33 reads as "late game"), but the heuristics were not
