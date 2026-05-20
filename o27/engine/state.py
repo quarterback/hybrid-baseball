@@ -111,16 +111,17 @@ class Player:
     # no longer reads it.
     pitcher_role: str = ""
 
-    # Legacy Phase-8 fields. `archetype`, `pitcher_archetype`, and
-    # `hard_contact_delta` are still referenced elsewhere (kept zeroed for
-    # backward compat). `hr_weight_bonus` is no longer read by the
-    # probability code — the legacy archetype HR boost was removed because
-    # it inflated joker HR rates on hard contact in ways the modern rating
-    # model already accounts for via `power`. Field retained so v2 DB
-    # rows / seed code keep loading without schema churn.
+    # Legacy Phase-8 archetype fields. None are read by the probability
+    # code anymore: the `hr_weight_bonus` (HR boost) and
+    # `hard_contact_delta` (hard-contact boost) modifiers were removed
+    # because they inflated joker contact/power outcomes in ways the
+    # modern `power` rating already models — and as unscaled additive
+    # boosts they bypassed the per-game joker decay. Fields retained as
+    # zeroed stubs so v2 DB rows / seed code keep loading without schema
+    # churn. `archetype` / `pitcher_archetype` strings are likewise inert.
     archetype: str = ""
     pitcher_archetype: str = ""
-    hard_contact_delta: float = 0.0
+    hard_contact_delta: float = 0.0   # unused; see comment above
     hr_weight_bonus:    float = 0.0   # unused; see comment above
 
     # Realism layer — multi-dimensional ratings (0.0–1.0).
