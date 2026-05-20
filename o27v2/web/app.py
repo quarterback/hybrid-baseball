@@ -2345,8 +2345,18 @@ def _aggregate_pitcher_rows(
         ip = outs / 3.0
         if outs > 0:
             p["era"] = er * 27.0 / outs
+            # RA/27 — ALL runs allowed (earned + unearned) on the same
+            # 27-out scale as ERA. In O27 the Walk-Back rule manufactures
+            # unearned runs that ERA excludes, so RA/27 ≥ ERA and the gap is
+            # the walk-back/passed-ball cost. runs_allowed == er + uer; fall
+            # back to that sum for callers whose query omits the `r` column.
+            r_allowed = p.get("r")
+            if r_allowed is None:
+                r_allowed = er + uer
+            p["ra27"] = (r_allowed or 0) * 27.0 / outs
         else:
             p["era"] = 0.0
+            p["ra27"] = 0.0
         if ip > 0:
             p["whip"] = (h + bb) / ip
             p["k9"]   = k  * 9.0 / ip

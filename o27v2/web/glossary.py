@@ -119,6 +119,8 @@ GLOSSARY_SECTIONS: list[dict] = [
              "desc": "Park-adjusted, league-relative wERA on the ERA+ scale (100 = average, higher = better)."},
             {"key": "xra", "abbr": "xRA", "name": "Expected Runs Allowed",
              "desc": "Non-negative linear-weights estimate of runs allowed (HR≈1.4, single≈0.45, BB/HBP≈0.32), anchored so league xRA = league wERA. Lower is better."},
+            {"key": "ra27", "abbr": "RA/27", "name": "Runs Allowed per 27 Outs",
+             "desc": "All runs allowed (earned + unearned) on the same 27-out scale as wERA/xRA — the runs-allowed sibling of ERA. Because it includes Walk-Back and passed-ball runs that ERA excludes, the RA/27 − wERA gap surfaces the run damage the earned-run stats hide. Lower is better."},
             {"key": "decay", "abbr": "Decay", "name": "Late-Arc Decay",
              "desc": "Drift-corrected late-arc fade in K% points. 0 = matches league norm; positive = fades worse; negative = holds up better. Lower is better."},
             {"key": "late_k_pct_pct", "abbr": "LateK%", "name": "Late K Rate",

@@ -180,7 +180,7 @@
 <div class="row g-3 mb-3">
   {{ card('wERA',        'werra',    '%.2f',  false, pitching, tooltip='Weighted ERA — runs allowed weighted by arc position (outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20)') }}
   {{ card('xRA',        'xra',     '%.2f',  false, pitching, tooltip='Expected Runs Allowed — non-negative linear-weights formula (HR=1.4, single≈0.45, BB/HBP=0.32), multiplicatively anchored so league xRA = league wERA') }}
-  {{ card('Decay (low)', 'decay',    '%+.1f', false, pitching, tooltip='Drift-corrected late-arc fade (points). 0 = matches league norm; positive = fades worse than the natural lineup-cycling lift; negative = holds up better than league. Subtracts the league arc-1→arc-3 K% delta to isolate fatigue from O27 lineup-cycling.') }}
+  {{ card('RA/27 (low)', 'ra27',   '%.2f',  false, pitching, tooltip='Runs Allowed per 27 outs — ALL runs (earned + unearned) on the same scale as wERA/xRA. Unlike ERA/wERA it includes Walk-Back and passed-ball runs, so RA/27 − wERA is the run damage the earned-run stats hide. Lower is better.') }}
   {{ card('LateK%',      'late_k_pct_pct', '%.1f%%', true, pitching, tooltip='Arc-3 K% (outs 19-27, incl foul-outs). The short-relief sibling to Decay — closers and back-of-arc specialists who never see arc-1 sample appear here.') }}
   {{ card('GSc+',        'gsc_plus', '%d',    true,  pitching, tooltip='League-relative Game Score (100 = league avg, higher = better)') }}
   {{ card('GSc Index',   'gsc_index','%d',    true,  pitching, tooltip='Z-score-normalized Game Score on an IQ-style 100 / 15 scale. Unlike GSc+ (mean-only), GSc Index also accounts for the spread of pitcher talent — a 130 reads as "+2 σ above average" in a deep 56-team league the same as in an 8-team league.') }}
