@@ -96,10 +96,13 @@ def _walk_back_should_fire(hit_type: str, batted_advance_from_3b: int = 0) -> bo
     """
     if hit_type in _WALK_BACK_BAT_DRIVES:
         return True
-    # Sac fly / productive ground out: the play's runner_advances[2] is the
-    # advance amount that WOULD apply to a runner on 3B. Any positive value
-    # scores from 3B.
-    if hit_type in ("fly_out", "ground_out", "fielders_choice"):
+    # Sac fly / productive ground out / batter gunned at home on a deep
+    # drive: the play's runner_advances[2] is the advance amount that WOULD
+    # apply to a runner on 3B. Any positive value scores from 3B. An
+    # inside-the-park out clears the bases (the batter is out, but the
+    # runners ahead — including the Walk-Back runner — cross), so it drives
+    # the Walk-Back runner home just like a productive out.
+    if hit_type in ("fly_out", "ground_out", "fielders_choice", "itp_out"):
         return batted_advance_from_3b >= 1
     return False
 
