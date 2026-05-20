@@ -2419,6 +2419,62 @@ def _aggregate_pitcher_rows(
 # Routes
 # ---------------------------------------------------------------------------
 
+# ---- PWA: manifest + icon ------------------------------------------------
+# Served from routes (not a static folder) so the app stays a single
+# package with no extra build step. The icon is an SVG so it scales to any
+# size and needs no binary asset; Android/Chrome install fully from it.
+# Deliberately NO service worker: O27 sim data changes on every "Sim" click,
+# and a caching SW would serve stale standings/box scores. Installability +
+# standalone display is the win; offline caching would be a footgun here.
+
+_APP_ICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+    '<rect width="512" height="512" rx="96" fill="#0a3a73"/>'
+    '<circle cx="256" cy="256" r="150" fill="#f4efe2"/>'
+    '<path d="M150 165a150 150 0 0 0 0 182" stroke="#b3162e" stroke-width="9" '
+    'fill="none" stroke-linecap="round" stroke-dasharray="3 16"/>'
+    '<path d="M362 165a150 150 0 0 1 0 182" stroke="#b3162e" stroke-width="9" '
+    'fill="none" stroke-linecap="round" stroke-dasharray="3 16"/>'
+    '<text x="256" y="300" text-anchor="middle" font-family="Inter,Arial,sans-serif" '
+    'font-size="150" font-weight="800" fill="#0a3a73" letter-spacing="-6">O27</text>'
+    '</svg>'
+)
+
+
+@app.route("/manifest.webmanifest")
+def webmanifest():
+    import json as _json
+    manifest = {
+        "name": "O27 Baseball",
+        "short_name": "O27",
+        "description": "Browse simulated O27 baseball seasons — stats, standings, box scores.",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "any",
+        "background_color": "#f4efe2",
+        "theme_color": "#0a3a73",
+        "icons": [
+            {
+                "src": url_for("app_icon"),
+                "sizes": "any",
+                "type": "image/svg+xml",
+                "purpose": "any maskable",
+            }
+        ],
+    }
+    return Response(_json.dumps(manifest), mimetype="application/manifest+json")
+
+
+@app.route("/icon.svg")
+def app_icon():
+    return Response(
+        _APP_ICON_SVG,
+        mimetype="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.route("/")
 def index():
     team_count = db.fetchone("SELECT COUNT(*) as n FROM teams")
