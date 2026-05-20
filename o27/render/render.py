@@ -59,10 +59,12 @@ _HIT_TYPE_DISPLAY: dict[str, str] = {
     "itp_out":         "deep drive — thrown out at home",
 }
 
-# Sentinel `runner_from_base` value for a batter who scored himself (home
-# run) — distinct from the real base indices 0/1/2 (1B/2B/3B). The web/box
-# renderers map this to "HR".
+# Sentinel `runner_from_base` values, distinct from the real base indices
+# 0/1/2 (1B/2B/3B). BATTER_HR_FROM_BASE = batter's own home-run run ("HR");
+# OTHER_FROM_BASE = a run with no starting base (Walk-Back bonus / phantom),
+# rendered as "—".
 BATTER_HR_FROM_BASE = 3
+OTHER_FROM_BASE = 4
 
 
 class Renderer:
@@ -104,7 +106,6 @@ class Renderer:
         self._last_outs: int = 0      # outs at END of last event
         self._pa_start_bases: tuple = (None, None, None)  # bases at START of current PA
         self._pa_runners_out: set = set()       # runner_ids retired during current PA
-        self._pa_batter_runs: int = 0           # times the batter scored himself this PA (home runs)
         # Pesäpallo-style scoring log — one entry per run that crosses the
         # plate. Captures batter, runner, runner's starting base in the
         # PA, the score-after-this-run, outs, and half. Populated at PA
@@ -176,7 +177,6 @@ class Renderer:
             # than leaking the prior half's stranded runners into this PA.
             self._pa_start_bases = tuple(ctx.get("bases_list") or (None, None, None))
             self._pa_runners_out = set()
-            self._pa_batter_runs = 0
             self._on_new_pa(batter)
             lines.append(self._batter_intro(batter))
             self._current_pa_batter_id = batter.player_id
@@ -339,13 +339,14 @@ class Renderer:
         return rows
 
     def _flush_final_pa(self) -> None:
-        """Credit the game's final plate appearance.
+        """Credit the game's final plate appearance's advancement metrics.
 
         `_credit_pa_advancement` normally fires at the *next* batter's PA
         boundary, but the last PA of the game (frequently a walk-off) has no
-        successor, so its runner advancement — and any runner-from-base run,
-        including the winning run — would otherwise be dropped from the
-        advancement stats and the scoring-events log. Flushed once at game end.
+        successor, so its per-base advancement (adv_op / rad) would otherwise
+        be dropped. (Run scoring-log rows are emitted per-event in
+        _credit_runs, so they don't depend on this flush.) Flushed once at
+        game end.
         """
         if self._current_pa_batter_id is not None:
             self._credit_pa_advancement(self._current_pa_batter_id)
@@ -637,14 +638,12 @@ class Renderer:
         at a HIGHER base OR scored (= departed without being recorded as
         retired during this PA) = successful advancement.
 
-        Also emits one row into self._scoring_log per runner who scored —
-        captured here because we have all the per-PA bookkeeping in one
-        place (starting bases, retired-runner set, score deltas).
+        Run scoring-log rows are emitted authoritatively in _credit_runs;
+        this method only computes the per-base advancement metrics.
         """
         s = self._stats_for_id(batter_id)
         start_bases = self._pa_start_bases or (None, None, None)
         end_bases   = self._last_bases or (None, None, None)
-        scored_runners: list[tuple[int, str]] = []   # (src_idx, runner_id), highest base first
         for src_idx in (0, 1, 2):
             runner_id = start_bases[src_idx]
             if runner_id is None:
@@ -659,7 +658,6 @@ class Renderer:
             #   - departed and NOT in retired-set → scored → gained (3-src_idx) bases
             #   - departed and in retired-set → out → no advancement, no bases
             advanced = False
-            scored   = False
             bases_gained = 0
             if runner_id in end_bases:
                 new_idx = end_bases.index(runner_id)
@@ -668,7 +666,6 @@ class Renderer:
                     bases_gained = new_idx - src_idx
             elif runner_id not in self._pa_runners_out:
                 advanced = True
-                scored   = True
                 bases_gained = 3 - src_idx
             if advanced and s is not None:
                 if src_idx == 0:   s.adv_adv_1b += 1
@@ -681,36 +678,6 @@ class Renderer:
                 if src_idx == 0:   s.rad_1b += bases_gained
                 elif src_idx == 1: s.rad_2b += bases_gained
                 else:              s.rad_3b += bases_gained
-            if scored:
-                scored_runners.append((src_idx, runner_id))
-
-        # Emit one scoring-log entry per run that crossed: runners who scored
-        # from a base (highest base first — closest to home → scored first),
-        # then the batter's own run(s) on a home run (he crosses last, behind
-        # any runners ahead of him). Tick the score backwards from the PA-end
-        # total so each row shows the cumulative score at the moment of that run.
-        scored_runners.sort(key=lambda x: -x[0])   # 3B-runner first
-        emit: list[tuple[int, str]] = list(scored_runners)
-        for _ in range(self._pa_batter_runs):
-            emit.append((BATTER_HR_FROM_BASE, batter_id))
-        if not emit:
-            return
-        is_visitors = self._last_half in ("top", "super_top")
-        n_total = len(emit)
-        for i, (src_idx, runner_id) in enumerate(emit):
-            runs_remaining_after = n_total - 1 - i
-            v_now = self._last_score_v - (runs_remaining_after if is_visitors else 0)
-            h_now = self._last_score_h - (runs_remaining_after if not is_visitors else 0)
-            self._scoring_log.append({
-                "seq":              len(self._scoring_log),
-                "half":             self._last_half,
-                "outs_before":      self._last_outs,
-                "batter_id":        batter_id,
-                "runner_id":        runner_id,
-                "runner_from_base": src_idx,
-                "visitors_score":   v_now,
-                "home_score":       h_now,
-            })
 
     def _stats_for_id(self, batter_id: str):
         """Look up an existing BatterStats by player_id. Returns None if
@@ -1530,22 +1497,22 @@ class Renderer:
 
     def _credit_runs(self, ctx: dict, state_after, runs_scored: int,
                      etype: str, disp: dict) -> None:
-        """Credit the 'R' stat to runners who scored.
+        """Credit the 'R' stat to the players who scored AND emit one
+        scoring-log row per run.
 
-        Edge cases handled:
-          - Same player_id appears on multiple bases simultaneously
-            (engine bug where the batter-as-runner advances AND batter-as-batter
-            takes a base at the same time). The before/after multiset diff
-            counts those as scores.
-          - Lineup wrapped to a player who was still on base — they're both
-            the batter AND a runner. Their PA scores them as runner; the
-            batter-position is from their hit. Detected by same-count before
-            and after.
-          - HR batter scores even though never on base before.
-          - Unrecoverable case (runner's pid not in _batter_stats — e.g. a
-            sub path that didn't register stats): we fall back to crediting
-            the batter so Σ batter.runs == state.score and the box-score R
-            column stays consistent.
+        This is the single authoritative run-attribution path (every run
+        flows through here exactly once), so deriving the scoring log from
+        the same `runs_scored` count guarantees the log reconciles exactly
+        to the final score — no phantom over-counts, no missed runs.
+
+        Each scorer is paired with the base they scored from (0/1/2 = 1B/2B/3B,
+        BATTER_HR_FROM_BASE for the batter's own home-run run). Any run that
+        can't be matched to a starting-base runner or a HR (e.g. a Walk-Back
+        bonus run, or a phantom-attribution edge) is credited to the batter
+        and tagged OTHER_FROM_BASE.
+
+        Edge cases handled: same pid on multiple bases; lineup-wrap (batter
+        was also a runner); HR batter; runner pid missing from _batter_stats.
         """
         from collections import Counter
 
@@ -1555,10 +1522,10 @@ class Renderer:
         after_count  = Counter(p for p in bases_after  if p is not None)
         batter_pid   = ctx["batter"].player_id
 
-        # 3B → 2B → 1B order so the furthest-along runner is credited first.
-        # `seen` prevents double-counting when the same pid appears at multiple
-        # base indices (the count-diff already captures the multiplicity).
-        left_ids: list[str] = []
+        # Ordered (from_base, pid) for each runner who left a base and crossed.
+        # 3B → 2B → 1B so the furthest-along runner is credited first; `seen`
+        # prevents double-counting a pid that occupies multiple bases.
+        scorers: list[tuple[int, str]] = []
         seen: set[str] = set()
         for i in (2, 1, 0):
             pid = bases_before[i]
@@ -1567,39 +1534,48 @@ class Renderer:
             seen.add(pid)
             scored = max(0, before_count[pid] - after_count.get(pid, 0))
             for _ in range(scored):
-                left_ids.append(pid)
+                scorers.append((i, pid))
 
         # Lineup-wrap case: batter was on base before, still on base after
-        # with the same multiplicity → the runner-instance of them crossed
-        # home (then they re-occupied a base as the batter).
+        # with the same multiplicity → the runner-instance of them crossed.
         if (batter_pid in before_count
                 and before_count[batter_pid] == after_count.get(batter_pid, 0)):
-            left_ids.append(batter_pid)
+            wrap_base = bases_before.index(batter_pid)
+            scorers.append((wrap_base, batter_pid))
 
-        # HR: batter scores too (only if not already accounted for above).
+        # HR: the batter scores himself (unless already counted via wrap).
         hit_type = disp.get("hit_type", "")
         if etype == "ball_in_play" and hit_type in ("hr", "home_run"):
-            if left_ids.count(batter_pid) == 0:
-                left_ids.append(batter_pid)
-            # The batter scored himself on this home run — record it so the
-            # scoring log gets an entry for the batter's own run (otherwise
-            # solo HRs produce no scoring-log row at all).
-            self._pa_batter_runs += 1
+            if not any(pid == batter_pid for _, pid in scorers):
+                scorers.append((BATTER_HR_FROM_BASE, batter_pid))
 
-        # Credit the first `runs_scored` from left_ids.
-        credited = 0
-        for pid in left_ids[:runs_scored]:
-            if pid in self._batter_stats:
-                self._batter_stats[pid].runs += 1
-                credited += 1
+        # Take exactly `runs_scored` runs; pad any shortfall with batter-
+        # attributed "other" runs (Walk-Back / phantom) so the count is exact.
+        runs: list[tuple[int, str]] = list(scorers[:runs_scored])
+        while len(runs) < runs_scored:
+            runs.append((OTHER_FROM_BASE, batter_pid))
 
-        # Fallback: any uncredited runs go to the batter so the per-batter
-        # R column sums to state.score. This isn't always semantically
-        # right (a phantom runner might have actually scored), but
-        # mis-attribution is better than the totals drifting apart.
-        remaining = runs_scored - credited
-        if remaining > 0 and batter_pid in self._batter_stats:
-            self._batter_stats[batter_pid].runs += remaining
+        # Credit R and emit a scoring-log row per run, ticking the batting
+        # team's score up by one each run (other team's score is constant).
+        bt = ctx.get("batting_team_id")
+        before_bt = int(ctx.get("score", {}).get(bt, 0) or 0)
+        other = "home" if bt == "visitors" else "visitors"
+        other_score = int(state_after.score.get(other, 0) or 0)
+        for i, (from_base, pid) in enumerate(runs):
+            target = pid if pid in self._batter_stats else batter_pid
+            if target in self._batter_stats:
+                self._batter_stats[target].runs += 1
+            bt_score = before_bt + i + 1
+            self._scoring_log.append({
+                "seq":              len(self._scoring_log),
+                "half":             ctx.get("half", "top"),
+                "outs_before":      int(ctx.get("outs", 0) or 0),
+                "batter_id":        batter_pid,
+                "runner_id":        pid,
+                "runner_from_base": from_base,
+                "visitors_score":   bt_score if bt == "visitors" else other_score,
+                "home_score":       bt_score if bt == "home" else other_score,
+            })
 
     # -----------------------------------------------------------------------
     # Public accessor — structured stats for web display
