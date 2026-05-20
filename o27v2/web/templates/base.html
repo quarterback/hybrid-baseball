@@ -104,6 +104,20 @@
       padding: 3px 8px;
       color: var(--text);
     }
+    /* While a bulk sim is running the badge doubles as a progress bar: a
+       green fill grows left→right toward the target date (--pct), so the
+       user sees forward progress instead of a crawling date that looks
+       like the season reset to early in the month. */
+    .sim-date.simming {
+      background-image: linear-gradient(
+        to right,
+        rgba(20, 108, 46, .35) 0%,
+        rgba(20, 108, 46, .35) var(--pct, 0%),
+        transparent var(--pct, 0%));
+      border-color: #0e5320;
+      white-space: nowrap;
+      transition: background-image .25s ease;
+    }
     .sim-btn {
       font-size: .85rem;
       font-weight: 600;
@@ -867,10 +881,43 @@
     if (text) badge.textContent = text;
   }
 
+  function daysBetween(a, b) {
+    const ms = Date.parse(b) - Date.parse(a);
+    return Number.isFinite(ms) ? Math.round(ms / 86400000) : 0;
+  }
+
+  // Paint the badge as a progress bar toward `target`, given the day the
+  // sim has reached (`current`). Falls back to an indeterminate label when
+  // the span can't be computed yet.
+  function showProgress(start, current, target) {
+    if (!target) {
+      badge.textContent = current ? `Simulating ${current}…` : 'Simulating…';
+      return;
+    }
+    const total = daysBetween(start, target);
+    const done = daysBetween(start, current);
+    const pct = total > 0
+      ? Math.max(0, Math.min(99, Math.round((done / total) * 100)))
+      : 0;
+    badge.classList.add('simming');
+    badge.style.setProperty('--pct', pct + '%');
+    badge.textContent = `Simulating → ${target} · ${pct}%`;
+  }
+
+  function clearProgress() {
+    badge.classList.remove('simming');
+    badge.style.removeProperty('--pct');
+  }
+
   async function runSim(kind) {
     const orig = badge.textContent;
     setBusy(true, `Simulating ${currentDate}…`);
     let lastData = null;
+    // Latched on the first chunk: where we started and the goal we're
+    // simming toward. `target` only ever moves forward (the season target
+    // grows as playoff games get scheduled) so the bar never jumps back.
+    let startDate = null;
+    let targetDate = null;
     try {
       // Bulk endpoints chunk their work and return done=false when more
       // remains. Loop until done so a Sim Month / Sim Season click is one
@@ -918,6 +965,7 @@
         if (data.errored && data.errored > 0) {
           // Sim ran but some games crashed — surface the cause and don't
           // reload (the schedule's "Err" buttons would hide the real reason).
+          clearProgress();
           badge.textContent = orig;
           setBusy(false);
           alert(
@@ -928,14 +976,17 @@
           );
           return;
         }
+        if (startDate === null) startDate = data.from_date || data.current_date || null;
+        if (data.to_date && (targetDate === null || data.to_date > targetDate)) {
+          targetDate = data.to_date;
+        }
         if (data.done === false) {
-          if (data.current_date) {
-            badge.textContent = `Simulating ${data.current_date}…`;
-          }
+          showProgress(startDate, data.current_date || startDate, targetDate);
           continue;
         }
         break;
       }
+      clearProgress();
       const data = lastData || {};
       if (data.from_date && data.to_date && data.from_date !== data.to_date) {
         badge.textContent = `Simulated ${data.from_date} → ${data.to_date}`;
@@ -945,6 +996,7 @@
       window.location.reload();
     } catch (err) {
       console.error(err);
+      clearProgress();
       badge.textContent = orig;
       setBusy(false);
       alert('Simulation failed: ' + err.message);
