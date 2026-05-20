@@ -29,6 +29,10 @@ from __future__ import annotations
 MLB_ANCHOR_MEAN = {
     # Pitching
     "era":   4.30,
+    # RA/27 (all runs, not just earned) gets an MLB-readable twin on the
+    # ERA scale — same anchor as ERA so the XO value reads like a familiar
+    # ERA. The native RA/27 stays on the O27 scale next to wERA/xRA.
+    "ra27":  4.30,
     "whip":  1.30,
     "k9":    8.5,
     "bb9":   3.2,
@@ -53,6 +57,7 @@ MLB_ANCHOR_MEAN = {
 MLB_ANCHOR_SD = {
     # Pitching
     "era":   1.05,
+    "ra27":  1.05,   # ERA-scale spread (see MLB_ANCHOR_MEAN["ra27"]).
     "whip":  0.14,
     "k9":    2.10,
     "bb9":   0.95,
@@ -72,7 +77,7 @@ MLB_ANCHOR_SD = {
 
 # Stats that the XO map covers. Order is for stable iteration in
 # templates / calibration panels.
-XO_PITCHER_STATS = ("era", "whip", "k9", "bb9", "hr9",
+XO_PITCHER_STATS = ("era", "ra27", "whip", "k9", "bb9", "hr9",
                     "oavg", "oobp", "oslg", "oops")
 XO_BATTER_STATS  = ("avg", "obp", "slg", "ops", "woba", "babip")
 

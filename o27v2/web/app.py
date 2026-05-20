@@ -1430,7 +1430,13 @@ def _aggregate_batter_rows(
         for stat in XO_BATTER_STATS:
             mean = scoped_xo_b.get(f"xo_{stat}_mean") or 0.0
             sd   = scoped_xo_b.get(f"xo_{stat}_sd")   or 0.0
-            native = b.get(stat) or 0.0
+            # The AVG crossover must anchor on traditional batting average
+            # (H/AB = bavg), the true 1:1 analog to MLB AVG and the same
+            # quantity the league baseline uses (see _compute_xo_league_
+            # baselines: avg_vals = h/ab). b["avg"] is O27's headline PAVG
+            # (H/PA) — a different denominator — so feeding it here would
+            # z-score a plate average against a batting-average distribution.
+            native = (b.get("bavg") if stat == "avg" else b.get(stat)) or 0.0
             b_xo[stat] = to_xo(stat, native, mean, sd)
         b["xo"] = b_xo
 
@@ -1875,21 +1881,29 @@ def _compute_xo_league_baselines(
     out: dict[str, float] = {}
 
     # --- Batter qualifying distribution (per-player rate stats) ---
+    # NB: every formula below MUST mirror the per-player computation in
+    # _aggregate_batter_rows so the XO z-anchor maps a player's displayed
+    # native value against a distribution of the SAME quantity. Drift here
+    # silently miscalibrates the crossover (see the AVG/PAVG bug).
     bat_rows = db.fetchall(
         f"""SELECT player_id,
-                   SUM(pa)      AS pa,
-                   SUM(ab)      AS ab,
-                   SUM(hits)    AS h,
-                   SUM(doubles) AS d2,
-                   SUM(triples) AS d3,
-                   SUM(hr)      AS hr,
-                   SUM(bb)      AS bb,
-                   SUM(hbp)     AS hbp
+                   SUM(pa)         AS pa,
+                   SUM(ab)         AS ab,
+                   SUM(hits)       AS h,
+                   SUM(doubles)    AS d2,
+                   SUM(triples)    AS d3,
+                   SUM(hr)         AS hr,
+                   SUM(bb)         AS bb,
+                   SUM(k)          AS k,
+                   SUM(hbp)        AS hbp,
+                   COALESCE(SUM(stay_hits),0) AS stay_hits
               FROM game_batter_stats{bat_where}
              GROUP BY player_id
             HAVING SUM(pa) >= 50""",
         bat_params,
     )
+    ww = _linear_weights()["woba_weights"]
+    stay_w = ww.get("STAY", ww["1B"])
     avg_vals: list[float]   = []
     obp_vals: list[float]   = []
     slg_vals: list[float]   = []
@@ -1904,18 +1918,31 @@ def _compute_xo_league_baselines(
         d3 = r["d3"] or 0
         hr = r["hr"] or 0
         bb = r["bb"] or 0
+        k  = r["k"]  or 0
         hbp = r["hbp"] or 0
+        stay_h = r["stay_hits"] or 0
         if pa <= 0 or ab <= 0:
             continue
         singles = h - d2 - d3 - hr
         tb      = singles + 2 * d2 + 3 * d3 + 4 * hr
+        # AVG = H/AB (batting average), matching the per-player bavg the XO
+        # crossover anchors on (NOT the H/PA headline PAVG).
         avg_vals.append(h / ab)
         obp_vals.append((h + bb + hbp) / pa)
         slg_vals.append(tb / pa)
         ops_vals.append((h + bb + hbp) / pa + tb / pa)
-        woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
+        # wOBA uses the same dynamic empirical weights + true-singles/stay
+        # split as _aggregate_batter_rows (not fixed MLB weights).
+        true_singles = h - d2 - d3 - hr - stay_h
+        woba_num = (
+            ww["BB"] * bb + ww["HBP"] * hbp + ww["1B"] * true_singles +
+            ww["2B"] * d2 + ww["3B"] * d3 + ww["HR"] * hr +
+            stay_w * stay_h
+        )
         woba_vals.append(woba_num / pa)
-        bab_den = ab - hr
+        # BABIP excludes strikeouts from the denominator, matching the
+        # per-player formula: (H − HR) / (PA − K − BB − HBP − HR).
+        bab_den = pa - k - bb - hbp - hr
         if bab_den > 0:
             babip_vals.append((h - hr) / bab_den)
 
@@ -1931,6 +1958,7 @@ def _compute_xo_league_baselines(
         f"""SELECT ps.player_id,
                    SUM(ps.outs_recorded) AS outs,
                    SUM(ps.er)            AS er,
+                   SUM(ps.runs_allowed)  AS r,
                    SUM(ps.bb)            AS bb,
                    SUM(ps.k)             AS k,
                    SUM(ps.hits_allowed)  AS h,
@@ -1945,6 +1973,7 @@ def _compute_xo_league_baselines(
         pit_params,
     )
     era_vals:  list[float] = []
+    ra27_vals: list[float] = []
     whip_vals: list[float] = []
     k9_vals:   list[float] = []
     bb9_vals:  list[float] = []
@@ -1961,21 +1990,23 @@ def _compute_xo_league_baselines(
         bf = r["bf"] or 0
         ab_faced = max(0, bf - (r["bb"] or 0) - (r["hbp"] or 0))
         era_vals.append((r["er"] or 0) * 27.0 / outs)
+        # RA/27 distribution mirrors the per-player p["ra27"] (all runs).
+        ra27_vals.append((r["r"] or 0) * 27.0 / outs)
         whip_vals.append(((r["h"] or 0) + (r["bb"] or 0)) / ip)
         k9_vals.append((r["k"]  or 0) * 9.0 / ip)
         bb9_vals.append((r["bb"] or 0) * 9.0 / ip)
         hr9_vals.append((r["hr"] or 0) * 9.0 / ip)
         if ab_faced > 0:
-            singles_a = (r["h"] or 0) - (r["d2"] or 0) - (r["d3"] or 0) - (r["hr"] or 0)
-            tb_a = singles_a + 2 * (r["d2"] or 0) + 3 * (r["d3"] or 0) + 4 * (r["hr"] or 0)
             oavg_vals.append((r["h"] or 0) / ab_faced)
-            oslg_vals.append(tb_a / ab_faced)
+            # oSLG mirrors _aggregate_pitcher_rows: (H + 3·HR)/AB_faced.
+            oslg_vals.append(((r["h"] or 0) + 3 * (r["hr"] or 0)) / ab_faced)
         if bf > 0:
             oobp_vals.append(((r["h"] or 0) + (r["bb"] or 0) + (r["hbp"] or 0)) / bf)
         if ab_faced > 0 and bf > 0:
             oops_vals.append(oobp_vals[-1] + oslg_vals[-1])
 
-    for stat, vals in (("era",  era_vals), ("whip", whip_vals),
+    for stat, vals in (("era",  era_vals), ("ra27", ra27_vals),
+                        ("whip", whip_vals),
                         ("k9",   k9_vals),  ("bb9",  bb9_vals),
                         ("hr9",  hr9_vals), ("oavg", oavg_vals),
                         ("oobp", oobp_vals), ("oslg", oslg_vals),
@@ -2319,8 +2350,18 @@ def _aggregate_pitcher_rows(
         ip = outs / 3.0
         if outs > 0:
             p["era"] = er * 27.0 / outs
+            # RA/27 — ALL runs allowed (earned + unearned) on the same
+            # 27-out scale as ERA. In O27 the Walk-Back rule manufactures
+            # unearned runs that ERA excludes, so RA/27 ≥ ERA and the gap is
+            # the walk-back/passed-ball cost. runs_allowed == er + uer; fall
+            # back to that sum for callers whose query omits the `r` column.
+            r_allowed = p.get("r")
+            if r_allowed is None:
+                r_allowed = er + uer
+            p["ra27"] = (r_allowed or 0) * 27.0 / outs
         else:
             p["era"] = 0.0
+            p["ra27"] = 0.0
         if ip > 0:
             p["whip"] = (h + bb) / ip
             p["k9"]   = k  * 9.0 / ip
