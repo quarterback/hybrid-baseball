@@ -789,6 +789,7 @@ _PARK_ADJECTIVES = (
     "Silver", "Copper", "Twilight", "Sunset", "Ember", "North",
     "Whitestone", "Bayview", "Highland", "Riverside", "Meadow",
     "Hollow", "Stoneford", "Brookside", "Foxgrove",
+    "Gaslight", "Tannery", "Coffin", "Spite", "Crooked", "Wedge",
 )
 _PARK_NOUNS = (
     "Field", "Stadium", "Park", "Ground", "Yards", "Grounds", "Bowl",
@@ -797,6 +798,7 @@ _PARK_NOUNS = (
 _CRICKET_SINGLETONS = (
     "The Oval", "The Crucible", "The Pavilion", "The Citadel",
     "The Bullring", "The Cauldron", "The Pitch", "The Cathedral",
+    "The Icebox", "The Funnel", "The Keyhole", "The Wedge",
 )
 
 
@@ -868,8 +870,24 @@ _PARK_SHAPES = (
      "Center-field corner juts back another 30 ft from the alleys"),
     ("oval",            "Oval — Cricket-Ground Revival",
      "MCG-style elliptical boundary — pull HRs vanish, gappers feast"),
+    # ── Wild & exotic — geometry that could never pass a modern siting
+    # review. Rare (low weights) so a league still feels mostly grounded,
+    # but every few teams you stumble onto something deranged.
+    ("bandbox",         "The Bandbox",
+     "Baker-Bowl tiny — 285-ft lines, 360-ft CF, a spite fence to cope"),
+    ("crescent",        "The Crescent — Inverted",
+     "Concave boundary — CF caves IN shorter than the alleys; the only park where you pull it to center"),
+    ("hourglass",       "The Hourglass",
+     "Alleys pinch to 335 ft while lines and CF balloon — gappers die, pull shots and CF moonshots feast"),
+    ("coffin_corner",   "Coffin Corner",
+     "One foul line dives to 265 ft then the adjacent alley cliffs back to 445 — the other half plays cavernous"),
+    ("sawtooth_wedge",  "The Wedge",
+     "Monotonic ramp — a 275-ft short porch in left climbing to a 415-ft death valley in right"),
 )
-_PARK_SHAPE_WEIGHTS = (0.40, 0.10, 0.07, 0.13, 0.08, 0.10, 0.12)
+_PARK_SHAPE_WEIGHTS = (
+    0.40, 0.10, 0.07, 0.13, 0.08, 0.10, 0.12,   # original 7
+    0.04, 0.03, 0.04, 0.03, 0.03,               # bandbox, crescent, hourglass, coffin, wedge
+)
 
 
 _QUIRK_CATALOG: tuple[dict, ...] = (
@@ -933,6 +951,21 @@ _QUIRK_CATALOG: tuple[dict, ...] = (
     {"key": "scoreboard_clock",   "label": "Scoreboard Clock",
      "blurb": "20-foot clock in deep CF — the only timepiece in the league; ground-rule single on a hit",
      "weight": 0.05, "shapes": None},
+    {"key": "spite_fence",        "label": "The Spite Fence",
+     "blurb": "60-foot tin-and-timber wall slapped up to choke off the cheap pull HRs the tiny footprint hands out — pop flies clang off it for doubles",
+     "weight": 0.30, "shapes": ("bandbox",)},
+    {"key": "the_coffin",         "label": "The Coffin",
+     "blurb": "the short foul-line pocket cliffs back to the alley at a near-right angle — caroms ricochet sideways and balls wedge in the corner for ground-rule doubles",
+     "weight": 0.30, "shapes": ("coffin_corner",)},
+    {"key": "pinch_alleys",       "label": "Pinched Alleys",
+     "blurb": "the power alleys cave in 50 feet shorter than the lines — outfielders cheat to the gaps and gappers go to die",
+     "weight": 0.25, "shapes": ("hourglass",)},
+    {"key": "inverted_wall",      "label": "The Inverted Wall",
+     "blurb": "dead-center boundary bows IN toward the plate — the scoreboard looms close enough to read from the box",
+     "weight": 0.25, "shapes": ("crescent",)},
+    {"key": "the_ramp",           "label": "The Ramp",
+     "blurb": "the wall climbs steadily from a short porch to a death valley — the same fly ball is a souvenir on one line and a long out on the other",
+     "weight": 0.25, "shapes": ("sawtooth_wedge",)},
 )
 
 
@@ -997,7 +1030,7 @@ def _roll_park_dimensions(rng: random.Random) -> dict:
         lcf = int(round(rng.gauss(385, 12)))
         rcf = int(round(rng.gauss(385, 12)))
         cf  = int(round(rng.gauss(445, 16)))
-    else:   # oval — cricket-ground revival
+    elif shape == "oval":   # cricket-ground revival
         # Boundary nearly uniform around the whole playing field.
         # Pull HRs become rare, gappers and Stay-mechanic 2C events
         # become much more valuable.
@@ -1007,11 +1040,87 @@ def _roll_park_dimensions(rng: random.Random) -> dict:
         lcf = int(round(rng.gauss(398, 9)))
         rcf = int(round(rng.gauss(398, 9)))
         cf  = int(round(rng.gauss(418, 10)))
+    elif shape == "bandbox":
+        # Baker Bowl — tiny everywhere. HR factory at every angle, which
+        # is exactly why these parks always sprouted a freakishly tall
+        # spite fence (handled in the wall-height roll below).
+        skew = rng.uniform(-8, 8)
+        lf  = int(round(rng.gauss(285, 10) - skew))
+        rf  = int(round(rng.gauss(285, 10) + skew))
+        lcf = int(round(rng.gauss(330, 12)))
+        rcf = int(round(rng.gauss(330, 12)))
+        cf  = int(round(rng.gauss(360, 12)))
+    elif shape == "crescent":
+        # Inverted boundary — dead CF caves IN shorter than the power
+        # alleys. The only park in the league where straightaway center
+        # is the cheap HR and the gaps are where drives go to die.
+        skew = rng.uniform(-8, 8)
+        lf  = int(round(rng.gauss(350, 12) - skew))
+        rf  = int(round(rng.gauss(350, 12) + skew))
+        lcf = int(round(rng.gauss(420, 14)))
+        rcf = int(round(rng.gauss(420, 14)))
+        cf  = int(round(rng.gauss(365, 12)))
+    elif shape == "hourglass":
+        # Pinched power alleys with deep lines and a deep CF chasm. Pull
+        # the foul-line shot or hit it dead center; anything in the gap
+        # dies in the pinch.
+        skew = rng.uniform(-10, 10)
+        lf  = int(round(rng.gauss(365, 12) - skew))
+        rf  = int(round(rng.gauss(365, 12) + skew))
+        lcf = int(round(rng.gauss(335, 12)))
+        rcf = int(round(rng.gauss(335, 12)))
+        cf  = int(round(rng.gauss(445, 16)))
+    elif shape == "coffin_corner":
+        # Extreme one-sided notch: one foul line dives in, its adjacent
+        # alley cliffs back, and the far half plays cavernous. Pick the
+        # short side at random so coffins land in both LF and RF.
+        if rng.random() < 0.5:
+            # Short-left coffin.
+            lf  = int(round(rng.gauss(265, 10)))
+            lcf = int(round(rng.gauss(445, 16)))
+            rcf = int(round(rng.gauss(425, 16)))
+            rf  = int(round(rng.gauss(390, 14)))
+        else:
+            # Short-right coffin (mirror).
+            rf  = int(round(rng.gauss(265, 10)))
+            rcf = int(round(rng.gauss(445, 16)))
+            lcf = int(round(rng.gauss(425, 16)))
+            lf  = int(round(rng.gauss(390, 14)))
+        cf  = int(round(rng.gauss(430, 16)))
+    elif shape == "sawtooth_wedge":
+        # Monotonic ramp from a short porch in left to a death valley in
+        # right (orientation flips half the time).
+        if rng.random() < 0.5:
+            lf  = int(round(rng.gauss(275, 10)))
+            lcf = int(round(rng.gauss(335, 14)))
+            cf  = int(round(rng.gauss(395, 14)))
+            rcf = int(round(rng.gauss(395, 14)))
+            rf  = int(round(rng.gauss(415, 14)))
+        else:
+            rf  = int(round(rng.gauss(275, 10)))
+            rcf = int(round(rng.gauss(335, 14)))
+            cf  = int(round(rng.gauss(395, 14)))
+            lcf = int(round(rng.gauss(395, 14)))
+            lf  = int(round(rng.gauss(415, 14)))
+    else:   # defensive fallback — treat unknown shapes as balanced
+        skew = rng.uniform(-10, 10)
+        lf  = int(round(rng.gauss(338, 12) - skew))
+        rf  = int(round(rng.gauss(338, 12) + skew))
+        lcf = int(round(rng.gauss(388, 12)))
+        rcf = int(round(rng.gauss(388, 12)))
+        cf  = int(round(rng.gauss(412, 14)))
 
     # Wall height: long tail. Bathtub / short-porch parks get the
-    # tallest walls (Ebbets / Polo Grounds were both 35-40 ft RF).
+    # tallest walls (Ebbets / Polo Grounds were both 35-40 ft RF). The
+    # bandbox almost always sprouts a freakish spite fence to claw back
+    # the cheap HRs its tiny footprint hands out; coffin / wedge parks
+    # often slap an extreme wall on the short side.
     wall_roll = rng.random()
-    if shape in ("bathtub", "short_porch_rf", "short_porch_lf") and wall_roll < 0.45:
+    if shape == "bandbox" and wall_roll < 0.70:
+        wall_h = int(round(rng.uniform(40, 60)))   # Baker Bowl spite fence
+    elif shape in ("coffin_corner", "sawtooth_wedge") and wall_roll < 0.40:
+        wall_h = int(round(rng.uniform(30, 55)))
+    elif shape in ("bathtub", "short_porch_rf", "short_porch_lf") and wall_roll < 0.45:
         wall_h = int(round(rng.uniform(28, 50)))
     elif wall_roll < 0.08:
         wall_h = int(round(rng.uniform(28, 42)))   # Green Monster class
@@ -1023,12 +1132,15 @@ def _roll_park_dimensions(rng: random.Random) -> dict:
     else:
         wall_h = int(round(rng.uniform(8, 14)))
 
+    # Physical floors only — exotic shapes (bandbox short CF, sub-285
+    # coffin lines) must survive. The original archetypes' Gaussians sit
+    # well above these, so for them the clamp is a no-op.
     return {
-        "lf":     max(255, lf),
-        "lcf":    max(330, lcf),
-        "cf":     max(380, cf),
-        "rcf":    max(330, rcf),
-        "rf":     max(255, rf),
+        "lf":     max(250, lf),
+        "lcf":    max(300, lcf),
+        "cf":     max(355, cf),
+        "rcf":    max(300, rcf),
+        "rf":     max(250, rf),
         "wall_h": wall_h,
         "shape":  shape,
     }
