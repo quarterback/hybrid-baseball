@@ -1881,21 +1881,29 @@ def _compute_xo_league_baselines(
     out: dict[str, float] = {}
 
     # --- Batter qualifying distribution (per-player rate stats) ---
+    # NB: every formula below MUST mirror the per-player computation in
+    # _aggregate_batter_rows so the XO z-anchor maps a player's displayed
+    # native value against a distribution of the SAME quantity. Drift here
+    # silently miscalibrates the crossover (see the AVG/PAVG bug).
     bat_rows = db.fetchall(
         f"""SELECT player_id,
-                   SUM(pa)      AS pa,
-                   SUM(ab)      AS ab,
-                   SUM(hits)    AS h,
-                   SUM(doubles) AS d2,
-                   SUM(triples) AS d3,
-                   SUM(hr)      AS hr,
-                   SUM(bb)      AS bb,
-                   SUM(hbp)     AS hbp
+                   SUM(pa)         AS pa,
+                   SUM(ab)         AS ab,
+                   SUM(hits)       AS h,
+                   SUM(doubles)    AS d2,
+                   SUM(triples)    AS d3,
+                   SUM(hr)         AS hr,
+                   SUM(bb)         AS bb,
+                   SUM(k)          AS k,
+                   SUM(hbp)        AS hbp,
+                   COALESCE(SUM(stay_hits),0) AS stay_hits
               FROM game_batter_stats{bat_where}
              GROUP BY player_id
             HAVING SUM(pa) >= 50""",
         bat_params,
     )
+    ww = _linear_weights()["woba_weights"]
+    stay_w = ww.get("STAY", ww["1B"])
     avg_vals: list[float]   = []
     obp_vals: list[float]   = []
     slg_vals: list[float]   = []
@@ -1910,18 +1918,31 @@ def _compute_xo_league_baselines(
         d3 = r["d3"] or 0
         hr = r["hr"] or 0
         bb = r["bb"] or 0
+        k  = r["k"]  or 0
         hbp = r["hbp"] or 0
+        stay_h = r["stay_hits"] or 0
         if pa <= 0 or ab <= 0:
             continue
         singles = h - d2 - d3 - hr
         tb      = singles + 2 * d2 + 3 * d3 + 4 * hr
+        # AVG = H/AB (batting average), matching the per-player bavg the XO
+        # crossover anchors on (NOT the H/PA headline PAVG).
         avg_vals.append(h / ab)
         obp_vals.append((h + bb + hbp) / pa)
         slg_vals.append(tb / pa)
         ops_vals.append((h + bb + hbp) / pa + tb / pa)
-        woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
+        # wOBA uses the same dynamic empirical weights + true-singles/stay
+        # split as _aggregate_batter_rows (not fixed MLB weights).
+        true_singles = h - d2 - d3 - hr - stay_h
+        woba_num = (
+            ww["BB"] * bb + ww["HBP"] * hbp + ww["1B"] * true_singles +
+            ww["2B"] * d2 + ww["3B"] * d3 + ww["HR"] * hr +
+            stay_w * stay_h
+        )
         woba_vals.append(woba_num / pa)
-        bab_den = ab - hr
+        # BABIP excludes strikeouts from the denominator, matching the
+        # per-player formula: (H − HR) / (PA − K − BB − HBP − HR).
+        bab_den = pa - k - bb - hbp - hr
         if bab_den > 0:
             babip_vals.append((h - hr) / bab_den)
 
@@ -1972,10 +1993,9 @@ def _compute_xo_league_baselines(
         bb9_vals.append((r["bb"] or 0) * 9.0 / ip)
         hr9_vals.append((r["hr"] or 0) * 9.0 / ip)
         if ab_faced > 0:
-            singles_a = (r["h"] or 0) - (r["d2"] or 0) - (r["d3"] or 0) - (r["hr"] or 0)
-            tb_a = singles_a + 2 * (r["d2"] or 0) + 3 * (r["d3"] or 0) + 4 * (r["hr"] or 0)
             oavg_vals.append((r["h"] or 0) / ab_faced)
-            oslg_vals.append(tb_a / ab_faced)
+            # oSLG mirrors _aggregate_pitcher_rows: (H + 3·HR)/AB_faced.
+            oslg_vals.append(((r["h"] or 0) + 3 * (r["hr"] or 0)) / ab_faced)
         if bf > 0:
             oobp_vals.append(((r["h"] or 0) + (r["bb"] or 0) + (r["hbp"] or 0)) / bf)
         if ab_faced > 0 and bf > 0:
