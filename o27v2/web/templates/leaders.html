@@ -205,6 +205,7 @@
 </div>
 <div class="row g-3 mb-3">
   {{ card('ERA (low)',  'era',  '%.2f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent ERA') }}
+  {{ card('RA/27 (low)','ra27', '%.2f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent RA/27 — all runs allowed (earned + unearned) z-anchored to the MLB ERA scale, so it reads like an ERA. Runs above the ERA card = the Walk-Back/unearned cost.') }}
   {{ card('WHIP (low)', 'whip', '%.2f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent WHIP') }}
   {{ card('K/9',        'k9',   '%.1f', true,  pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent K/9') }}
   {{ card('BB/9 (low)', 'bb9',  '%.1f', false, pitching, force_xo=true, col='col-lg-4 col-md-6', tooltip='MLB-equivalent BB/9') }}

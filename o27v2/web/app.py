@@ -1958,6 +1958,7 @@ def _compute_xo_league_baselines(
         f"""SELECT ps.player_id,
                    SUM(ps.outs_recorded) AS outs,
                    SUM(ps.er)            AS er,
+                   SUM(ps.runs_allowed)  AS r,
                    SUM(ps.bb)            AS bb,
                    SUM(ps.k)             AS k,
                    SUM(ps.hits_allowed)  AS h,
@@ -1972,6 +1973,7 @@ def _compute_xo_league_baselines(
         pit_params,
     )
     era_vals:  list[float] = []
+    ra27_vals: list[float] = []
     whip_vals: list[float] = []
     k9_vals:   list[float] = []
     bb9_vals:  list[float] = []
@@ -1988,6 +1990,8 @@ def _compute_xo_league_baselines(
         bf = r["bf"] or 0
         ab_faced = max(0, bf - (r["bb"] or 0) - (r["hbp"] or 0))
         era_vals.append((r["er"] or 0) * 27.0 / outs)
+        # RA/27 distribution mirrors the per-player p["ra27"] (all runs).
+        ra27_vals.append((r["r"] or 0) * 27.0 / outs)
         whip_vals.append(((r["h"] or 0) + (r["bb"] or 0)) / ip)
         k9_vals.append((r["k"]  or 0) * 9.0 / ip)
         bb9_vals.append((r["bb"] or 0) * 9.0 / ip)
@@ -2001,7 +2005,8 @@ def _compute_xo_league_baselines(
         if ab_faced > 0 and bf > 0:
             oops_vals.append(oobp_vals[-1] + oslg_vals[-1])
 
-    for stat, vals in (("era",  era_vals), ("whip", whip_vals),
+    for stat, vals in (("era",  era_vals), ("ra27", ra27_vals),
+                        ("whip", whip_vals),
                         ("k9",   k9_vals),  ("bb9",  bb9_vals),
                         ("hr9",  hr9_vals), ("oavg", oavg_vals),
                         ("oobp", oobp_vals), ("oslg", oslg_vals),
