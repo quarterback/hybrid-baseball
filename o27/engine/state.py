@@ -571,15 +571,16 @@ class GameState:
     spell_log: list = field(default_factory=list)
 
     # --- Walk-Back (post-HR rule-placed runner) ---
-    # Set immediately after an HR PA resolves; consumed by the very next PA.
-    # When set, contains the player_id of the HR-hitter (display only —
-    # the runner is the HR-hitter himself, not a separate ghost). The next
-    # batter's PA, regardless of outcome, increments the pitcher's wb_faced
-    # counter exactly once; if the next batter drives the runner home with
-    # the bat (1B/2B/3B/HR/sac-fly), the team scores +1 unearned run, the
-    # driver gets +1 RBI, and the pitcher's wb_runs counter increments.
-    # The flag is cleared at the start of the next PA after being captured.
-    walk_back_pending: Optional[str] = None
+    # After an HR resolves MLB-exactly, the HR-hitter "walks back" to 3B as
+    # a live bonus runner and is added to this set. From there he is a normal
+    # baserunner with no special handling: he advances, scores, is put out,
+    # or is stranded at the half's end exactly like any other runner on 3B.
+    # His fate is NOT a one-PA window — he persists across PAs until resolved
+    # (mirrors the extra-innings ghost runner). Whenever he scores it is an
+    # unearned Walk-Back run; the pitcher's wb_faced ticks once at the moment
+    # his fate resolves (score / out / strand) and wb_runs ticks when he
+    # scores. Holds player_ids of the Walk-Back runners currently on base.
+    walk_back_runner_ids: set = field(default_factory=set)
 
     # --- Multi-hit tracking (within one at-bat) ---
     current_at_bat_hits: int = 0

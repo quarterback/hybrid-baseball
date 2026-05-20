@@ -894,8 +894,9 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "runs_allowed": ps.runs_allowed,
             # ER = runs_allowed − (passed-ball/error UER + Walk-Back unearned).
             # The spell's `unearned_runs` counter already includes both
-            # sources (see o27/engine/pa.py:_resolve_walk_back_at_pa_end),
-            # so this subtraction excludes the Walk-Back run from ERA
+            # sources (see o27/engine/pa.py:_reconcile_walk_back, which moves
+            # each Walk-Back run from earned to unearned when the bonus runner
+            # scores), so this subtraction excludes the Walk-Back run from ERA
             # exactly as required by the Manfred-runner precedent.
             "er": max(0, ps.runs_allowed - getattr(ps, "unearned_runs", 0)),
             "bb": ps.bb,
