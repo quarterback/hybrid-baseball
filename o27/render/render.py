@@ -348,6 +348,7 @@ class Renderer:
                 t.hr           += r.hr
                 t.rbi          += r.rbi
                 t.bb           += r.bb
+                t.ibb          += r.ibb
                 t.k            += r.k
                 t.hbp          += r.hbp
                 t.sty          += r.sty
@@ -1229,6 +1230,13 @@ class Renderer:
             # Walk: 1 PA, NOT an at-bat. No multi_hit_abs.
             s.pa += 1
             s.bb += 1
+            s.rbi += runs_scored
+
+        elif etype == "intentional_walk":
+            # Manager-issued IBB. Counts as a walk AND as an IBB (subset).
+            s.pa += 1
+            s.bb += 1
+            s.ibb += 1
             s.rbi += runs_scored
 
         elif etype == "foul_tip_caught":

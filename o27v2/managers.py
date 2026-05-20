@@ -96,6 +96,12 @@ class Archetype:
     # modern / saber archetypes shift more. Defaulted on the dataclass
     # so legacy archetype defs don't all need updating.
     shift_aggression: float = 0.50
+    # Willingness to issue an intentional walk to a hot or elite batter
+    # when first base is open. Old-school skippers walk the bat more
+    # readily; analytic skippers tend to pitch to whoever the model says
+    # is gettable. Defaulted so legacy archetype defs don't all need
+    # updating — neutral 0.50 lands in the middle of the range.
+    ibb_aggression: float = 0.50
     # Declared Seconds — declaration aggression governs willingness to
     # bank outs for a rebuttal half; bat_first_pref biases the home
     # manager's pre-game choice. Defaults are slightly above neutral on
@@ -121,7 +127,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.08, bullpen_aggression=0.10, leverage_aware=0.20,
         joker_aggression=0.10, pinch_hit_aggression=0.08,
         platoon_aggression=0.05, run_game=0.55, bench_usage=0.05,
-        shift_aggression=0.10,
+        shift_aggression=0.10, ibb_aggression=0.75,
         declare_aggression=0.20, bat_first_pref=0.70,
     ),
     "iron_manager": Archetype(
@@ -129,7 +135,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.18, bullpen_aggression=0.20, leverage_aware=0.30,
         joker_aggression=0.20, pinch_hit_aggression=0.18,
         platoon_aggression=0.15, run_game=0.50, bench_usage=0.12,
-        shift_aggression=0.20,
+        shift_aggression=0.20, ibb_aggression=0.70,
         declare_aggression=0.25, bat_first_pref=0.65,
     ),
     "old_school": Archetype(
@@ -137,7 +143,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.28, bullpen_aggression=0.32, leverage_aware=0.42,
         joker_aggression=0.30, pinch_hit_aggression=0.30,
         platoon_aggression=0.25, run_game=0.45, bench_usage=0.22,
-        shift_aggression=0.30,
+        shift_aggression=0.30, ibb_aggression=0.80,
         declare_aggression=0.35, bat_first_pref=0.60,
     ),
     "small_ball": Archetype(
@@ -145,6 +151,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.40, bullpen_aggression=0.45, leverage_aware=0.55,
         joker_aggression=0.55, pinch_hit_aggression=0.55,
         platoon_aggression=0.50, run_game=0.85, bench_usage=0.45,
+        ibb_aggression=0.65,
         declare_aggression=0.55, bat_first_pref=0.55,
     ),
     "players_manager": Archetype(
@@ -152,6 +159,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.32, bullpen_aggression=0.40, leverage_aware=0.50,
         joker_aggression=0.42, pinch_hit_aggression=0.35,
         platoon_aggression=0.35, run_game=0.45, bench_usage=0.40,
+        ibb_aggression=0.45,
         declare_aggression=0.40, bat_first_pref=0.55,
     ),
     "set_and_forget": Archetype(
@@ -159,6 +167,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.30, bullpen_aggression=0.25, leverage_aware=0.20,
         joker_aggression=0.18, pinch_hit_aggression=0.20,
         platoon_aggression=0.20, run_game=0.40, bench_usage=0.10,
+        ibb_aggression=0.30,
         declare_aggression=0.30, bat_first_pref=0.55,
     ),
 
@@ -168,6 +177,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.50, bullpen_aggression=0.50, leverage_aware=0.55,
         joker_aggression=0.50, pinch_hit_aggression=0.50,
         platoon_aggression=0.50, run_game=0.50, bench_usage=0.50,
+        ibb_aggression=0.50,
         declare_aggression=0.50, bat_first_pref=0.55,
     ),
     "fiery": Archetype(
@@ -175,6 +185,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.70, bullpen_aggression=0.60, leverage_aware=0.55,
         joker_aggression=0.80, pinch_hit_aggression=0.70,
         platoon_aggression=0.45, run_game=0.65, bench_usage=0.55,
+        ibb_aggression=0.75,
         declare_aggression=0.70, bat_first_pref=0.50,
     ),
 
@@ -184,6 +195,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.85, bullpen_aggression=0.55, leverage_aware=0.45,
         joker_aggression=0.60, pinch_hit_aggression=0.65,
         platoon_aggression=0.40, run_game=0.55, bench_usage=0.65,
+        ibb_aggression=0.85,
         declare_aggression=0.65, bat_first_pref=0.50,
     ),
     "bullpen_innovator": Archetype(
@@ -191,6 +203,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.78, bullpen_aggression=0.88, leverage_aware=0.92,
         joker_aggression=0.55, pinch_hit_aggression=0.65,
         platoon_aggression=0.78, run_game=0.45, bench_usage=0.65,
+        ibb_aggression=0.60,
         declare_aggression=0.55, bat_first_pref=0.45,
     ),
     "modern": Archetype(
@@ -198,17 +211,19 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.80, bullpen_aggression=0.80, leverage_aware=0.85,
         joker_aggression=0.65, pinch_hit_aggression=0.70,
         platoon_aggression=0.70, run_game=0.50, bench_usage=0.70,
-        shift_aggression=0.80,
+        shift_aggression=0.80, ibb_aggression=0.40,
         declare_aggression=0.60, bat_first_pref=0.50,
     ),
 
     # ----- unorthodox / high-variance personas -----
     "sabermetric_max": Archetype(
+        # Pure analytics — won't waste a free base just because a guy is
+        # hot. The model says pitch to them.
         key="sabermetric_max", label="Sabermetric Maximalist",
         quick_hook=0.92, bullpen_aggression=0.95, leverage_aware=0.95,
         joker_aggression=0.75, pinch_hit_aggression=0.85,
         platoon_aggression=0.90, run_game=0.40, bench_usage=0.85,
-        shift_aggression=0.95,
+        shift_aggression=0.95, ibb_aggression=0.15,
         declare_aggression=0.75, bat_first_pref=0.45,
     ),
     "mad_scientist": Archetype(
@@ -218,6 +233,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.65, bullpen_aggression=0.72, leverage_aware=0.70,
         joker_aggression=0.92, pinch_hit_aggression=0.85,
         platoon_aggression=0.82, run_game=0.65, bench_usage=0.80, noise=0.32,
+        ibb_aggression=0.70,
         declare_aggression=0.80, bat_first_pref=0.50,
     ),
     "gambler": Archetype(
@@ -226,6 +242,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.80, bullpen_aggression=0.78, leverage_aware=0.65,
         joker_aggression=0.88, pinch_hit_aggression=0.80,
         platoon_aggression=0.55, run_game=0.85, bench_usage=0.60, noise=0.30,
+        ibb_aggression=0.20,
         declare_aggression=0.85, bat_first_pref=0.55,
     ),
 
@@ -243,7 +260,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.62, bullpen_aggression=0.70, leverage_aware=0.80,
         joker_aggression=0.78, pinch_hit_aggression=0.88,
         platoon_aggression=0.92, run_game=0.55, bench_usage=0.88,
-        shift_aggression=0.70,
+        shift_aggression=0.70, ibb_aggression=0.55,
         declare_aggression=0.60, bat_first_pref=0.50,
     ),
     "special_teams": Archetype(
@@ -258,7 +275,7 @@ ARCHETYPES: dict[str, Archetype] = {
         quick_hook=0.72, bullpen_aggression=0.75, leverage_aware=0.78,
         joker_aggression=0.65, pinch_hit_aggression=0.78,
         platoon_aggression=0.85, run_game=0.55, bench_usage=0.92,
-        shift_aggression=0.65,
+        shift_aggression=0.65, ibb_aggression=0.50,
         declare_aggression=0.55, bat_first_pref=0.50,
     ),
 }
@@ -294,6 +311,7 @@ def roll_manager(rng: random.Random) -> dict:
         "mgr_run_game":           _clamp(arch.run_game             + rng.uniform(-n, n)),
         "mgr_bench_usage":        _clamp(arch.bench_usage          + rng.uniform(-n, n)),
         "mgr_shift_aggression":   _clamp(arch.shift_aggression     + rng.uniform(-n, n)),
+        "mgr_ibb_aggression":     _clamp(arch.ibb_aggression       + rng.uniform(-n, n)),
         "mgr_declare_aggression": _clamp(arch.declare_aggression   + rng.uniform(-n, n)),
         "mgr_bat_first_pref":     _clamp(arch.bat_first_pref       + rng.uniform(-n, n)),
     }

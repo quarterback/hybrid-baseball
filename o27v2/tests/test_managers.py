@@ -79,6 +79,7 @@ def test_roll_manager_shape_for_new_types():
         "mgr_run_game",
         "mgr_bench_usage",
         "mgr_shift_aggression",
+        "mgr_ibb_aggression",
         "mgr_declare_aggression",
         "mgr_bat_first_pref",
     }

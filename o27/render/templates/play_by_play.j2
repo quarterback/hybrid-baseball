@@ -23,6 +23,8 @@
   Foul tip caught — STRIKEOUT.
 {% elif event_type == "hit_by_pitch" %}
   HBP — {{ batter_name }} awarded 1B.
+{% elif event_type == "intentional_walk" %}
+  INTENTIONAL WALK — {{ batter_name }} given a free pass.
 {% elif event_type == "wild_pitch" %}
   Wild pitch — runners advance.
 {% elif event_type == "passed_ball" %}

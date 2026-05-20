@@ -18,6 +18,7 @@ class BatterStats:
     hr: int = 0
     rbi: int = 0
     bb: int = 0
+    ibb: int = 0     # Intentional walks (subset of bb).
     k: int = 0
     hbp: int = 0
     sty: int = 0           # Stays (internal only — not displayed in UI)

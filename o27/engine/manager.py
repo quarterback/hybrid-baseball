@@ -478,6 +478,63 @@ def _needed_archetype(state: GameState) -> Optional[str]:
     return None
 
 
+def _pick_freshest_joker(eligible: list, state: GameState) -> Player:
+    """Pick the joker with the fewest PAs this game (skill breaks ties).
+
+    Replaces the legacy "always pick highest skill" selection that let
+    one elite joker monopolize all insertions. Combined with the
+    per-joker rating decay in prob.py, this spreads usage across the
+    pool so each of the three jokers gets a meaningful share of the
+    team's joker ABs.
+    """
+    return min(
+        eligible,
+        key=lambda j: (
+            state.bgs(j.player_id).get("joker_pa", 0),
+            -float(getattr(j, "skill", 0.5) or 0.5),
+        ),
+    )
+
+
+def _pool_fatigue_mult(eligible: list, state: GameState) -> float:
+    """Soft probability dampener tied to the freshest joker's usage.
+
+    Used alongside the per-joker rating decay in prob.py. The decay
+    handles the "joker stops being productive" half; this dampener
+    handles the "manager realizes the bench is tapped out" half. It's
+    NOT a hard cap — a determined manager in a clutch spot can still
+    insert past the soft cap, just at a much lower roll rate.
+
+    Reads the MIN joker_pa across eligible jokers (i.e., the freshest
+    available). If even the freshest is already gassed, the pool is
+    spent and probability collapses sharply.
+
+    Curve leaves room for genuine anomaly games (the occasional 9-,
+    10-, or 11-PA joker is a story, not a bug) while keeping the
+    median at 5-7 PAs:
+      pool freshness (min joker_pa) → multiplier
+      0..3 PAs : 1.00   (pool fresh)
+      4 PAs    : 0.90
+      5 PAs    : 0.70
+      6 PAs    : 0.50
+      7 PAs    : 0.35
+      8 PAs    : 0.22
+      9+ PAs   : 0.12   (anomaly territory — rare but possible)
+    """
+    if not eligible:
+        return 0.0
+    fresh = min(
+        state.bgs(j.player_id).get("joker_pa", 0) for j in eligible
+    )
+    if fresh <= 3:  return 1.00
+    if fresh == 4:  return 0.90
+    if fresh == 5:  return 0.70
+    if fresh == 6:  return 0.50
+    if fresh == 7:  return 0.35
+    if fresh == 8:  return 0.22
+    return 0.12
+
+
 def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     """Joker insertion decision: weak-hitter override + leverage path.
 
@@ -497,6 +554,10 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
          leverage-aware roll (capped at 35%). This still creates the
          "managers shoot in the right spots" stat that differentiates
          persona quality.
+
+    Selection: freshest joker first, ties broken by skill. The rating
+    decay in prob.py makes each successive joker AB less productive, so
+    spreading usage across the three jokers is the natural play.
     """
     if state.is_super_inning:
         return None
@@ -515,6 +576,10 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
         return None
 
     joker_agg = float(getattr(team, "mgr_joker_aggression", 0.5))
+    # Pool fatigue — collapses both insertion paths' probability once
+    # every joker has been used heavily. Identity (1.0) early in the
+    # game; near-zero past 8 PAs on the freshest joker.
+    pool_mult = _pool_fatigue_mult(eligible, state)
 
     # --- Path 1: weak-hitter override ----------------------------------
     # Skip leverage entirely if the upcoming batter is below replacement
@@ -528,17 +593,14 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
         if (batter_skill < cfg.JOKER_WEAK_BATTER_THRESHOLD
                 and best_joker_skill > batter_skill):
             weak_p = (cfg.JOKER_WEAK_INSERT_BASE
-                      + cfg.JOKER_WEAK_INSERT_AGG_SCALE * joker_agg)
+                      + cfg.JOKER_WEAK_INSERT_AGG_SCALE * joker_agg) * pool_mult
             if rng is None:
                 import random as _r
                 roll = _r.random()
             else:
                 roll = rng.random()
             if roll < weak_p:
-                return max(
-                    eligible,
-                    key=lambda j: float(getattr(j, "skill", 0.5) or 0.5),
-                )
+                return _pick_freshest_joker(eligible, state)
             # Roll missed — fall through to the leverage path. Don't
             # short-circuit to None; leverage can still pick this up.
 
@@ -554,7 +616,7 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     leverage = gap_factor * late_factor * runner_factor
 
     # Per-PA insertion probability for non-weak batters.
-    insert_p = min(0.35, leverage * (0.25 + 0.5 * joker_agg))
+    insert_p = min(0.35, leverage * (0.25 + 0.5 * joker_agg)) * pool_mult
     if rng is None:
         import random as _r
         roll = _r.random()
@@ -563,10 +625,85 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     if roll >= insert_p:
         return None
 
-    # Pick the joker best-fit for the spot. Simple v1: best by hitting
-    # skill. Future: archetype-aware (speed joker with runners on 1B,
-    # power joker with bases empty in scoring spots, etc.).
-    return max(eligible, key=lambda j: float(getattr(j, "skill", 0.5) or 0.5))
+    return _pick_freshest_joker(eligible, state)
+
+
+def should_intentional_walk(state: GameState, rng=None) -> bool:
+    """Decide whether to issue an intentional walk before this PA.
+
+    Manager refuses to pitch to a hot or elite batter when first base is
+    open and the situational stakes are high enough. Drivers:
+      - Hot-streak factor: current-game AVG above IBB_AVG_FLOOR, with a
+        bonus when the batter has 3+ hits today (3-for-3 reads stronger
+        than .500 in 2 PAs).
+      - Leverage: late in the half + runners in scoring position.
+      - Manager persona: mgr_ibb_aggression (fielding team) sets the
+        baseline willingness.
+
+    Hard gates:
+      - Never with 1B occupied (would just give a free base ahead).
+      - Skip with 2 outs and bases empty (no leverage to walk anyone).
+      - Skip in blowouts (score gap > IBB_MAX_SCORE_GAP).
+      - Skip during super-innings (separate format).
+    """
+    if not getattr(cfg, "IBB_ENABLE", True):
+        return False
+    if state.is_super_inning:
+        return False
+    batter = state.current_batter
+    if batter is None:
+        return False
+    # 1B occupied — walking just loads bases / adds a runner.
+    if state.bases[0] is not None:
+        return False
+    # No runners and 2 outs — nothing at stake, just pitch.
+    if state.outs >= 2 and state.runner_count == 0:
+        return False
+    # Blowout — let the starters work.
+    score_gap = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
+    if score_gap > cfg.IBB_MAX_SCORE_GAP:
+        return False
+
+    bgs = state.bgs(batter.player_id)
+    pa  = int(bgs.get("pa", 0))
+    h   = int(bgs.get("h", 0))
+
+    # Hot-streak factor — only meaningful with at least 2 PAs of evidence.
+    hot = 0.0
+    if pa >= 2:
+        avg = h / pa
+        hot = max(0.0, avg - cfg.IBB_AVG_FLOOR) * cfg.IBB_HOT_SCALE
+        if h >= cfg.IBB_HOT_HITS_THRESHOLD:
+            hot += cfg.IBB_HOT_HITS_BONUS
+
+    # Elite-skill factor — even on a 0-fer day, a true elite bat in a
+    # spot you can't afford to lose still earns an IBB consideration.
+    skill = float(getattr(batter, "skill", 0.5) or 0.5)
+    elite = max(0.0, skill - cfg.IBB_SKILL_FLOOR) * cfg.IBB_SKILL_SCALE
+
+    # Leverage: late in the half + runners in scoring position weigh
+    # heaviest. With no RISP we still allow some IBB (e.g., walk the
+    # cleanup hitter to face the 5-spot) but at a reduced rate.
+    late = state.outs / 27.0
+    risp = 1.0 if state.runners_in_scoring_position else 0.0
+    leverage = late * (0.4 + 0.6 * risp)
+
+    # Fielding-team manager persona. Falls back to neutral when the
+    # field isn't populated (legacy DBs).
+    agg = float(getattr(state.fielding_team, "mgr_ibb_aggression", 0.5) or 0.5)
+
+    p = cfg.IBB_BASE_PROB + (hot + elite + leverage) \
+                          * (cfg.IBB_AGG_FLOOR + cfg.IBB_AGG_SCALE * agg)
+    p = max(0.0, min(cfg.IBB_MAX_PROB, p))
+
+    if p <= 0.0:
+        return False
+    if rng is None:
+        import random as _r
+        roll = _r.random()
+    else:
+        roll = rng.random()
+    return roll < p
 
 
 def _legacy_should_insert_joker(state: GameState) -> Optional[Player]:

@@ -111,12 +111,17 @@ class Player:
     # no longer reads it.
     pitcher_role: str = ""
 
-    # Legacy Phase-8 fields (kept zeroed for backward compatibility with the
-    # probability code that still references them; jokers/archetypes are gone).
+    # Legacy Phase-8 fields. `archetype`, `pitcher_archetype`, and
+    # `hard_contact_delta` are still referenced elsewhere (kept zeroed for
+    # backward compat). `hr_weight_bonus` is no longer read by the
+    # probability code — the legacy archetype HR boost was removed because
+    # it inflated joker HR rates on hard contact in ways the modern rating
+    # model already accounts for via `power`. Field retained so v2 DB
+    # rows / seed code keep loading without schema churn.
     archetype: str = ""
     pitcher_archetype: str = ""
     hard_contact_delta: float = 0.0
-    hr_weight_bonus:    float = 0.0
+    hr_weight_bonus:    float = 0.0   # unused; see comment above
 
     # Realism layer — multi-dimensional ratings (0.0–1.0).
     # All default to 0.5 so legacy callers that don't set them produce
@@ -387,6 +392,11 @@ class Team:
     mgr_bullpen_aggression:   float = 0.5
     mgr_leverage_aware:       float = 0.5
     mgr_joker_aggression:     float = 0.5
+    # Willingness to issue an intentional walk to a hot or elite batter.
+    # 0.0 = never; 1.0 = walks anyone hot at the first available chance.
+    # Read by manager.should_intentional_walk; varied per archetype in
+    # o27v2/managers.py so different skippers have different IBB policies.
+    mgr_ibb_aggression:       float = 0.5
     mgr_pinch_hit_aggression: float = 0.5
     mgr_platoon_aggression:   float = 0.5
     mgr_run_game:             float = 0.5
@@ -639,6 +649,16 @@ class GameState:
     # --- Super-inning rounds ---
     super_inning_rounds: list = field(default_factory=list)
 
+    # --- Per-game batter running stats ---
+    # Keyed by player_id. Used by:
+    #   - The joker decay system in prob.py (joker_pa count drives the
+    #     rating-decay multiplier so a joker's effective ratings sag with
+    #     each successive AB this game).
+    #   - The intentional-walk decision in manager.py (hot-streak factor
+    #     reads pa / h to decide whether to give a free pass).
+    # Resets naturally each new GameState (fresh dict per game).
+    batter_game_stats: dict = field(default_factory=dict)
+
     # --- Raw event log ---
     events: list = field(default_factory=list)
 
@@ -743,6 +763,17 @@ class GameState:
         if self.in_seconds_phase:
             return int(self.seconds_phase_number or 0)
         return 0
+
+    def bgs(self, pid: str) -> dict:
+        """Get-or-create the per-game running stat row for a player.
+
+        Returns a dict with keys: pa, h, bb, joker_pa. Mutated in place by
+        pa.py at event boundaries; read by prob.py (joker decay) and
+        manager.py (intentional walk hot-streak factor).
+        """
+        return self.batter_game_stats.setdefault(
+            pid, {"pa": 0, "h": 0, "bb": 0, "joker_pa": 0}
+        )
 
     def is_half_over(self) -> bool:
         """True when the current half has ended."""

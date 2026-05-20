@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS teams (
     mgr_run_game             REAL  DEFAULT 0.5,
     mgr_bench_usage          REAL  DEFAULT 0.5,
     mgr_shift_aggression     REAL  DEFAULT 0.5,
+    -- mgr_ibb_aggression — willingness to issue an intentional walk to
+    -- a hot or elite batter. Read by manager.should_intentional_walk.
+    mgr_ibb_aggression       REAL  DEFAULT 0.5,
     -- Declared Seconds — two new persona axes. mgr_declare_aggression
     -- governs willingness to bank outs for a rebuttal half;
     -- mgr_bat_first_pref is the home-team bat-first/bat-second bias.
@@ -868,6 +871,13 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE teams ADD COLUMN mgr_shift_aggression REAL DEFAULT 0.5")
+            conn.commit()
+        except Exception:
+            pass
+        # Intentional-walk persona dimension — added with the joker decay
+        # / IBB rebalance pass. Legacy rows default to 0.5 (neutral).
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN mgr_ibb_aggression REAL DEFAULT 0.5")
             conn.commit()
         except Exception:
             pass

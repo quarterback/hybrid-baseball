@@ -669,6 +669,43 @@ JOKER_WEAK_INSERT_BASE: float       = 0.75
 JOKER_WEAK_INSERT_AGG_SCALE: float  = 0.20
 
 # ---------------------------------------------------------------------------
+# Joker rating decay — applied to a joker's effective ratings each AB
+# ---------------------------------------------------------------------------
+# Each successive use of the same joker in one game shrinks their rating
+# deviations (skill, eye, contact, power) toward replacement level. The
+# manager can keep inserting them, but the realistic outcome is that
+# they stop being productive — which is the behavior we want without a
+# hard cap. Curve is hard-coded in prob._joker_decay_factor; these
+# constants name the breakpoints so they're visible / tunable.
+JOKER_DECAY_FLOOR: float          = 0.50  # multiplier on the 10th+ use
+JOKER_DECAY_K_BREAKPOINT_PA: int  = 5     # K penalty kicks up here
+JOKER_DECAY_STEEP_BREAKPOINT_PA: int = 7  # steeper drop from here
+
+# ---------------------------------------------------------------------------
+# Intentional walks — manager refuses to pitch to a hot or elite batter
+# ---------------------------------------------------------------------------
+# Decision flow in manager.should_intentional_walk:
+#   hard gates → 1B must be empty, not 2-out bases-empty, score gap ≤ MAX
+#   probability = BASE + (hot + elite + leverage) * (AGG_FLOOR + AGG_SCALE * mgr_ibb_aggression)
+#   capped at MAX_PROB
+# Tuned so a hot bat (3+ hits today) with RISP and 1B open against an
+# aggressive skipper gets walked ~30-45% of the time, while a cold bat
+# in low-leverage spots almost never does.
+
+IBB_ENABLE: bool             = True
+IBB_BASE_PROB: float         = 0.00   # bare-context IBB rate (rises with hot+leverage)
+IBB_MAX_PROB: float          = 0.55   # ceiling per-PA
+IBB_HOT_HITS_THRESHOLD: int  = 3      # 3+ hits today triggers multi-hit bonus
+IBB_HOT_HITS_BONUS: float    = 0.35   # added to "hot" factor when threshold met
+IBB_AVG_FLOOR: float         = 0.300  # only in-game AVG above this contributes
+IBB_HOT_SCALE: float         = 0.80   # scales (avg − floor) → hot factor
+IBB_SKILL_FLOOR: float       = 0.65   # only batter.skill above this contributes
+IBB_SKILL_SCALE: float       = 0.50   # scales (skill − floor) → elite factor
+IBB_AGG_FLOOR: float         = 0.20   # baseline aggression multiplier
+IBB_AGG_SCALE: float         = 0.60   # additional from mgr_ibb_aggression
+IBB_MAX_SCORE_GAP: int       = 6      # skip IBB beyond this score gap (blowout)
+
+# ---------------------------------------------------------------------------
 # Manager heuristics — pitching change
 # ---------------------------------------------------------------------------
 # Threshold (BF) = max(PITCHER_CHANGE_BASE,
@@ -911,9 +948,11 @@ WALK_BACK_SPONSORS: list[str] = [
     "Mariposa Almanac",
 ]
 
-# Legacy alias kept for the archetype `hr_weight_bonus` field, which the
-# data layer hands in for joker / slugger archetypes. Now applied as a
-# redistribute scalar (line_out → HR) on top of the power axis.
+# Legacy POWER_HR_WEIGHT_SCALE retained as a stub. The archetype
+# `hr_weight_bonus` HR boost it scaled was removed because it
+# double-counted what the modern `power` rating already drives via
+# _redistribute. Constant kept so external configs that reference it
+# don't crash on import.
 POWER_HR_WEIGHT_SCALE: float = 0.08
 
 # --- Movement → HARD_CONTACT GB bias --------------------------------------
