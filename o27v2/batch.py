@@ -64,7 +64,7 @@ class FastRenderer(Renderer):
     def render_spell_log(self, state) -> list[str]:                return []
     def render_super_inning_log(self, state) -> list[str]:         return []
     def render_super_inning_tie(self) -> list[str]:                return []
-    def render_super_inning_round_header(self, state, rn, v5, h5) -> list[str]: return []
+    def render_super_inning_round_header(self, state, rn) -> list[str]: return []
     def render_super_inning_round_summary(self, state, rn, vr, hr) -> list[str]: return []
     def render_game_over(self, state) -> list[str]:                return []
 

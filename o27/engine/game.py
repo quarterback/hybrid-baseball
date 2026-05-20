@@ -31,7 +31,6 @@ Public API
   run_half(state, event_provider, renderer=None) -> list[str]
   halftime(state, renderer=None) -> list[str]
   check_winner(state) -> str | None
-  setup_super_inning(state, visitors_5, home_5) -> list[str]
 """
 
 from __future__ import annotations
@@ -44,10 +43,10 @@ from typing import Callable, Iterator, Optional
 
 
 # Hard ceiling on super-inning rounds. Without this, two evenly-matched
-# lineups that keep producing identical 5-dismissal totals lock the engine
-# into an unbounded while-loop inside simulate_game() — the bulk-sim
-# per-game deadline only fires between games, so a hung game silently
-# eats every chunk and the day's clock never advances.
+# lineups that keep trading identical run totals lock the engine into an
+# unbounded while-loop inside simulate_game() — the bulk-sim per-game
+# deadline only fires between games, so a hung game silently eats every
+# chunk and the day's clock never advances.
 #
 # Regular-season games are allowed to end in a tie after this many
 # tied SI rounds. Playoff games can't tie (the bracket needs a winner)
@@ -63,7 +62,6 @@ def run_game(
     state: GameState,
     event_provider: Callable[[GameState], Optional[dict]],
     renderer=None,
-    super_selector: Optional[Callable[[GameState, str], list]] = None,
 ) -> tuple[GameState, list[str]]:
     """
     Run a complete O27 game.
@@ -74,8 +72,6 @@ def run_game(
         renderer:        Optional Renderer instance (Phase 3+). When provided,
                          all output uses Jinja2 templates and a box score is
                          appended at the end.
-        super_selector:  Optional callable(state, team_id) → list[Player] of 5
-                         batters for super-inning. If None, first 5 batters used.
 
     Returns:
         (final_state, full_log)
@@ -205,117 +201,70 @@ def run_game(
             state.super_inning_number = state.seconds_phase_number
         state.super_inning_number += 1
 
-        if super_selector:
-            v5 = super_selector(state, "visitors")
-            h5 = super_selector(state, "home")
+        # Super-innings are normal 3-out innings, measured in cumulative
+        # outs: the first super out is #28, so round r covers outs
+        # 27+3*(r-1)+1 .. 27+3*r. Each half starts at the base out count and
+        # ends at base+3 (or, in the bottom, the moment the home team leads).
+        out_base = 27 + 3 * (si_rounds_played - 1)
+        state.super_outs_target = out_base + 3
+
+        if renderer:
+            full_log += renderer.render_super_inning_round_header(
+                state, si_rounds_played
+            )
         else:
-            # Fallback selector — first 5 available position players from
-            # the roster (filtering out subbed-out and pitchers). Honors
-            # the one-way invariant: anyone the manager pulled mid-game is
-            # gone for super-innings too.
-            v5 = _default_super_lineup(state.visitors)
-            h5 = _default_super_lineup(state.home)
+            full_log.append(f"\n--- Super-Inning Round {si_rounds_played} ---")
 
-        si_log = setup_super_inning(state, v5, h5, renderer)
-        full_log += si_log
-
-        # Visitors bat (super_top).
+        # Visitors bat (super_top) — full 3 outs, no walk-off (like the
+        # top of an extra inning).
         state.half = "super_top"
-        state.outs = 0
+        state.outs = out_base
         state.bases = [None, None, None]
         state.count.reset()
         state.total_pa_this_half = 0
-        state.visitors.reset_super()
-        state.visitors.super_lineup = v5
-        state.visitors.super_lineup_position = 0
         state.partnership_runs = 0
         state.partnership_first_batter_id = None
         _set_fielding_pitcher(state)
         super_score_before_v = state.score["visitors"]
-        v5_ids = [p.player_id for p in v5]
-        v_snap = renderer.snapshot_batter_stats(v5_ids) if renderer else {}
         full_log.append(_half_header(state, renderer))
         full_log += run_half(state, event_provider, renderer)
         _close_current_spell(state)
-        v_outcomes = renderer.batter_outcomes_since(v5, v_snap) if renderer else []
-        # Task #58: SI half cap = 5. The dismissal-set cap is the real
-        # invariant; the outs counter is a softer guard that previously
-        # asserted-and-crashed on rare runner-out interactions. Treat an
-        # outs overrun as a logged anomaly so calibration runs don't die.
-        if state.outs > 5:
-            full_log.append(
-                f"[warn] SI super_top outs overrun for visitors round "
-                f"{state.super_inning_number}: outs={state.outs}"
-            )
-        assert len(state.visitors.super_dismissed) <= 5, (
-            f"SI dismissal cap exceeded for visitors round "
-            f"{state.super_inning_number}: {len(state.visitors.super_dismissed)}"
-        )
 
-        # Home bats (super_bottom).
+        # Home bats (super_bottom) — 3 outs, or walk-off the instant they
+        # take the lead.
         state.half = "super_bottom"
-        state.outs = 0
+        state.outs = out_base
         state.bases = [None, None, None]
         state.count.reset()
         state.total_pa_this_half = 0
-        state.home.reset_super()
-        state.home.super_lineup = h5
-        state.home.super_lineup_position = 0
         state.partnership_runs = 0
         state.partnership_first_batter_id = None
         _set_fielding_pitcher(state)
         super_score_before_h = state.score["home"]
-        h5_ids = [p.player_id for p in h5]
-        h_snap = renderer.snapshot_batter_stats(h5_ids) if renderer else {}
         full_log.append(_half_header(state, renderer))
         full_log += run_half(state, event_provider, renderer)
         _close_current_spell(state)
-        h_outcomes = renderer.batter_outcomes_since(h5, h_snap) if renderer else []
-        # Task #58: SI half cap = 5 for the home half too. See note above —
-        # outs overrun is downgraded from assertion to logged anomaly.
-        if state.outs > 5:
-            full_log.append(
-                f"[warn] SI super_bottom outs overrun for home round "
-                f"{state.super_inning_number}: outs={state.outs}"
-            )
-        assert len(state.home.super_dismissed) <= 5, (
-            f"SI dismissal cap exceeded for home round "
-            f"{state.super_inning_number}: {len(state.home.super_dismissed)}"
-        )
 
         # Snapshot end of this SI round (phase = super_inning_number).
         if renderer:
             renderer.end_phase(state.super_inning_number)
 
-        # Record round (with batter names + per-batter outcomes for end-of-game log).
         v_runs = state.score["visitors"] - super_score_before_v
         h_runs = state.score["home"] - super_score_before_h
-        round_rec = SuperInningRound(
-            team_name=state.visitors.name,
-            selected_batter_ids=v5_ids,
-            selected_batter_names=[p.name for p in v5],
-            runs=v_runs,
-            dismissals=len(state.visitors.super_dismissed),
-            batter_outcomes=v_outcomes,
+        state.super_inning_rounds.append(
+            SuperInningRound(team_name=state.visitors.name, runs=v_runs)
         )
-        state.super_inning_rounds.append(round_rec)
-        round_rec2 = SuperInningRound(
-            team_name=state.home.name,
-            selected_batter_ids=h5_ids,
-            selected_batter_names=[p.name for p in h5],
-            runs=h_runs,
-            dismissals=len(state.home.super_dismissed),
-            batter_outcomes=h_outcomes,
+        state.super_inning_rounds.append(
+            SuperInningRound(team_name=state.home.name, runs=h_runs)
         )
-        state.super_inning_rounds.append(round_rec2)
 
         if renderer:
             full_log += renderer.render_super_inning_round_summary(
-                state, state.super_inning_number, v_runs, h_runs
+                state, si_rounds_played, v_runs, h_runs
             )
         else:
             full_log.append(
-                f"  Super-inning R{state.super_inning_number}: "
+                f"  Super-inning R{si_rounds_played}: "
                 f"{state.visitors.name} {v_runs} – {state.home.name} {h_runs}"
             )
 
@@ -420,57 +369,6 @@ def check_winner(state: GameState) -> Optional[str]:
     if h > v:
         return "home"
     return None
-
-
-# ---------------------------------------------------------------------------
-# Super-inning setup
-# ---------------------------------------------------------------------------
-
-def _default_super_lineup(team) -> list:
-    """Default super-inning 5: first 5 available non-pitcher roster
-    players. Respects the substitution-economy one-way invariant — any
-    player in `team.substituted_out` is gone for super-innings too.
-
-    Falls back to including subbed-out players if fewer than 5 remain
-    (e.g., a freak game with many position-player subs); the engine still
-    needs 5 bodies to fill the round, and crashing on this would be
-    worse than the rules nuance.
-    """
-    eligible = [
-        p for p in team.roster
-        if not getattr(p, "is_pitcher", False)
-        and team.is_available(p.player_id)
-    ]
-    if len(eligible) >= 5:
-        return eligible[:5]
-    # Fallback: top up from subbed-out players. Shouldn't happen with a
-    # well-shaped 42-45 roster but the engine has to produce a lineup.
-    extras = [
-        p for p in team.roster
-        if not getattr(p, "is_pitcher", False)
-        and not team.is_available(p.player_id)
-    ]
-    return (eligible + extras)[:5]
-
-
-def setup_super_inning(
-    state: GameState,
-    visitors_5: list,
-    home_5: list,
-    renderer=None,
-) -> list[str]:
-    """Configure the state for a super-inning round."""
-    if renderer:
-        return renderer.render_super_inning_round_header(
-            state, state.super_inning_number, visitors_5, home_5
-        )
-    log = [
-        f"  {state.visitors.name} super lineup: "
-        f"{', '.join(p.name for p in visitors_5)}",
-        f"  {state.home.name} super lineup: "
-        f"{', '.join(p.name for p in home_5)}",
-    ]
-    return log
 
 
 # ---------------------------------------------------------------------------

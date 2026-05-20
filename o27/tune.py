@@ -83,7 +83,7 @@ class FastRenderer(Renderer):
     def render_super_inning_tie(self) -> list[str]:
         return []
 
-    def render_super_inning_round_header(self, state, round_num, v5, h5) -> list[str]:
+    def render_super_inning_round_header(self, state, round_num) -> list[str]:
         return []
 
     def render_super_inning_round_summary(self, state, round_num, v_runs, h_runs) -> list[str]:

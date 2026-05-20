@@ -165,18 +165,11 @@ def _arc_index(outs: int) -> int:
 
 def _record_out(state: GameState, batter_id: str) -> list[str]:
     """
-    Record one out. Handles partnership tracking and super-inning dismissals.
-    Returns log lines.
+    Record one out. Handles partnership tracking. Returns log lines.
     """
     log = []
     state.outs += 1
     state.pitcher_outs_this_spell += 1
-
-    # Super-inning: track dismissed batters.
-    if state.is_super_inning:
-        state.batting_team.super_dismissed.add(batter_id)
-        log.append(f"  [Super-inning dismissal: {batter_id}; "
-                   f"{len(state.batting_team.super_dismissed)}/5]")
 
     # Partnership: close when an out is recorded.
     second_batter_id = batter_id
