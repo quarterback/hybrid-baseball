@@ -163,8 +163,12 @@ class Renderer:
             if self._current_pa_batter_id is not None:
                 self._credit_pa_advancement(self._current_pa_batter_id)
             # Reset PA-scoped state for the incoming batter. The new PA's
-            # starting bases = whatever was on base at end of previous PA.
-            self._pa_start_bases = self._last_bases
+            # starting bases = the bases standing right now (this event's
+            # pre-event snapshot). Within a half this equals the previous
+            # PA's end bases; across a half/super-inning boundary the engine
+            # has cleared the bases, so this correctly resets to empty rather
+            # than leaking the prior half's stranded runners into this PA.
+            self._pa_start_bases = tuple(ctx.get("bases_list") or (None, None, None))
             self._pa_runners_out = set()
             self._on_new_pa(batter)
             lines.append(self._batter_intro(batter))
@@ -327,8 +331,23 @@ class Renderer:
             })
         return rows
 
+    def _flush_final_pa(self) -> None:
+        """Credit the game's final plate appearance.
+
+        `_credit_pa_advancement` normally fires at the *next* batter's PA
+        boundary, but the last PA of the game (frequently a walk-off) has no
+        successor, so its runner advancement — and any runner-from-base run,
+        including the winning run — would otherwise be dropped from the
+        advancement stats and the scoring-events log. Flushed once at game end.
+        """
+        if self._current_pa_batter_id is not None:
+            self._credit_pa_advancement(self._current_pa_batter_id)
+            self._current_pa_batter_id = None
+
     def render_box_score(self, state) -> list[str]:
         """Render the full dual-team box score, including pitcher lines and required RR."""
+        self._flush_final_pa()
+
         def _rows(team):
             return [
                 self._batter_stats.get(
