@@ -314,6 +314,45 @@ RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.22
 RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.22
 RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.05
 
+# ---------------------------------------------------------------------------
+# Inside-the-park home runs
+# ---------------------------------------------------------------------------
+# Modern MLB sees ~10-20 inside-the-park HRs a SEASON: small, circular,
+# regular outfields give the ball nowhere to hide. O27 never had a
+# cookie-cutter era — its parks are deadball-era large/irregular (cavernous
+# alleys, ovals, triangles, odd corners), so ITPHRs are the deep-park
+# release valve and run noticeably hotter than the modern rate.
+#
+# Trigger: ONLY a clean deep `triple` (errors carry hit_type "error" and
+# are scored reached-on-error / "Little League HR", never a HR — so the
+# error path can never become an ITPHR). The ball must die in a genuinely
+# deep part of the yard (fence at the BIP spray ≥ MIN_FENCE) on a real
+# drive (proxy distance ≥ MIN_DISTANCE), and a fast/aggressive batter must
+# decide to go for it.
+#
+# Two-stage resolution:
+#   1. P(attempt to circle): base + park-depth + speed + aggressiveness.
+#   2. If attempting, P(touches home safely) vs the relay: base + speed +
+#      baserunning − OF arm. Success → HR (arms the Walk-Back, exactly like
+#      an over-the-fence HR). Failure splits into thrown-out-at-home (an
+#      out, no hit) vs scrambled back to 3B (stays a triple), the split
+#      driven by aggressiveness.
+ITP_HR_MIN_FENCE: float            = 400.0   # fence (ft) at the BIP spray angle
+ITP_HR_MIN_DISTANCE: float         = 330.0   # proxy carry (ft) — a genuine deep drive
+ITP_HR_BASE_ATTEMPT: float         = 0.16    # base P(attempt) on a qualifying deep triple
+ITP_HR_DEPTH_SCALE: float          = 0.0030  # +P(attempt) per ft of fence beyond MIN_FENCE
+ITP_HR_ATTEMPT_SPEED_SCALE: float  = 0.55    # +P(attempt) per (speed - 0.5)
+ITP_HR_ATTEMPT_AGGRO_SCALE: float  = 0.35    # +P(attempt) per (run_aggressiveness - 0.5)
+ITP_HR_ATTEMPT_MAX: float          = 0.85
+ITP_HR_BASE_SUCCESS: float         = 0.52    # base P(safe at home) given an attempt
+ITP_HR_SUCCESS_SPEED_SCALE: float  = 0.55    # +success per (speed - 0.5)
+ITP_HR_SUCCESS_BASERUN_SCALE: float = 0.35   # +success per (baserunning - 0.5)
+ITP_HR_SUCCESS_ARM_SCALE: float    = 0.45    # −success per (of_arm - 0.5)
+ITP_HR_SUCCESS_MIN: float          = 0.08
+ITP_HR_SUCCESS_MAX: float          = 0.92
+ITP_HR_FAIL_OUT_BASE: float        = 0.55    # given a failed attempt, P(out at home) vs held at 3B
+ITP_HR_FAIL_OUT_AGGRO_SCALE: float = 0.40    # +P(out) per (run_aggressiveness - 0.5) — aggressive runners get gunned
+
 # GIDP — ground-ball double plays. With at least one runner on base
 # and < 2 outs, a share of ground outs become double plays. The exact
 # probability depends on:

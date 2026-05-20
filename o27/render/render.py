@@ -56,6 +56,7 @@ _HIT_TYPE_DISPLAY: dict[str, str] = {
     "stay_ground":     "ground ball (stay)",
     "stay_fly_no_catch": "fly ball (stay)",
     "error":           "error",
+    "itp_out":         "deep drive — thrown out at home",
 }
 
 
@@ -850,10 +851,14 @@ class Renderer:
 
         # --- HOME RUN: everyone scores ---
         if etype == "ball_in_play" and hit_type in ("hr", "home_run"):
+            inside_park = bool((event.get("outcome") or {}).get("inside_park"))
             for i in range(2, -1, -1):
                 if bases_before[i] is not None:
                     lines.append(f"  Runner scores.")
-            lines.append("  Batter scores (HR).")
+            if inside_park:
+                lines.append("  Batter scores — INSIDE-THE-PARK HOME RUN!")
+            else:
+                lines.append("  Batter scores (HR).")
             # Walk-Back arming caption. The HR PA sets walk_back_pending in
             # the engine; the raw-log path in o27/engine/pa.py emits these
             # lines, but render_event bypasses that log, so mirror them here.

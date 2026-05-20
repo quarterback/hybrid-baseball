@@ -955,6 +955,94 @@ def _thrown_out_at_home(rng: random.Random, speed: float, baserunning: float) ->
     return rng.random() < out_p
 
 
+def _resolve_inside_park_hr(
+    rng: random.Random,
+    outcome_dict: dict,
+    batter,
+    state: GameState,
+    ev,
+    la,
+    spray,
+    park_dims,
+) -> None:
+    """Maybe convert a clean deep triple into an inside-the-park HR.
+
+    Mutates outcome_dict in place. Fires ONLY on hit_type == 'triple':
+    a ball misplayed for an error carries hit_type 'error' and is scored
+    reached-on-error ("Little League home run"), never a HR, so the error
+    path can never reach here. See config ITP_HR_* and
+    docs/aar-inside-the-park-hr-and-pbp.md.
+
+    Three terminal shapes:
+      * inside_park HR  → hit_type 'hr' + inside_park flag (arms Walk-Back,
+        scores like any HR).
+      * out at home     → hit_type 'itp_out', batter_safe False (an out,
+        no hit; runners ahead still score).
+      * held at 3B      → untouched triple.
+    """
+    if not park_dims:
+        return
+    if outcome_dict.get("hit_type") != "triple":
+        return
+    if ev is None or la is None or spray is None:
+        return
+    from o27.engine.park_effects import _fence_at_angle, _proxy_distance
+    fence = _fence_at_angle(spray, park_dims)
+    dist = _proxy_distance(ev, la)
+    if fence < cfg.ITP_HR_MIN_FENCE or dist < cfg.ITP_HR_MIN_DISTANCE:
+        return
+
+    speed = float(getattr(batter, "speed", 0.5) or 0.5)
+    brun  = float(getattr(batter, "baserunning", 0.5) or 0.5)
+    aggro = float(getattr(batter, "run_aggressiveness", 0.5) or 0.5)
+
+    # Stage 1 — does the batter try to circle, or pull up at third?
+    p_attempt = (cfg.ITP_HR_BASE_ATTEMPT
+                 + (fence - cfg.ITP_HR_MIN_FENCE) * cfg.ITP_HR_DEPTH_SCALE
+                 + (speed - 0.5) * cfg.ITP_HR_ATTEMPT_SPEED_SCALE
+                 + (aggro - 0.5) * cfg.ITP_HR_ATTEMPT_AGGRO_SCALE)
+    p_attempt = max(0.0, min(cfg.ITP_HR_ATTEMPT_MAX, p_attempt))
+    if rng.random() >= p_attempt:
+        return  # pulls up at third — stays a triple
+
+    # Stage 2 — beat the relay home? OF arm of the fielder who ran it down.
+    of_arm = 0.5
+    fid = outcome_dict.get("fielder_id")
+    if fid is not None:
+        f = state.fielding_team.get_player(fid)
+        if f is not None:
+            of_arm = float(getattr(f, "arm", 0.5) or 0.5)
+    p_success = (cfg.ITP_HR_BASE_SUCCESS
+                 + (speed - 0.5) * cfg.ITP_HR_SUCCESS_SPEED_SCALE
+                 + (brun  - 0.5) * cfg.ITP_HR_SUCCESS_BASERUN_SCALE
+                 - (of_arm - 0.5) * cfg.ITP_HR_SUCCESS_ARM_SCALE)
+    p_success = max(cfg.ITP_HR_SUCCESS_MIN, min(cfg.ITP_HR_SUCCESS_MAX, p_success))
+    if rng.random() < p_success:
+        # Inside-the-park HOME RUN. Scores exactly like an over-the-fence
+        # HR (everyone in, batter in) and arms the Walk-Back downstream.
+        outcome_dict["hit_type"] = "hr"
+        outcome_dict["batter_safe"] = True
+        outcome_dict["caught_fly"] = False
+        outcome_dict["runner_advances"] = [4, 4, 4]
+        outcome_dict["runner_out_idx"] = None
+        outcome_dict["inside_park"] = True
+        return
+
+    # Failed the attempt: gunned at the plate, or scrambled back to 3B.
+    p_out = cfg.ITP_HR_FAIL_OUT_BASE + (aggro - 0.5) * cfg.ITP_HR_FAIL_OUT_AGGRO_SCALE
+    p_out = max(0.0, min(1.0, p_out))
+    if rng.random() < p_out:
+        # Thrown out at home. Runners ahead of the batter already crossed
+        # and score; the batter is out — no hit credited.
+        outcome_dict["hit_type"] = "itp_out"
+        outcome_dict["batter_safe"] = False
+        outcome_dict["caught_fly"] = False
+        outcome_dict["runner_advances"] = [4, 4, 4]
+        outcome_dict["runner_out_idx"] = None
+        outcome_dict["itp_out_at_home"] = True
+    # else: held at 3B — leave the triple as-is.
+
+
 def _get_speed(pid: Optional[str], state: GameState) -> float:
     if pid is None:
         return 0.5
@@ -2295,14 +2383,28 @@ class ProbabilisticProvider:
             park_dims=getattr(state, "park_dimensions", None),
         )
 
+        # Inside-the-park HR contest. A clean deep triple in a deep/irregular
+        # park may become an ITPHR (scores + arms the Walk-Back), an out at
+        # home, or stay a triple. Resolved before the Stay decision: a batter
+        # circling the bases is a run outcome by definition, never a stay.
+        _resolve_inside_park_hr(
+            rng, outcome_dict, batter, state,
+            ev_v, la_v, spray_v,
+            getattr(state, "park_dimensions", None),
+        )
+
         hit_type = outcome_dict["hit_type"]
         caught_fly = outcome_dict["caught_fly"]
 
         is_hr     = (hit_type == "hr")
         is_triple = (hit_type == "triple")
+        # ITPHR / out-at-home are terminal run outcomes — force "run" so the
+        # Stay mechanic can't strand a batter who's already circling.
+        _itp_terminal = bool(outcome_dict.get("inside_park")
+                             or outcome_dict.get("itp_out_at_home"))
 
         # Stay-vs-run decision.
-        if stay_mod.stay_available(state):
+        if not _itp_terminal and stay_mod.stay_available(state):
             stay = should_stay_prob(
                 rng, state, batter, quality,
                 caught_fly=caught_fly,
