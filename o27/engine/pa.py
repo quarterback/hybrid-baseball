@@ -84,6 +84,34 @@ def _pick_walk_back_sponsor(state: GameState) -> str:
 # Walk-Back run inside unearned_runs (Manfred-runner precedent).
 # ---------------------------------------------------------------------------
 
+def _walkoff_blocks_walk_back(state: GameState) -> bool:
+    """True if the Walk-Back must be waved off because the HR itself is a
+    walk-off — the game ends the instant the last-batting team takes the
+    lead, so no bonus runner is placed (per the rule: "on a walk-off there
+    is no Walk-Back, the game ends").
+
+    Block it whenever the batting team is the last to bat in a walk-off-
+    eligible half AND is already tied-or-ahead after the HR (placing the
+    runner could only pad a won game or manufacture the winning run). If
+    they still trail, the bonus can't end the game, so it resolves normally.
+    """
+    bat = state.batting_team
+    fld = state.fielding_team
+    if state.score.get(bat.team_id, 0) < state.score.get(fld.team_id, 0):
+        return False
+    half = state.half
+    if half in ("super_bottom", "seconds_second"):
+        return True
+    if half in ("top", "bottom"):
+        # Regulation: only the second-batting team's half walks off, and only
+        # when the first-batting team has no banked outs left to answer with.
+        second = state.second_batting_team
+        first = state.first_batting_team
+        if (second is not None and bat is second
+                and int(getattr(first, "outs_banked", 0) or 0) <= 0):
+            return True
+    return False
+
 
 def _arc_index(outs: int) -> int:
     """Bucket an outs-count into arc 0 (1-9) / arc 1 (10-18) / arc 2 (19-27).
@@ -687,7 +715,8 @@ def _resolve_contact(
         # then the HR-hitter walks back to 3B as a live bonus runner. From
         # here he's an ordinary baserunner — _reconcile_walk_back / _record_out
         # / resolve_stranded_walk_backs settle his fate whenever it happens.
-        if hit_type in ("hr", "home_run"):
+        # Exception: a walk-off HR ends the game, so no bonus runner is placed.
+        if hit_type in ("hr", "home_run") and not _walkoff_blocks_walk_back(state):
             state.bases[2] = batter_id
             state.walk_back_runner_ids.add(batter_id)
             log.append(f"  [Walk-Back — {batter.name} retreats to 3B as the bonus runner.]")

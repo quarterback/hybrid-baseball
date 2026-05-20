@@ -365,7 +365,7 @@ CREATE TABLE IF NOT EXISTS game_scoring_events (
     outs_before     INTEGER NOT NULL,        -- outs in this half BEFORE the scoring play
     batter_id       INTEGER NOT NULL REFERENCES players(id),
     runner_id       INTEGER NOT NULL REFERENCES players(id),
-    runner_from_base INTEGER NOT NULL,        -- 0 = 1B, 1 = 2B, 2 = 3B (where the runner started the PA)
+    runner_from_base INTEGER NOT NULL,        -- 0 = 1B, 1 = 2B, 2 = 3B (where the runner started the PA); 3 = batter's own run (HR)
     visitors_score  INTEGER NOT NULL,        -- score after this run
     home_score      INTEGER NOT NULL
 );

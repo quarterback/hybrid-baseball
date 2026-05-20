@@ -238,6 +238,23 @@ def test_walk_back_runner_picked_off_is_a_stop():
     assert state.score["visitors"] == 1
 
 
+def test_walk_back_runner_cannot_be_pinch_run_for():
+    """Rule: a Walk-Back bonus runner can't be replaced by a pinch runner —
+    he stays on the bag (keeps the HR-hitter's bat in the lineup and avoids
+    burning a bench player on a free runner)."""
+    from o27.engine import manager as mgr
+    state = _mk_state()
+    apply_event(state, _bip("run", outcome_home_run()))
+    assert state.bases[2] == "visitors_0"
+    pr = _mk_player("visitors_pr", "visitors_pr")
+    state.visitors.roster.append(pr)
+    log = mgr.pinch_run(state, base_idx=2, runner_in=pr)
+    # Refused: the Walk-Back runner is untouched and still tracked.
+    assert state.bases[2] == "visitors_0"
+    assert state.walk_back_runner_ids == {"visitors_0"}
+    assert any("cannot be replaced" in line for line in log)
+
+
 def test_walk_back_runner_caught_stealing_home_is_a_stop():
     state = _mk_state()
     apply_event(state, _bip("run", outcome_home_run()))
