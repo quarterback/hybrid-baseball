@@ -929,7 +929,7 @@ def seed_schedule(
         db.execute("DELETE FROM team_phase_outs")
         db.execute("DELETE FROM sim_meta WHERE key = 'sim_date'")
 
-    teams = db.fetchall("SELECT id, division, league, city FROM teams ORDER BY id")
+    teams = db.fetchall("SELECT id, division, league, city, lat, lon FROM teams ORDER BY id")
     if not teams:
         raise RuntimeError("seed_league() must be called before seed_schedule()")
 
@@ -946,12 +946,14 @@ def seed_schedule(
     # land deterministically.
     from o27.engine.weather import draw_weather
     city_by_id = {t["id"]: (t.get("city") or "") for t in teams}
+    coords_by_id = {t["id"]: (t["lat"], t["lon"]) for t in teams}
     weather_rng = random.Random((rng_seed or 0) ^ 0xBA5EBA11)
 
     rows = []
     for g in games:
         home_city = city_by_id.get(g["home_team_id"], "")
-        w = draw_weather(weather_rng, home_city, g["game_date"])
+        h_lat, h_lon = coords_by_id.get(g["home_team_id"], (None, None))
+        w = draw_weather(weather_rng, home_city, g["game_date"], lat=h_lat, lon=h_lon)
         rows.append((
             g["season"], g["game_date"], g["home_team_id"], g["away_team_id"],
             w.temperature, w.wind, w.humidity, w.precip, w.cloud,

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Rename leagues &amp; divisions{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{{ url_for('league') }}">League</a></li>
+    <li class="breadcrumb-item active">Rename</li>
+  </ol>
+</nav>
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <h2 class="mb-3">Rename leagues &amp; divisions</h2>
+
+    <div class="panel mb-3" style="padding:14px">
+      <div class="text-secondary small">
+        Edit the league and division names used across standings, schedule,
+        and box scores. Renaming is display-only — teams, records, and the
+        schedule are untouched. League and division names are independent,
+        so after renaming a league (e.g. <code>AL</code> →
+        <code>Atlantic</code>) you may also want to rename its divisions
+        (e.g. <code>AL West</code> → <code>Atlantic West</code>).
+      </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('league_edit_post') }}">
+      <h5 class="mb-2">Leagues</h5>
+      <div class="row g-2 mb-4">
+        {% for lg in leagues %}
+        <div class="col-md-6 d-flex align-items-center gap-2">
+          <span class="text-secondary small" style="min-width:3.5rem">{{ lg }}</span>
+          <input type="hidden" name="league_old" value="{{ lg }}">
+          <input type="text" name="league_new" value="{{ lg }}" maxlength="40"
+                 class="form-control form-control-sm">
+        </div>
+        {% endfor %}
+      </div>
+
+      <h5 class="mb-2">Divisions</h5>
+      <div class="row g-2 mb-4">
+        {% for d in divisions %}
+        <div class="col-md-6 d-flex align-items-center gap-2">
+          <span class="text-secondary small" style="min-width:3.5rem"
+                title="{{ d.league }} · {{ d.n }} teams">{{ d.n }}t</span>
+          <input type="hidden" name="division_old" value="{{ d.division }}">
+          <input type="text" name="division_new" value="{{ d.division }}" maxlength="40"
+                 class="form-control form-control-sm">
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="d-flex gap-2 align-items-center">
+        <button type="submit" class="btn btn-primary">Save names</button>
+        <a href="{{ url_for('league') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

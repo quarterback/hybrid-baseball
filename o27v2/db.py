@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS teams (
     name      TEXT NOT NULL,
     abbrev    TEXT NOT NULL,
     city      TEXT NOT NULL,
+    -- Geographic coordinates of the home market. Drives "nearest city"
+    -- weather (o27/engine/weather.archetype_for_coords) and the
+    -- west→east division placement. NULL on legacy rows; weather falls
+    -- back to the city-name lookup when absent.
+    lat       REAL,
+    lon       REAL,
     division  TEXT NOT NULL,
     league    TEXT NOT NULL,
     wins      INTEGER DEFAULT 0,
@@ -775,6 +781,15 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+
+        # Home-market coordinates — drives nearest-city weather + division
+        # placement. NULL default so legacy rows fall back to name lookup.
+        for col in ("lat", "lon"):
+            try:
+                conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL")
+                conn.commit()
+            except Exception:
+                pass
 
         # Realism layer team columns (ballpark factors).
         for col, defval in [("park_hr", "1.0"), ("park_hits", "1.0")]:

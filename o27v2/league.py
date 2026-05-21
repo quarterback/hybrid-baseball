@@ -1183,6 +1183,48 @@ def _park_shape_meta(shape_key: str) -> dict:
     return {"label": "", "blurb": ""}
 
 
+# --- Public park helpers for the live ballpark editor (web/app.py) -------
+
+def get_park_shapes() -> list[dict]:
+    """All park shape archetypes as [{key, label, blurb}] for the editor
+    shape picker."""
+    return [{"key": k, "label": label, "blurb": blurb}
+            for k, label, blurb in _PARK_SHAPES]
+
+
+def get_quirk_catalog() -> list[dict]:
+    """The full architectural-quirk catalog as
+    [{key, label, blurb, shapes}] — `shapes` is None (any) or a list of
+    shape keys the quirk is gated to."""
+    return [{"key": q["key"], "label": q["label"], "blurb": q["blurb"],
+             "shapes": list(q["shapes"]) if q["shapes"] else None}
+            for q in _QUIRK_CATALOG]
+
+
+def get_park_shape_meta(shape_key: str) -> dict:
+    """Public alias of _park_shape_meta — {label, blurb} for a shape."""
+    return _park_shape_meta(shape_key)
+
+
+def quirk_meta(key: str) -> dict:
+    """Return {key, label, blurb} for a quirk key (empty label if
+    unknown) — lets the editor reconstruct a quirk chosen by key."""
+    for q in _QUIRK_CATALOG:
+        if q["key"] == key:
+            return {"key": q["key"], "label": q["label"], "blurb": q["blurb"]}
+    return {"key": key, "label": key, "blurb": ""}
+
+
+def roll_park(rng: random.Random) -> tuple[dict, str, list[dict]]:
+    """Roll a fresh park: returns (dimensions_dict, shape_key, quirks_list).
+    `dimensions_dict` is {lf, lcf, cf, rcf, rf, wall_h} (shape stripped
+    out into its own return value)."""
+    dims = _roll_park_dimensions(rng)
+    shape = dims.pop("shape", "")
+    quirks = _roll_park_quirks(rng, shape)
+    return dims, shape, quirks
+
+
 def _park_surname_pool(rng: random.Random, count: int = 60) -> list[str]:
     """Pull a small pool of surnames from the existing name data to feed
     the ballpark generator. Kept short to keep generation cheap; the
@@ -2240,6 +2282,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         abbrev = team_def.get("abbreviation") or team_def.get("abbrev", "???")
         city   = team_def.get("city", "")
         name   = team_def.get("name", "Team")
+        lat    = team_def.get("lat")
+        lon    = team_def.get("lon")
 
         park_hr, park_hits = _roll_park_factors(rng2)
         park_name = _roll_ballpark_name(rng2, city, surname_pool, used_park_names)
@@ -2256,7 +2300,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         # biasing per-pitch outcomes.
         org_strength = _roll_org_grade(rng2)
         team_id = db.execute(
-            "INSERT INTO teams (name, abbrev, city, division, league, "
+            "INSERT INTO teams (name, abbrev, city, lat, lon, division, league, "
             "park_hr, park_hits, park_name, park_dimensions, "
             "park_shape, park_quirks, "
             "manager_archetype, manager_name, "
@@ -2265,8 +2309,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
             "mgr_bench_usage, mgr_shift_aggression, mgr_ibb_aggression, org_strength, "
             "fo_strategy, fo_aggression, fo_archetype_bias)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (name, abbrev, city, division, league_name,
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (name, abbrev, city, lat, lon, division, league_name,
              park_hr, park_hits, park_name, park_dims,
              park_shape, park_quirks,
              mgr["manager_archetype"], mgr_name,

@@ -423,10 +423,12 @@ def _schedule_series_game(series_id: int, game_num: int, base_date: _dt.date,
 
     # Weather: re-roll per playoff game using the home park's city.
     from o27.engine.weather import draw_weather
-    home_row = db.fetchone("SELECT city FROM teams WHERE id = ?", (home_id,))
+    home_row = db.fetchone("SELECT city, lat, lon FROM teams WHERE id = ?", (home_id,))
     home_city = (home_row or {}).get("city") or ""
+    h_lat = (home_row or {}).get("lat")
+    h_lon = (home_row or {}).get("lon")
     rng = _random.Random((rng_seed or 0) ^ (series_id * 1009 + game_num))
-    w = draw_weather(rng, home_city, game_date)
+    w = draw_weather(rng, home_city, game_date, lat=h_lat, lon=h_lon)
 
     return db.execute(
         "INSERT INTO games (season, game_date, home_team_id, away_team_id, "
