@@ -97,6 +97,10 @@
                     {{ cfg.leagues|length }} tiers
                     &nbsp;·&nbsp; {{ cfg.teams_per_division }} teams/tier
                     &nbsp;·&nbsp; {{ cfg.season_days }}-day season
+                  {% elif cfg.schedule_mode == 'independent' %}
+                    {{ (cfg.league_specs or cfg.leagues)|length }} peer leagues
+                    &nbsp;·&nbsp; {{ cfg.team_count }} teams
+                    &nbsp;·&nbsp; {{ cfg.season_days }}-day season
                   {% else %}
                     {{ cfg.divisions_per_league * (cfg.leagues|length) }} divisions
                     &nbsp;·&nbsp; {{ cfg.teams_per_division }} teams/div
@@ -315,8 +319,8 @@
             <td class="team-abbrev">{{ cfg_id }}</td>
             <td class="num">{{ cfg.team_count }}</td>
             <td><span class="badge bg-secondary">{{ cfg.level }}</span></td>
-            <td class="num">{{ cfg.divisions_per_league * (cfg.leagues|length) }}</td>
-            <td class="num">{{ cfg.teams_per_division }}</td>
+            <td class="num">{% if cfg.divisions_per_league is defined %}{{ cfg.divisions_per_league * (cfg.leagues|length) }}{% else %}—{% endif %}</td>
+            <td class="num">{{ cfg.teams_per_division if cfg.teams_per_division is defined else '—' }}</td>
             <td class="num">{{ cfg.games_per_team }}</td>
             <td class="num">{{ cfg.season_days }}</td>
             <td class="num fw-bold">{{ (cfg.team_count * cfg.games_per_team) // 2 }}</td>
