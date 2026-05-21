@@ -229,10 +229,20 @@
 </script>
 
 {% else %}
-{# Non-tiered fallback: original league/division layout, unchanged. #}
+{# Non-tiered fallback: league/division layout. For a peer-league universe
+   each league renders as its own panel (side by side / stacked), tagged
+   with its playing-style flavour. #}
 {% for league_name, league_divs in leagues.items() %}
 <div class="dense mb-4">
-  <div class="panel-title">{{ league_name }}</div>
+  <div class="panel-title d-flex flex-wrap align-items-center gap-2">
+    <span>{{ league_name }}</span>
+    {% if league_styles and league_styles.get(league_name) %}
+    <span class="badge" style="background:var(--bg-warm);color:var(--text);border:1px solid var(--border-soft);font-weight:600">
+      {{ league_styles[league_name] }}
+    </span>
+    {% endif %}
+  </div>
+  <div class="table-responsive">
   <table class="table table-sm dense-table sortable mb-0">
     <thead><tr>
       <th>Team</th>
@@ -276,6 +286,7 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endfor %}
 {% endif %}

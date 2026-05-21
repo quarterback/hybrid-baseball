@@ -63,7 +63,8 @@
     <div class="text-secondary small mb-2">
       Each league needs an <strong>even</strong> team count (for a balanced schedule) divisible by its division count.
     </div>
-    <table class="table table-sm dense-table mb-0" id="league-table">
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0" id="league-table" style="min-width:640px">
       <thead><tr>
         <th>League name</th>
         <th class="num">Teams</th>
@@ -74,6 +75,7 @@
       </tr></thead>
       <tbody id="league-rows"></tbody>
     </table>
+    </div>
   </div>
 
   <button type="submit" class="btn btn-primary">Build &amp; play universe</button>

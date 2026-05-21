@@ -511,6 +511,16 @@ def _leagues_with_divisions() -> dict[str, dict[str, list[dict]]]:
     return out
 
 
+def _config_options() -> list[dict]:
+    """All available league/universe configs as [{id, label}] for the
+    sim dropdowns. Built dynamically so custom universes appear too."""
+    out = []
+    for cid, cfg in get_league_configs().items():
+        out.append({"id": cid, "label": cfg.get("label") or cid})
+    out.sort(key=lambda o: o["label"].lower())
+    return out
+
+
 def _active_config() -> dict | None:
     """Return the currently active league config dict, or None when no
     league config is recorded in sim_meta."""
@@ -2621,7 +2631,8 @@ def index():
                            divisions=divs,
                            top=top,
                            win_pct=_win_pct,
-                           gb=_gb)
+                           gb=_gb,
+                           league_configs=_config_options())
 
 
 @app.route("/standings")
@@ -2705,6 +2716,17 @@ def standings():
         )
     }
 
+    # Per-league style/locale labels so the peer-league view shows each
+    # league's flavour (e.g. "Nippon — contact / command").
+    from o27v2.league import style_profile_label
+    league_styles: dict[str, str] = {}
+    for row in db.fetchall(
+        "SELECT league, MAX(COALESCE(style_profile,'')) AS sp FROM teams GROUP BY league"
+    ):
+        lbl = style_profile_label(row["sp"])
+        if lbl:
+            league_styles[row["league"]] = lbl
+
     return _serve("standings.html",
                            leagues=leagues,
                            extras=extras,
@@ -2715,6 +2737,7 @@ def standings():
                            tier_order=tier_order_list,
                            tier_meta=tier_meta,
                            tiered_view=tiered_view,
+                           league_styles=league_styles,
                            all_games_played=_all_games_played())
 
 
@@ -7491,7 +7514,8 @@ def seasons_index():
         "SELECT * FROM seasons ORDER BY season_number DESC"
     )
     live = compute_live_season()
-    return _serve("seasons.html", seasons=rows, live=live)
+    return _serve("seasons.html", seasons=rows, live=live,
+                  league_configs=_config_options())
 
 
 @app.route("/seasons/<int:season_id>")
