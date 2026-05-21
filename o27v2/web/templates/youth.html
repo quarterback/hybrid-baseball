@@ -24,6 +24,9 @@
       <a class="btn btn-sm btn-outline-warning" href="{{ url_for('youth_tournament_view') }}" title="Group stage + knockout bracket">
         Tournament 🏆
       </a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('youth_graduates_view') }}" title="Players who graduated into the pro pool">
+        Graduates →
+      </a>
     {% endif %}
     {% if not teams %}
     <button id="youth-seed-btn" class="btn btn-sm btn-warning"

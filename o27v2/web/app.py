@@ -7497,6 +7497,15 @@ def youth_view():
                   archetype_options=("bat", "arm", "stars"))
 
 
+@app.route("/youth/graduates")
+def youth_graduates_view():
+    """The youth-to-pro talent-discovery feed: who graduated, from where,
+    and where they landed."""
+    from o27v2 import youth as _youth
+    grads = _youth.recent_graduations(limit=200)
+    return _serve("youth_graduates.html", graduates=grads)
+
+
 @app.route("/youth/team/<int:team_id>")
 def youth_team_view(team_id: int):
     from o27v2 import youth as _youth
