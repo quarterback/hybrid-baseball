@@ -663,6 +663,371 @@ def archetype_for_city(city: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# City coordinates + nearest-city lookup
+# ---------------------------------------------------------------------------
+#
+# A coordinate gazetteer so weather can be drawn from a team's lat/lon by
+# finding the nearest anchor city, instead of needing an exact name match.
+# "Pick the closest known city" — approximate is fine, so the distance is
+# a cheap equirectangular metric, not a true great-circle haversine.
+#
+# `_BASE_COORDS` carries coordinates for cities already in
+# `_CITY_ARCHETYPES`. `_EXTRA_CITIES` is the expansion pack — new cities
+# that get BOTH an archetype and coordinates in one place (folded into the
+# tables below). Heavy on Finnish towns and US metro / micropolitan
+# markets so a custom league can sprawl far past the preset catalogue.
+
+_BASE_COORDS: dict[str, tuple[float, float]] = {
+    # US / North America anchors
+    "Albuquerque": (35.08, -106.65), "Arizona": (33.45, -112.07),
+    "Las Vegas": (36.17, -115.14), "El Paso": (31.76, -106.49),
+    "Midland": (31.99, -102.08),
+    "San Francisco": (37.77, -122.42), "Oakland": (37.80, -122.27),
+    "Seattle": (47.61, -122.33), "Portland": (45.52, -122.68),
+    "Tacoma": (47.25, -122.44), "Salem": (44.94, -123.04),
+    "Los Angeles": (34.05, -118.24), "San Diego": (32.72, -117.16),
+    "Sacramento": (38.58, -121.49), "Tampa": (27.95, -82.46),
+    "Tampa Bay": (27.77, -82.64), "Clearwater": (27.97, -82.80),
+    "Daytona": (29.21, -81.02), "Jacksonville": (30.33, -81.66),
+    "Savannah": (32.08, -81.09), "Charlotte": (35.23, -80.84),
+    "Greenville": (34.85, -82.39), "Greensboro": (36.07, -79.79),
+    "Wilmington": (34.23, -77.94), "Lynchburg": (37.41, -79.14),
+    "Myrtle Beach": (33.69, -78.89), "Asheville": (35.60, -82.55),
+    "Durham": (35.99, -78.90), "Richmond": (37.54, -77.44),
+    "Norfolk": (36.85, -76.29), "Zebulon": (35.83, -78.31),
+    "Chicago": (41.85, -87.65), "Cleveland": (41.50, -81.69),
+    "Detroit": (42.33, -83.05), "Milwaukee": (43.04, -87.91),
+    "Minnesota": (44.98, -93.27), "Pittsburgh": (40.44, -80.00),
+    "Buffalo": (42.89, -78.88), "Toronto": (43.65, -79.38),
+    "Montreal": (45.50, -73.57), "Boston": (42.36, -71.06),
+    "New York": (40.71, -74.01), "Pawtucket": (41.88, -71.38),
+    "Hartford": (41.76, -72.69), "Trenton": (40.22, -74.76),
+    "Lehigh Valley": (40.65, -75.43), "Binghamton": (42.10, -75.91),
+    "Lansing": (42.73, -84.56), "Cedar Rapids": (41.98, -91.67),
+    "Columbus": (39.96, -83.00), "Toledo": (41.66, -83.56),
+    "Indianapolis": (39.77, -86.16), "Omaha": (41.26, -95.94),
+    "Harrisburg": (40.27, -76.88),
+    "Atlanta": (33.75, -84.39), "Baltimore": (39.29, -76.61),
+    "Cincinnati": (39.10, -84.51), "Houston": (29.76, -95.37),
+    "Kansas City": (39.10, -94.58), "Nashville": (36.16, -86.78),
+    "Philadelphia": (39.95, -75.17), "St. Louis": (38.63, -90.20),
+    "Texas": (32.75, -97.08), "Washington": (38.91, -77.04),
+    "Arkansas": (34.75, -92.29), "Chattanooga": (35.05, -85.31),
+    "Corpus Christi": (27.80, -97.40), "Frisco": (33.15, -96.82),
+    "Jackson": (32.30, -90.18), "Lakewood": (40.10, -74.22),
+    "Montgomery": (32.37, -86.30), "Peoria": (40.69, -89.59),
+    "Round Rock": (30.51, -97.68), "San Antonio": (29.42, -98.49),
+    "Miami": (25.76, -80.19), "Biloxi": (30.40, -88.89),
+    "Colorado": (39.74, -104.99), "Colorado Springs": (38.83, -104.82),
+    "Salt Lake City": (40.76, -111.89),
+    "Vancouver": (49.28, -123.12), "Victoria": (48.43, -123.37),
+    "Calgary": (51.05, -114.07), "Edmonton": (53.55, -113.49),
+    "Winnipeg": (49.90, -97.14), "Halifax": (44.65, -63.58),
+    "Quebec City": (46.81, -71.21), "Ottawa": (45.42, -75.70),
+    "New Jersey": (40.74, -74.17),
+    # Nordic / Baltic
+    "Helsinki": (60.17, 24.94), "Tampere": (61.50, 23.79),
+    "Turku": (60.45, 22.27), "Espoo": (60.21, 24.66),
+    "Vantaa": (60.29, 25.04), "Oulu": (65.01, 25.47),
+    "Lahti": (60.98, 25.66), "Kuopio": (62.89, 27.68),
+    "Jyväskylä": (62.24, 25.75), "Vaasa": (63.10, 21.62),
+    "Joensuu": (62.60, 29.76), "Pori": (61.49, 21.80),
+    "Lappeenranta": (61.06, 28.19), "Hämeenlinna": (60.99, 24.46),
+    "Rovaniemi": (66.50, 25.73), "Mikkeli": (61.69, 27.27),
+    "Kotka": (60.47, 26.95), "Salo": (60.38, 23.13),
+    "Porvoo": (60.39, 25.66), "Kouvola": (60.87, 26.70),
+    "Stockholm": (59.33, 18.07), "Gothenburg": (57.71, 11.97),
+    "Malmö": (55.60, 13.00), "Uppsala": (59.86, 17.64),
+    "Oslo": (59.91, 10.75), "Bergen": (60.39, 5.32),
+    "Trondheim": (63.43, 10.39), "Reykjavik": (64.15, -21.94),
+    "Copenhagen": (55.68, 12.57), "Tallinn": (59.44, 24.75),
+    "Riga": (56.95, 24.11), "Vilnius": (54.69, 25.28),
+    "Saint Petersburg": (59.93, 30.34),
+    # UK / Ireland / W Europe
+    "London": (51.51, -0.13), "Manchester": (53.48, -2.24),
+    "Liverpool": (53.41, -2.99), "Leeds": (53.80, -1.55),
+    "Edinburgh": (55.95, -3.19), "Glasgow": (55.86, -4.25),
+    "Belfast": (54.60, -5.93), "Dublin": (53.35, -6.26),
+    "Cardiff": (51.48, -3.18), "Paris": (48.86, 2.35),
+    "Lyon": (45.76, 4.84), "Marseille": (43.30, 5.37),
+    "Nice": (43.70, 7.27), "Toulouse": (43.60, 1.44),
+    "Bordeaux": (44.84, -0.58), "Berlin": (52.52, 13.40),
+    "Munich": (48.14, 11.58), "Hamburg": (53.55, 9.99),
+    "Frankfurt": (50.11, 8.68), "Cologne": (50.94, 6.96),
+    "Vienna": (48.21, 16.37), "Zürich": (47.37, 8.54),
+    "Amsterdam": (52.37, 4.90), "Rotterdam": (51.92, 4.48),
+    "Brussels": (50.85, 4.35), "Madrid": (40.42, -3.70),
+    "Barcelona": (41.39, 2.17), "Valencia": (39.47, -0.38),
+    "Seville": (37.39, -5.99), "Bilbao": (43.26, -2.93),
+    "Lisbon": (38.72, -9.14), "Porto": (41.16, -8.62),
+    "Rome": (41.90, 12.50), "Milan": (45.46, 9.19),
+    "Naples": (40.85, 14.27), "Athens": (37.98, 23.73),
+    "Warsaw": (52.23, 21.01), "Prague": (50.08, 14.44),
+    "Budapest": (47.50, 19.04), "Moscow": (55.76, 37.62),
+    "Kyiv": (50.45, 30.52), "Istanbul": (41.01, 28.98),
+    # Asia / Oceania / Africa / LatAm anchors
+    "Tokyo": (35.68, 139.69), "Osaka": (34.69, 135.50),
+    "Sapporo": (43.06, 141.35), "Seoul": (37.57, 126.98),
+    "Beijing": (39.90, 116.41), "Shanghai": (31.23, 121.47),
+    "Hong Kong": (22.32, 114.17), "Taipei": (25.03, 121.57),
+    "Bangkok": (13.76, 100.50), "Manila": (14.60, 120.98),
+    "Jakarta": (-6.21, 106.85), "Singapore": (1.35, 103.82),
+    "Kuala Lumpur": (3.14, 101.69), "Mumbai": (19.08, 72.88),
+    "Delhi": (28.61, 77.21), "Chennai": (13.08, 80.27),
+    "Dubai": (25.20, 55.27), "Riyadh": (24.71, 46.68),
+    "Tel Aviv": (32.08, 34.78), "Cairo": (30.04, 31.24),
+    "Lagos": (6.52, 3.38), "Nairobi": (-1.29, 36.82),
+    "Cape Town": (-33.92, 18.42), "Johannesburg": (-26.20, 28.05),
+    "Sydney": (-33.87, 151.21), "Melbourne": (-37.81, 144.96),
+    "Brisbane": (-27.47, 153.03), "Perth": (-31.95, 115.86),
+    "Alice Springs": (-23.70, 133.88), "Auckland": (-36.85, 174.76),
+    "Wellington": (-41.29, 174.78), "Mexico City": (19.43, -99.13),
+    "Monterrey": (25.69, -100.32), "Havana": (23.11, -82.37),
+    "Santo Domingo": (18.49, -69.93), "San Juan": (18.47, -66.11),
+    "Buenos Aires": (-34.60, -58.38), "Santiago": (-33.45, -70.67),
+    "Rio de Janeiro": (-22.91, -43.17), "São Paulo": (-23.55, -46.63),
+    "Lima": (-12.05, -77.04), "Bogotá": (4.71, -74.07),
+}
+
+# Expansion pack — (lat, lon, archetype). Folded into both tables below.
+_EXTRA_CITIES: dict[str, tuple[float, float, str]] = {
+    # ----- Finland: far more towns, mostly subarctic -----
+    "Seinäjoki": (62.79, 22.84, "subarctic"),
+    "Kokkola": (63.84, 23.13, "subarctic"),
+    "Kajaani": (64.23, 27.73, "subarctic"),
+    "Kemi": (65.74, 24.56, "subarctic"),
+    "Tornio": (65.85, 24.15, "subarctic"),
+    "Iisalmi": (63.56, 27.19, "subarctic"),
+    "Savonlinna": (61.87, 28.88, "subarctic"),
+    "Raahe": (64.68, 24.48, "subarctic"),
+    "Imatra": (61.19, 28.77, "subarctic"),
+    "Hyvinkää": (60.63, 24.86, "subarctic"),
+    "Järvenpää": (60.47, 25.10, "subarctic"),
+    "Lohja": (60.25, 24.07, "subarctic"),
+    "Rauma": (61.13, 21.51, "subarctic"),
+    "Kuusamo": (65.96, 29.19, "subarctic"),
+    "Sodankylä": (67.42, 26.59, "subarctic"),
+    "Inari": (68.66, 27.55, "subarctic"),
+    "Hanko": (59.83, 22.97, "subarctic"),
+    "Mariehamn": (60.10, 19.94, "subarctic"),
+    "Nokia": (61.48, 23.51, "subarctic"),
+    "Ylöjärvi": (61.55, 23.60, "subarctic"),
+    "Kerava": (60.40, 25.10, "subarctic"),
+    "Riihimäki": (60.74, 24.78, "subarctic"),
+    "Valkeakoski": (61.27, 24.03, "subarctic"),
+    "Heinola": (61.20, 26.04, "subarctic"),
+    "Varkaus": (62.31, 27.87, "subarctic"),
+    "Pieksämäki": (62.30, 27.13, "subarctic"),
+    "Ylivieska": (64.08, 24.55, "subarctic"),
+    "Kuhmo": (64.13, 29.52, "subarctic"),
+    "Sotkamo": (64.13, 28.40, "subarctic"),
+    "Pietarsaari": (63.68, 22.70, "subarctic"),
+    "Uusikaupunki": (60.80, 21.41, "subarctic"),
+    "Naantali": (60.47, 22.03, "subarctic"),
+    "Kaarina": (60.41, 22.37, "subarctic"),
+    "Forssa": (60.81, 23.62, "subarctic"),
+    "Kangasala": (61.46, 24.07, "subarctic"),
+    "Tuusula": (60.40, 25.03, "subarctic"),
+    "Nurmijärvi": (60.47, 24.81, "subarctic"),
+    "Kirkkonummi": (60.12, 24.44, "subarctic"),
+    "Kemijärvi": (66.71, 27.43, "subarctic"),
+    "Tornio Haparanda": (65.84, 24.14, "subarctic"),
+    # ----- US Northeast / New England (continental_cold) -----
+    "Albany": (42.65, -73.76, "continental_cold"),
+    "Syracuse": (43.05, -76.15, "continental_cold"),
+    "Rochester": (43.16, -77.61, "continental_cold"),
+    "Worcester": (42.26, -71.80, "continental_cold"),
+    "Providence": (41.82, -71.41, "continental_cold"),
+    "Manchester NH": (42.99, -71.46, "continental_cold"),
+    "Portland ME": (43.66, -70.26, "continental_cold"),
+    "Burlington VT": (44.48, -73.21, "continental_cold"),
+    "Scranton": (41.41, -75.66, "continental_cold"),
+    "Allentown": (40.60, -75.48, "continental_cold"),
+    "Erie": (42.13, -80.09, "continental_cold"),
+    "Springfield MA": (42.10, -72.59, "continental_cold"),
+    "New Haven": (41.31, -72.93, "continental_cold"),
+    "Bridgeport": (41.19, -73.20, "continental_cold"),
+    "Bangor": (44.80, -68.77, "continental_cold"),
+    "Utica": (43.10, -75.23, "continental_cold"),
+    # ----- US Midwest / Great Lakes (continental_cold) -----
+    "Grand Rapids": (42.96, -85.67, "continental_cold"),
+    "Fort Wayne": (41.08, -85.14, "continental_cold"),
+    "Dayton": (39.76, -84.19, "continental_cold"),
+    "Akron": (41.08, -81.52, "continental_cold"),
+    "Youngstown": (41.10, -80.65, "continental_cold"),
+    "Madison": (43.07, -89.40, "continental_cold"),
+    "Green Bay": (44.51, -88.02, "continental_cold"),
+    "Des Moines": (41.59, -93.62, "continental_cold"),
+    "Sioux Falls": (43.55, -96.70, "continental_cold"),
+    "Fargo": (46.88, -96.79, "continental_cold"),
+    "Duluth": (46.79, -92.10, "continental_cold"),
+    "Rockford": (42.27, -89.09, "continental_cold"),
+    "South Bend": (41.68, -86.25, "continental_cold"),
+    "Kalamazoo": (42.29, -85.59, "continental_cold"),
+    "Flint": (43.01, -83.69, "continental_cold"),
+    "Saginaw": (43.42, -83.95, "continental_cold"),
+    "Quad Cities": (41.52, -90.58, "continental_cold"),
+    "Springfield IL": (39.78, -89.65, "continental_cold"),
+    "Wichita": (37.69, -97.34, "continental_warm"),
+    "Lincoln": (40.81, -96.70, "continental_cold"),
+    "Bismarck": (46.81, -100.78, "continental_cold"),
+    "Rapid City": (44.08, -103.23, "arid_steppe"),
+    # ----- US South / Southeast (continental_warm) -----
+    "Memphis": (35.15, -90.05, "continental_warm"),
+    "Knoxville": (35.96, -83.92, "continental_warm"),
+    "Huntsville": (34.73, -86.59, "continental_warm"),
+    "Mobile": (30.69, -88.04, "continental_warm"),
+    "Shreveport": (32.53, -93.75, "continental_warm"),
+    "Baton Rouge": (30.45, -91.19, "continental_warm"),
+    "Little Rock": (34.75, -92.29, "continental_warm"),
+    "Tulsa": (36.15, -95.99, "continental_warm"),
+    "Oklahoma City": (35.47, -97.52, "continental_warm"),
+    "Columbia SC": (34.00, -81.03, "continental_warm"),
+    "Augusta": (33.47, -81.97, "continental_warm"),
+    "Macon": (32.84, -83.63, "continental_warm"),
+    "Tallahassee": (30.44, -84.28, "continental_warm"),
+    "Pensacola": (30.42, -87.22, "coastal_warm"),
+    "Lexington": (38.04, -84.50, "continental_warm"),
+    "Louisville": (38.25, -85.76, "continental_warm"),
+    "Roanoke": (37.27, -79.94, "continental_warm"),
+    "Fayetteville NC": (35.05, -78.88, "coastal_warm"),
+    "Columbus GA": (32.46, -84.99, "continental_warm"),
+    "Tuscaloosa": (33.21, -87.57, "continental_warm"),
+    "New Orleans": (29.95, -90.07, "continental_warm"),
+    # ----- Texas (continental_warm / arid) -----
+    "Austin": (30.27, -97.74, "continental_warm"),
+    "Waco": (31.55, -97.15, "continental_warm"),
+    "Lubbock": (33.58, -101.86, "arid_steppe"),
+    "Amarillo": (35.22, -101.83, "arid_steppe"),
+    "Abilene": (32.45, -99.73, "arid_steppe"),
+    "Laredo": (27.51, -99.51, "desert"),
+    "Brownsville": (25.90, -97.50, "coastal_warm"),
+    "McAllen": (26.20, -98.23, "coastal_warm"),
+    "Tyler": (32.35, -95.30, "continental_warm"),
+    "Beaumont": (30.08, -94.10, "continental_warm"),
+    # ----- Florida (coastal_warm / tropical) -----
+    "Orlando": (28.54, -81.38, "coastal_warm"),
+    "Fort Myers": (26.64, -81.87, "tropical"),
+    "Sarasota": (27.34, -82.53, "coastal_warm"),
+    "Gainesville": (29.65, -82.32, "coastal_warm"),
+    "Lakeland": (28.04, -81.95, "coastal_warm"),
+    "Fort Lauderdale": (26.12, -80.14, "tropical"),
+    "West Palm Beach": (26.71, -80.05, "tropical"),
+    "Key West": (24.56, -81.78, "tropical"),
+    "Naples FL": (26.14, -81.79, "tropical"),
+    "Ocala": (29.19, -82.13, "coastal_warm"),
+    "Pensacola FL": (30.42, -87.22, "coastal_warm"),
+    # ----- US Southwest desert -----
+    "Phoenix": (33.45, -112.07, "desert"),
+    "Tucson": (32.22, -110.97, "desert"),
+    "Yuma": (32.69, -114.63, "desert"),
+    "Mesa": (33.42, -111.83, "desert"),
+    "Palm Springs": (33.83, -116.55, "desert"),
+    "St. George": (37.10, -113.58, "desert"),
+    # ----- Mountain / Intermountain West -----
+    "Boise": (43.62, -116.21, "arid_steppe"),
+    "Spokane": (47.66, -117.43, "arid_steppe"),
+    "Reno": (39.53, -119.81, "arid_steppe"),
+    "Flagstaff": (35.20, -111.65, "mountain"),
+    "Missoula": (46.87, -113.99, "mountain"),
+    "Bozeman": (45.68, -111.04, "mountain"),
+    "Billings": (45.78, -108.50, "arid_steppe"),
+    "Cheyenne": (41.14, -104.82, "arid_steppe"),
+    "Casper": (42.85, -106.32, "arid_steppe"),
+    "Pocatello": (42.87, -112.45, "arid_steppe"),
+    "Provo": (40.23, -111.66, "mountain"),
+    "Ogden": (41.22, -111.97, "mountain"),
+    "Boulder": (40.01, -105.27, "mountain"),
+    # ----- Pacific Northwest (coastal_cool) -----
+    "Eugene": (44.05, -123.09, "coastal_cool"),
+    "Bellingham": (48.75, -122.48, "coastal_cool"),
+    "Olympia": (47.04, -122.90, "coastal_cool"),
+    "Vancouver WA": (45.63, -122.66, "coastal_cool"),
+    # ----- California -----
+    "Fresno": (36.74, -119.77, "mediterranean"),
+    "Bakersfield": (35.37, -119.02, "arid_steppe"),
+    "Stockton": (37.96, -121.29, "mediterranean"),
+    "Modesto": (37.64, -120.997, "mediterranean"),
+    "San Jose": (37.34, -121.89, "coastal_warm"),
+    "Santa Barbara": (34.42, -119.70, "mediterranean"),
+    "Long Beach": (33.77, -118.19, "coastal_warm"),
+    "Anaheim": (33.84, -117.91, "coastal_warm"),
+    "Riverside": (33.95, -117.40, "mediterranean"),
+    "San Bernardino": (34.11, -117.29, "mediterranean"),
+    "Chico": (39.73, -121.84, "mediterranean"),
+    "Redding": (40.59, -122.39, "mediterranean"),
+    "Santa Rosa": (38.44, -122.71, "mediterranean"),
+    "Monterey": (36.60, -121.89, "coastal_cool"),
+    "Ventura": (34.27, -119.29, "coastal_warm"),
+}
+
+# Fold the expansion pack into the name->archetype table (don't clobber an
+# existing hand-authored entry) and build the combined name->coords map.
+for _xname, (_xlat, _xlon, _xarch) in _EXTRA_CITIES.items():
+    _CITY_ARCHETYPES.setdefault(_xname, _xarch)
+
+_CITY_COORDS: dict[str, tuple[float, float]] = dict(_BASE_COORDS)
+for _xname, (_xlat, _xlon, _xarch) in _EXTRA_CITIES.items():
+    _CITY_COORDS[_xname] = (_xlat, _xlon)
+
+# Coordinate anchors for nearest-city lookup: every city we know both a
+# location AND an archetype for. (name, lat, lon, archetype).
+_CLIMATE_ANCHORS: list[tuple[str, float, float, str]] = [
+    (name, lat, lon, _CITY_ARCHETYPES[name])
+    for name, (lat, lon) in _CITY_COORDS.items()
+    if name in _CITY_ARCHETYPES
+]
+
+
+def _coord_dist2(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Squared equirectangular distance — monotone in true distance, so
+    fine for nearest-neighbour ranking and far cheaper than haversine."""
+    import math
+    mid = math.radians((lat1 + lat2) * 0.5)
+    x = math.radians(lon2 - lon1) * math.cos(mid)
+    y = math.radians(lat2 - lat1)
+    return x * x + y * y
+
+
+def nearest_city(lat: float, lon: float) -> tuple[str, str] | None:
+    """Return (city_name, archetype) of the nearest anchor to (lat, lon),
+    or None if no coordinate is usable."""
+    if lat is None or lon is None:
+        return None
+    try:
+        lat = float(lat); lon = float(lon)
+    except (TypeError, ValueError):
+        return None
+    best: tuple[str, str] | None = None
+    best_d = float("inf")
+    for name, alat, alon, arch in _CLIMATE_ANCHORS:
+        d = _coord_dist2(lat, lon, alat, alon)
+        if d < best_d:
+            best_d, best = d, (name, arch)
+    return best
+
+
+def archetype_for_coords(lat: float, lon: float) -> str:
+    """Climatological archetype for a lat/lon — the archetype of the
+    nearest anchor city. Falls back to continental_warm if coords are
+    unusable."""
+    hit = nearest_city(lat, lon)
+    return hit[1] if hit else "continental_warm"
+
+
+def city_gazetteer() -> list[dict]:
+    """Sorted list of known cities with coords + archetype, for UI
+    pickers (the team-location datalist)."""
+    out = [
+        {"name": name, "lat": lat, "lon": lon, "archetype": _CITY_ARCHETYPES[name]}
+        for name, (lat, lon) in _CITY_COORDS.items()
+        if name in _CITY_ARCHETYPES
+    ]
+    out.sort(key=lambda c: c["name"])
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Archetype-month tier distributions
 # ---------------------------------------------------------------------------
 #
@@ -1004,12 +1369,21 @@ def _choose(rng: random.Random, dist: dict[str, float]) -> str:
     return tier
 
 
-def draw_weather(rng: random.Random, city: str, game_date: str) -> Weather:
+def draw_weather(rng: random.Random, city: str, game_date: str,
+                 lat: float | None = None, lon: float | None = None) -> Weather:
     """Draw a Weather sample for `city` on `game_date` (YYYY-MM-DD).
+
+    When `lat`/`lon` are supplied, the archetype is taken from the
+    nearest known anchor city ("closest city" geography) rather than an
+    exact name match — so any custom location resolves to sensible
+    weather. Falls back to the name lookup when coordinates are absent.
 
     Pure: feed the same RNG state twice and you get the same sample.
     """
-    archetype = archetype_for_city(city)
+    if lat is not None and lon is not None:
+        archetype = archetype_for_coords(lat, lon)
+    else:
+        archetype = archetype_for_city(city)
     month_key = _month_bucket(game_date)
     table = _TABLES.get(archetype, _CONTINENTAL_WARM).get(month_key, {})
 

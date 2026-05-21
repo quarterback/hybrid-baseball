@@ -6099,26 +6099,101 @@ def team_detail(team_id: int):
                            staff_wera=staff_disp)
 
 
+def _team_climate(team) -> str:
+    """Archetype for a team row — coords first ("nearest city"), then the
+    city-name lookup as a fallback."""
+    from o27.engine.weather import archetype_for_coords, archetype_for_city
+    lat, lon = team["lat"], team["lon"]
+    if lat is not None and lon is not None:
+        return archetype_for_coords(lat, lon)
+    return archetype_for_city(team["city"] or "")
+
+
+def _parse_park_dims(team) -> dict:
+    """Parse a team's stored park_dimensions JSON into a dict with all six
+    keys present (blank string when missing) for the editor inputs."""
+    import json as _json
+    raw = team["park_dimensions"] if "park_dimensions" in team.keys() else ""
+    try:
+        d = _json.loads(raw) if raw else {}
+    except (ValueError, TypeError):
+        d = {}
+    return {k: d.get(k, "") for k in ("lf", "lcf", "cf", "rcf", "rf", "wall_h")}
+
+
 @app.route("/team/<int:team_id>/edit", methods=["GET"])
 def team_edit_get(team_id: int):
-    from o27.engine.weather import archetype_for_city
+    from o27.engine.weather import city_gazetteer
+    from o27v2.league import get_park_shapes, get_quirk_catalog
+    import json as _json
     team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
     if not team:
         abort(404)
+    try:
+        cur_quirks = _json.loads(team["park_quirks"]) if team["park_quirks"] else []
+    except (ValueError, TypeError):
+        cur_quirks = []
+    cur_quirk_keys = [q.get("key") for q in cur_quirks if isinstance(q, dict)]
     return _serve("team_edit.html",
                            team=team,
-                           current_archetype=archetype_for_city(team["city"] or ""))
+                           current_archetype=_team_climate(team),
+                           city_gazetteer=city_gazetteer(),
+                           park_shapes=get_park_shapes(),
+                           quirk_catalog=get_quirk_catalog(),
+                           park_dims=_parse_park_dims(team),
+                           current_quirk_keys=cur_quirk_keys)
+
+
+def _reroll_weather_for_team(team_id: int, city: str, lat, lon) -> int:
+    """Re-roll stamped weather for this team's unplayed home games using
+    the (possibly new) location. Returns the count re-rolled."""
+    from o27.engine.weather import draw_weather
+    import random as _random
+    unplayed_home = db.fetchall(
+        "SELECT id, game_date FROM games WHERE home_team_id = ? AND played = 0",
+        (team_id,),
+    )
+    if not unplayed_home:
+        return 0
+    rng = _random.Random(team_id ^ 0xCAFE_BABE)
+    n = 0
+    for g in unplayed_home:
+        w = draw_weather(rng, city, g["game_date"], lat=lat, lon=lon)
+        db.execute(
+            """UPDATE games SET temperature_tier=?, wind_tier=?,
+               humidity_tier=?, precip_tier=?, cloud_tier=?
+               WHERE id=?""",
+            (w.temperature, w.wind, w.humidity, w.precip, w.cloud, g["id"]),
+        )
+        n += 1
+    return n
 
 
 @app.route("/team/<int:team_id>/edit", methods=["POST"])
 def team_edit_post(team_id: int):
     from flask import flash
-    from o27.engine.weather import draw_weather, archetype_for_city
+    from o27.engine.weather import archetype_for_coords, archetype_for_city, city_gazetteer
+    from o27v2.league import roll_park, quirk_meta
+    import json as _json
     import random as _random
 
     team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
     if not team:
         abort(404)
+
+    action = (request.form.get("action") or "save").strip()
+
+    # ---- Re-roll the ballpark in place (keeps identity fields) ----------
+    if action == "reroll_park":
+        dims, shape, quirks = roll_park(_random.Random())
+        db.execute(
+            "UPDATE teams SET park_dimensions=?, park_shape=?, park_quirks=? WHERE id=?",
+            (_json.dumps(dims), shape, _json.dumps(quirks), team_id),
+        )
+        from o27v2.league import get_park_shape_meta
+        flash(f"Re-rolled ballpark — {get_park_shape_meta(shape).get('label') or shape} "
+              f"with {len(quirks)} quirk(s).", "info")
+        return redirect(url_for("team_edit_get", team_id=team_id))
 
     new_name   = (request.form.get("name", "") or "").strip()
     new_abbrev = (request.form.get("abbrev", "") or "").strip().upper()
@@ -6144,39 +6219,91 @@ def team_edit_post(team_id: int):
         flash(f"Abbreviation {new_abbrev} is already used by another team.", "error")
         return redirect(url_for("team_edit_get", team_id=team_id))
 
-    city_changed = (new_city != (team["city"] or ""))
+    # ---- Coordinates: explicit lat/lon win; otherwise resolve from the
+    # city name via the gazetteer; otherwise keep whatever we had. -------
+    def _coord(name: str):
+        s = (request.form.get(name, "") or "").strip()
+        if s == "":
+            return None
+        try:
+            return float(s)
+        except ValueError:
+            return None
 
-    db.execute(
-        "UPDATE teams SET name = ?, abbrev = ?, city = ? WHERE id = ?",
-        (new_name, new_abbrev, new_city, team_id),
+    new_lat = _coord("lat")
+    new_lon = _coord("lon")
+    if new_lat is None or new_lon is None:
+        gaz = {c["name"].lower(): c for c in city_gazetteer()}
+        hit = gaz.get(new_city.lower())
+        if hit:
+            new_lat = hit["lat"] if new_lat is None else new_lat
+            new_lon = hit["lon"] if new_lon is None else new_lon
+    # Fall back to the existing coords if still unresolved.
+    if new_lat is None:
+        new_lat = team["lat"]
+    if new_lon is None:
+        new_lon = team["lon"]
+
+    # ---- Ballpark fields ------------------------------------------------
+    def _dim(name: str, fallback) -> int:
+        s = (request.form.get(name, "") or "").strip()
+        try:
+            return int(round(float(s)))
+        except (ValueError, TypeError):
+            return fallback
+
+    cur_dims = _parse_park_dims(team)
+    def _cur(k):
+        v = cur_dims.get(k)
+        return v if isinstance(v, (int, float)) else 0
+    dims = {
+        "lf":     max(220, _dim("lf",     _cur("lf"))),
+        "lcf":    max(260, _dim("lcf",    _cur("lcf"))),
+        "cf":     max(300, _dim("cf",     _cur("cf"))),
+        "rcf":    max(260, _dim("rcf",    _cur("rcf"))),
+        "rf":     max(220, _dim("rf",     _cur("rf"))),
+        "wall_h": max(2, min(80, _dim("wall_h", _cur("wall_h") or 8))),
+    }
+    new_shape = (request.form.get("park_shape", "") or team["park_shape"] or "").strip()
+    new_park_name = (request.form.get("park_name", "") or "").strip() or team["park_name"]
+    quirk_keys = request.form.getlist("quirks")
+    quirks = [quirk_meta(k) for k in quirk_keys if k]
+
+    def _factor(name: str, fallback: float) -> float:
+        s = (request.form.get(name, "") or "").strip()
+        try:
+            return max(0.80, min(1.20, float(s)))
+        except (ValueError, TypeError):
+            return fallback
+    new_park_hr   = _factor("park_hr",   team["park_hr"])
+    new_park_hits = _factor("park_hits", team["park_hits"])
+
+    location_changed = (
+        new_city != (team["city"] or "")
+        or new_lat != team["lat"]
+        or new_lon != team["lon"]
     )
 
-    # Re-roll weather for unplayed home games when the city changes —
-    # archetype_for_city is called fresh per-game inside draw_weather, so
-    # changing the city alone changes the climatology. A new RNG forked
-    # off the team_id keeps the reseed deterministic per team.
-    rerolled = 0
-    if city_changed:
-        unplayed_home = db.fetchall(
-            "SELECT id, game_date FROM games WHERE home_team_id = ? AND played = 0",
-            (team_id,),
-        )
-        if unplayed_home:
-            rng = _random.Random(team_id ^ 0xCAFE_BABE)
-            for g in unplayed_home:
-                w = draw_weather(rng, new_city, g["game_date"])
-                db.execute(
-                    """UPDATE games SET temperature_tier=?, wind_tier=?,
-                       humidity_tier=?, precip_tier=?, cloud_tier=?
-                       WHERE id=?""",
-                    (w.temperature, w.wind, w.humidity, w.precip, w.cloud, g["id"]),
-                )
-                rerolled += 1
+    db.execute(
+        "UPDATE teams SET name=?, abbrev=?, city=?, lat=?, lon=?, "
+        "park_name=?, park_dimensions=?, park_shape=?, park_quirks=?, "
+        "park_hr=?, park_hits=? WHERE id=?",
+        (new_name, new_abbrev, new_city, new_lat, new_lon,
+         new_park_name, _json.dumps(dims), new_shape, _json.dumps(quirks),
+         new_park_hr, new_park_hits, team_id),
+    )
 
-    if city_changed:
+    # Re-roll weather for unplayed home games when the location changes.
+    # Played games keep their stamped conditions.
+    if location_changed:
+        rerolled = _reroll_weather_for_team(team_id, new_city, new_lat, new_lon)
+        if new_lat is not None and new_lon is not None:
+            arch = archetype_for_coords(new_lat, new_lon)
+        else:
+            arch = archetype_for_city(new_city)
         flash(
             f"Team updated. Re-rolled weather for {rerolled} unplayed home games "
-            f"({archetype_for_city(new_city)} archetype).",
+            f"({arch} archetype).",
             "info",
         )
     else:
@@ -6500,6 +6627,48 @@ def new_league_post():
         app.logger.exception("verify_opponent_balance failed: %s", e)
 
     return redirect(url_for("index"))
+
+
+@app.route("/league/edit", methods=["GET"])
+def league_edit_get():
+    """Rename leagues and divisions. Lists the distinct league/division
+    names currently on the teams table, each editable in place."""
+    leagues = [r["league"] for r in db.fetchall(
+        "SELECT DISTINCT league FROM teams ORDER BY league")]
+    div_rows = db.fetchall(
+        "SELECT division, league, COUNT(*) AS n FROM teams "
+        "GROUP BY division, league ORDER BY league, division")
+    return _serve("league_edit.html", leagues=leagues, divisions=div_rows)
+
+
+@app.route("/league/edit", methods=["POST"])
+def league_edit_post():
+    from flask import flash
+
+    league_old = request.form.getlist("league_old")
+    league_new = request.form.getlist("league_new")
+    div_old    = request.form.getlist("division_old")
+    div_new    = request.form.getlist("division_new")
+
+    renamed_lg = 0
+    for old, new in zip(league_old, league_new):
+        new = (new or "").strip()
+        if new and new != old:
+            db.execute("UPDATE teams SET league = ? WHERE league = ?", (new, old))
+            renamed_lg += 1
+
+    renamed_div = 0
+    for old, new in zip(div_old, div_new):
+        new = (new or "").strip()
+        if new and new != old:
+            db.execute("UPDATE teams SET division = ? WHERE division = ?", (new, old))
+            renamed_div += 1
+
+    if renamed_lg or renamed_div:
+        flash(f"Renamed {renamed_lg} league(s) and {renamed_div} division(s).", "info")
+    else:
+        flash("No changes made.", "info")
+    return redirect(url_for("league_edit_get"))
 
 
 # ---------------------------------------------------------------------------
