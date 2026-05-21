@@ -656,6 +656,12 @@
        already wrap in .table-responsive, but enforce min-widths
        so the columns don't squish into illegibility. */
     .table-responsive .dense-table { min-width: 720px; }
+    /* Narrow tables (few columns) opt out of the 720px floor and size
+       to their content instead of forcing horizontal scroll / dead space. */
+    .table-responsive .dense-table.dense-table--fit { min-width: 0; width: auto; }
+    @media (max-width: 768px) {
+      .table-responsive .dense-table.dense-table--fit { width: 100%; }
+    }
     @media (max-width: 768px) {
       .dense-table tbody td { font-size: .78rem; padding: 3px 5px; }
       .dense-table thead th { font-size: .65rem; padding: 4px 5px; }
