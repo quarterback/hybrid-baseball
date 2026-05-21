@@ -6979,9 +6979,16 @@ def api_sim_multi_season():
     n         = int(data.get("n", 3))
     base_seed = int(data.get("seed", 42))
     config_id = (data.get("config_id") or "30teams").strip()
+    # "detail" mirrors the per-game sim flag. Accept the friendly "fast"
+    # checkbox (boolean) as well as an explicit "lite"/"full" string.
+    if "fast" in data:
+        detail = "lite" if data.get("fast") else "full"
+    else:
+        detail = "lite" if (data.get("detail") or "lite") == "lite" else "full"
     if config_id not in get_league_configs():
         return jsonify({"ok": False, "error": f"unknown config: {config_id}"}), 400
-    started, msg = start_multi_season(n, base_seed=base_seed, config_id=config_id)
+    started, msg = start_multi_season(n, base_seed=base_seed, config_id=config_id,
+                                      detail=detail)
     return jsonify({"ok": started, "message": msg}), (202 if started else 409)
 
 

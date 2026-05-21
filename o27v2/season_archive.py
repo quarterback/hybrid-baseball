@@ -479,6 +479,7 @@ _MULTI_STATE: dict[str, Any] = {
     "current_phase": "idle",             # idle|seeding|simulating|archiving|done|error
     "current_seed": None,
     "config_id": None,
+    "detail": "lite",                    # "lite"|"full" per-game sim detail
     "games_simmed_current": 0,           # games played so far in the active season
     "games_simmed_total": 0,             # cumulative across whole run
     "seasons": [],                       # per-season summaries (appended on archive)
@@ -488,8 +489,34 @@ _MULTI_STATE: dict[str, Any] = {
 
 def multi_season_status() -> dict[str, Any]:
     with _MULTI_LOCK:
-        return {k: (list(v) if isinstance(v, list) else v)
+        snap = {k: (list(v) if isinstance(v, list) else v)
                 for k, v in _MULTI_STATE.items()}
+    # Derive throughput + ETA so the dashboard can show live progress.
+    games_per_sec = 0.0
+    eta_seconds: int | None = None
+    started = snap.get("started_at")
+    total_done = snap.get("games_simmed_total", 0) or 0
+    if started and total_done > 0:
+        try:
+            end = (snap.get("finished_at")
+                   and _dt.datetime.fromisoformat(snap["finished_at"])) \
+                  or _dt.datetime.utcnow()
+            elapsed = (end - _dt.datetime.fromisoformat(started)).total_seconds()
+            if elapsed > 0:
+                games_per_sec = round(total_done / elapsed, 2)
+                seasons_left = max(0, (snap.get("target_seasons", 0) or 0)
+                                   - (snap.get("completed_seasons", 0) or 0))
+                done_seasons = snap.get("completed_seasons", 0) or 0
+                if games_per_sec > 0 and done_seasons > 0 and seasons_left > 0:
+                    avg_games_per_season = total_done / done_seasons
+                    eta_seconds = int(
+                        (avg_games_per_season * seasons_left) / games_per_sec
+                    )
+        except (ValueError, TypeError):
+            pass
+    snap["games_per_sec"] = games_per_sec
+    snap["eta_seconds"] = eta_seconds
+    return snap
 
 
 def _state_update(**kw) -> None:
@@ -510,6 +537,7 @@ def _run_multi_season_thread(
     n_seasons: int,
     base_seed: int,
     config_id: str,
+    detail: str = "lite",
 ) -> None:
     """Loop body — never raises out of the thread."""
     from o27v2.league import seed_league
@@ -550,7 +578,7 @@ def _run_multi_season_thread(
             cur = start_date
             while cur <= end_date:
                 step_to = min(end_date, cur + _dt.timedelta(days=14))
-                simulate_through(step_to.isoformat())
+                simulate_through(step_to.isoformat(), detail=detail)
                 _tick_games_simmed()
                 cur = step_to + _dt.timedelta(days=1)
 
@@ -571,7 +599,7 @@ def _run_multi_season_thread(
                 target = get_last_scheduled_date()
                 if target is None or target == prev_target:
                     break
-                simulate_through(target)
+                simulate_through(target, detail=detail)
                 _tick_games_simmed()
                 prev_target = target
 
@@ -627,9 +655,18 @@ def start_multi_season(
     n_seasons: int,
     base_seed: int = 42,
     config_id: str = "30teams",
+    detail: str = "lite",
 ) -> tuple[bool, str]:
-    """Spawn the runner thread. Returns (started, message). N is clamped 1-10."""
+    """Spawn the runner thread. Returns (started, message). N is clamped 1-10.
+
+    `detail` ("lite"|"full") is forwarded to the per-game sim. Defaults to
+    "lite" — multi-season runs only keep end-of-season snapshots, so the
+    per-PA logs / play-by-play text are discarded on the next reset anyway;
+    skipping those writes is a free speedup with no effect on the archived
+    standings / leaders.
+    """
     n_seasons = max(1, min(int(n_seasons), 10))
+    detail = "full" if detail == "full" else "lite"
     with _MULTI_LOCK:
         if _MULTI_STATE.get("running"):
             return False, "A multi-season run is already in progress."
@@ -644,6 +681,7 @@ def start_multi_season(
             "current_phase": "starting",
             "current_seed": None,
             "config_id": config_id,
+            "detail": detail,
             "games_simmed_current": 0,
             "games_simmed_total": 0,
             "seasons": [],
@@ -651,8 +689,9 @@ def start_multi_season(
         })
     t = threading.Thread(
         target=_run_multi_season_thread,
-        args=(n_seasons, base_seed, config_id),
+        args=(n_seasons, base_seed, config_id, detail),
         daemon=True,
     )
     t.start()
-    return True, f"Started multi-season run for {n_seasons} season(s)."
+    mode_label = "fast" if detail == "lite" else "full-detail"
+    return True, f"Started {mode_label} multi-season run for {n_seasons} season(s)."
