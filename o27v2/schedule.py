@@ -739,6 +739,30 @@ def generate_schedule(
                 f"(expected {games_per_team} each). Check tier_order, "
                 f"tier_schedule_pairs, and per-pair counts in config."
             )
+    elif (config or {}).get("schedule_mode") == "independent":
+        # Peer-universe mode: each major league plays a fully self-contained
+        # season — no interleague games. We pair within each league's teams
+        # only (honouring that league's intra/inter-division weighting), then
+        # concatenate. Every league lays onto the SAME calendar, so the
+        # leagues run concurrently. Player movement between leagues happens
+        # off the field (transfers / offseason), not via cross-league games.
+        league_map = {t["id"]: t.get("league") for t in teams}
+        by_league: dict[str, list[int]] = defaultdict(list)
+        for tid in team_ids:
+            by_league[league_map.get(tid)].append(tid)
+        directed = []
+        for lg, ids in by_league.items():
+            if len(ids) < 2:
+                continue
+            if len(ids) % 2 != 0:
+                raise ValueError(
+                    f"League {lg!r} has {len(ids)} teams — each independent "
+                    f"league needs an even team count for balanced scheduling."
+                )
+            sub_div = {tid: div_map.get(tid) for tid in ids}
+            directed += _generate_pairings(
+                ids, games_per_team, sub_div, intra_w, inter_w, rng
+            )
     else:
         directed = _generate_pairings(
             team_ids, games_per_team, div_map, intra_w, inter_w, rng
