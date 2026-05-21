@@ -6998,6 +6998,34 @@ def api_sim_multi_season_status():
     return jsonify(multi_season_status())
 
 
+@app.route("/api/history/presim", methods=["POST"])
+def api_history_presim():
+    """Start a carry-forward pre-sim history run in the background. Builds a
+    fresh league and plays N consecutive seasons with the same franchises,
+    aging rosters between seasons. The /seasons page polls
+    /api/history/presim/status for progress."""
+    from o27v2.season_archive import start_history
+    data = request.get_json(silent=True) or {}
+    n         = int(data.get("n", 5))
+    base_seed = int(data.get("seed", 42))
+    config_id = (data.get("config_id") or "30teams").strip()
+    if "fast" in data:
+        detail = "lite" if data.get("fast") else "full"
+    else:
+        detail = "lite" if (data.get("detail") or "lite") == "lite" else "full"
+    if config_id not in get_league_configs():
+        return jsonify({"ok": False, "error": f"unknown config: {config_id}"}), 400
+    started, msg = start_history(n, base_seed=base_seed, config_id=config_id,
+                                 detail=detail)
+    return jsonify({"ok": started, "message": msg}), (202 if started else 409)
+
+
+@app.route("/api/history/presim/status")
+def api_history_presim_status():
+    from o27v2.season_archive import history_status
+    return jsonify(history_status())
+
+
 @app.route("/api/season/promote-relegate", methods=["POST"])
 def api_season_promote_relegate():
     """Run the tiered-config promotion/relegation pass.
@@ -7323,12 +7351,31 @@ def season_detail(season_id: int):
             r["division"] or "—", []
         ).append(r)
 
+    # "Stars of the Season" — pull the rank-1 leader from a few headline
+    # categories so the page opens with the season's standout players, not
+    # just category tables. Each entry is the top row already stored by the
+    # leader snapshot (no extra query).
+    def _top(by_cat: dict, category: str) -> dict | None:
+        rows = by_cat.get(category) or []
+        return rows[0] if rows else None
+
+    stars = {
+        "avg": _top(bat_by_cat, "avg"),
+        "hr":  _top(bat_by_cat, "hr"),
+        "rbi": _top(bat_by_cat, "rbi"),
+        "ops": _top(bat_by_cat, "ops"),
+        "wins": _top(pit_by_cat, "w"),
+        "era":  _top(pit_by_cat, "werra"),
+        "k":    _top(pit_by_cat, "k"),
+    }
+
     return _serve(
         "season_detail.html",
         season=season,
         leagues=leagues,
         batting=bat_by_cat,
         pitching=pit_by_cat,
+        stars=stars,
     )
 
 
