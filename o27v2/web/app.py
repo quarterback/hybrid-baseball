@@ -6699,6 +6699,116 @@ def new_league_post():
     return redirect(url_for("index"))
 
 
+# ---------------------------------------------------------------------------
+# Peer-universe builder. Lets the user author an interoperable world of
+# several co-equal, fully-independent major leagues — each its own size,
+# locale and playing style — and seed it. Saved as a first-class config
+# preset so it works everywhere (dashboard, pre-sim history, etc.).
+# ---------------------------------------------------------------------------
+
+_BUILTIN_CONFIG_IDS = {
+    "8teams", "12teams", "16teams", "24teams", "30teams", "36teams",
+    "56teams_tiered", "international", "custom",
+}
+
+
+def _universe_style_options():
+    from o27v2.league import style_profile_label
+    keys = ["balanced", "npb", "dominican", "european", "caribbean", "athletic"]
+    return [{"key": k, "label": style_profile_label(k)} for k in keys]
+
+
+def _universe_locale_options():
+    from o27v2.league import get_name_regions, get_name_region_presets
+    regions = [{"id": rid, "label": (meta.get("label") or rid), "group": "Region"}
+               for rid, meta in sorted(get_name_regions().items())]
+    presets = [{"id": pid, "label": (meta.get("label") or pid), "group": "Preset (blend)"}
+               for pid, meta in get_name_region_presets().items()]
+    return presets + regions
+
+
+@app.route("/universe/new", methods=["GET"])
+def universe_new_get():
+    return _serve("universe_new.html",
+                  style_options=_universe_style_options(),
+                  locale_options=_universe_locale_options())
+
+
+@app.route("/universe/new", methods=["POST"])
+def universe_new_post():
+    import os as _os, re as _re, json as _json
+    from o27v2.league import build_universe_config, _CONFIGS_DIR, seed_league
+    from o27v2.schedule import seed_schedule
+    from o27v2.season_archive import set_active_league_meta, multi_season_status
+    from flask import flash
+
+    if multi_season_status().get("running"):
+        flash("A multi-season run is in progress — wait for it to finish.", "error")
+        return redirect(url_for("universe_new_get"))
+
+    raw_id = (request.form.get("universe_id") or "").strip().lower()
+    uid = _re.sub(r"[^a-z0-9_]", "", raw_id.replace("-", "_").replace(" ", "_"))
+    if not uid:
+        flash("Universe needs an id (letters, numbers, underscores).", "error")
+        return redirect(url_for("universe_new_get"))
+    if uid in _BUILTIN_CONFIG_IDS:
+        flash(f"'{uid}' is a built-in config id — pick another.", "error")
+        return redirect(url_for("universe_new_get"))
+
+    names     = request.form.getlist("lg_name")
+    teams     = request.form.getlist("lg_teams")
+    divisions = request.form.getlist("lg_divisions")
+    styles    = request.form.getlist("lg_style")
+    locales   = request.form.getlist("lg_locale")
+    leagues = []
+    for i, nm in enumerate(names):
+        if not (nm or "").strip():
+            continue
+        leagues.append({
+            "name":      nm.strip(),
+            "teams":     int(teams[i]) if i < len(teams) and teams[i] else 0,
+            "divisions": int(divisions[i]) if i < len(divisions) and divisions[i] else 1,
+            "style":     (styles[i] if i < len(styles) else "") or "",
+            "locale":    (locales[i] if i < len(locales) else "") or "",
+        })
+
+    try:
+        cfg = build_universe_config(
+            universe_id=uid,
+            label=(request.form.get("label") or None),
+            leagues=leagues,
+            games_per_team=int(request.form.get("games_per_team", 60) or 60),
+            season_days=int(request.form.get("season_days", 150) or 150),
+            season_year=int(request.form.get("season_year", 2026) or 2026),
+            gender=(request.form.get("gender", "male") or "male"),
+        )
+    except (ValueError, TypeError) as e:
+        flash(f"Universe configuration error: {e}", "error")
+        return redirect(url_for("universe_new_get"))
+
+    # Persist as a first-class preset so it's reusable everywhere.
+    path = _os.path.join(_CONFIGS_DIR, f"{uid}.json")
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            _json.dump(cfg, fh, indent=2)
+    except OSError as e:
+        flash(f"Could not save universe config: {e}", "error")
+        return redirect(url_for("universe_new_get"))
+
+    # Create a new save and seed the universe (mirrors /new-league).
+    rng_seed = int(request.form.get("rng_seed", 42) or 42)
+    from o27v2 import saves as _saves
+    save_name = (request.form.get("league_name") or "").strip() or (cfg["label"])
+    _saves.new_save(save_name, uid, rng_seed)
+    db.init_db()
+    seed_league(rng_seed=rng_seed, config_id=uid)
+    seed_schedule(rng_seed=rng_seed, config_id=uid)
+    set_active_league_meta(rng_seed, uid)
+    flash(f"Built universe '{cfg['label']}' — {len(leagues)} leagues, "
+          f"{cfg['team_count']} teams.", "info")
+    return redirect(url_for("index"))
+
+
 @app.route("/league/edit", methods=["GET"])
 def league_edit_get():
     """Rename leagues and divisions. Lists the distinct league/division

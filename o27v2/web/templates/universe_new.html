@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Build a Universe{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Build a Peer-League Universe</h2>
+    <div class="text-secondary small" style="max-width:780px;line-height:1.5">
+      Several co-equal major leagues in one world (the basketball-universe model) — each its own
+      size, home region and playing style. Leagues run <strong>fully independently</strong>
+      (no interleague games); players cross over via transfers and the offseason. Each league's
+      style sets the talent the generator produces, so the leagues play measurably different
+      baseball without any rule changes.
+    </div>
+  </div>
+  <a class="btn btn-sm btn-secondary" href="{{ url_for('new_league_get') }}">← New league</a>
+</div>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for cat, m in msgs %}
+  <div class="alert alert-{{ 'danger' if cat=='error' else cat }} py-2">{{ m }}</div>
+  {% endfor %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('universe_new_post') }}">
+  <div class="dense mb-3" style="padding:14px 16px">
+    <div class="panel-title">Universe</div>
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small mb-0">Universe id</label>
+        <input name="universe_id" class="form-control form-control-sm" style="width:160px"
+               placeholder="my_universe" required>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0">Label</label>
+        <input name="label" class="form-control form-control-sm" style="width:240px"
+               placeholder="My World">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0">Games/team</label>
+        <input type="number" name="games_per_team" value="60" min="2" class="form-control form-control-sm" style="width:90px">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0">Season days</label>
+        <input type="number" name="season_days" value="150" min="10" class="form-control form-control-sm" style="width:90px">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0">Year</label>
+        <input type="number" name="season_year" value="2026" class="form-control form-control-sm" style="width:90px">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0">Seed</label>
+        <input type="number" name="rng_seed" value="42" class="form-control form-control-sm" style="width:90px">
+      </div>
+    </div>
+  </div>
+
+  <div class="dense mb-3" style="padding:14px 16px">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="panel-title mb-0">Leagues</div>
+      <button type="button" id="add-league" class="btn btn-sm btn-outline-primary">+ Add league</button>
+    </div>
+    <div class="text-secondary small mb-2">
+      Each league needs an <strong>even</strong> team count (for a balanced schedule) divisible by its division count.
+    </div>
+    <table class="table table-sm dense-table mb-0" id="league-table">
+      <thead><tr>
+        <th>League name</th>
+        <th class="num">Teams</th>
+        <th class="num">Divisions</th>
+        <th>Style (talent profile)</th>
+        <th>Home region (names)</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="league-rows"></tbody>
+    </table>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Build &amp; play universe</button>
+  <span class="text-secondary small ms-2">Creates a new save and seeds the world.</span>
+</form>
+
+<template id="league-row-tpl">
+  <tr>
+    <td><input name="lg_name" class="form-control form-control-sm" placeholder="O27 MLB"></td>
+    <td><input name="lg_teams" type="number" min="2" step="2" value="6" class="form-control form-control-sm" style="width:80px"></td>
+    <td><input name="lg_divisions" type="number" min="1" value="1" class="form-control form-control-sm" style="width:70px"></td>
+    <td>
+      <select name="lg_style" class="form-select form-select-sm">
+        {% for s in style_options %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+      </select>
+    </td>
+    <td>
+      <select name="lg_locale" class="form-select form-select-sm">
+        <option value="">(default mix)</option>
+        {% for o in locale_options %}<option value="{{ o.id }}">{{ o.label }} — {{ o.group }}</option>{% endfor %}
+      </select>
+    </td>
+    <td><button type="button" class="btn btn-sm btn-link text-danger p-0 rm-league">Remove</button></td>
+  </tr>
+</template>
+
+<script>
+(function () {
+  var rows = document.getElementById('league-rows');
+  var tpl  = document.getElementById('league-row-tpl');
+  function addRow(preset) {
+    var node = tpl.content.cloneNode(true);
+    var tr = node.querySelector('tr');
+    if (preset) {
+      tr.querySelector('[name=lg_name]').value = preset.name || '';
+      tr.querySelector('[name=lg_teams]').value = preset.teams || 6;
+      if (preset.style)  tr.querySelector('[name=lg_style]').value = preset.style;
+      if (preset.locale) tr.querySelector('[name=lg_locale]').value = preset.locale;
+    }
+    tr.querySelector('.rm-league').addEventListener('click', function () {
+      tr.remove();
+    });
+    rows.appendChild(node);
+  }
+  document.getElementById('add-league').addEventListener('click', function () { addRow(); });
+  // Seed with a couple of starter rows so the form isn't empty.
+  [
+    {name: 'O27 MLB', teams: 8, style: 'dominican', locale: 'us'},
+    {name: 'O27 NPB', teams: 6, style: 'npb', locale: 'east_asia'},
+  ].forEach(addRow);
+})();
+</script>
+{% endblock %}
