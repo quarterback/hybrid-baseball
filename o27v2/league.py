@@ -235,6 +235,107 @@ def build_custom_config(
     }
 
 
+def build_universe_config(
+    *,
+    universe_id: str,
+    label: str | None,
+    leagues: list[dict],
+    games_per_team: int = 90,
+    season_days: int = 150,
+    season_year: int = 2026,
+    season_start_month: int = 4,
+    season_start_day: int = 1,
+    all_star_break_month: int = 7,
+    all_star_break_day: int = 13,
+    all_star_break_days: int = 4,
+    gender: str = "male",
+    level: str = "MLB",
+) -> dict:
+    """Build a peer-universe config: several co-equal, fully-independent
+    major leagues in one world, each with its own size, locale and playing
+    style. Players move between them off the field (transfers / offseason),
+    never via interleague games.
+
+    `leagues` is an ordered list of dicts:
+        {name, teams, divisions=1, style="", locale=""}
+      * style  — a key from _STYLE_PROFILES (or "" for balanced)
+      * locale — a region/preset id from data/names/regions.json (or "")
+
+    Validates each league's team math and that style/locale ids exist.
+    Raises ValueError with a human-readable message on bad input.
+    """
+    if not leagues:
+        raise ValueError("A universe needs at least one league.")
+    seen_names: set[str] = set()
+    league_specs: list[dict] = []
+    style_profiles: dict[str, str] = {}
+    name_regions: dict[str, str] = {}
+    valid_regions = set(get_name_regions().keys()) | set(get_name_region_presets().keys())
+
+    for i, lg in enumerate(leagues):
+        name = (lg.get("name") or "").strip()
+        if not name:
+            raise ValueError(f"League #{i + 1} needs a name.")
+        if name in seen_names:
+            raise ValueError(f"Duplicate league name: {name!r}.")
+        seen_names.add(name)
+        teams = int(lg.get("teams", 0) or 0)
+        ndiv  = max(1, int(lg.get("divisions", 1) or 1))
+        if teams < 2:
+            raise ValueError(f"League {name!r} needs at least 2 teams.")
+        if teams % 2 != 0:
+            raise ValueError(
+                f"League {name!r} has {teams} teams — each independent league "
+                f"needs an EVEN team count for a balanced schedule."
+            )
+        if teams % ndiv != 0:
+            raise ValueError(
+                f"League {name!r}: {teams} teams don't divide evenly into "
+                f"{ndiv} divisions."
+            )
+        style  = (lg.get("style") or "").strip()
+        locale = (lg.get("locale") or "").strip()
+        if style and style not in _STYLE_PROFILES:
+            raise ValueError(f"League {name!r}: unknown style {style!r}.")
+        if locale and locale not in valid_regions:
+            raise ValueError(f"League {name!r}: unknown locale {locale!r}.")
+        league_specs.append({"name": name, "teams": teams, "divisions": ndiv})
+        if style:
+            style_profiles[name] = style
+        if locale:
+            name_regions[name] = locale
+
+    team_count = sum(s["teams"] for s in league_specs)
+    g = (gender or "male").lower()
+    if g not in ("male", "female", "mixed"):
+        raise ValueError(f"Gender must be male/female/mixed (got {gender!r}).")
+
+    return {
+        "id":                     universe_id,
+        "label":                  label or f"Universe — {len(league_specs)} leagues",
+        "team_count":             team_count,
+        "level":                  level,
+        "games_per_team":         int(games_per_team),
+        "season_days":            int(season_days),
+        "leagues":                [s["name"] for s in league_specs],
+        "schedule_mode":          "independent",
+        "league_specs":           league_specs,
+        "style_profiles":         style_profiles,
+        "name_regions":           name_regions,
+        # Within a league, split games evenly between same-division and
+        # cross-division opponents.
+        "intra_division_weight":  0.5,
+        "inter_division_weight":  0.5,
+        "season_year":            int(season_year),
+        "season_start_month":     int(season_start_month),
+        "season_start_day":       int(season_start_day),
+        "all_star_break_month":   int(all_star_break_month),
+        "all_star_break_day":     int(all_star_break_day),
+        "all_star_break_days":    int(all_star_break_days),
+        "gender":                 g,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Division assignment helpers
 # ---------------------------------------------------------------------------
@@ -282,6 +383,45 @@ def _assign_tiered_divisions(
     for slot, orig_idx in enumerate(indices):
         tier = tier_order[slot // teams_per_tier]
         assignments[orig_idx] = (tier, tier)
+    return assignments
+
+
+def _assign_universe_divisions(
+    selected: list[dict], league_specs: list[dict], rng: random.Random
+) -> list[tuple[str, str]]:
+    """Build a (league, division) assignment for a peer-universe config.
+
+    `league_specs` is an ordered list of {name, teams, divisions}. Teams are
+    shuffled once (variety across seeds) then dealt into each league in turn
+    up to that league's `teams` count, and round-robin'd across its
+    divisions. Leagues may be DIFFERENT sizes — that's the whole point of a
+    peer universe (an O27-MLB of 24 beside an O27-KBO of 10). Division names
+    are '<League> A/B/C…' (or just the league name when a league has one
+    division).
+    """
+    total = sum(int(s["teams"]) for s in league_specs)
+    if total != len(selected):
+        raise ValueError(
+            f"Universe league_specs sum to {total} teams but {len(selected)} "
+            f"were selected — these must match (team_count)."
+        )
+    indices = list(range(len(selected)))
+    rng.shuffle(indices)
+
+    assignments: list[tuple[str, str]] = [("", "")] * len(selected)
+    cursor = 0
+    for spec in league_specs:
+        name = spec["name"]
+        n    = int(spec["teams"])
+        ndiv = max(1, int(spec.get("divisions", 1)))
+        for j in range(n):
+            orig_idx = indices[cursor + j]
+            if ndiv > 1:
+                div = f"{name} {chr(65 + (j % ndiv))}"
+            else:
+                div = name
+            assignments[orig_idx] = (name, div)
+        cursor += n
     return assignments
 
 
@@ -2362,7 +2502,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         rng.shuffle(remaining)
         selected += remaining[: n_teams - len(selected)]
 
-    if config.get("schedule_mode") == "tiered":
+    if config.get("league_specs"):
+        div_map = _assign_universe_divisions(selected, config["league_specs"], rng)
+    elif config.get("schedule_mode") == "tiered":
         div_map = _assign_tiered_divisions(selected, config, rng)
     else:
         div_map = _assign_geographic_divisions(selected, config)

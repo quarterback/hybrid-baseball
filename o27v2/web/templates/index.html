@@ -160,13 +160,9 @@
     <div class="col-auto">
       <label class="form-label" for="ms-config">Config</label>
       <select id="ms-config" class="form-select form-select-sm">
-        <option value="8teams">8 teams</option>
-        <option value="12teams">12 teams</option>
-        <option value="16teams">16 teams</option>
-        <option value="24teams">24 teams</option>
-        <option value="30teams" selected>30 teams</option>
-        <option value="36teams">36 teams</option>
-        <option value="international">International (6 styles)</option>
+        {% for c in league_configs %}
+        <option value="{{ c.id }}"{% if c.id == '30teams' %} selected{% endif %}>{{ c.label }}</option>
+        {% endfor %}
       </select>
     </div>
     <div class="col-auto">
