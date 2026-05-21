@@ -88,13 +88,20 @@ def load(source: str) -> dict[str, Any]:
 
 
 def _default_db_path() -> str:
-    return os.environ.get(
-        "O27V2_DB_PATH",
-        os.path.join(
+    # Honour an explicit O27V2_DB_PATH override (tests / single-DB deploys);
+    # otherwise read whichever save is currently active so the almanac stays
+    # consistent with the rest of the site.
+    env = os.environ.get("O27V2_DB_PATH")
+    if env:
+        return env
+    try:
+        from o27v2 import db as _v2db
+        return _v2db._resolve_path()
+    except Exception:
+        return os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
             "o27v2", "o27v2.db",
-        ),
-    )
+        )
 
 
 def _looks_like_sqlite(path: str) -> bool:

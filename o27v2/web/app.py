@@ -282,11 +282,18 @@ def inject_currency_rates():
 
 @app.context_processor
 def inject_sim_state():
+    try:
+        from o27v2 import saves as _saves
+        active = _saves.get_active_save()
+        save_name = active["name"] if active else None
+    except Exception:
+        save_name = None
     return {"sim": {
         "current_date":   get_current_sim_date(),
         "all_star_date":  get_all_star_date(),
         "last_date":      get_last_scheduled_date(),
         "season_complete": is_season_complete(),
+        "save_name":      save_name,
     }}
 
 
@@ -6429,7 +6436,12 @@ def new_league_post():
             return redirect(url_for("new_league_get"))
         meta_cfg_id = "custom"
 
-    db.drop_all()
+    # Create a NEW save file and switch to it instead of wiping the active
+    # league — old leagues stay on disk and remain reachable from /saves.
+    from o27v2 import saves as _saves
+    league_name = (request.form.get("league_name") or "").strip() \
+        or f"Save {len(_saves.list_saves()) + 1}"
+    _saves.new_save(league_name, meta_cfg_id, rng_seed)
     db.init_db()
     seed_league(rng_seed=rng_seed,
                 config_id=meta_cfg_id if custom_cfg is None else "custom",
@@ -6488,6 +6500,148 @@ def new_league_post():
         app.logger.exception("verify_opponent_balance failed: %s", e)
 
     return redirect(url_for("index"))
+
+
+# ---------------------------------------------------------------------------
+# Save slots (multiple concurrent leagues)
+# ---------------------------------------------------------------------------
+
+def _saves_runner_busy() -> str | None:
+    """Return a user-facing message if the multi-season runner is active, in
+    which case switching/deleting the active DB out from under it is unsafe."""
+    from o27v2.season_archive import multi_season_status
+    status = multi_season_status()
+    if status.get("running"):
+        cur = status.get("current_season_index") or 0
+        tgt = status.get("target_seasons") or 0
+        return (f"Multi-season test sim is running (season {cur}/{tgt}). "
+                f"Wait for it to finish before changing the active league.")
+    return None
+
+
+@app.route("/saves", methods=["GET"])
+def saves_index():
+    from o27v2 import saves as _saves
+    rows = _saves.list_saves()
+    active_id = _saves.get_active_id()
+    return _serve("saves.html", saves=rows, active_id=active_id)
+
+
+@app.route("/saves/<save_id>/activate", methods=["POST"])
+def saves_activate(save_id):
+    from flask import flash
+    from o27v2 import saves as _saves
+    busy = _saves_runner_busy()
+    if busy:
+        flash(busy, "error")
+        return redirect(url_for("saves_index"))
+    try:
+        _saves.set_active(save_id)
+    except KeyError:
+        flash("That save no longer exists.", "error")
+        return redirect(url_for("saves_index"))
+    db.init_db()           # idempotent: ensure schema/WAL on the now-active file
+    resync_sim_clock()
+    s = _saves.get_active_save()
+    flash(f"Switched to “{s['name']}”." if s else "League switched.", "info")
+    return redirect(url_for("saves_index"))
+
+
+@app.route("/saves/<save_id>/rename", methods=["POST"])
+def saves_rename(save_id):
+    from flask import flash
+    from o27v2 import saves as _saves
+    new_name = (request.form.get("name") or "").strip()
+    if not new_name:
+        flash("Name cannot be empty.", "error")
+        return redirect(url_for("saves_index"))
+    try:
+        _saves.rename_save(save_id, new_name)
+        flash("League renamed.", "info")
+    except KeyError:
+        flash("That save no longer exists.", "error")
+    return redirect(url_for("saves_index"))
+
+
+@app.route("/saves/<save_id>/delete", methods=["POST"])
+def saves_delete(save_id):
+    from flask import flash
+    from o27v2 import saves as _saves
+    if not request.form.get("confirm"):
+        flash("Delete not confirmed.", "error")
+        return redirect(url_for("saves_index"))
+    busy = _saves_runner_busy()
+    if busy:
+        flash(busy, "error")
+        return redirect(url_for("saves_index"))
+    was_active = (_saves.get_active_id() == save_id)
+    try:
+        _saves.delete_save(save_id)
+    except KeyError:
+        flash("That save no longer exists.", "error")
+        return redirect(url_for("saves_index"))
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("saves_index"))
+    if was_active:
+        db.init_db()
+        resync_sim_clock()
+    flash("League deleted.", "info")
+    return redirect(url_for("saves_index"))
+
+
+@app.route("/saves/<save_id>/export", methods=["GET"])
+def saves_export(save_id):
+    import tempfile
+    from flask import flash, send_file, after_this_request
+    from o27v2 import saves as _saves
+    s = next((x for x in _saves.list_saves() if x["id"] == save_id), None)
+    if not s:
+        flash("That save no longer exists.", "error")
+        return redirect(url_for("saves_index"))
+    fd, tmp = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    _saves.snapshot_to(save_id, tmp)
+
+    @after_this_request
+    def _cleanup(response):
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return response
+
+    return send_file(tmp, as_attachment=True,
+                     download_name=f"{_saves.slug(s['name'])}.o27save.db",
+                     mimetype="application/x-sqlite3")
+
+
+@app.route("/saves/import", methods=["POST"])
+def saves_import():
+    import tempfile
+    from flask import flash
+    from o27v2 import saves as _saves
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("No file uploaded.", "error")
+        return redirect(url_for("saves_index"))
+    name = (request.form.get("name") or "").strip() \
+        or os.path.splitext(os.path.basename(f.filename))[0] or "Imported league"
+    fd, tmp = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        f.save(tmp)
+        if not _saves.is_valid_save_db(tmp):
+            flash("That file is not a valid O27 league save.", "error")
+            return redirect(url_for("saves_index"))
+        _saves.register_existing_file(tmp, name)
+        flash(f"Imported “{name}”. Activate it from the list to play.", "info")
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    return redirect(url_for("saves_index"))
 
 
 # ---------------------------------------------------------------------------

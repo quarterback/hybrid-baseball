@@ -9,14 +9,36 @@ import os
 import sqlite3
 from typing import Any
 
-_DB_PATH = os.environ.get(
-    "O27V2_DB_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "o27v2.db"),
-)
+_DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "o27v2.db")
+_ENV_DB_PATH = os.environ.get("O27V2_DB_PATH")
+# _DB_PATH is the "single fixed DB" path. When it differs from the frozen
+# default — either because O27V2_DB_PATH is set, or a test reassigned it at
+# runtime — path resolution bypasses the saves registry entirely. Otherwise
+# the active save (o27v2/saves.py) drives which file every connection opens.
+_DB_PATH = _ENV_DB_PATH or _DEFAULT_DB_PATH
+_DB_PATH_OVERRIDDEN = _ENV_DB_PATH is not None
+
+
+def _resolve_path() -> str:
+    """Path of the SQLite file every connection should open.
+
+    Explicit override (O27V2_DB_PATH env var, or a runtime reassignment of
+    _DB_PATH) wins and selects a single fixed DB — this is what the test
+    suite relies on. With no override, resolve the active save's file; if no
+    save is active yet (fresh box, pre-migration) fall back to the default.
+    """
+    if _DB_PATH_OVERRIDDEN or _DB_PATH != _DEFAULT_DB_PATH:
+        return _DB_PATH
+    try:
+        from o27v2 import saves
+        active = saves.active_db_path()
+    except Exception:
+        active = None
+    return active or _DB_PATH
 
 
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_resolve_path())
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     # synchronous=NORMAL is per-connection (not persisted like journal_mode).
@@ -623,21 +645,31 @@ CREATE INDEX IF NOT EXISTS idx_ballots_season_cat
 
 def _wipe_if_stale() -> None:
     """
-    Detect a pre-Phase-8 database and wipe it so seed_league() can reseed.
+    Detect a genuinely pre-Phase-8 database and wipe it so seed_league() can
+    reseed with the current schema.
 
-    Signal: any pitcher row (is_pitcher=1) with a blank pitcher_role is
-    guaranteed to be from before Phase 8 — generate_players() always sets
-    pitcher_role='workhorse' for pitchers.  If such rows exist, every player
-    in the DB lacks archetype/role/modifier data and the whole roster must be
-    regenerated.
+    Signal: a populated players table where NO player carries an archetype.
+    Pre-Phase-8 rosters predate the archetype column (added as '' by the
+    ALTER migration above), whereas every modern seed classifies its batters
+    (and jokers) with non-empty archetypes. A DB with players but zero
+    archetypes is therefore stale.
 
-    A fresh empty DB (tables don't exist yet) is silently ignored.
+    NOTE: the previous signal (blank pitcher_role) is no longer valid —
+    Task #65 stopped persisting pitcher_role entirely (roles are derived live
+    at game time), so it is '' for every pitcher in a healthy modern league.
+    Using it here caused init_db() — which runs on every server boot — to
+    drop_all() perfectly good leagues, i.e. "data disappears on its own".
+
+    A fresh empty DB (tables don't exist yet, or no players) is left alone.
     """
     try:
-        row = fetchone(
-            "SELECT COUNT(*) AS n FROM players WHERE is_pitcher = 1 AND pitcher_role = ''"
+        total = fetchone("SELECT COUNT(*) AS n FROM players")
+        if not total or total["n"] == 0:
+            return
+        archetyped = fetchone(
+            "SELECT COUNT(*) AS n FROM players WHERE COALESCE(archetype, '') != ''"
         )
-        if row and row["n"] > 0:
+        if archetyped and archetyped["n"] == 0:
             drop_all()
     except Exception:
         pass  # tables don't exist yet — nothing to wipe
@@ -653,7 +685,7 @@ def init_db() -> None:
       3. executescript(SCHEMA) — create missing tables.
     """
     # Step 0: ensure parent directory exists (e.g. /data on fly volumes)
-    db_dir = os.path.dirname(_DB_PATH)
+    db_dir = os.path.dirname(_resolve_path())
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
 

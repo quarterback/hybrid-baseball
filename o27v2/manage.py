@@ -339,6 +339,35 @@ def cmd_tune(n_games: int | None = None, config_id: str = "30teams"):
 
 def cmd_runserver(config_id: str = "30teams"):
     from o27v2.web.app import app
+    from o27v2 import saves
+
+    # One-time migration: if there are no save slots yet but a legacy
+    # single-DB file with real data exists, adopt it as the first save so
+    # the user loses nothing. Skipped when O27V2_DB_PATH pins a fixed DB
+    # (single-DB / test deployments bypass the saves registry entirely).
+    if not os.environ.get("O27V2_DB_PATH") and not saves.load_registry()["saves"]:
+        # Candidate legacy locations: the resolved default (local dev) and the
+        # old fly path /data/o27v2.db (sibling of the saves dir) used before
+        # O27V2_DB_PATH was dropped from fly.toml.
+        candidates = [
+            db._resolve_path(),
+            os.path.join(os.path.dirname(saves.saves_dir()), "o27v2.db"),
+        ]
+        adopted = False
+        for legacy in candidates:
+            if os.path.exists(legacy) and saves.is_valid_save_db(legacy):
+                sid = saves.register_existing_file(legacy, "Save 1")
+                saves.set_active(sid)
+                print(f"Adopted existing league as 'Save 1' from {legacy} ({sid}).")
+                adopted = True
+                break
+        if not adopted:
+            # Fresh install: create an empty active slot so the league seeded
+            # below lives in a registered save (visible/switchable in /saves)
+            # rather than the unregistered fallback file.
+            sid = saves.new_save("Save 1", config_id, 0)
+            print(f"Created initial save slot 'Save 1' ({sid}).")
+
     db.init_db()
     existing = db.fetchone("SELECT COUNT(*) as n FROM teams")
     if not existing or existing["n"] == 0:

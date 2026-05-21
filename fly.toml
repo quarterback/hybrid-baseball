@@ -6,7 +6,11 @@ primary_region = "iad"
 
 [env]
   PORT = "8080"
-  O27V2_DB_PATH = "/data/o27v2.db"
+  # Each saved league is its own SQLite file under this directory on the
+  # persistent volume, tracked by saves/registry.json. Do NOT set
+  # O27V2_DB_PATH here — that pins a single fixed DB and bypasses the saves
+  # registry. The startup migration adopts any legacy /data/o27v2.db as "Save 1".
+  O27V2_SAVES_DIR = "/data/saves"
 
 [[mounts]]
   source = "o27v2_data"

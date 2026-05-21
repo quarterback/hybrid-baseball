@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Saved Leagues{% endblock %}
+{% block content %}
+<h2 class="mb-1">Saved Leagues</h2>
+<p class="text-secondary small mb-3">
+  Keep multiple leagues side by side. The <strong>active</strong> league is the
+  one shown everywhere else on the site. Creating a new league no longer wipes
+  the others — switch between them here, or export one as a backup file.
+</p>
+
+<div class="dense mb-4">
+  <div class="panel-title">Your Leagues</div>
+  {% if saves %}
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th></th>
+      <th>Name</th>
+      <th>Config</th>
+      <th class="num">Seed</th>
+      <th>Created</th>
+      <th>Last played</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      {% for s in saves %}
+      <tr {% if s.id == active_id %}style="background:var(--bg-warm)"{% endif %}>
+        <td>
+          {% if s.id == active_id %}
+            <span class="strk-l" style="font-weight:700">● ACTIVE</span>
+          {% else %}
+            <form method="post" action="{{ url_for('saves_activate', save_id=s.id) }}" class="d-inline">
+              <button class="btn btn-sm btn-outline-primary" type="submit">Activate</button>
+            </form>
+          {% endif %}
+        </td>
+        <td style="font-weight:600">{{ s.name }}</td>
+        <td>{{ s.config_id or '—' }}</td>
+        <td class="num">{{ s.seed if s.seed is not none else '—' }}</td>
+        <td class="small text-secondary">{{ (s.created_at or '')[:10] }}</td>
+        <td class="small text-secondary">{{ (s.last_played_at or '')[:10] }}</td>
+        <td class="text-nowrap">
+          <a href="{{ url_for('saves_export', save_id=s.id) }}" class="btn btn-sm btn-outline-secondary">Export</a>
+          <button class="btn btn-sm btn-outline-secondary"
+                  onclick="document.getElementById('rename-{{ s.id }}').classList.toggle('d-none')">Rename</button>
+          <form method="post" action="{{ url_for('saves_delete', save_id=s.id) }}" class="d-inline"
+                onsubmit="return confirm('Delete “{{ s.name }}” permanently? This cannot be undone.')">
+            <input type="hidden" name="confirm" value="1">
+            <button class="btn btn-sm btn-outline-danger" type="submit"
+                    {% if saves|length <= 1 %}disabled title="Can't delete the only league"{% endif %}>Delete</button>
+          </form>
+          <form id="rename-{{ s.id }}" method="post" action="{{ url_for('saves_rename', save_id=s.id) }}"
+                class="d-none mt-1">
+            <input type="text" name="name" value="{{ s.name }}" class="form-control form-control-sm d-inline-block" style="max-width:220px">
+            <button class="btn btn-sm btn-primary" type="submit">Save name</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-secondary small mb-0">
+    No saved leagues yet. Create one from
+    <a href="{{ url_for('new_league_get') }}">+ League</a>, or import a backup below.
+  </p>
+  {% endif %}
+</div>
+
+<div class="dense" style="max-width:560px">
+  <div class="panel-title">Import a league</div>
+  <p class="text-secondary small mb-2">
+    Upload a <code>.o27save.db</code> file exported from this site. It is added
+    as a new league; activate it from the list to play.
+  </p>
+  <form method="post" action="{{ url_for('saves_import') }}" enctype="multipart/form-data"
+        class="d-flex flex-wrap gap-2 align-items-end">
+    <div>
+      <label class="form-label small mb-1">League file</label>
+      <input type="file" name="file" accept=".db,.sqlite,application/x-sqlite3" required
+             class="form-control form-control-sm">
+    </div>
+    <div>
+      <label class="form-label small mb-1">Name (optional)</label>
+      <input type="text" name="name" placeholder="from filename" class="form-control form-control-sm">
+    </div>
+    <button class="btn btn-sm btn-primary" type="submit">Import</button>
+  </form>
+</div>
+{% endblock %}

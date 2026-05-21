@@ -59,27 +59,24 @@ def test_init_db_wipes_stale_and_reseeds(stale_db):
 
         league.seed_league(rng_seed=7)
 
-        # Pitchers must have workhorse/committee role
+        # Pitchers seed cleanly. pitcher_role is intentionally NOT stored
+        # (Task #65: roles are derived live at game time), so the column is
+        # blank for every pitcher in a healthy modern league.
         pitchers = db.fetchall("SELECT pitcher_role FROM players WHERE is_pitcher = 1")
         assert len(pitchers) > 0, "No pitchers seeded"
-        assert all(p["pitcher_role"] == "workhorse" for p in pitchers), (
-            "All P-position players must be 'workhorse'; got "
-            + str([p["pitcher_role"] for p in pitchers])
+        assert all((p["pitcher_role"] or "") == "" for p in pitchers), (
+            "pitcher_role is live-derived and must not be persisted; got "
+            + str(sorted({p["pitcher_role"] for p in pitchers}))
         )
 
-        # Jokers must have archetype and modifiers
-        jokers = db.fetchall(
-            "SELECT archetype, hard_contact_delta, hr_weight_bonus FROM players WHERE is_joker = 1"
+        # Reseed produced a modern, archetyped roster — the invariant
+        # _wipe_if_stale() now keys on (a populated players table where at
+        # least one player carries an archetype). Were this empty, init_db()
+        # would treat the league as stale and wipe it on the next boot.
+        archetyped = db.fetchone(
+            "SELECT COUNT(*) AS n FROM players WHERE COALESCE(archetype, '') != ''"
         )
-        assert len(jokers) > 0, "No jokers seeded"
-        archetypes_seen = {j["archetype"] for j in jokers}
-        assert archetypes_seen == {"power", "speed", "contact"}, (
-            f"Expected all three archetypes; got {archetypes_seen}"
-        )
-        power_jokers = [j for j in jokers if j["archetype"] == "power"]
-        assert all(j["hard_contact_delta"] > 0 for j in power_jokers), (
-            "Power jokers should have positive hard_contact_delta"
-        )
+        assert archetyped["n"] > 0, "reseeded roster must carry archetypes"
 
     finally:
         db._DB_PATH = original_path

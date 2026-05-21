@@ -787,6 +787,10 @@
 <nav class="topbar navbar navbar-expand-xl">
   <div class="container-fluid p-0" style="max-width:1500px">
     <a class="navbar-brand" href="{{ url_for('index') }}">⚾ O27</a>
+    {% if sim.save_name %}
+    <a href="{{ url_for('saves_index') }}" class="nav-link py-0 px-2"
+       style="font-size:.8rem;align-self:center" title="Active league — click to switch">{{ sim.save_name }}</a>
+    {% endif %}
     <button class="navbar-toggler order-2" type="button"
             data-bs-toggle="collapse" data-bs-target="#topbarNav"
             aria-controls="topbarNav" aria-expanded="false"
@@ -842,6 +846,7 @@
         <a class="nav-link {% if request.endpoint in ('youth_view','youth_team_view','youth_tournament_view') %}active{% endif %}" href="{{ url_for('youth_view') }}">Youth</a>
         <a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a>
         <a class="nav-link {% if request.path.startswith('/almanac') %}active{% endif %}" href="/almanac/" title="Live stats almanac">Almanac</a>
+        <a class="nav-link {% if request.endpoint == 'saves_index' %}active{% endif %}" href="{{ url_for('saves_index') }}" title="Switch, save, export or import leagues">Saves</a>
         <a class="nav-link accent {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">+ League</a>
       </div>
     </div>
