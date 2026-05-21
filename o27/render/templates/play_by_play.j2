@@ -78,6 +78,8 @@
   {{ joker_name }} takes the field for {{ sub_out_name }}{% if sub_position %} at {{ sub_position }}{% endif %}.
 {% elif event_type == "tactical_def_swap" %}
   {{ sub_in_name }} comes in for {{ sub_out_name }} (defensive swap).
+{% elif event_type == "phase_transition_swap" %}
+  {{ batting_team_name }} switches to its defensive lineup: {{ sub_in_list }} in for {{ sub_out_list }}.
 {% elif event_type == "declaration" %}
   >> {{ declaring_team_name }} DECLARES SECONDS at out {{ declared_at }} ({{ declare_score_for }}-{{ declare_score_against }}).
 {% endif %}

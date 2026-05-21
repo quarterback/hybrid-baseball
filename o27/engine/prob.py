@@ -2172,6 +2172,16 @@ class ProbabilisticProvider:
                 "player_out": j2f["player_out"],
             }
 
+        # Wholesale offensive→defensive UNIT swap at the phase boundary.
+        # First-batting team only, late in their offensive phase, fires at
+        # most once per game. Swaps in a unit of defensive specialists
+        # (size scales with mgr_platoon_aggression) before the team fields.
+        # Checked before the single-player tactical_def_swap so the bigger
+        # re-tool gets first claim on the bench.
+        unit_swaps = mgr.should_phase_transition_swap(state, rng=self.rng)
+        if unit_swaps:
+            return {"type": "phase_transition_swap", "swaps": unit_swaps}
+
         # Mid-batting-half offensive→defensive swap. Road team only
         # (state.half == "top"), once the lineup has cycled at least
         # once. Pulls a slugger and brings in a defensive specialist

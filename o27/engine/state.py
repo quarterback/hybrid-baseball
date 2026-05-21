@@ -443,6 +443,11 @@ class Team:
     # super-innings and Declared Seconds.
     bench: list = field(default_factory=list)
     substituted_out: set = field(default_factory=set)
+    # Phase-transition swap — fires at most once per game. The first-batting
+    # team swaps in a defensive unit late in their offensive phase so the
+    # better gloves are in place when they take the field. Reset per game
+    # via dataclass defaults.
+    phase_swap_done: bool = False
 
     def current_batter(self) -> Player:
         """Get the current batter from the active lineup."""

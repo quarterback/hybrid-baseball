@@ -63,7 +63,7 @@ _NON_PA_EVENTS = frozenset(
      "stolen_base_attempt", "pickoff_attempt", "balk",
      "wild_pitch", "passed_ball",
      "defensive_sub", "tactical_def_swap", "pinch_runner",
-     "joker_to_field"}
+     "joker_to_field", "phase_transition_swap"}
 )
 
 # Maps internal hit_type strings → human-readable prose for the transcript.
@@ -955,6 +955,10 @@ class Renderer:
             "sub_out_name": "",
             "sub_position": "",
             "sub_base": "",
+            # Phase-transition swap — comma-joined name lists for the
+            # multi-player line.
+            "sub_in_list": "",
+            "sub_out_list": "",
         }
 
         # --- Event-specific overrides ---
@@ -1178,6 +1182,32 @@ class Renderer:
                     stats_obj.entry_type = "DEF"
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+
+        elif etype == "phase_transition_swap":
+            # Wholesale offensive→defensive unit swap. Provider intent:
+            # {swaps: [{player_in: Player, player_out: Player}, ...]}.
+            # Build comma-joined incoming/outgoing name lists for the
+            # single multi-player line, and tag every incoming player DEF.
+            d["display_type"] = "PHASE TRANSITION"
+            swaps = event.get("swaps") or []
+            ins, outs = [], []
+            inning = state_after.outs // 3 + 1
+            for sw in swaps:
+                player_in  = sw.get("player_in")
+                player_out = sw.get("player_out")
+                if player_in is not None:
+                    ins.append(player_in.name)
+                    stats_obj = self._get_stats(player_in)
+                    if stats_obj.entry_type in ("", "starter"):
+                        stats_obj.entry_type = "DEF"
+                    if player_out is not None:
+                        stats_obj.replaced_player_id = str(player_out.player_id)
+                    if not stats_obj.entered_inning:
+                        stats_obj.entered_inning = inning
+                if player_out is not None:
+                    outs.append(player_out.name)
+            d["sub_in_list"]  = ", ".join(ins)
+            d["sub_out_list"] = ", ".join(outs)
 
         elif etype == "declaration":
             # Declared Seconds — surface a play-by-play line via the template.
