@@ -1,5 +1,6 @@
 *.db
 *.db-shm
 *.db-wal
+saves/
 __pycache__/
 *.py[cod]

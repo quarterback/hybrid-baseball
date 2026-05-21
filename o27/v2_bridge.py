@@ -33,8 +33,8 @@ _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 def is_active() -> bool:
-    """True iff the o27v2 DB exists and has at least one team row."""
-    if not os.path.exists(_DB_PATH):
+    """True iff the active o27v2 save exists and has at least one team row."""
+    if not os.path.exists(_v2db._resolve_path()):
         return False
     try:
         row = _v2db.fetchone("SELECT COUNT(*) AS n FROM teams")
