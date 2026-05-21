@@ -96,7 +96,64 @@
       Est. value {{ player_est_value | money }}
     </span>
     {% endif %}
+    {% if current_league %}
+    <span class="badge" style="background:var(--bg-warm);color:var(--text);border:1px solid var(--border-soft)"
+          title="The league this player currently plays in{% if current_style_label %}, and its playing-style profile{% endif %}.">
+      {{ current_league }}{% if current_style_label %} · {{ current_style_label }}{% endif %}
+    </span>
+    {% endif %}
   </div>
+
+  {% if transfer_leagues %}
+  <div class="mt-2 pt-2" style="border-top:1px dashed var(--border-soft)">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <span class="text-secondary small" title="Move this player to another team — including a league with a different playing style — and watch how his stats change in a new environment.">
+        Promote / transfer to:
+      </span>
+      <select id="transfer-team" class="form-select form-select-sm" style="width:auto;max-width:320px">
+        <option value="">Choose a team…</option>
+        {% for lg in transfer_leagues %}
+        <optgroup label="{{ lg.league }}{% if lg.style_label %} — {{ lg.style_label }}{% endif %}">
+          {% for tm in lg.teams %}
+          <option value="{{ tm.id }}">{{ tm.abbrev }} — {{ tm.name }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+      <button id="transfer-btn" type="button" class="btn btn-sm btn-primary" disabled>Transfer</button>
+      <span id="transfer-msg" class="small text-secondary"></span>
+    </div>
+  </div>
+  <script>
+  (function () {
+    var sel = document.getElementById('transfer-team');
+    var btn = document.getElementById('transfer-btn');
+    var msg = document.getElementById('transfer-msg');
+    if (!sel || !btn) return;
+    sel.addEventListener('change', function () { btn.disabled = !sel.value; });
+    btn.addEventListener('click', async function () {
+      var tid = parseInt(sel.value, 10);
+      if (!tid) return;
+      var label = sel.options[sel.selectedIndex].text;
+      if (!confirm('Transfer {{ player.name }} to ' + label + '?')) return;
+      btn.disabled = true; msg.textContent = 'Transferring…';
+      try {
+        var r = await fetch('/api/player/{{ player.id }}/transfer', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({team_id: tid}),
+        });
+        var data = await r.json();
+        if (!data.ok) throw new Error(data.error || 'transfer failed');
+        msg.innerHTML = '<span class="strk-w">' + data.message + ' Reloading…</span>';
+        setTimeout(function () { window.location.reload(); }, 900);
+      } catch (err) {
+        msg.innerHTML = '<span class="strk-l">Failed: ' + err.message + '</span>';
+        btn.disabled = false;
+      }
+    });
+  })();
+  </script>
+  {% endif %}
   {# Headline stat strip — large numbers, monospace, b-ref feel #}
   {% if bt_totals or pt_totals %}
   <div class="d-flex flex-wrap gap-4 mt-3 pt-3" style="border-top:1px solid var(--border-soft)">

@@ -166,10 +166,39 @@ def _draw_delta(rng: _random.Random, mu: float, sigma: float = _DEV_SIGMA,
     return rng.gauss(mu, sigma)
 
 
+# Per-season development-trajectory bias: a league's playing style shapes
+# not just the talent it generates but how players grow within it. We reuse
+# the same per-attribute _STYLE_PROFILES bundle (in 20-95 grade points) used
+# at generation, scaled WAY down into a per-season μ nudge — so a Nippon-style
+# arm gains command a touch faster than velocity year over year, and over a
+# career the trajectories diverge. Kept small so it shapes, not dominates.
+_STYLE_DEV_SCALE = 0.05   # ±12 grade-point profile → ±0.6 μ per season
+
+
+def _style_dev_bias(style_profile: Optional[str]) -> dict[str, float]:
+    """Map a league style-profile key to a small per-attribute development
+    μ nudge dict. Empty/unknown → no bias."""
+    if not style_profile:
+        return {}
+    try:
+        from o27v2.league import _STYLE_PROFILES
+    except Exception:
+        return {}
+    prof = _STYLE_PROFILES.get(style_profile)
+    if not prof:
+        return {}
+    return {attr: pts * _STYLE_DEV_SCALE for attr, pts in prof.items()}
+
+
 def _develop_player(p: dict, org_strength: int, rng: _random.Random,
-                    is_pitcher: bool) -> tuple[dict, int]:
+                    is_pitcher: bool,
+                    style_dev: Optional[dict[str, float]] = None) -> tuple[dict, int]:
     """Apply one season of development to a player. Returns
-    (updated_attribute_dict, new_age). Caller writes back to DB."""
+    (updated_attribute_dict, new_age). Caller writes back to DB.
+
+    `style_dev` (optional) is a per-attribute μ nudge derived from the
+    player's league style profile, so league culture imprints on career
+    trajectories (see _style_dev_bias)."""
     new_age = (p.get("age") or 27) + 1
     mu_age  = _mu_age(new_age)
     mu_org  = _mu_org(org_strength)
@@ -192,6 +221,8 @@ def _develop_player(p: dict, org_strength: int, rng: _random.Random,
         # Per-attribute curve modulation: Power peaks earlier than
         # Contact, Speed falls off fastest, Stamina holds longest.
         mu_attr = _mu_for_attr(attr, mu_total)
+        if style_dev:
+            mu_attr += style_dev.get(attr, 0.0)
         delta = _draw_delta(rng, mu_attr, grit_mod=grit_mod)
         new_val = round(cur + delta)
         # Clamp to [20, 95] — Elite+ tier is reachable here, that's
@@ -255,14 +286,19 @@ def _fresh_ethic_roll(rng: _random.Random) -> int:
 
 
 def develop_players_for_team(team_id: int, org_strength: int,
-                             rng: _random.Random) -> int:
+                             rng: _random.Random,
+                             style_dev: Optional[dict[str, float]] = None) -> int:
     """Run the dev pass for every player on a team. Returns the count
-    of players updated."""
+    of players updated.
+
+    `style_dev` (optional) is the league's development-trajectory bias,
+    applied to every player on the team so league culture shapes careers."""
     rows = db.fetchall("SELECT * FROM players WHERE team_id = ?", (team_id,))
     n = 0
     for p in rows:
         is_pitcher = bool(p.get("is_pitcher"))
-        updated, new_age = _develop_player(p, org_strength, rng, is_pitcher)
+        updated, new_age = _develop_player(p, org_strength, rng, is_pitcher,
+                                           style_dev=style_dev)
         if not updated and (p.get("age") or 0) == new_age:
             continue
         cols   = list(updated.keys()) + ["age"]
@@ -332,10 +368,16 @@ def run_offseason(season: int, rng_seed: Optional[int] = None) -> dict:
     forward via the stock-market formula. Returns a summary dict."""
     rng = _random.Random(rng_seed if rng_seed is not None else 0)
 
-    teams = db.fetchall("SELECT id, abbrev, org_strength FROM teams")
+    teams = db.fetchall(
+        "SELECT id, abbrev, org_strength, COALESCE(style_profile,'') AS style_profile FROM teams")
     team_summary: dict[str, int] = {}
+    _bias_cache: dict[str, dict[str, float]] = {}
     for t in teams:
-        n = develop_players_for_team(t["id"], t["org_strength"] or 50, rng)
+        sp = t.get("style_profile") or ""
+        if sp not in _bias_cache:
+            _bias_cache[sp] = _style_dev_bias(sp)
+        n = develop_players_for_team(
+            t["id"], t["org_strength"] or 50, rng, style_dev=_bias_cache[sp])
         team_summary[t["abbrev"]] = n
 
     fa_count = develop_free_agents(rng)

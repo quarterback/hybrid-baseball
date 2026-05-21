@@ -5098,6 +5098,32 @@ def player_detail(player_id: int):
         pt_totals["wpa"]    = wp["wpa"]    if wp else None
         pt_totals["li_avg"] = wp["li_avg"] if wp else None
 
+    # Transfer / promote targets: every other team, grouped by league with
+    # its style profile, so the user can move this player into a different
+    # statistical environment and watch how he performs. Lets you, e.g.,
+    # promote a contact-league standout into the power-leaning Majors.
+    from o27v2.league import style_profile_label
+    _team_rows = db.fetchall(
+        "SELECT id, abbrev, name, league, COALESCE(style_profile,'') AS style_profile "
+        "FROM teams ORDER BY league, abbrev"
+    )
+    transfer_leagues: dict[str, dict] = {}
+    for tr in _team_rows:
+        if tr["id"] == player["team_id"]:
+            continue
+        grp = transfer_leagues.setdefault(tr["league"] or "—", {
+            "league": tr["league"] or "—",
+            "style": tr["style_profile"],
+            "style_label": style_profile_label(tr["style_profile"]),
+            "teams": [],
+        })
+        grp["teams"].append(tr)
+    cur_team = db.fetchone(
+        "SELECT league, COALESCE(style_profile,'') AS style_profile FROM teams WHERE id = ?",
+        (player["team_id"],),
+    ) or {}
+    current_style_label = style_profile_label(cur_team.get("style_profile"))
+
     return _serve(
         "player.html",
         player=player,
@@ -5110,7 +5136,51 @@ def player_detail(player_id: int):
         handedness_splits=handedness_splits,
         baselines=baselines,
         player_est_value=player_est_value,
+        transfer_leagues=list(transfer_leagues.values()),
+        current_league=cur_team.get("league") or "",
+        current_style_label=current_style_label,
     )
+
+
+@app.route("/api/player/<int:player_id>/transfer", methods=["POST"])
+def api_player_transfer(player_id: int):
+    """Move a player to another team (and league). Body: {"team_id": <int>}.
+
+    A direct roster move — sets the player's team and marks him active —
+    so you can drop a player into a different style environment and watch
+    his stats there. Logs the move to the transactions table when present."""
+    data = request.get_json(silent=True) or {}
+    target_team_id = data.get("team_id")
+    if target_team_id is None:
+        return jsonify({"ok": False, "error": "team_id required"}), 400
+    player = db.fetchone("SELECT id, name, team_id FROM players WHERE id = ?", (player_id,))
+    if not player:
+        return jsonify({"ok": False, "error": "player not found"}), 404
+    target = db.fetchone(
+        "SELECT id, abbrev, name, league FROM teams WHERE id = ?", (target_team_id,))
+    if not target:
+        return jsonify({"ok": False, "error": "target team not found"}), 404
+    from_team_id = player["team_id"]
+    db.execute(
+        "UPDATE players SET team_id = ?, is_active = 1 WHERE id = ?",
+        (target["id"], player_id),
+    )
+    # Best-effort transaction log (table shape varies across saves).
+    try:
+        from datetime import date as _date
+        db.execute(
+            "INSERT INTO transactions (date, type, player_id, from_team_id, to_team_id, note) "
+            "VALUES (?, 'transfer', ?, ?, ?, ?)",
+            (_date.today().isoformat(), player_id, from_team_id, target["id"],
+             f"Manual transfer to {target['abbrev']} ({target['league']})"),
+        )
+    except Exception:
+        pass
+    return jsonify({
+        "ok": True,
+        "message": f"{player['name']} transferred to {target['name']} ({target['league']}).",
+        "team_id": target["id"],
+    })
 
 
 # ---------------------------------------------------------------------------
