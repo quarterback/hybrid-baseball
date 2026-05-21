@@ -12,6 +12,17 @@
       </div>
     </div>
 
+    <div class="panel mb-3" style="padding:12px 14px">
+      <div class="small">
+        <strong>Just want to edit the current league?</strong> (no reset)
+        <a href="{{ url_for('league_edit_get') }}">✎ Rename leagues &amp; divisions</a>
+        · to rename a team, change its city/coordinates, or reshape its
+        ballpark, open the team from the
+        <a href="{{ url_for('teams') }}">Teams</a> page and click
+        <em>Edit</em>.
+      </div>
+    </div>
+
     {% if current_team_count > 0 %}
     <div class="alert mb-3 d-flex align-items-start gap-2"
          style="background:#fff4dc;border:1px solid #d49d3a;color:#5a3f00;border-radius:var(--radius);padding:10px 14px;font-size:.88rem">
