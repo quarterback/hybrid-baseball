@@ -65,11 +65,21 @@
   Pickoff attempt — runner safe.
 {% endif %}
 {% elif event_type == "joker_insertion" %}
-  JOKER: {{ batting_team_name }} inserts {{ joker_name }} (joker) into lineup.
+  {{ batting_team_name }} sends in joker {{ joker_name }} for an extra plate appearance (joker #{{ joker_count }}).
 {% elif event_type == "pitching_change" %}
   PITCHING CHANGE: {{ old_pitcher_name }} exits ({{ old_spell_count }} BF this spell).
 {% elif event_type == "pinch_hit" %}
-  PINCH HIT: {{ replacement_name }} bats for {{ replaced_name }}.
+  {{ replacement_name }} pinch-hits for {{ replaced_name }}.
+{% elif event_type == "defensive_sub" %}
+  {{ sub_in_name }} replaces {{ sub_out_name }}{% if sub_position %} at {{ sub_position }}{% endif %}.
+{% elif event_type == "pinch_runner" %}
+  {{ sub_in_name }} pinch-runs for {{ sub_out_name }} at {{ sub_base }}.
+{% elif event_type == "joker_to_field" %}
+  {{ joker_name }} takes the field for {{ sub_out_name }}{% if sub_position %} at {{ sub_position }}{% endif %}.
+{% elif event_type == "tactical_def_swap" %}
+  {{ sub_in_name }} comes in for {{ sub_out_name }} (defensive swap).
+{% elif event_type == "phase_transition_swap" %}
+  {{ batting_team_name }} switches to its defensive lineup: {{ sub_in_list }} in for {{ sub_out_list }}.
 {% elif event_type == "declaration" %}
   >> {{ declaring_team_name }} DECLARES SECONDS at out {{ declared_at }} ({{ declare_score_for }}-{{ declare_score_against }}).
 {% endif %}

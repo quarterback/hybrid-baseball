@@ -63,7 +63,7 @@ _NON_PA_EVENTS = frozenset(
      "stolen_base_attempt", "pickoff_attempt", "balk",
      "wild_pitch", "passed_ball",
      "defensive_sub", "tactical_def_swap", "pinch_runner",
-     "joker_to_field"}
+     "joker_to_field", "phase_transition_swap"}
 )
 
 # Maps internal hit_type strings → human-readable prose for the transcript.
@@ -133,6 +133,9 @@ class Renderer:
         # boundary in _credit_pa_advancement; persisted by sim.py at game
         # end via the game_scoring_events table.
         self._scoring_log: list[dict] = []
+        # Per-game running count of joker insertions per batting team, keyed
+        # by team_id. Surfaced in the joker play-by-play line as a usage tally.
+        self._joker_insertions: dict[str, int] = {}
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -764,6 +767,20 @@ class Renderer:
                 return by_position[pos][0]
         return any_others[0] if any_others else None
 
+    def _resolve_player_name(self, state, player_id) -> str:
+        """Look up a player's display name by id across both teams' rosters.
+        Falls back to the id string if the player can't be found."""
+        if not player_id:
+            return ""
+        for team in (getattr(state, "visitors", None), getattr(state, "home", None)):
+            if team is None:
+                continue
+            getter = getattr(team, "get_player", None)
+            p = getter(player_id) if getter else None
+            if p is not None:
+                return p.name
+        return str(player_id)
+
     def _batter_intro(self, batter) -> str:
         tag = " [P]" if batter.is_pitcher else ""
         return f"--- Now batting: {batter.name}{tag} ---"
@@ -923,6 +940,7 @@ class Renderer:
             "steal_to": "",
             "pickoff_base": "",
             "joker_name": "",
+            "joker_count": 0,
             "batting_team_name": ctx["batting_team_name"],
             "fielding_team_name": ctx["fielding_team_name"],
             "new_pitcher_name": "",
@@ -930,6 +948,17 @@ class Renderer:
             "old_spell_count": ctx["spell_count"],
             "replacement_name": "",
             "replaced_name": batter.name,
+            # Substitution display fields (defensive_sub / pinch_runner /
+            # joker_to_field / tactical_def_swap). All default empty so
+            # StrictUndefined is satisfied even on non-sub events.
+            "sub_in_name": "",
+            "sub_out_name": "",
+            "sub_position": "",
+            "sub_base": "",
+            # Phase-transition swap — comma-joined name lists for the
+            # multi-player line.
+            "sub_in_list": "",
+            "sub_out_list": "",
         }
 
         # --- Event-specific overrides ---
@@ -1015,6 +1044,7 @@ class Renderer:
 
         elif etype == "pinch_hit":
             replacement = event.get("replacement")
+            d["display_type"] = "PINCH HITTER"
             d["replacement_name"] = replacement.name if replacement else "?"
             # Mark the replacement as a PH and record who they came in for.
             # The replaced player is the team's CURRENT batter at this point
@@ -1041,6 +1071,17 @@ class Renderer:
             # shapes here for back-compat.
             joker = event.get("joker")
             inning = state_after.outs // 3 + 1
+            # Plumb the incoming joker's name into the template (the bug:
+            # this was never set, so the log read "inserts  (joker)").
+            # The provider intent carries a Player under "joker"; the legacy
+            # state.events form carries a "joker_name" string instead.
+            d["joker_name"] = joker.name if joker is not None else event.get("joker_name", "")
+            # Per-game running joker-insertion count for this batting team.
+            # O27 jokers are uncapped by design (any number per game), so this
+            # is a usage tally for readability, NOT a cap denominator.
+            tid = ctx["batting_team_id"]
+            self._joker_insertions[tid] = self._joker_insertions.get(tid, 0) + 1
+            d["joker_count"] = self._joker_insertions[tid]
             if joker is not None:
                 stats_obj = self._get_stats(joker)
                 stats_obj.entry_type = "joker"
@@ -1072,10 +1113,15 @@ class Renderer:
             # intent — those keys are unused here.)
             player_in  = event.get("player_in")
             player_out = event.get("player_out")
+            d["display_type"] = "DEFENSIVE SUB"
             if player_in is not None:
+                d["sub_in_name"] = player_in.name
                 stats_obj = self._get_stats(player_in)
                 stats_obj.entry_type = "DEF"
                 if player_out is not None:
+                    d["sub_out_name"] = player_out.name
+                    d["sub_position"] = (getattr(player_out, "game_position", "")
+                                         or getattr(player_out, "position", "") or "")
                     stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
@@ -1093,7 +1139,12 @@ class Renderer:
             # outgoing id by inspecting the substitution_log).
             runner_in = event.get("runner_in")
             base_idx  = event.get("base_idx")
+            d["display_type"] = "PINCH RUNNER"
+            base_names = ["1B", "2B", "3B"]
+            if base_idx is not None and 0 <= base_idx < 3:
+                d["sub_base"] = base_names[base_idx]
             if runner_in is not None:
+                d["sub_in_name"] = runner_in.name
                 stats_obj = self._get_stats(runner_in)
                 stats_obj.entry_type = "PR"
                 if not stats_obj.entered_inning:
@@ -1105,6 +1156,8 @@ class Renderer:
                     if (rec.kind == "pinch_run"
                             and rec.in_player_id == runner_in.player_id):
                         stats_obj.replaced_player_id = str(rec.out_player_id)
+                        d["sub_out_name"] = self._resolve_player_name(
+                            state_after, rec.out_player_id)
                         break
 
         elif etype == "tactical_def_swap":
@@ -1116,7 +1169,11 @@ class Renderer:
             # pinch_hit). Mark entry_type="DEF" so the row reads as a
             # defensive insertion rather than a PH.
             replacement = event.get("replacement")
+            d["display_type"] = "DEFENSIVE SWAP"
+            # Outgoing player is the currently scheduled batter (same as PH).
+            d["sub_out_name"] = batter.name
             if replacement is not None:
+                d["sub_in_name"] = replacement.name
                 stats_obj = self._get_stats(replacement)
                 # tactical_def_swap is a defensive intent; the player is
                 # in the lineup permanently from here on, just like PH,
@@ -1125,6 +1182,32 @@ class Renderer:
                     stats_obj.entry_type = "DEF"
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+
+        elif etype == "phase_transition_swap":
+            # Wholesale offensive→defensive unit swap. Provider intent:
+            # {swaps: [{player_in: Player, player_out: Player}, ...]}.
+            # Build comma-joined incoming/outgoing name lists for the
+            # single multi-player line, and tag every incoming player DEF.
+            d["display_type"] = "PHASE TRANSITION"
+            swaps = event.get("swaps") or []
+            ins, outs = [], []
+            inning = state_after.outs // 3 + 1
+            for sw in swaps:
+                player_in  = sw.get("player_in")
+                player_out = sw.get("player_out")
+                if player_in is not None:
+                    ins.append(player_in.name)
+                    stats_obj = self._get_stats(player_in)
+                    if stats_obj.entry_type in ("", "starter"):
+                        stats_obj.entry_type = "DEF"
+                    if player_out is not None:
+                        stats_obj.replaced_player_id = str(player_out.player_id)
+                    if not stats_obj.entered_inning:
+                        stats_obj.entered_inning = inning
+                if player_out is not None:
+                    outs.append(player_out.name)
+            d["sub_in_list"]  = ", ".join(ins)
+            d["sub_out_list"] = ", ".join(outs)
 
         elif etype == "declaration":
             # Declared Seconds — surface a play-by-play line via the template.
@@ -1149,10 +1232,15 @@ class Renderer:
             # Provider intent: {joker: Player, player_out: Player}.
             joker      = event.get("joker")
             player_out = event.get("player_out")
+            d["display_type"] = "JOKER TO FIELD"
             if joker is not None:
+                d["joker_name"] = joker.name
                 stats_obj = self._get_stats(joker)
                 stats_obj.entry_type = "joker_field"
                 if player_out is not None:
+                    d["sub_out_name"] = player_out.name
+                    d["sub_position"] = (getattr(player_out, "game_position", "")
+                                         or getattr(player_out, "position", "") or "")
                     stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1

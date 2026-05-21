@@ -559,6 +559,14 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
         log += mgr.joker_to_field(state, event["joker"], event["player_out"])
         return log
 
+    if etype == "phase_transition_swap":
+        # Wholesale offensive→defensive unit swap (first-batting team,
+        # phase boundary). The applier mutates the lineup, stamps the
+        # one-way exit set, and appends its own typed event for the box
+        # score; here we just emit the play-by-play log lines.
+        log += mgr.phase_transition_swap(state, event["swaps"])
+        return log
+
     if etype == "tactical_def_swap":
         # Mid-batting-half offensive→defensive swap. Reuse pinch_hit
         # semantics (replace current scheduled batter, take the slot)

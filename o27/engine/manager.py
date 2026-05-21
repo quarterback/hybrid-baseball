@@ -1557,6 +1557,150 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
     return best_cand
 
 
+def should_phase_transition_swap(state: GameState, rng=None) -> Optional[list[dict]]:
+    """Wholesale offensive→defensive unit swap at the phase boundary.
+
+    The first-batting team, late in its offensive phase, swaps in a unit
+    of defensive specialists from the bench for its weakest-defense
+    regulars — one tactical move that re-tools the field before the team
+    has to defend. Distinct from `should_swap_offensive_for_defense`
+    (one player) and `should_defensive_sub` (fielding team, mid-defense).
+
+    Structural gates:
+      - Regulation half only (no super-innings).
+      - First-batting team only (they still have to field).
+      - Fires at most once per game (team.phase_swap_done).
+      - Late offensive phase (outs >= 18) so it lands near the boundary.
+      - Lineup must have cycled at least once.
+
+    The number of swaps and the firing likelihood scale with
+    mgr_platoon_aggression. Each swap must clear the per-candidate
+    leverage threshold, so a low-aggression skipper rarely swaps a full
+    unit while a platoon-heavy one re-tools several slots.
+
+    Returns a list of {'player_out': Player, 'player_in': Player} (one
+    entry per swap) or None.
+    """
+    if state.is_super_inning:
+        return None
+    if (state.first_batting_team is None
+            or state.batting_team is not state.first_batting_team):
+        return None
+    team = state.batting_team
+    if getattr(team, "phase_swap_done", False):
+        return None
+    if state.outs < 18:
+        return None
+    if team.lineup_cycle_number < 1:
+        return None
+
+    aggression = float(getattr(team, "mgr_platoon_aggression", 0.5) or 0.5)
+    # Max unit size scales with platoon aggression: 0.0–0.33 → 1,
+    # 0.33–0.66 → 2, 0.66+ → 3. The threshold check below still gates
+    # each individual swap, so this is a ceiling, not a quota.
+    max_swaps = 1 + int(aggression * 3)        # 1..3 (aggression in [0,1])
+    max_swaps = max(1, min(3, max_swaps))
+
+    # Bench: roster non-pitchers not in the lineup, still available, not jokers.
+    lineup = list(team.lineup)
+    lineup_ids = {pl.player_id for pl in lineup}
+    bench = [
+        pl for pl in team.roster
+        if not pl.is_pitcher
+        and pl.player_id not in lineup_ids
+        and team.is_available(pl.player_id)
+        and not _is_joker(pl)
+    ]
+    if not bench:
+        return None
+
+    # Candidate regulars to pull: non-pitcher, non-catcher, non-DH, weakest
+    # defense first. Catcher arm is a team-level stat; DH has no glove.
+    candidates_out = sorted(
+        [pl for pl in lineup
+         if not pl.is_pitcher
+         and (getattr(pl, "position", "") not in ("C", "DH"))],
+        key=lambda pl: float(getattr(pl, "defense", 0.5) or 0.5),
+    )
+
+    threshold = substitution_threshold(team)
+    swaps: list[dict] = []
+    used_in_ids: set = set()
+    for out_pl in candidates_out:
+        if len(swaps) >= max_swaps:
+            break
+        best_score = 0.0
+        best_cand: Optional[Player] = None
+        for cand in bench:
+            if cand.player_id in used_in_ids:
+                continue
+            s = score_substitution(state, cand, "pinch_field", out_pl)
+            if s > best_score:
+                best_score = s
+                best_cand = cand
+        if best_cand is not None and best_score >= threshold:
+            swaps.append({"player_out": out_pl, "player_in": best_cand})
+            used_in_ids.add(best_cand.player_id)
+
+    return swaps or None
+
+
+def phase_transition_swap(state: GameState, swaps: list[dict]) -> list[str]:
+    """Apply a wholesale offensive→defensive unit swap for the batting team.
+
+    Each entry replaces `player_out` in the batting team's lineup with
+    `player_in` at the same slot, inheriting the outgoing player's field
+    position. The outgoing players are stamped into the one-way exit set
+    (via _log_substitution). Emits a single phase_transition_swap event
+    carrying the full incoming/outgoing roster so the renderer can write
+    one multi-player line.
+    """
+    team = state.batting_team
+    applied: list[tuple[Player, Player]] = []
+    for sw in swaps:
+        player_out = sw.get("player_out")
+        player_in  = sw.get("player_in")
+        if player_out is None or player_in is None:
+            continue
+        if player_out not in team.lineup:
+            continue
+        if not team.is_available(player_in.player_id):
+            continue
+        idx = team.lineup.index(player_out)
+        team.lineup[idx] = player_in
+        if (not getattr(player_in, "game_position", "")
+                and getattr(player_out, "game_position", "")):
+            player_in.game_position = player_out.game_position
+        if player_in in team.bench:
+            team.bench.remove(player_in)
+        _log_substitution(
+            state,
+            kind="pinch_field",
+            team_id=team.team_id,
+            in_player_id=player_in.player_id,
+            out_player_id=player_out.player_id,
+            lineup_index=idx,
+            reason="phase_transition_swap",
+        )
+        applied.append((player_in, player_out))
+
+    if not applied:
+        return []
+
+    team.phase_swap_done = True
+    ins  = ", ".join(pi.name for pi, _ in applied)
+    outs = ", ".join(po.name for _, po in applied)
+    log = [f"  PHASE TRANSITION: {team.name} switches to its defensive "
+           f"lineup: {ins} in for {outs}."]
+    state.events.append({
+        "type": "phase_transition_swap",
+        "team_id": team.team_id,
+        "in_ids":  [pi.player_id for pi, _ in applied],
+        "out_ids": [po.player_id for _, po in applied],
+    })
+    return log
+
+
 def should_bunt(state: GameState, rng=None) -> Optional[dict]:
     """Manager-driven sacrifice bunt decision.
 
