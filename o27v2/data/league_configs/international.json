@@ -1,0 +1,40 @@
+{
+  "id": "international",
+  "label": "International Leagues (6 styles, 30 teams)",
+  "team_count": 30,
+  "level": "MLB",
+  "games_per_team": 80,
+  "season_days": 150,
+  "leagues": ["Nippon League", "Liga Dominicana", "European League", "Caribbean League", "Sahara League", "Oceania League"],
+  "divisions_per_league": 1,
+  "teams_per_division": 5,
+  "intra_division_weight": 0.0,
+  "inter_division_weight": 0.0,
+  "schedule_mode": "tiered",
+  "tier_order": ["Nippon League", "Liga Dominicana", "European League", "Caribbean League", "Sahara League", "Oceania League"],
+  "tier_in_league_games_per_pair": 20,
+  "tier_schedule_pairs": [],
+  "tier_cross_games_per_pair": 0,
+  "style_profiles": {
+    "Nippon League": "npb",
+    "Liga Dominicana": "dominican",
+    "European League": "european",
+    "Caribbean League": "caribbean",
+    "Sahara League": "athletic",
+    "Oceania League": "balanced"
+  },
+  "name_regions": {
+    "Nippon League": "east_asia",
+    "Liga Dominicana": "latin_america",
+    "European League": "europe_western",
+    "Caribbean League": "caribbean_cricket",
+    "Sahara League": {"africa": 0.45, "central_west_asia": 0.4, "africa_cricket": 0.15},
+    "Oceania League": {"anzac": 0.4, "pacific_islands": 0.25, "southeast_asia": 0.2, "malaysia": 0.15}
+  },
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
+}

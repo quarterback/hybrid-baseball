@@ -712,6 +712,112 @@ def _roll_org_grade(rng: random.Random) -> int:
     return max(20, min(95, rng.randint(lo, hi)))
 
 
+# ---------------------------------------------------------------------------
+# Playing-style profiles (mechanical league diversity).
+#
+# A style profile is a per-attribute additive bias (in 20-95 scout-grade
+# points) applied on TOP of org/team_shift at seed time. It rides the same
+# clamped `team_shift` path through `_roll_tier_grade`, so a contact-leaning
+# league genuinely generates higher-contact / lower-power players — the
+# engine and the fast-sim both read these grades, so the statistical
+# environment actually differs (not just names/parks).
+#
+# Biases are deliberately small (|b| <= 10) and roughly zero-sum per profile
+# so a styled league keeps internal parity — it skews the *shape* of play,
+# not the overall talent level. Keys map to the attribute names used by
+# `_make_hitter` / `_make_pitcher`. Selected per-league via a config's
+# optional `style_profiles` block; persisted on each teams row.
+# ---------------------------------------------------------------------------
+# Real-sport-inspired flavours. Each bundle carries BOTH hitter keys
+# (contact/power/eye/speed/baserunning/run_aggressiveness/defense/arm) and
+# pitcher keys (pitcher_skill≈stuff/velocity, command≈control, movement≈
+# groundball/HR-suppression) — `_make_hitter` and `_make_pitcher` each read
+# only the keys relevant to them. Because EVERY team in a league shares the
+# same profile, intra-league competitive parity is automatic regardless of
+# the bias — so the bundles are tuned to push the league's NET run
+# environment (the hitter-vs-pitcher interaction) in the intended direction,
+# not to be attribute-zero-sum. Validated by per-league HR/K/BB/SB divergence.
+_STYLE_PROFILES: dict[str, dict[str, int]] = {
+    # Nippon (NPB): contact-first hitters + command artists with lower
+    # velocity. NET → highest AVG, lowest K (both sides cut Ks), low HR.
+    "npb": {
+        "contact": 9, "eye": 4, "power": -12, "speed": -2,        # hitters
+        "command": 9, "pitcher_skill": -8, "movement": 5,         # pitchers
+    },
+    # Dominican: free-swinging sluggers vs. hard, fly-ball-prone arms.
+    # NET → most HR, most K, fewest walks. Three-true-outcome ball.
+    "dominican": {
+        "power": 13, "contact": -5, "eye": -11,                   # hitters
+        "pitcher_skill": 9, "command": -6, "movement": -9,        # pitchers
+    },
+    # European: patience + finesse. NET → highest BB/OBP, low HR, doubles
+    # over homers, low K, strong defense. Low-scoring, work-the-count ball.
+    # Pitching is command-and-deception (low stuff) so it doesn't rack up Ks.
+    "european": {
+        "eye": 13, "contact": 4, "power": -13, "defense": 5,      # hitters
+        "command": 10, "pitcher_skill": 0, "movement": 4,         # pitchers
+    },
+    # Caribbean / West Indies: athletic, action-oriented. NET → most SB &
+    # triples, high BABIP, contact over power.
+    "caribbean": {
+        "speed": 10, "baserunning": 10, "run_aggressiveness": 7,  # hitters
+        "contact": 5, "power": -5, "defense": 7, "arm": 5,
+        "pitcher_skill": -3, "movement": -3,                      # pitchers
+    },
+    # Athletic / academy: toolsy, high-ceiling, raw. Big power and speed
+    # and live arms, but undeveloped contact/discipline/command — boom-or-
+    # bust talent. NET → loud tools, lots of HR, lots of K, lots of SB.
+    # The "talent-discovery" flavour — raw ability outrunning polish.
+    "athletic": {
+        "power": 9, "speed": 9, "arm": 8, "baserunning": 7,       # hitters
+        "run_aggressiveness": 6, "contact": -5, "eye": -6,
+        "pitcher_skill": 8, "command": -7, "movement": -3,        # pitchers
+    },
+    # Balanced — explicit no-op so a config can name it without special-casing.
+    "balanced": {},
+}
+# Generic aliases (kept for backward-compat with earlier configs/saves).
+_STYLE_PROFILES["contact"]       = _STYLE_PROFILES["npb"]
+_STYLE_PROFILES["power"]         = _STYLE_PROFILES["dominican"]
+_STYLE_PROFILES["speed_defense"] = _STYLE_PROFILES["caribbean"]
+
+
+def resolve_name_region_weights(spec) -> dict | None:
+    """Resolve a per-league locale spec to region weights, reusing the
+    EXISTING name data. `spec` may be:
+      * a dict of {region_id: weight} (used as-is),
+      * a preset id from regions.json `presets`,
+      * a single region id from regions.json `regions` (pinned 100%).
+    Returns None when the spec is empty/unknown so callers can fall back."""
+    if not spec:
+        return None
+    if isinstance(spec, dict):
+        return spec
+    presets = get_name_region_presets()
+    if spec in presets:
+        return dict(presets[spec].get("weights", {}))
+    regions = get_name_regions()
+    if spec in regions:
+        return {spec: 1.0}
+    return None
+
+
+def style_profile_label(name: str | None) -> str:
+    """Human-readable label for a style profile key (UI badge)."""
+    return {
+        "npb":           "Nippon (contact / command)",
+        "dominican":     "Dominican (power / TTO)",
+        "european":      "European (discipline / OBP)",
+        "caribbean":     "Caribbean (speed / BABIP)",
+        "athletic":      "Academy (toolsy / high-ceiling)",
+        "contact":       "Contact / finesse",
+        "power":         "Power / TTO",
+        "speed_defense": "Speed & defense",
+        "balanced":      "Balanced",
+        "":              "",
+    }.get(name or "", (name or "").replace("_", " ").title())
+
+
 # Per-team org-strength: a 20-95 scout-grade team attribute, rolled
 # from the same _TALENT_TIERS distribution as individual player
 # attributes and then PERSISTED on the teams row (see seed_league()).
@@ -1275,6 +1381,7 @@ def _make_hitter(
     name: str,
     team_shift: int = 0,
     country: str = "",
+    style: dict[str, int] | None = None,
 ) -> dict:
     """Build one position-player dict with every attribute rolled
     independently against the talent-tier distribution (Task #65).
@@ -1287,16 +1394,17 @@ def _make_hitter(
     org skew higher and all players on a weak org skew lower. Set by
     `generate_players` once per team.
     """
-    def roll() -> int:
-        return _roll_tier_grade(rng, team_shift)
+    def roll(attr: str | None = None) -> int:
+        bias = style.get(attr, 0) if (style and attr) else 0
+        return _roll_tier_grade(rng, team_shift + bias)
 
-    skill_g  = roll()
-    speed_g  = roll()
+    skill_g  = roll("skill")
+    speed_g  = roll("speed")
     # Realism layer — independently tier-rolled so a hitter can be elite
     # power but average eye, etc. Drives distinct stat-line shapes.
-    contact_g  = roll()
-    power_g    = roll()
-    eye_g      = roll()
+    contact_g  = roll("contact")
+    power_g    = roll("power")
+    eye_g      = roll("eye")
     bats_roll  = _roll_bats(rng)
     # Spray tendency: base N(0.5, 0.12), nudged toward pull by power
     # (sluggers turn on the ball) and by LHB tendency. Clamped [0.05, 0.95].
@@ -1324,8 +1432,8 @@ def _make_hitter(
     # Defense layer — general glove + arm independently tier-rolled.
     # A great-glove no-bat archetype (low skill, elite defense) is a
     # real type in this sport.
-    defense_g  = roll()
-    arm_g      = roll()
+    defense_g  = roll("defense")
+    arm_g      = roll("arm")
 
     # Per-position sub-ratings. Strategy:
     # - Roll one "primary specialty" group at full tier
@@ -1419,8 +1527,8 @@ def _make_hitter(
         # Baserunning skill + aggressiveness, independent rolls. A smart
         # average-speed runner (high baserunning, mid speed) is just as
         # useful on the bases as a pure burner.
-        "baserunning":        roll(),
-        "run_aggressiveness": roll(),
+        "baserunning":        roll("baserunning"),
+        "run_aggressiveness": roll("run_aggressiveness"),
         # Phase 5e — work-ethic / work-habits. Both rolled from the same
         # 9-tier ladder (capped at 80 like every other seed-time
         # attribute). habit_cup starts at 0.5 (neutral).
@@ -1748,6 +1856,7 @@ def _make_pitcher(
     name: str,
     team_shift: int = 0,
     country: str = "",
+    style: dict[str, int] | None = None,
 ) -> dict:
     """Build one pitcher dict with Stuff (`pitcher_skill`) and Stamina
     rolled INDEPENDENTLY against the tier ladder.
@@ -1757,16 +1866,17 @@ def _make_pitcher(
     Stamina automatically slides from rotation into middle relief without
     any persisted re-tagging.
     """
-    def roll() -> int:
-        return _roll_tier_grade(rng, team_shift)
+    def roll(attr: str | None = None) -> int:
+        bias = style.get(attr, 0) if (style and attr) else 0
+        return _roll_tier_grade(rng, team_shift + bias)
 
-    stuff_g   = roll()
-    stamina_g = roll()
+    stuff_g   = roll("pitcher_skill")
+    stamina_g = roll("stamina")
     # Realism layer — pitcher Command + Movement rolled INDEPENDENTLY of
     # Stuff. Drives the Maddux-vs-Ryan stat-shape spectrum: high Command
     # = low BB regardless of Stuff; high Movement = ground-ball pitcher.
-    command_g  = roll()
-    movement_g = roll()
+    command_g  = roll("command")
+    movement_g = roll("movement")
     # Pitchers also get defense/arm — they field comebackers and bunts,
     # and high-arm pitchers help suppress steals. Capped lower than
     # position players since pitcher fielding matters less in O27.
@@ -2014,6 +2124,7 @@ def _generate_draft_pool(
     n_teams: int,
     rng: random.Random,
     name_picker,
+    style: dict[str, int] | None = None,
 ) -> dict[str, list[dict]]:
     """Build the league-wide player pool, keyed by slot position.
 
@@ -2034,7 +2145,7 @@ def _generate_draft_pool(
         for _ in range(target):
             nm, country = name_picker()
             if pos == "P":
-                bucket.append(_make_pitcher(rng, is_active=0, name=nm, country=country))
+                bucket.append(_make_pitcher(rng, is_active=0, name=nm, country=country, style=style))
             elif pos == SPEC_PR:
                 bucket.append(_make_specialist(rng, "pr_specialist", name=nm, country=country))
             elif pos == SPEC_PH:
@@ -2042,7 +2153,7 @@ def _generate_draft_pool(
             elif pos == SPEC_JOKER:
                 bucket.append(_make_specialist(rng, "joker", name=nm, country=country))
             else:
-                bucket.append(_make_hitter(rng, pos, is_active=0, name=nm, country=country))
+                bucket.append(_make_hitter(rng, pos, is_active=0, name=nm, country=country, style=style))
         pool[pos] = bucket
     return pool
 
@@ -2211,6 +2322,16 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     config  = config if config is not None else get_config(config_id)
     level   = config.get("level", "MLB")
     n_teams = config["team_count"]
+    # Optional mechanical style diversity: {league_name: profile_key}. When
+    # present, each league's talent pool is generated with that profile's
+    # per-attribute bias so leagues play differently. Absent → neutral.
+    style_profiles_cfg: dict[str, str] = config.get("style_profiles") or {}
+    # Optional per-league locale: {league_name: region_id_or_preset}. Each
+    # value names an EXISTING region/preset in data/names/regions.json — so a
+    # league can be located anywhere we have name data (e.g. east_asia,
+    # latin_america, nordic), independent of its playing style. Reuses the
+    # existing name infrastructure; no new name data.
+    name_regions_cfg: dict[str, str] = config.get("name_regions") or {}
 
     all_teams  = _load_teams_db()
     rng        = random.Random(rng_seed)
@@ -2270,6 +2391,27 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         region_weights = name_config.get("region_weights"),
     )
 
+    # Per-league name pickers, built from `name_regions` against the EXISTING
+    # name data. A league with a configured locale draws its players' (and
+    # managers') names from that region; otherwise it falls back to the
+    # league-wide name_config. Cached per (league, salt) so generation is
+    # deterministic. crc32 (not python hash) keeps seeding stable across runs.
+    import zlib as _zlib
+    _lg_picker_cache: dict[tuple[str, int], object] = {}
+
+    def _league_name_picker(league_name: str, salt: int):
+        key = (league_name or "", salt)
+        if key not in _lg_picker_cache:
+            weights = (resolve_name_region_weights(name_regions_cfg.get(league_name))
+                       or name_config.get("region_weights"))
+            seed = (rng_seed ^ salt ^ _zlib.crc32((league_name or "").encode())) & 0x7FFFFFFF
+            _lg_picker_cache[key] = make_name_picker(
+                random.Random(seed),
+                gender         = name_config.get("gender", "male"),
+                region_weights = weights,
+            )
+        return _lg_picker_cache[key]
+
     # Phase 1: insert all teams with their rolled org_strength. The
     # value is rolled from the same 9-tier ladder players use (uncapped
     # at 95 here — orgs CAN be Elite+ at seed; only player attributes
@@ -2278,6 +2420,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     # talent faster between seasons, building dynasties organically.
     # It does NOT bias per-pitch outcomes — that role is gone.
     team_ids: list[int] = []
+    team_leagues: list[str] = []
     for idx, (team_def, (league_name, division)) in enumerate(zip(selected, div_map)):
         abbrev = team_def.get("abbreviation") or team_def.get("abbrev", "???")
         city   = team_def.get("city", "")
@@ -2293,12 +2436,16 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         park_quirks = json.dumps(_roll_park_quirks(rng2, park_shape))
         mgr = roll_manager(rng2)
         fo  = roll_fo(rng2)
-        mgr_name, _mgr_country = mgr_name_picker()
+        if name_regions_cfg.get(league_name):
+            mgr_name, _mgr_country = _league_name_picker(league_name, 0xA17C0DE)()
+        else:
+            mgr_name, _mgr_country = mgr_name_picker()
         # Org_strength rolled on the full 9-tier ladder (uncapped at 95) —
         # ~7% of teams genuinely start with Elite+/Elite development orgs,
         # ~12% Excellent, etc. Drives multi-season player growth without
         # biasing per-pitch outcomes.
         org_strength = _roll_org_grade(rng2)
+        team_style = style_profiles_cfg.get(league_name, "")
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, lat, lon, division, league, "
             "park_hr, park_hits, park_name, park_dimensions, "
@@ -2308,8 +2455,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
             "mgr_bench_usage, mgr_shift_aggression, mgr_ibb_aggression, org_strength, "
-            "fo_strategy, fo_aggression, fo_archetype_bias)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "fo_strategy, fo_aggression, fo_archetype_bias, style_profile)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, lat, lon, division, league_name,
              park_hr, park_hits, park_name, park_dims,
              park_shape, park_quirks,
@@ -2322,9 +2469,11 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
              mgr.get("mgr_shift_aggression", 0.5),
              mgr.get("mgr_ibb_aggression", 0.5),
              org_strength,
-             fo["fo_strategy"], fo["fo_aggression"], fo["fo_archetype_bias"]),
+             fo["fo_strategy"], fo["fo_aggression"], fo["fo_archetype_bias"],
+             team_style),
         )
         team_ids.append(team_id)
+        team_leagues.append(league_name)
 
     # Phase 2: generate the league-wide draft pool and snake-draft it.
     # No team bias — every player is rolled from the same 9-tier
@@ -2335,8 +2484,31 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         gender         = name_config.get("gender", "male"),
         region_weights = name_config.get("region_weights"),
     )
-    pool = _generate_draft_pool(len(team_ids), rng2, name_picker)
-    assignments, free_agents = _run_snake_draft(team_ids, pool, rng2)
+    if style_profiles_cfg or name_regions_cfg:
+        # Per-league generation: each league gets its own talent pool, drawn
+        # under that league's style profile AND its own locale name picker,
+        # then drafted within itself. This delivers mechanically distinct
+        # statistical environments, keeps each league self-contained
+        # (concurrent international leagues), and lets a league be located
+        # in any region we have name data for. Free agents accumulate across
+        # all leagues.
+        teams_by_league: dict[str, list[int]] = {}
+        for tid, lg in zip(team_ids, team_leagues):
+            teams_by_league.setdefault(lg, []).append(tid)
+        assignments: dict[int, list[dict]] = {}
+        free_agents = []
+        for lg, tids in teams_by_league.items():
+            profile_key = style_profiles_cfg.get(lg, "")
+            style = _STYLE_PROFILES.get(profile_key) or None
+            lg_picker = (_league_name_picker(lg, 0x0)
+                         if name_regions_cfg.get(lg) else name_picker)
+            lg_pool = _generate_draft_pool(len(tids), rng2, lg_picker, style=style)
+            lg_assign, lg_fa = _run_snake_draft(tids, lg_pool, rng2)
+            assignments.update(lg_assign)
+            free_agents.extend(lg_fa)
+    else:
+        pool = _generate_draft_pool(len(team_ids), rng2, name_picker)
+        assignments, free_agents = _run_snake_draft(team_ids, pool, rng2)
 
     # Phase 3: persist drafted rosters + free-agent pool, and recompute
     # each team's org_strength from its actual roster.

@@ -3,6 +3,58 @@
 {% block content %}
 <h2 class="mb-3">Season History</h2>
 
+<div class="dense mb-3" id="presim-card">
+  <div class="panel-title">Build League History</div>
+  <div class="p-2">
+    <div class="text-secondary small mb-2" style="line-height:1.45">
+      Build a fresh league and play several seasons of <em>connected</em> history —
+      the same franchises and players, aging and developing year over year — so a new
+      league opens with a real past: champions, standings and statistical leaders to
+      browse. <strong>Replaces the current league.</strong>
+    </div>
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small mb-0" for="ph-n">Seasons</label>
+        <input type="number" id="ph-n" value="5" min="1" max="20" class="form-control form-control-sm" style="width:80px">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0" for="ph-seed">Base seed</label>
+        <input type="number" id="ph-seed" value="42" min="0" class="form-control form-control-sm" style="width:110px">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small mb-0" for="ph-config">Config</label>
+        <select id="ph-config" class="form-select form-select-sm">
+          <option value="8teams">8 teams</option>
+          <option value="12teams">12 teams</option>
+          <option value="16teams">16 teams</option>
+          <option value="24teams">24 teams</option>
+          <option value="30teams" selected>30 teams</option>
+          <option value="36teams">36 teams</option>
+          <option value="international">International (6 styles)</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <div class="form-check mb-1">
+          <input class="form-check-input" type="checkbox" id="ph-fast" checked>
+          <label class="form-check-label small" for="ph-fast"
+                 title="Skip play-by-play logs. Standings, leaders and stats are unaffected.">Fast sim</label>
+        </div>
+        <button id="ph-start" type="button" class="btn btn-sm btn-primary">Build History</button>
+      </div>
+    </div>
+    <div id="ph-status" class="mt-3 pt-3" style="display:none;border-top:1px solid var(--border-soft)">
+      <div class="d-flex justify-content-between small mb-1">
+        <span id="ph-phase" class="text-secondary">Starting…</span>
+        <span id="ph-count" class="text-secondary"></span>
+      </div>
+      <div class="progress mb-2" style="height:12px">
+        <div id="ph-bar" class="progress-bar" role="progressbar" style="width:0%;background:var(--link)"></div>
+      </div>
+      <div id="ph-detail" class="small text-secondary"></div>
+    </div>
+  </div>
+</div>
+
 {% if live %}
 <div class="dense mb-3">
   <div class="panel-title">Currently In Progress</div>
@@ -100,6 +152,87 @@
 
 <script>
 (function () {
+  // ---- Build League History (pre-sim) ----
+  var phStart  = document.getElementById('ph-start');
+  var phStatus = document.getElementById('ph-status');
+  var phPhase  = document.getElementById('ph-phase');
+  var phCount  = document.getElementById('ph-count');
+  var phBar    = document.getElementById('ph-bar');
+  var phDetail = document.getElementById('ph-detail');
+  var phTimer  = null;
+
+  function phFmtPhase(p) {
+    return ({starting:'Starting…', seeding:'Seeding league…', simulating:'Simulating season…',
+             archiving:'Archiving…', aging:'Aging rosters…', done:'Done', error:'Error'})[p] || (p || '');
+  }
+
+  async function phPoll() {
+    try {
+      var r = await fetch('/api/history/presim/status');
+      var s = await r.json();
+      phStatus.style.display = 'block';
+      var idx = s.current_season_index || 0, tgt = s.target_seasons || 0;
+      phPhase.textContent = 'Season ' + (idx || '?') + ' / ' + tgt + ' — ' + phFmtPhase(s.current_phase)
+                          + (s.current_year ? ' (' + s.current_year + ')' : '');
+      var tp = s.games_per_sec ? (' · ' + s.games_per_sec + ' games/sec') : '';
+      phCount.textContent = (s.completed_seasons || 0) + ' / ' + tgt + ' seasons · '
+                          + (s.games_simmed_total || 0) + ' games' + tp;
+      var pct = tgt ? Math.min(100, Math.round(((s.completed_seasons || 0) / tgt) * 100)) : 0;
+      phBar.style.width = pct + '%';
+      if (s.seasons && s.seasons.length) {
+        phDetail.innerHTML = s.seasons.map(function (x) {
+          return '#' + x.season_number + ' (' + x.year + '): champion <strong>'
+               + (x.champion_abbrev || '—') + '</strong> ' + x.champion_w + '-' + x.champion_l;
+        }).join(' · ');
+      }
+      if (!s.running) {
+        clearInterval(phTimer); phTimer = null;
+        phStart.disabled = false; phStart.textContent = 'Build History';
+        if (s.current_phase === 'done') {
+          phPhase.innerHTML = '<span class="strk-w">Done ✓ — reloading…</span>';
+          setTimeout(function () { window.location.reload(); }, 1200);
+        } else if (s.current_phase === 'error') {
+          phDetail.innerHTML = '<span class="strk-l">Failed: '
+            + (s.error || 'unknown error') + '</span>';
+        }
+      }
+    } catch (e) { /* transient */ }
+  }
+
+  if (phStart) {
+    phStart.addEventListener('click', async function () {
+      var n = Math.max(1, Math.min(20, parseInt(document.getElementById('ph-n').value, 10) || 5));
+      var seed = parseInt(document.getElementById('ph-seed').value, 10) || 42;
+      var config = document.getElementById('ph-config').value || '30teams';
+      var fast = document.getElementById('ph-fast').checked;
+      if (!confirm('Build ' + n + ' season(s) of history?\n\nThis REPLACES the current league with a fresh one and plays ' + n + ' connected seasons in the background.')) return;
+      phStart.disabled = true; phStart.textContent = 'Building…';
+      phStatus.style.display = 'block';
+      try {
+        var r = await fetch('/api/history/presim', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({n: n, seed: seed, config_id: config, fast: fast}),
+        });
+        var data = await r.json();
+        if (!data.ok) throw new Error(data.message || data.error || 'failed to start');
+        phStart.textContent = 'Building…';
+        if (phTimer) clearInterval(phTimer);
+        phTimer = setInterval(phPoll, 1500); phPoll();
+      } catch (err) {
+        alert('Failed to start: ' + err.message);
+        phStart.disabled = false; phStart.textContent = 'Build History';
+      }
+    });
+  }
+
+  // Resume polling if a run is already in flight when the page loads.
+  fetch('/api/history/presim/status').then(function (r) { return r.json(); }).then(function (s) {
+    if (s.running) {
+      phStart.disabled = true; phStart.textContent = 'Building…';
+      phTimer = setInterval(phPoll, 1500); phPoll();
+    }
+  }).catch(function () {});
+
   document.querySelectorAll('.delete-season-btn').forEach(function (btn) {
     btn.addEventListener('click', async function () {
       var id = btn.dataset.seasonId;

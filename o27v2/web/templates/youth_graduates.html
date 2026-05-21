@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Youth Graduates{% endblock %}
+{% block content %}
+
+{% macro stars(n) -%}
+  <span class="youth-stars" title="{{ n }}-star recruit">
+    {%- for i in range(5) -%}
+      {%- if i < n %}<span class="star-on">★</span>{% else %}<span class="star-off">★</span>{% endif -%}
+    {%- endfor -%}
+  </span>
+{%- endmacro %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Youth Graduates → Pros</h2>
+    <div class="text-secondary small">
+      Prospects who aged out of the youth league and crossed into the pro pool, newest first.
+      Each lands as a free agent until a club signs them — possibly into a different-style league,
+      where their development shows its true colours.
+    </div>
+  </div>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('youth_view') }}">← Youth League</a>
+</div>
+
+{% if graduates %}
+<div class="dense">
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th class="num">Year</th>
+      <th>Player</th>
+      <th>Pos</th>
+      <th class="num">Stars</th>
+      <th>From (nation)</th>
+      <th>Landed at</th>
+    </tr></thead>
+    <tbody>
+    {% for g in graduates %}
+    <tr>
+      <td class="num">{{ g.grad_year }}</td>
+      <td>
+        {% if g.country %}<span class="player-flag" title="{{ g.country }}">{{ g.country | flag }}</span> {% endif %}
+        {% if g.pro_player_id %}
+          <a href="{{ url_for('player_detail', player_id=g.pro_player_id) }}">{{ g.name }}</a>
+        {% else %}{{ g.name }}{% endif %}
+      </td>
+      <td>{% if g.is_pitcher %}P{% else %}{{ g.position }}{% endif %}</td>
+      <td class="num">{{ stars(g.recruit_stars) }}</td>
+      <td><span class="team-abbrev">{{ g.from_team_abbrev }}</span> {{ g.from_team }}</td>
+      <td>
+        {% if g.pro_team_abbrev %}
+          <span class="team-abbrev">{{ g.pro_team_abbrev }}</span>
+          <span class="text-secondary small">{{ g.pro_league }}</span>
+        {% else %}
+          <span class="text-secondary small">Free agent</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="dense" style="padding:18px;text-align:center">
+  <div class="text-secondary">
+    No graduates yet. Youth players graduate into the pro pool at season rollover
+    (when the youth league is attached and a season is archived).
+  </div>
+</div>
+{% endif %}
+{% endblock %}

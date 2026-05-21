@@ -48,6 +48,35 @@
   </div>
 </div>
 
+{% set _stars = [
+  ('Batting AVG', stars.avg,  stars.avg.avg if stars.avg else None,  '%.3f'),
+  ('Home Runs',   stars.hr,   stars.hr.hr  if stars.hr  else None,   '%d'),
+  ('RBI',         stars.rbi,  stars.rbi.rbi if stars.rbi else None,  '%d'),
+  ('OPS',         stars.ops,  stars.ops.ops if stars.ops else None,  '%.3f'),
+  ('Wins',        stars.wins, stars.wins.w if stars.wins else None,  '%d'),
+  ('wERA',        stars.era,  stars.era.era if stars.era else None,  '%.2f'),
+  ('Strikeouts',  stars.k,    stars.k.k    if stars.k    else None,  '%d'),
+] %}
+{% if stars and (stars.avg or stars.hr or stars.wins) %}
+<div class="dense mb-3">
+  <div class="panel-title">Stars of the Season</div>
+  <div class="p-2" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem">
+    {% for label, row, val, fmt in _stars %}
+      {% if row %}
+      <div class="dense" style="padding:.5rem .6rem">
+        <div class="text-secondary small" style="text-transform:uppercase;letter-spacing:.04em">{{ label }}</div>
+        <div style="font-weight:700">{{ row.player_name }}</div>
+        <div class="text-secondary small">
+          <span class="team-abbrev">{{ row.team_abbrev or '—' }}</span>
+          {% if val is not none %} · {{ fmt % val }}{% endif %}
+        </div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="dense mb-3">
   <div class="panel-title">Final Standings</div>
   {% for league_name, divisions in leagues.items() %}

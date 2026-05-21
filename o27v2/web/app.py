@@ -5098,6 +5098,32 @@ def player_detail(player_id: int):
         pt_totals["wpa"]    = wp["wpa"]    if wp else None
         pt_totals["li_avg"] = wp["li_avg"] if wp else None
 
+    # Transfer / promote targets: every other team, grouped by league with
+    # its style profile, so the user can move this player into a different
+    # statistical environment and watch how he performs. Lets you, e.g.,
+    # promote a contact-league standout into the power-leaning Majors.
+    from o27v2.league import style_profile_label
+    _team_rows = db.fetchall(
+        "SELECT id, abbrev, name, league, COALESCE(style_profile,'') AS style_profile "
+        "FROM teams ORDER BY league, abbrev"
+    )
+    transfer_leagues: dict[str, dict] = {}
+    for tr in _team_rows:
+        if tr["id"] == player["team_id"]:
+            continue
+        grp = transfer_leagues.setdefault(tr["league"] or "—", {
+            "league": tr["league"] or "—",
+            "style": tr["style_profile"],
+            "style_label": style_profile_label(tr["style_profile"]),
+            "teams": [],
+        })
+        grp["teams"].append(tr)
+    cur_team = db.fetchone(
+        "SELECT league, COALESCE(style_profile,'') AS style_profile FROM teams WHERE id = ?",
+        (player["team_id"],),
+    ) or {}
+    current_style_label = style_profile_label(cur_team.get("style_profile"))
+
     return _serve(
         "player.html",
         player=player,
@@ -5110,7 +5136,51 @@ def player_detail(player_id: int):
         handedness_splits=handedness_splits,
         baselines=baselines,
         player_est_value=player_est_value,
+        transfer_leagues=list(transfer_leagues.values()),
+        current_league=cur_team.get("league") or "",
+        current_style_label=current_style_label,
     )
+
+
+@app.route("/api/player/<int:player_id>/transfer", methods=["POST"])
+def api_player_transfer(player_id: int):
+    """Move a player to another team (and league). Body: {"team_id": <int>}.
+
+    A direct roster move — sets the player's team and marks him active —
+    so you can drop a player into a different style environment and watch
+    his stats there. Logs the move to the transactions table when present."""
+    data = request.get_json(silent=True) or {}
+    target_team_id = data.get("team_id")
+    if target_team_id is None:
+        return jsonify({"ok": False, "error": "team_id required"}), 400
+    player = db.fetchone("SELECT id, name, team_id FROM players WHERE id = ?", (player_id,))
+    if not player:
+        return jsonify({"ok": False, "error": "player not found"}), 404
+    target = db.fetchone(
+        "SELECT id, abbrev, name, league FROM teams WHERE id = ?", (target_team_id,))
+    if not target:
+        return jsonify({"ok": False, "error": "target team not found"}), 404
+    from_team_id = player["team_id"]
+    db.execute(
+        "UPDATE players SET team_id = ?, is_active = 1 WHERE id = ?",
+        (target["id"], player_id),
+    )
+    # Best-effort transaction log (table shape varies across saves).
+    try:
+        from datetime import date as _date
+        db.execute(
+            "INSERT INTO transactions (date, type, player_id, from_team_id, to_team_id, note) "
+            "VALUES (?, 'transfer', ?, ?, ?, ?)",
+            (_date.today().isoformat(), player_id, from_team_id, target["id"],
+             f"Manual transfer to {target['abbrev']} ({target['league']})"),
+        )
+    except Exception:
+        pass
+    return jsonify({
+        "ok": True,
+        "message": f"{player['name']} transferred to {target['name']} ({target['league']}).",
+        "team_id": target["id"],
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -6979,9 +7049,16 @@ def api_sim_multi_season():
     n         = int(data.get("n", 3))
     base_seed = int(data.get("seed", 42))
     config_id = (data.get("config_id") or "30teams").strip()
+    # "detail" mirrors the per-game sim flag. Accept the friendly "fast"
+    # checkbox (boolean) as well as an explicit "lite"/"full" string.
+    if "fast" in data:
+        detail = "lite" if data.get("fast") else "full"
+    else:
+        detail = "lite" if (data.get("detail") or "lite") == "lite" else "full"
     if config_id not in get_league_configs():
         return jsonify({"ok": False, "error": f"unknown config: {config_id}"}), 400
-    started, msg = start_multi_season(n, base_seed=base_seed, config_id=config_id)
+    started, msg = start_multi_season(n, base_seed=base_seed, config_id=config_id,
+                                      detail=detail)
     return jsonify({"ok": started, "message": msg}), (202 if started else 409)
 
 
@@ -6989,6 +7066,34 @@ def api_sim_multi_season():
 def api_sim_multi_season_status():
     from o27v2.season_archive import multi_season_status
     return jsonify(multi_season_status())
+
+
+@app.route("/api/history/presim", methods=["POST"])
+def api_history_presim():
+    """Start a carry-forward pre-sim history run in the background. Builds a
+    fresh league and plays N consecutive seasons with the same franchises,
+    aging rosters between seasons. The /seasons page polls
+    /api/history/presim/status for progress."""
+    from o27v2.season_archive import start_history
+    data = request.get_json(silent=True) or {}
+    n         = int(data.get("n", 5))
+    base_seed = int(data.get("seed", 42))
+    config_id = (data.get("config_id") or "30teams").strip()
+    if "fast" in data:
+        detail = "lite" if data.get("fast") else "full"
+    else:
+        detail = "lite" if (data.get("detail") or "lite") == "lite" else "full"
+    if config_id not in get_league_configs():
+        return jsonify({"ok": False, "error": f"unknown config: {config_id}"}), 400
+    started, msg = start_history(n, base_seed=base_seed, config_id=config_id,
+                                 detail=detail)
+    return jsonify({"ok": started, "message": msg}), (202 if started else 409)
+
+
+@app.route("/api/history/presim/status")
+def api_history_presim_status():
+    from o27v2.season_archive import history_status
+    return jsonify(history_status())
 
 
 @app.route("/api/season/promote-relegate", methods=["POST"])
@@ -7316,12 +7421,31 @@ def season_detail(season_id: int):
             r["division"] or "—", []
         ).append(r)
 
+    # "Stars of the Season" — pull the rank-1 leader from a few headline
+    # categories so the page opens with the season's standout players, not
+    # just category tables. Each entry is the top row already stored by the
+    # leader snapshot (no extra query).
+    def _top(by_cat: dict, category: str) -> dict | None:
+        rows = by_cat.get(category) or []
+        return rows[0] if rows else None
+
+    stars = {
+        "avg": _top(bat_by_cat, "avg"),
+        "hr":  _top(bat_by_cat, "hr"),
+        "rbi": _top(bat_by_cat, "rbi"),
+        "ops": _top(bat_by_cat, "ops"),
+        "wins": _top(pit_by_cat, "w"),
+        "era":  _top(pit_by_cat, "werra"),
+        "k":    _top(pit_by_cat, "k"),
+    }
+
     return _serve(
         "season_detail.html",
         season=season,
         leagues=leagues,
         batting=bat_by_cat,
         pitching=pit_by_cat,
+        stars=stars,
     )
 
 
@@ -7371,6 +7495,15 @@ def youth_view():
                   prospects=prospects,
                   archetype=archetype,
                   archetype_options=("bat", "arm", "stars"))
+
+
+@app.route("/youth/graduates")
+def youth_graduates_view():
+    """The youth-to-pro talent-discovery feed: who graduated, from where,
+    and where they landed."""
+    from o27v2 import youth as _youth
+    grads = _youth.recent_graduations(limit=200)
+    return _serve("youth_graduates.html", graduates=grads)
 
 
 @app.route("/youth/team/<int:team_id>")

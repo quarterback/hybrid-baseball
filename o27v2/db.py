@@ -111,7 +111,12 @@ CREATE TABLE IF NOT EXISTS teams (
     fo_aggression      REAL    DEFAULT 0.5,
     fo_archetype_bias  TEXT    DEFAULT '',
     fo_losing_streak   INTEGER DEFAULT 0,
-    fo_last_trade_date TEXT    DEFAULT ''
+    fo_last_trade_date TEXT    DEFAULT '',
+    -- Per-league playing-style profile (see o27v2/league.py _STYLE_PROFILES).
+    -- Empty = neutral generation. Set when a config opts into mechanical
+    -- style diversity; drives a per-attribute bias at seed time and is
+    -- surfaced as a badge in the UI.
+    style_profile      TEXT    DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -909,6 +914,11 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE teams ADD COLUMN fo_losing_streak INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN style_profile TEXT DEFAULT ''")
             conn.commit()
         except Exception:
             pass

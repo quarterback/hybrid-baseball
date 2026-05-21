@@ -279,6 +279,23 @@ CREATE TABLE IF NOT EXISTS youth_games (
 """
 
 
+_SCHEMA_GRADUATIONS = """
+CREATE TABLE IF NOT EXISTS youth_graduations (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    grad_year        INTEGER NOT NULL,
+    pro_player_id    INTEGER,
+    name             TEXT NOT NULL,
+    country          TEXT DEFAULT '',
+    position         TEXT DEFAULT '',
+    is_pitcher       INTEGER DEFAULT 0,
+    from_team        TEXT DEFAULT '',
+    from_team_abbrev TEXT DEFAULT '',
+    recruit_stars    INTEGER DEFAULT 3,
+    age              INTEGER
+);
+"""
+
+
 def init_youth_schema() -> None:
     """Create the youth_* tables if they don't exist. Idempotent.
 
@@ -291,6 +308,7 @@ def init_youth_schema() -> None:
     db.execute(_SCHEMA_GROUPS)
     db.execute(_SCHEMA_GROUP_MEMBERSHIP)
     db.execute(_SCHEMA_GAMES)
+    db.execute(_SCHEMA_GRADUATIONS)
 
     # Per-game stat tables live in `youth_sim` but are referenced from
     # `top_prospects()` and `player_observed_stats()` here. Co-initialise
@@ -522,12 +540,25 @@ def seed_youth_league(rng_seed: int = 0, seed_year: int = 1) -> int:
 # Annual roll-forward
 # ---------------------------------------------------------------------------
 
+# Keys the pro dev pass emits that have no column on `youth_players`
+# (archetype + substitution-role tags are a pro-roster concept). They must
+# be stripped before the youth UPDATE or it fails with "no such column".
+_PRO_ONLY_DEV_KEYS = (
+    "archetype", "role_hit", "role_run", "role_two_way",
+    "role_field_pos", "roster_slot",
+)
+
+
 def _develop_youth_row(p: dict, rng: random.Random) -> tuple[dict, int]:
     """Apply one season of development to a youth player. Reuses the
-    pro-league dev formula with org_strength=50 (neutral)."""
+    pro-league dev formula with org_strength=50 (neutral), then drops the
+    pro-only archetype/role keys that `youth_players` doesn't carry."""
     from o27v2.development import _develop_player
-    return _develop_player(p, org_strength=50, rng=rng,
-                           is_pitcher=bool(p.get("is_pitcher")))
+    updated, new_age = _develop_player(p, org_strength=50, rng=rng,
+                                       is_pitcher=bool(p.get("is_pitcher")))
+    for k in _PRO_ONLY_DEV_KEYS:
+        updated.pop(k, None)
+    return updated, new_age
 
 
 def _graduate_to_pro_fa(p: dict) -> int | None:
@@ -725,6 +756,21 @@ def advance_youth_year(rng_seed: int = 0,
                     "position":       fresh["position"],
                     "pro_player_id":  pro_id,
                 })
+                # Record the graduation in the persistent feed so the pro
+                # side can show who crossed over, from where, and when.
+                try:
+                    db.execute(
+                        "INSERT INTO youth_graduations "
+                        "(grad_year, pro_player_id, name, country, position, "
+                        " is_pitcher, from_team, from_team_abbrev, recruit_stars, age) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (int(new_season_year), pro_id, fresh["name"],
+                         fresh["country"] or "", fresh["position"],
+                         int(fresh["is_pitcher"]), team["name"], team["abbrev"],
+                         int(fresh["recruit_stars"] or 3), int(new_age)),
+                    )
+                except Exception:
+                    pass
                 # Cascade delete the graduate's tournament stat rows so
                 # the youth_players FK constraint can resolve. The
                 # tournament happened, the player has moved on; their
@@ -863,6 +909,27 @@ def top_prospects(limit: int = 25,
             "ORDER BY h DESC, hr DESC, rbi DESC "
             "LIMIT ?", (limit,),
         )
+    return [dict(r) for r in rows]
+
+
+def recent_graduations(limit: int = 100) -> list[dict]:
+    """The youth-to-pro feed: players who graduated into the pro pool,
+    newest first. Joins to the pro `players`/`teams` so the feed shows
+    where each graduate landed (still a free agent, or signed by a club —
+    possibly in a different-style league)."""
+    init_youth_schema()
+    rows = db.fetchall(
+        "SELECT gr.*, "
+        "       p.team_id AS pro_team_id, p.is_active AS pro_active, "
+        "       t.abbrev AS pro_team_abbrev, t.name AS pro_team_name, "
+        "       t.league AS pro_league, COALESCE(t.style_profile,'') AS pro_style "
+        "FROM youth_graduations gr "
+        "LEFT JOIN players p ON p.id = gr.pro_player_id "
+        "LEFT JOIN teams   t ON t.id = p.team_id "
+        "ORDER BY gr.grad_year DESC, gr.id DESC "
+        "LIMIT ?",
+        (limit,),
+    )
     return [dict(r) for r in rows]
 
 

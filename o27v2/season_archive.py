@@ -479,6 +479,7 @@ _MULTI_STATE: dict[str, Any] = {
     "current_phase": "idle",             # idle|seeding|simulating|archiving|done|error
     "current_seed": None,
     "config_id": None,
+    "detail": "lite",                    # "lite"|"full" per-game sim detail
     "games_simmed_current": 0,           # games played so far in the active season
     "games_simmed_total": 0,             # cumulative across whole run
     "seasons": [],                       # per-season summaries (appended on archive)
@@ -488,8 +489,34 @@ _MULTI_STATE: dict[str, Any] = {
 
 def multi_season_status() -> dict[str, Any]:
     with _MULTI_LOCK:
-        return {k: (list(v) if isinstance(v, list) else v)
+        snap = {k: (list(v) if isinstance(v, list) else v)
                 for k, v in _MULTI_STATE.items()}
+    # Derive throughput + ETA so the dashboard can show live progress.
+    games_per_sec = 0.0
+    eta_seconds: int | None = None
+    started = snap.get("started_at")
+    total_done = snap.get("games_simmed_total", 0) or 0
+    if started and total_done > 0:
+        try:
+            end = (snap.get("finished_at")
+                   and _dt.datetime.fromisoformat(snap["finished_at"])) \
+                  or _dt.datetime.utcnow()
+            elapsed = (end - _dt.datetime.fromisoformat(started)).total_seconds()
+            if elapsed > 0:
+                games_per_sec = round(total_done / elapsed, 2)
+                seasons_left = max(0, (snap.get("target_seasons", 0) or 0)
+                                   - (snap.get("completed_seasons", 0) or 0))
+                done_seasons = snap.get("completed_seasons", 0) or 0
+                if games_per_sec > 0 and done_seasons > 0 and seasons_left > 0:
+                    avg_games_per_season = total_done / done_seasons
+                    eta_seconds = int(
+                        (avg_games_per_season * seasons_left) / games_per_sec
+                    )
+        except (ValueError, TypeError):
+            pass
+    snap["games_per_sec"] = games_per_sec
+    snap["eta_seconds"] = eta_seconds
+    return snap
 
 
 def _state_update(**kw) -> None:
@@ -510,6 +537,7 @@ def _run_multi_season_thread(
     n_seasons: int,
     base_seed: int,
     config_id: str,
+    detail: str = "lite",
 ) -> None:
     """Loop body — never raises out of the thread."""
     from o27v2.league import seed_league
@@ -550,7 +578,7 @@ def _run_multi_season_thread(
             cur = start_date
             while cur <= end_date:
                 step_to = min(end_date, cur + _dt.timedelta(days=14))
-                simulate_through(step_to.isoformat())
+                simulate_through(step_to.isoformat(), detail=detail)
                 _tick_games_simmed()
                 cur = step_to + _dt.timedelta(days=1)
 
@@ -571,7 +599,7 @@ def _run_multi_season_thread(
                 target = get_last_scheduled_date()
                 if target is None or target == prev_target:
                     break
-                simulate_through(target)
+                simulate_through(target, detail=detail)
                 _tick_games_simmed()
                 prev_target = target
 
@@ -627,9 +655,18 @@ def start_multi_season(
     n_seasons: int,
     base_seed: int = 42,
     config_id: str = "30teams",
+    detail: str = "lite",
 ) -> tuple[bool, str]:
-    """Spawn the runner thread. Returns (started, message). N is clamped 1-10."""
+    """Spawn the runner thread. Returns (started, message). N is clamped 1-10.
+
+    `detail` ("lite"|"full") is forwarded to the per-game sim. Defaults to
+    "lite" — multi-season runs only keep end-of-season snapshots, so the
+    per-PA logs / play-by-play text are discarded on the next reset anyway;
+    skipping those writes is a free speedup with no effect on the archived
+    standings / leaders.
+    """
     n_seasons = max(1, min(int(n_seasons), 10))
+    detail = "full" if detail == "full" else "lite"
     with _MULTI_LOCK:
         if _MULTI_STATE.get("running"):
             return False, "A multi-season run is already in progress."
@@ -644,6 +681,7 @@ def start_multi_season(
             "current_phase": "starting",
             "current_seed": None,
             "config_id": config_id,
+            "detail": detail,
             "games_simmed_current": 0,
             "games_simmed_total": 0,
             "seasons": [],
@@ -651,8 +689,272 @@ def start_multi_season(
         })
     t = threading.Thread(
         target=_run_multi_season_thread,
-        args=(n_seasons, base_seed, config_id),
+        args=(n_seasons, base_seed, config_id, detail),
         daemon=True,
     )
     t.start()
-    return True, f"Started multi-season run for {n_seasons} season(s)."
+    mode_label = "fast" if detail == "lite" else "full-detail"
+    return True, f"Started {mode_label} multi-season run for {n_seasons} season(s)."
+
+
+# ---------------------------------------------------------------------------
+# Pre-simulated history — carry-forward runner (Phase B).
+#
+# Unlike the multi-season runner above (which drop_all()s and reseeds a fresh
+# league every season — independent snapshots, used as the invariant test
+# bed), the history runner seeds the league ONCE and then plays season after
+# season with the SAME franchises and players. Between seasons it ages and
+# develops every roster via development.run_offseason and advances the
+# calendar year, so a freshly-built league acquires a believable, connected
+# backstory: persisting teams, players who rise and decline, and an
+# accumulating record of champions, standings and statistical leaders.
+# ---------------------------------------------------------------------------
+
+_HISTORY_LOCK = threading.Lock()
+_HISTORY_STATE: dict[str, Any] = {
+    "running": False,
+    "started_at": None,
+    "finished_at": None,
+    "target_seasons": 0,
+    "completed_seasons": 0,
+    "current_season_index": 0,
+    "current_year": None,
+    "current_phase": "idle",      # idle|seeding|simulating|archiving|aging|done|error
+    "config_id": None,
+    "detail": "lite",
+    "games_simmed_current": 0,
+    "games_simmed_total": 0,
+    "seasons": [],
+    "error": None,
+}
+
+
+def history_status() -> dict[str, Any]:
+    with _HISTORY_LOCK:
+        snap = {k: (list(v) if isinstance(v, list) else v)
+                for k, v in _HISTORY_STATE.items()}
+    games_per_sec = 0.0
+    started = snap.get("started_at")
+    total = snap.get("games_simmed_total", 0) or 0
+    if started and total > 0:
+        try:
+            end = (snap.get("finished_at")
+                   and _dt.datetime.fromisoformat(snap["finished_at"])) \
+                  or _dt.datetime.utcnow()
+            elapsed = (end - _dt.datetime.fromisoformat(started)).total_seconds()
+            if elapsed > 0:
+                games_per_sec = round(total / elapsed, 2)
+        except (ValueError, TypeError):
+            pass
+    snap["games_per_sec"] = games_per_sec
+    return snap
+
+
+def _history_state_update(**kw) -> None:
+    with _HISTORY_LOCK:
+        _HISTORY_STATE.update(kw)
+
+
+def _reset_for_next_history_season() -> None:
+    """Clear the prior season's games, per-game stats and playoff bracket,
+    and zero team W/L — while KEEPING players, teams, and the persistent
+    season_* archive tables. This is the carry-forward counterpart to
+    db.drop_all(): it resets the playable surface for a new season without
+    destroying roster continuity or the accumulated history.
+
+    Child rows (stats / logs referencing games) are deleted before the
+    games rows so foreign keys resolve cleanly.
+    """
+    for tbl in (
+        "game_pa_log", "game_pitcher_stats", "game_batter_stats",
+        "team_phase_outs", "game_pbp", "game_scoring_events",
+        "playoff_series", "games", "transactions",
+    ):
+        try:
+            db.execute(f"DELETE FROM {tbl}")
+        except Exception:
+            pass
+    db.execute("UPDATE teams SET wins = 0, losses = 0")
+    db.execute(
+        "DELETE FROM sim_meta "
+        "WHERE key IN ('sim_date', 'current_season_archived_id')"
+    )
+
+
+def _run_history_thread(
+    n_seasons: int,
+    base_seed: int,
+    config_id: str,
+    detail: str,
+) -> None:
+    """Loop body for the carry-forward history runner. Never raises out."""
+    from o27v2.league import seed_league, get_config
+    from o27v2.schedule import seed_schedule
+    from o27v2.development import run_offseason
+    from o27v2.sim import (
+        simulate_through, get_last_scheduled_date, resync_sim_clock,
+        is_season_complete,
+    )
+
+    def _tick() -> None:
+        n = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"] or 0
+        with _HISTORY_LOCK:
+            _HISTORY_STATE["games_simmed_current"] = n
+
+    try:
+        # Seed the league ONCE — no per-season drop_all.
+        _history_state_update(current_phase="seeding", current_season_index=0)
+        db.drop_all()
+        db.init_db()
+        seed_league(rng_seed=base_seed, config_id=config_id)
+        set_active_league_meta(base_seed, config_id)
+
+        base_cfg = get_config(config_id)
+        base_year = int(base_cfg.get("season_year", 2026))
+
+        for i in range(n_seasons):
+            year = base_year + i
+            schedule_seed = base_seed + i
+            started_season = _dt.datetime.utcnow().isoformat(timespec="seconds")
+            _history_state_update(
+                current_season_index=i + 1,
+                current_year=year,
+                current_phase="seeding",
+                games_simmed_current=0,
+            )
+
+            # Reset the playable surface for every season after the first
+            # (the freshly-seeded league already has an empty games table).
+            if i > 0:
+                _reset_for_next_history_season()
+
+            # Schedule this season under its own year so each archived
+            # season gets a distinct calendar year (_derive_year reads the
+            # latest played game date). A per-season schedule seed varies the
+            # matchup order; the empty games table means seed_schedule always
+            # regenerates here.
+            cfg = dict(base_cfg)
+            cfg["season_year"] = year
+            seed_schedule(config_id=config_id, rng_seed=schedule_seed, config=cfg)
+            resync_sim_clock()
+
+            last_date = get_last_scheduled_date()
+            if last_date is None:
+                raise RuntimeError("seed_schedule produced no games")
+
+            _history_state_update(current_phase="simulating")
+            simulate_through(last_date, detail=detail)
+            _tick()
+
+            # Drain the playoff bracket (same pattern as the multi-season runner).
+            prev_target: str | None = None
+            drain_safety = 40
+            while drain_safety > 0:
+                drain_safety -= 1
+                if is_season_complete():
+                    break
+                target = get_last_scheduled_date()
+                if target is None or target == prev_target:
+                    break
+                simulate_through(target, detail=detail)
+                _tick()
+                prev_target = target
+
+            # Archive. Clear the duplicate-archive guard first so each season
+            # in the lineage gets its own snapshot row.
+            db.execute("DELETE FROM sim_meta WHERE key = 'current_season_archived_id'")
+            _history_state_update(current_phase="archiving")
+            sid = archive_current_season(
+                rng_seed=schedule_seed, config_id=config_id,
+                started_at=started_season, run_invariants=True,
+            )
+
+            # Age + develop every roster for the next season (carry-forward).
+            _history_state_update(current_phase="aging")
+            try:
+                run_offseason(season=i + 1, rng_seed=schedule_seed)
+            except Exception:
+                pass  # never let an offseason bug abort the whole lineage
+
+            row = db.fetchone(
+                "SELECT season_number, year, champion_team_name, champion_abbrev, "
+                "champion_w, champion_l, invariant_pass, invariant_fail "
+                "FROM seasons WHERE id = ?", (sid,)) if sid else None
+            games_simmed = db.fetchone(
+                "SELECT COUNT(*) as n FROM games WHERE played = 1")["n"] or 0
+            summary = {
+                "season_id": sid,
+                "season_number": (row or {}).get("season_number"),
+                "year": (row or {}).get("year") or year,
+                "seed": schedule_seed,
+                "games_simmed": games_simmed,
+                "champion_name": (row or {}).get("champion_team_name"),
+                "champion_abbrev": (row or {}).get("champion_abbrev"),
+                "champion_w": (row or {}).get("champion_w") or 0,
+                "champion_l": (row or {}).get("champion_l") or 0,
+                "invariant_pass": (row or {}).get("invariant_pass") or 0,
+                "invariant_fail": (row or {}).get("invariant_fail") or 0,
+            }
+            with _HISTORY_LOCK:
+                _HISTORY_STATE["seasons"].append(summary)
+                _HISTORY_STATE["completed_seasons"] = i + 1
+                _HISTORY_STATE["games_simmed_total"] += games_simmed
+
+        _history_state_update(
+            running=False, current_phase="done",
+            finished_at=_dt.datetime.utcnow().isoformat(timespec="seconds"),
+        )
+    except Exception as e:
+        tb = traceback.format_exc(limit=4)
+        _history_state_update(
+            running=False, current_phase="error",
+            error=f"{type(e).__name__}: {e}\n{tb}",
+            finished_at=_dt.datetime.utcnow().isoformat(timespec="seconds"),
+        )
+
+
+def start_history(
+    n_seasons: int,
+    base_seed: int = 42,
+    config_id: str = "30teams",
+    detail: str = "lite",
+) -> tuple[bool, str]:
+    """Spawn the carry-forward history runner. Returns (started, message).
+
+    Builds a fresh league, then plays `n_seasons` consecutive seasons with
+    the SAME franchises/players — aging and developing rosters between
+    seasons — so the league ends up with a connected, browsable past. N is
+    clamped 1-20. `detail` defaults to "lite" (fast)."""
+    n_seasons = max(1, min(int(n_seasons), 20))
+    detail = "full" if detail == "full" else "lite"
+    with _HISTORY_LOCK:
+        if _HISTORY_STATE.get("running"):
+            return False, "A pre-sim history run is already in progress."
+        _HISTORY_STATE.update({
+            "running": True,
+            "started_at": _dt.datetime.utcnow().isoformat(timespec="seconds"),
+            "finished_at": None,
+            "target_seasons": n_seasons,
+            "completed_seasons": 0,
+            "current_season_index": 0,
+            "current_year": None,
+            "current_phase": "starting",
+            "config_id": config_id,
+            "detail": detail,
+            "games_simmed_current": 0,
+            "games_simmed_total": 0,
+            "seasons": [],
+            "error": None,
+        })
+    # Guard against colliding with the multi-season runner (both reseed/reset
+    # the live DB).
+    if _MULTI_STATE.get("running"):
+        _history_state_update(running=False, current_phase="idle")
+        return False, "A multi-season run is already in progress."
+    t = threading.Thread(
+        target=_run_history_thread,
+        args=(n_seasons, base_seed, config_id, detail),
+        daemon=True,
+    )
+    t.start()
+    return True, f"Building {n_seasons} season(s) of league history."

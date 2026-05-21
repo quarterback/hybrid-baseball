@@ -1432,7 +1432,8 @@ def _roll_today_condition(visitors: Team, home: Team, weather, rng: random.Rando
 # Main simulation entry point
 # ---------------------------------------------------------------------------
 
-def simulate_game(game_id: int, seed: int | None = None) -> dict:
+def simulate_game(game_id: int, seed: int | None = None,
+                  detail: str = "full") -> dict:
     """
     Run an O27 game for the given DB game_id.
 
@@ -1441,12 +1442,22 @@ def simulate_game(game_id: int, seed: int | None = None) -> dict:
     - Stores score, winner, and per-player stats back to DB.
     - Fires post-game injury draws, deadline trade checks, and waiver claims.
     - Returns a summary dict.
+
+    `detail` ("full"|"lite") controls how much per-game narrative is
+    persisted. In "lite" mode the play-by-play text blob (`game_pbp`),
+    the per-PA event log (`game_pa_log`), and the scoring-events log
+    (`game_scoring_events`) are skipped — these feed only the read-only
+    PBP / scoring views and the WPA model, not standings or leader
+    boards. Box-score stat rows, the games row, and team W/L are written
+    identically, so standings / leaders / the invariant harness are
+    unaffected. Used by bulk multi-season and pre-sim history runs.
     """
     with _SIM_LOCK:
-        return _simulate_game_locked(game_id, seed=seed)
+        return _simulate_game_locked(game_id, seed=seed, detail=detail)
 
 
-def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
+def _simulate_game_locked(game_id: int, seed: int | None = None,
+                          detail: str = "full") -> dict:
     game = db.fetchone("SELECT * FROM games WHERE id = ?", (game_id,))
     if game is None:
         raise ValueError(f"Game {game_id} not found")
@@ -1534,8 +1545,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
     renderer = Renderer()
     provider = ProbabilisticProvider(rng)
 
+    lite = (detail == "lite")
     final_state, full_log = run_game(state, provider, renderer)
-    pbp_text = "\n".join(full_log)
+    pbp_text = "" if lite else "\n".join(full_log)
 
     away_score = final_state.score["visitors"]
     home_score = final_state.score["home"]
@@ -1703,7 +1715,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
         # o27/engine/state.py:Team.team_id. The legacy mapping used "away"
         # which silently dropped every visitor's PA event from the log.
         pa_log = getattr(renderer, "_pa_log", []) or []
-        if pa_log:
+        if pa_log and not lite:
             role_to_db = {
                 "home":     home_team_id,
                 "visitors": away_team_id,
@@ -1737,7 +1749,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
         # Full text play-by-play blob (sponsor captions and all). Discarded
         # before this landed; now persisted for the read-only /game/<id>/pbp
         # view. DELETE above keeps it idempotent on retries.
-        if pbp_text:
+        if pbp_text and not lite:
             conn.execute(
                 "INSERT INTO game_pbp (game_id, pbp_text) VALUES (?, ?)",
                 (game_id, pbp_text),
@@ -1747,7 +1759,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None) -> dict:
         # inserting (matches the pa_log pattern; protects against retries).
         scoring_log = getattr(renderer, "_scoring_log", []) or []
         conn.execute("DELETE FROM game_scoring_events WHERE game_id = ?", (game_id,))
-        if scoring_log:
+        if scoring_log and not lite:
             # batter_id / runner_id in the engine are player_id STRINGS that
             # match players.id when stringified. Coerce to int for the FK.
             def _to_int_or_none(v):
@@ -2013,7 +2025,8 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
 # Batch simulation helper
 # ---------------------------------------------------------------------------
 
-def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
+def simulate_next_n(n: int = 10, seed_base: int | None = None,
+                    detail: str = "full") -> list[dict]:
     """
     Simulate the next N unplayed games in schedule order.
     Returns list of result dicts.
@@ -2039,7 +2052,7 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None) -> list[dict]:
                 results.append({"sweep_error": str(e), "date": g["game_date"]})
         seed = None if seed_base is None else seed_base + i
         try:
-            r = simulate_game(g["id"], seed=seed)
+            r = simulate_game(g["id"], seed=seed, detail=detail)
             results.append(r)
         except GameAlreadyPlayedError:
             continue
@@ -2183,7 +2196,8 @@ def get_all_star_date() -> str | None:
 SIM_PER_REQUEST_GAME_CAP = 3000
 
 
-def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_PER_REQUEST_GAME_CAP) -> list[dict]:
+def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_PER_REQUEST_GAME_CAP,
+                  detail: str = "full") -> list[dict]:
     """Simulate every unplayed game whose game_date == `date`. Does NOT touch the clock.
 
     Runs the weekly Sunday match-day sweep first if `date` is a Sunday
@@ -2204,7 +2218,7 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_
     for i, g in enumerate(games):
         seed = None if seed_base is None else seed_base + i
         try:
-            results.append(simulate_game(g["id"], seed=seed))
+            results.append(simulate_game(g["id"], seed=seed, detail=detail))
         except GameAlreadyPlayedError:
             continue
         except Exception as e:
@@ -2217,6 +2231,7 @@ def simulate_through(
     seed_base: int | None = None,
     max_games: int = SIM_PER_REQUEST_GAME_CAP,
     max_seconds: float | None = None,
+    detail: str = "full",
 ) -> list[dict]:
     """Simulate every unplayed game with game_date <= `target_date`. Does NOT touch the clock.
 
@@ -2264,7 +2279,7 @@ def simulate_through(
                     results.append({"sweep_error": str(e), "date": g["game_date"]})
             seed = None if seed_base is None else seed_base + len(seen_game_ids)
             try:
-                results.append(simulate_game(g["id"], seed=seed))
+                results.append(simulate_game(g["id"], seed=seed, detail=detail))
             except GameAlreadyPlayedError:
                 continue
             except Exception as e:
