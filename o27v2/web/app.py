@@ -6782,16 +6782,27 @@ def universe_new_post():
     teams     = request.form.getlist("lg_teams")
     divisions = request.form.getlist("lg_divisions")
     styles    = request.form.getlist("lg_style")
+    customs   = request.form.getlist("lg_custom")
     locales   = request.form.getlist("lg_locale")
     leagues = []
     for i, nm in enumerate(names):
         if not (nm or "").strip():
             continue
+        style_val: object = (styles[i] if i < len(styles) else "") or ""
+        # A "custom" style ships its per-attribute biases as a JSON blob in
+        # the parallel lg_custom field; pass the parsed dict through.
+        if style_val == "custom":
+            raw = customs[i] if i < len(customs) else ""
+            try:
+                style_val = _json.loads(raw) if raw else {}
+            except ValueError:
+                flash(f"League '{nm.strip()}': custom style biases were malformed.", "error")
+                return redirect(url_for("universe_new_get"))
         leagues.append({
             "name":      nm.strip(),
             "teams":     int(teams[i]) if i < len(teams) and teams[i] else 0,
             "divisions": int(divisions[i]) if i < len(divisions) and divisions[i] else 1,
-            "style":     (styles[i] if i < len(styles) else "") or "",
+            "style":     style_val,
             "locale":    (locales[i] if i < len(locales) else "") or "",
         })
 

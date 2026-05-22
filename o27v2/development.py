@@ -176,16 +176,25 @@ _STYLE_DEV_SCALE = 0.05   # ±12 grade-point profile → ±0.6 μ per season
 
 
 def _style_dev_bias(style_profile: Optional[str]) -> dict[str, float]:
-    """Map a league style-profile key to a small per-attribute development
-    μ nudge dict. Empty/unknown → no bias."""
+    """Map a league style-profile to a small per-attribute development μ
+    nudge dict. `style_profile` is a preset key, a JSON custom-bias dict
+    (authored in the builder), or empty. Empty/unknown → no bias."""
     if not style_profile:
         return {}
-    try:
-        from o27v2.league import _STYLE_PROFILES
-    except Exception:
-        return {}
-    prof = _STYLE_PROFILES.get(style_profile)
-    if not prof:
+    prof = None
+    if style_profile.startswith("{"):
+        try:
+            import json as _json
+            prof = _json.loads(style_profile)
+        except (ValueError, TypeError):
+            prof = None
+    if prof is None:
+        try:
+            from o27v2.league import _STYLE_PROFILES
+        except Exception:
+            return {}
+        prof = _STYLE_PROFILES.get(style_profile)
+    if not isinstance(prof, dict) or not prof:
         return {}
     return {attr: pts * _STYLE_DEV_SCALE for attr, pts in prof.items()}
 

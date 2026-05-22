@@ -293,15 +293,35 @@ def build_universe_config(
                 f"League {name!r}: {teams} teams don't divide evenly into "
                 f"{ndiv} divisions."
             )
-        style  = (lg.get("style") or "").strip()
+        style  = lg.get("style")
         locale = (lg.get("locale") or "").strip()
-        if style and style not in _STYLE_PROFILES:
-            raise ValueError(f"League {name!r}: unknown style {style!r}.")
         if locale and locale not in valid_regions:
             raise ValueError(f"League {name!r}: unknown locale {locale!r}.")
         league_specs.append({"name": name, "teams": teams, "divisions": ndiv})
-        if style:
-            style_profiles[name] = style
+        # Style may be a preset key (str) or a custom per-attribute bias dict.
+        if isinstance(style, dict):
+            clean: dict[str, int] = {}
+            for k, v in style.items():
+                if k not in _CUSTOM_STYLE_ATTRS:
+                    raise ValueError(f"League {name!r}: unknown style attribute {k!r}.")
+                try:
+                    iv = int(v)
+                except (TypeError, ValueError):
+                    raise ValueError(f"League {name!r}: bias for {k!r} must be a number.")
+                if abs(iv) > _CUSTOM_STYLE_MAX:
+                    raise ValueError(
+                        f"League {name!r}: bias for {k!r} must be between "
+                        f"-{_CUSTOM_STYLE_MAX} and {_CUSTOM_STYLE_MAX}."
+                    )
+                if iv:
+                    clean[k] = iv
+            if clean:
+                style_profiles[name] = clean
+        elif isinstance(style, str) and style.strip():
+            s = style.strip()
+            if s not in _STYLE_PROFILES:
+                raise ValueError(f"League {name!r}: unknown style {s!r}.")
+            style_profiles[name] = s
         if locale:
             name_regions[name] = locale
 
@@ -916,6 +936,18 @@ _STYLE_PROFILES: dict[str, dict[str, int]] = {
     # Balanced — explicit no-op so a config can name it without special-casing.
     "balanced": {},
 }
+
+# Attributes a user may bias when authoring a CUSTOM league style in the
+# builder (hitter + pitcher knobs that map to real on-field tendencies), plus
+# the per-knob magnitude cap. _make_hitter/_make_pitcher read only the keys
+# relevant to each, so one dict can carry both.
+_CUSTOM_STYLE_ATTRS: frozenset[str] = frozenset({
+    "contact", "power", "eye", "speed", "baserunning",
+    "run_aggressiveness", "defense", "arm",
+    "pitcher_skill", "command", "movement", "stamina",
+})
+_CUSTOM_STYLE_MAX = 25
+
 # Generic aliases (kept for backward-compat with earlier configs/saves).
 _STYLE_PROFILES["contact"]       = _STYLE_PROFILES["npb"]
 _STYLE_PROFILES["power"]         = _STYLE_PROFILES["dominican"]
@@ -944,6 +976,8 @@ def resolve_name_region_weights(spec) -> dict | None:
 
 def style_profile_label(name: str | None) -> str:
     """Human-readable label for a style profile key (UI badge)."""
+    if isinstance(name, str) and name.startswith("{"):
+        return "Custom"
     return {
         "npb":           "Nippon (contact / command)",
         "dominican":     "Dominican (power / TTO)",
@@ -2587,7 +2621,10 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         # ~12% Excellent, etc. Drives multi-season player growth without
         # biasing per-pitch outcomes.
         org_strength = _roll_org_grade(rng2)
-        team_style = style_profiles_cfg.get(league_name, "")
+        _prof = style_profiles_cfg.get(league_name, "")
+        # Persist preset keys as-is; persist a custom bias dict as JSON so
+        # the badge + development layer can recover it.
+        team_style = json.dumps(_prof) if isinstance(_prof, dict) else (_prof or "")
         team_id = db.execute(
             "INSERT INTO teams (name, abbrev, city, lat, lon, division, league, "
             "park_hr, park_hits, park_name, park_dimensions, "
@@ -2640,8 +2677,10 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         assignments: dict[int, list[dict]] = {}
         free_agents = []
         for lg, tids in teams_by_league.items():
-            profile_key = style_profiles_cfg.get(lg, "")
-            style = _STYLE_PROFILES.get(profile_key) or None
+            prof = style_profiles_cfg.get(lg, "")
+            # A league's style may be a preset key OR an inline custom bias
+            # dict authored in the builder.
+            style = prof if isinstance(prof, dict) else (_STYLE_PROFILES.get(prof) or None)
             lg_picker = (_league_name_picker(lg, 0x0)
                          if name_regions_cfg.get(lg) else name_picker)
             lg_pool = _generate_draft_pool(len(tids), rng2, lg_picker, style=style)

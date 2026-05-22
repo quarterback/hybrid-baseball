@@ -83,14 +83,16 @@
 </form>
 
 <template id="league-row-tpl">
-  <tr>
+  <tr class="lg-main">
     <td><input name="lg_name" class="form-control form-control-sm" placeholder="O27 MLB"></td>
     <td><input name="lg_teams" type="number" min="2" step="2" value="6" class="form-control form-control-sm" style="width:80px"></td>
     <td><input name="lg_divisions" type="number" min="1" value="1" class="form-control form-control-sm" style="width:70px"></td>
     <td>
-      <select name="lg_style" class="form-select form-select-sm">
+      <select name="lg_style" class="form-select form-select-sm lg-style">
         {% for s in style_options %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+        <option value="custom">Custom… (set your own)</option>
       </select>
+      <input type="hidden" name="lg_custom" class="lg-custom" value="">
     </td>
     <td>
       <select name="lg_locale" class="form-select form-select-sm">
@@ -100,27 +102,95 @@
     </td>
     <td><button type="button" class="btn btn-sm btn-link text-danger p-0 rm-league">Remove</button></td>
   </tr>
+  <tr class="lg-custom-panel" style="display:none">
+    <td colspan="6" style="background:var(--bg-warm)">
+      <div class="small text-secondary mb-2">
+        Custom style — bias the talent this league generates (−25…+25 grade points per attribute,
+        0 = neutral). Positive = the league produces more of that trait. Hitter and pitcher knobs
+        combine into the league's net run environment.
+      </div>
+      <div class="d-flex flex-wrap gap-3">
+        <div>
+          <div class="fw-bold small mb-1">Hitters</div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for a, lbl in [('contact','Contact'),('power','Power'),('eye','Eye'),('speed','Speed'),('baserunning','Baserun'),('run_aggressiveness','Run agg'),('defense','Defense'),('arm','Arm')] %}
+            <label class="small" style="display:flex;flex-direction:column;width:78px">
+              <span class="text-secondary">{{ lbl }}</span>
+              <input type="number" class="form-control form-control-sm cust-attr" data-attr="{{ a }}" value="0" min="-25" max="25" step="1">
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+        <div>
+          <div class="fw-bold small mb-1">Pitchers</div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for a, lbl in [('pitcher_skill','Stuff'),('command','Command'),('movement','Movement'),('stamina','Stamina')] %}
+            <label class="small" style="display:flex;flex-direction:column;width:78px">
+              <span class="text-secondary">{{ lbl }}</span>
+              <input type="number" class="form-control form-control-sm cust-attr" data-attr="{{ a }}" value="0" min="-25" max="25" step="1">
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </td>
+  </tr>
 </template>
 
 <script>
 (function () {
   var rows = document.getElementById('league-rows');
   var tpl  = document.getElementById('league-row-tpl');
-  function addRow(preset) {
-    var node = tpl.content.cloneNode(true);
-    var tr = node.querySelector('tr');
-    if (preset) {
-      tr.querySelector('[name=lg_name]').value = preset.name || '';
-      tr.querySelector('[name=lg_teams]').value = preset.teams || 6;
-      if (preset.style)  tr.querySelector('[name=lg_style]').value = preset.style;
-      if (preset.locale) tr.querySelector('[name=lg_locale]').value = preset.locale;
-    }
-    tr.querySelector('.rm-league').addEventListener('click', function () {
-      tr.remove();
+
+  function serialize(panel, hidden) {
+    var out = {};
+    panel.querySelectorAll('.cust-attr').forEach(function (inp) {
+      var v = parseInt(inp.value, 10) || 0;
+      if (v) out[inp.dataset.attr] = Math.max(-25, Math.min(25, v));
     });
-    rows.appendChild(node);
+    hidden.value = Object.keys(out).length ? JSON.stringify(out) : '';
   }
+
+  function addRow(preset) {
+    var frag  = tpl.content.cloneNode(true);
+    var main  = frag.querySelector('.lg-main');
+    var panel = frag.querySelector('.lg-custom-panel');
+    var sel    = main.querySelector('.lg-style');
+    var hidden = main.querySelector('.lg-custom');
+
+    function syncPanel() {
+      var isCustom = sel.value === 'custom';
+      panel.style.display = isCustom ? '' : 'none';
+      if (isCustom) serialize(panel, hidden); else hidden.value = '';
+    }
+    sel.addEventListener('change', syncPanel);
+    panel.querySelectorAll('.cust-attr').forEach(function (inp) {
+      inp.addEventListener('input', function () { serialize(panel, hidden); });
+    });
+    main.querySelector('.rm-league').addEventListener('click', function () {
+      main.remove(); panel.remove();
+    });
+
+    if (preset) {
+      main.querySelector('[name=lg_name]').value = preset.name || '';
+      main.querySelector('[name=lg_teams]').value = preset.teams || 6;
+      if (preset.style)  sel.value = preset.style;
+      if (preset.locale) main.querySelector('[name=lg_locale]').value = preset.locale;
+    }
+    rows.appendChild(frag);
+    syncPanel();
+  }
+
   document.getElementById('add-league').addEventListener('click', function () { addRow(); });
+  // Re-serialize all custom panels right before submit so the latest values win.
+  document.querySelector('form').addEventListener('submit', function () {
+    rows.querySelectorAll('.lg-main').forEach(function (main) {
+      if (main.querySelector('.lg-style').value === 'custom') {
+        serialize(main.nextElementSibling, main.querySelector('.lg-custom'));
+      }
+    });
+  });
+
   // Seed with a couple of starter rows so the form isn't empty.
   [
     {name: 'O27 MLB', teams: 8, style: 'dominican', locale: 'us'},
