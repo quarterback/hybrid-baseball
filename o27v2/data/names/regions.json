@@ -151,7 +151,10 @@
           "surname_keys": ["sri_lankan_sinhalese"] },
         { "weight": 0.03, "country": "LK",
           "first_keys": ["sri_lankan_tamil"],
-          "surname_keys": ["sri_lankan_tamil"] }
+          "surname_keys": ["sri_lankan_tamil"] },
+        { "weight": 0.06, "country": "NP",
+          "first_keys": ["nepali"],
+          "surname_keys": ["nepali"] }
       ]
     },
     "east_asia": {
@@ -203,25 +206,38 @@
         "by population but high per-capita talent yield, mirroring the",
         "GY/TT pattern). Native Fijian, Samoan, Tongan, and Papuan",
         "subregions decompose what was previously a flat pacific_islander",
-        "draw."
+        "draw. Guam (Chamorro), American Samoa (reusing the Samoan pool)",
+        "and Hawaii (Native Hawaiian + Portuguese/Asian-American island",
+        "blend) extend the region into the real US-affiliated baseball",
+        "pipeline. Hawaii carries country code US — it is a US state, not",
+        "a separate nation."
       ],
       "label": "Pacific Islands",
       "subregions": [
-        { "weight": 0.27, "country": "FJ",
+        { "weight": 0.22, "country": "FJ",
           "first_keys": ["fijian", "pacific_islander"],
           "surname_keys": ["fijian", "pacific_islander"] },
-        { "weight": 0.18, "country": "FJ",
+        { "weight": 0.14, "country": "FJ",
           "first_keys": ["indo_fijian"],
           "surname_keys": ["indo_fijian"] },
-        { "weight": 0.25, "country": "WS",
+        { "weight": 0.18, "country": "WS",
           "first_keys": ["samoan", "pacific_islander"],
           "surname_keys": ["samoan", "pacific_islander"] },
-        { "weight": 0.20, "country": "TO",
+        { "weight": 0.15, "country": "TO",
           "first_keys": ["tongan", "pacific_islander"],
           "surname_keys": ["tongan", "pacific_islander"] },
-        { "weight": 0.10, "country": "PG",
+        { "weight": 0.07, "country": "PG",
           "first_keys": ["papuan_melanesian", "pacific_islander"],
-          "surname_keys": ["papuan_melanesian", "pacific_islander"] }
+          "surname_keys": ["papuan_melanesian", "pacific_islander"] },
+        { "weight": 0.10, "country": "GU",
+          "first_keys": ["chamorro"],
+          "surname_keys": ["chamorro"] },
+        { "weight": 0.06, "country": "AS",
+          "first_keys": ["samoan", "pacific_islander"],
+          "surname_keys": ["samoan", "pacific_islander"] },
+        { "weight": 0.08, "country": "US",
+          "first_keys": ["hawaiian"],
+          "surname_keys": ["hawaiian"] }
       ]
     },
     "caribbean_dutch": {
@@ -439,27 +455,76 @@
     },
     "southeast_asia": {
       "_note": [
-        "Decomposed into culturally cohesive subregions. Filipino names",
-        "show their distinctive Spanish-colonial-surname-over-Tagalog-",
-        "first-name pattern; Indonesian and Thai have their own pools."
+        "Decomposed into culturally cohesive subregions. The Philippines",
+        "is no longer a subregion here — it was promoted to its own",
+        "top-level `philippines` region (six cultural subregions). This",
+        "region now covers mainland + maritime SE Asia: Vietnam, Thailand,",
+        "Indonesia, Singapore (Chinese + Malay), Myanmar (mononymic",
+        "Burmese), Laos, Cambodia and Brunei (reusing the malay pool)."
       ],
       "label": "Southeast Asia",
       "subregions": [
         { "weight": 0.30, "country": "VN",
           "first_keys": ["vietnamese"],
           "surname_keys": ["vietnamese"] },
-        { "weight": 0.25, "country": "PH",
-          "first_keys": ["filipino"],
-          "surname_keys": ["filipino", "spanish"] },
-        { "weight": 0.20, "country": "TH",
+        { "weight": 0.22, "country": "TH",
           "first_keys": ["thai"],
           "surname_keys": ["thai"] },
-        { "weight": 0.15, "country": "ID",
+        { "weight": 0.18, "country": "ID",
           "first_keys": ["indonesian"],
           "surname_keys": ["indonesian"] },
-        { "weight": 0.10, "country": "KH",
+        { "weight": 0.07, "country": "SG",
+          "first_keys": ["singaporean_chinese"],
+          "surname_keys": ["chinese_malaysian"] },
+        { "weight": 0.03, "country": "SG",
+          "first_keys": ["malay"],
+          "surname_keys": ["malay"] },
+        { "weight": 0.08, "country": "MM",
+          "first_keys": ["burmese"],
+          "surname_keys": ["burmese"] },
+        { "weight": 0.06, "country": "LA",
+          "first_keys": ["lao"],
+          "surname_keys": ["lao"] },
+        { "weight": 0.04, "country": "KH",
           "first_keys": ["cambodian"],
-          "surname_keys": ["cambodian"] }
+          "surname_keys": ["cambodian"] },
+        { "weight": 0.02, "country": "BN",
+          "first_keys": ["malay"],
+          "surname_keys": ["malay"] }
+      ]
+    },
+    "philippines": {
+      "_doc": [
+        "Promoted from a single Spanish-colonial subregion of southeast_asia",
+        "to a full region. Filipino naming is Spanish-Catholic surnames over",
+        "Tagalog/regional given names — but the country is not monolithic:",
+        "Visayan and Ilocano lines carry distinct surname pools, the",
+        "Chinese-Filipino (Chinoy) community uses Hokkien-derived surnames",
+        "with mostly Western given names, the old landed Spanish-mestizo",
+        "families surface peninsular Spanish surnames, and Muslim Mindanao",
+        "(Maranao/Tausug/Maguindanao) is a wholly separate naming world.",
+        "Weights are a rough demographic split, not a baseball-talent claim."
+      ],
+      "label": "Philippines",
+      "subregions": [
+        { "weight": 0.34, "country": "PH",
+          "first_keys": ["filipino"],
+          "surname_keys": ["filipino"] },
+        { "weight": 0.24, "country": "PH",
+          "first_keys": ["filipino"],
+          "surname_keys": ["filipino_visayan", "filipino"] },
+        { "weight": 0.12, "country": "PH",
+          "first_keys": ["filipino"],
+          "surname_keys": ["filipino_ilocano", "filipino"] },
+        { "weight": 0.12, "country": "PH",
+          "first_keys": ["filipino_chinese", "filipino"],
+          "surname_keys": ["filipino_chinese"] },
+        { "weight": 0.10, "country": "PH",
+          "first_keys": ["filipino"],
+          "surname_keys": ["spanish", "filipino"] },
+        { "weight": 0.08, "country": "PH",
+          "first_keys": ["filipino_muslim"],
+          "surname_keys": ["filipino_muslim"] }
       ]
     },
     "central_west_asia": {
@@ -467,6 +532,96 @@
       "country_weights": { "TR": 0.45, "SA": 0.20, "IR": 0.15, "EG": 0.10, "KZ": 0.10 },
       "first_keys":   ["central_asian", "turkish", "arabic"],
       "surname_keys": ["central_asian", "turkish", "arabic"]
+    },
+    "gulf_cricket": {
+      "_doc": [
+        "UAE & Oman associate-cricket sides are overwhelmingly South-Asian",
+        "expat communities (Indian + Pakistani) with a thin native-Emirati/",
+        "Omani Arab tail. Reuses the existing south-Asian and Arabic pools",
+        "rather than minting new buckets — the demographic IS the diaspora."
+      ],
+      "label": "Gulf (expat cricket)",
+      "subregions": [
+        { "weight": 0.35, "country": "AE",
+          "first_keys": ["indian_north"],
+          "surname_keys": ["indian_north"] },
+        { "weight": 0.25, "country": "AE",
+          "first_keys": ["pakistani"],
+          "surname_keys": ["pakistani"] },
+        { "weight": 0.10, "country": "AE",
+          "first_keys": ["arabic"],
+          "surname_keys": ["arabic"] },
+        { "weight": 0.20, "country": "OM",
+          "first_keys": ["indian_south"],
+          "surname_keys": ["indian_south_tamil", "indian_south_telugu"] },
+        { "weight": 0.10, "country": "OM",
+          "first_keys": ["pakistani"],
+          "surname_keys": ["pakistani"] }
+      ]
+    },
+    "israel": {
+      "_doc": [
+        "Real WBC baseball nation (qualified 2017 & 2023). Native Israeli",
+        "Hebrew given names + the Sephardi/Mizrahi/Ashkenazi surname blend."
+      ],
+      "label": "Israel",
+      "country": "IL",
+      "first_keys":   ["israeli"],
+      "surname_keys": ["israeli"]
+    },
+    "netherlands": {
+      "_doc": [
+        "Established European baseball nation (Hoofdklasse, multiple WBC",
+        "appearances). Promoted out of the flat europe_western pool so a",
+        "Netherlands national side draws Dutch names tagged NL rather than",
+        "the mixed German/French/Spanish blend."
+      ],
+      "label": "Netherlands",
+      "country": "NL",
+      "first_keys":   ["dutch"],
+      "surname_keys": ["dutch"]
+    },
+    "italy": {
+      "_doc": [
+        "Established European baseball nation (Serie A1, WBC regular).",
+        "Promoted out of europe_western so an Italy national side draws",
+        "Italian names tagged IT."
+      ],
+      "label": "Italy",
+      "country": "IT",
+      "first_keys":   ["italian"],
+      "surname_keys": ["italian"]
+    },
+    "finland": {
+      "_doc": [
+        "Home of pesäpallo (Finnish baseball). Promoted out of the flat",
+        "nordic pool so a Finland national side is tagged FI; given/family",
+        "names use the shared Nordic/Scandinavian pools (no Finnish-specific",
+        "name data exists yet)."
+      ],
+      "label": "Finland",
+      "country": "FI",
+      "first_keys":   ["nordic"],
+      "surname_keys": ["nordic", "scandinavian"]
+    },
+    "europe_southeast": {
+      "_doc": [
+        "Emerging European baseball nations outside the established DE/NL/",
+        "IT/CZ core: Greece (long-standing federation, 2004-Olympics host),",
+        "Croatia and Slovenia."
+      ],
+      "label": "Southeast Europe (emerging baseball)",
+      "subregions": [
+        { "weight": 0.45, "country": "GR",
+          "first_keys": ["greek"],
+          "surname_keys": ["greek"] },
+        { "weight": 0.35, "country": "HR",
+          "first_keys": ["croatian"],
+          "surname_keys": ["croatian"] },
+        { "weight": 0.20, "country": "SI",
+          "first_keys": ["slovenian"],
+          "surname_keys": ["slovenian"] }
+      ]
     },
     "africa": {
       "_note": [
@@ -542,7 +697,7 @@
         "caribbean_cricket": 0.07, "caribbean_dutch": 0.01,
         "africa_cricket": 0.03, "british_isles": 0.025,
         "afghan_central_asia": 0.005, "malaysia": 0.01,
-        "pacific_islands": 0.005, "canada": 0.04,
+        "pacific_islands": 0.005, "canada": 0.04, "philippines": 0.01,
         "europe_western": 0.02, "europe_eastern": 0.005
       }
     },
@@ -564,7 +719,7 @@
         "caribbean_cricket": 0.11, "caribbean_dutch": 0.02,
         "africa_cricket": 0.05, "british_isles": 0.03,
         "afghan_central_asia": 0.015, "malaysia": 0.025,
-        "pacific_islands": 0.02, "canada": 0.02,
+        "pacific_islands": 0.02, "canada": 0.02, "philippines": 0.02,
         "europe_western": 0.015, "europe_eastern": 0.02
       }
     },
@@ -590,19 +745,21 @@
         "caribbean_cricket": 0.13, "caribbean_dutch": 0.025,
         "africa_cricket": 0.06, "british_isles": 0.035,
         "afghan_central_asia": 0.02, "malaysia": 0.035,
-        "pacific_islands": 0.04, "canada": 0.015,
+        "pacific_islands": 0.04, "canada": 0.015, "philippines": 0.03,
         "europe_western": 0.005, "europe_eastern": 0.04
       }
     },
     "global": {
       "label": "Global (even-handed mix)",
       "weights": {
-        "us": 0.11, "latin_america": 0.09, "south_america": 0.07,
-        "europe_western": 0.08, "europe_eastern": 0.04, "nordic": 0.03,
-        "east_asia": 0.08, "southeast_asia": 0.05, "south_asia": 0.13,
-        "central_west_asia": 0.04, "africa": 0.05, "africa_cricket": 0.05,
-        "anzac": 0.04, "caribbean_cricket": 0.05, "caribbean_dutch": 0.02,
-        "pacific_islands": 0.03, "british_isles": 0.03, "malaysia": 0.02
+        "us": 0.10, "latin_america": 0.08, "south_america": 0.06,
+        "europe_western": 0.07, "europe_eastern": 0.04, "nordic": 0.02,
+        "europe_southeast": 0.02, "east_asia": 0.07, "southeast_asia": 0.05,
+        "philippines": 0.04, "south_asia": 0.12, "central_west_asia": 0.03,
+        "gulf_cricket": 0.02, "israel": 0.01, "africa": 0.05,
+        "africa_cricket": 0.05, "anzac": 0.04, "caribbean_cricket": 0.05,
+        "caribbean_dutch": 0.02, "pacific_islands": 0.03,
+        "british_isles": 0.03, "malaysia": 0.02
       }
     },
     "european": {
@@ -615,8 +772,8 @@
     "asian_pro": {
       "label": "East-Asia Pro",
       "weights": {
-        "east_asia": 0.65, "southeast_asia": 0.18, "us": 0.07,
-        "latin_america": 0.05, "malaysia": 0.05
+        "east_asia": 0.60, "southeast_asia": 0.13, "philippines": 0.10,
+        "us": 0.07, "latin_america": 0.05, "malaysia": 0.05
       }
     },
     "nordic": {
