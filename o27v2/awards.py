@@ -38,6 +38,36 @@ _N_VOTERS = 30        # roughly BBWAA chapter size; gives clean point spreads
 _VOTER_NOISE = 0.07   # gaussian σ as a fraction of |score|
 
 
+# Display labels for award categories. A config may override any of these
+# via an "award_names" map (e.g. peer-universe leagues rename the pitching
+# award to "Pitcher of the Year" rather than the MLB-specific "Cy Young").
+_DEFAULT_AWARD_LABELS = {
+    "mvp":      "MVP",
+    "cy_young": "Cy Young",
+    "roy":      "Rookie of the Year",
+    "ws_mvp":   "World Series MVP",
+}
+
+
+def award_labels() -> dict:
+    """Category → display-label map for the live league, applying any
+    `award_names` overrides from the active config. Any lookup failure
+    falls back to the MLB defaults so the UI always has a label."""
+    labels = dict(_DEFAULT_AWARD_LABELS)
+    try:
+        row = db.fetchone("SELECT value FROM sim_meta WHERE key = 'league_config'")
+        config_id = row["value"] if row and row.get("value") else None
+        if config_id:
+            from o27v2.league import get_config
+            overrides = get_config(config_id).get("award_names") or {}
+            for k, v in overrides.items():
+                if v:
+                    labels[k] = v
+    except Exception:
+        pass
+    return labels
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
