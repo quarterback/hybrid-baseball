@@ -448,10 +448,23 @@
       ]
     },
     "nordic": {
+      "_doc": [
+        "Full national breakout: Sweden / Finland / Norway / Denmark each",
+        "draw from their own distinct given+surname pools (the -sson, -nen",
+        "and -sen patronymic belts are kept separate) rather than a single",
+        "blended Scandinavian pool. Weights match the old country split."
+      ],
       "label": "Nordic",
-      "country_weights": { "SE": 0.30, "FI": 0.30, "NO": 0.20, "DK": 0.20 },
-      "first_keys":   ["nordic"],
-      "surname_keys": ["nordic", "scandinavian"]
+      "subregions": [
+        { "weight": 0.30, "country": "SE",
+          "first_keys": ["swedish"],   "surname_keys": ["swedish"] },
+        { "weight": 0.30, "country": "FI",
+          "first_keys": ["finnish"],   "surname_keys": ["finnish"] },
+        { "weight": 0.20, "country": "NO",
+          "first_keys": ["norwegian"], "surname_keys": ["norwegian"] },
+        { "weight": 0.20, "country": "DK",
+          "first_keys": ["danish"],    "surname_keys": ["danish"] }
+      ]
     },
     "southeast_asia": {
       "_note": [
@@ -594,15 +607,141 @@
     },
     "finland": {
       "_doc": [
-        "Home of pesäpallo (Finnish baseball). Promoted out of the flat",
-        "nordic pool so a Finland national side is tagged FI; given/family",
-        "names use the shared Nordic/Scandinavian pools (no Finnish-specific",
-        "name data exists yet)."
+        "Home of pesäpallo (Finnish baseball). Dedicated Finnish given/",
+        "family-name pool (the -nen surname belt: Virtanen, Korhonen,",
+        "Mäkinen), distinct from the Scandinavian neighbours."
       ],
       "label": "Finland",
       "country": "FI",
-      "first_keys":   ["nordic"],
-      "surname_keys": ["nordic", "scandinavian"]
+      "first_keys":   ["finnish"],
+      "surname_keys": ["finnish"]
+    },
+    "sweden": {
+      "_doc": [
+        "Swedish national pool — the -sson patronymic belt (Andersson,",
+        "Johansson, Karlsson)."
+      ],
+      "label": "Sweden",
+      "country": "SE",
+      "first_keys":   ["swedish"],
+      "surname_keys": ["swedish"]
+    },
+    "norway": {
+      "_doc": [
+        "Norwegian national pool — the -sen patronymic belt (Hansen,",
+        "Johansen, Olsen) with the ø/å given names."
+      ],
+      "label": "Norway",
+      "country": "NO",
+      "first_keys":   ["norwegian"],
+      "surname_keys": ["norwegian"]
+    },
+    "denmark": {
+      "_doc": [
+        "Danish national pool — the -sen belt (Jensen, Nielsen, Hansen)."
+      ],
+      "label": "Denmark",
+      "country": "DK",
+      "first_keys":   ["danish"],
+      "surname_keys": ["danish"]
+    },
+    "haiti": {
+      "_doc": [
+        "The 'Puerto Rico of O27' — shares Hispaniola with the baseball-mad",
+        "Dominican Republic, so the same island pipeline feeds a distinct",
+        "Francophone naming world: French/Haitian-Creole given names over",
+        "French + saint-prefixed surnames (Saint-Fleur, Jean-Baptiste, Désir)."
+      ],
+      "label": "Haiti",
+      "country": "HT",
+      "first_keys":   ["haitian"],
+      "surname_keys": ["haitian"]
+    },
+    "curacao": {
+      "_doc": [
+        "Dutch-Caribbean baseball powerhouse (Bogaerts, Profar, Jansen).",
+        "Promoted out of caribbean_dutch to its own Papiamento pool."
+      ],
+      "label": "Curacao",
+      "country": "CW",
+      "first_keys":   ["curacao_papiamento"],
+      "surname_keys": ["curacao_papiamento"]
+    },
+    "aruba": {
+      "_doc": [
+        "Dutch-Caribbean baseball nation alongside Curacao. Papiamento",
+        "given names with the Aruban surname set (Croes, Tromp, Maduro)."
+      ],
+      "label": "Aruba",
+      "country": "AW",
+      "first_keys":   ["aruban_papiamento"],
+      "surname_keys": ["aruban_papiamento", "curacao_papiamento"]
+    },
+    "suriname": {
+      "_doc": [
+        "The most ethnically diverse naming pool in the hemisphere:",
+        "Hindustani, Javanese, Maroon and Dutch-Creole lines, each with",
+        "its own given/surname set. Promoted out of caribbean_dutch."
+      ],
+      "label": "Suriname",
+      "subregions": [
+        { "weight": 0.37, "country": "SR",
+          "first_keys": ["surinamese_hindustani"],
+          "surname_keys": ["surinamese_hindustani"] },
+        { "weight": 0.25, "country": "SR",
+          "first_keys": ["surinamese_javanese"],
+          "surname_keys": ["surinamese_javanese"] },
+        { "weight": 0.23, "country": "SR",
+          "first_keys": ["surinamese_maroon", "afro_caribbean"],
+          "surname_keys": ["surinamese_maroon", "afro_caribbean"] },
+        { "weight": 0.15, "country": "SR",
+          "first_keys": ["surinamese_dutch", "dutch"],
+          "surname_keys": ["surinamese_dutch", "dutch"] }
+      ]
+    },
+    "guyana": {
+      "_doc": [
+        "Anglophone South American cricket nation, bi-ethnic Indo-Guyanese",
+        "and Afro-Guyanese split. Promoted out of caribbean_cricket to its",
+        "own region."
+      ],
+      "label": "Guyana",
+      "subregions": [
+        { "weight": 0.62, "country": "GY",
+          "first_keys": ["indo_guyanese"],
+          "surname_keys": ["indo_guyanese"] },
+        { "weight": 0.38, "country": "GY",
+          "first_keys": ["afro_guyanese", "afro_caribbean"],
+          "surname_keys": ["afro_guyanese", "afro_caribbean"] }
+      ]
+    },
+    "guam": {
+      "_doc": [
+        "Pacific baseball nation (CHamoru). Spanish-colonial surnames over",
+        "CHamoru/Western given names."
+      ],
+      "label": "Guam",
+      "country": "GU",
+      "first_keys":   ["chamorro"],
+      "surname_keys": ["chamorro"]
+    },
+    "indonesia": {
+      "_doc": [
+        "Southeast Asian growth market. Indonesian given/family names."
+      ],
+      "label": "Indonesia",
+      "country": "ID",
+      "first_keys":   ["indonesian"],
+      "surname_keys": ["indonesian"]
+    },
+    "thailand": {
+      "_doc": [
+        "Southeast Asian baseball/softball nation. Thai given/family names."
+      ],
+      "label": "Thailand",
+      "country": "TH",
+      "first_keys":   ["thai"],
+      "surname_keys": ["thai"]
     },
     "europe_southeast": {
       "_doc": [
