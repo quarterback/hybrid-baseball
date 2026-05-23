@@ -19,12 +19,29 @@
 <div class="row g-3 mb-3">
   <div class="col-md-6">
     <div class="dense">
+      {% if league_champions %}
+      <div class="panel-title">League Champions</div>
+      <div class="p-3">
+        <table class="table table-sm mb-0">
+          <tbody>
+          {% for c in league_champions %}
+            <tr>
+              <td class="text-secondary">{{ c.league }}</td>
+              <td><span class="team-abbrev">{{ c.team_abbrev or '—' }}</span> {{ c.team_name or '' }}</td>
+              <td class="num"><strong>{{ c.wins }}-{{ c.losses }}</strong></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
       <div class="panel-title">Champion</div>
       <div class="p-3">
         <div class="score-big">{{ season.champion_abbrev or '—' }}</div>
         <div>{{ season.champion_team_name or '' }}</div>
         <div class="text-secondary mt-1">Record: <strong>{{ season.champion_w }}-{{ season.champion_l }}</strong></div>
       </div>
+      {% endif %}
     </div>
   </div>
   <div class="col-md-6">

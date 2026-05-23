@@ -7585,10 +7585,38 @@ def season_detail(season_id: int):
         "k":    _top(pit_by_cat, "k"),
     }
 
+    # Per-league champions (soccer model): for configs that run no
+    # postseason, each league's table winner is its champion. Computed
+    # from the standings snapshot — top team per league by win pct.
+    # Left empty for bracket configs, where the single playoff champion
+    # (season.champion_*) is the meaningful headline.
+    league_champions: list[dict] = []
+    try:
+        from o27v2.league import get_config
+        cfg = get_config(season["config_id"]) if season["config_id"] else {}
+        if (cfg.get("postseason") or "").lower() == "none":
+            best: dict[str, dict] = {}
+            for r in standings:
+                lg = r["league"] or "—"
+                pct = (r["wins"] or 0) / max(1, (r["wins"] or 0) + (r["losses"] or 0))
+                if lg not in best or pct > best[lg]["_pct"]:
+                    best[lg] = {
+                        "league": lg,
+                        "team_name": r["team_name"],
+                        "team_abbrev": r["team_abbrev"],
+                        "wins": r["wins"],
+                        "losses": r["losses"],
+                        "_pct": pct,
+                    }
+            league_champions = [best[k] for k in sorted(best)]
+    except Exception:
+        league_champions = []
+
     return _serve(
         "season_detail.html",
         season=season,
         leagues=leagues,
+        league_champions=league_champions,
         batting=bat_by_cat,
         pitching=pit_by_cat,
         stars=stars,
