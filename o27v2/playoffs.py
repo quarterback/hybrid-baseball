@@ -235,6 +235,24 @@ def champion() -> dict | None:
 # Bracket initiation + round wiring
 # ---------------------------------------------------------------------------
 
+def postseason_disabled() -> bool:
+    """True when the live league's config opts out of the postseason
+    (soccer model — the regular-season table winner is the champion).
+
+    Read from the config persisted at seed time. Any lookup failure
+    defaults to False so the standard bracket path is never blocked.
+    """
+    try:
+        row = db.fetchone("SELECT value FROM sim_meta WHERE key = 'league_config'")
+        config_id = row["value"] if row and row.get("value") else None
+        if not config_id:
+            return False
+        from o27v2.league import get_config
+        return (get_config(config_id).get("postseason") or "").lower() == "none"
+    except Exception:
+        return False
+
+
 def initiate_playoffs(season: int = 1, rng_seed: int | None = None) -> dict:
     """Create round-1 series rows and schedule their first games.
     Returns a summary dict suitable for flashing to the user.
@@ -242,7 +260,10 @@ def initiate_playoffs(season: int = 1, rng_seed: int | None = None) -> dict:
     Pre-conditions:
       - Regular season complete (all is_playoff=0 games have played=1).
       - No playoff_series rows exist yet.
+      - The active config has not opted out of the postseason.
     """
+    if postseason_disabled():
+        return {"ok": False, "reason": "postseason_disabled"}
     if playoffs_initiated():
         return {"ok": False, "reason": "playoffs_already_initiated"}
     if not regular_season_complete():
@@ -543,5 +564,14 @@ def maybe_initiate(season: int = 1, rng_seed: int | None = None) -> dict | None:
     if playoffs_initiated():
         return None
     if not regular_season_complete():
+        return None
+    if postseason_disabled():
+        # Soccer model: no bracket. Still grant regular-season awards
+        # (idempotent) so MVP / Cy Young / RoY are decided at season's end.
+        try:
+            from o27v2.awards import select_regular_season_awards
+            select_regular_season_awards(season=season)
+        except Exception:
+            pass
         return None
     return initiate_playoffs(season=season, rng_seed=rng_seed)

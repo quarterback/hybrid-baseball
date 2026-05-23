@@ -6451,7 +6451,7 @@ def playoffs_view():
         get_bracket, champion as _champion, compute_field,
         playoffs_initiated, regular_season_complete,
     )
-    from o27v2.awards import get_awards, get_award_results
+    from o27v2.awards import get_awards, get_award_results, award_labels
 
     bracket = get_bracket()
 
@@ -6520,6 +6520,7 @@ def playoffs_view():
         champion=_champion(),
         awards=get_awards(),
         award_results=award_results,
+        cat_labels=award_labels(),
         team_abbrev=team_abbrev,
         projected_field=projected_field,
         playoffs_initiated=playoffs_initiated(),

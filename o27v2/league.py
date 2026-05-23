@@ -339,6 +339,13 @@ def build_universe_config(
         "season_days":            int(season_days),
         "leagues":                [s["name"] for s in league_specs],
         "schedule_mode":          "independent",
+        # Peer-universe leagues follow the soccer model: the regular-season
+        # table winner is the champion, with no postseason bracket. "none"
+        # suppresses playoff initiation entirely (no cross-league games).
+        "postseason":             "none",
+        # Peer universes use generic award names rather than MLB-specific ones.
+        "award_names":            {"mvp": "Hitter of the Year",
+                                   "cy_young": "Pitcher of the Year"},
         "league_specs":           league_specs,
         "style_profiles":         style_profiles,
         "name_regions":           name_regions,

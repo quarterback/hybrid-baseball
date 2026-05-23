@@ -4,6 +4,11 @@
   "team_count": 84,
   "level": "MLB",
   "schedule_mode": "independent",
+  "postseason": "none",
+  "award_names": {
+    "mvp": "Hitter of the Year",
+    "cy_young": "Pitcher of the Year"
+  },
   "leagues": [
     "Americas Premier League",
     "Rising Sun League",
