@@ -6,10 +6,19 @@ This replaces the heuristic in `o27v2/youth.py:_simulate_unplayed_games`
 with the same engine path the pro league uses (`o27.engine.run_game`),
 adapted for youth roster shape:
 
-  * 9-batter lineup (8 hitters + SP), matching the original O27
-    rules. No DH and no jokers — youth rosters are 8 hitters + 4
-    pitchers, period.
-  * Bench is empty; once a player exits, they're done.
+  * Pro lineup model (shared o27v2.sim builders): the 9-batter base
+    lineup (8 fielders + SP) is ordered by hitting talent and stamped
+    with per-game fielding positions; the SP bats (almost always 9th).
+    The 3 jokers are NOT in the batting order — they stay in
+    jokers_available and the manager AI inserts them tactically per PA
+    (the O27 DH analog).
+  * Full substitution economy: youth rosters now carry the same
+    48-player shape as the pro league (8 starters + 11 backups + 3
+    jokers + 1 PR + 2 PH specialists + 17 pitchers active, plus
+    reserves). Team.bench is populated from the active backups +
+    specialists, so pinch-hit / pinch-run / defensive subs fire here
+    the same way they do on the pro side. The one-way invariant holds:
+    once a player exits, they're done.
   * Per-team manager fields use league-mean defaults (no archetype
     drift) since youth teams don't have a managers row.
   * No injury post-processing, no workload tracking — youth play one
@@ -117,7 +126,7 @@ def _make_engine_player(p: dict, *, home_bonus: float = 0.0) -> Player:
     archetype = ""
     if int(p.get("is_joker") or 0):
         archetype = str(p.get("joker_archetype") or "")
-    return Player(
+    ep = Player(
         player_id=str(p["id"]),
         name=p["name"],
         is_pitcher=bool(p["is_pitcher"]),
@@ -147,17 +156,35 @@ def _make_engine_player(p: dict, *, home_bonus: float = 0.0) -> Player:
         run_aggressiveness=gov(_scout.to_unit(p.get("run_aggressiveness") or 50)),
         position=str(p.get("position") or ("P" if p.get("is_pitcher") else "DH")),
     )
+    # Substitution-economy role tags — drive the bench candidate pickers
+    # (PH/PR/DEF). Mirrors o27v2.sim._db_team_to_engine hydration.
+    rs = p.get("roster_slot")
+    if rs is not None and str(rs):
+        ep.roster_slot = str(rs)
+    rh = p.get("role_hit")
+    if rh is not None:
+        ep.role_hit = bool(int(rh))
+    rr = p.get("role_run")
+    if rr is not None:
+        ep.role_run = bool(int(rr))
+    rtw = p.get("role_two_way")
+    if rtw is not None:
+        ep.role_two_way = bool(int(rtw))
+    rfp = p.get("role_field_pos")
+    if rfp is not None:
+        ep.role_field_pos = str(rfp)
+    return ep
 
 
 def _pick_youth_starter(youth_team_id: int, season: int,
                         rng: random.Random) -> int | None:
-    """Pick today's SP for a youth team. Strategy: from the 4 pitchers,
-    take the one with the fewest tournament starts so far in this
-    season. Ties go to highest pitcher_skill, then lowest id (stable).
+    """Pick today's SP for a youth team. Strategy: from the active
+    pitchers, take the one with the fewest tournament starts so far in
+    this season. Ties go to highest pitcher_skill, then lowest id.
     """
     pitchers = db.fetchall(
         "SELECT id, pitcher_skill FROM youth_players "
-        "WHERE youth_team_id = ? AND is_pitcher = 1",
+        "WHERE youth_team_id = ? AND is_pitcher = 1 AND is_active = 1",
         (youth_team_id,),
     )
     if not pitchers:
@@ -199,7 +226,7 @@ def _build_youth_engine_team(
         raise ValueError(f"Youth team {youth_team_id} not found")
 
     rows = db.fetchall(
-        "SELECT * FROM youth_players WHERE youth_team_id = ?",
+        "SELECT * FROM youth_players WHERE youth_team_id = ? AND is_active = 1",
         (youth_team_id,),
     )
     players = [dict(r) for r in rows]
@@ -251,16 +278,33 @@ def _build_youth_engine_team(
     if starter_engine is None:
         raise ValueError(f"Youth team {youth_team_id} has no usable pitchers")
 
-    # 9-batter lineup: 8 starting fielders in canonical order + SP last
-    # (the original O27 rule: every fielder bats including the SP).
-    lineup: list[Player] = []
-    for pos in _HITTER_POSITIONS_ORDER:
-        if pos in starting_hitters_by_pos:
-            lineup.append(starting_hitters_by_pos[pos])
-    # Pad from backups if any starting position is missing entirely.
-    while len(lineup) < 8 and backup_hitters:
-        lineup.append(backup_hitters.pop(0))
-    lineup.append(starter_engine)
+    # Identify the 8 starting fielders (first row seen at each canonical
+    # position), padding from the backup pool if a position is unfilled.
+    starting_fielders: list[Player] = [
+        starting_hitters_by_pos[pos]
+        for pos in _HITTER_POSITIONS_ORDER
+        if pos in starting_hitters_by_pos
+    ]
+    while len(starting_fielders) < 8 and backup_hitters:
+        starting_fielders.append(backup_hitters.pop(0))
+
+    # Pro lineup model (o27v2.sim): stamp per-game fielding positions,
+    # then order the 9-batter base lineup (8 fielders + SP) by hitting
+    # talent. The SP bats — almost always 9th, unless its bat clears the
+    # 0.50 bar. The 3 jokers are NOT in the batting order; they stay in
+    # jokers_available and the manager AI inserts them tactically per PA
+    # (the O27 DH analog).
+    from o27v2.sim import _ordered_lineup, _assign_game_positions
+    _assign_game_positions(starting_fielders, [starter_engine], jokers_engine)
+    lineup = _ordered_lineup(starting_fielders, [starter_engine])
+
+    # The engine's _set_fielding_pitcher picks the first is_pitcher in
+    # roster order, so put today's SP first or the rotation pick is
+    # cosmetic (mirrors o27v2.sim).
+    if starter_engine in engine_players:
+        engine_players = [starter_engine] + [
+            p for p in engine_players if p is not starter_engine
+        ]
 
     team = Team(
         team_id=team_role,
@@ -285,6 +329,11 @@ def _build_youth_engine_team(
         mgr_bench_usage=0.5,
         jokers_available=jokers_engine,
     )
+    # Populate the bench (substitution-economy). Bench = the non-starting
+    # fielders + the PR/PH specialists (everything left in backup_hitters
+    # after lineup padding). The engine's PH/PR/DEF candidate-pickers walk
+    # this list; without it no positional substitution can fire.
+    team.bench = list(backup_hitters)
     return team, players, int(starter_engine.player_id)
 
 
