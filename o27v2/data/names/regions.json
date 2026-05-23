@@ -569,6 +569,41 @@
       "first_keys":   ["israeli"],
       "surname_keys": ["israeli"]
     },
+    "netherlands": {
+      "_doc": [
+        "Established European baseball nation (Hoofdklasse, multiple WBC",
+        "appearances). Promoted out of the flat europe_western pool so a",
+        "Netherlands national side draws Dutch names tagged NL rather than",
+        "the mixed German/French/Spanish blend."
+      ],
+      "label": "Netherlands",
+      "country": "NL",
+      "first_keys":   ["dutch"],
+      "surname_keys": ["dutch"]
+    },
+    "italy": {
+      "_doc": [
+        "Established European baseball nation (Serie A1, WBC regular).",
+        "Promoted out of europe_western so an Italy national side draws",
+        "Italian names tagged IT."
+      ],
+      "label": "Italy",
+      "country": "IT",
+      "first_keys":   ["italian"],
+      "surname_keys": ["italian"]
+    },
+    "finland": {
+      "_doc": [
+        "Home of pesäpallo (Finnish baseball). Promoted out of the flat",
+        "nordic pool so a Finland national side is tagged FI; given/family",
+        "names use the shared Nordic/Scandinavian pools (no Finnish-specific",
+        "name data exists yet)."
+      ],
+      "label": "Finland",
+      "country": "FI",
+      "first_keys":   ["nordic"],
+      "surname_keys": ["nordic", "scandinavian"]
+    },
     "europe_southeast": {
       "_doc": [
         "Emerging European baseball nations outside the established DE/NL/",
