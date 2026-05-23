@@ -2,25 +2,27 @@
 O27 Youth League — auto-attached prospect-watching league.
 
 A second, structurally separate league that lives alongside the main
-pro league on every save. Thirty-two national teams (a deliberately
+pro league on every save. Forty-eight national teams (a deliberately
 broader field than the pro WBC roster — modeled on the ICC U19 World
-Cup mix of traditional baseball and cricket nations) carry a roster of
-12 players each, ages 14-19, and develop year over year. Players who
-turn 20 graduate into the pro league's free-agent pool.
+Cup mix of traditional baseball and cricket nations) carry a full
+48-player substitution-economy roster each (the same shape as the pro
+league: starters, backups, jokers, PR/PH specialists, pitchers and
+reserves), ages 14-19, and develop year over year. Players who turn 20
+graduate into the pro league's free-agent pool.
 
 Schema is fully separate (`youth_teams`, `youth_players`) so existing
-queries against `teams` / `players` are unaffected. Game simulation is
-NOT part of this phase — the league exists to give you a window into
-developing talent before it reaches the pros, not to produce its own
-standings off simulated games.
+queries against `teams` / `players` are unaffected. Games are simulated
+through the real O27 engine (see `youth_sim`), so the substitution
+economy — bench pinch-hit / pinch-run / defensive subs and joker
+insertion — runs in youth tournaments too.
 
 Public surface:
-  * seed_youth_league()   — create the 16 national teams + initial
-                            rosters. Idempotent.
+  * seed_youth_league()   — create the national teams + initial
+                            48-player rosters. Idempotent.
   * advance_youth_year()  — annual aging: develop attributes, age
-                            everyone +1, graduate age-23 players to the
-                            pro FA pool, generate new 18-year-old
-                            replacements.
+                            everyone +1, graduate age-19 players to the
+                            pro FA pool, refill the roster shape with new
+                            14-year-olds.
   * youth_teams()         — fetch all youth team rows.
   * youth_roster(team_id) — fetch players on a youth team, ordered.
   * top_prospects(limit)  — sorted view across the league for the UI.
@@ -137,27 +139,45 @@ def country_region(country_code: str) -> str:
 
 # Per-team roster shape for the youth league.
 #
-# 28 players per team: enough depth to platoon, hold a real bullpen,
-# and run jokers without leaving the bench bare. Over 48 teams that's
-# 1,344 youth players league-wide.
+# Youth squads carry the SAME substitution-economy shape the players
+# graduate into on the pro side (o27v2/league.py: ACTIVE_FIELDERS etc).
+# Mirroring the pro roster means the bench/specialist substitution
+# economy works in youth games too — pinch-hit, pinch-run and
+# defensive subs draw from a real bench, not an empty one. Over 48
+# teams that's 2,304 youth players league-wide.
 #
-#   8 starting fielders (one at each canonical position)
-#   8 position-player backups (one backup per starting position)
-#   9 pitchers              (3 rotation + 6 bullpen, youth scale)
-#   3 jokers                (the structural O27 joker trio)
-#  ----
-#  28 total
+#    8 starting fielders   (one at each canonical position)
+#   11 fielder backups     (depth at every position for PH/PR/DEF subs)
+#    3 jokers              (the structural O27 joker trio — one per archetype)
+#    1 pinch-run specialist (pure speed, drafted explicitly)
+#    2 pinch-hit specialists (loud bat / no glove, drafted explicitly)
+#   17 pitchers
+#  ---- 42 active
+#    3 reserve hitters     (is_active=0 depth, promoted on graduation gaps)
+#    3 reserve pitchers     (is_active=0 depth)
+#  ---- 48 total
 
 _HITTER_POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
-_N_PITCHERS = 9
-_N_JOKERS   = 3
+# Backup distribution: one body at every canonical position (8) plus an
+# extra at the three up-the-middle premium spots (11 total).
+_BACKUP_POSITIONS = _HITTER_POSITIONS + ["CF", "SS", "2B"]
+_N_BACKUPS     = len(_BACKUP_POSITIONS)   # 11
+_N_JOKERS      = 3
+_N_PR_SPEC     = 1
+_N_PH_SPEC     = 2
+_N_PITCHERS    = 17
+_N_RESERVE_HIT = 3
+_N_RESERVE_PIT = 3
 
-ROSTER_SIZE = (
-    len(_HITTER_POSITIONS)        # 8 starters
-    + len(_HITTER_POSITIONS)      # 8 backups
-    + _N_PITCHERS                 # 9 pitchers
-    + _N_JOKERS                   # 3 jokers
-)  # = 28
+ACTIVE_SIZE = (
+    len(_HITTER_POSITIONS)   # 8 starters
+    + _N_BACKUPS             # 11 backups
+    + _N_JOKERS              # 3 jokers
+    + _N_PR_SPEC + _N_PH_SPEC  # 3 specialists
+    + _N_PITCHERS            # 17 pitchers
+)  # = 42
+
+ROSTER_SIZE = ACTIVE_SIZE + _N_RESERVE_HIT + _N_RESERVE_PIT  # = 48
 
 # Joker archetypes — same set the pro league rolls.
 _JOKER_ARCHETYPES = ["power", "speed", "contact"]
@@ -261,13 +281,23 @@ CREATE TABLE IF NOT EXISTS youth_players (
     -- 14-year-old who got rated 4★ keeps that label even if his
     -- numbers underwhelm by 19 (busted phenom) or vice versa
     -- (late-blooming sleeper).
-    recruit_stars      INTEGER DEFAULT 3
+    recruit_stars      INTEGER DEFAULT 3,
+    -- Substitution-economy layer (mirrors the pro `players` columns).
+    -- is_active=0 marks reserve depth that does not dress for games.
+    -- role_* / roster_slot drive the bench substitution candidate
+    -- pickers; they are re-derived each off-season from updated grades.
+    is_active          INTEGER DEFAULT 1,
+    roster_slot        TEXT    DEFAULT '',
+    role_hit           INTEGER DEFAULT 1,
+    role_run           INTEGER DEFAULT 0,
+    role_two_way       INTEGER DEFAULT 1,
+    role_field_pos     TEXT    DEFAULT ''
 );
 """
 
 # Tournament schema. Each season the youth league runs one short
-# tournament: 8 groups of 4 → top 2 per group advance → R16 → QF →
-# SF → Final. 32 teams total, 63 games per tournament.
+# tournament: 8 groups of 6 → top 2 per group advance → R16 → QF →
+# SF → Final. 48 teams total, 135 games per tournament.
 _SCHEMA_GROUPS = """
 CREATE TABLE IF NOT EXISTS youth_groups (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -347,6 +377,12 @@ def init_youth_schema() -> None:
         ("youth_players", "joker_archetype TEXT DEFAULT ''"),
         ("youth_players", "youth_potential_index REAL DEFAULT 1.0"),
         ("youth_players", "recruit_stars INTEGER DEFAULT 3"),
+        ("youth_players", "is_active INTEGER DEFAULT 1"),
+        ("youth_players", "roster_slot TEXT DEFAULT ''"),
+        ("youth_players", "role_hit INTEGER DEFAULT 1"),
+        ("youth_players", "role_run INTEGER DEFAULT 0"),
+        ("youth_players", "role_two_way INTEGER DEFAULT 1"),
+        ("youth_players", "role_field_pos TEXT DEFAULT ''"),
     ]
     for table, col_def in _migrations:
         try:
@@ -407,6 +443,14 @@ def _make_youth_player(
     p["age"] = age
     p["is_joker"] = 1 if is_joker else 0
     p["joker_archetype"] = joker_archetype if is_joker else ""
+    if is_joker:
+        # Jokers are the DH role — tag the slot so the engine recognises
+        # them and the bench builder excludes them from PH/PR/DEF subs.
+        p["roster_slot"]    = "joker"
+        p["role_hit"]       = 1
+        p["role_run"]       = 0
+        p["role_two_way"]   = 0
+        p["role_field_pos"] = ""
     p["youth_potential_index"] = round(rng.uniform(_YPI_LO, _YPI_HI), 3)
     p["recruit_stars"] = _stars_from_composite(_composite_for_player(p))
     return p
@@ -431,14 +475,33 @@ def _name_picker_for_region(rng: random.Random, region_id: str,
                             region_weights={region_id: 1.0})
 
 
+def _make_youth_specialist(
+    rng: random.Random,
+    kind: str,           # "pr_specialist" | "ph_specialist"
+    name: str,
+    country: str,
+    age: int,
+) -> dict:
+    """Build a youth situational specialist by reusing the pro
+    `_make_specialist` shape (so role tags + roster_slot land exactly
+    as they do on the pro side), then layering on the youth-only YPI
+    governor + recruit-stars label."""
+    from o27v2.league import _make_specialist
+    p = _make_specialist(rng, kind, name=name, country=country)
+    p["age"] = age
+    p["youth_potential_index"] = round(rng.uniform(_YPI_LO, _YPI_HI), 3)
+    p["recruit_stars"] = _stars_from_composite(_composite_for_player(p))
+    return p
+
+
 def _spawn_roster(
     team: dict,
     rng: random.Random,
     seed_year: int,
 ) -> list[dict]:
-    """Build a full 28-player youth roster for one team:
-       8 starting fielders + 8 position-player backups
-       + 9 pitchers + 3 jokers.
+    """Build a full 48-player substitution-economy youth roster:
+       8 starters + 11 backups + 3 jokers + 1 PR + 2 PH + 17 pitchers
+       (42 active) + 3 reserve hitters + 3 reserve pitchers.
     """
     name_pick = _name_picker_for_region(rng, team["name_region"],
                                           team.get("country_code", ""))
@@ -447,8 +510,8 @@ def _spawn_roster(
     def _age() -> int:
         return rng.randint(_SEED_AGE_LO, _SEED_AGE_HI)
 
-    def _spawn(pos: str, *, is_pitcher: bool, is_joker: bool = False,
-               joker_archetype: str = "") -> dict:
+    def _spawn(pos: str, *, is_pitcher: bool, is_active: int = 1,
+               is_joker: bool = False, joker_archetype: str = "") -> dict:
         nm, ctry = name_pick()
         country = ctry or team["country_code"]
         p = _make_youth_player(
@@ -456,22 +519,42 @@ def _spawn_roster(
             age=_age(),
             is_joker=is_joker, joker_archetype=joker_archetype,
         )
+        p["is_active"] = is_active
+        p["seed_year"] = seed_year
+        return p
+
+    def _spawn_spec(kind: str) -> dict:
+        nm, ctry = name_pick()
+        country = ctry or team["country_code"]
+        p = _make_youth_specialist(rng, kind, name=nm, country=country,
+                                   age=_age())
+        p["is_active"] = 1
         p["seed_year"] = seed_year
         return p
 
     # 8 starting fielders.
     for pos in _HITTER_POSITIONS:
         rows.append(_spawn(pos, is_pitcher=False))
-    # 8 position-player backups (one per starting position).
-    for pos in _HITTER_POSITIONS:
+    # 11 fielder backups (one per position + premium up-the-middle depth).
+    for pos in _BACKUP_POSITIONS:
         rows.append(_spawn(pos, is_pitcher=False))
-    # 9 pitchers.
-    for _ in range(_N_PITCHERS):
-        rows.append(_spawn("P", is_pitcher=True))
     # 3 jokers — one of each archetype.
     for archetype in _JOKER_ARCHETYPES[:_N_JOKERS]:
         rows.append(_spawn("DH", is_pitcher=False,
                            is_joker=True, joker_archetype=archetype))
+    # Situational specialists: 1 pinch-runner + 2 pinch-hitters.
+    for _ in range(_N_PR_SPEC):
+        rows.append(_spawn_spec("pr_specialist"))
+    for _ in range(_N_PH_SPEC):
+        rows.append(_spawn_spec("ph_specialist"))
+    # 17 pitchers.
+    for _ in range(_N_PITCHERS):
+        rows.append(_spawn("P", is_pitcher=True))
+    # Reserve depth (does not dress for games until promoted).
+    for _ in range(_N_RESERVE_HIT):
+        rows.append(_spawn("RF", is_pitcher=False, is_active=0))
+    for _ in range(_N_RESERVE_PIT):
+        rows.append(_spawn("P", is_pitcher=True, is_active=0))
 
     return rows
 
@@ -489,6 +572,8 @@ _PLAYER_COLS = (
     "baserunning", "run_aggressiveness",
     "bats", "throws", "work_ethic", "work_habits", "habit_cup",
     "youth_potential_index", "recruit_stars",
+    "is_active", "roster_slot", "role_hit", "role_run", "role_two_way",
+    "role_field_pos",
 )
 
 
@@ -514,6 +599,12 @@ def _insert_player(team_id: int, p: dict) -> None:
         float(p.get("habit_cup", 0.5)),
         float(p.get("youth_potential_index", 1.0)),
         int(p.get("recruit_stars", 3)),
+        int(p.get("is_active", 1)),
+        str(p.get("roster_slot", "") or ""),
+        int(p.get("role_hit", 1)),
+        int(p.get("role_run", 0)),
+        int(p.get("role_two_way", 1)),
+        str(p.get("role_field_pos", "") or ""),
     )
     db.execute(
         f"INSERT INTO youth_players ({cols}) VALUES ({qs})",
@@ -526,8 +617,9 @@ def _insert_player(team_id: int, p: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def seed_youth_league(rng_seed: int = 0, seed_year: int = 1) -> int:
-    """Create the 16 national teams + initial 12-player rosters. Safe
-    to call only once — early-returns if youth_teams already has rows.
+    """Create the national teams + their initial 48-player rosters.
+    Safe to call only once — early-returns if youth_teams already has
+    rows.
 
     Returns the count of teams inserted (0 if the league already
     existed)."""
@@ -563,24 +655,35 @@ def seed_youth_league(rng_seed: int = 0, seed_year: int = 1) -> int:
 # Annual roll-forward
 # ---------------------------------------------------------------------------
 
-# Keys the pro dev pass emits that have no column on `youth_players`
-# (archetype + substitution-role tags are a pro-roster concept). They must
+# Keys the pro dev pass emits that have no column on `youth_players`.
+# `archetype` is a pro-roster concept with no youth column, so it must
 # be stripped before the youth UPDATE or it fails with "no such column".
-_PRO_ONLY_DEV_KEYS = (
-    "archetype", "role_hit", "role_run", "role_two_way",
-    "role_field_pos", "roster_slot",
-)
+# The substitution-role tags (role_hit/role_run/role_two_way/
+# role_field_pos/roster_slot) DO have youth columns now and are kept,
+# so they re-derive off the post-development grades each off-season —
+# exactly as they do on the pro side.
+_PRO_ONLY_DEV_KEYS = ("archetype",)
+
+# Roster slots that are drafted by intent rather than derived from
+# grades. The generic classifier would reclassify a developed PH bat as
+# bat_first; preserve the original intent instead.
+_INTENTIONAL_SLOTS = ("joker", "pr_specialist", "ph_specialist")
 
 
 def _develop_youth_row(p: dict, rng: random.Random) -> tuple[dict, int]:
     """Apply one season of development to a youth player. Reuses the
-    pro-league dev formula with org_strength=50 (neutral), then drops the
-    pro-only archetype/role keys that `youth_players` doesn't carry."""
+    pro-league dev formula with org_strength=50 (neutral), drops the
+    pro-only `archetype` key, and re-derives the substitution-role tags
+    off the new grades — while preserving the drafted intent of jokers
+    and specialists."""
     from o27v2.development import _develop_player
+    orig_slot = (p.get("roster_slot") or "")
     updated, new_age = _develop_player(p, org_strength=50, rng=rng,
                                        is_pitcher=bool(p.get("is_pitcher")))
     for k in _PRO_ONLY_DEV_KEYS:
         updated.pop(k, None)
+    if orig_slot in _INTENTIONAL_SLOTS:
+        updated["roster_slot"] = orig_slot
     return updated, new_age
 
 
@@ -639,31 +742,62 @@ def _graduate_to_pro_fa(p: dict) -> int | None:
 
 
 def _refill_team(team: dict, rng: random.Random, seed_year: int) -> int:
-    """After graduations, top up the team back to its target shape
-    with new 14-year-olds. Each role bucket (starter slot at every
-    position, backup slot at every position, pitchers, jokers) gets
-    refilled independently so the roster doesn't drift in shape over
-    multiple seasons.
+    """After graduations, top up the team back to its full
+    substitution-economy shape with new 14-year-olds. Every role bucket
+    (per-position fielders, jokers, PR/PH specialists, pitchers, and the
+    reserve depth) refills independently so the roster doesn't drift in
+    shape over multiple seasons.
     """
     rows = db.fetchall(
-        "SELECT position, is_pitcher, is_joker FROM youth_players "
-        "WHERE youth_team_id = ?",
+        "SELECT position, is_pitcher, is_joker, roster_slot, is_active, "
+        "       joker_archetype FROM youth_players WHERE youth_team_id = ?",
         (team["id"],),
     )
 
-    # Bucket by role.
-    pitcher_count = sum(1 for r in rows if r["is_pitcher"] and not r["is_joker"])
-    joker_count   = sum(1 for r in rows if r["is_joker"])
+    # Bucket the active roster. NOTE the classifier surfaces *organic*
+    # pr/ph specialists out of the ordinary fielder pool, so the
+    # roster_slot of a backup is not a stable identity. We therefore size
+    # the position group by a single TOTAL target (22 = 19 fielders + 1 PR
+    # + 2 PH) and only use roster_slot to guarantee the specialist
+    # minimums — never to drive per-position counts (that double-counted
+    # and made the roster grow every off-season).
     pos_counts: dict[str, int] = {pos: 0 for pos in _HITTER_POSITIONS}
+    n_position_players = 0          # all active non-joker, non-pitcher bodies
+    pr_active = ph_active = 0
+    active_pitchers = 0
+    reserve_hit = reserve_pit = 0
+    existing_archetypes: set[str] = set()
     for r in rows:
-        if not r["is_pitcher"] and not r["is_joker"]:
-            pos_counts[r["position"]] = pos_counts.get(r["position"], 0) + 1
+        slot = r["roster_slot"] or ""
+        if not r["is_active"]:
+            if r["is_pitcher"]:
+                reserve_pit += 1
+            else:
+                reserve_hit += 1
+            continue
+        if r["is_joker"]:
+            existing_archetypes.add(r["joker_archetype"] or "")
+            continue
+        if r["is_pitcher"]:
+            active_pitchers += 1
+            continue
+        n_position_players += 1
+        if slot == "pr_specialist":
+            pr_active += 1
+        elif slot == "ph_specialist":
+            ph_active += 1
+        if r["position"] in pos_counts:
+            pos_counts[r["position"]] += 1
+
+    _POSITION_PLAYER_TARGET = (
+        len(_HITTER_POSITIONS) + _N_BACKUPS + _N_PR_SPEC + _N_PH_SPEC
+    )  # 8 + 11 + 1 + 2 = 22
 
     name_pick = _name_picker_for_region(rng, team["name_region"],
                                           team.get("country_code", ""))
     added = 0
 
-    def _spawn_and_insert(pos: str, *, is_pitcher: bool,
+    def _spawn_and_insert(pos: str, *, is_pitcher: bool, is_active: int = 1,
                           is_joker: bool = False,
                           joker_archetype: str = "") -> None:
         nonlocal added
@@ -674,42 +808,53 @@ def _refill_team(team: dict, rng: random.Random, seed_year: int) -> int:
             name=nm, country=country, age=_SEED_AGE_LO,
             is_joker=is_joker, joker_archetype=joker_archetype,
         )
+        p["is_active"] = is_active
         p["seed_year"] = seed_year
         _insert_player(team["id"], p)
         added += 1
 
-    # Each canonical position needs a starter + backup = 2 bodies.
-    POSITION_TARGET = 2
-    for pos in _HITTER_POSITIONS:
-        while pos_counts.get(pos, 0) < POSITION_TARGET:
-            _spawn_and_insert(pos, is_pitcher=False)
-            pos_counts[pos] = pos_counts.get(pos, 0) + 1
+    def _spawn_spec(kind: str) -> None:
+        nonlocal added
+        nm, ctry = name_pick()
+        country = ctry or team["country_code"]
+        p = _make_youth_specialist(rng, kind, name=nm, country=country,
+                                   age=_SEED_AGE_LO)
+        p["is_active"] = 1
+        p["seed_year"] = seed_year
+        _insert_player(team["id"], p)
+        added += 1
 
-    # Pitchers.
-    while pitcher_count < _N_PITCHERS:
-        _spawn_and_insert("P", is_pitcher=True)
-        pitcher_count += 1
+    # Specialist minimums first (count toward the position-player total).
+    while pr_active < _N_PR_SPEC:
+        _spawn_spec("pr_specialist"); pr_active += 1; n_position_players += 1
+    while ph_active < _N_PH_SPEC:
+        _spawn_spec("ph_specialist"); ph_active += 1; n_position_players += 1
 
-    # Jokers — preserve archetype rotation so each team always has all
-    # three flavours.
-    have_archetypes = {
-        r["position"]: True for r in rows  # not actually used; cover by archetype below
-    }
-    existing_archetypes = set()
-    if joker_count:
-        existing_jokers = db.fetchall(
-            "SELECT joker_archetype FROM youth_players "
-            "WHERE youth_team_id = ? AND is_joker = 1",
-            (team["id"],),
-        )
-        existing_archetypes = {
-            (r["joker_archetype"] or "") for r in existing_jokers
-        }
+    # Fill the remaining position-player slots with fielders, always
+    # adding to the canonical position that is currently thinnest so
+    # coverage stays even. Pins the group at exactly 22.
+    while n_position_players < _POSITION_PLAYER_TARGET:
+        pos = min(_HITTER_POSITIONS, key=lambda p: pos_counts.get(p, 0))
+        _spawn_and_insert(pos, is_pitcher=False)
+        pos_counts[pos] = pos_counts.get(pos, 0) + 1
+        n_position_players += 1
+
+    # Jokers — preserve archetype rotation so each team keeps all three.
     for archetype in _JOKER_ARCHETYPES[:_N_JOKERS]:
         if archetype not in existing_archetypes:
             _spawn_and_insert("DH", is_pitcher=False,
                               is_joker=True, joker_archetype=archetype)
             existing_archetypes.add(archetype)
+
+    # Active pitchers.
+    while active_pitchers < _N_PITCHERS:
+        _spawn_and_insert("P", is_pitcher=True); active_pitchers += 1
+
+    # Reserve depth.
+    while reserve_hit < _N_RESERVE_HIT:
+        _spawn_and_insert("RF", is_pitcher=False, is_active=0); reserve_hit += 1
+    while reserve_pit < _N_RESERVE_PIT:
+        _spawn_and_insert("P", is_pitcher=True, is_active=0); reserve_pit += 1
 
     return added
 
