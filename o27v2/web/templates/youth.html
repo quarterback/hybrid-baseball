@@ -215,7 +215,7 @@
   const btn = document.getElementById('youth-seed-btn');
   if (!btn) return;
   btn.addEventListener('click', async () => {
-    if (!confirm('Attach the O27 Youth League to this save? Creates 32 national teams with 28-player rosters.')) return;
+    if (!confirm('Attach the O27 Youth League to this save? Creates 40 national teams with 28-player rosters.')) return;
     btn.disabled = true; btn.textContent = 'Attaching…';
     try {
       const r = await fetch('/api/youth/seed', {method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'});

@@ -34,7 +34,7 @@ from o27v2 import db
 
 
 # ---------------------------------------------------------------------------
-# National teams (32 nations — broader than WBC, mixes baseball + cricket
+# National teams (40 nations — broader than WBC, mixes baseball + cricket
 # nations to fit the U19 World Cup feel)
 # ---------------------------------------------------------------------------
 # (country_code, name, abbrev, name_region_id_in_regions.json)
@@ -66,14 +66,22 @@ _NATIONAL_TEAMS: list[tuple[str, str, str, str]] = [
     ("ZW", "Zimbabwe",             "ZIM", "africa_cricket"),
     ("IN", "India",                "IND", "south_asia"),
     ("PK", "Pakistan",             "PAK", "south_asia"),
+    ("LK", "Sri Lanka",            "SRI", "south_asia"),
+    ("BD", "Bangladesh",           "BAN", "south_asia"),
+    ("NP", "Nepal",                "NEP", "south_asia"),
+    ("AF", "Afghanistan",          "AFG", "afghan_central_asia"),
+    ("IL", "Israel",               "ISR", "israel"),
     ("MY", "Malaysia",             "MAS", "malaysia"),
-    ("PH", "Philippines",          "PHI", "southeast_asia"),
+    ("PH", "Philippines",          "PHI", "philippines"),
     ("JP", "Japan",                "JPN", "east_asia"),
     ("KR", "South Korea",          "KOR", "east_asia"),
     ("TW", "Taiwan",               "TPE", "east_asia"),
     ("AU", "Australia",            "AUS", "anzac"),
     ("NZ", "New Zealand",          "NZL", "anzac"),
     ("FJ", "Fiji",                 "FIJ", "pacific_islands"),
+    ("WS", "Samoa",                "SAM", "pacific_islands"),
+    ("CW", "Curacao",              "CUW", "caribbean_dutch"),
+    ("GR", "Greece",               "GRE", "europe_southeast"),
 ]
 
 # Geographic region a country belongs to, for grouping the standings on
@@ -85,21 +93,24 @@ _COUNTRY_REGION: dict[str, str] = {
     # Caribbean
     "DO": "Caribbean",      "PR": "Caribbean",      "CU": "Caribbean",
     "JM": "Caribbean",      "TT": "Caribbean",      "SR": "Caribbean",
-    "GY": "Caribbean",
+    "GY": "Caribbean",      "CW": "Caribbean",
     # South America
     "VE": "South America",  "CO": "South America",
     "BR": "South America",  "AR": "South America",
     # Europe
     "GB": "Europe",         "IE": "Europe",         "NL": "Europe",
     "IT": "Europe",         "CZ": "Europe",         "FI": "Europe",
+    "GR": "Europe",
     # Africa
     "ZA": "Africa",         "ZW": "Africa",
     # Asia
     "IN": "Asia",           "PK": "Asia",           "MY": "Asia",
     "PH": "Asia",           "JP": "Asia",           "KR": "Asia",
-    "TW": "Asia",
+    "TW": "Asia",           "LK": "Asia",           "BD": "Asia",
+    "NP": "Asia",           "AF": "Asia",           "IL": "Asia",
     # Oceania
     "AU": "Oceania",        "NZ": "Oceania",        "FJ": "Oceania",
+    "WS": "Oceania",
 }
 
 REGION_ORDER: list[str] = [
@@ -115,8 +126,8 @@ def country_region(country_code: str) -> str:
 # Per-team roster shape for the youth league.
 #
 # 28 players per team: enough depth to platoon, hold a real bullpen,
-# and run jokers without leaving the bench bare. Over 32 teams that's
-# 896 youth players league-wide.
+# and run jokers without leaving the bench bare. Over 40 teams that's
+# 1,120 youth players league-wide.
 #
 #   8 starting fielders (one at each canonical position)
 #   8 position-player backups (one backup per starting position)
@@ -964,11 +975,11 @@ def player_observed_stats(player_id: int) -> dict:
 # ---------------------------------------------------------------------------
 #
 # Format (per season):
-#   * 32 teams drawn into 8 groups of 4 (random — no pots/seeding for v1).
-#   * Each group: full round-robin, 3 games per team (each pair plays
-#     once). 6 games per group × 8 groups = 48 group games.
+#   * 40 teams drawn into 8 groups of 5 (random — no pots/seeding for v1).
+#   * Each group: full round-robin, 4 games per team (each pair plays
+#     once). C(5,2)=10 games per group × 8 groups = 80 group games.
 #   * Top 2 per group advance to R16 (single-elim). 8 + 4 + 2 + 1 = 15
-#     knockout games. Tournament total = 63 games.
+#     knockout games. Tournament total = 95 games.
 #
 # Game simulation here is a HEURISTIC, not the full PA-by-PA O27 engine.
 # We compute each team's overall composite from its current youth
@@ -980,7 +991,7 @@ def player_observed_stats(player_id: int) -> dict:
 # of the youth feature) does not depend on per-game stats.
 
 _GROUP_LETTERS  = ["A", "B", "C", "D", "E", "F", "G", "H"]
-_TEAMS_PER_GROUP = 4
+_TEAMS_PER_GROUP = 5
 
 
 def _team_overall(team_id: int) -> float:
@@ -1065,8 +1076,9 @@ def _has_tournament_for_season(season: int) -> bool:
 
 
 def draw_groups(season: int, rng_seed: int = 0) -> list[dict]:
-    """Random 8-group draw. Inserts youth_groups + membership rows.
-    Returns a list of {group_letter, team_ids} for inspection.
+    """Random 8-group draw (5 teams per group). Inserts youth_groups +
+    membership rows. Returns a list of {group_letter, team_ids} for
+    inspection.
 
     Idempotent: returns the existing draw when one already exists for
     `season`."""
@@ -1123,7 +1135,7 @@ def draw_groups(season: int, rng_seed: int = 0) -> list[dict]:
 
 def _schedule_group_games(season: int, groups: list[dict],
                           rng: random.Random) -> int:
-    """For each group, insert the C(4,2) = 6 round-robin games. Home/
+    """For each group, insert the C(5,2) = 10 round-robin games. Home/
     away alternates within the pair list."""
     n = 0
     for grp in groups:
@@ -1244,7 +1256,7 @@ def _build_knockout_bracket(season: int, rng: random.Random) -> int:
     if not groups:
         return 0
 
-    # Map group_letter → standings (length 4) for easy access.
+    # Map group_letter → standings (length 5) for easy access.
     by_letter: dict[str, list[dict]] = {}
     for rows in groups.values():
         if rows:
