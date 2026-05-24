@@ -3,7 +3,10 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-2">
   <h2 class="mb-0">Hall of Fame</h2>
-  <a href="{{ url_for('hof_candidates') }}" class="btn btn-sm btn-outline-primary">Candidate Board →</a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('hof_candidates') }}" class="btn btn-sm btn-outline-primary">Candidate Board →</a>
+    <a href="{{ url_for('hof_settings') }}" class="btn btn-sm btn-outline-secondary" title="Tune the points model and gates">Settings</a>
+  </div>
 </div>
 <div class="text-secondary small mb-3" style="line-height:1.45">
   The league Hall is <strong>gated and automatic</strong>. A player accumulates HOF

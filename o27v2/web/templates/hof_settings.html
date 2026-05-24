@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}HOF Settings{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h2 class="mb-0">Hall of Fame — Settings</h2>
+  <a href="{{ url_for('hall_of_fame') }}" class="btn btn-sm btn-outline-primary">← Hall of Fame</a>
+</div>
+<div class="text-secondary small mb-3" style="line-height:1.45">
+  Tune the points model and the induction gates. Changes are saved to this league and take
+  effect immediately on the candidate board. <strong>Save</strong> just stores the values.
+  <strong>Save &amp; Recompute</strong> additionally inducts anyone who now qualifies (use after
+  <em>lowering</em> a bar). <strong>Save &amp; Rebuild</strong> wipes the league Hall and the
+  automatic team inductions and re-evaluates from scratch — preserving manual team picks
+  (use after <em>raising</em> a bar, since recompute only ever adds members).
+</div>
+
+<form method="post" action="{{ url_for('hof_settings_post') }}">
+  {% for group_label, items in fields %}
+  <div class="dense mb-3">
+    <div class="panel-title">{{ group_label }}</div>
+    <div class="p-2">
+      <div class="row g-3">
+        {% for key, label in items %}
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label small mb-0" for="f-{{ key }}">{{ label }}</label>
+          <input type="number"
+                 id="f-{{ key }}" name="{{ key }}"
+                 value="{{ cfg[key] }}"
+                 step="{{ '1' if key in int_keys else '0.05' }}"
+                 min="0"
+                 class="form-control form-control-sm"
+                 style="max-width:140px">
+          <div class="text-secondary" style="font-size:.72rem">default {{ defaults[key] }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="dense mb-3">
+    <div class="panel-title">Ink categories</div>
+    <div class="p-2">
+      <div class="text-secondary small mb-2">
+        Which leaderboard categories count as leading the league (black ink) or a top-10
+        finish (gray ink). Only categories the season archive stores are listed.
+      </div>
+      <div class="row g-3">
+        <div class="col-12 col-md-6">
+          <div class="fw-bold small mb-1">Batting</div>
+          {% for key, label in all_batting_cats %}
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" id="bc-{{ key }}"
+                   name="major_batting_cats" value="{{ key }}"
+                   {% if key in batting_cats %}checked{% endif %}>
+            <label class="form-check-label small" for="bc-{{ key }}">{{ label }}</label>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="col-12 col-md-6">
+          <div class="fw-bold small mb-1">Pitching</div>
+          {% for key, label in all_pitching_cats %}
+          <div class="form-check form-check-inline">
+            <input class="form-check-input" type="checkbox" id="pc-{{ key }}"
+                   name="major_pitching_cats" value="{{ key }}"
+                   {% if key in pitching_cats %}checked{% endif %}>
+            <label class="form-check-label small" for="pc-{{ key }}">{{ label }}</label>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dense mb-3">
+    <div class="p-2 d-flex flex-wrap gap-2 align-items-center">
+      <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">Save</button>
+      <button type="submit" name="action" value="save_recompute" class="btn btn-sm btn-outline-primary">Save &amp; Recompute</button>
+      <button type="submit" name="action" value="save_rebuild" class="btn btn-sm btn-outline-warning"
+              onclick="return confirm('Rebuild wipes the league Hall and automatic team inductions (manual picks are kept) and re-evaluates from scratch. Continue?');">Save &amp; Rebuild</button>
+      <button type="submit" name="action" value="reset" class="btn btn-sm btn-outline-danger ms-auto"
+              onclick="return confirm('Reset all HOF settings to their shipped defaults?');">Reset to Defaults</button>
+    </div>
+    <div class="px-2 pb-2 text-secondary small">
+      League Hall currently has <strong>{{ league_count }}</strong> member(s).
+    </div>
+  </div>
+</form>
+{% endblock %}

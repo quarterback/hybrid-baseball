@@ -6194,6 +6194,7 @@ def team_detail(team_id: int):
 
 @app.route("/hall-of-fame")
 def hall_of_fame():
+    cfg = hof.load_config()
     inductees = hof.league_hof()
     batters = [r for r in inductees if not r["is_pitcher"]]
     pitchers = [r for r in inductees if r["is_pitcher"]]
@@ -6202,25 +6203,94 @@ def hall_of_fame():
         inductees=inductees,
         batters=batters,
         pitchers=pitchers,
-        threshold=hof.LEAGUE_THRESHOLD,
-        min_seasons=hof.LEAGUE_MIN_SEASONS,
-        min_age=hof.LEAGUE_MIN_AGE,
+        threshold=cfg["league_threshold"],
+        min_seasons=cfg["league_min_seasons"],
+        min_age=cfg["league_min_age"],
     )
 
 
 @app.route("/hall-of-fame/candidates")
 def hof_candidates():
-    cands = hof.candidates()
+    cfg = hof.load_config()
+    cands = hof.candidates(cfg=cfg)
     # Active watch-list: not yet in the Hall, ranked by how close they are.
     active = [c for c in cands if not c["in_league_hof"]]
     return _serve(
         "hof_candidates.html",
         candidates=cands,
         active=active,
-        threshold=hof.LEAGUE_THRESHOLD,
-        min_seasons=hof.LEAGUE_MIN_SEASONS,
-        min_age=hof.LEAGUE_MIN_AGE,
+        threshold=cfg["league_threshold"],
+        min_seasons=cfg["league_min_seasons"],
+        min_age=cfg["league_min_age"],
     )
+
+
+@app.route("/hall-of-fame/settings")
+def hof_settings():
+    cfg = hof.load_config()
+    return _serve(
+        "hof_settings.html",
+        cfg=cfg,
+        defaults=hof.DEFAULTS,
+        fields=hof.CONFIG_FIELDS,
+        int_keys=sorted(hof._INT_KEYS),
+        all_batting_cats=hof.ALL_BATTING_CATS,
+        all_pitching_cats=hof.ALL_PITCHING_CATS,
+        batting_cats=sorted(cfg["major_batting_cats"]),
+        pitching_cats=sorted(cfg["major_pitching_cats"]),
+        league_count=len(hof.league_hof()),
+    )
+
+
+@app.route("/hall-of-fame/settings", methods=["POST"])
+def hof_settings_post():
+    action = (request.form.get("action") or "save").strip()
+    if action == "reset":
+        hof.reset_config()
+        flash("HOF settings reset to defaults.", "info")
+        return redirect(url_for("hof_settings"))
+
+    partial = {}
+    for k in hof.DEFAULTS:
+        raw = request.form.get(k)
+        if raw is not None and str(raw).strip() != "":
+            partial[k] = raw
+    partial["major_batting_cats"] = request.form.getlist("major_batting_cats")
+    partial["major_pitching_cats"] = request.form.getlist("major_pitching_cats")
+    hof.save_config(partial)
+
+    if action == "save_rebuild":
+        # Reconcile: evicts members who no longer qualify (preserves manual
+        # team picks). Use after raising a threshold.
+        result = hof.rebuild_halls()
+        flash(
+            f"Settings saved and halls rebuilt from scratch — league Hall now "
+            f"has {len(hof.league_hof())} member(s), "
+            f"{len(result['team'])} criteria team inductions.",
+            "info",
+        )
+    elif action == "save_recompute":
+        # Additive: only adds newly qualifying players. Use after lowering a
+        # threshold (won't disturb existing inductees).
+        row = db.fetchone("SELECT MAX(season_number) AS n FROM seasons")
+        sn = (row or {}).get("n")
+        yr = None
+        if sn:
+            yrow = db.fetchone(
+                "SELECT year FROM seasons WHERE season_number = ?", (sn,)
+            )
+            yr = (yrow or {}).get("year")
+        result = hof.run_inductions(sn, yr)
+        flash(
+            f"Settings saved and inductions recomputed — added "
+            f"{len(result['league'])} new league member(s), "
+            f"{len(result['team'])} new team induction(s).",
+            "info",
+        )
+    else:
+        flash("HOF settings saved. Use Recompute or Rebuild to re-evaluate "
+              "the halls.", "info")
+    return redirect(url_for("hof_settings"))
 
 
 @app.route("/team/<int:team_id>/hall-of-fame")
