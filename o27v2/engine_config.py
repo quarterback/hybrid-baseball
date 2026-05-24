@@ -259,3 +259,77 @@ def apply_preset(name: str) -> dict[str, object]:
     _store(overrides)
     apply_overrides(force=True)
     return overrides
+
+
+# --------------------------------------------------------------------------
+# Named environments — the user's own library of tunings. Each is just a
+# snapshot of an override set, stored by name. The "working" overrides
+# (load_overrides) are what's live; saving snapshots them under a name,
+# loading copies a snapshot back into the working set.
+# --------------------------------------------------------------------------
+_ENVS_KEY = "engine_environments"
+
+
+def list_environments() -> dict[str, dict]:
+    """name -> override dict, for every saved environment."""
+    row = db.fetchone("SELECT value FROM sim_meta WHERE key = ?", (_ENVS_KEY,))
+    if not row or not row.get("value"):
+        return {}
+    try:
+        data = json.loads(row["value"])
+    except Exception:
+        return {}
+    out: dict[str, dict] = {}
+    for name, ov in data.items():
+        if not isinstance(ov, dict):
+            continue
+        clean: dict[str, object] = {}
+        for k, v in ov.items():
+            if k in DEFAULTS:
+                try:
+                    clean[k] = _coerce(k, v)
+                except (TypeError, ValueError):
+                    continue
+        out[str(name)] = clean
+    return out
+
+
+def _store_environments(envs: dict[str, dict]) -> None:
+    db.execute(
+        "INSERT OR REPLACE INTO sim_meta (key, value) VALUES (?, ?)",
+        (_ENVS_KEY, json.dumps(envs)),
+    )
+
+
+def save_environment(name: str, overrides: dict | None = None) -> bool:
+    """Snapshot an override set under `name` (defaults to the current working
+    set). Overwrites an existing environment of the same name. Returns False
+    for an empty name."""
+    name = (name or "").strip()[:60]
+    if not name:
+        return False
+    snapshot = load_overrides() if overrides is None else {
+        k: _coerce(k, v) for k, v in overrides.items() if k in DEFAULTS
+    }
+    envs = list_environments()
+    envs[name] = snapshot
+    _store_environments(envs)
+    return True
+
+
+def load_environment(name: str) -> bool:
+    """Make a saved environment the working (live) tuning and apply it.
+    Returns False if the name isn't found."""
+    envs = list_environments()
+    if name not in envs:
+        return False
+    _store(envs[name])
+    apply_overrides(force=True)
+    return True
+
+
+def delete_environment(name: str) -> None:
+    envs = list_environments()
+    if name in envs:
+        del envs[name]
+        _store_environments(envs)

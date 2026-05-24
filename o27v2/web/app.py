@@ -6298,6 +6298,7 @@ def engine_settings():
     engine_config.ensure_applied()
     eff = engine_config.effective()
     overrides = engine_config.load_overrides()
+    envs = engine_config.list_environments()
     return _serve(
         "engine_settings.html",
         fields=engine_config.config_fields(),
@@ -6306,41 +6307,72 @@ def engine_settings():
         overrides=overrides,
         bool_keys=engine_config.bool_keys(),
         override_count=len(overrides),
-        presets=engine_config.PRESET_LABELS,
+        environments={name: len(ov) for name, ov in sorted(envs.items())},
+        examples=engine_config.PRESET_LABELS,
     )
 
 
 @app.route("/engine/settings", methods=["POST"])
 def engine_settings_post():
     action = (request.form.get("action") or "save").strip()
+
     if action == "reset":
         engine_config.reset_overrides()
         flash("Engine tunables reset to defaults.", "info")
         return redirect(url_for("engine_settings"))
-    if action == "preset":
+
+    if action == "load_example":
         name = (request.form.get("preset") or "").strip()
         applied = engine_config.apply_preset(name)
-        if name in engine_config.PRESETS:
-            flash(f"Applied the {engine_config.PRESET_LABELS.get(name, name)} "
-                  f"preset ({len(applied)} constant(s) changed). New games "
-                  f"use it immediately.", "info")
-        else:
-            flash("Cleared engine overrides (back to defaults).", "info")
+        flash(f"Loaded the {engine_config.PRESET_LABELS.get(name, name)} "
+              f"example into your working tuning ({len(applied)} constant(s)). "
+              f"Edit freely, then Save as an environment to keep it.", "info")
         return redirect(url_for("engine_settings"))
 
+    if action == "save_env":
+        name = (request.form.get("env_name") or "").strip()
+        if engine_config.save_environment(name):
+            flash(f"Saved current tuning as environment “{name}”.", "info")
+        else:
+            flash("Give the environment a name before saving.", "error")
+        return redirect(url_for("engine_settings"))
+
+    if action == "load_env":
+        name = (request.form.get("env_name") or "").strip()
+        if engine_config.load_environment(name):
+            flash(f"Loaded environment “{name}” — it's now live for new games.",
+                  "info")
+        else:
+            flash("That environment no longer exists.", "error")
+        return redirect(url_for("engine_settings"))
+
+    if action == "delete_env":
+        name = (request.form.get("env_name") or "").strip()
+        engine_config.delete_environment(name)
+        flash(f"Deleted environment “{name}”.", "info")
+        return redirect(url_for("engine_settings"))
+
+    # Default: save the edited constants as the working tuning.
     partial = {}
     bkeys = engine_config.bool_keys()
     for k in engine_config.DEFAULTS:
         if k in bkeys:
-            # Unchecked checkboxes don't submit — treat absence as False.
             partial[k] = (request.form.get(k) is not None)
         else:
             raw = request.form.get(k)
             if raw is not None and str(raw).strip() != "":
                 partial[k] = raw
     merged = engine_config.save_overrides(partial)
-    flash(f"Engine tunables saved — {len(merged)} active override(s). "
-          f"New games use them immediately.", "info")
+
+    # Optionally also snapshot under a name in the same submit.
+    save_as = (request.form.get("save_as") or "").strip()
+    if save_as:
+        engine_config.save_environment(save_as)
+        flash(f"Tuning saved and stored as environment “{save_as}” — "
+              f"{len(merged)} override(s). Live for new games.", "info")
+    else:
+        flash(f"Tuning saved — {len(merged)} active override(s). "
+              f"Live for new games.", "info")
     return redirect(url_for("engine_settings"))
 
 

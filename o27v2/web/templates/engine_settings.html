@@ -3,43 +3,30 @@
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-2">
   <h2 class="mb-0">Engine Tunables</h2>
-  <span class="text-secondary small">{{ override_count }} active override(s)</span>
+  <span class="text-secondary small">{{ override_count }} value(s) changed from default</span>
 </div>
 <div class="text-secondary small mb-3" style="line-height:1.45">
-  Re-tune the simulation engine at runtime — no code edits. Changes are saved to this
-  league and take effect on the <strong>next game simulated</strong>. Use the presets to flip a
-  whole run environment (e.g. induce a deadball era) in one click, or fine-tune individual
-  constants below. Overridden values are marked ●; "default" shows the shipped value.
-  The pitch-probability tables and contact-outcome matrices are structural and aren't editable here.
+  Tune the simulation engine yourself — every editable constant is below, grouped and searchable.
+  Edit any field and hit <strong>Save Tuning</strong>; changes take effect on the
+  <strong>next game simulated</strong>. Build whatever run environment you want — a deadball era,
+  a launch-angle circus, a junkball league — and <strong>save it as a named environment</strong>
+  so you can keep a library of contexts and switch between them. Changed values are marked ●;
+  each field shows its constant name and shipped default. (The pitch-probability and
+  contact-outcome tables are structural and not exposed here.)
 </div>
 
-<div class="dense mb-3">
-  <div class="panel-title">Presets</div>
-  <div class="p-2 d-flex flex-wrap gap-2 align-items-center">
-    {% for key, label in presets.items() %}
-    <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0">
-      <input type="hidden" name="action" value="preset">
-      <input type="hidden" name="preset" value="{{ key }}">
-      <button type="submit" class="btn btn-sm btn-outline-primary"
-              onclick="return confirm('Apply the {{ label }} preset? This replaces your current engine overrides.');">{{ label }}</button>
-    </form>
-    {% endfor %}
-    <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0">
-      <input type="hidden" name="action" value="reset">
-      <button type="submit" class="btn btn-sm btn-outline-danger"
-              onclick="return confirm('Clear all engine overrides and restore defaults?');">Reset to Defaults</button>
-    </form>
-  </div>
-</div>
-
-<div class="dense mb-3">
-  <div class="p-2">
-    <input type="search" id="tune-search" class="form-control form-control-sm"
-           placeholder="Filter constants by name…" style="max-width:360px" autocomplete="off">
-  </div>
-</div>
-
+{# ---------- Manual tuning: the main event ---------- #}
 <form method="post" action="{{ url_for('engine_settings_post') }}">
+  <div class="dense mb-3">
+    <div class="p-2 d-flex flex-wrap gap-2 align-items-center">
+      <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">Save Tuning</button>
+      <input type="text" name="save_as" class="form-control form-control-sm" style="max-width:240px"
+             placeholder="…and save as environment (optional name)">
+      <input type="search" id="tune-search" class="form-control form-control-sm ms-auto"
+             placeholder="Filter constants…" style="max-width:280px" autocomplete="off">
+    </div>
+  </div>
+
   {% for group_label, items in fields %}
   <div class="dense mb-3 tune-group">
     <div class="panel-title">{{ group_label }}</div>
@@ -53,12 +40,12 @@
             <input class="form-check-input" type="checkbox" id="f-{{ key }}" name="{{ key }}"
                    {% if effective[key] %}checked{% endif %}>
             <label class="form-check-label small" for="f-{{ key }}">
-              {{ label }}{% if key in overrides %} <span title="overridden">●</span>{% endif %}
+              {{ label }}{% if key in overrides %} <span title="changed">●</span>{% endif %}
             </label>
           </div>
           {% else %}
           <label class="form-label small mb-0" for="f-{{ key }}">
-            {{ label }}{% if key in overrides %} <span title="overridden" style="color:var(--accent)">●</span>{% endif %}
+            {{ label }}{% if key in overrides %} <span title="changed" style="color:var(--accent)">●</span>{% endif %}
           </label>
           <input type="number" step="any" id="f-{{ key }}" name="{{ key }}"
                  value="{{ effective[key] }}"
@@ -76,11 +63,74 @@
 
   <div class="dense mb-3" style="position:sticky;bottom:0">
     <div class="p-2 d-flex gap-2 align-items-center">
-      <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">Save Overrides</button>
+      <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">Save Tuning</button>
+      <button type="submit" name="action" value="reset" class="btn btn-sm btn-outline-danger"
+              onclick="return confirm('Discard all changes and restore every constant to its default?');">Reset to Defaults</button>
       <span class="text-secondary small">Takes effect on the next simulated game.</span>
     </div>
   </div>
 </form>
+
+{# ---------- Saved environments: your library of contexts ---------- #}
+<div class="dense mb-3">
+  <div class="panel-title">Your Environments</div>
+  <div class="p-2">
+    <form method="post" action="{{ url_for('engine_settings_post') }}" class="d-flex gap-2 align-items-center mb-2">
+      <input type="hidden" name="action" value="save_env">
+      <input type="text" name="env_name" class="form-control form-control-sm" style="max-width:240px"
+             placeholder="Name this environment" required>
+      <button type="submit" class="btn btn-sm btn-outline-primary">Save current tuning as environment</button>
+    </form>
+    {% if environments %}
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr><th>Environment</th><th class="num">Changed constants</th><th></th></tr></thead>
+      <tbody>
+      {% for name, n in environments.items() %}
+        <tr>
+          <td>{{ name }}</td>
+          <td class="num text-secondary">{{ n }}</td>
+          <td class="d-flex gap-2">
+            <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0">
+              <input type="hidden" name="action" value="load_env">
+              <input type="hidden" name="env_name" value="{{ name }}">
+              <button type="submit" class="btn btn-sm btn-link p-0">Load</button>
+            </form>
+            <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0"
+                  onsubmit="return confirm('Delete environment “{{ name }}”?');">
+              <input type="hidden" name="action" value="delete_env">
+              <input type="hidden" name="env_name" value="{{ name }}">
+              <button type="submit" class="btn btn-sm btn-link text-danger p-0">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-secondary small">No saved environments yet. Tune the constants above, then save this tuning under a name to start your library.</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ---------- Starting examples (optional) ---------- #}
+<div class="dense mb-3">
+  <div class="panel-title">Starting examples</div>
+  <div class="p-2">
+    <div class="text-secondary small mb-2">
+      Optional jump-off points. Loading one drops it into your working tuning so you can edit it
+      and save your own variant — it doesn't lock you into anything.
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for key, label in examples.items() %}
+      <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0">
+        <input type="hidden" name="action" value="load_example">
+        <input type="hidden" name="preset" value="{{ key }}">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Load: {{ label }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+</div>
 
 <script>
 (function () {

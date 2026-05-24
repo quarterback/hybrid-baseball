@@ -86,3 +86,29 @@ def test_config_fields_cover_every_editable_constant(fresh_db):
     for _, items in ec.config_fields():
         listed.update(name for name, _ in items)
     assert listed == set(ec.DEFAULTS)
+
+
+def test_save_and_load_named_environment(fresh_db):
+    ec.save_overrides({"POWER_REDIST_HR": 0.2, "SB_SUCCESS_BASE": 0.8})
+    assert ec.save_environment("Slap Hit League") is True
+    # Change the working tuning to something else.
+    ec.save_overrides({"POWER_REDIST_HR": 0.95})
+    assert cfg.POWER_REDIST_HR == 0.95
+    # Loading the saved env makes it live again.
+    assert ec.load_environment("Slap Hit League") is True
+    assert cfg.POWER_REDIST_HR == 0.2
+    assert cfg.SB_SUCCESS_BASE == 0.8
+    assert ec.list_environments()["Slap Hit League"]["POWER_REDIST_HR"] == 0.2
+
+
+def test_empty_environment_name_rejected(fresh_db):
+    assert ec.save_environment("   ") is False
+    assert ec.list_environments() == {}
+
+
+def test_delete_and_load_missing_environment(fresh_db):
+    ec.save_overrides({"POWER_REDIST_HR": 0.2})
+    ec.save_environment("Temp")
+    ec.delete_environment("Temp")
+    assert "Temp" not in ec.list_environments()
+    assert ec.load_environment("Temp") is False
