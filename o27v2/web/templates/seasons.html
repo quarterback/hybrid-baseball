@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Season History{% endblock %}
 {% block content %}
-<h2 class="mb-3">Season History</h2>
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h2 class="mb-0">Season History</h2>
+  <a href="{{ url_for('seasons_career') }}" class="btn btn-sm btn-outline-primary">Career Leaders →</a>
+</div>
 
 <div class="dense mb-3" id="presim-card">
   <div class="panel-title">Build League History</div>

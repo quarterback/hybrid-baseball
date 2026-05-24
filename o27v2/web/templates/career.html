@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Career Leaders{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h2 class="mb-0">Career Leaders</h2>
+  <a href="{{ url_for('seasons_index') }}" class="btn btn-sm btn-outline-secondary">← Season History</a>
+</div>
+
+<div class="text-secondary small mb-3" style="line-height:1.45">
+  Totals aggregated across <strong>{{ n_seasons }}</strong> archived season(s),
+  by player. Use the multi-season <em>Build League History</em> runner so the
+  same players persist and accumulate a career. Rate stats require a career
+  minimum of {{ min_pa }} PA (batting) / {{ min_outs }} outs (pitching).
+</div>
+
+{% if not has_data %}
+<div class="dense">
+  <div class="p-4 text-center text-secondary">
+    No career data yet. Archived seasons only carry per-player career lines
+    once they're snapshotted by the history runner — build or play some
+    seasons, then come back.
+  </div>
+</div>
+{% else %}
+
+{% macro bat_table(label, rows, key, fmt) %}
+<div class="dense mb-3">
+  <div class="panel-title">{{ label }}</div>
+  {% if rows %}
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th class="num" style="width:24px">#</th><th>Player</th><th>Tm</th>
+      <th class="num">Sea</th><th class="num">G</th><th class="num">PA</th>
+      <th class="num">H</th><th class="num">HR</th><th class="num">RBI</th>
+      <th class="num">SB</th><th class="num">{{ label }}</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="num text-secondary">{{ loop.index }}</td>
+      <td>{{ r.player_name }}</td>
+      <td><span class="team-abbrev">{{ r.team_abbrev }}</span></td>
+      <td class="num">{{ r.seasons }}</td>
+      <td class="num">{{ r.g }}</td>
+      <td class="num">{{ r.pa }}</td>
+      <td class="num">{{ r.h }}</td>
+      <td class="num">{{ r.hr }}</td>
+      <td class="num">{{ r.rbi }}</td>
+      <td class="num">{{ r.sb }}</td>
+      <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-3 text-center text-secondary small">No qualifiers.</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro pit_table(label, rows, key, fmt) %}
+<div class="dense mb-3">
+  <div class="panel-title">{{ label }}</div>
+  {% if rows %}
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th class="num" style="width:24px">#</th><th>Player</th><th>Tm</th>
+      <th class="num">Sea</th><th class="num">G</th><th class="num">W</th>
+      <th class="num">L</th><th class="num">IP</th><th class="num">K</th>
+      <th class="num">BB</th><th class="num">{{ label }}</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="num text-secondary">{{ loop.index }}</td>
+      <td>{{ r.player_name }}</td>
+      <td><span class="team-abbrev">{{ r.team_abbrev }}</span></td>
+      <td class="num">{{ r.seasons }}</td>
+      <td class="num">{{ r.g }}</td>
+      <td class="num">{{ r.w }}</td>
+      <td class="num">{{ r.l }}</td>
+      <td class="num">{{ r.ip_disp }}</td>
+      <td class="num">{{ r.k }}</td>
+      <td class="num">{{ r.bb }}</td>
+      <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-3 text-center text-secondary small">No qualifiers.</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <h5 class="mb-2">Batting</h5>
+    {{ bat_table('H',   batting.get('h',   []), 'h',   '%d') }}
+    {{ bat_table('HR',  batting.get('hr',  []), 'hr',  '%d') }}
+    {{ bat_table('RBI', batting.get('rbi', []), 'rbi', '%d') }}
+    {{ bat_table('R',   batting.get('r',   []), 'r',   '%d') }}
+    {{ bat_table('SB',  batting.get('sb',  []), 'sb',  '%d') }}
+    {{ bat_table('BB',  batting.get('bb',  []), 'bb',  '%d') }}
+    {{ bat_table('AVG', batting.get('avg', []), 'avg', '%.3f') }}
+    {{ bat_table('OBP', batting.get('obp', []), 'obp', '%.3f') }}
+    {{ bat_table('OPS', batting.get('ops', []), 'ops', '%.3f') }}
+  </div>
+  <div class="col-lg-6">
+    <h5 class="mb-2">Pitching</h5>
+    {{ pit_table('W',    pitching.get('w',    []), 'w',    '%d') }}
+    {{ pit_table('K',    pitching.get('k',    []), 'k',    '%d') }}
+    {{ pit_table('G',    pitching.get('g',    []), 'g',    '%d') }}
+    {{ pit_table('GS',   pitching.get('gs',   []), 'gs',   '%d') }}
+    {{ pit_table('ERA',  pitching.get('era',  []), 'era',  '%.2f') }}
+    {{ pit_table('WHIP', pitching.get('whip', []), 'whip', '%.2f') }}
+    {{ pit_table('K/9',  pitching.get('k9',   []), 'k9',   '%.2f') }}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
