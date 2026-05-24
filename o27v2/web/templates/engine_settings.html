@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Engine Tunables{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h2 class="mb-0">Engine Tunables</h2>
+  <span class="text-secondary small">{{ override_count }} value(s) changed from default</span>
+</div>
+<div class="text-secondary small mb-3" style="line-height:1.45">
+  Tune the simulation engine yourself — every editable constant is below, grouped and searchable.
+  Edit any field and hit <strong>Save Tuning</strong>; changes take effect on the
+  <strong>next game simulated</strong>. Build whatever run environment you want — a deadball era,
+  a launch-angle circus, a junkball league — and <strong>save it as a named environment</strong>
+  so you can keep a library of contexts and switch between them. Changed values are marked ●;
+  each field shows its constant name and shipped default. (The pitch-probability and
+  contact-outcome tables are structural and not exposed here.)
+</div>
+
+{# ---------- Manual tuning: the main event ---------- #}
+<form method="post" action="{{ url_for('engine_settings_post') }}">
+  <div class="dense mb-3">
+    <div class="p-2 d-flex flex-wrap gap-2 align-items-center">
+      <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">Save Tuning</button>
+      <input type="text" name="save_as" class="form-control form-control-sm" style="max-width:240px"
+             placeholder="…and save as environment (optional name)">
+      <button type="button" id="bench-btn" class="btn btn-sm btn-outline-secondary">Benchmark (live tuning)</button>
+      <input type="search" id="tune-search" class="form-control form-control-sm ms-auto"
+             placeholder="Filter constants…" style="max-width:280px" autocomplete="off">
+    </div>
+    <div id="bench-out" class="px-2 pb-2 small" style="display:none"></div>
+  </div>
+
+  {% for group_label, items in fields %}
+  <div class="dense mb-3 tune-group">
+    <div class="panel-title">{{ group_label }}</div>
+    <div class="p-2">
+      <div class="row g-3">
+        {% for key, label in items %}
+        <div class="col-12 col-md-6 col-lg-4 tune-field"
+             data-name="{{ key|lower }}" data-label="{{ label|lower }}">
+          {% if key in bool_keys %}
+          <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" id="f-{{ key }}" name="{{ key }}"
+                   {% if effective[key] %}checked{% endif %}>
+            <label class="form-check-label small" for="f-{{ key }}">
+              {{ label }}{% if key in overrides %} <span title="changed">●</span>{% endif %}
+            </label>
+          </div>
+          {% else %}
+          <label class="form-label small mb-0" for="f-{{ key }}">
+            {{ label }}{% if key in overrides %} <span title="changed" style="color:var(--accent)">●</span>{% endif %}
+          </label>
+          <input type="number" step="any" id="f-{{ key }}" name="{{ key }}"
+                 value="{{ effective[key] }}"
+                 class="form-control form-control-sm" style="max-width:150px">
+          <div class="text-secondary" style="font-size:.72rem">
+            <code>{{ key }}</code> · default {{ defaults[key] }}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="dense mb-3" style="position:sticky;bottom:0">
+    <div class="p-2 d-flex gap-2 align-items-center">
+      <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">Save Tuning</button>
+      <button type="submit" name="action" value="reset" class="btn btn-sm btn-outline-danger"
+              onclick="return confirm('Discard all changes and restore every constant to its default?');">Reset to Defaults</button>
+      <span class="text-secondary small">Takes effect on the next simulated game.</span>
+    </div>
+  </div>
+</form>
+
+{# ---------- Saved environments: your library of contexts ---------- #}
+<div class="dense mb-3">
+  <div class="panel-title">Your Environments</div>
+  <div class="p-2">
+    <form method="post" action="{{ url_for('engine_settings_post') }}" class="d-flex gap-2 align-items-center mb-2">
+      <input type="hidden" name="action" value="save_env">
+      <input type="text" name="env_name" class="form-control form-control-sm" style="max-width:240px"
+             placeholder="Name this environment" required>
+      <button type="submit" class="btn btn-sm btn-outline-primary">Save current tuning as environment</button>
+    </form>
+    {% if environments %}
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr><th>Environment</th><th class="num">Changed constants</th><th></th></tr></thead>
+      <tbody>
+      {% for name, n in environments.items() %}
+        <tr>
+          <td>{{ name }}</td>
+          <td class="num text-secondary">{{ n }}</td>
+          <td class="d-flex gap-2 align-items-center">
+            <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0">
+              <input type="hidden" name="action" value="load_env">
+              <input type="hidden" name="env_name" value="{{ name }}">
+              <button type="submit" class="btn btn-sm btn-link p-0">Load</button>
+            </form>
+            <button type="button" class="btn btn-sm btn-link p-0 bench-env" data-env="{{ name }}">Benchmark</button>
+            <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0"
+                  onsubmit="return confirm('Delete environment “{{ name }}”?');">
+              <input type="hidden" name="action" value="delete_env">
+              <input type="hidden" name="env_name" value="{{ name }}">
+              <button type="submit" class="btn btn-sm btn-link text-danger p-0">Delete</button>
+            </form>
+            <span class="bench-env-out text-secondary" data-env="{{ name }}" style="font-size:.78rem"></span>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-secondary small">No saved environments yet. Tune the constants above, then save this tuning under a name to start your library.</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ---------- Starting examples (optional) ---------- #}
+<div class="dense mb-3">
+  <div class="panel-title">Starting examples</div>
+  <div class="p-2">
+    <div class="text-secondary small mb-2">
+      Optional jump-off points. Loading one drops it into your working tuning so you can edit it
+      and save your own variant — it doesn't lock you into anything.
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for key, label in examples.items() %}
+      <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0">
+        <input type="hidden" name="action" value="load_example">
+        <input type="hidden" name="preset" value="{{ key }}">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Load: {{ label }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  function fmt(d) {
+    if (!d || !d.ok) return '⚠ ' + ((d && d.error) || 'benchmark failed');
+    return '<strong>' + d.label + '</strong> — '
+      + d.r_per_game + ' R/g, ' + d.hr_per_game + ' HR/g, '
+      + d.avg.toFixed(3).replace(/^0/, '') + ' AVG, '
+      + d.k_pct + '% K, ' + d.bb_pct + '% BB '
+      + '<span class="text-secondary">(' + d.games + ' g, per team)</span>';
+  }
+  async function runBench(url) {
+    var r = await fetch(url);
+    return await r.json();
+  }
+
+  var btn = document.getElementById('bench-btn');
+  var out = document.getElementById('bench-out');
+  if (btn) {
+    btn.addEventListener('click', async function () {
+      out.style.display = 'block';
+      out.innerHTML = '<span class="text-secondary">Simulating the saved tuning… (a few seconds)</span>';
+      btn.disabled = true;
+      try { out.innerHTML = fmt(await runBench('{{ url_for("engine_benchmark") }}')); }
+      catch (e) { out.innerHTML = '⚠ ' + e.message; }
+      btn.disabled = false;
+    });
+  }
+
+  document.querySelectorAll('.bench-env').forEach(function (b) {
+    b.addEventListener('click', async function () {
+      var name = b.dataset.env;
+      var cell = document.querySelector('.bench-env-out[data-env="' + CSS.escape(name) + '"]');
+      if (cell) cell.innerHTML = 'simulating…';
+      b.disabled = true;
+      try {
+        var d = await runBench('{{ url_for("engine_benchmark") }}?env=' + encodeURIComponent(name));
+        if (cell) cell.innerHTML = fmt(d);
+      } catch (e) { if (cell) cell.innerHTML = '⚠ ' + e.message; }
+      b.disabled = false;
+    });
+  });
+
+  var box = document.getElementById('tune-search');
+  if (!box) return;
+  box.addEventListener('input', function () {
+    var q = box.value.trim().toLowerCase();
+    document.querySelectorAll('.tune-group').forEach(function (grp) {
+      var anyVisible = false;
+      grp.querySelectorAll('.tune-field').forEach(function (f) {
+        var hit = !q || f.dataset.name.indexOf(q) !== -1 || f.dataset.label.indexOf(q) !== -1;
+        f.style.display = hit ? '' : 'none';
+        if (hit) anyVisible = true;
+      });
+      grp.style.display = anyVisible ? '' : 'none';
+    });
+  });
+})();
+</script>
+{% endblock %}

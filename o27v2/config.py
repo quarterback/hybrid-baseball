@@ -175,6 +175,53 @@ JOKERS_PER_ARCHETYPE: int = 1   # Phase 10: 3 jokers per team total (one per arc
 HOME_ADVANTAGE_SKILL: float = 0.0
 
 # ---------------------------------------------------------------------------
+# New-player generation shifts (grade points, 20-80 scale).
+#
+# Added to the talent-tier roll for the named attribute when a player is
+# generated, so the engine-tunables dashboard can reshape the NEW-player
+# talent pool without touching code — e.g. +15 POWER for a slugging era,
+# -12 POWER / +8 CONTACT for a deadball talent pool, -10 SKILL for a
+# low-talent expansion era. Read at call time by o27v2/league.py.
+#
+# These affect ONLY players generated after the shift is set (new leagues,
+# history builds, youth graduates, expansion). Existing players are never
+# touched — by design. Default 0.0 = the shipped distribution.
+# ---------------------------------------------------------------------------
+GEN_SHIFT_SKILL:    float = 0.0
+GEN_SHIFT_CONTACT:  float = 0.0
+GEN_SHIFT_POWER:    float = 0.0
+GEN_SHIFT_EYE:      float = 0.0
+GEN_SHIFT_SPEED:    float = 0.0
+GEN_SHIFT_DEFENSE:  float = 0.0
+GEN_SHIFT_ARM:      float = 0.0
+GEN_SHIFT_PITCHING: float = 0.0   # pitcher Stuff + pitch quality
+GEN_SHIFT_STAMINA:  float = 0.0
+
+# ---------------------------------------------------------------------------
+# Joker archetypes (20-80 grade centers).
+#
+# Each team rosters three jokers (the O27 DH role) — drawn as one power bat,
+# one speed bat, and one contact bat. These set the center grade for each
+# joker's signature tools; generation rolls ±6 around them, while overall
+# hitting skill still comes from the draft (so good orgs get better jokers).
+# Tunable from the engine-tunables dashboard so you can make the power joker a
+# true masher, the speed joker a pure burner, etc. The dead hard_contact_delta
+# / hr_weight_bonus modifiers are NOT used — archetypes differ by real grades.
+# ---------------------------------------------------------------------------
+JOKER_POWER_POWER:     float = 78.0
+JOKER_POWER_CONTACT:   float = 66.0
+JOKER_POWER_SPEED:     float = 35.0
+JOKER_POWER_EYE:       float = 62.0
+JOKER_SPEED_POWER:     float = 45.0
+JOKER_SPEED_CONTACT:   float = 64.0
+JOKER_SPEED_SPEED:     float = 80.0
+JOKER_SPEED_EYE:       float = 58.0
+JOKER_CONTACT_POWER:   float = 56.0
+JOKER_CONTACT_CONTACT: float = 80.0
+JOKER_CONTACT_SPEED:   float = 52.0
+JOKER_CONTACT_EYE:     float = 72.0
+
+# ---------------------------------------------------------------------------
 # Re-exports of Phase 8 engine constants
 #
 # These values are defined in o27/config.py (where manager.py reads them) and

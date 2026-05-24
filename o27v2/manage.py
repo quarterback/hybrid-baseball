@@ -10,6 +10,7 @@ Usage:
     python o27v2/manage.py backfill_salaries     — recompute every player's salary in guilders from current attributes
     python o27v2/manage.py backfill_archetypes   — classify every non-pitcher / non-joker player's archetype from current grades
     python o27v2/manage.py smoke
+    python o27v2/manage.py hof                    — evaluate Hall of Fame inductions and print the league + team Halls
     python o27v2/manage.py configs              — list available league configs
     python o27v2/manage.py tune [SEASON_GAMES]  — sim a full season, verify Phase 9 targets
 
@@ -154,6 +155,57 @@ def cmd_backfill_arc():
     ) or {}
     print(f"  Arc coverage: {cov.get('arc_rows', 0)}/{cov.get('rows', 0)} "
           f"pitcher rows have arc data populated.")
+
+
+def cmd_hof():
+    """Evaluate Hall of Fame inductions against the current career-line data
+    and print both the league Hall and the per-team Halls.
+
+    Inductions normally run automatically at season archive; this command
+    re-runs them (idempotent — INSERT OR IGNORE) so an existing save that
+    predates the HOF feature gets its Hall populated from whatever career
+    lines have been snapshotted so far. Career lines only start accumulating
+    once a season is archived under the HOF build, so a save with no archived
+    seasons yet will show an empty Hall."""
+    from o27v2 import db, hof
+
+    row = db.fetchone("SELECT MAX(season_number) AS n FROM seasons")
+    season_number = (row or {}).get("n")
+    year = None
+    if season_number:
+        yr = db.fetchone(
+            "SELECT year FROM seasons WHERE season_number = ?", (season_number,)
+        )
+        year = (yr or {}).get("year")
+
+    lines = db.fetchone("SELECT COUNT(*) AS n FROM player_career_lines")["n"] or 0
+    if lines == 0:
+        print("No career lines snapshotted yet — archive at least one season "
+              "first (the HOF snapshot runs at season archive).")
+        return
+
+    result = hof.run_inductions(season_number, year)
+    print(f"Inductions evaluated (season {season_number or '—'}).")
+    print(f"  New league inductees: {len(result['league'])}")
+    print(f"  New team inductees:   {len(result['team'])}")
+    print()
+
+    league = hof.league_hof()
+    print(f"League Hall of Fame — {len(league)} member(s):")
+    for r in league:
+        print(f"  {r['hof_points']:6.1f}  {r['player_name']:<24} "
+              f"{(r['primary_team_abbrev'] or '—'):<4}  {r['career_summary']}")
+    if not league:
+        print("  (empty — nobody has cleared the threshold yet)")
+
+    team_rows = db.fetchall(
+        "SELECT team_abbrev, COUNT(*) AS n FROM team_hof_inductees "
+        "GROUP BY team_abbrev ORDER BY n DESC"
+    )
+    if team_rows:
+        print("\nTeam Halls of Fame:")
+        for t in team_rows:
+            print(f"  {t['team_abbrev']:<4}  {t['n']} member(s)")
 
 
 def cmd_smoke():
@@ -401,6 +453,8 @@ def main():
         cmd_sim(n)
     elif args[0] == "smoke":
         cmd_smoke()
+    elif args[0] == "hof":
+        cmd_hof()
     elif args[0] == "backfill_arc":
         cmd_backfill_arc()
     elif args[0] == "backfill_salaries":

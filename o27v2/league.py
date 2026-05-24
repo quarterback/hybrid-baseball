@@ -865,6 +865,74 @@ def _tier_unit(rng: random.Random, team_shift: int = 0) -> float:
     return _scout.to_unit(_roll_tier_grade(rng, team_shift))
 
 
+# Per-attribute NEW-player generation shifts. Read from o27v2/config.py at
+# call time (so the engine-tunables dashboard can reshape the talent pool of
+# newly generated players). The roll() closures in _make_hitter / _make_pitcher
+# add _gen_shift(attr) on top of team_shift + style bias.
+_GEN_SHIFT_MAP = {
+    "skill":         "GEN_SHIFT_SKILL",
+    "contact":       "GEN_SHIFT_CONTACT",
+    "power":         "GEN_SHIFT_POWER",
+    "eye":           "GEN_SHIFT_EYE",
+    "speed":         "GEN_SHIFT_SPEED",
+    "defense":       "GEN_SHIFT_DEFENSE",
+    "arm":           "GEN_SHIFT_ARM",
+    "pitcher_skill": "GEN_SHIFT_PITCHING",
+    "stamina":       "GEN_SHIFT_STAMINA",
+}
+
+
+def _gen_shift(attr: str | None) -> int:
+    const = _GEN_SHIFT_MAP.get(attr or "")
+    if not const:
+        return 0
+    try:
+        return int(round(float(getattr(v2cfg, const, 0.0) or 0.0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+# Jokers (the O27 DH role) are drawn as three distinct bats — one power, one
+# speed, one contact — per team. The per-archetype grade centers live in
+# o27v2/config.py and are read at call time so the dashboard can re-tune them.
+_JOKER_ARCH_ORDER = ("power", "speed", "contact")
+
+
+def _joker_center(archetype: str, tool: str, default: float) -> float:
+    try:
+        return float(
+            getattr(v2cfg, f"JOKER_{archetype.upper()}_{tool.upper()}", default)
+            or default
+        )
+    except (TypeError, ValueError):
+        return default
+
+
+def _shape_joker(p: dict, archetype: str, rng: random.Random) -> None:
+    """Reshape a drafted joker in place into a power / speed / contact bat,
+    drawing its signature tools around the (tunable) archetype centers.
+    Overall `skill` — the draft talent gradient — is left intact."""
+    def around(center: float, sig: float = 6.0) -> int:
+        return int(max(20, min(80, round(rng.gauss(center, sig)))))
+
+    p["power"]   = around(_joker_center(archetype, "power",   60))
+    p["contact"] = around(_joker_center(archetype, "contact", 62))
+    p["speed"]   = around(_joker_center(archetype, "speed",   45))
+    p["eye"]     = around(_joker_center(archetype, "eye",     60))
+    if archetype == "speed":
+        sp = _joker_center(archetype, "speed", 80)
+        p["baserunning"]        = around(sp)
+        p["run_aggressiveness"] = around(min(78.0, sp))
+    # Re-derive pull tendency from the reshaped power grade.
+    nudge = 0.04 if p.get("bats") == "L" else 0.0
+    p["pull_pct"] = round(_clamp(
+        rng.gauss(0.5, 0.12) + (p["power"] - 50) / 100.0 * 0.30 + nudge,
+        0.05, 0.95), 3)
+    # Jokers carry their own archetype label (the classifier returns "" for
+    # them by design), so stamp it directly.
+    p["archetype"] = archetype
+
+
 def _roll_org_grade(rng: random.Random) -> int:
     """Roll an org_strength against the full 9-tier ladder, NOT capped
     at 80. Org_strength influences multi-season development rate, so a
@@ -1580,7 +1648,7 @@ def _make_hitter(
     """
     def roll(attr: str | None = None) -> int:
         bias = style.get(attr, 0) if (style and attr) else 0
-        return _roll_tier_grade(rng, team_shift + bias)
+        return _roll_tier_grade(rng, team_shift + bias + _gen_shift(attr))
 
     skill_g  = roll("skill")
     speed_g  = roll("speed")
@@ -1997,7 +2065,8 @@ def _build_repertoire(
         available = [(k, w) for (k, w) in available if k != pick]
 
     entries: list[dict] = []
-    primary_quality = _quality_unit(_roll_tier_grade(rng, team_shift))
+    _pq_shift = _gen_shift("pitcher_skill")
+    primary_quality = _quality_unit(_roll_tier_grade(rng, team_shift + _pq_shift))
     entries.append({
         "pitch_type":   primary,
         "quality":      primary_quality,
@@ -2005,7 +2074,7 @@ def _build_repertoire(
     })
     remaining_mass = 1.0 - entries[0]["usage_weight"]
     secondary_qualities = [
-        _quality_unit(_roll_tier_grade(rng, team_shift))
+        _quality_unit(_roll_tier_grade(rng, team_shift + _pq_shift))
         for _ in secondaries
     ]
     if secondaries:
@@ -2052,7 +2121,7 @@ def _make_pitcher(
     """
     def roll(attr: str | None = None) -> int:
         bias = style.get(attr, 0) if (style and attr) else 0
-        return _roll_tier_grade(rng, team_shift + bias)
+        return _roll_tier_grade(rng, team_shift + bias + _gen_shift(attr))
 
     stuff_g   = roll("pitcher_skill")
     stamina_g = roll("stamina")
@@ -2197,9 +2266,11 @@ def generate_players(
     for pos in ("RF", "CF", "SS", "2B"):
         players.append(_hitter(pos, is_active=1))
 
-    # ---- Active jokers (the DH role; 3 drafted explicitly) ----
-    for _ in range(ACTIVE_JOKERS):
-        players.append(_spec("joker"))
+    # ---- Active jokers (the DH role; one of each archetype) ----
+    for _i in range(ACTIVE_JOKERS):
+        jk = _spec("joker")
+        _shape_joker(jk, _JOKER_ARCH_ORDER[_i % len(_JOKER_ARCH_ORDER)], rng)
+        players.append(jk)
 
     # ---- Active situational specialists ----
     players.append(_spec("pr_specialist"))
@@ -2503,6 +2574,14 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     if existing and existing["n"] > 0:
         return
 
+    # Make the current engine tuning live before any player is generated, so
+    # the GEN_SHIFT_* knobs reshape this league's NEW-player talent pool.
+    try:
+        from o27v2 import engine_config
+        engine_config.ensure_applied()
+    except Exception:
+        pass
+
     config  = config if config is not None else get_config(config_id)
     level   = config.get("level", "MLB")
     n_teams = config["team_count"]
@@ -2727,6 +2806,14 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     else:
         pool = _generate_draft_pool(len(team_ids), rng2, name_picker)
         assignments, free_agents = _run_snake_draft(team_ids, pool, rng2)
+
+    # Each team's three jokers are drawn as one power, one speed, and one
+    # contact bat. Reshape them in place here — before salaries are computed
+    # at insert — so the archetype shows in their tools and valuation.
+    for _roster in assignments.values():
+        _jokers = [p for p in _roster if p.get("roster_slot") == "joker"]
+        for _i, _j in enumerate(_jokers):
+            _shape_joker(_j, _JOKER_ARCH_ORDER[_i % len(_JOKER_ARCH_ORDER)], rng2)
 
     # Phase 3: persist drafted rosters + free-agent pool, and recompute
     # each team's org_strength from its actual roster.

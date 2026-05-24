@@ -25,9 +25,9 @@ _workspace = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _workspace not in sys.path:
     sys.path.insert(0, _workspace)
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response
+from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response, flash
 
-from o27v2 import db, currency, valuation
+from o27v2 import db, currency, valuation, hof, engine_config
 from o27v2.web import text_export
 from o27v2.sim import (
     simulate_game,
@@ -6304,6 +6304,325 @@ def team_detail(team_id: int):
                            win_pct=_win_pct,
                            team_payroll=team_payroll,
                            staff_wera=staff_disp)
+
+
+@app.route("/hall-of-fame")
+def hall_of_fame():
+    cfg = hof.load_config()
+    inductees = hof.league_hof()
+    batters = [r for r in inductees if not r["is_pitcher"]]
+    pitchers = [r for r in inductees if r["is_pitcher"]]
+    return _serve(
+        "hall_of_fame.html",
+        inductees=inductees,
+        batters=batters,
+        pitchers=pitchers,
+        threshold=cfg["league_threshold"],
+        min_seasons=cfg["league_min_seasons"],
+        min_age=cfg["league_min_age"],
+    )
+
+
+@app.route("/hall-of-fame/candidates")
+def hof_candidates():
+    cfg = hof.load_config()
+    cands = hof.candidates(cfg=cfg)
+    # Active watch-list: not yet in the Hall, ranked by how close they are.
+    active = [c for c in cands if not c["in_league_hof"]]
+    return _serve(
+        "hof_candidates.html",
+        candidates=cands,
+        active=active,
+        threshold=cfg["league_threshold"],
+        min_seasons=cfg["league_min_seasons"],
+        min_age=cfg["league_min_age"],
+    )
+
+
+@app.route("/hall-of-fame/settings")
+def hof_settings():
+    cfg = hof.load_config()
+    return _serve(
+        "hof_settings.html",
+        cfg=cfg,
+        defaults=hof.DEFAULTS,
+        fields=hof.CONFIG_FIELDS,
+        int_keys=sorted(hof._INT_KEYS),
+        all_batting_cats=hof.ALL_BATTING_CATS,
+        all_pitching_cats=hof.ALL_PITCHING_CATS,
+        batting_cats=sorted(cfg["major_batting_cats"]),
+        pitching_cats=sorted(cfg["major_pitching_cats"]),
+        league_count=len(hof.league_hof()),
+    )
+
+
+@app.route("/hall-of-fame/settings", methods=["POST"])
+def hof_settings_post():
+    action = (request.form.get("action") or "save").strip()
+    if action == "reset":
+        hof.reset_config()
+        flash("HOF settings reset to defaults.", "info")
+        return redirect(url_for("hof_settings"))
+
+    partial = {}
+    for k in hof.DEFAULTS:
+        raw = request.form.get(k)
+        if raw is not None and str(raw).strip() != "":
+            partial[k] = raw
+    partial["major_batting_cats"] = request.form.getlist("major_batting_cats")
+    partial["major_pitching_cats"] = request.form.getlist("major_pitching_cats")
+    hof.save_config(partial)
+
+    if action == "save_rebuild":
+        # Reconcile: evicts members who no longer qualify (preserves manual
+        # team picks). Use after raising a threshold.
+        result = hof.rebuild_halls()
+        flash(
+            f"Settings saved and halls rebuilt from scratch — league Hall now "
+            f"has {len(hof.league_hof())} member(s), "
+            f"{len(result['team'])} criteria team inductions.",
+            "info",
+        )
+    elif action == "save_recompute":
+        # Additive: only adds newly qualifying players. Use after lowering a
+        # threshold (won't disturb existing inductees).
+        row = db.fetchone("SELECT MAX(season_number) AS n FROM seasons")
+        sn = (row or {}).get("n")
+        yr = None
+        if sn:
+            yrow = db.fetchone(
+                "SELECT year FROM seasons WHERE season_number = ?", (sn,)
+            )
+            yr = (yrow or {}).get("year")
+        result = hof.run_inductions(sn, yr)
+        flash(
+            f"Settings saved and inductions recomputed — added "
+            f"{len(result['league'])} new league member(s), "
+            f"{len(result['team'])} new team induction(s).",
+            "info",
+        )
+    else:
+        flash("HOF settings saved. Use Recompute or Rebuild to re-evaluate "
+              "the halls.", "info")
+    return redirect(url_for("hof_settings"))
+
+
+@app.route("/engine/settings")
+def engine_settings():
+    engine_config.ensure_applied()
+    eff = engine_config.effective()
+    overrides = engine_config.load_overrides()
+    envs = engine_config.list_environments()
+    return _serve(
+        "engine_settings.html",
+        fields=engine_config.config_fields(),
+        effective=eff,
+        defaults=engine_config.DEFAULTS,
+        overrides=overrides,
+        bool_keys=engine_config.bool_keys(),
+        override_count=len(overrides),
+        environments={name: len(ov) for name, ov in sorted(envs.items())},
+        examples=engine_config.PRESET_LABELS,
+    )
+
+
+@app.route("/engine/settings", methods=["POST"])
+def engine_settings_post():
+    action = (request.form.get("action") or "save").strip()
+
+    if action == "reset":
+        engine_config.reset_overrides()
+        flash("Engine tunables reset to defaults.", "info")
+        return redirect(url_for("engine_settings"))
+
+    if action == "load_example":
+        name = (request.form.get("preset") or "").strip()
+        applied = engine_config.apply_preset(name)
+        flash(f"Loaded the {engine_config.PRESET_LABELS.get(name, name)} "
+              f"example into your working tuning ({len(applied)} constant(s)). "
+              f"Edit freely, then Save as an environment to keep it.", "info")
+        return redirect(url_for("engine_settings"))
+
+    if action == "save_env":
+        name = (request.form.get("env_name") or "").strip()
+        if engine_config.save_environment(name):
+            flash(f"Saved current tuning as environment “{name}”.", "info")
+        else:
+            flash("Give the environment a name before saving.", "error")
+        return redirect(url_for("engine_settings"))
+
+    if action == "load_env":
+        name = (request.form.get("env_name") or "").strip()
+        if engine_config.load_environment(name):
+            flash(f"Loaded environment “{name}” — it's now live for new games.",
+                  "info")
+        else:
+            flash("That environment no longer exists.", "error")
+        return redirect(url_for("engine_settings"))
+
+    if action == "delete_env":
+        name = (request.form.get("env_name") or "").strip()
+        engine_config.delete_environment(name)
+        flash(f"Deleted environment “{name}”.", "info")
+        return redirect(url_for("engine_settings"))
+
+    # Default: save the edited constants as the working tuning.
+    partial = {}
+    bkeys = engine_config.bool_keys()
+    for k in engine_config.DEFAULTS:
+        if k in bkeys:
+            partial[k] = (request.form.get(k) is not None)
+        else:
+            raw = request.form.get(k)
+            if raw is not None and str(raw).strip() != "":
+                partial[k] = raw
+    merged = engine_config.save_overrides(partial)
+
+    # Optionally also snapshot under a name in the same submit.
+    save_as = (request.form.get("save_as") or "").strip()
+    if save_as:
+        engine_config.save_environment(save_as)
+        flash(f"Tuning saved and stored as environment “{save_as}” — "
+              f"{len(merged)} override(s). Live for new games.", "info")
+    else:
+        flash(f"Tuning saved — {len(merged)} active override(s). "
+              f"Live for new games.", "info")
+    return redirect(url_for("engine_settings"))
+
+
+@app.route("/engine/benchmark")
+def engine_benchmark():
+    """Sim the current working tuning (or a saved env via ?env=Name) in an
+    isolated subprocess and return the run-environment stats it produces."""
+    import subprocess
+    import json
+    env_name = (request.args.get("env") or "").strip()
+    if env_name:
+        envs = engine_config.list_environments()
+        if env_name not in envs:
+            return jsonify({"ok": False, "error": "unknown environment"}), 404
+        overrides = envs[env_name]
+    else:
+        overrides = engine_config.load_overrides()
+
+    try:
+        games = max(8, min(120, int(request.args.get("games", 40))))
+    except (TypeError, ValueError):
+        games = 40
+
+    workspace = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    child_env = {k: v for k, v in os.environ.items()
+                 if k != "O27V2_DB_PATH"}
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "o27v2.bench",
+             "--games", str(games), "--config", "8teams",
+             "--overrides", json.dumps(overrides)],
+            cwd=workspace, env=child_env,
+            capture_output=True, text=True, timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "benchmark timed out"}), 504
+
+    line = (proc.stdout or "").strip().splitlines()
+    payload = None
+    for ln in reversed(line):
+        try:
+            payload = json.loads(ln)
+            break
+        except ValueError:
+            continue
+    if payload is None:
+        return jsonify({"ok": False,
+                        "error": (proc.stderr or "no output")[:300]}), 500
+    return jsonify(payload)
+
+
+@app.route("/team/<int:team_id>/hall-of-fame")
+def team_hall_of_fame(team_id: int):
+    team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
+    if not team:
+        abort(404)
+    inductees = hof.team_hof(team_id)
+    inducted_ids = {r["player_id"] for r in inductees}
+
+    # Manual-induction pool: anyone who has played for this franchise (has a
+    # career line tagged to this abbrev) or is on the current roster, minus
+    # those already enshrined here. Annotated with their team-context points.
+    metrics_by_id = {c["player_id"]: c for c in hof.compute_all()}
+    pool: dict[int, dict] = {}
+    for pid, c in metrics_by_id.items():
+        if pid in inducted_ids:
+            continue
+        tinfo = c["teams"].get(team["abbrev"])
+        if tinfo:
+            pool[pid] = {
+                "player_id": pid,
+                "name": c["player_name"],
+                "summary": c["career_summary"],
+                "team_points": tinfo["points"],
+                "seasons_with_team": tinfo["seasons"],
+            }
+    for p in db.fetchall(
+        "SELECT id, name FROM players WHERE team_id = ?", (team_id,)
+    ):
+        if p["id"] not in inducted_ids and p["id"] not in pool:
+            pool[p["id"]] = {
+                "player_id": p["id"], "name": p["name"], "summary": "",
+                "team_points": 0.0, "seasons_with_team": 0,
+            }
+    inductable = sorted(
+        pool.values(),
+        key=lambda d: (-d["team_points"], d["name"]),
+    )
+    return _serve(
+        "team_hof.html",
+        team=team,
+        inductees=inductees,
+        inductable=inductable,
+        team_threshold=hof.TEAM_THRESHOLD,
+        team_min_seasons=hof.TEAM_MIN_SEASONS,
+    )
+
+
+@app.route("/team/<int:team_id>/hall-of-fame/induct", methods=["POST"])
+def team_hof_induct(team_id: int):
+    try:
+        player_id = int(request.form.get("player_id", "") or 0)
+    except (TypeError, ValueError):
+        player_id = 0
+    if not player_id:
+        flash("Pick a player to induct.", "error")
+        return redirect(url_for("team_hall_of_fame", team_id=team_id))
+
+    sn = db.fetchone("SELECT MAX(season_number) AS n FROM seasons")
+    season_number = (sn or {}).get("n")
+    year = None
+    if season_number:
+        yr = db.fetchone(
+            "SELECT year FROM seasons WHERE season_number = ?", (season_number,)
+        )
+        year = (yr or {}).get("year")
+
+    ok = hof.induct_into_team_manual(team_id, player_id, season_number, year)
+    if ok:
+        flash("Player inducted into the team Hall of Fame.", "info")
+    else:
+        flash("Could not induct that player (already in, or unknown).", "error")
+    return redirect(url_for("team_hall_of_fame", team_id=team_id))
+
+
+@app.route("/team/<int:team_id>/hall-of-fame/remove", methods=["POST"])
+def team_hof_remove(team_id: int):
+    try:
+        player_id = int(request.form.get("player_id", "") or 0)
+    except (TypeError, ValueError):
+        player_id = 0
+    if player_id:
+        hof.remove_from_team(team_id, player_id)
+        flash("Removed from the team Hall of Fame.", "info")
+    return redirect(url_for("team_hall_of_fame", team_id=team_id))
 
 
 def _team_climate(team) -> str:

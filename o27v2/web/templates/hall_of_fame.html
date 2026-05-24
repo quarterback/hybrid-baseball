@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Hall of Fame{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h2 class="mb-0">Hall of Fame</h2>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('hof_candidates') }}" class="btn btn-sm btn-outline-primary">Candidate Board →</a>
+    <a href="{{ url_for('hof_settings') }}" class="btn btn-sm btn-outline-secondary" title="Tune the points model and gates">Settings</a>
+  </div>
+</div>
+<div class="text-secondary small mb-3" style="line-height:1.45">
+  The league Hall is <strong>gated and automatic</strong>. A player accumulates HOF
+  points from concrete achievements — major awards, championship rings, leading the
+  league (<em>black ink</em>), top-10 finishes (<em>gray ink</em>), sustained-excellence
+  seasons, and longevity. Enshrinement is automatic once a career clears
+  <strong>{{ threshold }} points</strong> with at least <strong>{{ min_seasons }} qualified
+  seasons</strong> and age <strong>{{ min_age }}+</strong>. No voting.
+</div>
+
+{% if not inductees %}
+<div class="p-4 text-center text-secondary dense">
+  Nobody has been enshrined yet. The Hall fills up as seasons are simulated and archived —
+  inductions are evaluated at the end of every season. Check the
+  <a href="{{ url_for('hof_candidates') }}">candidate board</a> to see who's tracking toward it.
+</div>
+{% else %}
+
+{% macro plaque_table(rows, label) %}
+<div class="dense mb-3">
+  <div class="panel-title">{{ label }} <span class="text-secondary">({{ rows|length }})</span></div>
+  <table class="table table-sm dense-table mb-0 sortable">
+    <thead><tr>
+      <th>Player</th>
+      <th>Pos</th>
+      <th>Team</th>
+      <th class="num">Inducted</th>
+      <th class="num">Seasons</th>
+      <th class="num">HOF Pts</th>
+      <th>Career</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
+        <td class="text-secondary">{{ r.position or ('P' if r.is_pitcher else '—') }}</td>
+        <td><span class="team-abbrev">{{ r.primary_team_abbrev or '—' }}</span></td>
+        <td class="num">{{ r.inducted_year if r.inducted_year is not none else ('S' ~ r.inducted_season_number) }}</td>
+        <td class="num">{{ r.seasons_played }}</td>
+        <td class="num"><strong>{{ '%.1f'|format(r.hof_points) }}</strong></td>
+        <td class="text-secondary small">{{ r.career_summary }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{{ plaque_table(batters, 'Position Players') }}
+{{ plaque_table(pitchers, 'Pitchers') }}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}HOF Candidate Board{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h2 class="mb-0">HOF Candidate Board</h2>
+  <a href="{{ url_for('hall_of_fame') }}" class="btn btn-sm btn-outline-primary">← Hall of Fame</a>
+</div>
+<div class="text-secondary small mb-3" style="line-height:1.45">
+  Every player's career ranked by HOF points. The league threshold is
+  <strong>{{ threshold }} points</strong> with <strong>{{ min_seasons }}+ qualified
+  seasons</strong> and age <strong>{{ min_age }}+</strong>. Players in green have already
+  cleared the bar and are enshrined; "Eligible" means they meet the longevity/age window
+  and would be inducted once they reach the points line.
+</div>
+
+{% if not candidates %}
+<div class="p-4 text-center text-secondary dense">
+  No career data yet — simulate and archive at least one season to populate the board.
+</div>
+{% else %}
+<div class="dense">
+  <table class="table table-sm dense-table mb-0 sortable">
+    <thead><tr>
+      <th class="num">#</th>
+      <th>Player</th>
+      <th>Pos</th>
+      <th>Team</th>
+      <th class="num">Age</th>
+      <th class="num">Sea</th>
+      <th class="num">HOF Pts</th>
+      <th>Progress</th>
+      <th class="num" title="Led the league in a major category">Black</th>
+      <th class="num" title="Top-10 finishes in a major category">Gray</th>
+      <th class="num" title="Championship rings">Rings</th>
+      <th>Awards</th>
+      <th>Status</th>
+    </tr></thead>
+    <tbody>
+    {% for c in candidates %}
+      <tr {% if c.in_league_hof %}style="background:var(--bg-warm)"{% endif %}>
+        <td class="num text-secondary">{{ loop.index }}</td>
+        <td><a href="{{ url_for('player_detail', player_id=c.player_id) }}">{{ c.player_name }}</a></td>
+        <td class="text-secondary">{{ c.position or ('P' if c.is_pitcher else '—') }}</td>
+        <td><span class="team-abbrev">{{ c.primary_team_abbrev or '—' }}</span></td>
+        <td class="num">{{ c.age or '—' }}</td>
+        <td class="num">{{ c.seasons_played }}</td>
+        <td class="num"><strong>{{ '%.1f'|format(c.hof_points) }}</strong></td>
+        <td style="min-width:120px">
+          <div class="progress" style="height:10px;background:var(--border-soft)">
+            <div class="progress-bar" role="progressbar"
+                 style="width:{{ c.pct_to_threshold }}%;background:{{ 'var(--strk-w, #2e7d32)' if c.in_league_hof else 'var(--link)' }}"></div>
+          </div>
+        </td>
+        <td class="num">{{ c.black_ink or '' }}</td>
+        <td class="num text-secondary">{{ c.gray_ink or '' }}</td>
+        <td class="num">{{ c.rings or '' }}</td>
+        <td class="small text-secondary">
+          {%- set parts = [] -%}
+          {%- if c.awards.get('mvp') %}{% set _ = parts.append(c.awards['mvp']|string ~ '× MVP') %}{% endif -%}
+          {%- if c.awards.get('cy_young') %}{% set _ = parts.append(c.awards['cy_young']|string ~ '× Cy') %}{% endif -%}
+          {%- if c.awards.get('ws_mvp') %}{% set _ = parts.append(c.awards['ws_mvp']|string ~ '× WS') %}{% endif -%}
+          {%- if c.awards.get('roy') %}{% set _ = parts.append('ROY') %}{% endif -%}
+          {{ parts|join(', ') }}
+        </td>
+        <td>
+          {% if c.in_league_hof %}
+            <span class="strk-w" style="font-weight:700">★ Enshrined</span>
+          {% elif c.league_eligible %}
+            <span class="text-secondary">Eligible</span>
+          {% else %}
+            <span class="text-secondary small">Building</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

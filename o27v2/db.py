@@ -698,6 +698,104 @@ CREATE TABLE IF NOT EXISTS award_ballots (
 );
 CREATE INDEX IF NOT EXISTS idx_ballots_season_cat
     ON award_ballots(season, category);
+
+-- Hall of Fame (Task: player-hall-of-fame).
+--
+-- Per-game stats are wiped at every offseason rollover
+-- (_reset_for_next_history_season) and only the top-10 leader rows survive,
+-- so there is no surviving source of full career totals. player_career_lines
+-- fixes that: archive_current_season snapshots EVERY qualified player's full
+-- season batting + pitching line here BEFORE the per-game stats are cleared.
+-- Career totals = SUM over this table; black/gray ink, awards, rings, and
+-- sustained-excellence all derive from it plus the season_* archive tables.
+--
+-- These three tables are tied to live player ids (stable across a single
+-- continuous franchise but meaningless after a reseed), so unlike the
+-- season_* archive tables they ARE dropped by drop_all() — a fresh universe
+-- starts the Hall over. _reset_for_next_history_season does NOT touch them,
+-- so they accumulate across the carry-forward season lineage.
+CREATE TABLE IF NOT EXISTS player_career_lines (
+    season_id     INTEGER NOT NULL REFERENCES seasons(id),
+    season_number INTEGER,
+    year          INTEGER,
+    player_id     INTEGER NOT NULL,
+    player_name   TEXT,
+    team_abbrev   TEXT,
+    is_pitcher    INTEGER DEFAULT 0,
+    position      TEXT DEFAULT '',
+    age           INTEGER,
+    -- batting line
+    g     INTEGER DEFAULT 0,
+    pa    INTEGER DEFAULT 0,
+    ab    INTEGER DEFAULT 0,
+    h     INTEGER DEFAULT 0,
+    d2    INTEGER DEFAULT 0,
+    d3    INTEGER DEFAULT 0,
+    hr    INTEGER DEFAULT 0,
+    r     INTEGER DEFAULT 0,
+    rbi   INTEGER DEFAULT 0,
+    bb    INTEGER DEFAULT 0,
+    k     INTEGER DEFAULT 0,
+    sb    INTEGER DEFAULT 0,
+    avg       REAL DEFAULT 0,
+    obp       REAL DEFAULT 0,
+    slg       REAL DEFAULT 0,
+    ops       REAL DEFAULT 0,
+    wrc_plus  REAL DEFAULT 100,
+    -- pitching line
+    p_g    INTEGER DEFAULT 0,
+    w      INTEGER DEFAULT 0,
+    l      INTEGER DEFAULT 0,
+    outs   INTEGER DEFAULT 0,
+    er     INTEGER DEFAULT 0,
+    p_k    INTEGER DEFAULT 0,
+    p_bb   INTEGER DEFAULT 0,
+    p_h    INTEGER DEFAULT 0,
+    wera       REAL DEFAULT 0,
+    whip       REAL DEFAULT 0,
+    wera_plus  REAL DEFAULT 100,
+    PRIMARY KEY (season_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_career_lines_player
+    ON player_career_lines(player_id);
+
+-- League Hall of Fame — gated, automatic (LPGA-style points threshold +
+-- longevity/age eligibility). One row per enshrined player.
+CREATE TABLE IF NOT EXISTS hof_inductees (
+    player_id              INTEGER PRIMARY KEY,
+    player_name            TEXT,
+    primary_team_abbrev    TEXT,
+    is_pitcher             INTEGER DEFAULT 0,
+    position               TEXT DEFAULT '',
+    inducted_season_number INTEGER,
+    inducted_year          INTEGER,
+    hof_points             REAL DEFAULT 0,
+    seasons_played         INTEGER DEFAULT 0,
+    career_summary         TEXT DEFAULT '',
+    inducted_at            TEXT
+);
+
+-- Team Halls of Fame — a lower, franchise-scoped bar. Players land here
+-- either by meeting the team criteria automatically (method='criteria') or
+-- by a manual induction from the team HOF page (method='manual'). A player
+-- can be in several team halls (e.g. a franchise legend traded late).
+CREATE TABLE IF NOT EXISTS team_hof_inductees (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id                INTEGER,
+    team_abbrev            TEXT,
+    player_id              INTEGER,
+    player_name            TEXT,
+    is_pitcher             INTEGER DEFAULT 0,
+    position               TEXT DEFAULT '',
+    inducted_season_number INTEGER,
+    inducted_year          INTEGER,
+    team_points            REAL DEFAULT 0,
+    seasons_with_team      INTEGER DEFAULT 0,
+    method                 TEXT DEFAULT 'criteria',
+    career_summary         TEXT DEFAULT '',
+    inducted_at            TEXT,
+    UNIQUE(team_id, player_id)
+);
 """
 
 
@@ -1362,6 +1460,9 @@ def drop_all() -> None:
                 DROP TABLE IF EXISTS sim_meta;
                 DROP TABLE IF EXISTS award_ballots;
                 DROP TABLE IF EXISTS season_awards;
+                DROP TABLE IF EXISTS team_hof_inductees;
+                DROP TABLE IF EXISTS hof_inductees;
+                DROP TABLE IF EXISTS player_career_lines;
                 DROP TABLE IF EXISTS games;
                 DROP TABLE IF EXISTS playoff_series;
                 DROP TABLE IF EXISTS players;

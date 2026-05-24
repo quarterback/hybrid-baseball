@@ -451,6 +451,12 @@ def _make_youth_player(
         p["role_run"]       = 0
         p["role_two_way"]   = 0
         p["role_field_pos"] = ""
+        # Draw the joker as its archetype (power / speed / contact) — same
+        # tunable grade centers as the pro side — so youth jokers are genuine
+        # archetypes whose grades carry through to the pro pool at graduation.
+        if joker_archetype in ("power", "speed", "contact"):
+            from o27v2.league import _shape_joker
+            _shape_joker(p, joker_archetype, rng)
     p["youth_potential_index"] = round(rng.uniform(_YPI_LO, _YPI_HI), 3)
     p["recruit_stars"] = _stars_from_composite(_composite_for_player(p))
     return p

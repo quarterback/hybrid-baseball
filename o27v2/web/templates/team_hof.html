@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ team.name }} — Hall of Fame{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h2 class="mb-0"><span class="team-abbrev">{{ team.abbrev }}</span> {{ team.name }} — Hall of Fame</h2>
+  <a href="{{ url_for('team_detail', team_id=team.id) }}" class="btn btn-sm btn-outline-primary">← Team</a>
+</div>
+<div class="text-secondary small mb-3" style="line-height:1.45">
+  The team Hall uses a lower, franchise-scoped bar than the league Hall. Players are inducted
+  automatically once they earn <strong>{{ team_threshold }}+ HOF points in {{ team.abbrev }} colors</strong>
+  across at least <strong>{{ team_min_seasons }} seasons with the club</strong> — or you can enshrine
+  anyone by hand below.
+</div>
+
+<div class="dense mb-3">
+  <div class="panel-title">Enshrined <span class="text-secondary">({{ inductees|length }})</span></div>
+  {% if inductees %}
+  <table class="table table-sm dense-table mb-0 sortable">
+    <thead><tr>
+      <th>Player</th>
+      <th>Pos</th>
+      <th class="num">Inducted</th>
+      <th class="num">Seasons w/ Team</th>
+      <th class="num">Team Pts</th>
+      <th>How</th>
+      <th>Career</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in inductees %}
+      <tr>
+        <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
+        <td class="text-secondary">{{ r.position or ('P' if r.is_pitcher else '—') }}</td>
+        <td class="num">{{ r.inducted_year if r.inducted_year is not none else ('S' ~ r.inducted_season_number) }}</td>
+        <td class="num">{{ r.seasons_with_team }}</td>
+        <td class="num"><strong>{{ '%.1f'|format(r.team_points) }}</strong></td>
+        <td>
+          {% if r.method == 'manual' %}
+            <span class="text-secondary small">manual</span>
+          {% else %}
+            <span class="text-secondary small">criteria</span>
+          {% endif %}
+        </td>
+        <td class="text-secondary small">{{ r.career_summary }}</td>
+        <td>
+          <form method="post" action="{{ url_for('team_hof_remove', team_id=team.id) }}"
+                onsubmit="return confirm('Remove {{ r.player_name }} from the {{ team.abbrev }} Hall of Fame?');"
+                style="margin:0">
+            <input type="hidden" name="player_id" value="{{ r.player_id }}">
+            <button type="submit" class="btn btn-sm btn-link text-danger p-0">Remove</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-3 text-center text-secondary">
+    No {{ team.abbrev }} players enshrined yet.
+  </div>
+  {% endif %}
+</div>
+
+<div class="dense">
+  <div class="panel-title">Induct Manually</div>
+  <div class="p-2">
+    {% if inductable %}
+    <form method="post" action="{{ url_for('team_hof_induct', team_id=team.id) }}"
+          class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small mb-0" for="hof-player">Player</label>
+        <select id="hof-player" name="player_id" class="form-select form-select-sm" style="min-width:280px">
+          {% for p in inductable %}
+          <option value="{{ p.player_id }}">{{ p.name }}{% if p.team_points %} — {{ '%.1f'|format(p.team_points) }} pts, {{ p.seasons_with_team }} seasons{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Induct</button>
+      </div>
+    </form>
+    <div class="text-secondary small mt-2">
+      The pool is everyone who has worn {{ team.abbrev }} colors plus the current roster.
+      Manual inductions are kept even if they don't meet the automatic criteria.
+    </div>
+    {% else %}
+    <div class="text-secondary small">No eligible players to induct manually right now.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
