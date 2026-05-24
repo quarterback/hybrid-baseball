@@ -1846,7 +1846,8 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
     # Real managers concentrate hit-and-run in specific counts — a 0-2 hole
     # is the worst possible spot, while 1-0 / 2-1 / 3-1 are canonical. Skip
     # entirely with two strikes (batter can't protect a borderline pitch).
-    if state.bases[0] is not None and state.count.strikes < 2:
+    if (state.bases[0] is not None and state.bases[1] is None
+            and state.count.strikes < 2):
         count_tup = (state.count.balls, state.count.strikes)
         h_and_r_p = (
             cfg.HIT_AND_RUN_BASE_PROB
@@ -1886,6 +1887,10 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
     for base_idx in (0, 1):
         pid = state.bases[base_idx]
         if pid is None:
+            continue
+        # Can't steal a base that's already occupied (e.g. a Walk-Back bonus
+        # runner on 3B blocks a steal of third from second).
+        if state.bases[base_idx + 1] is not None:
             continue
         speed = _get_speed(pid, state)
         if speed < speed_thresh:

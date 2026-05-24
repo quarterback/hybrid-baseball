@@ -463,6 +463,13 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
         if runner_id is None:
             log.append("  No runner to steal.")
             return log
+        # A runner can't steal an occupied base — the base ahead is blocked
+        # (e.g. a Walk-Back bonus runner sitting on 3B). Overwriting it would
+        # silently erase the occupant, who _reconcile_walk_back would then
+        # mis-read as a scored run. Wave the steal off; the runner holds.
+        if base_idx + 1 <= 2 and state.bases[base_idx + 1] is not None:
+            log.append("  Steal waved off — the base ahead is occupied.")
+            return log
         if success:
             state.bases[base_idx] = None
             state.pitcher_sb_allowed_this_spell += 1
