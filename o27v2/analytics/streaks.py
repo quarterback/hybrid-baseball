@@ -13,7 +13,15 @@ from collections import defaultdict
 from o27v2 import db
 
 
-def longest_hit_streaks(top_n: int = 10) -> list[dict]:
+def _team_in(team_ids, col="team_id"):
+    """SQL fragment restricting `col` to team_ids, or '' when unfiltered."""
+    if not team_ids:
+        return ""
+    ids = ",".join(str(int(t)) for t in team_ids)
+    return f" AND {col} IN ({ids})"
+
+
+def longest_hit_streaks(top_n: int = 10, team_ids=None) -> list[dict]:
     """Return the top-N hit streaks of the current season.
 
     A hit streak is consecutive games (in date order) where the batter
@@ -21,15 +29,15 @@ def longest_hit_streaks(top_n: int = 10) -> list[dict]:
     doesn't break a streak — but a zero-PA day does not extend one).
 
     Active streaks (still in progress at the latest game date) are
-    flagged with `active=True`.
+    flagged with `active=True`. `team_ids` scopes to one league.
     """
     rows = db.fetchall(
-        """
+        f"""
         SELECT bs.player_id, bs.hits, bs.ab, bs.pa, g.id AS game_id,
                g.game_date
         FROM game_batter_stats bs
         JOIN games g ON bs.game_id = g.id
-        WHERE g.played = 1 AND bs.phase = 0
+        WHERE g.played = 1 AND bs.phase = 0{_team_in(team_ids, "bs.team_id")}
         ORDER BY bs.player_id, g.game_date, g.id
         """
     )
@@ -101,7 +109,7 @@ def longest_hit_streaks(top_n: int = 10) -> list[dict]:
     return streaks[:top_n]
 
 
-def no_hitters_and_perfect_games() -> dict:
+def no_hitters_and_perfect_games(team_ids=None) -> dict:
     """Find single-pitcher no-hitters and perfect games (regulation only).
 
     Definitions:
@@ -117,7 +125,7 @@ def no_hitters_and_perfect_games() -> dict:
     """
     # Per-game, per-pitcher line in regulation only.
     rows = db.fetchall(
-        """
+        f"""
         SELECT ps.game_id, ps.player_id, ps.team_id,
                SUM(ps.outs_recorded) AS outs,
                SUM(ps.hits_allowed)  AS h,
@@ -126,7 +134,7 @@ def no_hitters_and_perfect_games() -> dict:
                SUM(ps.unearned_runs) AS uer,
                SUM(ps.k)             AS k
         FROM game_pitcher_stats ps
-        WHERE ps.phase = 0
+        WHERE ps.phase = 0{_team_in(team_ids, "ps.team_id")}
         GROUP BY ps.game_id, ps.player_id
         HAVING SUM(ps.outs_recorded) >= 27
            AND SUM(ps.hits_allowed)  = 0

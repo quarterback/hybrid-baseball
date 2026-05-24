@@ -4193,16 +4193,18 @@ def _batter_game_score(
     return float(score)
 
 
-def _top_pitcher_outings(top_n: int = 10) -> list[dict]:
+def _top_pitcher_outings(top_n: int = 10, team_ids: list[int] | None = None) -> list[dict]:
     """Top per-appearance Game Scores of the season (regulation only).
 
     Returns rows ready for template rendering: player + team labels, the
     pitching line (IP, H, BB, K, ER), the GSc, and the box-score link.
     Computed in Python so we share the canonical `_pitcher_game_score()`
-    formula with the season aggregator.
+    formula with the season aggregator. `team_ids` scopes to one league.
     """
+    _tf = (f" AND ps.team_id IN ({','.join(str(int(i)) for i in team_ids)})"
+           if team_ids else "")
     rows = db.fetchall(
-        """
+        f"""
         SELECT ps.player_id, ps.team_id, ps.game_id,
                ps.outs_recorded, ps.hits_allowed, ps.bb, ps.k,
                ps.er, ps.unearned_runs, ps.hr_allowed, ps.fo_induced,
@@ -4220,7 +4222,7 @@ def _top_pitcher_outings(top_n: int = 10) -> list[dict]:
         JOIN teams   ht ON g.home_team_id = ht.id
         JOIN teams   at ON g.away_team_id = at.id
         WHERE ps.phase = 0 AND g.played = 1 AND ps.outs_recorded > 0
-        """
+        """ + _tf
     )
     enriched: list[dict] = []
     for r in rows:
@@ -4260,10 +4262,13 @@ def _top_pitcher_outings(top_n: int = 10) -> list[dict]:
     return enriched[:top_n]
 
 
-def _top_batter_games(top_n: int = 10) -> list[dict]:
-    """Top per-game batter Game Scores of the season (regulation only)."""
+def _top_batter_games(top_n: int = 10, team_ids: list[int] | None = None) -> list[dict]:
+    """Top per-game batter Game Scores of the season (regulation only).
+    `team_ids` scopes to one league."""
+    _tf = (f" AND bs.team_id IN ({','.join(str(int(i)) for i in team_ids)})"
+           if team_ids else "")
     rows = db.fetchall(
-        """
+        f"""
         SELECT bs.player_id, bs.team_id, bs.game_id,
                bs.pa, bs.ab, bs.hits, bs.doubles, bs.triples, bs.hr,
                bs.rbi, bs.runs, bs.bb, bs.k,
@@ -4280,7 +4285,7 @@ def _top_batter_games(top_n: int = 10) -> list[dict]:
         JOIN teams   ht ON g.home_team_id = ht.id
         JOIN teams   at ON g.away_team_id = at.id
         WHERE bs.phase = 0 AND g.played = 1 AND bs.pa > 0
-        """
+        """ + _tf
     )
     enriched: list[dict] = []
     for r in rows:
@@ -4332,11 +4337,29 @@ def glossary():
 
 @app.route("/leaders")
 def leaders():
-    games_played = db.fetchone("SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
+    # In a multi-league independent universe each league is its own
+    # statistical environment, so leaderboards + rate baselines are scoped
+    # to one league. Single-league/non-independent configs => no filter.
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    lg_where = "WHERE t.league = ? " if selected_league else ""
+    lg_and   = "AND t.league = ? "   if selected_league else ""
+    lg_param = (selected_league,)    if selected_league else ()
+
+    if selected_league:
+        games_played = db.fetchone(
+            "SELECT COUNT(*) as n FROM games g JOIN teams t "
+            "ON g.home_team_id = t.id WHERE g.played = 1 AND t.league = ?",
+            (selected_league,),
+        )["n"]
+    else:
+        games_played = db.fetchone(
+            "SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
     if games_played == 0:
         return _serve("leaders.html",
                                games_played=0, batting=[], pitching=[],
-                               min_pa=0, min_outs=0)
+                               min_pa=0, min_outs=0,
+                               leagues=leagues, selected_league=selected_league)
 
     # Scale qualifying minimums by games-per-team, not by total league games.
     # MLB rule of thumb: 3.1 PA/team-game for batting, 1 IP/team-game for
@@ -4345,7 +4368,7 @@ def leaders():
     min_pa, min_outs = _qualifying_thresholds(games_played)
 
     batting = db.fetchall(
-        """SELECT p.id as player_id, p.name as player_name, p.position,
+        f"""SELECT p.id as player_id, p.name as player_name, p.position,
                   p.power as r_power, p.contact as r_contact, p.eye as r_eye,
                   p.defense as defense, p.arm as arm,
                   p.defense_infield as defense_infield,
@@ -4379,11 +4402,12 @@ def leaders():
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
+           {lg_where}
            GROUP BY p.id
            HAVING SUM(bs.pa) >= ?""",
-        (min_pa,),
+        (*lg_param, min_pa),
     )
-    baselines = _league_baselines()
+    baselines = _league_baselines(league=selected_league)
     _aggregate_batter_rows(batting, baselines=baselines)
     # Per-base advancement conversion %, computed post-aggregate so the
     # leaderboard template can render them without the Jinja2 having to
@@ -4442,9 +4466,10 @@ def leaders():
            FROM {_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
+           {lg_where}
            GROUP BY p.id
            HAVING SUM(ps.outs_recorded) >= ?""",
-        (min_outs,),
+        (*lg_param, min_outs),
     )
     # Shared helper now produces wERA / xFIP / Decay / GSc / OS+ / AOR / etc.
     wl = _pitcher_wl_map()
@@ -4464,7 +4489,7 @@ def leaders():
     games_per_team = max(1, (games_played * 2) // num_teams)
     min_chances = max(3, games_per_team)
     fielding = db.fetchall(
-        """SELECT p.id as player_id, p.name as player_name, p.position,
+        f"""SELECT p.id as player_id, p.name as player_name, p.position,
                   t.abbrev as team_abbrev, t.id as team_id,
                   COUNT(bs.game_id) as g,
                   COALESCE(SUM(bs.po),0) as po,
@@ -4474,8 +4499,10 @@ def leaders():
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
+           {lg_where}
            GROUP BY p.id
            HAVING (COALESCE(SUM(bs.po),0) + COALESCE(SUM(bs.a),0) + COALESCE(SUM(bs.e),0)) > 0""",
+        lg_param,
     )
     for f in fielding:
         po_v = f.get("po") or 0
@@ -4494,36 +4521,38 @@ def leaders():
     fielding_qual = [f for f in fielding if f["chances"] >= min_chances]
 
     salaries = db.fetchall(
-        """SELECT p.id as player_id, p.name as player_name, p.position,
+        f"""SELECT p.id as player_id, p.name as player_name, p.position,
                   p.is_pitcher, p.salary,
                   t.abbrev as team_abbrev, t.id as team_id
            FROM players p
            JOIN teams t ON p.team_id = t.id
-           WHERE p.salary > 0
+           WHERE p.salary > 0 {lg_and}
            ORDER BY p.salary DESC
            LIMIT 25""",
+        lg_param,
     )
 
     # ----- Game-log Top 10 (per-outing / per-game) -----------------
     # Each row is one appearance (pitcher) or one game (batter).
     # We compute the per-event Game Score in Python so the pitcher
     # formula stays single-sourced through `_pitcher_game_score`.
-    top_outings = _top_pitcher_outings(top_n=10)
-    top_games   = _top_batter_games(top_n=10)
+    _lg_team_ids = _league_team_ids(selected_league)
+    top_outings = _top_pitcher_outings(top_n=10, team_ids=_lg_team_ids)
+    top_games   = _top_batter_games(top_n=10, team_ids=_lg_team_ids)
 
     # ----- Streaks & milestones (hit streaks, no-hitters, perfect) -
     from o27v2.analytics.streaks import (
         longest_hit_streaks, no_hitters_and_perfect_games,
     )
-    hit_streaks = longest_hit_streaks(top_n=10)
-    nohit_data  = no_hitters_and_perfect_games()
+    hit_streaks = longest_hit_streaks(top_n=10, team_ids=_lg_team_ids)
+    nohit_data  = no_hitters_and_perfect_games(team_ids=_lg_team_ids)
 
     # ----- WPA / Leverage Index leaderboard ------------------------
     # Empirical WP built from this league's own outcomes (no MLB
     # crutch). Templates render top 10 by WPA for batters/pitchers
     # and the highest-leverage PA-of-the-season list.
     from o27v2.analytics.wpa import build_player_wpa
-    wpa_data = build_player_wpa()
+    wpa_data = build_player_wpa(team_ids=_lg_team_ids)
     # Join WPA / LI onto the batting + pitching rows so the existing
     # `card()` macro can render them like any other stat.
     for b in batting:
@@ -4599,6 +4628,8 @@ def leaders():
         top_wpa_events=top_wpa_events,
         wpa_n_games=wpa_data.get("n_games", 0),
         scale=scale,
+        leagues=leagues,
+        selected_league=selected_league,
     )
 
 
