@@ -27,7 +27,7 @@ if _workspace not in sys.path:
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response, flash
 
-from o27v2 import db, currency, valuation, hof
+from o27v2 import db, currency, valuation, hof, engine_config
 from o27v2.web import text_export
 from o27v2.sim import (
     simulate_game,
@@ -6291,6 +6291,57 @@ def hof_settings_post():
         flash("HOF settings saved. Use Recompute or Rebuild to re-evaluate "
               "the halls.", "info")
     return redirect(url_for("hof_settings"))
+
+
+@app.route("/engine/settings")
+def engine_settings():
+    engine_config.ensure_applied()
+    eff = engine_config.effective()
+    overrides = engine_config.load_overrides()
+    return _serve(
+        "engine_settings.html",
+        fields=engine_config.config_fields(),
+        effective=eff,
+        defaults=engine_config.DEFAULTS,
+        overrides=overrides,
+        bool_keys=engine_config.bool_keys(),
+        override_count=len(overrides),
+        presets=engine_config.PRESET_LABELS,
+    )
+
+
+@app.route("/engine/settings", methods=["POST"])
+def engine_settings_post():
+    action = (request.form.get("action") or "save").strip()
+    if action == "reset":
+        engine_config.reset_overrides()
+        flash("Engine tunables reset to defaults.", "info")
+        return redirect(url_for("engine_settings"))
+    if action == "preset":
+        name = (request.form.get("preset") or "").strip()
+        applied = engine_config.apply_preset(name)
+        if name in engine_config.PRESETS:
+            flash(f"Applied the {engine_config.PRESET_LABELS.get(name, name)} "
+                  f"preset ({len(applied)} constant(s) changed). New games "
+                  f"use it immediately.", "info")
+        else:
+            flash("Cleared engine overrides (back to defaults).", "info")
+        return redirect(url_for("engine_settings"))
+
+    partial = {}
+    bkeys = engine_config.bool_keys()
+    for k in engine_config.DEFAULTS:
+        if k in bkeys:
+            # Unchecked checkboxes don't submit — treat absence as False.
+            partial[k] = (request.form.get(k) is not None)
+        else:
+            raw = request.form.get(k)
+            if raw is not None and str(raw).strip() != "":
+                partial[k] = raw
+    merged = engine_config.save_overrides(partial)
+    flash(f"Engine tunables saved — {len(merged)} active override(s). "
+          f"New games use them immediately.", "info")
+    return redirect(url_for("engine_settings"))
 
 
 @app.route("/team/<int:team_id>/hall-of-fame")

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Engine Tunables{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h2 class="mb-0">Engine Tunables</h2>
+  <span class="text-secondary small">{{ override_count }} active override(s)</span>
+</div>
+<div class="text-secondary small mb-3" style="line-height:1.45">
+  Re-tune the simulation engine at runtime — no code edits. Changes are saved to this
+  league and take effect on the <strong>next game simulated</strong>. Use the presets to flip a
+  whole run environment (e.g. induce a deadball era) in one click, or fine-tune individual
+  constants below. Overridden values are marked ●; "default" shows the shipped value.
+  The pitch-probability tables and contact-outcome matrices are structural and aren't editable here.
+</div>
+
+<div class="dense mb-3">
+  <div class="panel-title">Presets</div>
+  <div class="p-2 d-flex flex-wrap gap-2 align-items-center">
+    {% for key, label in presets.items() %}
+    <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0">
+      <input type="hidden" name="action" value="preset">
+      <input type="hidden" name="preset" value="{{ key }}">
+      <button type="submit" class="btn btn-sm btn-outline-primary"
+              onclick="return confirm('Apply the {{ label }} preset? This replaces your current engine overrides.');">{{ label }}</button>
+    </form>
+    {% endfor %}
+    <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0">
+      <input type="hidden" name="action" value="reset">
+      <button type="submit" class="btn btn-sm btn-outline-danger"
+              onclick="return confirm('Clear all engine overrides and restore defaults?');">Reset to Defaults</button>
+    </form>
+  </div>
+</div>
+
+<div class="dense mb-3">
+  <div class="p-2">
+    <input type="search" id="tune-search" class="form-control form-control-sm"
+           placeholder="Filter constants by name…" style="max-width:360px" autocomplete="off">
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('engine_settings_post') }}">
+  {% for group_label, items in fields %}
+  <div class="dense mb-3 tune-group">
+    <div class="panel-title">{{ group_label }}</div>
+    <div class="p-2">
+      <div class="row g-3">
+        {% for key, label in items %}
+        <div class="col-12 col-md-6 col-lg-4 tune-field"
+             data-name="{{ key|lower }}" data-label="{{ label|lower }}">
+          {% if key in bool_keys %}
+          <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" id="f-{{ key }}" name="{{ key }}"
+                   {% if effective[key] %}checked{% endif %}>
+            <label class="form-check-label small" for="f-{{ key }}">
+              {{ label }}{% if key in overrides %} <span title="overridden">●</span>{% endif %}
+            </label>
+          </div>
+          {% else %}
+          <label class="form-label small mb-0" for="f-{{ key }}">
+            {{ label }}{% if key in overrides %} <span title="overridden" style="color:var(--accent)">●</span>{% endif %}
+          </label>
+          <input type="number" step="any" id="f-{{ key }}" name="{{ key }}"
+                 value="{{ effective[key] }}"
+                 class="form-control form-control-sm" style="max-width:150px">
+          <div class="text-secondary" style="font-size:.72rem">
+            <code>{{ key }}</code> · default {{ defaults[key] }}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="dense mb-3" style="position:sticky;bottom:0">
+    <div class="p-2 d-flex gap-2 align-items-center">
+      <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">Save Overrides</button>
+      <span class="text-secondary small">Takes effect on the next simulated game.</span>
+    </div>
+  </div>
+</form>
+
+<script>
+(function () {
+  var box = document.getElementById('tune-search');
+  if (!box) return;
+  box.addEventListener('input', function () {
+    var q = box.value.trim().toLowerCase();
+    document.querySelectorAll('.tune-group').forEach(function (grp) {
+      var anyVisible = false;
+      grp.querySelectorAll('.tune-field').forEach(function (f) {
+        var hit = !q || f.dataset.name.indexOf(q) !== -1 || f.dataset.label.indexOf(q) !== -1;
+        f.style.display = hit ? '' : 'none';
+        if (hit) anyVisible = true;
+      });
+      grp.style.display = anyVisible ? '' : 'none';
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -845,7 +845,8 @@
         <a class="nav-link {% if request.endpoint == 'auction_view' %}active{% endif %}" href="{{ url_for('auction_view') }}">Auction</a>
         <a class="nav-link {% if request.endpoint in ('youth_view','youth_team_view','youth_tournament_view') %}active{% endif %}" href="{{ url_for('youth_view') }}">Youth</a>
         <a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a>
-        <a class="nav-link {% if request.endpoint in ('hall_of_fame','hof_candidates') %}active{% endif %}" href="{{ url_for('hall_of_fame') }}" title="Hall of Fame">HOF</a>
+        <a class="nav-link {% if request.endpoint in ('hall_of_fame','hof_candidates','hof_settings') %}active{% endif %}" href="{{ url_for('hall_of_fame') }}" title="Hall of Fame">HOF</a>
+        <a class="nav-link {% if request.endpoint == 'engine_settings' %}active{% endif %}" href="{{ url_for('engine_settings') }}" title="Engine tunables">Engine</a>
         <a class="nav-link {% if request.path.startswith('/almanac') %}active{% endif %}" href="/almanac/" title="Live stats almanac">Almanac</a>
         <a class="nav-link {% if request.endpoint == 'saves_index' %}active{% endif %}" href="{{ url_for('saves_index') }}" title="Switch, save, export or import leagues">Saves</a>
         <a class="nav-link accent {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">+ League</a>

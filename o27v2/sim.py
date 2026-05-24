@@ -1452,6 +1452,8 @@ def simulate_game(game_id: int, seed: int | None = None,
     identically, so standings / leaders / the invariant harness are
     unaffected. Used by bulk multi-season and pre-sim history runs.
     """
+    from o27v2 import engine_config
+    engine_config.ensure_applied()
     with _SIM_LOCK:
         return _simulate_game_locked(game_id, seed=seed, detail=detail)
 
