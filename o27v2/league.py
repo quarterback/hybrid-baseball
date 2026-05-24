@@ -346,6 +346,9 @@ def build_universe_config(
         # Peer universes use generic award names rather than MLB-specific ones.
         "award_names":            {"mvp": "Hitter of the Year",
                                    "cy_young": "Pitcher of the Year"},
+        # Generate locale-appropriate club identities from data/names/* rather
+        # than reusing real MLB franchises (see o27v2/team_naming.py).
+        "team_naming":            "generated",
         "league_specs":           league_specs,
         "style_profiles":         style_profiles,
         "name_regions":           name_regions,
@@ -2602,6 +2605,23 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     # development (see o27v2/development.py): high-org teams grow
     # talent faster between seasons, building dynasties organically.
     # It does NOT bias per-pitch outcomes — that role is gone.
+    # Locale-aware team identities for peer universes. When the config opts
+    # in, each league's clubs are generated from the regional naming data
+    # (data/names/*) instead of reusing real MLB franchises. Built per league
+    # as a FIFO queue keyed by league name; consumed in the insert loop below.
+    gen_team_queue: dict[str, list[dict]] = {}
+    if config.get("team_naming") == "generated":
+        from o27v2 import team_naming as _team_naming
+        counts: dict[str, int] = {}
+        for _ln, _div in div_map:
+            counts[_ln] = counts.get(_ln, 0) + 1
+        _used_abbrev: set[str] = set()
+        for _ln, _n in counts.items():
+            ids = _team_naming.generate_league_teams(_ln, _n, rng_seed,
+                                                     used_abbrev=_used_abbrev)
+            if ids:
+                gen_team_queue[_ln] = ids
+
     team_ids: list[int] = []
     team_leagues: list[str] = []
     for idx, (team_def, (league_name, division)) in enumerate(zip(selected, div_map)):
@@ -2610,6 +2630,16 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         name   = team_def.get("name", "Team")
         lat    = team_def.get("lat")
         lon    = team_def.get("lon")
+        # Override with a generated locale-appropriate identity when this
+        # league opted into generated naming. lat/lon are dropped (the real
+        # MLB coordinates would mismatch the new city); weather falls back to
+        # the city string.
+        if gen_team_queue.get(league_name):
+            ident = gen_team_queue[league_name].pop(0)
+            name   = ident["name"]
+            city   = ident["city"] or city
+            abbrev = ident["abbrev"]
+            lat = lon = None
 
         park_hr, park_hits = _roll_park_factors(rng2)
         park_name = _roll_ballpark_name(rng2, city, surname_pool, used_park_names)

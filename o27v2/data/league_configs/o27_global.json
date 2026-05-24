@@ -5,6 +5,7 @@
   "level": "MLB",
   "schedule_mode": "independent",
   "postseason": "none",
+  "team_naming": "generated",
   "award_names": {
     "mvp": "Hitter of the Year",
     "cy_young": "Pitcher of the Year"
