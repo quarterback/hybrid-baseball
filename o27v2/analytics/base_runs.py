@@ -45,6 +45,14 @@ from o27v2 import db
 _DEFAULT_COEFFS = (1.4, -0.6, -3.0, 0.1)
 
 
+def _team_in(team_ids, col="team_id"):
+    """SQL fragment restricting `col` to team_ids, or '' when unfiltered."""
+    if not team_ids:
+        return ""
+    ids = ",".join(str(int(t)) for t in team_ids)
+    return f" AND {col} IN ({ids})"
+
+
 def _b_value(c: tuple[float, float, float, float],
              h: int, d2: int, d3: int, hr: int,
              bb: int, hbp: int) -> float:
@@ -65,7 +73,7 @@ def _bsr(c: tuple[float, float, float, float],
     return a * b / (b + cc) + d
 
 
-def _team_offense_rows() -> list[dict]:
+def _team_offense_rows(team_ids=None) -> list[dict]:
     return db.fetchall(
         """
         SELECT t.id AS team_id, t.abbrev, t.name,
@@ -80,13 +88,15 @@ def _team_offense_rows() -> list[dict]:
         FROM teams t
         LEFT JOIN game_batter_stats b ON b.team_id = t.id AND b.phase = 0
         LEFT JOIN games g ON g.id = b.game_id
-        WHERE (g.id IS NULL) OR (g.played = 1 AND g.is_playoff = 0)
+        WHERE ((g.id IS NULL) OR (g.played = 1 AND g.is_playoff = 0))"""
+        + _team_in(team_ids, "t.id")
+        + """
         GROUP BY t.id
         """
     )
 
 
-def _team_defense_rows() -> list[dict]:
+def _team_defense_rows(team_ids=None) -> list[dict]:
     """Per-team allowed counting stats — sum opponents' batting against them."""
     return db.fetchall(
         """
@@ -104,12 +114,15 @@ def _team_defense_rows() -> list[dict]:
         JOIN game_batter_stats b ON b.game_id = g.id
                                 AND b.team_id != t.id
                                 AND b.phase = 0
+        WHERE 1=1"""
+        + _team_in(team_ids, "t.id")
+        + """
         GROUP BY t.id
         """
     )
 
 
-def _team_runs_allowed() -> dict[int, int]:
+def _team_runs_allowed(team_ids=None) -> dict[int, int]:
     rows = db.fetchall(
         """
         SELECT t.id AS team_id,
@@ -119,6 +132,9 @@ def _team_runs_allowed() -> dict[int, int]:
         FROM teams t
         LEFT JOIN games g ON (g.home_team_id = t.id OR g.away_team_id = t.id)
                           AND g.played = 1 AND g.is_playoff = 0
+        WHERE 1=1"""
+        + _team_in(team_ids, "t.id")
+        + """
         GROUP BY t.id
         """
     )
@@ -186,7 +202,7 @@ def _refit_coeffs(off_rows: list[dict], def_rows: list[dict],
     return fitted, _joint_sse(fitted, off_rows, def_rows, ra_actual)
 
 
-def build_base_runs_table() -> dict:
+def build_base_runs_table(team_ids=None) -> dict:
     """Per-team BaseRuns predictions and sequencing-luck residuals.
 
     Returns:
@@ -218,9 +234,9 @@ def build_base_runs_table() -> dict:
             }, …],   # sorted by |bsr_total_fit| desc
         }
     """
-    off_rows  = _team_offense_rows()
-    def_rows  = _team_defense_rows()
-    ra_actual = _team_runs_allowed()
+    off_rows  = _team_offense_rows(team_ids)
+    def_rows  = _team_defense_rows(team_ids)
+    ra_actual = _team_runs_allowed(team_ids)
 
     if not off_rows:
         return {"n_teams": 0, "teams": []}

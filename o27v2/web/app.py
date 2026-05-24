@@ -535,6 +535,41 @@ def _active_config() -> dict | None:
         return None
 
 
+def _independent_leagues() -> list[str]:
+    """Distinct league names when the active universe is multi-league and
+    independent (each league is its own statistical environment, so stats
+    must not be pooled). Empty for single-league or non-independent configs,
+    which keeps the legacy whole-DB behavior unchanged.
+    """
+    cfg = _active_config()
+    if not cfg or cfg.get("schedule_mode") != "independent":
+        return []
+    rows = db.fetchall(
+        "SELECT DISTINCT league FROM teams "
+        "WHERE league IS NOT NULL AND league != '' ORDER BY league"
+    )
+    leagues = [r["league"] for r in rows]
+    return leagues if len(leagues) > 1 else []
+
+
+def _selected_league(leagues: list[str]) -> str | None:
+    """Resolve the ?league= query param against the available leagues,
+    defaulting to the first (pooling across independent leagues is
+    meaningless, so we never default to 'all')."""
+    if not leagues:
+        return None
+    sel = request.args.get("league")
+    return sel if sel in leagues else leagues[0]
+
+
+def _league_team_ids(league: str | None) -> list[int] | None:
+    """Team ids for a league, or None (no filter) when league is None."""
+    if not league:
+        return None
+    rows = db.fetchall("SELECT id FROM teams WHERE league = ?", (league,))
+    return [r["id"] for r in rows]
+
+
 def _tiered_standings(cfg: dict) -> tuple[dict[str, list[dict]], dict[str, dict]]:
     """Build tier-ordered standings + per-tier cut-line metadata for a
     tiered config. Returns (tiers, meta) where:
@@ -5675,31 +5710,42 @@ def analytics():
       * Expected wOBA — strips BABIP variance via contact-quality bins.
       * Pythagorean exponent — empirically refit for O27's run env.
     """
+    # In a multi-league independent universe each league is its own run
+    # environment, so all of these tables must be scoped to one league
+    # (pooling them is meaningless). Single-league configs => team_ids None.
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    team_ids        = _league_team_ids(selected_league)
+    _team_csv       = ",".join(str(i) for i in team_ids) if team_ids else ""
+    _gp_where       = f" AND home_team_id IN ({_team_csv})" if _team_csv else ""
+
     games_played = db.fetchone(
-        "SELECT COUNT(*) AS n FROM games WHERE played = 1"
+        f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}"
     )["n"] or 0
     if games_played == 0:
         return _serve("analytics.html",
                       games_played=0, re_table=None, re_curve=None,
                       xwoba=None, pythag=None, base_runs=None,
-                      lin_w=None, gsc_summary=None)
+                      lin_w=None, gsc_summary=None,
+                      leagues=leagues, selected_league=selected_league)
 
     from o27v2.analytics import (
         build_re_table, build_re_by_outs_remaining,
         build_xwoba_table, refit_pythag_exponent,
         build_base_runs_table,
     )
+    from o27v2.analytics.linear_weights import derive_linear_weights
 
     # Scale qualifier to season completeness: full-season convention is
     # 162 PA (matches /leaders); 2,430 / 15 = 162.
     min_pa = max(20, games_played // 15)
 
-    re_table  = build_re_table()
-    re_curve  = build_re_by_outs_remaining()
-    xwoba     = build_xwoba_table(min_pa=min_pa)
-    pythag    = refit_pythag_exponent()
-    base_runs = build_base_runs_table()
-    lin_w     = _linear_weights()
+    re_table  = build_re_table(team_ids=team_ids)
+    re_curve  = build_re_by_outs_remaining(team_ids=team_ids)
+    xwoba     = build_xwoba_table(min_pa=min_pa, team_ids=team_ids)
+    pythag    = refit_pythag_exponent(team_ids=team_ids)
+    base_runs = build_base_runs_table(team_ids=team_ids)
+    lin_w     = derive_linear_weights(team_ids=team_ids) if team_ids else _linear_weights()
 
     # League mean / median Game Score across all starter outings, so the
     # linear-weights panel can show the auto-tune result vs the target of 50.
@@ -5711,6 +5757,7 @@ def analytics():
         FROM game_pitcher_stats
         WHERE phase = 0 AND is_starter = 1
         """
+        + (f" AND team_id IN ({_team_csv})" if _team_csv else "")
     )
     if gsc_dist:
         gscs = sorted(
@@ -5786,6 +5833,8 @@ def analytics():
         gsc_summary=gsc_summary,
         min_pa=min_pa,
         xo_calib_rows=xo_calib_rows,
+        leagues=leagues,
+        selected_league=selected_league,
     )
 
 

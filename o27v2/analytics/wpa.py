@@ -26,6 +26,14 @@ from typing import Iterable
 from o27v2 import db
 
 
+def _team_in(team_ids, col="team_id"):
+    """SQL fragment restricting `col` to team_ids, or '' when unfiltered."""
+    if not team_ids:
+        return ""
+    ids = ",".join(str(int(t)) for t in team_ids)
+    return f" AND {col} IN ({ids})"
+
+
 # ---------------------------------------------------------------------------
 # State coarsening — the empirical table is sparse at extreme score
 # differentials and rare base states, so we collapse axes when needed.
@@ -59,7 +67,7 @@ def _winner_map() -> dict[int, int | None]:
     }
 
 
-def build_wp_table() -> dict:
+def build_wp_table(team_ids=None) -> dict:
     """Build the empirical win-prob lookup.
 
     Returns:
@@ -85,7 +93,9 @@ def build_wp_table() -> dict:
         WHERE pa.phase = 0
           AND pa.outs_before IS NOT NULL
           AND pa.bases_before IS NOT NULL
-          AND pa.score_diff_before IS NOT NULL
+          AND pa.score_diff_before IS NOT NULL"""
+        + _team_in(team_ids, "pa.team_id")
+        + """
         """
     )
 
@@ -163,7 +173,7 @@ def lookup_wp(
 # ---------------------------------------------------------------------------
 # Per-player WPA and Leverage aggregates.
 
-def build_player_wpa() -> dict:
+def build_player_wpa(team_ids=None) -> dict:
     """Walk every PA, compute per-event WPA + leverage, and aggregate by
     batter and pitcher.
 
@@ -175,7 +185,7 @@ def build_player_wpa() -> dict:
           "top_pa": list[dict] (top |WPA| events, for narrative surfaces),
         }
     """
-    wp_table = build_wp_table()
+    wp_table = build_wp_table(team_ids)
     if wp_table["n_games"] == 0:
         return {"wp_table_size": 0, "by_batter": {}, "by_pitcher": {},
                 "top_pa": [], "li_norm": 1.0}
@@ -194,7 +204,9 @@ def build_player_wpa() -> dict:
           AND pa.bases_before IS NOT NULL
           AND pa.bases_after  IS NOT NULL
           AND pa.score_diff_before IS NOT NULL
-          AND pa.score_diff_after  IS NOT NULL
+          AND pa.score_diff_after  IS NOT NULL"""
+        + _team_in(team_ids, "pa.team_id")
+        + """
         """
     )
 

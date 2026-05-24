@@ -45,6 +45,14 @@ from typing import Iterable
 from o27v2 import db
 
 
+def _team_in(team_ids, col="team_id"):
+    """SQL fragment restricting `col` to team_ids, or '' when unfiltered."""
+    if not team_ids:
+        return ""
+    ids = ",".join(str(int(t)) for t in team_ids)
+    return f" AND {col} IN ({ids})"
+
+
 # Bases mask: 3-bit, bit0 = 1B, bit1 = 2B, bit2 = 3B.
 # After-walk state and runs forced home, indexed by before-state.
 # (HBP transitions identically.)
@@ -87,7 +95,7 @@ def _classify_bip(hit_type: str | None,
     return "out"
 
 
-def _iter_events_full() -> Iterable[dict]:
+def _iter_events_full(team_ids=None) -> Iterable[dict]:
     """All regulation BIP events with full pre/post state stamps."""
     return db.fetchall(
         """
@@ -100,13 +108,15 @@ def _iter_events_full() -> Iterable[dict]:
           AND outs_before  IS NOT NULL
           AND bases_before IS NOT NULL
           AND outs_after   IS NOT NULL
-          AND bases_after  IS NOT NULL
+          AND bases_after  IS NOT NULL"""
+        + _team_in(team_ids, "team_id")
+        + """
         ORDER BY game_id, team_id, ab_seq, swing_idx
         """
     )
 
 
-def _build_re_full() -> tuple[dict[tuple[int, int], float], dict[tuple[int, int], int]]:
+def _build_re_full(team_ids=None) -> tuple[dict[tuple[int, int], float], dict[tuple[int, int], int]]:
     """Single-out-granularity RE per (bases, outs).
 
     Returns (re_map, n_map). Both are keyed by (bases:int, outs:int).
@@ -124,7 +134,9 @@ def _build_re_full() -> tuple[dict[tuple[int, int], float], dict[tuple[int, int]
         SELECT game_id, team_id, ab_seq, swing_idx,
                outs_before, bases_before, runs_scored
         FROM game_pa_log
-        WHERE phase = 0 AND outs_before IS NOT NULL
+        WHERE phase = 0 AND outs_before IS NOT NULL"""
+        + _team_in(team_ids, "team_id")
+        + """
         ORDER BY game_id, team_id, ab_seq, swing_idx
         """
     )
@@ -204,7 +216,7 @@ def _walk_run_value(re_map: dict[tuple[int, int], float],
     return s
 
 
-def derive_linear_weights() -> dict:
+def derive_linear_weights(team_ids=None) -> dict:
     """Empirically derive wOBA weights and Game Score coefficients.
 
     Returns:
@@ -242,7 +254,7 @@ def derive_linear_weights() -> dict:
     numbers directly comparable in scale to OBP / SLG without
     requiring downstream rescaling.
     """
-    re_map, re_n = _build_re_full()
+    re_map, re_n = _build_re_full(team_ids)
     state_p     = _state_occupation(re_n)
     league_re_start = _re_lookup(re_map, 0, 0)
 
@@ -250,7 +262,7 @@ def derive_linear_weights() -> dict:
     rv_sum    = defaultdict(float)
     rv_n      = defaultdict(int)
     n_events  = 0
-    for ev in _iter_events_full():
+    for ev in _iter_events_full(team_ids):
         et = _classify_bip(ev["hit_type"], ev["was_stay"], ev["stay_credited"])
         if et is None:
             continue
@@ -340,7 +352,9 @@ def derive_linear_weights() -> dict:
                COALESCE(SUM(hbp), 0)        AS hbp,
                COALESCE(SUM(stay_hits), 0)  AS stay_h
         FROM game_batter_stats
-        WHERE phase = 0
+        WHERE phase = 0"""
+        + _team_in(team_ids, "team_id")
+        + """
         """
     ) or {}
     pa = counts.get("pa") or 0
@@ -398,7 +412,9 @@ def derive_linear_weights() -> dict:
             AVG(hr_allowed)  AS hr,
             AVG(fo_induced) AS fo
         FROM game_pitcher_stats
-        WHERE phase = 0 AND is_starter = 1
+        WHERE phase = 0 AND is_starter = 1"""
+        + _team_in(team_ids, "team_id")
+        + """
         """
     ) or {}
     if avg_line.get("n") or 0:
