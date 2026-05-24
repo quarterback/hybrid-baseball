@@ -2266,9 +2266,11 @@ def generate_players(
     for pos in ("RF", "CF", "SS", "2B"):
         players.append(_hitter(pos, is_active=1))
 
-    # ---- Active jokers (the DH role; 3 drafted explicitly) ----
-    for _ in range(ACTIVE_JOKERS):
-        players.append(_spec("joker"))
+    # ---- Active jokers (the DH role; one of each archetype) ----
+    for _i in range(ACTIVE_JOKERS):
+        jk = _spec("joker")
+        _shape_joker(jk, _JOKER_ARCH_ORDER[_i % len(_JOKER_ARCH_ORDER)], rng)
+        players.append(jk)
 
     # ---- Active situational specialists ----
     players.append(_spec("pr_specialist"))

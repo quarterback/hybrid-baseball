@@ -167,6 +167,24 @@ def test_jokers_drawn_as_three_archetypes(fresh_db):
     assert spd_spd > pwr_spd
 
 
+def test_youth_jokers_drawn_as_archetypes(fresh_db):
+    import random
+    from o27v2 import youth
+    ec.reset_overrides()
+    rng = random.Random(3)
+    by_arch = {
+        a: youth._make_youth_player(rng, "CF", 0, "Kid", "US", 17,
+                                    is_joker=True, joker_archetype=a)
+        for a in ("power", "speed", "contact")
+    }
+    assert by_arch["power"]["power"] > by_arch["speed"]["power"]
+    assert by_arch["speed"]["speed"] > by_arch["power"]["speed"]
+    assert by_arch["contact"]["contact"] >= by_arch["power"]["contact"]
+    for a, p in by_arch.items():
+        assert p["roster_slot"] == "joker"
+        assert p["archetype"] == a
+
+
 def test_characterize_labels_by_run_environment():
     assert ec.characterize({"hr_per_game": 0.6, "r_per_game": 9}) \
         == "Deadball · pitcher-dominant"
