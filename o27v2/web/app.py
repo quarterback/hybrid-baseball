@@ -25,7 +25,7 @@ _workspace = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _workspace not in sys.path:
     sys.path.insert(0, _workspace)
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response
+from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response, flash
 
 from o27v2 import db, currency, valuation, hof
 from o27v2.web import text_export
