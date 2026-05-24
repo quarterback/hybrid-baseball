@@ -22,9 +22,11 @@
       <button type="submit" name="action" value="save" class="btn btn-sm btn-primary">Save Tuning</button>
       <input type="text" name="save_as" class="form-control form-control-sm" style="max-width:240px"
              placeholder="…and save as environment (optional name)">
+      <button type="button" id="bench-btn" class="btn btn-sm btn-outline-secondary">Benchmark (live tuning)</button>
       <input type="search" id="tune-search" class="form-control form-control-sm ms-auto"
              placeholder="Filter constants…" style="max-width:280px" autocomplete="off">
     </div>
+    <div id="bench-out" class="px-2 pb-2 small" style="display:none"></div>
   </div>
 
   {% for group_label, items in fields %}
@@ -89,18 +91,20 @@
         <tr>
           <td>{{ name }}</td>
           <td class="num text-secondary">{{ n }}</td>
-          <td class="d-flex gap-2">
+          <td class="d-flex gap-2 align-items-center">
             <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0">
               <input type="hidden" name="action" value="load_env">
               <input type="hidden" name="env_name" value="{{ name }}">
               <button type="submit" class="btn btn-sm btn-link p-0">Load</button>
             </form>
+            <button type="button" class="btn btn-sm btn-link p-0 bench-env" data-env="{{ name }}">Benchmark</button>
             <form method="post" action="{{ url_for('engine_settings_post') }}" style="margin:0"
                   onsubmit="return confirm('Delete environment “{{ name }}”?');">
               <input type="hidden" name="action" value="delete_env">
               <input type="hidden" name="env_name" value="{{ name }}">
               <button type="submit" class="btn btn-sm btn-link text-danger p-0">Delete</button>
             </form>
+            <span class="bench-env-out text-secondary" data-env="{{ name }}" style="font-size:.78rem"></span>
           </td>
         </tr>
       {% endfor %}
@@ -134,6 +138,46 @@
 
 <script>
 (function () {
+  function fmt(d) {
+    if (!d || !d.ok) return '⚠ ' + ((d && d.error) || 'benchmark failed');
+    return '<strong>' + d.label + '</strong> — '
+      + d.r_per_game + ' R/g, ' + d.hr_per_game + ' HR/g, '
+      + d.avg.toFixed(3).replace(/^0/, '') + ' AVG, '
+      + d.k_pct + '% K, ' + d.bb_pct + '% BB '
+      + '<span class="text-secondary">(' + d.games + ' g, per team)</span>';
+  }
+  async function runBench(url) {
+    var r = await fetch(url);
+    return await r.json();
+  }
+
+  var btn = document.getElementById('bench-btn');
+  var out = document.getElementById('bench-out');
+  if (btn) {
+    btn.addEventListener('click', async function () {
+      out.style.display = 'block';
+      out.innerHTML = '<span class="text-secondary">Simulating the saved tuning… (a few seconds)</span>';
+      btn.disabled = true;
+      try { out.innerHTML = fmt(await runBench('{{ url_for("engine_benchmark") }}')); }
+      catch (e) { out.innerHTML = '⚠ ' + e.message; }
+      btn.disabled = false;
+    });
+  }
+
+  document.querySelectorAll('.bench-env').forEach(function (b) {
+    b.addEventListener('click', async function () {
+      var name = b.dataset.env;
+      var cell = document.querySelector('.bench-env-out[data-env="' + CSS.escape(name) + '"]');
+      if (cell) cell.innerHTML = 'simulating…';
+      b.disabled = true;
+      try {
+        var d = await runBench('{{ url_for("engine_benchmark") }}?env=' + encodeURIComponent(name));
+        if (cell) cell.innerHTML = fmt(d);
+      } catch (e) { if (cell) cell.innerHTML = '⚠ ' + e.message; }
+      b.disabled = false;
+    });
+  });
+
   var box = document.getElementById('tune-search');
   if (!box) return;
   box.addEventListener('input', function () {

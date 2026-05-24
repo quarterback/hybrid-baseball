@@ -112,3 +112,21 @@ def test_delete_and_load_missing_environment(fresh_db):
     ec.delete_environment("Temp")
     assert "Temp" not in ec.list_environments()
     assert ec.load_environment("Temp") is False
+
+
+def test_o27v2_knob_applies_to_v2_config(fresh_db):
+    import o27v2.config as v2cfg
+    assert "HOME_ADVANTAGE_SKILL" in ec.DEFAULTS
+    ec.save_overrides({"HOME_ADVANTAGE_SKILL": 0.3})
+    assert v2cfg.HOME_ADVANTAGE_SKILL == pytest.approx(0.3)
+    ec.reset_overrides()
+    assert v2cfg.HOME_ADVANTAGE_SKILL == ec.DEFAULTS["HOME_ADVANTAGE_SKILL"]
+
+
+def test_characterize_labels_by_run_environment():
+    assert ec.characterize({"hr_per_game": 0.6, "r_per_game": 9}) \
+        == "Deadball · pitcher-dominant"
+    assert ec.characterize({"hr_per_game": 2.8, "r_per_game": 19}) \
+        == "Normal-power · normal-scoring"
+    assert ec.characterize({"hr_per_game": 6.0, "r_per_game": 33}) \
+        == "Extreme-power · explosive"

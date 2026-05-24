@@ -44,11 +44,33 @@ def _is_editable(name: str, value) -> bool:
 
 
 # Pristine defaults, captured ONCE at import before any override is applied.
-DEFAULTS: dict[str, object] = {
+# Two domains: the o27 engine constants (auto-discovered) and a curated
+# allowlist of o27v2-side knobs. We only expose o27v2 constants that the sim
+# reads at call time (so a runtime override actually takes effect) — e.g.
+# HOME_ADVANTAGE_SKILL. Roster-shape / archetype constants are import-bound or
+# seed-time and are deliberately omitted to avoid sliders that do nothing.
+import o27v2.config as v2cfg
+
+_O27_DEFAULTS: dict[str, object] = {
     name: value
     for name, value in vars(cfg).items()
     if _is_editable(name, value)
 }
+
+_V2_ALLOWLIST = ("HOME_ADVANTAGE_SKILL",)
+_V2_DEFAULTS: dict[str, object] = {
+    name: getattr(v2cfg, name)
+    for name in _V2_ALLOWLIST
+    if hasattr(v2cfg, name) and name not in _O27_DEFAULTS
+}
+
+# Combined view used everywhere for validation / coercion / storage.
+DEFAULTS: dict[str, object] = {**_O27_DEFAULTS, **_V2_DEFAULTS}
+
+
+def _target_module(name: str):
+    """Which config module owns this constant."""
+    return v2cfg if name in _V2_DEFAULTS else cfg
 
 
 def _coerce(name: str, value):
@@ -101,6 +123,9 @@ _CURATED: list[tuple[str, list[tuple[str, str]]]] = [
     ]),
     ("Stolen bases", [
         ("SB_SUCCESS_BASE", "Stolen-base success baseline"),
+    ]),
+    ("Context (o27v2)", [
+        ("HOME_ADVANTAGE_SKILL", "Home-field skill bonus"),
     ]),
 ]
 
@@ -192,17 +217,28 @@ def is_overridden(name: str) -> bool:
 _applied = False
 
 
+def apply_values(overrides: dict) -> None:
+    """Push an override dict onto the live config modules (no DB read).
+    Resets every editable constant to its default first, so any constant not
+    in `overrides` reverts cleanly. Used by apply_overrides and by the
+    benchmark subprocess (which gets its overrides passed in, not from DB)."""
+    for name, default in DEFAULTS.items():
+        val = overrides.get(name, default)
+        try:
+            val = _coerce(name, val)
+        except (TypeError, ValueError):
+            val = default
+        setattr(_target_module(name), name, val)
+
+
 def apply_overrides(force: bool = False) -> None:
-    """Push the effective config onto o27.config. Resets every editable
-    constant to its default first, so removing an override reverts cleanly.
-    Idempotent and cheap (a few hundred setattrs); the DB is read once per
-    process unless force=True."""
+    """Push the effective stored config onto the config modules. Idempotent
+    and cheap (a few hundred setattrs); the DB is read once per process unless
+    force=True."""
     global _applied
     if _applied and not force:
         return
-    overrides = load_overrides()
-    for name, default in DEFAULTS.items():
-        setattr(cfg, name, overrides.get(name, default))
+    apply_values(load_overrides())
     _applied = True
 
 
@@ -333,3 +369,34 @@ def delete_environment(name: str) -> None:
     if name in envs:
         del envs[name]
         _store_environments(envs)
+
+
+# --------------------------------------------------------------------------
+# Characterising a tuning by what it produces. Given the per-team-per-game
+# stats from a benchmark sim, derive a short descriptive label so an
+# environment is identified by its run environment, not just its name.
+# Bands are rough, O27-calibrated (the sport runs hot: ~19 R/G, ~2.8 HR/G
+# per team at default).
+# --------------------------------------------------------------------------
+def _band(value: float, cuts: list[tuple[float, str]]) -> str:
+    for ceil, label in cuts:
+        if value < ceil:
+            return label
+    return cuts[-1][1]
+
+
+def characterize(stats: dict) -> str:
+    """Return a short label like 'Deadball · pitcher-dominant' from a
+    benchmark stat dict carrying per-team 'hr_per_game' and 'r_per_game'."""
+    hr = float(stats.get("hr_per_game") or 0.0)
+    r = float(stats.get("r_per_game") or 0.0)
+    power = _band(hr, [
+        (1.0, "Deadball"), (2.0, "Low-power"), (3.5, "Normal-power"),
+        (5.0, "High-power"), (float("inf"), "Extreme-power"),
+    ])
+    scoring = _band(r, [
+        (12.0, "pitcher-dominant"), (17.0, "low-scoring"),
+        (23.0, "normal-scoring"), (30.0, "high-scoring"),
+        (float("inf"), "explosive"),
+    ])
+    return f"{power} · {scoring}"

@@ -6376,6 +6376,55 @@ def engine_settings_post():
     return redirect(url_for("engine_settings"))
 
 
+@app.route("/engine/benchmark")
+def engine_benchmark():
+    """Sim the current working tuning (or a saved env via ?env=Name) in an
+    isolated subprocess and return the run-environment stats it produces."""
+    import subprocess
+    import json
+    env_name = (request.args.get("env") or "").strip()
+    if env_name:
+        envs = engine_config.list_environments()
+        if env_name not in envs:
+            return jsonify({"ok": False, "error": "unknown environment"}), 404
+        overrides = envs[env_name]
+    else:
+        overrides = engine_config.load_overrides()
+
+    try:
+        games = max(8, min(120, int(request.args.get("games", 40))))
+    except (TypeError, ValueError):
+        games = 40
+
+    workspace = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    child_env = {k: v for k, v in os.environ.items()
+                 if k != "O27V2_DB_PATH"}
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "o27v2.bench",
+             "--games", str(games), "--config", "8teams",
+             "--overrides", json.dumps(overrides)],
+            cwd=workspace, env=child_env,
+            capture_output=True, text=True, timeout=180,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "error": "benchmark timed out"}), 504
+
+    line = (proc.stdout or "").strip().splitlines()
+    payload = None
+    for ln in reversed(line):
+        try:
+            payload = json.loads(ln)
+            break
+        except ValueError:
+            continue
+    if payload is None:
+        return jsonify({"ok": False,
+                        "error": (proc.stderr or "no output")[:300]}), 500
+    return jsonify(payload)
+
+
 @app.route("/team/<int:team_id>/hall-of-fame")
 def team_hall_of_fame(team_id: int):
     team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
