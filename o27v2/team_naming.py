@@ -196,9 +196,33 @@ _CATEGORY_BUILDERS = {
 # Category allocation
 # ---------------------------------------------------------------------------
 
+# The data files zero out traditional / baseball-club / authority counts for
+# the African Federation because they were authored around a real-club roster.
+# Now that the league is generated like the others, give it a spread that fits
+# African club-naming culture (evocative/animal civic identities) rather than
+# defaulting almost entirely to corporate. Corporate remains the residual.
+_AFRICAN_FED_TARGETS = {
+    "target_traditional":    3,   # Lions, Leopards, Cheetahs — evocative animals
+    "target_category_5":     3,   # civic "Baseball Club" (Sundowns-style)
+    "target_small_business": 2,
+    "target_authorities":    1,
+}
+
+
 def _targets(league_key: str, n_teams: int) -> list[str]:
     """Return a per-team category list of length n_teams, honoring each data
     file's regional_distribution and filling the remainder with corporate."""
+    if league_key == "african_federation":
+        trad = _AFRICAN_FED_TARGETS["target_traditional"]
+        club = _AFRICAN_FED_TARGETS["target_category_5"]
+        biz = _AFRICAN_FED_TARGETS["target_small_business"]
+        auth = _AFRICAN_FED_TARGETS["target_authorities"]
+        cats = (["baseball_club"] * club + ["small_business"] * biz
+                + ["traditional"] * trad + ["authority"] * auth)
+        cats = cats[:n_teams]
+        cats += ["corporate"] * (n_teams - len(cats))
+        return cats
+
     tn = _load("team_naming.json")
     trad = (tn["category_3_traditional_mascots"]["regional_distribution"]
             .get(league_key, {}).get("target_traditional", 0))
@@ -256,20 +280,6 @@ def generate_league_teams(league_name: str, n_teams: int, rng_seed: int,
     rng = random.Random(seed)
     if used_abbrev is None:
         used_abbrev = set()
-
-    # African Federation: real-club roster, no procedural generation.
-    if league_name == "African Federation":
-        roster = _load("african_federation_teams.json")["teams"]
-        teams = [dict(t) for t in roster]
-        rng.shuffle(teams)
-        out: list[dict] = []
-        for t in teams[:n_teams]:
-            out.append({
-                "name": t["name"],
-                "city": t.get("city", ""),
-                "abbrev": _make_abbrev(t["name"], used_abbrev),
-            })
-        return out
 
     region_key, league_key = _LEAGUE_MAP[league_name]
     cities = _city_pool(region_key)
