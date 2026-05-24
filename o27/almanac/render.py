@@ -32,7 +32,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from .compute import Views, MIN_PA_QUALIFIED, MIN_OUTS_QUALIFIED
+from .compute import Views, MIN_PA_QUALIFIED, MIN_OUTS_QUALIFIED, team_label
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -57,6 +57,9 @@ def render_site(
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    # Compose team display labels without duplicating the city (generated
+    # universe clubs already carry the city inside `name`).
+    env.globals["team_label"] = team_label
 
     generated_at = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     source_label = _source_label(views, dataset)
@@ -230,7 +233,7 @@ def render_site(
             "age":        p.get("age"),
             "bats":       p.get("bats", "R"),
             "throws":     p.get("throws", "R"),
-            "team_name":  f"{(t or {}).get('city','')} {(t or {}).get('name','')}".strip(),
+            "team_name":  team_label(t),
             "archetype":  p.get("archetype", ""),
         }
         bat_log = views.game_logs_batter.get(p["id"], [])

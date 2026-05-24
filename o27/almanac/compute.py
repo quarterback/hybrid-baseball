@@ -15,6 +15,24 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+def team_label(t: Any) -> str:
+    """Full display label for a team, without duplicating the city.
+
+    Real franchises store the nickname in `name` with `city` separate
+    ("New York" + "Yankees" -> "New York Yankees"). Generated universe clubs
+    embed the city in `name` ("Toronto" + "Toronto Forestry"); prepending the
+    city again would double it. Only prepend when the name doesn't already
+    lead with the city.
+    """
+    t = t or {}
+    city = (t.get("city") or "").strip()
+    name = (t.get("name") or "").strip()
+    if city and name and not name.startswith(city):
+        return f"{city} {name}".strip()
+    return name or city
+
+
+
 # ---------------------------------------------------------------------------
 # Constants — single place to bump if the league recalibrates.
 # ---------------------------------------------------------------------------
@@ -285,8 +303,8 @@ def _build_schedule(games: list[dict], teams_by_id: dict[int, dict]) -> list[dic
             "away_id":      g["away_team_id"],
             "home_abbrev":  h["abbrev"],
             "away_abbrev":  a["abbrev"],
-            "home_name":    f"{h.get('city','')} {h.get('name','')}".strip(),
-            "away_name":    f"{a.get('city','')} {a.get('name','')}".strip(),
+            "home_name":    team_label(h),
+            "away_name":    team_label(a),
             "home_score":   g.get("home_score") or 0,
             "away_score":   g.get("away_score") or 0,
             "winner_id":    g.get("winner_id"),
@@ -353,7 +371,7 @@ def _empty_batter_slot(pid, players_by_id, teams_by_id, sample_row) -> dict:
         "age":        p.get("age"),
         "team_id":    sample_row.get("team_id"),
         "team":       t.get("abbrev", "?"),
-        "team_name":  f"{t.get('city','')} {t.get('name','')}".strip(),
+        "team_name":  team_label(t),
     }
 
 
@@ -546,7 +564,7 @@ def _empty_pitcher_slot(pid, players_by_id, teams_by_id, sample_row) -> dict:
         "age":       p.get("age"),
         "team_id":   sample_row.get("team_id"),
         "team":      t.get("abbrev", "?"),
-        "team_name": f"{t.get('city','')} {t.get('name','')}".strip(),
+        "team_name": team_label(t),
     }
 
 

@@ -22,7 +22,7 @@
     <tbody>
       {% for t in views.teams %}
       <tr>
-        <td class="sticky-col t-left"><a href="teams/{{ t.abbrev|lower }}.html"><span class="chip">{{ t.abbrev }}</span> {{ t.city }} {{ t.name }}</a></td>
+        <td class="sticky-col t-left"><a href="teams/{{ t.abbrev|lower }}.html"><span class="chip">{{ t.abbrev }}</span> {{ team_label(t) }}</a></td>
         <td class="t-left">{{ t.park_name or '—' }}</td>
         <td class="t-left">{{ t.park_shape or '—' }}</td>
         <td data-val="{{ t.park_hr or 1.0 }}">{{ '%.2f'|format(t.park_hr or 1.0) }}</td>

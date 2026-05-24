@@ -7,7 +7,7 @@
     <span class="chip lg">{{ team_row.abbrev }}</span>
   </div>
   <div>
-    <h1>{{ team_row.city }} {{ team_row.name }}</h1>
+    <h1>{{ team_label(team_row) }}</h1>
     <div class="subline">{{ team_row.league }} · {{ team_row.division }} · Park: {{ team_row.park_name or '—' }} · Mgr: {{ team_row.manager_name or '—' }}</div>
   </div>
   <div>

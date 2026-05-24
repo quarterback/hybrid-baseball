@@ -43,7 +43,7 @@ from flask import (
 )
 
 from . import compute, export, loader
-from .compute import MIN_PA_QUALIFIED, MIN_OUTS_QUALIFIED
+from .compute import MIN_PA_QUALIFIED, MIN_OUTS_QUALIFIED, team_label
 from .render import _attribute_panel, _box_row, _format_weather, _slugify
 
 
@@ -57,6 +57,10 @@ almanac_bp = Blueprint(
     static_folder=os.path.join(_HERE, "static"),
     static_url_path="/almanac/_static",
 )
+
+# Expose the city-deduplicating team label to all blueprint templates (the
+# standalone static exporter registers the same global in render.py).
+almanac_bp.add_app_template_global(team_label, "team_label")
 
 
 # ---------------------------------------------------------------------------
@@ -336,7 +340,7 @@ def player_detail(slug: str):
         "bats":       p.get("bats", "R"),
         "throws":     p.get("throws", "R"),
         "country":    p.get("country", ""),
-        "team_name":  f"{(t or {}).get('city','')} {(t or {}).get('name','')}".strip(),
+        "team_name":  team_label(t),
         "archetype":  p.get("archetype", ""),
     }
     return render_template("player.html.j2", **ctx,
