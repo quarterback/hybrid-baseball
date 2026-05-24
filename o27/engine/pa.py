@@ -215,6 +215,20 @@ def _reconcile_walk_back(state: GameState) -> list[str]:
     for rid in scored:
         state.walk_back_runner_ids.discard(rid)
         state.pitcher_wb_faced_this_spell += 1
+        # A bonus runner only counts as a Walk-Back RUN when a run was actually
+        # booked on THIS spell. Every run crosses the plate via _score_run,
+        # which charges the current pitcher's pitcher_runs_this_spell in the
+        # same event _reconcile_walk_back runs in — so a genuine score always
+        # leaves runs_this_spell >= 1 here. If it is 0, the runner left the
+        # bases without a run on this pitcher (a base-state anomaly, e.g. an
+        # erased runner), NOT a scored run; treat it as a faced/stopped
+        # resolution. This keeps wb_runs <= runs_this_spell (and, after the
+        # demotion below, <= unearned_runs) per spell no matter how the runner
+        # came off the bases — the anchor invariant #9 depends on.
+        if state.pitcher_runs_this_spell <= 0:
+            log.append("  Walk-Back: bonus runner off the bases without scoring "
+                       "(no run booked this spell).")
+            continue
         state.pitcher_wb_runs_this_spell += 1
         # Move one run earned -> unearned. Skip when the spell is already
         # all-unearned (an error this spell, or a passed-ball run): the run
