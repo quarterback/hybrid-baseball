@@ -146,6 +146,10 @@ def _load_sqlite(path: str) -> dict[str, Any]:
             "SELECT * FROM season_batting_leaders")
         season_pitching_leaders = _try_query(conn,
             "SELECT * FROM season_pitching_leaders")
+        season_player_batting = _try_query(conn,
+            "SELECT * FROM season_player_batting")
+        season_player_pitching = _try_query(conn,
+            "SELECT * FROM season_player_pitching")
     finally:
         conn.close()
 
@@ -174,6 +178,8 @@ def _load_sqlite(path: str) -> dict[str, Any]:
         "season_standings_archive":      season_standings,
         "season_batting_leaders_archive": season_batting_leaders,
         "season_pitching_leaders_archive": season_pitching_leaders,
+        "season_player_batting":  season_player_batting,
+        "season_player_pitching": season_player_pitching,
     }
 
 

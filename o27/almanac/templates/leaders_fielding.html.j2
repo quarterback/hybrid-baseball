@@ -18,6 +18,7 @@
     <button class="btn" data-export-csv="#fld-tbl" data-filename="fielding-leaders.csv">CSV</button>
   </div>
 </div>
+{% include "_league_nav.html.j2" %}
 
 <div class="tablewrap">
   <table id="fld-tbl" class="stat-table heatmap">
@@ -32,10 +33,10 @@
       <th data-heat="hi">dDRS</th><th data-heat="hi">dWAR</th>
     </tr></thead>
     <tbody>
-      {% for r in views.fielding_season %}
-      <tr>
-        <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
-        <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+      {% for r in views.fielding_season if (not current_league or r.league == current_league) %}
+      <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
+        <td class="sticky-col t-left"><a href="{{ base_path }}players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+        <td class="t-left"><a href="{{ base_path }}teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
         <td class="t-left"><span class="pos-badge">{{ r.position }}</span></td>
         <td>{{ r.g }}</td>
         <td>{{ r.po }}</td>

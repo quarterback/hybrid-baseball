@@ -594,7 +594,54 @@ CREATE TABLE IF NOT EXISTS season_pitching_leaders (
     PRIMARY KEY (season_id, category, rank)
 );
 
--- Phase 4: postseason bracket. One row per series (e.g. "1 vs 8 in WC
+-- Full per-player season lines, persisted at archive time so career
+-- (multi-season) leaderboards can aggregate by a stable player_id. Unlike
+-- season_*_leaders (top-10 by name only), this stores every player who
+-- recorded a PA / out, keyed by the player row that persists across
+-- history-mode seasons. Raw game stats are wiped on each season reset, so
+-- these snapshots are the only durable per-player record.
+CREATE TABLE IF NOT EXISTS season_player_batting (
+    season_id   INTEGER NOT NULL REFERENCES seasons(id),
+    player_id   INTEGER NOT NULL,
+    player_name TEXT,
+    team_abbrev TEXT,
+    league      TEXT,
+    g           INTEGER DEFAULT 0,
+    pa          INTEGER DEFAULT 0,
+    ab          INTEGER DEFAULT 0,
+    r           INTEGER DEFAULT 0,
+    h           INTEGER DEFAULT 0,
+    doubles     INTEGER DEFAULT 0,
+    triples     INTEGER DEFAULT 0,
+    hr          INTEGER DEFAULT 0,
+    rbi         INTEGER DEFAULT 0,
+    bb          INTEGER DEFAULT 0,
+    k           INTEGER DEFAULT 0,
+    sb          INTEGER DEFAULT 0,
+    hbp         INTEGER DEFAULT 0,
+    PRIMARY KEY (season_id, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS season_player_pitching (
+    season_id   INTEGER NOT NULL REFERENCES seasons(id),
+    player_id   INTEGER NOT NULL,
+    player_name TEXT,
+    team_abbrev TEXT,
+    league      TEXT,
+    g           INTEGER DEFAULT 0,
+    gs          INTEGER DEFAULT 0,
+    w           INTEGER DEFAULT 0,
+    l           INTEGER DEFAULT 0,
+    outs        INTEGER DEFAULT 0,
+    h           INTEGER DEFAULT 0,
+    r           INTEGER DEFAULT 0,
+    er          INTEGER DEFAULT 0,
+    bb          INTEGER DEFAULT 0,
+    k           INTEGER DEFAULT 0,
+    hr          INTEGER DEFAULT 0,
+    PRIMARY KEY (season_id, player_id)
+);
+
 -- round"). Created in waves as each round's pairings are determined.
 -- best_of is the series length; high_wins/low_wins track the standings;
 -- winner_team_id is set once one side hits ceil(best_of / 2) wins.

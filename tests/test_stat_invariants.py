@@ -404,57 +404,25 @@ def test_invariant_5_w_bound(played_game_ids):
     """
     from o27v2.web.app import _pitcher_wl_map, _PSTATS_DEDUP_SQL
 
-    scoped = _scoped_game_ids()
+    # W comes straight from the production decision logic the live site uses
+    # (`_pitcher_wl_map`: SP-outs threshold + most-effective-reliever), not a
+    # re-derivation here. A local "max outs per team-game" re-derivation used
+    # to live here and drifted out of sync with that rule; deriving W from the
+    # production path directly is both authoritative and self-maintaining. G
+    # comes from the production dedup view, so an over-count in either path
+    # still surfaces as W > G.
+    #
+    # NOTE: `_pitcher_wl_map` is inherently whole-DB, so this invariant runs
+    # unscoped (it ignores O27V2_INVARIANTS_GAMES).
+    wl = _pitcher_wl_map()
 
-    # Re-derive W (production rule) but filter to scoped games when set.
-    extra_w, params_w = _game_filter_clause("ps")
-    win_rows = db.fetchall(
-        f"""SELECT ps.player_id, ps.team_id, ps.game_id, g.winner_id
-              FROM game_pitcher_stats ps
-              JOIN games g ON g.id = ps.game_id
-              JOIN (SELECT game_id, team_id, MAX(outs_recorded) AS mo
-                      FROM game_pitcher_stats
-                     GROUP BY game_id, team_id) m
-                ON m.game_id = ps.game_id
-               AND m.team_id = ps.team_id
-               AND m.mo = ps.outs_recorded
-             WHERE g.played = 1{extra_w}
-             ORDER BY ps.game_id, ps.team_id, ps.rowid""",
-        params_w,
-    )
-    wl: dict[int, dict[str, int]] = {}
-    seen: set[tuple[int, int]] = set()
-    for r in win_rows:
-        key = (r["game_id"], r["team_id"])
-        if key in seen:
-            continue
-        seen.add(key)
-        rec = wl.setdefault(r["player_id"], {"w": 0, "l": 0})
-        if r["winner_id"] == r["team_id"]:
-            rec["w"] += 1
-        elif r["winner_id"] is not None:
-            rec["l"] += 1
-
-    # When unscoped, sanity-check that our re-derivation matches the
-    # production helper exactly — this guards against future drift.
-    if scoped is None:
-        prod = _pitcher_wl_map()
-        prod_w = {pid: r.get("w", 0) for pid, r in prod.items() if r.get("w", 0)}
-        local_w = {pid: r.get("w", 0) for pid, r in wl.items() if r.get("w", 0)}
-        assert prod_w == local_w, (
-            "test re-derivation of W diverges from production "
-            "`_pitcher_wl_map`; the harness is out of sync"
-        )
-
-    extra_g, params_g = _game_filter_clause("ps")
     g_rows = db.fetchall(
         f"""SELECT ps.player_id AS pid,
                    COUNT(DISTINCT ps.game_id) AS g
               FROM {_PSTATS_DEDUP_SQL} ps
               JOIN games gm ON gm.id = ps.game_id
-             WHERE gm.played = 1{extra_g.replace('AND ps.game_id', 'AND ps.game_id')}
-             GROUP BY ps.player_id""",
-        params_g,
+             WHERE gm.played = 1
+             GROUP BY ps.player_id"""
     )
     g_map = {r["pid"]: (r["g"] or 0) for r in g_rows}
 
@@ -471,14 +439,11 @@ def test_invariant_5_w_bound(played_game_ids):
     )
 
     # Independent global cross-check: total wins distributed across all
-    # pitchers must equal the number of decided games (within scope).
+    # pitchers must equal the number of decided games.
     total_w = sum(rec.get("w", 0) for rec in wl.values())
-    extra_dec, params_dec = _game_filter_clause()
     decided = db.fetchone(
         "SELECT COUNT(*) AS n FROM games WHERE played = 1 "
         "AND winner_id IS NOT NULL"
-        + extra_dec.replace("AND game_id", "AND id"),
-        params_dec,
     )["n"]
     assert total_w == decided, (
         f"Σ W ({total_w}) != decided games ({decided}); "
@@ -573,8 +538,8 @@ def test_invariant_7b_pitcher_row_uniqueness(played_game_ids):
 
 def test_invariant_8_fip_anchored_to_era(played_game_ids):
     """league wERA within 0.05 of league raw ER per 27 outs, AND league
-    xFIP within 0.05 of league wERA. Replaces the legacy FIP-vs-ERA
-    invariant; the wERA / xFIP constants are refit per call so a
+    xRA within 0.05 of league wERA. Replaces the legacy FIP-vs-ERA
+    invariant; the wERA / xRA constants are refit per call so a
     drift in either should trip this immediately.
 
     Plus an independent ER ≤ R sanity check: per (game, team), the
@@ -631,18 +596,18 @@ def test_invariant_8_fip_anchored_to_era(played_game_ids):
     league_werra_weighted = (
         sum((r.get("werra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
     )
-    league_xfip_weighted = (
-        sum((r.get("xfip") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
+    league_xra_weighted = (
+        sum((r.get("xra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
     )
     assert abs(league_werra_weighted - league_raw_era) < 0.05, (
         f"outs-weighted league wERA {league_werra_weighted:.4f} not within "
         f"0.05 of league raw ER/27 {league_raw_era:.4f}; the production "
         f"`_league_werra_consts` / `_aggregate_pitcher_rows` no longer agree"
     )
-    assert abs(league_xfip_weighted - league_werra_weighted) < 0.05, (
-        f"outs-weighted league xFIP {league_xfip_weighted:.4f} not within "
-        f"0.05 of league wERA {league_werra_weighted:.4f}; xFIP constant "
-        f"is no longer anchored to wERA"
+    assert abs(league_xra_weighted - league_werra_weighted) < 0.05, (
+        f"outs-weighted league xRA {league_xra_weighted:.4f} not within "
+        f"0.05 of league wERA {league_werra_weighted:.4f}; the xRA constant "
+        f"(`xra_norm`) is no longer anchored to wERA"
     )
 
     # ---- (b) ER <= R per (game, team) ----------------------------------

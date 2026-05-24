@@ -43,7 +43,7 @@ from flask import (
 )
 
 from . import compute, export, loader
-from .compute import MIN_PA_QUALIFIED, MIN_OUTS_QUALIFIED
+from .compute import MIN_PA_QUALIFIED, MIN_OUTS_QUALIFIED, team_label
 from .render import _attribute_panel, _box_row, _format_weather, _slugify
 
 
@@ -57,6 +57,12 @@ almanac_bp = Blueprint(
     static_folder=os.path.join(_HERE, "static"),
     static_url_path="/almanac/_static",
 )
+
+# Expose the city-deduplicating team label to all blueprint templates (the
+# standalone static exporter registers the same global in render.py).
+almanac_bp.add_app_template_global(team_label, "team_label")
+almanac_bp.add_app_template_global(_slugify, "slugify")
+almanac_bp.add_app_template_filter(_slugify, "slugify")
 
 
 # ---------------------------------------------------------------------------
@@ -149,14 +155,16 @@ def home():
     views = ctx["views"]
     schedule_newest = list(reversed(views.schedule))
     top_woba = sorted([r for r in views.batting_season  if r.get("qualified")],
-                      key=lambda r: -r["woba"])[:10]
+                      key=lambda r: (-r["woba_plus"], -r["woba"]))[:10]
     top_wera = sorted([r for r in views.pitching_season if r.get("qualified")],
-                      key=lambda r: r["wera"])[:10]
+                      key=lambda r: (-r["era_plus"], r["wera"]))[:10]
     return render_template("index.html.j2",
                            **ctx,
                            section="home",
                            recent_games=schedule_newest[:12],
-                           top_woba=top_woba, top_wera=top_wera)
+                           top_woba=top_woba, top_wera=top_wera,
+                           current_league=None,
+                           leader_leagues=_leader_leagues(views))
 
 
 @almanac_bp.route("/standings.html")
@@ -183,6 +191,13 @@ def parks():
                            section="parks")
 
 
+@almanac_bp.route("/career.html")
+def career():
+    ctx = _base_ctx()
+    return render_template("career.html.j2", **ctx, section="career",
+                           career=ctx["views"].career)
+
+
 # ---- leaders ---------------------------------------------------------------
 
 _LEADER_TEMPLATES = {
@@ -195,21 +210,44 @@ _LEADER_TEMPLATES = {
 }
 
 
-@almanac_bp.route("/leaders/<which>.html")
-def leaders(which: str):
+def _leader_leagues(views) -> list[str]:
+    """Distinct leagues for the per-league leader nav; empty if single-league."""
+    leagues = sorted({r.get("league") for r in views.standings if r.get("league")})
+    return leagues if len(leagues) > 1 else []
+
+
+def _render_leaders(which: str, league: str | None):
     if which not in _LEADER_TEMPLATES:
         abort(404)
     tpl, extra = _LEADER_TEMPLATES[which]
     ctx = _base_ctx()
     extra_ctx = dict(extra)
     views = ctx["views"]
+    leagues = _leader_leagues(views)
+    if league is not None:
+        # Match the slug back to a real league name; 404 on unknown.
+        league = next((lg for lg in leagues if _slugify(lg) == league), None)
+        if league is None:
+            abort(404)
     if which == "batting":
         extra_ctx["always_show_all"] = not any(r.get("qualified")
                                                for r in views.batting_season)
     elif which == "pitching":
         extra_ctx["always_show_all"] = not any(r.get("qualified")
                                                for r in views.pitching_season)
-    return render_template(tpl, **ctx, section="leaders", **extra_ctx)
+    return render_template(tpl, **ctx, section="leaders",
+                           current_league=league, leader_leagues=leagues,
+                           leader_page=which, **extra_ctx)
+
+
+@almanac_bp.route("/leaders/<which>.html")
+def leaders(which: str):
+    return _render_leaders(which, None)
+
+
+@almanac_bp.route("/leaders/<league>/<which>.html")
+def leaders_by_league(league: str, which: str):
+    return _render_leaders(which, league)
 
 
 # ---- teams -----------------------------------------------------------------
@@ -262,8 +300,23 @@ def team_detail(abbrev: str):
 @almanac_bp.route("/players/")
 @almanac_bp.route("/players/index.html")
 def players_index():
+    return _render_players_index(None)
+
+
+@almanac_bp.route("/players/<league>/")
+@almanac_bp.route("/players/<league>/index.html")
+def players_index_by_league(league: str):
+    return _render_players_index(league)
+
+
+def _render_players_index(league: str | None):
     ctx = _base_ctx()
     views = ctx["views"]
+    leagues = _leader_leagues(views)
+    if league is not None:
+        league = next((lg for lg in leagues if _slugify(lg) == league), None)
+        if league is None:
+            abort(404)
     teams_by_id = {t["id"]: t for t in views.teams}
     rows: list[dict] = []
     for p in views.players:
@@ -281,6 +334,8 @@ def players_index():
             "age":        p.get("age"),
             "bats":       p.get("bats", "R"),
             "throws":     p.get("throws", "R"),
+            "league":     (t or {}).get("league", ""),
+            "division":   (t or {}).get("division", ""),
         }
         if p.get("is_pitcher"):
             ps = views.pitching_by_player.get(p["id"])
@@ -295,7 +350,8 @@ def players_index():
         rows.append(row)
     rows.sort(key=lambda r: (r["team"], r["name"]))
     return render_template("players_index.html.j2", **ctx,
-                           section="players", players=rows)
+                           section="players", players=rows,
+                           current_league=league, leader_leagues=leagues)
 
 
 @almanac_bp.route("/players/<slug>.html")
@@ -336,7 +392,7 @@ def player_detail(slug: str):
         "bats":       p.get("bats", "R"),
         "throws":     p.get("throws", "R"),
         "country":    p.get("country", ""),
-        "team_name":  f"{(t or {}).get('city','')} {(t or {}).get('name','')}".strip(),
+        "team_name":  team_label(t),
         "archetype":  p.get("archetype", ""),
     }
     return render_template("player.html.j2", **ctx,

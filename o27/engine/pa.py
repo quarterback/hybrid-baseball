@@ -130,6 +130,14 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
     Record one out. Handles partnership tracking. Returns log lines.
     """
     log = []
+    # Continuous-out model: a phase has a fixed out ceiling (27 in regulation,
+    # super_outs_target in a super-inning, banked outs in a seconds round).
+    # is_half_over() is only evaluated between PAs, so a single multi-out PA
+    # (DP/TP, stay-out + runner-out, runner thrown out + batter out) could
+    # otherwise record outs past the ceiling and inflate the phase to 28.
+    # Refuse to record once the cap is reached — the half ends exactly there.
+    if state.outs >= state.out_cap():
+        return log
     state.outs += 1
     state.pitcher_outs_this_spell += 1
 

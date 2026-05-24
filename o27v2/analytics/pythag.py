@@ -22,13 +22,21 @@ from __future__ import annotations
 from o27v2 import db
 
 
+def _team_in(team_ids, col="team_id"):
+    """SQL fragment restricting `col` to team_ids, or '' when unfiltered."""
+    if not team_ids:
+        return ""
+    ids = ",".join(str(int(t)) for t in team_ids)
+    return f" AND {col} IN ({ids})"
+
+
 def _pythag_pct(r: int, ra: int, k: float) -> float:
     if r <= 0 and ra <= 0:
         return 0.5
     return (r ** k) / (r ** k + ra ** k)
 
 
-def _team_records() -> list[dict]:
+def _team_records(team_ids=None) -> list[dict]:
     """All teams with R / RA / GP / W."""
     rows = db.fetchall(
         """
@@ -46,6 +54,9 @@ def _team_records() -> list[dict]:
         FROM teams t
         LEFT JOIN games g
           ON (g.home_team_id = t.id OR g.away_team_id = t.id)
+        WHERE 1=1"""
+        + _team_in(team_ids, "t.id")
+        + """
         GROUP BY t.id
         """
     )
@@ -63,7 +74,7 @@ def _sse(exp: float, teams: list[dict]) -> float:
 
 
 def refit_pythag_exponent(
-    *, lo: float = 1.0, hi: float = 4.0, iters: int = 60,
+    *, lo: float = 1.0, hi: float = 4.0, iters: int = 60, team_ids=None,
 ) -> dict:
     """Empirically fit the Pythagorean exponent over the league.
 
@@ -81,7 +92,7 @@ def refit_pythag_exponent(
                            luck_default, luck_fitted}, …],
         }
     """
-    teams = _team_records()
+    teams = _team_records(team_ids)
     if not teams:
         return {
             "fitted_exponent": 1.83, "fitted_sse": 0.0, "fitted_rmse": 0.0,

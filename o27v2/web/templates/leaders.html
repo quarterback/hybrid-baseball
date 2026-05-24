@@ -13,11 +13,23 @@
     </div>
   </div>
   <div class="d-flex gap-2 align-items-center flex-wrap">
+    {% if leagues %}
+    <form method="get" class="mb-0">
+      <select name="league" class="form-select form-select-sm" style="width:auto"
+              title="Each league is its own statistical environment"
+              onchange="this.form.submit()">
+        {% for lg in leagues %}
+        <option value="{{ lg }}" {% if lg == selected_league %}selected{% endif %}>{{ lg }}</option>
+        {% endfor %}
+      </select>
+      {% if scale == 'xo' %}<input type="hidden" name="scale" value="xo">{% endif %}
+    </form>
+    {% endif %}
     <div class="btn-group btn-group-sm" role="group" aria-label="Stat scale">
-      <a href="{{ url_for('leaders') }}"
+      <a href="{{ url_for('leaders', league=selected_league) }}"
          class="btn {% if scale != 'xo' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
          title="Native O27 scale (default)">Native</a>
-      <a href="{{ url_for('leaders', scale='xo') }}"
+      <a href="{{ url_for('leaders', scale='xo', league=selected_league) }}"
          class="btn {% if scale == 'xo' %}btn-secondary{% else %}btn-outline-secondary{% endif %}"
          title="Crossover (XO): z-anchored to MLB mean and spread. Same player order as Native; only the numbers translate.">XO Crossover</a>
     </div>
