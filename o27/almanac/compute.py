@@ -128,6 +128,10 @@ class Views:
     pa_log_by_game:   dict[int, list[dict]] = field(default_factory=dict)
     scoring_by_game:  dict[int, list[dict]] = field(default_factory=dict)
 
+    # Career (multi-season) leaderboards aggregated from the per-player
+    # season-line snapshots. Empty until at least one season is archived.
+    career:           dict[str, Any]  = field(default_factory=dict)
+
 
 # ---------------------------------------------------------------------------
 # Public entry
@@ -220,7 +224,146 @@ def compute_views(dataset: dict[str, Any]) -> Views:
                                        dataset.get("pitching") or [],
                                        v.games)
 
+    # Career (multi-season) leaderboards from archived per-player lines.
+    v.career = _career_leaderboards(
+        dataset.get("season_player_batting") or [],
+        dataset.get("season_player_pitching") or [],
+        dataset.get("seasons") or [],
+    )
+
     return v
+
+
+# ---------------------------------------------------------------------------
+# Career (multi-season) leaderboards
+# ---------------------------------------------------------------------------
+
+CAREER_MIN_PA   = 50   # career qualification for batting rate stats
+CAREER_MIN_OUTS = 60   # career qualification for pitching rate stats
+
+
+def _career_latest_meta(lines: list[dict]) -> dict[int, dict]:
+    """Most-recent name / team / league per player (highest season_id)."""
+    meta: dict[int, dict] = {}
+    for r in lines:
+        pid = r["player_id"]
+        cur = meta.get(pid)
+        if cur is None or (r.get("season_id") or 0) >= (cur.get("season_id") or 0):
+            meta[pid] = r
+    return meta
+
+
+def _career_rank(rows, key, *, reverse=True, n=25, min_field=None, min_val=0):
+    pool = [r for r in rows
+            if min_field is None or (r.get(min_field) or 0) >= min_val]
+    return sorted(pool, key=lambda r: (r.get(key) or 0), reverse=reverse)[:n]
+
+
+def _career_batting(lines: list[dict]) -> list[dict]:
+    meta = _career_latest_meta(lines)
+    agg: dict[int, dict] = {}
+    fields = ("g", "pa", "ab", "r", "h", "doubles", "triples",
+              "hr", "rbi", "bb", "k", "sb", "hbp")
+    for r in lines:
+        pid = r["player_id"]
+        a = agg.get(pid)
+        if a is None:
+            a = agg[pid] = {f: 0 for f in fields}
+            a["player_id"] = pid
+            a["_seasons"] = set()
+        for f in fields:
+            a[f] += r.get(f) or 0
+        a["_seasons"].add(r.get("season_id"))
+    out: list[dict] = []
+    for pid, a in agg.items():
+        m = meta.get(pid, {})
+        ab, h, bb, hbp = a["ab"], a["h"], a["bb"], a["hbp"]
+        d2, d3, hr = a["doubles"], a["triples"], a["hr"]
+        tb = (h - d2 - d3 - hr) + 2 * d2 + 3 * d3 + 4 * hr
+        obp_den = ab + bb + hbp
+        a.update(
+            seasons=len(a.pop("_seasons")),
+            player_name=m.get("player_name", "?"),
+            team_abbrev=m.get("team_abbrev", ""),
+            league=m.get("league", ""),
+            tb=tb,
+            avg=(h / ab) if ab else 0.0,
+            obp=((h + bb + hbp) / obp_den) if obp_den else 0.0,
+            slg=(tb / ab) if ab else 0.0,
+        )
+        a["ops"] = a["obp"] + a["slg"]
+        out.append(a)
+    return out
+
+
+def _career_pitching(lines: list[dict]) -> list[dict]:
+    meta = _career_latest_meta(lines)
+    agg: dict[int, dict] = {}
+    fields = ("g", "gs", "w", "l", "outs", "h", "r", "er", "bb", "k", "hr")
+    for r in lines:
+        pid = r["player_id"]
+        a = agg.get(pid)
+        if a is None:
+            a = agg[pid] = {f: 0 for f in fields}
+            a["player_id"] = pid
+            a["_seasons"] = set()
+        for f in fields:
+            a[f] += r.get(f) or 0
+        a["_seasons"].add(r.get("season_id"))
+    out: list[dict] = []
+    for pid, a in agg.items():
+        m = meta.get(pid, {})
+        outs = a["outs"]
+        ip = outs / 3.0
+        a.update(
+            seasons=len(a.pop("_seasons")),
+            player_name=m.get("player_name", "?"),
+            team_abbrev=m.get("team_abbrev", ""),
+            league=m.get("league", ""),
+            ip=ip,
+            ip_disp=f"{outs // 3}.{outs % 3}",
+            era=((a["er"] * 27.0 / outs) if outs else 0.0),
+            whip=(((a["bb"] + a["h"]) / ip) if ip else 0.0),
+            k9=((a["k"] * 27.0 / outs) if outs else 0.0),
+        )
+        out.append(a)
+    return out
+
+
+def _career_leaderboards(bat_lines: list[dict], pit_lines: list[dict],
+                         seasons: list[dict]) -> dict[str, Any]:
+    bat = _career_batting(bat_lines)
+    pit = _career_pitching(pit_lines)
+    batting = {
+        "h":   _career_rank(bat, "h"),
+        "hr":  _career_rank(bat, "hr"),
+        "rbi": _career_rank(bat, "rbi"),
+        "r":   _career_rank(bat, "r"),
+        "sb":  _career_rank(bat, "sb"),
+        "bb":  _career_rank(bat, "bb"),
+        "avg": _career_rank(bat, "avg", min_field="pa", min_val=CAREER_MIN_PA),
+        "obp": _career_rank(bat, "obp", min_field="pa", min_val=CAREER_MIN_PA),
+        "ops": _career_rank(bat, "ops", min_field="pa", min_val=CAREER_MIN_PA),
+    }
+    pitching = {
+        "w":    _career_rank(pit, "w"),
+        "k":    _career_rank(pit, "k"),
+        "g":    _career_rank(pit, "g"),
+        "gs":   _career_rank(pit, "gs"),
+        "era":  _career_rank(pit, "era",  reverse=False,
+                             min_field="outs", min_val=CAREER_MIN_OUTS),
+        "whip": _career_rank(pit, "whip", reverse=False,
+                             min_field="outs", min_val=CAREER_MIN_OUTS),
+        "k9":   _career_rank(pit, "k9", min_field="outs", min_val=CAREER_MIN_OUTS),
+    }
+    return {
+        "batting": batting,
+        "pitching": pitching,
+        "has_data": bool(bat or pit),
+        "n_seasons": len(seasons),
+        "min_pa": CAREER_MIN_PA,
+        "min_outs": CAREER_MIN_OUTS,
+    }
 
 
 # ---------------------------------------------------------------------------

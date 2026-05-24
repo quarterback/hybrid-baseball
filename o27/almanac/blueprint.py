@@ -191,6 +191,13 @@ def parks():
                            section="parks")
 
 
+@almanac_bp.route("/career.html")
+def career():
+    ctx = _base_ctx()
+    return render_template("career.html.j2", **ctx, section="career",
+                           career=ctx["views"].career)
+
+
 # ---- leaders ---------------------------------------------------------------
 
 _LEADER_TEMPLATES = {

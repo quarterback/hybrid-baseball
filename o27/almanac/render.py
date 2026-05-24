@@ -153,7 +153,10 @@ def render_site(
            {**base_ctx, "section": "awards", "base_path": ""})
     _write(env, "parks.html.j2", os.path.join(out_dir, "parks.html"),
            {**base_ctx, "section": "parks", "base_path": ""})
-    pages_written += 2
+    _write(env, "career.html.j2", os.path.join(out_dir, "career.html"),
+           {**base_ctx, "section": "career", "base_path": "",
+            "career": views.career})
+    pages_written += 3
 
     # ------- teams -------
     teams_dir = os.path.join(out_dir, "teams")
