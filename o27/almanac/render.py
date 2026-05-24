@@ -32,7 +32,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from .compute import Views, MIN_PA_QUALIFIED, MIN_OUTS_QUALIFIED
+from .compute import Views, MIN_PA_QUALIFIED, MIN_OUTS_QUALIFIED, team_label
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -57,6 +57,11 @@ def render_site(
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    # Compose team display labels without duplicating the city (generated
+    # universe clubs already carry the city inside `name`).
+    env.globals["team_label"] = team_label
+    env.globals["slugify"] = _slugify
+    env.filters["slugify"] = _slugify
 
     generated_at = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     source_label = _source_label(views, dataset)
@@ -73,15 +78,23 @@ def render_site(
 
     # ------- home -------
     schedule_newest = list(reversed(views.schedule))
+    leader_leagues = sorted({r.get("league") for r in views.standings
+                             if r.get("league")})
+    if len(leader_leagues) <= 1:
+        leader_leagues = []
+    # Rank by the league-relative metric so the cross-league "best of" is fair
+    # (raw wOBA/wERA favour hitter- or pitcher-friendly leagues).
     top_woba  = sorted([r for r in views.batting_season  if r.get("qualified")],
-                       key=lambda r: -r["woba"])[:10]
+                       key=lambda r: (-r["woba_plus"], -r["woba"]))[:10]
     top_wera  = sorted([r for r in views.pitching_season if r.get("qualified")],
-                       key=lambda r: r["wera"])[:10]
+                       key=lambda r: (-r["era_plus"], r["wera"]))[:10]
     _write(env, "index.html.j2", os.path.join(out_dir, "index.html"),
            {**base_ctx, "section": "home", "base_path": "",
             "recent_games": schedule_newest[:12],
             "top_woba": top_woba,
-            "top_wera": top_wera})
+            "top_wera": top_wera,
+            "current_league": None,
+            "leader_leagues": leader_leagues})
     pages_written += 1
 
     # ------- standings / schedule -------
@@ -96,36 +109,54 @@ def render_site(
     # ------- leaders -------
     leaders_dir = os.path.join(out_dir, "leaders")
     os.makedirs(leaders_dir, exist_ok=True)
-    always_show = not any(r.get("qualified") for r in views.batting_season)
-    _write(env, "leaders_batting.html.j2",
-           os.path.join(leaders_dir, "batting.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../",
-            "min_pa": MIN_PA_QUALIFIED, "always_show_all": always_show})
+    always_show   = not any(r.get("qualified") for r in views.batting_season)
     always_show_p = not any(r.get("qualified") for r in views.pitching_season)
-    _write(env, "leaders_pitching.html.j2",
-           os.path.join(leaders_dir, "pitching.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../",
-            "min_outs": MIN_OUTS_QUALIFIED, "always_show_all": always_show_p})
-    _write(env, "leaders_stays.html.j2",
-           os.path.join(leaders_dir, "stays.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../"})
-    _write(env, "leaders_fielding.html.j2",
-           os.path.join(leaders_dir, "fielding.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../"})
-    _write(env, "leaders_value.html.j2",
-           os.path.join(leaders_dir, "value.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../"})
-    _write(env, "leaders_situational.html.j2",
-           os.path.join(leaders_dir, "situational.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../"})
-    pages_written += 6
+
+    # (template, filename, page-key, extra ctx). page-key drives the
+    # cross-league nav so each league links to the same stat page.
+    _LEADER_PAGES = [
+        ("leaders_batting.html.j2",     "batting.html",     "batting",
+         {"min_pa": MIN_PA_QUALIFIED, "always_show_all": always_show}),
+        ("leaders_pitching.html.j2",    "pitching.html",    "pitching",
+         {"min_outs": MIN_OUTS_QUALIFIED, "always_show_all": always_show_p}),
+        ("leaders_stays.html.j2",       "stays.html",       "stays",       {}),
+        ("leaders_fielding.html.j2",    "fielding.html",    "fielding",    {}),
+        ("leaders_value.html.j2",       "value.html",       "value",       {}),
+        ("leaders_situational.html.j2", "situational.html", "situational", {}),
+    ]
+    # Per-league leader pages when the universe has more than one league
+    # (each is its own statistical environment). The all-leagues pages stay
+    # at leaders/<page> and link out to leaders/<league-slug>/<page>.
+    leader_leagues = sorted({r.get("league") for r in views.standings
+                             if r.get("league")})
+    if len(leader_leagues) <= 1:
+        leader_leagues = []
+
+    for tpl, fname, key, extra in _LEADER_PAGES:
+        _write(env, tpl, os.path.join(leaders_dir, fname),
+               {**base_ctx, "section": "leaders", "base_path": "../",
+                "current_league": None, "leader_leagues": leader_leagues,
+                "leader_page": key, **extra})
+        pages_written += 1
+    for lg in leader_leagues:
+        sub = os.path.join(leaders_dir, _slugify(lg))
+        os.makedirs(sub, exist_ok=True)
+        for tpl, fname, key, extra in _LEADER_PAGES:
+            _write(env, tpl, os.path.join(sub, fname),
+                   {**base_ctx, "section": "leaders", "base_path": "../../",
+                    "current_league": lg, "leader_leagues": leader_leagues,
+                    "leader_page": key, **extra})
+            pages_written += 1
 
     # ------- awards + parks (top-level pages) -------
     _write(env, "awards.html.j2", os.path.join(out_dir, "awards.html"),
            {**base_ctx, "section": "awards", "base_path": ""})
     _write(env, "parks.html.j2", os.path.join(out_dir, "parks.html"),
            {**base_ctx, "section": "parks", "base_path": ""})
-    pages_written += 2
+    _write(env, "career.html.j2", os.path.join(out_dir, "career.html"),
+           {**base_ctx, "section": "career", "base_path": "",
+            "career": views.career})
+    pages_written += 3
 
     # ------- teams -------
     teams_dir = os.path.join(out_dir, "teams")
@@ -190,6 +221,8 @@ def render_site(
             "age":        p.get("age"),
             "bats":       p.get("bats", "R"),
             "throws":     p.get("throws", "R"),
+            "league":     (t or {}).get("league", ""),
+            "division":   (t or {}).get("division", ""),
         }
         if p.get("is_pitcher"):
             ps = views.pitching_by_player.get(p["id"])
@@ -207,8 +240,18 @@ def render_site(
     _write(env, "players_index.html.j2",
            os.path.join(players_dir, "index.html"),
            {**base_ctx, "section": "players", "base_path": "../",
-            "players": index_rows})
+            "players": index_rows, "current_league": None,
+            "leader_leagues": leader_leagues})
     pages_written += 1
+    for lg in leader_leagues:
+        sub = os.path.join(players_dir, _slugify(lg))
+        os.makedirs(sub, exist_ok=True)
+        _write(env, "players_index.html.j2",
+               os.path.join(sub, "index.html"),
+               {**base_ctx, "section": "players", "base_path": "../../",
+                "players": index_rows, "current_league": lg,
+                "leader_leagues": leader_leagues})
+        pages_written += 1
 
     # Per-player pages.
     for p in views.players:
@@ -230,7 +273,7 @@ def render_site(
             "age":        p.get("age"),
             "bats":       p.get("bats", "R"),
             "throws":     p.get("throws", "R"),
-            "team_name":  f"{(t or {}).get('city','')} {(t or {}).get('name','')}".strip(),
+            "team_name":  team_label(t),
             "archetype":  p.get("archetype", ""),
         }
         bat_log = views.game_logs_batter.get(p["id"], [])

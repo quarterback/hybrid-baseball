@@ -15,6 +15,7 @@
     <button class="btn" data-export-csv="#stays-tbl" data-filename="stay-leaders.csv">CSV</button>
   </div>
 </div>
+{% include "_league_nav.html.j2" %}
 
 <div class="tablewrap">
   <table id="stays-tbl" class="stat-table heatmap">
@@ -37,10 +38,10 @@
       <th data-heat="lo">FO%</th>
     </tr></thead>
     <tbody>
-      {% for r in views.batting_season if r.qualified %}
-      <tr>
-        <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
-        <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+      {% for r in views.batting_season if r.qualified and (not current_league or r.league == current_league) %}
+      <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
+        <td class="sticky-col t-left"><a href="{{ base_path }}players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+        <td class="t-left"><a href="{{ base_path }}teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
         <td>{{ r.pa }}</td>
         <td>{{ r.ab }}</td>
         <td>{{ r.stays }}</td>

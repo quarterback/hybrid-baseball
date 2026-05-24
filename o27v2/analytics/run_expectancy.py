@@ -68,7 +68,15 @@ _OUTS_BUCKET_LABELS = {
 }
 
 
-def _iter_halves() -> Iterable[list[dict]]:
+def _team_in(team_ids, col="team_id"):
+    """SQL fragment restricting `col` to team_ids, or '' when unfiltered."""
+    if not team_ids:
+        return ""
+    ids = ",".join(str(int(t)) for t in team_ids)
+    return f" AND {col} IN ({ids})"
+
+
+def _iter_halves(team_ids=None) -> Iterable[list[dict]]:
     """Yield each regulation half as a list of PA-log rows ordered
     chronologically. Halves with NULL state stamps (legacy rows) are
     skipped.
@@ -79,7 +87,9 @@ def _iter_halves() -> Iterable[list[dict]]:
                outs_before, bases_before, score_diff_before,
                runs_scored
         FROM game_pa_log
-        WHERE phase = 0 AND outs_before IS NOT NULL
+        WHERE phase = 0 AND outs_before IS NOT NULL"""
+        + _team_in(team_ids, "team_id")
+        + """
         ORDER BY game_id, team_id, phase, ab_seq, swing_idx
         """
     )
@@ -97,7 +107,7 @@ def _iter_halves() -> Iterable[list[dict]]:
         yield bucket
 
 
-def build_re_table() -> dict:
+def build_re_table(team_ids=None) -> dict:
     """Build the RE24-O27 matrix.
 
     Returns:
@@ -128,7 +138,7 @@ def build_re_table() -> dict:
     n_halves = 0
     n_events = 0
     total_runs = 0
-    for half in _iter_halves():
+    for half in _iter_halves(team_ids):
         n_halves += 1
         # Tail-sum: future_runs[i] = sum of runs_scored[i:]
         n = len(half)
@@ -178,7 +188,7 @@ def build_re_table() -> dict:
     }
 
 
-def build_re_by_outs_remaining() -> dict:
+def build_re_by_outs_remaining(team_ids=None) -> dict:
     """Run-expectancy curve indexed purely by outs already recorded.
 
     Returns:
@@ -196,7 +206,7 @@ def build_re_by_outs_remaining() -> dict:
     counts: dict[int, int]   = defaultdict(int)
 
     n_halves = 0
-    for half in _iter_halves():
+    for half in _iter_halves(team_ids):
         n_halves += 1
         n = len(half)
         future = [0] * (n + 1)
@@ -221,12 +231,12 @@ def build_re_by_outs_remaining() -> dict:
     return {"n_halves": n_halves, "curve": curve}
 
 
-def build_re_by_bases() -> dict:
+def build_re_by_bases(team_ids=None) -> dict:
     """Marginal RE by base state (collapsed across outs)."""
     sums:   dict[int, float] = defaultdict(float)
     counts: dict[int, int]   = defaultdict(int)
 
-    for half in _iter_halves():
+    for half in _iter_halves(team_ids):
         n = len(half)
         future = [0] * (n + 1)
         for i in range(n - 1, -1, -1):

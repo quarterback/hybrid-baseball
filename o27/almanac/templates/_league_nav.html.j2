@@ -1,0 +1,16 @@
+{# Per-league navigation. Shown only in multi-league universes; links each
+   league to the same page so wOBA+/ERA+ are read inside the league that
+   produced them. Defaults target the leader pages; pass nav_section /
+   nav_page to point it elsewhere (e.g. the players index). #}
+{% if leader_leagues %}
+{% set _section = nav_section|default('leaders') %}
+{% set _page = nav_page|default((leader_page|default('')) ~ '.html') %}
+<div class="tabs league-nav" style="margin-bottom:8px;">
+  <a href="{{ base_path }}{{ _section }}/{{ _page }}"
+     class="{% if not current_league %}active{% endif %}">All leagues</a>
+  {% for lg in leader_leagues %}
+  <a href="{{ base_path }}{{ _section }}/{{ lg|slugify }}/{{ _page }}"
+     class="{% if current_league == lg %}active{% endif %}">{{ lg }}</a>
+  {% endfor %}
+</div>
+{% endif %}

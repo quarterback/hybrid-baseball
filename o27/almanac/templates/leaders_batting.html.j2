@@ -16,9 +16,10 @@
   <div class="btn-row">
     <input class="search-box" data-filter-table="#batting-tbl" data-filter-cols="0,1" placeholder="Find batter…">
     <button class="btn" data-export-csv="#batting-tbl" data-filename="batting-leaders.csv">CSV</button>
-    <a class="btn" href="../exports/batting_season.csv">Pre-rendered CSV</a>
+    <a class="btn" href="{{ base_path }}exports/batting_season.csv">Pre-rendered CSV</a>
   </div>
 </div>
+{% include "_league_nav.html.j2" %}
 
 <div class="tablewrap">
   <table id="batting-tbl" class="stat-table heatmap">
@@ -56,10 +57,10 @@
       <th data-heat="hi">OPS+</th>
     </tr></thead>
     <tbody>
-      {% for r in views.batting_season if (r.qualified or always_show_all) and not r.is_pitcher %}
-      <tr>
-        <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
-        <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+      {% for r in views.batting_season if (r.qualified or always_show_all) and not r.is_pitcher and (not current_league or r.league == current_league) %}
+      <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
+        <td class="sticky-col t-left"><a href="{{ base_path }}players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+        <td class="t-left"><a href="{{ base_path }}teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
         <td class="t-left"><span class="pos-badge {% if r.is_joker %}joker{% elif r.is_pitcher %}pitcher{% endif %}">{{ r.position }}</span></td>
         <td>{{ r.age or '—' }}</td>
         <td>{{ r.bats }}/{{ r.throws }}</td>
@@ -112,7 +113,7 @@
   with linear weights refit empirically for this league's run
   environment (in a high-RPG O27 context, singles and walks gain
   ~30% in value vs MLB defaults because bases are full more often —
-  see the <a href="../analytics.html">analytics page</a> for the
+  see the <a href="{{ base_path }}analytics.html">analytics page</a> for the
   derivation). wOBA+ scales the rate to 100 = league average.
   Traditional AVG / OBP / SLG / OPS appear for comparison.
   League wOBA / AVG / OBP / SLG / OPS:

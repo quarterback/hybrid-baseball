@@ -29,7 +29,7 @@
       {% for r in views.standings %}
       {% set py = views.team_pythag.get(r.abbrev) or {} %}
       <tr>
-        <td class="sticky-col t-left"><a href="teams/{{ r.abbrev|lower }}.html"><span class="chip">{{ r.abbrev }}</span> {{ r.city }} {{ r.name }}</a></td>
+        <td class="sticky-col t-left"><a href="teams/{{ r.abbrev|lower }}.html"><span class="chip">{{ r.abbrev }}</span> {{ team_label(r) }}</a></td>
         <td class="t-left">{{ r.league }}</td>
         <td class="t-left">{{ r.division }}</td>
         <td>{{ r.w }}</td>

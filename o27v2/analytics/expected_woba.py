@@ -25,8 +25,16 @@ from o27v2 import db
 from o27v2.analytics.linear_weights import derive_linear_weights
 
 
-def _woba_weights() -> dict:
-    return derive_linear_weights()["woba_weights"]
+def _team_in(team_ids, col="team_id"):
+    """SQL fragment restricting `col` to team_ids, or '' when unfiltered."""
+    if not team_ids:
+        return ""
+    ids = ",".join(str(int(t)) for t in team_ids)
+    return f" AND {col} IN ({ids})"
+
+
+def _woba_weights(team_ids=None) -> dict:
+    return derive_linear_weights(team_ids=team_ids)["woba_weights"]
 
 
 def _bip_woba_points(weights: dict,
@@ -53,7 +61,7 @@ def _bip_woba_points(weights: dict,
     return 0.0
 
 
-def _quality_table() -> dict[str, dict]:
+def _quality_table(team_ids=None) -> dict[str, dict]:
     """Compute league xwOBA-per-BIP for each quality bucket.
 
     Returns:
@@ -64,12 +72,14 @@ def _quality_table() -> dict[str, dict]:
             None:     {...},   # legacy / unknown quality bucket
         }
     """
-    weights = _woba_weights()
+    weights = _woba_weights(team_ids)
     rows = db.fetchall(
         """
         SELECT quality, hit_type, was_stay, stay_credited, COUNT(*) AS n
         FROM game_pa_log
-        WHERE phase = 0
+        WHERE phase = 0"""
+        + _team_in(team_ids, "team_id")
+        + """
         GROUP BY quality, hit_type, was_stay, stay_credited
         """
     )
@@ -89,7 +99,7 @@ def _quality_table() -> dict[str, dict]:
     return out
 
 
-def build_xwoba_table(min_pa: int = 162) -> dict:
+def build_xwoba_table(min_pa: int = 162, team_ids=None) -> dict:
     """Compute per-batter xwOBA across the active league.
 
     Args:
@@ -105,8 +115,8 @@ def build_xwoba_table(min_pa: int = 162) -> dict:
             "league_xwoba":  float,
         }
     """
-    weights   = _woba_weights()
-    qtable    = _quality_table()
+    weights   = _woba_weights(team_ids)
+    qtable    = _quality_table(team_ids)
     bip_xwoba = {q: v["xwoba_per_bip"] for q, v in qtable.items()}
 
     bip_rows = db.fetchall(
@@ -120,7 +130,9 @@ def build_xwoba_table(min_pa: int = 162) -> dict:
                SUM(CASE WHEN hit_type IN ('single','infield_single') AND was_stay=0 THEN 1 ELSE 0 END) AS d1,
                COUNT(*) AS n_bip
         FROM game_pa_log
-        WHERE phase = 0
+        WHERE phase = 0"""
+        + _team_in(team_ids, "team_id")
+        + """
         GROUP BY batter_id, quality
         """
     )
@@ -149,7 +161,9 @@ def build_xwoba_table(min_pa: int = 162) -> dict:
         FROM game_batter_stats b
         JOIN players p ON p.id = b.player_id
         LEFT JOIN teams t ON t.id = b.team_id
-        WHERE b.phase = 0
+        WHERE b.phase = 0"""
+        + _team_in(team_ids, "b.team_id")
+        + """
         GROUP BY b.player_id
         """
     )

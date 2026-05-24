@@ -1,0 +1,94 @@
+{% extends "_base.html.j2" %}
+{% block title %}Career Leaders — {{ site_title }}{% endblock %}
+{% block content %}
+<h1 class="page-title">Career Leaders</h1>
+<p class="page-subtitle">
+  Totals aggregated across {{ career.n_seasons }} archived season(s), by player.
+  Rate stats require a career minimum of {{ career.min_pa }} PA (batting) /
+  {{ career.min_outs }} outs (pitching). Build multi-season history so players
+  persist and accumulate a career.
+</p>
+
+{% if not career.has_data %}
+<div class="tablewrap"><div class="p-3" style="padding:24px;text-align:center;color:var(--muted,#888)">
+  No career data yet. Per-player career lines are snapshotted when a season is
+  archived — play or build some seasons, then return.
+</div></div>
+{% else %}
+
+{% macro bat_cat(label, rows, key, fmt) %}
+<div class="tablewrap short" style="margin-bottom:14px;">
+  <div class="section-bar"><h2>{{ label }}</h2></div>
+  <table class="stat-table">
+    <thead><tr>
+      <th style="width:24px">#</th><th data-type="text">Player</th>
+      <th data-type="text">Tm</th><th>Sea</th><th>G</th><th>PA</th>
+      <th>H</th><th>HR</th><th>RBI</th><th>SB</th><th>{{ label }}</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td style="opacity:.55">{{ loop.index }}</td>
+      <td class="t-left">{{ r.player_name }}</td>
+      <td class="t-left"><a href="{{ base_path }}teams/{{ r.team_abbrev|lower }}.html"><span class="chip">{{ r.team_abbrev }}</span></a></td>
+      <td>{{ r.seasons }}</td><td>{{ r.g }}</td><td>{{ r.pa }}</td>
+      <td>{{ r.h }}</td><td>{{ r.hr }}</td><td>{{ r.rbi }}</td><td>{{ r.sb }}</td>
+      <td style="font-weight:700">{{ fmt|format(r[key]) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{% macro pit_cat(label, rows, key, fmt) %}
+<div class="tablewrap short" style="margin-bottom:14px;">
+  <div class="section-bar"><h2>{{ label }}</h2></div>
+  <table class="stat-table">
+    <thead><tr>
+      <th style="width:24px">#</th><th data-type="text">Pitcher</th>
+      <th data-type="text">Tm</th><th>Sea</th><th>G</th><th>W</th><th>L</th>
+      <th>IP</th><th>K</th><th>BB</th><th>{{ label }}</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td style="opacity:.55">{{ loop.index }}</td>
+      <td class="t-left">{{ r.player_name }}</td>
+      <td class="t-left"><a href="{{ base_path }}teams/{{ r.team_abbrev|lower }}.html"><span class="chip">{{ r.team_abbrev }}</span></a></td>
+      <td>{{ r.seasons }}</td><td>{{ r.g }}</td><td>{{ r.w }}</td><td>{{ r.l }}</td>
+      <td>{{ r.ip_disp }}</td><td>{{ r.k }}</td><td>{{ r.bb }}</td>
+      <td style="font-weight:700">{{ fmt|format(r[key]) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start;">
+  <div>
+    <h3 class="page-subtitle" style="font-size:1.05rem;font-weight:600;">Batting</h3>
+    {{ bat_cat('H',   career.batting.h,   'h',   '%d') }}
+    {{ bat_cat('HR',  career.batting.hr,  'hr',  '%d') }}
+    {{ bat_cat('RBI', career.batting.rbi, 'rbi', '%d') }}
+    {{ bat_cat('R',   career.batting.r,   'r',   '%d') }}
+    {{ bat_cat('SB',  career.batting.sb,  'sb',  '%d') }}
+    {{ bat_cat('BB',  career.batting.bb,  'bb',  '%d') }}
+    {{ bat_cat('AVG', career.batting.avg, 'avg', '%.3f') }}
+    {{ bat_cat('OBP', career.batting.obp, 'obp', '%.3f') }}
+    {{ bat_cat('OPS', career.batting.ops, 'ops', '%.3f') }}
+  </div>
+  <div>
+    <h3 class="page-subtitle" style="font-size:1.05rem;font-weight:600;">Pitching</h3>
+    {{ pit_cat('W',    career.pitching.w,    'w',    '%d') }}
+    {{ pit_cat('K',    career.pitching.k,    'k',    '%d') }}
+    {{ pit_cat('G',    career.pitching.g,    'g',    '%d') }}
+    {{ pit_cat('GS',   career.pitching.gs,   'gs',   '%d') }}
+    {{ pit_cat('ERA',  career.pitching.era,  'era',  '%.2f') }}
+    {{ pit_cat('WHIP', career.pitching.whip, 'whip', '%.2f') }}
+    {{ pit_cat('K/9',  career.pitching.k9,   'k9',   '%.2f') }}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

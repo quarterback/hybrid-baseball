@@ -16,9 +16,10 @@
   <div class="btn-row">
     <input class="search-box" data-filter-table="#pitching-tbl" data-filter-cols="0,1" placeholder="Find pitcher…">
     <button class="btn" data-export-csv="#pitching-tbl" data-filename="pitching-leaders.csv">CSV</button>
-    <a class="btn" href="../exports/pitching_season.csv">Pre-rendered CSV</a>
+    <a class="btn" href="{{ base_path }}exports/pitching_season.csv">Pre-rendered CSV</a>
   </div>
 </div>
+{% include "_league_nav.html.j2" %}
 
 <div class="tablewrap">
   <table id="pitching-tbl" class="stat-table heatmap">
@@ -62,10 +63,10 @@
       <th data-heat="hi">pWAR</th>
     </tr></thead>
     <tbody>
-      {% for r in views.pitching_season if r.qualified or always_show_all %}
-      <tr>
-        <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
-        <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+      {% for r in views.pitching_season if (r.qualified or always_show_all) and (not current_league or r.league == current_league) %}
+      <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
+        <td class="sticky-col t-left"><a href="{{ base_path }}players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+        <td class="t-left"><a href="{{ base_path }}teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
         <td class="t-left"><span class="pos-badge">{{ r.throws }}</span></td>
         <td>{{ r.age or '—' }}</td>
         <td>{{ r.g }}</td>
@@ -122,7 +123,7 @@
   Minimum {{ min_outs }} outs (20 IP) to qualify. Headline stats are
   <b>wERA</b> (run-environment-weighted ERA, calibrated to this league's
   actual scoring shape) and <b>GSc</b> (Game Score with O27-empirical
-  refit coefficients — see the <a href="../analytics.html">analytics
+  refit coefficients — see the <a href="{{ base_path }}analytics.html">analytics
   page</a> for the derivation). Traditional ERA and FIP appear for
   comparison; FIP's constant is now computed dynamically so league_FIP
   collapses to league_ERA by construction, but neither is the right

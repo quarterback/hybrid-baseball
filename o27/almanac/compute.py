@@ -15,6 +15,24 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+def team_label(t: Any) -> str:
+    """Full display label for a team, without duplicating the city.
+
+    Real franchises store the nickname in `name` with `city` separate
+    ("New York" + "Yankees" -> "New York Yankees"). Generated universe clubs
+    embed the city in `name` ("Toronto" + "Toronto Forestry"); prepending the
+    city again would double it. Only prepend when the name doesn't already
+    lead with the city.
+    """
+    t = t or {}
+    city = (t.get("city") or "").strip()
+    name = (t.get("name") or "").strip()
+    if city and name and not name.startswith(city):
+        return f"{city} {name}".strip()
+    return name or city
+
+
+
 # ---------------------------------------------------------------------------
 # Constants — single place to bump if the league recalibrates.
 # ---------------------------------------------------------------------------
@@ -110,6 +128,10 @@ class Views:
     pa_log_by_game:   dict[int, list[dict]] = field(default_factory=dict)
     scoring_by_game:  dict[int, list[dict]] = field(default_factory=dict)
 
+    # Career (multi-season) leaderboards aggregated from the per-player
+    # season-line snapshots. Empty until at least one season is archived.
+    career:           dict[str, Any]  = field(default_factory=dict)
+
 
 # ---------------------------------------------------------------------------
 # Public entry
@@ -139,12 +161,27 @@ def compute_views(dataset: dict[str, Any]) -> Views:
     pit_agg = _aggregate_pitchers(dataset.get("pitching") or [],
                                   players_by_id, teams_by_id)
 
-    # League denominators + runs-per-win.
+    # League denominators + runs-per-win. In a multi-league universe each
+    # league is its own run environment, so rate-plus stats (wOBA+, ERA+,
+    # OPS+, FIP, VORP) must be measured against the player's OWN league —
+    # pooling 84 teams would rank a high-offense league's hitters as average.
+    # We keep a universe-wide league_totals for any global display, but
+    # augment each player against per-league denominators when >1 league.
     v.league_totals = _league_totals(bat_agg, pit_agg)
     v.runs_per_win  = _runs_per_win(v.league_totals)
 
-    _augment_batters(bat_agg,  v.league_totals, v.runs_per_win)
-    _augment_pitchers(pit_agg, v.league_totals, v.runs_per_win)
+    leagues_present = sorted({r.get("league") or "" for r in bat_agg} - {""})
+    if len(leagues_present) > 1:
+        for lg in leagues_present:
+            bsub = [r for r in bat_agg if (r.get("league") or "") == lg]
+            psub = [r for r in pit_agg if (r.get("league") or "") == lg]
+            lt  = _league_totals(bsub, psub)
+            rpw = _runs_per_win(lt)
+            _augment_batters(bsub, lt, rpw)
+            _augment_pitchers(psub, lt, rpw)
+    else:
+        _augment_batters(bat_agg,  v.league_totals, v.runs_per_win)
+        _augment_pitchers(pit_agg, v.league_totals, v.runs_per_win)
 
     v.batting_season  = sorted(bat_agg,  key=lambda r: -r["pa"])
     v.pitching_season = sorted(pit_agg, key=lambda r: -r["outs_recorded"])
@@ -187,7 +224,146 @@ def compute_views(dataset: dict[str, Any]) -> Views:
                                        dataset.get("pitching") or [],
                                        v.games)
 
+    # Career (multi-season) leaderboards from archived per-player lines.
+    v.career = _career_leaderboards(
+        dataset.get("season_player_batting") or [],
+        dataset.get("season_player_pitching") or [],
+        dataset.get("seasons") or [],
+    )
+
     return v
+
+
+# ---------------------------------------------------------------------------
+# Career (multi-season) leaderboards
+# ---------------------------------------------------------------------------
+
+CAREER_MIN_PA   = 50   # career qualification for batting rate stats
+CAREER_MIN_OUTS = 60   # career qualification for pitching rate stats
+
+
+def _career_latest_meta(lines: list[dict]) -> dict[int, dict]:
+    """Most-recent name / team / league per player (highest season_id)."""
+    meta: dict[int, dict] = {}
+    for r in lines:
+        pid = r["player_id"]
+        cur = meta.get(pid)
+        if cur is None or (r.get("season_id") or 0) >= (cur.get("season_id") or 0):
+            meta[pid] = r
+    return meta
+
+
+def _career_rank(rows, key, *, reverse=True, n=25, min_field=None, min_val=0):
+    pool = [r for r in rows
+            if min_field is None or (r.get(min_field) or 0) >= min_val]
+    return sorted(pool, key=lambda r: (r.get(key) or 0), reverse=reverse)[:n]
+
+
+def _career_batting(lines: list[dict]) -> list[dict]:
+    meta = _career_latest_meta(lines)
+    agg: dict[int, dict] = {}
+    fields = ("g", "pa", "ab", "r", "h", "doubles", "triples",
+              "hr", "rbi", "bb", "k", "sb", "hbp")
+    for r in lines:
+        pid = r["player_id"]
+        a = agg.get(pid)
+        if a is None:
+            a = agg[pid] = {f: 0 for f in fields}
+            a["player_id"] = pid
+            a["_seasons"] = set()
+        for f in fields:
+            a[f] += r.get(f) or 0
+        a["_seasons"].add(r.get("season_id"))
+    out: list[dict] = []
+    for pid, a in agg.items():
+        m = meta.get(pid, {})
+        ab, h, bb, hbp = a["ab"], a["h"], a["bb"], a["hbp"]
+        d2, d3, hr = a["doubles"], a["triples"], a["hr"]
+        tb = (h - d2 - d3 - hr) + 2 * d2 + 3 * d3 + 4 * hr
+        obp_den = ab + bb + hbp
+        a.update(
+            seasons=len(a.pop("_seasons")),
+            player_name=m.get("player_name", "?"),
+            team_abbrev=m.get("team_abbrev", ""),
+            league=m.get("league", ""),
+            tb=tb,
+            avg=(h / ab) if ab else 0.0,
+            obp=((h + bb + hbp) / obp_den) if obp_den else 0.0,
+            slg=(tb / ab) if ab else 0.0,
+        )
+        a["ops"] = a["obp"] + a["slg"]
+        out.append(a)
+    return out
+
+
+def _career_pitching(lines: list[dict]) -> list[dict]:
+    meta = _career_latest_meta(lines)
+    agg: dict[int, dict] = {}
+    fields = ("g", "gs", "w", "l", "outs", "h", "r", "er", "bb", "k", "hr")
+    for r in lines:
+        pid = r["player_id"]
+        a = agg.get(pid)
+        if a is None:
+            a = agg[pid] = {f: 0 for f in fields}
+            a["player_id"] = pid
+            a["_seasons"] = set()
+        for f in fields:
+            a[f] += r.get(f) or 0
+        a["_seasons"].add(r.get("season_id"))
+    out: list[dict] = []
+    for pid, a in agg.items():
+        m = meta.get(pid, {})
+        outs = a["outs"]
+        ip = outs / 3.0
+        a.update(
+            seasons=len(a.pop("_seasons")),
+            player_name=m.get("player_name", "?"),
+            team_abbrev=m.get("team_abbrev", ""),
+            league=m.get("league", ""),
+            ip=ip,
+            ip_disp=f"{outs // 3}.{outs % 3}",
+            era=((a["er"] * 27.0 / outs) if outs else 0.0),
+            whip=(((a["bb"] + a["h"]) / ip) if ip else 0.0),
+            k9=((a["k"] * 27.0 / outs) if outs else 0.0),
+        )
+        out.append(a)
+    return out
+
+
+def _career_leaderboards(bat_lines: list[dict], pit_lines: list[dict],
+                         seasons: list[dict]) -> dict[str, Any]:
+    bat = _career_batting(bat_lines)
+    pit = _career_pitching(pit_lines)
+    batting = {
+        "h":   _career_rank(bat, "h"),
+        "hr":  _career_rank(bat, "hr"),
+        "rbi": _career_rank(bat, "rbi"),
+        "r":   _career_rank(bat, "r"),
+        "sb":  _career_rank(bat, "sb"),
+        "bb":  _career_rank(bat, "bb"),
+        "avg": _career_rank(bat, "avg", min_field="pa", min_val=CAREER_MIN_PA),
+        "obp": _career_rank(bat, "obp", min_field="pa", min_val=CAREER_MIN_PA),
+        "ops": _career_rank(bat, "ops", min_field="pa", min_val=CAREER_MIN_PA),
+    }
+    pitching = {
+        "w":    _career_rank(pit, "w"),
+        "k":    _career_rank(pit, "k"),
+        "g":    _career_rank(pit, "g"),
+        "gs":   _career_rank(pit, "gs"),
+        "era":  _career_rank(pit, "era",  reverse=False,
+                             min_field="outs", min_val=CAREER_MIN_OUTS),
+        "whip": _career_rank(pit, "whip", reverse=False,
+                             min_field="outs", min_val=CAREER_MIN_OUTS),
+        "k9":   _career_rank(pit, "k9", min_field="outs", min_val=CAREER_MIN_OUTS),
+    }
+    return {
+        "batting": batting,
+        "pitching": pitching,
+        "has_data": bool(bat or pit),
+        "n_seasons": len(seasons),
+        "min_pa": CAREER_MIN_PA,
+        "min_outs": CAREER_MIN_OUTS,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -285,8 +461,8 @@ def _build_schedule(games: list[dict], teams_by_id: dict[int, dict]) -> list[dic
             "away_id":      g["away_team_id"],
             "home_abbrev":  h["abbrev"],
             "away_abbrev":  a["abbrev"],
-            "home_name":    f"{h.get('city','')} {h.get('name','')}".strip(),
-            "away_name":    f"{a.get('city','')} {a.get('name','')}".strip(),
+            "home_name":    team_label(h),
+            "away_name":    team_label(a),
             "home_score":   g.get("home_score") or 0,
             "away_score":   g.get("away_score") or 0,
             "winner_id":    g.get("winner_id"),
@@ -353,7 +529,9 @@ def _empty_batter_slot(pid, players_by_id, teams_by_id, sample_row) -> dict:
         "age":        p.get("age"),
         "team_id":    sample_row.get("team_id"),
         "team":       t.get("abbrev", "?"),
-        "team_name":  f"{t.get('city','')} {t.get('name','')}".strip(),
+        "team_name":  team_label(t),
+        "league":     t.get("league", ""),
+        "division":   t.get("division", ""),
     }
 
 
@@ -546,7 +724,9 @@ def _empty_pitcher_slot(pid, players_by_id, teams_by_id, sample_row) -> dict:
         "age":       p.get("age"),
         "team_id":   sample_row.get("team_id"),
         "team":      t.get("abbrev", "?"),
-        "team_name": f"{t.get('city','')} {t.get('name','')}".strip(),
+        "team_name": team_label(t),
+        "league":    t.get("league", ""),
+        "division":  t.get("division", ""),
     }
 
 
@@ -1019,6 +1199,8 @@ def _empty_fielder_slot(pid, position, players_by_id, teams_by_id, sample_row):
         "position":  position,
         "team":      t.get("abbrev", "?"),
         "team_id":   sample_row.get("team_id"),
+        "league":    t.get("league", ""),
+        "division":  t.get("division", ""),
         "po": 0, "a": 0, "e": 0,
     }
 

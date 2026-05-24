@@ -14,6 +14,7 @@
     <a class="active" href="situational.html">Situational</a>
   </div>
 </div>
+{% include "_league_nav.html.j2" %}
 
 <section>
   <div class="section-bar">
@@ -35,10 +36,10 @@
         <th data-heat="hi">CONV·TOT</th>
       </tr></thead>
       <tbody>
-        {% for r in views.batting_season if r.qualified %}
-        <tr>
-          <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
-          <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+        {% for r in views.batting_season if r.qualified and (not current_league or r.league == current_league) %}
+        <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
+          <td class="sticky-col t-left"><a href="{{ base_path }}players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td class="t-left"><a href="{{ base_path }}teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
           <td>{{ r.pa }}</td>
           <td>{{ r.adv_op_1b }}</td>
           <td>{{ r.adv_adv_1b }}</td>
@@ -79,10 +80,10 @@
         <th data-heat="hi">CONV%</th>
       </tr></thead>
       <tbody>
-        {% for r in views.batting_season if r.qualified %}
-        <tr>
-          <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
-          <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
+        {% for r in views.batting_season if r.qualified and (not current_league or r.league == current_league) %}
+        <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
+          <td class="sticky-col t-left"><a href="{{ base_path }}players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
+          <td class="t-left"><a href="{{ base_path }}teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
           <td>{{ r.stays }}</td>
           <td>{{ r.c2_op_1b }}</td>
           <td>{{ r.c2_adv_1b }}</td>

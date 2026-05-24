@@ -749,6 +749,22 @@ class GameState:
             pid, {"pa": 0, "h": 0, "bb": 0, "joker_pa": 0}
         )
 
+    def out_cap(self) -> int:
+        """Numeric out ceiling for the current phase, ignoring walk-offs.
+
+        The half ends at this many cumulative outs and no PA may push the
+        phase past it. Mirrors the thresholds used by is_half_over():
+
+          - regulation        → 27
+          - super-inning      → super_outs_target (cumulative: 27 + 3*round)
+          - seconds round     → the batting team's banked outs
+        """
+        if self.is_super_inning:
+            return int(self.super_outs_target or 0)
+        if self.in_seconds_phase:
+            return max(0, int(self.batting_team.outs_banked or 0))
+        return 27
+
     def is_half_over(self) -> bool:
         """True when the current half has ended."""
         if self.is_super_inning:
@@ -756,13 +772,12 @@ class GameState:
             # outs (the first super out is #28, so each round's half ends at
             # super_outs_target = 27 + 3*round). The bottom half also ends
             # early on a walk-off — the moment the second-batting team leads.
-            return self.outs >= self.super_outs_target or self._super_walkoff()
+            return self.outs >= self.out_cap() or self._super_walkoff()
         if self.in_seconds_phase:
             # Seconds round: ends when the team has used its banked outs OR
             # the comeback walk-off fires (lead change with opp out of options).
-            cap = max(0, int(self.batting_team.outs_banked or 0))
-            return self.outs >= cap or self._seconds_walkoff()
-        return self.outs >= 27 or self._regulation_walkoff()
+            return self.outs >= self.out_cap() or self._seconds_walkoff()
+        return self.outs >= self.out_cap() or self._regulation_walkoff()
 
     def _regulation_walkoff(self) -> bool:
         """Walk-off in regulation: only valid in the SECOND half (the half
