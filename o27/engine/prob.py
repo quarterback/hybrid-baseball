@@ -2611,6 +2611,17 @@ class ProbabilisticProvider:
                 outcome_dict["runner_out_idx"] = lead_idx
                 outcome_dict["hit_type"] = "fielders_choice"
 
+        # A home run records no defensive outs — everyone scores. Earlier
+        # conversion paths (over-the-fence flex, inside-the-park HR) can leave
+        # stale runner-out indices behind from the pre-HR hit type; the engine
+        # ignores them (advance_runners scores everyone on an HR) but the
+        # renderer would charge a phantom TOA out, over-counting batter outs.
+        # Strip them so both ledgers see zero outs on the HR.
+        if outcome_dict.get("hit_type") in ("hr", "home_run"):
+            outcome_dict["runner_out_idx"] = None
+            outcome_dict["extra_runner_outs"] = []
+            outcome_dict["toa_runner_idxs"] = []
+
         return {
             "type": "ball_in_play",
             "choice": choice,

@@ -301,6 +301,13 @@ def run_half(
     (backwards-compatible — tests continue to work unchanged).
     """
     log: list[str] = []
+    # A joker insertion (state.batter_override) is "for the next PA" within
+    # THIS half. If a half ends before the inserted joker completes his PA
+    # (e.g. a walk-off on a between-pitch event right after the insertion),
+    # the override would otherwise leak into the next half — where the batting
+    # team has flipped, so the stale joker (now an opponent player) bats and
+    # his out is misattributed to the wrong team. Clear it at every half start.
+    state.batter_override = None
     while not state.is_half_over():
         if renderer:
             ctx = renderer.capture_context(state)
@@ -392,7 +399,13 @@ def _close_current_spell(state: GameState) -> None:
     pitcher = (state.fielding_team.get_player(state.current_pitcher_id)
                or state.visitors.get_player(state.current_pitcher_id)
                or state.home.get_player(state.current_pitcher_id))
-    if pitcher is None or state.pitcher_spell_count == 0:
+    # Keep any spell that recorded outs even when it faced no complete PA
+    # (a reliever who only logged a pickoff / caught-stealing out, or a short
+    # seconds/super half that ended on a runner-out): those outs are charged
+    # on the batter side, so dropping the spell loses them from the pitcher
+    # ledger and breaks the batter↔pitcher out reconciliation.
+    if pitcher is None or (state.pitcher_spell_count == 0
+                           and state.pitcher_outs_this_spell == 0):
         return
     spell = SpellRecord(
         pitcher_id=pitcher.player_id,

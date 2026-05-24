@@ -345,8 +345,11 @@ def pitching_change(
     old_pitcher = state.fielding_team.get_player(old_pitcher_id) if old_pitcher_id else None
 
     log = []
-    if old_pitcher and state.pitcher_spell_count > 0:
-        # Close the current spell only when the pitcher actually faced batters.
+    if old_pitcher and (state.pitcher_spell_count > 0
+                        or state.pitcher_outs_this_spell > 0):
+        # Close the current spell when the pitcher faced batters OR recorded
+        # any out (a pickoff / caught-stealing out can happen with zero
+        # complete PAs; dropping it would lose the out from the pitcher ledger).
         spell = SpellRecord(
             pitcher_id=old_pitcher.player_id,
             pitcher_name=old_pitcher.name,
