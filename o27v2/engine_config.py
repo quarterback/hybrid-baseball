@@ -57,7 +57,12 @@ _O27_DEFAULTS: dict[str, object] = {
     if _is_editable(name, value)
 }
 
-_V2_ALLOWLIST = ("HOME_ADVANTAGE_SKILL",)
+_V2_ALLOWLIST = (
+    "HOME_ADVANTAGE_SKILL",
+    "GEN_SHIFT_SKILL", "GEN_SHIFT_CONTACT", "GEN_SHIFT_POWER",
+    "GEN_SHIFT_EYE", "GEN_SHIFT_SPEED", "GEN_SHIFT_DEFENSE",
+    "GEN_SHIFT_ARM", "GEN_SHIFT_PITCHING", "GEN_SHIFT_STAMINA",
+)
 _V2_DEFAULTS: dict[str, object] = {
     name: getattr(v2cfg, name)
     for name in _V2_ALLOWLIST
@@ -126,6 +131,17 @@ _CURATED: list[tuple[str, list[tuple[str, str]]]] = [
     ]),
     ("Context (o27v2)", [
         ("HOME_ADVANTAGE_SKILL", "Home-field skill bonus"),
+    ]),
+    ("New-player generation (grade points; affects players generated AFTER you save)", [
+        ("GEN_SHIFT_SKILL",    "Hitter overall skill shift"),
+        ("GEN_SHIFT_CONTACT",  "Contact shift"),
+        ("GEN_SHIFT_POWER",    "Power shift"),
+        ("GEN_SHIFT_EYE",      "Eye / plate discipline shift"),
+        ("GEN_SHIFT_SPEED",    "Speed shift"),
+        ("GEN_SHIFT_DEFENSE",  "Defense shift"),
+        ("GEN_SHIFT_ARM",      "Arm shift"),
+        ("GEN_SHIFT_PITCHING", "Pitcher Stuff + arsenal quality shift"),
+        ("GEN_SHIFT_STAMINA",  "Pitcher stamina shift"),
     ]),
 ]
 

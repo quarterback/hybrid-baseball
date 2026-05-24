@@ -175,6 +175,29 @@ JOKERS_PER_ARCHETYPE: int = 1   # Phase 10: 3 jokers per team total (one per arc
 HOME_ADVANTAGE_SKILL: float = 0.0
 
 # ---------------------------------------------------------------------------
+# New-player generation shifts (grade points, 20-80 scale).
+#
+# Added to the talent-tier roll for the named attribute when a player is
+# generated, so the engine-tunables dashboard can reshape the NEW-player
+# talent pool without touching code — e.g. +15 POWER for a slugging era,
+# -12 POWER / +8 CONTACT for a deadball talent pool, -10 SKILL for a
+# low-talent expansion era. Read at call time by o27v2/league.py.
+#
+# These affect ONLY players generated after the shift is set (new leagues,
+# history builds, youth graduates, expansion). Existing players are never
+# touched — by design. Default 0.0 = the shipped distribution.
+# ---------------------------------------------------------------------------
+GEN_SHIFT_SKILL:    float = 0.0
+GEN_SHIFT_CONTACT:  float = 0.0
+GEN_SHIFT_POWER:    float = 0.0
+GEN_SHIFT_EYE:      float = 0.0
+GEN_SHIFT_SPEED:    float = 0.0
+GEN_SHIFT_DEFENSE:  float = 0.0
+GEN_SHIFT_ARM:      float = 0.0
+GEN_SHIFT_PITCHING: float = 0.0   # pitcher Stuff + pitch quality
+GEN_SHIFT_STAMINA:  float = 0.0
+
+# ---------------------------------------------------------------------------
 # Re-exports of Phase 8 engine constants
 #
 # These values are defined in o27/config.py (where manager.py reads them) and

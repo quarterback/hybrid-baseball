@@ -865,6 +865,33 @@ def _tier_unit(rng: random.Random, team_shift: int = 0) -> float:
     return _scout.to_unit(_roll_tier_grade(rng, team_shift))
 
 
+# Per-attribute NEW-player generation shifts. Read from o27v2/config.py at
+# call time (so the engine-tunables dashboard can reshape the talent pool of
+# newly generated players). The roll() closures in _make_hitter / _make_pitcher
+# add _gen_shift(attr) on top of team_shift + style bias.
+_GEN_SHIFT_MAP = {
+    "skill":         "GEN_SHIFT_SKILL",
+    "contact":       "GEN_SHIFT_CONTACT",
+    "power":         "GEN_SHIFT_POWER",
+    "eye":           "GEN_SHIFT_EYE",
+    "speed":         "GEN_SHIFT_SPEED",
+    "defense":       "GEN_SHIFT_DEFENSE",
+    "arm":           "GEN_SHIFT_ARM",
+    "pitcher_skill": "GEN_SHIFT_PITCHING",
+    "stamina":       "GEN_SHIFT_STAMINA",
+}
+
+
+def _gen_shift(attr: str | None) -> int:
+    const = _GEN_SHIFT_MAP.get(attr or "")
+    if not const:
+        return 0
+    try:
+        return int(round(float(getattr(v2cfg, const, 0.0) or 0.0)))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _roll_org_grade(rng: random.Random) -> int:
     """Roll an org_strength against the full 9-tier ladder, NOT capped
     at 80. Org_strength influences multi-season development rate, so a
@@ -1580,7 +1607,7 @@ def _make_hitter(
     """
     def roll(attr: str | None = None) -> int:
         bias = style.get(attr, 0) if (style and attr) else 0
-        return _roll_tier_grade(rng, team_shift + bias)
+        return _roll_tier_grade(rng, team_shift + bias + _gen_shift(attr))
 
     skill_g  = roll("skill")
     speed_g  = roll("speed")
@@ -1997,7 +2024,8 @@ def _build_repertoire(
         available = [(k, w) for (k, w) in available if k != pick]
 
     entries: list[dict] = []
-    primary_quality = _quality_unit(_roll_tier_grade(rng, team_shift))
+    _pq_shift = _gen_shift("pitcher_skill")
+    primary_quality = _quality_unit(_roll_tier_grade(rng, team_shift + _pq_shift))
     entries.append({
         "pitch_type":   primary,
         "quality":      primary_quality,
@@ -2005,7 +2033,7 @@ def _build_repertoire(
     })
     remaining_mass = 1.0 - entries[0]["usage_weight"]
     secondary_qualities = [
-        _quality_unit(_roll_tier_grade(rng, team_shift))
+        _quality_unit(_roll_tier_grade(rng, team_shift + _pq_shift))
         for _ in secondaries
     ]
     if secondaries:
@@ -2052,7 +2080,7 @@ def _make_pitcher(
     """
     def roll(attr: str | None = None) -> int:
         bias = style.get(attr, 0) if (style and attr) else 0
-        return _roll_tier_grade(rng, team_shift + bias)
+        return _roll_tier_grade(rng, team_shift + bias + _gen_shift(attr))
 
     stuff_g   = roll("pitcher_skill")
     stamina_g = roll("stamina")
@@ -2502,6 +2530,14 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     existing = db.fetchone("SELECT COUNT(*) as n FROM teams")
     if existing and existing["n"] > 0:
         return
+
+    # Make the current engine tuning live before any player is generated, so
+    # the GEN_SHIFT_* knobs reshape this league's NEW-player talent pool.
+    try:
+        from o27v2 import engine_config
+        engine_config.ensure_applied()
+    except Exception:
+        pass
 
     config  = config if config is not None else get_config(config_id)
     level   = config.get("level", "MLB")

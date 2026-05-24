@@ -53,14 +53,15 @@ def main() -> int:
         from o27v2.sim import simulate_next_n
 
         db.init_db()
-        seed_league(rng_seed=args.seed, config_id=args.config)
-        seed_schedule(config_id=args.config, rng_seed=args.seed)
-
-        # Apply the tuning directly (no DB round-trip) and pin it so the
+        # Apply the tuning BEFORE seeding so generation shifts (GEN_SHIFT_*)
+        # reshape this benchmark league's new players, and pin it so the
         # per-game ensure_applied() hook doesn't reset it from the empty
         # temp-DB overrides.
         ec.apply_values(overrides)
         ec._applied = True
+
+        seed_league(rng_seed=args.seed, config_id=args.config)
+        seed_schedule(config_id=args.config, rng_seed=args.seed)
 
         simulate_next_n(max(1, args.games))
 

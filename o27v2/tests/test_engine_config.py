@@ -123,6 +123,22 @@ def test_o27v2_knob_applies_to_v2_config(fresh_db):
     assert v2cfg.HOME_ADVANTAGE_SKILL == ec.DEFAULTS["HOME_ADVANTAGE_SKILL"]
 
 
+def test_generation_shift_knobs_apply_and_drive_league_gen(fresh_db):
+    import o27v2.config as v2cfg
+    from o27v2 import league
+    for k in ("GEN_SHIFT_POWER", "GEN_SHIFT_CONTACT", "GEN_SHIFT_PITCHING"):
+        assert k in ec.DEFAULTS
+    ec.save_overrides({"GEN_SHIFT_POWER": 15, "GEN_SHIFT_CONTACT": -8})
+    assert v2cfg.GEN_SHIFT_POWER == pytest.approx(15)
+    # league reads the shift at call time, rounded to grade points.
+    assert league._gen_shift("power") == 15
+    assert league._gen_shift("contact") == -8
+    assert league._gen_shift("speed") == 0
+    assert league._gen_shift(None) == 0
+    ec.reset_overrides()
+    assert league._gen_shift("power") == 0
+
+
 def test_characterize_labels_by_run_environment():
     assert ec.characterize({"hr_per_game": 0.6, "r_per_game": 9}) \
         == "Deadball · pitcher-dominant"
