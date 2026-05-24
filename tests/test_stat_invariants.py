@@ -573,8 +573,8 @@ def test_invariant_7b_pitcher_row_uniqueness(played_game_ids):
 
 def test_invariant_8_fip_anchored_to_era(played_game_ids):
     """league wERA within 0.05 of league raw ER per 27 outs, AND league
-    xFIP within 0.05 of league wERA. Replaces the legacy FIP-vs-ERA
-    invariant; the wERA / xFIP constants are refit per call so a
+    xRA within 0.05 of league wERA. Replaces the legacy FIP-vs-ERA
+    invariant; the wERA / xRA constants are refit per call so a
     drift in either should trip this immediately.
 
     Plus an independent ER ≤ R sanity check: per (game, team), the
@@ -631,18 +631,18 @@ def test_invariant_8_fip_anchored_to_era(played_game_ids):
     league_werra_weighted = (
         sum((r.get("werra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
     )
-    league_xfip_weighted = (
-        sum((r.get("xfip") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
+    league_xra_weighted = (
+        sum((r.get("xra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
     )
     assert abs(league_werra_weighted - league_raw_era) < 0.05, (
         f"outs-weighted league wERA {league_werra_weighted:.4f} not within "
         f"0.05 of league raw ER/27 {league_raw_era:.4f}; the production "
         f"`_league_werra_consts` / `_aggregate_pitcher_rows` no longer agree"
     )
-    assert abs(league_xfip_weighted - league_werra_weighted) < 0.05, (
-        f"outs-weighted league xFIP {league_xfip_weighted:.4f} not within "
-        f"0.05 of league wERA {league_werra_weighted:.4f}; xFIP constant "
-        f"is no longer anchored to wERA"
+    assert abs(league_xra_weighted - league_werra_weighted) < 0.05, (
+        f"outs-weighted league xRA {league_xra_weighted:.4f} not within "
+        f"0.05 of league wERA {league_werra_weighted:.4f}; the xRA constant "
+        f"(`xra_norm`) is no longer anchored to wERA"
     )
 
     # ---- (b) ER <= R per (game, team) ----------------------------------
