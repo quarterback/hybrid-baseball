@@ -153,26 +153,52 @@
     downloadCSV(name, tableToCSV(target));
   });
 
-  // ----------------------------------------------------------------- Filter (search)
-  document.addEventListener("input", (e) => {
-    const inp = e.target.closest("[data-filter-table]");
-    if (!inp) return;
-    const tbl = document.querySelector(inp.dataset.filterTable);
+  // ----------------------------------------------------------------- Filters
+  // Unified row filter: a table can have a text search box plus league /
+  // division dropdowns; a row is shown only when it passes ALL active
+  // controls. Controls point at their table via a selector in the dataset.
+  function controlsFor(tbl) {
+    const sel = "#" + tbl.id;
+    return Array.from(document.querySelectorAll(
+      `[data-filter-table="${sel}"],[data-league-filter="${sel}"],[data-division-filter="${sel}"]`
+    ));
+  }
+  function applyTableFilters(tbl) {
     if (!tbl) return;
-    const q = inp.value.toLowerCase().trim();
-    const cols = (inp.dataset.filterCols || "0").split(",").map((s) => parseInt(s, 10));
+    const ctrls = controlsFor(tbl);
     Array.from(tbl.tBodies[0]?.rows || []).forEach((row) => {
-      let hit = !q;
-      if (q) {
-        for (const i of cols) {
-          if ((row.cells[i]?.textContent || "").toLowerCase().includes(q)) {
-            hit = true;
-            break;
+      let visible = true;
+      for (const c of ctrls) {
+        if (c.dataset.filterTable) {
+          const q = c.value.toLowerCase().trim();
+          if (q) {
+            const cols = (c.dataset.filterCols || "0").split(",").map((s) => parseInt(s, 10));
+            let hit = false;
+            for (const i of cols) {
+              if ((row.cells[i]?.textContent || "").toLowerCase().includes(q)) { hit = true; break; }
+            }
+            if (!hit) visible = false;
           }
+        } else if (c.dataset.leagueFilter) {
+          if (c.value && c.value !== "all" && (row.dataset.league || "") !== c.value) visible = false;
+        } else if (c.dataset.divisionFilter) {
+          if (c.value && c.value !== "all" && (row.dataset.division || "") !== c.value) visible = false;
         }
       }
-      row.style.display = hit ? "" : "none";
+      row.style.display = visible ? "" : "none";
     });
+  }
+  function tableForControl(c) {
+    const sel = c.dataset.filterTable || c.dataset.leagueFilter || c.dataset.divisionFilter;
+    return sel ? document.querySelector(sel) : null;
+  }
+  document.addEventListener("input", (e) => {
+    const c = e.target.closest("[data-filter-table]");
+    if (c) applyTableFilters(tableForControl(c));
+  });
+  document.addEventListener("change", (e) => {
+    const c = e.target.closest("[data-league-filter],[data-division-filter]");
+    if (c) applyTableFilters(tableForControl(c));
   });
 
   // ----------------------------------------------------------------- Init

@@ -16,9 +16,16 @@
 </div>
 
 <section>
+  {% set _leagues = views.batting_season|map(attribute='league')|reject('equalto','')|unique|sort|list %}
   <div class="section-bar">
     <h2>Per-Base Runner Advancement (Any-Cause)</h2>
     <div class="btn-row">
+      {% if _leagues|length > 1 %}
+      <select class="search-box" data-league-filter="#adv-tbl" title="Each league is its own statistical environment">
+        <option value="all">All leagues</option>
+        {% for lg in _leagues %}<option value="{{ lg }}">{{ lg }}</option>{% endfor %}
+      </select>
+      {% endif %}
       <button class="btn" data-export-csv="#adv-tbl" data-filename="advancement-leaders.csv">CSV</button>
     </div>
   </div>
@@ -36,7 +43,7 @@
       </tr></thead>
       <tbody>
         {% for r in views.batting_season if r.qualified %}
-        <tr>
+        <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
           <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
           <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
           <td>{{ r.pa }}</td>
@@ -63,6 +70,12 @@
   <div class="section-bar">
     <h2>2C (Stay) Per-Base Conversion</h2>
     <div class="btn-row">
+      {% if _leagues|length > 1 %}
+      <select class="search-box" data-league-filter="#c2-tbl" title="Each league is its own statistical environment">
+        <option value="all">All leagues</option>
+        {% for lg in _leagues %}<option value="{{ lg }}">{{ lg }}</option>{% endfor %}
+      </select>
+      {% endif %}
       <button class="btn" data-export-csv="#c2-tbl" data-filename="2c-conversion-leaders.csv">CSV</button>
     </div>
   </div>
@@ -80,7 +93,7 @@
       </tr></thead>
       <tbody>
         {% for r in views.batting_season if r.qualified %}
-        <tr>
+        <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
           <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
           <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
           <td>{{ r.stays }}</td>

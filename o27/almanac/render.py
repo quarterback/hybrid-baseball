@@ -193,6 +193,8 @@ def render_site(
             "age":        p.get("age"),
             "bats":       p.get("bats", "R"),
             "throws":     p.get("throws", "R"),
+            "league":     (t or {}).get("league", ""),
+            "division":   (t or {}).get("division", ""),
         }
         if p.get("is_pitcher"):
             ps = views.pitching_by_player.get(p["id"])

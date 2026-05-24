@@ -157,12 +157,27 @@ def compute_views(dataset: dict[str, Any]) -> Views:
     pit_agg = _aggregate_pitchers(dataset.get("pitching") or [],
                                   players_by_id, teams_by_id)
 
-    # League denominators + runs-per-win.
+    # League denominators + runs-per-win. In a multi-league universe each
+    # league is its own run environment, so rate-plus stats (wOBA+, ERA+,
+    # OPS+, FIP, VORP) must be measured against the player's OWN league —
+    # pooling 84 teams would rank a high-offense league's hitters as average.
+    # We keep a universe-wide league_totals for any global display, but
+    # augment each player against per-league denominators when >1 league.
     v.league_totals = _league_totals(bat_agg, pit_agg)
     v.runs_per_win  = _runs_per_win(v.league_totals)
 
-    _augment_batters(bat_agg,  v.league_totals, v.runs_per_win)
-    _augment_pitchers(pit_agg, v.league_totals, v.runs_per_win)
+    leagues_present = sorted({r.get("league") or "" for r in bat_agg} - {""})
+    if len(leagues_present) > 1:
+        for lg in leagues_present:
+            bsub = [r for r in bat_agg if (r.get("league") or "") == lg]
+            psub = [r for r in pit_agg if (r.get("league") or "") == lg]
+            lt  = _league_totals(bsub, psub)
+            rpw = _runs_per_win(lt)
+            _augment_batters(bsub, lt, rpw)
+            _augment_pitchers(psub, lt, rpw)
+    else:
+        _augment_batters(bat_agg,  v.league_totals, v.runs_per_win)
+        _augment_pitchers(pit_agg, v.league_totals, v.runs_per_win)
 
     v.batting_season  = sorted(bat_agg,  key=lambda r: -r["pa"])
     v.pitching_season = sorted(pit_agg, key=lambda r: -r["outs_recorded"])
@@ -372,6 +387,8 @@ def _empty_batter_slot(pid, players_by_id, teams_by_id, sample_row) -> dict:
         "team_id":    sample_row.get("team_id"),
         "team":       t.get("abbrev", "?"),
         "team_name":  team_label(t),
+        "league":     t.get("league", ""),
+        "division":   t.get("division", ""),
     }
 
 
@@ -565,6 +582,8 @@ def _empty_pitcher_slot(pid, players_by_id, teams_by_id, sample_row) -> dict:
         "team_id":   sample_row.get("team_id"),
         "team":      t.get("abbrev", "?"),
         "team_name": team_label(t),
+        "league":    t.get("league", ""),
+        "division":  t.get("division", ""),
     }
 
 
@@ -1037,6 +1056,8 @@ def _empty_fielder_slot(pid, position, players_by_id, teams_by_id, sample_row):
         "position":  position,
         "team":      t.get("abbrev", "?"),
         "team_id":   sample_row.get("team_id"),
+        "league":    t.get("league", ""),
+        "division":  t.get("division", ""),
         "po": 0, "a": 0, "e": 0,
     }
 

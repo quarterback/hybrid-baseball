@@ -19,8 +19,16 @@
   </div>
 </div>
 
+{% set _leagues = views.batting_season|map(attribute='league')|reject('equalto','')|unique|sort|list %}
 <section>
-  <div class="section-bar"><h2>Position Players · bWAR</h2></div>
+  <div class="section-bar"><h2>Position Players · bWAR</h2>
+    {% if _leagues|length > 1 %}
+    <select class="search-box" data-league-filter="#war-tbl-bat" title="Each league is its own statistical environment">
+      <option value="all">All leagues</option>
+      {% for lg in _leagues %}<option value="{{ lg }}">{{ lg }}</option>{% endfor %}
+    </select>
+    {% endif %}
+  </div>
   <div class="tablewrap">
     <table id="war-tbl-bat" class="stat-table heatmap">
       <thead><tr>
@@ -35,7 +43,7 @@
       </tr></thead>
       <tbody>
         {% for r in views.batting_season if r.qualified and not r.is_pitcher %}
-        <tr>
+        <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
           <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
           <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
           <td class="t-left"><span class="pos-badge {% if r.is_joker %}joker{% endif %}">{{ r.position }}</span></td>
@@ -58,7 +66,14 @@
 </section>
 
 <section>
-  <div class="section-bar"><h2>Pitchers · pWAR</h2></div>
+  <div class="section-bar"><h2>Pitchers · pWAR</h2>
+    {% if _leagues|length > 1 %}
+    <select class="search-box" data-league-filter="#war-tbl-pit" title="Each league is its own statistical environment">
+      <option value="all">All leagues</option>
+      {% for lg in _leagues %}<option value="{{ lg }}">{{ lg }}</option>{% endfor %}
+    </select>
+    {% endif %}
+  </div>
   <div class="tablewrap">
     <table id="war-tbl-pit" class="stat-table heatmap">
       <thead><tr>
@@ -72,7 +87,7 @@
       </tr></thead>
       <tbody>
         {% for r in views.pitching_season if r.qualified %}
-        <tr>
+        <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
           <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
           <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
           <td>{{ r.g }}</td>

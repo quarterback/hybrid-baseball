@@ -14,6 +14,13 @@
     <a href="situational.html">Situational</a>
   </div>
   <div class="btn-row">
+    {% set _leagues = views.fielding_season|map(attribute='league')|reject('equalto','')|unique|sort|list %}
+    {% if _leagues|length > 1 %}
+    <select class="search-box" data-league-filter="#fld-tbl" title="Each league is its own statistical environment">
+      <option value="all">All leagues</option>
+      {% for lg in _leagues %}<option value="{{ lg }}">{{ lg }}</option>{% endfor %}
+    </select>
+    {% endif %}
     <input class="search-box" data-filter-table="#fld-tbl" data-filter-cols="0,1,2" placeholder="Find fielder…">
     <button class="btn" data-export-csv="#fld-tbl" data-filename="fielding-leaders.csv">CSV</button>
   </div>
@@ -33,7 +40,7 @@
     </tr></thead>
     <tbody>
       {% for r in views.fielding_season %}
-      <tr>
+      <tr data-league="{{ r.league }}" data-division="{{ r.division }}">
         <td class="sticky-col t-left"><a href="../players/{{ r.team|lower }}_{{ r.slug }}.html">{{ r.name }}</a></td>
         <td class="t-left"><a href="../teams/{{ r.team|lower }}.html"><span class="chip">{{ r.team }}</span></a></td>
         <td class="t-left"><span class="pos-badge">{{ r.position }}</span></td>
