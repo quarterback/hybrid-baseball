@@ -78,15 +78,23 @@ def render_site(
 
     # ------- home -------
     schedule_newest = list(reversed(views.schedule))
+    leader_leagues = sorted({r.get("league") for r in views.standings
+                             if r.get("league")})
+    if len(leader_leagues) <= 1:
+        leader_leagues = []
+    # Rank by the league-relative metric so the cross-league "best of" is fair
+    # (raw wOBA/wERA favour hitter- or pitcher-friendly leagues).
     top_woba  = sorted([r for r in views.batting_season  if r.get("qualified")],
-                       key=lambda r: -r["woba"])[:10]
+                       key=lambda r: (-r["woba_plus"], -r["woba"]))[:10]
     top_wera  = sorted([r for r in views.pitching_season if r.get("qualified")],
-                       key=lambda r: r["wera"])[:10]
+                       key=lambda r: (-r["era_plus"], r["wera"]))[:10]
     _write(env, "index.html.j2", os.path.join(out_dir, "index.html"),
            {**base_ctx, "section": "home", "base_path": "",
             "recent_games": schedule_newest[:12],
             "top_woba": top_woba,
-            "top_wera": top_wera})
+            "top_wera": top_wera,
+            "current_league": None,
+            "leader_leagues": leader_leagues})
     pages_written += 1
 
     # ------- standings / schedule -------
@@ -229,8 +237,18 @@ def render_site(
     _write(env, "players_index.html.j2",
            os.path.join(players_dir, "index.html"),
            {**base_ctx, "section": "players", "base_path": "../",
-            "players": index_rows})
+            "players": index_rows, "current_league": None,
+            "leader_leagues": leader_leagues})
     pages_written += 1
+    for lg in leader_leagues:
+        sub = os.path.join(players_dir, _slugify(lg))
+        os.makedirs(sub, exist_ok=True)
+        _write(env, "players_index.html.j2",
+               os.path.join(sub, "index.html"),
+               {**base_ctx, "section": "players", "base_path": "../../",
+                "players": index_rows, "current_league": lg,
+                "leader_leagues": leader_leagues})
+        pages_written += 1
 
     # Per-player pages.
     for p in views.players:

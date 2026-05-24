@@ -88,7 +88,9 @@
 </section>
 
 <section>
-  <div class="section-bar"><h2>Top Hitters · wOBA</h2><div class="btn-row"><a class="btn" href="leaders/batting.html">All batting leaders →</a></div></div>
+  <div class="section-bar"><h2>Top Hitters · wOBA+ (league-adjusted)</h2><div class="btn-row"><a class="btn" href="leaders/batting.html">All batting leaders →</a></div></div>
+  {% set nav_page = 'batting.html' %}
+  {% include "_league_nav.html.j2" %}
   <div class="tablewrap short">
     <table class="stat-table heatmap">
       <thead><tr>
@@ -120,7 +122,9 @@
 </section>
 
 <section>
-  <div class="section-bar"><h2>Top Pitchers · wERA</h2><div class="btn-row"><a class="btn" href="leaders/pitching.html">All pitching leaders →</a></div></div>
+  <div class="section-bar"><h2>Top Pitchers · ERA+ (league-adjusted)</h2><div class="btn-row"><a class="btn" href="leaders/pitching.html">All pitching leaders →</a></div></div>
+  {% set nav_page = 'pitching.html' %}
+  {% include "_league_nav.html.j2" %}
   <div class="tablewrap short">
     <table class="stat-table heatmap">
       <thead><tr>

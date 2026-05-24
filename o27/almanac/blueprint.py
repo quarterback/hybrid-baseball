@@ -155,14 +155,16 @@ def home():
     views = ctx["views"]
     schedule_newest = list(reversed(views.schedule))
     top_woba = sorted([r for r in views.batting_season  if r.get("qualified")],
-                      key=lambda r: -r["woba"])[:10]
+                      key=lambda r: (-r["woba_plus"], -r["woba"]))[:10]
     top_wera = sorted([r for r in views.pitching_season if r.get("qualified")],
-                      key=lambda r: r["wera"])[:10]
+                      key=lambda r: (-r["era_plus"], r["wera"]))[:10]
     return render_template("index.html.j2",
                            **ctx,
                            section="home",
                            recent_games=schedule_newest[:12],
-                           top_woba=top_woba, top_wera=top_wera)
+                           top_woba=top_woba, top_wera=top_wera,
+                           current_league=None,
+                           leader_leagues=_leader_leagues(views))
 
 
 @almanac_bp.route("/standings.html")
@@ -291,8 +293,23 @@ def team_detail(abbrev: str):
 @almanac_bp.route("/players/")
 @almanac_bp.route("/players/index.html")
 def players_index():
+    return _render_players_index(None)
+
+
+@almanac_bp.route("/players/<league>/")
+@almanac_bp.route("/players/<league>/index.html")
+def players_index_by_league(league: str):
+    return _render_players_index(league)
+
+
+def _render_players_index(league: str | None):
     ctx = _base_ctx()
     views = ctx["views"]
+    leagues = _leader_leagues(views)
+    if league is not None:
+        league = next((lg for lg in leagues if _slugify(lg) == league), None)
+        if league is None:
+            abort(404)
     teams_by_id = {t["id"]: t for t in views.teams}
     rows: list[dict] = []
     for p in views.players:
@@ -326,7 +343,8 @@ def players_index():
         rows.append(row)
     rows.sort(key=lambda r: (r["team"], r["name"]))
     return render_template("players_index.html.j2", **ctx,
-                           section="players", players=rows)
+                           section="players", players=rows,
+                           current_league=league, leader_leagues=leagues)
 
 
 @almanac_bp.route("/players/<slug>.html")
