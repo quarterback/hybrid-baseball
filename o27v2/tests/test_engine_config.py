@@ -139,6 +139,34 @@ def test_generation_shift_knobs_apply_and_drive_league_gen(fresh_db):
     assert league._gen_shift("power") == 0
 
 
+def test_jokers_drawn_as_three_archetypes(fresh_db):
+    from o27v2.league import seed_league
+    ec.reset_overrides()
+    seed_league(rng_seed=11, config_id="8teams")
+    teams = db.fetchall(
+        "SELECT DISTINCT team_id FROM players "
+        "WHERE roster_slot='joker' AND team_id IS NOT NULL"
+    )
+    assert teams
+    for t in teams:
+        jk = db.fetchall(
+            "SELECT archetype FROM players "
+            "WHERE roster_slot='joker' AND team_id=?", (t["team_id"],)
+        )
+        assert sorted(j["archetype"] for j in jk) == ["contact", "power", "speed"]
+    # The power joker out-powers the speed joker; the speed joker is faster.
+    pwr = db.fetchone("SELECT AVG(power) v FROM players WHERE roster_slot='joker' "
+                      "AND archetype='power' AND team_id IS NOT NULL")["v"]
+    spd_pwr = db.fetchone("SELECT AVG(power) v FROM players WHERE roster_slot='joker' "
+                          "AND archetype='speed' AND team_id IS NOT NULL")["v"]
+    spd_spd = db.fetchone("SELECT AVG(speed) v FROM players WHERE roster_slot='joker' "
+                          "AND archetype='speed' AND team_id IS NOT NULL")["v"]
+    pwr_spd = db.fetchone("SELECT AVG(speed) v FROM players WHERE roster_slot='joker' "
+                          "AND archetype='power' AND team_id IS NOT NULL")["v"]
+    assert pwr > spd_pwr
+    assert spd_spd > pwr_spd
+
+
 def test_characterize_labels_by_run_environment():
     assert ec.characterize({"hr_per_game": 0.6, "r_per_game": 9}) \
         == "Deadball · pitcher-dominant"

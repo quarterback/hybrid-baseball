@@ -62,6 +62,9 @@ _V2_ALLOWLIST = (
     "GEN_SHIFT_SKILL", "GEN_SHIFT_CONTACT", "GEN_SHIFT_POWER",
     "GEN_SHIFT_EYE", "GEN_SHIFT_SPEED", "GEN_SHIFT_DEFENSE",
     "GEN_SHIFT_ARM", "GEN_SHIFT_PITCHING", "GEN_SHIFT_STAMINA",
+    "JOKER_POWER_POWER", "JOKER_POWER_CONTACT", "JOKER_POWER_SPEED", "JOKER_POWER_EYE",
+    "JOKER_SPEED_POWER", "JOKER_SPEED_CONTACT", "JOKER_SPEED_SPEED", "JOKER_SPEED_EYE",
+    "JOKER_CONTACT_POWER", "JOKER_CONTACT_CONTACT", "JOKER_CONTACT_SPEED", "JOKER_CONTACT_EYE",
 )
 _V2_DEFAULTS: dict[str, object] = {
     name: getattr(v2cfg, name)
@@ -142,6 +145,20 @@ _CURATED: list[tuple[str, list[tuple[str, str]]]] = [
         ("GEN_SHIFT_ARM",      "Arm shift"),
         ("GEN_SHIFT_PITCHING", "Pitcher Stuff + arsenal quality shift"),
         ("GEN_SHIFT_STAMINA",  "Pitcher stamina shift"),
+    ]),
+    ("Joker archetypes (grade centers; one power / speed / contact joker per team)", [
+        ("JOKER_POWER_POWER",     "Power joker — power"),
+        ("JOKER_POWER_CONTACT",   "Power joker — contact"),
+        ("JOKER_POWER_SPEED",     "Power joker — speed"),
+        ("JOKER_POWER_EYE",       "Power joker — eye"),
+        ("JOKER_SPEED_POWER",     "Speed joker — power"),
+        ("JOKER_SPEED_CONTACT",   "Speed joker — contact"),
+        ("JOKER_SPEED_SPEED",     "Speed joker — speed"),
+        ("JOKER_SPEED_EYE",       "Speed joker — eye"),
+        ("JOKER_CONTACT_POWER",   "Contact joker — power"),
+        ("JOKER_CONTACT_CONTACT", "Contact joker — contact"),
+        ("JOKER_CONTACT_SPEED",   "Contact joker — speed"),
+        ("JOKER_CONTACT_EYE",     "Contact joker — eye"),
     ]),
 ]
 

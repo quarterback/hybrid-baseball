@@ -892,6 +892,47 @@ def _gen_shift(attr: str | None) -> int:
         return 0
 
 
+# Jokers (the O27 DH role) are drawn as three distinct bats — one power, one
+# speed, one contact — per team. The per-archetype grade centers live in
+# o27v2/config.py and are read at call time so the dashboard can re-tune them.
+_JOKER_ARCH_ORDER = ("power", "speed", "contact")
+
+
+def _joker_center(archetype: str, tool: str, default: float) -> float:
+    try:
+        return float(
+            getattr(v2cfg, f"JOKER_{archetype.upper()}_{tool.upper()}", default)
+            or default
+        )
+    except (TypeError, ValueError):
+        return default
+
+
+def _shape_joker(p: dict, archetype: str, rng: random.Random) -> None:
+    """Reshape a drafted joker in place into a power / speed / contact bat,
+    drawing its signature tools around the (tunable) archetype centers.
+    Overall `skill` — the draft talent gradient — is left intact."""
+    def around(center: float, sig: float = 6.0) -> int:
+        return int(max(20, min(80, round(rng.gauss(center, sig)))))
+
+    p["power"]   = around(_joker_center(archetype, "power",   60))
+    p["contact"] = around(_joker_center(archetype, "contact", 62))
+    p["speed"]   = around(_joker_center(archetype, "speed",   45))
+    p["eye"]     = around(_joker_center(archetype, "eye",     60))
+    if archetype == "speed":
+        sp = _joker_center(archetype, "speed", 80)
+        p["baserunning"]        = around(sp)
+        p["run_aggressiveness"] = around(min(78.0, sp))
+    # Re-derive pull tendency from the reshaped power grade.
+    nudge = 0.04 if p.get("bats") == "L" else 0.0
+    p["pull_pct"] = round(_clamp(
+        rng.gauss(0.5, 0.12) + (p["power"] - 50) / 100.0 * 0.30 + nudge,
+        0.05, 0.95), 3)
+    # Jokers carry their own archetype label (the classifier returns "" for
+    # them by design), so stamp it directly.
+    p["archetype"] = archetype
+
+
 def _roll_org_grade(rng: random.Random) -> int:
     """Roll an org_strength against the full 9-tier ladder, NOT capped
     at 80. Org_strength influences multi-season development rate, so a
@@ -2763,6 +2804,14 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     else:
         pool = _generate_draft_pool(len(team_ids), rng2, name_picker)
         assignments, free_agents = _run_snake_draft(team_ids, pool, rng2)
+
+    # Each team's three jokers are drawn as one power, one speed, and one
+    # contact bat. Reshape them in place here — before salaries are computed
+    # at insert — so the archetype shows in their tools and valuation.
+    for _roster in assignments.values():
+        _jokers = [p for p in _roster if p.get("roster_slot") == "joker"]
+        for _i, _j in enumerate(_jokers):
+            _shape_joker(_j, _JOKER_ARCH_ORDER[_i % len(_JOKER_ARCH_ORDER)], rng2)
 
     # Phase 3: persist drafted rosters + free-agent pool, and recompute
     # each team's org_strength from its actual roster.
