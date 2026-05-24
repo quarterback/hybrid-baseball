@@ -294,6 +294,118 @@ def _snapshot_leaders(season_id: int) -> None:
                    sorted(pitching, key=lambda x: x.get("wpa") or 0, reverse=True))
 
 
+def _snapshot_career_lines(season_id: int, season_number: int,
+                           year: int | None) -> None:
+    """Persist EVERY qualified player's full season line into
+    player_career_lines before the per-game stats get wiped at rollover.
+
+    This is the Hall of Fame's source of truth for career totals — the
+    season_* leader tables only keep the top 10 per category, so without
+    this snapshot a non-leader's career is unrecoverable after the offseason
+    reset. Mirrors the qualification thresholds _snapshot_leaders uses.
+    """
+    from o27v2.web.app import (
+        _PSTATS_DEDUP_SQL,
+        _aggregate_batter_rows,
+        _aggregate_pitcher_rows,
+        _pitcher_wl_map,
+        _league_baselines,
+    )
+
+    games_played = db.fetchone(
+        "SELECT COUNT(*) as n FROM games WHERE played = 1"
+    )["n"] or 0
+    if games_played == 0:
+        return
+
+    num_teams = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
+    min_pa   = max(3, games_per_team)
+    min_outs = max(3, games_per_team)
+    baselines = _league_baselines()
+
+    batting = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.age as age,
+                  p.position as position, t.id as team_id, t.abbrev as team_abbrev,
+                  COUNT(bs.game_id) as g,
+                  SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                  SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                  SUM(bs.runs) as r, SUM(bs.rbi) as rbi, SUM(bs.bb) as bb,
+                  SUM(bs.k) as k, COALESCE(SUM(bs.sb),0) as sb
+             FROM game_batter_stats bs
+             JOIN players p ON bs.player_id = p.id
+             JOIN teams   t ON bs.team_id = t.id
+            GROUP BY p.id
+           HAVING SUM(bs.pa) >= ?""",
+        (min_pa,),
+    )
+    _aggregate_batter_rows(batting, baselines=baselines)
+    for r in batting:
+        db.execute(
+            """INSERT OR REPLACE INTO player_career_lines
+               (season_id, season_number, year, player_id, player_name,
+                team_abbrev, is_pitcher, position, age,
+                g, pa, ab, h, d2, d3, hr, r, rbi, bb, k, sb,
+                avg, obp, slg, ops, wrc_plus)
+               VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                       ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (season_id, season_number, year, r["player_id"], r["player_name"],
+             r["team_abbrev"], r.get("position") or "", r.get("age"),
+             r.get("g") or 0, r.get("pa") or 0, r.get("ab") or 0,
+             r.get("h") or 0, r.get("d2") or 0, r.get("d3") or 0,
+             r.get("hr") or 0, r.get("r") or 0, r.get("rbi") or 0,
+             r.get("bb") or 0, r.get("k") or 0, r.get("sb") or 0,
+             float(r.get("avg") or 0), float(r.get("obp") or 0),
+             float(r.get("slg") or 0), float(r.get("ops") or 0),
+             float(r.get("wrc_plus") or 100)),
+        )
+
+    pitching = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name, p.age as age,
+                   p.position as position, t.id as team_id, t.abbrev as team_abbrev,
+                   COUNT(ps.game_id) as g,
+                   SUM(ps.outs_recorded) as outs,
+                   SUM(ps.hits_allowed)  as h,
+                   SUM(ps.er)            as er,
+                   SUM(ps.bb)            as bb,
+                   SUM(ps.k)             as k,
+                   COALESCE(SUM(ps.er_arc1),0) AS er_arc1, COALESCE(SUM(ps.er_arc2),0) AS er_arc2, COALESCE(SUM(ps.er_arc3),0) AS er_arc3,
+                   COALESCE(SUM(ps.k_arc1),0)  AS k_arc1,  COALESCE(SUM(ps.k_arc2),0)  AS k_arc2,  COALESCE(SUM(ps.k_arc3),0)  AS k_arc3,
+                   COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1, COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2, COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
+                   COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1, COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2, COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
+                   COALESCE(SUM(ps.is_starter),0) AS gs
+              FROM {_PSTATS_DEDUP_SQL} ps
+              JOIN players p ON ps.player_id = p.id
+              JOIN teams   t ON ps.team_id = t.id
+             GROUP BY p.id
+            HAVING SUM(ps.outs_recorded) >= ?""",
+        (min_outs,),
+    )
+    wl = _pitcher_wl_map()
+    _aggregate_pitcher_rows(pitching, wl, baselines=baselines)
+    for r in pitching:
+        outs = float(r.get("outs") or 0)
+        innings = outs / 3.0
+        whip = ((float(r.get("bb") or 0) + float(r.get("h") or 0)) / innings) \
+            if innings > 0 else 0.0
+        rec = wl.get(r["player_id"], {}) if wl else {}
+        db.execute(
+            """INSERT OR REPLACE INTO player_career_lines
+               (season_id, season_number, year, player_id, player_name,
+                team_abbrev, is_pitcher, position, age,
+                p_g, w, l, outs, er, p_k, p_bb, p_h, wera, whip, wera_plus)
+               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                       ?, ?, ?)""",
+            (season_id, season_number, year, r["player_id"], r["player_name"],
+             r["team_abbrev"], r.get("position") or "", r.get("age"),
+             r.get("g") or 0, rec.get("w") or 0, rec.get("l") or 0,
+             int(outs), r.get("er") or 0, r.get("k") or 0, r.get("bb") or 0,
+             r.get("h") or 0,
+             float(r.get("werra") or 0), float(whip),
+             float(r.get("wera_plus") or 100)),
+        )
+
+
 def _derive_year() -> int | None:
     """Pull the calendar year from the latest played game's date.
     Falls back to today's year if no games or unparseable."""
@@ -424,6 +536,16 @@ def archive_current_season(
     )
     _snapshot_standings(new_id)
     _snapshot_leaders(new_id)
+    # Hall of Fame: snapshot every qualified player's full season line (the
+    # only surviving source of career totals once the offseason wipes the
+    # per-game stats) and then evaluate inductions. Wrapped so a HOF bug
+    # never aborts the season archive itself.
+    try:
+        _snapshot_career_lines(new_id, season_number, year)
+        from o27v2 import hof
+        hof.run_inductions(season_number, year)
+    except Exception:
+        traceback.print_exc()
     _mark_current_season_archived(new_id)
     return new_id
 

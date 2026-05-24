@@ -27,7 +27,7 @@ if _workspace not in sys.path:
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response
 
-from o27v2 import db, currency, valuation
+from o27v2 import db, currency, valuation, hof
 from o27v2.web import text_export
 from o27v2.sim import (
     simulate_game,
@@ -6190,6 +6190,123 @@ def team_detail(team_id: int):
                            win_pct=_win_pct,
                            team_payroll=team_payroll,
                            staff_wera=staff_disp)
+
+
+@app.route("/hall-of-fame")
+def hall_of_fame():
+    inductees = hof.league_hof()
+    batters = [r for r in inductees if not r["is_pitcher"]]
+    pitchers = [r for r in inductees if r["is_pitcher"]]
+    return _serve(
+        "hall_of_fame.html",
+        inductees=inductees,
+        batters=batters,
+        pitchers=pitchers,
+        threshold=hof.LEAGUE_THRESHOLD,
+        min_seasons=hof.LEAGUE_MIN_SEASONS,
+        min_age=hof.LEAGUE_MIN_AGE,
+    )
+
+
+@app.route("/hall-of-fame/candidates")
+def hof_candidates():
+    cands = hof.candidates()
+    # Active watch-list: not yet in the Hall, ranked by how close they are.
+    active = [c for c in cands if not c["in_league_hof"]]
+    return _serve(
+        "hof_candidates.html",
+        candidates=cands,
+        active=active,
+        threshold=hof.LEAGUE_THRESHOLD,
+        min_seasons=hof.LEAGUE_MIN_SEASONS,
+        min_age=hof.LEAGUE_MIN_AGE,
+    )
+
+
+@app.route("/team/<int:team_id>/hall-of-fame")
+def team_hall_of_fame(team_id: int):
+    team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
+    if not team:
+        abort(404)
+    inductees = hof.team_hof(team_id)
+    inducted_ids = {r["player_id"] for r in inductees}
+
+    # Manual-induction pool: anyone who has played for this franchise (has a
+    # career line tagged to this abbrev) or is on the current roster, minus
+    # those already enshrined here. Annotated with their team-context points.
+    metrics_by_id = {c["player_id"]: c for c in hof.compute_all()}
+    pool: dict[int, dict] = {}
+    for pid, c in metrics_by_id.items():
+        if pid in inducted_ids:
+            continue
+        tinfo = c["teams"].get(team["abbrev"])
+        if tinfo:
+            pool[pid] = {
+                "player_id": pid,
+                "name": c["player_name"],
+                "summary": c["career_summary"],
+                "team_points": tinfo["points"],
+                "seasons_with_team": tinfo["seasons"],
+            }
+    for p in db.fetchall(
+        "SELECT id, name FROM players WHERE team_id = ?", (team_id,)
+    ):
+        if p["id"] not in inducted_ids and p["id"] not in pool:
+            pool[p["id"]] = {
+                "player_id": p["id"], "name": p["name"], "summary": "",
+                "team_points": 0.0, "seasons_with_team": 0,
+            }
+    inductable = sorted(
+        pool.values(),
+        key=lambda d: (-d["team_points"], d["name"]),
+    )
+    return _serve(
+        "team_hof.html",
+        team=team,
+        inductees=inductees,
+        inductable=inductable,
+        team_threshold=hof.TEAM_THRESHOLD,
+        team_min_seasons=hof.TEAM_MIN_SEASONS,
+    )
+
+
+@app.route("/team/<int:team_id>/hall-of-fame/induct", methods=["POST"])
+def team_hof_induct(team_id: int):
+    try:
+        player_id = int(request.form.get("player_id", "") or 0)
+    except (TypeError, ValueError):
+        player_id = 0
+    if not player_id:
+        flash("Pick a player to induct.", "error")
+        return redirect(url_for("team_hall_of_fame", team_id=team_id))
+
+    sn = db.fetchone("SELECT MAX(season_number) AS n FROM seasons")
+    season_number = (sn or {}).get("n")
+    year = None
+    if season_number:
+        yr = db.fetchone(
+            "SELECT year FROM seasons WHERE season_number = ?", (season_number,)
+        )
+        year = (yr or {}).get("year")
+
+    ok = hof.induct_into_team_manual(team_id, player_id, season_number, year)
+    if ok:
+        flash("Player inducted into the team Hall of Fame.", "info")
+    else:
+        flash("Could not induct that player (already in, or unknown).", "error")
+    return redirect(url_for("team_hall_of_fame", team_id=team_id))
+
+
+@app.route("/team/<int:team_id>/hall-of-fame/remove", methods=["POST"])
+def team_hof_remove(team_id: int):
+    try:
+        player_id = int(request.form.get("player_id", "") or 0)
+    except (TypeError, ValueError):
+        player_id = 0
+    if player_id:
+        hof.remove_from_team(team_id, player_id)
+        flash("Removed from the team Hall of Fame.", "info")
+    return redirect(url_for("team_hall_of_fame", team_id=team_id))
 
 
 def _team_climate(team) -> str:

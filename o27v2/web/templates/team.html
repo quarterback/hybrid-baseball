@@ -9,6 +9,9 @@
   </ol>
   <div class="d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('team_hall_of_fame', team_id=team.id) }}"
+       title="Team Hall of Fame">Hall of Fame</a>
+    <a class="btn btn-sm btn-outline-secondary"
        href="{{ url_for('team_edit_get', team_id=team.id) }}"
        title="Rename team / change city">Edit</a>
     <button class="copy-md btn btn-sm btn-outline-secondary"
