@@ -216,6 +216,39 @@ and the aggregate invariant follows; `er_arc1+er_arc2+er_arc3 == er` stays 0
 violations (invariant 8 anchor intact) and no `er < 0` / `unearned > runs` rows
 appear.
 
+A full-season rebuild (which evolves rosters via in-season injuries/trades, so
+it explores game states a static one-shot sim loop never reaches) surfaced **one**
+residual `wb_runs > unearned` group — proof there was at least one more base-erase
+path beyond the steal, and a reminder that the one-shot trace loop and the archive
+build are not the same population. Rather than hunt every rare erase path, the
+robust closure is an engine rule in `_reconcile_walk_back` itself: a bonus runner
+only counts as a Walk-Back *run* when a run was actually booked on the current
+spell. Every run crosses the plate via `_score_run`, which charges the current
+pitcher in the same event `_reconcile_walk_back` runs in, so a genuine score
+always leaves `pitcher_runs_this_spell >= 1` at the tick. When it is 0 the runner
+left the bases without a run on this pitcher (a base-state anomaly, not a score) —
+tick `wb_faced` (a stop) but **not** `wb_runs`. This guarantees
+`wb_runs <= runs_this_spell` per spell, and with the existing demotion
+`wb_runs <= unearned_runs`, regardless of how the runner came off the bases. It
+is a principled engine fix (it makes the path's long-standing documented
+assumption explicit), not an extraction-level clamp.
+
+### Final state
+
+All 10 checks in `tests/test_stat_invariants.py` pass on a freshly-built
+single-season DB (~2466 games). Full-season spot-checks: `batter_outs ==
+opp_pitcher_outs` for every (game, team, phase); `SUM(wb_runs) <=
+SUM(unearned_runs)` for every (game, team); `er_arc1+er_arc2+er_arc3 == er` and
+no `er < 0` / `unearned_runs > runs_allowed` rows. No regressions: `o27/` (54)
+and `o27v2/` (61) suites stay green. (The pre-existing statistical flake
+`test_weather_calibration.py::test_extreme_weather_within_calibration_envelope`
+is unrelated and untouched.)
+
+The six fixes, by commit: batter↔pitcher reconciliation — phantom-HR-out +
+two-way reconciliation + declaration-jump + pitcher-spell-drop + joker-override
+leak (#2/#3); steal-into-occupied-base + Walk-Back-run-requires-a-booked-run
+(#9).
+
 ---
 
 ## What went well
@@ -257,3 +290,26 @@ appear.
 3. **Half the "engine failures" were test rot.** When an invariant trips,
    check whether the *test* still matches production (`xfip`→`xra`, local W
    re-derivation vs `_pitcher_wl_map`) before assuming the engine regressed.
+4. **Instrument with an INDEPENDENT ground truth, not the suspect baseline.**
+   The prior session's per-event trace used `ctx["outs"]` — the same baseline
+   the production reconciliation uses — and got false "matches". Wrapping
+   `pa._record_out` to maintain a separate per-(team, phase) engine-out tally
+   and comparing *that* to the renderer's per-event batter-charge delta is what
+   exposed all five over-charge mechanisms. When two ledgers disagree, measure
+   each against a third, independent source.
+5. **The sim is not reproducible across processes; the archive build is not the
+   one-shot loop.** Object-identity set/dict iteration makes a given
+   `(game_id, seed)` diverge run-to-run, so chasing one specific failing game by
+   re-running it is unreliable — characterize the *class* of failure from DB
+   rows instead. And the season archive (`_run_history_thread` →
+   `simulate_through`) uses random per-game seeds *and* evolves rosters via
+   in-season injuries/trades, so it reaches states a static `for gid: sim(gid)`
+   loop never does. A fix that's clean on the one-shot loop still needs the
+   full-build harness to confirm — and the last residual usually hides in the
+   build-only population.
+6. **Prefer an invariant-enforcing engine rule over chasing every rare input.**
+   The Walk-Back over-count had multiple root causes (an illegal steal that
+   erased the bonus runner, plus other rare base-state anomalies). Fixing the
+   known one at root *and* adding a single guard that makes the path's own
+   assumption explicit (`wb_runs` only when a run was booked this spell) closes
+   the whole class without an extraction-level clamp.
