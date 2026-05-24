@@ -1562,6 +1562,7 @@ class Renderer:
         # runner, pickoff caught mid-PA — anyone who was on base and is
         # now an out without crossing the plate).
         toa_credited = 0
+        toa_charged_stats: list = []   # runner stats objects credited a TOA out
         if etype == "ball_in_play":
             outcome = event.get("outcome") or {}
             toa_idxs = outcome.get("toa_runner_idxs") or []
@@ -1580,6 +1581,7 @@ class Renderer:
                             rs.outs_recorded += 1
                             rs.toa += 1
                             toa_credited += 1
+                            toa_charged_stats.append(rs)
             # All base-runner erasures on this play (TOA + FC + GIDP-runner
             # + pickoff caught here) count toward LOB — they were on base
             # and won't cross the plate.
@@ -1590,16 +1592,46 @@ class Renderer:
                     tm = state_after.visitors if bt == "visitors" else state_after.home
                     tm.lob = int(getattr(tm, "lob", 0) or 0) + erased_total
 
-        # Task #49: universal leftover-out charge. Any out the engine recorded
-        # for this event that the per-event branches above didn't already
-        # credit (CS, successful pickoff, FC runner out, DP runner-trail out,
-        # runner thrown out on a stay, etc.) is charged to the current batter
-        # so the per-batter OR column sums to 27 per half.
-        engine_outs_delta = (state_after.outs or 0) - (ctx.get("outs") or 0)
-        already_charged = s.outs_recorded - _or_before + toa_credited
-        leftover = engine_outs_delta - already_charged
-        if leftover > 0:
-            s.outs_recorded += leftover
+        # Task #49: reconcile this event's per-batter out charges to the
+        # engine's ground-truth out count. state.outs is the single source of
+        # truth for both ledgers (renderer batter OR and engine pitcher outs);
+        # the per-event structured branches and the TOA loop above only express
+        # the renderer's *intended* attribution and can diverge from what the
+        # engine actually recorded:
+        #   - under-count (CS / pickoff / FC / DP-trail runner outs not credited
+        #     by a structured branch) → top the current batter up.
+        #   - over-count (a TOA / structured out the engine never recorded —
+        #     e.g. the engine's stay path retires only the lead runner, or a
+        #     multi-out play truncated at the phase out-cap) → trim the excess
+        #     so the OR column still sums to the engine's outs per phase.
+        # Trim the batter's own structured charge first (down to its pre-event
+        # value), then peel back TOA runner credits LIFO — never below what was
+        # charged this event, so no per-player count goes negative.
+        # A Declared Seconds declaration ends the half by jumping state.outs
+        # straight to the cap (pa.py: state.outs = 27) WITHOUT recording any
+        # real out — the team banked the remaining outs for a rebuttal round.
+        # The engine never calls _record_out, so the pitcher ledger correctly
+        # shows only the real outs; treat the artificial jump as zero outs here
+        # so the batter ledger doesn't get charged the banked count.
+        if etype == "declaration":
+            engine_outs_delta = 0
+        else:
+            engine_outs_delta = (state_after.outs or 0) - (ctx.get("outs") or 0)
+        batter_charged = s.outs_recorded - _or_before
+        diff = engine_outs_delta - (batter_charged + toa_credited)
+        if diff > 0:
+            s.outs_recorded += diff
+        elif diff < 0:
+            excess = -diff
+            trim_batter = min(excess, batter_charged)
+            s.outs_recorded -= trim_batter
+            excess -= trim_batter
+            for rs in reversed(toa_charged_stats):
+                if excess <= 0:
+                    break
+                rs.outs_recorded -= 1
+                rs.toa -= 1
+                excess -= 1
 
         # Credit runs-scored (R) to the players who left the bases.
         if runs_scored > 0:
