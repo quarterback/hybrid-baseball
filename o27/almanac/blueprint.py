@@ -61,6 +61,8 @@ almanac_bp = Blueprint(
 # Expose the city-deduplicating team label to all blueprint templates (the
 # standalone static exporter registers the same global in render.py).
 almanac_bp.add_app_template_global(team_label, "team_label")
+almanac_bp.add_app_template_global(_slugify, "slugify")
+almanac_bp.add_app_template_filter(_slugify, "slugify")
 
 
 # ---------------------------------------------------------------------------
@@ -199,21 +201,44 @@ _LEADER_TEMPLATES = {
 }
 
 
-@almanac_bp.route("/leaders/<which>.html")
-def leaders(which: str):
+def _leader_leagues(views) -> list[str]:
+    """Distinct leagues for the per-league leader nav; empty if single-league."""
+    leagues = sorted({r.get("league") for r in views.standings if r.get("league")})
+    return leagues if len(leagues) > 1 else []
+
+
+def _render_leaders(which: str, league: str | None):
     if which not in _LEADER_TEMPLATES:
         abort(404)
     tpl, extra = _LEADER_TEMPLATES[which]
     ctx = _base_ctx()
     extra_ctx = dict(extra)
     views = ctx["views"]
+    leagues = _leader_leagues(views)
+    if league is not None:
+        # Match the slug back to a real league name; 404 on unknown.
+        league = next((lg for lg in leagues if _slugify(lg) == league), None)
+        if league is None:
+            abort(404)
     if which == "batting":
         extra_ctx["always_show_all"] = not any(r.get("qualified")
                                                for r in views.batting_season)
     elif which == "pitching":
         extra_ctx["always_show_all"] = not any(r.get("qualified")
                                                for r in views.pitching_season)
-    return render_template(tpl, **ctx, section="leaders", **extra_ctx)
+    return render_template(tpl, **ctx, section="leaders",
+                           current_league=league, leader_leagues=leagues,
+                           leader_page=which, **extra_ctx)
+
+
+@almanac_bp.route("/leaders/<which>.html")
+def leaders(which: str):
+    return _render_leaders(which, None)
+
+
+@almanac_bp.route("/leaders/<league>/<which>.html")
+def leaders_by_league(league: str, which: str):
+    return _render_leaders(which, league)
 
 
 # ---- teams -----------------------------------------------------------------

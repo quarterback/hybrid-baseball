@@ -1,0 +1,13 @@
+{# Per-league leader navigation. Shown only in multi-league universes;
+   links each league to the same stat page (leader_page) so wOBA+/ERA+ are
+   read inside the league that produced them. #}
+{% if leader_leagues %}
+<div class="tabs league-nav" style="margin-bottom:8px;">
+  <a href="{{ base_path }}leaders/{{ leader_page }}.html"
+     class="{% if not current_league %}active{% endif %}">All leagues</a>
+  {% for lg in leader_leagues %}
+  <a href="{{ base_path }}leaders/{{ lg|slugify }}/{{ leader_page }}.html"
+     class="{% if current_league == lg %}active{% endif %}">{{ lg }}</a>
+  {% endfor %}
+</div>
+{% endif %}

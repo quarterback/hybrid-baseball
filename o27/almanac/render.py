@@ -60,6 +60,8 @@ def render_site(
     # Compose team display labels without duplicating the city (generated
     # universe clubs already carry the city inside `name`).
     env.globals["team_label"] = team_label
+    env.globals["slugify"] = _slugify
+    env.filters["slugify"] = _slugify
 
     generated_at = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     source_label = _source_label(views, dataset)
@@ -99,29 +101,44 @@ def render_site(
     # ------- leaders -------
     leaders_dir = os.path.join(out_dir, "leaders")
     os.makedirs(leaders_dir, exist_ok=True)
-    always_show = not any(r.get("qualified") for r in views.batting_season)
-    _write(env, "leaders_batting.html.j2",
-           os.path.join(leaders_dir, "batting.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../",
-            "min_pa": MIN_PA_QUALIFIED, "always_show_all": always_show})
+    always_show   = not any(r.get("qualified") for r in views.batting_season)
     always_show_p = not any(r.get("qualified") for r in views.pitching_season)
-    _write(env, "leaders_pitching.html.j2",
-           os.path.join(leaders_dir, "pitching.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../",
-            "min_outs": MIN_OUTS_QUALIFIED, "always_show_all": always_show_p})
-    _write(env, "leaders_stays.html.j2",
-           os.path.join(leaders_dir, "stays.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../"})
-    _write(env, "leaders_fielding.html.j2",
-           os.path.join(leaders_dir, "fielding.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../"})
-    _write(env, "leaders_value.html.j2",
-           os.path.join(leaders_dir, "value.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../"})
-    _write(env, "leaders_situational.html.j2",
-           os.path.join(leaders_dir, "situational.html"),
-           {**base_ctx, "section": "leaders", "base_path": "../"})
-    pages_written += 6
+
+    # (template, filename, page-key, extra ctx). page-key drives the
+    # cross-league nav so each league links to the same stat page.
+    _LEADER_PAGES = [
+        ("leaders_batting.html.j2",     "batting.html",     "batting",
+         {"min_pa": MIN_PA_QUALIFIED, "always_show_all": always_show}),
+        ("leaders_pitching.html.j2",    "pitching.html",    "pitching",
+         {"min_outs": MIN_OUTS_QUALIFIED, "always_show_all": always_show_p}),
+        ("leaders_stays.html.j2",       "stays.html",       "stays",       {}),
+        ("leaders_fielding.html.j2",    "fielding.html",    "fielding",    {}),
+        ("leaders_value.html.j2",       "value.html",       "value",       {}),
+        ("leaders_situational.html.j2", "situational.html", "situational", {}),
+    ]
+    # Per-league leader pages when the universe has more than one league
+    # (each is its own statistical environment). The all-leagues pages stay
+    # at leaders/<page> and link out to leaders/<league-slug>/<page>.
+    leader_leagues = sorted({r.get("league") for r in views.standings
+                             if r.get("league")})
+    if len(leader_leagues) <= 1:
+        leader_leagues = []
+
+    for tpl, fname, key, extra in _LEADER_PAGES:
+        _write(env, tpl, os.path.join(leaders_dir, fname),
+               {**base_ctx, "section": "leaders", "base_path": "../",
+                "current_league": None, "leader_leagues": leader_leagues,
+                "leader_page": key, **extra})
+        pages_written += 1
+    for lg in leader_leagues:
+        sub = os.path.join(leaders_dir, _slugify(lg))
+        os.makedirs(sub, exist_ok=True)
+        for tpl, fname, key, extra in _LEADER_PAGES:
+            _write(env, tpl, os.path.join(sub, fname),
+                   {**base_ctx, "section": "leaders", "base_path": "../../",
+                    "current_league": lg, "leader_leagues": leader_leagues,
+                    "leader_page": key, **extra})
+            pages_written += 1
 
     # ------- awards + parks (top-level pages) -------
     _write(env, "awards.html.j2", os.path.join(out_dir, "awards.html"),
