@@ -4028,7 +4028,33 @@ def stats_browse():
     teams_list = db.fetchall(
         "SELECT id, abbrev, name, league, division FROM teams ORDER BY abbrev"
     )
-    baselines = _league_baselines()
+
+    # League / division filters — a dropdown to narrow a big universe instead
+    # of scrolling one giant table. The league filter also recalibrates rate
+    # baselines when the universe is independent (each league is its own
+    # statistical environment), so wRC+/OPS+ are measured in-league.
+    league_arg   = request.args.get("league")   or "all"
+    division_arg = request.args.get("division") or "all"
+    all_leagues  = sorted({t["league"] for t in teams_list if t["league"]})
+    all_divisions = sorted({
+        t["division"] for t in teams_list
+        if t["division"] and (league_arg == "all" or t["league"] == league_arg)
+    })
+    sel_lg = league_arg if league_arg in all_leagues else None
+    sel_div = division_arg if division_arg in all_divisions else "all"
+    _indep = set(_independent_leagues())
+
+    extra_team_clauses: list[str] = []
+    extra_team_params: list = []
+    if sel_lg:
+        extra_team_clauses.append("t.league = ?")
+        extra_team_params.append(sel_lg)
+    if sel_div != "all":
+        extra_team_clauses.append("t.division = ?")
+        extra_team_params.append(sel_div)
+
+    baselines = (_league_baselines(league=sel_lg)
+                 if sel_lg and sel_lg in _indep else _league_baselines())
 
     # ----- Batting table -----
     batters: list[dict] = []
@@ -4040,6 +4066,8 @@ def stats_browse():
         if team_filter_id is not None:
             where_clauses.append("bs.team_id = ?")
             params.append(team_filter_id)
+        where_clauses += extra_team_clauses
+        params       += extra_team_params
         if pos_arg.lower() in ("hitter", "non_pitcher"):
             where_clauses.append("p.is_pitcher = 0")
         elif pos_arg.lower() in ("pitcher",):
@@ -4092,6 +4120,8 @@ def stats_browse():
         if team_filter_id is not None:
             where_clauses.append("ps.team_id = ?")
             params.append(team_filter_id)
+        where_clauses += extra_team_clauses
+        params       += extra_team_params
         # Pitching always implies pitchers.
         where_clauses.append("p.is_pitcher = 1")
         if name_query:
@@ -4159,6 +4189,10 @@ def stats_browse():
         batters=batters,
         pitchers=pitchers,
         games_played=games_played,
+        all_leagues=all_leagues,
+        selected_league=league_arg,
+        all_divisions=all_divisions,
+        selected_division=sel_div,
     )
 
 
