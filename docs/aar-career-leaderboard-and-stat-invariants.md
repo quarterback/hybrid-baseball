@@ -5,11 +5,11 @@
 **Commits:** `3011c91` (career → almanac), `ece4271` (invariant 8 → xRA),
 `2814300` (phase-outs cap + W-bound).
 
-**Outcome:** 4 of the 6 originally-failing invariants fixed and committed
-(#1, #4, #5, #8). #2/#3 (batter↔pitcher out reconciliation) and #9 (walk-back
-runs ≤ unearned) remain open — both root-caused to deep engine attribution
-bugs, with fix attempts that were tried and reverted (documented below) and a
-concrete next-step plan for each.
+**Outcome:** all 6 originally-failing invariants are now fixed. #1, #4, #5, #8
+were closed in the first session (commits above). #2/#3 (batter↔pitcher out
+reconciliation) and #9 (walk-back runs ≤ unearned) were closed in a follow-up
+session on branch `claude/stat-invariants-fixes-VuqBb` — see the **UPDATE
+(FIXED)** notes in the #2/#3 and #9 sections below for the actual root causes.
 
 ---
 
@@ -126,6 +126,46 @@ batter-out with no matching engine out, then fix that branch — likely a path
 that emits an out on a play the engine treats as safe (or a multi-out play
 whose nominal out count exceeds what the engine recorded under the out-cap).
 
+**UPDATE (FIXED — follow-up session).** The independent-counter trace (compare
+each event's per-batter charge delta against the true `state.outs` delta) found
+*four* distinct over-charge mechanisms, all making the batter ledger exceed the
+engine's outs:
+
+1. **Phantom HR out.** A home run carried stale `toa_runner_idxs` /
+   `runner_out_idx` left over from the pre-HR hit type (over-the-fence power-
+   redist flex, inside-the-park HR conversion). The engine ignores them
+   (`advance_runners` scores everyone on an HR, recording no outs) but the
+   renderer's TOA loop charged a runner out that never happened. *Fix:* strip
+   all out-indices from any `hr`/`home_run` outcome at the point the contact
+   event is emitted (`prob.py` `_generate_pitch` return).
+2. **One-directional reconciliation.** The "leftover" top-up only ever *added*
+   to reach `state.outs`; it never trimmed when structured + TOA charges already
+   *exceeded* the engine delta (the engine's valid-stay path retires only the
+   lead runner; a multi-out play truncates at the phase out-cap). *Fix:* replace
+   the leftover block with a two-way reconciliation to `state.outs` — trim the
+   batter's own structured charge first, then peel back TOA runner credits LIFO,
+   never below what was charged this event (no per-player count goes negative).
+3. **Declaration jump.** A Declared-Seconds declaration ends the half by setting
+   `state.outs = 27` with no `_record_out`; the renderer read that artificial
+   jump as recorded outs and charged the batter the banked count. *Fix:* treat
+   the `declaration` event as zero engine outs in the reconciliation.
+4. **Pitcher spell drop.** `_close_current_spell` / `pitching_change` dropped a
+   spell whose `pitcher_spell_count == 0` even when it had recorded outs (a
+   reliever's pickoff/CS out, or a short seconds/super half ending on a runner
+   out). The out stayed on the batter side but vanished from the pitcher ledger,
+   so `opp_pitcher_outs < batter_outs`. *Fix:* keep any spell with
+   `pitcher_outs_this_spell > 0`.
+
+A fifth bug surfaced in the same trace and also broke #2/#3: a **joker override
+leak**. `state.batter_override` (a one-PA joker insertion) was only cleared in
+`_end_at_bat`; if a half ended before the joker completed his PA (e.g. a walk-
+off on a between-pitch event right after the insertion), the override leaked
+into the next half, where the batting team has flipped — so the stale joker
+(now an *opponent* roster player) batted and his out was attributed to the wrong
+team/phase. *Fix:* clear `state.batter_override` at the start of every half
+(`run_half`). After all five fixes the per-(game,team,phase) batter↔pitcher out
+reconciliation is exact in both directions across a full season.
+
 ### Real bug — walk-back run classification (#9) — OPEN
 
 The invariant: per (game, team), `wb_runs ≤ unearned_runs` (a Walk-Back run is
@@ -156,6 +196,25 @@ scoring. (An extraction-level team-aggregate reconciliation — bump `unearned`
 on any same-team spell with `runs > unearned` headroom — would make the
 invariant green but only approximates per-pitcher attribution, so it was not
 pursued.)
+
+**UPDATE (FIXED — follow-up session).** The cross-pitcher attribution theory was
+wrong. Instrumenting `_reconcile_walk_back` showed every legitimate bonus-run
+tick fires on a spell that already holds the run (`pitcher_runs_this_spell >= 1`)
+and demotes one earned→unearned, so `wb_runs <= unearned` holds per spell. The
+real defect was a **false-positive "scored" detection** driven by an illegal
+play: a runner stealing into an *occupied* base. The stolen-base handler
+(`pa.py`) and generator (`prob.py`) never checked the target base, so a runner
+on 2B could "steal" 3B while the Walk-Back bonus runner sat there — the handler
+blindly overwrote `bases[2]`, silently erasing the bonus runner with no run and
+no out. `_reconcile_walk_back` then saw him off the bases and mis-counted him as
+a scored run (`wb_runs += 1`) on a spell with no matching run, leaving
+`wb_runs > unearned`. (It also corrupted ordinary runners — a hidden source of
+run/LOB drift.) *Fix:* a runner cannot steal an occupied base — the generator
+skips such attempts and the handler waves them off (the runner holds). With the
+illegal play gone, the per-spell `wb_runs <= unearned <= runs` relation holds
+and the aggregate invariant follows; `er_arc1+er_arc2+er_arc3 == er` stays 0
+violations (invariant 8 anchor intact) and no `er < 0` / `unearned > runs` rows
+appear.
 
 ---
 
