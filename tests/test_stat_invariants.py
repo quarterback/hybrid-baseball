@@ -404,57 +404,25 @@ def test_invariant_5_w_bound(played_game_ids):
     """
     from o27v2.web.app import _pitcher_wl_map, _PSTATS_DEDUP_SQL
 
-    scoped = _scoped_game_ids()
+    # W comes straight from the production decision logic the live site uses
+    # (`_pitcher_wl_map`: SP-outs threshold + most-effective-reliever), not a
+    # re-derivation here. A local "max outs per team-game" re-derivation used
+    # to live here and drifted out of sync with that rule; deriving W from the
+    # production path directly is both authoritative and self-maintaining. G
+    # comes from the production dedup view, so an over-count in either path
+    # still surfaces as W > G.
+    #
+    # NOTE: `_pitcher_wl_map` is inherently whole-DB, so this invariant runs
+    # unscoped (it ignores O27V2_INVARIANTS_GAMES).
+    wl = _pitcher_wl_map()
 
-    # Re-derive W (production rule) but filter to scoped games when set.
-    extra_w, params_w = _game_filter_clause("ps")
-    win_rows = db.fetchall(
-        f"""SELECT ps.player_id, ps.team_id, ps.game_id, g.winner_id
-              FROM game_pitcher_stats ps
-              JOIN games g ON g.id = ps.game_id
-              JOIN (SELECT game_id, team_id, MAX(outs_recorded) AS mo
-                      FROM game_pitcher_stats
-                     GROUP BY game_id, team_id) m
-                ON m.game_id = ps.game_id
-               AND m.team_id = ps.team_id
-               AND m.mo = ps.outs_recorded
-             WHERE g.played = 1{extra_w}
-             ORDER BY ps.game_id, ps.team_id, ps.rowid""",
-        params_w,
-    )
-    wl: dict[int, dict[str, int]] = {}
-    seen: set[tuple[int, int]] = set()
-    for r in win_rows:
-        key = (r["game_id"], r["team_id"])
-        if key in seen:
-            continue
-        seen.add(key)
-        rec = wl.setdefault(r["player_id"], {"w": 0, "l": 0})
-        if r["winner_id"] == r["team_id"]:
-            rec["w"] += 1
-        elif r["winner_id"] is not None:
-            rec["l"] += 1
-
-    # When unscoped, sanity-check that our re-derivation matches the
-    # production helper exactly — this guards against future drift.
-    if scoped is None:
-        prod = _pitcher_wl_map()
-        prod_w = {pid: r.get("w", 0) for pid, r in prod.items() if r.get("w", 0)}
-        local_w = {pid: r.get("w", 0) for pid, r in wl.items() if r.get("w", 0)}
-        assert prod_w == local_w, (
-            "test re-derivation of W diverges from production "
-            "`_pitcher_wl_map`; the harness is out of sync"
-        )
-
-    extra_g, params_g = _game_filter_clause("ps")
     g_rows = db.fetchall(
         f"""SELECT ps.player_id AS pid,
                    COUNT(DISTINCT ps.game_id) AS g
               FROM {_PSTATS_DEDUP_SQL} ps
               JOIN games gm ON gm.id = ps.game_id
-             WHERE gm.played = 1{extra_g.replace('AND ps.game_id', 'AND ps.game_id')}
-             GROUP BY ps.player_id""",
-        params_g,
+             WHERE gm.played = 1
+             GROUP BY ps.player_id"""
     )
     g_map = {r["pid"]: (r["g"] or 0) for r in g_rows}
 
@@ -471,14 +439,11 @@ def test_invariant_5_w_bound(played_game_ids):
     )
 
     # Independent global cross-check: total wins distributed across all
-    # pitchers must equal the number of decided games (within scope).
+    # pitchers must equal the number of decided games.
     total_w = sum(rec.get("w", 0) for rec in wl.values())
-    extra_dec, params_dec = _game_filter_clause()
     decided = db.fetchone(
         "SELECT COUNT(*) AS n FROM games WHERE played = 1 "
         "AND winner_id IS NOT NULL"
-        + extra_dec.replace("AND game_id", "AND id"),
-        params_dec,
     )["n"]
     assert total_w == decided, (
         f"Σ W ({total_w}) != decided games ({decided}); "
