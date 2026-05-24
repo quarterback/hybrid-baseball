@@ -1,0 +1,119 @@
+{
+  "id": "o27_global",
+  "label": "O27 Global Universe (7 peer leagues)",
+  "team_count": 84,
+  "level": "MLB",
+  "schedule_mode": "independent",
+  "leagues": [
+    "Americas Premier League",
+    "Rising Sun League",
+    "Europa League",
+    "Pacifica League",
+    "Indo-Malay League",
+    "Subcontinental & Middle East League",
+    "African Federation"
+  ],
+  "league_specs": [
+    { "name": "Americas Premier League",              "teams": 14, "divisions": 2 },
+    { "name": "Rising Sun League",                    "teams": 12, "divisions": 2 },
+    { "name": "Europa League",                        "teams": 12, "divisions": 2 },
+    { "name": "Pacifica League",                      "teams": 12, "divisions": 2 },
+    { "name": "Indo-Malay League",                    "teams": 12, "divisions": 2 },
+    { "name": "Subcontinental & Middle East League",  "teams": 12, "divisions": 2 },
+    { "name": "African Federation",                   "teams": 10, "divisions": 1 }
+  ],
+  "style_profiles": {
+    "Americas Premier League": {
+      "power": 5,
+      "pitcher_skill": 3
+    },
+    "Rising Sun League": {
+      "contact": 10,
+      "eye": 6,
+      "command": 10,
+      "movement": 6,
+      "power": -8,
+      "pitcher_skill": -4
+    },
+    "Europa League": {
+      "contact": 12,
+      "eye": 4,
+      "command": 12,
+      "pitcher_skill": -8,
+      "movement": -4,
+      "power": -8
+    },
+    "Pacifica League": {
+      "power": 8,
+      "arm": 12,
+      "speed": 6,
+      "pitcher_skill": 6,
+      "contact": -2,
+      "eye": -4,
+      "command": -4
+    },
+    "Indo-Malay League": {
+      "contact": 8,
+      "speed": 8,
+      "command": 6,
+      "movement": 6,
+      "eye": 4,
+      "power": -4,
+      "pitcher_skill": -2
+    },
+    "Subcontinental & Middle East League": {
+      "command": 14,
+      "movement": 14,
+      "pitcher_skill": -6,
+      "contact": 6,
+      "eye": 6,
+      "power": -10
+    },
+    "African Federation": "balanced"
+  },
+  "name_regions": {
+    "Americas Premier League": {
+      "us": 0.40,
+      "caribbean_cricket": 0.20,
+      "latin_america": 0.25,
+      "south_america": 0.10,
+      "canada": 0.05
+    },
+    "Rising Sun League": "east_asia",
+    "Europa League": {
+      "europe_western": 0.45,
+      "europe_eastern": 0.30,
+      "british_isles": 0.15,
+      "nordic": 0.10
+    },
+    "Pacifica League": {
+      "anzac": 0.45,
+      "southeast_asia": 0.30,
+      "pacific_islands": 0.25
+    },
+    "Indo-Malay League": {
+      "malaysia": 0.55,
+      "southeast_asia": 0.45
+    },
+    "Subcontinental & Middle East League": {
+      "south_asia": 0.60,
+      "central_west_asia": 0.30,
+      "afghan_central_asia": 0.10
+    },
+    "African Federation": {
+      "africa": 0.70,
+      "africa_cricket": 0.20,
+      "caribbean_cricket": 0.10
+    }
+  },
+  "games_per_team": 82,
+  "season_days": 165,
+  "intra_division_weight": 0.5,
+  "inter_division_weight": 0.5,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
+}

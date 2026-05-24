@@ -1,0 +1,83 @@
+{
+  "_comment": "Public authority team names for O27, category 4. These are state-sponsored or institutional teams (police, military, railways, customs, postal, ports authorities). The pattern is invariably <City/State> <Authority> with no mascot — institutions don't need cute names. Real-world precedent: Indian Railways cricket team, Mumbai Police, Pakistan Railways, Brazilian state police football clubs, the various military sports teams across South Asia and Africa. The category is intentionally rare (~6-10 teams across the universe). Regional weighting reflects where the institutional-sports tradition actually exists.",
+
+  "authority_types": {
+    "_comment": "The base authority pool. Each entry has 'regions' listing which regional locales the type fits, since not every institution exists in every region's sports culture.",
+    "law_enforcement": [
+      { "stem": "Police",         "regions": ["subcontinent", "indo_malay", "africa", "americas"], "_real_precedent": "Mumbai Police, Karachi Police, Sao Paulo PM" },
+      { "stem": "Highway Patrol", "regions": ["americas"] },
+      { "stem": "Customs",        "regions": ["subcontinent", "indo_malay", "africa", "europe"] },
+      { "stem": "Border Force",   "regions": ["subcontinent", "pacifica", "americas"] }
+    ],
+    "military": [
+      { "stem": "Army",            "regions": ["subcontinent", "africa", "indo_malay", "pacifica", "americas"], "_real_precedent": "Service teams across South Asia and Africa" },
+      { "stem": "Navy",            "regions": ["subcontinent", "africa", "indo_malay", "pacifica", "americas", "europe"] },
+      { "stem": "Air Force",       "regions": ["subcontinent", "americas", "europe"] },
+      { "stem": "Defence Force",   "regions": ["pacifica", "africa"] },
+      { "stem": "Royal Marines",   "regions": ["europe", "pacifica"] }
+    ],
+    "transport_infrastructure": [
+      { "stem": "Railways",        "regions": ["subcontinent", "africa", "europe"], "_real_precedent": "Indian Railways cricket team is the canonical example" },
+      { "stem": "Postal Service",  "regions": ["europe", "subcontinent", "africa"] },
+      { "stem": "Port Authority",  "regions": ["subcontinent", "indo_malay", "africa", "americas", "europe"] },
+      { "stem": "Transit",         "regions": ["americas", "europe", "east_asia"] },
+      { "stem": "Aviation",        "regions": ["subcontinent", "africa", "europe"] }
+    ],
+    "civic_services": [
+      { "stem": "Fire",            "regions": ["americas", "europe", "subcontinent"] },
+      { "stem": "Municipal",       "regions": ["americas", "europe", "subcontinent", "africa"], "_real_precedent": "Sao Paulo Municipal" },
+      { "stem": "Public Works",    "regions": ["subcontinent", "africa", "indo_malay"] },
+      { "stem": "Water Board",     "regions": ["subcontinent", "africa", "europe"] }
+    ],
+    "national_services": [
+      { "stem": "State Bank",      "regions": ["subcontinent", "africa", "europe"], "_real_precedent": "State Bank of India sports teams" },
+      { "stem": "Reserve Bank",    "regions": ["subcontinent", "africa", "pacifica"] },
+      { "stem": "Forestry",        "regions": ["subcontinent", "africa", "pacifica", "americas"] },
+      { "stem": "Agriculture",     "regions": ["subcontinent", "africa", "indo_malay"] }
+    ]
+  },
+
+  "naming_pattern": {
+    "_comment": "Pattern is always <City or Province> <Authority>, no modifier, no suffix, no mascot. The austerity of the naming is the point.",
+    "pattern": "{city_or_state} {authority_stem}",
+    "examples": [
+      "Mumbai Police",
+      "Karachi Customs",
+      "Indian Railways",
+      "Pakistan Railways",
+      "Bangladesh Army",
+      "Sri Lanka Navy",
+      "Nigerian Army",
+      "Kenya Police",
+      "Ghana Postal",
+      "Egyptian Aviation",
+      "Lagos Port Authority",
+      "Sao Paulo PM",
+      "Mexico City Fire",
+      "Caracas Municipal",
+      "Manila Customs",
+      "Jakarta Police",
+      "Sydney Defence Force",
+      "Auckland Maritime",
+      "London Metropolitan",
+      "Hamburg Hafenamt",
+      "Stockholm Postverket",
+      "Mumbai Port Trust",
+      "Delhi Transit Authority",
+      "Singapore Customs"
+    ]
+  },
+
+  "regional_distribution": {
+    "_comment": "Suggested per-league authority team counts in the 84-team universe. Heaviest in Subcontinent+ME (where the tradition is strongest in real cricket), lighter elsewhere, absent in some.",
+    "americas_premier":  { "target_authorities": 1, "_note": "Maybe Sao Paulo PM or Caracas Municipal" },
+    "rising_sun":        { "target_authorities": 0, "_note": "Japanese/Korean corporate sports culture is non-institutional; skip" },
+    "europa":            { "target_authorities": 0, "_note": "European football is club-tradition; skip or one rare exception" },
+    "pacifica":          { "target_authorities": 1, "_note": "Sydney Defence Force or Manila Police" },
+    "indo_malay":        { "target_authorities": 1, "_note": "Jakarta Police or Kuala Lumpur Customs" },
+    "subcontinent":      { "target_authorities": 3, "_note": "Mumbai Police, Indian Railways, Pakistan Army-equivalent. Maximum representation; this is the home of the tradition" },
+    "african_federation": { "target_authorities": 0, "_note": "African Federation uses its own real club-naming conventions (see african_federation_teams.json). Not the institutional/state-sports pattern that exists in South Asian cricket." }
+  },
+
+  "_total_universe_target": 6
+}

@@ -1,0 +1,233 @@
+{
+  "_comment": "Generator components for category-2 fictional small-business team names. Format: <City> <Optional Modifier> <Business Name> with regional-appropriate suffix. The category is the most populous in the universe (~33-40 teams across 84). The generator picks region-appropriate components from this file's pools and combines them with a city from the team's locale. Hand-authored 'curated_examples' should be used preferentially (1-2 per league) to anchor the style before procedural generation fills the rest.",
+
+  "business_types_global": [
+    "Bakery", "Cafe", "Coffee & Bean", "Tea House", "Chicken Shack", "Fish Market",
+    "Spice Market", "Grocery", "Provisioners", "Outfitters", "Drapers", "Tailors",
+    "Watchmakers", "Goldsmiths", "Carpenters", "Plumbers", "Electricians", "Auto Body",
+    "Motors", "Garage", "Cycle Co.", "Hardware", "Print Shop", "Press", "Stationers",
+    "Booksellers", "Studio", "Foundry", "Ironworks", "Glassworks", "Lumber Co.",
+    "Paper Co.", "Cement Works", "Brickworks", "Tile Works", "Soap Works", "Salt Works",
+    "Trading Co.", "Mercantile", "Brewery", "Bottling Co.", "Cannery", "Sawmill",
+    "Engineering Works", "Manufactory", "Construction", "Shipping Co.", "Express Co.",
+    "Cab Co.", "Tobacco Co."
+  ],
+
+  "modifiers_optional": [
+    "Royal", "United", "National", "Imperial", "Central", "Eastern", "Western",
+    "Northern", "Southern", "Pacific", "Atlantic", "Continental", "Old", "New",
+    "First", "Premier", "Grand", "Provincial", "Metropolitan", "Municipal",
+    "Crown", "Standard", "Universal", "Modern", "Liberty", "Independence"
+  ],
+
+  "regional_flavor": {
+    "americas": {
+      "_label": "Americas Premier locale flavor",
+      "english_suffix_options": [" & Co.", " & Sons", " Bros.", " Inc.", " Ltd.", ""],
+      "spanish_suffix_options": [" Hermanos", " y Compañía", " e Hijos", " y Cía.", ""],
+      "portuguese_suffix_options": [" Irmãos", " & Filhos", " & Cia.", ""],
+      "preferred_business_types_extra": [
+        "Tortillería", "Panadería", "Carnicería", "Cantina", "Bodega",
+        "Mercado", "Empanadería", "Asadero", "Heladería"
+      ],
+      "curated_examples": [
+        "Sydney Coffee & Bean",
+        "Lima Hermanos Soap Works",
+        "Buenos Aires Provisioners",
+        "Caracas Tobacco & Co.",
+        "Quito Print Shop",
+        "Detroit Old Mercantile",
+        "Cartagena Royal Spice Market",
+        "São Paulo Irmãos Bottling Co.",
+        "Vancouver Pacific Sawmill",
+        "Toronto Liberty Press",
+        "Havana Cantina y Cía."
+      ]
+    },
+    "east_asia": {
+      "_label": "Rising Sun locale flavor",
+      "english_suffix_options": [" Brothers", " Co.", " Trading", ""],
+      "japanese_suffix_options": [" Honten", " Shoten", " Honpo"],
+      "preferred_business_types_extra": [
+        "Soba Shop", "Noodle Co.", "Tea Importers", "Lacquerware",
+        "Paperworks", "Pottery Co.", "Ramen House", "Tofu Works"
+      ],
+      "curated_examples": [
+        "Osaka Eastern Watchmakers",
+        "Yokohama Crown Tea House",
+        "Kyoto Goldsmiths & Co.",
+        "Sapporo Bottling Co.",
+        "Seoul Modern Cycle Co.",
+        "Busan Universal Foundry",
+        "Taipei Continental Trading",
+        "Nagoya Brothers Printworks",
+        "Fukuoka Standard Soba Shop",
+        "Kobe Pacific Paperworks"
+      ]
+    },
+    "europe": {
+      "_label": "Europa locale flavor",
+      "english_suffix_options": [" Ltd.", " & Sons", " & Co.", ""],
+      "german_suffix_options": [" GmbH", " AG", " KG", " & Söhne"],
+      "italian_suffix_options": [" S.p.A.", " & Figli", " S.r.l."],
+      "dutch_suffix_options": [" B.V.", " & Zonen"],
+      "french_suffix_options": [" et Fils", " & Cie.", " SARL"],
+      "nordic_suffix_options": [" AB", " & Söner", " AS"],
+      "polish_suffix_options": [" Sp.", " i Synowie"],
+      "preferred_business_types_extra": [
+        "Bierhaus", "Brauerei", "Tabakwaren", "Werkstatt", "Buchhandlung",
+        "Pasticceria", "Salumeria", "Bäckerei", "Tabacchi", "Boulangerie",
+        "Bryggeri", "Glasbruk"
+      ],
+      "curated_examples": [
+        "Milan Salumeria & Figli",
+        "Stockholm Northern Sawmill AB",
+        "Hamburg Eastern Werkstatt GmbH",
+        "Lyon et Fils Soap Works",
+        "Prague Continental Glassworks",
+        "Bologna Pasticceria & Co.",
+        "Manchester Royal Cycle Co.",
+        "Amsterdam Crown Bottling B.V.",
+        "Helsinki Premier Paperworks",
+        "Lisbon Atlantic Provisioners",
+        "Warsaw Imperial Bäckerei",
+        "Vienna Modern Tabakwaren GmbH"
+      ]
+    },
+    "pacifica": {
+      "_label": "Pacifica locale flavor",
+      "english_suffix_options": [" Pty Ltd", " & Sons", " & Co.", ""],
+      "tagalog_suffix_options": [" at mga Anak", " Mag-anak"],
+      "preferred_business_types_extra": [
+        "Sari-sari Store", "Outback Outfitters", "Surf Shop", "Cane Works",
+        "Coconut Co.", "Pearl Traders", "Sheep Station", "Carinderia", "Lechon House"
+      ],
+      "curated_examples": [
+        "Sydney Coffee & Bean",
+        "Mindanao Chicken Shack",
+        "Auckland Southern Outfitters",
+        "Cebu Modern Cycle Co.",
+        "Brisbane Pacific Cannery",
+        "Wellington Royal Wool Co.",
+        "Manila Crown Print Shop",
+        "Suva Coconut Co.",
+        "Davao Eastern Trading",
+        "Port Moresby Pearl Traders",
+        "Perth Old Sheep Station",
+        "Quezon Carinderia at mga Anak"
+      ]
+    },
+    "indo_malay": {
+      "_label": "Indo-Malay locale flavor",
+      "english_suffix_options": [" Sdn Bhd", " Bhd", " & Sons", ""],
+      "malay_suffix_options": [" dan Anak", " Bersaudara"],
+      "indonesian_suffix_options": [" dan Putra", " Bersaudara"],
+      "preferred_business_types_extra": [
+        "Warung", "Kedai Kopi", "Rumah Makan", "Toko", "Batik Co.",
+        "Rubber Estate", "Tin Co.", "Spice Traders", "Pasar Malam"
+      ],
+      "curated_examples": [
+        "Kuala Lumpur Continental Trading Sdn Bhd",
+        "Jakarta Premier Batik Co.",
+        "Penang Royal Spice Traders",
+        "Surabaya United Kedai Kopi",
+        "Bandung Modern Press",
+        "Johor Bahru Pacific Rubber Estate",
+        "Yogyakarta Eastern Bookbinders",
+        "Medan Crown Tin Co.",
+        "Bali Pasar Malam dan Putra",
+        "Kota Kinabalu Maritime Provisioners"
+      ]
+    },
+    "subcontinent": {
+      "_label": "Subcontinental & Middle East locale flavor",
+      "english_suffix_options": [" & Sons", " & Brothers", " Bros.", " Ltd.", " Pvt. Ltd.", ""],
+      "hindi_suffix_options": [" Sangh", " Bhandar", " evam Putra"],
+      "urdu_suffix_options": [" Aur Beradaran", " Tijarat"],
+      "arabic_suffix_options": [" wa Ikhwan", " & Sons"],
+      "preferred_business_types_extra": [
+        "Sweet Shop", "Tiffin Co.", "Spice Bhandar", "Cloth Merchants",
+        "Jute Works", "Tea Importers", "Cycle Mart", "Rickshaw Works",
+        "Khadi Bhandar", "Mithai Wala", "Halwai", "Dabbawala Co."
+      ],
+      "curated_examples": [
+        "Mumbai Royal Spice Market",
+        "Calcutta Eastern Jute Works",
+        "Karachi Premier Cloth Merchants",
+        "Delhi Crown Sweet Shop",
+        "Madras Provincial Cycle Mart",
+        "Lahore & Sons Booksellers",
+        "Dhaka National Tea Importers",
+        "Colombo Pacific Tile Works",
+        "Dubai Standard Spice Traders",
+        "Tehran Modern Provisioners",
+        "Kabul Mountain Press",
+        "Riyadh Crown Outfitters",
+        "Bangalore Tiffin Co. Pvt. Ltd.",
+        "Hyderabad Mithai Wala & Sons"
+      ]
+    },
+    "africa": {
+      "_label": "African Federation locale flavor",
+      "english_suffix_options": [" Ltd.", " & Co.", " & Brothers", " Pty Ltd", ""],
+      "swahili_suffix_options": [" na Ndugu", " na Wana"],
+      "french_suffix_options": [" et Frères", " & Cie."],
+      "portuguese_suffix_options": [" & Irmãos", " & Cia."],
+      "afrikaans_suffix_options": [" en Seuns", " & Kie."],
+      "preferred_business_types_extra": [
+        "Spaza Shop", "Mealie Mill", "Cocoa Co.", "Coffee Estate",
+        "Diamond Works", "Hide Traders", "Cattle Co.", "Boma Trading",
+        "Kraal Works", "Maize Co."
+      ],
+      "curated_examples": [
+        "Lagos United Foundry",
+        "Nairobi Eastern Coffee Estate",
+        "Cape Town Premier Cycle Co.",
+        "Accra Crown Cocoa Co.",
+        "Dakar et Frères Provisioners",
+        "Johannesburg Imperial Diamond Works",
+        "Kampala Royal Cattle Co.",
+        "Abidjan Modern Press",
+        "Addis Ababa Continental Spice Traders",
+        "Harare Pacific Tile Works",
+        "Mombasa Maritime Trading na Ndugu",
+        "Pretoria Standard Boekhandel en Seuns"
+      ]
+    }
+  },
+
+  "naming_pattern": {
+    "_comment": "Generation algorithm.",
+    "steps": [
+      "1. Select a city from the team's locale per the league's name_regions.",
+      "2. Decide locale_sub within the region (e.g., for Subcontinent: hindi vs urdu vs arabic vs english based on the city's primary language).",
+      "3. With ~40% probability, prepend a modifier from modifiers_optional.",
+      "4. Select a business type: 70% from business_types_global, 30% from the region's preferred_business_types_extra.",
+      "5. With ~50% probability, append a locale-appropriate suffix from the region's suffix_options.",
+      "6. Capitalize and combine: '<City> <Modifier?> <Business Type><Suffix?>'."
+    ],
+    "examples_of_generated_output": [
+      "Lagos United Foundry & Co.",
+      "Mumbai Royal Spice Market & Sons",
+      "Sapporo Eastern Tea Importers Honten",
+      "Hamburg Crown Bäckerei GmbH",
+      "Manila Pacific Sari-sari Store",
+      "Buenos Aires Hermanos Provisioners",
+      "Kuala Lumpur Northern Tin Co. Sdn Bhd",
+      "Stockholm Modern Glasbruk AB"
+    ]
+  },
+
+  "regional_distribution": {
+    "_comment": "Suggested per-league small-business team counts in the 84-team universe. This is the most populous category. Heaviest in markets with strong informal-economy and small-business retail traditions; somewhat lighter where corporate dominates.",
+    "americas_premier":  { "target_small_business": 5, "_note": "Mixed; balances against majors, category-5, and traditional" },
+    "rising_sun":        { "target_small_business": 5, "_note": "Balances against the major-corporate tradition" },
+    "europa":            { "target_small_business": 3, "_note": "Lighter because category-5 dominates Europa" },
+    "pacifica":          { "target_small_business": 5, "_note": "Filipino and Australian small-business retail flavor is strong" },
+    "indo_malay":        { "target_small_business": 5, "_note": "Warung and kedai kopi culture; small-business retail is huge" },
+    "subcontinent":      { "target_small_business": 4, "_note": "Sweet-shop, dabbawala, cloth-merchant culture is iconic" },
+    "african_federation": { "target_small_business": 4, "_note": "Spaza shops, market economies; substantial weight" }
+  },
+
+  "_total_universe_target": 31
+}

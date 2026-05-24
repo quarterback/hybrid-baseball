@@ -1,0 +1,210 @@
+{
+  "_comment": "Combined data file covering category 3 (North American traditional <City> <Mascot> names — the holdouts) and category 5 (<City> Baseball Club — the European football-style civic-identity convention, locale-spelled and city-size-scaled).",
+
+  "category_3_traditional_mascots": {
+    "_comment": "Category 3: <City> <Mascot> with no corporate sponsor. The North American holdout convention. Rare in O27 (~10% of teams), more common in Americas Premier and Pacifica, sparse elsewhere. Mascots are organized by class so the generator can pick thematically.",
+
+    "mascot_pool": {
+      "predators": [
+        "Tigers", "Lions", "Bears", "Wolves", "Cougars", "Panthers", "Jaguars",
+        "Leopards", "Hawks", "Eagles", "Falcons", "Owls", "Ospreys", "Hounds",
+        "Sharks", "Pirates", "Mavericks"
+      ],
+      "prey_and_hardy": [
+        "Mustangs", "Stallions", "Broncos", "Bulls", "Rams", "Bisons",
+        "Stags", "Elk", "Caribou", "Moose"
+      ],
+      "regional_animals": {
+        "americas":     ["Cougars", "Coyotes", "Pumas", "Cóndores", "Caimanes", "Tucanes", "Manatíes"],
+        "east_asia":    ["Tigers", "Dragons", "Cranes", "Phoenix", "Tortoises"],
+        "europe":       ["Stags", "Boars", "Wolves", "Lynxes", "Ravens", "Eagles"],
+        "pacifica":     ["Kookaburras", "Wallabies", "Dingoes", "Sea Eagles", "Crocs", "Cassowaries", "Tuataras", "Kiwis"],
+        "indo_malay":   ["Tigers", "Orangutans", "Hornbills", "Cobras", "Pythons", "Garudas"],
+        "subcontinent": ["Tigers", "Cobras", "Mongooses", "Hawks", "Peacocks", "Elephants"],
+        "africa":       ["Lions", "Leopards", "Cheetahs", "Rhinos", "Elephants", "Gazelles", "Hippos", "Marabous"]
+      },
+      "weather_and_natural": [
+        "Storms", "Thunder", "Lightning", "Tornados", "Tides", "Currents",
+        "Mountaineers", "Highlanders", "Rangers", "Pioneers", "Voyagers"
+      ],
+      "mythical_and_heritage": [
+        "Sentinels", "Guardians", "Crusaders", "Knights", "Vikings",
+        "Samurai", "Spartans", "Centurions", "Gladiators",
+        "Royals", "Imperials", "Sovereigns"
+      ],
+      "industrial_civic": [
+        "Steelmen", "Smelters", "Brewers", "Drillers", "Riggers",
+        "Miners", "Loggers", "Foundrymen", "Mariners", "Stevedores",
+        "Trainmen", "Boilermakers"
+      ]
+    },
+
+    "naming_pattern": {
+      "pattern": "{city} {mascot}",
+      "examples": [
+        "Detroit Tigers",
+        "Buenos Aires Cóndores",
+        "Brisbane Kookaburras",
+        "Cape Town Lions",
+        "Nagoya Dragons",
+        "Athens Spartans",
+        "Manchester Knights",
+        "Lagos Sentinels",
+        "Vancouver Mariners",
+        "Bombay Peacocks",
+        "Pittsburgh Steelmen",
+        "Auckland Sea Eagles"
+      ]
+    },
+
+    "regional_distribution": {
+      "_comment": "Where the holdout-traditional convention plays best. Heaviest in Americas Premier and Pacifica (cultural fit); rare or absent in NPB-influenced and Europa-influenced leagues.",
+      "americas_premier":  { "target_traditional": 3, "_note": "The North American convention's native ground" },
+      "rising_sun":        { "target_traditional": 0, "_note": "Corporate naming dominates; traditional is non-native here" },
+      "europa":            { "target_traditional": 1, "_note": "Maybe one outlier; the European convention is category-5" },
+      "pacifica":          { "target_traditional": 2, "_note": "Australian sports tradition uses this; Brisbane Kookaburras-style" },
+      "indo_malay":        { "target_traditional": 0, "_note": "Corporate dominates; skip" },
+      "subcontinent":      { "target_traditional": 0, "_note": "Not the cultural register; corporate and authority dominate" },
+      "african_federation": { "target_traditional": 0, "_note": "African Federation uses its own real club-naming conventions (royal patronage, parastatal, church-owned, brewery-branded, civic evocative). See african_federation_teams.json. Category 3 doesn't apply here." }
+    }
+  },
+
+  "category_5_baseball_club": {
+    "_comment": "Category 5: <City> Baseball Club / <City> Baseball Klub / etc. The European football-style civic-identity convention. Locale-spelled to fit each region's language tradition. City-size-scaled (megacities support multiple clubs in the same metro, smaller cities support one). Roughly 25-32 teams across the 84-team universe — the second-largest category after fictional small-business.",
+
+    "locale_spellings": {
+      "_comment": "Each locale maps to one or more valid 'baseball club' spellings. The generator picks the spelling matching the city's primary language. Multiple valid spellings in a locale allow stylistic variation across teams in the same region.",
+      "english":      ["Baseball Club", "BC"],
+      "spanish":      ["Club de Béisbol", "Béisbol Club", "BC"],
+      "portuguese":   ["Clube de Beisebol", "BC"],
+      "french":       ["Club de Baseball", "BC"],
+      "italian":      ["Baseball Club", "Calcio Baseball"],
+      "german":       ["Baseball Klub", "BK"],
+      "dutch":        ["Honkbalclub", "Honkbal Klub", "HC"],
+      "nordic":       ["Baseboll Klubb", "Baseball Klubb", "BK"],
+      "slavic":       ["Beisbol Klub", "BK"],
+      "polish":       ["Klub Baseballowy", "KB"],
+      "russian":      ["Beysbol'nyy Klub", "BK"],
+      "japanese":     ["Baseball Club", "Yakyū-bu", "野球クラブ"],
+      "korean":       ["Baseball Club", "Yagu Club"],
+      "chinese":      ["Baseball Club", "Bàngqiú Jùlèbù"],
+      "hindi":        ["Baseball Club", "Beisbol Sangh"],
+      "urdu":         ["Baseball Club", "Beisbol Klub"],
+      "arabic":       ["Baseball Club", "Naadi al-Beisbol", "نادي البيسبول"],
+      "malay":        ["Kelab Beisbol", "KB"],
+      "indonesian":   ["Klub Bisbol", "KB"],
+      "tagalog":      ["Baseball Club", "Klub ng Beisbol"],
+      "swahili":      ["Klabu ya Beisboli", "KB"],
+      "amharic":      ["Baseball Club"],
+      "afrikaans":    ["Bofbalklub", "Baseball Klub"],
+      "turkish":      ["Beysbol Kulübü", "BK"],
+      "persian":      ["Bisbol Kolob"]
+    },
+
+    "city_to_locale": {
+      "_comment": "Maps representative city names to their preferred locale-spelling. Generator looks up the city, gets the locale, picks one of the valid spellings for that locale. Cities below are exemplary — the actual list draws from each region's name_regions distribution.",
+
+      "americas_anglophone":   { "cities_example": ["Toronto", "Vancouver", "New York", "Chicago", "Houston", "Miami", "Atlanta"], "locale": "english" },
+      "americas_spanish":      { "cities_example": ["Buenos Aires", "Mexico City", "Caracas", "Lima", "Santiago", "Bogotá", "Havana", "Santo Domingo"], "locale": "spanish" },
+      "americas_portuguese":   { "cities_example": ["São Paulo", "Rio de Janeiro", "Salvador", "Brasília"], "locale": "portuguese" },
+      "americas_canada_french":{ "cities_example": ["Montréal"], "locale": "french" },
+
+      "east_asia_japan":       { "cities_example": ["Tokyo", "Osaka", "Yokohama", "Nagoya", "Sapporo", "Kobe", "Fukuoka"], "locale": "japanese" },
+      "east_asia_korea":       { "cities_example": ["Seoul", "Busan", "Incheon", "Daegu", "Daejeon"], "locale": "korean" },
+      "east_asia_china":       { "cities_example": ["Beijing", "Shanghai", "Guangzhou", "Shenzhen", "Chengdu"], "locale": "chinese" },
+
+      "europa_english":        { "cities_example": ["London", "Manchester", "Liverpool", "Dublin", "Edinburgh"], "locale": "english" },
+      "europa_german":         { "cities_example": ["Berlin", "Hamburg", "Munich", "Cologne", "Frankfurt", "Vienna"], "locale": "german" },
+      "europa_dutch":          { "cities_example": ["Amsterdam", "Rotterdam", "Antwerp"], "locale": "dutch" },
+      "europa_french":         { "cities_example": ["Paris", "Lyon", "Marseille", "Brussels"], "locale": "french" },
+      "europa_italian":        { "cities_example": ["Milan", "Rome", "Naples", "Turin", "Bologna"], "locale": "italian" },
+      "europa_spanish":        { "cities_example": ["Madrid", "Barcelona", "Valencia", "Seville"], "locale": "spanish" },
+      "europa_nordic":         { "cities_example": ["Stockholm", "Copenhagen", "Oslo", "Helsinki", "Reykjavík"], "locale": "nordic" },
+      "europa_polish":         { "cities_example": ["Warsaw", "Kraków", "Gdańsk"], "locale": "polish" },
+      "europa_slavic":         { "cities_example": ["Prague", "Bratislava", "Belgrade", "Zagreb", "Ljubljana"], "locale": "slavic" },
+
+      "pacifica_australia":    { "cities_example": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Auckland", "Wellington"], "locale": "english" },
+      "pacifica_philippines":  { "cities_example": ["Manila", "Cebu", "Davao", "Quezon City"], "locale": "tagalog" },
+      "pacifica_pacific":      { "cities_example": ["Port Moresby", "Suva", "Apia", "Nukuʻalofa"], "locale": "english" },
+
+      "indo_malay_malay":      { "cities_example": ["Kuala Lumpur", "Penang", "Johor Bahru", "Kota Kinabalu"], "locale": "malay" },
+      "indo_malay_indonesian": { "cities_example": ["Jakarta", "Surabaya", "Bandung", "Medan", "Semarang", "Makassar"], "locale": "indonesian" },
+      "indo_malay_other":      { "cities_example": ["Bangkok", "Ho Chi Minh", "Hanoi"], "locale": "english" },
+
+      "subcontinent_india":    { "cities_example": ["Mumbai", "Delhi", "Bangalore", "Chennai", "Kolkata", "Hyderabad", "Ahmedabad"], "locale": "hindi" },
+      "subcontinent_pakistan": { "cities_example": ["Karachi", "Lahore", "Islamabad", "Rawalpindi"], "locale": "urdu" },
+      "subcontinent_other":    { "cities_example": ["Dhaka", "Colombo", "Kathmandu"], "locale": "english" },
+      "middle_east_arabic":    { "cities_example": ["Dubai", "Abu Dhabi", "Riyadh", "Doha", "Cairo"], "locale": "arabic" },
+      "middle_east_turkish":   { "cities_example": ["Istanbul", "Ankara"], "locale": "turkish" },
+      "middle_east_persian":   { "cities_example": ["Tehran", "Esfahan"], "locale": "persian" },
+
+      "africa_english":        { "cities_example": ["Lagos", "Nairobi", "Accra", "Johannesburg", "Cape Town"], "locale": "english" },
+      "africa_swahili":        { "cities_example": ["Nairobi", "Dar es Salaam", "Mombasa"], "locale": "swahili" },
+      "africa_afrikaans":      { "cities_example": ["Pretoria", "Bloemfontein"], "locale": "afrikaans" },
+      "africa_french":         { "cities_example": ["Dakar", "Abidjan", "Kinshasa", "Casablanca"], "locale": "french" },
+      "africa_amharic":        { "cities_example": ["Addis Ababa"], "locale": "amharic" }
+    },
+
+    "city_tier_system": {
+      "_comment": "Cities are tagged by tier to govern how many category-5 clubs the city can support. The 'support_count' is the max category-5 clubs that can coexist in a city of that tier.",
+      "megacity":   { "population_threshold": "5M+",       "support_count": 4, "_examples": "Tokyo, Mumbai, São Paulo, Buenos Aires, Lagos, Jakarta, Manila, Mexico City, Karachi, Cairo, Dhaka, London (in this universe)" },
+      "major":      { "population_threshold": "1M-5M",     "support_count": 2, "_examples": "Osaka, Madrid, Sydney, Bangalore, Lima, Casablanca, Kuala Lumpur" },
+      "mid":        { "population_threshold": "300K-1M",   "support_count": 1, "_examples": "Stockholm, Auckland, Penang, Cape Town suburbs" },
+      "small":      { "population_threshold": "<300K",     "support_count": 0, "_note": "Small cities don't get category-5 teams; fall through to corporate/small-business naming" }
+    },
+
+    "naming_pattern": {
+      "pattern": "{city} {locale_spelled_baseball_club}",
+      "examples": [
+        "Tokyo Baseball Club",
+        "Tokyo Yakyū-bu",
+        "Hamburg Baseball Klub",
+        "Amsterdam Honkbalclub",
+        "Buenos Aires Club de Béisbol",
+        "São Paulo Clube de Beisebol",
+        "Stockholm Baseboll Klubb",
+        "Mumbai Beisbol Sangh",
+        "Kuala Lumpur Kelab Beisbol",
+        "Jakarta Klub Bisbol",
+        "Manila Klub ng Beisbol",
+        "Nairobi Klabu ya Beisboli",
+        "Cape Town Bofbalklub",
+        "Dakar Club de Baseball",
+        "Istanbul Beysbol Kulübü",
+        "Lagos Baseball Club",
+        "Casablanca Club de Baseball",
+        "Sydney Baseball Club",
+        "Melbourne BC",
+        "Brisbane Baseball Club",
+        "Manchester Baseball Club",
+        "Milan Baseball Club",
+        "Rome Calcio Baseball",
+        "Madrid Club de Béisbol",
+        "Barcelona BC",
+        "Karachi Baseball Klub",
+        "Lahore Baseball Klub",
+        "Dubai Naadi al-Beisbol",
+        "Tehran Bisbol Kolob"
+      ],
+      "megacity_multiple_clubs_example": [
+        "Tokyo Baseball Club",
+        "Tokyo Eastern BC",
+        "Setagaya Yakyū-bu",
+        "Shibuya Baseball Club"
+      ]
+    },
+
+    "regional_distribution": {
+      "_comment": "Category-5 distribution across the 84-team universe. Heaviest in Europa (where the convention is most authentic to local sports culture); reasonably heavy in Americas Premier (Latin American football tradition); modest in others.",
+      "americas_premier":  { "target_category_5": 4, "_note": "Latin American football tradition supports this strongly; Toronto BC, Buenos Aires Club de Béisbol, São Paulo Clube, Caracas BC" },
+      "rising_sun":        { "target_category_5": 3, "_note": "Coexists alongside corporate naming; Tokyo Yakyū-bu, Seoul Yagu Club, Osaka BC" },
+      "europa":            { "target_category_5": 7, "_note": "Heaviest concentration — this is the home of the convention. Manchester BC, Hamburg Klub, Amsterdam Honkbalclub, Milan BC, Madrid Club de Béisbol, Stockholm Klubb, Warsaw Klub" },
+      "pacifica":          { "target_category_5": 3, "_note": "Sydney BC, Manila Klub ng Beisbol, Auckland BC" },
+      "indo_malay":        { "target_category_5": 3, "_note": "Kuala Lumpur Kelab, Jakarta Klub, Penang BC" },
+      "subcontinent":      { "target_category_5": 3, "_note": "Mumbai BC, Karachi Klub, Dubai Naadi" },
+      "african_federation": { "target_category_5": 0, "_note": "African Federation uses its own real conventions (see african_federation_teams.json). Real African football clubs are Asante Kotoko, Mamelodi Sundowns, MFM, Tusker, Enyimba — not the City Baseball Club pattern. Category 5 doesn't apply." }
+    },
+
+    "_total_universe_target": 23
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "_comment": "African Federation team identities sourced from real African football clubs across the continent. The league's 10-team roster uses actual club-naming conventions and identities from South Africa, Nigeria, Ghana, Kenya, and elsewhere. No generated/stereotyped framing — these are the names that exist. The few South African globals (Kaizer Chiefs, Mamelodi Sundowns, Orlando Pirates) are the highest-profile names; the rest pull from the real continental club landscape and reflect its actual variety: royal patronage, church-owned, parastatal, brewery-sponsored, evocative civic names.",
+
+  "league": "African Federation",
+  "team_count": 10,
+
+  "teams": [
+    {
+      "name": "Mamelodi Sundowns",
+      "city": "Pretoria",
+      "country": "South Africa",
+      "convention": "civic_evocative",
+      "_real_basis": "Mamelodi Sundowns FC, South Africa Premier Soccer League, founded 1970, named after Mamelodi township in Pretoria. Globally recognized."
+    },
+    {
+      "name": "Kaizer Chiefs",
+      "city": "Johannesburg",
+      "country": "South Africa",
+      "convention": "founder_named",
+      "_real_basis": "Kaizer Chiefs FC, named after founder Kaizer Motaung. One of the most famous club names in African football."
+    },
+    {
+      "name": "Orlando Pirates",
+      "city": "Johannesburg",
+      "country": "South Africa",
+      "convention": "civic_evocative",
+      "_real_basis": "Orlando Pirates FC, named after Orlando township in Soweto. Founded 1937. Globally recognized."
+    },
+    {
+      "name": "Asante Kotoko",
+      "city": "Kumasi",
+      "country": "Ghana",
+      "convention": "royal_patronage",
+      "_real_basis": "Asante Kotoko SC, Kumasi. Owned by the Asantehene (King of Ashanti). 'Kotoko' = porcupine, the Ashanti symbol. Nicknamed the Porcupine Warriors. African Club of the 20th Century per IFFHS."
+    },
+    {
+      "name": "Hearts of Oak",
+      "city": "Accra",
+      "country": "Ghana",
+      "convention": "evocative_aspirational",
+      "_real_basis": "Accra Hearts of Oak SC, founded 1911. CAF Champions League winners 2000. Nickname: The Phobians."
+    },
+    {
+      "name": "Enyimba",
+      "city": "Aba",
+      "country": "Nigeria",
+      "convention": "parastatal_state_owned",
+      "_real_basis": "Enyimba FC, Aba. Founded 1976, state-owned by Abia State. Back-to-back CAF Champions League winners 2003 and 2004."
+    },
+    {
+      "name": "Mountain of Fire FC",
+      "city": "Lagos",
+      "country": "Nigeria",
+      "convention": "church_owned",
+      "_real_basis": "MFM FC, Lagos. Owned by the Mountain of Fire and Miracles Ministries, a Pentecostal church. Won the maiden Church World Cup. Promoted to Nigerian Premier League 2015."
+    },
+    {
+      "name": "Tusker",
+      "city": "Nairobi",
+      "country": "Kenya",
+      "convention": "brewery_branded",
+      "_real_basis": "Tusker FC, Nairobi. Sponsored by East African Breweries; named after the Tusker beer brand. Formerly Kenya Breweries until 1999. Nickname: The Brewers. 13 Kenyan Premier League titles."
+    },
+    {
+      "name": "Al Ahly",
+      "city": "Cairo",
+      "country": "Egypt",
+      "convention": "national_pride",
+      "_real_basis": "Al Ahly SC, Cairo. Founded 1907. Most successful African club ever, 12+ CAF Champions League titles. 'Al Ahly' means 'the national' in Arabic."
+    },
+    {
+      "name": "Wydad",
+      "city": "Casablanca",
+      "country": "Morocco",
+      "convention": "civic_traditional",
+      "_real_basis": "Wydad AC, Casablanca. Founded 1937. Multiple CAF Champions League titles. Major North African club."
+    }
+  ],
+
+  "_global_brand_teams": [
+    "Mamelodi Sundowns",
+    "Kaizer Chiefs",
+    "Orlando Pirates",
+    "Al Ahly"
+  ],
+
+  "_naming_conventions_present_in_real_african_football": {
+    "civic_evocative":          "Named after the city, township, or place — Mamelodi Sundowns, Orlando Pirates, Hearts of Oak, Hearts of Lions, Cape Town City, Bloemfontein Celtic",
+    "royal_patronage":          "Owned by or named after a royal house — Asante Kotoko (Asantehene), Royal Leopards, royal-affiliated clubs",
+    "parastatal_state_owned":    "Owned by a state government or government body — Enyimba (Abia State), Rivers United, Rangers International (Enugu State), many NPFL clubs",
+    "church_owned":             "Owned by a Pentecostal church or religious institution — MFM FC (Mountain of Fire), TEAP FC (Redeemed Christian Church of God), My People FC, Sofapaka",
+    "brewery_branded":           "Named after a brewery's flagship beer — Tusker (East African Breweries), formerly Kenya Breweries",
+    "founder_named":             "Named after the founder or owner — Kaizer Chiefs (Kaizer Motaung), Remo Stars (Kunle Soname)",
+    "evocative_aspirational":   "Declarative or aspirational names — Hearts of Oak, Mighty Atoms, Venomous Vipers, Sekondi Eleven Wise, Rainbow FC, Sporting Lagos",
+    "national_pride":            "Names invoking national or pan-Arab identity — Al Ahly ('the national'), Zamalek, El Ahly",
+    "civic_traditional":         "Long-established city clubs — Wydad, Raja, Gor Mahia, AFC Leopards"
+  }
+}
