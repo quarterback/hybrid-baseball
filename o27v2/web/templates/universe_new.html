@@ -64,7 +64,7 @@
       Each league needs an <strong>even</strong> team count (for a balanced schedule) divisible by its division count.
     </div>
     <div class="table-responsive">
-    <table class="table table-sm dense-table mb-0" id="league-table" style="min-width:640px">
+    <table class="table table-sm dense-table mb-0" id="league-table">
       <thead><tr>
         <th>League name</th>
         <th class="num">Teams</th>
@@ -84,23 +84,23 @@
 
 <template id="league-row-tpl">
   <tr class="lg-main">
-    <td><input name="lg_name" class="form-control form-control-sm" placeholder="O27 MLB"></td>
-    <td><input name="lg_teams" type="number" min="2" step="2" value="6" class="form-control form-control-sm" style="width:80px"></td>
-    <td><input name="lg_divisions" type="number" min="1" value="1" class="form-control form-control-sm" style="width:70px"></td>
-    <td>
+    <td data-label="League name"><input name="lg_name" class="form-control form-control-sm" placeholder="O27 MLB"></td>
+    <td data-label="Teams" class="num"><input name="lg_teams" type="number" min="2" step="2" value="6" class="form-control form-control-sm" style="width:80px"></td>
+    <td data-label="Divisions" class="num"><input name="lg_divisions" type="number" min="1" value="1" class="form-control form-control-sm" style="width:70px"></td>
+    <td data-label="Style (talent profile)">
       <select name="lg_style" class="form-select form-select-sm lg-style">
         {% for s in style_options %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
         <option value="custom">Custom… (set your own)</option>
       </select>
       <input type="hidden" name="lg_custom" class="lg-custom" value="">
     </td>
-    <td>
+    <td data-label="Home region (names)">
       <select name="lg_locale" class="form-select form-select-sm">
         <option value="">(default mix)</option>
         {% for o in locale_options %}<option value="{{ o.id }}">{{ o.label }} — {{ o.group }}</option>{% endfor %}
       </select>
     </td>
-    <td><button type="button" class="btn btn-sm btn-link text-danger p-0 rm-league">Remove</button></td>
+    <td class="lg-actions-cell"><button type="button" class="btn btn-sm btn-link text-danger p-0 rm-league">Remove</button></td>
   </tr>
   <tr class="lg-custom-panel" style="display:none">
     <td colspan="6" style="background:var(--bg-warm)">
