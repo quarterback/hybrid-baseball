@@ -150,6 +150,41 @@ Omit a league from `name_regions` (or use `""`) to fall back to the default mix.
 > name-region preset. They're independent — `style_profiles` takes style keys,
 > `name_regions` takes locale ids. Don't cross them.
 
+> Weather is decoupled too — and it emerges from a team's *city*. With
+> `team_naming: "generated"` each team is placed in a real city drawn from its
+> locale's pool, and the climate (and thus heat/humidity → fatigue, HR carry,
+> error rate) is resolved from that city. So a tropical locale automatically
+> produces a hot, fatigue-taxing league with no weather knob. A blended
+> `name_regions` dict blends the *cities* too: a cold-climate slice (e.g.
+> `east_asia`, which includes Sapporo) will drag non-tropical cities into an
+> otherwise tropical league — keep the locale climate-coherent if a uniform
+> climate identity matters.
+
+---
+
+## 5b. `park_profiles` — a league's field geometry (optional)
+
+`{ "<league name>": <profile> }`. Field geometry is the single biggest driver
+of how O27 plays in a region (tiny urban lots → HR + walkback game; converted
+cricket grounds → few over-fence HRs, gappers, triples, inside-the-park HRs,
+defensive range). Without this block a league rolls its parks from the global
+all-eras shape distribution; with it, the league's parks cluster toward a
+geometry. A value is **either** a named profile key **or** a raw
+`{ shape: weight }` dict (weights need not sum to 1; unknown shapes ignored).
+
+| key | feel |
+|---|---|
+| `urban_small` | tiny urban footprints — short fences, spite-fence walls |
+| `brazil_futsal` | futsal-court/rooftop tiny — extreme HR + absurd scoring |
+| `cricket_grounds` | oval converted cricket grounds — pull HRs vanish, gappers/triples/ITP feast |
+| `mixed_split` | repurposed cricket grounds + new small urban parks (split personality) |
+| `coastal_inland_mix` | small coastal + big inland — two sub-styles |
+| `wild_variance` | maximum geometric variance, incl. exotics — no two parks alike |
+
+Shape keys for a raw dict: `balanced`, `short_porch_rf`, `short_porch_lf`,
+`cavernous`, `bathtub`, `triangle`, `oval`, `bandbox`, `crescent`, `hourglass`,
+`coffin_corner`, `sawtooth_wedge`. Defined in `o27v2/league.py` (`_PARK_PROFILES`).
+
 ---
 
 ## 6. Hard validation rules (a config is rejected if any fail)

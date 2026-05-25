@@ -1,0 +1,38 @@
+{
+  "id": "region_sea_urban",
+  "label": "Southeast Asian Urban League (small-footprint power game)",
+  "team_count": 14,
+  "level": "MLB",
+  "schedule_mode": "independent",
+  "postseason": "none",
+  "team_naming": "generated",
+  "leagues": ["Southeast Asian Urban League"],
+  "league_specs": [
+    {"name": "Southeast Asian Urban League", "teams": 14, "divisions": 2}
+  ],
+  "style_profiles": {
+    "Southeast Asian Urban League": {
+      "power": 12, "contact": 12, "eye": 4,
+      "speed": -4, "baserunning": -2,
+      "pitcher_skill": -8, "movement": 8, "command": 10
+    }
+  },
+  "name_regions": {
+    "Southeast Asian Urban League": {
+      "philippines": 0.42, "southeast_asia": 0.42, "malaysia": 0.16
+    }
+  },
+  "park_profiles": {
+    "Southeast Asian Urban League": "urban_small"
+  },
+  "games_per_team": 60,
+  "season_days": 120,
+  "intra_division_weight": 0.5,
+  "inter_division_weight": 0.5,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
+}

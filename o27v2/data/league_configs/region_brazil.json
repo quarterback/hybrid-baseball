@@ -1,0 +1,37 @@
+{
+  "id": "region_brazil",
+  "label": "Brazil Developmental League (futsal touch, raw pitching, absurd scoring)",
+  "team_count": 10,
+  "level": "MLB",
+  "schedule_mode": "independent",
+  "postseason": "none",
+  "team_naming": "generated",
+  "leagues": ["Brazil Developmental League"],
+  "league_specs": [
+    {"name": "Brazil Developmental League", "teams": 10, "divisions": 1}
+  ],
+  "style_profiles": {
+    "Brazil Developmental League": {
+      "contact": 16, "eye": 6, "speed": 6, "baserunning": 6, "power": 2,
+      "pitcher_skill": -18, "command": -14, "movement": -10, "stamina": -8
+    }
+  },
+  "name_regions": {
+    "Brazil Developmental League": {
+      "south_america": 0.80, "latin_america": 0.20
+    }
+  },
+  "park_profiles": {
+    "Brazil Developmental League": "brazil_futsal"
+  },
+  "games_per_team": 54,
+  "season_days": 110,
+  "intra_division_weight": 0.5,
+  "inter_division_weight": 0.5,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
+}

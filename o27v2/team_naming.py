@@ -147,6 +147,27 @@ def _region_for_city_keys(city_keys: tuple[str, ...]) -> str | None:
                 return region
     return None
 
+
+def _resolve_locale_city_keys(locale) -> tuple[tuple[str, ...] | None, str | None]:
+    """Resolve a `locale` to (city_keys, dominant region_key) for generated
+    team identities. `locale` is either a region/preset id string OR a weighted
+    {region_id: weight} blend dict. A blend draws cities from the UNION of all
+    its regions' sub-pools (so a mixed-origin league gets mixed-but-regional
+    cities, and therefore regional weather), with the highest-weight region
+    driving the coarse naming flavor. Returns (None, None) when nothing
+    resolves, so the caller falls back to the worldwide pool."""
+    if isinstance(locale, dict):
+        keys: list[str] = []
+        for rid in sorted(locale, key=lambda k: -float(locale.get(k) or 0.0)):
+            keys.extend(_LOCALE_TO_CITY_KEYS.get(rid, ()))
+        if not keys:
+            return None, None
+        seen: set[str] = set()
+        ck = tuple(k for k in keys if not (k in seen or seen.add(k)))
+        return ck, _region_for_city_keys(ck)
+    ck = _LOCALE_TO_CITY_KEYS.get((locale or "").strip())
+    return ck, (_region_for_city_keys(ck) if ck else None)
+
 # locale (from city_to_locale) -> the language prefix used by the
 # regional_flavor "<lang>_suffix_options" keys in business_names.json.
 _LOCALE_TO_SUFFIX_LANG = {
@@ -389,11 +410,11 @@ def generate_league_teams(league_name: str, n_teams: int, rng_seed: int,
         city_keys = None  # whole-region pool for canonical leagues
     else:
         league_key = None  # no authored distribution -> balanced default
-        city_keys = _LOCALE_TO_CITY_KEYS.get((locale or "").strip())
-        region_key = _region_for_city_keys(city_keys) if city_keys else None
+        city_keys, region_key = _resolve_locale_city_keys(locale)
 
+    _locale_key = json.dumps(locale, sort_keys=True) if isinstance(locale, dict) else (locale or "")
     seed = (rng_seed ^ zlib.crc32(league_name.encode())
-            ^ zlib.crc32((locale or "").encode())) & 0x7FFFFFFF
+            ^ zlib.crc32(_locale_key.encode())) & 0x7FFFFFFF
     rng = random.Random(seed)
     if used_abbrev is None:
         used_abbrev = set()
