@@ -39,8 +39,12 @@ If you want the long version of the design argument, the post that goes through 
 - Defensive shifts fire from a manager `shift_aggression` rating against batter spray, with adaptability ratings letting hitters bunt or go opposite-field against extreme shifts.
 - A per-game weather draw mutates batted-ball physics on the margin.
 
+**Two O27-native wrinkles**
+- **Walk-Back.** A home run returns the hitter to third base as a live, persistent bonus runner — he stays there until he's driven in, put out, or the half ends, exactly like any other runner.
+- **Declared Seconds.** A manager may end his side's regulation half early and *bank* the unused outs, buying a second trip through the lineup later in the game. A genuine risk/reward lever with no equivalent in real baseball.
+
 **Game length**
-- Tied games go to super-innings: each side fields 5 batters and bats until 5 dismissals. Repeat until a winner.
+- Tied games go to extra innings: each side bats a normal 3-out frame, repeated until a winner. (An earlier 5-out "super-inning" format was dropped after it let offenses run up double-digit frames.)
 - Regular season length is per league config (8/12/16/24/30/36 teams, plus a 56-team tiered config). The default 30-team config plays 162 games per team.
 
 ## How the Stats Are Different
@@ -90,7 +94,9 @@ The sim has grown well past "rules engine + box score." A non-exhaustive list of
 - **Trade engine.** Motivation-driven, with front-office personalities (rebuilders, win-now buyers, value hunters). Deadline activity, in-season trades, and waivers all fire from team state, not random rolls.
 - **Injuries and aging.** Tiered IL (DTD / short / long), age-curve modifiers, position-specific risk, year-over-year drift baked into the offseason.
 - **Schedule, playoffs, awards.** Configurable team counts (8–36 + tiered), division-aware round-robin, playoff bracket, end-of-season awards and scouting.
-- **Youth pipeline.** A separate development sim feeds prospects into the league.
+- **Youth pipeline.** A separate development sim feeds prospects into the league, with a 48-team youth World Cup.
+- **Hall of Fame & career records.** A gated league hall plus criteria-based team halls, and multi-season career leaderboards surfaced in the almanac.
+- **Runtime tuning & world-building.** A web dashboard exposes every engine constant with era/stylistic presets, a guard-railed randomizer, and a saved-environment library (each auto-labelled by the run environment it produces). A peer-universe builder composes co-equal, independently-styled leagues whose play styles emerge from their field geometry, climate, and talent pipeline rather than national stereotype; configs support promotion/relegation tiers.
 - **Realism layer.** Ballparks (with pre-modern shapes), weather, batted-ball physics (EV / LA / spray), handedness splits, defensive shifts, RISP-pressure modifier, leadership flare on the firing side of a leverage swing.
 - **Stat invariants test suite.** `make test-invariants` runs nine assertions that catch every mathematically-impossible-stat bug the project has shipped before (phase-out caps, OR reconciliation, pitcher↔batter cross-check, OS% bounds, league FIP within 0.05 of league ERA, etc.). Required to pass before any release.
 - **Newspaper-style box score and Markdown export** for LLM-friendly game writeups.
@@ -114,14 +120,15 @@ Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoni
   - `injuries.py`, `trades.py`, `waivers.py`, `transactions.py`, `front_office.py` — roster movement.
   - `auction.py`, `currency.py`, `valuation.py` — economy.
   - `archetypes.py`, `scout.py`, `managers.py`, `development.py`, `youth.py`, `youth_sim.py` — player modeling and pipeline.
-  - `playoffs.py`, `awards.py`, `season_archive.py`, `promotion.py` — season lifecycle.
+  - `playoffs.py`, `awards.py`, `season_archive.py`, `promotion.py`, `hof.py` — season lifecycle and Hall of Fame.
+  - `engine_config.py` — runtime engine-tunables (presets, randomizer, saved environments) layered over `o27/config.py`.
   - `analytics/` — linear weights, xwOBA, base runs, run expectancy, Pythagorean.
   - `data/league_configs/` — `8teams.json` through `36teams.json` plus `56teams_tiered.json`.
   - `tests/` — archetype, linear-weights, RISP-pressure, trade, migration tests.
 - `tests/` — top-level invariant suite (`make test-invariants`) that runs against a populated DB.
 - `docs/` — methodology references and ~40 AARs documenting every system shipped.
 - `Dockerfile`, `fly.toml`, `DEPLOY.md` — Fly.io deployment for `hybrid-baseball.fly.dev`.
-- `lib/`, `scripts/`, `pnpm-workspace.yaml` — TypeScript-side workspace scaffolding (API spec, codegen, React client). Independent of the Python sim.
+- `scripts/`, `pnpm-workspace.yaml` — peripheral TypeScript workspace (codegen, design mockups). Independent of the Python sim.
 
 ## Running It
 
@@ -163,7 +170,7 @@ Deployment to Fly.io (`hybrid-baseball` app, `ams` region, `o27v2_data` volume m
 
 ## Status
 
-Active development. Engine, stats methodology, web UI, economy, trades, playoffs, and the youth pipeline are functional and producing complete simulated seasons. New systems land roughly weekly; recent additions include defensive shifts (with adaptability and bunt-against-shift), per-base runner-advancement analytics, the leadership-flare model, named-manager attribute effects, and a motivation-driven trade engine with front-office personalities. The pitch repertoire system, ballpark geometry, and weather model all continue to evolve.
+Active development. Engine, stats methodology, web UI, economy, trades, playoffs, and the youth pipeline are functional and producing complete simulated seasons. New systems land continuously; recent additions include a Hall of Fame and career leaderboards, a re-themed WCAG-AA light/dark UI with grouped navigation and a mobile layout, a runtime engine-tunables dashboard (presets, randomizer, saved environments), infrastructure-driven regional leagues with per-league park geometry, defensive shifts, and a motivation-driven trade engine with front-office personalities. The pitch repertoire system, ballpark geometry, and weather model all continue to evolve.
 
 The sim is not a complete game product. There's no manager-mode play, no human-driven GM workflow. It's a data exploration tool for browsing what the rules produce, with views designed to surface stats and archetypes for human reading or LLM ingestion.
 
