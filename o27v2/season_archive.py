@@ -192,9 +192,9 @@ def _snapshot_leaders(season_id: int) -> None:
                 """INSERT OR REPLACE INTO season_batting_leaders
                    (season_id, category, rank, player_name, team_abbrev,
                     g, pa, ab, h, hr, rbi, bb, avg, obp, slg, ops,
-                    wrc_plus, wpa, li_avg)
+                    wrc_plus, wpa, li_avg, ops_plus)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                           ?, ?, ?)""",
+                           ?, ?, ?, ?)""",
                 (season_id, category, i, r["player_name"], r["team_abbrev"],
                  r.get("g") or 0, r.get("pa") or 0, r.get("ab") or 0,
                  r.get("h") or 0, r.get("hr") or 0, r.get("rbi") or 0,
@@ -203,29 +203,53 @@ def _snapshot_leaders(season_id: int) -> None:
                  float(r.get("slg") or 0), float(r.get("ops") or 0),
                  float(r.get("wrc_plus") or 100),
                  float(r.get("wpa") or 0),
-                 float(r.get("li_avg") or 0)),
+                 float(r.get("li_avg") or 0),
+                 float(r.get("ops_plus") or 100)),
             )
 
     _save_batting("avg", sorted(batting, key=lambda x: x["avg"], reverse=True))
     _save_batting("hr",  sorted(batting, key=lambda x: x["hr"] or 0, reverse=True))
     _save_batting("rbi", sorted(batting, key=lambda x: x["rbi"] or 0, reverse=True))
     _save_batting("ops", sorted(batting, key=lambda x: x["ops"], reverse=True))
-    _save_batting("wrc_plus",
-                  sorted(batting, key=lambda x: x.get("wrc_plus") or 0, reverse=True))
-    _save_batting("wpa",
-                  sorted(batting, key=lambda x: x.get("wpa") or 0, reverse=True))
+    # OPS+ substitutes for wRC+ here: wRC+'s wOBA weights are derived from
+    # game_pa_log, which fast-sim (detail="lite") skips, collapsing wRC+ to
+    # one constant for every batter. OPS+ is OPS-relative (box-score only),
+    # so it ranks correctly in both fast and full archives.
+    _save_batting("ops_plus",
+                  sorted(batting, key=lambda x: x.get("ops_plus") or 0, reverse=True))
+    # WPA dropped: it's derived from game_pa_log, which fast-sim
+    # (detail="lite") skips, so it reads +0.00 for every batter.
 
+    # NOTE: this MUST select the arc-bucketed columns (er_arc*/bf_arc*/etc.)
+    # and the true-outcome columns that `_aggregate_pitcher_rows` consumes.
+    # Omitting them (the original bug) made the aggregator read every arc as
+    # 0, so archived wERA collapsed to 0.00 and wERA+ fell back to 100 for
+    # every pitcher. The arc columns are written even by fast-sim
+    # (detail="lite"); only the per-PA log is skipped there.
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
                    t.id as team_id, t.abbrev as team_abbrev,
                    COUNT(ps.game_id) as g,
                    SUM(ps.outs_recorded) as outs,
+                   SUM(ps.batters_faced) as bf,
                    SUM(ps.hits_allowed)  as h,
                    SUM(ps.runs_allowed)  as r,
                    SUM(ps.er)            as er,
                    SUM(ps.bb)            as bb,
                    SUM(ps.k)             as k,
-                   SUM(ps.hr_allowed)    as hr_allowed
+                   SUM(ps.hr_allowed)    as hr_allowed,
+                   COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
+                   COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
+                   COALESCE(SUM(ps.fo_induced),0)    as fo_induced,
+                   COALESCE(SUM(ps.pitches),0)       as pitches,
+                   COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                   COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
+                   COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                   COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                   COALESCE(SUM(ps.singles_allowed),0) as singles_allowed,
+                   COALESCE(SUM(ps.doubles_allowed),0) as doubles_allowed,
+                   COALESCE(SUM(ps.triples_allowed),0) as triples_allowed,
+                   COALESCE(SUM(ps.is_starter),0) as gs
               FROM {_PSTATS_DEDUP_SQL} ps
               JOIN players p ON ps.player_id = p.id
               JOIN teams   t ON ps.team_id = t.id
@@ -266,9 +290,10 @@ def _snapshot_leaders(season_id: int) -> None:
                 """INSERT OR REPLACE INTO season_pitching_leaders
                    (season_id, category, rank, player_name, team_abbrev,
                     g, w, l, outs, er, k, bb, era, fip, whip, oavg,
-                    wera_plus, gsc_index, wpa, li_avg)
+                    wera_plus, gsc_index, wpa, li_avg,
+                    fip_dips, kbb, whip_v, k9)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                           ?, ?, ?, ?)""",
+                           ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (season_id, category, i, r["player_name"], r["team_abbrev"],
                  r.get("g") or 0, r.get("w") or 0, r.get("l") or 0,
                  r.get("outs") or 0, r.get("er") or 0,
@@ -278,7 +303,11 @@ def _snapshot_leaders(season_id: int) -> None:
                  float(r.get("wera_plus") or 100),
                  float(r.get("gsc_index") or 100),
                  float(r.get("wpa") or 0),
-                 float(r.get("li_avg") or 0)),
+                 float(r.get("li_avg") or 0),
+                 float(r.get("fip") or 0),
+                 float(r.get("kbb") or 0),
+                 float(r.get("whip") or 0),
+                 float(r.get("k9") or 0)),
             )
 
     _save_pitching("w",     sorted(pitching, key=lambda x: x["w"], reverse=True))
@@ -290,8 +319,17 @@ def _snapshot_leaders(season_id: int) -> None:
                    sorted(pitching, key=lambda x: x.get("wera_plus") or 0, reverse=True))
     _save_pitching("gsc_index",
                    sorted(pitching, key=lambda x: x.get("gsc_index") or 0, reverse=True))
-    _save_pitching("wpa",
-                   sorted(pitching, key=lambda x: x.get("wpa") or 0, reverse=True))
+    # Outs-based DIPS leaderboards (replace the pa_log-derived WPA board,
+    # which reads 0 for every pitcher in fast-sim archives). FIP / WHIP sort
+    # ascending (lower is better); K/BB / K/9 sort descending.
+    _save_pitching("fip",
+                   sorted(pitching, key=lambda x: x.get("fip") if x.get("fip") else 999.0))
+    _save_pitching("kbb",
+                   sorted(pitching, key=lambda x: x.get("kbb") or 0, reverse=True))
+    _save_pitching("whip",
+                   sorted(pitching, key=lambda x: x.get("whip") if x.get("whip") else 999.0))
+    _save_pitching("k9",
+                   sorted(pitching, key=lambda x: x.get("k9") or 0, reverse=True))
 
 
 def _snapshot_career_lines(season_id: int, season_number: int,

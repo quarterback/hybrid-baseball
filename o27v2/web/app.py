@@ -1458,6 +1458,40 @@ def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
     return c_w, xra_norm, league_outs_per_g, share_1b, share_2b, share_3b
 
 
+def _league_fip_constant() -> float:
+    """League FIP constant so that league FIP == league ERA.
+
+    FIP is the classic DIPS estimator built only from the three true
+    outcomes a pitcher controls (HR, BB+HBP, K) plus innings — none of
+    which need the per-PA event log, so it survives fast-sim (`detail
+    ="lite"`) seasons that skip `game_pa_log`. IP is outs/3; a complete
+    27-out frame == 9 IP, so the per-9 ERA scale and this constant line up
+    with the existing `era`/`k9`/`whip` columns.
+
+    Falls back to an MLB-ish 3.10 on an empty DB.
+    """
+    row = db.fetchone(
+        f"""SELECT COALESCE(SUM(hr_allowed),0)    AS hr,
+                   COALESCE(SUM(bb),0)            AS bb,
+                   COALESCE(SUM(hbp_allowed),0)   AS hbp,
+                   COALESCE(SUM(k),0)             AS k,
+                   COALESCE(SUM(er),0)            AS er,
+                   COALESCE(SUM(outs_recorded),0) AS outs
+            FROM {_PSTATS_DEDUP_SQL} ps"""
+    ) or {}
+    outs = row.get("outs") or 0
+    if not outs:
+        return 3.10
+    ip = outs / 3.0
+    lg_era = (row.get("er") or 0) * 9.0 / ip
+    lg_raw = (
+        13.0 * (row.get("hr") or 0)
+        + 3.0 * ((row.get("bb") or 0) + (row.get("hbp") or 0))
+        - 2.0 * (row.get("k") or 0)
+    ) / ip
+    return lg_era - lg_raw
+
+
 def _league_baselines(league: str | None = None) -> dict[str, float]:
     """Compute league baselines for OPS+/ERA+/wOBA+/WAR/VORP relativization.
 
@@ -1951,6 +1985,7 @@ def _aggregate_pitcher_rows(
     if werra_consts is None:
         werra_consts = _league_werra_consts()
     c_w, xra_norm, league_outs_per_g, share_1b, share_2b, share_3b = werra_consts
+    fip_const = _league_fip_constant()
     # Pre-blend the per-non-HR-hit weight using league shares so each
     # pitcher's xRA picks up the v2 2B/3B uplift without persisting
     # hit-type breakdowns on game_pitcher_stats.
@@ -2215,11 +2250,20 @@ def _aggregate_pitcher_rows(
             p["k9"]   = k  * 9.0 / ip
             p["bb9"]  = bb * 9.0 / ip
             p["hr9"]  = hr * 9.0 / ip
+            # FIP — DIPS estimator on the ERA scale. Built only from the
+            # three true outcomes (HR / BB+HBP / K) and outs, so unlike
+            # wERA/xRA it needs no arc columns and unlike WPA/wRC+ it needs
+            # no game_pa_log — it stays correct in fast-sim archives.
+            p["fip"]  = (13.0 * hr + 3.0 * (bb + hbp_a) - 2.0 * k) / ip + fip_const
         else:
             p["whip"] = 0.0
             p["k9"]   = 0.0
             p["bb9"]  = 0.0
             p["hr9"]  = 0.0
+            p["fip"]  = 0.0
+        # K/BB ratio — None when the pitcher hasn't issued a walk (templates
+        # render None as "—"; avoids a divide-by-zero / fake-infinite value).
+        p["kbb"] = (k / bb) if bb > 0 else None
 
         # --- Walk-Back Stop% (post-HR rule-placed runner strand rate) ---
         # The Manfred-runner-analog measurement: the rate at which this
