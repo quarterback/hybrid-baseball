@@ -6873,7 +6873,10 @@ def new_league_get():
                            configs=configs,
                            current_team_count=current_n,
                            name_region_presets=get_name_region_presets(),
-                           name_regions=get_name_regions())
+                           name_regions=get_name_regions(),
+                           style_options=_universe_style_options(),
+                           locale_options=_universe_locale_options(),
+                           park_options=_universe_park_options())
 
 
 @app.route("/new-league", methods=["POST"])
@@ -6936,6 +6939,9 @@ def new_league_post():
                 label                = request.form.get("label") or None,
                 gender               = request.form.get("gender", "male") or "male",
                 name_region_preset   = request.form.get("name_region_preset") or None,
+                style                = request.form.get("cf_style") or None,
+                home_region          = request.form.get("cf_home_region") or None,
+                park                 = request.form.get("cf_park") or None,
             )
         except (ValueError, TypeError) as e:
             flash(f"League configuration error: {e}", "error")
@@ -7079,11 +7085,17 @@ def _universe_locale_options():
     return presets + regions
 
 
+def _universe_park_options():
+    from o27v2.league import get_park_profiles
+    return [{"key": k, "label": lbl} for k, lbl in get_park_profiles().items()]
+
+
 @app.route("/universe/new", methods=["GET"])
 def universe_new_get():
     return _serve("universe_new.html",
                   style_options=_universe_style_options(),
                   locale_options=_universe_locale_options(),
+                  park_options=_universe_park_options(),
                   **_universe_custom_meta())
 
 
@@ -7114,6 +7126,7 @@ def universe_new_post():
     styles    = request.form.getlist("lg_style")
     customs   = request.form.getlist("lg_custom")
     locales   = request.form.getlist("lg_locale")
+    parks     = request.form.getlist("lg_park")
     leagues = []
     for i, nm in enumerate(names):
         if not (nm or "").strip():
@@ -7134,6 +7147,7 @@ def universe_new_post():
             "divisions": int(divisions[i]) if i < len(divisions) and divisions[i] else 1,
             "style":     style_val,
             "locale":    (locales[i] if i < len(locales) else "") or "",
+            "park":      (parks[i] if i < len(parks) else "") or "",
         })
 
     try:

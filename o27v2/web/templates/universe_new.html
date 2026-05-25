@@ -122,6 +122,7 @@
         <th class="num">Divisions</th>
         <th>Style (talent profile)</th>
         <th>Home region (names)</th>
+        <th>Field geometry (parks)</th>
         <th></th>
       </tr></thead>
       <tbody id="league-rows"></tbody>
@@ -151,10 +152,16 @@
         {% for o in locale_options %}<option value="{{ o.id }}">{{ o.label }} — {{ o.group }}</option>{% endfor %}
       </select>
     </td>
+    <td data-label="Field geometry (parks)">
+      <select name="lg_park" class="form-select form-select-sm" title="Field dimensions drive HR vs. triples/inside-the-park and defensive range">
+        <option value="">(varied — all eras)</option>
+        {% for p in park_options %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
+      </select>
+    </td>
     <td class="lg-actions-cell"><button type="button" class="btn btn-sm btn-link text-danger p-0 rm-league">Remove</button></td>
   </tr>
   <tr class="lg-custom-panel" style="display:none">
-    <td colspan="6" style="background:var(--bg-warm)">
+    <td colspan="7" style="background:var(--bg-warm)">
       <div class="cust-head">
         <div class="small text-secondary" style="line-height:1.5">
           <strong>0 = neutral</strong> · range −{{ custom_style_max }}…+{{ custom_style_max }} grade points
@@ -268,6 +275,7 @@
       main.querySelector('[name=lg_teams]').value = preset.teams || 6;
       if (preset.style)  sel.value = preset.style;
       if (preset.locale) main.querySelector('[name=lg_locale]').value = preset.locale;
+      if (preset.park)   main.querySelector('[name=lg_park]').value = preset.park;
     }
     rows.appendChild(frag);
     syncPanel();

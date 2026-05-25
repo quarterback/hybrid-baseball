@@ -140,12 +140,25 @@ def build_custom_config(
     gender: str = "male",
     name_region_preset: str | None = None,
     name_region_weights: dict[str, float] | None = None,
+    style: object = None,
+    home_region: str | None = None,
+    park: str | None = None,
 ) -> dict:
     """Build a league-config dict from raw inputs (the parametric form path).
 
     Validates the team-count math: must be even and divisible by
     `leagues_count * divisions_per_league` so divisions can be even-sized.
     Weights are normalised to sum to 1.0 before being stored.
+
+    The optional "newer-feature" knobs apply uniformly to every league the
+    custom config produces (the single-league path is the common case):
+      * style       — a _STYLE_PROFILES key or a custom {attr: bias} dict;
+                       sets the league talent profile.
+      * home_region — a region/preset id from data/names/regions.json; switches
+                       on generated team identities so the league's clubs sit in
+                       that region's cities (driving regional weather) and its
+                       players/managers draw from that locale.
+      * park        — a _PARK_PROFILES field-geometry key.
 
     Raises `ValueError` with a human-readable message on invalid input
     so the form handler can surface it to the user.
@@ -208,7 +221,7 @@ def build_custom_config(
     else:
         leagues = [f"L{i + 1}" for i in range(leagues_count)]
 
-    return {
+    cfg = {
         "id":                     "custom",
         "label":                  label or f"Custom — {team_count} teams",
         "team_count":             team_count,
@@ -234,6 +247,51 @@ def build_custom_config(
         "name_region_weights":       resolved_weights,
     }
 
+    # --- Optional "newer-feature" knobs, applied uniformly to every league ---
+    # Talent profile (preset key or custom bias dict).
+    if isinstance(style, dict):
+        clean: dict[str, int] = {}
+        for k, v in style.items():
+            if k not in _CUSTOM_STYLE_ATTRS:
+                raise ValueError(f"Unknown style attribute {k!r}.")
+            try:
+                iv = int(v)
+            except (TypeError, ValueError):
+                raise ValueError(f"Style bias for {k!r} must be a number.")
+            if abs(iv) > _CUSTOM_STYLE_MAX:
+                raise ValueError(
+                    f"Style bias for {k!r} must be between "
+                    f"-{_CUSTOM_STYLE_MAX} and {_CUSTOM_STYLE_MAX}."
+                )
+            if iv:
+                clean[k] = iv
+        if clean:
+            cfg["style_profiles"] = {lg: clean for lg in leagues}
+    elif isinstance(style, str) and style.strip():
+        s = style.strip()
+        if s not in _STYLE_PROFILES:
+            raise ValueError(f"Unknown style {s!r}.")
+        cfg["style_profiles"] = {lg: s for lg in leagues}
+
+    # Home region → generated regional team identities (cities → weather) and
+    # a per-league name locale.
+    if home_region and home_region.strip():
+        hr = home_region.strip()
+        valid_regions = set(get_name_regions()) | set(get_name_region_presets())
+        if hr not in valid_regions:
+            raise ValueError(f"Unknown home region {hr!r}.")
+        cfg["team_naming"]  = "generated"
+        cfg["name_regions"] = {lg: hr for lg in leagues}
+
+    # Field geometry profile.
+    if park and park.strip():
+        pk = park.strip()
+        if pk not in _PARK_PROFILES:
+            raise ValueError(f"Unknown park profile {pk!r}.")
+        cfg["park_profiles"] = {lg: pk for lg in leagues}
+
+    return cfg
+
 
 def build_universe_config(
     *,
@@ -257,9 +315,11 @@ def build_universe_config(
     never via interleague games.
 
     `leagues` is an ordered list of dicts:
-        {name, teams, divisions=1, style="", locale=""}
+        {name, teams, divisions=1, style="", locale="", park=""}
       * style  — a key from _STYLE_PROFILES (or "" for balanced)
       * locale — a region/preset id from data/names/regions.json (or "")
+      * park   — a key from _PARK_PROFILES field-geometry profile (or "" for
+                 the global all-eras park distribution)
 
     Validates each league's team math and that style/locale ids exist.
     Raises ValueError with a human-readable message on bad input.
@@ -270,6 +330,7 @@ def build_universe_config(
     league_specs: list[dict] = []
     style_profiles: dict[str, str] = {}
     name_regions: dict[str, str] = {}
+    park_profiles: dict[str, str] = {}
     valid_regions = set(get_name_regions().keys()) | set(get_name_region_presets().keys())
 
     for i, lg in enumerate(leagues):
@@ -297,6 +358,9 @@ def build_universe_config(
         locale = (lg.get("locale") or "").strip()
         if locale and locale not in valid_regions:
             raise ValueError(f"League {name!r}: unknown locale {locale!r}.")
+        park = (lg.get("park") or "").strip()
+        if park and park not in _PARK_PROFILES:
+            raise ValueError(f"League {name!r}: unknown park profile {park!r}.")
         league_specs.append({"name": name, "teams": teams, "divisions": ndiv})
         # Style may be a preset key (str) or a custom per-attribute bias dict.
         if isinstance(style, dict):
@@ -324,6 +388,8 @@ def build_universe_config(
             style_profiles[name] = s
         if locale:
             name_regions[name] = locale
+        if park:
+            park_profiles[name] = park
 
     team_count = sum(s["teams"] for s in league_specs)
     g = (gender or "male").lower()
@@ -352,6 +418,7 @@ def build_universe_config(
         "league_specs":           league_specs,
         "style_profiles":         style_profiles,
         "name_regions":           name_regions,
+        "park_profiles":          park_profiles,
         # Within a league, split games evenly between same-division and
         # cross-division opponents.
         "intra_division_weight":  0.5,
@@ -1299,6 +1366,23 @@ _PARK_PROFILES: dict[str, dict[str, float]] = {
 }
 
 _PARK_SHAPE_NAMES = frozenset(s[0] for s in _PARK_SHAPES)
+
+# Human labels for the named park profiles, surfaced in the league-builder UI
+# so the geometry presets are pickable from a menu instead of read from source.
+_PARK_PROFILE_LABELS: dict[str, str] = {
+    "urban_small":        "Urban small-footprint — short fences, HR + walkback game",
+    "brazil_futsal":      "Futsal-tiny — extreme HR, absurd scoring",
+    "cricket_grounds":    "Converted cricket grounds — oval, few HR, gappers & triples",
+    "mixed_split":        "Mixed — cricket grounds + small urban (split personality)",
+    "coastal_inland_mix": "Coastal small + inland big — two sub-styles",
+    "wild_variance":      "Wild variance — every shape, no two parks alike",
+}
+
+
+def get_park_profiles() -> dict[str, str]:
+    """Named park-geometry profiles → human label, for the league-builder menus.
+    The value passed into a config's `park_profiles` block is the key."""
+    return {k: _PARK_PROFILE_LABELS.get(k, k) for k in _PARK_PROFILES}
 
 
 def _resolve_park_shape_weights(profile) -> list[float] | None:
