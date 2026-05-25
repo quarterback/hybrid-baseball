@@ -201,7 +201,15 @@
     {{ bat_table('HR',  batting.get('hr',  []), 'hr',  '%d') }}
     {{ bat_table('RBI', batting.get('rbi', []), 'rbi', '%d') }}
     {{ bat_table('OPS', batting.get('ops', []), 'ops', '%.3f') }}
-    {{ bat_table('wRC+',batting.get('wrc_plus', []), 'wrc_plus', '%d') }}
+    {# OPS+ replaces wRC+ here: wRC+'s wOBA weights come from game_pa_log,
+       which fast-sim skips, so archived wRC+ is a flat constant. OPS+ is
+       box-score-only and ranks correctly in fast and full archives alike.
+       Legacy archives (no ops_plus board) keep their original wRC+ table. #}
+    {% if batting.get('ops_plus') %}
+    {{ bat_table('OPS+', batting.get('ops_plus'), 'ops_plus', '%d') }}
+    {% else %}
+    {{ bat_table('wRC+', batting.get('wrc_plus', []), 'wrc_plus', '%d') }}
+    {% endif %}
   </div>
   <div class="col-lg-6">
     <h5 class="text-secondary text-uppercase small">Pitching Leaders</h5>

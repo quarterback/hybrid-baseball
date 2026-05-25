@@ -565,6 +565,10 @@ CREATE TABLE IF NOT EXISTS season_batting_leaders (
     wrc_plus    REAL DEFAULT 100,
     wpa         REAL DEFAULT 0,
     li_avg      REAL DEFAULT 0,
+    -- OPS+ (OPS relative to league, 100 = avg). Built from box-score OPS,
+    -- so unlike wRC+ (wOBA weights from game_pa_log) it stays correct in
+    -- fast-sim archives.
+    ops_plus    REAL DEFAULT 100,
     PRIMARY KEY (season_id, category, rank)
 );
 
@@ -1304,6 +1308,7 @@ def init_db() -> None:
             ("season_batting_leaders",  "wrc_plus",   100),
             ("season_batting_leaders",  "wpa",        0),
             ("season_batting_leaders",  "li_avg",     0),
+            ("season_batting_leaders",  "ops_plus",   100),
             ("season_pitching_leaders", "wera_plus",  100),
             ("season_pitching_leaders", "gsc_index",  100),
             ("season_pitching_leaders", "wpa",        0),

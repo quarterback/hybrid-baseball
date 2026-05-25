@@ -192,9 +192,9 @@ def _snapshot_leaders(season_id: int) -> None:
                 """INSERT OR REPLACE INTO season_batting_leaders
                    (season_id, category, rank, player_name, team_abbrev,
                     g, pa, ab, h, hr, rbi, bb, avg, obp, slg, ops,
-                    wrc_plus, wpa, li_avg)
+                    wrc_plus, wpa, li_avg, ops_plus)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                           ?, ?, ?)""",
+                           ?, ?, ?, ?)""",
                 (season_id, category, i, r["player_name"], r["team_abbrev"],
                  r.get("g") or 0, r.get("pa") or 0, r.get("ab") or 0,
                  r.get("h") or 0, r.get("hr") or 0, r.get("rbi") or 0,
@@ -203,18 +203,22 @@ def _snapshot_leaders(season_id: int) -> None:
                  float(r.get("slg") or 0), float(r.get("ops") or 0),
                  float(r.get("wrc_plus") or 100),
                  float(r.get("wpa") or 0),
-                 float(r.get("li_avg") or 0)),
+                 float(r.get("li_avg") or 0),
+                 float(r.get("ops_plus") or 100)),
             )
 
     _save_batting("avg", sorted(batting, key=lambda x: x["avg"], reverse=True))
     _save_batting("hr",  sorted(batting, key=lambda x: x["hr"] or 0, reverse=True))
     _save_batting("rbi", sorted(batting, key=lambda x: x["rbi"] or 0, reverse=True))
     _save_batting("ops", sorted(batting, key=lambda x: x["ops"], reverse=True))
-    _save_batting("wrc_plus",
-                  sorted(batting, key=lambda x: x.get("wrc_plus") or 0, reverse=True))
+    # OPS+ substitutes for wRC+ here: wRC+'s wOBA weights are derived from
+    # game_pa_log, which fast-sim (detail="lite") skips, collapsing wRC+ to
+    # one constant for every batter. OPS+ is OPS-relative (box-score only),
+    # so it ranks correctly in both fast and full archives.
+    _save_batting("ops_plus",
+                  sorted(batting, key=lambda x: x.get("ops_plus") or 0, reverse=True))
     # WPA dropped: it's derived from game_pa_log, which fast-sim
-    # (detail="lite") skips, so it reads +0.00 for every batter. wRC+ above
-    # is retained — it's correct for full-detail archives.
+    # (detail="lite") skips, so it reads +0.00 for every batter.
 
     # NOTE: this MUST select the arc-bucketed columns (er_arc*/bf_arc*/etc.)
     # and the true-outcome columns that `_aggregate_pitcher_rows` consumes.
