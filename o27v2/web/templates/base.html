@@ -529,6 +529,30 @@
     }
     .dropdown-item { color: var(--text) !important; padding: 5px 14px; }
     .dropdown-item:hover { background: var(--bg-alt) !important; color: var(--link) !important; }
+    .dropdown-item.active, .dropdown-item:active {
+      background: var(--accent-soft) !important;
+      color: var(--accent) !important;
+      font-weight: 700;
+    }
+    .dropdown-item.accent { color: var(--accent) !important; font-weight: 600; }
+    .dropdown-divider { border-top-color: var(--border-soft); }
+    .topbar .nav-link.dropdown-toggle { display: inline-flex; align-items: center; }
+
+    /* Collapsed navbar (below the xl breakpoint): render dropdown menus
+       inline as expandable sections instead of floating overlays, so the
+       grouped nav is usable on a phone. */
+    @media (max-width: 1199px) {
+      .topbar .navbar-collapse .dropdown-menu {
+        position: static;
+        float: none;
+        border: 0;
+        box-shadow: none;
+        background: transparent;
+        padding: 0 0 4px 14px;
+        margin: 0;
+      }
+      .topbar .navbar-collapse .dropdown-item { padding: 8px 10px; }
+    }
 
     /* ---- Progress bar ---- */
     .progress { background: var(--bg-soft) !important; border: 1px solid var(--border-soft); border-radius: 2px; }
@@ -945,31 +969,79 @@
     </div>
 
     <div class="collapse navbar-collapse order-3 order-xl-2" id="topbarNav">
-      <div class="navbar-nav flex-row flex-wrap gap-1 mt-2 mt-xl-0">
-        <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}"     href="{{ url_for('index') }}">Scores</a>
-        <a class="nav-link {% if request.endpoint == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a>
-        <a class="nav-link {% if request.endpoint == 'schedule' %}active{% endif %}"  href="{{ url_for('schedule') }}">Schedule</a>
-        <a class="nav-link {% if request.endpoint in ('players','player_detail') %}active{% endif %}" href="{{ url_for('players') }}">Players</a>
-        <a class="nav-link {% if request.endpoint in ('teams','team_detail') %}active{% endif %}"     href="{{ url_for('teams') }}">Teams</a>
-        <a class="nav-link {% if request.endpoint == 'league' %}active{% endif %}" href="{{ url_for('league') }}">League</a>
-        <a class="nav-link {% if request.endpoint == 'distributions' %}active{% endif %}" href="{{ url_for('distributions') }}">Dist.</a>
-        <a class="nav-link {% if request.endpoint == 'analytics' %}active{% endif %}" href="{{ url_for('analytics') }}">Analytics</a>
-        <a class="nav-link {% if request.endpoint == 'leaders' %}active{% endif %}"   href="{{ url_for('leaders') }}">Leaders</a>
-        <a class="nav-link {% if request.endpoint == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stats</a>
-        <a class="nav-link {% if request.endpoint == 'glossary' %}active{% endif %}" href="{{ url_for('glossary') }}" title="What every stat abbreviation means">Glossary</a>
-        <a class="nav-link {% if request.endpoint == 'compare' %}active{% endif %}" href="{{ url_for('compare') }}">Compare</a>
-        <a class="nav-link {% if request.endpoint == 'playoffs_view' %}active{% endif %}" href="{{ url_for('playoffs_view') }}">Playoffs</a>
-        <a class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}" href="{{ url_for('transactions') }}">Trans.</a>
-        <a class="nav-link {% if request.endpoint == 'free_agents' %}active{% endif %}" href="{{ url_for('free_agents') }}">FAs</a>
-        <a class="nav-link {% if request.endpoint == 'auction_view' %}active{% endif %}" href="{{ url_for('auction_view') }}">Auction</a>
-        <a class="nav-link {% if request.endpoint in ('youth_view','youth_team_view','youth_tournament_view') %}active{% endif %}" href="{{ url_for('youth_view') }}">Youth</a>
-        <a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a>
-        <a class="nav-link {% if request.endpoint in ('hall_of_fame','hof_candidates','hof_settings') %}active{% endif %}" href="{{ url_for('hall_of_fame') }}" title="Hall of Fame">HOF</a>
-        <a class="nav-link {% if request.endpoint == 'engine_settings' %}active{% endif %}" href="{{ url_for('engine_settings') }}" title="Engine tunables">Engine</a>
-        <a class="nav-link {% if request.path.startswith('/almanac') %}active{% endif %}" href="/almanac/" title="Live stats almanac">Almanac</a>
-        <a class="nav-link {% if request.endpoint == 'saves_index' %}active{% endif %}" href="{{ url_for('saves_index') }}" title="Switch, save, export or import leagues">Saves</a>
-        <a class="nav-link accent {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">+ League</a>
-      </div>
+      {#- Grouped navigation. Each top menu is active when the current
+          endpoint (or path, for the Almanac) belongs to it. -#}
+      {% set ep = request.endpoint %}
+      {% set g_games   = ['index', 'standings', 'schedule', 'playoffs_view'] %}
+      {% set g_players = ['players', 'player_detail', 'teams', 'team_detail', 'compare', 'free_agents'] %}
+      {% set g_stats   = ['leaders', 'stats_browse', 'analytics', 'distributions', 'glossary'] %}
+      {% set g_league  = ['league', 'transactions', 'auction_view', 'auction_live', 'youth_view', 'youth_team_view', 'youth_tournament_view'] %}
+      {% set g_history = ['seasons_index', 'season_detail', 'season_archive', 'hall_of_fame', 'hof_candidates', 'hof_settings'] %}
+      {% set g_manage  = ['engine_settings', 'benchmarks', 'saves_index', 'new_league_get', 'new_league_post', 'universe_new_get', 'universe_new_post'] %}
+      <ul class="navbar-nav gap-1 mt-2 mt-xl-0">
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_games %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Games</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep == 'index' %}active{% endif %}" href="{{ url_for('index') }}">Scores</a></li>
+            <li><a class="dropdown-item {% if ep == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a></li>
+            <li><a class="dropdown-item {% if ep == 'schedule' %}active{% endif %}" href="{{ url_for('schedule') }}">Schedule</a></li>
+            <li><a class="dropdown-item {% if ep == 'playoffs_view' %}active{% endif %}" href="{{ url_for('playoffs_view') }}">Playoffs</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_players %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Players</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep in ('players','player_detail') %}active{% endif %}" href="{{ url_for('players') }}">Players</a></li>
+            <li><a class="dropdown-item {% if ep in ('teams','team_detail') %}active{% endif %}" href="{{ url_for('teams') }}">Teams</a></li>
+            <li><a class="dropdown-item {% if ep == 'compare' %}active{% endif %}" href="{{ url_for('compare') }}">Compare</a></li>
+            <li><a class="dropdown-item {% if ep == 'free_agents' %}active{% endif %}" href="{{ url_for('free_agents') }}">Free Agents</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_stats %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Stats</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep == 'leaders' %}active{% endif %}" href="{{ url_for('leaders') }}">Leaders</a></li>
+            <li><a class="dropdown-item {% if ep == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stat Browser</a></li>
+            <li><a class="dropdown-item {% if ep == 'analytics' %}active{% endif %}" href="{{ url_for('analytics') }}">Analytics</a></li>
+            <li><a class="dropdown-item {% if ep == 'distributions' %}active{% endif %}" href="{{ url_for('distributions') }}">Distributions</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item {% if ep == 'glossary' %}active{% endif %}" href="{{ url_for('glossary') }}">Glossary</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_league %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">League</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep == 'league' %}active{% endif %}" href="{{ url_for('league') }}">League Overview</a></li>
+            <li><a class="dropdown-item {% if ep == 'transactions' %}active{% endif %}" href="{{ url_for('transactions') }}">Transactions</a></li>
+            <li><a class="dropdown-item {% if ep == 'auction_view' %}active{% endif %}" href="{{ url_for('auction_view') }}">Auction</a></li>
+            <li><a class="dropdown-item {% if ep in ('youth_view','youth_team_view','youth_tournament_view') %}active{% endif %}" href="{{ url_for('youth_view') }}">Youth</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_history or request.path.startswith('/almanac') %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">History</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a></li>
+            <li><a class="dropdown-item {% if ep in ('hall_of_fame','hof_candidates','hof_settings') %}active{% endif %}" href="{{ url_for('hall_of_fame') }}">Hall of Fame</a></li>
+            <li><a class="dropdown-item {% if request.path.startswith('/almanac') %}active{% endif %}" href="/almanac/">Almanac</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_manage %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Manage</a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item {% if ep == 'engine_settings' %}active{% endif %}" href="{{ url_for('engine_settings') }}">Engine Settings</a></li>
+            <li><a class="dropdown-item {% if ep == 'saves_index' %}active{% endif %}" href="{{ url_for('saves_index') }}">Saves</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item accent {% if ep in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">+ New League</a></li>
+          </ul>
+        </li>
+
+      </ul>
     </div>
   </div>
 </nav>
