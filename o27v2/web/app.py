@@ -53,225 +53,21 @@ from o27.almanac.blueprint import almanac_bp
 app.register_blueprint(almanac_bp)
 
 
-def _scout(val) -> int:
-    """Render a stored attribute as a 20–80 scout grade.
-    Task #47 stores grades natively as ints in [20, 80]; legacy float values
-    in [0.0, 1.0] are converted on the fly via the 0.15 / 0.50 / 0.85 anchors."""
-    try:
-        v = float(val)
-    except (TypeError, ValueError):
-        return 50
-    if v > 1.0:  # already a grade (int storage from Task #47)
-        return max(20, min(80, int(round(v))))
-    grade = 20 + (v - 0.15) / 0.70 * 60
-    return max(20, min(80, int(round(grade))))
-
+# Presentation filters live in o27v2.web.formatters (pure value formatters,
+# no app dependency). Import and register them on the Jinja environment.
+from o27v2.web.formatters import (  # noqa: E402
+    _scout, _flag, _archetype_label, _rating_stars,
+    _park_dimensions, _park_quirks, _park_shape_meta, _repertoire, _money,
+)
 
 app.jinja_env.filters["scout"] = _scout
-
-
-def _flag(country_code) -> str:
-    """Render an ISO 3166-1 alpha-2 country code as a flag emoji.
-
-    Two regional-indicator code points (U+1F1E6..U+1F1FF). Empty / invalid
-    codes render as empty string so templates can unconditionally
-    `{{ p.country | flag }}` next to player names.
-    """
-    if not country_code:
-        return ""
-    s = str(country_code).strip().upper()
-    if len(s) != 2 or not s.isalpha():
-        return ""
-    base = 0x1F1E6
-    a = ord("A")
-    return chr(base + ord(s[0]) - a) + chr(base + ord(s[1]) - a)
-
-
 app.jinja_env.filters["flag"] = _flag
-
-
-def _archetype_label(key) -> str:
-    """Convert a manager archetype key (e.g. 'mad_scientist') to its
-    human label (e.g. 'Mad Scientist'). Empty / unknown keys fall back
-    to the snake_case key so templates render *something* rather than
-    breaking."""
-    if not key:
-        return ""
-    from o27v2.managers import archetype_label
-    return archetype_label(str(key))
-
-
 app.jinja_env.filters["archetype_label"] = _archetype_label
-
-
-def _rating_stars(value) -> str:
-    """Render a 0..1 float as a 5-dot rating bar. Fog-of-war display —
-    hides the exact internal number while still showing the shape.
-
-    < 0.20 → ●○○○○ ;  0.20-0.39 → ●●○○○ ;  0.40-0.59 → ●●●○○ ;
-    0.60-0.79 → ●●●●○ ;  ≥ 0.80 → ●●●●●
-    """
-    try:
-        v = float(value or 0.0)
-    except (TypeError, ValueError):
-        v = 0.0
-    if v >= 0.80:
-        filled = 5
-    elif v >= 0.60:
-        filled = 4
-    elif v >= 0.40:
-        filled = 3
-    elif v >= 0.20:
-        filled = 2
-    else:
-        filled = 1
-    return "●" * filled + "○" * (5 - filled)
-
-
 app.jinja_env.filters["rating_stars"] = _rating_stars
-
-
-def _park_dimensions(value) -> dict:
-    """Parse a JSON-encoded park_dimensions field into a dict. Returns
-    an empty dict on malformed / legacy rows."""
-    import json as _json
-    if not value:
-        return {}
-    if isinstance(value, dict):
-        return value
-    try:
-        return _json.loads(value) or {}
-    except (ValueError, TypeError):
-        return {}
-
-
 app.jinja_env.filters["park_dimensions"] = _park_dimensions
-
-
-def _park_quirks(value) -> list:
-    """Parse the JSON-encoded park_quirks list into a list of dicts."""
-    import json as _json
-    if not value:
-        return []
-    if isinstance(value, list):
-        return value
-    try:
-        out = _json.loads(value)
-        return out if isinstance(out, list) else []
-    except (ValueError, TypeError):
-        return []
-
-
 app.jinja_env.filters["park_quirks"] = _park_quirks
-
-
-def _park_shape_meta(value) -> dict:
-    """Return {label, blurb} for a park_shape key. Empty dict on
-    unknown / legacy values."""
-    if not value:
-        return {"label": "", "blurb": ""}
-    try:
-        from o27v2.league import _park_shape_meta as _impl
-        return _impl(str(value))
-    except Exception:
-        return {"label": "", "blurb": ""}
-
-
 app.jinja_env.filters["park_shape_meta"] = _park_shape_meta
-
-
-def _repertoire(value) -> list:
-    """Parse a pitcher's JSON repertoire into a sorted list of dicts.
-
-    Each entry: {pitch_type, quality, usage_weight, grade, label, tier}.
-      grade  = quality mapped to a 20-80 scout grade (the rest of the
-               system uses 20-80, so the chip reads consistently).
-      tier   = 'elite' / 'plus' / 'avg' / 'fringe' / 'org' for chip color.
-      label  = humanized pitch_type (snake_case → Title Case, with a few
-               canon overrides).
-    Sorted by usage_weight desc so the primary pitch comes first.
-    """
-    import json as _json
-    if not value:
-        return []
-    if isinstance(value, str):
-        try:
-            raw = _json.loads(value)
-        except (ValueError, TypeError):
-            return []
-    elif isinstance(value, list):
-        raw = value
-    else:
-        return []
-
-    _OVERRIDES = {
-        "four_seam":       "4-Seam",
-        "sisko_slider":    "Sisko Slider",
-        "vulcan_changeup": "Vulcan Change",
-        "walking_slider":  "Walking Slider",
-        "curve_10_to_2":   "10-to-2 Curve",
-    }
-
-    def _label(pt: str) -> str:
-        if pt in _OVERRIDES:
-            return _OVERRIDES[pt]
-        return pt.replace("_", " ").title()
-
-    def _tier(grade: int) -> str:
-        if grade >= 70: return "elite"
-        if grade >= 60: return "plus"
-        if grade >= 50: return "avg"
-        if grade >= 40: return "fringe"
-        return "org"
-
-    out = []
-    for e in raw:
-        if not isinstance(e, dict) or not e.get("pitch_type"):
-            continue
-        q = float(e.get("quality", 0.5) or 0.5)
-        grade = max(20, min(80, int(round(20 + q * 60))))
-        out.append({
-            "pitch_type":   e["pitch_type"],
-            "label":        _label(e["pitch_type"]),
-            "quality":      q,
-            "usage_weight": float(e.get("usage_weight", 0.0) or 0.0),
-            "grade":        grade,
-            "tier":         _tier(grade),
-        })
-    out.sort(key=lambda r: r["usage_weight"], reverse=True)
-    return out
-
-
 app.jinja_env.filters["repertoire"] = _repertoire
-
-
-from markupsafe import Markup as _Markup  # noqa: E402
-
-
-def _money(g) -> _Markup:
-    """Render a guilder amount as a `<span class="o27-money">` cell with
-    pre-baked guilder / USD / EUR labels and a clickable pill. The pill
-    handler in base.html cycles between modes by swapping the visible
-    label, so each money cell carries everything the toggle needs."""
-    try:
-        n = int(g or 0)
-    except (TypeError, ValueError):
-        n = 0
-    label_g = currency.format_money(n, "guilder")
-    label_u = currency.format_money(n, "usd")
-    label_e = currency.format_money(n, "eur")
-    return _Markup(
-        f'<span class="o27-money" data-g="{n}" '
-        f'data-label-guilder="{label_g}" '
-        f'data-label-usd="{label_u}" '
-        f'data-label-eur="{label_e}">'
-        f'<span class="o27-money-label">{label_g}</span>'
-        f'<button type="button" class="o27-money-pill" '
-        f'aria-label="Toggle currency display">{currency.GUILDER}</button>'
-        f'</span>'
-    )
-
-
 app.jinja_env.filters["money"] = _money
 
 
@@ -7175,6 +6971,49 @@ def _universe_style_options():
     return [{"key": k, "label": style_profile_label(k)} for k in keys]
 
 
+# Ordered attribute knobs for the custom-league builder, with a short plain
+# hint of what each one pushes in the league's output. `group` splits the
+# panel into Hitters / Pitchers; `key` matches the names _make_hitter /
+# _make_pitcher read (see o27v2.league._CUSTOM_STYLE_ATTRS).
+_CUSTOM_ATTR_META = [
+    ("contact",            "Contact",  "hitter",  "batting average / contact"),
+    ("power",              "Power",    "hitter",  "home runs & extra-base hits"),
+    ("eye",                "Eye",      "hitter",  "walks / on-base"),
+    ("speed",              "Speed",    "hitter",  "steals & triples"),
+    ("baserunning",        "Baserun",  "hitter",  "extra bases taken"),
+    ("run_aggressiveness", "Run agg",  "hitter",  "steal & advance attempts"),
+    ("defense",            "Defense",  "hitter",  "fielding / runs saved"),
+    ("arm",                "Arm",      "hitter",  "outfield arm / holding runners"),
+    ("pitcher_skill",      "Stuff",    "pitcher", "velocity / strikeouts"),
+    ("command",            "Command",  "pitcher", "fewer walks"),
+    ("movement",           "Movement", "pitcher", "ground balls / HR suppression"),
+    ("stamina",            "Stamina",  "pitcher", "innings / deep starts"),
+]
+
+
+def _universe_custom_meta():
+    """Baseline/range context for the custom-style builder: the per-knob
+    attribute metadata and the named presets' bias values, so the UI can
+    show what neutral is and let users start from a known profile."""
+    from o27v2.league import _STYLE_PROFILES, _CUSTOM_STYLE_MAX, style_profile_label
+    hitter = [{"key": k, "label": lbl, "hint": h}
+              for (k, lbl, g, h) in _CUSTOM_ATTR_META if g == "hitter"]
+    pitcher = [{"key": k, "label": lbl, "hint": h}
+               for (k, lbl, g, h) in _CUSTOM_ATTR_META if g == "pitcher"]
+    preset_keys = ["npb", "dominican", "european", "caribbean", "athletic"]
+    presets = [{"key": k,
+                "label": style_profile_label(k),
+                "biases": dict(_STYLE_PROFILES.get(k) or {})}
+               for k in preset_keys]
+    return {
+        "hitter_attrs": hitter,
+        "pitcher_attrs": pitcher,
+        "style_presets": presets,
+        "custom_style_max": _CUSTOM_STYLE_MAX,
+        "attr_labels": {k: lbl for (k, lbl, _g, _h) in _CUSTOM_ATTR_META},
+    }
+
+
 def _universe_locale_options():
     from o27v2.league import get_name_regions, get_name_region_presets
     regions = [{"id": rid, "label": (meta.get("label") or rid), "group": "Region"}
@@ -7188,7 +7027,8 @@ def _universe_locale_options():
 def universe_new_get():
     return _serve("universe_new.html",
                   style_options=_universe_style_options(),
-                  locale_options=_universe_locale_options())
+                  locale_options=_universe_locale_options(),
+                  **_universe_custom_meta())
 
 
 @app.route("/universe/new", methods=["POST"])

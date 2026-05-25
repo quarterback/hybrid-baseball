@@ -5,8 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}O27 League{% endblock %} — O27 Baseball</title>
 
+  {# Apply the saved (or system-preferred) theme before first paint to
+     avoid a flash of the wrong palette. #}
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('o27.theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+
   {# ---- PWA / installability ---- #}
-  <meta name="theme-color" content="#0a3a73">
+  <meta name="theme-color" content="#3538a3">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -22,32 +36,108 @@
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
     /* ============================================================
-       O27 League — design system
-       Baseball-Reference influence: dense, monospace numerics,
-       quiet chrome, navy + red accents on a cream sheet.
+       O27 League — design system  ·  "Twilight Diamond"
+       Dense, monospace numerics, quiet chrome. Deep indigo as the
+       primary, a warm amber/leather accent. Ships light + dark,
+       both tuned for WCAG-AA contrast.
+
+       Two families of color tokens:
+         • TEXT/SURFACE tokens flip between light and dark.
+         • --fill-* tokens are FIXED across themes: they back solid
+           buttons/badges and always carry white (or, for warn, dark)
+           text, so contrast holds in both modes.
        ============================================================ */
     :root {
-      --bg:        #f4efe2;   /* page (cream) */
-      --bg-alt:    #ece5d1;   /* card header / striped row */
-      --bg-card:   #ffffff;   /* table & card body */
-      --bg-soft:   #faf6ea;   /* alt-row stripe */
-      --bg-warm:   #fff7d6;   /* row hover */
-      --border:    #c9c0a6;
-      --border-soft:  #e1d9bf;
-      --border-strong:#7a7250;
-      --text:      #1a1a1a;
-      --text-dim:  #5b5b5b;
-      --text-muted:#8a826a;
-      --link:      #0a3a73;
-      --link-hov:  #b3162e;
-      --accent:    #b3162e;   /* red accent */
-      --accent-2:  #7a4a00;   /* warm brown for div headers */
-      --good:      #14692c;
-      --bad:       #b3162e;
-      --warn:      #b35d00;
+      color-scheme: light;
 
-      --radius:    3px;
+      /* surfaces */
+      --bg:        #f3f4f8;   /* page */
+      --bg-alt:    #e7e9f1;   /* card header / striped row */
+      --bg-card:   #ffffff;   /* table & card body */
+      --bg-soft:   #eef0f6;   /* alt-row stripe */
+      --bg-warm:   #fdf3e2;   /* row hover (warm amber tint) */
+      --bg-alt-press: #d9dce7;/* pressed/hover secondary surface */
+      --border:    #d2d6e0;
+      --border-soft:  #e3e6ee;
+      --border-strong:#a3aabb;
+
+      /* text + link (flip per theme) */
+      --text:      #191c26;
+      --text-dim:  #4c5468;
+      --text-muted:#6f7790;
+      --link:      #3538a3;   /* deep indigo */
+      --link-hov:  #9a4708;   /* warm amber on hover */
+      --accent:    #9a4708;   /* amber/leather — active nav, accents */
+      --accent-2:  #7a4a00;   /* warm brown for division headers */
+      --good:      #2e7d32;   /* wins / positive (text role) */
+      --bad:       #c02b2b;   /* losses / negative (text role) */
+      --warn:      #9a5b00;
+      --gold:      #b8860b;   /* overall-rating diamonds */
+
+      /* fixed fills for solid controls (white text, both themes) */
+      --fill-primary:      #3a3ea8;
+      --fill-primary-press:#2c2f87;
+      --fill-good:         #2e7d32;
+      --fill-good-press:   #245f28;
+      --fill-bad:          #c02b2b;
+      --fill-bad-press:    #9a1f1f;
+      --fill-accent:       #9a4708;
+      --fill-accent-press: #7c3906;
+      --fill-warn:         #d49a3a;  /* dark text */
+      --fill-warn-press:   #b07f24;  /* dark text */
+      --fill-info:         #1466a0;
+      --fill-si:           #6b3f00;
+
+      /* tints + effects (flip per theme) */
+      --accent-soft: rgba(53, 56, 163, .09);
+      --focus-ring:  rgba(53, 56, 163, .28);
+      --copied-bg:   #e6f4ea;
+      --shadow-card: 0 4px 12px rgba(20,24,40,.08);
+      --shadow-pop:  0 6px 20px rgba(20,24,40,.18);
+
+      /* flash banners */
+      --flash-error-bg: #fdecec; --flash-error-bd: #d2685a; --flash-error-fg: #7a1d0e;
+      --flash-warn-bg:  #fff4dc; --flash-warn-bd:  #d49d3a; --flash-warn-fg:  #5a3f00;
+      --flash-info-bg:  #e7f0fb; --flash-info-bd:  #5a8fd8; --flash-info-fg:  #16356b;
+
+      --radius:    4px;
       --shadow-sm: 0 1px 0 rgba(0,0,0,.04);
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+
+      --bg:        #111319;
+      --bg-alt:    #20242f;
+      --bg-card:   #191c24;
+      --bg-soft:   #1d212b;
+      --bg-warm:   #2a2536;
+      --bg-alt-press: #2b3140;
+      --border:    #333a48;
+      --border-soft:  #262b36;
+      --border-strong:#4a5266;
+
+      --text:      #e7e9f0;
+      --text-dim:  #a7aec0;
+      --text-muted:#828b9e;
+      --link:      #8c90f2;   /* light indigo for dark bg */
+      --link-hov:  #e0a868;
+      --accent:    #e9a24e;   /* brighter amber on dark */
+      --accent-2:  #d8a24a;
+      --good:      #5bbf63;
+      --bad:       #ef5f5f;
+      --warn:      #e0a14d;
+      --gold:      #e0b34d;
+
+      --accent-soft: rgba(140, 144, 242, .16);
+      --focus-ring:  rgba(140, 144, 242, .42);
+      --copied-bg:   #16321f;
+      --shadow-card: 0 4px 14px rgba(0,0,0,.45);
+      --shadow-pop:  0 8px 24px rgba(0,0,0,.55);
+
+      --flash-error-bg: #2e1a18; --flash-error-bd: #a23a2c; --flash-error-fg: #f4b6ab;
+      --flash-warn-bg:  #2c2412; --flash-warn-bd:  #b07f24; --flash-warn-fg:  #f0cf8d;
+      --flash-info-bg:  #142436; --flash-info-bd:  #2f6fb0; --flash-info-fg:  #a9cdf2;
     }
 
     * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
@@ -91,7 +181,7 @@
       padding: 4px 10px !important;
       border-radius: var(--radius);
     }
-    .topbar .nav-link:hover { color: var(--link) !important; background: rgba(10, 58, 115, .08); }
+    .topbar .nav-link:hover { color: var(--link) !important; background: var(--accent-soft); }
     .topbar .nav-link.active { color: var(--accent) !important; font-weight: 700; background: transparent; }
     .topbar .nav-link.accent { color: var(--accent) !important; }
     .topbar .navbar-toggler {
@@ -101,7 +191,25 @@
       color: var(--text);
       background: var(--bg-card);
     }
-    .topbar .navbar-toggler:focus { box-shadow: 0 0 0 .15rem rgba(10, 58, 115, .25); }
+    .topbar .navbar-toggler:focus { box-shadow: 0 0 0 .15rem var(--focus-ring); }
+
+    /* ---- Theme toggle (light/dark) ---- */
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px; height: 30px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      border-radius: var(--radius);
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+    }
+    .theme-toggle:hover { border-color: var(--border-strong); background: var(--bg-alt); }
+    .theme-toggle:focus-visible { outline: none; box-shadow: 0 0 0 .15rem var(--focus-ring); }
 
     /* ---- Sim widget in topbar ---- */
     .sim-widget { display: flex; align-items: center; gap: 8px; }
@@ -121,10 +229,10 @@
     .sim-date.simming {
       background-image: linear-gradient(
         to right,
-        rgba(20, 108, 46, .35) 0%,
-        rgba(20, 108, 46, .35) var(--pct, 0%),
+        rgba(46, 125, 50, .38) 0%,
+        rgba(46, 125, 50, .38) var(--pct, 0%),
         transparent var(--pct, 0%));
-      border-color: #0e5320;
+      border-color: var(--fill-good-press);
       white-space: nowrap;
       transition: background-image .25s ease;
     }
@@ -133,11 +241,11 @@
       font-weight: 600;
       padding: 4px 12px;
       border-radius: var(--radius);
-      background: var(--good);
+      background: var(--fill-good);
       color: #fff;
-      border: 1px solid #0e5320;
+      border: 1px solid var(--fill-good-press);
     }
-    .sim-btn:hover { background: #0e5320; color: #fff; }
+    .sim-btn:hover { background: var(--fill-good-press); color: #fff; }
     .sim-btn:disabled { opacity: .55; cursor: not-allowed; }
 
     /* ---- Cards / panels ---- */
@@ -237,7 +345,7 @@
     /* Overall-rating chip: diamonds for current, baby bottles for
        projected upside (prospects only, age <= 26). */
     .ovr-chip { display: inline-flex; align-items: center; gap: 2px; line-height: 1; }
-    .ovr-diamond { color: #b8860b; font-size: 1.05em; }
+    .ovr-diamond { color: var(--gold); font-size: 1.05em; }
     .ovr-bottle { font-size: .95em; opacity: .85; }
 
     /* compact dense table aliases */
@@ -265,14 +373,14 @@
       border-radius: var(--radius);
       padding: 4px 12px;
     }
-    .btn-primary { background: var(--link); border-color: var(--link); color: #fff; }
-    .btn-primary:hover { background: #042c5b; border-color: #042c5b; color: #fff; }
+    .btn-primary { background: var(--fill-primary); border-color: var(--fill-primary); color: #fff; }
+    .btn-primary:hover { background: var(--fill-primary-press); border-color: var(--fill-primary-press); color: #fff; }
     .btn-secondary { background: var(--bg-alt); border-color: var(--border); color: var(--text); }
-    .btn-secondary:hover { background: #ddd5bb; border-color: var(--border-strong); color: var(--text); }
-    .btn-warning { background: #d49d3a; border-color: #b6822a; color: #1a1a1a; }
-    .btn-warning:hover { background: #b6822a; color: #1a1a1a; }
-    .btn-success { background: var(--good); border-color: var(--good); color: #fff; }
-    .btn-success:hover { background: #0e5320; color: #fff; }
+    .btn-secondary:hover { background: var(--bg-alt-press); border-color: var(--border-strong); color: var(--text); }
+    .btn-warning { background: var(--fill-warn); border-color: var(--fill-warn-press); color: #1a1a1a; }
+    .btn-warning:hover { background: var(--fill-warn-press); color: #1a1a1a; }
+    .btn-success { background: var(--fill-good); border-color: var(--fill-good); color: #fff; }
+    .btn-success:hover { background: var(--fill-good-press); color: #fff; }
     .btn-outline-secondary { background: transparent; border-color: var(--border); color: var(--text); }
     .btn-outline-secondary:hover { background: var(--bg-alt); border-color: var(--border-strong); color: var(--text); }
     .btn-link {
@@ -301,7 +409,7 @@
     }
     .form-control:focus, .form-select:focus {
       border-color: var(--link) !important;
-      box-shadow: 0 0 0 .2rem rgba(10, 58, 115, .15) !important;
+      box-shadow: 0 0 0 .2rem var(--focus-ring) !important;
     }
     .form-label {
       color: var(--text-dim);
@@ -321,17 +429,17 @@
       border-radius: 2px;
     }
     .badge.bg-secondary { background-color: var(--bg-alt) !important; color: var(--text) !important; border: 1px solid var(--border); }
-    .badge.bg-success   { background-color: var(--good) !important; color: #fff !important; }
-    .badge.bg-danger    { background-color: var(--bad) !important; color: #fff !important; }
-    .badge.bg-warning   { background-color: #d49d3a !important; color: #1a1a1a !important; }
-    .badge.bg-info      { background-color: #0c5074 !important; color: #fff !important; }
-    .badge.bg-primary   { background-color: var(--link) !important; color: #fff !important; }
+    .badge.bg-success   { background-color: var(--fill-good) !important; color: #fff !important; }
+    .badge.bg-danger    { background-color: var(--fill-bad) !important; color: #fff !important; }
+    .badge.bg-warning   { background-color: var(--fill-warn) !important; color: #1a1a1a !important; }
+    .badge.bg-info      { background-color: var(--fill-info) !important; color: #fff !important; }
+    .badge.bg-primary   { background-color: var(--fill-primary) !important; color: #fff !important; }
 
     /* ---- Specialty visuals ---- */
     .team-abbrev { font-weight: 700; color: var(--link); letter-spacing: .02em; }
     a.team-abbrev:hover { color: var(--link-hov); text-decoration: none; }
     .winner-badge {
-      background: var(--good);
+      background: var(--fill-good);
       color: #fff;
       border-radius: 2px;
       padding: 1px 6px;
@@ -339,7 +447,7 @@
       font-weight: 600;
       letter-spacing: .04em;
     }
-    .si-badge { background: #6b3f00; color: #fff; border-radius: 2px; padding: 1px 5px; font-size: .7rem; font-weight: 600; }
+    .si-badge { background: var(--fill-si); color: #fff; border-radius: 2px; padding: 1px 5px; font-size: .7rem; font-weight: 600; }
     .player-flag {
       display: inline-block;
       font-size: .95em;
@@ -355,8 +463,8 @@
 
     /* W/L pill bars */
     .l5pill { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin: 0 1px; vertical-align: middle; }
-    .l5pill.w { background: var(--good); }
-    .l5pill.l { background: var(--bad); }
+    .l5pill.w { background: var(--fill-good); }
+    .l5pill.l { background: var(--fill-bad); }
     .strk-w { color: var(--good); font-weight: 600; }
     .strk-l { color: var(--bad); font-weight: 600; }
 
@@ -416,11 +524,35 @@
       background: var(--bg-card) !important;
       border: 1px solid var(--border) !important;
       border-radius: var(--radius);
-      box-shadow: 0 4px 12px rgba(0,0,0,.08);
+      box-shadow: var(--shadow-pop);
       font-size: .85rem;
     }
     .dropdown-item { color: var(--text) !important; padding: 5px 14px; }
     .dropdown-item:hover { background: var(--bg-alt) !important; color: var(--link) !important; }
+    .dropdown-item.active, .dropdown-item:active {
+      background: var(--accent-soft) !important;
+      color: var(--accent) !important;
+      font-weight: 700;
+    }
+    .dropdown-item.accent { color: var(--accent) !important; font-weight: 600; }
+    .dropdown-divider { border-top-color: var(--border-soft); }
+    .topbar .nav-link.dropdown-toggle { display: inline-flex; align-items: center; }
+
+    /* Collapsed navbar (below the xl breakpoint): render dropdown menus
+       inline as expandable sections instead of floating overlays, so the
+       grouped nav is usable on a phone. */
+    @media (max-width: 1199px) {
+      .topbar .navbar-collapse .dropdown-menu {
+        position: static;
+        float: none;
+        border: 0;
+        box-shadow: none;
+        background: transparent;
+        padding: 0 0 4px 14px;
+        margin: 0;
+      }
+      .topbar .navbar-collapse .dropdown-item { padding: 8px 10px; }
+    }
 
     /* ---- Progress bar ---- */
     .progress { background: var(--bg-soft) !important; border: 1px solid var(--border-soft); border-radius: 2px; }
@@ -462,6 +594,15 @@
 
     /* close button in dark theme — neutralize the invert filter */
     .btn-close[style*="filter:invert"] { filter: none !important; }
+    [data-theme="dark"] .btn-close { filter: invert(1) grayscale(.4); }
+
+    /* ---- Flash banners (themeable) ---- */
+    .flash { border: 1px solid; border-radius: var(--radius); padding: 8px 12px; font-size: .86rem; }
+    .flash--error   { background: var(--flash-error-bg); border-color: var(--flash-error-bd); color: var(--flash-error-fg); }
+    .flash--warning { background: var(--flash-warn-bg);  border-color: var(--flash-warn-bd);  color: var(--flash-warn-fg); }
+    .flash--info    { background: var(--flash-info-bg);  border-color: var(--flash-info-bd);  color: var(--flash-info-fg); }
+    /* Keep Bootstrap-styled alerts (used on a few forms) legible in dark mode */
+    [data-theme="dark"] .alert { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
 
     /* ---- Copy-as-markdown button + toast ---- */
     .copy-md {
@@ -478,13 +619,13 @@
       font-weight: 500;
     }
     .copy-md:hover { color: var(--link); border-color: var(--link); background: var(--bg-soft); }
-    .copy-md.copied { color: var(--good); border-color: var(--good); background: #e8f5ec; }
+    .copy-md.copied { color: var(--good); border-color: var(--good); background: var(--copied-bg); }
     .copy-md::before { content: "📋"; font-size: .9rem; }
     .copy-toast {
       position: fixed;
       top: 60px;
       right: 20px;
-      background: var(--good);
+      background: var(--fill-good);
       color: #fff;
       padding: 8px 16px;
       border-radius: var(--radius);
@@ -498,7 +639,7 @@
       z-index: 9999;
     }
     .copy-toast.show { opacity: 1; transform: translateY(0); }
-    .copy-toast.error { background: var(--bad); }
+    .copy-toast.error { background: var(--fill-bad); }
 
     /* ---- Money pill (per-value currency toggle, site-wide) ---- */
     .o27-money {
@@ -544,9 +685,9 @@
       user-select: none;
       transition: background .12s, color .12s, border-color .12s;
     }
-    .cmp-add:hover { background: var(--link); color: #fff; border-color: var(--link); }
-    .cmp-add.in-basket { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .cmp-add.in-basket:hover { background: #8a0e23; border-color: #8a0e23; }
+    .cmp-add:hover { background: var(--fill-primary); color: #fff; border-color: var(--fill-primary); }
+    .cmp-add.in-basket { background: var(--fill-accent); color: #fff; border-color: var(--fill-accent); }
+    .cmp-add.in-basket:hover { background: var(--fill-accent-press); border-color: var(--fill-accent-press); }
     .cmp-basket {
       position: fixed;
       bottom: 14px;
@@ -555,7 +696,7 @@
       background: var(--bg-card);
       border: 2px solid var(--accent);
       border-radius: var(--radius);
-      box-shadow: 0 4px 16px rgba(0,0,0,.18);
+      box-shadow: var(--shadow-pop);
       padding: 8px 12px;
       min-width: 220px;
       max-width: 340px;
@@ -605,11 +746,11 @@
       text-decoration: none;
     }
     .cmp-basket .cmp-go {
-      background: var(--accent);
+      background: var(--fill-accent);
       color: #fff;
-      border: 1px solid var(--accent);
+      border: 1px solid var(--fill-accent);
     }
-    .cmp-basket .cmp-go:hover { background: #8a0e23; color: #fff; }
+    .cmp-basket .cmp-go:hover { background: var(--fill-accent-press); color: #fff; }
     .cmp-basket .cmp-clear {
       background: var(--bg-alt);
       color: var(--text);
@@ -665,6 +806,45 @@
     @media (max-width: 768px) {
       .dense-table tbody td { font-size: .78rem; padding: 3px 5px; }
       .dense-table thead th { font-size: .65rem; padding: 4px 5px; }
+    }
+
+    /* Universe builder — the league config table overflows on a phone
+       (forced 720px floor + many columns). Below 768px, opt it out of the
+       min-width floor and stack each league into a labelled card so every
+       field is reachable without horizontal scrolling. */
+    @media (max-width: 768px) {
+      #league-table { min-width: 0 !important; }
+      #league-table thead { display: none; }
+      #league-table tbody, #league-table tr, #league-table td { display: block; width: 100%; }
+      #league-table tr.lg-main {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-card);
+        padding: 8px 10px;
+        margin-bottom: 4px;
+      }
+      #league-table tr.lg-main td { border: 0 !important; padding: 4px 0; }
+      #league-table td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        font-size: .68rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        font-weight: 600;
+        color: var(--text-dim);
+        margin-bottom: 2px;
+      }
+      #league-table td.num { text-align: left; }
+      #league-table td input,
+      #league-table td select { width: 100% !important; }
+      #league-table td.lg-actions-cell { text-align: right; }
+      #league-table tr.lg-custom-panel {
+        border: 1px solid var(--border);
+        border-top: 0;
+        border-radius: 0 0 var(--radius) var(--radius);
+        margin: -4px 0 12px;
+      }
+      #league-table tr.lg-custom-panel td { border: 0 !important; }
     }
 
     /* League pulse — tighter cell spacing on small screens */
@@ -801,6 +981,8 @@
     {# Sim widget — always visible (outside the collapse) so the
        "Sim Today" button is one tap away even on phones #}
     <div class="sim-widget order-1 order-xl-3 ms-auto">
+      <button type="button" class="theme-toggle" id="theme-toggle"
+              title="Toggle light / dark theme" aria-label="Toggle light / dark theme">🌙</button>
       <span class="sim-date" id="sim-date-badge"
             title="Current sim date — earliest unplayed game">
         {% if sim.season_complete %}Season complete{% else %}{{ sim.current_date }}{% endif %}
@@ -826,31 +1008,79 @@
     </div>
 
     <div class="collapse navbar-collapse order-3 order-xl-2" id="topbarNav">
-      <div class="navbar-nav flex-row flex-wrap gap-1 mt-2 mt-xl-0">
-        <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}"     href="{{ url_for('index') }}">Scores</a>
-        <a class="nav-link {% if request.endpoint == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a>
-        <a class="nav-link {% if request.endpoint == 'schedule' %}active{% endif %}"  href="{{ url_for('schedule') }}">Schedule</a>
-        <a class="nav-link {% if request.endpoint in ('players','player_detail') %}active{% endif %}" href="{{ url_for('players') }}">Players</a>
-        <a class="nav-link {% if request.endpoint in ('teams','team_detail') %}active{% endif %}"     href="{{ url_for('teams') }}">Teams</a>
-        <a class="nav-link {% if request.endpoint == 'league' %}active{% endif %}" href="{{ url_for('league') }}">League</a>
-        <a class="nav-link {% if request.endpoint == 'distributions' %}active{% endif %}" href="{{ url_for('distributions') }}">Dist.</a>
-        <a class="nav-link {% if request.endpoint == 'analytics' %}active{% endif %}" href="{{ url_for('analytics') }}">Analytics</a>
-        <a class="nav-link {% if request.endpoint == 'leaders' %}active{% endif %}"   href="{{ url_for('leaders') }}">Leaders</a>
-        <a class="nav-link {% if request.endpoint == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stats</a>
-        <a class="nav-link {% if request.endpoint == 'glossary' %}active{% endif %}" href="{{ url_for('glossary') }}" title="What every stat abbreviation means">Glossary</a>
-        <a class="nav-link {% if request.endpoint == 'compare' %}active{% endif %}" href="{{ url_for('compare') }}">Compare</a>
-        <a class="nav-link {% if request.endpoint == 'playoffs_view' %}active{% endif %}" href="{{ url_for('playoffs_view') }}">Playoffs</a>
-        <a class="nav-link {% if request.endpoint == 'transactions' %}active{% endif %}" href="{{ url_for('transactions') }}">Trans.</a>
-        <a class="nav-link {% if request.endpoint == 'free_agents' %}active{% endif %}" href="{{ url_for('free_agents') }}">FAs</a>
-        <a class="nav-link {% if request.endpoint == 'auction_view' %}active{% endif %}" href="{{ url_for('auction_view') }}">Auction</a>
-        <a class="nav-link {% if request.endpoint in ('youth_view','youth_team_view','youth_tournament_view') %}active{% endif %}" href="{{ url_for('youth_view') }}">Youth</a>
-        <a class="nav-link {% if request.endpoint in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a>
-        <a class="nav-link {% if request.endpoint in ('hall_of_fame','hof_candidates','hof_settings') %}active{% endif %}" href="{{ url_for('hall_of_fame') }}" title="Hall of Fame">HOF</a>
-        <a class="nav-link {% if request.endpoint == 'engine_settings' %}active{% endif %}" href="{{ url_for('engine_settings') }}" title="Engine tunables">Engine</a>
-        <a class="nav-link {% if request.path.startswith('/almanac') %}active{% endif %}" href="/almanac/" title="Live stats almanac">Almanac</a>
-        <a class="nav-link {% if request.endpoint == 'saves_index' %}active{% endif %}" href="{{ url_for('saves_index') }}" title="Switch, save, export or import leagues">Saves</a>
-        <a class="nav-link accent {% if request.endpoint in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">+ League</a>
-      </div>
+      {#- Grouped navigation. Each top menu is active when the current
+          endpoint (or path, for the Almanac) belongs to it. -#}
+      {% set ep = request.endpoint %}
+      {% set g_games   = ['index', 'standings', 'schedule', 'playoffs_view'] %}
+      {% set g_players = ['players', 'player_detail', 'teams', 'team_detail', 'compare', 'free_agents'] %}
+      {% set g_stats   = ['leaders', 'stats_browse', 'analytics', 'distributions', 'glossary'] %}
+      {% set g_league  = ['league', 'transactions', 'auction_view', 'auction_live', 'youth_view', 'youth_team_view', 'youth_tournament_view'] %}
+      {% set g_history = ['seasons_index', 'season_detail', 'season_archive', 'hall_of_fame', 'hof_candidates', 'hof_settings'] %}
+      {% set g_manage  = ['engine_settings', 'benchmarks', 'saves_index', 'new_league_get', 'new_league_post', 'universe_new_get', 'universe_new_post'] %}
+      <ul class="navbar-nav gap-1 mt-2 mt-xl-0">
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_games %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Games</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep == 'index' %}active{% endif %}" href="{{ url_for('index') }}">Scores</a></li>
+            <li><a class="dropdown-item {% if ep == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a></li>
+            <li><a class="dropdown-item {% if ep == 'schedule' %}active{% endif %}" href="{{ url_for('schedule') }}">Schedule</a></li>
+            <li><a class="dropdown-item {% if ep == 'playoffs_view' %}active{% endif %}" href="{{ url_for('playoffs_view') }}">Playoffs</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_players %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Players</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep in ('players','player_detail') %}active{% endif %}" href="{{ url_for('players') }}">Players</a></li>
+            <li><a class="dropdown-item {% if ep in ('teams','team_detail') %}active{% endif %}" href="{{ url_for('teams') }}">Teams</a></li>
+            <li><a class="dropdown-item {% if ep == 'compare' %}active{% endif %}" href="{{ url_for('compare') }}">Compare</a></li>
+            <li><a class="dropdown-item {% if ep == 'free_agents' %}active{% endif %}" href="{{ url_for('free_agents') }}">Free Agents</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_stats %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Stats</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep == 'leaders' %}active{% endif %}" href="{{ url_for('leaders') }}">Leaders</a></li>
+            <li><a class="dropdown-item {% if ep == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stat Browser</a></li>
+            <li><a class="dropdown-item {% if ep == 'analytics' %}active{% endif %}" href="{{ url_for('analytics') }}">Analytics</a></li>
+            <li><a class="dropdown-item {% if ep == 'distributions' %}active{% endif %}" href="{{ url_for('distributions') }}">Distributions</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item {% if ep == 'glossary' %}active{% endif %}" href="{{ url_for('glossary') }}">Glossary</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_league %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">League</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep == 'league' %}active{% endif %}" href="{{ url_for('league') }}">League Overview</a></li>
+            <li><a class="dropdown-item {% if ep == 'transactions' %}active{% endif %}" href="{{ url_for('transactions') }}">Transactions</a></li>
+            <li><a class="dropdown-item {% if ep == 'auction_view' %}active{% endif %}" href="{{ url_for('auction_view') }}">Auction</a></li>
+            <li><a class="dropdown-item {% if ep in ('youth_view','youth_team_view','youth_tournament_view') %}active{% endif %}" href="{{ url_for('youth_view') }}">Youth</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_history or request.path.startswith('/almanac') %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">History</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item {% if ep in ('seasons_index','season_detail') %}active{% endif %}" href="{{ url_for('seasons_index') }}">Seasons</a></li>
+            <li><a class="dropdown-item {% if ep in ('hall_of_fame','hof_candidates','hof_settings') %}active{% endif %}" href="{{ url_for('hall_of_fame') }}">Hall of Fame</a></li>
+            <li><a class="dropdown-item {% if request.path.startswith('/almanac') %}active{% endif %}" href="/almanac/">Almanac</a></li>
+          </ul>
+        </li>
+
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle {% if ep in g_manage %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Manage</a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item {% if ep == 'engine_settings' %}active{% endif %}" href="{{ url_for('engine_settings') }}">Engine Settings</a></li>
+            <li><a class="dropdown-item {% if ep == 'saves_index' %}active{% endif %}" href="{{ url_for('saves_index') }}">Saves</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item accent {% if ep in ('new_league_get','new_league_post') %}active{% endif %}" href="{{ url_for('new_league_get') }}">+ New League</a></li>
+          </ul>
+        </li>
+
+      </ul>
     </div>
   </div>
 </nav>
@@ -860,14 +1090,8 @@
     {% if messages %}
       <div class="flash-region mb-3">
       {% for category, msg in messages %}
-        {% set palette = {
-            'error':   ('#ffe1e1', '#c9482b', '#7a1d0e'),
-            'warning': ('#fff4dc', '#d49d3a', '#5a3f00'),
-            'info':    ('#e3f0ff', '#3b7dd8', '#0e3a73'),
-        } %}
-        {% set bg, brd, fg = palette.get(category, palette['info']) %}
-        <div class="alert mb-2"
-             style="background:{{ bg }};border:1px solid {{ brd }};color:{{ fg }};border-radius:var(--radius);padding:8px 12px;font-size:.86rem">
+        {% set flash_class = {'error': 'flash--error', 'warning': 'flash--warning', 'info': 'flash--info'} %}
+        <div class="flash mb-2 {{ flash_class.get(category, 'flash--info') }}">
           {{ msg }}
         </div>
       {% endfor %}
@@ -903,6 +1127,41 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* -- Theme toggle: light/dark, persisted in localStorage, synced across
+      tabs. The initial theme is set pre-paint by the inline <head> script. -- */
+(function () {
+  var KEY = 'o27.theme';
+  var root = document.documentElement;
+  var btn  = document.getElementById('theme-toggle');
+  var meta = document.querySelector('meta[name="theme-color"]');
+  function current() { return root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; }
+  function paint() {
+    var dark = current() === 'dark';
+    if (btn) {
+      btn.textContent = dark ? '☀️' : '🌙';
+      btn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+    }
+    if (meta) {
+      var bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+      meta.setAttribute('content', bg || (dark ? '#111319' : '#f3f4f8'));
+    }
+  }
+  function set(theme) {
+    root.setAttribute('data-theme', theme);
+    try { localStorage.setItem(KEY, theme); } catch (e) {}
+    paint();
+  }
+  if (btn) btn.addEventListener('click', function () { set(current() === 'dark' ? 'light' : 'dark'); });
+  window.addEventListener('storage', function (e) {
+    if (e.key === KEY && (e.newValue === 'light' || e.newValue === 'dark')) {
+      root.setAttribute('data-theme', e.newValue);
+      paint();
+    }
+  });
+  paint();
+})();
+</script>
 <script>window.O27_RATES = {{ currency_rates | tojson }};</script>
 <script>
 /* -- Money toggle — per-value currency display. Click the small pill
