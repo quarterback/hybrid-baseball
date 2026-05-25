@@ -69,37 +69,83 @@ _REGION_CITY_PREFIXES: dict[str, tuple[str, ...]] = {
 }
 
 # A custom universe league carries a `locale` (a region/preset id from
-# data/names/regions.json) instead of one of the seven canonical league
-# names. Map those locale ids onto the team_naming region_keys above so any
-# user-named league still gets region-appropriate generated identities rather
-# than falling back to real MLB/MiLB franchises. Unmapped locales (and the
-# blended presets like "global") resolve to None -> a worldwide city pool.
-_LOCALE_TO_REGION: dict[str, str] = {
-    # Americas
-    "us": "americas", "canada": "americas", "latin_america": "americas",
-    "south_america": "americas", "caribbean_dutch": "americas",
-    "caribbean_cricket": "americas", "haiti": "americas", "curacao": "americas",
-    "aruba": "americas", "suriname": "americas", "guyana": "americas",
-    "americas_pro": "americas", "us_only": "americas",
-    # East Asia
-    "east_asia": "east_asia", "asian_pro": "east_asia",
-    # Europe
-    "europe_western": "europe", "europe_eastern": "europe",
-    "europe_southeast": "europe", "british_isles": "europe",
-    "netherlands": "europe", "italy": "europe", "israel": "europe",
-    "nordic": "europe", "finland": "europe", "sweden": "europe",
-    "norway": "europe", "denmark": "europe", "european": "europe",
-    # Pacifica
-    "anzac": "pacifica", "pacific_islands": "pacifica", "guam": "pacifica",
-    # Indo-Malay / Southeast Asia
-    "malaysia": "indo_malay", "southeast_asia": "indo_malay",
-    "philippines": "indo_malay", "indonesia": "indo_malay", "thailand": "indo_malay",
-    # Subcontinent & Middle East
-    "south_asia": "subcontinent", "afghan_central_asia": "subcontinent",
-    "central_west_asia": "subcontinent", "gulf_cricket": "subcontinent",
-    # Africa
-    "africa": "africa", "africa_cricket": "africa",
+# data/names/regions.json) instead of one of the seven canonical league names.
+# Map each locale onto the PRECISE city_to_locale sub-pool keys it should draw
+# from — finer than region_key so a Latin-American league never gets US/Canada
+# cities, a Nordic league only gets Nordic cities, etc. The coarse region_key
+# (which drives corporate sponsors, mascots and civic authorities, all of which
+# only have region-level data) is derived from these via _region_for_city_keys.
+# Unmapped locales (and blended presets like "global") fall through to a
+# worldwide pool so any user-named league still gets generated identities
+# instead of real MLB/MiLB franchises.
+_LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
+    # --- Americas ---
+    "us":                ("americas_anglophone",),
+    "us_only":           ("americas_anglophone",),
+    "canada":            ("americas_anglophone", "americas_canada_french"),
+    "latin_america":     ("americas_spanish", "americas_portuguese"),
+    "south_america":     ("americas_spanish", "americas_portuguese"),
+    "caribbean_dutch":   ("americas_spanish",),
+    "caribbean_cricket": ("americas_spanish",),
+    "haiti":             ("americas_spanish",),
+    "curacao":           ("americas_spanish",),
+    "aruba":             ("americas_spanish",),
+    "suriname":          ("americas_portuguese",),
+    "guyana":            ("americas_anglophone",),
+    "americas_pro":      ("americas_anglophone", "americas_spanish",
+                          "americas_portuguese", "americas_canada_french"),
+    # --- East Asia ---
+    "east_asia":         ("east_asia_japan", "east_asia_korea", "east_asia_china"),
+    "asian_pro":         ("east_asia_japan", "east_asia_korea", "east_asia_china"),
+    # --- Europe ---
+    "british_isles":     ("europa_english",),
+    "europe_western":    ("europa_english", "europa_german", "europa_dutch",
+                          "europa_french", "europa_italian", "europa_spanish"),
+    "europe_eastern":    ("europa_polish", "europa_slavic"),
+    "europe_southeast":  ("europa_slavic", "europa_italian"),
+    "netherlands":       ("europa_dutch",),
+    "italy":             ("europa_italian",),
+    "israel":            ("europa_english",),   # no Hebrew city pool -> civic English
+    "nordic":            ("europa_nordic",),
+    "finland":           ("europa_nordic",),
+    "sweden":            ("europa_nordic",),
+    "norway":            ("europa_nordic",),
+    "denmark":           ("europa_nordic",),
+    "european":          ("europa_english", "europa_german", "europa_dutch",
+                          "europa_french", "europa_italian", "europa_spanish",
+                          "europa_nordic", "europa_polish", "europa_slavic"),
+    # --- Pacifica ---
+    "anzac":             ("pacifica_australia",),
+    "pacific_islands":   ("pacifica_pacific",),
+    "guam":              ("pacifica_pacific",),
+    "philippines":       ("pacifica_philippines",),
+    # --- Indo-Malay / Southeast Asia ---
+    "malaysia":          ("indo_malay_malay",),
+    "indonesia":         ("indo_malay_indonesian",),
+    "thailand":          ("indo_malay_other",),
+    "southeast_asia":    ("indo_malay_malay", "indo_malay_indonesian", "indo_malay_other"),
+    # --- Subcontinent & Middle East ---
+    "south_asia":        ("subcontinent_india", "subcontinent_pakistan",
+                          "subcontinent_other"),
+    "afghan_central_asia": ("subcontinent_pakistan", "middle_east_persian"),
+    "central_west_asia": ("middle_east_turkish", "middle_east_persian"),
+    "gulf_cricket":      ("middle_east_arabic",),
+    # --- Africa ---
+    "africa":            ("africa_english", "africa_swahili", "africa_afrikaans",
+                          "africa_french", "africa_amharic"),
+    "africa_cricket":    ("africa_english",),
 }
+
+
+def _region_for_city_keys(city_keys: tuple[str, ...]) -> str | None:
+    """The coarse region_key that owns the given city sub-pool keys (used for
+    corporate sponsors / mascots / authorities). Derived from the city-key
+    prefix; all keys in a locale map to one region by construction."""
+    for ck in city_keys:
+        for region, prefixes in _REGION_CITY_PREFIXES.items():
+            if ck.startswith(prefixes):
+                return region
+    return None
 
 # locale (from city_to_locale) -> the language prefix used by the
 # regional_flavor "<lang>_suffix_options" keys in business_names.json.
@@ -119,20 +165,26 @@ def supports(league_name: str) -> bool:
 # City pool
 # ---------------------------------------------------------------------------
 
-def _city_pool(region_key: str | None) -> list[tuple[str, str]]:
-    """All (city, locale) pairs available to a region, from team_naming's
-    city_to_locale exemplar lists. A None/"global" region_key draws from
-    every region (used for blended-preset or locale-less custom leagues)."""
+def _city_pool(region_key: str | None,
+               city_keys: tuple[str, ...] | None = None) -> list[tuple[str, str]]:
+    """All (city, locale) pairs to draw from, out of team_naming's
+    city_to_locale exemplar lists.
+
+      * city_keys given  -> EXACTLY those sub-pools (precise locale tightening).
+      * region_key set   -> every sub-pool whose key matches the region prefix.
+      * None/"global"    -> every region (blended-preset or locale-less leagues).
+    """
     c2l = _load("team_naming.json")["category_5_baseball_club"]["city_to_locale"]
-    if region_key in (None, "global"):
-        prefixes = tuple(p for ps in _REGION_CITY_PREFIXES.values() for p in ps)
-    else:
-        prefixes = _REGION_CITY_PREFIXES.get(region_key, ())
     out: list[tuple[str, str]] = []
     for key, entry in c2l.items():
         if key.startswith("_"):
             continue
-        if not key.startswith(prefixes):
+        if city_keys is not None:
+            if key not in city_keys:
+                continue
+        elif region_key in (None, "global"):
+            pass
+        elif not key.startswith(_REGION_CITY_PREFIXES.get(region_key, ())):
             continue
         locale = entry.get("locale", "english")
         for city in entry.get("cities_example", []):
@@ -334,9 +386,11 @@ def generate_league_teams(league_name: str, n_teams: int, rng_seed: int,
     """
     if league_name in _LEAGUE_MAP:
         region_key, league_key = _LEAGUE_MAP[league_name]
+        city_keys = None  # whole-region pool for canonical leagues
     else:
-        region_key = _LOCALE_TO_REGION.get((locale or "").strip())
         league_key = None  # no authored distribution -> balanced default
+        city_keys = _LOCALE_TO_CITY_KEYS.get((locale or "").strip())
+        region_key = _region_for_city_keys(city_keys) if city_keys else None
 
     seed = (rng_seed ^ zlib.crc32(league_name.encode())
             ^ zlib.crc32((locale or "").encode())) & 0x7FFFFFFF
@@ -344,7 +398,7 @@ def generate_league_teams(league_name: str, n_teams: int, rng_seed: int,
     if used_abbrev is None:
         used_abbrev = set()
 
-    cities = _city_pool(region_key)
+    cities = _city_pool(region_key, city_keys)
     rng.shuffle(cities)
     cats = _targets(league_key, n_teams)
     rng.shuffle(cats)
