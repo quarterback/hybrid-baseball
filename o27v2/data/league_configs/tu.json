@@ -1,0 +1,49 @@
+{
+  "id": "tu",
+  "label": "Test",
+  "team_count": 8,
+  "level": "MLB",
+  "games_per_team": 4,
+  "season_days": 20,
+  "leagues": [
+    "Alpha",
+    "Beta"
+  ],
+  "schedule_mode": "independent",
+  "postseason": "none",
+  "award_names": {
+    "mvp": "Hitter of the Year",
+    "cy_young": "Pitcher of the Year"
+  },
+  "team_naming": "generated",
+  "league_specs": [
+    {
+      "name": "Alpha",
+      "teams": 4,
+      "divisions": 1
+    },
+    {
+      "name": "Beta",
+      "teams": 4,
+      "divisions": 1
+    }
+  ],
+  "style_profiles": {
+    "Alpha": "balanced",
+    "Beta": {
+      "power": 13,
+      "contact": -5,
+      "command": 9
+    }
+  },
+  "name_regions": {},
+  "intra_division_weight": 0.5,
+  "inter_division_weight": 0.5,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4,
+  "gender": "male"
+}

@@ -7175,6 +7175,49 @@ def _universe_style_options():
     return [{"key": k, "label": style_profile_label(k)} for k in keys]
 
 
+# Ordered attribute knobs for the custom-league builder, with a short plain
+# hint of what each one pushes in the league's output. `group` splits the
+# panel into Hitters / Pitchers; `key` matches the names _make_hitter /
+# _make_pitcher read (see o27v2.league._CUSTOM_STYLE_ATTRS).
+_CUSTOM_ATTR_META = [
+    ("contact",            "Contact",  "hitter",  "batting average / contact"),
+    ("power",              "Power",    "hitter",  "home runs & extra-base hits"),
+    ("eye",                "Eye",      "hitter",  "walks / on-base"),
+    ("speed",              "Speed",    "hitter",  "steals & triples"),
+    ("baserunning",        "Baserun",  "hitter",  "extra bases taken"),
+    ("run_aggressiveness", "Run agg",  "hitter",  "steal & advance attempts"),
+    ("defense",            "Defense",  "hitter",  "fielding / runs saved"),
+    ("arm",                "Arm",      "hitter",  "outfield arm / holding runners"),
+    ("pitcher_skill",      "Stuff",    "pitcher", "velocity / strikeouts"),
+    ("command",            "Command",  "pitcher", "fewer walks"),
+    ("movement",           "Movement", "pitcher", "ground balls / HR suppression"),
+    ("stamina",            "Stamina",  "pitcher", "innings / deep starts"),
+]
+
+
+def _universe_custom_meta():
+    """Baseline/range context for the custom-style builder: the per-knob
+    attribute metadata and the named presets' bias values, so the UI can
+    show what neutral is and let users start from a known profile."""
+    from o27v2.league import _STYLE_PROFILES, _CUSTOM_STYLE_MAX, style_profile_label
+    hitter = [{"key": k, "label": lbl, "hint": h}
+              for (k, lbl, g, h) in _CUSTOM_ATTR_META if g == "hitter"]
+    pitcher = [{"key": k, "label": lbl, "hint": h}
+               for (k, lbl, g, h) in _CUSTOM_ATTR_META if g == "pitcher"]
+    preset_keys = ["npb", "dominican", "european", "caribbean", "athletic"]
+    presets = [{"key": k,
+                "label": style_profile_label(k),
+                "biases": dict(_STYLE_PROFILES.get(k) or {})}
+               for k in preset_keys]
+    return {
+        "hitter_attrs": hitter,
+        "pitcher_attrs": pitcher,
+        "style_presets": presets,
+        "custom_style_max": _CUSTOM_STYLE_MAX,
+        "attr_labels": {k: lbl for (k, lbl, _g, _h) in _CUSTOM_ATTR_META},
+    }
+
+
 def _universe_locale_options():
     from o27v2.league import get_name_regions, get_name_region_presets
     regions = [{"id": rid, "label": (meta.get("label") or rid), "group": "Region"}
@@ -7188,7 +7231,8 @@ def _universe_locale_options():
 def universe_new_get():
     return _serve("universe_new.html",
                   style_options=_universe_style_options(),
-                  locale_options=_universe_locale_options())
+                  locale_options=_universe_locale_options(),
+                  **_universe_custom_meta())
 
 
 @app.route("/universe/new", methods=["POST"])

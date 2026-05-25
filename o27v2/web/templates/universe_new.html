@@ -2,6 +2,33 @@
 {% block title %}Build a Universe{% endblock %}
 {% block content %}
 
+<style>
+  .style-ref > summary { cursor: pointer; font-weight: 600; font-size: .85rem; color: var(--link); }
+  .style-ref > summary:hover { color: var(--link-hov); }
+  .style-ref-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+  .style-ref-card { border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 8px 10px; background: var(--bg-card); }
+  .style-ref-name { font-weight: 700; font-size: .82rem; margin-bottom: 5px; }
+  .style-ref-biases { display: flex; flex-wrap: wrap; gap: 4px; }
+  .bias-chip { font-size: .7rem; padding: 1px 6px; border-radius: 99px; border: 1px solid var(--border); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .bias-chip.pos { color: var(--good); border-color: var(--good); }
+  .bias-chip.neg { color: var(--bad); border-color: var(--bad); }
+
+  .cust-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .cust-start { display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--text-dim); }
+  .cust-start select { width: auto; }
+  .cust-section { margin-bottom: 8px; }
+  .cust-section-title { margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
+  .cust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; }
+  .cust-knob { display: flex; flex-direction: column; gap: 1px; }
+  .cust-knob-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .cust-knob-name { font-size: .8rem; font-weight: 600; }
+  .cust-knob-val { font-family: "JetBrains Mono", "SF Mono", monospace; font-size: .78rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+  .cust-knob-val.pos { color: var(--good); }
+  .cust-knob-val.neg { color: var(--bad); }
+  .cust-knob input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0; }
+  .cust-knob-hint { font-size: .68rem; color: var(--text-muted); line-height: 1.2; }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
     <h2 class="mb-1">Build a Peer-League Universe</h2>
@@ -63,6 +90,30 @@
     <div class="text-secondary small mb-2">
       Each league needs an <strong>even</strong> team count (for a balanced schedule) divisible by its division count.
     </div>
+
+    <details class="style-ref mb-3">
+      <summary>Style reference — what the built-in profiles bias, and the scale</summary>
+      <div class="small text-secondary mt-2 mb-2" style="line-height:1.5">
+        Biases are <strong>scout-grade points</strong> on the 20–80 talent scale (50 = league-average).
+        <strong>0 is neutral</strong>; the range is −{{ custom_style_max }}…+{{ custom_style_max }}. A positive
+        value means the league generates more of that trait. A <em>Custom</em> league starts at all-zero — the
+        profiles below are the built-ins, shown so you can see what a meaningful bias looks like before tuning
+        your own (or use “Start from” inside a custom row to copy one).
+      </div>
+      <div class="style-ref-grid">
+        {% for p in style_presets %}
+        <div class="style-ref-card">
+          <div class="style-ref-name">{{ p.label }}</div>
+          <div class="style-ref-biases">
+            {% for k, v in p.biases.items() %}
+            <span class="bias-chip {{ 'pos' if v > 0 else 'neg' }}">{{ attr_labels.get(k, k) }}&nbsp;{{ '+' if v > 0 else '' }}{{ v }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0" id="league-table">
       <thead><tr>
@@ -104,33 +155,42 @@
   </tr>
   <tr class="lg-custom-panel" style="display:none">
     <td colspan="6" style="background:var(--bg-warm)">
-      <div class="small text-secondary mb-2">
-        Custom style — bias the talent this league generates (−25…+25 grade points per attribute,
-        0 = neutral). Positive = the league produces more of that trait. Hitter and pitcher knobs
-        combine into the league's net run environment.
-      </div>
-      <div class="d-flex flex-wrap gap-3">
-        <div>
-          <div class="fw-bold small mb-1">Hitters</div>
-          <div class="d-flex flex-wrap gap-2">
-            {% for a, lbl in [('contact','Contact'),('power','Power'),('eye','Eye'),('speed','Speed'),('baserunning','Baserun'),('run_aggressiveness','Run agg'),('defense','Defense'),('arm','Arm')] %}
-            <label class="small" style="display:flex;flex-direction:column;width:78px">
-              <span class="text-secondary">{{ lbl }}</span>
-              <input type="number" class="form-control form-control-sm cust-attr" data-attr="{{ a }}" value="0" min="-25" max="25" step="1">
-            </label>
-            {% endfor %}
-          </div>
+      <div class="cust-head">
+        <div class="small text-secondary" style="line-height:1.5">
+          <strong>0 = neutral</strong> · range −{{ custom_style_max }}…+{{ custom_style_max }} grade points
+          (50 = league-average on the 20–80 scale). Drag a knob toward <strong>+</strong> to make the league
+          produce more of that trait. Open <em>Style reference</em> above to see the built-in profiles.
         </div>
-        <div>
-          <div class="fw-bold small mb-1">Pitchers</div>
-          <div class="d-flex flex-wrap gap-2">
-            {% for a, lbl in [('pitcher_skill','Stuff'),('command','Command'),('movement','Movement'),('stamina','Stamina')] %}
-            <label class="small" style="display:flex;flex-direction:column;width:78px">
-              <span class="text-secondary">{{ lbl }}</span>
-              <input type="number" class="form-control form-control-sm cust-attr" data-attr="{{ a }}" value="0" min="-25" max="25" step="1">
-            </label>
-            {% endfor %}
-          </div>
+        <label class="cust-start small">
+          Start from
+          <select class="lg-preset form-select form-select-sm">
+            <option value="">preset…</option>
+            {% for p in style_presets %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="cust-section">
+        <div class="fw-bold small cust-section-title">Hitters</div>
+        <div class="cust-grid">
+          {% for a in hitter_attrs %}
+          <label class="cust-knob" title="{{ a.hint }}">
+            <span class="cust-knob-head"><span class="cust-knob-name">{{ a.label }}</span><output class="cust-knob-val">0</output></span>
+            <input type="range" class="cust-attr" data-attr="{{ a.key }}" value="0" min="-{{ custom_style_max }}" max="{{ custom_style_max }}" step="1">
+            <span class="cust-knob-hint">{{ a.hint }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="cust-section">
+        <div class="fw-bold small cust-section-title">Pitchers</div>
+        <div class="cust-grid">
+          {% for a in pitcher_attrs %}
+          <label class="cust-knob" title="{{ a.hint }}">
+            <span class="cust-knob-head"><span class="cust-knob-name">{{ a.label }}</span><output class="cust-knob-val">0</output></span>
+            <input type="range" class="cust-attr" data-attr="{{ a.key }}" value="0" min="-{{ custom_style_max }}" max="{{ custom_style_max }}" step="1">
+            <span class="cust-knob-hint">{{ a.hint }}</span>
+          </label>
+          {% endfor %}
         </div>
       </div>
     </td>
@@ -141,14 +201,39 @@
 (function () {
   var rows = document.getElementById('league-rows');
   var tpl  = document.getElementById('league-row-tpl');
+  var STYLE_MAX = {{ custom_style_max }};
+  // Named presets keyed for "Start from" + reference. {key: {attr: bias}}
+  var PRESETS = {};
+  ({{ style_presets | tojson }}).forEach(function (p) { PRESETS[p.key] = p.biases || {}; });
+
+  function clamp(v) { return Math.max(-STYLE_MAX, Math.min(STYLE_MAX, v)); }
+
+  function syncOutput(inp) {
+    var out = inp.parentElement.querySelector('.cust-knob-val');
+    if (out) {
+      var v = parseInt(inp.value, 10) || 0;
+      out.textContent = (v > 0 ? '+' : '') + v;
+      out.classList.toggle('pos', v > 0);
+      out.classList.toggle('neg', v < 0);
+    }
+  }
 
   function serialize(panel, hidden) {
     var out = {};
     panel.querySelectorAll('.cust-attr').forEach(function (inp) {
-      var v = parseInt(inp.value, 10) || 0;
-      if (v) out[inp.dataset.attr] = Math.max(-25, Math.min(25, v));
+      var v = clamp(parseInt(inp.value, 10) || 0);
+      if (v) out[inp.dataset.attr] = v;
     });
     hidden.value = Object.keys(out).length ? JSON.stringify(out) : '';
+  }
+
+  // Load a preset's biases into a panel's knobs (missing attrs reset to 0).
+  function applyPreset(panel, hidden, biases) {
+    panel.querySelectorAll('.cust-attr').forEach(function (inp) {
+      inp.value = clamp(parseInt(biases[inp.dataset.attr], 10) || 0);
+      syncOutput(inp);
+    });
+    serialize(panel, hidden);
   }
 
   function addRow(preset) {
@@ -157,6 +242,7 @@
     var panel = frag.querySelector('.lg-custom-panel');
     var sel    = main.querySelector('.lg-style');
     var hidden = main.querySelector('.lg-custom');
+    var presetSel = panel.querySelector('.lg-preset');
 
     function syncPanel() {
       var isCustom = sel.value === 'custom';
@@ -165,8 +251,14 @@
     }
     sel.addEventListener('change', syncPanel);
     panel.querySelectorAll('.cust-attr').forEach(function (inp) {
-      inp.addEventListener('input', function () { serialize(panel, hidden); });
+      syncOutput(inp);
+      inp.addEventListener('input', function () { syncOutput(inp); serialize(panel, hidden); });
     });
+    if (presetSel) {
+      presetSel.addEventListener('change', function () {
+        if (PRESETS[presetSel.value]) applyPreset(panel, hidden, PRESETS[presetSel.value]);
+      });
+    }
     main.querySelector('.rm-league').addEventListener('click', function () {
       main.remove(); panel.remove();
     });
