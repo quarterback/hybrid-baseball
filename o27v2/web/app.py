@@ -6219,6 +6219,7 @@ def engine_settings():
         override_count=len(overrides),
         environments={name: len(ov) for name, ov in sorted(envs.items())},
         examples=engine_config.PRESET_LABELS,
+        league_configs=sorted(get_league_configs()),
     )
 
 
@@ -6237,6 +6238,17 @@ def engine_settings_post():
         flash(f"Loaded the {engine_config.PRESET_LABELS.get(name, name)} "
               f"example into your working tuning ({len(applied)} constant(s)). "
               f"Edit freely, then Save as an environment to keep it.", "info")
+        return redirect(url_for("engine_settings"))
+
+    if action == "randomize":
+        raw_seed = (request.form.get("rand_seed") or "").strip()
+        seed = int(raw_seed) if raw_seed.lstrip("-").isdigit() else None
+        applied = engine_config.randomize_overrides(seed=seed)
+        seed_note = f" (seed {seed})" if seed is not None else ""
+        flash(f"Rolled an eclectic random tuning{seed_note} — "
+              f"{len(applied)} knob(s) perturbed. It's now your working tuning; "
+              f"benchmark it, edit freely, or Save as an environment to keep it.",
+              "info")
         return redirect(url_for("engine_settings"))
 
     if action == "save_env":
@@ -7790,6 +7802,75 @@ def api_season_reset():
     set_active_league_meta(new_rng_seed, new_config_id)
     resync_sim_clock()
     return jsonify({"ok": True, "archived_season_id": archived_id})
+
+
+@app.route("/api/league/reseed-with-style", methods=["POST"])
+def api_reseed_with_style():
+    """Wipe the current league and regenerate a fresh one UNDER a chosen style,
+    so the style's GEN_SHIFT_* talent-pool knobs actually shape the new players.
+
+    Body/form: {style: <preset key | env name | "" for current working tuning>,
+                config_id: str, rng_seed: int}
+
+    Sequencing matters: db.drop_all() drops sim_meta (where the engine tuning
+    lives), so we resolve the style bundle BEFORE the wipe and re-store + apply
+    it AFTER init_db() but BEFORE seed_league() reads GEN_SHIFT_*.
+    """
+    from o27v2.league import seed_league
+    from o27v2.schedule import seed_schedule
+    from o27v2.season_archive import set_active_league_meta, multi_season_status
+
+    status = multi_season_status()
+    if status.get("running"):
+        return jsonify({
+            "ok": False,
+            "error": "multi-season test sim is running — wait for it to finish",
+        }), 409
+
+    data = request.get_json(silent=True) or request.form
+    style = (data.get("style") or "").strip()
+    config_id = (data.get("config_id") or "30teams").strip()
+    try:
+        rng_seed = int(data.get("rng_seed", 42))
+    except (TypeError, ValueError):
+        rng_seed = 42
+
+    if config_id not in get_league_configs():
+        return jsonify({"ok": False, "error": f"unknown config: {config_id}"}), 400
+
+    # 1. Resolve the style bundle now, before the wipe drops it.
+    if style in engine_config.PRESETS:
+        bundle = {k: v for k, v in engine_config.PRESETS[style].items()
+                  if k in engine_config.DEFAULTS}
+        style_label = engine_config.PRESET_LABELS.get(style, style)
+    elif style in engine_config.list_environments():
+        bundle = engine_config.list_environments()[style]
+        style_label = f"environment “{style}”"
+    elif style:
+        return jsonify({"ok": False, "error": f"unknown style: {style}"}), 400
+    else:
+        bundle = engine_config.load_overrides()  # current working tuning
+        style_label = "current working tuning"
+
+    # 2. Rebuild the DB (this drops sim_meta — the style is now gone from disk).
+    db.drop_all()
+    db.init_db()
+
+    # 3. Re-store + force-apply the style before any player is generated.
+    engine_config.save_overrides(bundle)
+
+    # 4. Generate the league + schedule under the live style.
+    seed_league(rng_seed=rng_seed, config_id=config_id)
+    seed_schedule(config_id=config_id, rng_seed=rng_seed)
+    set_active_league_meta(rng_seed, config_id)
+    resync_sim_clock()
+    return jsonify({
+        "ok": True,
+        "style": style_label,
+        "config_id": config_id,
+        "rng_seed": rng_seed,
+        "overrides": len(engine_config.load_overrides()),
+    })
 
 
 @app.route("/seasons")
