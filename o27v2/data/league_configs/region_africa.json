@@ -1,0 +1,37 @@
+{
+  "id": "region_africa",
+  "label": "West & Southern Africa League (football converts, fatigue-taxing heat)",
+  "team_count": 12,
+  "level": "MLB",
+  "schedule_mode": "independent",
+  "postseason": "none",
+  "team_naming": "generated",
+  "leagues": ["West & Southern Africa League"],
+  "league_specs": [
+    {"name": "West & Southern Africa League", "teams": 12, "divisions": 2}
+  ],
+  "style_profiles": {
+    "West & Southern Africa League": {
+      "speed": 14, "stamina": 14, "baserunning": 10, "defense": 6, "arm": 6,
+      "power": 2, "eye": -6, "contact": -4, "command": -6
+    }
+  },
+  "name_regions": {
+    "West & Southern Africa League": {
+      "africa": 0.62, "africa_cricket": 0.30, "central_west_asia": 0.08
+    }
+  },
+  "park_profiles": {
+    "West & Southern Africa League": "coastal_inland_mix"
+  },
+  "games_per_team": 60,
+  "season_days": 120,
+  "intra_division_weight": 0.5,
+  "inter_division_weight": 0.5,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
+}

@@ -1,0 +1,37 @@
+{
+  "id": "region_pacific",
+  "label": "Pacific Islands League (rugby converts, raw tools, wild park variance)",
+  "team_count": 8,
+  "level": "MLB",
+  "schedule_mode": "independent",
+  "postseason": "none",
+  "team_naming": "generated",
+  "leagues": ["Pacific Islands League"],
+  "league_specs": [
+    {"name": "Pacific Islands League", "teams": 8, "divisions": 1}
+  ],
+  "style_profiles": {
+    "Pacific Islands League": {
+      "power": 16, "speed": 12, "arm": 14, "stamina": 8,
+      "eye": -12, "command": -12, "contact": -6, "movement": -8, "baserunning": -2
+    }
+  },
+  "name_regions": {
+    "Pacific Islands League": {
+      "pacific_islands": 0.70, "anzac": 0.20, "philippines": 0.10
+    }
+  },
+  "park_profiles": {
+    "Pacific Islands League": "wild_variance"
+  },
+  "games_per_team": 54,
+  "season_days": 110,
+  "intra_division_weight": 0.5,
+  "inter_division_weight": 0.5,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
+}

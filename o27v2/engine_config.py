@@ -22,6 +22,7 @@ NOT editable here.
 from __future__ import annotations
 
 import json
+import random
 
 import o27.config as cfg
 from o27v2 import db
@@ -206,11 +207,176 @@ PRESETS: dict[str, dict[str, object]] = {
         "CONTACT_MEDIUM_BASE":    0.46,
         "CONTACT_HARD_BASE":      0.42,
     },
+
+    # --- Era recreations -------------------------------------------------
+    "era_1968": {
+        "CONTACT_WEAK_BASE":      0.26,
+        "CONTACT_MEDIUM_BASE":    0.52,
+        "CONTACT_HARD_BASE":      0.22,
+        "POWER_REDIST_HR":        0.20,
+        "PITCHER_DOM_BALL":      -0.10,
+        "PITCHER_DOM_SWINGING":   0.055,
+        "PITCHER_DOM_CONTACT":   -0.10,
+        "PITCHER_COMMAND_CALLED": 0.05,
+        "GIDP_BASE_PROB":         0.16,
+        "SB_SUCCESS_BASE":        0.62,
+        "SB_ATTEMPT_PROB_PER_PITCH": 0.06,
+        "GEN_SHIFT_PITCHING":     12,
+        "GEN_SHIFT_POWER":       -8,
+        "GEN_SHIFT_CONTACT":     -4,
+        "GEN_SHIFT_SPEED":        4,
+    },
+    "era_1987": {
+        "POWER_REDIST_HR":        0.66,
+        "PARK_HR_MAX":            1.35,
+        "PARK_HR_MIN":            0.95,
+        "CONTACT_WEAK_BASE":      0.16,
+        "CONTACT_MEDIUM_BASE":    0.48,
+        "CONTACT_HARD_BASE":      0.36,
+        "GEN_SHIFT_POWER":        12,
+    },
+    "era_2010s_tto": {
+        "POWER_REDIST_HR":        0.60,
+        "POWER_REDIST_MED_GO2FO": 0.30,
+        "POWER_REDIST_WEAK_S2FO": 0.30,
+        "CONTACT_WEAK_BASE":      0.14,
+        "CONTACT_MEDIUM_BASE":    0.46,
+        "CONTACT_HARD_BASE":      0.40,
+        "PITCHER_DOM_SWINGING":   0.05,
+        "BATTER_DOM_SWINGING":   -0.02,
+        "BATTER_EYE_BALL":        0.06,
+        "GIDP_BASE_PROB":         0.10,
+        "GEN_SHIFT_POWER":        10,
+        "GEN_SHIFT_EYE":          6,
+        "GEN_SHIFT_CONTACT":     -6,
+        "GEN_SHIFT_PITCHING":     6,
+    },
+
+    # --- Stylistic identities --------------------------------------------
+    "junkball": {
+        "POWER_REDIST_HR":        0.28,
+        "CONTACT_WEAK_BASE":      0.30,
+        "CONTACT_MEDIUM_BASE":    0.52,
+        "CONTACT_HARD_BASE":      0.18,
+        "MOVEMENT_GB_WEIGHT_SCALE": 0.10,
+        "CONTACT_MOVEMENT_TILT":  0.18,
+        "PITCHER_DOM_SWINGING":  -0.01,
+        "BATTER_DOM_SWINGING":   -0.09,
+        "PITCHER_COMMAND_CALLED": 0.05,
+        "GIDP_BASE_PROB":         0.17,
+        "GEN_SHIFT_PITCHING":    -8,
+        "GEN_SHIFT_POWER":       -6,
+    },
+    "launch_circus": {
+        "POWER_REDIST_HR":        0.80,
+        "POWER_REDIST_MED_GO2FO": 0.40,
+        "POWER_REDIST_WEAK_S2FO": 0.40,
+        "CONTACT_WEAK_BASE":      0.16,
+        "CONTACT_MEDIUM_BASE":    0.42,
+        "CONTACT_HARD_BASE":      0.42,
+        "PITCHER_DOM_SWINGING":   0.06,
+        "BATTER_DOM_SWINGING":    0.00,
+        "GIDP_BASE_PROB":         0.07,
+        "PARK_HR_MAX":            1.40,
+        "GEN_SHIFT_POWER":        15,
+        "GEN_SHIFT_CONTACT":     -8,
+    },
+    "contact_carnival": {
+        "CONTACT_WEAK_BASE":      0.12,
+        "CONTACT_MEDIUM_BASE":    0.50,
+        "CONTACT_HARD_BASE":      0.38,
+        "BATTER_DOM_SWINGING":   -0.10,
+        "BATTER_CONTACT_SWINGING": -0.12,
+        "PITCHER_DOM_SWINGING":  -0.01,
+        "POWER_REDIST_HR":        0.38,
+        "POWER_REDIST_HARD_S2D":  0.38,
+        "DEFENSE_RANGE_SHIFT_SCALE": 0.16,
+        "GEN_SHIFT_CONTACT":      12,
+        "GEN_SHIFT_POWER":       -6,
+    },
+    "speed_demon": {
+        "SB_ATTEMPT_PROB_PER_PITCH": 0.09,
+        "SB_SUCCESS_BASE":        0.70,
+        "SB_ATTEMPT_SPEED_THRESHOLD": 0.45,
+        "ITP_HR_BASE_ATTEMPT":    0.30,
+        "ITP_HR_BASE_SUCCESS":    0.62,
+        "RUNNER_EXTRA_SPEED_SCALE": 0.55,
+        "RUNNER_EXTRA_DOUBLE_FROM_1B": 0.45,
+        "SPEED_ADVANCE_MOD":      0.20,
+        "POWER_REDIST_HARD_D2T":  0.20,
+        "POWER_REDIST_HR":        0.40,
+        "GEN_SHIFT_SPEED":        15,
+        "GEN_SHIFT_POWER":       -6,
+    },
+    "workhorse": {
+        "WORKHORSE_CHANGE_BASE":  40,
+        "WORKHORSE_STAMINA_THRESHOLD": 0.50,
+        "RELIEVER_CHANGE_BASE":   20,
+        "RELIEVER_ENTRY_OUTS_MIN": 24,
+        "FATIGUE_DEBT_PER_PITCH": 0.003,
+        "FATIGUE_DEBT_MAX_PENALTY": 0.25,
+        "FATIGUE_DEBT_BUDGET_SCALE": 130,
+        "PITCHER_COMMAND_CALLED": 0.04,
+        "GEN_SHIFT_STAMINA":      15,
+    },
+
+    # --- Engine stress-tests (intentional extremes) ----------------------
+    "knifes_edge": {
+        "POWER_REDIST_HR":        0.85,
+        "POWER_REDIST_HARD_S2D":  0.40,
+        "POWER_REDIST_HARD_D2T":  0.18,
+        "CONTACT_WEAK_BASE":      0.08,
+        "CONTACT_MEDIUM_BASE":    0.42,
+        "CONTACT_HARD_BASE":      0.50,
+        "BATTER_DOM_SWINGING":   -0.10,
+        "BATTER_DOM_CONTACT":     0.06,
+        "BATTER_EYE_BALL":        0.08,
+        "PITCHER_DOM_BALL":       0.0,
+        "PITCHER_DOM_SWINGING":  -0.02,
+        "PITCHER_DOM_CONTACT":    0.0,
+        "DEFENSE_ERROR_BASE":     0.075,
+        "PARK_HR_MAX":            1.40,
+        "GEN_SHIFT_POWER":        15,
+        "GEN_SHIFT_CONTACT":      10,
+        "GEN_SHIFT_EYE":          8,
+        "GEN_SHIFT_PITCHING":    -12,
+    },
+    "pitchers_hellscape": {
+        "POWER_REDIST_HR":        0.06,
+        "POWER_REDIST_HARD_S2D":  0.18,
+        "CONTACT_WEAK_BASE":      0.34,
+        "CONTACT_MEDIUM_BASE":    0.52,
+        "CONTACT_HARD_BASE":      0.14,
+        "PITCHER_DOM_BALL":      -0.11,
+        "PITCHER_DOM_CALLED":     0.04,
+        "PITCHER_DOM_SWINGING":   0.07,
+        "PITCHER_DOM_CONTACT":   -0.11,
+        "PITCHER_COMMAND_BALL":  -0.10,
+        "PITCHER_COMMAND_CALLED": 0.06,
+        "BATTER_DOM_SWINGING":    0.0,
+        "BATTER_EYE_BALL":        0.01,
+        "DEFENSE_ERROR_BASE":     0.020,
+        "GIDP_BASE_PROB":         0.18,
+        "PARK_HR_MAX":            1.00,
+        "GEN_SHIFT_PITCHING":     15,
+        "GEN_SHIFT_POWER":       -12,
+        "GEN_SHIFT_CONTACT":     -8,
+    },
 }
 
 PRESET_LABELS = {
     "deadball": "Deadball era (suppressed power, more small ball)",
     "juiced":   "Juiced / live-ball era (inflated power)",
+    "era_1968": "1968 Year of the Pitcher (pitcher-dominant, low power)",
+    "era_1987": "1987 Lively Ball (HR-heavy spike, otherwise ordinary)",
+    "era_2010s_tto": "2010s Launch Angle / Three True Outcomes (HR + K + BB)",
+    "junkball": "Junkball League (soft stuff, weak contact, low K)",
+    "launch_circus": "Launch-Angle Circus (extreme three-true-outcomes)",
+    "contact_carnival": "Contact Carnival (highest BABIP, lowest K)",
+    "speed_demon": "Speed Demon League (steals, triples, inside-the-park HRs)",
+    "workhorse": "Workhorse Era (starters go deep, bullpen quiet)",
+    "knifes_edge": "Knife's Edge (max-offense stress test)",
+    "pitchers_hellscape": "Pitcher's Hellscape (min-offense stress test)",
 }
 
 
@@ -325,6 +491,88 @@ def apply_preset(name: str) -> dict[str, object]:
                 overrides[k] = _coerce(k, v)
             except (TypeError, ValueError):
                 continue
+    _store(overrides)
+    apply_overrides(force=True)
+    return overrides
+
+
+# --------------------------------------------------------------------------
+# Eclectic randomizer — roll a guard-railed random tuning. Each knob draws
+# from a SENSIBLE per-knob range (roughly default ±50%, clamped well inside the
+# math limits so nothing hits a singularity), and only a handful of knobs are
+# perturbed per roll — randomizing every knob tends to cancel out to
+# near-default, so targeted randomization produces more legible weirdness.
+# --------------------------------------------------------------------------
+_RANDOMIZE_RANGES: dict[str, tuple[float, float]] = {
+    # Power / extra-base hits
+    "POWER_REDIST_HR":           (0.10, 0.85),
+    "POWER_REDIST_HARD_S2D":     (0.18, 0.42),
+    "POWER_REDIST_HARD_D2T":     (0.04, 0.22),
+    "POWER_REDIST_MED_S2D":      (0.10, 0.32),
+    "POWER_REDIST_MED_GO2FO":    (0.06, 0.40),
+    "POWER_REDIST_WEAK_S2FO":    (0.08, 0.40),
+    # Pitcher / batter dominance
+    "PITCHER_DOM_BALL":          (-0.12, -0.02),
+    "PITCHER_DOM_SWINGING":      (-0.02, 0.07),
+    "PITCHER_DOM_CONTACT":       (-0.12, -0.01),
+    "PITCHER_COMMAND_CALLED":    (0.01, 0.06),
+    "BATTER_DOM_SWINGING":       (-0.11, 0.00),
+    "BATTER_DOM_CONTACT":        (0.00, 0.07),
+    "BATTER_EYE_BALL":           (0.01, 0.08),
+    # Baserunning / steals / defense / DPs
+    "SB_SUCCESS_BASE":           (0.40, 0.78),
+    "SB_ATTEMPT_PROB_PER_PITCH": (0.02, 0.10),
+    "DEFENSE_ERROR_BASE":        (0.020, 0.075),
+    "GIDP_BASE_PROB":            (0.07, 0.18),
+    "ITP_HR_BASE_ATTEMPT":       (0.08, 0.35),
+    "RUNNER_EXTRA_SPEED_SCALE":  (0.20, 0.55),
+    "MOVEMENT_GB_WEIGHT_SCALE":  (0.02, 0.12),
+    "PARK_HR_MAX":               (1.00, 1.40),
+    # Talent-pool shape (grade points; only bites on a reseed/regen)
+    "GEN_SHIFT_POWER":           (-12, 15),
+    "GEN_SHIFT_CONTACT":         (-10, 12),
+    "GEN_SHIFT_SPEED":           (-8, 15),
+    "GEN_SHIFT_PITCHING":        (-12, 15),
+    "GEN_SHIFT_EYE":             (-8, 10),
+    "GEN_SHIFT_STAMINA":         (-8, 15),
+}
+
+_RANDOMIZE_N_MIN = 8
+_RANDOMIZE_N_MAX = 12
+
+
+def randomize_overrides(seed: int | None = None,
+                        n_knobs: int | None = None) -> dict[str, object]:
+    """Replace the working tuning with a random, guard-railed bundle. Perturbs
+    8–12 knobs drawn from `_RANDOMIZE_RANGES`, and ~70% of the time also sets
+    the coupled CONTACT_*_BASE triple coherently (so it still sums to ~1.0).
+    Reproducible when `seed` is given."""
+    rng = random.Random(seed)
+    keys = [k for k in _RANDOMIZE_RANGES if k in DEFAULTS]
+    lo_n, hi_n = _RANDOMIZE_N_MIN, min(_RANDOMIZE_N_MAX, len(keys))
+    n = n_knobs if n_knobs is not None else rng.randint(lo_n, hi_n)
+    n = max(1, min(n, len(keys)))
+    chosen = rng.sample(keys, n)
+
+    overrides: dict[str, object] = {}
+    for k in chosen:
+        lo, hi = _RANDOMIZE_RANGES[k]
+        try:
+            overrides[k] = _coerce(k, rng.uniform(lo, hi))
+        except (TypeError, ValueError):
+            continue
+
+    # Coherent contact-quality mix (sums to ~1.0) on most rolls.
+    if rng.random() < 0.70 and {"CONTACT_HARD_BASE", "CONTACT_WEAK_BASE",
+                                "CONTACT_MEDIUM_BASE"} <= set(DEFAULTS):
+        hard = rng.uniform(0.16, 0.46)
+        weak = rng.uniform(0.10, 0.34)
+        med  = max(0.20, 1.0 - hard - weak)
+        total = hard + weak + med
+        overrides["CONTACT_HARD_BASE"]   = round(hard / total, 3)
+        overrides["CONTACT_WEAK_BASE"]   = round(weak / total, 3)
+        overrides["CONTACT_MEDIUM_BASE"] = round(med / total, 3)
+
     _store(overrides)
     apply_overrides(force=True)
     return overrides

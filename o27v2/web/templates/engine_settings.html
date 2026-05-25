@@ -133,8 +133,96 @@
       </form>
       {% endfor %}
     </div>
+
+    {# ---------- Eclectic randomizer ---------- #}
+    <hr class="my-3">
+    <div class="text-secondary small mb-2">
+      <strong>Eclectic randomizer</strong> — roll a guard-railed random tuning (8–12 knobs
+      perturbed within sensible ranges). Most rolls play fairly normal; the fun is the
+      occasional weird one. Leave the seed blank for a fresh roll, or set one to reproduce it.
+    </div>
+    <form method="post" action="{{ url_for('engine_settings_post') }}"
+          class="d-flex flex-wrap gap-2 align-items-center" style="margin:0">
+      <input type="hidden" name="action" value="randomize">
+      <input type="number" name="rand_seed" class="form-control form-control-sm"
+             style="max-width:160px" placeholder="seed (optional)" step="1">
+      <button type="submit" class="btn btn-sm btn-outline-warning">🎲 Randomize (Eclectic)</button>
+    </form>
+
+    {# ---------- Reseed a fresh league into a style ---------- #}
+    <hr class="my-3">
+    <div class="text-secondary small mb-2">
+      <strong>Reseed a fresh league into a style</strong> — wipe the current league and
+      regenerate a brand-new one with this style live, so its talent-pool shifts
+      (GEN_SHIFT) actually shape the new players. <span style="color:var(--accent)">This
+      destroys the current league and players</span> — it does not touch a league you keep
+      unless you run it.
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <select id="reseed-style" class="form-select form-select-sm" style="max-width:320px">
+        <option value="">Current working tuning</option>
+        <optgroup label="Presets">
+          {% for key, label in examples.items() %}
+          <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </optgroup>
+        {% if environments %}
+        <optgroup label="Saved environments">
+          {% for name, n in environments.items() %}
+          <option value="{{ name }}">{{ name }} ({{ n }} override{{ '' if n == 1 else 's' }})</option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
+      </select>
+      <select id="reseed-config" class="form-select form-select-sm" style="max-width:200px">
+        {% for cid in league_configs %}
+        <option value="{{ cid }}"{% if cid == '30teams' %} selected{% endif %}>{{ cid }}</option>
+        {% endfor %}
+      </select>
+      <input type="number" id="reseed-seed" class="form-control form-control-sm"
+             style="max-width:140px" placeholder="rng seed" value="42" step="1">
+      <button type="button" id="reseed-btn" class="btn btn-sm btn-outline-danger">Reseed into style</button>
+      <span id="reseed-out" class="small text-secondary"></span>
+    </div>
   </div>
 </div>
+
+<script>
+(function () {
+  var btn = document.getElementById('reseed-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async function () {
+    var styleSel = document.getElementById('reseed-style');
+    var style = styleSel.value;
+    var styleName = styleSel.options[styleSel.selectedIndex].text;
+    var config_id = document.getElementById('reseed-config').value;
+    var rng_seed = document.getElementById('reseed-seed').value || '42';
+    var out = document.getElementById('reseed-out');
+    if (!confirm('This will DELETE the current league and regenerate a fresh one under "'
+                 + styleName + '". Continue?')) return;
+    btn.disabled = true;
+    out.textContent = 'Reseeding…';
+    try {
+      var r = await fetch('{{ url_for("api_reseed_with_style") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({style: style, config_id: config_id, rng_seed: parseInt(rng_seed, 10)})
+      });
+      var d = await r.json();
+      if (d.ok) {
+        out.textContent = 'Reseeded into ' + d.style + ' — ' + d.overrides
+                          + ' override(s) live (' + d.config_id + ', seed ' + d.rng_seed + ').';
+      } else {
+        out.textContent = '⚠ ' + (d.error || 'reseed failed');
+      }
+    } catch (e) {
+      out.textContent = '⚠ ' + e;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
 
 <script>
 (function () {

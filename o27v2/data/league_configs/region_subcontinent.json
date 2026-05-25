@@ -1,0 +1,36 @@
+{
+  "id": "region_subcontinent",
+  "label": "Indian Subcontinent League (converted cricket grounds)",
+  "team_count": 12,
+  "level": "MLB",
+  "schedule_mode": "independent",
+  "postseason": "none",
+  "team_naming": "generated",
+  "leagues": ["Indian Subcontinent League"],
+  "league_specs": [
+    {"name": "Indian Subcontinent League", "teams": 12, "divisions": 2}
+  ],
+  "style_profiles": {
+    "Indian Subcontinent League": {
+      "contact": 14, "eye": 8, "speed": 6, "baserunning": 12,
+      "defense": 10, "arm": 12, "power": -16,
+      "pitcher_skill": -8, "movement": 16, "command": 8, "stamina": 4
+    }
+  },
+  "name_regions": {
+    "Indian Subcontinent League": "south_asia"
+  },
+  "park_profiles": {
+    "Indian Subcontinent League": "cricket_grounds"
+  },
+  "games_per_team": 60,
+  "season_days": 120,
+  "intra_division_weight": 0.5,
+  "inter_division_weight": 0.5,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
+}

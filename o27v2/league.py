@@ -1247,6 +1247,78 @@ _PARK_SHAPE_WEIGHTS = (
     0.04, 0.03, 0.04, 0.03, 0.03,               # bandbox, crescent, hourglass, coffin, wedge
 )
 
+# --------------------------------------------------------------------------
+# Per-league park-shape profiles. A region's infrastructure — not its national
+# character — determines what its fields look like, and field geometry is the
+# single biggest driver of how O27 plays in that region. A league config can
+# name one of these profiles (or pass a raw {shape: weight} dict) under
+# "park_profiles": {<league name>: <profile>} so its parks cluster toward a
+# geometry instead of rolling from the global all-eras distribution. Weights
+# need not sum to 1 (rng.choices normalises). Unknown shape keys are ignored.
+# --------------------------------------------------------------------------
+_PARK_PROFILES: dict[str, dict[str, float]] = {
+    # Tiny urban footprints wedged into dense cities — short fences forced by
+    # the lot, tall "spite" walls to claw back the cheapest HRs. A power-and-
+    # walkback game with nowhere to hide a slow outfielder.
+    "urban_small": {
+        "bandbox": 0.40, "short_porch_rf": 0.15, "short_porch_lf": 0.12,
+        "balanced": 0.18, "bathtub": 0.10, "sawtooth_wedge": 0.05,
+    },
+    # Futsal courts, rooftops, cleared lots — even tinier. Absurd scoring.
+    "brazil_futsal": {
+        "bandbox": 0.55, "bathtub": 0.18, "short_porch_rf": 0.10,
+        "short_porch_lf": 0.10, "balanced": 0.07,
+    },
+    # Converted cricket grounds — oval boundaries 380ft to all fields, low tin
+    # picket fences. Pull HRs vanish; gappers, triples, inside-the-park HRs and
+    # outfield range become the game.
+    "cricket_grounds": {
+        "oval": 0.58, "cavernous": 0.22, "balanced": 0.10, "triangle": 0.10,
+    },
+    # Repurposed cricket grounds AND new small urban parks side by side — a
+    # split-personality league where players must adapt to both poles.
+    "mixed_split": {
+        "oval": 0.22, "cavernous": 0.16, "bandbox": 0.22, "balanced": 0.20,
+        "short_porch_rf": 0.10, "short_porch_lf": 0.10,
+    },
+    # Coastal cities build small (dense), inland cities build big (land cheap) —
+    # two sub-styles inside one region.
+    "coastal_inland_mix": {
+        "bandbox": 0.22, "balanced": 0.26, "cavernous": 0.20, "oval": 0.16,
+        "short_porch_rf": 0.08, "short_porch_lf": 0.08,
+    },
+    # Whatever the community could build — colonial cricket grounds, converted
+    # rugby pitches, cleared jungle. Maximum geometric variance, including the
+    # exotics; no two parks alike.
+    "wild_variance": {
+        "balanced": 0.15, "oval": 0.12, "cavernous": 0.12, "bathtub": 0.10,
+        "bandbox": 0.12, "triangle": 0.08, "short_porch_rf": 0.06,
+        "short_porch_lf": 0.06, "crescent": 0.05, "hourglass": 0.05,
+        "coffin_corner": 0.04, "sawtooth_wedge": 0.05,
+    },
+}
+
+_PARK_SHAPE_NAMES = frozenset(s[0] for s in _PARK_SHAPES)
+
+
+def _resolve_park_shape_weights(profile) -> list[float] | None:
+    """Map a park profile (a named-preset key OR a {shape: weight} dict) onto a
+    weights list aligned to _PARK_SHAPES. Returns None to fall back to the
+    global default distribution (empty/unknown/degenerate profiles)."""
+    if not profile:
+        return None
+    if isinstance(profile, str):
+        profile = _PARK_PROFILES.get(profile)
+    if not isinstance(profile, dict):
+        return None
+    weights = [
+        float(profile.get(name, 0.0)) if name in _PARK_SHAPE_NAMES else 0.0
+        for name, _, _ in _PARK_SHAPES
+    ]
+    if sum(weights) <= 0:
+        return None
+    return weights
+
 
 _QUIRK_CATALOG: tuple[dict, ...] = (
     {"key": "tals_hill",          "label": "Tal's Hill",
@@ -1327,7 +1399,8 @@ _QUIRK_CATALOG: tuple[dict, ...] = (
 )
 
 
-def _roll_park_dimensions(rng: random.Random) -> dict:
+def _roll_park_dimensions(rng: random.Random,
+                          shape_weights: list[float] | None = None) -> dict:
     """Generate distinctive outfield dimensions + a shape archetype.
 
     O27's fiat is a pre-modern / cricket-revival ballpark world — no
@@ -1335,13 +1408,17 @@ def _roll_park_dimensions(rng: random.Random) -> dict:
     (balanced / short_porch / cavernous / bathtub / triangle / oval),
     then dimensions are drawn from that shape's joint distribution.
 
+    `shape_weights` (aligned to _PARK_SHAPES) overrides the global shape
+    distribution so a regional league can cluster toward a geometry — e.g.
+    oval-heavy converted cricket grounds, or bandbox-heavy urban lots.
+
     Returns: {lf, lcf, cf, rcf, rf, wall_h, shape}.
     Distances in feet. Asymmetric corners are real — a Polo Grounds
     bathtub produces 270-ft lines + 480-ft CF.
     """
     shape = rng.choices(
         [s[0] for s in _PARK_SHAPES],
-        weights=_PARK_SHAPE_WEIGHTS,
+        weights=shape_weights or _PARK_SHAPE_WEIGHTS,
     )[0]
 
     if shape == "balanced":
@@ -2595,6 +2672,11 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     # latin_america, nordic), independent of its playing style. Reuses the
     # existing name infrastructure; no new name data.
     name_regions_cfg: dict[str, str] = config.get("name_regions") or {}
+    # Optional per-league park-geometry profile: {league_name: profile}. Each
+    # value is a named _PARK_PROFILES key or a raw {shape: weight} dict. Lets a
+    # region's field infrastructure (tiny urban lots vs. converted cricket
+    # grounds) drive its play style. Absent → global all-eras park distribution.
+    park_profiles_cfg: dict = config.get("park_profiles") or {}
 
     all_teams  = _load_teams_db()
     rng        = random.Random(rng_seed)
@@ -2723,7 +2805,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
 
         park_hr, park_hits = _roll_park_factors(rng2)
         park_name = _roll_ballpark_name(rng2, city, surname_pool, used_park_names)
-        _dim_dict   = _roll_park_dimensions(rng2)
+        _pshape_w   = _resolve_park_shape_weights(park_profiles_cfg.get(league_name))
+        _dim_dict   = _roll_park_dimensions(rng2, shape_weights=_pshape_w)
         park_shape  = _dim_dict.pop("shape", "")
         park_dims   = json.dumps(_dim_dict)
         park_quirks = json.dumps(_roll_park_quirks(rng2, park_shape))

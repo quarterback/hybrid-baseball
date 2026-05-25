@@ -1,0 +1,38 @@
+{
+  "id": "region_west_indies",
+  "label": "West Indies Plus League (split-personality, surplus cricket talent)",
+  "team_count": 12,
+  "level": "MLB",
+  "schedule_mode": "independent",
+  "postseason": "none",
+  "team_naming": "generated",
+  "leagues": ["West Indies Plus League"],
+  "league_specs": [
+    {"name": "West Indies Plus League", "teams": 12, "divisions": 2}
+  ],
+  "style_profiles": {
+    "West Indies Plus League": {
+      "power": 10, "speed": 12, "arm": 10, "baserunning": 8,
+      "defense": 6, "contact": 2, "pitcher_skill": 4, "stamina": 4
+    }
+  },
+  "name_regions": {
+    "West Indies Plus League": {
+      "caribbean_cricket": 0.34, "latin_america": 0.24, "caribbean_dutch": 0.12,
+      "guyana": 0.08, "suriname": 0.06, "haiti": 0.06, "africa": 0.10
+    }
+  },
+  "park_profiles": {
+    "West Indies Plus League": "mixed_split"
+  },
+  "games_per_team": 60,
+  "season_days": 120,
+  "intra_division_weight": 0.5,
+  "inter_division_weight": 0.5,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4
+}
