@@ -2697,7 +2697,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         _used_abbrev: set[str] = set()
         for _ln, _n in counts.items():
             ids = _team_naming.generate_league_teams(_ln, _n, rng_seed,
-                                                     used_abbrev=_used_abbrev)
+                                                     used_abbrev=_used_abbrev,
+                                                     locale=name_regions_cfg.get(_ln))
             if ids:
                 gen_team_queue[_ln] = ids
 

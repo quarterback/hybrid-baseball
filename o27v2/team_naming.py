@@ -68,6 +68,39 @@ _REGION_CITY_PREFIXES: dict[str, tuple[str, ...]] = {
     "africa":       ("africa_",),
 }
 
+# A custom universe league carries a `locale` (a region/preset id from
+# data/names/regions.json) instead of one of the seven canonical league
+# names. Map those locale ids onto the team_naming region_keys above so any
+# user-named league still gets region-appropriate generated identities rather
+# than falling back to real MLB/MiLB franchises. Unmapped locales (and the
+# blended presets like "global") resolve to None -> a worldwide city pool.
+_LOCALE_TO_REGION: dict[str, str] = {
+    # Americas
+    "us": "americas", "canada": "americas", "latin_america": "americas",
+    "south_america": "americas", "caribbean_dutch": "americas",
+    "caribbean_cricket": "americas", "haiti": "americas", "curacao": "americas",
+    "aruba": "americas", "suriname": "americas", "guyana": "americas",
+    "americas_pro": "americas", "us_only": "americas",
+    # East Asia
+    "east_asia": "east_asia", "asian_pro": "east_asia",
+    # Europe
+    "europe_western": "europe", "europe_eastern": "europe",
+    "europe_southeast": "europe", "british_isles": "europe",
+    "netherlands": "europe", "italy": "europe", "israel": "europe",
+    "nordic": "europe", "finland": "europe", "sweden": "europe",
+    "norway": "europe", "denmark": "europe", "european": "europe",
+    # Pacifica
+    "anzac": "pacifica", "pacific_islands": "pacifica", "guam": "pacifica",
+    # Indo-Malay / Southeast Asia
+    "malaysia": "indo_malay", "southeast_asia": "indo_malay",
+    "philippines": "indo_malay", "indonesia": "indo_malay", "thailand": "indo_malay",
+    # Subcontinent & Middle East
+    "south_asia": "subcontinent", "afghan_central_asia": "subcontinent",
+    "central_west_asia": "subcontinent", "gulf_cricket": "subcontinent",
+    # Africa
+    "africa": "africa", "africa_cricket": "africa",
+}
+
 # locale (from city_to_locale) -> the language prefix used by the
 # regional_flavor "<lang>_suffix_options" keys in business_names.json.
 _LOCALE_TO_SUFFIX_LANG = {
@@ -86,11 +119,15 @@ def supports(league_name: str) -> bool:
 # City pool
 # ---------------------------------------------------------------------------
 
-def _city_pool(region_key: str) -> list[tuple[str, str]]:
+def _city_pool(region_key: str | None) -> list[tuple[str, str]]:
     """All (city, locale) pairs available to a region, from team_naming's
-    city_to_locale exemplar lists."""
+    city_to_locale exemplar lists. A None/"global" region_key draws from
+    every region (used for blended-preset or locale-less custom leagues)."""
     c2l = _load("team_naming.json")["category_5_baseball_club"]["city_to_locale"]
-    prefixes = _REGION_CITY_PREFIXES.get(region_key, ())
+    if region_key in (None, "global"):
+        prefixes = tuple(p for ps in _REGION_CITY_PREFIXES.values() for p in ps)
+    else:
+        prefixes = _REGION_CITY_PREFIXES.get(region_key, ())
     out: list[tuple[str, str]] = []
     for key, entry in c2l.items():
         if key.startswith("_"):
@@ -209,9 +246,26 @@ _AFRICAN_FED_TARGETS = {
 }
 
 
-def _targets(league_key: str, n_teams: int) -> list[str]:
+def _default_targets(n_teams: int) -> list[str]:
+    """A balanced category spread for custom leagues that have no authored
+    regional_distribution block. Mirrors the global mix of club-naming
+    cultures so a user-named league gets variety instead of all-corporate."""
+    trad = round(n_teams * 0.30)
+    club = round(n_teams * 0.25)
+    biz  = round(n_teams * 0.25)
+    auth = round(n_teams * 0.10)
+    cats = (["traditional"] * trad + ["baseball_club"] * club
+            + ["small_business"] * biz + ["authority"] * auth)
+    cats = cats[:n_teams]
+    cats += ["corporate"] * (n_teams - len(cats))  # corporate is the residual
+    return cats
+
+
+def _targets(league_key: str | None, n_teams: int) -> list[str]:
     """Return a per-team category list of length n_teams, honoring each data
     file's regional_distribution and filling the remainder with corporate."""
+    if league_key is None:
+        return _default_targets(n_teams)
     if league_key == "african_federation":
         trad = _AFRICAN_FED_TARGETS["target_traditional"]
         club = _AFRICAN_FED_TARGETS["target_category_5"]
@@ -265,23 +319,31 @@ def _make_abbrev(name: str, used: set[str]) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_league_teams(league_name: str, n_teams: int, rng_seed: int,
-                          used_abbrev: set[str] | None = None) -> list[dict]:
+                          used_abbrev: set[str] | None = None,
+                          locale: str | None = None) -> list[dict]:
     """Return n_teams identity dicts ({name, city, abbrev}) for a league.
 
-    Deterministic for a given (league_name, rng_seed). Returns [] if the
-    league has no locale mapping (caller should fall back to defaults).
+    Deterministic for a given (league_name, locale, rng_seed). The region is
+    resolved from the canonical league name first, then from `locale` (a
+    region/preset id from data/names/regions.json) for custom universes. A
+    locale-less, non-canonical league resolves to a worldwide pool so it still
+    gets generated identities rather than falling back to MLB/MiLB franchises.
+    Returns [] only when there is no locale data at all to draw from.
     Pass a shared `used_abbrev` set to keep abbreviations unique across an
     entire universe of leagues.
     """
-    if league_name not in _LEAGUE_MAP:
-        return []
+    if league_name in _LEAGUE_MAP:
+        region_key, league_key = _LEAGUE_MAP[league_name]
+    else:
+        region_key = _LOCALE_TO_REGION.get((locale or "").strip())
+        league_key = None  # no authored distribution -> balanced default
 
-    seed = (rng_seed ^ zlib.crc32(league_name.encode())) & 0x7FFFFFFF
+    seed = (rng_seed ^ zlib.crc32(league_name.encode())
+            ^ zlib.crc32((locale or "").encode())) & 0x7FFFFFFF
     rng = random.Random(seed)
     if used_abbrev is None:
         used_abbrev = set()
 
-    region_key, league_key = _LEAGUE_MAP[league_name]
     cities = _city_pool(region_key)
     rng.shuffle(cities)
     cats = _targets(league_key, n_teams)
