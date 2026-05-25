@@ -140,12 +140,25 @@ def build_custom_config(
     gender: str = "male",
     name_region_preset: str | None = None,
     name_region_weights: dict[str, float] | None = None,
+    style: object = None,
+    home_region: str | None = None,
+    park: str | None = None,
 ) -> dict:
     """Build a league-config dict from raw inputs (the parametric form path).
 
     Validates the team-count math: must be even and divisible by
     `leagues_count * divisions_per_league` so divisions can be even-sized.
     Weights are normalised to sum to 1.0 before being stored.
+
+    The optional "newer-feature" knobs apply uniformly to every league the
+    custom config produces (the single-league path is the common case):
+      * style       — a _STYLE_PROFILES key or a custom {attr: bias} dict;
+                       sets the league talent profile.
+      * home_region — a region/preset id from data/names/regions.json; switches
+                       on generated team identities so the league's clubs sit in
+                       that region's cities (driving regional weather) and its
+                       players/managers draw from that locale.
+      * park        — a _PARK_PROFILES field-geometry key.
 
     Raises `ValueError` with a human-readable message on invalid input
     so the form handler can surface it to the user.
@@ -208,7 +221,7 @@ def build_custom_config(
     else:
         leagues = [f"L{i + 1}" for i in range(leagues_count)]
 
-    return {
+    cfg = {
         "id":                     "custom",
         "label":                  label or f"Custom — {team_count} teams",
         "team_count":             team_count,
@@ -233,6 +246,51 @@ def build_custom_config(
         "name_region_preset":        name_region_preset,
         "name_region_weights":       resolved_weights,
     }
+
+    # --- Optional "newer-feature" knobs, applied uniformly to every league ---
+    # Talent profile (preset key or custom bias dict).
+    if isinstance(style, dict):
+        clean: dict[str, int] = {}
+        for k, v in style.items():
+            if k not in _CUSTOM_STYLE_ATTRS:
+                raise ValueError(f"Unknown style attribute {k!r}.")
+            try:
+                iv = int(v)
+            except (TypeError, ValueError):
+                raise ValueError(f"Style bias for {k!r} must be a number.")
+            if abs(iv) > _CUSTOM_STYLE_MAX:
+                raise ValueError(
+                    f"Style bias for {k!r} must be between "
+                    f"-{_CUSTOM_STYLE_MAX} and {_CUSTOM_STYLE_MAX}."
+                )
+            if iv:
+                clean[k] = iv
+        if clean:
+            cfg["style_profiles"] = {lg: clean for lg in leagues}
+    elif isinstance(style, str) and style.strip():
+        s = style.strip()
+        if s not in _STYLE_PROFILES:
+            raise ValueError(f"Unknown style {s!r}.")
+        cfg["style_profiles"] = {lg: s for lg in leagues}
+
+    # Home region → generated regional team identities (cities → weather) and
+    # a per-league name locale.
+    if home_region and home_region.strip():
+        hr = home_region.strip()
+        valid_regions = set(get_name_regions()) | set(get_name_region_presets())
+        if hr not in valid_regions:
+            raise ValueError(f"Unknown home region {hr!r}.")
+        cfg["team_naming"]  = "generated"
+        cfg["name_regions"] = {lg: hr for lg in leagues}
+
+    # Field geometry profile.
+    if park and park.strip():
+        pk = park.strip()
+        if pk not in _PARK_PROFILES:
+            raise ValueError(f"Unknown park profile {pk!r}.")
+        cfg["park_profiles"] = {lg: pk for lg in leagues}
+
+    return cfg
 
 
 def build_universe_config(

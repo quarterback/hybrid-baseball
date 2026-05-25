@@ -6829,7 +6829,10 @@ def new_league_get():
                            configs=configs,
                            current_team_count=current_n,
                            name_region_presets=get_name_region_presets(),
-                           name_regions=get_name_regions())
+                           name_regions=get_name_regions(),
+                           style_options=_universe_style_options(),
+                           locale_options=_universe_locale_options(),
+                           park_options=_universe_park_options())
 
 
 @app.route("/new-league", methods=["POST"])
@@ -6892,6 +6895,9 @@ def new_league_post():
                 label                = request.form.get("label") or None,
                 gender               = request.form.get("gender", "male") or "male",
                 name_region_preset   = request.form.get("name_region_preset") or None,
+                style                = request.form.get("cf_style") or None,
+                home_region          = request.form.get("cf_home_region") or None,
+                park                 = request.form.get("cf_park") or None,
             )
         except (ValueError, TypeError) as e:
             flash(f"League configuration error: {e}", "error")

@@ -229,6 +229,40 @@
             </div>
 
             <div class="col-12">
+              <div class="text-secondary" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">
+                Playing style &amp; setting <span style="text-transform:none">— optional; the newer per-league features</span>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="cf-style">Style (talent profile)</label>
+              <select id="cf-style" name="cf_style" class="form-select form-select-sm">
+                <option value="">Balanced (neutral)</option>
+                {% for s in style_options if s.key != 'balanced' %}
+                <option value="{{ s.key }}">{{ s.label }}</option>
+                {% endfor %}
+              </select>
+              <div class="text-secondary mt-1" style="font-size:.72rem">Biases the talent the generator produces.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="cf-home-region">Home region (cities &amp; weather)</label>
+              <select id="cf-home-region" name="cf_home_region" class="form-select form-select-sm">
+                <option value="">(use real franchises &amp; cities)</option>
+                {% for o in locale_options %}<option value="{{ o.id }}">{{ o.label }} — {{ o.group }}</option>{% endfor %}
+              </select>
+              <div class="text-secondary mt-1" style="font-size:.72rem">
+                Picks generated clubs in that region — its cities drive the weather. Overrides Name region above.
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="cf-park">Field geometry (parks)</label>
+              <select id="cf-park" name="cf_park" class="form-select form-select-sm">
+                <option value="">(varied — all eras)</option>
+                {% for p in park_options %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
+              </select>
+              <div class="text-secondary mt-1" style="font-size:.72rem">Park dimensions: HR vs. triples / inside-the-park &amp; defensive range.</div>
+            </div>
+
+            <div class="col-12">
               <label class="form-label">League-wide off-days</label>
               <div class="d-flex gap-3 flex-wrap" style="font-size:.86rem">
                 {% set dow_labels = [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
