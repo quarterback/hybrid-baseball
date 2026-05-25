@@ -7035,11 +7035,17 @@ def _universe_locale_options():
     return presets + regions
 
 
+def _universe_park_options():
+    from o27v2.league import get_park_profiles
+    return [{"key": k, "label": lbl} for k, lbl in get_park_profiles().items()]
+
+
 @app.route("/universe/new", methods=["GET"])
 def universe_new_get():
     return _serve("universe_new.html",
                   style_options=_universe_style_options(),
                   locale_options=_universe_locale_options(),
+                  park_options=_universe_park_options(),
                   **_universe_custom_meta())
 
 
@@ -7070,6 +7076,7 @@ def universe_new_post():
     styles    = request.form.getlist("lg_style")
     customs   = request.form.getlist("lg_custom")
     locales   = request.form.getlist("lg_locale")
+    parks     = request.form.getlist("lg_park")
     leagues = []
     for i, nm in enumerate(names):
         if not (nm or "").strip():
@@ -7090,6 +7097,7 @@ def universe_new_post():
             "divisions": int(divisions[i]) if i < len(divisions) and divisions[i] else 1,
             "style":     style_val,
             "locale":    (locales[i] if i < len(locales) else "") or "",
+            "park":      (parks[i] if i < len(parks) else "") or "",
         })
 
     try:
