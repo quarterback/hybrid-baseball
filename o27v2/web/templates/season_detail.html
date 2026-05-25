@@ -202,21 +202,25 @@
     {{ bat_table('RBI', batting.get('rbi', []), 'rbi', '%d') }}
     {{ bat_table('OPS', batting.get('ops', []), 'ops', '%.3f') }}
     {{ bat_table('wRC+',batting.get('wrc_plus', []), 'wrc_plus', '%d') }}
-    {{ bat_table('WPA', batting.get('wpa', []), 'wpa', '%+.2f') }}
   </div>
   <div class="col-lg-6">
     <h5 class="text-secondary text-uppercase small">Pitching Leaders</h5>
     {# Storage note: season_pitching_leaders reuses its `era` column to
        hold wERA values for go-forward archives, and `fip` for xRA.
-       Old archived seasons keep their original ERA/FIP semantics. #}
+       Old archived seasons keep their original ERA/FIP semantics. The
+       outs-based DIPS boards below read the dedicated fip_dips / kbb /
+       whip_v / k9 columns and stay correct in fast-sim archives. #}
     {{ pit_table('W',     pitching.get('w',     []), 'w',     '%d') }}
     {{ pit_table('wERA',  pitching.get('werra', pitching.get('era', [])), 'era', '%.2f') }}
     {{ pit_table('wERA+', pitching.get('wera_plus', []), 'wera_plus', '%d') }}
     {{ pit_table('xRA',  pitching.get('xra',  pitching.get('fip', [])), 'fip', '%.2f') }}
+    {{ pit_table('FIP',   pitching.get('fip',   []), 'fip_dips', '%.2f') }}
+    {{ pit_table('K/BB',  pitching.get('kbb',   []), 'kbb',  '%.2f') }}
+    {{ pit_table('WHIP',  pitching.get('whip',  []), 'whip_v', '%.2f') }}
+    {{ pit_table('K/9',   pitching.get('k9',    []), 'k9',   '%.1f') }}
     {{ pit_table('K',     pitching.get('k',     []), 'k',     '%d') }}
     {{ pit_table('OAVG',  pitching.get('oavg',  []), 'oavg',  '%.3f') }}
     {{ pit_table('GSc Idx', pitching.get('gsc_index', []), 'gsc_index', '%d') }}
-    {{ pit_table('WPA',   pitching.get('wpa',   []), 'wpa',   '%+.2f') }}
   </div>
 </div>
 
