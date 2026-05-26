@@ -1180,6 +1180,12 @@ class Renderer:
                 # but tagged DEF for the box-score's purposes.
                 if stats_obj.entry_type in ("", "starter"):
                     stats_obj.entry_type = "DEF"
+                # Record who they came in for — the scheduled batter, same
+                # as pinch_hit. Without this the box score can't pair or
+                # name the sub and the footnote reads "Replaced — at ...".
+                # First-entry only (no-reentry preserves the original).
+                if batter is not None and not stats_obj.replaced_player_id:
+                    stats_obj.replaced_player_id = str(batter.player_id)
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
 
