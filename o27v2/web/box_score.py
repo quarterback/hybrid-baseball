@@ -582,6 +582,22 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
 def render_game_notes(game: dict) -> str:
     """Footer: weather, attendance, super-innings, declarations / seconds, seed."""
     parts: list[str] = []
+
+    # Batting order: in O27 the home team may elect to bat first. Spell it
+    # out so a reader (or downstream agent) doesn't misread a line-score
+    # cell — a team that never came up renders the same '0'/'-' as one that
+    # batted and was held scoreless. Emitted only when the choice is known.
+    hbf = game.get("home_bats_first")
+    if hbf is not None:
+        home_name = game.get("home_name") or game.get("home_abbrev") or "Home"
+        away_name = game.get("away_name") or game.get("away_abbrev") or "Away"
+        if int(hbf or 0):
+            parts.append(f"  Batting order: {home_name} (home) batted first; "
+                         f"{away_name} batted second.")
+        else:
+            parts.append(f"  Batting order: {home_name} (home) batted second; "
+                         f"{away_name} batted first.")
+
     si = int(game.get("super_inning") or 0)
     if si:
         parts.append(f"  Super-innings: {si}.")

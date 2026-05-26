@@ -269,6 +269,21 @@ def test_box_score_chained_sub_names_prior_sub():
     assert "—" not in fn
 
 
+def test_game_notes_state_batting_order():
+    """The notes footer spells out whether the home team batted first or
+    second so a reader can't misread an un-batted line-score cell. Omitted
+    when the choice is unknown (legacy rows)."""
+    from o27v2.web.box_score import render_game_notes
+    second = render_game_notes(
+        dict(home_bats_first=0, home_name="Ho Chi Minh", away_name="Bangkok"))
+    assert "Ho Chi Minh (home) batted second; Bangkok batted first." in second
+    first = render_game_notes(
+        dict(home_bats_first=1, home_name="Ho Chi Minh", away_name="Bangkok"))
+    assert "Ho Chi Minh (home) batted first; Bangkok batted second." in first
+    unknown = render_game_notes(dict(home_name="X", away_name="Y"))
+    assert "Batting order" not in unknown
+
+
 def test_pr_with_ab_but_no_pa_raises():
     """The PR=AB=0 invariant: a PR with ab>0 but pa==0 indicates a
     sim-side stat-accounting bug. Renderer must surface this loudly
