@@ -306,12 +306,12 @@ def _sub_outcome_phrase(r: dict) -> str:
 def _render_sub_footnotes(
     rows: Iterable[dict],
     footnotes: dict[int, str],
-    starter_by_id: dict[int, dict],
+    row_by_id: dict[int, dict],
 ) -> str:
     """Emit the footnote block:
         a-Singled for Skanes in the 5th.
         b-Ran for Rosas in the 7th.
-    `starter_by_id` maps replaced_player_id → starter row so we can name
+    `row_by_id` maps player_id → row (starter or prior sub) so we can name
     who the sub came in for. Indented two spaces, matching the
     annotations block convention."""
     lines: list[str] = []
@@ -323,7 +323,7 @@ def _render_sub_footnotes(
         replaced_pid = r.get("replaced_player_id")
         replaced_name = "—"
         if replaced_pid is not None:
-            rep = starter_by_id.get(int(replaced_pid))
+            rep = row_by_id.get(int(replaced_pid))
             if rep is not None:
                 replaced_name = _last_name(rep.get("player_name", "")) or "—"
         inning = int(r.get("entered_inning", 0) or 0)
@@ -632,15 +632,18 @@ def _sub_footnotes_for(rows: list[dict]) -> str:
     footnotes = _assign_footnotes(ordered)
     if not footnotes:
         return ""
-    starter_by_id: dict[int, dict] = {}
-    for r, indent in ordered:
-        if not indent:
-            pid = r.get("player_id")
-            if pid is not None:
-                starter_by_id[int(pid)] = r
+    # Index every row by player_id — not just starters. A sub can come in
+    # for another sub (a chained substitution: PR for a PH, a DEF for a PR),
+    # in which case replaced_player_id points at the prior sub's row. Limiting
+    # this map to starters left those footnotes unresolved ("for —").
+    row_by_id: dict[int, dict] = {}
+    for r, _indent in ordered:
+        pid = r.get("player_id")
+        if pid is not None:
+            row_by_id[int(pid)] = r
     # Emit in lineup order so a precedes b precedes c.
     lineup_ordered = [r for r, _ in ordered if id(r) in footnotes]
-    return _render_sub_footnotes(lineup_ordered, footnotes, starter_by_id)
+    return _render_sub_footnotes(lineup_ordered, footnotes, row_by_id)
 
 
 def render_box_score(

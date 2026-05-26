@@ -248,6 +248,27 @@ def test_box_score_multiple_subs_get_sequential_letters():
     assert "b-Replaced Posada at C in the 9th." in fn
 
 
+def test_box_score_chained_sub_names_prior_sub():
+    """A sub that comes in for another sub (chained substitution) must
+    name the prior sub, not render '—'. Regression: the footnote lookup
+    map was built from starters only, so a PR-for-a-PH (and the next sub
+    in the same slot) resolved to an em-dash."""
+    from o27v2.web.box_score import _sub_footnotes_for
+    rows = [
+        _row(1, "Macarambon", "p", ab=2, hits=2, pa=2),
+        # PH comes in for the starter.
+        _row(2, "Romato", "ph", ab=1, hits=1, pa=1,
+             entry_type="PH", replaced_player_id=1, entered_inning=5),
+        # PR comes in for the PH — replaced_player_id points at the sub.
+        _row(3, "Tiu", "pr", ab=0, pa=0,
+             entry_type="PR", replaced_player_id=2, entered_inning=5),
+    ]
+    fn = _sub_footnotes_for(rows)
+    assert "a-Singled for Macarambon in the 5th." in fn
+    assert "b-Ran for Romato in the 5th." in fn
+    assert "—" not in fn
+
+
 def test_pr_with_ab_but_no_pa_raises():
     """The PR=AB=0 invariant: a PR with ab>0 but pa==0 indicates a
     sim-side stat-accounting bug. Renderer must surface this loudly
