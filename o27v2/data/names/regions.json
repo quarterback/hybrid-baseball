@@ -846,6 +846,43 @@
       "first_keys":   ["latino_hispanic", "latin_american"],
       "surname_keys": ["latino_hispanic", "latin_american", "spanish"]
     },
+    "cuba": {
+      "_doc": [
+        "Premier baseball nation. Promoted out of the latin_america CU",
+        "subregion (which only borrowed the generic latino_hispanic pool)",
+        "to a dedicated Cuban pool. The distinctive feature is the wave of",
+        "Y-initial given names (Yoenis, Yasiel, Yandy, Yulieski) that mark",
+        "post-1990s Cuban naming, over a Spanish + Afro-Cuban surname stock."
+      ],
+      "label": "Cuba",
+      "country": "CU",
+      "first_keys":   ["cuban"],
+      "surname_keys": ["cuban"]
+    },
+    "dominican": {
+      "_doc": [
+        "The single largest non-US MLB feeder. Promoted out of the",
+        "latin_america DO subregion to a dedicated Dominican pool (García,",
+        "Tatís, Guerrero, Encarnación over the Vladimir/Wander/Starlin",
+        "given-name set)."
+      ],
+      "label": "Dominican Republic",
+      "country": "DO",
+      "first_keys":   ["dominican"],
+      "surname_keys": ["dominican"]
+    },
+    "venezuela": {
+      "_doc": [
+        "Top-tier baseball nation (LVBP, second-largest MLB feeder after the",
+        "DR). Promoted out of the latin_america VE subregion to a dedicated",
+        "Venezuelan pool (Altuve, Cabrera, Aparicio, Concepción over the",
+        "Asdrúbal/Gleyber/Salvador given-name set)."
+      ],
+      "label": "Venezuela",
+      "country": "VE",
+      "first_keys":   ["venezuelan"],
+      "surname_keys": ["venezuelan"]
+    },
     "turkey": {
       "_doc": [
         "Promoted out of the central_west_asia blend. Turkish given + family",

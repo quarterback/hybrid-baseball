@@ -1,4 +1,29 @@
 {
+  "cuban": [
+    "Abreu", "Puig", "Céspedes", "Iglesias", "Gurriel", "Moncada", "Arozarena",
+    "Soler", "Morejón", "Robert", "Sierra", "Chapman", "Despaigne", "Tomás",
+    "Alarcón", "Mesa", "Viciedo", "Hechavarría", "Quintana", "Olivera",
+    "Pestano", "Cepeda", "Solano", "Urgellés", "Fernández", "Pérez",
+    "Hernández", "García", "Rodríguez", "Martínez", "González", "López",
+    "Sánchez", "Ramírez", "Castillo", "Valdés", "Alfonso", "Beltrán", "Sosa",
+    "Gourriel"
+  ],
+  "dominican": [
+    "García", "Martínez", "Rodríguez", "Pérez", "Soto", "Tatís", "Guerrero",
+    "Ramírez", "Cruz", "Peralta", "Encarnación", "Sosa", "Polanco", "Cabrera",
+    "Mejía", "Reyes", "Féliz", "Castillo", "Báez", "Vargas", "Núñez", "Frías",
+    "Liriano", "Pujols", "Almonte", "Severino", "Tejada", "Beltré", "Bautista",
+    "Marte", "Valdez", "Difo", "Heredia", "Paniagua", "Adames", "Ynoa",
+    "Germán", "De los Santos", "Geraldo", "Confesor"
+  ],
+  "venezuelan": [
+    "Cabrera", "Altuve", "Galvis", "Carrasco", "Aparicio", "Concepción",
+    "Sandoval", "Santana", "Chávez", "Rengifo", "Arráez", "Pérez", "Suárez",
+    "Escobar", "Hernández", "Acuña", "Guillén", "Galarraga", "Vizcaíno",
+    "Ramos", "Ozuna", "Maldonado", "Briceño", "Rondón", "Marcano", "Petit",
+    "Quiroz", "Rojas", "Mendoza", "Graterol", "Urdaneta", "Bracho", "Pirela",
+    "Yépez", "Pernía", "Casanova", "Bastardo", "Linárez", "Carrizo", "Suniaga"
+  ],
   "african": [
     "Acheampong",
     "Adeyemi",

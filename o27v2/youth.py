@@ -46,13 +46,13 @@ from o27v2 import db
 _NATIONAL_TEAMS: list[tuple[str, str, str, str]] = [
     ("US", "United States",       "USA", "us"),
     ("CA", "Canada",               "CAN", "canada"),
-    ("MX", "Mexico",               "MEX", "latin_america"),
-    ("DO", "Dominican Republic",  "DOM", "latin_america"),
+    ("MX", "Mexico",               "MEX", "mexico"),
+    ("DO", "Dominican Republic",  "DOM", "dominican"),
     ("PR", "Puerto Rico",          "PUR", "latin_america"),
-    ("CU", "Cuba",                 "CUB", "latin_america"),
-    ("VE", "Venezuela",            "VEN", "latin_america"),
+    ("CU", "Cuba",                 "CUB", "cuba"),
+    ("VE", "Venezuela",            "VEN", "venezuela"),
     ("CO", "Colombia",             "COL", "latin_america"),
-    ("BR", "Brazil",               "BRA", "south_america"),
+    ("BR", "Brazil",               "BRA", "brazil"),
     ("AR", "Argentina",            "ARG", "south_america"),
     ("HT", "Haiti",                "HAI", "haiti"),
     ("SR", "Suriname",             "SUR", "suriname"),
@@ -91,7 +91,7 @@ _NATIONAL_TEAMS: list[tuple[str, str, str, str]] = [
     ("FJ", "Fiji",                 "FIJ", "pacific_islands"),
     ("WS", "Samoa",                "SAM", "pacific_islands"),
     ("GU", "Guam",                 "GUM", "guam"),
-    ("GR", "Greece",               "GRE", "europe_southeast"),
+    ("GR", "Greece",               "GRE", "greece"),
 ]
 
 # Geographic region a country belongs to, for grouping the standings on

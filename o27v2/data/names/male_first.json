@@ -1,4 +1,28 @@
 {
+  "cuban": [
+    "Yoenis", "Yasiel", "Yuli", "Yoán", "Yandy", "Yadier", "Yariel", "Yunior",
+    "Yosvani", "Yulieski", "Yadiel", "Yunieski", "Aroldis", "Adolis", "Aledmys",
+    "Randy", "Raisel", "José", "Jorge", "Luis", "Iván", "Rusney", "Leonys",
+    "Lourdes", "Guillermo", "Norge", "Erisbel", "Dayán", "Liván", "Orlando",
+    "Kendrys", "Osvaldo", "Yohan", "Alexei", "Brayan", "Roenis", "Yoelvis",
+    "Onelki", "Vladimir", "Odrisamer"
+  ],
+  "dominican": [
+    "Vladimir", "Wander", "Juan", "Pedro", "Sammy", "Adrián", "Starlin",
+    "Robinson", "Fernando", "Eloy", "Junior", "Wandy", "Bartolo", "Aramis",
+    "Jhoan", "Manny", "Albert", "Hanley", "José", "Jean", "Rafael", "Domingo",
+    "Edwin", "Nelson", "Ervin", "Gregory", "Yefri", "Jeimer", "Teoscar",
+    "Jonathan", "Marcell", "Geraldo", "Carlos", "Francisco", "Ketel",
+    "Cristian", "Welington", "Ronny", "Sandy", "Néstor"
+  ],
+  "venezuelan": [
+    "Miguel", "José", "Asdrúbal", "Salvador", "Ronald", "Eugenio", "Pablo",
+    "Omar", "Gleyber", "Luis", "Víctor", "Andrés", "Wilson", "Avisaíl",
+    "Eduardo", "Anthony", "Ildemaro", "Rougned", "Ehire", "Maikel", "Aristides",
+    "Robert", "Willson", "Orlando", "Carlos", "Elvis", "Félix", "Freddy",
+    "Ranger", "Silvino", "Yangervis", "Alcides", "Endy", "César", "Wilmer",
+    "Henderson", "Renato", "Deyvison", "Oswaldo", "Bladimir"
+  ],
   "aboriginal_australian": [
     "Bindi",
     "Kirra",

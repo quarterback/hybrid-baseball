@@ -110,6 +110,9 @@
       "americas_spanish":      { "cities_example": ["Buenos Aires", "Mexico City", "Caracas", "Lima", "Santiago", "Bogotá", "Havana", "Santo Domingo"], "locale": "spanish" },
       "americas_portuguese":   { "cities_example": ["São Paulo", "Rio de Janeiro", "Salvador", "Brasília", "Belo Horizonte", "Curitiba", "Porto Alegre", "Recife", "Fortaleza", "Manaus"], "locale": "portuguese" },
       "americas_mexican":      { "cities_example": ["Mexico City", "Guadalajara", "Monterrey", "Hermosillo", "Culiacán", "Mazatlán", "Mérida", "Puebla", "Tijuana"], "locale": "spanish" },
+      "americas_cuban":        { "cities_example": ["Havana", "Santiago de Cuba", "Camagüey", "Holguín", "Santa Clara", "Matanzas", "Cienfuegos", "Pinar del Río"], "locale": "spanish" },
+      "americas_dominican":    { "cities_example": ["Santo Domingo", "Santiago", "La Romana", "San Pedro de Macorís", "San Cristóbal", "La Vega", "Puerto Plata"], "locale": "spanish" },
+      "americas_venezuelan":   { "cities_example": ["Caracas", "Maracaibo", "Valencia", "Barquisimeto", "Maracay", "Maturín", "Ciudad Guayana", "Barcelona"], "locale": "spanish" },
       "americas_canada_french":{ "cities_example": ["Montréal"], "locale": "french" },
 
       "east_asia_japan":       { "cities_example": ["Tokyo", "Osaka", "Yokohama", "Nagoya", "Sapporo", "Kobe", "Fukuoka"], "locale": "japanese" },
