@@ -1,12 +1,16 @@
 {% extends "base.html" %}
-{% block title %}O27 Youth Tournament{% endblock %}
+{% block title %}{{ page_title or "O27 Youth Tournament" }}{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
   <div>
     <a href="{{ url_for('youth_view') }}" class="small text-secondary">← Youth League</a>
-    <h2 class="mb-0 mt-1">O27 Youth Tournament{% if season %} — Season {{ season }}{% endif %}</h2>
+    {% if sibling_url %}
+      <span class="text-secondary small mx-1">·</span>
+      <a href="{{ sibling_url }}" class="small text-secondary">{{ sibling_label }}</a>
+    {% endif %}
+    <h2 class="mb-0 mt-1">{{ page_title or "O27 Youth Tournament" }}{% if season %} — Season {{ season }}{% endif %}</h2>
     <div class="text-secondary small">
-      8 groups of 4 → top 2 advance → R16 → QF → SF → Final.
+      {{ page_subtitle or "Group stage → knockout bracket." }}
     </div>
   </div>
   <div class="d-flex gap-2">
@@ -141,7 +145,7 @@
       const r = await fetch('/api/youth/tournament/run', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({reset: reset}),
+        body: JSON.stringify({reset: reset, competition: '{{ competition or "world" }}'}),
       });
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || 'request failed');

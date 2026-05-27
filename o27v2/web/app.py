@@ -7740,6 +7740,9 @@ def api_season_advance():
         youth_tournament_summary = youth.run_youth_tournament(
             rng_seed=(rng_seed or season_no * 17),
         )
+        # Frontier Cup (16 emerging nations) runs alongside the World Cup,
+        # before aging, so its prospects also play with this year's rosters.
+        youth.run_frontier_cup(rng_seed=(rng_seed or season_no * 17))
         youth_summary = youth.advance_youth_year(
             rng_seed=(rng_seed or season_no * 17),
             new_season_year=next_season,
@@ -8191,9 +8194,29 @@ def api_youth_seed():
 @app.route("/youth/tournament")
 def youth_tournament_view():
     from o27v2 import youth as _youth
-    summary = _youth.get_tournament()
+    summary = _youth.get_tournament(competition="world")
     return _serve("youth_tournament.html",
                   tournament=summary,
+                  competition="world",
+                  page_title="O27 Youth World Cup",
+                  page_subtitle="48 nations · 8 groups of 6 → top 2 advance → R16 → QF → SF → Final.",
+                  sibling_url=url_for("youth_frontier_view"),
+                  sibling_label="Frontier Cup →",
+                  season=(summary or {}).get("season"))
+
+
+@app.route("/youth/frontier")
+def youth_frontier_view():
+    from o27v2 import youth as _youth
+    _youth.ensure_frontier_teams()
+    summary = _youth.get_tournament(competition="frontier")
+    return _serve("youth_tournament.html",
+                  tournament=summary,
+                  competition="frontier",
+                  page_title="O27 Youth Frontier Cup",
+                  page_subtitle="16 emerging nations · 4 groups of 4 → top 2 advance → 8-team knockout (QF → SF → Final).",
+                  sibling_url=url_for("youth_tournament_view"),
+                  sibling_label="← World Cup",
                   season=(summary or {}).get("season"))
 
 
@@ -8253,15 +8276,19 @@ def youth_game_view(game_id: int):
 
 @app.route("/api/youth/tournament/run", methods=["POST"])
 def api_youth_tournament_run():
-    """Run (or re-run via reset=true) the youth tournament for the
-    current season."""
+    """Run (or re-run via reset=true) a youth tournament for the current
+    season. `competition` selects the World Cup ('world', default) or the
+    Frontier Cup ('frontier')."""
     from o27v2 import youth as _youth
     data = request.get_json(silent=True) or {}
-    reset    = bool(data.get("reset"))
-    rng_seed = int(data.get("rng_seed") or 0)
+    reset       = bool(data.get("reset"))
+    rng_seed    = int(data.get("rng_seed") or 0)
+    competition = data.get("competition") or "world"
+    if competition not in ("world", "frontier"):
+        competition = "world"
     if reset:
-        _youth.reset_youth_tournament()
-    summary = _youth.run_youth_tournament(rng_seed=rng_seed)
+        _youth.reset_youth_tournament(competition=competition)
+    summary = _youth.run_youth_tournament(rng_seed=rng_seed, competition=competition)
     return jsonify({"ok": True, "tournament": summary})
 
 

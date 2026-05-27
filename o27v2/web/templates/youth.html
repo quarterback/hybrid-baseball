@@ -21,8 +21,11 @@
   </div>
   <div class="d-flex gap-2">
     {% if teams %}
-      <a class="btn btn-sm btn-outline-warning" href="{{ url_for('youth_tournament_view') }}" title="Group stage + knockout bracket">
-        Tournament 🏆
+      <a class="btn btn-sm btn-outline-warning" href="{{ url_for('youth_tournament_view') }}" title="48 nations: group stage + knockout bracket">
+        World Cup 🏆
+      </a>
+      <a class="btn btn-sm btn-outline-warning" href="{{ url_for('youth_frontier_view') }}" title="16 emerging nations: group stage + 8-team knockout">
+        Frontier Cup 🥎
       </a>
       <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('youth_graduates_view') }}" title="Players who graduated into the pro pool">
         Graduates →
