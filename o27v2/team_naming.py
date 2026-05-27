@@ -197,6 +197,10 @@ _LOCALE_TO_SUFFIX_LANG = {
     "french": "french", "german": "german", "dutch": "dutch",
     "italian": "italian", "nordic": "nordic",
     "japanese": "japanese", "korean": "korean", "chinese": "chinese",
+    "tagalog": "tagalog", "malay": "malay", "indonesian": "indonesian",
+    "hindi": "hindi", "urdu": "urdu", "arabic": "arabic", "turkish": "turkish",
+    "persian": "persian", "swahili": "swahili", "afrikaans": "afrikaans",
+    "amharic": "amharic",
 }
 
 
@@ -295,10 +299,11 @@ def _name_business(city: str, locale: str, region_key: str, rng: random.Random) 
     # ~40% prepend a modifier.
     if rng.random() < 0.40:
         parts.append(rng.choice(biz["modifiers_optional"]))
-    # 70% global business type, 30% the region's flavor extras. Prefer a
-    # locale-specific list so the business type stays in the city's own
-    # language (a Portuguese city never draws a Spanish "Heladería"); fall
-    # back to the region-wide list for regions not yet split by locale.
+    # 70% global business type, 30% the region's flavor extras, keyed to the
+    # city's own language so the type never crosses locales (a Portuguese city
+    # draws no Spanish "Heladería", a Korean city no Japanese "Ramen House").
+    # A locale with no list uses the global types only. preferred_* is a
+    # legacy region-wide fallback, retained for safety but unused by shipped data.
     extras = (flavor.get(f"{lang}_business_types_extra")
               or flavor.get("preferred_business_types_extra") or [])
     if extras and rng.random() < 0.30:
