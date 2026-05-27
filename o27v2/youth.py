@@ -108,7 +108,7 @@ _FRONTIER_TEAMS: list[tuple[str, str, str, str]] = [
     ("SI", "Slovenia",        "SLO", "slovenia"),
     ("HU", "Hungary",         "HUN", "hungary"),
     ("SK", "Slovakia",        "SVK", "slovakia"),
-    ("SM", "San Marino",      "SMR", "san_marino"),
+    ("NA", "Namibia",         "NAM", "namibia"),
     ("RU", "Russia",          "RUS", "russia"),
     ("UA", "Ukraine",         "UKR", "ukraine"),
     ("LT", "Lithuania",       "LTU", "lithuania"),
@@ -141,10 +141,10 @@ _COUNTRY_REGION: dict[str, str] = {
     # Europe (Frontier Cup)
     "DE": "Europe",         "AT": "Europe",         "CH": "Europe",
     "HR": "Europe",         "SI": "Europe",         "HU": "Europe",
-    "SK": "Europe",         "SM": "Europe",         "RU": "Europe",
-    "UA": "Europe",         "LT": "Europe",         "TR": "Europe",
+    "SK": "Europe",         "RU": "Europe",         "UA": "Europe",
+    "LT": "Europe",         "TR": "Europe",
     # Africa
-    "ZA": "Africa",         "ZW": "Africa",
+    "ZA": "Africa",         "ZW": "Africa",         "NA": "Africa",
     # Asia
     "IN": "Asia",           "PK": "Asia",           "MY": "Asia",
     "PH": "Asia",           "JP": "Asia",           "KR": "Asia",
