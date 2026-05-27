@@ -2,7 +2,7 @@
 
 **Date completed:** 2026-05-27
 **Branch:** `claude/sports-arbitrage-pitcher-mechanics-vVNgT`
-**Commits:** `6274a12` (times-through-the-order familiarity), `7566137` (softball/underhand arsenal + archetypes), launch_angle_bias + foul_delta commit (this AAR)
+**Commits:** `6274a12` (times-through-the-order familiarity), `7566137` (softball/underhand arsenal + archetypes), `4891095` (launch_angle_bias + foul_delta + this AAR), `5e2d61e` (glossary)
 
 ---
 
@@ -147,6 +147,13 @@ The magnitudes (`FAMILIARITY_*`, the per-pitch `timing_resistance` values) were 
 - Stat-invariant gate (`make test-invariants`) against freshly-simmed DBs — 10/10 throughout.
 - Sim confirms the new pitches are thrown in real games and produce distinct grounder/flyout profiles (see Part 3 table); new archetypes generate.
 
+**End-to-end wiring audit** (the additions must be caught by every stat surface, not just the engine):
+- Pitch-mix buckets (FB%/BR%/OFF%): all 24 catalog pitches classified into exactly one bucket — verified none unbucketed and no typos, so the percentages always sum.
+- `primary_pitch` is max-of-counts (works for any pitch); arsenal chips render via the o27v2 `_repertoire` filter (with label overrides) and the legacy o27 template; the 3 new archetypes render via `replace('_',' ')|title` in both apps.
+- Almanac averages sim's pre-computed bucket percentages + `primary_pitch` — no second classifier to keep in sync.
+- Glossary FB/BR/OFF% definitions updated to enumerate the new families.
+- Swept scout / valuation / awards / managers / engine_config / `o27v2/archetypes.py` — no hardcoded pitch-type or pitcher-archetype enumerations to update (`o27v2/archetypes.py` classifies position players only; pitchers carry the repertoire archetype from `o27/data.py`). `stamina_bonus` flows into valuation through the normal attribute path.
+
 ---
 
 ## Files touched
@@ -159,4 +166,15 @@ The magnitudes (`FAMILIARITY_*`, the per-pitch `timing_resistance` values) were 
 - `o27/data.py` — 3 new archetypes + `stamina_bonus` support.
 - `o27v2/sim.py` — pitch-mix bucket classification for the new pitches.
 - `o27v2/web/formatters.py` — display-name overrides.
+- `o27v2/web/glossary.py` — FB/BR/OFF% stat definitions extended to the new pitch families.
 - `tests/test_analytics_invariants.py` — RE-curve start:end heuristic re-baselined 4× → 3.5×.
+
+---
+
+## Test notes (for the next agent)
+
+- **`make test-invariants` (the release gate)** = `tests/test_stat_invariants.py`: 10 mathematically-impossible-stat checks against a populated `o27v2.db`. Green throughout — run it **standalone** (`O27V2_DB_PATH=… pytest tests/test_stat_invariants.py`), which is how the Makefile runs it.
+- **Two pre-existing anomalies, both confirmed independent of this branch** (they reproduce with the working tree stashed):
+  1. `test_template_renders.py::test_season_archive_writer_runs_end_to_end` — asserts `wrc_plus` in a category set that doesn't contain it. Fails on the clean tree.
+  2. The `test_stat_invariants` tests **ERROR with sqlite** only when the *whole* suite runs together — an earlier test resets the DB out from under them. They pass standalone. This is a test-isolation issue in the suite, not a product bug.
+- **Identity discipline:** every lever added here collapses to the legacy surface at its neutral value — familiarity at `looks==0`, `launch_angle_bias`/`foul_delta` at `0.0`. That's what keeps `test_realism_identity` and `test_power_redistribute` green.
