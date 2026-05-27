@@ -1,4 +1,13 @@
 {
+  "lithuanian": [
+    "Kazlauskas", "Jankauskas", "Petrauskas", "Stankevičius", "Vasiliauskas",
+    "Žukauskas", "Butkus", "Urbonas", "Balčiūnas", "Kavaliauskas",
+    "Paulauskas", "Sabonis", "Marčiulionis", "Jasikevičius", "Adomaitis",
+    "Ramanauskas", "Navickas", "Kairys", "Mockus", "Šarkauskas", "Žemaitis",
+    "Daukantas", "Valančius", "Vaitkus", "Rimkus", "Kuzminskas", "Pocius",
+    "Bagdonas", "Šimkus", "Norkus", "Gricius", "Lukšys", "Kalvaitis",
+    "Maceina", "Gintautas"
+  ],
   "cuban": [
     "Abreu", "Puig", "Céspedes", "Iglesias", "Gurriel", "Moncada", "Arozarena",
     "Soler", "Morejón", "Robert", "Sierra", "Chapman", "Despaigne", "Tomás",

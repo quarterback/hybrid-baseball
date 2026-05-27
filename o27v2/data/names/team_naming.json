@@ -101,7 +101,9 @@
       "persian":      ["Bisbol Kolob"],
       "greek":        ["Beizbol Omilos", "BC"],
       "ukrainian":    ["Beysbolnyi Klub", "BK"],
-      "czech":        ["Baseballový Klub", "BK"]
+      "czech":        ["Baseballový Klub", "BK"],
+      "hungarian":    ["Baseball Klub", "BK"],
+      "lithuanian":   ["Beisbolo Klubas", "BK"]
     },
 
     "city_to_locale": {
@@ -136,6 +138,17 @@
       "europa_russian":        { "cities_example": ["Moscow", "Saint Petersburg", "Novosibirsk", "Yekaterinburg", "Kazan", "Nizhny Novgorod"], "locale": "russian" },
       "europa_ukrainian":      { "cities_example": ["Kyiv", "Kharkiv", "Odesa", "Lviv", "Dnipro", "Zaporizhzhia"], "locale": "ukrainian" },
       "europa_czech":          { "cities_example": ["Prague", "Brno", "Ostrava", "Plzeň", "Olomouc", "Hradec Králové"], "locale": "czech" },
+      "europa_croatian":       { "cities_example": ["Zagreb", "Split", "Rijeka", "Osijek", "Zadar"], "locale": "slavic" },
+      "europa_slovenian":      { "cities_example": ["Ljubljana", "Maribor", "Celje", "Kranj"], "locale": "slavic" },
+      "europa_slovak":         { "cities_example": ["Bratislava", "Košice", "Prešov", "Žilina", "Nitra"], "locale": "slavic" },
+      "europa_hungarian":      { "cities_example": ["Budapest", "Debrecen", "Szeged", "Miskolc", "Pécs"], "locale": "hungarian" },
+      "europa_austrian":       { "cities_example": ["Vienna", "Graz", "Linz", "Salzburg", "Innsbruck", "Klagenfurt"], "locale": "german" },
+      "europa_sanmarino":      { "cities_example": ["San Marino", "Serravalle", "Borgo Maggiore", "Dogana", "Fiorentino"], "locale": "italian" },
+      "europa_swiss_de":       { "cities_example": ["Zürich", "Bern", "Basel", "Lucerne", "St. Gallen"], "locale": "german" },
+      "europa_swiss_fr":       { "cities_example": ["Geneva", "Lausanne", "Neuchâtel"], "locale": "french" },
+      "europa_swiss_it":       { "cities_example": ["Lugano", "Bellinzona"], "locale": "italian" },
+      "europa_lithuanian":     { "cities_example": ["Vilnius", "Kaunas", "Klaipėda", "Šiauliai", "Panevėžys"], "locale": "lithuanian" },
+      "central_asia_kazakh":   { "cities_example": ["Almaty", "Astana", "Shymkent", "Karaganda", "Aktobe", "Taraz"], "locale": "russian" },
 
       "pacifica_australia":    { "cities_example": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Auckland", "Wellington"], "locale": "english" },
       "pacifica_philippines":  { "cities_example": ["Manila", "Cebu", "Davao", "Quezon City"], "locale": "tagalog" },

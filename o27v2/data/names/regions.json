@@ -998,6 +998,122 @@
           "first_keys": ["african"],
           "surname_keys": ["african"] }
       ]
+    },
+    "kazakhstan": {
+      "_doc": [
+        "Central-Asian frontier market. The growth thesis is the Koryo-saram",
+        "infusion: the ethnic-Korean community deported to Kazakhstan in 1937",
+        "carries the baseball culture of the East-Asian launch market inland,",
+        "seeding the sport ahead of its neighbours. Rosters blend the Kazakh",
+        "majority (the central_asian pool — Nursultan, Nazarbayev, Doszhanov)",
+        "with a deliberately over-weighted Korean wave and the large Russian-",
+        "Kazakhstani minority. All tagged KZ."
+      ],
+      "label": "Kazakhstan",
+      "subregions": [
+        { "weight": 0.55, "country": "KZ",
+          "first_keys": ["central_asian"],
+          "surname_keys": ["central_asian"] },
+        { "weight": 0.25, "country": "KZ",
+          "first_keys": ["korean"],
+          "surname_keys": ["korean"] },
+        { "weight": 0.20, "country": "KZ",
+          "first_keys": ["russian"],
+          "surname_keys": ["russian"] }
+      ]
+    },
+    "croatia": {
+      "_doc": [
+        "European baseball nation (best Euro finish 7th, 2021). Promoted out",
+        "of the europe_southeast blend to its own Croatian pool."
+      ],
+      "label": "Croatia",
+      "country": "HR",
+      "first_keys":   ["croatian"],
+      "surname_keys": ["croatian"]
+    },
+    "slovenia": {
+      "_doc": [
+        "Emerging European baseball nation (Euro debut 10th, 1995). Promoted",
+        "out of the europe_southeast blend to its own Slovenian pool."
+      ],
+      "label": "Slovenia",
+      "country": "SI",
+      "first_keys":   ["slovenian"],
+      "surname_keys": ["slovenian"]
+    },
+    "hungary": {
+      "_doc": [
+        "Emerging European baseball nation. Promoted out of the europe_eastern",
+        "blend so a Hungary side draws Magyar (surname-first in life, rendered",
+        "given-surname here) names tagged HU."
+      ],
+      "label": "Hungary",
+      "country": "HU",
+      "first_keys":   ["hungarian"],
+      "surname_keys": ["hungarian"]
+    },
+    "slovakia": {
+      "_doc": [
+        "Emerging European baseball nation. Promoted out of the europe_eastern",
+        "blend to its own Slovak pool, tagged SK."
+      ],
+      "label": "Slovakia",
+      "country": "SK",
+      "first_keys":   ["slovak"],
+      "surname_keys": ["slovak"]
+    },
+    "austria": {
+      "_doc": [
+        "European baseball nation (Euro 9th, 2025). German given + family",
+        "names tagged AT, distinct from the Germany pool only by country code."
+      ],
+      "label": "Austria",
+      "country": "AT",
+      "first_keys":   ["german"],
+      "surname_keys": ["german"]
+    },
+    "san_marino": {
+      "_doc": [
+        "European baseball pioneer — the microstate's 5th place in 1971 is the",
+        "best finish of any never-medalist. Italian given + family names",
+        "tagged SM."
+      ],
+      "label": "San Marino",
+      "country": "SM",
+      "first_keys":   ["italian"],
+      "surname_keys": ["italian"]
+    },
+    "switzerland": {
+      "_doc": [
+        "European baseball nation (Euro 11th, 2025). Multilingual by",
+        "construction: a German-speaking majority with French- and Italian-",
+        "speaking minorities, each drawing its own given+surname pool. All",
+        "tagged CH."
+      ],
+      "label": "Switzerland",
+      "subregions": [
+        { "weight": 0.62, "country": "CH",
+          "first_keys": ["german"],
+          "surname_keys": ["german"] },
+        { "weight": 0.23, "country": "CH",
+          "first_keys": ["french"],
+          "surname_keys": ["french"] },
+        { "weight": 0.15, "country": "CH",
+          "first_keys": ["italian"],
+          "surname_keys": ["italian"] }
+      ]
+    },
+    "lithuania": {
+      "_doc": [
+        "Baltic baseball nation (Euro 15th-tie, 2025). Dedicated Lithuanian",
+        "pool — the gendered -as/-is/-us masculine surname endings",
+        "(Kazlauskas, Stankevičius, Sabonis). Tagged LT."
+      ],
+      "label": "Lithuania",
+      "country": "LT",
+      "first_keys":   ["lithuanian"],
+      "surname_keys": ["lithuanian"]
     }
   },
   "presets": {
