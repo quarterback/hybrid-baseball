@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import io
+import logging
 import os
 import threading
 from typing import Any
@@ -69,6 +70,8 @@ almanac_bp.add_app_template_filter(_slugify, "slugify")
 # Cached dataset / views (keyed by source-file mtime)
 # ---------------------------------------------------------------------------
 
+_LOG = logging.getLogger(__name__)
+
 _CACHE_LOCK = threading.Lock()
 _CACHE: dict[str, Any] = {"key": None, "dataset": None, "views": None,
                           "loaded_at": None}
@@ -94,12 +97,7 @@ def _resolve_source() -> str:
     return loader._default_db_path()
 
 
-def _get_dataset_and_views() -> tuple[dict, compute.Views]:
-    source = _resolve_source()
-    key = _cache_key(source)
-    with _CACHE_LOCK:
-        if _CACHE["key"] == key and _CACHE["dataset"] is not None:
-            return _CACHE["dataset"], _CACHE["views"]
+def _compute_and_store(source: str, key: tuple[str, float]) -> tuple[dict, compute.Views]:
     # Compute outside the lock — only one request will race to populate,
     # but we'd rather not block the world during a 1-2s aggregation.
     dataset = loader.load(source)
@@ -108,6 +106,36 @@ def _get_dataset_and_views() -> tuple[dict, compute.Views]:
         _CACHE.update(key=key, dataset=dataset, views=views,
                       loaded_at=_dt.datetime.now())
     return dataset, views
+
+
+def _get_dataset_and_views() -> tuple[dict, compute.Views]:
+    source = _resolve_source()
+    key = _cache_key(source)
+    with _CACHE_LOCK:
+        if _CACHE["key"] == key and _CACHE["dataset"] is not None:
+            return _CACHE["dataset"], _CACHE["views"]
+    return _compute_and_store(source, key)
+
+
+def warm_cache(source: str | None = None) -> bool:
+    """Pre-compute and cache the dataset+views so the next request renders
+    from a warm cache instead of paying the cold-load cost (seconds on a
+    fresh league). Best-effort: returns True on success or an existing warm
+    cache, False on failure (logged, never raised). Safe to call from a
+    background thread — `source` defaults to the active save's DB path, which
+    resolves without app/request context."""
+    try:
+        if source is None:
+            source = loader._default_db_path()
+        key = _cache_key(source)
+        with _CACHE_LOCK:
+            if _CACHE["key"] == key and _CACHE["dataset"] is not None:
+                return True
+        _compute_and_store(source, key)
+        return True
+    except Exception:
+        _LOG.exception("almanac warm_cache failed for source=%s", source)
+        return False
 
 
 def _base_ctx() -> dict:
