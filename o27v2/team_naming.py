@@ -93,6 +93,7 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "cuba":              ("americas_cuban",),
     "dominican":         ("americas_dominican",),
     "venezuela":         ("americas_venezuelan",),
+    "bermuda":           ("americas_bermuda",),
     "caribbean_dutch":   ("americas_spanish",),
     "caribbean_cricket": ("americas_spanish",),
     "haiti":             ("americas_spanish",),
@@ -105,14 +106,19 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
                           "americas_dominican", "americas_venezuelan",
                           "americas_portuguese", "americas_canada_french"),
     # --- East Asia ---
-    "east_asia":         ("east_asia_japan", "east_asia_korea", "east_asia_china"),
+    "east_asia":         ("east_asia_japan", "east_asia_korea", "east_asia_china",
+                          "east_asia_hongkong"),
     "asian_pro":         ("east_asia_japan", "east_asia_korea", "east_asia_china"),
+    "hong_kong":         ("east_asia_hongkong",),
     # --- Europe ---
-    "british_isles":     ("europa_english",),
+    "british_isles":     ("europa_english", "europa_scottish"),
+    "scotland":          ("europa_scottish",),
     "europe_western":    ("europa_english", "europa_german", "europa_dutch",
                           "europa_french", "europa_italian", "europa_spanish"),
-    "europe_eastern":    ("europa_polish", "europa_slavic",
+    "germany":           ("europa_german",),
+    "europe_eastern":    ("europa_polish", "europa_slavic", "europa_czech",
                           "europa_russian", "europa_ukrainian"),
+    "czechia":           ("europa_czech",),
     "europe_southeast":  ("europa_slavic", "europa_italian", "europa_greek"),
     "greece":            ("europa_greek",),
     "russia":            ("europa_russian",),
@@ -147,8 +153,9 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "gulf_cricket":      ("middle_east_arabic",),
     # --- Africa ---
     "africa":            ("africa_english", "africa_swahili", "africa_afrikaans",
-                          "africa_french", "africa_amharic"),
-    "africa_cricket":    ("africa_english",),
+                          "africa_french", "africa_amharic", "africa_namibia"),
+    "africa_cricket":    ("africa_english", "africa_namibia"),
+    "namibia":           ("africa_namibia",),
 }
 
 

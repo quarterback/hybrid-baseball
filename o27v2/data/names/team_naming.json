@@ -100,7 +100,8 @@
       "turkish":      ["Beysbol Kulübü", "BK"],
       "persian":      ["Bisbol Kolob"],
       "greek":        ["Beizbol Omilos", "BC"],
-      "ukrainian":    ["Beysbolnyi Klub", "BK"]
+      "ukrainian":    ["Beysbolnyi Klub", "BK"],
+      "czech":        ["Baseballový Klub", "BK"]
     },
 
     "city_to_locale": {
@@ -113,14 +114,17 @@
       "americas_cuban":        { "cities_example": ["Havana", "Santiago de Cuba", "Camagüey", "Holguín", "Santa Clara", "Matanzas", "Cienfuegos", "Pinar del Río"], "locale": "spanish" },
       "americas_dominican":    { "cities_example": ["Santo Domingo", "Santiago", "La Romana", "San Pedro de Macorís", "San Cristóbal", "La Vega", "Puerto Plata"], "locale": "spanish" },
       "americas_venezuelan":   { "cities_example": ["Caracas", "Maracaibo", "Valencia", "Barquisimeto", "Maracay", "Maturín", "Ciudad Guayana", "Barcelona"], "locale": "spanish" },
+      "americas_bermuda":      { "cities_example": ["Hamilton", "St. George's", "Somerset", "Flatts", "Warwick"], "locale": "english" },
       "americas_canada_french":{ "cities_example": ["Montréal"], "locale": "french" },
 
       "east_asia_japan":       { "cities_example": ["Tokyo", "Osaka", "Yokohama", "Nagoya", "Sapporo", "Kobe", "Fukuoka"], "locale": "japanese" },
       "east_asia_korea":       { "cities_example": ["Seoul", "Busan", "Incheon", "Daegu", "Daejeon"], "locale": "korean" },
       "east_asia_china":       { "cities_example": ["Beijing", "Shanghai", "Guangzhou", "Shenzhen", "Chengdu"], "locale": "chinese" },
+      "east_asia_hongkong":    { "cities_example": ["Hong Kong", "Kowloon", "Tsuen Wan", "Sha Tin", "Victoria"], "locale": "chinese" },
 
       "europa_english":        { "cities_example": ["London", "Manchester", "Liverpool", "Dublin", "Edinburgh"], "locale": "english" },
-      "europa_german":         { "cities_example": ["Berlin", "Hamburg", "Munich", "Cologne", "Frankfurt", "Vienna"], "locale": "german" },
+      "europa_scottish":       { "cities_example": ["Edinburgh", "Glasgow", "Aberdeen", "Dundee", "Inverness", "Stirling"], "locale": "english" },
+      "europa_german":         { "cities_example": ["Berlin", "Hamburg", "Munich", "Cologne", "Frankfurt", "Vienna", "Regensburg", "Mannheim", "Bonn", "Stuttgart", "Heidelberg"], "locale": "german" },
       "europa_dutch":          { "cities_example": ["Amsterdam", "Rotterdam", "Antwerp"], "locale": "dutch" },
       "europa_french":         { "cities_example": ["Paris", "Lyon", "Marseille", "Brussels"], "locale": "french" },
       "europa_italian":        { "cities_example": ["Milan", "Rome", "Naples", "Turin", "Bologna"], "locale": "italian" },
@@ -131,6 +135,7 @@
       "europa_greek":          { "cities_example": ["Athens", "Thessaloniki", "Patras", "Heraklion", "Larissa", "Volos"], "locale": "greek" },
       "europa_russian":        { "cities_example": ["Moscow", "Saint Petersburg", "Novosibirsk", "Yekaterinburg", "Kazan", "Nizhny Novgorod"], "locale": "russian" },
       "europa_ukrainian":      { "cities_example": ["Kyiv", "Kharkiv", "Odesa", "Lviv", "Dnipro", "Zaporizhzhia"], "locale": "ukrainian" },
+      "europa_czech":          { "cities_example": ["Prague", "Brno", "Ostrava", "Plzeň", "Olomouc", "Hradec Králové"], "locale": "czech" },
 
       "pacifica_australia":    { "cities_example": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Auckland", "Wellington"], "locale": "english" },
       "pacifica_philippines":  { "cities_example": ["Manila", "Cebu", "Davao", "Quezon City"], "locale": "tagalog" },
@@ -151,7 +156,8 @@
       "africa_swahili":        { "cities_example": ["Nairobi", "Dar es Salaam", "Mombasa"], "locale": "swahili" },
       "africa_afrikaans":      { "cities_example": ["Pretoria", "Bloemfontein"], "locale": "afrikaans" },
       "africa_french":         { "cities_example": ["Dakar", "Abidjan", "Kinshasa", "Casablanca"], "locale": "french" },
-      "africa_amharic":        { "cities_example": ["Addis Ababa"], "locale": "amharic" }
+      "africa_amharic":        { "cities_example": ["Addis Ababa"], "locale": "amharic" },
+      "africa_namibia":        { "cities_example": ["Windhoek", "Swakopmund", "Walvis Bay", "Oshakati", "Rundu"], "locale": "english" }
     },
 
     "city_tier_system": {

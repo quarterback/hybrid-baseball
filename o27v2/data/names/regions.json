@@ -922,6 +922,82 @@
       "country": "UA",
       "first_keys":   ["ukrainian"],
       "surname_keys": ["ukrainian"]
+    },
+    "czechia": {
+      "_doc": [
+        "The European baseball powerhouse (real-world WBC 2023 qualifier and",
+        "the continent's breakout program). Promoted out of the europe_eastern",
+        "blend — where it already holds the dominant CZ subregion — to its own",
+        "Czech pool."
+      ],
+      "label": "Czech Republic",
+      "country": "CZ",
+      "first_keys":   ["czech"],
+      "surname_keys": ["czech"]
+    },
+    "germany": {
+      "_doc": [
+        "Established amateur-baseball nation (Bundesliga + a growing MLB-org",
+        "academy presence). Promoted out of the flat europe_western pool so a",
+        "Germany side draws German names tagged DE."
+      ],
+      "label": "Germany",
+      "country": "DE",
+      "first_keys":   ["german"],
+      "surname_keys": ["german"]
+    },
+    "scotland": {
+      "_doc": [
+        "Associate cricket nation with its own pathway. Promoted out of the",
+        "british_isles GB blend to a dedicated Scottish pool (Mc/Mac surnames",
+        "+ the Scottish given-name set). Carries country code GB."
+      ],
+      "label": "Scotland",
+      "country": "GB",
+      "first_keys":   ["scottish"],
+      "surname_keys": ["scottish"]
+    },
+    "hong_kong": {
+      "_doc": [
+        "Associate cricket side and an East-Asian baseball outpost. Chinese",
+        "(Cantonese) given + family names tagged HK."
+      ],
+      "label": "Hong Kong",
+      "country": "HK",
+      "first_keys":   ["chinese"],
+      "surname_keys": ["chinese"]
+    },
+    "bermuda": {
+      "_doc": [
+        "Atlantic cricket nation with deep pedigree (the St. George's /",
+        "Somerset Cup Match rivalry). Afro-Caribbean given + family names",
+        "over a British-colonial surname layer, tagged BM."
+      ],
+      "label": "Bermuda",
+      "country": "BM",
+      "first_keys":   ["afro_caribbean", "english_general"],
+      "surname_keys": ["afro_caribbean", "english_general"]
+    },
+    "namibia": {
+      "_doc": [
+        "Associate cricket nation whose national side is historically",
+        "dominated by the Afrikaans- and German-descended communities",
+        "(Erasmus, Wiese, Trumpelmann, Loftie-Eaton) over an Oshiwambo/Bantu",
+        "majority. Reuses the afrikaner, german and african pools rather than",
+        "minting a new bucket — the demographic IS that blend."
+      ],
+      "label": "Namibia",
+      "subregions": [
+        { "weight": 0.45, "country": "NA",
+          "first_keys": ["afrikaner"],
+          "surname_keys": ["afrikaner"] },
+        { "weight": 0.30, "country": "NA",
+          "first_keys": ["german", "afrikaner"],
+          "surname_keys": ["german"] },
+        { "weight": 0.25, "country": "NA",
+          "first_keys": ["african"],
+          "surname_keys": ["african"] }
+      ]
     }
   },
   "presets": {

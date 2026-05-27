@@ -65,7 +65,7 @@ _NATIONAL_TEAMS: list[tuple[str, str, str, str]] = [
     ("IE", "Ireland",              "IRL", "british_isles"),
     ("NL", "Netherlands",          "NED", "netherlands"),
     ("IT", "Italy",                "ITA", "italy"),
-    ("CZ", "Czech Republic",       "CZE", "europe_eastern"),
+    ("CZ", "Czech Republic",       "CZE", "czechia"),
     ("FI", "Finland",              "FIN", "finland"),
     ("SE", "Sweden",               "SWE", "sweden"),
     ("NO", "Norway",               "NOR", "norway"),
