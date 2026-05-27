@@ -98,7 +98,9 @@
       "amharic":      ["Baseball Club"],
       "afrikaans":    ["Bofbalklub", "Baseball Klub"],
       "turkish":      ["Beysbol Kulübü", "BK"],
-      "persian":      ["Bisbol Kolob"]
+      "persian":      ["Bisbol Kolob"],
+      "greek":        ["Beizbol Omilos", "BC"],
+      "ukrainian":    ["Beysbolnyi Klub", "BK"]
     },
 
     "city_to_locale": {
@@ -106,7 +108,8 @@
 
       "americas_anglophone":   { "cities_example": ["Toronto", "Vancouver", "New York", "Chicago", "Houston", "Miami", "Atlanta"], "locale": "english" },
       "americas_spanish":      { "cities_example": ["Buenos Aires", "Mexico City", "Caracas", "Lima", "Santiago", "Bogotá", "Havana", "Santo Domingo"], "locale": "spanish" },
-      "americas_portuguese":   { "cities_example": ["São Paulo", "Rio de Janeiro", "Salvador", "Brasília"], "locale": "portuguese" },
+      "americas_portuguese":   { "cities_example": ["São Paulo", "Rio de Janeiro", "Salvador", "Brasília", "Belo Horizonte", "Curitiba", "Porto Alegre", "Recife", "Fortaleza", "Manaus"], "locale": "portuguese" },
+      "americas_mexican":      { "cities_example": ["Mexico City", "Guadalajara", "Monterrey", "Hermosillo", "Culiacán", "Mazatlán", "Mérida", "Puebla", "Tijuana"], "locale": "spanish" },
       "americas_canada_french":{ "cities_example": ["Montréal"], "locale": "french" },
 
       "east_asia_japan":       { "cities_example": ["Tokyo", "Osaka", "Yokohama", "Nagoya", "Sapporo", "Kobe", "Fukuoka"], "locale": "japanese" },
@@ -122,6 +125,9 @@
       "europa_nordic":         { "cities_example": ["Stockholm", "Copenhagen", "Oslo", "Helsinki", "Reykjavík"], "locale": "nordic" },
       "europa_polish":         { "cities_example": ["Warsaw", "Kraków", "Gdańsk"], "locale": "polish" },
       "europa_slavic":         { "cities_example": ["Prague", "Bratislava", "Belgrade", "Zagreb", "Ljubljana"], "locale": "slavic" },
+      "europa_greek":          { "cities_example": ["Athens", "Thessaloniki", "Patras", "Heraklion", "Larissa", "Volos"], "locale": "greek" },
+      "europa_russian":        { "cities_example": ["Moscow", "Saint Petersburg", "Novosibirsk", "Yekaterinburg", "Kazan", "Nizhny Novgorod"], "locale": "russian" },
+      "europa_ukrainian":      { "cities_example": ["Kyiv", "Kharkiv", "Odesa", "Lviv", "Dnipro", "Zaporizhzhia"], "locale": "ukrainian" },
 
       "pacifica_australia":    { "cities_example": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Auckland", "Wellington"], "locale": "english" },
       "pacifica_philippines":  { "cities_example": ["Manila", "Cebu", "Davao", "Quezon City"], "locale": "tagalog" },
@@ -135,7 +141,7 @@
       "subcontinent_pakistan": { "cities_example": ["Karachi", "Lahore", "Islamabad", "Rawalpindi"], "locale": "urdu" },
       "subcontinent_other":    { "cities_example": ["Dhaka", "Colombo", "Kathmandu"], "locale": "english" },
       "middle_east_arabic":    { "cities_example": ["Dubai", "Abu Dhabi", "Riyadh", "Doha", "Cairo"], "locale": "arabic" },
-      "middle_east_turkish":   { "cities_example": ["Istanbul", "Ankara"], "locale": "turkish" },
+      "middle_east_turkish":   { "cities_example": ["Istanbul", "Ankara", "İzmir", "Bursa", "Antalya", "Adana"], "locale": "turkish" },
       "middle_east_persian":   { "cities_example": ["Tehran", "Esfahan"], "locale": "persian" },
 
       "africa_english":        { "cities_example": ["Lagos", "Nairobi", "Accra", "Johannesburg", "Cape Town"], "locale": "english" },

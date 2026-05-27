@@ -805,6 +805,86 @@
           "first_keys": ["lusophone_african", "african"],
           "surname_keys": ["lusophone_african", "african"] }
       ]
+    },
+    "brazil": {
+      "_doc": [
+        "Promoted out of south_america to its own region. Brazil's distinctive",
+        "naming is the hyphenated immigrant blend — Japanese-Brazilian,",
+        "Italian-Brazilian, German-Brazilian and Lebanese-Brazilian lines",
+        "(Yamamoto-Costa, Bauer-Silva) layered over the Portuguese base — which",
+        "is genuinely distinct from generic MLB-shaped Latin American naming.",
+        "Subregion weights are the south_america BR subregions renormalised to 1.0."
+      ],
+      "label": "Brazil",
+      "subregions": [
+        { "weight": 0.46, "country": "BR",
+          "first_keys": ["brazilian", "portuguese"],
+          "surname_keys": ["brazilian_portuguese"] },
+        { "weight": 0.23, "country": "BR",
+          "first_keys": ["brazilian", "italian"],
+          "surname_keys": ["brazilian_italian"] },
+        { "weight": 0.16, "country": "BR",
+          "first_keys": ["brazilian_japanese"],
+          "surname_keys": ["brazilian_japanese"] },
+        { "weight": 0.09, "country": "BR",
+          "first_keys": ["brazilian", "german"],
+          "surname_keys": ["brazilian_german"] },
+        { "weight": 0.06, "country": "BR",
+          "first_keys": ["brazilian", "arabic"],
+          "surname_keys": ["brazilian_lebanese"] }
+      ]
+    },
+    "mexico": {
+      "_doc": [
+        "Real baseball nation (LMB summer league, LMP winter league, WBC",
+        "regular). Promoted out of the latin_america MX subregion so a Mexico",
+        "national side draws names tagged MX rather than the blended Latin",
+        "American pool."
+      ],
+      "label": "Mexico",
+      "country": "MX",
+      "first_keys":   ["latino_hispanic", "latin_american"],
+      "surname_keys": ["latino_hispanic", "latin_american", "spanish"]
+    },
+    "turkey": {
+      "_doc": [
+        "Promoted out of the central_west_asia blend. Turkish given + family",
+        "names tagged TR."
+      ],
+      "label": "Turkey",
+      "country": "TR",
+      "first_keys":   ["turkish"],
+      "surname_keys": ["turkish"]
+    },
+    "greece": {
+      "_doc": [
+        "Long-standing baseball federation (hosted the 2004 Olympic",
+        "tournament). Promoted out of europe_southeast to its own Greek pool."
+      ],
+      "label": "Greece",
+      "country": "GR",
+      "first_keys":   ["greek"],
+      "surname_keys": ["greek"]
+    },
+    "russia": {
+      "_doc": [
+        "Promoted out of the europe_eastern blend. Russian given + family",
+        "names tagged RU."
+      ],
+      "label": "Russia",
+      "country": "RU",
+      "first_keys":   ["russian"],
+      "surname_keys": ["russian"]
+    },
+    "ukraine": {
+      "_doc": [
+        "Promoted out of the europe_eastern blend. Ukrainian given + family",
+        "names tagged UA."
+      ],
+      "label": "Ukraine",
+      "country": "UA",
+      "first_keys":   ["ukrainian"],
+      "surname_keys": ["ukrainian"]
     }
   },
   "presets": {
