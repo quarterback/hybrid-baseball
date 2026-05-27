@@ -371,15 +371,15 @@
   <div class="section-bar"><h2>Times Through the Order</h2></div>
   <div class="tablewrap short">
     <table class="stat-table">
-      <thead><tr><th class="t-left">Look</th><th>Hard-Hit % Allowed</th><th>Contact Events</th></tr></thead>
+      <thead><tr><th class="t-left">Look</th><th>K %</th><th>Hard-Hit %</th><th>Batters Faced</th></tr></thead>
       <tbody>
-        <tr><td class="t-left">1st time</td><td>{{ '%.0f'|format(season.tto1_hardhit * 100) }}%</td><td>{{ season.tto1_contacts }}</td></tr>
-        <tr><td class="t-left">3rd+ time</td><td>{{ '%.0f'|format(season.tto3_hardhit * 100) }}%</td><td>{{ season.tto3_contacts }}</td></tr>
-        <tr><td class="t-left">Δ (familiarity)</td><td>{{ '%+.0f'|format(season.tto_hardhit_delta * 100) }}%</td><td>—</td></tr>
+        <tr><td class="t-left">1st time</td><td>{{ '%.0f'|format(season.tto1_k_pct * 100) }}%</td><td>{{ '%.0f'|format(season.tto1_hardhit * 100) }}%</td><td>{{ season.tto1_bf or 0 }}</td></tr>
+        <tr><td class="t-left">2nd time</td><td>{{ '%.0f'|format(season.tto2_k_pct * 100) }}%</td><td>{{ '%.0f'|format(season.tto2_hardhit * 100) }}%</td><td>{{ season.tto2_bf or 0 }}</td></tr>
+        <tr><td class="t-left">3rd+ time</td><td>{{ '%.0f'|format(season.tto3_k_pct * 100) }}%</td><td>{{ '%.0f'|format(season.tto3_hardhit * 100) }}%</td><td>{{ season.tto3_bf or 0 }}</td></tr>
       </tbody>
     </table>
   </div>
-  <p class="note">Hard-hit rate allowed by how many times the lineup has faced this pitcher in the game. Positive Δ = hitters square him up more with familiarity; flat or negative = he resists being timed up (high Deception). Contact-quality only — strikeout splits by look require engine-side TTO counters.</p>
+  <p class="note">Performance by how many times the lineup has faced this pitcher in the game (the familiarity axis, distinct from the arc/fatigue axis behind Decay). <strong>TTO K-Decay {{ '%+.1f'|format(season.tto_k_decay or 0) }}</strong> K%-pts from the 1st look to the 3rd+ — positive means the lineup cracks his code across looks; flat or negative means he resists being timed up (the deception arbitrage, also captured by his Deception grade). Hard-hit% is the contact-quality companion from the batted-ball log.</p>
 </section>
 {% endif %}
 

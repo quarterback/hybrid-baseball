@@ -199,3 +199,39 @@ Surfaced on the almanac player page (Batted-Ball Profile + Times Through the Ord
 - `o27/almanac/templates/player.html.j2` — Batted-Ball Profile + Times Through the Order sections.
 - `o27v2/web/glossary.py` — reframed `decay`; added `deception` / `gb_pct` / `tto_hardhit_delta`.
 - `o27/almanac/tests/test_build.py` — unit tests for the two compute helpers.
+
+---
+
+## Part 5 — Engine-side TTO counters: K%-by-look becomes real
+
+Part 4's TTO splits were contact-quality only, because `game_pa_log` stores no strikeout/walk rows. To get the headline familiarity signal — **whiff rate by look** — the engine had to count it directly. Built by mirroring the existing arc/Decay bucket pipeline end to end:
+
+- **Engine** (`o27/engine/state.py`, `pa.py`, `game.py`, `manager.py`): added `{k,fo,bf}_tto` buckets to `SpellRecord` and the live `pitcher_*_tto_this_spell` counters to `GameState` (look buckets: 1st / 2nd / 3rd+ time the batter has faced this pitcher this game). A new `_tto_bucket(state)` reads `matchup_count` (the prior count → the 0-based look index) and the counters tick at the same sites as the arc K/FO/BF counters. BF's bucket is captured *before* `matchup_pa` is ticked so it lands in the same look as that PA's K/FO. Persisted to `SpellRecord` at spell end (game end + pitching change) and reset alongside the arc buckets.
+- **DB** (`o27v2/db.py`): nine new `game_pitcher_stats` columns (`k_tto1-3`, `fo_tto1-3`, `bf_tto1-3`) + an idempotent `ALTER TABLE` migration (legacy rows default 0).
+- **Sim** (`o27v2/sim.py`): summed across spells and written in both pitcher-stats INSERTs.
+- **Dedup view** (`o27v2/web/app.py`): the new columns added to `_PSTATS_DEDUP_SQL` so the o27v2 stat layer can read them.
+- **Almanac** (`o27/almanac/compute.py`): summed in `_PITCHING_SUM_FIELDS`; `_augment_pitchers` computes `tto{1,2,3}_k_pct` (K% incl. foul-outs, matching the arc K% convention) and **`tto_k_decay`** = K%-pts lost from 1st → 3rd+ look. Surfaced on the player page (K% + hard-hit% + BF by look).
+
+**It measures exactly what the engine models.** League K% by look over an 8-team / 150-game sim:
+
+| Look | K% | BF |
+|---|---|---|
+| 1st | 26.4% | 9,942 |
+| 2nd | 24.0% | 2,127 |
+| 3rd+ | **18.6%** | 1,040 |
+
+**League TTO K-Decay = +7.8 K%-pts** — pitchers lose ~8 points of strikeout rate by the third time through, the familiarity effect made visible in the stats. Per-pitcher it's a small-sample split (the 3rd+ bucket is thin), meaningful in aggregate / over a full season, exactly like MLB's times-through-the-order splits.
+
+**Decay vs Deception, fully separated:** `Decay` = the fatigue/arc axis (arc-1 vs arc-3 K%); `TTO K-Decay` = the familiarity axis (1st vs 3rd+ look); the `Deception` grade = the repertoire-driven talent input that predicts a low TTO K-Decay. A pitcher can now be shown to fade from fatigue, from familiarity, or from neither.
+
+**New invariant:** `test_invariant_10_tto_buckets_reconcile` asserts per-row `bf_tto1+2+3 == batters_faced` and `k_tto1+2+3 == k` — guards the whole accumulation → SpellRecord → DB pipeline. The gate is now 11/11.
+
+### Files touched (Part 5)
+- `o27/engine/state.py`, `o27/engine/pa.py`, `o27/engine/game.py`, `o27/engine/manager.py` — TTO counters, `_tto_bucket`, persist + reset.
+- `o27v2/db.py` — schema columns + migration.
+- `o27v2/sim.py` — sum + write the buckets.
+- `o27v2/web/app.py` — `_PSTATS_DEDUP_SQL` columns.
+- `o27/almanac/compute.py` — aggregation + `tto_k_decay` / K%-by-look.
+- `o27/almanac/templates/player.html.j2` — K%-by-look in the TTO section.
+- `o27v2/web/glossary.py` — `tto_k_decay` entry.
+- `tests/test_stat_invariants.py` — invariant 10.

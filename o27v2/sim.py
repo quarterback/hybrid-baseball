@@ -872,6 +872,10 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
         k_a1,  k_a2,  k_a3  = _sum_arc("k_arc")
         fo_a1, fo_a2, fo_a3 = _sum_arc("fo_arc")
         bf_a1, bf_a2, bf_a3 = _sum_arc("bf_arc")
+        # Times-through-the-order buckets (1st / 2nd / 3rd+ look).
+        k_t1,  k_t2,  k_t3  = _sum_arc("k_tto")
+        fo_t1, fo_t2, fo_t3 = _sum_arc("fo_tto")
+        bf_t1, bf_t2, bf_t3 = _sum_arc("bf_tto")
 
         # is_starter: this pitcher began the game on the mound for this
         # team. Detect via the first spell's start_batter_num == 1 AND
@@ -912,6 +916,9 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "k_arc1":  k_a1,  "k_arc2":  k_a2,  "k_arc3":  k_a3,
             "fo_arc1": fo_a1, "fo_arc2": fo_a2, "fo_arc3": fo_a3,
             "bf_arc1": bf_a1, "bf_arc2": bf_a2, "bf_arc3": bf_a3,
+            "k_tto1":  k_t1,  "k_tto2":  k_t2,  "k_tto3":  k_t3,
+            "fo_tto1": fo_t1, "fo_tto2": fo_t2, "fo_tto3": fo_t3,
+            "bf_tto1": bf_t1, "bf_tto2": bf_t2, "bf_tto3": bf_t3,
             "is_starter": is_starter,
             "wb_faced": wb_faced,
             "wb_runs":  wb_runs,
@@ -1797,11 +1804,14 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                     k_arc1,  k_arc2,  k_arc3,
                     fo_arc1, fo_arc2, fo_arc3,
                     bf_arc1, bf_arc2, bf_arc3,
+                    k_tto1,  k_tto2,  k_tto3,
+                    fo_tto1, fo_tto2, fo_tto3,
+                    bf_tto1, bf_tto2, bf_tto3,
                     is_starter,
                     singles_allowed, doubles_allowed, triples_allowed,
                     fastball_pct, breaking_pct, offspeed_pct, primary_pitch,
                     wb_faced, wb_runs)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
                  r["runs_allowed"], r.get("er", r["runs_allowed"]),
@@ -1814,6 +1824,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                  r.get("k_arc1",  0), r.get("k_arc2",  0), r.get("k_arc3",  0),
                  r.get("fo_arc1", 0), r.get("fo_arc2", 0), r.get("fo_arc3", 0),
                  r.get("bf_arc1", 0), r.get("bf_arc2", 0), r.get("bf_arc3", 0),
+                 r.get("k_tto1",  0), r.get("k_tto2",  0), r.get("k_tto3",  0),
+                 r.get("fo_tto1", 0), r.get("fo_tto2", 0), r.get("fo_tto3", 0),
+                 r.get("bf_tto1", 0), r.get("bf_tto2", 0), r.get("bf_tto3", 0),
                  r.get("is_starter", 0),
                  r.get("singles_allowed", 0), r.get("doubles_allowed", 0),
                  r.get("triples_allowed", 0),
@@ -2005,9 +2018,12 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
             k_arc1,  k_arc2,  k_arc3,
             fo_arc1, fo_arc2, fo_arc3,
             bf_arc1, bf_arc2, bf_arc3,
+            k_tto1,  k_tto2,  k_tto3,
+            fo_tto1, fo_tto2, fo_tto3,
+            bf_tto1, bf_tto2, bf_tto3,
             is_starter,
             wb_faced, wb_runs)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["batters_faced"],
           r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
           r.get("er", r["runs_allowed"]),
@@ -2019,6 +2035,9 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
           r.get("k_arc1",  0), r.get("k_arc2",  0), r.get("k_arc3",  0),
           r.get("fo_arc1", 0), r.get("fo_arc2", 0), r.get("fo_arc3", 0),
           r.get("bf_arc1", 0), r.get("bf_arc2", 0), r.get("bf_arc3", 0),
+          r.get("k_tto1",  0), r.get("k_tto2",  0), r.get("k_tto3",  0),
+          r.get("fo_tto1", 0), r.get("fo_tto2", 0), r.get("fo_tto3", 0),
+          r.get("bf_tto1", 0), r.get("bf_tto2", 0), r.get("bf_tto3", 0),
           r.get("is_starter", 0),
           r.get("wb_faced", 0), r.get("wb_runs", 0))
          for r in rows],

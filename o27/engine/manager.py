@@ -378,6 +378,9 @@ def pitching_change(
             k_arc=list(state.pitcher_k_arc_this_spell),
             fo_arc=list(state.pitcher_fo_arc_this_spell),
             bf_arc=list(state.pitcher_bf_arc_this_spell),
+            k_tto=list(state.pitcher_k_tto_this_spell),
+            fo_tto=list(state.pitcher_fo_tto_this_spell),
+            bf_tto=list(state.pitcher_bf_tto_this_spell),
             wb_faced=state.pitcher_wb_faced_this_spell,
             wb_runs=state.pitcher_wb_runs_this_spell,
         )
@@ -404,6 +407,9 @@ def pitching_change(
     state.pitcher_k_arc_this_spell  = [0, 0, 0]
     state.pitcher_fo_arc_this_spell = [0, 0, 0]
     state.pitcher_bf_arc_this_spell = [0, 0, 0]
+    state.pitcher_k_tto_this_spell  = [0, 0, 0]
+    state.pitcher_fo_tto_this_spell = [0, 0, 0]
+    state.pitcher_bf_tto_this_spell = [0, 0, 0]
     state.pitcher_wb_faced_this_spell = 0
     state.pitcher_wb_runs_this_spell = 0
     state.pitcher_start_pa = state.total_pa_this_half

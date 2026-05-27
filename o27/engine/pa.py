@@ -125,6 +125,21 @@ def _arc_index(outs: int) -> int:
         return 1
     return 2
 
+
+def _tto_bucket(state: GameState) -> int:
+    """Look bucket for the current matchup: 0 = 1st time this batter has faced
+    the pitcher on the mound this game, 1 = 2nd, 2 = 3rd+.
+
+    Reads matchup_count, which is the PRIOR count (this PA is ticked onto it
+    only in _end_at_bat), so the value is the correct 0-based look index for
+    the PA in progress. Must be read BEFORE _end_at_bat ticks the matchup.
+    """
+    b = state.current_batter
+    p = state.get_current_pitcher()
+    if b is None or p is None:
+        return 0
+    return min(state.matchup_count(p.player_id, b.player_id), 2)
+
 def _record_out(state: GameState, batter_id: str) -> list[str]:
     """
     Record one out. Handles partnership tracking. Returns log lines.
@@ -296,6 +311,9 @@ def _end_at_bat(state: GameState) -> list[str]:
     # this AB was a joker insertion, the joker_pa counter ticks too —
     # the joker's effective ratings in prob.py decay against this count
     # on their NEXT joker insertion.
+    # Capture this PA's look bucket BEFORE matchup_pa is ticked below, so the
+    # BF-by-look counter lands in the same bucket as any K/FO from this PA.
+    _bf_tto_bucket = _tto_bucket(state)
     batter = state.current_batter
     if batter is not None:
         bgs = state.bgs(batter.player_id)
@@ -323,6 +341,7 @@ def _end_at_bat(state: GameState) -> list[str]:
     # BF arc anchored to the OUTS the AB started in (not the outs the
     # AB ends at), so K/BB/FO and BF for the same AB share an arc.
     state.pitcher_bf_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+    state.pitcher_bf_tto_this_spell[_bf_tto_bucket] += 1
     # Snapshot start-of-PA outs for the upcoming PA.
     state.pa_start_outs = state.outs
     return log
@@ -413,6 +432,7 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
             log.append(f"  Foul #{state.count.fouls} — FOUL OUT.")
             state.pitcher_fo_induced_this_spell += 1
             state.pitcher_fo_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+            state.pitcher_fo_tto_this_spell[_tto_bucket(state)] += 1
             batter_id = state.current_batter.player_id
             log += _record_out(state, batter_id)
             log += _end_at_bat(state)
@@ -427,6 +447,7 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
         log.append("  Foul tip caught — STRIKEOUT.")
         state.pitcher_k_this_spell += 1
         state.pitcher_k_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+        state.pitcher_k_tto_this_spell[_tto_bucket(state)] += 1
         batter_id = state.current_batter.player_id
         log += _record_out(state, batter_id)
         log += _end_at_bat(state)
@@ -924,6 +945,7 @@ def _strike(state: GameState, log: list, swinging: bool) -> list[str]:
         log.append(f"  STRIKEOUT.")
         state.pitcher_k_this_spell += 1
         state.pitcher_k_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+        state.pitcher_k_tto_this_spell[_tto_bucket(state)] += 1
         log += _record_out(state, batter_id)
         log += _end_at_bat(state)
     return log

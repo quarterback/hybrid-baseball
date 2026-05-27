@@ -458,6 +458,18 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     bf_arc1        INTEGER DEFAULT 0,
     bf_arc2        INTEGER DEFAULT 0,
     bf_arc3        INTEGER DEFAULT 0,
+    -- Times-through-the-order buckets (1st / 2nd / 3rd+ look a batter has had
+    -- at this pitcher in the game). Powers K%-by-look splits and the
+    -- Deception decay stat (familiarity axis, vs Decay's fatigue axis).
+    k_tto1         INTEGER DEFAULT 0,
+    k_tto2         INTEGER DEFAULT 0,
+    k_tto3         INTEGER DEFAULT 0,
+    fo_tto1        INTEGER DEFAULT 0,
+    fo_tto2        INTEGER DEFAULT 0,
+    fo_tto3        INTEGER DEFAULT 0,
+    bf_tto1        INTEGER DEFAULT 0,
+    bf_tto2        INTEGER DEFAULT 0,
+    bf_tto3        INTEGER DEFAULT 0,
     is_starter     INTEGER DEFAULT 0,   -- 1 if this pitcher started the game
     -- Walk-Back rule (post-HR rule-placed runner). wb_faced = PAs this
     -- pitcher pitched with a Walk-Back runner pending. wb_runs = subset
@@ -1241,6 +1253,21 @@ def init_db() -> None:
             "is_starter",
         )
         for col in _arc_cols:
+            try:
+                conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Times-through-the-order buckets (1st / 2nd / 3rd+ look). Powers
+        # K%-by-look splits + the Deception decay stat. Default 0 on legacy
+        # rows (familiarity stats simply read empty for pre-migration games).
+        _tto_cols = (
+            "k_tto1",  "k_tto2",  "k_tto3",
+            "fo_tto1", "fo_tto2", "fo_tto3",
+            "bf_tto1", "bf_tto2", "bf_tto3",
+        )
+        for col in _tto_cols:
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()

@@ -672,6 +672,9 @@ _PITCHING_SUM_FIELDS = [
     "k_arc1",  "k_arc2",  "k_arc3",
     "fo_arc1", "fo_arc2", "fo_arc3",
     "bf_arc1", "bf_arc2", "bf_arc3",
+    "k_tto1",  "k_tto2",  "k_tto3",
+    "fo_tto1", "fo_tto2", "fo_tto3",
+    "bf_tto1", "bf_tto2", "bf_tto3",
     "singles_allowed", "doubles_allowed", "triples_allowed",
     "fastball_pct", "breaking_pct", "offspeed_pct",
 ]
@@ -839,6 +842,23 @@ def _augment_pitchers(rows: list[dict], league: dict[str, float],
         r["late_k_pct"]  = ((k3 + fo3) / bf3) if bf3 else 0.0
         r["early_k_pct"] = ((k1 + fo1) / bf1) if bf1 else 0.0
         r["arc3_reach_pct"] = (1.0 if bf3 > 0 else 0.0)
+
+        # Times-through-the-order (FAMILIARITY axis — the engine TTO buckets).
+        # K% (incl. foul-outs, matching the arc K% convention) by how many
+        # times the batter has faced this pitcher in the game.
+        kt1, kt2, kt3 = r.get("k_tto1") or 0, r.get("k_tto2") or 0, r.get("k_tto3") or 0
+        ft1, ft2, ft3 = r.get("fo_tto1") or 0, r.get("fo_tto2") or 0, r.get("fo_tto3") or 0
+        bt1, bt2, bt3 = r.get("bf_tto1") or 0, r.get("bf_tto2") or 0, r.get("bf_tto3") or 0
+        r["tto1_k_pct"] = ((kt1 + ft1) / bt1) if bt1 else 0.0
+        r["tto2_k_pct"] = ((kt2 + ft2) / bt2) if bt2 else 0.0
+        r["tto3_k_pct"] = ((kt3 + ft3) / bt3) if bt3 else 0.0
+        r["tto1_bf"], r["tto2_bf"], r["tto3_bf"] = bt1, bt2, bt3
+        # TTO K-Decay: K% points lost from the 1st look to the 3rd+ look.
+        # Positive = the lineup cracks his code across repeat looks (low
+        # deception); ~0 / negative = he holds his whiffs as familiarity grows
+        # (high deception — the arbitrage arm). The familiarity-axis sibling
+        # of Decay (which is the fatigue/arc axis).
+        r["tto_k_decay"] = (r["tto1_k_pct"] - r["tto3_k_pct"]) * 100.0
 
         # Per-arc ER rates (R/9-style)
         r["arc1_era"] = (er1 * 27.0 / (bf1 * (outs / bf))) if (bf and bf1 and outs) else 0.0

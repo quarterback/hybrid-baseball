@@ -333,6 +333,15 @@ class SpellRecord:
     k_arc:   list = field(default_factory=lambda: [0, 0, 0])
     fo_arc:  list = field(default_factory=lambda: [0, 0, 0])
     bf_arc:  list = field(default_factory=lambda: [0, 0, 0])
+    # Times-through-the-order counters. Indices 0/1/2 = the 1st / 2nd / 3rd+
+    # time each batter faced this pitcher this game (the look number), so
+    # K%/FO%/contact can be split by familiarity. Distinct from the arc
+    # buckets (which split by out position / fatigue): a pitcher can be on
+    # his 1st look deep in the arc (fresh reliever) or his 4th look early
+    # (top of the order in a marathon). Powers the Deception decay stat.
+    k_tto:   list = field(default_factory=lambda: [0, 0, 0])
+    fo_tto:  list = field(default_factory=lambda: [0, 0, 0])
+    bf_tto:  list = field(default_factory=lambda: [0, 0, 0])
 
 
 @dataclass
@@ -562,6 +571,12 @@ class GameState:
     pitcher_k_arc_this_spell:  list = field(default_factory=lambda: [0, 0, 0])
     pitcher_fo_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
     pitcher_bf_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
+    # Live times-through-the-order counters for the current spell (look
+    # buckets: 1st / 2nd / 3rd+ time the batter has faced this pitcher this
+    # game). Persisted onto SpellRecord.{k,fo,bf}_tto at spell end.
+    pitcher_k_tto_this_spell:  list = field(default_factory=lambda: [0, 0, 0])
+    pitcher_fo_tto_this_spell: list = field(default_factory=lambda: [0, 0, 0])
+    pitcher_bf_tto_this_spell: list = field(default_factory=lambda: [0, 0, 0])
     # Outs at the start of the current PA — used to bucket BF/K/BB/FO so
     # an out-producing AB charges its event to the arc the AB began in,
     # not the arc the resulting out crossed into.
