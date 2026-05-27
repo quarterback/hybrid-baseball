@@ -247,6 +247,51 @@ def _resolve_joker_decay(state: "GameState", batter: Player) -> float:
     return _joker_decay_factor(prior)
 
 
+def _pitcher_timing_resistance(pitcher: Player) -> float:
+    """How un-timeable this pitcher stays as a lineup sees him repeatedly.
+
+    Usage-weighted mean of each repertoire pitch's `timing_resistance`. A
+    knuckleballer (knuckleball 0.95) lands near-immune; a four-seam/slider arm
+    lands low and gets solved over a long arc. Repertoire-less (legacy)
+    pitchers fall back to a movement-derived value: high-movement arms are
+    harder to time even without a typed repertoire. Identity-safe — the value
+    only scales the familiarity term, which is zero on the first look anyway.
+    """
+    repertoire = getattr(pitcher, "repertoire", None)
+    if repertoire:
+        total_w = 0.0
+        acc = 0.0
+        for entry in repertoire:
+            catalog = cfg.PITCH_CATALOG.get(getattr(entry, "pitch_type", None))
+            if catalog is None:
+                continue
+            w = float(getattr(entry, "usage_weight", 1.0) or 0.0)
+            if w <= 0.0:
+                continue
+            tr = float(catalog.get("timing_resistance", cfg.DEFAULT_TIMING_RESISTANCE))
+            acc += tr * w
+            total_w += w
+        if total_w > 0.0:
+            return max(0.0, min(1.0, acc / total_w))
+    # Legacy fallback: center on DEFAULT, nudged by movement (0.5 → identity).
+    move = float(getattr(pitcher, "movement", 0.5) or 0.5)
+    return max(0.0, min(1.0, cfg.DEFAULT_TIMING_RESISTANCE + (move - 0.5) * 0.6))
+
+
+def _familiarity_dominance(times_faced: int, resistance: float) -> float:
+    """Batter-advantage scalar from times-through-the-order.
+
+    Grows with prior PAs vs this pitcher this game, attenuated by the
+    pitcher's timing_resistance. Zero on the first look (identity). See
+    config FAMILIARITY_* for the shape.
+    """
+    if times_faced <= 0:
+        return 0.0
+    looks = min(int(times_faced), cfg.FAMILIARITY_MAX_LOOKS)
+    factor = max(0.0, min(2.0, (1.0 - resistance) * 2.0))
+    return cfg.FAMILIARITY_PER_LOOK * looks * factor
+
+
 def _pitch_probs(
     pitcher: Player,
     batter: Player,
@@ -258,6 +303,7 @@ def _pitch_probs(
     pitch_type: Optional[str] = None,
     pitch_quality: float = 0.5,
     joker_decay: float = 1.0,
+    familiarity: float = 0.0,
 ) -> tuple:
     """Return adjusted pitch-outcome probability tuple (sums to 1.0)."""
     base = list(cfg.PITCH_BASE.get((balls, strikes), cfg.PITCH_BASE[(0, 0)]))
@@ -325,6 +371,16 @@ def _pitch_probs(
     base[2] += con_dev * cfg.BATTER_CONTACT_SWINGING
     base[3] += con_dev * cfg.BATTER_CONTACT_FOUL
     base[4] += con_dev * cfg.BATTER_CONTACT_CONTACT
+
+    # Times-through-the-order familiarity: the more this batter has faced this
+    # pitcher this game, the more he's timed the arm up — fewer whiffs, fewer
+    # called strikes chased, more balls in play. Attenuated by the pitcher's
+    # timing_resistance (computed by the caller). Collapses to 0 on the first
+    # look, preserving the legacy probability surface (identity invariant).
+    if familiarity:
+        base[1] += familiarity * cfg.FAMILIARITY_CALLED
+        base[2] += familiarity * cfg.FAMILIARITY_SWINGING
+        base[4] += familiarity * cfg.FAMILIARITY_CONTACT
 
     # Command (pitcher): independent of Stuff → control pitchers walk fewer.
     # Per-pitch quality draw applies here too: the same pitcher with high
@@ -431,12 +487,13 @@ def pitch_outcome(
     pitch_type: Optional[str] = None,
     pitch_quality: float = 0.5,
     joker_decay: float = 1.0,
+    familiarity: float = 0.0,
 ) -> str:
     """Draw one pitch outcome. Returns a string matching one of _PITCH_NAMES."""
     probs = _pitch_probs(
         pitcher, batter, balls, strikes, spell_count, weather,
         rng=rng, pitch_type=pitch_type, pitch_quality=pitch_quality,
-        joker_decay=joker_decay,
+        joker_decay=joker_decay, familiarity=familiarity,
     )
     r = rng.random()
     cumulative = 0.0
@@ -461,6 +518,7 @@ def contact_quality(
     pitch_quality: float = 0.5,
     target_pressure_shift: float = 0.0,
     joker_decay: float = 1.0,
+    familiarity: float = 0.0,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
@@ -498,6 +556,11 @@ def contact_quality(
     # they're locked in. Identity at 0.0 so first-batting teams or PAs past
     # the fade window see no change.
     shift += target_pressure_shift
+
+    # Times-through-the-order familiarity: a hitter who has timed this pitcher
+    # up doesn't just make more contact (handled in _pitch_probs) — he squares
+    # it up better. Tilts the bucket toward hard contact. Zero on first look.
+    shift += familiarity * cfg.FAMILIARITY_HARD_TILT
 
     # Second-swing modifier: on swings 2+ within the same AB, tilt the
     # contact distribution by eye-vs-command. High-eye batter reads the
@@ -2250,10 +2313,20 @@ class ProbabilisticProvider:
         # ratings sag together as their PA count climbs this game.
         joker_decay = _resolve_joker_decay(state, batter)
 
+        # Times-through-the-order familiarity. How many PAs this batter has
+        # already completed against THIS pitcher this game drives how far the
+        # matchup has tilted toward the hitter, scaled down by the pitcher's
+        # repertoire timing_resistance (deception arms stay un-timeable). Zero
+        # on the first look → identity. Threaded into both outcome models.
+        times_faced = state.matchup_count(pitcher.player_id, batter.player_id)
+        familiarity = _familiarity_dominance(
+            times_faced, _pitcher_timing_resistance(pitcher)
+        )
+
         outcome = pitch_outcome(
             rng, pitcher, batter, balls, strikes, spell, weather,
             pitch_type=sel_pitch, pitch_quality=sel_quality,
-            joker_decay=joker_decay,
+            joker_decay=joker_decay, familiarity=familiarity,
         )
 
         # HBP: a fraction of balls become hit-by-pitches, scaled by pitcher
@@ -2316,6 +2389,7 @@ class ProbabilisticProvider:
             pitch_type=sel_pitch, pitch_quality=sel_quality,
             target_pressure_shift=tp_shift,
             joker_decay=joker_decay,
+            familiarity=familiarity,
         )
         is_hr     = False
         is_triple = False

@@ -928,6 +928,32 @@ PITCHER_COMMAND_CALLED: float = +0.03
 CONTACT_POWER_TILT:    float = 0.10
 CONTACT_MOVEMENT_TILT: float = 0.10   # parity with power tilt — high-movement pitcher suppresses hard contact as strongly as a slugger creates it
 
+# --- Times-through-the-order familiarity ----------------------------------
+# "Any sport has arbitrage — guys eventually crack the code." In a 27-out arc
+# the top of the order can face one pitcher 5–7 times in a single game (vs 2–3
+# in MLB), so batter familiarity is a first-class pitching dynamic here, not a
+# rounding error. Each prior PA a batter has had against THIS pitcher this game
+# tilts the matchup toward the hitter — he's timing the arm up. The penalty is
+# attenuated by the pitcher's repertoire-weighted timing_resistance: a
+# knuckleballer / eephus artist / junkballer stays un-timeable (near-zero
+# penalty), while a pure-velocity "flamethrower" gets solved by the 4th look.
+# This is the lever that makes the deception archetypes the sport's arbitrage —
+# the workhorse who keeps showing the lineup something un-timeable out-survives
+# the velocity arm over a marathon half-inning.
+#
+# fam dominance = FAMILIARITY_PER_LOOK * min(looks, MAX) * factor, where
+#   factor = clamp((1 - timing_resistance) * 2, 0, 2)
+#   (resistance 0.5 → factor 1.0 baseline; 1.0 → 0 immune; 0.0 → 2.0 amplified)
+# At looks=0 (first time facing this pitcher) fam == 0 → all terms collapse to
+# the legacy surface, preserving the realism identity invariant.
+FAMILIARITY_PER_LOOK:   float = 0.18    # familiarity-dominance accrued per prior PA (pre-attenuation)
+FAMILIARITY_MAX_LOOKS:  int   = 7       # cap on prior PAs counted (top-of-order can see an SP this often)
+FAMILIARITY_SWINGING:   float = -0.022  # fewer whiffs as the batter times the arm up
+FAMILIARITY_CALLED:     float = -0.009  # lays off borderline pitches he's now seen
+FAMILIARITY_CONTACT:    float = +0.020  # more balls in play
+FAMILIARITY_HARD_TILT:  float = +0.028  # contact-quality batter-advantage shift per unit fam (mistakes get punished)
+DEFAULT_TIMING_RESISTANCE: float = 0.5  # repertoire-less pitchers fall back to a movement-derived value around this
+
 # --- Power → in-play distribution redistribution --------------------------
 # Phase 10.2: power was previously a one-trick HR additive (POWER_HR_WEIGHT_
 # SCALE=0.08 was added to the HR row weight, INCREASING total HARD weight
@@ -1117,6 +1143,13 @@ RELEASE_FATIGUE_SCALE: float = 0.10   # fatigue-dominance: 0.20 → 0.10; submar
 #   arm_stress        multiplier on per-pitch fatigue contribution (>1 = harder on arm)
 #   max_release       Optional upper bound — pitch doesn't work above this angle
 #   count_bias        "all" | "ahead" | "behind" | "2strike" — usage weight bias
+#   timing_resistance [0,1] — how un-timeable the pitch stays as a hitter sees it
+#                     repeatedly across a 27-out arc. 1.0 = a hitter never "times
+#                     it up" no matter how many looks (knuckleball, eephus); 0.0 =
+#                     fully solved after one look (raw velocity). ~0.5 = neutral.
+#                     Drives the times-through-the-order familiarity penalty: a
+#                     pitcher's repertoire-weighted mean sets how fast the lineup
+#                     cracks his code on the 4th–7th time through. See FAMILIARITY_*.
 #
 # All deltas are quality-scaled: they represent the shift at quality=1.0 and
 # collapse to 0 at quality=0.0. Identity at pitch_type=None.
@@ -1126,6 +1159,8 @@ PITCH_CATALOG: dict = {
     # ── FASTBALLS ─────────────────────────────────────────────────────────────
     "four_seam": {
         "velocity_class":     "high",
+        "timing_resistance":  0.20,   # pure velocity — the lineup times it up fast
+
         # From sidearm, the four-seam lacks the downward plane that creates
         # swing-and-miss in MLB. It's a setup pitch more than a put-away.
         "k_delta":            +0.02,
@@ -1143,6 +1178,8 @@ PITCH_CATALOG: dict = {
     },
     "sinker": {
         "velocity_class":     "high",
+        "timing_resistance":  0.40,   # movement helps, but it's still a fastball
+
         # O27's workhorse fastball. All movement, GB-heavy, HR-suppressing.
         "k_delta":            -0.02,
         "bb_delta":           -0.01,
@@ -1159,6 +1196,8 @@ PITCH_CATALOG: dict = {
     },
     "cutter": {
         "velocity_class":     "high",
+        "timing_resistance":  0.45,   # late break buys some resistance
+
         # Late-breaking. Drives weak contact, bonus vs opposite-handed.
         "k_delta":            +0.01,
         "bb_delta":           -0.01,
@@ -1175,6 +1214,8 @@ PITCH_CATALOG: dict = {
     },
     "palmball": {
         "velocity_class":     "low",
+        "timing_resistance":  0.70,   # velocity mismatch keeps hitters off-balance
+
         # Deception over velocity. 78–82 mph that plays up because the arm
         # action looks like a regular fastball. Suppresses Ks but induces
         # unusual soft contact from the velocity mismatch. The "lost velocity"
@@ -1196,6 +1237,8 @@ PITCH_CATALOG: dict = {
     # ── BREAKING BALLS ────────────────────────────────────────────────────────
     "slider": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.50,   # neutral
+
         # Standard hard slider. K-driving. Genuinely neutral platoon.
         "k_delta":            +0.04,
         "bb_delta":           +0.01,
@@ -1212,6 +1255,8 @@ PITCH_CATALOG: dict = {
     },
     "sisko_slider": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.55,   # reverse break stays surprising
+
         # O27-original. Reverse-breaking — breaks INTO same-handed batters
         # rather than away. From sidearm the surprise is amplified: batters
         # expect the natural side-arm break to go away; the Sisko goes the
@@ -1231,6 +1276,8 @@ PITCH_CATALOG: dict = {
     },
     "walking_slider": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.60,   # slow lateral drift defeats timing
+
         # Slow lateral slider — doesn't snap sharply but walks across the zone.
         # Batter commits before it arrives; the crafty veteran's version.
         "k_delta":            +0.02,
@@ -1248,6 +1295,8 @@ PITCH_CATALOG: dict = {
     },
     "curveball": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.50,   # neutral
+
         # Standard 12-to-6 curve. Hard-contact suppression, moderate K.
         # Worse from sidearm — the 12-to-6 topspin requires height to load.
         # Less common in O27 precisely because of the structural sidearm world.
@@ -1266,6 +1315,8 @@ PITCH_CATALOG: dict = {
     },
     "curve_10_to_2": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.60,   # diagonal break is hard to square repeatedly
+
         # Sidearm/submarine specialist curve. Breaks diagonally — the pitcher
         # "steers" the batter's eye across the plate. Extreme weak contact,
         # GB-heavy. From sidearm a righty produces grounders to the right side.
@@ -1287,6 +1338,8 @@ PITCH_CATALOG: dict = {
     # ── OFF-SPEED ─────────────────────────────────────────────────────────────
     "changeup": {
         "velocity_class":     "low",
+        "timing_resistance":  0.55,   # velocity differential resists timing
+
         # Velocity differential. Reverse-platoon advantage (same-sided pitcher
         # changeup arm-side, boring in on the same-handed batter — works like
         # a screwball at reduced arm stress).
@@ -1305,6 +1358,8 @@ PITCH_CATALOG: dict = {
     },
     "vulcan_changeup": {
         "velocity_class":     "low",
+        "timing_resistance":  0.60,   # tumbling action on top of the velo gap
+
         # Tumbling action from the split-finger grip (middle+ring finger).
         # Higher K than regular changeup, devastating opposite-handed.
         "k_delta":            +0.03,
@@ -1322,6 +1377,8 @@ PITCH_CATALOG: dict = {
     },
     "splitter": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.50,   # neutral — sharp but readable arm action
+
         # Hard off-speed with sharp downward break. K-driving, GB-heavy.
         "k_delta":            +0.04,
         "bb_delta":           +0.01,
@@ -1340,6 +1397,8 @@ PITCH_CATALOG: dict = {
     # ── SPECIALTY / O27-REVIVED ───────────────────────────────────────────────
     "knuckleball": {
         "velocity_class":     "low",
+        "timing_resistance":  0.95,   # un-timeable — even the pitcher can't predict it
+
         # Velocity-independent. Durability monster — knuckleballers pitch into
         # their late 40s. 2C-suppressing because nobody extends on a knuckler.
         "k_delta":            -0.01,
@@ -1357,6 +1416,8 @@ PITCH_CATALOG: dict = {
     },
     "spitter": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.65,   # erratic tumble — never the same twice
+
         # Legal in O27 lore. Extreme weak contact / GB, low K, low BB —
         # it tumbles into the zone and batters can't get under it.
         "k_delta":            -0.02,
@@ -1374,6 +1435,8 @@ PITCH_CATALOG: dict = {
     },
     "eephus": {
         "velocity_class":     "low",
+        "timing_resistance":  0.85,   # timing disruption is the entire point
+
         # 2C-disruption weapon when used selectively — never a primary pitch.
         # The batter can't reconcile the velocity with the arm action. When it
         # works, it works big; the rest of the time it's a ball or a foul.
@@ -1392,6 +1455,8 @@ PITCH_CATALOG: dict = {
     },
     "screwball": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.60,   # reverse break keeps hitters guessing
+
         # Reverse-breaking. Reverse-platoon advantage (righty screwball is the
         # righty's weapon against lefty bats). Higher arm stress.
         "k_delta":            +0.02,
@@ -1409,6 +1474,8 @@ PITCH_CATALOG: dict = {
     },
     "gyroball": {
         "velocity_class":     "high",
+        "timing_resistance":  0.75,   # arrives where the eye didn't predict
+
         # Bullet gyrospin — minimal break but extreme deception. The ball
         # arrives at a different location than the batter's eye predicted.
         # Rare: maybe 3-4% of O27 pitchers throw one at elite quality.

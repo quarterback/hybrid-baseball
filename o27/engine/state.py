@@ -637,6 +637,15 @@ class GameState:
     # Resets naturally each new GameState (fresh dict per game).
     batter_game_stats: dict = field(default_factory=dict)
 
+    # --- Per-game batter-vs-pitcher matchup counts ---
+    # Keyed by (pitcher_id, batter_id) → number of COMPLETED PAs this batter
+    # has had against this pitcher this game. Read by the times-through-the-
+    # order familiarity model in prob.py: the more times a hitter has faced
+    # an arm, the more he's timed it up. Keying on the pitcher means a fresh
+    # reliever resets familiarity to zero against everyone — bringing in a
+    # new look is itself a lever. Incremented in pa._end_at_bat at PA close.
+    matchup_pa: dict = field(default_factory=dict)
+
     # --- Raw event log ---
     events: list = field(default_factory=list)
 
@@ -748,6 +757,14 @@ class GameState:
         return self.batter_game_stats.setdefault(
             pid, {"pa": 0, "h": 0, "bb": 0, "joker_pa": 0}
         )
+
+    def matchup_count(self, pitcher_id: str, batter_id: str) -> int:
+        """Prior completed PAs of this batter vs this pitcher this game.
+
+        0 the first time they meet (familiarity model collapses to identity),
+        1 the second time, etc. Drives the times-through-the-order penalty.
+        """
+        return self.matchup_pa.get((pitcher_id, batter_id), 0)
 
     def out_cap(self) -> int:
         """Numeric out ceiling for the current phase, ignoring walk-offs.

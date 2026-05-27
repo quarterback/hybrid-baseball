@@ -302,6 +302,13 @@ def _end_at_bat(state: GameState) -> list[str]:
         bgs["pa"] += 1
         if state.batter_override is not None:
             bgs["joker_pa"] += 1
+        # Times-through-the-order: tick this batter's PA count against the
+        # pitcher he just faced, so his NEXT look at the same arm carries
+        # familiarity. Charged to whoever was on the mound for this PA.
+        _pitcher = state.get_current_pitcher()
+        if _pitcher is not None:
+            key = (_pitcher.player_id, batter.player_id)
+            state.matchup_pa[key] = state.matchup_pa.get(key, 0) + 1
 
     # Joker AB: clear the override and DO NOT advance the base lineup.
     # The joker insertion was an EXTRA PA — the base lineup position
