@@ -52,9 +52,17 @@
       "_label": "Rising Sun locale flavor",
       "english_suffix_options": [" Brothers", " Co.", " Trading", ""],
       "japanese_suffix_options": [" Honten", " Shoten", " Honpo"],
-      "preferred_business_types_extra": [
-        "Soba Shop", "Noodle Co.", "Tea Importers", "Lacquerware",
-        "Paperworks", "Pottery Co.", "Ramen House", "Tofu Works"
+      "japanese_business_types_extra": [
+        "Soba Shop", "Ramen House", "Tofu Works", "Lacquerware",
+        "Sake Brewery", "Pottery Co.", "Paperworks", "Noodle Co."
+      ],
+      "korean_business_types_extra": [
+        "Kimchi Co.", "Ginseng Traders", "Soju Brewery", "Noodle Co.",
+        "Tea Importers", "Pottery Co.", "Paperworks"
+      ],
+      "chinese_business_types_extra": [
+        "Silk Co.", "Porcelain Works", "Herbal Medicine Co.", "Dumpling House",
+        "Tea Importers", "Noodle Co.", "Pottery Co.", "Paperworks"
       ],
       "curated_examples": [
         "Osaka Eastern Watchmakers",

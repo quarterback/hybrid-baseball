@@ -196,6 +196,7 @@ _LOCALE_TO_SUFFIX_LANG = {
     "english": "english", "spanish": "spanish", "portuguese": "portuguese",
     "french": "french", "german": "german", "dutch": "dutch",
     "italian": "italian", "nordic": "nordic",
+    "japanese": "japanese", "korean": "korean", "chinese": "chinese",
 }
 
 
