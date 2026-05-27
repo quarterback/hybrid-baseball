@@ -1492,4 +1492,162 @@ PITCH_CATALOG: dict = {
         "max_release":         None,
         "count_bias":          "2strike",
     },
+
+    # ── SOFTBALL-DERIVED / UNDERHAND ──────────────────────────────────────────
+    # A true underhand or ultra-low submarine slot shares the mechanical path of
+    # a fastpitch-softball delivery, which opens spin axes that are physically
+    # impossible from a normal baseball arm slot. These pitches are HARD-gated to
+    # low release angles (max_release ~0.30–0.45): they simply don't exist above
+    # sidearm. They trade velocity for un-timeable movement and are extremely
+    # arm-friendly (low arm_stress) — the structural basis for the "fatigue-immune
+    # ace" who can carry elite movement all the way to out 27. All carry very high
+    # timing_resistance: the whole point is that a lineup can't crack the code on
+    # them no matter how many times through they get in a 27-out arc.
+    #
+    # ENGINE-MODELING NOTE: the catalog's only batted-ball lever is contact
+    # quality (weak/medium/hard → EV); the engine has no per-pitch launch-angle
+    # field, so "induces grounders" vs "induces popups" both reduce to weak
+    # contact + EV suppression here. The grounder/popup distinction in the design
+    # notes is flavor the batted-ball model can't yet separate — see the AAR.
+    "riseball": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.85,   # pure backspin off the dirt — un-timeable ladder
+        # Heavy pure backspin from a dead-underhand slot. Climbs through the top
+        # of the zone against a level swing plane → swing-and-miss and weak fly.
+        # The anti-power "ladder" pitch: hunts Ks and popups, punishes uppercut.
+        "k_delta":            +0.06,
+        "bb_delta":           +0.02,
+        "contact_delta":      -0.03,
+        "hard_contact_shift": -0.06,
+        "weak_contact_shift": +0.03,
+        "platoon_mode":       "standard",
+        "platoon_scale":       0.8,
+        "release_optimal":     0.10,   # dead underhand
+        "release_window":      0.18,
+        "arm_stress":          0.55,
+        "max_release":         0.32,   # impossible above low submarine
+        "count_bias":          "2strike",
+    },
+    "peeled_drop": {
+        "velocity_class":     "mid",
+        "timing_resistance":  0.70,
+        # Pure topspin rolled over the top out of the underhand whip — a 12-to-6
+        # break that happens entirely below the waist. Dives into the dirt:
+        # extreme weak contact, big EV suppression. The grounder/runner-freeze
+        # tool that counters pesäpallo-style stay advancement.
+        "k_delta":            -0.01,
+        "bb_delta":           +0.01,
+        "contact_delta":      +0.02,
+        "hard_contact_shift": -0.08,
+        "weak_contact_shift": +0.09,
+        "platoon_mode":       "standard",
+        "platoon_scale":       1.0,
+        "release_optimal":     0.08,
+        "release_window":      0.18,
+        "arm_stress":          0.55,
+        "max_release":         0.30,
+        "count_bias":          "ahead",
+    },
+    "backhand_changeup": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.80,
+        # Flipped hand at release, ball pushed out of the back of the hand. Mimics
+        # fastball arm speed but arrives 15–20 mph slower with near-zero spin.
+        # Punishes aggressive hitters who pull the trigger early on second-chance
+        # contact — racks up strikes without spending outs.
+        "k_delta":            +0.03,
+        "bb_delta":           +0.02,
+        "contact_delta":      -0.01,
+        "hard_contact_shift": -0.04,
+        "weak_contact_shift": +0.05,
+        "platoon_mode":       "reverse",
+        "platoon_scale":       1.0,
+        "release_optimal":     0.15,
+        "release_window":      0.25,
+        "arm_stress":          0.55,
+        "max_release":         0.45,
+        "count_bias":          "2strike",
+    },
+    "sky_eephus": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.92,   # ~50 mph vertical parabola — timing window in ms
+        # The "Sky-Drop": a slowpitch-softball arc launched from the underhand
+        # slot, apex above the batter's eye, dropping near-vertically through the
+        # back of the zone at roughly half a sidearm fastball's speed. The most
+        # extreme timing-disruption weapon in the catalog; a surprise put-away,
+        # never a primary. More extreme and slot-locked than the standard eephus.
+        "k_delta":            +0.07,
+        "bb_delta":           +0.04,
+        "contact_delta":      -0.04,
+        "hard_contact_shift": -0.02,
+        "weak_contact_shift": +0.03,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.2,
+        "release_optimal":     0.12,
+        "release_window":      0.40,
+        "arm_stress":          0.45,   # the most arm-friendly pitch in the game
+        "max_release":         0.35,
+        "count_bias":          "2strike",
+    },
+
+    # ── 3-PITCH KNUCKLEBALL ACE ("Chaos Elite") ───────────────────────────────
+    # The pure visual-illusionist knuckleballer discards velocity entirely and
+    # carries three distinct knuckle variations off the low slot. All near-immune
+    # to timing (timing_resistance ~0.93) and arm-friendly; handedness is
+    # irrelevant (platoon_scale 0). Command is the price — elevated bb_delta.
+    "slither_knuck": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.93,
+        # Heavy horizontal deflection — breaks sideways on seam-catch. The
+        # put-away knuck that misses bats, aimed at high-eye contact hitters.
+        "k_delta":            +0.05,
+        "bb_delta":           +0.04,
+        "contact_delta":      -0.03,
+        "hard_contact_shift": -0.04,
+        "weak_contact_shift": +0.02,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.0,
+        "release_optimal":     0.20,
+        "release_window":      0.40,
+        "arm_stress":          0.55,
+        "max_release":         None,   # works from any slot like a knuckler
+        "count_bias":          "2strike",
+    },
+    "drop_knuck": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.93,
+        # Dead-stalling action that tumbles into the dirt at the plate. Extreme
+        # weak contact, low whiff — the groundball knuck that neutralizes the
+        # "stay" mechanic by denying the offense anything to advance on.
+        "k_delta":            -0.01,
+        "bb_delta":           +0.03,
+        "contact_delta":      +0.01,
+        "hard_contact_shift": -0.06,
+        "weak_contact_shift": +0.08,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.0,
+        "release_optimal":     0.18,
+        "release_window":      0.45,
+        "arm_stress":          0.55,
+        "max_release":         None,
+        "count_bias":          "all",
+    },
+    "rise_knuck": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.93,
+        # Released low on an upward path, hovers at the letters. Triggers weak
+        # popups and whiffs up — burns through an AB's 3-contact limit.
+        "k_delta":            +0.04,
+        "bb_delta":           +0.03,
+        "contact_delta":      -0.02,
+        "hard_contact_shift": -0.05,
+        "weak_contact_shift": +0.02,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.0,
+        "release_optimal":     0.15,
+        "release_window":      0.40,
+        "arm_stress":          0.55,
+        "max_release":         0.35,
+        "count_bias":          "2strike",
+    },
 }

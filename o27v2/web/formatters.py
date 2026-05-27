@@ -148,6 +148,12 @@ def _repertoire(value) -> list:
         "vulcan_changeup": "Vulcan Change",
         "walking_slider":  "Walking Slider",
         "curve_10_to_2":   "10-to-2 Curve",
+        "peeled_drop":      "Peeled Drop",
+        "backhand_changeup":"Backhand Change",
+        "sky_eephus":       "Sky Eephus",
+        "slither_knuck":    "Slither Knuck",
+        "drop_knuck":       "Drop Knuck",
+        "rise_knuck":       "Rise Knuck",
     }
 
     def _label(pt: str) -> str:

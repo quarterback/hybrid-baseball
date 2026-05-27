@@ -939,9 +939,11 @@ def _decorate_pitcher_pitch_mix(renderer, pstats: list[dict]) -> None:
     fb_keys      = {"four_seam", "sinker", "cutter"}
     breaking_keys = {"slider", "sisko_slider", "walking_slider",
                      "curveball", "curve_10_to_2", "screwball",
-                     "gyroball", "spitter"}
+                     "gyroball", "spitter", "peeled_drop"}
     offspeed_keys = {"changeup", "vulcan_changeup", "splitter",
-                     "palmball", "knuckleball", "eephus"}
+                     "palmball", "knuckleball", "eephus",
+                     "riseball", "backhand_changeup", "sky_eephus",
+                     "slither_knuck", "drop_knuck", "rise_knuck"}
 
     # Aggregate by (pitcher_id_int, phase).
     agg: dict[tuple[int, int], dict] = {}
