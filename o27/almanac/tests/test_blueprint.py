@@ -167,6 +167,57 @@ def empty_client():
         bp_module.invalidate_cache()
 
 
+# ---------------------------------------------------------------------------
+# warm_cache: pre-computes the dataset+views off the request path (e.g. in a
+# background thread after creating a new league) so the first real request
+# renders from a warm cache instead of paying the cold-load aggregation.
+# ---------------------------------------------------------------------------
+
+def test_warm_cache_populates_cache(monkeypatch, tmp_path):
+    fixture = build_fixture()
+    calls = {"n": 0}
+
+    def counting_load(source):
+        calls["n"] += 1
+        return fixture
+
+    monkeypatch.setattr(loader, "load", counting_load)
+    # Real file so _cache_key's mtime lookup is stable across the warm + read.
+    src = tmp_path / "live.db"
+    src.write_bytes(b"SQLite format 3\x00")
+    bp_module.invalidate_cache()
+    try:
+        assert bp_module.warm_cache(str(src)) is True
+        assert calls["n"] == 1
+        # Second warm of the same source is a no-op hit — no recompute.
+        assert bp_module.warm_cache(str(src)) is True
+        assert calls["n"] == 1
+        # A request resolving to the same source reads the warmed cache.
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        app.config["ALMANAC_SOURCE"] = str(src)
+        app.register_blueprint(bp_module.almanac_bp)
+        with app.test_client() as c:
+            assert c.get("/almanac/standings.html").status_code == 200
+        assert calls["n"] == 1  # served from warm cache, no extra load
+    finally:
+        bp_module.invalidate_cache()
+
+
+def test_warm_cache_swallows_errors(monkeypatch):
+    def boom(source):
+        raise RuntimeError("db not ready")
+
+    monkeypatch.setattr(loader, "load", boom)
+    bp_module.invalidate_cache()
+    try:
+        # Best-effort: a failed warm must never raise into the caller.
+        assert bp_module.warm_cache("anything") is False
+        assert bp_module._CACHE["dataset"] is None
+    finally:
+        bp_module.invalidate_cache()
+
+
 def test_empty_db_renders_every_top_level_page(empty_client):
     """Regression for the standings.html `improvement_pct` crash. Every
     non-detail page must render against an empty dataset."""

@@ -7011,6 +7011,19 @@ def new_league_post():
     except Exception as e:
         app.logger.exception("verify_opponent_balance failed: %s", e)
 
+    # Warm the almanac cache in the background. A new save switches the DB
+    # the almanac reads from, so the first /almanac request would otherwise
+    # pay the full cold-load aggregation (seconds on a large league) before
+    # anything renders. All DB writes above are done, so the warmed dataset
+    # matches what the next request will read.
+    try:
+        import threading
+        from o27.almanac.blueprint import warm_cache
+        threading.Thread(target=warm_cache, name="almanac-warm",
+                         daemon=True).start()
+    except Exception as e:
+        app.logger.exception("almanac cache warm failed to start: %s", e)
+
     return redirect(url_for("index"))
 
 
