@@ -499,7 +499,9 @@ def _aggregate_batters(
 
     for r in rows:
         pid = r["player_id"]
-        slot = agg.setdefault(pid, _empty_batter_slot(pid, players_by_id, teams_by_id, r))
+        slot = agg.get(pid)
+        if slot is None:
+            slot = agg[pid] = _empty_batter_slot(pid, players_by_id, teams_by_id, r)
         for f in _BATTING_SUM_FIELDS:
             slot[f] = (slot.get(f) or 0) + (r.get(f) or 0)
         if (r.get("pa") or 0) > 0:
@@ -683,7 +685,9 @@ def _aggregate_pitchers(
 
     for r in rows:
         pid = r["player_id"]
-        slot = agg.setdefault(pid, _empty_pitcher_slot(pid, players_by_id, teams_by_id, r))
+        slot = agg.get(pid)
+        if slot is None:
+            slot = agg[pid] = _empty_pitcher_slot(pid, players_by_id, teams_by_id, r)
         for f in _PITCHING_SUM_FIELDS:
             slot[f] = (slot.get(f) or 0) + (r.get(f) or 0)
         games_seen.setdefault(pid, set()).add(r["game_id"])
@@ -1117,7 +1121,7 @@ def _build_game_logs(
             "date":    g.get("game_date", ""),
             "ha":      ha,
             "opp":     opp.get("abbrev", "?"),
-            **{k: r.get(k) for k in r.keys() if k not in ("id",)},
+            **{k: val for k, val in r.items() if k != "id"},
         }
         out.setdefault(r["player_id"], []).append(entry)
     # newest first
@@ -1161,8 +1165,10 @@ def _aggregate_fielders(rows, players_by_id, teams_by_id) -> list[dict]:
         # Strip secondary positions like "SS-2B" → "SS" for grouping.
         primary = pos.split("-")[0]
         key = (pid, primary)
-        slot = agg.setdefault(key, _empty_fielder_slot(pid, primary,
-                                                      players_by_id, teams_by_id, r))
+        slot = agg.get(key)
+        if slot is None:
+            slot = agg[key] = _empty_fielder_slot(pid, primary,
+                                                  players_by_id, teams_by_id, r)
         slot["po"] += (r.get("po") or 0)
         slot["a"]  += (r.get("a")  or 0)
         slot["e"]  += (r.get("e")  or 0)
