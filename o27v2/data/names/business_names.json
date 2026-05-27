@@ -26,9 +26,13 @@
       "english_suffix_options": [" & Co.", " & Sons", " Bros.", " Inc.", " Ltd.", ""],
       "spanish_suffix_options": [" Hermanos", " y Compañía", " e Hijos", " y Cía.", ""],
       "portuguese_suffix_options": [" Irmãos", " & Filhos", " & Cia.", ""],
-      "preferred_business_types_extra": [
+      "spanish_business_types_extra": [
         "Tortillería", "Panadería", "Carnicería", "Cantina", "Bodega",
         "Mercado", "Empanadería", "Asadero", "Heladería"
+      ],
+      "portuguese_business_types_extra": [
+        "Padaria", "Açougue", "Mercearia", "Sorveteria", "Lanchonete",
+        "Boteco", "Armazém"
       ],
       "curated_examples": [
         "Sydney Coffee & Bean",
@@ -74,10 +78,22 @@
       "french_suffix_options": [" et Fils", " & Cie.", " SARL"],
       "nordic_suffix_options": [" AB", " & Söner", " AS"],
       "polish_suffix_options": [" Sp.", " i Synowie"],
-      "preferred_business_types_extra": [
+      "german_business_types_extra": [
         "Bierhaus", "Brauerei", "Tabakwaren", "Werkstatt", "Buchhandlung",
-        "Pasticceria", "Salumeria", "Bäckerei", "Tabacchi", "Boulangerie",
-        "Bryggeri", "Glasbruk"
+        "Bäckerei", "Konditorei", "Metzgerei"
+      ],
+      "italian_business_types_extra": [
+        "Pasticceria", "Salumeria", "Tabacchi", "Trattoria", "Gelateria",
+        "Osteria"
+      ],
+      "french_business_types_extra": [
+        "Boulangerie", "Pâtisserie", "Boucherie", "Brasserie", "Charcuterie"
+      ],
+      "dutch_business_types_extra": [
+        "Bakkerij", "Brouwerij", "Slagerij", "Kruidenier", "Boekhandel"
+      ],
+      "nordic_business_types_extra": [
+        "Bryggeri", "Glasbruk", "Bageri", "Verkstad"
       ],
       "curated_examples": [
         "Milan Salumeria & Figli",
@@ -202,7 +218,7 @@
       "1. Select a city from the team's locale per the league's name_regions.",
       "2. Decide locale_sub within the region (e.g., for Subcontinent: hindi vs urdu vs arabic vs english based on the city's primary language).",
       "3. With ~40% probability, prepend a modifier from modifiers_optional.",
-      "4. Select a business type: 70% from business_types_global, 30% from the region's preferred_business_types_extra.",
+      "4. Select a business type: 70% from business_types_global, 30% from the region's flavor extras — preferring a locale-specific <lang>_business_types_extra list (so a Portuguese city never draws a Spanish type) and falling back to the region-wide preferred_business_types_extra for regions not yet split by locale.",
       "5. With ~50% probability, append a locale-appropriate suffix from the region's suffix_options.",
       "6. Capitalize and combine: '<City> <Modifier?> <Business Type><Suffix?>'."
     ],

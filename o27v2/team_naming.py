@@ -289,12 +289,17 @@ def _name_corporate(city: str, locale: str, region_key: str, rng: random.Random)
 def _name_business(city: str, locale: str, region_key: str, rng: random.Random) -> str:
     biz = _load("business_names.json")
     flavor = biz["regional_flavor"].get(region_key, {})
+    lang = _LOCALE_TO_SUFFIX_LANG.get(locale, "english")
     parts = [city]
     # ~40% prepend a modifier.
     if rng.random() < 0.40:
         parts.append(rng.choice(biz["modifiers_optional"]))
-    # 70% global business type, 30% the region's preferred extras.
-    extras = flavor.get("preferred_business_types_extra") or []
+    # 70% global business type, 30% the region's flavor extras. Prefer a
+    # locale-specific list so the business type stays in the city's own
+    # language (a Portuguese city never draws a Spanish "Heladería"); fall
+    # back to the region-wide list for regions not yet split by locale.
+    extras = (flavor.get(f"{lang}_business_types_extra")
+              or flavor.get("preferred_business_types_extra") or [])
     if extras and rng.random() < 0.30:
         btype = rng.choice(extras)
     else:
@@ -302,7 +307,6 @@ def _name_business(city: str, locale: str, region_key: str, rng: random.Random) 
     name = " ".join(parts) + " " + btype
     # ~50% append a locale-appropriate suffix.
     if rng.random() < 0.50:
-        lang = _LOCALE_TO_SUFFIX_LANG.get(locale, "english")
         suffixes = flavor.get(f"{lang}_suffix_options")
         if not suffixes:
             # Any available suffix list for the region, else none.
