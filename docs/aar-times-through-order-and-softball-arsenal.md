@@ -178,3 +178,24 @@ The magnitudes (`FAMILIARITY_*`, the per-pitch `timing_resistance` values) were 
   1. `test_template_renders.py::test_season_archive_writer_runs_end_to_end` — asserts `wrc_plus` in a category set that doesn't contain it. Fails on the clean tree.
   2. The `test_stat_invariants` tests **ERROR with sqlite** only when the *whole* suite runs together — an earlier test resets the DB out from under them. They pass standalone. This is a test-isolation issue in the suite, not a product bug.
 - **Identity discipline:** every lever added here collapses to the legacy surface at its neutral value — familiarity at `looks==0`, `launch_angle_bias`/`foul_delta` at `0.0`. That's what keeps `test_realism_identity` and `test_power_redistribute` green.
+
+---
+
+## Part 4 — Stats surfaced from the new mechanics
+
+Once the engine could *produce* deception/familiarity/grounder behaviour, the stat layer needed to *catch* it. Added in the almanac compute layer (`o27/almanac/compute.py`, where Decay / wERA / xRA already live), all derived from the loaded `game_pa_log` + repertoire — so they backfill over existing data with no re-sim:
+
+- **#1 Batted-ball profile — GB% / LD% / FB% / GO-AO.** Classified from the logged `launch_angle` (<10° grounder, 10–25° line drive, >25° fly). Now genuinely pitch-driven thanks to `launch_angle_bias`: a sinker/peeled-drop/drop-knuck arm and a riseball/rise-knuck arm finally have different lines, not just different K%. The headline payoff of the launch-angle work.
+- **#2 Times-Through-the-Order splits.** Hard-hit% allowed by look (1st / 3rd+), plus the familiarity Δ. The look number is the rank of an AB's `ab_seq` within each `(game, pitcher, batter)` group, so it survives multi-row stay ABs. **Contact-quality only** — `game_pa_log` stores balls-in-play but no K/BB rows, so K%-by-look is *not* derivable from the log; that dimension needs engine-side TTO counters (mirroring the arc/Decay buckets) and is the clean follow-up.
+- **#3 Decay split.** `Decay` is reframed as the **fatigue/arc axis** (arc-1 vs arc-3 K%); the **familiarity axis** is now its own thing — the Deception grade + TTO splits. Glossary updated to draw the line explicitly so the two aren't conflated.
+- **#4 Deception grade.** Repertoire-weighted `timing_resistance` → a 20–80 scouting grade (knuckle/eephus/softball junk ~70+, pure velocity ~32, 50 neutral). Sits alongside the batted-ball profile on the player page — the talent input that *explains* a flat TTO Δ.
+
+**Exit velocity:** unchanged by definition — `launch_angle_bias` is a launch-angle lever, not an EV one. EV is still contact-quality + power + `hard_contact_shift`. The *population* shifts slightly: the new softball pitches' negative `hard_contact_shift` lowers EV allowed, and more grounders pulls mean EV down a touch via the existing hit-type EV nudge. No EV stat needed re-derivation.
+
+Surfaced on the almanac player page (Batted-Ball Profile + Times Through the Order sections); glossary entries added for `deception`, `gb_pct`, `tto_hardhit_delta`, and the reframed `decay`. Verified by `o27/almanac/tests/test_build.py` (`_deception_grade`, `_attach_pitcher_battedball_tto`) and a full almanac build (694 pages).
+
+### Files touched (Part 4)
+- `o27/almanac/compute.py` — `_deception_grade`, `_attach_pitcher_battedball_tto`, wired into `compute_views`.
+- `o27/almanac/templates/player.html.j2` — Batted-Ball Profile + Times Through the Order sections.
+- `o27v2/web/glossary.py` — reframed `decay`; added `deception` / `gb_pct` / `tto_hardhit_delta`.
+- `o27/almanac/tests/test_build.py` — unit tests for the two compute helpers.
