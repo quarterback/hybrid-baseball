@@ -171,9 +171,9 @@ GLOSSARY_SECTIONS: list[dict] = [
             {"key": "fastball_pct", "abbr": "FB%", "name": "Fastball Usage",
              "desc": "Share of typed pitches that were fastballs (4-seam / sinker / cutter)."},
             {"key": "breaking_pct", "abbr": "BR%", "name": "Breaking-Ball Usage",
-             "desc": "Share of typed pitches that were breaking balls."},
+             "desc": "Share of typed pitches that were breaking balls (slider / curve / screwball / gyroball / spitter / peeled drop)."},
             {"key": "offspeed_pct", "abbr": "OFF%", "name": "Off-Speed Usage",
-             "desc": "Share of typed pitches that were off-speed (change / split / palm / knuckle / eephus)."},
+             "desc": "Share of typed pitches that were off-speed or deception junk (change / split / palm / knuckle / eephus, plus the softball-derived riseball, backhand change, sky eephus, and the slither / drop / rise knuckle variants)."},
         ],
     },
     {
