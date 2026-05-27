@@ -987,6 +987,17 @@ POWER_REDIST_MED_S2D:   float = 0.20
 POWER_REDIST_MED_GO2FO: float = 0.15
 POWER_REDIST_WEAK_S2FO: float = 0.20
 
+# --- Pitch launch-angle redistribution ------------------------------------
+# Per-pitch launch_angle_bias rolls ground_out↔fly_out weight inside each
+# contact-quality table (sum-preserving, same mechanism as the power axis).
+# This is what turns "grounder pitch" vs "popup pitch" into a real outcome
+# split instead of flavor on top of weak contact. FRACTION of the from-row
+# weight moved at |launch_angle_bias| = 1.0:
+#   bias < 0 (grounder inducer): fly_out → ground_out
+#   bias > 0 (fly/popup inducer): ground_out → fly_out
+# Identity at bias = 0.0. Applied AFTER power redistribution, BEFORE park.
+LAUNCH_REDIST_GO2FO: float = 0.35
+
 # ---------------------------------------------------------------------------
 # Walk-Back sponsorship
 # ---------------------------------------------------------------------------
@@ -1150,6 +1161,18 @@ RELEASE_FATIGUE_SCALE: float = 0.10   # fatigue-dominance: 0.20 → 0.10; submar
 #                     Drives the times-through-the-order familiarity penalty: a
 #                     pitcher's repertoire-weighted mean sets how fast the lineup
 #                     cracks his code on the 4th–7th time through. See FAMILIARITY_*.
+#   launch_angle_bias [-1,1] — pushes BATTED-BALL launch angle. Negative = grounder
+#                     inducer (rolls ground_out↔fly_out weight toward ground_out in
+#                     resolve_contact, sum-preserving; e.g. sinker, peeled_drop,
+#                     drop_knuck); positive = fly-ball / popup inducer (riseball,
+#                     rise_knuck, four-seam). 0.0 (default) = neutral / identity.
+#                     This is the lever that makes "grounder pitch" vs "popup pitch"
+#                     a REAL outcome split, not just flavor on top of weak contact.
+#   foul_delta        added to foul probability (positive = more fouls). In O27
+#                     every foul spends one of the batter's 3 contact events, so a
+#                     positive foul_delta literally burns down the AB toward a
+#                     foul-out — the mechanism behind "rise"-type popup/foul pitches.
+#                     0.0 (default) = identity.
 #
 # All deltas are quality-scaled: they represent the shift at quality=1.0 and
 # collapse to 0 at quality=0.0. Identity at pitch_type=None.
@@ -1160,6 +1183,8 @@ PITCH_CATALOG: dict = {
     "four_seam": {
         "velocity_class":     "high",
         "timing_resistance":  0.20,   # pure velocity — the lineup times it up fast
+        "launch_angle_bias":  +0.30,  # flyball-prone from the higher slot
+        "foul_delta":         +0.01,  # high heat gets fouled straight back
 
         # From sidearm, the four-seam lacks the downward plane that creates
         # swing-and-miss in MLB. It's a setup pitch more than a put-away.
@@ -1179,6 +1204,7 @@ PITCH_CATALOG: dict = {
     "sinker": {
         "velocity_class":     "high",
         "timing_resistance":  0.40,   # movement helps, but it's still a fastball
+        "launch_angle_bias":  -0.45,  # the GB-heavy workhorse fastball
 
         # O27's workhorse fastball. All movement, GB-heavy, HR-suppressing.
         "k_delta":            -0.02,
@@ -1316,6 +1342,7 @@ PITCH_CATALOG: dict = {
     "curve_10_to_2": {
         "velocity_class":     "mid",
         "timing_resistance":  0.60,   # diagonal break is hard to square repeatedly
+        "launch_angle_bias":  -0.50,  # diagonal break drives grounders to the pull side
 
         # Sidearm/submarine specialist curve. Breaks diagonally — the pitcher
         # "steers" the batter's eye across the plate. Extreme weak contact,
@@ -1378,6 +1405,7 @@ PITCH_CATALOG: dict = {
     "splitter": {
         "velocity_class":     "mid",
         "timing_resistance":  0.50,   # neutral — sharp but readable arm action
+        "launch_angle_bias":  -0.25,  # sharp downward break → grounders
 
         # Hard off-speed with sharp downward break. K-driving, GB-heavy.
         "k_delta":            +0.04,
@@ -1417,6 +1445,7 @@ PITCH_CATALOG: dict = {
     "spitter": {
         "velocity_class":     "mid",
         "timing_resistance":  0.65,   # erratic tumble — never the same twice
+        "launch_angle_bias":  -0.55,  # tumbles in → extreme groundball
 
         # Legal in O27 lore. Extreme weak contact / GB, low K, low BB —
         # it tumbles into the zone and batters can't get under it.
@@ -1436,6 +1465,8 @@ PITCH_CATALOG: dict = {
     "eephus": {
         "velocity_class":     "low",
         "timing_resistance":  0.85,   # timing disruption is the entire point
+        "launch_angle_bias":  +0.20,  # high arc → weak fly / popup when hit
+        "foul_delta":         +0.02,  # mistimed hacks foul it off
 
         # 2C-disruption weapon when used selectively — never a primary pitch.
         # The batter can't reconcile the velocity with the arm action. When it
@@ -1512,6 +1543,8 @@ PITCH_CATALOG: dict = {
     "riseball": {
         "velocity_class":     "low",
         "timing_resistance":  0.85,   # pure backspin off the dirt — un-timeable ladder
+        "launch_angle_bias":  +0.70,  # climbs → swing-under, weak fly, popups
+        "foul_delta":         +0.04,  # the ladder pitch: fouled up, burns the AB
         # Heavy pure backspin from a dead-underhand slot. Climbs through the top
         # of the zone against a level swing plane → swing-and-miss and weak fly.
         # The anti-power "ladder" pitch: hunts Ks and popups, punishes uppercut.
@@ -1531,6 +1564,7 @@ PITCH_CATALOG: dict = {
     "peeled_drop": {
         "velocity_class":     "mid",
         "timing_resistance":  0.70,
+        "launch_angle_bias":  -0.70,  # dives into the dirt → extreme groundball
         # Pure topspin rolled over the top out of the underhand whip — a 12-to-6
         # break that happens entirely below the waist. Dives into the dirt:
         # extreme weak contact, big EV suppression. The grounder/runner-freeze
@@ -1551,6 +1585,7 @@ PITCH_CATALOG: dict = {
     "backhand_changeup": {
         "velocity_class":     "low",
         "timing_resistance":  0.80,
+        "launch_angle_bias":  -0.10,  # slight under-the-ball weak contact
         # Flipped hand at release, ball pushed out of the back of the hand. Mimics
         # fastball arm speed but arrives 15–20 mph slower with near-zero spin.
         # Punishes aggressive hitters who pull the trigger early on second-chance
@@ -1571,6 +1606,8 @@ PITCH_CATALOG: dict = {
     "sky_eephus": {
         "velocity_class":     "low",
         "timing_resistance":  0.92,   # ~50 mph vertical parabola — timing window in ms
+        "launch_angle_bias":  +0.30,  # near-vertical drop → mistimed pop-ups
+        "foul_delta":         +0.03,  # batters foul off the slow arc
         # The "Sky-Drop": a slowpitch-softball arc launched from the underhand
         # slot, apex above the batter's eye, dropping near-vertically through the
         # back of the zone at roughly half a sidearm fastball's speed. The most
@@ -1598,6 +1635,7 @@ PITCH_CATALOG: dict = {
     "slither_knuck": {
         "velocity_class":     "low",
         "timing_resistance":  0.93,
+        "launch_angle_bias":   0.0,   # horizontal break — no vertical tilt
         # Heavy horizontal deflection — breaks sideways on seam-catch. The
         # put-away knuck that misses bats, aimed at high-eye contact hitters.
         "k_delta":            +0.05,
@@ -1616,6 +1654,7 @@ PITCH_CATALOG: dict = {
     "drop_knuck": {
         "velocity_class":     "low",
         "timing_resistance":  0.93,
+        "launch_angle_bias":  -0.60,  # tumbles into the dirt → groundball knuck
         # Dead-stalling action that tumbles into the dirt at the plate. Extreme
         # weak contact, low whiff — the groundball knuck that neutralizes the
         # "stay" mechanic by denying the offense anything to advance on.
@@ -1635,6 +1674,8 @@ PITCH_CATALOG: dict = {
     "rise_knuck": {
         "velocity_class":     "low",
         "timing_resistance":  0.93,
+        "launch_angle_bias":  +0.50,  # hovers at the letters → popups
+        "foul_delta":         +0.03,  # burns the AB's 3-contact limit with foul pops
         # Released low on an upward path, hovers at the letters. Triggers weak
         # popups and whiffs up — burns through an AB's 3-contact limit.
         "k_delta":            +0.04,

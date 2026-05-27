@@ -2,7 +2,7 @@
 
 **Date completed:** 2026-05-27
 **Branch:** `claude/sports-arbitrage-pitcher-mechanics-vVNgT`
-**Commits:** `6274a12` (times-through-the-order familiarity), softball-arsenal commit (this AAR)
+**Commits:** `6274a12` (times-through-the-order familiarity), `7566137` (softball/underhand arsenal + archetypes), launch_angle_bias + foul_delta commit (this AAR)
 
 ---
 
@@ -98,16 +98,34 @@ Plus plumbing: pitch-mix bucket classifier (`o27v2/sim.py`) updated so the new p
 
 ---
 
-## Engine-modeling limitations (deliberately not faked)
+### Part 3 — Making the grounder/popup split a real outcome (launch_angle_bias + foul_delta)
 
-The design brief described per-pitch trajectory physics the catalog **cannot currently represent**, and we chose to model honestly with the levers that exist rather than invent capabilities:
+The first pass shipped the seven pitches but flagged that the engine had no way to separate "grounder pitch" from "popup pitch" — both collapsed to weak contact. The designer's response: *"then yes let's do that now. Feels like a good evolution in the game's modeling."* So we added the two missing levers.
 
-- **No per-pitch launch-angle field.** The batted-ball model derives launch angle from `hit_type`, and a pitch's only batted-ball lever is contact quality (weak/medium/hard → EV, via `hard_contact_shift`). So "induces grounders" (`peeled_drop`, `drop_knuck`) vs "induces popups" (`riseball`, `rise_knuck`) **both reduce to weak contact + EV suppression** — the grounder/popup distinction is flavor the engine can't yet separate.
-- **No foul-out-specific target.** `k_delta` adds to swinging strikes; there's no foul-share delta, so "spikes foul_out%" is approximated as elevated whiff + weak contact.
-- **No per-pitch movement variance** keyed to weather. The "knuckle-eephus catches every micro-current" idea has no hook; we folded that concept into the existing high-resistance / high-`bb_delta` knuckle variants rather than add a fake field.
-- **Consolidation.** The brief's "underhand spinner" eephus is mechanically identical to `peeled_drop` (topspin → weak grounders) under the available levers, so it was not added as a separate redundant entry.
+**`launch_angle_bias` [−1, +1]** (per-pitch catalog field). In `resolve_contact`, after the existing sum-preserving power redistribution, the bias rolls `ground_out ↔ fly_out` weight inside the contact-quality table via the same `_redistribute` mechanism (new constant `LAUNCH_REDIST_GO2FO = 0.35`):
 
-These are the natural next pieces of work if the designer wants the grounder/popup split to be real: a per-pitch `launch_angle_bias` feeding `sample_batted_ball`, and a foul-share delta in `_pitch_probs`.
+- bias < 0 (grounder): `fly_out → ground_out` — `sinker` −0.45, `spitter` −0.55, `curve_10_to_2` −0.50, `peeled_drop` −0.70, `drop_knuck` −0.60, `splitter` −0.25.
+- bias > 0 (fly/popup): `ground_out → fly_out` — `four_seam` +0.30, `eephus` +0.20, `sky_eephus` +0.30, `riseball` +0.70, `rise_knuck` +0.50.
+- Identity at 0.0 (every pitch without the field). Sum-preserving, so total outs-vs-hits is unchanged — only the *type* of out shifts. The bias also nudges the synthetic `sample_batted_ball` launch angle (±8° at full bias) so spray charts stay consistent with the categorical outcome.
+
+**`foul_delta`** (per-pitch catalog field) added to the foul component in `_pitch_probs`. In O27 every foul spends one of the batter's 3 contact events, so a positive `foul_delta` literally burns the AB toward a foul-out — the mechanism behind the "rise/letters" pitches: `riseball` +0.04, `sky_eephus` +0.03, `rise_knuck` +0.03, `eephus` +0.02, `four_seam` +0.01. Identity at 0.0.
+
+**Proof it's now a real outcome split** (8-team, 224-game sim — clearest on the knuckle trio that shares every other parameter):
+
+| Pitch | bias | grounder% | flyout% |
+|---|---|---|---|
+| `drop_knuck` | −0.60 | 25.3% | 13.1% |
+| `slither_knuck` | 0.00 | 19.4% | 13.9% |
+| `rise_knuck` | +0.50 | 23.4% | **17.0%** |
+| `four_seam` | +0.30 | 16.8% | 14.2% |
+| `sinker` | −0.45 | 22.7% | 12.0% |
+
+The three knuckle variants are no longer cosmetic — they produce distinct batted-ball profiles. (Rare pitches like `riseball`/`peeled_drop`/`sky_eephus` have tiny samples in an 8-team pool; the mechanism is identical and verified on the unit redistribution.)
+
+### Remaining modeling gaps (still deliberately not faked)
+
+- **No per-pitch movement variance keyed to weather.** The "knuckle-eephus catches every micro-current" idea has no hook; folded into the high-resistance / high-`bb_delta` knuckle variants rather than add a fake field.
+- **Consolidation.** The brief's "underhand spinner" eephus is mechanically identical to `peeled_drop` (topspin → weak grounders), so it was not added as a separate redundant entry.
 
 ---
 
@@ -117,24 +135,28 @@ Per explicit instruction, **no offsetting run-environment tune was applied.** Th
 
 The magnitudes (`FAMILIARITY_*`, the per-pitch `timing_resistance` values) were set by reasoning, not a season-scale calibration sweep, so the *size* of the junkball edge over a full 162 is an estimate. `FAMILIARITY_PER_LOOK` is the single dial to scale the whole effect up or down.
 
+**One downstream effect surfaced and was re-baselined.** The familiarity model raises *late-arc* offense (more looks at the same arm = more runs), which lifts run-expectancy at the end of the arc and compressed the `test_re_curve_overall_decreasing` start:end ratio from ≥4× to ~3.71× — confirmed on the 30-team default config, not an 8-team artifact. Since the higher-run environment is intentional and no offset tune is wanted, the heuristic was re-baselined 4× → 3.5× (with a comment), keeping it a guard against gross curve inversions while matching the new baseline. This is a SABR sanity heuristic, not a correctness invariant; the `make test-invariants` stat-invariant gate (mathematically-impossible-stat checks) was unaffected throughout.
+
 ---
 
 ## Verification
 
-- `python o27v2/manage.py smoke` — 10/10 games complete.
-- `tests/test_realism_identity.py`, `o27/tests/`, `o27v2/tests/test_archetypes.py` — pass (identity preserved at first look).
-- Full suite — 240 passed (1 pre-existing unrelated failure: `test_season_archive_writer` / `wrc_plus`, fails identically on the clean tree).
-- Stat-invariant gate against a freshly-simmed 8-team DB — 10/10.
-- Sim confirms the new pitches are thrown in real games (slither_knuck, drop_knuck, backhand_changeup, rise_knuck, peeled_drop, sky_eephus all present) and the new archetypes generate.
+- `python o27v2/manage.py smoke` — 10/10 games complete (re-run after each part).
+- `tests/test_realism_identity.py`, `o27/tests/` (incl. `test_power_redistribute.py`), `o27v2/tests/test_archetypes.py` — pass. Identity preserved at first look (familiarity) and at bias/delta 0.0 (launch/foul).
+- `tests/test_analytics_invariants.py` — 7/7 after the RE-curve re-baseline.
+- Stat-invariant gate (`make test-invariants`) against freshly-simmed DBs — 10/10 throughout.
+- Sim confirms the new pitches are thrown in real games and produce distinct grounder/flyout profiles (see Part 3 table); new archetypes generate.
 
 ---
 
 ## Files touched
 
-- `o27/config.py` — `timing_resistance` on all pitches; `FAMILIARITY_*` constants; 7 new catalog entries.
+- `o27/config.py` — `timing_resistance` on all pitches; `FAMILIARITY_*` constants; 7 new catalog entries; `launch_angle_bias` + `foul_delta` fields and `LAUNCH_REDIST_GO2FO`.
 - `o27/engine/state.py` — `matchup_pa` + `matchup_count()`.
 - `o27/engine/pa.py` — matchup counter tick at PA close.
-- `o27/engine/prob.py` — repertoire→resistance, familiarity-dominance, threaded into both outcome models.
+- `o27/engine/prob.py` — repertoire→resistance, familiarity-dominance, threaded into both outcome models; `foul_delta` in `_pitch_probs`; `launch_angle_bias` redistribution in `resolve_contact`.
+- `o27/engine/batted_ball.py` — `pitch_launch_bias` shifts synthetic launch angle.
 - `o27/data.py` — 3 new archetypes + `stamina_bonus` support.
 - `o27v2/sim.py` — pitch-mix bucket classification for the new pitches.
 - `o27v2/web/formatters.py` — display-name overrides.
+- `tests/test_analytics_invariants.py` — RE-curve start:end heuristic re-baselined 4× → 3.5×.

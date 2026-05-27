@@ -447,6 +447,7 @@ def _pitch_probs(
             eff  = pq * rq           # effective quality after release-match penalty
             base[0] += catalog["bb_delta"]      * eff
             base[2] += catalog["k_delta"]        * eff
+            base[3] += catalog.get("foul_delta", 0.0) * eff
             base[4] += catalog["contact_delta"]  * eff
             _apply_pitch_platoon(base, catalog, pitcher, batter)
 
@@ -1570,6 +1571,7 @@ def resolve_contact(
     quality: str,
     batter: Player,
     state: GameState,
+    launch_angle_bias: float = 0.0,
 ) -> dict:
     """
     Resolve a ball-in-play event into a full fielding outcome dict.
@@ -1604,6 +1606,19 @@ def resolve_contact(
         table = _redistribute(table, _medium_edges(), power_dev)
     elif quality == "weak":
         table = _redistribute(table, _weak_edges(), power_dev)
+
+    # Pitch launch-angle bias: roll ground_out↔fly_out weight by the pitch's
+    # launch_angle_bias (sum-preserving). Negative bias (sinker, peeled_drop,
+    # drop_knuck) drives grounders; positive (riseball, rise_knuck) drives
+    # fly balls / popups. This is what makes the grounder/popup split a REAL
+    # outcome difference between pitches, not just weak-contact flavor.
+    # Identity at bias = 0.0.
+    if launch_angle_bias:
+        table = _redistribute(
+            table,
+            [("ground_out", "fly_out", cfg.LAUNCH_REDIST_GO2FO)],
+            float(launch_angle_bias),
+        )
 
     # Park factors (multiplicative) applied AFTER redistribution.
     park_hr   = getattr(state.home, "park_hr", 1.0) if state.home else 1.0
@@ -2411,8 +2426,18 @@ class ProbabilisticProvider:
             elif quality == "medium":
                 quality = "hard"
 
-        # Resolve fielding outcome.
-        outcome_dict = resolve_contact(rng, quality, batter, state)
+        # Resolve fielding outcome. The selected pitch's launch_angle_bias
+        # tilts the ground_out↔fly_out split so grounder pitches (sinker,
+        # peeled_drop, drop_knuck) and popup pitches (riseball, rise_knuck)
+        # produce genuinely different batted-ball profiles.
+        _pitch_lab = 0.0
+        if sel_pitch:
+            _pitch_lab = float(
+                (cfg.PITCH_CATALOG.get(sel_pitch, {}) or {}).get("launch_angle_bias", 0.0)
+                or 0.0
+            )
+        outcome_dict = resolve_contact(rng, quality, batter, state,
+                                       launch_angle_bias=_pitch_lab)
 
         # "error" manifestation — if the contact resolved as a routine
         # out, the defender bobbles it under pressure and the batter
@@ -2510,6 +2535,7 @@ class ProbabilisticProvider:
             batter_power=float(getattr(batter, "power", 0.5) or 0.5),
             pitch_hard_contact_shift=_pitch_hcs,
             batter_bats=str(getattr(batter, "bats", "") or ""),
+            pitch_launch_bias=_pitch_lab,
         )
         _apply_park(
             rng,
