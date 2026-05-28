@@ -976,6 +976,43 @@ _EXTRA_CITIES: dict[str, tuple[float, float, str]] = {
     "Santa Rosa": (38.44, -122.71, "mediterranean"),
     "Monterey": (36.60, -121.89, "coastal_cool"),
     "Ventura": (34.27, -119.29, "coastal_warm"),
+    # ----- Zaryanovia: alt-history Russian Far East -----
+    # Real-world climate parallels: Garrison ≈ Vladivostok (Dwb humid
+    # continental, sea-moderated); the Stratton/Amur heartland ≈
+    # Khabarovsk / Birobidzhan (Dwb, hot summers + cold winters); the
+    # northern oblasts (Zolotoy / northern Sakhalin / Kamchatka /
+    # Chukotka) ≈ Magadan / Petropavlovsk / Okha / Anadyr (Dfc
+    # subarctic). Two existing archetypes cover the spectrum the master
+    # wiki documents — no need for a new one.
+    "Garrison":         (43.12, 131.89, "continental_cold"),
+    "Gannibal":         (43.70, 132.50, "continental_cold"),
+    "New Eldorado":     (42.82, 132.89, "continental_cold"),
+    "Vostok Harbor":    (42.90, 132.34, "continental_cold"),
+    "Ussuri":           (43.80, 131.95, "continental_cold"),
+    "Partizansk":       (43.13, 133.13, "continental_cold"),
+    "Slavyan":          (42.86, 131.38, "continental_cold"),
+    "Stratton":         (48.79, 132.92, "continental_cold"),
+    "New Philadelphia": (48.60, 132.20, "continental_cold"),
+    "Cummings":         (49.10, 131.50, "continental_cold"),
+    "Amargrad":         (48.48, 135.07, "continental_cold"),
+    "Komsa":            (50.55, 137.01, "continental_cold"),
+    "Amursk":           (50.23, 136.90, "continental_cold"),
+    "Nikol":            (53.15, 140.73, "continental_cold"),
+    "Verkhnegrad":      (50.29, 127.54, "continental_cold"),
+    "Svobodny":         (51.38, 128.13, "continental_cold"),
+    "Tynda":            (55.15, 124.72, "subarctic"),
+    "Magadan City":     (59.56, 150.80, "subarctic"),
+    "Susuman":          (62.78, 148.15, "subarctic"),
+    "Ola":              (59.58, 151.29, "subarctic"),
+    "Neftezma":         (46.96, 142.74, "continental_cold"),
+    "Korsa":            (46.63, 142.78, "continental_cold"),
+    "Okha":             (53.59, 142.95, "subarctic"),
+    "Nogliki":          (51.83, 143.17, "subarctic"),
+    "Vulkangrad":       (53.02, 158.65, "subarctic"),
+    "Klyuch":           (56.31, 160.84, "subarctic"),
+    "Yelizovo":         (53.18, 158.38, "subarctic"),
+    "Anadyr":           (64.73, 177.51, "subarctic"),
+    "Provideniya":      (64.42, -173.23, "subarctic"),
 }
 
 # Fold the expansion pack into the name->archetype table (don't clobber an
