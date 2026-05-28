@@ -175,73 +175,147 @@ def format_eur(g: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Zora — Zaryanovia's national currency
+# Zora — Zaryanovia's national currency (ZRZ)
 # ---------------------------------------------------------------------------
 #
-# Symbol layers (sociolinguistic; surfaced selectively):
-#   ₴   (U+20B4)  ZORA_DISPLAY     — formal / printed / signage form.
-#                                    Hard to handwrite, so it migrated to the
-#                                    display contexts where nobody scrawls
-#                                    (banknotes, storefronts, official price
-#                                    boards, the central-bank logo). This is
-#                                    the glyph the app shows everywhere, since
-#                                    every rendered amount in a sim is by
-#                                    definition "printed."
-#   ₳   (U+20B3)  ZORA_HAND        — the working everyday handwritten form.
-#                                    Three-stroke fast scrawl on receipts,
-#                                    chalkboards, ledgers. Not surfaced in the
-#                                    sim today, but reserved for any future
-#                                    "personal note" / "scout's chalkboard"
-#                                    flavor that wants the handwritten register.
-#   З̵Р  (U+0417 U+0420)            — the dead Russian-era ruble mark. Lingers
-#                                    as a generational + border-region habit
-#                                    among older Zaryans, fading as that
-#                                    cohort ages out. Worldbuilding only; no
-#                                    code path renders it. Doc kept here for
-#                                    the eventual country-info page.
+# The Zaryan zora is a STRONG, high-PPP currency — 1 ₳ ≈ $13.50 USD at
+# baseline. Prices are small dignified numbers (Swiss franc / Kuwaiti dinar
+# psychology, not yen / won). The country is a Pacific-Rim resource economy
+# on the Norwegian model — a sovereign wealth fund sterilizes oil/gas/gold
+# revenue, so the currency floats freely on real prosperity rather than
+# being defended at a peg.
 #
-# Codes: ZRN was the old Zaire new-zaire code (now dead, ISO 4217-stale).
-# ZRZ is the canonical Zaryanovia three-letter code we use here, reusing the
-# ZR ISO 3166-1 root that's also the country code.
+# Symbol — there is one canonical symbol:
+#   ₳   (U+20B3)  ZORA_SYMBOL  — austral sign. Three-stroke, fast, written
+#                                everywhere (banknotes, signage, handwriting,
+#                                ledgers). The currency wears one face.
 #
-# Plurals: simplified two-way (creole vernacular):
-#     zora  (singular, n == 1)
-#     zory  (plural,   n != 1)
-# The full Slavic three-way (zora / zory / zor) is more "authentic" but
-# unused — fictional Zaryanovia's settler-creole vernacular regularized
-# Russian's case grammar down to two forms, the way creoles always do.
+# Heritage glyph (worldbuilding only — not rendered):
+#   ЗР  (U+0417 U+0420)        — the dead Russian-era ruble mark. Lingers as
+#                                a generational + border-region habit among
+#                                older Zaryans, fading as that cohort ages
+#                                out. Documented for the country-info page.
 #
-# Subdivision: 100 luchi = 1 zora ("rays of the dawn" — the zora is named
-# for `zarya`, the Russian word for dawn). All game amounts are stored as
-# integer guilders, so luchi never surface in any formatter today; the
-# subdivision exists in lore only.
+# Code: ZRZ (Zaryanovia, reusing the ZR ISO 3166-1 root). ZRN/ZRZ were the
+# defunct Zaire codes — taken over here.
+#
+# Subdivision: 100 luchi = 1 zora ("rays" compose the dawn — zarya is the
+# Russian word for dawn; luchi is rays). Singular: luch. All in-game amounts
+# are integer guilders so luchi never surface in formatters today; the
+# subdivision is lore plus the helper below for any prose context.
+#
+# Plurals (creole-regularized two-way):
+#     zora  (singular)
+#     zory  (plural)
+# The bare genitive `zor` survives only in archaic/formal register; modern
+# Zaryans default to the two-form pair the way creoles always do.
 
-ZORA_DISPLAY = "₴"   # ₴  formal / printed / signage form
-ZORA_HAND    = "₳"   # ₳  handwritten / vernacular form
-ZORA_DEAD    = "ЗР"  # ЗР dead Russian-era ruble (heritage only)
+ZORA_SYMBOL = "₳"   # The one canonical zora symbol.
+ZORA_DEAD   = "ЗР"  # Dead Russian-era ruble (lore-only, not rendered).
+
+# Backwards-compat alias — early scaffolding called this ZORA_DISPLAY before
+# the wiki fixed the symbol to ₳ outright. Kept so external callers don't
+# break; new code should reference ZORA_SYMBOL.
+ZORA_DISPLAY = ZORA_SYMBOL
 
 ZORA_CODE: str = "ZRZ"
-ZORA_PER_USD: float = 250.0
-GUILDER_PER_ZORA: float = GUILDER_PER_USD / ZORA_PER_USD   # 0.40
+
+# ---------- Basket-driven rate ----------
+#
+# The zora floats against a trade-weighted basket:
+#     35% Japanese yen   (high-tech manufacturing alignment)
+#     35% South Korean won (semiconductor & aerospace integration)
+#     15% US dollar      (energy trading + maritime logistics anchor)
+#     15% Chinese yuan   (land-border supply chain)
+# The Russian ruble is deliberately excluded — being the *stable
+# alternative* to the ruble is the whole haven value proposition.
+#
+# Reserve war chest (backs the float Norwegian-model, not pegged):
+#     SGD, CHF, EUR, gold. Worldbuilding only — no code path uses these.
+#
+# Per-currency index = baseline / current (so a stronger member currency
+# means index > 1). Weighted sum is the basket multiplier; baseline
+# zora_usd of 13.50 is scaled by it and clamped to [6.55, 19.97].
+ZORA_BASKET_WEIGHTS: dict[str, float] = {
+    "JPY": 0.35,
+    "KRW": 0.35,
+    "USD": 0.15,
+    "CNY": 0.15,
+}
+# Baseline FX rates: units per 1 USD. USD itself is by definition 1.0.
+ZORA_BASELINE_RATES: dict[str, float] = {
+    "JPY":  150.0,
+    "KRW": 1350.0,
+    "USD":    1.0,
+    "CNY":    7.20,
+}
+# Current FX rates — start at baseline so the headline matches the spec
+# rate of $13.50 / zora out of the box. Adjust these and call
+# `zora_usd()` to see the basket move the headline.
+ZORA_CURRENT_RATES: dict[str, float] = dict(ZORA_BASELINE_RATES)
+
+ZORA_USD_BASELINE: float = 13.50
+ZORA_USD_FLOOR:    float = 6.55
+ZORA_USD_CEIL:     float = 19.97
+
+ZORA_RESERVE_ASSETS: tuple[str, ...] = ("SGD", "CHF", "EUR", "XAU")  # gold = XAU
+
+
+def zora_usd() -> float:
+    """Current USD value of 1 zora, derived from the basket.
+
+      index_c   = baseline_c / current_c        # >1 ⇒ currency c strengthened
+      mult      = Σ weight_c * index_c
+      zora_usd  = clamp(13.50 * mult, 6.55, 19.97)
+    """
+    mult = 0.0
+    for code, w in ZORA_BASKET_WEIGHTS.items():
+        baseline = ZORA_BASELINE_RATES.get(code, 1.0)
+        current  = ZORA_CURRENT_RATES.get(code, baseline) or baseline
+        idx = baseline / current
+        mult += w * idx
+    rate = ZORA_USD_BASELINE * mult
+    if rate < ZORA_USD_FLOOR: return ZORA_USD_FLOOR
+    if rate > ZORA_USD_CEIL:  return ZORA_USD_CEIL
+    return rate
+
+
+def guilder_per_zora() -> float:
+    """Computed via the USD anchor: ƒ100 = $1 → guilders per zora =
+    100 * (USD per zora)."""
+    return GUILDER_PER_USD * zora_usd()
 
 
 def to_zora(g: int) -> float:
-    return int(g) / GUILDER_PER_ZORA
+    return int(g) / guilder_per_zora()
 
 
 def format_zora(g: int) -> str:
-    """Render a guilder amount in zora. Reuses the Indian-style lakh / crore
-    convention since the zora is in the same numerical-scale family — Zaryan
-    finance picked up the Indian-numbering habit through the same WBSC /
-    Asian trade routes the guilder did."""
-    return f"{ZORA_DISPLAY}{format_crore(int(round(to_zora(g))))}"
+    """Render a guilder amount in zora. Strong-currency formatter —
+    small dignified numbers, Swiss-franc psychology. Sub-zora amounts
+    render in luchi (₳0.18 would look weak; "18 luchi" is the natural
+    Zaryan idiom — same as cents to a dollar, kopeks to a ruble)."""
+    z_raw = to_zora(g)
+    if 0 < z_raw < 1:
+        # Sub-zora: show in luchi (100 luchi = 1 zora).
+        luchi = int(round(z_raw * 100))
+        if luchi <= 0:
+            return f"{ZORA_SYMBOL}0"
+        return f"{luchi} luchi" if luchi != 1 else "1 luch"
+    z = int(round(z_raw))
+    return f"{ZORA_SYMBOL}{z:,}"
 
 
 def zora_plural(n: int) -> str:
     """Two-form creole vernacular: zora (n == 1), zory (n != 1).
-    Not used by the numeric formatter (which is glyph-only); exposed for
-    prose contexts that want to spell out a zora amount."""
+    The archaic/formal genitive `zor` survives in old register but is
+    not produced by this helper. Exposed for any prose context."""
     return "zora" if abs(int(n)) == 1 else "zory"
+
+
+def luch_plural(n: int) -> str:
+    """Subunit plural: luch (1) / luchi (else). 100 luchi = 1 zora."""
+    return "luch" if abs(int(n)) == 1 else "luchi"
 
 
 # ---------------------------------------------------------------------------
@@ -271,12 +345,14 @@ def rates_for_js() -> dict:
     """Snapshot of every constant the front-end toggle needs. Keys match
     `o27v2/web/templates/base.html` JS access patterns."""
     return {
-        "symbol":          GUILDER,
-        "guilderPerUsd":   GUILDER_PER_USD,
-        "guilderPerEur":   GUILDER_PER_EUR,
-        "guilderPerZora":  GUILDER_PER_ZORA,
-        "zoraSymbol":      ZORA_DISPLAY,
-        "lakh":            LAKH,
-        "crore":           CRORE,
-        "basketWeights":   dict(BASKET_WEIGHTS),
+        "symbol":           GUILDER,
+        "guilderPerUsd":    GUILDER_PER_USD,
+        "guilderPerEur":    GUILDER_PER_EUR,
+        "guilderPerZora":   guilder_per_zora(),
+        "zoraSymbol":       ZORA_SYMBOL,
+        "zoraUsd":          zora_usd(),
+        "zoraBasketWeights": dict(ZORA_BASKET_WEIGHTS),
+        "lakh":             LAKH,
+        "crore":            CRORE,
+        "basketWeights":    dict(BASKET_WEIGHTS),
     }
