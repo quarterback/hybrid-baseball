@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+{% block title %}Pro World Cup{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-0">Pro World Cup{% if season %} — Season {{ season }}{% endif %}</h2>
+    <div class="text-secondary small">
+      Regional qualifying → 24-nation group stage → 8-team knockout. Pros play for their birth country (or a heritage call-up via secondary nationality).
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    {% if not summary %}
+      <button id="init-btn" class="btn btn-warning btn-sm">Start Qualifying</button>
+    {% else %}
+      <button id="reset-btn" class="btn btn-outline-danger btn-sm">Reset & Re-run</button>
+      {% if summary.phase == 'qualifying' %}
+        <button id="advance-btn" class="btn btn-warning btn-sm">Run Qualifying → Lock 24</button>
+      {% elif summary.phase == 'rosters' %}
+        <button id="auto-all-btn" class="btn btn-outline-warning btn-sm">Auto-fill All Rosters</button>
+        <button id="run-btn" class="btn btn-warning btn-sm">Lock Rosters & Run Tournament</button>
+      {% elif summary.phase == 'tournament' %}
+        <button id="run-btn" class="btn btn-warning btn-sm">Continue Tournament</button>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if not summary %}
+  <div class="dense" style="padding:18px;text-align:center">
+    <div class="text-secondary">No World Cup has been started for this season yet. Click <strong>Start Qualifying</strong> to seed the regional groups from the eligible pro pool.</div>
+  </div>
+{% else %}
+
+  {% if summary.champion %}
+  <div class="dense mb-4" style="padding:14px;background:rgba(255,193,7,.10);border-left:3px solid #f0c024">
+    <div class="d-flex align-items-center gap-3">
+      <div style="font-size:1.6rem">🏆</div>
+      <div>
+        <div class="text-secondary small">CHAMPION — Season {{ summary.season }}</div>
+        <div style="font-size:1.15rem;font-weight:700">
+          <span class="team-abbrev">{{ summary.champion.abbrev }}</span>
+          {{ summary.champion.name }}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- Phase indicator chips ---- #}
+  <div class="dense mb-4" style="padding:10px 14px">
+    <div class="d-flex gap-2 align-items-center small flex-wrap">
+      {% set phase = summary.phase %}
+      {% for code, label in [('qualifying','Qualifying'),('rosters','Rosters'),('tournament','Tournament'),('complete','Complete')] %}
+        {% set order = ['qualifying','rosters','tournament','complete'] %}
+        {% set done = order.index(code) < order.index(phase) %}
+        {% set active = code == phase %}
+        <span class="badge {% if active %}bg-warning text-dark{% elif done %}bg-success{% else %}bg-secondary{% endif %}">
+          {% if done %}✓ {% endif %}{{ label }}
+        </span>
+        {% if not loop.last %}<span class="text-secondary">→</span>{% endif %}
+      {% endfor %}
+      <span class="text-secondary ms-auto">{{ summary.qualified_count }} of 24 nations qualified</span>
+    </div>
+  </div>
+
+  {# ============================================================
+     Qualifying — per-region standings tables
+     ============================================================ #}
+  {% if summary.qualifying_groups %}
+  <div class="dense mb-4">
+    <div class="panel-title">Regional qualifying</div>
+    <div class="text-secondary small mb-2">
+      Single round-robin per region. Top of the line qualifies for the 24-nation main bracket.
+    </div>
+    <div class="row g-3">
+      {% for block in summary.qualifying_groups %}
+      <div class="col-md-6 col-lg-3">
+        <div class="panel" style="padding:10px 12px;height:100%">
+          <div class="fw-bold mb-2 d-flex justify-content-between">
+            <span>{{ block.region }}</span>
+            <span class="text-secondary small">Top {{ block.quota }} advance</span>
+          </div>
+          <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
+            <thead><tr>
+              <th class="num">#</th>
+              <th>Nation</th>
+              <th class="num">W</th>
+              <th class="num">L</th>
+              <th class="num">±</th>
+            </tr></thead>
+            <tbody>
+              {% for r in block.rows %}
+                {% set seed = loop.index %}
+                <tr class="{% if r.qualified %}strk-w{% endif %}">
+                  <td class="num">{{ seed }}</td>
+                  <td>
+                    <span class="team-abbrev">{{ r.abbrev }}</span>
+                    <span class="text-secondary small ms-1">{{ r.name }}</span>
+                    {% if r.qualified %}<span class="text-success ms-1">✓</span>{% endif %}
+                  </td>
+                  <td class="num">{{ r.w }}</td>
+                  <td class="num">{{ r.l }}</td>
+                  <td class="num">{{ r.rs - r.ra }}</td>
+                </tr>
+                {% if seed == block.quota and block.rows|length > block.quota %}
+                  <tr><td colspan="5" style="border-top:1px dashed var(--ink-muted);padding:1px 0"></td></tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ============================================================
+     Qualified nations + roster status (Rosters phase or later)
+     ============================================================ #}
+  {% if summary.phase in ('rosters', 'tournament', 'complete') and summary.qualified_teams %}
+  <div class="dense mb-4">
+    <div class="panel-title">National rosters</div>
+    <div class="text-secondary small mb-2">
+      {% if summary.rosters_locked %}
+        Rosters were locked when the tournament started.
+      {% else %}
+        Auto-picked rosters are in place. Click into a nation to swap players before locking.
+      {% endif %}
+    </div>
+    <div class="row g-2">
+      {% for t in summary.qualified_teams %}
+        <div class="col-md-4 col-lg-3">
+          <a href="{{ url_for('pro_worldcup_team_view', wc_team_id=t.id) }}"
+             class="panel d-block text-decoration-none"
+             style="padding:8px 10px">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <span class="team-abbrev">{{ t.abbrev }}</span>
+                <span class="ms-1">{{ t.name }}</span>
+              </div>
+              <span class="text-secondary small">{{ t.region }}</span>
+            </div>
+          </a>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ============================================================
+     Main group stage standings
+     ============================================================ #}
+  {% if summary.main_groups %}
+  <div class="dense mb-4">
+    <div class="panel-title">Group stage</div>
+    <div class="row g-3">
+      {% for grp in summary.main_groups %}
+      <div class="col-md-6 col-lg-3">
+        <div class="panel" style="padding:10px 12px;height:100%">
+          <div class="fw-bold mb-2">Group {{ grp.group_letter }}</div>
+          <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
+            <thead><tr>
+              <th class="num">#</th>
+              <th>Nation</th>
+              <th class="num">W</th>
+              <th class="num">L</th>
+              <th class="num">±</th>
+            </tr></thead>
+            <tbody>
+              {% for r in grp.rows %}
+                {% set seed = loop.index %}
+                <tr class="{% if seed <= 2 %}strk-w{% endif %}">
+                  <td class="num">{{ seed }}</td>
+                  <td>
+                    <span class="team-abbrev">{{ r.abbrev }}</span>
+                    <span class="text-secondary small ms-1">{{ r.name }}</span>
+                  </td>
+                  <td class="num">{{ r.w }}</td>
+                  <td class="num">{{ r.l }}</td>
+                  <td class="num">{{ r.rs - r.ra }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <div class="text-secondary small mt-1">Top 2 advance</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ============================================================
+     Knockout bracket
+     ============================================================ #}
+  {% set rounds = [('qf', 'Quarter-finals'), ('sf', 'Semi-finals'), ('final', 'Final')] %}
+  {% for code, label in rounds %}
+    {% set games = summary.by_phase.get(code) %}
+    {% if games %}
+    <div class="dense mb-4">
+      <div class="panel-title">{{ label }}</div>
+      <table class="table table-sm dense-table mb-0">
+        <thead><tr>
+          <th>Match</th>
+          <th class="num">Score</th>
+          <th>Winner</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+        {% for g in games %}
+          <tr>
+            <td>
+              <span class="team-abbrev">{{ g.home_abbrev }}</span> {{ g.home_name }}
+              <span class="text-secondary mx-2">vs</span>
+              <span class="team-abbrev">{{ g.away_abbrev }}</span> {{ g.away_name }}
+            </td>
+            <td class="num">{% if g.played %}{{ g.home_score }}–{{ g.away_score }}{% else %}—{% endif %}</td>
+            <td>
+              {% if g.played %}
+                <strong>
+                  {% if g.winner_wc_team_id == g.home_wc_team_id %}{{ g.home_abbrev }}{% else %}{{ g.away_abbrev }}{% endif %}
+                </strong>
+              {% else %}
+                <span class="text-secondary">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if g.played %}
+                <a class="small" href="{{ url_for('pro_worldcup_game_view', game_id=g.id) }}">Box →</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  {# ============================================================
+     Sample of main-group games (collapsed by default — there are 60)
+     ============================================================ #}
+  {% set group_games = summary.by_phase.get('group') %}
+  {% if group_games %}
+  <details class="dense mb-4">
+    <summary class="panel-title" style="cursor:pointer">Group games ({{ group_games|length }})</summary>
+    <table class="table table-sm dense-table mb-0 mt-2">
+      <tbody>
+      {% for g in group_games %}
+        <tr>
+          <td><span class="team-abbrev">{{ g.home_abbrev }}</span> vs <span class="team-abbrev">{{ g.away_abbrev }}</span></td>
+          <td class="num">{% if g.played %}{{ g.home_score }}–{{ g.away_score }}{% else %}—{% endif %}</td>
+          <td>{% if g.played %}<a class="small" href="{{ url_for('pro_worldcup_game_view', game_id=g.id) }}">Box →</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+
+  {% set qual_games = summary.by_phase.get('qual') %}
+  {% if qual_games %}
+  <details class="dense mb-4">
+    <summary class="panel-title" style="cursor:pointer">Qualifying games ({{ qual_games|length }})</summary>
+    <table class="table table-sm dense-table mb-0 mt-2">
+      <tbody>
+      {% for g in qual_games %}
+        <tr>
+          <td><span class="team-abbrev">{{ g.home_abbrev }}</span> vs <span class="team-abbrev">{{ g.away_abbrev }}</span></td>
+          <td class="num">{% if g.played %}{{ g.home_score }}–{{ g.away_score }}{% else %}—{% endif %}</td>
+          <td>{% if g.played %}<a class="small" href="{{ url_for('pro_worldcup_game_view', game_id=g.id) }}">Box →</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+
+{% endif %}
+
+<script>
+(function () {
+  async function postJSON(url, body) {
+    const r = await fetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body || {}),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || ('HTTP '+r.status));
+    return data;
+  }
+
+  function bind(id, fn, confirmMsg) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      if (confirmMsg && !confirm(confirmMsg)) return;
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Working…';
+      try { await fn(); window.location.reload(); }
+      catch (err) {
+        alert('Failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  }
+
+  bind('init-btn',     () => postJSON('/api/pro-worldcup/start-qualifying'));
+  bind('advance-btn',  () => postJSON('/api/pro-worldcup/finish-qualifying'));
+  bind('auto-all-btn', () => postJSON('/api/pro-worldcup/auto-rosters', {overwrite: true}));
+  bind('run-btn',      () => postJSON('/api/pro-worldcup/run-tournament'));
+  bind('reset-btn',    () => postJSON('/api/pro-worldcup/reset'),
+       'Wipe this season\'s World Cup (qualifying, rosters, tournament) and re-run from scratch?');
+})();
+</script>
+{% endblock %}

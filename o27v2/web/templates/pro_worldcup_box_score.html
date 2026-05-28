@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}World Cup Box Score{% endblock %}
+{% block content %}
+
+{% set g = box.game %}
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <a href="{{ url_for('pro_worldcup_view') }}" class="small text-secondary">← Pro World Cup</a>
+    <h2 class="mb-0 mt-1">
+      <span class="team-abbrev">{{ g.away_abbrev }}</span> {{ g.away_name }}
+      <span class="mx-2 text-secondary">at</span>
+      <span class="team-abbrev">{{ g.home_abbrev }}</span> {{ g.home_name }}
+    </h2>
+    <div class="text-secondary small">
+      Season {{ g.season }} ·
+      {% if g.phase == 'qual'  %}Regional qualifying
+      {% elif g.phase == 'group' %}Group stage
+      {% elif g.phase == 'qf'  %}Quarter-final
+      {% elif g.phase == 'sf'  %}Semi-final
+      {% elif g.phase == 'final' %}Final
+      {% else %}{{ g.phase }}{% endif %}
+    </div>
+  </div>
+  <div class="text-end">
+    <div class="fw-bold" style="font-size:1.6rem;line-height:1">
+      <span class="{% if g.away_score > g.home_score %}strk-w{% endif %}">{{ g.away_score }}</span>
+      <span class="text-secondary mx-2">—</span>
+      <span class="{% if g.home_score > g.away_score %}strk-w{% endif %}">{{ g.home_score }}</span>
+    </div>
+    <div class="text-secondary small">{% if g.played %}Final{% else %}Not played{% endif %}</div>
+  </div>
+</div>
+
+{% if not g.played %}
+<div class="alert alert-warning">This game has not been played yet.</div>
+{% else %}
+<pre style="font-family:'Courier New',Consolas,Menlo,monospace;
+            font-size:13px; line-height:1.35; white-space:pre;
+            color:var(--fg, inherit); background:transparent;
+            padding:1rem; margin:0; overflow-x:auto;">{{ box_score_text }}</pre>
+{% endif %}
+
+{% endblock %}
