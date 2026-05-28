@@ -130,6 +130,7 @@
       "europa_scottish":       { "cities_example": ["Edinburgh", "Glasgow", "Aberdeen", "Dundee", "Inverness", "Stirling"], "locale": "english" },
       "europa_german":         { "cities_example": ["Berlin", "Hamburg", "Munich", "Cologne", "Frankfurt", "Vienna", "Regensburg", "Mannheim", "Bonn", "Stuttgart", "Heidelberg"], "locale": "german" },
       "europa_dutch":          { "cities_example": ["Amsterdam", "Rotterdam", "Antwerp"], "locale": "dutch" },
+      "europa_belgian":        { "cities_example": ["Brussels", "Antwerp", "Ghent", "Bruges", "Leuven", "Mechelen"], "locale": "dutch" },
       "europa_french":         { "cities_example": ["Paris", "Lyon", "Marseille", "Brussels"], "locale": "french" },
       "europa_italian":        { "cities_example": ["Milan", "Rome", "Naples", "Turin", "Bologna"], "locale": "italian" },
       "europa_spanish":        { "cities_example": ["Madrid", "Barcelona", "Valencia", "Seville"], "locale": "spanish" },

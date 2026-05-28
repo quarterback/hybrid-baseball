@@ -1214,6 +1214,27 @@
       "country": "ES",
       "first_keys":   ["spanish"],
       "surname_keys": ["spanish"]
+    },
+    "poland": {
+      "_doc": [
+        "Small but real European baseball scene (Polish Baseball League,",
+        "Euro qualifier). Polish given + family names tagged PL."
+      ],
+      "label": "Poland",
+      "country": "PL",
+      "first_keys":   ["polish"],
+      "surname_keys": ["polish"]
+    },
+    "belgium": {
+      "_doc": [
+        "Frontier baseball nation — the scene is Flemish-led (Antwerp /",
+        "Borgerhout), so naming blends Dutch (Flemish) and French (Walloon).",
+        "Tagged BE."
+      ],
+      "label": "Belgium",
+      "country": "BE",
+      "first_keys":   ["dutch", "french"],
+      "surname_keys": ["dutch", "french"]
     }
   },
   "presets": {

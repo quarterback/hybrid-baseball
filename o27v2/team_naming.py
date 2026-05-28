@@ -136,6 +136,8 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "russia":            ("europa_russian",),
     "ukraine":           ("europa_ukrainian",),
     "netherlands":       ("europa_dutch",),
+    "belgium":           ("europa_belgian",),
+    "poland":            ("europa_polish",),
     "spain":             ("europa_spanish",),
     "italy":             ("europa_italian",),
     "israel":            ("europa_english",),   # no Hebrew city pool -> civic English
