@@ -274,6 +274,47 @@ _COUNTRY_TALENT_SHIFT: dict[str, int] = {
 def _talent_shift(country_code: str) -> int:
     return _COUNTRY_TALENT_SHIFT.get((country_code or "").upper(), 0)
 
+
+# Relative baseball-talent baseline per nation (rough 0-10), used ONLY for
+# the dual-nationality "spread good talent to weaker nations" mechanic. A
+# diaspora player (grandparent / parent lineage) eligible for both a strong
+# heritage nation and a weaker home nation is steered to the WEAKER one and
+# boosted by the gap — so frontier sides occasionally capture a real star,
+# à la Brazilian-eligible footballers or dual-national Africans. Unlisted
+# nations default to _BASELINE_DEFAULT (developmental).
+_BASELINE_DEFAULT = 2
+_NATION_BASELINE: dict[str, int] = {
+    "US": 9, "DO": 9, "JP": 9, "VE": 8, "PR": 8, "CU": 8, "KR": 7, "TW": 7,
+    "MX": 6, "NL": 6, "CO": 5, "CA": 5, "AU": 5,
+}
+# Heritage sources a dual-national inherits eligibility from: the talent-rich
+# nations (baseline >= 5). A weaker home nation captures these as call-ups.
+_HERITAGE_POOL: tuple[str, ...] = tuple(
+    c for c, b in _NATION_BASELINE.items() if b >= 5
+)
+_DUAL_NATIONAL_P = 0.02   # ~2% of players are eligible for a second nation
+
+
+def _baseline(country_code: str) -> int:
+    return _NATION_BASELINE.get((country_code or "").upper(), _BASELINE_DEFAULT)
+
+
+def _roll_dual_nationality(home_code: str,
+                           rng: random.Random) -> tuple[str, int]:
+    """For ~2% of players, return (secondary_country, talent_boost_points).
+    The boost reflects the gap when `home_code` is the WEAKER of the two
+    eligible nations, so weaker sides capitalize on diaspora talent. Returns
+    ('', 0) for the common single-nationality case."""
+    if rng.random() >= _DUAL_NATIONAL_P:
+        return "", 0
+    home = (home_code or "").upper()
+    pool = [c for c in _HERITAGE_POOL if c != home]
+    if not pool:
+        return "", 0
+    heritage = rng.choices(pool, weights=[_NATION_BASELINE[c] for c in pool])[0]
+    boost = max(0, min(12, round((_baseline(heritage) - _baseline(home)) * 1.2)))
+    return heritage, boost
+
 # Recruit-star thresholds (US college recruiting feel).
 # Composite is averaged from TRUE attribute grades, NOT YPI-modified.
 # Hitters: (skill + contact + power + eye) / 4
@@ -300,8 +341,9 @@ CREATE TABLE IF NOT EXISTS youth_teams (
     name          TEXT NOT NULL,
     abbrev        TEXT NOT NULL,
     name_region   TEXT NOT NULL DEFAULT 'us',
-    -- 'world' = the 48-nation World Cup field; 'frontier' = the 16-nation
-    -- Frontier Cup field. Keeps the two competitions' draws separate.
+    -- 'world' = the 48-nation World Cup field; 'frontier' = the Frontier
+    -- Cup field (26 nations competing for 24 berths). Keeps the two
+    -- competitions' draws separate.
     tier          TEXT NOT NULL DEFAULT 'world'
 );
 """
@@ -361,7 +403,15 @@ CREATE TABLE IF NOT EXISTS youth_players (
     role_hit           INTEGER DEFAULT 1,
     role_run           INTEGER DEFAULT 0,
     role_two_way       INTEGER DEFAULT 1,
-    role_field_pos     TEXT    DEFAULT ''
+    role_field_pos     TEXT    DEFAULT '',
+    -- Player-card flavor (mirrors the pro `players` columns). hometown =
+    -- birthplace city; birthday = cosmetic "Mar 14"; secondary_country =
+    -- the player's OTHER eligible nation (dual-national lineage). On the
+    -- youth side a secondary_country marks a heritage call-up whose talent
+    -- was steered toward this (weaker) nation — see _make_youth_player.
+    hometown           TEXT    DEFAULT '',
+    birthday           TEXT    DEFAULT '',
+    secondary_country  TEXT    DEFAULT ''
 );
 """
 
@@ -459,6 +509,10 @@ def init_youth_schema() -> None:
         ("youth_teams",  "tier TEXT NOT NULL DEFAULT 'world'"),
         ("youth_groups", "competition TEXT NOT NULL DEFAULT 'world'"),
         ("youth_games",  "competition TEXT NOT NULL DEFAULT 'world'"),
+        # Player-card flavor (hometown / cosmetic birthday / dual nationality).
+        ("youth_players", "hometown TEXT DEFAULT ''"),
+        ("youth_players", "birthday TEXT DEFAULT ''"),
+        ("youth_players", "secondary_country TEXT DEFAULT ''"),
     ]
     for table, col_def in _migrations:
         try:
@@ -512,13 +566,17 @@ def _make_youth_player(
       * tags joker rows with archetype.
     """
     from o27v2.league import _make_hitter, _make_pitcher
-    shift = _talent_shift(country)
+    # Dual-nationality is decided up front: a heritage call-up's talent boost
+    # rides the same team_shift lever as the per-nation talent bump.
+    secondary, dual_boost = _roll_dual_nationality(country, rng)
+    shift = _talent_shift(country) + dual_boost
     if is_pitcher:
         p = _make_pitcher(rng, is_active=1, name=name, country=country,
                           team_shift=shift)
     else:
         p = _make_hitter(rng, pos, is_active=1, name=name, country=country,
                          team_shift=shift)
+    p["secondary_country"] = secondary
     p["age"] = age
     p["is_joker"] = 1 if is_joker else 0
     p["joker_archetype"] = joker_archetype if is_joker else ""
@@ -572,8 +630,10 @@ def _make_youth_specialist(
     as they do on the pro side), then layering on the youth-only YPI
     governor + recruit-stars label."""
     from o27v2.league import _make_specialist
+    secondary, dual_boost = _roll_dual_nationality(country, rng)
     p = _make_specialist(rng, kind, name=name, country=country,
-                         team_shift=_talent_shift(country))
+                         team_shift=_talent_shift(country) + dual_boost)
+    p["secondary_country"] = secondary
     p["age"] = age
     p["youth_potential_index"] = round(rng.uniform(_YPI_LO, _YPI_HI), 3)
     p["recruit_stars"] = _stars_from_composite(_composite_for_player(p))
@@ -660,6 +720,7 @@ _PLAYER_COLS = (
     "youth_potential_index", "recruit_stars",
     "is_active", "roster_slot", "role_hit", "role_run", "role_two_way",
     "role_field_pos",
+    "hometown", "birthday", "secondary_country",
 )
 
 
@@ -691,6 +752,9 @@ def _insert_player(team_id: int, p: dict) -> None:
         int(p.get("role_run", 0)),
         int(p.get("role_two_way", 1)),
         str(p.get("role_field_pos", "") or ""),
+        str(p.get("hometown", "") or ""),
+        str(p.get("birthday", "") or ""),
+        str(p.get("secondary_country", "") or ""),
     )
     db.execute(
         f"INSERT INTO youth_players ({cols}) VALUES ({qs})",

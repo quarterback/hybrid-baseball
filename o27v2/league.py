@@ -1787,6 +1787,19 @@ RESERVE_PITCHERS   = 3
 ACTIVE_POSITION_TOTAL = ACTIVE_FIELDERS + ACTIVE_JOKERS + ACTIVE_SPECIALISTS  # 25
 
 
+def _stamp_player_flavor(p: dict, rng: random.Random) -> None:
+    """Attach cosmetic identity fields — hometown, birthday — and a flavor
+    dual-nationality tag. Drawn LAST in each maker so attribute rolls stay
+    reproducible. Respects a pre-set `secondary_country` (the youth side
+    assigns its own via weak-nation talent steering)."""
+    from o27v2 import team_naming as _tn
+    ctry = p.get("country", "")
+    p["hometown"] = _tn.roll_hometown(ctry, rng)
+    p["birthday"] = _tn.roll_birthday(rng)
+    if not p.get("secondary_country"):
+        p["secondary_country"] = _tn.roll_secondary_country(ctry, rng)
+
+
 def _make_hitter(
     rng: random.Random,
     pos: str,
@@ -1958,6 +1971,7 @@ def _make_hitter(
     result["role_two_way"]   = 1 if is_two_way(result) else 0
     result["role_field_pos"] = encode_field_positions(result)
     result["roster_slot"]    = classify_roster_slot(result)
+    _stamp_player_flavor(result, rng)
     return result
 
 
@@ -2125,6 +2139,7 @@ def _make_specialist(
         result["role_run"]    = 0
     result["role_two_way"]   = 0
     result["role_field_pos"] = ""
+    _stamp_player_flavor(result, rng)
     return result
 
 
@@ -2307,7 +2322,7 @@ def _make_pitcher(
     pitch_variance = round(rng.uniform(0.02, 0.14), 3)
     # Grit: fatigue resistance + per-game form stability. Bounded 0.25-0.75.
     grit = round(0.25 + rng.random() * 0.50, 3)
-    return {
+    _pitcher = {
         "name": name,
         "country": country,
         "position": "P",
@@ -2366,6 +2381,8 @@ def _make_pitcher(
         "role_two_way":   0,
         "role_field_pos": "",
     }
+    _stamp_player_flavor(_pitcher, rng)
+    return _pitcher
 
 
 def generate_players(
@@ -2997,8 +3014,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          work_ethic, work_habits, habit_cup, salary,
          release_angle, pitch_variance, grit, repertoire,
          pull_pct, adaptability, leadership,
-         roster_slot, role_hit, role_run, role_two_way, role_field_pos)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+         roster_slot, role_hit, role_run, role_two_way, role_field_pos,
+         hometown, birthday, secondary_country)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -3039,7 +3057,10 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 int(p.get("role_hit", 1)),
                 int(p.get("role_run", 0)),
                 int(p.get("role_two_way", 1)),
-                p.get("role_field_pos", ""))
+                p.get("role_field_pos", ""),
+                p.get("hometown", ""),
+                p.get("birthday", ""),
+                p.get("secondary_country", ""))
 
     # Cache team-id → league name so each player's salary uses the
     # right tier cap. Also pull manager_archetype for the per-archetype

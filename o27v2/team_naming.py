@@ -505,3 +505,49 @@ def generate_league_teams(league_name: str, n_teams: int, rng_seed: int,
             "abbrev": _make_abbrev(name, used_abbrev),
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# Per-player flavor: hometown, birthday, secondary nationality.
+# These are cosmetic identity fields rolled at roster generation. Hometown
+# draws from data/names/hometowns.json (keyed by alpha-2 country code).
+# ---------------------------------------------------------------------------
+
+# Talent-rich baseball nations a diaspora player might also be eligible for
+# (grandparent / parent lineage). Used as the secondary-nationality source so
+# the "spread good talent around" effect pulls from real powerhouses. The
+# weak-nation talent steering itself lives in o27v2.youth.
+_HERITAGE_SOURCES: tuple[str, ...] = (
+    "US", "DO", "VE", "PR", "CU", "MX", "JP", "KR", "CO", "TW", "NL", "CA",
+)
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+_MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+
+def roll_hometown(country_code: str, rng: random.Random) -> str:
+    """A random believable birthplace for a player from `country_code`.
+    Empty string when we have no city pool for that country."""
+    cities = _load("hometowns.json")["cities"].get((country_code or "").upper())
+    return rng.choice(cities) if cities else ""
+
+
+def roll_birthday(rng: random.Random) -> str:
+    """A cosmetic month/day birthday like 'Mar 14'. No year — age is the
+    engine's clock; this is pure player-card flavor."""
+    m = rng.randrange(12)
+    return f"{_MONTHS[m]} {rng.randint(1, _MONTH_DAYS[m])}"
+
+
+def roll_secondary_country(country_code: str, rng: random.Random,
+                           p: float = 0.02) -> str:
+    """Flavor dual-nationality tag: ~`p` of players are eligible for a
+    second nation via lineage. Returns a heritage-source code distinct
+    from the player's own, or '' (the common case). Pure flavor here; the
+    youth side overrides this with weak-nation talent steering."""
+    if rng.random() >= p:
+        return ""
+    own = (country_code or "").upper()
+    pool = [c for c in _HERITAGE_SOURCES if c != own]
+    return rng.choice(pool) if pool else ""
