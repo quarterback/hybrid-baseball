@@ -81,6 +81,18 @@
     </div>
   </div>
 
+  {% if tournament.did_not_qualify %}
+  <div class="dense mb-4">
+    <div class="panel-title">Did not qualify</div>
+    <div class="text-secondary small mb-2">Missed this season's draw — the field is larger than the Cup's berths, so entry rotates year to year.</div>
+    <div>
+      {% for t in tournament.did_not_qualify %}
+        <span class="badge bg-secondary me-1 mb-1"><span class="team-abbrev">{{ t.abbrev }}</span> {{ t.name }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {% set rounds = [
       ('r16',   'Round of 16'),
       ('qf',    'Quarter-finals'),

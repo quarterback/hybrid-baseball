@@ -125,7 +125,12 @@ _FRONTIER_TEAMS: list[tuple[str, str, str, str]] = [
     ("IR", "Iran",            "IRI", "iran"),
     ("UG", "Uganda",          "UGA", "uganda"),
     ("ES", "Spain",           "ESP", "spain"),
+    ("PL", "Poland",          "POL", "poland"),
+    ("BE", "Belgium",         "BEL", "belgium"),
 ]
+# 26 frontier nations compete for 24 Cup berths: the seasonal draw
+# (draw_groups) shuffles the field and the bottom two MISS OUT each year
+# — a rotating qualification, surfaced on /youth as "Did not qualify".
 
 # Geographic region a country belongs to, for grouping the standings on
 # /youth so the teams aren't a flat list. Order here is the order regions
@@ -153,7 +158,7 @@ _COUNTRY_REGION: dict[str, str] = {
     "HR": "Europe",         "SI": "Europe",         "HU": "Europe",
     "SK": "Europe",         "RU": "Europe",         "UA": "Europe",
     "LT": "Europe",         "TR": "Europe",         "SM": "Europe",
-    "ES": "Europe",
+    "ES": "Europe",         "PL": "Europe",         "BE": "Europe",
     # Africa
     "ZA": "Africa",         "ZW": "Africa",         "NA": "Africa",
     # Africa (Frontier Cup)
@@ -253,6 +258,21 @@ AGE_OUT      = 19   # players who would turn 20 graduate this offseason
 # attribute grid and the pro stats tell the truth.
 _YPI_LO = 0.22
 _YPI_HI = 0.81
+
+# Per-country talent shift for youth roster generation. A nation's
+# prospects roll every attribute grade with this additive `team_shift`
+# bump (the same lever the pro maker uses for strong/weak orgs), so a
+# powerhouse baseball culture produces a deeper, higher-ceiling pool —
+# more blue-chip recruits, who feed the pro FA pool at graduation.
+# Absent = 0 (neutral parity). Kept deliberately small: Elite+ (81-95)
+# is still earned via development, never handed out at seed time.
+_COUNTRY_TALENT_SHIFT: dict[str, int] = {
+    "PR": 6,   # Puerto Rico — two-time WBC finalist, perennial MLB talent factory
+}
+
+
+def _talent_shift(country_code: str) -> int:
+    return _COUNTRY_TALENT_SHIFT.get((country_code or "").upper(), 0)
 
 # Recruit-star thresholds (US college recruiting feel).
 # Composite is averaged from TRUE attribute grades, NOT YPI-modified.
@@ -492,10 +512,13 @@ def _make_youth_player(
       * tags joker rows with archetype.
     """
     from o27v2.league import _make_hitter, _make_pitcher
+    shift = _talent_shift(country)
     if is_pitcher:
-        p = _make_pitcher(rng, is_active=1, name=name, country=country)
+        p = _make_pitcher(rng, is_active=1, name=name, country=country,
+                          team_shift=shift)
     else:
-        p = _make_hitter(rng, pos, is_active=1, name=name, country=country)
+        p = _make_hitter(rng, pos, is_active=1, name=name, country=country,
+                         team_shift=shift)
     p["age"] = age
     p["is_joker"] = 1 if is_joker else 0
     p["joker_archetype"] = joker_archetype if is_joker else ""
@@ -549,7 +572,8 @@ def _make_youth_specialist(
     as they do on the pro side), then layering on the youth-only YPI
     governor + recruit-stars label."""
     from o27v2.league import _make_specialist
-    p = _make_specialist(rng, kind, name=name, country=country)
+    p = _make_specialist(rng, kind, name=name, country=country,
+                         team_shift=_talent_shift(country))
     p["age"] = age
     p["youth_potential_index"] = round(rng.uniform(_YPI_LO, _YPI_HI), 3)
     p["recruit_stars"] = _stars_from_composite(_composite_for_player(p))
@@ -1718,6 +1742,21 @@ def _summarise_tournament(season: int, competition: str = "world") -> dict[str, 
                 "rows":         enriched_rows,
             })
 
+    # Rotating qualification: when the field is larger than the number of
+    # Cup berths (the Frontier Cup runs 26 nations for 24 slots), the teams
+    # left out of this season's draw surface as "Did not qualify" rather
+    # than silently vanishing.
+    tier = _comp_cfg(competition)["tier"]
+    qualified_ids = {r["team_id"] for rows in groups.values() for r in rows}
+    did_not_qualify = sorted(
+        ({"name": t["name"], "abbrev": t["abbrev"],
+          "country_code": t["country_code"]}
+         for t in teams.values()
+         if t.get("tier") == tier and t["id"] not in qualified_ids
+         and qualified_ids),
+        key=lambda t: t["name"],
+    )
+
     return {
         "season":      season,
         "competition": competition,
@@ -1726,6 +1765,7 @@ def _summarise_tournament(season: int, competition: str = "world") -> dict[str, 
         "by_round":    by_round,
         "champion":    champion,
         "complete":    bool(final_game and final_game.get("played")),
+        "did_not_qualify": did_not_qualify,
     }
 
 
