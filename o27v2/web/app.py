@@ -8214,7 +8214,7 @@ def youth_frontier_view():
                   tournament=summary,
                   competition="frontier",
                   page_title="O27 Youth Frontier Cup",
-                  page_subtitle="24 emerging nations · 4 groups of 6 → top 2 advance → 8-team knockout (QF → SF → Final).",
+                  page_subtitle="28 emerging nations vie for 24 berths · 4 groups of 6 → top 2 advance → 8-team knockout (QF → SF → Final).",
                   sibling_url=url_for("youth_tournament_view"),
                   sibling_label="← World Cup",
                   season=(summary or {}).get("season"))

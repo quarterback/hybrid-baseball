@@ -1235,6 +1235,30 @@
       "country": "BE",
       "first_keys":   ["dutch", "french"],
       "surname_keys": ["dutch", "french"]
+    },
+    "palestine": {
+      "_doc": [
+        "Frontier baseball nation with little domestic infrastructure — the",
+        "program leans on the diaspora (the expat-fueled talent steering in",
+        "o27v2.youth gives it occasional foreign-raised call-ups). Arabic",
+        "given + family names tagged PS."
+      ],
+      "label": "Palestine",
+      "country": "PS",
+      "first_keys":   ["arabic"],
+      "surname_keys": ["arabic"]
+    },
+    "lebanon": {
+      "_doc": [
+        "Frontier baseball nation fueled by one of the world's largest",
+        "diasporas — Brazil and Trinidad hold huge Lebanese-descended",
+        "communities, so the family-name pool blends domestic Arabic with the",
+        "brazilian_lebanese / lebanese_trinidadian diaspora surnames. Tagged LB."
+      ],
+      "label": "Lebanon",
+      "country": "LB",
+      "first_keys":   ["arabic", "brazilian"],
+      "surname_keys": ["arabic", "brazilian_lebanese", "lebanese_trinidadian"]
     }
   },
   "presets": {

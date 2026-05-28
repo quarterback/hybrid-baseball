@@ -92,6 +92,8 @@
     "SA": ["Riyadh", "Jeddah", "Mecca", "Medina", "Dammam", "Khobar", "Tabuk", "Taif"],
     "EG": ["Cairo", "Alexandria", "Giza", "Port Said", "Suez", "Luxor", "Mansoura", "Tanta"],
     "AO": ["Luanda", "Huambo", "Lobito", "Benguela", "Lubango", "Malanje", "Namibe", "Cabinda"],
-    "MZ": ["Maputo", "Matola", "Beira", "Nampula", "Chimoio", "Quelimane", "Tete", "Nacala"]
+    "MZ": ["Maputo", "Matola", "Beira", "Nampula", "Chimoio", "Quelimane", "Tete", "Nacala"],
+    "PS": ["Gaza", "Ramallah", "Hebron", "Nablus", "Bethlehem", "Jenin", "Rafah", "Tulkarm", "Jericho", "Khan Yunis"],
+    "LB": ["Beirut", "Tripoli", "Sidon", "Tyre", "Jounieh", "Zahlé", "Byblos", "Baalbek", "Aley", "Nabatieh"]
   }
 }

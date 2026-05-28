@@ -127,9 +127,11 @@ _FRONTIER_TEAMS: list[tuple[str, str, str, str]] = [
     ("ES", "Spain",           "ESP", "spain"),
     ("PL", "Poland",          "POL", "poland"),
     ("BE", "Belgium",         "BEL", "belgium"),
+    ("PS", "Palestine",       "PLE", "palestine"),
+    ("LB", "Lebanon",         "LBN", "lebanon"),
 ]
-# 26 frontier nations compete for 24 Cup berths: the seasonal draw
-# (draw_groups) shuffles the field and the bottom two MISS OUT each year
+# 28 frontier nations compete for 24 Cup berths: the seasonal draw
+# (draw_groups) shuffles the field and the bottom four MISS OUT each year
 # — a rotating qualification, surfaced on /youth as "Did not qualify".
 
 # Geographic region a country belongs to, for grouping the standings on
@@ -171,6 +173,7 @@ _COUNTRY_REGION: dict[str, str] = {
     "ID": "Asia",           "TH": "Asia",
     # Asia (Frontier Cup)
     "KZ": "Asia",           "HK": "Asia",           "IR": "Asia",
+    "PS": "Asia",           "LB": "Asia",
     # Oceania
     "AU": "Oceania",        "NZ": "Oceania",        "FJ": "Oceania",
     "GU": "Oceania",
@@ -294,6 +297,16 @@ _HERITAGE_POOL: tuple[str, ...] = tuple(
 )
 _DUAL_NATIONAL_P = 0.02   # ~2% of players are eligible for a second nation
 
+# Expat-fueled programs: nations with little domestic infrastructure whose
+# sides are carried by the diaspora (huge Lebanese communities in Brazil /
+# Trinidad; the Palestinian diaspora across the Americas). A much larger
+# share of their roster is heritage call-ups, so they punch above their
+# nonexistent domestic weight — exactly how these teams come to exist.
+_EXPAT_FUELED: dict[str, float] = {
+    "PS": 0.22,
+    "LB": 0.22,
+}
+
 
 def _baseline(country_code: str) -> int:
     return _NATION_BASELINE.get((country_code or "").upper(), _BASELINE_DEFAULT)
@@ -301,13 +314,14 @@ def _baseline(country_code: str) -> int:
 
 def _roll_dual_nationality(home_code: str,
                            rng: random.Random) -> tuple[str, int]:
-    """For ~2% of players, return (secondary_country, talent_boost_points).
-    The boost reflects the gap when `home_code` is the WEAKER of the two
-    eligible nations, so weaker sides capitalize on diaspora talent. Returns
-    ('', 0) for the common single-nationality case."""
-    if rng.random() >= _DUAL_NATIONAL_P:
-        return "", 0
+    """Return (secondary_country, talent_boost_points) for a dual-eligible
+    player, else ('', 0). The dual-eligibility rate is ~2% for most nations
+    but much higher for expat-fueled programs. The boost reflects the gap
+    when `home_code` is the WEAKER of the two eligible nations, so weaker
+    sides capitalize on diaspora talent."""
     home = (home_code or "").upper()
+    if rng.random() >= _EXPAT_FUELED.get(home, _DUAL_NATIONAL_P):
+        return "", 0
     pool = [c for c in _HERITAGE_POOL if c != home]
     if not pool:
         return "", 0

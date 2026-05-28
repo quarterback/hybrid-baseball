@@ -173,6 +173,8 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "iran":              ("middle_east_persian",),
     "kazakhstan":        ("central_asia_kazakh",),
     "gulf_cricket":      ("middle_east_arabic",),
+    "palestine":         ("middle_east_arabic",),
+    "lebanon":           ("middle_east_arabic",),
     # --- Africa ---
     "africa":            ("africa_english", "africa_swahili", "africa_afrikaans",
                           "africa_french", "africa_amharic", "africa_namibia"),
