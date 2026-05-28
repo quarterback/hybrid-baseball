@@ -8523,3 +8523,132 @@ def api_league_configs():
 @app.route("/api/health")
 def api_health():
     return jsonify({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Financials — live FX board for the two in-game fictional currencies
+# (guilder, zora) plus every real-world currency the game references.
+# ---------------------------------------------------------------------------
+
+@app.route("/financials", methods=["GET", "POST"])
+def financials_view():
+    from o27v2 import currency as cur
+    from o27v2 import fx as _fx
+    force = (request.method == "POST"
+             and request.form.get("action") == "refresh")
+    snap = _fx.apply_to_zora_basket(force=force)
+
+    # ---- Zora basket: live math, per-component breakdown ----
+    zora_components = []
+    mult_total = 0.0
+    for code, weight in cur.ZORA_BASKET_WEIGHTS.items():
+        baseline = cur.ZORA_BASELINE_RATES.get(code, 1.0)
+        current  = cur.ZORA_CURRENT_RATES.get(code, baseline) or baseline
+        index    = baseline / current
+        contrib  = weight * index
+        mult_total += contrib
+        zora_components.append({
+            "code": code, "weight": weight,
+            "baseline": baseline, "current": current,
+            "index": index, "contrib": contrib,
+        })
+    raw_rate = cur.ZORA_USD_BASELINE * mult_total
+    rate_clamped = cur.zora_usd()
+    clamped = abs(raw_rate - rate_clamped) > 1e-6
+    zora_panel = {
+        "components": zora_components,
+        "baseline_rate": cur.ZORA_USD_BASELINE,
+        "multiplier":    mult_total,
+        "raw_rate":      raw_rate,
+        "rate":          rate_clamped,
+        "floor":         cur.ZORA_USD_FLOOR,
+        "ceil":          cur.ZORA_USD_CEIL,
+        "clamped":       clamped,
+        "reserve":       list(cur.ZORA_RESERVE_ASSETS),
+    }
+
+    # ---- Guilder basket: informational only (fixed-anchor currency) ----
+    rates = (snap or {}).get("rates") or {}
+    guilder_components = []
+    for code, weight in cur.BASKET_WEIGHTS.items():
+        nominal = cur.BASKET_NOMINAL_RATES.get(code)
+        live    = rates.get(code)
+        guilder_components.append({
+            "code": code, "weight": weight,
+            "nominal": nominal, "live": live,
+        })
+    guilder_panel = {
+        "components":  guilder_components,
+        "anchor":      f"ƒ{int(cur.GUILDER_PER_USD)} = $1 USD",
+        "synthetic":   cur.basket_synthetic_usd_per_guilder(),
+    }
+
+    # ---- Cross-rate table: pairwise of the four headline currencies ----
+    # Build a 4×4 grid of "1 row-unit = N column-units".
+    cross_codes = [("ƒ", "Guilder", "guilder"),
+                   ("₳", "Zora",    "zora"),
+                   ("$", "USD",     "usd"),
+                   ("€", "EUR",     "eur")]
+    # Convert each into USD value of 1 unit, then derive cross.
+    usd_per = {
+        "guilder": 1.0 / cur.GUILDER_PER_USD,
+        "zora":    cur.zora_usd(),
+        "usd":     1.0,
+        "eur":     1.0 / (cur.GUILDER_PER_EUR / cur.GUILDER_PER_USD),
+    }
+    cross = []
+    for row_sym, row_label, row_key in cross_codes:
+        row = {"sym": row_sym, "label": row_label, "cells": []}
+        for _, _col_label, col_key in cross_codes:
+            row["cells"].append(usd_per[row_key] / usd_per[col_key])
+        cross.append(row)
+
+    # ---- Full FX list (all tracked real-world rates) ----
+    CURRENCY_NAMES = {
+        "JPY": "Japanese Yen",          "KRW": "South Korean Won",
+        "CNY": "Chinese Yuan",          "EUR": "Euro",
+        "HTG": "Haitian Gourde",        "JMD": "Jamaican Dollar",
+        "PHP": "Philippine Peso",       "GYD": "Guyanese Dollar",
+        "TTD": "Trinidad & Tobago Dollar", "DOP": "Dominican Peso",
+        "FJD": "Fijian Dollar",         "XCD": "Eastern Caribbean Dollar",
+        "VUV": "Vanuatu Vatu",          "SGD": "Singapore Dollar",
+        "CHF": "Swiss Franc",           "GBP": "British Pound",
+        "CAD": "Canadian Dollar",       "AUD": "Australian Dollar",
+        "BRL": "Brazilian Real",        "MXN": "Mexican Peso",
+        "INR": "Indian Rupee",          "ZAR": "South African Rand",
+        "TRY": "Turkish Lira",          "RUB": "Russian Ruble",
+    }
+    fx_rows = []
+    for code in _fx.TRACKED_SYMBOLS:
+        fx_rows.append({
+            "code": code,
+            "name": CURRENCY_NAMES.get(code, code),
+            "rate": rates.get(code),
+            "in_zora_basket":    code in cur.ZORA_BASKET_WEIGHTS,
+            "in_guilder_basket": code in cur.BASKET_WEIGHTS,
+            "in_reserve":        code in cur.ZORA_RESERVE_ASSETS,
+            "excluded_ruble":    code == "RUB",
+        })
+
+    # ---- Format the as-of / age strings for display ----
+    import datetime as _dt
+    as_of_str = (snap or {}).get("as_of") or "no live fetch yet"
+    fetched_at = (snap or {}).get("fetched_at") or 0
+    if fetched_at:
+        age_sec = int(_dt.datetime.utcnow().timestamp() - fetched_at)
+    else:
+        age_sec = None
+
+    return _serve(
+        "financials.html",
+        snap=snap,
+        as_of=as_of_str,
+        fetched_age_sec=age_sec,
+        zora_panel=zora_panel,
+        guilder_panel=guilder_panel,
+        cross=cross,
+        fx_rows=fx_rows,
+        zora_symbol=cur.ZORA_SYMBOL,
+        zora_code=cur.ZORA_CODE,
+        guilder_symbol=cur.GUILDER,
+    )
