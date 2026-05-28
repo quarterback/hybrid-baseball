@@ -542,10 +542,14 @@ def zaryanify_draw(rng: random.Random, gender: str) -> tuple[str, str]:
 # the name shape that culture wears in this game.
 
 ZARYAN_STREAM_WEIGHTS: dict[str, float] = {
-    "creole":    0.69,   # Zaryanification pipeline (creole majority)
+    "creole":    0.67,   # Zaryanification pipeline (creole majority)
     "russian":   0.13,   # ethnic Russian minority — "marked normal" group
     "east_asia": 0.13,   # Korean / Japanese / Chinese, combined
-    "expat":     0.05,   # third-culture-kid pool incl. modern Americans + Africans
+    "ukrainian": 0.03,   # Zelyony Klyn "Green Wedge" minority — real
+                         # late-19C/early-20C Ukrainian-majority area in
+                         # the Russian Far East; historically grounded
+                         # Slavic minority distinct from ethnic Russian
+    "expat":     0.04,   # third-culture-kid pool incl. modern Americans + Africans
 }
 
 # Within the East Asian bucket, distribute the weight across the three
@@ -587,7 +591,6 @@ _EXPAT_CULTURES: list[tuple[str, str, float]] = [
     ("turkish",             "turkish",                0.03),
     ("vietnamese",          "vietnamese",             0.03),
     ("polish",              "polish",                 0.02),
-    ("ukrainian",           "ukrainian",              0.02),
     ("greek",               "greek",                  0.01),
     ("lithuanian",          "lithuanian",             0.01),
 ]
@@ -624,12 +627,13 @@ def _pick_from_weighted(rng: random.Random,
 
 
 def draw_zaryan_name(rng: random.Random, gender: str) -> tuple[str, str]:
-    """Top-level Zaryan name draw — stratified over four streams:
+    """Top-level Zaryan name draw — stratified over five streams:
 
       creole    (67%):  through the Zaryanification pipeline
       russian   (13%):  bare Russian first + Russian surname
-      east_asia  (7%):  one of Korean / Japanese / Chinese
-      expat     (13%):  one of the broad third-culture-kid culture pool
+      east_asia (13%):  one of Korean / Japanese / Chinese
+      ukrainian  (3%):  Zelyony Klyn "Green Wedge" Slavic minority
+      expat      (4%):  one of the broad third-culture-kid culture pool
                         (modern Americans, Africans, Latin Americans,
                         Indians, Europeans, Middle Easterners…)
 
@@ -646,6 +650,8 @@ def draw_zaryan_name(rng: random.Random, gender: str) -> tuple[str, str]:
         return zaryanify_draw(rng, g)
     if stream == "russian":
         out = _draw_named(rng, g, "russian", "russian")
+    elif stream == "ukrainian":
+        out = _draw_named(rng, g, "ukrainian", "ukrainian")
     elif stream == "east_asia":
         f_key, s_key = _pick_from_weighted(rng, _EAST_ASIA_WEIGHTS)
         out = _draw_named(rng, g, f_key, s_key)
