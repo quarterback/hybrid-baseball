@@ -94,8 +94,8 @@ _NATIONAL_TEAMS: list[tuple[str, str, str, str]] = [
     ("GR", "Greece",               "GRE", "greece"),
 ]
 
-# The Frontier Cup field: 16 emerging / frontier baseball nations that play
-# their OWN competition (4 groups of 4 → top 2 → 8-team knockout), separate
+# The Frontier Cup field: 24 emerging / frontier baseball nations that play
+# their OWN competition (4 groups of 6 → top 2 → 8-team knockout), separate
 # from the 48-nation World Cup above. These get full youth rosters and the
 # same develop/graduate lifecycle, but are tagged tier='frontier' so the
 # World Cup draw never touches them.
@@ -117,6 +117,14 @@ _FRONTIER_TEAMS: list[tuple[str, str, str, str]] = [
     ("HK", "Hong Kong",       "HKG", "hong_kong"),
     ("BM", "Bermuda",         "BER", "bermuda"),
     ("GB", "Scotland",        "SCO", "scotland"),
+    ("SM", "San Marino",      "SMR", "san_marino"),
+    ("CV", "Cape Verde",      "CPV", "cape_verde"),
+    ("MU", "Mauritius",       "MRI", "mauritius"),
+    ("BB", "Barbados",        "BAR", "barbados"),
+    ("BS", "Bahamas",         "BAH", "bahamas"),
+    ("IR", "Iran",            "IRI", "iran"),
+    ("UG", "Uganda",          "UGA", "uganda"),
+    ("ES", "Spain",           "ESP", "spain"),
 ]
 
 # Geographic region a country belongs to, for grouping the standings on
@@ -130,6 +138,8 @@ _COUNTRY_REGION: dict[str, str] = {
     "JM": "Caribbean",      "TT": "Caribbean",      "SR": "Caribbean",
     "GY": "Caribbean",      "CW": "Caribbean",      "HT": "Caribbean",
     "AW": "Caribbean",
+    # Caribbean / Atlantic (Frontier Cup)
+    "BB": "Caribbean",      "BS": "Caribbean",
     # South America
     "VE": "South America",  "CO": "South America",
     "BR": "South America",  "AR": "South America",
@@ -142,9 +152,12 @@ _COUNTRY_REGION: dict[str, str] = {
     "DE": "Europe",         "AT": "Europe",         "CH": "Europe",
     "HR": "Europe",         "SI": "Europe",         "HU": "Europe",
     "SK": "Europe",         "RU": "Europe",         "UA": "Europe",
-    "LT": "Europe",         "TR": "Europe",
+    "LT": "Europe",         "TR": "Europe",         "SM": "Europe",
+    "ES": "Europe",
     # Africa
     "ZA": "Africa",         "ZW": "Africa",         "NA": "Africa",
+    # Africa (Frontier Cup)
+    "CV": "Africa",         "MU": "Africa",         "UG": "Africa",
     # Asia
     "IN": "Asia",           "PK": "Asia",           "MY": "Asia",
     "PH": "Asia",           "JP": "Asia",           "KR": "Asia",
@@ -152,7 +165,7 @@ _COUNTRY_REGION: dict[str, str] = {
     "NP": "Asia",           "AF": "Asia",           "IL": "Asia",
     "ID": "Asia",           "TH": "Asia",
     # Asia (Frontier Cup)
-    "KZ": "Asia",           "HK": "Asia",
+    "KZ": "Asia",           "HK": "Asia",           "IR": "Asia",
     # Oceania
     "AU": "Oceania",        "NZ": "Oceania",        "FJ": "Oceania",
     "GU": "Oceania",
@@ -691,18 +704,21 @@ def _seed_team_set(teams: list[tuple[str, str, str, str]], tier: str,
 
 
 def ensure_frontier_teams(rng_seed: int = 0, seed_year: int = 1) -> int:
-    """Idempotently seed the 16 Frontier Cup nations. Separate from
-    seed_youth_league so saves that predate the Frontier Cup get the new
-    field backfilled the first time the cup is viewed or run. No-op when
-    the frontier field already exists."""
+    """Idempotently seed the Frontier Cup nations. Inserts only the teams
+    that are missing (by country code), so saves that predate the Frontier
+    Cup — or that seeded an earlier, smaller field — get backfilled the
+    first time the cup is viewed or run. Returns the count inserted."""
     init_youth_schema()
-    existing = db.fetchone(
-        "SELECT COUNT(*) AS n FROM youth_teams WHERE tier = 'frontier'"
-    )
-    if existing and existing["n"] > 0:
+    have = {
+        r["country_code"] for r in db.fetchall(
+            "SELECT country_code FROM youth_teams WHERE tier = 'frontier'"
+        )
+    }
+    missing = [t for t in _FRONTIER_TEAMS if t[0] not in have]
+    if not missing:
         return 0
     rng = random.Random((rng_seed or 0) ^ 0xF_0_4_7_1E)  # "FRONTIER" jolt
-    return _seed_team_set(_FRONTIER_TEAMS, "frontier", rng, seed_year)
+    return _seed_team_set(missing, "frontier", rng, seed_year)
 
 
 def seed_youth_league(rng_seed: int = 0, seed_year: int = 1) -> int:
@@ -1214,8 +1230,8 @@ def player_observed_stats(player_id: int) -> dict:
 #
 #   world    — 48 nations → 8 groups of 6 → top 2 → R16 → QF → SF → Final
 #              (120 group + 15 knockout = 135 games).
-#   frontier — 16 nations → 4 groups of 4 → top 2 → QF → SF → Final
-#              (24 group + 7 knockout = 31 games).
+#   frontier — 24 nations → 4 groups of 6 → top 2 → QF → SF → Final
+#              (60 group + 7 knockout = 67 games).
 #
 # Draws are random (no pots/seeding). Games are simulated by the real
 # PA-by-PA O27 engine via youth_sim.simulate_youth_game, with the heuristic
@@ -1237,7 +1253,7 @@ _COMPETITIONS: dict[str, dict] = {
         "label":           "Frontier Cup",
         "tier":            "frontier",
         "group_letters":   ["A", "B", "C", "D"],
-        "teams_per_group": 4,
+        "teams_per_group": 6,
         "first_knockout":  "qf",
     },
 }

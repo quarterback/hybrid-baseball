@@ -1192,6 +1192,28 @@
       "country": "IR",
       "first_keys":   ["iranian"],
       "surname_keys": ["iranian"]
+    },
+    "uganda": {
+      "_doc": [
+        "African baseball sleeper — the genuine Little-League Cinderella",
+        "story (Uganda reached the LLWS), an O27 development target. Reuses",
+        "the east_african + african pools (Baganda / Banyankole / Acholi",
+        "naming). Tagged UG."
+      ],
+      "label": "Uganda",
+      "country": "UG",
+      "first_keys":   ["east_african", "african"],
+      "surname_keys": ["east_african", "african"]
+    },
+    "spain": {
+      "_doc": [
+        "Second-tier European baseball nation (CBS league, perennial Euro",
+        "qualifier). Castilian given + family names tagged ES."
+      ],
+      "label": "Spain",
+      "country": "ES",
+      "first_keys":   ["spanish"],
+      "surname_keys": ["spanish"]
     }
   },
   "presets": {

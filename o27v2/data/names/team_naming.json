@@ -174,7 +174,8 @@
       "africa_amharic":        { "cities_example": ["Addis Ababa"], "locale": "amharic" },
       "africa_namibia":        { "cities_example": ["Windhoek", "Swakopmund", "Walvis Bay", "Oshakati", "Rundu"], "locale": "english" },
       "africa_capeverde":      { "cities_example": ["Praia", "Mindelo", "Santa Maria", "Espargos", "Assomada"], "locale": "portuguese" },
-      "africa_mauritius":      { "cities_example": ["Port Louis", "Curepipe", "Quatre Bornes", "Vacoas", "Beau Bassin"], "locale": "french" }
+      "africa_mauritius":      { "cities_example": ["Port Louis", "Curepipe", "Quatre Bornes", "Vacoas", "Beau Bassin"], "locale": "french" },
+      "africa_uganda":         { "cities_example": ["Kampala", "Entebbe", "Jinja", "Gulu", "Mbarara", "Mukono"], "locale": "english" }
     },
 
     "city_tier_system": {
