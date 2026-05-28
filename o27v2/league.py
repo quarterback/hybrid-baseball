@@ -199,11 +199,15 @@ def build_custom_config(
     teams_per_division = team_count // total_divs
 
     # Resolve name distribution. Explicit weights win; otherwise look up
-    # the named preset; otherwise fall back to the americas_pro defaults.
+    # the named preset; otherwise treat the id as a single region (100%
+    # weight); otherwise fall back to the americas_pro defaults.
     presets = get_name_region_presets()
     if name_region_weights is None:
         if name_region_preset and name_region_preset in presets:
             resolved_weights = dict(presets[name_region_preset]["weights"])
+        elif name_region_preset and name_region_preset in get_name_regions():
+            # Single-region pick — every player draws from that one region.
+            resolved_weights = {name_region_preset: 1.0}
         else:
             resolved_weights = _default_region_weights()
     else:
