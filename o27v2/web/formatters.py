@@ -26,21 +26,38 @@ def _scout(val) -> int:
     return max(20, min(80, int(round(grade))))
 
 
-def _flag(country_code) -> str:
-    """Render an ISO 3166-1 alpha-2 country code as a flag emoji.
+def _flag(country_code):
+    """Render a country code as a flag.
 
-    Two regional-indicator code points (U+1F1E6..U+1F1FF). Empty / invalid
-    codes render as empty string so templates can unconditionally
-    `{{ p.country | flag }}` next to player names.
+    For real ISO 3166-1 alpha-2 codes, returns the regional-indicator
+    emoji pair (OS/browser emoji font supplies the picture).
+
+    For fictional countries registered in `_CUSTOM_FLAGS`, returns an
+    inline <img> tag pointing at a static asset under
+    `o27v2/web/static/flags/`. Templates wrap the output in a
+    `<span class="player-flag">` regardless of which path renders.
     """
     if not country_code:
         return ""
     s = str(country_code).strip().upper()
+    if s in _CUSTOM_FLAGS:
+        path = _CUSTOM_FLAGS[s]
+        return Markup(
+            f'<img src="/static/flags/{path}" alt="{s}" class="player-flag-img" '
+            f'style="height:1em;vertical-align:-0.15em;width:auto" />'
+        )
     if len(s) != 2 or not s.isalpha():
         return ""
     base = 0x1F1E6
     a = ord("A")
     return chr(base + ord(s[0]) - a) + chr(base + ord(s[1]) - a)
+
+
+# Fictional countries with custom flag art. Files live in
+# o27v2/web/static/flags/ and are served by Flask's built-in static route.
+_CUSTOM_FLAGS: dict[str, str] = {
+    "ZR": "zr.svg",   # Zaryanovia — alt-history Russian Far East (placeholder; swap with real art)
+}
 
 
 def _archetype_label(key) -> str:

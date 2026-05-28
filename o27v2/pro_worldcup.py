@@ -262,7 +262,7 @@ _COUNTRY_DISPLAY: dict[str, tuple[str, str]] = {
     "ID": ("Indonesia", "INA"),      "TH": ("Thailand", "THA"),
     "KZ": ("Kazakhstan", "KAZ"),     "HK": ("Hong Kong", "HKG"),
     "IR": ("Iran", "IRI"),           "PS": ("Palestine", "PLE"),
-    "LB": ("Lebanon", "LBN"),
+    "LB": ("Lebanon", "LBN"),        "ZR": ("Zaryanovia", "ZAR"),
     # Oceania
     "AU": ("Australia", "AUS"),      "NZ": ("New Zealand", "NZL"),
     "FJ": ("Fiji", "FIJ"),           "GU": ("Guam", "GUM"),

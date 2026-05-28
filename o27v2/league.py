@@ -681,9 +681,25 @@ def make_name_picker(
             return _pick_weighted_key(rng, _normalise_weights(cw))
         return ""
 
+    def _resolved_gender() -> str:
+        if g_lower in ("male", "female"):
+            return g_lower
+        return "male" if rng.random() < 0.5 else "female"
+
     def _draw_from_region(region_id: str) -> tuple[str | None, str | None, str]:
         """Return (first, last, country) for one region draw. Either name
         may be None if the bucket is empty (caller should retry)."""
+        if region_id == "zaryanovia":
+            # Zaryanification pipeline: phonology + patronymic + surname-path
+            # rules — see o27v2/zaryan_names.py. Builds a single 3-component
+            # full name; we split on the last space so the picker's "first last"
+            # convention still works (the patronymic rides along with the first).
+            from o27v2 import zaryan_names as _zy
+            full, country = _zy.zaryanify_draw(rng, _resolved_gender())
+            if " " in full:
+                first, _, last = full.rpartition(" ")
+                return first, last, country
+            return full, "", country
         region = regions_meta.get(region_id)
         if region is None:
             return None, None, ""
@@ -738,6 +754,28 @@ def make_country_pinned_picker(rng: random.Random, region_id: str,
     Fijian pair in pacific_islands), the relative weights between those
     variants are preserved.
     """
+    if region_id == "zaryanovia":
+        # Zaryanification pipeline: bypass the subregion machinery and
+        # generate via the dedicated creole converter.
+        from o27v2 import zaryan_names as _zy
+        g_lower = (gender or "male").lower()
+        used: set[str] = set()
+
+        def _resolved() -> str:
+            if g_lower in ("male", "female"):
+                return g_lower
+            return "male" if rng.random() < 0.5 else "female"
+
+        def _name() -> tuple[str, str]:
+            for _ in range(500):
+                full, _country = _zy.zaryanify_draw(rng, _resolved())
+                if full and full not in used:
+                    used.add(full)
+                    return full, (country_code or "ZR").upper()
+            return f"Player {rng.randint(100, 999)}", (country_code or "ZR").upper()
+
+        return _name
+
     region = get_name_regions().get(region_id) or {}
     subregions = region.get("subregions") or []
     cc = (country_code or "").upper()

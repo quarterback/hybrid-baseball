@@ -92,6 +92,7 @@ _NATIONAL_TEAMS: list[tuple[str, str, str, str]] = [
     ("WS", "Samoa",                "SAM", "pacific_islands"),
     ("GU", "Guam",                 "GUM", "guam"),
     ("GR", "Greece",               "GRE", "greece"),
+    ("ZR", "Zaryanovia",           "ZAR", "zaryanovia"),
 ]
 
 # The Frontier Cup field: 24 emerging / frontier baseball nations that play
@@ -174,6 +175,8 @@ _COUNTRY_REGION: dict[str, str] = {
     # Asia (Frontier Cup)
     "KZ": "Asia",           "HK": "Asia",           "IR": "Asia",
     "PS": "Asia",           "LB": "Asia",
+    # Eurasia (fictional)
+    "ZR": "Asia",
     # Oceania
     "AU": "Oceania",        "NZ": "Oceania",        "FJ": "Oceania",
     "GU": "Oceania",
@@ -805,6 +808,24 @@ def _seed_team_set(teams: list[tuple[str, str, str, str]], tier: str,
     return inserted
 
 
+def ensure_world_teams(rng_seed: int = 0, seed_year: int = 1) -> int:
+    """Idempotently seed the top-tier World Cup nations. Mirrors
+    `ensure_frontier_teams`: inserts only teams missing by country code,
+    so existing saves pick up newly-registered nations (e.g. Zaryanovia)
+    without needing a fresh league."""
+    init_youth_schema()
+    have = {
+        r["country_code"] for r in db.fetchall(
+            "SELECT country_code FROM youth_teams WHERE tier = 'world'"
+        )
+    }
+    missing = [t for t in _NATIONAL_TEAMS if t[0] not in have]
+    if not missing:
+        return 0
+    rng = random.Random((rng_seed or 0) ^ 0x07_07_07_4D)  # "WORLD" jolt
+    return _seed_team_set(missing, "world", rng, seed_year)
+
+
 def ensure_frontier_teams(rng_seed: int = 0, seed_year: int = 1) -> int:
     """Idempotently seed the Frontier Cup nations. Inserts only the teams
     that are missing (by country code), so saves that predate the Frontier
@@ -836,9 +857,11 @@ def seed_youth_league(rng_seed: int = 0, seed_year: int = 1) -> int:
     init_youth_schema()
     existing = db.fetchone("SELECT COUNT(*) AS n FROM youth_teams")
     if existing and existing["n"] > 0:
-        # League already seeded; still backfill the frontier field for
-        # saves created before the Frontier Cup shipped.
-        return ensure_frontier_teams(rng_seed=rng_seed, seed_year=seed_year)
+        # League already seeded; still backfill both fields for saves
+        # that predate newer nation additions (Zaryanovia, Frontier Cup).
+        added = ensure_world_teams(rng_seed=rng_seed, seed_year=seed_year)
+        added += ensure_frontier_teams(rng_seed=rng_seed, seed_year=seed_year)
+        return added
 
     rng = random.Random((rng_seed or 0) ^ 0x59_0_4_7_4)  # "YOUTH" → const seed jolt
     inserted = _seed_team_set(_NATIONAL_TEAMS, "world", rng, seed_year)
