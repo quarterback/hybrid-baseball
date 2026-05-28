@@ -9,10 +9,11 @@ Three-phase pipeline:
   1. **Qualifying**: every eligible nation (≥9 active hitters + ≥5
      pitchers in the pro pool) enters a regional round-robin
      (Americas / Asia / Europe / Other). Regional quotas sum to 24.
-  2. **Rosters**: each qualified nation gets an auto-rolled 22-man
-     roster — best position-by-position pros eligible for that country,
-     plus a pitching staff. The web UI lets the user swap players
-     before the main tournament starts.
+  2. **Rosters**: each qualified nation gets an auto-rolled 30-man
+     roster (WBC-standard tournament size) — 8 canonical starters,
+     6 fielder backups, 3 jokers (the DH role, matching the pro
+     league's structural convention), and 13 pitchers. The web UI
+     lets the user swap players before the main tournament starts.
   3. **Main tournament**: 4 groups of 6, top 2 advance to an 8-team
      knockout (QF → SF → Final).
 
@@ -329,15 +330,27 @@ def _country_pool(country_code: str, *, include_secondary: bool = False) -> list
 # ---------------------------------------------------------------------------
 
 _HITTER_POSITIONS_ORDER = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
-WC_ROSTER_SIZE = 22
+
+# 30-man tournament roster: matches the WBC active-roster standard
+# (WBSC-sanctioned events use 28-30; WBC 2023 = 30, min 14 pitchers).
+# Slot shape was chosen to map cleanly onto the pro game's structural
+# conventions — 3 jokers because that's the league-wide DH count
+# (o27v2/league.py: ACTIVE_JOKERS = 3) and the engine's _ordered_lineup
+# expects exactly 3 jokers in jokers_available.
+WC_ROSTER_SIZE = 30
+WC_STARTERS    = 8    # one canonical fielder per position
+WC_BACKUPS     = 6    # best non-starter position players
+WC_JOKERS      = 3    # DH role — matches league.py ACTIVE_JOKERS
+WC_PITCHERS    = 13   # close to WBC's 14-pitcher minimum
+assert WC_STARTERS + WC_BACKUPS + WC_JOKERS + WC_PITCHERS == WC_ROSTER_SIZE
 
 
 def _pick_auto_roster(pool: list[dict]) -> list[int]:
-    """Pick a 22-man squad from a country's eligible pool.
+    """Pick a 30-man squad from a country's eligible pool.
 
-    Slot shape: 8 positional starters (best at each canonical position)
-    + 4 best position-player backups + 8 best pitchers + 2 jokers (or 2
-    more position-player backups if the pool is shallow on jokers).
+    Slot shape: 8 canonical starters (best at each fielding position)
+    + 6 best position-player backups + 3 jokers (or more backups if the
+    pool is shallow on jokers) + 13 best pitchers.
 
     Returns player IDs in roster order: starters by position, then
     backups, then pitchers, then jokers. The engine builder reads this
@@ -370,24 +383,24 @@ def _pick_auto_roster(pool: list[dict]) -> list[int]:
             picked.append(best)
             picked_ids.add(int(best["id"]))
 
-    # 4 best backups (any non-pitcher not already picked).
+    # 6 best position-player backups (any non-pitcher not already picked).
     remaining_backups = sorted(
         (p for p in backups if int(p["id"]) not in picked_ids),
         key=_player_composite,
         reverse=True,
     )
-    for p in remaining_backups[:4]:
+    for p in remaining_backups[:WC_BACKUPS]:
         picked.append(p)
         picked_ids.add(int(p["id"]))
 
-    # 8 best pitchers.
-    top_pitchers = sorted(pitchers, key=_player_composite, reverse=True)[:8]
+    # 13 best pitchers.
+    top_pitchers = sorted(pitchers, key=_player_composite, reverse=True)[:WC_PITCHERS]
     for p in top_pitchers:
         picked.append(p)
         picked_ids.add(int(p["id"]))
 
-    # 2 jokers (or extra backups if no jokers available).
-    top_jokers = sorted(jokers, key=_player_composite, reverse=True)[:2]
+    # 3 jokers (or extra backups if no jokers available).
+    top_jokers = sorted(jokers, key=_player_composite, reverse=True)[:WC_JOKERS]
     for p in top_jokers:
         picked.append(p)
         picked_ids.add(int(p["id"]))
@@ -407,7 +420,7 @@ def _pick_auto_roster(pool: list[dict]) -> list[int]:
 
 
 def _pool_strength(pool: list[dict]) -> float:
-    """Average composite of a country's TOP 22 pros — drives qualifying
+    """Average composite of a country's TOP 30 pros — drives qualifying
     seeding and the cut to 12 nations per region."""
     if not pool:
         return 0.0
@@ -1075,7 +1088,7 @@ def lock_qualifiers(season: int | None = None) -> dict:
 
 def auto_pick_rosters(season: int | None = None,
                       overwrite: bool = False) -> dict:
-    """Roll a 22-man auto-roster for every qualified nation that doesn't
+    """Roll a 30-man auto-roster for every qualified nation that doesn't
     have one yet. `overwrite=True` clears existing rosters first."""
     init_wc_schema()
     if season is None:

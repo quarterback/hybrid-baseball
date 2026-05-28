@@ -8327,7 +8327,8 @@ def pro_worldcup_team_view(wc_team_id: int):
     eligible = _wc.get_eligible_for_team(wc_team_id)
     locked = bool(summary and summary.get("rosters_locked"))
     return _serve("pro_worldcup_team.html",
-                  team=team, roster=roster, eligible=eligible, locked=locked)
+                  team=team, roster=roster, eligible=eligible, locked=locked,
+                  roster_size=_wc.WC_ROSTER_SIZE)
 
 
 @app.route("/pro-worldcup/game/<int:game_id>")

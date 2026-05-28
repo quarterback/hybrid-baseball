@@ -25,7 +25,7 @@
   <div class="col-lg-6">
     <div class="dense mb-3">
       <div class="panel-title d-flex justify-content-between align-items-center">
-        <span>Selected roster (<span id="selected-count">{{ roster|length }}</span>/22)</span>
+        <span>Selected roster (<span id="selected-count">{{ roster|length }}</span>/{{ roster_size }})</span>
         <span class="text-secondary small">Click ✕ to remove</span>
       </div>
       <table class="table table-sm dense-table mb-0 mt-2" style="font-size:.85rem">
@@ -159,9 +159,9 @@
       cb.addEventListener('change', () => {
         const pid = parseInt(cb.dataset.pid, 10);
         if (cb.checked) {
-          if (selectedIds().length >= 22) {
+          if (selectedIds().length >= {{ roster_size }}) {
             cb.checked = false;
-            alert('22-man roster is full. Remove a player first.');
+            alert('{{ roster_size }}-man roster is full. Remove a player first.');
             return;
           }
           addRow(pid, cb.dataset.name, cb.dataset.pos, cb.dataset.pitcher,
