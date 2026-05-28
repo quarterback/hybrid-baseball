@@ -1432,14 +1432,29 @@ def draw_weather(rng: random.Random, city: str, game_date: str,
     exact name match — so any custom location resolves to sensible
     weather. Falls back to the name lookup when coordinates are absent.
 
+    Zaryan cities short-circuit both paths: they have explicit per-month
+    tier weights derived from real-anchored hi/precip data (see
+    o27.engine.zaryan_climate), so a Neftezma August game samples
+    Yuzhno-Sakhalinsk-style cool typhoon-season weather rather than
+    generic continental_cold.
+
     Pure: feed the same RNG state twice and you get the same sample.
     """
-    if lat is not None and lon is not None:
-        archetype = archetype_for_coords(lat, lon)
-    else:
-        archetype = archetype_for_city(city)
     month_key = _month_bucket(game_date)
-    table = _TABLES.get(archetype, _CONTINENTAL_WARM).get(month_key, {})
+
+    # Zaryan profile takes precedence over both name and coord archetype lookups.
+    from o27.engine import zaryan_climate as _zc
+    table = None
+    if city:
+        table = _zc.tier_table_for_city(city)
+    if table is not None:
+        table = table.get(month_key, {})
+    else:
+        if lat is not None and lon is not None:
+            archetype = archetype_for_coords(lat, lon)
+        else:
+            archetype = archetype_for_city(city)
+        table = _TABLES.get(archetype, _CONTINENTAL_WARM).get(month_key, {})
 
     return Weather(
         temperature=_choose(rng, table.get("temperature", {"mild": 1})),
