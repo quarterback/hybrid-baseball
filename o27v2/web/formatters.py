@@ -56,7 +56,7 @@ def _flag(country_code):
 # Fictional countries with custom flag art. Files live in
 # o27v2/web/static/flags/ and are served by Flask's built-in static route.
 _CUSTOM_FLAGS: dict[str, str] = {
-    "ZR": "zr.svg",   # Zaryanovia — alt-history Russian Far East (placeholder; swap with real art)
+    "ZR": "zr.png",   # Zaryanovia — alt-history Russian Far East
 }
 
 

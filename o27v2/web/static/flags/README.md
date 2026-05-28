@@ -21,4 +21,6 @@ exist for non-ISO codes).
 |------|-------------|--------|
 | ZR   | Zaryanovia  | zr.png |
 
+`zr.png` is a 1456×816 PNG (~480 KB). At 1em rendered height the file size is overkill for the inline flag use case; we can downsize/optimize if it becomes a perf concern, but the browser caches it after first load so it's fine for now.
+
 To replace a placeholder, just overwrite the file with the same filename.
