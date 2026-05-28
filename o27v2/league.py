@@ -695,7 +695,7 @@ def make_name_picker(
             # full name; we split on the last space so the picker's "first last"
             # convention still works (the patronymic rides along with the first).
             from o27v2 import zaryan_names as _zy
-            full, country = _zy.zaryanify_draw(rng, _resolved_gender())
+            full, country = _zy.draw_zaryan_name(rng, _resolved_gender())
             if " " in full:
                 first, _, last = full.rpartition(" ")
                 return first, last, country
@@ -768,7 +768,7 @@ def make_country_pinned_picker(rng: random.Random, region_id: str,
 
         def _name() -> tuple[str, str]:
             for _ in range(500):
-                full, _country = _zy.zaryanify_draw(rng, _resolved())
+                full, _country = _zy.draw_zaryan_name(rng, _resolved())
                 if full and full not in used:
                     used.add(full)
                     return full, (country_code or "ZR").upper()

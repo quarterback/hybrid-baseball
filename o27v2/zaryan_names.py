@@ -437,15 +437,20 @@ def _load_pool(fname: str, key: str) -> list[str]:
     return pool
 
 
-# English first-name sub-pools to source the input from. Heavy weight on the
-# Black-American pool to reflect the AME Zion settler-founding heritage.
+# English first-name sub-pools the creole majority sources from. The AME
+# Zion / Black-American settler stream is the founding majority; American
+# regional pools fill out the rest. African-origin Zaryans exist (post-WWII
+# colonial-army-veteran migration + the Ethiopian thread) but they KEEP
+# their origin-culture names rather than getting run through the creole
+# Zaryanification filter — they're routed via the "african" expat stream
+# below, not folded in here.
 _ENG_FIRST_KEYS_M = ["black_american", "american_south", "american_northeast",
                      "american_midwest", "american_west"]
 _ENG_FIRST_KEYS_F = ["black_american", "american_south", "american_northeast",
                      "american_midwest", "american_west"]
 _ENG_FIRST_WEIGHTS = [0.40, 0.20, 0.15, 0.15, 0.10]
 
-_ENG_SURNAME_KEYS = ["black_american", "american_general"]
+_ENG_SURNAME_KEYS    = ["black_american", "american_general"]
 _ENG_SURNAME_WEIGHTS = [0.35, 0.65]
 
 
@@ -496,7 +501,9 @@ def _draw_english(rng: random.Random, pool_kind: str) -> str:
 
 
 def zaryanify_draw(rng: random.Random, gender: str) -> tuple[str, str]:
-    """Return (full_name, country_code='ZR') for a Zaryanified name.
+    """Return (full_name, country_code='ZR') for a CREOLE Zaryan name —
+    the 130-year-deep Black-American + African + mixed majority stream
+    run through the full Zaryanification pipeline.
 
     The full name is "First Patronymic Last" — three components, separated
     by single spaces, matching how other players in the league surface.
@@ -517,3 +524,106 @@ def zaryanify_draw(rng: random.Random, gender: str) -> tuple[str, str]:
     else:
         full = f"{first} {last}"
     return full, "ZR"
+
+
+# ---------------------------------------------------------------------------
+# Diversity bypass — some percentage of Zaryan names skip the converter
+# ---------------------------------------------------------------------------
+#
+# Most Zaryan names go through the Zaryanification pipeline (the 130-year-
+# deep creole). The rest draw from a flat list of cultural pools and look
+# like names from that culture as they normally appear elsewhere in the
+# game — Russian Zaryans look like Russians, Korean Zaryans look like
+# Koreans (same Kim/Park/Choi names Team Korea has), African Zaryans
+# keep origin-country names, modern American expats look American, etc.
+#
+# No special-case patronymic logic — each culture's pool already produces
+# the name shape that culture wears in this game.
+
+# Probability that a draw bypasses the Zaryanification filter.
+_BYPASS_RATE: float = 0.30
+
+# Culture pools the bypass picks from. (first_key, surname_key, weight).
+# A single key per slot keeps each draw culturally coherent (no mixing
+# Korean first names with Italian surnames).
+_BYPASS_CULTURES: list[tuple[str, str, float]] = [
+    # Russian minority — the "marked normal" group
+    ("russian",            "russian",            0.18),
+    # East Asian immigrant streams (keep their normal in-game name shape)
+    ("korean",             "korean",             0.10),
+    ("japanese",           "japanese",           0.08),
+    ("chinese",            "chinese",            0.06),
+    # African Zaryans — keep origin-country names, not Russified
+    ("african",            "african",            0.04),
+    ("ethiopian",          "ethiopian",          0.03),
+    ("yoruba",             "yoruba",             0.02),
+    ("east_african",       "east_african",       0.02),
+    # Modern American expats — the "foreign but also not" wave
+    ("american_midwest",   "american_general",   0.05),
+    ("american_northeast", "american_general",   0.04),
+    ("black_american",     "black_american",     0.03),
+    # Third-culture-kid passport mix
+    ("indian",             "indian",             0.06),
+    ("filipino",           "filipino",           0.03),
+    ("latin_american",     "latin_american",     0.05),
+    ("mexican",            "mexican",            0.03),
+    ("brazilian",          "brazilian",          0.02),
+    ("italian",            "italian",            0.03),
+    ("german",             "german",             0.02),
+    ("french",             "french",             0.02),
+    ("iranian",            "iranian",            0.02),
+    ("lebanese",           "lebanese",           0.02),
+    ("turkish",            "turkish",            0.02),
+    ("vietnamese",         "vietnamese",         0.02),
+    ("polish",             "polish",             0.02),
+    ("ukrainian",          "ukrainian",          0.02),
+    ("greek",              "greek",              0.01),
+    ("lithuanian",         "lithuanian",         0.01),
+]
+
+
+def _bypass_draw(rng: random.Random, gender: str) -> tuple[str, str] | None:
+    """Pick a culture by weight and draw native first + native surname.
+    No phonology, no Path A/B/C, no patronymic — the name comes out the
+    way that culture normally appears in the rest of the game.
+
+    Returns (full_name, 'ZR') or None if the picked culture's pools
+    are empty (caller falls back to creole)."""
+    cultures = [(f, s, w) for (f, s, w) in _BYPASS_CULTURES if w > 0]
+    total = sum(w for _, _, w in cultures)
+    r = rng.random() * total
+    acc = 0.0
+    first_key, surname_key = cultures[-1][0], cultures[-1][1]
+    for f, s, w in cultures:
+        acc += w
+        if r < acc:
+            first_key, surname_key = f, s
+            break
+
+    pool_first_fname = "female_first.json" if gender == "female" else "male_first.json"
+    first_pool   = _load_pool(pool_first_fname, first_key)
+    surname_pool = _load_pool("surnames.json",  surname_key)
+    if not first_pool or not surname_pool:
+        return None
+    first   = rng.choice(first_pool)
+    surname = rng.choice(surname_pool)
+    return f"{first} {surname}", "ZR"
+
+
+def draw_zaryan_name(rng: random.Random, gender: str) -> tuple[str, str]:
+    """Top-level Zaryan name draw. Most names run through the creole
+    Zaryanification pipeline; a configurable share bypasses the filter
+    and draws from one of many cultural pools so Zaryan rosters surface
+    the country's polyglot character (Russian, Korean, Japanese,
+    Chinese, African, Latin American, modern American expat, Indian,
+    Middle Eastern, European — the third-culture-kid passport mix).
+
+    Bypass draws that come up empty (missing pool) fall through to the
+    creole pipeline so a name always succeeds.
+    """
+    g = "female" if (gender or "male").lower() == "female" else "male"
+    if rng.random() < _BYPASS_RATE:
+        out = _bypass_draw(rng, g)
+        if out:
+            return out
+    return zaryanify_draw(rng, g)
