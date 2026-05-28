@@ -3,7 +3,7 @@ O27 financial register — the guilder (ƒ) currency system.
 
 The guilder is O27's canonical unit. Internal storage and all callers pass
 plain Python ints in guilders; this module owns every display decision:
-Indian-style numbering (lakh / crore), USD and EUR conversion via a
+Indian-style numbering (lakh / crore), USD / EUR / zora conversion via a
 synthetic basket anchor, and the per-mode entry point used by the Jinja
 `money` filter and the matching JS toggle.
 
@@ -14,6 +14,10 @@ Worldbuilding anchors (intentional, documented):
     BASKET_NOMINAL_RATES is given in "currency units per 1 USD"; the
     weighted sum produces an effective USD-per-guilder, which we turn
     around into EUR via a fixed EUR/USD nominal.
+  • Zora (Zaryanovia, ZRZ): a post-1993 Slavic-rooted national currency,
+    ₴250 = $1 USD by anchor convention (weaker than the guilder, fitting
+    a frontier post-Soviet economy). See ZORA section below for the
+    full symbol / pluralization / subdivision lore.
 
 The basket is config-only here — we don't actually re-anchor the guilder
 each time the basket moves. Baking the rate this way keeps the headline
@@ -171,10 +175,80 @@ def format_eur(g: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Zora — Zaryanovia's national currency
+# ---------------------------------------------------------------------------
+#
+# Symbol layers (sociolinguistic; surfaced selectively):
+#   ₴   (U+20B4)  ZORA_DISPLAY     — formal / printed / signage form.
+#                                    Hard to handwrite, so it migrated to the
+#                                    display contexts where nobody scrawls
+#                                    (banknotes, storefronts, official price
+#                                    boards, the central-bank logo). This is
+#                                    the glyph the app shows everywhere, since
+#                                    every rendered amount in a sim is by
+#                                    definition "printed."
+#   ₳   (U+20B3)  ZORA_HAND        — the working everyday handwritten form.
+#                                    Three-stroke fast scrawl on receipts,
+#                                    chalkboards, ledgers. Not surfaced in the
+#                                    sim today, but reserved for any future
+#                                    "personal note" / "scout's chalkboard"
+#                                    flavor that wants the handwritten register.
+#   З̵Р  (U+0417 U+0420)            — the dead Russian-era ruble mark. Lingers
+#                                    as a generational + border-region habit
+#                                    among older Zaryans, fading as that
+#                                    cohort ages out. Worldbuilding only; no
+#                                    code path renders it. Doc kept here for
+#                                    the eventual country-info page.
+#
+# Codes: ZRN was the old Zaire new-zaire code (now dead, ISO 4217-stale).
+# ZRZ is the canonical Zaryanovia three-letter code we use here, reusing the
+# ZR ISO 3166-1 root that's also the country code.
+#
+# Plurals: simplified two-way (creole vernacular):
+#     zora  (singular, n == 1)
+#     zory  (plural,   n != 1)
+# The full Slavic three-way (zora / zory / zor) is more "authentic" but
+# unused — fictional Zaryanovia's settler-creole vernacular regularized
+# Russian's case grammar down to two forms, the way creoles always do.
+#
+# Subdivision: 100 luchi = 1 zora ("rays of the dawn" — the zora is named
+# for `zarya`, the Russian word for dawn). All game amounts are stored as
+# integer guilders, so luchi never surface in any formatter today; the
+# subdivision exists in lore only.
+
+ZORA_DISPLAY = "₴"   # ₴  formal / printed / signage form
+ZORA_HAND    = "₳"   # ₳  handwritten / vernacular form
+ZORA_DEAD    = "ЗР"  # ЗР dead Russian-era ruble (heritage only)
+
+ZORA_CODE: str = "ZRZ"
+ZORA_PER_USD: float = 250.0
+GUILDER_PER_ZORA: float = GUILDER_PER_USD / ZORA_PER_USD   # 0.40
+
+
+def to_zora(g: int) -> float:
+    return int(g) / GUILDER_PER_ZORA
+
+
+def format_zora(g: int) -> str:
+    """Render a guilder amount in zora. Reuses the Indian-style lakh / crore
+    convention since the zora is in the same numerical-scale family — Zaryan
+    finance picked up the Indian-numbering habit through the same WBSC /
+    Asian trade routes the guilder did."""
+    return f"{ZORA_DISPLAY}{format_crore(int(round(to_zora(g))))}"
+
+
+def zora_plural(n: int) -> str:
+    """Two-form creole vernacular: zora (n == 1), zory (n != 1).
+    Not used by the numeric formatter (which is glyph-only); exposed for
+    prose contexts that want to spell out a zora amount."""
+    return "zora" if abs(int(n)) == 1 else "zory"
+
+
+# ---------------------------------------------------------------------------
 # Top-level dispatch — used by the Jinja `money` filter
 # ---------------------------------------------------------------------------
 
-Mode = Literal["guilder", "usd", "eur"]
+Mode = Literal["guilder", "usd", "eur", "zora"]
 
 
 def format_money(g: int, mode: Mode = "guilder") -> str:
@@ -184,6 +258,8 @@ def format_money(g: int, mode: Mode = "guilder") -> str:
         return format_usd(g)
     if mode == "eur":
         return format_eur(g)
+    if mode == "zora":
+        return format_zora(g)
     return f"{GUILDER}{format_crore(g)}"
 
 
@@ -198,6 +274,8 @@ def rates_for_js() -> dict:
         "symbol":          GUILDER,
         "guilderPerUsd":   GUILDER_PER_USD,
         "guilderPerEur":   GUILDER_PER_EUR,
+        "guilderPerZora":  GUILDER_PER_ZORA,
+        "zoraSymbol":      ZORA_DISPLAY,
         "lakh":            LAKH,
         "crore":           CRORE,
         "basketWeights":   dict(BASKET_WEIGHTS),

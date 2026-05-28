@@ -209,11 +209,13 @@ def _money(g) -> Markup:
     label_g = currency.format_money(n, "guilder")
     label_u = currency.format_money(n, "usd")
     label_e = currency.format_money(n, "eur")
+    label_z = currency.format_money(n, "zora")
     return Markup(
         f'<span class="o27-money" data-g="{n}" '
         f'data-label-guilder="{label_g}" '
         f'data-label-usd="{label_u}" '
-        f'data-label-eur="{label_e}">'
+        f'data-label-eur="{label_e}" '
+        f'data-label-zora="{label_z}">'
         f'<span class="o27-money-label">{label_g}</span>'
         f'<button type="button" class="o27-money-pill" '
         f'aria-label="Toggle currency display">{currency.GUILDER}</button>'
