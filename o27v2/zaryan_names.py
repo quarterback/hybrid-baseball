@@ -28,6 +28,7 @@ Hooked into o27v2.league.make_name_picker via the "zaryanovia" region id.
 from __future__ import annotations
 
 import os
+import re
 import json
 import random
 
@@ -36,13 +37,22 @@ import random
 # Step 1: phonology
 # ---------------------------------------------------------------------------
 
+# Match H only when NOT preceded by another consonant — so the rule fires
+# on word-initial H (Harrison → Garrison) and intervocalic H (Ohio → Ogio)
+# but leaves the Sh/Ch/Ph/Th/Gh/Kh/Wh/Rh digraphs alone (Shaq stays Shaq,
+# Richey stays Richey, Prakash stays Prakash).
+_H_NOT_DIGRAPH = re.compile(r"(?<![BbCcDdFfGgJjKkLlMmNnPpQqRrSsTtVvWwXxZz])H",
+                            flags=re.IGNORECASE)
+_TH = re.compile(r"Th", flags=re.IGNORECASE)
+# W → V, except when followed by h (Wh digraph: Whistler stays Whistler).
+_W_NOT_WH = re.compile(r"W(?!h)", flags=re.IGNORECASE)
+
+
 def _apply_phonology(s: str) -> str:
-    """Russian sound system reshapes English roots. Order matters: TH before T."""
-    s = s.replace("Th", "T").replace("th", "t").replace("TH", "T")
-    s = s.replace("H", "G").replace("h", "g")
-    # Restore G at non-initial positions where H was acting like a silent letter
-    # (e.g. "Brooks" has no H so safe; "Ohio" -> "Ogio" is fine for our purposes).
-    s = s.replace("W", "V").replace("w", "v")
+    """Russian sound system reshapes English roots. Order matters: TH before H."""
+    s = _TH.sub(lambda m: "T" if m.group(0)[0].isupper() else "t", s)
+    s = _H_NOT_DIGRAPH.sub(lambda m: "G" if m.group(0).isupper() else "g", s)
+    s = _W_NOT_WH.sub(lambda m: "V" if m.group(0).isupper() else "v", s)
     return s
 
 
