@@ -527,79 +527,77 @@ def zaryanify_draw(rng: random.Random, gender: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Diversity bypass — some percentage of Zaryan names skip the converter
+# Diversity buckets — stratified pick over the four Zaryan streams
 # ---------------------------------------------------------------------------
 #
 # Most Zaryan names go through the Zaryanification pipeline (the 130-year-
-# deep creole). The rest draw from a flat list of cultural pools and look
-# like names from that culture as they normally appear elsewhere in the
-# game — Russian Zaryans look like Russians, Korean Zaryans look like
-# Koreans (same Kim/Park/Choi names Team Korea has), African Zaryans
-# keep origin-country names, modern American expats look American, etc.
+# deep creole). The rest pick one of three named buckets — Russian
+# minority, East Asian (Korean/Japanese/Chinese), or a diverse "expat"
+# pool (the third-culture-kid passport mix the master wiki calls out,
+# including modern Americans and African Zaryans who keep origin-country
+# names). Each bucket's share is fixed; the expat pool is flat across
+# many cultures within it.
 #
 # No special-case patronymic logic — each culture's pool already produces
 # the name shape that culture wears in this game.
 
-# Probability that a draw bypasses the Zaryanification filter.
-_BYPASS_RATE: float = 0.30
+ZARYAN_STREAM_WEIGHTS: dict[str, float] = {
+    "creole":    0.69,   # Zaryanification pipeline (creole majority)
+    "russian":   0.13,   # ethnic Russian minority — "marked normal" group
+    "east_asia": 0.13,   # Korean / Japanese / Chinese, combined
+    "expat":     0.05,   # third-culture-kid pool incl. modern Americans + Africans
+}
 
-# Culture pools the bypass picks from. (first_key, surname_key, weight).
-# A single key per slot keeps each draw culturally coherent (no mixing
-# Korean first names with Italian surnames).
-_BYPASS_CULTURES: list[tuple[str, str, float]] = [
-    # Russian minority — the "marked normal" group
-    ("russian",            "russian",            0.18),
-    # East Asian immigrant streams (keep their normal in-game name shape)
-    ("korean",             "korean",             0.10),
-    ("japanese",           "japanese",           0.08),
-    ("chinese",            "chinese",            0.06),
+# Within the East Asian bucket, distribute the weight across the three
+# streams. These sum to 1.0 (proportions inside the 7% slice).
+_EAST_ASIA_WEIGHTS: list[tuple[str, str, float]] = [
+    ("korean",   "korean",   0.45),
+    ("japanese", "japanese", 0.35),
+    ("chinese",  "chinese",  0.20),
+]
+
+# The expat pool — flat list of cultures, weighted within itself.
+# Modern Americans (the "foreign but also not" wave) + African Zaryans
+# (origin-country names kept) + a broad third-culture-kid bevy.
+_EXPAT_CULTURES: list[tuple[str, str, float]] = [
+    # Modern American expats
+    ("american_midwest",   "american_general",   0.10),
+    ("american_northeast", "american_general",   0.08),
+    ("black_american",     "black_american",     0.06),
     # African Zaryans — keep origin-country names, not Russified
-    ("african",            "african",            0.04),
-    ("ethiopian",          "ethiopian",          0.03),
-    ("yoruba",             "yoruba",             0.02),
-    ("east_african",       "east_african",       0.02),
-    # Modern American expats — the "foreign but also not" wave
-    ("american_midwest",   "american_general",   0.05),
-    ("american_northeast", "american_general",   0.04),
-    ("black_american",     "black_american",     0.03),
-    # Third-culture-kid passport mix
-    ("indian",             "indian",             0.06),
-    ("filipino",           "filipino",           0.03),
-    ("latin_american",     "latin_american",     0.05),
-    ("mexican",            "mexican",            0.03),
-    ("brazilian",          "brazilian",          0.02),
-    ("italian",            "italian",            0.03),
-    ("german",             "german",             0.02),
-    ("french",             "french",             0.02),
-    ("iranian",            "iranian",            0.02),
-    ("lebanese",           "lebanese",           0.02),
-    ("turkish",            "turkish",            0.02),
-    ("vietnamese",         "vietnamese",         0.02),
-    ("polish",             "polish",             0.02),
-    ("ukrainian",          "ukrainian",          0.02),
-    ("greek",              "greek",              0.01),
-    ("lithuanian",         "lithuanian",         0.01),
+    ("african",             "african",            0.07),
+    ("ethiopian",           "ethiopian",          0.04),
+    ("yoruba",              "yoruba",             0.03),
+    ("east_african",        "east_african",       0.03),
+    # Third-culture-kid passport mix. The surname-key may differ from
+    # first-key when the codebase splits a culture across multiple
+    # pools — Brazilian first names + Brazilian-Portuguese surnames,
+    # Mexican first names sourced from latin_american pools, Lebanese
+    # surnames from arabic since there's no direct Lebanese surname pool.
+    ("indian",              "indian",                 0.10),
+    ("filipino",            "filipino",               0.05),
+    ("latin_american",      "latin_american",         0.08),
+    ("latin_american",      "latin_american",         0.05),   # extra weight (was "mexican")
+    ("brazilian",           "brazilian_portuguese",   0.04),
+    ("italian",             "italian",                0.04),
+    ("german",              "german",                 0.03),
+    ("french",              "french",                 0.03),
+    ("iranian",             "iranian",                0.03),
+    ("arabic",              "arabic",                 0.03),   # was "lebanese"
+    ("turkish",             "turkish",                0.03),
+    ("vietnamese",          "vietnamese",             0.03),
+    ("polish",              "polish",                 0.02),
+    ("ukrainian",           "ukrainian",              0.02),
+    ("greek",               "greek",                  0.01),
+    ("lithuanian",          "lithuanian",             0.01),
 ]
 
 
-def _bypass_draw(rng: random.Random, gender: str) -> tuple[str, str] | None:
-    """Pick a culture by weight and draw native first + native surname.
+def _draw_named(rng: random.Random, gender: str,
+                first_key: str, surname_key: str) -> tuple[str, str] | None:
+    """Native first + native surname from the given culture pools.
     No phonology, no Path A/B/C, no patronymic — the name comes out the
-    way that culture normally appears in the rest of the game.
-
-    Returns (full_name, 'ZR') or None if the picked culture's pools
-    are empty (caller falls back to creole)."""
-    cultures = [(f, s, w) for (f, s, w) in _BYPASS_CULTURES if w > 0]
-    total = sum(w for _, _, w in cultures)
-    r = rng.random() * total
-    acc = 0.0
-    first_key, surname_key = cultures[-1][0], cultures[-1][1]
-    for f, s, w in cultures:
-        acc += w
-        if r < acc:
-            first_key, surname_key = f, s
-            break
-
+    way that culture normally appears in the rest of the game."""
     pool_first_fname = "female_first.json" if gender == "female" else "male_first.json"
     first_pool   = _load_pool(pool_first_fname, first_key)
     surname_pool = _load_pool("surnames.json",  surname_key)
@@ -610,20 +608,48 @@ def _bypass_draw(rng: random.Random, gender: str) -> tuple[str, str] | None:
     return f"{first} {surname}", "ZR"
 
 
-def draw_zaryan_name(rng: random.Random, gender: str) -> tuple[str, str]:
-    """Top-level Zaryan name draw. Most names run through the creole
-    Zaryanification pipeline; a configurable share bypasses the filter
-    and draws from one of many cultural pools so Zaryan rosters surface
-    the country's polyglot character (Russian, Korean, Japanese,
-    Chinese, African, Latin American, modern American expat, Indian,
-    Middle Eastern, European — the third-culture-kid passport mix).
+def _pick_from_weighted(rng: random.Random,
+                        choices: list[tuple[str, str, float]]
+                        ) -> tuple[str, str]:
+    """Weighted pick among (first_key, surname_key, weight) tuples."""
+    active = [c for c in choices if c[2] > 0]
+    total = sum(w for _, _, w in active)
+    r = rng.random() * total
+    acc = 0.0
+    for f, s, w in active:
+        acc += w
+        if r < acc:
+            return f, s
+    return active[-1][0], active[-1][1]
 
-    Bypass draws that come up empty (missing pool) fall through to the
-    creole pipeline so a name always succeeds.
+
+def draw_zaryan_name(rng: random.Random, gender: str) -> tuple[str, str]:
+    """Top-level Zaryan name draw — stratified over four streams:
+
+      creole    (67%):  through the Zaryanification pipeline
+      russian   (13%):  bare Russian first + Russian surname
+      east_asia  (7%):  one of Korean / Japanese / Chinese
+      expat     (13%):  one of the broad third-culture-kid culture pool
+                        (modern Americans, Africans, Latin Americans,
+                        Indians, Europeans, Middle Easterners…)
+
+    Non-creole picks that come up empty (missing pool) fall through to
+    the creole pipeline so a name always succeeds.
     """
     g = "female" if (gender or "male").lower() == "female" else "male"
-    if rng.random() < _BYPASS_RATE:
-        out = _bypass_draw(rng, g)
-        if out:
-            return out
-    return zaryanify_draw(rng, g)
+    stream = _weighted_choice(
+        rng,
+        list(ZARYAN_STREAM_WEIGHTS.keys()),
+        list(ZARYAN_STREAM_WEIGHTS.values()),
+    )
+    if stream == "creole":
+        return zaryanify_draw(rng, g)
+    if stream == "russian":
+        out = _draw_named(rng, g, "russian", "russian")
+    elif stream == "east_asia":
+        f_key, s_key = _pick_from_weighted(rng, _EAST_ASIA_WEIGHTS)
+        out = _draw_named(rng, g, f_key, s_key)
+    else:  # expat
+        f_key, s_key = _pick_from_weighted(rng, _EXPAT_CULTURES)
+        out = _draw_named(rng, g, f_key, s_key)
+    return out if out else zaryanify_draw(rng, g)
