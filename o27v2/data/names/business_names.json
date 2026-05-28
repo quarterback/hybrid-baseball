@@ -26,9 +26,13 @@
       "english_suffix_options": [" & Co.", " & Sons", " Bros.", " Inc.", " Ltd.", ""],
       "spanish_suffix_options": [" Hermanos", " y Compañía", " e Hijos", " y Cía.", ""],
       "portuguese_suffix_options": [" Irmãos", " & Filhos", " & Cia.", ""],
-      "preferred_business_types_extra": [
+      "spanish_business_types_extra": [
         "Tortillería", "Panadería", "Carnicería", "Cantina", "Bodega",
         "Mercado", "Empanadería", "Asadero", "Heladería"
+      ],
+      "portuguese_business_types_extra": [
+        "Padaria", "Açougue", "Mercearia", "Sorveteria", "Lanchonete",
+        "Boteco", "Armazém"
       ],
       "curated_examples": [
         "Sydney Coffee & Bean",
@@ -48,9 +52,17 @@
       "_label": "Rising Sun locale flavor",
       "english_suffix_options": [" Brothers", " Co.", " Trading", ""],
       "japanese_suffix_options": [" Honten", " Shoten", " Honpo"],
-      "preferred_business_types_extra": [
-        "Soba Shop", "Noodle Co.", "Tea Importers", "Lacquerware",
-        "Paperworks", "Pottery Co.", "Ramen House", "Tofu Works"
+      "japanese_business_types_extra": [
+        "Soba Shop", "Ramen House", "Tofu Works", "Lacquerware",
+        "Sake Brewery", "Pottery Co.", "Paperworks", "Noodle Co."
+      ],
+      "korean_business_types_extra": [
+        "Kimchi Co.", "Ginseng Traders", "Soju Brewery", "Noodle Co.",
+        "Tea Importers", "Pottery Co.", "Paperworks"
+      ],
+      "chinese_business_types_extra": [
+        "Silk Co.", "Porcelain Works", "Herbal Medicine Co.", "Dumpling House",
+        "Tea Importers", "Noodle Co.", "Pottery Co.", "Paperworks"
       ],
       "curated_examples": [
         "Osaka Eastern Watchmakers",
@@ -74,10 +86,22 @@
       "french_suffix_options": [" et Fils", " & Cie.", " SARL"],
       "nordic_suffix_options": [" AB", " & Söner", " AS"],
       "polish_suffix_options": [" Sp.", " i Synowie"],
-      "preferred_business_types_extra": [
+      "german_business_types_extra": [
         "Bierhaus", "Brauerei", "Tabakwaren", "Werkstatt", "Buchhandlung",
-        "Pasticceria", "Salumeria", "Bäckerei", "Tabacchi", "Boulangerie",
-        "Bryggeri", "Glasbruk"
+        "Bäckerei", "Konditorei", "Metzgerei"
+      ],
+      "italian_business_types_extra": [
+        "Pasticceria", "Salumeria", "Tabacchi", "Trattoria", "Gelateria",
+        "Osteria"
+      ],
+      "french_business_types_extra": [
+        "Boulangerie", "Pâtisserie", "Boucherie", "Brasserie", "Charcuterie"
+      ],
+      "dutch_business_types_extra": [
+        "Bakkerij", "Brouwerij", "Slagerij", "Kruidenier", "Boekhandel"
+      ],
+      "nordic_business_types_extra": [
+        "Bryggeri", "Glasbruk", "Bageri", "Verkstad"
       ],
       "curated_examples": [
         "Milan Salumeria & Figli",
@@ -98,9 +122,12 @@
       "_label": "Pacifica locale flavor",
       "english_suffix_options": [" Pty Ltd", " & Sons", " & Co.", ""],
       "tagalog_suffix_options": [" at mga Anak", " Mag-anak"],
-      "preferred_business_types_extra": [
-        "Sari-sari Store", "Outback Outfitters", "Surf Shop", "Cane Works",
-        "Coconut Co.", "Pearl Traders", "Sheep Station", "Carinderia", "Lechon House"
+      "english_business_types_extra": [
+        "Outback Outfitters", "Surf Shop", "Cane Works", "Coconut Co.",
+        "Pearl Traders", "Sheep Station"
+      ],
+      "tagalog_business_types_extra": [
+        "Sari-sari Store", "Carinderia", "Lechon House"
       ],
       "curated_examples": [
         "Sydney Coffee & Bean",
@@ -122,9 +149,16 @@
       "english_suffix_options": [" Sdn Bhd", " Bhd", " & Sons", ""],
       "malay_suffix_options": [" dan Anak", " Bersaudara"],
       "indonesian_suffix_options": [" dan Putra", " Bersaudara"],
-      "preferred_business_types_extra": [
-        "Warung", "Kedai Kopi", "Rumah Makan", "Toko", "Batik Co.",
-        "Rubber Estate", "Tin Co.", "Spice Traders", "Pasar Malam"
+      "malay_business_types_extra": [
+        "Warung", "Kedai Kopi", "Toko", "Batik Co.", "Pasar Malam",
+        "Spice Traders"
+      ],
+      "indonesian_business_types_extra": [
+        "Warung", "Rumah Makan", "Toko", "Kedai Kopi", "Pasar Malam",
+        "Batik Co."
+      ],
+      "english_business_types_extra": [
+        "Rubber Estate", "Tin Co.", "Spice Traders"
       ],
       "curated_examples": [
         "Kuala Lumpur Continental Trading Sdn Bhd",
@@ -145,10 +179,27 @@
       "hindi_suffix_options": [" Sangh", " Bhandar", " evam Putra"],
       "urdu_suffix_options": [" Aur Beradaran", " Tijarat"],
       "arabic_suffix_options": [" wa Ikhwan", " & Sons"],
-      "preferred_business_types_extra": [
-        "Sweet Shop", "Tiffin Co.", "Spice Bhandar", "Cloth Merchants",
-        "Jute Works", "Tea Importers", "Cycle Mart", "Rickshaw Works",
-        "Khadi Bhandar", "Mithai Wala", "Halwai", "Dabbawala Co."
+      "hindi_business_types_extra": [
+        "Mithai Wala", "Halwai", "Dabbawala Co.", "Tiffin Co.", "Spice Bhandar",
+        "Khadi Bhandar", "Sweet Shop", "Cycle Mart"
+      ],
+      "urdu_business_types_extra": [
+        "Sweet Shop", "Cloth Merchants", "Cycle Mart", "Tea Importers",
+        "Rickshaw Works", "Tiffin Co."
+      ],
+      "english_business_types_extra": [
+        "Tea Importers", "Jute Works", "Cloth Merchants", "Cycle Mart",
+        "Rickshaw Works"
+      ],
+      "arabic_business_types_extra": [
+        "Souq", "Spice Souk", "Coffee Roasters", "Dates Co.", "Perfumery",
+        "Gold Souk"
+      ],
+      "turkish_business_types_extra": [
+        "Kebap House", "Çay House", "Bazaar", "Lokanta", "Bakkal"
+      ],
+      "persian_business_types_extra": [
+        "Bazaar", "Teahouse", "Carpet Works", "Saffron Traders"
       ],
       "curated_examples": [
         "Mumbai Royal Spice Market",
@@ -174,10 +225,22 @@
       "french_suffix_options": [" et Frères", " & Cie."],
       "portuguese_suffix_options": [" & Irmãos", " & Cia."],
       "afrikaans_suffix_options": [" en Seuns", " & Kie."],
-      "preferred_business_types_extra": [
+      "english_business_types_extra": [
         "Spaza Shop", "Mealie Mill", "Cocoa Co.", "Coffee Estate",
         "Diamond Works", "Hide Traders", "Cattle Co.", "Boma Trading",
         "Kraal Works", "Maize Co."
+      ],
+      "swahili_business_types_extra": [
+        "Duka", "Soko", "Kahawa Co.", "Mboga Market"
+      ],
+      "afrikaans_business_types_extra": [
+        "Padstal", "Slaghuis", "Bakkery", "Spaza Shop"
+      ],
+      "french_business_types_extra": [
+        "Marché", "Épicerie", "Boulangerie", "Cacao Co."
+      ],
+      "amharic_business_types_extra": [
+        "Bunna Bet", "Gebeya"
       ],
       "curated_examples": [
         "Lagos United Foundry",
@@ -202,7 +265,7 @@
       "1. Select a city from the team's locale per the league's name_regions.",
       "2. Decide locale_sub within the region (e.g., for Subcontinent: hindi vs urdu vs arabic vs english based on the city's primary language).",
       "3. With ~40% probability, prepend a modifier from modifiers_optional.",
-      "4. Select a business type: 70% from business_types_global, 30% from the region's preferred_business_types_extra.",
+      "4. Select a business type: 70% from business_types_global, 30% from the region's locale-specific <lang>_business_types_extra list keyed off the city's language (so a Portuguese city never draws a Spanish type, a Korean city never a Japanese one). A locale with no list for its language uses the global types only. (preferred_business_types_extra is a legacy region-wide fallback, no longer used by the shipped regions.)",
       "5. With ~50% probability, append a locale-appropriate suffix from the region's suffix_options.",
       "6. Capitalize and combine: '<City> <Modifier?> <Business Type><Suffix?>'."
     ],

@@ -21,13 +21,15 @@
     <h2 class="mb-0 mt-1">
       {{ player.name }}
       {% if player.country %}<span class="text-secondary small">({{ player.country }})</span>{% endif %}
+      {% if player.secondary_country %}<span class="text-secondary small" title="Also eligible for {{ player.secondary_country }} — dual-national heritage call-up">+ {{ player.secondary_country }}</span>{% endif %}
     </h2>
     <div class="text-secondary small mt-1">
       {{ player.position }}{% if player.is_joker %} · Joker ({{ player.joker_archetype or '—' }}){% endif %}
-      &nbsp;·&nbsp; Age {% if player.age >= 19 %}<span class="strk-w" title="Graduates to the pro FA pool at next season rollover.">{{ player.age }}</span>{% else %}{{ player.age }}{% endif %}
+      &nbsp;·&nbsp; Age {% if player.age >= 19 %}<span class="strk-w" title="Graduates to the pro FA pool at next season rollover.">{{ player.age }}</span>{% else %}{{ player.age }}{% endif %}{% if player.birthday %} <span title="Birthday (cosmetic)">({{ player.birthday }})</span>{% endif %}
       &nbsp;·&nbsp; B/T {{ player.bats }}/{{ player.throws }}
       &nbsp;·&nbsp; {{ stars(player.recruit_stars or 1) }}
     </div>
+    {% if player.hometown %}<div class="text-secondary small">Born {{ player.hometown }}{% if player.country %}, {{ player.country }}{% endif %}</div>{% endif %}
   </div>
   <div class="text-secondary small text-end">
     <span class="team-abbrev">{{ player.team_abbrev }}</span>

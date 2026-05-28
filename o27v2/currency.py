@@ -3,7 +3,7 @@ O27 financial register — the guilder (ƒ) currency system.
 
 The guilder is O27's canonical unit. Internal storage and all callers pass
 plain Python ints in guilders; this module owns every display decision:
-Indian-style numbering (lakh / crore), USD and EUR conversion via a
+Indian-style numbering (lakh / crore), USD / EUR / zora conversion via a
 synthetic basket anchor, and the per-mode entry point used by the Jinja
 `money` filter and the matching JS toggle.
 
@@ -14,6 +14,10 @@ Worldbuilding anchors (intentional, documented):
     BASKET_NOMINAL_RATES is given in "currency units per 1 USD"; the
     weighted sum produces an effective USD-per-guilder, which we turn
     around into EUR via a fixed EUR/USD nominal.
+  • Zora (Zaryanovia, ZRZ): a post-1993 Slavic-rooted national currency,
+    ₴250 = $1 USD by anchor convention (weaker than the guilder, fitting
+    a frontier post-Soviet economy). See ZORA section below for the
+    full symbol / pluralization / subdivision lore.
 
 The basket is config-only here — we don't actually re-anchor the guilder
 each time the basket moves. Baking the rate this way keeps the headline
@@ -171,10 +175,154 @@ def format_eur(g: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Zora — Zaryanovia's national currency (ZRZ)
+# ---------------------------------------------------------------------------
+#
+# The Zaryan zora is a STRONG, high-PPP currency — 1 ₳ ≈ $13.50 USD at
+# baseline. Prices are small dignified numbers (Swiss franc / Kuwaiti dinar
+# psychology, not yen / won). The country is a Pacific-Rim resource economy
+# on the Norwegian model — a sovereign wealth fund sterilizes oil/gas/gold
+# revenue, so the currency floats freely on real prosperity rather than
+# being defended at a peg.
+#
+# Symbol — there is one canonical symbol:
+#   ₳   (U+20B3)  ZORA_SYMBOL  — austral sign. Three-stroke, fast, written
+#                                everywhere (banknotes, signage, handwriting,
+#                                ledgers). The currency wears one face.
+#
+# Heritage glyph (worldbuilding only — not rendered):
+#   ЗР  (U+0417 U+0420)        — the dead Russian-era ruble mark. Lingers as
+#                                a generational + border-region habit among
+#                                older Zaryans, fading as that cohort ages
+#                                out. Documented for the country-info page.
+#
+# Code: ZRZ (Zaryanovia, reusing the ZR ISO 3166-1 root). ZRN/ZRZ were the
+# defunct Zaire codes — taken over here.
+#
+# Subdivision: 100 luchi = 1 zora ("rays" compose the dawn — zarya is the
+# Russian word for dawn; luchi is rays). Singular: luch. All in-game amounts
+# are integer guilders so luchi never surface in formatters today; the
+# subdivision is lore plus the helper below for any prose context.
+#
+# Plurals (creole-regularized two-way):
+#     zora  (singular)
+#     zory  (plural)
+# The bare genitive `zor` survives only in archaic/formal register; modern
+# Zaryans default to the two-form pair the way creoles always do.
+
+ZORA_SYMBOL = "₳"   # The one canonical zora symbol.
+ZORA_DEAD   = "ЗР"  # Dead Russian-era ruble (lore-only, not rendered).
+
+# Backwards-compat alias — early scaffolding called this ZORA_DISPLAY before
+# the wiki fixed the symbol to ₳ outright. Kept so external callers don't
+# break; new code should reference ZORA_SYMBOL.
+ZORA_DISPLAY = ZORA_SYMBOL
+
+ZORA_CODE: str = "ZRZ"
+
+# ---------- Basket-driven rate ----------
+#
+# The zora floats against a trade-weighted basket:
+#     35% Japanese yen   (high-tech manufacturing alignment)
+#     35% South Korean won (semiconductor & aerospace integration)
+#     15% US dollar      (energy trading + maritime logistics anchor)
+#     15% Chinese yuan   (land-border supply chain)
+# The Russian ruble is deliberately excluded — being the *stable
+# alternative* to the ruble is the whole haven value proposition.
+#
+# Reserve war chest (backs the float Norwegian-model, not pegged):
+#     SGD, CHF, EUR, gold. Worldbuilding only — no code path uses these.
+#
+# Per-currency index = baseline / current (so a stronger member currency
+# means index > 1). Weighted sum is the basket multiplier; baseline
+# zora_usd of 13.50 is scaled by it and clamped to [6.55, 19.97].
+ZORA_BASKET_WEIGHTS: dict[str, float] = {
+    "JPY": 0.35,
+    "KRW": 0.35,
+    "USD": 0.15,
+    "CNY": 0.15,
+}
+# Baseline FX rates: units per 1 USD. USD itself is by definition 1.0.
+ZORA_BASELINE_RATES: dict[str, float] = {
+    "JPY":  150.0,
+    "KRW": 1350.0,
+    "USD":    1.0,
+    "CNY":    7.20,
+}
+# Current FX rates — start at baseline so the headline matches the spec
+# rate of $13.50 / zora out of the box. Adjust these and call
+# `zora_usd()` to see the basket move the headline.
+ZORA_CURRENT_RATES: dict[str, float] = dict(ZORA_BASELINE_RATES)
+
+ZORA_USD_BASELINE: float = 13.50
+ZORA_USD_FLOOR:    float = 6.55
+ZORA_USD_CEIL:     float = 19.97
+
+ZORA_RESERVE_ASSETS: tuple[str, ...] = ("SGD", "CHF", "EUR", "XAU")  # gold = XAU
+
+
+def zora_usd() -> float:
+    """Current USD value of 1 zora, derived from the basket.
+
+      index_c   = baseline_c / current_c        # >1 ⇒ currency c strengthened
+      mult      = Σ weight_c * index_c
+      zora_usd  = clamp(13.50 * mult, 6.55, 19.97)
+    """
+    mult = 0.0
+    for code, w in ZORA_BASKET_WEIGHTS.items():
+        baseline = ZORA_BASELINE_RATES.get(code, 1.0)
+        current  = ZORA_CURRENT_RATES.get(code, baseline) or baseline
+        idx = baseline / current
+        mult += w * idx
+    rate = ZORA_USD_BASELINE * mult
+    if rate < ZORA_USD_FLOOR: return ZORA_USD_FLOOR
+    if rate > ZORA_USD_CEIL:  return ZORA_USD_CEIL
+    return rate
+
+
+def guilder_per_zora() -> float:
+    """Computed via the USD anchor: ƒ100 = $1 → guilders per zora =
+    100 * (USD per zora)."""
+    return GUILDER_PER_USD * zora_usd()
+
+
+def to_zora(g: int) -> float:
+    return int(g) / guilder_per_zora()
+
+
+def format_zora(g: int) -> str:
+    """Render a guilder amount in zora. Strong-currency formatter —
+    small dignified numbers, Swiss-franc psychology. Sub-zora amounts
+    render in luchi (₳0.18 would look weak; "18 luchi" is the natural
+    Zaryan idiom — same as cents to a dollar, kopeks to a ruble)."""
+    z_raw = to_zora(g)
+    if 0 < z_raw < 1:
+        # Sub-zora: show in luchi (100 luchi = 1 zora).
+        luchi = int(round(z_raw * 100))
+        if luchi <= 0:
+            return f"{ZORA_SYMBOL}0"
+        return f"{luchi} luchi" if luchi != 1 else "1 luch"
+    z = int(round(z_raw))
+    return f"{ZORA_SYMBOL}{z:,}"
+
+
+def zora_plural(n: int) -> str:
+    """Two-form creole vernacular: zora (n == 1), zory (n != 1).
+    The archaic/formal genitive `zor` survives in old register but is
+    not produced by this helper. Exposed for any prose context."""
+    return "zora" if abs(int(n)) == 1 else "zory"
+
+
+def luch_plural(n: int) -> str:
+    """Subunit plural: luch (1) / luchi (else). 100 luchi = 1 zora."""
+    return "luch" if abs(int(n)) == 1 else "luchi"
+
+
+# ---------------------------------------------------------------------------
 # Top-level dispatch — used by the Jinja `money` filter
 # ---------------------------------------------------------------------------
 
-Mode = Literal["guilder", "usd", "eur"]
+Mode = Literal["guilder", "usd", "eur", "zora"]
 
 
 def format_money(g: int, mode: Mode = "guilder") -> str:
@@ -184,6 +332,8 @@ def format_money(g: int, mode: Mode = "guilder") -> str:
         return format_usd(g)
     if mode == "eur":
         return format_eur(g)
+    if mode == "zora":
+        return format_zora(g)
     return f"{GUILDER}{format_crore(g)}"
 
 
@@ -195,10 +345,14 @@ def rates_for_js() -> dict:
     """Snapshot of every constant the front-end toggle needs. Keys match
     `o27v2/web/templates/base.html` JS access patterns."""
     return {
-        "symbol":          GUILDER,
-        "guilderPerUsd":   GUILDER_PER_USD,
-        "guilderPerEur":   GUILDER_PER_EUR,
-        "lakh":            LAKH,
-        "crore":           CRORE,
-        "basketWeights":   dict(BASKET_WEIGHTS),
+        "symbol":           GUILDER,
+        "guilderPerUsd":    GUILDER_PER_USD,
+        "guilderPerEur":    GUILDER_PER_EUR,
+        "guilderPerZora":   guilder_per_zora(),
+        "zoraSymbol":       ZORA_SYMBOL,
+        "zoraUsd":          zora_usd(),
+        "zoraBasketWeights": dict(ZORA_BASKET_WEIGHTS),
+        "lakh":             LAKH,
+        "crore":            CRORE,
+        "basketWeights":    dict(BASKET_WEIGHTS),
     }

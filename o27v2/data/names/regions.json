@@ -24,16 +24,31 @@
     "us": {
       "label": "USA",
       "country": "US",
-      "first_keys":   ["american_northeast", "american_south", "american_midwest",
-                       "american_west", "american_texas_southwest", "black_american",
-                       "asian_american"],
-      "surname_keys": ["american_general", "black_american"]
+      "first_keys": [
+        "american_northeast",
+        "american_south",
+        "american_midwest",
+        "american_west",
+        "american_texas_southwest",
+        "black_american",
+        "asian_american"
+      ],
+      "surname_keys": [
+        "american_general",
+        "black_american"
+      ]
     },
     "canada": {
       "label": "Canada",
       "country": "CA",
-      "first_keys":   ["canadian_english", "canadian_french"],
-      "surname_keys": ["canadian_french", "american_general"]
+      "first_keys": [
+        "canadian_english",
+        "canadian_french"
+      ],
+      "surname_keys": [
+        "canadian_french",
+        "american_general"
+      ]
     },
     "latin_america": {
       "_doc": [
@@ -47,30 +62,101 @@
       ],
       "label": "Latin America",
       "subregions": [
-        { "weight": 0.30, "country": "DO",
-          "first_keys":   ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american"] },
-        { "weight": 0.20, "country": "VE",
-          "first_keys":   ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american"] },
-        { "weight": 0.15, "country": "CU",
-          "first_keys":   ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american"] },
-        { "weight": 0.13, "country": "PR",
-          "first_keys":   ["puerto_rican"],
-          "surname_keys": ["puerto_rican", "latino_hispanic"] },
-        { "weight": 0.13, "country": "MX",
-          "first_keys":   ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american"] },
-        { "weight": 0.05, "country": "CO",
-          "first_keys":   ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american"] },
-        { "weight": 0.02, "country": "PA",
-          "first_keys":   ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american"] },
-        { "weight": 0.02, "country": "NI",
-          "first_keys":   ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american"] }
+        {
+          "weight": 0.3,
+          "country": "DO",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ]
+        },
+        {
+          "weight": 0.2,
+          "country": "VE",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "CU",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ]
+        },
+        {
+          "weight": 0.13,
+          "country": "PR",
+          "first_keys": [
+            "puerto_rican"
+          ],
+          "surname_keys": [
+            "puerto_rican",
+            "latino_hispanic"
+          ]
+        },
+        {
+          "weight": 0.13,
+          "country": "MX",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "CO",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ]
+        },
+        {
+          "weight": 0.02,
+          "country": "PA",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ]
+        },
+        {
+          "weight": 0.02,
+          "country": "NI",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ]
+        }
       ]
     },
     "south_america": {
@@ -87,74 +173,244 @@
       ],
       "label": "South America (non-baseball powerhouses)",
       "subregions": [
-        { "weight": 0.18, "country": "AR",
-          "first_keys": ["argentinian", "spanish", "italian"],
-          "surname_keys": ["argentinian"] },
-        { "weight": 0.04, "country": "AR",
-          "first_keys": ["argentinian_german", "argentinian"],
-          "surname_keys": ["argentinian_german"] },
-        { "weight": 0.20, "country": "BR",
-          "first_keys": ["brazilian", "portuguese"],
-          "surname_keys": ["brazilian_portuguese"] },
-        { "weight": 0.10, "country": "BR",
-          "first_keys": ["brazilian", "italian"],
-          "surname_keys": ["brazilian_italian"] },
-        { "weight": 0.07, "country": "BR",
-          "first_keys": ["brazilian_japanese"],
-          "surname_keys": ["brazilian_japanese"] },
-        { "weight": 0.04, "country": "BR",
-          "first_keys": ["brazilian", "german"],
-          "surname_keys": ["brazilian_german"] },
-        { "weight": 0.02, "country": "BR",
-          "first_keys": ["brazilian", "arabic"],
-          "surname_keys": ["brazilian_lebanese"] },
-        { "weight": 0.10, "country": "CL",
-          "first_keys": ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american", "spanish"] },
-        { "weight": 0.10, "country": "PE",
-          "first_keys": ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american", "spanish"] },
-        { "weight": 0.08, "country": "CO",
-          "first_keys": ["latino_hispanic", "latin_american", "afro_caribbean"],
-          "surname_keys": ["latino_hispanic", "latin_american", "spanish"] },
-        { "weight": 0.07, "country": "VE",
-          "first_keys": ["latino_hispanic", "latin_american"],
-          "surname_keys": ["latino_hispanic", "latin_american"] }
+        {
+          "weight": 0.18,
+          "country": "AR",
+          "first_keys": [
+            "argentinian",
+            "spanish",
+            "italian"
+          ],
+          "surname_keys": [
+            "argentinian"
+          ]
+        },
+        {
+          "weight": 0.04,
+          "country": "AR",
+          "first_keys": [
+            "argentinian_german",
+            "argentinian"
+          ],
+          "surname_keys": [
+            "argentinian_german"
+          ]
+        },
+        {
+          "weight": 0.2,
+          "country": "BR",
+          "first_keys": [
+            "brazilian",
+            "portuguese"
+          ],
+          "surname_keys": [
+            "brazilian_portuguese"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "BR",
+          "first_keys": [
+            "brazilian",
+            "italian"
+          ],
+          "surname_keys": [
+            "brazilian_italian"
+          ]
+        },
+        {
+          "weight": 0.07,
+          "country": "BR",
+          "first_keys": [
+            "brazilian_japanese"
+          ],
+          "surname_keys": [
+            "brazilian_japanese"
+          ]
+        },
+        {
+          "weight": 0.04,
+          "country": "BR",
+          "first_keys": [
+            "brazilian",
+            "german"
+          ],
+          "surname_keys": [
+            "brazilian_german"
+          ]
+        },
+        {
+          "weight": 0.02,
+          "country": "BR",
+          "first_keys": [
+            "brazilian",
+            "arabic"
+          ],
+          "surname_keys": [
+            "brazilian_lebanese"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "CL",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american",
+            "spanish"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "PE",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american",
+            "spanish"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "CO",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american",
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american",
+            "spanish"
+          ]
+        },
+        {
+          "weight": 0.07,
+          "country": "VE",
+          "first_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ],
+          "surname_keys": [
+            "latino_hispanic",
+            "latin_american"
+          ]
+        }
       ]
     },
     "south_asia": {
       "label": "South Asia (cricket pipeline)",
       "subregions": [
-        { "weight": 0.20, "country": "IN",
-          "first_keys": ["indian_north"],
-          "surname_keys": ["indian_north"] },
-        { "weight": 0.10, "country": "IN",
-          "first_keys": ["indian_punjabi_sikh", "indian_north"],
-          "surname_keys": ["indian_punjabi_sikh"] },
-        { "weight": 0.16, "country": "IN",
-          "first_keys": ["indian_south"],
-          "surname_keys": ["indian_south_tamil", "indian_south_telugu", "indian_south_kannada"] },
-        { "weight": 0.13, "country": "IN",
-          "first_keys": ["indian_west"],
-          "surname_keys": ["indian_west_marathi", "indian_west_gujarati"] },
-        { "weight": 0.08, "country": "IN",
-          "first_keys": ["indian_east"],
-          "surname_keys": ["indian_east"] },
-        { "weight": 0.18, "country": "PK",
-          "first_keys": ["pakistani"],
-          "surname_keys": ["pakistani"] },
-        { "weight": 0.08, "country": "BD",
-          "first_keys": ["bangladeshi"],
-          "surname_keys": ["bangladeshi"] },
-        { "weight": 0.04, "country": "LK",
-          "first_keys": ["sri_lankan_sinhalese"],
-          "surname_keys": ["sri_lankan_sinhalese"] },
-        { "weight": 0.03, "country": "LK",
-          "first_keys": ["sri_lankan_tamil"],
-          "surname_keys": ["sri_lankan_tamil"] },
-        { "weight": 0.06, "country": "NP",
-          "first_keys": ["nepali"],
-          "surname_keys": ["nepali"] }
+        {
+          "weight": 0.2,
+          "country": "IN",
+          "first_keys": [
+            "indian_north"
+          ],
+          "surname_keys": [
+            "indian_north"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "IN",
+          "first_keys": [
+            "indian_punjabi_sikh",
+            "indian_north"
+          ],
+          "surname_keys": [
+            "indian_punjabi_sikh"
+          ]
+        },
+        {
+          "weight": 0.16,
+          "country": "IN",
+          "first_keys": [
+            "indian_south"
+          ],
+          "surname_keys": [
+            "indian_south_tamil",
+            "indian_south_telugu",
+            "indian_south_kannada"
+          ]
+        },
+        {
+          "weight": 0.13,
+          "country": "IN",
+          "first_keys": [
+            "indian_west"
+          ],
+          "surname_keys": [
+            "indian_west_marathi",
+            "indian_west_gujarati"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "IN",
+          "first_keys": [
+            "indian_east"
+          ],
+          "surname_keys": [
+            "indian_east"
+          ]
+        },
+        {
+          "weight": 0.18,
+          "country": "PK",
+          "first_keys": [
+            "pakistani"
+          ],
+          "surname_keys": [
+            "pakistani"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "BD",
+          "first_keys": [
+            "bangladeshi"
+          ],
+          "surname_keys": [
+            "bangladeshi"
+          ]
+        },
+        {
+          "weight": 0.04,
+          "country": "LK",
+          "first_keys": [
+            "sri_lankan_sinhalese"
+          ],
+          "surname_keys": [
+            "sri_lankan_sinhalese"
+          ]
+        },
+        {
+          "weight": 0.03,
+          "country": "LK",
+          "first_keys": [
+            "sri_lankan_tamil"
+          ],
+          "surname_keys": [
+            "sri_lankan_tamil"
+          ]
+        },
+        {
+          "weight": 0.06,
+          "country": "NP",
+          "first_keys": [
+            "nepali"
+          ],
+          "surname_keys": [
+            "nepali"
+          ]
+        }
       ]
     },
     "east_asia": {
@@ -166,35 +422,96 @@
         "market of O27 and stays the largest single subregion."
       ],
       "subregions": [
-        { "weight": 0.45, "country": "JP",
-          "first_keys": ["japanese"],
-          "surname_keys": ["japanese"] },
-        { "weight": 0.32, "country": "KR",
-          "first_keys": ["korean"],
-          "surname_keys": ["korean"] },
-        { "weight": 0.15, "country": "TW",
-          "first_keys": ["chinese_taiwanese", "chinese"],
-          "surname_keys": ["chinese_taiwanese", "chinese"] },
-        { "weight": 0.08, "country": "CN",
-          "first_keys": ["chinese"],
-          "surname_keys": ["chinese"] }
+        {
+          "weight": 0.45,
+          "country": "JP",
+          "first_keys": [
+            "japanese"
+          ],
+          "surname_keys": [
+            "japanese"
+          ]
+        },
+        {
+          "weight": 0.32,
+          "country": "KR",
+          "first_keys": [
+            "korean"
+          ],
+          "surname_keys": [
+            "korean"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "TW",
+          "first_keys": [
+            "chinese_taiwanese",
+            "chinese"
+          ],
+          "surname_keys": [
+            "chinese_taiwanese",
+            "chinese"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "CN",
+          "first_keys": [
+            "chinese"
+          ],
+          "surname_keys": [
+            "chinese"
+          ]
+        }
       ]
     },
     "anzac": {
       "label": "Australia / New Zealand",
       "subregions": [
-        { "weight": 0.50, "country": "AU",
-          "first_keys": ["anglo_australian"],
-          "surname_keys": ["anglo_australian"] },
-        { "weight": 0.05, "country": "AU",
-          "first_keys": ["aboriginal_australian", "anglo_australian"],
-          "surname_keys": ["anglo_australian"] },
-        { "weight": 0.30, "country": "NZ",
-          "first_keys": ["anglo_nz"],
-          "surname_keys": ["anglo_nz"] },
-        { "weight": 0.15, "country": "NZ",
-          "first_keys": ["maori", "anglo_nz"],
-          "surname_keys": ["maori", "anglo_nz"] }
+        {
+          "weight": 0.5,
+          "country": "AU",
+          "first_keys": [
+            "anglo_australian"
+          ],
+          "surname_keys": [
+            "anglo_australian"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "AU",
+          "first_keys": [
+            "aboriginal_australian",
+            "anglo_australian"
+          ],
+          "surname_keys": [
+            "anglo_australian"
+          ]
+        },
+        {
+          "weight": 0.3,
+          "country": "NZ",
+          "first_keys": [
+            "anglo_nz"
+          ],
+          "surname_keys": [
+            "anglo_nz"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "NZ",
+          "first_keys": [
+            "maori",
+            "anglo_nz"
+          ],
+          "surname_keys": [
+            "maori",
+            "anglo_nz"
+          ]
+        }
       ]
     },
     "pacific_islands": {
@@ -214,30 +531,96 @@
       ],
       "label": "Pacific Islands",
       "subregions": [
-        { "weight": 0.22, "country": "FJ",
-          "first_keys": ["fijian", "pacific_islander"],
-          "surname_keys": ["fijian", "pacific_islander"] },
-        { "weight": 0.14, "country": "FJ",
-          "first_keys": ["indo_fijian"],
-          "surname_keys": ["indo_fijian"] },
-        { "weight": 0.18, "country": "WS",
-          "first_keys": ["samoan", "pacific_islander"],
-          "surname_keys": ["samoan", "pacific_islander"] },
-        { "weight": 0.15, "country": "TO",
-          "first_keys": ["tongan", "pacific_islander"],
-          "surname_keys": ["tongan", "pacific_islander"] },
-        { "weight": 0.07, "country": "PG",
-          "first_keys": ["papuan_melanesian", "pacific_islander"],
-          "surname_keys": ["papuan_melanesian", "pacific_islander"] },
-        { "weight": 0.10, "country": "GU",
-          "first_keys": ["chamorro"],
-          "surname_keys": ["chamorro"] },
-        { "weight": 0.06, "country": "AS",
-          "first_keys": ["samoan", "pacific_islander"],
-          "surname_keys": ["samoan", "pacific_islander"] },
-        { "weight": 0.08, "country": "US",
-          "first_keys": ["hawaiian"],
-          "surname_keys": ["hawaiian"] }
+        {
+          "weight": 0.22,
+          "country": "FJ",
+          "first_keys": [
+            "fijian",
+            "pacific_islander"
+          ],
+          "surname_keys": [
+            "fijian",
+            "pacific_islander"
+          ]
+        },
+        {
+          "weight": 0.14,
+          "country": "FJ",
+          "first_keys": [
+            "indo_fijian"
+          ],
+          "surname_keys": [
+            "indo_fijian"
+          ]
+        },
+        {
+          "weight": 0.18,
+          "country": "WS",
+          "first_keys": [
+            "samoan",
+            "pacific_islander"
+          ],
+          "surname_keys": [
+            "samoan",
+            "pacific_islander"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "TO",
+          "first_keys": [
+            "tongan",
+            "pacific_islander"
+          ],
+          "surname_keys": [
+            "tongan",
+            "pacific_islander"
+          ]
+        },
+        {
+          "weight": 0.07,
+          "country": "PG",
+          "first_keys": [
+            "papuan_melanesian",
+            "pacific_islander"
+          ],
+          "surname_keys": [
+            "papuan_melanesian",
+            "pacific_islander"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "GU",
+          "first_keys": [
+            "chamorro"
+          ],
+          "surname_keys": [
+            "chamorro"
+          ]
+        },
+        {
+          "weight": 0.06,
+          "country": "AS",
+          "first_keys": [
+            "samoan",
+            "pacific_islander"
+          ],
+          "surname_keys": [
+            "samoan",
+            "pacific_islander"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "US",
+          "first_keys": [
+            "hawaiian"
+          ],
+          "surname_keys": [
+            "hawaiian"
+          ]
+        }
       ]
     },
     "caribbean_dutch": {
@@ -251,24 +634,71 @@
       ],
       "label": "Caribbean (Dutch)",
       "subregions": [
-        { "weight": 0.40, "country": "CW",
-          "first_keys": ["curacao_papiamento"],
-          "surname_keys": ["curacao_papiamento"] },
-        { "weight": 0.20, "country": "AW",
-          "first_keys": ["curacao_papiamento"],
-          "surname_keys": ["aruban_papiamento", "curacao_papiamento"] },
-        { "weight": 0.15, "country": "SR",
-          "first_keys": ["surinamese_hindustani"],
-          "surname_keys": ["surinamese_hindustani"] },
-        { "weight": 0.10, "country": "SR",
-          "first_keys": ["surinamese_javanese"],
-          "surname_keys": ["surinamese_javanese"] },
-        { "weight": 0.10, "country": "SR",
-          "first_keys": ["surinamese_maroon", "afro_caribbean"],
-          "surname_keys": ["surinamese_maroon", "afro_caribbean"] },
-        { "weight": 0.05, "country": "SR",
-          "first_keys": ["surinamese_dutch", "dutch"],
-          "surname_keys": ["surinamese_dutch", "dutch"] }
+        {
+          "weight": 0.4,
+          "country": "CW",
+          "first_keys": [
+            "curacao_papiamento"
+          ],
+          "surname_keys": [
+            "curacao_papiamento"
+          ]
+        },
+        {
+          "weight": 0.2,
+          "country": "AW",
+          "first_keys": [
+            "curacao_papiamento"
+          ],
+          "surname_keys": [
+            "aruban_papiamento",
+            "curacao_papiamento"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "SR",
+          "first_keys": [
+            "surinamese_hindustani"
+          ],
+          "surname_keys": [
+            "surinamese_hindustani"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "SR",
+          "first_keys": [
+            "surinamese_javanese"
+          ],
+          "surname_keys": [
+            "surinamese_javanese"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "SR",
+          "first_keys": [
+            "surinamese_maroon",
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "surinamese_maroon",
+            "afro_caribbean"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "SR",
+          "first_keys": [
+            "surinamese_dutch",
+            "dutch"
+          ],
+          "surname_keys": [
+            "surinamese_dutch",
+            "dutch"
+          ]
+        }
       ]
     },
     "caribbean_cricket": {
@@ -283,127 +713,362 @@
       ],
       "label": "Caribbean (Cricket Anglophone)",
       "subregions": [
-        { "weight": 0.26, "country": "GY",
-          "first_keys": ["indo_guyanese"],
-          "surname_keys": ["indo_guyanese"] },
-        { "weight": 0.10, "country": "GY",
-          "first_keys": ["afro_caribbean"],
-          "surname_keys": ["afro_guyanese", "afro_caribbean"] },
-        { "weight": 0.20, "country": "TT",
-          "first_keys": ["indo_trinidadian"],
-          "surname_keys": ["indo_trinidadian"] },
-        { "weight": 0.11, "country": "TT",
-          "first_keys": ["afro_caribbean"],
-          "surname_keys": ["afro_trinidadian", "afro_caribbean"] },
-        { "weight": 0.03, "country": "TT",
-          "first_keys": ["afro_caribbean"],
-          "surname_keys": ["chinese_trinidadian"] },
-        { "weight": 0.02, "country": "TT",
-          "first_keys": ["arabic"],
-          "surname_keys": ["lebanese_trinidadian"] },
-        { "weight": 0.13, "country": "JM",
-          "first_keys": ["afro_caribbean"],
-          "surname_keys": ["afro_caribbean"] },
-        { "weight": 0.05, "country": "BB",
-          "first_keys": ["afro_caribbean"],
-          "surname_keys": ["afro_caribbean"] },
-        { "weight": 0.03, "country": "AG",
-          "first_keys": ["afro_caribbean"],
-          "surname_keys": ["afro_caribbean"] }
+        {
+          "weight": 0.26,
+          "country": "GY",
+          "first_keys": [
+            "indo_guyanese"
+          ],
+          "surname_keys": [
+            "indo_guyanese"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "GY",
+          "first_keys": [
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "afro_guyanese",
+            "afro_caribbean"
+          ]
+        },
+        {
+          "weight": 0.2,
+          "country": "TT",
+          "first_keys": [
+            "indo_trinidadian"
+          ],
+          "surname_keys": [
+            "indo_trinidadian"
+          ]
+        },
+        {
+          "weight": 0.11,
+          "country": "TT",
+          "first_keys": [
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "afro_trinidadian",
+            "afro_caribbean"
+          ]
+        },
+        {
+          "weight": 0.03,
+          "country": "TT",
+          "first_keys": [
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "chinese_trinidadian"
+          ]
+        },
+        {
+          "weight": 0.02,
+          "country": "TT",
+          "first_keys": [
+            "arabic"
+          ],
+          "surname_keys": [
+            "lebanese_trinidadian"
+          ]
+        },
+        {
+          "weight": 0.13,
+          "country": "JM",
+          "first_keys": [
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "afro_caribbean"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "BB",
+          "first_keys": [
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "afro_caribbean"
+          ]
+        },
+        {
+          "weight": 0.03,
+          "country": "AG",
+          "first_keys": [
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "afro_caribbean"
+          ]
+        }
       ]
     },
     "africa_cricket": {
       "label": "Africa (Cricket Nations)",
       "subregions": [
-        { "weight": 0.20, "country": "ZA",
-          "first_keys": ["afrikaner"],
-          "surname_keys": ["afrikaner"] },
-        { "weight": 0.13, "country": "ZA",
-          "first_keys": ["english_south_african", "anglo_australian"],
-          "surname_keys": ["english_south_african"] },
-        { "weight": 0.18, "country": "ZA",
-          "first_keys": ["zulu"],
-          "surname_keys": ["zulu"] },
-        { "weight": 0.10, "country": "ZA",
-          "first_keys": ["xhosa"],
-          "surname_keys": ["xhosa"] },
-        { "weight": 0.07, "country": "ZA",
-          "first_keys": ["indian_south_african", "indian_south"],
-          "surname_keys": ["indian_south_african"] },
-        { "weight": 0.06, "country": "ZW",
-          "first_keys": ["english_zimbabwean"],
-          "surname_keys": ["english_zimbabwean"] },
-        { "weight": 0.10, "country": "ZW",
-          "first_keys": ["shona"],
-          "surname_keys": ["shona"] },
-        { "weight": 0.04, "country": "ZW",
-          "first_keys": ["ndebele"],
-          "surname_keys": ["ndebele"] },
-        { "weight": 0.04, "country": "KE",
-          "first_keys": ["english_kenyan"],
-          "surname_keys": ["english_kenyan"] },
-        { "weight": 0.05, "country": "KE",
-          "first_keys": ["kikuyu"],
-          "surname_keys": ["kikuyu"] },
-        { "weight": 0.03, "country": "KE",
-          "first_keys": ["luo"],
-          "surname_keys": ["luo"] }
+        {
+          "weight": 0.2,
+          "country": "ZA",
+          "first_keys": [
+            "afrikaner"
+          ],
+          "surname_keys": [
+            "afrikaner"
+          ]
+        },
+        {
+          "weight": 0.13,
+          "country": "ZA",
+          "first_keys": [
+            "english_south_african",
+            "anglo_australian"
+          ],
+          "surname_keys": [
+            "english_south_african"
+          ]
+        },
+        {
+          "weight": 0.18,
+          "country": "ZA",
+          "first_keys": [
+            "zulu"
+          ],
+          "surname_keys": [
+            "zulu"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "ZA",
+          "first_keys": [
+            "xhosa"
+          ],
+          "surname_keys": [
+            "xhosa"
+          ]
+        },
+        {
+          "weight": 0.07,
+          "country": "ZA",
+          "first_keys": [
+            "indian_south_african",
+            "indian_south"
+          ],
+          "surname_keys": [
+            "indian_south_african"
+          ]
+        },
+        {
+          "weight": 0.06,
+          "country": "ZW",
+          "first_keys": [
+            "english_zimbabwean"
+          ],
+          "surname_keys": [
+            "english_zimbabwean"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "ZW",
+          "first_keys": [
+            "shona"
+          ],
+          "surname_keys": [
+            "shona"
+          ]
+        },
+        {
+          "weight": 0.04,
+          "country": "ZW",
+          "first_keys": [
+            "ndebele"
+          ],
+          "surname_keys": [
+            "ndebele"
+          ]
+        },
+        {
+          "weight": 0.04,
+          "country": "KE",
+          "first_keys": [
+            "english_kenyan"
+          ],
+          "surname_keys": [
+            "english_kenyan"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "KE",
+          "first_keys": [
+            "kikuyu"
+          ],
+          "surname_keys": [
+            "kikuyu"
+          ]
+        },
+        {
+          "weight": 0.03,
+          "country": "KE",
+          "first_keys": [
+            "luo"
+          ],
+          "surname_keys": [
+            "luo"
+          ]
+        }
       ]
     },
     "british_isles": {
       "label": "Britain & Ireland",
       "subregions": [
-        { "weight": 0.50, "country": "GB",
-          "first_keys": ["english_general"],
-          "surname_keys": ["english_general"] },
-        { "weight": 0.15, "country": "GB",
-          "first_keys": ["scottish"],
-          "surname_keys": ["scottish"] },
-        { "weight": 0.10, "country": "GB",
-          "first_keys": ["welsh"],
-          "surname_keys": ["welsh"] },
-        { "weight": 0.25, "country": "IE",
-          "first_keys": ["irish"],
-          "surname_keys": ["irish"] }
+        {
+          "weight": 0.5,
+          "country": "GB",
+          "first_keys": [
+            "english_general"
+          ],
+          "surname_keys": [
+            "english_general"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "GB",
+          "first_keys": [
+            "scottish"
+          ],
+          "surname_keys": [
+            "scottish"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "GB",
+          "first_keys": [
+            "welsh"
+          ],
+          "surname_keys": [
+            "welsh"
+          ]
+        },
+        {
+          "weight": 0.25,
+          "country": "IE",
+          "first_keys": [
+            "irish"
+          ],
+          "surname_keys": [
+            "irish"
+          ]
+        }
       ]
     },
     "afghan_central_asia": {
       "label": "Afghanistan / Central Asia",
       "subregions": [
-        { "weight": 0.55, "country": "AF",
-          "first_keys": ["pashto"],
-          "surname_keys": ["pashto"] },
-        { "weight": 0.30, "country": "AF",
-          "first_keys": ["dari"],
-          "surname_keys": ["dari"] },
-        { "weight": 0.15, "country": "UZ",
-          "first_keys": ["uzbek"],
-          "surname_keys": ["uzbek"] }
+        {
+          "weight": 0.55,
+          "country": "AF",
+          "first_keys": [
+            "pashto"
+          ],
+          "surname_keys": [
+            "pashto"
+          ]
+        },
+        {
+          "weight": 0.3,
+          "country": "AF",
+          "first_keys": [
+            "dari"
+          ],
+          "surname_keys": [
+            "dari"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "UZ",
+          "first_keys": [
+            "uzbek"
+          ],
+          "surname_keys": [
+            "uzbek"
+          ]
+        }
       ]
     },
     "malaysia": {
       "label": "Malaysia (the structural growth market)",
       "subregions": [
-        { "weight": 0.55, "country": "MY",
-          "first_keys": ["malay"],
-          "surname_keys": ["malay"] },
-        { "weight": 0.30, "country": "MY",
-          "first_keys": ["chinese_malaysian"],
-          "surname_keys": ["chinese_malaysian"] },
-        { "weight": 0.15, "country": "MY",
-          "first_keys": ["indian_malaysian"],
-          "surname_keys": ["indian_malaysian"] }
+        {
+          "weight": 0.55,
+          "country": "MY",
+          "first_keys": [
+            "malay"
+          ],
+          "surname_keys": [
+            "malay"
+          ]
+        },
+        {
+          "weight": 0.3,
+          "country": "MY",
+          "first_keys": [
+            "chinese_malaysian"
+          ],
+          "surname_keys": [
+            "chinese_malaysian"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "MY",
+          "first_keys": [
+            "indian_malaysian"
+          ],
+          "surname_keys": [
+            "indian_malaysian"
+          ]
+        }
       ]
     },
     "europe_western": {
       "label": "Western Europe",
       "country_weights": {
-        "DE": 0.25, "FR": 0.20, "NL": 0.18, "IT": 0.15, "ES": 0.12, "PT": 0.10
+        "DE": 0.25,
+        "FR": 0.2,
+        "NL": 0.18,
+        "IT": 0.15,
+        "ES": 0.12,
+        "PT": 0.1
       },
-      "first_keys":   ["uk_european", "irish_european", "french", "german",
-                       "italian", "spanish", "dutch", "portuguese"],
-      "surname_keys": ["uk_european", "irish", "french", "german",
-                       "italian", "spanish", "dutch", "portuguese"]
+      "first_keys": [
+        "uk_european",
+        "irish_european",
+        "french",
+        "german",
+        "italian",
+        "spanish",
+        "dutch",
+        "portuguese"
+      ],
+      "surname_keys": [
+        "uk_european",
+        "irish",
+        "french",
+        "german",
+        "italian",
+        "spanish",
+        "dutch",
+        "portuguese"
+      ]
     },
     "europe_eastern": {
       "_doc": [
@@ -421,30 +1086,86 @@
       ],
       "label": "Eastern Europe",
       "subregions": [
-        { "weight": 0.42, "country": "CZ",
-          "first_keys": ["czech"],
-          "surname_keys": ["czech"] },
-        { "weight": 0.18, "country": "PL",
-          "first_keys": ["polish"],
-          "surname_keys": ["polish"] },
-        { "weight": 0.12, "country": "RU",
-          "first_keys": ["russian"],
-          "surname_keys": ["russian"] },
-        { "weight": 0.10, "country": "UA",
-          "first_keys": ["ukrainian"],
-          "surname_keys": ["ukrainian"] },
-        { "weight": 0.08, "country": "HU",
-          "first_keys": ["hungarian"],
-          "surname_keys": ["hungarian"] },
-        { "weight": 0.05, "country": "SK",
-          "first_keys": ["slovak"],
-          "surname_keys": ["slovak"] },
-        { "weight": 0.03, "country": "RO",
-          "first_keys": ["romanian"],
-          "surname_keys": ["romanian"] },
-        { "weight": 0.02, "country": "BG",
-          "first_keys": ["bulgarian"],
-          "surname_keys": ["bulgarian"] }
+        {
+          "weight": 0.42,
+          "country": "CZ",
+          "first_keys": [
+            "czech"
+          ],
+          "surname_keys": [
+            "czech"
+          ]
+        },
+        {
+          "weight": 0.18,
+          "country": "PL",
+          "first_keys": [
+            "polish"
+          ],
+          "surname_keys": [
+            "polish"
+          ]
+        },
+        {
+          "weight": 0.12,
+          "country": "RU",
+          "first_keys": [
+            "russian"
+          ],
+          "surname_keys": [
+            "russian"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "UA",
+          "first_keys": [
+            "ukrainian"
+          ],
+          "surname_keys": [
+            "ukrainian"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "HU",
+          "first_keys": [
+            "hungarian"
+          ],
+          "surname_keys": [
+            "hungarian"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "SK",
+          "first_keys": [
+            "slovak"
+          ],
+          "surname_keys": [
+            "slovak"
+          ]
+        },
+        {
+          "weight": 0.03,
+          "country": "RO",
+          "first_keys": [
+            "romanian"
+          ],
+          "surname_keys": [
+            "romanian"
+          ]
+        },
+        {
+          "weight": 0.02,
+          "country": "BG",
+          "first_keys": [
+            "bulgarian"
+          ],
+          "surname_keys": [
+            "bulgarian"
+          ]
+        }
       ]
     },
     "nordic": {
@@ -456,14 +1177,46 @@
       ],
       "label": "Nordic",
       "subregions": [
-        { "weight": 0.30, "country": "SE",
-          "first_keys": ["swedish"],   "surname_keys": ["swedish"] },
-        { "weight": 0.30, "country": "FI",
-          "first_keys": ["finnish"],   "surname_keys": ["finnish"] },
-        { "weight": 0.20, "country": "NO",
-          "first_keys": ["norwegian"], "surname_keys": ["norwegian"] },
-        { "weight": 0.20, "country": "DK",
-          "first_keys": ["danish"],    "surname_keys": ["danish"] }
+        {
+          "weight": 0.3,
+          "country": "SE",
+          "first_keys": [
+            "swedish"
+          ],
+          "surname_keys": [
+            "swedish"
+          ]
+        },
+        {
+          "weight": 0.3,
+          "country": "FI",
+          "first_keys": [
+            "finnish"
+          ],
+          "surname_keys": [
+            "finnish"
+          ]
+        },
+        {
+          "weight": 0.2,
+          "country": "NO",
+          "first_keys": [
+            "norwegian"
+          ],
+          "surname_keys": [
+            "norwegian"
+          ]
+        },
+        {
+          "weight": 0.2,
+          "country": "DK",
+          "first_keys": [
+            "danish"
+          ],
+          "surname_keys": [
+            "danish"
+          ]
+        }
       ]
     },
     "southeast_asia": {
@@ -477,33 +1230,96 @@
       ],
       "label": "Southeast Asia",
       "subregions": [
-        { "weight": 0.30, "country": "VN",
-          "first_keys": ["vietnamese"],
-          "surname_keys": ["vietnamese"] },
-        { "weight": 0.22, "country": "TH",
-          "first_keys": ["thai"],
-          "surname_keys": ["thai"] },
-        { "weight": 0.18, "country": "ID",
-          "first_keys": ["indonesian"],
-          "surname_keys": ["indonesian"] },
-        { "weight": 0.07, "country": "SG",
-          "first_keys": ["singaporean_chinese"],
-          "surname_keys": ["chinese_malaysian"] },
-        { "weight": 0.03, "country": "SG",
-          "first_keys": ["malay"],
-          "surname_keys": ["malay"] },
-        { "weight": 0.08, "country": "MM",
-          "first_keys": ["burmese"],
-          "surname_keys": ["burmese"] },
-        { "weight": 0.06, "country": "LA",
-          "first_keys": ["lao"],
-          "surname_keys": ["lao"] },
-        { "weight": 0.04, "country": "KH",
-          "first_keys": ["cambodian"],
-          "surname_keys": ["cambodian"] },
-        { "weight": 0.02, "country": "BN",
-          "first_keys": ["malay"],
-          "surname_keys": ["malay"] }
+        {
+          "weight": 0.3,
+          "country": "VN",
+          "first_keys": [
+            "vietnamese"
+          ],
+          "surname_keys": [
+            "vietnamese"
+          ]
+        },
+        {
+          "weight": 0.22,
+          "country": "TH",
+          "first_keys": [
+            "thai"
+          ],
+          "surname_keys": [
+            "thai"
+          ]
+        },
+        {
+          "weight": 0.18,
+          "country": "ID",
+          "first_keys": [
+            "indonesian"
+          ],
+          "surname_keys": [
+            "indonesian"
+          ]
+        },
+        {
+          "weight": 0.07,
+          "country": "SG",
+          "first_keys": [
+            "singaporean_chinese"
+          ],
+          "surname_keys": [
+            "chinese_malaysian"
+          ]
+        },
+        {
+          "weight": 0.03,
+          "country": "SG",
+          "first_keys": [
+            "malay"
+          ],
+          "surname_keys": [
+            "malay"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "MM",
+          "first_keys": [
+            "burmese"
+          ],
+          "surname_keys": [
+            "burmese"
+          ]
+        },
+        {
+          "weight": 0.06,
+          "country": "LA",
+          "first_keys": [
+            "lao"
+          ],
+          "surname_keys": [
+            "lao"
+          ]
+        },
+        {
+          "weight": 0.04,
+          "country": "KH",
+          "first_keys": [
+            "cambodian"
+          ],
+          "surname_keys": [
+            "cambodian"
+          ]
+        },
+        {
+          "weight": 0.02,
+          "country": "BN",
+          "first_keys": [
+            "malay"
+          ],
+          "surname_keys": [
+            "malay"
+          ]
+        }
       ]
     },
     "philippines": {
@@ -520,31 +1336,91 @@
       ],
       "label": "Philippines",
       "subregions": [
-        { "weight": 0.34, "country": "PH",
-          "first_keys": ["filipino"],
-          "surname_keys": ["filipino"] },
-        { "weight": 0.24, "country": "PH",
-          "first_keys": ["filipino"],
-          "surname_keys": ["filipino_visayan", "filipino"] },
-        { "weight": 0.12, "country": "PH",
-          "first_keys": ["filipino"],
-          "surname_keys": ["filipino_ilocano", "filipino"] },
-        { "weight": 0.12, "country": "PH",
-          "first_keys": ["filipino_chinese", "filipino"],
-          "surname_keys": ["filipino_chinese"] },
-        { "weight": 0.10, "country": "PH",
-          "first_keys": ["filipino"],
-          "surname_keys": ["spanish", "filipino"] },
-        { "weight": 0.08, "country": "PH",
-          "first_keys": ["filipino_muslim"],
-          "surname_keys": ["filipino_muslim"] }
+        {
+          "weight": 0.34,
+          "country": "PH",
+          "first_keys": [
+            "filipino"
+          ],
+          "surname_keys": [
+            "filipino"
+          ]
+        },
+        {
+          "weight": 0.24,
+          "country": "PH",
+          "first_keys": [
+            "filipino"
+          ],
+          "surname_keys": [
+            "filipino_visayan",
+            "filipino"
+          ]
+        },
+        {
+          "weight": 0.12,
+          "country": "PH",
+          "first_keys": [
+            "filipino"
+          ],
+          "surname_keys": [
+            "filipino_ilocano",
+            "filipino"
+          ]
+        },
+        {
+          "weight": 0.12,
+          "country": "PH",
+          "first_keys": [
+            "filipino_chinese",
+            "filipino"
+          ],
+          "surname_keys": [
+            "filipino_chinese"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "PH",
+          "first_keys": [
+            "filipino"
+          ],
+          "surname_keys": [
+            "spanish",
+            "filipino"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "PH",
+          "first_keys": [
+            "filipino_muslim"
+          ],
+          "surname_keys": [
+            "filipino_muslim"
+          ]
+        }
       ]
     },
     "central_west_asia": {
       "label": "Central / West Asia / Middle East",
-      "country_weights": { "TR": 0.45, "SA": 0.20, "IR": 0.15, "EG": 0.10, "KZ": 0.10 },
-      "first_keys":   ["central_asian", "turkish", "arabic"],
-      "surname_keys": ["central_asian", "turkish", "arabic"]
+      "country_weights": {
+        "TR": 0.45,
+        "SA": 0.2,
+        "IR": 0.15,
+        "EG": 0.1,
+        "KZ": 0.1
+      },
+      "first_keys": [
+        "central_asian",
+        "turkish",
+        "arabic"
+      ],
+      "surname_keys": [
+        "central_asian",
+        "turkish",
+        "arabic"
+      ]
     },
     "gulf_cricket": {
       "_doc": [
@@ -555,21 +1431,57 @@
       ],
       "label": "Gulf (expat cricket)",
       "subregions": [
-        { "weight": 0.35, "country": "AE",
-          "first_keys": ["indian_north"],
-          "surname_keys": ["indian_north"] },
-        { "weight": 0.25, "country": "AE",
-          "first_keys": ["pakistani"],
-          "surname_keys": ["pakistani"] },
-        { "weight": 0.10, "country": "AE",
-          "first_keys": ["arabic"],
-          "surname_keys": ["arabic"] },
-        { "weight": 0.20, "country": "OM",
-          "first_keys": ["indian_south"],
-          "surname_keys": ["indian_south_tamil", "indian_south_telugu"] },
-        { "weight": 0.10, "country": "OM",
-          "first_keys": ["pakistani"],
-          "surname_keys": ["pakistani"] }
+        {
+          "weight": 0.35,
+          "country": "AE",
+          "first_keys": [
+            "indian_north"
+          ],
+          "surname_keys": [
+            "indian_north"
+          ]
+        },
+        {
+          "weight": 0.25,
+          "country": "AE",
+          "first_keys": [
+            "pakistani"
+          ],
+          "surname_keys": [
+            "pakistani"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "AE",
+          "first_keys": [
+            "arabic"
+          ],
+          "surname_keys": [
+            "arabic"
+          ]
+        },
+        {
+          "weight": 0.2,
+          "country": "OM",
+          "first_keys": [
+            "indian_south"
+          ],
+          "surname_keys": [
+            "indian_south_tamil",
+            "indian_south_telugu"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "OM",
+          "first_keys": [
+            "pakistani"
+          ],
+          "surname_keys": [
+            "pakistani"
+          ]
+        }
       ]
     },
     "israel": {
@@ -579,8 +1491,12 @@
       ],
       "label": "Israel",
       "country": "IL",
-      "first_keys":   ["israeli"],
-      "surname_keys": ["israeli"]
+      "first_keys": [
+        "israeli"
+      ],
+      "surname_keys": [
+        "israeli"
+      ]
     },
     "netherlands": {
       "_doc": [
@@ -591,8 +1507,12 @@
       ],
       "label": "Netherlands",
       "country": "NL",
-      "first_keys":   ["dutch"],
-      "surname_keys": ["dutch"]
+      "first_keys": [
+        "dutch"
+      ],
+      "surname_keys": [
+        "dutch"
+      ]
     },
     "italy": {
       "_doc": [
@@ -602,8 +1522,12 @@
       ],
       "label": "Italy",
       "country": "IT",
-      "first_keys":   ["italian"],
-      "surname_keys": ["italian"]
+      "first_keys": [
+        "italian"
+      ],
+      "surname_keys": [
+        "italian"
+      ]
     },
     "finland": {
       "_doc": [
@@ -613,8 +1537,12 @@
       ],
       "label": "Finland",
       "country": "FI",
-      "first_keys":   ["finnish"],
-      "surname_keys": ["finnish"]
+      "first_keys": [
+        "finnish"
+      ],
+      "surname_keys": [
+        "finnish"
+      ]
     },
     "sweden": {
       "_doc": [
@@ -623,8 +1551,12 @@
       ],
       "label": "Sweden",
       "country": "SE",
-      "first_keys":   ["swedish"],
-      "surname_keys": ["swedish"]
+      "first_keys": [
+        "swedish"
+      ],
+      "surname_keys": [
+        "swedish"
+      ]
     },
     "norway": {
       "_doc": [
@@ -633,8 +1565,12 @@
       ],
       "label": "Norway",
       "country": "NO",
-      "first_keys":   ["norwegian"],
-      "surname_keys": ["norwegian"]
+      "first_keys": [
+        "norwegian"
+      ],
+      "surname_keys": [
+        "norwegian"
+      ]
     },
     "denmark": {
       "_doc": [
@@ -642,8 +1578,12 @@
       ],
       "label": "Denmark",
       "country": "DK",
-      "first_keys":   ["danish"],
-      "surname_keys": ["danish"]
+      "first_keys": [
+        "danish"
+      ],
+      "surname_keys": [
+        "danish"
+      ]
     },
     "haiti": {
       "_doc": [
@@ -654,8 +1594,12 @@
       ],
       "label": "Haiti",
       "country": "HT",
-      "first_keys":   ["haitian"],
-      "surname_keys": ["haitian"]
+      "first_keys": [
+        "haitian"
+      ],
+      "surname_keys": [
+        "haitian"
+      ]
     },
     "curacao": {
       "_doc": [
@@ -664,8 +1608,12 @@
       ],
       "label": "Curacao",
       "country": "CW",
-      "first_keys":   ["curacao_papiamento"],
-      "surname_keys": ["curacao_papiamento"]
+      "first_keys": [
+        "curacao_papiamento"
+      ],
+      "surname_keys": [
+        "curacao_papiamento"
+      ]
     },
     "aruba": {
       "_doc": [
@@ -674,8 +1622,13 @@
       ],
       "label": "Aruba",
       "country": "AW",
-      "first_keys":   ["aruban_papiamento"],
-      "surname_keys": ["aruban_papiamento", "curacao_papiamento"]
+      "first_keys": [
+        "aruban_papiamento"
+      ],
+      "surname_keys": [
+        "aruban_papiamento",
+        "curacao_papiamento"
+      ]
     },
     "suriname": {
       "_doc": [
@@ -685,18 +1638,50 @@
       ],
       "label": "Suriname",
       "subregions": [
-        { "weight": 0.37, "country": "SR",
-          "first_keys": ["surinamese_hindustani"],
-          "surname_keys": ["surinamese_hindustani"] },
-        { "weight": 0.25, "country": "SR",
-          "first_keys": ["surinamese_javanese"],
-          "surname_keys": ["surinamese_javanese"] },
-        { "weight": 0.23, "country": "SR",
-          "first_keys": ["surinamese_maroon", "afro_caribbean"],
-          "surname_keys": ["surinamese_maroon", "afro_caribbean"] },
-        { "weight": 0.15, "country": "SR",
-          "first_keys": ["surinamese_dutch", "dutch"],
-          "surname_keys": ["surinamese_dutch", "dutch"] }
+        {
+          "weight": 0.37,
+          "country": "SR",
+          "first_keys": [
+            "surinamese_hindustani"
+          ],
+          "surname_keys": [
+            "surinamese_hindustani"
+          ]
+        },
+        {
+          "weight": 0.25,
+          "country": "SR",
+          "first_keys": [
+            "surinamese_javanese"
+          ],
+          "surname_keys": [
+            "surinamese_javanese"
+          ]
+        },
+        {
+          "weight": 0.23,
+          "country": "SR",
+          "first_keys": [
+            "surinamese_maroon",
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "surinamese_maroon",
+            "afro_caribbean"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "SR",
+          "first_keys": [
+            "surinamese_dutch",
+            "dutch"
+          ],
+          "surname_keys": [
+            "surinamese_dutch",
+            "dutch"
+          ]
+        }
       ]
     },
     "guyana": {
@@ -707,12 +1692,28 @@
       ],
       "label": "Guyana",
       "subregions": [
-        { "weight": 0.62, "country": "GY",
-          "first_keys": ["indo_guyanese"],
-          "surname_keys": ["indo_guyanese"] },
-        { "weight": 0.38, "country": "GY",
-          "first_keys": ["afro_guyanese", "afro_caribbean"],
-          "surname_keys": ["afro_guyanese", "afro_caribbean"] }
+        {
+          "weight": 0.62,
+          "country": "GY",
+          "first_keys": [
+            "indo_guyanese"
+          ],
+          "surname_keys": [
+            "indo_guyanese"
+          ]
+        },
+        {
+          "weight": 0.38,
+          "country": "GY",
+          "first_keys": [
+            "afro_guyanese",
+            "afro_caribbean"
+          ],
+          "surname_keys": [
+            "afro_guyanese",
+            "afro_caribbean"
+          ]
+        }
       ]
     },
     "guam": {
@@ -722,8 +1723,12 @@
       ],
       "label": "Guam",
       "country": "GU",
-      "first_keys":   ["chamorro"],
-      "surname_keys": ["chamorro"]
+      "first_keys": [
+        "chamorro"
+      ],
+      "surname_keys": [
+        "chamorro"
+      ]
     },
     "indonesia": {
       "_doc": [
@@ -731,8 +1736,12 @@
       ],
       "label": "Indonesia",
       "country": "ID",
-      "first_keys":   ["indonesian"],
-      "surname_keys": ["indonesian"]
+      "first_keys": [
+        "indonesian"
+      ],
+      "surname_keys": [
+        "indonesian"
+      ]
     },
     "thailand": {
       "_doc": [
@@ -740,8 +1749,12 @@
       ],
       "label": "Thailand",
       "country": "TH",
-      "first_keys":   ["thai"],
-      "surname_keys": ["thai"]
+      "first_keys": [
+        "thai"
+      ],
+      "surname_keys": [
+        "thai"
+      ]
     },
     "europe_southeast": {
       "_doc": [
@@ -751,15 +1764,36 @@
       ],
       "label": "Southeast Europe (emerging baseball)",
       "subregions": [
-        { "weight": 0.45, "country": "GR",
-          "first_keys": ["greek"],
-          "surname_keys": ["greek"] },
-        { "weight": 0.35, "country": "HR",
-          "first_keys": ["croatian"],
-          "surname_keys": ["croatian"] },
-        { "weight": 0.20, "country": "SI",
-          "first_keys": ["slovenian"],
-          "surname_keys": ["slovenian"] }
+        {
+          "weight": 0.45,
+          "country": "GR",
+          "first_keys": [
+            "greek"
+          ],
+          "surname_keys": [
+            "greek"
+          ]
+        },
+        {
+          "weight": 0.35,
+          "country": "HR",
+          "first_keys": [
+            "croatian"
+          ],
+          "surname_keys": [
+            "croatian"
+          ]
+        },
+        {
+          "weight": 0.2,
+          "country": "SI",
+          "first_keys": [
+            "slovenian"
+          ],
+          "surname_keys": [
+            "slovenian"
+          ]
+        }
       ]
     },
     "africa": {
@@ -774,36 +1808,947 @@
       ],
       "label": "Sub-Saharan Africa",
       "subregions": [
-        { "weight": 0.18, "country": "NG",
-          "first_keys": ["yoruba", "african"],
-          "surname_keys": ["yoruba", "african"] },
-        { "weight": 0.14, "country": "NG",
-          "first_keys": ["igbo", "african"],
-          "surname_keys": ["igbo", "african"] },
-        { "weight": 0.08, "country": "NG",
-          "first_keys": ["hausa", "african"],
-          "surname_keys": ["hausa", "african"] },
-        { "weight": 0.13, "country": "ET",
-          "first_keys": ["amharic", "ethiopian"],
-          "surname_keys": ["amharic", "ethiopian"] },
-        { "weight": 0.07, "country": "ET",
-          "first_keys": ["oromo", "ethiopian"],
-          "surname_keys": ["oromo", "ethiopian"] },
-        { "weight": 0.15, "country": "GH",
-          "first_keys": ["akan", "african"],
-          "surname_keys": ["akan", "african"] },
-        { "weight": 0.10, "country": "TZ",
-          "first_keys": ["east_african", "african"],
-          "surname_keys": ["east_african", "african"] },
-        { "weight": 0.05, "country": "MG",
-          "first_keys": ["malagasy"],
-          "surname_keys": ["malagasy"] },
-        { "weight": 0.05, "country": "MZ",
-          "first_keys": ["lusophone_african", "african"],
-          "surname_keys": ["lusophone_african", "african"] },
-        { "weight": 0.05, "country": "AO",
-          "first_keys": ["lusophone_african", "african"],
-          "surname_keys": ["lusophone_african", "african"] }
+        {
+          "weight": 0.18,
+          "country": "NG",
+          "first_keys": [
+            "yoruba",
+            "african"
+          ],
+          "surname_keys": [
+            "yoruba",
+            "african"
+          ]
+        },
+        {
+          "weight": 0.14,
+          "country": "NG",
+          "first_keys": [
+            "igbo",
+            "african"
+          ],
+          "surname_keys": [
+            "igbo",
+            "african"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "NG",
+          "first_keys": [
+            "hausa",
+            "african"
+          ],
+          "surname_keys": [
+            "hausa",
+            "african"
+          ]
+        },
+        {
+          "weight": 0.13,
+          "country": "ET",
+          "first_keys": [
+            "amharic",
+            "ethiopian"
+          ],
+          "surname_keys": [
+            "amharic",
+            "ethiopian"
+          ]
+        },
+        {
+          "weight": 0.07,
+          "country": "ET",
+          "first_keys": [
+            "oromo",
+            "ethiopian"
+          ],
+          "surname_keys": [
+            "oromo",
+            "ethiopian"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "GH",
+          "first_keys": [
+            "akan",
+            "african"
+          ],
+          "surname_keys": [
+            "akan",
+            "african"
+          ]
+        },
+        {
+          "weight": 0.1,
+          "country": "TZ",
+          "first_keys": [
+            "east_african",
+            "african"
+          ],
+          "surname_keys": [
+            "east_african",
+            "african"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "MG",
+          "first_keys": [
+            "malagasy"
+          ],
+          "surname_keys": [
+            "malagasy"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "MZ",
+          "first_keys": [
+            "lusophone_african",
+            "african"
+          ],
+          "surname_keys": [
+            "lusophone_african",
+            "african"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "AO",
+          "first_keys": [
+            "lusophone_african",
+            "african"
+          ],
+          "surname_keys": [
+            "lusophone_african",
+            "african"
+          ]
+        }
+      ]
+    },
+    "brazil": {
+      "_doc": [
+        "Promoted out of south_america to its own region. Brazil's distinctive",
+        "naming is the hyphenated immigrant blend — Japanese-Brazilian,",
+        "Italian-Brazilian, German-Brazilian and Lebanese-Brazilian lines",
+        "(Yamamoto-Costa, Bauer-Silva) layered over the Portuguese base — which",
+        "is genuinely distinct from generic MLB-shaped Latin American naming.",
+        "Subregion weights are the south_america BR subregions renormalised to 1.0."
+      ],
+      "label": "Brazil",
+      "subregions": [
+        {
+          "weight": 0.46,
+          "country": "BR",
+          "first_keys": [
+            "brazilian",
+            "portuguese"
+          ],
+          "surname_keys": [
+            "brazilian_portuguese"
+          ]
+        },
+        {
+          "weight": 0.23,
+          "country": "BR",
+          "first_keys": [
+            "brazilian",
+            "italian"
+          ],
+          "surname_keys": [
+            "brazilian_italian"
+          ]
+        },
+        {
+          "weight": 0.16,
+          "country": "BR",
+          "first_keys": [
+            "brazilian_japanese"
+          ],
+          "surname_keys": [
+            "brazilian_japanese"
+          ]
+        },
+        {
+          "weight": 0.09,
+          "country": "BR",
+          "first_keys": [
+            "brazilian",
+            "german"
+          ],
+          "surname_keys": [
+            "brazilian_german"
+          ]
+        },
+        {
+          "weight": 0.06,
+          "country": "BR",
+          "first_keys": [
+            "brazilian",
+            "arabic"
+          ],
+          "surname_keys": [
+            "brazilian_lebanese"
+          ]
+        }
+      ]
+    },
+    "mexico": {
+      "_doc": [
+        "Real baseball nation (LMB summer league, LMP winter league, WBC",
+        "regular). Promoted out of the latin_america MX subregion so a Mexico",
+        "national side draws names tagged MX rather than the blended Latin",
+        "American pool."
+      ],
+      "label": "Mexico",
+      "country": "MX",
+      "first_keys": [
+        "latino_hispanic",
+        "latin_american"
+      ],
+      "surname_keys": [
+        "latino_hispanic",
+        "latin_american",
+        "spanish"
+      ]
+    },
+    "cuba": {
+      "_doc": [
+        "Premier baseball nation. Promoted out of the latin_america CU",
+        "subregion (which only borrowed the generic latino_hispanic pool)",
+        "to a dedicated Cuban pool. The distinctive feature is the wave of",
+        "Y-initial given names (Yoenis, Yasiel, Yandy, Yulieski) that mark",
+        "post-1990s Cuban naming, over a Spanish + Afro-Cuban surname stock."
+      ],
+      "label": "Cuba",
+      "country": "CU",
+      "first_keys": [
+        "cuban"
+      ],
+      "surname_keys": [
+        "cuban"
+      ]
+    },
+    "dominican": {
+      "_doc": [
+        "The single largest non-US MLB feeder. Promoted out of the",
+        "latin_america DO subregion to a dedicated Dominican pool (García,",
+        "Tatís, Guerrero, Encarnación over the Vladimir/Wander/Starlin",
+        "given-name set)."
+      ],
+      "label": "Dominican Republic",
+      "country": "DO",
+      "first_keys": [
+        "dominican"
+      ],
+      "surname_keys": [
+        "dominican"
+      ]
+    },
+    "venezuela": {
+      "_doc": [
+        "Top-tier baseball nation (LVBP, second-largest MLB feeder after the",
+        "DR). Promoted out of the latin_america VE subregion to a dedicated",
+        "Venezuelan pool (Altuve, Cabrera, Aparicio, Concepción over the",
+        "Asdrúbal/Gleyber/Salvador given-name set)."
+      ],
+      "label": "Venezuela",
+      "country": "VE",
+      "first_keys": [
+        "venezuelan"
+      ],
+      "surname_keys": [
+        "venezuelan"
+      ]
+    },
+    "turkey": {
+      "_doc": [
+        "Promoted out of the central_west_asia blend. Turkish given + family",
+        "names tagged TR."
+      ],
+      "label": "Turkey",
+      "country": "TR",
+      "first_keys": [
+        "turkish"
+      ],
+      "surname_keys": [
+        "turkish"
+      ]
+    },
+    "greece": {
+      "_doc": [
+        "Long-standing baseball federation (hosted the 2004 Olympic",
+        "tournament). Promoted out of europe_southeast to its own Greek pool."
+      ],
+      "label": "Greece",
+      "country": "GR",
+      "first_keys": [
+        "greek"
+      ],
+      "surname_keys": [
+        "greek"
+      ]
+    },
+    "russia": {
+      "_doc": [
+        "Promoted out of the europe_eastern blend. Russian given + family",
+        "names tagged RU."
+      ],
+      "label": "Russia",
+      "country": "RU",
+      "first_keys": [
+        "russian"
+      ],
+      "surname_keys": [
+        "russian"
+      ]
+    },
+    "ukraine": {
+      "_doc": [
+        "Promoted out of the europe_eastern blend. Ukrainian given + family",
+        "names tagged UA."
+      ],
+      "label": "Ukraine",
+      "country": "UA",
+      "first_keys": [
+        "ukrainian"
+      ],
+      "surname_keys": [
+        "ukrainian"
+      ]
+    },
+    "czechia": {
+      "_doc": [
+        "The European baseball powerhouse (real-world WBC 2023 qualifier and",
+        "the continent's breakout program). Promoted out of the europe_eastern",
+        "blend — where it already holds the dominant CZ subregion — to its own",
+        "Czech pool."
+      ],
+      "label": "Czech Republic",
+      "country": "CZ",
+      "first_keys": [
+        "czech"
+      ],
+      "surname_keys": [
+        "czech"
+      ]
+    },
+    "germany": {
+      "_doc": [
+        "Established amateur-baseball nation (Bundesliga + a growing MLB-org",
+        "academy presence). Promoted out of the flat europe_western pool so a",
+        "Germany side draws German names tagged DE."
+      ],
+      "label": "Germany",
+      "country": "DE",
+      "first_keys": [
+        "german"
+      ],
+      "surname_keys": [
+        "german"
+      ]
+    },
+    "scotland": {
+      "_doc": [
+        "Associate cricket nation with its own pathway. Promoted out of the",
+        "british_isles GB blend to a dedicated Scottish pool (Mc/Mac surnames",
+        "+ the Scottish given-name set). Carries country code GB."
+      ],
+      "label": "Scotland",
+      "country": "GB",
+      "first_keys": [
+        "scottish"
+      ],
+      "surname_keys": [
+        "scottish"
+      ]
+    },
+    "hong_kong": {
+      "_doc": [
+        "Associate cricket side and an East-Asian baseball outpost. Chinese",
+        "(Cantonese) given + family names tagged HK."
+      ],
+      "label": "Hong Kong",
+      "country": "HK",
+      "first_keys": [
+        "chinese"
+      ],
+      "surname_keys": [
+        "chinese"
+      ]
+    },
+    "bermuda": {
+      "_doc": [
+        "Atlantic cricket nation with deep pedigree (the St. George's /",
+        "Somerset Cup Match rivalry). Afro-Caribbean given + family names",
+        "over a British-colonial surname layer, tagged BM."
+      ],
+      "label": "Bermuda",
+      "country": "BM",
+      "first_keys": [
+        "afro_caribbean",
+        "english_general"
+      ],
+      "surname_keys": [
+        "afro_caribbean",
+        "english_general"
+      ]
+    },
+    "namibia": {
+      "_doc": [
+        "Associate cricket nation whose national side is historically",
+        "dominated by the Afrikaans- and German-descended communities",
+        "(Erasmus, Wiese, Trumpelmann, Loftie-Eaton) over an Oshiwambo/Bantu",
+        "majority. Reuses the afrikaner, german and african pools rather than",
+        "minting a new bucket — the demographic IS that blend."
+      ],
+      "label": "Namibia",
+      "subregions": [
+        {
+          "weight": 0.45,
+          "country": "NA",
+          "first_keys": [
+            "afrikaner"
+          ],
+          "surname_keys": [
+            "afrikaner"
+          ]
+        },
+        {
+          "weight": 0.3,
+          "country": "NA",
+          "first_keys": [
+            "german",
+            "afrikaner"
+          ],
+          "surname_keys": [
+            "german"
+          ]
+        },
+        {
+          "weight": 0.25,
+          "country": "NA",
+          "first_keys": [
+            "african"
+          ],
+          "surname_keys": [
+            "african"
+          ]
+        }
+      ]
+    },
+    "kazakhstan": {
+      "_doc": [
+        "Central-Asian frontier market. The growth thesis is the Koryo-saram",
+        "infusion: the ethnic-Korean community deported to Kazakhstan in 1937",
+        "carries the baseball culture of the East-Asian launch market inland,",
+        "seeding the sport ahead of its neighbours. Rosters blend the Kazakh",
+        "majority (the central_asian pool — Nursultan, Nazarbayev, Doszhanov)",
+        "with a deliberately over-weighted Korean wave and the large Russian-",
+        "Kazakhstani minority. All tagged KZ."
+      ],
+      "label": "Kazakhstan",
+      "subregions": [
+        {
+          "weight": 0.55,
+          "country": "KZ",
+          "first_keys": [
+            "central_asian"
+          ],
+          "surname_keys": [
+            "central_asian"
+          ]
+        },
+        {
+          "weight": 0.25,
+          "country": "KZ",
+          "first_keys": [
+            "korean"
+          ],
+          "surname_keys": [
+            "korean"
+          ]
+        },
+        {
+          "weight": 0.2,
+          "country": "KZ",
+          "first_keys": [
+            "russian"
+          ],
+          "surname_keys": [
+            "russian"
+          ]
+        }
+      ]
+    },
+    "croatia": {
+      "_doc": [
+        "European baseball nation (best Euro finish 7th, 2021). Promoted out",
+        "of the europe_southeast blend to its own Croatian pool."
+      ],
+      "label": "Croatia",
+      "country": "HR",
+      "first_keys": [
+        "croatian"
+      ],
+      "surname_keys": [
+        "croatian"
+      ]
+    },
+    "slovenia": {
+      "_doc": [
+        "Emerging European baseball nation (Euro debut 10th, 1995). Promoted",
+        "out of the europe_southeast blend to its own Slovenian pool."
+      ],
+      "label": "Slovenia",
+      "country": "SI",
+      "first_keys": [
+        "slovenian"
+      ],
+      "surname_keys": [
+        "slovenian"
+      ]
+    },
+    "hungary": {
+      "_doc": [
+        "Emerging European baseball nation. Promoted out of the europe_eastern",
+        "blend so a Hungary side draws Magyar (surname-first in life, rendered",
+        "given-surname here) names tagged HU."
+      ],
+      "label": "Hungary",
+      "country": "HU",
+      "first_keys": [
+        "hungarian"
+      ],
+      "surname_keys": [
+        "hungarian"
+      ]
+    },
+    "slovakia": {
+      "_doc": [
+        "Emerging European baseball nation. Promoted out of the europe_eastern",
+        "blend to its own Slovak pool, tagged SK."
+      ],
+      "label": "Slovakia",
+      "country": "SK",
+      "first_keys": [
+        "slovak"
+      ],
+      "surname_keys": [
+        "slovak"
+      ]
+    },
+    "austria": {
+      "_doc": [
+        "European baseball nation (Euro 9th, 2025). German given + family",
+        "names tagged AT, distinct from the Germany pool only by country code."
+      ],
+      "label": "Austria",
+      "country": "AT",
+      "first_keys": [
+        "german"
+      ],
+      "surname_keys": [
+        "german"
+      ]
+    },
+    "san_marino": {
+      "_doc": [
+        "European baseball pioneer — the microstate's 5th place in 1971 is the",
+        "best finish of any never-medalist. Italian given + family names",
+        "tagged SM."
+      ],
+      "label": "San Marino",
+      "country": "SM",
+      "first_keys": [
+        "italian"
+      ],
+      "surname_keys": [
+        "italian"
+      ]
+    },
+    "switzerland": {
+      "_doc": [
+        "European baseball nation (Euro 11th, 2025). Multilingual by",
+        "construction: a German-speaking majority with French- and Italian-",
+        "speaking minorities, each drawing its own given+surname pool. All",
+        "tagged CH."
+      ],
+      "label": "Switzerland",
+      "subregions": [
+        {
+          "weight": 0.62,
+          "country": "CH",
+          "first_keys": [
+            "german"
+          ],
+          "surname_keys": [
+            "german"
+          ]
+        },
+        {
+          "weight": 0.23,
+          "country": "CH",
+          "first_keys": [
+            "french"
+          ],
+          "surname_keys": [
+            "french"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "CH",
+          "first_keys": [
+            "italian"
+          ],
+          "surname_keys": [
+            "italian"
+          ]
+        }
+      ]
+    },
+    "lithuania": {
+      "_doc": [
+        "Baltic baseball nation (Euro 15th-tie, 2025). Dedicated Lithuanian",
+        "pool — the gendered -as/-is/-us masculine surname endings",
+        "(Kazlauskas, Stankevičius, Sabonis). Tagged LT."
+      ],
+      "label": "Lithuania",
+      "country": "LT",
+      "first_keys": [
+        "lithuanian"
+      ],
+      "surname_keys": [
+        "lithuanian"
+      ]
+    },
+    "cape_verde": {
+      "_doc": [
+        "Caribbean-adjacent Atlantic sleeper. The large Cape Verdean diaspora",
+        "in New England (the oldest African-immigrant community in the US)",
+        "gives O27 a real recruiting channel into the islands. Lusophone-",
+        "Creole naming (Tavares, Monteiro, Lopes) over Portuguese given",
+        "names. Tagged CV."
+      ],
+      "label": "Cape Verde",
+      "country": "CV",
+      "first_keys": [
+        "lusophone_african",
+        "portuguese"
+      ],
+      "surname_keys": [
+        "lusophone_african"
+      ]
+    },
+    "mauritius": {
+      "_doc": [
+        "Indian-Ocean sleeper — the 'Samoa-to-rugby' archetype: a small",
+        "island whose multi-ethnic athletic base over-produces relative to",
+        "population once a sport takes root. Naming is the real Mauritian",
+        "mosaic: Indo-Mauritian Hindu (Bihari) majority, Tamil/Telugu and",
+        "Muslim Indian lines, an Afro-Malagasy Creole plurality, the Franco-",
+        "Mauritian elite and a Sino-Mauritian minority. Tagged MU."
+      ],
+      "label": "Mauritius",
+      "subregions": [
+        {
+          "weight": 0.32,
+          "country": "MU",
+          "first_keys": [
+            "indian",
+            "indian_north"
+          ],
+          "surname_keys": [
+            "indian"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "MU",
+          "first_keys": [
+            "indian_south"
+          ],
+          "surname_keys": [
+            "indian_south_tamil",
+            "indian"
+          ]
+        },
+        {
+          "weight": 0.13,
+          "country": "MU",
+          "first_keys": [
+            "arabic",
+            "indian"
+          ],
+          "surname_keys": [
+            "indian"
+          ]
+        },
+        {
+          "weight": 0.25,
+          "country": "MU",
+          "first_keys": [
+            "french",
+            "malagasy"
+          ],
+          "surname_keys": [
+            "french",
+            "malagasy"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "MU",
+          "first_keys": [
+            "french"
+          ],
+          "surname_keys": [
+            "french"
+          ]
+        },
+        {
+          "weight": 0.07,
+          "country": "MU",
+          "first_keys": [
+            "chinese"
+          ],
+          "surname_keys": [
+            "chinese"
+          ]
+        }
+      ]
+    },
+    "barbados": {
+      "_doc": [
+        "Anglophone Caribbean nation with a tiny but real baseball community",
+        "alongside its cricket pedigree — an O27 conversion target. Afro-",
+        "Caribbean given + family names. Tagged BB."
+      ],
+      "label": "Barbados",
+      "country": "BB",
+      "first_keys": [
+        "afro_caribbean"
+      ],
+      "surname_keys": [
+        "afro_caribbean"
+      ]
+    },
+    "bahamas": {
+      "_doc": [
+        "Caribbean baseball sleeper with genuine MLB pedigree per capita",
+        "(Jazz Chisholm Jr., Antoan Richardson). Afro-Caribbean given +",
+        "family names. Tagged BS."
+      ],
+      "label": "Bahamas",
+      "country": "BS",
+      "first_keys": [
+        "afro_caribbean"
+      ],
+      "surname_keys": [
+        "afro_caribbean"
+      ]
+    },
+    "iran": {
+      "_doc": [
+        "Real baseball federation with a small, growing community — an O27",
+        "frontier target. Dedicated Iranian-Persian pool (Dariush, Kourosh,",
+        "Arash over Hosseini/Shirazi/Esfahani), distinct from the Afghan",
+        "Dari pool. Tagged IR."
+      ],
+      "label": "Iran",
+      "country": "IR",
+      "first_keys": [
+        "iranian"
+      ],
+      "surname_keys": [
+        "iranian"
+      ]
+    },
+    "uganda": {
+      "_doc": [
+        "African baseball sleeper — the genuine Little-League Cinderella",
+        "story (Uganda reached the LLWS), an O27 development target. Reuses",
+        "the east_african + african pools (Baganda / Banyankole / Acholi",
+        "naming). Tagged UG."
+      ],
+      "label": "Uganda",
+      "country": "UG",
+      "first_keys": [
+        "east_african",
+        "african"
+      ],
+      "surname_keys": [
+        "east_african",
+        "african"
+      ]
+    },
+    "spain": {
+      "_doc": [
+        "Second-tier European baseball nation (CBS league, perennial Euro",
+        "qualifier). Castilian given + family names tagged ES."
+      ],
+      "label": "Spain",
+      "country": "ES",
+      "first_keys": [
+        "spanish"
+      ],
+      "surname_keys": [
+        "spanish"
+      ]
+    },
+    "poland": {
+      "_doc": [
+        "Small but real European baseball scene (Polish Baseball League,",
+        "Euro qualifier). Polish given + family names tagged PL."
+      ],
+      "label": "Poland",
+      "country": "PL",
+      "first_keys": [
+        "polish"
+      ],
+      "surname_keys": [
+        "polish"
+      ]
+    },
+    "belgium": {
+      "_doc": [
+        "Frontier baseball nation — the scene is Flemish-led (Antwerp /",
+        "Borgerhout), so naming blends Dutch (Flemish) and French (Walloon).",
+        "Tagged BE."
+      ],
+      "label": "Belgium",
+      "country": "BE",
+      "first_keys": [
+        "dutch",
+        "french"
+      ],
+      "surname_keys": [
+        "dutch",
+        "french"
+      ]
+    },
+    "palestine": {
+      "_doc": [
+        "Frontier baseball nation with little domestic infrastructure — the",
+        "program leans on the diaspora (the expat-fueled talent steering in",
+        "o27v2.youth gives it occasional foreign-raised call-ups). Arabic",
+        "given + family names tagged PS."
+      ],
+      "label": "Palestine",
+      "country": "PS",
+      "first_keys": [
+        "arabic"
+      ],
+      "surname_keys": [
+        "arabic"
+      ]
+    },
+    "lebanon": {
+      "_doc": [
+        "Frontier baseball nation fueled by one of the world's largest",
+        "diasporas — Brazil and Trinidad hold huge Lebanese-descended",
+        "communities, so the family-name pool blends domestic Arabic with the",
+        "brazilian_lebanese / lebanese_trinidadian diaspora surnames. Tagged LB."
+      ],
+      "label": "Lebanon",
+      "country": "LB",
+      "first_keys": [
+        "arabic",
+        "brazilian"
+      ],
+      "surname_keys": [
+        "arabic",
+        "brazilian_lebanese",
+        "lebanese_trinidadian"
+      ]
+    },
+    "zaryanovia": {
+      "_doc": [
+        "Zaryanovia — alt-history Russian Far East. Names are produced by",
+        "the Zaryanification converter (o27v2/zaryan_names.py): English first",
+        "+ surname drawn from the American / Black-American pools and run",
+        "through a Russian-English creole pipeline (phonology, patronymic,",
+        "surname-path A/B/C, feminization). The creole majority is the",
+        "primary draw; the minority subregions below carry the four other",
+        "founding-stream populations (ethnic Russians, Koryo-saram Koreans,",
+        "Chinese, Africans incl. the Ethiopian thread) plus the Soviet-era",
+        "Kazakh / Central Asian minority. The Russian ethnic minority is the",
+        "'marked' group — small share. No Japanese stream (Sakhalin Japanese",
+        "were not a founding population per the master wiki)."
+      ],
+      "label": "Zaryanovia",
+      "country": "ZR",
+      "subregions": [
+        {
+          "weight": 0.65,
+          "country": "ZR",
+          "_note": "creole majority — Zaryanification pipeline applies",
+          "first_keys": [
+            "black_american",
+            "american_south"
+          ],
+          "surname_keys": [
+            "american_general",
+            "black_american"
+          ]
+        },
+        {
+          "weight": 0.12,
+          "country": "ZR",
+          "first_keys": [
+            "russian"
+          ],
+          "surname_keys": [
+            "russian"
+          ]
+        },
+        {
+          "weight": 0.08,
+          "country": "ZR",
+          "first_keys": [
+            "korean"
+          ],
+          "surname_keys": [
+            "koryo_saram"
+          ]
+        },
+        {
+          "weight": 0.07,
+          "country": "ZR",
+          "first_keys": [
+            "african",
+            "ethiopian",
+            "amharic"
+          ],
+          "surname_keys": [
+            "african",
+            "ethiopian",
+            "amharic"
+          ]
+        },
+        {
+          "weight": 0.05,
+          "country": "ZR",
+          "first_keys": [
+            "chinese"
+          ],
+          "surname_keys": [
+            "chinese"
+          ]
+        },
+        {
+          "weight": 0.03,
+          "country": "ZR",
+          "first_keys": [
+            "central_asian"
+          ],
+          "surname_keys": [
+            "central_asian"
+          ]
+        }
       ]
     }
   },
@@ -811,9 +2756,14 @@
     "americas_pro": {
       "label": "Americas Pro (MLB-like — pre-cricket-pipeline baseline)",
       "weights": {
-        "us": 0.55, "latin_america": 0.28, "east_asia": 0.04,
-        "anzac": 0.03, "canada": 0.04, "europe_western": 0.03,
-        "africa": 0.02, "central_west_asia": 0.01
+        "us": 0.55,
+        "latin_america": 0.28,
+        "east_asia": 0.04,
+        "anzac": 0.03,
+        "canada": 0.04,
+        "europe_western": 0.03,
+        "africa": 0.02,
+        "central_west_asia": 0.01
       }
     },
     "o27_year_1": {
@@ -831,13 +2781,23 @@
         "narrative."
       ],
       "weights": {
-        "us": 0.33, "latin_america": 0.20, "south_america": 0.04,
-        "east_asia": 0.12, "south_asia": 0.07, "anzac": 0.05,
-        "caribbean_cricket": 0.07, "caribbean_dutch": 0.01,
-        "africa_cricket": 0.03, "british_isles": 0.025,
-        "afghan_central_asia": 0.005, "malaysia": 0.01,
-        "pacific_islands": 0.005, "canada": 0.04, "philippines": 0.01,
-        "europe_western": 0.02, "europe_eastern": 0.005
+        "us": 0.33,
+        "latin_america": 0.2,
+        "south_america": 0.04,
+        "east_asia": 0.12,
+        "south_asia": 0.07,
+        "anzac": 0.05,
+        "caribbean_cricket": 0.07,
+        "caribbean_dutch": 0.01,
+        "africa_cricket": 0.03,
+        "british_isles": 0.025,
+        "afghan_central_asia": 0.005,
+        "malaysia": 0.01,
+        "pacific_islands": 0.005,
+        "canada": 0.04,
+        "philippines": 0.01,
+        "europe_western": 0.02,
+        "europe_eastern": 0.005
       }
     },
     "o27_year_5": {
@@ -853,13 +2813,23 @@
         "count, while GY+TT remain top-tier per capita."
       ],
       "weights": {
-        "us": 0.18, "latin_america": 0.15, "south_america": 0.10,
-        "east_asia": 0.09, "south_asia": 0.14, "anzac": 0.06,
-        "caribbean_cricket": 0.11, "caribbean_dutch": 0.02,
-        "africa_cricket": 0.05, "british_isles": 0.03,
-        "afghan_central_asia": 0.015, "malaysia": 0.025,
-        "pacific_islands": 0.02, "canada": 0.02, "philippines": 0.02,
-        "europe_western": 0.015, "europe_eastern": 0.02
+        "us": 0.18,
+        "latin_america": 0.15,
+        "south_america": 0.1,
+        "east_asia": 0.09,
+        "south_asia": 0.14,
+        "anzac": 0.06,
+        "caribbean_cricket": 0.11,
+        "caribbean_dutch": 0.02,
+        "africa_cricket": 0.05,
+        "british_isles": 0.03,
+        "afghan_central_asia": 0.015,
+        "malaysia": 0.025,
+        "pacific_islands": 0.02,
+        "canada": 0.02,
+        "philippines": 0.02,
+        "europe_western": 0.015,
+        "europe_eastern": 0.02
       }
     },
     "o27_year_10": {
@@ -879,46 +2849,80 @@
         "German-Brazilian rosters distinct from MLB-shaped Latin America."
       ],
       "weights": {
-        "us": 0.13, "latin_america": 0.11, "south_america": 0.13,
-        "east_asia": 0.09, "south_asia": 0.20, "anzac": 0.075,
-        "caribbean_cricket": 0.13, "caribbean_dutch": 0.025,
-        "africa_cricket": 0.06, "british_isles": 0.035,
-        "afghan_central_asia": 0.02, "malaysia": 0.035,
-        "pacific_islands": 0.04, "canada": 0.015, "philippines": 0.03,
-        "europe_western": 0.005, "europe_eastern": 0.04
+        "us": 0.13,
+        "latin_america": 0.11,
+        "south_america": 0.13,
+        "east_asia": 0.09,
+        "south_asia": 0.2,
+        "anzac": 0.075,
+        "caribbean_cricket": 0.13,
+        "caribbean_dutch": 0.025,
+        "africa_cricket": 0.06,
+        "british_isles": 0.035,
+        "afghan_central_asia": 0.02,
+        "malaysia": 0.035,
+        "pacific_islands": 0.04,
+        "canada": 0.015,
+        "philippines": 0.03,
+        "europe_western": 0.005,
+        "europe_eastern": 0.04
       }
     },
     "global": {
       "label": "Global (even-handed mix)",
       "weights": {
-        "us": 0.10, "latin_america": 0.08, "south_america": 0.06,
-        "europe_western": 0.07, "europe_eastern": 0.04, "nordic": 0.02,
-        "europe_southeast": 0.02, "east_asia": 0.07, "southeast_asia": 0.05,
-        "philippines": 0.04, "south_asia": 0.12, "central_west_asia": 0.03,
-        "gulf_cricket": 0.02, "israel": 0.01, "africa": 0.05,
-        "africa_cricket": 0.05, "anzac": 0.04, "caribbean_cricket": 0.05,
-        "caribbean_dutch": 0.02, "pacific_islands": 0.03,
-        "british_isles": 0.03, "malaysia": 0.02
+        "us": 0.1,
+        "latin_america": 0.08,
+        "south_america": 0.06,
+        "europe_western": 0.07,
+        "europe_eastern": 0.04,
+        "nordic": 0.02,
+        "europe_southeast": 0.02,
+        "east_asia": 0.07,
+        "southeast_asia": 0.05,
+        "philippines": 0.04,
+        "south_asia": 0.12,
+        "central_west_asia": 0.03,
+        "gulf_cricket": 0.02,
+        "israel": 0.01,
+        "africa": 0.05,
+        "africa_cricket": 0.05,
+        "anzac": 0.04,
+        "caribbean_cricket": 0.05,
+        "caribbean_dutch": 0.02,
+        "pacific_islands": 0.03,
+        "british_isles": 0.03,
+        "malaysia": 0.02
       }
     },
     "european": {
       "label": "European",
       "weights": {
-        "europe_western": 0.45, "europe_eastern": 0.18, "nordic": 0.13,
-        "british_isles": 0.15, "central_west_asia": 0.05, "africa": 0.04
+        "europe_western": 0.45,
+        "europe_eastern": 0.18,
+        "nordic": 0.13,
+        "british_isles": 0.15,
+        "central_west_asia": 0.05,
+        "africa": 0.04
       }
     },
     "asian_pro": {
       "label": "East-Asia Pro",
       "weights": {
-        "east_asia": 0.60, "southeast_asia": 0.13, "philippines": 0.10,
-        "us": 0.07, "latin_america": 0.05, "malaysia": 0.05
+        "east_asia": 0.6,
+        "southeast_asia": 0.13,
+        "philippines": 0.1,
+        "us": 0.07,
+        "latin_america": 0.05,
+        "malaysia": 0.05
       }
     },
     "nordic": {
       "label": "Nordic (pesäpallo / Finnish)",
       "weights": {
-        "nordic": 0.92, "europe_eastern": 0.04, "us": 0.04
+        "nordic": 0.92,
+        "europe_eastern": 0.04,
+        "us": 0.04
       }
     },
     "us_only": {

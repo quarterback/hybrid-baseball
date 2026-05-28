@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}{{ team.name }} — World Cup Roster{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <a href="{{ url_for('pro_worldcup_view') }}" class="small text-secondary">← Pro World Cup</a>
+    <h2 class="mb-0 mt-1">
+      <span class="team-abbrev">{{ team.abbrev }}</span>
+      {{ team.name }}
+    </h2>
+    <div class="text-secondary small">
+      {{ team.region }} · pool strength {{ "%.1f"|format(team.pool_strength or 0) }} ·
+      {% if locked %}roster locked{% else %}roster open{% endif %}
+    </div>
+  </div>
+  {% if not locked %}
+  <div class="d-flex gap-2">
+    <button id="auto-btn" class="btn btn-outline-warning btn-sm">Auto-pick</button>
+    <button id="save-btn" class="btn btn-warning btn-sm">Save roster</button>
+  </div>
+  {% endif %}
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="dense mb-3">
+      <div class="panel-title d-flex justify-content-between align-items-center">
+        <span>Selected roster (<span id="selected-count">{{ roster|length }}</span>/{{ roster_size }})</span>
+        <span class="text-secondary small">Click ✕ to remove</span>
+      </div>
+      <table class="table table-sm dense-table mb-0 mt-2" style="font-size:.85rem">
+        <thead><tr>
+          <th>Player</th>
+          <th>Pos</th>
+          <th class="num">OVR</th>
+          <th>Club</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="selected-tbody">
+          {% for p in roster %}
+            <tr data-pid="{{ p.player_id }}" data-pos="{{ p.position }}" data-pitcher="{{ p.is_pitcher }}">
+              <td>{{ p.name }}</td>
+              <td>{{ p.position }}</td>
+              <td class="num">{{ p.composite }}</td>
+              <td class="text-secondary small">{{ p.club_abbrev or '—' }}</td>
+              <td>{% if not locked %}<button class="btn btn-sm btn-link p-0 remove-btn" data-pid="{{ p.player_id }}">✕</button>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="dense mb-3">
+      <div class="panel-title d-flex justify-content-between align-items-center">
+        <span>Eligible pool ({{ eligible|length }})</span>
+        <span class="text-secondary small">Heritage call-ups flagged</span>
+      </div>
+      <div class="d-flex gap-2 mb-2">
+        <input id="filter-input" class="form-control form-control-sm" placeholder="Filter by name / position…">
+        <select id="pos-filter" class="form-select form-select-sm" style="max-width:120px">
+          <option value="">All</option>
+          <option value="P">Pitchers</option>
+          <option value="C">Catchers</option>
+          <option value="IF">Infielders</option>
+          <option value="OF">Outfielders</option>
+        </select>
+      </div>
+      <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
+        <thead><tr>
+          <th></th>
+          <th>Player</th>
+          <th>Pos</th>
+          <th class="num">OVR</th>
+          <th>Club</th>
+        </tr></thead>
+        <tbody id="eligible-tbody">
+          {% for p in eligible %}
+            <tr class="eligible-row"
+                data-pid="{{ p.id }}"
+                data-pos="{{ p.position }}"
+                data-pitcher="{{ p.is_pitcher }}"
+                data-name="{{ p.name|lower }}">
+              <td>
+                {% if not locked %}
+                <input type="checkbox" class="form-check-input eligible-cb"
+                       data-pid="{{ p.id }}"
+                       data-name="{{ p.name }}"
+                       data-pos="{{ p.position }}"
+                       data-pitcher="{{ p.is_pitcher }}"
+                       data-club="{{ p.club_abbrev or '' }}"
+                       data-composite="{{ p.composite }}">
+                {% endif %}
+              </td>
+              <td>
+                {{ p.name }}
+                {% if p.is_heritage %}
+                  <span class="badge bg-info text-dark ms-1" title="Heritage call-up via secondary nationality">H</span>
+                {% endif %}
+              </td>
+              <td>{{ p.position }}</td>
+              <td class="num">{{ p.composite }}</td>
+              <td class="text-secondary small">{{ p.club_abbrev or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const wcTeamId = {{ team.id }};
+  const locked = {{ 'true' if locked else 'false' }};
+
+  const selectedTbody = document.getElementById('selected-tbody');
+  const countSpan     = document.getElementById('selected-count');
+
+  function selectedIds() {
+    return Array.from(selectedTbody.querySelectorAll('tr[data-pid]'))
+                .map(tr => parseInt(tr.dataset.pid, 10));
+  }
+  function syncCheckboxes() {
+    const sel = new Set(selectedIds());
+    document.querySelectorAll('.eligible-cb').forEach(cb => {
+      cb.checked = sel.has(parseInt(cb.dataset.pid, 10));
+    });
+    countSpan.textContent = sel.size;
+  }
+  function addRow(pid, name, pos, pitcher, club, composite) {
+    if (selectedIds().includes(pid)) return;
+    const tr = document.createElement('tr');
+    tr.dataset.pid = pid;
+    tr.dataset.pos = pos;
+    tr.dataset.pitcher = pitcher;
+    tr.innerHTML = `
+      <td>${name}</td>
+      <td>${pos}</td>
+      <td class="num">${composite}</td>
+      <td class="text-secondary small">${club || '—'}</td>
+      <td><button class="btn btn-sm btn-link p-0 remove-btn" data-pid="${pid}">✕</button></td>`;
+    selectedTbody.appendChild(tr);
+  }
+  function removeRow(pid) {
+    const tr = selectedTbody.querySelector(`tr[data-pid="${pid}"]`);
+    if (tr) tr.remove();
+  }
+
+  if (!locked) {
+    document.addEventListener('click', (e) => {
+      if (e.target.matches('.remove-btn')) {
+        removeRow(parseInt(e.target.dataset.pid, 10));
+        syncCheckboxes();
+      }
+    });
+    document.querySelectorAll('.eligible-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const pid = parseInt(cb.dataset.pid, 10);
+        if (cb.checked) {
+          if (selectedIds().length >= {{ roster_size }}) {
+            cb.checked = false;
+            alert('{{ roster_size }}-man roster is full. Remove a player first.');
+            return;
+          }
+          addRow(pid, cb.dataset.name, cb.dataset.pos, cb.dataset.pitcher,
+                 cb.dataset.club, cb.dataset.composite);
+        } else {
+          removeRow(pid);
+        }
+        syncCheckboxes();
+      });
+    });
+
+    // Filters
+    const fInput = document.getElementById('filter-input');
+    const posSel = document.getElementById('pos-filter');
+    function applyFilter() {
+      const q = (fInput.value || '').toLowerCase();
+      const pos = posSel.value;
+      document.querySelectorAll('.eligible-row').forEach(tr => {
+        const name = tr.dataset.name;
+        const rowPos = tr.dataset.pos;
+        const isP = tr.dataset.pitcher === '1' || tr.dataset.pitcher === 'True';
+        let posMatch = true;
+        if (pos === 'P') posMatch = isP;
+        else if (pos === 'C') posMatch = rowPos === 'C';
+        else if (pos === 'IF') posMatch = ['1B','2B','3B','SS'].includes(rowPos);
+        else if (pos === 'OF') posMatch = ['LF','CF','RF'].includes(rowPos);
+        tr.style.display = (name.includes(q) && posMatch) ? '' : 'none';
+      });
+    }
+    fInput.addEventListener('input', applyFilter);
+    posSel.addEventListener('change', applyFilter);
+
+    async function postJSON(url, body) {
+      const r = await fetch(url, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body || {}),
+      });
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.error || ('HTTP '+r.status));
+      return d;
+    }
+
+    document.getElementById('auto-btn').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        await postJSON(`/api/pro-worldcup/team/${wcTeamId}/auto`);
+        window.location.reload();
+      } catch (err) {
+        alert('Auto-pick failed: ' + err.message);
+        e.target.disabled = false;
+      }
+    });
+    document.getElementById('save-btn').addEventListener('click', async (e) => {
+      const ids = selectedIds();
+      if (ids.length === 0) { alert('Pick at least one player.'); return; }
+      if (ids.length < 14) {
+        if (!confirm(`Only ${ids.length} players selected — the engine may fail. Save anyway?`)) return;
+      }
+      e.target.disabled = true;
+      try {
+        await postJSON(`/api/pro-worldcup/team/${wcTeamId}/roster`, {player_ids: ids});
+        alert('Roster saved.');
+        window.location.href = '{{ url_for("pro_worldcup_view") }}';
+      } catch (err) {
+        alert('Save failed: ' + err.message);
+        e.target.disabled = false;
+      }
+    });
+
+    syncCheckboxes();
+  }
+})();
+</script>
+{% endblock %}

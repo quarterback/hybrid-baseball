@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}Financials — Currency Board{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Financials</h2>
+    <div class="text-secondary small">
+      Two in-game fictional currencies — <strong>guilder (ƒ)</strong> and
+      <strong>zora (₳)</strong> — alongside every real-world currency the
+      game references. Real FX pulled live from
+      <code>open.er-api.com</code> (no API key required, free tier, ~daily
+      update cadence).
+    </div>
+  </div>
+  <form method="post" class="d-flex gap-2 align-items-center">
+    <input type="hidden" name="action" value="refresh">
+    <div class="text-secondary small">
+      {% if snap and snap.error %}
+        <span class="text-warning">⚠ {{ snap.error }}</span>
+      {% elif snap and snap.stale %}
+        <span class="text-warning">⚠ serving stale cache</span>
+      {% else %}
+        As of: <strong>{{ as_of }}</strong>
+        {% if fetched_age_sec is not none %}
+          · fetched {{ (fetched_age_sec / 60) | int }} min ago
+        {% endif %}
+      {% endif %}
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" type="submit">Refresh now</button>
+  </form>
+</div>
+
+{# ----------------------- At-a-glance cards ----------------------- #}
+<div class="row g-3 mb-4">
+  {% for row in cross %}
+  <div class="col-md-3 col-6">
+    <div class="panel panel-body h-100">
+      <div class="d-flex justify-content-between align-items-baseline">
+        <h5 class="mb-1">
+          <span style="font-size:1.3em;font-weight:700">{{ row.sym }}</span>
+          {{ row.label }}
+        </h5>
+        {% if row.label in ('Guilder','Zora') %}
+          <span class="badge bg-info text-dark">fictional</span>
+        {% endif %}
+      </div>
+      <div class="text-secondary small mb-1">1 {{ row.label }} buys:</div>
+      <ul class="list-unstyled small mb-0">
+        {% for cell in row.cells %}
+          {% set head = cross[loop.index0] %}
+          {% if head.label != row.label %}
+            <li>{{ head.sym }} {{ "%.4f"|format(cell) if cell < 1 else "%.2f"|format(cell) }} {{ head.label }}</li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ----------------------- Zora basket (live) ----------------------- #}
+<div class="panel mb-4">
+  <div class="panel-title d-flex justify-content-between align-items-center">
+    <div>
+      <strong>Zora basket</strong> — live computation
+      <span class="text-secondary small ms-2">
+        Baseline 1 {{ zora_symbol }} = ${{ "%.2f"|format(zora_panel.baseline_rate) }} ·
+        clamp [${{ "%.2f"|format(zora_panel.floor) }}, ${{ "%.2f"|format(zora_panel.ceil) }}]
+      </span>
+    </div>
+    <div>
+      <span class="badge bg-secondary">Norwegian-model float</span>
+    </div>
+  </div>
+  <div class="panel-body">
+    <table class="table table-sm dense-table mb-3" style="font-size:.85rem">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th class="text-end">Weight</th>
+          <th class="text-end">Baseline /USD</th>
+          <th class="text-end">Current /USD</th>
+          <th class="text-end">Index</th>
+          <th class="text-end">Contribution</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in zora_panel.components %}
+        <tr>
+          <td><strong>{{ c.code }}</strong></td>
+          <td class="text-end">{{ "%.0f%%"|format(c.weight * 100) }}</td>
+          <td class="text-end">{{ "%.4f"|format(c.baseline) }}</td>
+          <td class="text-end">{{ "%.4f"|format(c.current) }}</td>
+          <td class="text-end">
+            <span class="{% if c.index > 1.0 %}text-success{% elif c.index < 1.0 %}text-danger{% endif %}">
+              {{ "%.4f"|format(c.index) }}
+            </span>
+          </td>
+          <td class="text-end">{{ "%.4f"|format(c.contrib) }}</td>
+        </tr>
+      {% endfor %}
+        <tr class="border-top">
+          <td colspan="5" class="text-end"><strong>Basket multiplier:</strong></td>
+          <td class="text-end"><strong>{{ "%.4f"|format(zora_panel.multiplier) }}</strong></td>
+        </tr>
+        <tr>
+          <td colspan="5" class="text-end">
+            ${{ "%.2f"|format(zora_panel.baseline_rate) }} × {{ "%.4f"|format(zora_panel.multiplier) }} = ${{ "%.4f"|format(zora_panel.raw_rate) }}
+            {% if zora_panel.clamped %}<span class="text-warning">→ clamped</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <strong style="font-size:1.1em">${{ "%.4f"|format(zora_panel.rate) }} / {{ zora_symbol }}</strong>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="row small">
+      <div class="col-md-6">
+        <div class="text-secondary mb-1"><strong>Excluded by design:</strong></div>
+        <div>🇷🇺 <strong>Russian ruble (RUB)</strong> — being the stable alternative
+            to ruble instability is the whole haven-currency value proposition.</div>
+      </div>
+      <div class="col-md-6">
+        <div class="text-secondary mb-1"><strong>Reserve war chest (backs the float):</strong></div>
+        <div>{{ zora_panel.reserve | join(' · ') }} (XAU = gold; not quoted by FX feed)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ----------------------- Guilder basket (informational) ----------------------- #}
+<div class="panel mb-4">
+  <div class="panel-title d-flex justify-content-between align-items-center">
+    <div>
+      <strong>Guilder basket</strong> — informational only
+      <span class="text-secondary small ms-2">
+        Anchor: <strong>{{ guilder_panel.anchor }}</strong> (fixed; the basket
+        is the worldbuilding source of truth, not the live rate-setter).
+      </span>
+    </div>
+    <div>
+      <span class="badge bg-secondary">Caribbean-Pacific</span>
+    </div>
+  </div>
+  <div class="panel-body">
+    <table class="table table-sm dense-table mb-3" style="font-size:.85rem">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th class="text-end">Weight</th>
+          <th class="text-end">Nominal /USD (config)</th>
+          <th class="text-end">Live /USD</th>
+          <th class="text-end">Drift</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in guilder_panel.components %}
+        <tr>
+          <td><strong>{{ c.code }}</strong></td>
+          <td class="text-end">{{ "%.0f%%"|format(c.weight * 100) }}</td>
+          <td class="text-end">{{ "%.4f"|format(c.nominal) if c.nominal is not none else '—' }}</td>
+          <td class="text-end">{{ "%.4f"|format(c.live) if c.live is not none else '—' }}</td>
+          <td class="text-end">
+            {% if c.live and c.nominal %}
+              {% set drift = (c.live / c.nominal - 1) * 100 %}
+              <span class="{% if drift > 5 %}text-danger{% elif drift < -5 %}text-success{% endif %}">
+                {{ "%+.1f%%"|format(drift) }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="text-secondary small">
+      Synthetic basket-implied rate (if we re-anchored the guilder each load):
+      <strong>${{ "%.6f"|format(guilder_panel.synthetic) }} USD per ƒ</strong>.
+      The live anchor is held constant at {{ guilder_panel.anchor }} regardless.
+    </div>
+  </div>
+</div>
+
+{# ----------------------- Cross-rate matrix ----------------------- #}
+<div class="panel mb-4">
+  <div class="panel-title"><strong>Cross-rates</strong> — pairwise conversion of the four headline currencies</div>
+  <div class="panel-body">
+    <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
+      <thead>
+        <tr>
+          <th>1 of ↓</th>
+          {% for col in cross %}
+            <th class="text-end">{{ col.sym }} {{ col.label }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in cross %}
+        {% set row_idx = loop.index0 %}
+        <tr>
+          <td><strong>{{ row.sym }} {{ row.label }}</strong></td>
+          {% for cell in row.cells %}
+            <td class="text-end{% if loop.index0 == row_idx %} text-secondary{% endif %}">
+              {% if loop.index0 == row_idx %}1.0000{% elif cell < 0.01 %}{{ "%.6f"|format(cell) }}{% else %}{{ "%.4f"|format(cell) }}{% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ----------------------- All tracked real-world currencies ----------------------- #}
+<div class="panel mb-4">
+  <div class="panel-title">
+    <strong>All tracked currencies</strong>
+    <span class="text-secondary small ms-2">Units per $1 USD · {{ fx_rows | length }} currencies</span>
+  </div>
+  <div class="panel-body">
+    <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Name</th>
+          <th class="text-end">Rate / USD</th>
+          <th>Role</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in fx_rows %}
+        <tr>
+          <td><strong>{{ r.code }}</strong></td>
+          <td>{{ r.name }}</td>
+          <td class="text-end">
+            {% if r.rate is not none %}
+              {{ "%.4f"|format(r.rate) if r.rate < 100 else "%.2f"|format(r.rate) }}
+            {% else %}<span class="text-secondary">—</span>{% endif %}
+          </td>
+          <td>
+            {% if r.in_zora_basket %}
+              <span class="badge bg-success">zora basket</span>
+            {% endif %}
+            {% if r.in_guilder_basket %}
+              <span class="badge bg-info text-dark">guilder basket</span>
+            {% endif %}
+            {% if r.in_reserve %}
+              <span class="badge bg-secondary">zora reserve</span>
+            {% endif %}
+            {% if r.excluded_ruble %}
+              <span class="badge bg-danger">excluded by zora policy</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="text-secondary small mb-4">
+  Provider: <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer">{{ snap.provider if snap else 'open.er-api.com' }}</a>
+  · Cached in-process for 60 minutes · Click <em>Refresh now</em> to force a new fetch.
+</div>
+
+{% endblock %}

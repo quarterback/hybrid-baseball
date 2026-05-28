@@ -7743,10 +7743,24 @@ def api_season_advance():
         youth_tournament_summary = youth.run_youth_tournament(
             rng_seed=(rng_seed or season_no * 17),
         )
+        # Frontier Cup (16 emerging nations) runs alongside the World Cup,
+        # before aging, so its prospects also play with this year's rosters.
+        youth.run_frontier_cup(rng_seed=(rng_seed or season_no * 17))
         youth_summary = youth.advance_youth_year(
             rng_seed=(rng_seed or season_no * 17),
             new_season_year=next_season,
         )
+        # Pro World Cup runs against the pro pool AS IT STANDS at season
+        # end (after the regular season but before off-season aging /
+        # development / waivers move players around). Auto-rolled
+        # rosters; the /pro-worldcup page exposes a reset + manual
+        # roster editor for the user to re-run with custom selections.
+        try:
+            from o27v2 import pro_worldcup as _wc
+            _wc.run_full_world_cup(season=season_no,
+                                   rng_seed=(rng_seed or season_no * 17))
+        except Exception:
+            pass
     except Exception:
         # Either the youth tables don't exist (legacy save) or one of
         # the steps blew up. We deliberately swallow so the pro-side
@@ -8194,9 +8208,29 @@ def api_youth_seed():
 @app.route("/youth/tournament")
 def youth_tournament_view():
     from o27v2 import youth as _youth
-    summary = _youth.get_tournament()
+    summary = _youth.get_tournament(competition="world")
     return _serve("youth_tournament.html",
                   tournament=summary,
+                  competition="world",
+                  page_title="O27 Youth World Cup",
+                  page_subtitle="48 nations · 8 groups of 6 → top 2 advance → R16 → QF → SF → Final.",
+                  sibling_url=url_for("youth_frontier_view"),
+                  sibling_label="Frontier Cup →",
+                  season=(summary or {}).get("season"))
+
+
+@app.route("/youth/frontier")
+def youth_frontier_view():
+    from o27v2 import youth as _youth
+    _youth.ensure_frontier_teams()
+    summary = _youth.get_tournament(competition="frontier")
+    return _serve("youth_tournament.html",
+                  tournament=summary,
+                  competition="frontier",
+                  page_title="O27 Youth Frontier Cup",
+                  page_subtitle="28 emerging nations vie for 24 berths · 4 groups of 6 → top 2 advance → 8-team knockout (QF → SF → Final).",
+                  sibling_url=url_for("youth_tournament_view"),
+                  sibling_label="← World Cup",
                   season=(summary or {}).get("season"))
 
 
@@ -8256,16 +8290,179 @@ def youth_game_view(game_id: int):
 
 @app.route("/api/youth/tournament/run", methods=["POST"])
 def api_youth_tournament_run():
-    """Run (or re-run via reset=true) the youth tournament for the
-    current season."""
+    """Run (or re-run via reset=true) a youth tournament for the current
+    season. `competition` selects the World Cup ('world', default) or the
+    Frontier Cup ('frontier')."""
     from o27v2 import youth as _youth
     data = request.get_json(silent=True) or {}
-    reset    = bool(data.get("reset"))
-    rng_seed = int(data.get("rng_seed") or 0)
+    reset       = bool(data.get("reset"))
+    rng_seed    = int(data.get("rng_seed") or 0)
+    competition = data.get("competition") or "world"
+    if competition not in ("world", "frontier"):
+        competition = "world"
     if reset:
-        _youth.reset_youth_tournament()
-    summary = _youth.run_youth_tournament(rng_seed=rng_seed)
+        _youth.reset_youth_tournament(competition=competition)
+    summary = _youth.run_youth_tournament(rng_seed=rng_seed, competition=competition)
     return jsonify({"ok": True, "tournament": summary})
+
+
+# ===========================================================================
+# Pro World Cup
+# ===========================================================================
+
+@app.route("/pro-worldcup")
+def pro_worldcup_view():
+    from o27v2 import pro_worldcup as _wc
+    summary = _wc.summarise()
+    return _serve("pro_worldcup.html",
+                  summary=summary,
+                  season=(summary or {}).get("season"))
+
+
+@app.route("/pro-worldcup/team/<int:wc_team_id>")
+def pro_worldcup_team_view(wc_team_id: int):
+    from o27v2 import pro_worldcup as _wc
+    team = _wc.get_team(wc_team_id)
+    if not team:
+        abort(404)
+    summary = _wc.summarise(season=team["season"])
+    roster = _wc.get_roster(wc_team_id)
+    eligible = _wc.get_eligible_for_team(wc_team_id)
+    locked = bool(summary and summary.get("rosters_locked"))
+    return _serve("pro_worldcup_team.html",
+                  team=team, roster=roster, eligible=eligible, locked=locked,
+                  roster_size=_wc.WC_ROSTER_SIZE)
+
+
+@app.route("/pro-worldcup/game/<int:game_id>")
+def pro_worldcup_game_view(game_id: int):
+    from o27v2 import pro_worldcup as _wc
+    from .box_score import render_box_score as _render_box_score
+    box = _wc.get_box_score(game_id)
+    if not box:
+        abort(404)
+    g = box["game"]
+    away_id, home_id = g["away_wc_team_id"], g["home_wc_team_id"]
+    away_batting = [dict(r) for r in box["batters"]  if r["wc_team_id"] == away_id]
+    home_batting = [dict(r) for r in box["batters"]  if r["wc_team_id"] == home_id]
+    away_pitching = [dict(r) for r in box["pitchers"] if r["wc_team_id"] == away_id]
+    home_pitching = [dict(r) for r in box["pitchers"] if r["wc_team_id"] == home_id]
+    for r in away_batting + home_batting:
+        r.setdefault("entry_type", "starter")
+        r.setdefault("entered_inning", 0)
+        r.setdefault("box_position", r.get("position") or "")
+        r["season_hr"] = r.get("hr") or 0
+    line_for = lambda rows: {
+        "runs":    {0: sum((r.get("runs") or 0) for r in rows)},
+        "hits":    {0: sum((r.get("hits") or 0) for r in rows)},
+        "errors":  {0: 0},
+        "total_r": sum((r.get("runs") or 0) for r in rows),
+        "total_h": sum((r.get("hits") or 0) for r in rows),
+        "total_e": 0,
+    }
+    away_line = line_for(away_batting)
+    home_line = line_for(home_batting)
+    decisions: dict[int, str] = {}
+    winner_id = g.get("winner_wc_team_id")
+    if winner_id is not None:
+        win_pitchers  = away_pitching if winner_id == away_id else home_pitching
+        lose_pitchers = home_pitching if winner_id == away_id else away_pitching
+        if win_pitchers:
+            decisions[win_pitchers[0]["player_id"]] = "W"
+        if lose_pitchers:
+            decisions[lose_pitchers[0]["player_id"]] = "L"
+    box_score_text = _render_box_score(
+        game=g,
+        phases=[0],
+        away_line=away_line,
+        home_line=home_line,
+        away_batting=away_batting,
+        home_batting=home_batting,
+        away_pitching=away_pitching,
+        home_pitching=home_pitching,
+        decisions=decisions,
+    )
+    return _serve("pro_worldcup_box_score.html",
+                  box=box, box_score_text=box_score_text)
+
+
+@app.route("/api/pro-worldcup/start-qualifying", methods=["POST"])
+def api_pro_worldcup_start_qualifying():
+    from o27v2 import pro_worldcup as _wc
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    info = _wc.initialize_qualifying(rng_seed=rng_seed)
+    _wc.simulate_qualifying(season=info["season"], rng_seed=rng_seed)
+    return jsonify({"ok": True, "info": info})
+
+
+@app.route("/api/pro-worldcup/finish-qualifying", methods=["POST"])
+def api_pro_worldcup_finish_qualifying():
+    from o27v2 import pro_worldcup as _wc
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    # Make sure any still-unplayed qualifying games are run first.
+    _wc.simulate_qualifying(rng_seed=rng_seed)
+    info = _wc.lock_qualifiers()
+    _wc.auto_pick_rosters(season=info["season"], overwrite=False)
+    return jsonify({"ok": True, "info": info})
+
+
+@app.route("/api/pro-worldcup/auto-rosters", methods=["POST"])
+def api_pro_worldcup_auto_rosters():
+    from o27v2 import pro_worldcup as _wc
+    data = request.get_json(silent=True) or {}
+    overwrite = bool(data.get("overwrite"))
+    info = _wc.auto_pick_rosters(overwrite=overwrite)
+    return jsonify({"ok": True, "info": info})
+
+
+@app.route("/api/pro-worldcup/team/<int:wc_team_id>/auto", methods=["POST"])
+def api_pro_worldcup_team_auto(wc_team_id: int):
+    from o27v2 import pro_worldcup as _wc
+    team = _wc.get_team(wc_team_id)
+    if not team:
+        return jsonify({"ok": False, "error": "team not found"}), 404
+    pool = _wc._country_pool(team["country_code"], include_secondary=False)
+    picks = _wc._pick_auto_roster(pool)
+    try:
+        _wc.set_roster(wc_team_id, picks)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "size": len(picks)})
+
+
+@app.route("/api/pro-worldcup/team/<int:wc_team_id>/roster", methods=["POST"])
+def api_pro_worldcup_team_roster(wc_team_id: int):
+    from o27v2 import pro_worldcup as _wc
+    data = request.get_json(silent=True) or {}
+    ids = data.get("player_ids") or []
+    try:
+        ids = [int(x) for x in ids]
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "player_ids must be integers"}), 400
+    try:
+        info = _wc.set_roster(wc_team_id, ids)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "info": info})
+
+
+@app.route("/api/pro-worldcup/run-tournament", methods=["POST"])
+def api_pro_worldcup_run_tournament():
+    from o27v2 import pro_worldcup as _wc
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    _wc.lock_rosters()
+    summary = _wc.run_main_tournament(rng_seed=rng_seed)
+    return jsonify({"ok": True, "summary": summary})
+
+
+@app.route("/api/pro-worldcup/reset", methods=["POST"])
+def api_pro_worldcup_reset():
+    from o27v2 import pro_worldcup as _wc
+    n = _wc.reset_world_cup()
+    return jsonify({"ok": True, "deleted_games": n})
 
 
 @app.route("/auction")
@@ -8329,3 +8526,132 @@ def api_league_configs():
 @app.route("/api/health")
 def api_health():
     return jsonify({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Financials — live FX board for the two in-game fictional currencies
+# (guilder, zora) plus every real-world currency the game references.
+# ---------------------------------------------------------------------------
+
+@app.route("/financials", methods=["GET", "POST"])
+def financials_view():
+    from o27v2 import currency as cur
+    from o27v2 import fx as _fx
+    force = (request.method == "POST"
+             and request.form.get("action") == "refresh")
+    snap = _fx.apply_to_zora_basket(force=force)
+
+    # ---- Zora basket: live math, per-component breakdown ----
+    zora_components = []
+    mult_total = 0.0
+    for code, weight in cur.ZORA_BASKET_WEIGHTS.items():
+        baseline = cur.ZORA_BASELINE_RATES.get(code, 1.0)
+        current  = cur.ZORA_CURRENT_RATES.get(code, baseline) or baseline
+        index    = baseline / current
+        contrib  = weight * index
+        mult_total += contrib
+        zora_components.append({
+            "code": code, "weight": weight,
+            "baseline": baseline, "current": current,
+            "index": index, "contrib": contrib,
+        })
+    raw_rate = cur.ZORA_USD_BASELINE * mult_total
+    rate_clamped = cur.zora_usd()
+    clamped = abs(raw_rate - rate_clamped) > 1e-6
+    zora_panel = {
+        "components": zora_components,
+        "baseline_rate": cur.ZORA_USD_BASELINE,
+        "multiplier":    mult_total,
+        "raw_rate":      raw_rate,
+        "rate":          rate_clamped,
+        "floor":         cur.ZORA_USD_FLOOR,
+        "ceil":          cur.ZORA_USD_CEIL,
+        "clamped":       clamped,
+        "reserve":       list(cur.ZORA_RESERVE_ASSETS),
+    }
+
+    # ---- Guilder basket: informational only (fixed-anchor currency) ----
+    rates = (snap or {}).get("rates") or {}
+    guilder_components = []
+    for code, weight in cur.BASKET_WEIGHTS.items():
+        nominal = cur.BASKET_NOMINAL_RATES.get(code)
+        live    = rates.get(code)
+        guilder_components.append({
+            "code": code, "weight": weight,
+            "nominal": nominal, "live": live,
+        })
+    guilder_panel = {
+        "components":  guilder_components,
+        "anchor":      f"ƒ{int(cur.GUILDER_PER_USD)} = $1 USD",
+        "synthetic":   cur.basket_synthetic_usd_per_guilder(),
+    }
+
+    # ---- Cross-rate table: pairwise of the four headline currencies ----
+    # Build a 4×4 grid of "1 row-unit = N column-units".
+    cross_codes = [("ƒ", "Guilder", "guilder"),
+                   ("₳", "Zora",    "zora"),
+                   ("$", "USD",     "usd"),
+                   ("€", "EUR",     "eur")]
+    # Convert each into USD value of 1 unit, then derive cross.
+    usd_per = {
+        "guilder": 1.0 / cur.GUILDER_PER_USD,
+        "zora":    cur.zora_usd(),
+        "usd":     1.0,
+        "eur":     1.0 / (cur.GUILDER_PER_EUR / cur.GUILDER_PER_USD),
+    }
+    cross = []
+    for row_sym, row_label, row_key in cross_codes:
+        row = {"sym": row_sym, "label": row_label, "cells": []}
+        for _, _col_label, col_key in cross_codes:
+            row["cells"].append(usd_per[row_key] / usd_per[col_key])
+        cross.append(row)
+
+    # ---- Full FX list (all tracked real-world rates) ----
+    CURRENCY_NAMES = {
+        "JPY": "Japanese Yen",          "KRW": "South Korean Won",
+        "CNY": "Chinese Yuan",          "EUR": "Euro",
+        "HTG": "Haitian Gourde",        "JMD": "Jamaican Dollar",
+        "PHP": "Philippine Peso",       "GYD": "Guyanese Dollar",
+        "TTD": "Trinidad & Tobago Dollar", "DOP": "Dominican Peso",
+        "FJD": "Fijian Dollar",         "XCD": "Eastern Caribbean Dollar",
+        "VUV": "Vanuatu Vatu",          "SGD": "Singapore Dollar",
+        "CHF": "Swiss Franc",           "GBP": "British Pound",
+        "CAD": "Canadian Dollar",       "AUD": "Australian Dollar",
+        "BRL": "Brazilian Real",        "MXN": "Mexican Peso",
+        "INR": "Indian Rupee",          "ZAR": "South African Rand",
+        "TRY": "Turkish Lira",          "RUB": "Russian Ruble",
+    }
+    fx_rows = []
+    for code in _fx.TRACKED_SYMBOLS:
+        fx_rows.append({
+            "code": code,
+            "name": CURRENCY_NAMES.get(code, code),
+            "rate": rates.get(code),
+            "in_zora_basket":    code in cur.ZORA_BASKET_WEIGHTS,
+            "in_guilder_basket": code in cur.BASKET_WEIGHTS,
+            "in_reserve":        code in cur.ZORA_RESERVE_ASSETS,
+            "excluded_ruble":    code == "RUB",
+        })
+
+    # ---- Format the as-of / age strings for display ----
+    import datetime as _dt
+    as_of_str = (snap or {}).get("as_of") or "no live fetch yet"
+    fetched_at = (snap or {}).get("fetched_at") or 0
+    if fetched_at:
+        age_sec = int(_dt.datetime.utcnow().timestamp() - fetched_at)
+    else:
+        age_sec = None
+
+    return _serve(
+        "financials.html",
+        snap=snap,
+        as_of=as_of_str,
+        fetched_age_sec=age_sec,
+        zora_panel=zora_panel,
+        guilder_panel=guilder_panel,
+        cross=cross,
+        fx_rows=fx_rows,
+        zora_symbol=cur.ZORA_SYMBOL,
+        zora_code=cur.ZORA_CODE,
+        guilder_symbol=cur.GUILDER,
+    )

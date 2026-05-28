@@ -83,8 +83,17 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "us":                ("americas_anglophone",),
     "us_only":           ("americas_anglophone",),
     "canada":            ("americas_anglophone", "americas_canada_french"),
-    "latin_america":     ("americas_spanish", "americas_portuguese"),
-    "south_america":     ("americas_spanish", "americas_portuguese"),
+    "latin_america":     ("americas_spanish", "americas_mexican", "americas_cuban",
+                          "americas_dominican", "americas_venezuelan",
+                          "americas_portuguese"),
+    "south_america":     ("americas_spanish", "americas_venezuelan",
+                          "americas_portuguese"),
+    "brazil":            ("americas_portuguese",),
+    "mexico":            ("americas_mexican",),
+    "cuba":              ("americas_cuban",),
+    "dominican":         ("americas_dominican",),
+    "venezuela":         ("americas_venezuelan",),
+    "bermuda":           ("americas_bermuda",),
     "caribbean_dutch":   ("americas_spanish",),
     "caribbean_cricket": ("americas_spanish",),
     "haiti":             ("americas_spanish",),
@@ -92,18 +101,44 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "aruba":             ("americas_spanish",),
     "suriname":          ("americas_portuguese",),
     "guyana":            ("americas_anglophone",),
+    "barbados":          ("americas_barbados",),
+    "bahamas":           ("americas_bahamas",),
     "americas_pro":      ("americas_anglophone", "americas_spanish",
+                          "americas_mexican", "americas_cuban",
+                          "americas_dominican", "americas_venezuelan",
                           "americas_portuguese", "americas_canada_french"),
     # --- East Asia ---
-    "east_asia":         ("east_asia_japan", "east_asia_korea", "east_asia_china"),
+    "east_asia":         ("east_asia_japan", "east_asia_korea", "east_asia_china",
+                          "east_asia_hongkong"),
     "asian_pro":         ("east_asia_japan", "east_asia_korea", "east_asia_china"),
+    "hong_kong":         ("east_asia_hongkong",),
     # --- Europe ---
-    "british_isles":     ("europa_english",),
+    "british_isles":     ("europa_english", "europa_scottish"),
+    "scotland":          ("europa_scottish",),
     "europe_western":    ("europa_english", "europa_german", "europa_dutch",
                           "europa_french", "europa_italian", "europa_spanish"),
-    "europe_eastern":    ("europa_polish", "europa_slavic"),
-    "europe_southeast":  ("europa_slavic", "europa_italian"),
+    "germany":           ("europa_german",),
+    "austria":           ("europa_austrian",),
+    "europe_eastern":    ("europa_polish", "europa_slavic", "europa_czech",
+                          "europa_slovak", "europa_hungarian",
+                          "europa_russian", "europa_ukrainian"),
+    "czechia":           ("europa_czech",),
+    "slovakia":          ("europa_slovak",),
+    "hungary":           ("europa_hungarian",),
+    "europe_southeast":  ("europa_slavic", "europa_italian", "europa_greek",
+                          "europa_croatian", "europa_slovenian"),
+    "greece":            ("europa_greek",),
+    "croatia":           ("europa_croatian",),
+    "slovenia":          ("europa_slovenian",),
+    "san_marino":        ("europa_sanmarino",),
+    "switzerland":       ("europa_swiss_de", "europa_swiss_fr", "europa_swiss_it"),
+    "lithuania":         ("europa_lithuanian",),
+    "russia":            ("europa_russian",),
+    "ukraine":           ("europa_ukrainian",),
     "netherlands":       ("europa_dutch",),
+    "belgium":           ("europa_belgian",),
+    "poland":            ("europa_polish",),
+    "spain":             ("europa_spanish",),
     "italy":             ("europa_italian",),
     "israel":            ("europa_english",),   # no Hebrew city pool -> civic English
     "nordic":            ("europa_nordic",),
@@ -111,9 +146,13 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "sweden":            ("europa_nordic",),
     "norway":            ("europa_nordic",),
     "denmark":           ("europa_nordic",),
-    "european":          ("europa_english", "europa_german", "europa_dutch",
-                          "europa_french", "europa_italian", "europa_spanish",
-                          "europa_nordic", "europa_polish", "europa_slavic"),
+    "european":          ("europa_english", "europa_german", "europa_austrian",
+                          "europa_dutch", "europa_french", "europa_italian",
+                          "europa_spanish", "europa_nordic", "europa_polish",
+                          "europa_slavic", "europa_croatian", "europa_slovenian",
+                          "europa_slovak", "europa_hungarian", "europa_czech",
+                          "europa_swiss_de", "europa_swiss_fr", "europa_swiss_it",
+                          "europa_lithuanian"),
     # --- Pacifica ---
     "anzac":             ("pacifica_australia",),
     "pacific_islands":   ("pacifica_pacific",),
@@ -128,12 +167,23 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "south_asia":        ("subcontinent_india", "subcontinent_pakistan",
                           "subcontinent_other"),
     "afghan_central_asia": ("subcontinent_pakistan", "middle_east_persian"),
-    "central_west_asia": ("middle_east_turkish", "middle_east_persian"),
+    "central_west_asia": ("middle_east_turkish", "middle_east_persian",
+                          "central_asia_kazakh"),
+    "turkey":            ("middle_east_turkish",),
+    "iran":              ("middle_east_persian",),
+    "kazakhstan":        ("central_asia_kazakh",),
+    "zaryanovia":        ("eurasia_zaryanovia",),
     "gulf_cricket":      ("middle_east_arabic",),
+    "palestine":         ("middle_east_arabic",),
+    "lebanon":           ("middle_east_arabic",),
     # --- Africa ---
     "africa":            ("africa_english", "africa_swahili", "africa_afrikaans",
-                          "africa_french", "africa_amharic"),
-    "africa_cricket":    ("africa_english",),
+                          "africa_french", "africa_amharic", "africa_namibia"),
+    "africa_cricket":    ("africa_english", "africa_namibia"),
+    "namibia":           ("africa_namibia",),
+    "cape_verde":        ("africa_capeverde",),
+    "mauritius":         ("africa_mauritius",),
+    "uganda":            ("africa_uganda",),
 }
 
 
@@ -174,6 +224,11 @@ _LOCALE_TO_SUFFIX_LANG = {
     "english": "english", "spanish": "spanish", "portuguese": "portuguese",
     "french": "french", "german": "german", "dutch": "dutch",
     "italian": "italian", "nordic": "nordic",
+    "japanese": "japanese", "korean": "korean", "chinese": "chinese",
+    "tagalog": "tagalog", "malay": "malay", "indonesian": "indonesian",
+    "hindi": "hindi", "urdu": "urdu", "arabic": "arabic", "turkish": "turkish",
+    "persian": "persian", "swahili": "swahili", "afrikaans": "afrikaans",
+    "amharic": "amharic",
 }
 
 
@@ -267,12 +322,18 @@ def _name_corporate(city: str, locale: str, region_key: str, rng: random.Random)
 def _name_business(city: str, locale: str, region_key: str, rng: random.Random) -> str:
     biz = _load("business_names.json")
     flavor = biz["regional_flavor"].get(region_key, {})
+    lang = _LOCALE_TO_SUFFIX_LANG.get(locale, "english")
     parts = [city]
     # ~40% prepend a modifier.
     if rng.random() < 0.40:
         parts.append(rng.choice(biz["modifiers_optional"]))
-    # 70% global business type, 30% the region's preferred extras.
-    extras = flavor.get("preferred_business_types_extra") or []
+    # 70% global business type, 30% the region's flavor extras, keyed to the
+    # city's own language so the type never crosses locales (a Portuguese city
+    # draws no Spanish "Heladería", a Korean city no Japanese "Ramen House").
+    # A locale with no list uses the global types only. preferred_* is a
+    # legacy region-wide fallback, retained for safety but unused by shipped data.
+    extras = (flavor.get(f"{lang}_business_types_extra")
+              or flavor.get("preferred_business_types_extra") or [])
     if extras and rng.random() < 0.30:
         btype = rng.choice(extras)
     else:
@@ -280,7 +341,6 @@ def _name_business(city: str, locale: str, region_key: str, rng: random.Random) 
     name = " ".join(parts) + " " + btype
     # ~50% append a locale-appropriate suffix.
     if rng.random() < 0.50:
-        lang = _LOCALE_TO_SUFFIX_LANG.get(locale, "english")
         suffixes = flavor.get(f"{lang}_suffix_options")
         if not suffixes:
             # Any available suffix list for the region, else none.
@@ -448,3 +508,49 @@ def generate_league_teams(league_name: str, n_teams: int, rng_seed: int,
             "abbrev": _make_abbrev(name, used_abbrev),
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# Per-player flavor: hometown, birthday, secondary nationality.
+# These are cosmetic identity fields rolled at roster generation. Hometown
+# draws from data/names/hometowns.json (keyed by alpha-2 country code).
+# ---------------------------------------------------------------------------
+
+# Talent-rich baseball nations a diaspora player might also be eligible for
+# (grandparent / parent lineage). Used as the secondary-nationality source so
+# the "spread good talent around" effect pulls from real powerhouses. The
+# weak-nation talent steering itself lives in o27v2.youth.
+_HERITAGE_SOURCES: tuple[str, ...] = (
+    "US", "DO", "VE", "PR", "CU", "MX", "JP", "KR", "CO", "TW", "NL", "CA",
+)
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+_MONTH_DAYS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+
+def roll_hometown(country_code: str, rng: random.Random) -> str:
+    """A random believable birthplace for a player from `country_code`.
+    Empty string when we have no city pool for that country."""
+    cities = _load("hometowns.json")["cities"].get((country_code or "").upper())
+    return rng.choice(cities) if cities else ""
+
+
+def roll_birthday(rng: random.Random) -> str:
+    """A cosmetic month/day birthday like 'Mar 14'. No year — age is the
+    engine's clock; this is pure player-card flavor."""
+    m = rng.randrange(12)
+    return f"{_MONTHS[m]} {rng.randint(1, _MONTH_DAYS[m])}"
+
+
+def roll_secondary_country(country_code: str, rng: random.Random,
+                           p: float = 0.02) -> str:
+    """Flavor dual-nationality tag: ~`p` of players are eligible for a
+    second nation via lineage. Returns a heritage-source code distinct
+    from the player's own, or '' (the common case). Pure flavor here; the
+    youth side overrides this with weak-nation talent steering."""
+    if rng.random() >= p:
+        return ""
+    own = (country_code or "").upper()
+    pool = [c for c in _HERITAGE_SOURCES if c != own]
+    return rng.choice(pool) if pool else ""

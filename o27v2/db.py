@@ -156,6 +156,14 @@ CREATE TABLE IF NOT EXISTS players (
     -- the flag emoji rendered next to the player's name in the UI.
     -- Empty string for legacy rows / pre-roster generation.
     country   TEXT DEFAULT '',
+    -- Player-card flavor. hometown = birthplace city (rolled from
+    -- data/names/hometowns.json by country); birthday = cosmetic "Mar 14"
+    -- (no year — age is the engine clock); secondary_country = dual-
+    -- nationality code for lineage-eligible players (flag flavor + the
+    -- youth side's weak-nation talent steering).
+    hometown          TEXT DEFAULT '',
+    birthday          TEXT DEFAULT '',
+    secondary_country TEXT DEFAULT '',
     -- Defense layer (range / glove / arm + per-position-group sub-ratings).
     defense           INTEGER DEFAULT 50,
     arm               INTEGER DEFAULT 50,
@@ -985,6 +993,17 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+
+        # Player-card flavor: hometown (birthplace city), birthday (cosmetic
+        # "Mar 14" — no year, age is the engine's clock), and a secondary
+        # nationality code for dual-eligible players. Empty defaults keep
+        # legacy rows rendering cleanly.
+        for col in ("hometown", "birthday", "secondary_country"):
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} TEXT DEFAULT ''")
+                conn.commit()
+            except Exception:
+                pass
 
         # Home-market coordinates — drives nearest-city weather + division
         # placement. NULL default so legacy rows fall back to name lookup.
