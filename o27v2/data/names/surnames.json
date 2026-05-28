@@ -1,4 +1,12 @@
 {
+  "iranian": [
+    "Hosseini", "Mohammadi", "Ahmadi", "Rezaei", "Karimi", "Moradi", "Jafari",
+    "Tehrani", "Shirazi", "Esfahani", "Tabatabaei", "Alavi", "Rostami",
+    "Nouri", "Sadeghi", "Kazemi", "Ghorbani", "Akbari", "Bahrami", "Soltani",
+    "Rahimi", "Mousavi", "Hashemi", "Nazari", "Ebrahimi", "Mahmoudi",
+    "Najafi", "Yousefi", "Saberi", "Farahani", "Daei", "Ansari", "Sharifi",
+    "Heydari", "Kamali"
+  ],
   "lithuanian": [
     "Kazlauskas", "Jankauskas", "Petrauskas", "Stankevičius", "Vasiliauskas",
     "Žukauskas", "Butkus", "Urbonas", "Balčiūnas", "Kavaliauskas",

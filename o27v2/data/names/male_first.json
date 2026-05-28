@@ -1,4 +1,11 @@
 {
+  "iranian": [
+    "Amir", "Mohammad", "Ali", "Hossein", "Reza", "Mehdi", "Saeed", "Hamid",
+    "Farhad", "Kourosh", "Dariush", "Bahram", "Siavash", "Arash", "Babak",
+    "Kaveh", "Pejman", "Omid", "Navid", "Behnam", "Behrouz", "Kamran",
+    "Shahin", "Iman", "Ramin", "Sina", "Esmail", "Hassan", "Javad", "Vahid",
+    "Pouya", "Milad", "Soroush", "Farzad", "Mazdak"
+  ],
   "lithuanian": [
     "Mantas", "Tomas", "Lukas", "Matas", "Dovydas", "Karolis", "Rokas",
     "Nerijus", "Marius", "Darius", "Gintaras", "Vytautas", "Mindaugas",

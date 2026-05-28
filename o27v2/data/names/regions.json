@@ -1114,6 +1114,84 @@
       "country": "LT",
       "first_keys":   ["lithuanian"],
       "surname_keys": ["lithuanian"]
+    },
+    "cape_verde": {
+      "_doc": [
+        "Caribbean-adjacent Atlantic sleeper. The large Cape Verdean diaspora",
+        "in New England (the oldest African-immigrant community in the US)",
+        "gives O27 a real recruiting channel into the islands. Lusophone-",
+        "Creole naming (Tavares, Monteiro, Lopes) over Portuguese given",
+        "names. Tagged CV."
+      ],
+      "label": "Cape Verde",
+      "country": "CV",
+      "first_keys":   ["lusophone_african", "portuguese"],
+      "surname_keys": ["lusophone_african"]
+    },
+    "mauritius": {
+      "_doc": [
+        "Indian-Ocean sleeper — the 'Samoa-to-rugby' archetype: a small",
+        "island whose multi-ethnic athletic base over-produces relative to",
+        "population once a sport takes root. Naming is the real Mauritian",
+        "mosaic: Indo-Mauritian Hindu (Bihari) majority, Tamil/Telugu and",
+        "Muslim Indian lines, an Afro-Malagasy Creole plurality, the Franco-",
+        "Mauritian elite and a Sino-Mauritian minority. Tagged MU."
+      ],
+      "label": "Mauritius",
+      "subregions": [
+        { "weight": 0.32, "country": "MU",
+          "first_keys": ["indian", "indian_north"],
+          "surname_keys": ["indian"] },
+        { "weight": 0.15, "country": "MU",
+          "first_keys": ["indian_south"],
+          "surname_keys": ["indian_south_tamil", "indian"] },
+        { "weight": 0.13, "country": "MU",
+          "first_keys": ["arabic", "indian"],
+          "surname_keys": ["indian"] },
+        { "weight": 0.25, "country": "MU",
+          "first_keys": ["french", "malagasy"],
+          "surname_keys": ["french", "malagasy"] },
+        { "weight": 0.08, "country": "MU",
+          "first_keys": ["french"],
+          "surname_keys": ["french"] },
+        { "weight": 0.07, "country": "MU",
+          "first_keys": ["chinese"],
+          "surname_keys": ["chinese"] }
+      ]
+    },
+    "barbados": {
+      "_doc": [
+        "Anglophone Caribbean nation with a tiny but real baseball community",
+        "alongside its cricket pedigree — an O27 conversion target. Afro-",
+        "Caribbean given + family names. Tagged BB."
+      ],
+      "label": "Barbados",
+      "country": "BB",
+      "first_keys":   ["afro_caribbean"],
+      "surname_keys": ["afro_caribbean"]
+    },
+    "bahamas": {
+      "_doc": [
+        "Caribbean baseball sleeper with genuine MLB pedigree per capita",
+        "(Jazz Chisholm Jr., Antoan Richardson). Afro-Caribbean given +",
+        "family names. Tagged BS."
+      ],
+      "label": "Bahamas",
+      "country": "BS",
+      "first_keys":   ["afro_caribbean"],
+      "surname_keys": ["afro_caribbean"]
+    },
+    "iran": {
+      "_doc": [
+        "Real baseball federation with a small, growing community — an O27",
+        "frontier target. Dedicated Iranian-Persian pool (Dariush, Kourosh,",
+        "Arash over Hosseini/Shirazi/Esfahani), distinct from the Afghan",
+        "Dari pool. Tagged IR."
+      ],
+      "label": "Iran",
+      "country": "IR",
+      "first_keys":   ["iranian"],
+      "surname_keys": ["iranian"]
     }
   },
   "presets": {

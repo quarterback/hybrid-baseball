@@ -101,6 +101,8 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "aruba":             ("americas_spanish",),
     "suriname":          ("americas_portuguese",),
     "guyana":            ("americas_anglophone",),
+    "barbados":          ("americas_barbados",),
+    "bahamas":           ("americas_bahamas",),
     "americas_pro":      ("americas_anglophone", "americas_spanish",
                           "americas_mexican", "americas_cuban",
                           "americas_dominican", "americas_venezuelan",
@@ -165,6 +167,7 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
     "central_west_asia": ("middle_east_turkish", "middle_east_persian",
                           "central_asia_kazakh"),
     "turkey":            ("middle_east_turkish",),
+    "iran":              ("middle_east_persian",),
     "kazakhstan":        ("central_asia_kazakh",),
     "gulf_cricket":      ("middle_east_arabic",),
     # --- Africa ---
@@ -172,6 +175,8 @@ _LOCALE_TO_CITY_KEYS: dict[str, tuple[str, ...]] = {
                           "africa_french", "africa_amharic", "africa_namibia"),
     "africa_cricket":    ("africa_english", "africa_namibia"),
     "namibia":           ("africa_namibia",),
+    "cape_verde":        ("africa_capeverde",),
+    "mauritius":         ("africa_mauritius",),
 }
 
 

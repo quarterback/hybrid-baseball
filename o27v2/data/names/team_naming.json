@@ -117,6 +117,8 @@
       "americas_dominican":    { "cities_example": ["Santo Domingo", "Santiago", "La Romana", "San Pedro de Macorís", "San Cristóbal", "La Vega", "Puerto Plata"], "locale": "spanish" },
       "americas_venezuelan":   { "cities_example": ["Caracas", "Maracaibo", "Valencia", "Barquisimeto", "Maracay", "Maturín", "Ciudad Guayana", "Barcelona"], "locale": "spanish" },
       "americas_bermuda":      { "cities_example": ["Hamilton", "St. George's", "Somerset", "Flatts", "Warwick"], "locale": "english" },
+      "americas_barbados":     { "cities_example": ["Bridgetown", "Speightstown", "Oistins", "Holetown"], "locale": "english" },
+      "americas_bahamas":      { "cities_example": ["Nassau", "Freeport", "Marsh Harbour", "West End"], "locale": "english" },
       "americas_canada_french":{ "cities_example": ["Montréal"], "locale": "french" },
 
       "east_asia_japan":       { "cities_example": ["Tokyo", "Osaka", "Yokohama", "Nagoya", "Sapporo", "Kobe", "Fukuoka"], "locale": "japanese" },
@@ -163,14 +165,16 @@
       "subcontinent_other":    { "cities_example": ["Dhaka", "Colombo", "Kathmandu"], "locale": "english" },
       "middle_east_arabic":    { "cities_example": ["Dubai", "Abu Dhabi", "Riyadh", "Doha", "Cairo"], "locale": "arabic" },
       "middle_east_turkish":   { "cities_example": ["Istanbul", "Ankara", "İzmir", "Bursa", "Antalya", "Adana"], "locale": "turkish" },
-      "middle_east_persian":   { "cities_example": ["Tehran", "Esfahan"], "locale": "persian" },
+      "middle_east_persian":   { "cities_example": ["Tehran", "Esfahan", "Mashhad", "Shiraz", "Tabriz", "Karaj"], "locale": "persian" },
 
       "africa_english":        { "cities_example": ["Lagos", "Nairobi", "Accra", "Johannesburg", "Cape Town"], "locale": "english" },
       "africa_swahili":        { "cities_example": ["Nairobi", "Dar es Salaam", "Mombasa"], "locale": "swahili" },
       "africa_afrikaans":      { "cities_example": ["Pretoria", "Bloemfontein"], "locale": "afrikaans" },
       "africa_french":         { "cities_example": ["Dakar", "Abidjan", "Kinshasa", "Casablanca"], "locale": "french" },
       "africa_amharic":        { "cities_example": ["Addis Ababa"], "locale": "amharic" },
-      "africa_namibia":        { "cities_example": ["Windhoek", "Swakopmund", "Walvis Bay", "Oshakati", "Rundu"], "locale": "english" }
+      "africa_namibia":        { "cities_example": ["Windhoek", "Swakopmund", "Walvis Bay", "Oshakati", "Rundu"], "locale": "english" },
+      "africa_capeverde":      { "cities_example": ["Praia", "Mindelo", "Santa Maria", "Espargos", "Assomada"], "locale": "portuguese" },
+      "africa_mauritius":      { "cities_example": ["Port Louis", "Curepipe", "Quatre Bornes", "Vacoas", "Beau Bassin"], "locale": "french" }
     },
 
     "city_tier_system": {
