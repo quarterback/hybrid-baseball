@@ -215,3 +215,44 @@ def test_csv_exports_have_headers(site):
             assert len(header) > 1, f"{name} has no columns"
             rows = list(reader)
             assert len(rows) > 0, f"{name} has no data rows"
+
+
+def test_deception_grade_from_repertoire():
+    """Deception grade tracks repertoire timing_resistance: knuckle/eephus
+    arms grade high, pure-velocity arms grade low, no repertoire = neutral 50."""
+    from o27.almanac.compute import _deception_grade
+    knuckle = [{"pitch_type": "knuckleball", "usage_weight": 4.0},
+               {"pitch_type": "eephus", "usage_weight": 1.0}]
+    velo    = [{"pitch_type": "four_seam", "usage_weight": 3.0},
+               {"pitch_type": "slider", "usage_weight": 1.0}]
+    assert _deception_grade(knuckle) > _deception_grade(velo)
+    assert _deception_grade(knuckle) >= 70          # un-timeable arsenal
+    assert _deception_grade(velo) <= 45             # gets figured out
+    assert _deception_grade(None) == 50             # no repertoire → neutral
+    assert _deception_grade("not json") == 50       # robust to junk
+
+
+def test_battedball_tto_attach():
+    """GB/LD/FB classification, GO/AO, and times-through hard-hit splits
+    attach onto pitcher rows from a synthetic PA-log."""
+    from o27.almanac.compute import _attach_pitcher_battedball_tto
+    pbp = {7: {"player_id": 7}}
+    players = {7: {"repertoire": [{"pitch_type": "sinker", "usage_weight": 1.0}]}}
+    # pitcher 7 vs batter 1, faced 3 times (ab_seq 1,5,9) — grounders, and
+    # hard contact only on the 3rd look (familiarity).
+    pa = [
+        {"game_id": 1, "pitcher_id": 7, "batter_id": 1, "ab_seq": 1, "quality": "weak",   "launch_angle": -3.0, "hit_type": "ground_out"},
+        {"game_id": 1, "pitcher_id": 7, "batter_id": 1, "ab_seq": 5, "quality": "medium", "launch_angle": 18.0, "hit_type": "single"},
+        {"game_id": 1, "pitcher_id": 7, "batter_id": 1, "ab_seq": 9, "quality": "hard",   "launch_angle": 40.0, "hit_type": "double"},
+    ]
+    _attach_pitcher_battedball_tto(pbp, players, pa)
+    row = pbp[7]
+    assert abs(row["gb_pct"] - 1/3) < 1e-9
+    assert abs(row["ld_pct"] - 1/3) < 1e-9
+    assert abs(row["fb_pct"] - 1/3) < 1e-9
+    assert row["bip_tracked"] == 3
+    # 1st look weak (0 hard-hit), 3rd+ look hard (100% hard-hit) → positive Δ
+    assert row["tto1_hardhit"] == 0.0
+    assert row["tto3_hardhit"] == 1.0
+    assert row["tto_hardhit_delta"] == 1.0
+    assert row["deception"] >= 20 and row["deception"] <= 80

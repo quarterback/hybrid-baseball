@@ -106,6 +106,7 @@ def sample_batted_ball(
     batter_power: float,
     pitch_hard_contact_shift: float,
     batter_bats: str = "",
+    pitch_launch_bias: float = 0.0,
 ) -> tuple[float, float, float]:
     """Sample (exit_velocity_mph, launch_angle_deg, spray_angle_deg) for a
     single ball-in-play event. The triple is persisted on game_pa_log
@@ -132,6 +133,10 @@ def sample_batted_ball(
     la_mu, la_sigma = _LA_BY_HIT_TYPE.get(hit_type, (+10.0, 12.0))
     # High-Power batters tilt a few degrees more elevation.
     la_mu += (float(batter_power) - 0.5) * 4.0
+    # Pitch launch bias: grounder pitches (negative) shave degrees off, popup
+    # pitches (positive) add them — keeps the synthetic LA consistent with the
+    # ground_out↔fly_out tilt applied to the categorical outcome.
+    la_mu += float(pitch_launch_bias) * 8.0
     la = _clamp(rng.gauss(la_mu, la_sigma), -45.0, 60.0)
 
     # Spray angle --------------------------------------------------------

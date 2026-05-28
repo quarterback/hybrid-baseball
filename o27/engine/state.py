@@ -333,6 +333,15 @@ class SpellRecord:
     k_arc:   list = field(default_factory=lambda: [0, 0, 0])
     fo_arc:  list = field(default_factory=lambda: [0, 0, 0])
     bf_arc:  list = field(default_factory=lambda: [0, 0, 0])
+    # Times-through-the-order counters. Indices 0/1/2 = the 1st / 2nd / 3rd+
+    # time each batter faced this pitcher this game (the look number), so
+    # K%/FO%/contact can be split by familiarity. Distinct from the arc
+    # buckets (which split by out position / fatigue): a pitcher can be on
+    # his 1st look deep in the arc (fresh reliever) or his 4th look early
+    # (top of the order in a marathon). Powers the Deception decay stat.
+    k_tto:   list = field(default_factory=lambda: [0, 0, 0])
+    fo_tto:  list = field(default_factory=lambda: [0, 0, 0])
+    bf_tto:  list = field(default_factory=lambda: [0, 0, 0])
 
 
 @dataclass
@@ -562,6 +571,12 @@ class GameState:
     pitcher_k_arc_this_spell:  list = field(default_factory=lambda: [0, 0, 0])
     pitcher_fo_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
     pitcher_bf_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
+    # Live times-through-the-order counters for the current spell (look
+    # buckets: 1st / 2nd / 3rd+ time the batter has faced this pitcher this
+    # game). Persisted onto SpellRecord.{k,fo,bf}_tto at spell end.
+    pitcher_k_tto_this_spell:  list = field(default_factory=lambda: [0, 0, 0])
+    pitcher_fo_tto_this_spell: list = field(default_factory=lambda: [0, 0, 0])
+    pitcher_bf_tto_this_spell: list = field(default_factory=lambda: [0, 0, 0])
     # Outs at the start of the current PA — used to bucket BF/K/BB/FO so
     # an out-producing AB charges its event to the arc the AB began in,
     # not the arc the resulting out crossed into.
@@ -636,6 +651,15 @@ class GameState:
     #     reads pa / h to decide whether to give a free pass).
     # Resets naturally each new GameState (fresh dict per game).
     batter_game_stats: dict = field(default_factory=dict)
+
+    # --- Per-game batter-vs-pitcher matchup counts ---
+    # Keyed by (pitcher_id, batter_id) → number of COMPLETED PAs this batter
+    # has had against this pitcher this game. Read by the times-through-the-
+    # order familiarity model in prob.py: the more times a hitter has faced
+    # an arm, the more he's timed it up. Keying on the pitcher means a fresh
+    # reliever resets familiarity to zero against everyone — bringing in a
+    # new look is itself a lever. Incremented in pa._end_at_bat at PA close.
+    matchup_pa: dict = field(default_factory=dict)
 
     # --- Raw event log ---
     events: list = field(default_factory=list)
@@ -748,6 +772,14 @@ class GameState:
         return self.batter_game_stats.setdefault(
             pid, {"pa": 0, "h": 0, "bb": 0, "joker_pa": 0}
         )
+
+    def matchup_count(self, pitcher_id: str, batter_id: str) -> int:
+        """Prior completed PAs of this batter vs this pitcher this game.
+
+        0 the first time they meet (familiarity model collapses to identity),
+        1 the second time, etc. Drives the times-through-the-order penalty.
+        """
+        return self.matchup_pa.get((pitcher_id, batter_id), 0)
 
     def out_cap(self) -> int:
         """Numeric out ceiling for the current phase, ignoring walk-offs.
