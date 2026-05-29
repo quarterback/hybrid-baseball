@@ -8322,6 +8322,7 @@ def pro_worldcup_view():
 @app.route("/pro-worldcup/team/<int:wc_team_id>")
 def pro_worldcup_team_view(wc_team_id: int):
     from o27v2 import pro_worldcup as _wc
+    from o27v2 import nation_talent as _talent
     team = _wc.get_team(wc_team_id)
     if not team:
         abort(404)
@@ -8329,9 +8330,10 @@ def pro_worldcup_team_view(wc_team_id: int):
     roster = _wc.get_roster(wc_team_id)
     eligible = _wc.get_eligible_for_team(wc_team_id)
     locked = bool(summary and summary.get("rosters_locked"))
+    talent = _talent.describe(team["country_code"])
     return _serve("pro_worldcup_team.html",
                   team=team, roster=roster, eligible=eligible, locked=locked,
-                  roster_size=_wc.WC_ROSTER_SIZE)
+                  roster_size=_wc.WC_ROSTER_SIZE, talent=talent)
 
 
 @app.route("/pro-worldcup/game/<int:game_id>")
@@ -8446,6 +8448,25 @@ def api_pro_worldcup_team_roster(wc_team_id: int):
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True, "info": info})
+
+
+@app.route("/api/pro-worldcup/team/<int:wc_team_id>/talent", methods=["POST"])
+def api_pro_worldcup_team_talent(wc_team_id: int):
+    from o27v2 import pro_worldcup as _wc
+    from o27v2 import nation_talent as _talent
+    team = _wc.get_team(wc_team_id)
+    if not team:
+        return jsonify({"ok": False, "error": "team not found"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        investment = int(data.get("investment"))
+        grassroots = int(data.get("grassroots"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "investment/grassroots must be integers"}), 400
+    if not (0 <= investment <= 100 and 0 <= grassroots <= 100):
+        return jsonify({"ok": False, "error": "ratings must be 0-100"}), 400
+    _talent.set_rating(team["country_code"], investment, grassroots)
+    return jsonify({"ok": True, "talent": _talent.describe(team["country_code"])})
 
 
 @app.route("/api/pro-worldcup/run-tournament", methods=["POST"])
