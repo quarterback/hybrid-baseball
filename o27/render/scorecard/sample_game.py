@@ -9,6 +9,8 @@ import os
 from baseball_scorecard.baseball_scorecard import Scorecard
 from baseball_scorecard.metapost.metapost_builder import MetapostBuilder
 from baseball_scorecard.team.lineup import Lineup
+from baseball_scorecard.plays.inning import Inning
+from baseball_scorecard.plays.at_bat import AtBat
 
 # Metapost's coordinate range maxes out around 20 inning columns in this
 # template (upstream README, "Limitations"). 20 columns is enough for the
@@ -33,6 +35,65 @@ def _o27_no_ab(self):
     else:
         self.current_batter -= 1
 Lineup.no_ab = _o27_no_ab
+
+# Replace the upstream Inning.get_metapost_data with one that labels the
+# inning-number row with the *running out count* after that column's last
+# PA, so the column header reads as the out ruler the design calls for,
+# not as a (meaningless) inning index. Cumulative out count carries
+# across Inning objects via a class attribute, since the upstream model
+# still caps each Inning at 3 outs.
+Inning._o27_top_outs = 0
+Inning._o27_bot_outs = 0
+
+def _o27_inning_get_metapost_data(self, overflow: int):
+    inn_num = self._Inning__number
+    events = self._Inning__events
+    batting_team = self._Inning__batting_team
+    stats = self._Inning__stats
+
+    # Top/bottom alternates: pick the right cumulative counter.
+    counter_attr = "_o27_top_outs" if self.top else "_o27_bot_outs"
+
+    result = f"    % O27 PA block (inning #{inn_num}, top={self.top})\n"
+    x_start = 128 * (inn_num + overflow - 1)
+    result += f"    xstart := {x_start};\n"
+    result += "    set_inning_num_label_vars(xstart);\n"
+
+    if inn_num in batting_team.defensive_subs.keys():
+        events = batting_team.defensive_subs[inn_num] + events
+
+    # Label the column at the TOP with the running out count BEFORE this
+    # block's PAs (so the reader sees "starting from N outs").
+    pre = getattr(Inning, counter_attr)
+    result += (
+        f"    label(btex {{\\bigsf {pre}}} etex, top_inn_label) withcolor clr;\n\n"
+    )
+
+    at_bats_printed = 1
+    for event in events:
+        if type(event) is AtBat:
+            if at_bats_printed > 12:
+                at_bats_printed = 1
+                overflow += 1
+                x_start += 128
+                result += f"    xstart := {x_start};\n"
+                result += "    set_inning_num_label_vars(xstart);\n\n"
+            at_bats_printed += 1
+            for play in event.plays:
+                if play.__class__.__name__ in ("Out", "ThrownOut"):
+                    setattr(Inning, counter_attr,
+                            getattr(Inning, counter_attr) + 1)
+        result += event.get_metapost_data(inn_num)
+
+    post = getattr(Inning, counter_attr)
+    result += (
+        f"    label(btex {{\\bigsf {post}}} etex, bot_inn_label) withcolor clr;\n"
+    )
+    result += stats.get_metapost_data()
+    result += "    draw_inning_end(xstart,ystart,innendclr);\n"
+    return (result, overflow)
+
+Inning.get_metapost_data = _o27_inning_get_metapost_data
 
 OUT = os.environ.get("O27_SCORECARD_OUT", os.getcwd())
 # Use the forked O27 templates rather than the upstream defaults. The

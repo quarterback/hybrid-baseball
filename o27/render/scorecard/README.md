@@ -34,12 +34,19 @@ regulation, 28+ in extras). Innings don't exist on an O27 scorecard —
 Declared Seconds and extras are both just continuations of the same
 out-counter ruler. Everything else hangs off that ruler.
 
-- [ ] Out-counter ruler at the top of the grid (replacing the inning
-      number header). Continuous 1 → 27, then 28+ for extras.
-- [ ] Column header label: INNINGS → OUT (singular ruler, not segmented)
-- [ ] Lineup grid: 9 rows → 12 rows (8 fielders + SP + 3 DH)
+- [x] Out-counter ruler at the top of the grid. Column headers show
+      running out count at the top (entry) and bottom (exit) of each
+      PA block — the reader sees outs progressing 0 → 27 (and beyond
+      for extras) along the column ruler. Implemented via a runtime
+      patch on `Inning.get_metapost_data` that carries cumulative outs
+      across blocks.
+- [x] Column header label: INNINGS → OUT (singular ruler, not segmented)
+- [x] Lineup grid: 9 rows → 12 rows (8 fielders + SP + 3 DH)
 - [ ] PA cells laid out against the out ruler rather than into fixed
-      inning columns — column width follows PA sequence
+      inning columns — partial: blocks still allocated 12-row columns
+      that overflow on lineup turnover, but the cell *width* doesn't
+      yet vary with PA density. The column-header running-out labels
+      cover the readability gap for now.
 - [x] Stay tickmarks (1–3) in diamond corner. Macro: `draw_stay_ticks`.
 - [x] Joker insertion glyph (J + identity) in cell corner. Macro:
       `draw_joker_glyph`. Per-turnover cooldown is enforced upstream
