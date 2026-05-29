@@ -271,20 +271,10 @@ AGE_OUT      = 19   # players who would turn 20 graduate this offseason
 _YPI_LO = 0.22
 _YPI_HI = 0.81
 
-# Per-country talent shift for youth roster generation. A nation's
-# prospects roll every attribute grade with this additive `team_shift`
-# bump (the same lever the pro maker uses for strong/weak orgs), so a
-# powerhouse baseball culture produces a deeper, higher-ceiling pool —
-# more blue-chip recruits, who feed the pro FA pool at graduation.
-# Absent = 0 (neutral parity). Kept deliberately small: Elite+ (81-95)
-# is still earned via development, never handed out at seed time.
-_COUNTRY_TALENT_SHIFT: dict[str, int] = {
-    "PR": 6,   # Puerto Rico — two-time WBC finalist, perennial MLB talent factory
-}
-
-
-def _talent_shift(country_code: str) -> int:
-    return _COUNTRY_TALENT_SHIFT.get((country_code or "").upper(), 0)
+# Per-country talent generation now lives in o27v2/nation_talent.py (a
+# two-metric investment/grassroots model applied inside the shared pro
+# maker), so youth prospects pick it up automatically. The old single
+# PR-only `_talent_shift` lever was folded into that data file.
 
 
 # Relative baseball-talent baseline per nation (rough 0-10), used ONLY for
@@ -590,9 +580,11 @@ def _make_youth_player(
     """
     from o27v2.league import _make_hitter, _make_pitcher
     # Dual-nationality is decided up front: a heritage call-up's talent boost
-    # rides the same team_shift lever as the per-nation talent bump.
+    # rides the same team_shift lever. The per-nation talent lift + elite
+    # spike are applied inside the maker itself (o27v2.nation_talent), so we
+    # only pass the dual-national boost here to avoid double-counting.
     secondary, dual_boost = _roll_dual_nationality(country, rng)
-    shift = _talent_shift(country) + dual_boost
+    shift = dual_boost
     if is_pitcher:
         p = _make_pitcher(rng, is_active=1, name=name, country=country,
                           team_shift=shift)
@@ -655,7 +647,7 @@ def _make_youth_specialist(
     from o27v2.league import _make_specialist
     secondary, dual_boost = _roll_dual_nationality(country, rng)
     p = _make_specialist(rng, kind, name=name, country=country,
-                         team_shift=_talent_shift(country) + dual_boost)
+                         team_shift=dual_boost)
     p["secondary_country"] = secondary
     p["age"] = age
     p["youth_potential_index"] = round(rng.uniform(_YPI_LO, _YPI_HI), 3)
