@@ -566,7 +566,7 @@ def draw_pitcher_labels(expr xstart,ystart,clr,leftish) =
         label(btex {\midsf \#} etex, 1/2[(xstart-iposwidth*2-namewidth,ystart),(xstart-iposwidth*3-namewidth,ystart-(32))]) withcolor clr;
         label(btex {\midsf Opposing Pitchers} etex, 1/2[(xstart-iposwidth*2,ystart),(xstart-iposwidth*2-namewidth,ystart-32)]) withcolor clr;
         label(btex {\midsf L/R} etex, 1/2[(xstart-iposwidth,ystart),(xstart-iposwidth*2,ystart-32)]) withcolor clr;
-        label(btex {\midsf Inn} etex, 1/2[(xstart,ystart),(xstart-iposwidth,ystart-32)]) withcolor clr;
+        label(btex {\midsf Out} etex, 1/2[(xstart,ystart),(xstart-iposwidth,ystart-32)]) withcolor clr;
         %
         label(btex {\midsf WLS} etex, 1/2[(xstart+statboxwidth,ystart),(xstart,ystart-32)]) withcolor clr;
         label(btex {\midsf BF} etex, 1/2[(xstart+statboxwidth*2,ystart),(xstart+statboxwidth,ystart-32)]) withcolor clr;
@@ -1272,10 +1272,19 @@ def draw_full_scorecard(expr innings) =
         xstart := 0;
         draw (xstart,ystart)--(xstart-iposwidth*2,ystart)--(xstart-iposwidth*2,ystart+32)--(xstart,ystart+32)--cycle withcolor clr;
 
+        % O27 graft: label the inning-number row as the out ruler.
+        label(btex {\midsf POS} etex, 1/2[(0,ystart),(-iposwidth,ystart+32)]) withcolor clr;
+        label(btex {\midsf OUT \#} etex, 1/2[(-iposwidth,ystart),(-iposwidth*2,ystart+32)]) withcolor clr;
+
         % Inning boxes
         for xstart := 0 step box_size until (innings - 1) * box_size:
             draw (xstart,ystart)--(xstart+128,ystart)--(xstart+128,ystart+32)--(xstart,ystart+32)--cycle withcolor clr;
         endfor
+
+        % O27 graft: out-ruler header strip above the column-number row.
+        % Draws a thin band labeling the ruler with regulation/extras zones.
+        label.top(btex {\bigsf O27 OUT RULER --- regulation 1-27, extras 28+} etex,
+                  ((innings * box_size) / 2, 1200)) withcolor clr;
 
         % Draw the game and play total boxes
         xstart := (innings * box_size);
