@@ -1,59 +1,52 @@
 """
 Zaryan name converter.
 
-Implements the Zaryanification pipeline: takes an English first + last name
-drawn from the standard American/Black-American pools and runs it through
-a Russian-English creole transformation. Output is a full Zaryan name with
-patronymic — e.g.
+Takes an English first + last name drawn from the standard
+American / Black-American pools and runs it through a Russian-English
+creole transformation. Output is two-part — First + Last, Spanish-style
+— with no middle patronymic.
 
-    "Marcus Brooks"          ->  "Maks Elijahovich Brooks"
-    "Paul Smith"             ->  "Pavel Genrievich Kuznetsov"
-    "Karen Harrison" (older) ->  "Kira Marcusovna Garisonova"
+    "Marcus Brooks"        ->  "Maks Brooksov"
+    "Paul Smith"           ->  "Pavel Kuznetsov"
+    "Karen Harrison"       ->  "Kira Garison"
+    "Coretta Jefferson"    ->  "Coretta Jefferson"   (untranslated bypass)
 
-The pipeline (per the design spec) is:
+Pipeline:
 
-  1. Phonology — H->G, TH->T, W->V (applied to patronymics; surnames default
-     to the "modern register" and keep original spelling).
-  2. Surname path — A (Russified -ov ending), B (translated-Slavic via a
-     meaning dictionary), or C (bare English).
-  3. Patronymic — built from a separately-drawn father's first name with
-     -ovich (m) or -ovna (f), after phonology.
-  4. First name — Russianized via the convert dictionary, or kept as a
-     heritage/Biblical name.
-  5. Feminization — Path B always feminizes for women; Path A/C only for
-     "older/rural" register characters.
+  * `_UNTRANSLATED_RATE` of draws skip the converter entirely and surface
+    the bare English input — the modern cosmopolitan register for younger
+    / urban Zaryans who don't carry the Russified creole form day-to-day.
+  * The rest convert through:
+      Surname path — A (Russified -ov ending), B (translated-Slavic via
+                     a 60-entry meaning dictionary: Wood→Lesov,
+                     Smith→Kuznetsov, etc.), or C (bare English)
+      First name   — Russianized via the convert dictionary, or kept as
+                     a heritage/Biblical name (Elijah, Isaiah, Booker,
+                     Marcus, Coretta, …)
+      Feminization — Path B always feminizes for women; Path A/C only
+                     for "older/rural" register characters
 
 Hooked into o27v2.league.make_name_picker via the "zaryanovia" region id.
+The patronymic + phonology machinery from the earlier spec was retired
+when the user pushed names to two-part Spanish-style.
 """
 from __future__ import annotations
 
 import os
-import re
 import json
 import random
 
 
+
+
 # ---------------------------------------------------------------------------
-# Step 1: phonology
+# Untranslated bypass rate
 # ---------------------------------------------------------------------------
-
-# Match H only when NOT preceded by another consonant — so the rule fires
-# on word-initial H (Harrison → Garrison) and intervocalic H (Ohio → Ogio)
-# but leaves the Sh/Ch/Ph/Th/Gh/Kh/Wh/Rh digraphs alone (Shaq stays Shaq,
-# Richey stays Richey, Prakash stays Prakash).
-_H_NOT_DIGRAPH = re.compile(r"(?<![BbCcDdFfGgJjKkLlMmNnPpQqRrSsTtVvWwXxZz])H",
-                            flags=re.IGNORECASE)
-_TH = re.compile(r"Th", flags=re.IGNORECASE)
-# W → V, except when followed by h (Wh digraph: Whistler stays Whistler).
-_W_NOT_WH = re.compile(r"W(?!h)", flags=re.IGNORECASE)
-
-
-def _apply_phonology(s: str) -> str:
-    """Russian sound system reshapes English roots. Order matters: TH before H."""
-    s = _TH.sub(lambda m: "T" if m.group(0)[0].isupper() else "t", s)
-    s = _H_NOT_DIGRAPH.sub(lambda m: "G" if m.group(0).isupper() else "g", s)
-    s = _W_NOT_WH.sub(lambda m: "V" if m.group(0).isupper() else "v", s)
-    return s
+# Share of creole draws that skip the converter entirely and surface the
+# bare English input (Marcus Brooks, Coretta Jefferson, etc.) — the modern
+# cosmopolitan register for younger / urban Zaryans who don't carry the
+# Russified creole form day-to-day.
+_UNTRANSLATED_RATE: float = 0.25
 
 
 # ---------------------------------------------------------------------------
@@ -385,39 +378,6 @@ def _convert_first_name(eng: str, gender: str, rng: random.Random,
 
 
 # ---------------------------------------------------------------------------
-# Step 3: patronymic
-# ---------------------------------------------------------------------------
-
-def _patronymic(father_eng: str, gender: str) -> str:
-    """Build a patronymic from a father's English first name. Apply phonology
-    (H->G, W->V), then attach the gendered suffix.
-
-    Suffix rules (derived from the spec's worked examples):
-      * end in consonant         -> +ovich / +ovna   (Govard -> Govardovich)
-      * end in -i / -y           -> +evich / +evna   (Genri  -> Genrievich,
-                                                       Mikey  -> Mikeyevich)
-      * end in -a / -e / -o / -u -> drop the vowel, +evich / +evna
-                                    (Kodya -> Kody+evich = Kodyevich;
-                                     Tyrone -> Tyron+evna = Tyronevna)
-    """
-    if not father_eng or len(father_eng.strip()) < 2:
-        return ""
-    base = _apply_phonology(father_eng).strip()
-    if len(base) < 2:
-        return ""
-    is_female = (gender == "female")
-    cons_suffix = "ovna" if is_female else "ovich"
-    soft_suffix = "evna" if is_female else "evich"
-    low = base.lower()
-    last = low[-1]
-    if last in "iy":
-        return base + soft_suffix
-    if last in "aeou":
-        return base[:-1] + soft_suffix
-    return base + cons_suffix
-
-
-# ---------------------------------------------------------------------------
 # Public draw
 # ---------------------------------------------------------------------------
 
@@ -501,29 +461,32 @@ def _draw_english(rng: random.Random, pool_kind: str) -> str:
 
 
 def zaryanify_draw(rng: random.Random, gender: str) -> tuple[str, str]:
-    """Return (full_name, country_code='ZR') for a CREOLE Zaryan name —
-    the 130-year-deep Black-American + African + mixed majority stream
-    run through the full Zaryanification pipeline.
+    """Return (full_name, country_code='ZR') for a CREOLE Zaryan name.
 
-    The full name is "First Patronymic Last" — three components, separated
-    by single spaces, matching how other players in the league surface.
+    The pipeline:
+      * `_UNTRANSLATED_RATE` of draws skip the converter entirely and
+        return the bare English input — the modern cosmopolitan register
+        (Marcus Brooks, Coretta Jefferson) for younger / urban Zaryans
+        who don't carry the Russified creole form on the day-to-day.
+      * The rest run through first-name Russianization + surname
+        path A/B/C and come out two-part (First + Last) — Spanish-style,
+        no middle patronymic.
     """
     is_female = (gender or "male").lower() == "female"
     pool_kind = "female_first" if is_female else "male_first"
 
-    eng_first   = _draw_english(rng, pool_kind)
-    eng_last    = _draw_english(rng, "surname")
-    father_eng  = _draw_english(rng, "male_first")   # patronymic is always paternal
+    eng_first = _draw_english(rng, pool_kind)
+    eng_last  = _draw_english(rng, "surname")
+    if not eng_first or not eng_last:
+        return f"Player {rng.randint(100, 999)}", "ZR"
+
+    # Untranslated bypass — bare modern English name, no Russification.
+    if rng.random() < _UNTRANSLATED_RATE:
+        return f"{eng_first} {eng_last}", "ZR"
 
     first = _convert_first_name(eng_first, "female" if is_female else "male", rng)
-    last  = _convert_surname(eng_last, "female" if is_female else "male", rng)
-    patro = _patronymic(father_eng, "female" if is_female else "male")
-
-    if patro:
-        full = f"{first} {patro} {last}"
-    else:
-        full = f"{first} {last}"
-    return full, "ZR"
+    last  = _convert_surname(eng_last,    "female" if is_female else "male", rng)
+    return f"{first} {last}", "ZR"
 
 
 # ---------------------------------------------------------------------------
