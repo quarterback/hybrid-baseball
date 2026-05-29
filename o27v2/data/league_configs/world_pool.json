@@ -66,10 +66,11 @@
     "World League": "global",
     "Frontier League": "south_asia",
     "African Premier Division": {
-      "africa": 0.4,
-      "africa_cricket": 0.35,
-      "namibia": 0.09,
-      "uganda": 0.06,
+      "africa": 0.32,
+      "africa_cricket": 0.28,
+      "north_africa": 0.18,
+      "namibia": 0.07,
+      "uganda": 0.05,
       "mauritius": 0.05,
       "cape_verde": 0.05
     }

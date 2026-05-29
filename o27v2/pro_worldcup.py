@@ -257,7 +257,9 @@ _COUNTRY_DISPLAY: dict[str, tuple[str, str]] = {
     "ET": ("Ethiopia", "ETH"),       "KE": ("Kenya", "KEN"),
     "TZ": ("Tanzania", "TAN"),       "AO": ("Angola", "ANG"),
     "MZ": ("Mozambique", "MOZ"),     "MG": ("Madagascar", "MAD"),
-    "EG": ("Egypt", "EGY"),
+    "EG": ("Egypt", "EGY"),          "MA": ("Morocco", "MAR"),
+    "DZ": ("Algeria", "ALG"),        "TN": ("Tunisia", "TUN"),
+    "LY": ("Libya", "LBA"),
     # Asia
     "IN": ("India", "IND"),          "PK": ("Pakistan", "PAK"),
     "MY": ("Malaysia", "MAS"),       "PH": ("Philippines", "PHI"),
