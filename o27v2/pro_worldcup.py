@@ -1596,6 +1596,13 @@ def run_main_tournament(season: int | None = None,
         "VALUES (?, 'complete', 1)",
         (season,),
     )
+
+    # Per-nation talent drifts on the back of these results: deep knockout
+    # runs fund investment, participation grows grassroots, and everyone
+    # mean-reverts toward neutral. Idempotent per season, so re-running a
+    # completed tournament won't double-count.
+    from o27v2 import nation_talent as _nt
+    _nt.drift_from_worldcup(season)
     return summarise(season)
 
 
