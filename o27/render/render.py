@@ -620,6 +620,7 @@ class Renderer:
         if self._pa_record_in_progress is not None:
             self._finalize_pa_record({"outs": state.outs})
             self._current_pa_batter_id = None
+        self._populate_pitcher_arc(state)
         winner = state.winner
         sep = "=" * 60
         if not winner:
@@ -657,6 +658,32 @@ class Renderer:
         # 0-0). This hook stays as a "first time we see this batter at
         # the plate" marker — the actual stat increment happens elsewhere.
         return
+
+    # Halves where the visitors are batting (so opposing pitchers face them
+    # and show up on the visitors' scorecard arc).
+    _TOP_HALVES = {"top", "seconds_first", "supreg_top", "super_top"}
+
+    def _populate_pitcher_arc(self, state) -> None:
+        """Build pitcher_arc[bucket] from state.spell_log at game end. Each
+        segment is {start_out, end_out, pitcher, half}. Out positions run on
+        a single continuous ruler per side."""
+        top_cursor = 0
+        bot_cursor = 0
+        for spell in state.spell_log:
+            is_top = spell.half in self._TOP_HALVES
+            bucket = "top" if is_top else "bot"
+            cursor = top_cursor if is_top else bot_cursor
+            seg_end = cursor + spell.outs_recorded
+            self.pitcher_arc[bucket].append({
+                "start_out": cursor,
+                "end_out": seg_end,
+                "pitcher": spell.pitcher_name,
+                "half": spell.half,
+            })
+            if is_top:
+                top_cursor = seg_end
+            else:
+                bot_cursor = seg_end
 
     def _stats_snapshot(self, player_id: str) -> dict:
         """Return a flat snapshot of the batter's accumulator fields."""

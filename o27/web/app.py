@@ -58,8 +58,14 @@ def _build_scorecards(final_state, log_lines, v_batting, h_batting, renderer=Non
     the text PBP if not available (older cached game data)."""
     try:
         meta: dict = {}
+        arc_top: list = []
+        arc_bot: list = []
         if renderer is not None and getattr(renderer, "pa_records", None):
             pa_records, meta = from_renderer_records(renderer.pa_records)
+            for seg in renderer.pitcher_arc.get("top", []):
+                arc_top.append((seg["start_out"], seg["end_out"], seg["pitcher"].split(" ")[-1] if seg["pitcher"] else ""))
+            for seg in renderer.pitcher_arc.get("bot", []):
+                arc_bot.append((seg["start_out"], seg["end_out"], seg["pitcher"].split(" ")[-1] if seg["pitcher"] else ""))
         else:
             pa_records = extract_pa_records(log_lines)
         vis_lineup = [
@@ -76,6 +82,8 @@ def _build_scorecards(final_state, log_lines, v_batting, h_batting, renderer=Non
             pa_records=pa_records,
             declared_visitors=meta.get("declared_visitors_at"),
             declared_home=meta.get("declared_home_at"),
+            visitors_pitcher_arc=arc_top,
+            home_pitcher_arc=arc_bot,
         )
     except Exception:
         # Scorecard is a nice-to-have; never break the box score on it.
