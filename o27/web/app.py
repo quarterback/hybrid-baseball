@@ -586,8 +586,6 @@ def game():
         h_pitching=h_pitching,
         v_hits=v_hits,
         h_hits=h_hits,
-        **{f"scorecard_{k}": v for k, v in _build_scorecards(
-            final_state, log_lines, v_batting, h_batting, renderer).items()},
     )
 
 
@@ -637,8 +635,41 @@ def view_game(game_id):
         h_pitching=h_pitching,
         v_hits=v_hits,
         h_hits=h_hits,
-        **{f"scorecard_{k}": v for k, v in _build_scorecards(
-            final_state, log_lines, v_batting, h_batting, renderer).items()},
+    )
+
+
+@app.route("/game/<game_id>/scorecard")
+def game_scorecard(game_id):
+    """Dedicated scorecard view — only renders when the user follows
+    the link from the box score, so the scorecard cost stays off the
+    main game page."""
+    g = data.get_game(game_id)
+    parts = game_id.split("_", 2)
+    if len(parts) != 3:
+        return redirect(url_for("index"))
+    try:
+        seed = int(parts[0])
+    except ValueError:
+        return redirect(url_for("index"))
+    v_abbrev, h_abbrev = parts[1], parts[2]
+
+    final_state, log_lines, renderer = _run(seed, v_abbrev, h_abbrev)
+    v_batting, h_batting, _, _ = _structured_stats(final_state, renderer)
+    cards = _build_scorecards(final_state, log_lines, v_batting, h_batting, renderer)
+    return render_template(
+        "game_scorecard.html",
+        active="boxscores",
+        game_id=game_id,
+        seed=seed,
+        visitors_abbrev=v_abbrev,
+        home_abbrev=h_abbrev,
+        visitors_name=final_state.visitors.name,
+        home_name=final_state.home.name,
+        visitors_score=final_state.score.get("visitors", 0),
+        home_score=final_state.score.get("home", 0),
+        winner_id=final_state.winner or "",
+        scorecard_visitors=cards.get("visitors", ""),
+        scorecard_home=cards.get("home", ""),
     )
 
 
