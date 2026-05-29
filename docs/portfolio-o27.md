@@ -66,7 +66,8 @@ Three borrowed and invented mechanics that turn out to belong together:
   the plate and advance runners at the cost of a strike. The lever a skilled
   hitter keeps over an at-bat; the source of most of O27's RBI.
 - **The joker** — three tactical pinch-batters a manager can drop into any spot,
-  any time, as often as he likes. Offense left on the table if unused.
+  once per joker per time through the order. No overall cap, so the same joker
+  comes back as the lineup cycles. Offense left on the table if unused.
 
 And two mechanics that show how far the design goes once you pull the thread:
 
