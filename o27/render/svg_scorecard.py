@@ -37,6 +37,74 @@ class PARecord:
     out_at_end: int = 0   # running outs after this PA in the half
 
 
+# Map the engine's `state.half` values into the visitors/home buckets the
+# scorecard renders. "top" and any "seconds_first" continuation are the
+# visitors' arc; "bottom" and "seconds_second" are the home's. "supreg_*"
+# are extras and join the same arcs.
+_TOP_HALVES = {"top", "seconds_first", "supreg_top"}
+_BOT_HALVES = {"bottom", "bot", "seconds_second", "supreg_bottom"}
+
+
+def _normalize_half(half: str) -> str:
+    if half in _TOP_HALVES:
+        return "top"
+    if half in _BOT_HALVES:
+        return "bot"
+    return "top"
+
+
+def from_renderer_records(records: list[dict]) -> tuple[list[PARecord], dict]:
+    """Convert structured PA records from the engine Renderer into the
+    dataclass list the SVG layout expects. Returns (records, meta) where
+    meta carries flags like `declared_visitors_at` / `declared_home_at`
+    derived from the engine's half transitions.
+
+    The engine resets state.outs at half/phase boundaries (regulation top,
+    declared-seconds extension, etc.), so per-PA outs_at_end coming off
+    the records is half-scoped. The scorecard wants a single continuous
+    out ruler per side, so we re-derive cumulative outs here, ignoring
+    engine resets."""
+    out: list[PARecord] = []
+    seq_by_half: dict[str, int] = {}
+    meta: dict = {"declared_visitors_at": None, "declared_home_at": None}
+    top_running = 0
+    bot_running = 0
+    seen_top_seconds = False
+    seen_bot_seconds = False
+    for r in records:
+        raw_half = r["half"]
+        half = _normalize_half(raw_half)
+        if raw_half == "seconds_first" and not seen_top_seconds:
+            meta["declared_visitors_at"] = top_running
+            seen_top_seconds = True
+        if raw_half == "seconds_second" and not seen_bot_seconds:
+            meta["declared_home_at"] = bot_running
+            seen_bot_seconds = True
+        if half == "top":
+            if r["is_out"]:
+                top_running += 1
+            running = top_running
+        else:
+            if r["is_out"]:
+                bot_running += 1
+            running = bot_running
+        seq_by_half[half] = seq_by_half.get(half, 0) + 1
+        out.append(PARecord(
+            half=half,
+            half_idx=1 if half == "top" else 2,
+            seq=seq_by_half[half],
+            batter=r["batter"],
+            outcome=r["outcome"],
+            is_out=r["is_out"],
+            is_joker=r.get("is_joker", False),
+            joker_id=r.get("joker_id"),
+            is_walk_back=r.get("is_walk_back", False),
+            stays=r.get("stays", 0),
+            out_at_end=running,
+        ))
+    return out, meta
+
+
 # --- Log parsing ----------------------------------------------------------
 
 _BATTER_RE = re.compile(r"^--- Now batting: (.+?) ---$")

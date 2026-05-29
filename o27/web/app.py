@@ -45,15 +45,23 @@ from o27.engine.state import GameState, Team, Player, PitchEntry
 from o27.engine.game import run_game
 from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
-from o27.render.svg_scorecard import extract_pa_records, render_scorecard
+from o27.render.svg_scorecard import (
+    extract_pa_records, from_renderer_records, render_scorecard,
+)
 from o27.main import make_foxes, make_bears
 import o27.data as data
 
 
-def _build_scorecards(final_state, log_lines, v_batting, h_batting):
-    """Compute the two scorecard SVGs from a finished game's PBP."""
+def _build_scorecards(final_state, log_lines, v_batting, h_batting, renderer=None):
+    """Compute the two scorecard SVGs from a finished game's PBP. Prefers
+    structured PA records from the engine renderer; falls back to parsing
+    the text PBP if not available (older cached game data)."""
     try:
-        pa_records = extract_pa_records(log_lines)
+        meta: dict = {}
+        if renderer is not None and getattr(renderer, "pa_records", None):
+            pa_records, meta = from_renderer_records(renderer.pa_records)
+        else:
+            pa_records = extract_pa_records(log_lines)
         vis_lineup = [
             {"name": b["name"], "pos": b.get("pos", "")} for b in v_batting[:12]
         ]
@@ -66,6 +74,8 @@ def _build_scorecards(final_state, log_lines, v_batting, h_batting):
             visitors_lineup=vis_lineup,
             home_lineup=hom_lineup,
             pa_records=pa_records,
+            declared_visitors=meta.get("declared_visitors_at"),
+            declared_home=meta.get("declared_home_at"),
         )
     except Exception:
         # Scorecard is a nice-to-have; never break the box score on it.
@@ -569,7 +579,7 @@ def game():
         v_hits=v_hits,
         h_hits=h_hits,
         **{f"scorecard_{k}": v for k, v in _build_scorecards(
-            final_state, log_lines, v_batting, h_batting).items()},
+            final_state, log_lines, v_batting, h_batting, renderer).items()},
     )
 
 
@@ -620,7 +630,7 @@ def view_game(game_id):
         v_hits=v_hits,
         h_hits=h_hits,
         **{f"scorecard_{k}": v for k, v in _build_scorecards(
-            final_state, log_lines, v_batting, h_batting).items()},
+            final_state, log_lines, v_batting, h_batting, renderer).items()},
     )
 
 

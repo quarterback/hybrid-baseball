@@ -136,6 +136,18 @@ class Renderer:
         # Per-game running count of joker insertions per batting team, keyed
         # by team_id. Surfaced in the joker play-by-play line as a usage tally.
         self._joker_insertions: dict[str, int] = {}
+        # Structured per-PA records for downstream consumers (the SVG
+        # scorecard, future analytics). One entry per completed plate
+        # appearance. Derived from BatterStats diffs at PA boundary so the
+        # outcome is whatever the engine actually credited, not parsed from
+        # text. Populated by _finalize_pa_record / _start_pa_record.
+        self.pa_records: list[dict] = []
+        self._pa_record_in_progress: dict | None = None
+        # Pitcher arc records: one entry per pitcher's appearance window
+        # (start_out, end_out, pitcher name, half). Closed when the next
+        # pitcher comes in or at game end.
+        self.pitcher_arc: dict[str, list[dict]] = {"top": [], "bot": []}
+        self._current_arc_segment: dict | None = None
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -193,6 +205,7 @@ class Renderer:
             # us which starting-base runners advanced vs were retired.
             if self._current_pa_batter_id is not None:
                 self._credit_pa_advancement(self._current_pa_batter_id)
+                self._finalize_pa_record(ctx)
             # Reset PA-scoped state for the incoming batter. The new PA's
             # starting bases = the bases standing right now (this event's
             # pre-event snapshot). Within a half this equals the previous
@@ -202,6 +215,7 @@ class Renderer:
             self._pa_start_bases = tuple(ctx.get("bases_list") or (None, None, None))
             self._pa_runners_out = set()
             self._on_new_pa(batter)
+            self._start_pa_record(batter, ctx)
             lines.append(self._batter_intro(batter))
             self._current_pa_batter_id = batter.player_id
 
@@ -249,6 +263,11 @@ class Renderer:
 
     def render_halftime(self, state) -> list[str]:
         """Render the halftime break announcement."""
+        # Close the last PA of the top half (no next-batter event will fire
+        # to trigger _finalize_pa_record).
+        if self._pa_record_in_progress is not None:
+            self._finalize_pa_record({"outs": state.outs})
+            self._current_pa_batter_id = None
         v_score = state.score["visitors"]
         target_runs = v_score + 1
         required_rr = target_runs / 27
@@ -597,6 +616,10 @@ class Renderer:
 
     def render_game_over(self, state) -> list[str]:
         """Render the final game-over banner."""
+        # Close the trailing PA if the game ended mid-half (walk-off, etc.)
+        if self._pa_record_in_progress is not None:
+            self._finalize_pa_record({"outs": state.outs})
+            self._current_pa_batter_id = None
         winner = state.winner
         sep = "=" * 60
         if not winner:
@@ -634,6 +657,88 @@ class Renderer:
         # 0-0). This hook stays as a "first time we see this batter at
         # the plate" marker — the actual stat increment happens elsewhere.
         return
+
+    def _stats_snapshot(self, player_id: str) -> dict:
+        """Return a flat snapshot of the batter's accumulator fields."""
+        s = self._batter_stats.get(player_id)
+        if s is None:
+            return {"pa": 0, "ab": 0, "hits": 0, "doubles": 0, "triples": 0,
+                    "hr": 0, "bb": 0, "ibb": 0, "k": 0, "hbp": 0, "sty": 0,
+                    "outs_recorded": 0}
+        return {"pa": s.pa, "ab": s.ab, "hits": s.hits, "doubles": s.doubles,
+                "triples": s.triples, "hr": s.hr, "bb": s.bb, "ibb": s.ibb,
+                "k": s.k, "hbp": s.hbp, "sty": s.sty,
+                "outs_recorded": s.outs_recorded}
+
+    def _start_pa_record(self, batter, ctx) -> None:
+        """Open a PA record for the incoming batter."""
+        self._pa_record_in_progress = {
+            "batter_id": batter.player_id,
+            "batter_name": batter.name,
+            "is_joker": bool(getattr(batter, "is_joker", False)),
+            "joker_id": self._joker_insertions.get(ctx.get("batting_team_id", ""), 0) or None,
+            "pitcher_name": ctx["pitcher"].name if ctx.get("pitcher") else "",
+            "half": ctx.get("half", "top"),
+            "outs_at_start": ctx.get("outs", 0),
+            "phase": ctx.get("phase", 0),
+            "pre": self._stats_snapshot(batter.player_id),
+        }
+
+    def _finalize_pa_record(self, ctx_after) -> None:
+        """Close the in-progress PA record when the next PA starts (or the
+        half ends). Derives the outcome from the BatterStats delta so it
+        reflects what the engine actually credited, not a text parse."""
+        pa = self._pa_record_in_progress
+        if pa is None:
+            return
+        post = self._stats_snapshot(pa["batter_id"])
+        pre = pa["pre"]
+        d = {k: post[k] - pre[k] for k in post}
+
+        # Outcome derivation from the diff.
+        outcome, is_out = "OUT", True
+        if d["hr"] > 0:
+            outcome, is_out = "HR", False
+        elif d["triples"] > 0:
+            outcome, is_out = "3B", False
+        elif d["doubles"] > 0:
+            outcome, is_out = "2B", False
+        elif d["hits"] > 0:
+            outcome, is_out = "1B", False
+        elif d["ibb"] > 0:
+            outcome, is_out = "IBB", False
+        elif d["bb"] > 0:
+            outcome, is_out = "BB", False
+        elif d["hbp"] > 0:
+            outcome, is_out = "HBP", False
+        elif d["k"] > 0:
+            outcome, is_out = "K", True
+        elif d["outs_recorded"] > 0:
+            outcome, is_out = "OUT", True
+        else:
+            # No definite outcome (FC where the batter advances on a runner
+            # being put out, sac fly, etc.). Mark as a generic out only if
+            # the half-game outs ticked up across this PA.
+            outs_now = ctx_after.get("outs", pa["outs_at_start"])
+            is_out = outs_now > pa["outs_at_start"]
+            outcome = "FC" if is_out else "?"
+
+        self.pa_records.append({
+            "batter": pa["batter_name"],
+            "batter_id": pa["batter_id"],
+            "pitcher": pa["pitcher_name"],
+            "half": pa["half"],
+            "phase": pa["phase"],
+            "outs_at_start": pa["outs_at_start"],
+            "outs_at_end": pa["outs_at_start"] + (1 if is_out else 0),
+            "is_out": is_out,
+            "outcome": outcome,
+            "stays": d["sty"],
+            "is_joker": pa["is_joker"],
+            "joker_id": pa["joker_id"],
+            "is_walk_back": outcome == "HR",
+        })
+        self._pa_record_in_progress = None
 
     def _accumulate_pa_runners_out(self, event, ctx) -> None:
         """Track runners retired during the current PA. Called per-event
