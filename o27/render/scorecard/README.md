@@ -29,10 +29,23 @@ Requires: `texlive-metapost`, `texlive-latex-extra`, `pdflatex`, `mpost`,
 
 ## O27 grafts (in progress)
 
-- [ ] Column header: INNINGS → CYCLES
+The structural axis of the card is the **out number** (1 → 27 in
+regulation, 28+ in extras). Innings don't exist on an O27 scorecard —
+Declared Seconds and extras are both just continuations of the same
+out-counter ruler. Everything else hangs off that ruler.
+
+- [ ] Out-counter ruler at the top of the grid (replacing the inning
+      number header). Continuous 1 → 27, then 28+ for extras.
+- [ ] Column header label: INNINGS → OUT (singular ruler, not segmented)
 - [ ] Lineup grid: 9 rows → 12 rows (8 fielders + SP + 3 DH)
+- [ ] PA cells laid out against the out ruler rather than into fixed
+      inning columns — column width follows PA sequence
 - [ ] Stay tickmarks (1–3) in diamond corner
-- [ ] Joker cooldown strip per cycle
+- [ ] Joker cooldown ticks (resets when the lineup turns over — visible
+      from the lineup row but not a structural column)
 - [ ] Walk-Back annotation + side-margin runner tracker
-- [ ] Pitcher arc bar across the bottom (by out-range, not by inning)
-- [ ] Declared Seconds banked/spent ledger
+- [ ] Pitcher arc bar across the bottom plotted against the out ruler
+- [ ] Declared Seconds: a marker on the ruler at the bank point ("outs
+      X–27 banked"), reappearing wherever they're spent later in the
+      sequence. No separate ledger.
+- [ ] Extras: outs 28+ on the same ruler, no special block
