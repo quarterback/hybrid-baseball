@@ -64,8 +64,8 @@
         <tr{% if p.is_joker %} class="jr"{% endif %}>
           <td>
             <a href="/player/{{ team.abbrev }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a>
-            {% if p.is_joker and p.joker_archetype %}
-            <span class="ab ab-{{ p.joker_archetype | lower }}">{{ p.joker_archetype }}</span>
+            {% if p.is_joker %}
+            <span class="ab">J</span>
             {% endif %}
             {% if p.is_pitcher and p.pitcher_archetype %}
             <span class="ab dim small" style="font-size:.6rem; opacity:.7;">{{ p.pitcher_archetype | replace('_',' ') | title }}</span>
@@ -115,7 +115,6 @@
           <td class="dim mono">J{{ loop.index }}</td>
           <td>
             <a href="/player/{{ team.abbrev }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a>
-            {% if p.joker_archetype %}<span class="ab ab-{{ p.joker_archetype | lower }}">{{ p.joker_archetype }}</span>{% endif %}
           </td>
           <td class="pos">{{ p.position }}</td>
           <td class="r mono">{{ "%.3f"|format(p.skill) }}</td>
@@ -153,7 +152,7 @@
         <tr{% if p.is_joker %} class="jr"{% endif %}>
           <td>
             <a href="/player/{{ team.abbrev }}_{{ p.name | replace(' ','_') | replace('.','') }}" class="link">{{ p.name }}</a>
-            {% if p.is_joker and p.archetype %}<span class="ab ab-{{ p.archetype | lower }}">{{ p.archetype }}</span>{% endif %}
+            {% if p.is_joker %}<span class="ab">J</span>{% endif %}
           </td>
           <td class="pos">{{ p.pos }}</td>
           <td class="r mono dim">{{ p.gp }}</td>

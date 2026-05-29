@@ -6,8 +6,8 @@
   <p class="sub">
     <a href="/team/{{ team.abbrev }}" class="link">{{ team.display }}</a>
     · {{ player.position }}
-    {% if player.is_joker and player.joker_archetype %}
-    · <span class="ab ab-{{ player.joker_archetype | lower }}">{{ player.joker_archetype }}</span>
+    {% if player.is_joker %}
+    · <span class="ab">J</span>
     {% endif %}
   </p>
 </div>

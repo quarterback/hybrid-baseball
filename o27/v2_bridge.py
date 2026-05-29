@@ -67,7 +67,7 @@ def _player_to_dict(p: dict) -> dict:
     is_joker = bool(p.get("is_joker"))
     pos = p.get("position") or ""
     if is_joker and archetype:
-        pos = f"JKR-{archetype[:3]}"
+        pos = "J"
     return {
         "name": p["name"],
         "position": pos,
@@ -377,7 +377,7 @@ def _batters_for(game_id: int, team_id: int) -> list[dict]:
         is_joker = bool(r.get("is_joker"))
         pos = r.get("position") or ""
         if is_joker and archetype:
-            pos = f"JKR-{archetype[:3]}"
+            pos = "J"
         out.append({
             "name":     r["player_name"],
             "pos":      pos,
@@ -728,7 +728,7 @@ def get_team_batting(abbrev: str) -> list[dict]:
         is_joker = bool(r.get("is_joker"))
         pos = r.get("position") or ""
         if is_joker and archetype:
-            pos = f"JKR-{archetype[:3]}"
+            pos = "J"
         out.append({
             "name": r["name"], "pos": pos,
             "is_joker": is_joker, "archetype": archetype,
@@ -829,7 +829,7 @@ def get_player_stats(team_abbrev: str, player_name: str) -> Optional[dict]:
     is_joker = bool(pl.get("is_joker"))
     pos = pl.get("position") or ""
     if is_joker and archetype:
-        pos = f"JKR-{archetype[:3]}"
+        pos = "J"
     # 2C moved-runner rates per source base.
     c2_op_total  = (r["c2_op_1b"] or 0) + (r["c2_op_2b"] or 0) + (r["c2_op_3b"] or 0)
     c2_adv_total = (r["c2_adv_1b"] or 0) + (r["c2_adv_2b"] or 0) + (r["c2_adv_3b"] or 0)

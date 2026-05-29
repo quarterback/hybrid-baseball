@@ -312,8 +312,10 @@ def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list
             if not p.is_joker:
                 pos_idx += 1
             if p.is_joker:
+                # Joker is a DH-style slot; archetype is a tendency, not a
+                # position. Position label is just "J".
                 archetype = "Power" if p.speed < 0.50 else ("Speed" if p.speed > 0.65 else "Contact")
-                pos = f"JKR-{archetype[:3]}"
+                pos = "J"
             else:
                 archetype = ""
             s = bs.get(p.player_id)
