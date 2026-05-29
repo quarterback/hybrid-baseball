@@ -8403,7 +8403,7 @@ def api_pro_worldcup_finish_qualifying():
     rng_seed = int(data.get("rng_seed") or 0)
     # Make sure any still-unplayed qualifying games are run first.
     _wc.simulate_qualifying(rng_seed=rng_seed)
-    info = _wc.lock_qualifiers()
+    info = _wc.lock_qualifiers(rng_seed=rng_seed)
     _wc.auto_pick_rosters(season=info["season"], overwrite=False)
     return jsonify({"ok": True, "info": info})
 
