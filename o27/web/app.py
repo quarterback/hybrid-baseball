@@ -45,8 +45,31 @@ from o27.engine.state import GameState, Team, Player, PitchEntry
 from o27.engine.game import run_game
 from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
+from o27.render.svg_scorecard import extract_pa_records, render_scorecard
 from o27.main import make_foxes, make_bears
 import o27.data as data
+
+
+def _build_scorecards(final_state, log_lines, v_batting, h_batting):
+    """Compute the two scorecard SVGs from a finished game's PBP."""
+    try:
+        pa_records = extract_pa_records(log_lines)
+        vis_lineup = [
+            {"name": b["name"], "pos": b.get("pos", "")} for b in v_batting[:12]
+        ]
+        hom_lineup = [
+            {"name": b["name"], "pos": b.get("pos", "")} for b in h_batting[:12]
+        ]
+        return render_scorecard(
+            visitors_name=final_state.visitors.name,
+            home_name=final_state.home.name,
+            visitors_lineup=vis_lineup,
+            home_lineup=hom_lineup,
+            pa_records=pa_records,
+        )
+    except Exception:
+        # Scorecard is a nice-to-have; never break the box score on it.
+        return {"visitors": "", "home": ""}
 
 app = Flask(__name__, template_folder="templates")
 app.secret_key = os.environ.get("SECRET_KEY", "o27-dev-secret-key")
@@ -543,6 +566,8 @@ def game():
         h_pitching=h_pitching,
         v_hits=v_hits,
         h_hits=h_hits,
+        **{f"scorecard_{k}": v for k, v in _build_scorecards(
+            final_state, log_lines, v_batting, h_batting).items()},
     )
 
 
@@ -592,6 +617,8 @@ def view_game(game_id):
         h_pitching=h_pitching,
         v_hits=v_hits,
         h_hits=h_hits,
+        **{f"scorecard_{k}": v for k, v in _build_scorecards(
+            final_state, log_lines, v_batting, h_batting).items()},
     )
 
 

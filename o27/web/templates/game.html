@@ -75,6 +75,9 @@
   <div class="card-hd" style="padding:0; border-bottom:none;">
     <div class="tabs" style="padding:0 .5rem;">
       <button class="tab-btn active" data-tg="main" data-ti="box"  onclick="switchTab('main','box')">Box Score</button>
+      {% if scorecard_visitors %}
+      <button class="tab-btn"        data-tg="main" data-ti="sc"   onclick="switchTab('main','sc')">Scorecard</button>
+      {% endif %}
       {% if sections.spells %}
       <button class="tab-btn"        data-tg="main" data-ti="pit"  onclick="switchTab('main','pit')">Pitching Log</button>
       {% endif %}
@@ -111,6 +114,23 @@
     <p class="dim small">No box score data available.</p>
     {% endif %}
   </div>
+
+  {# ── SCORECARD ── #}
+  {% if scorecard_visitors %}
+  <div class="tab-panel card-bd" style="padding:.65rem;" data-pg="main" data-pi="sc">
+    <div style="overflow-x:auto;">
+      {{ scorecard_visitors | safe }}
+    </div>
+    <div style="overflow-x:auto; margin-top:.6rem;">
+      {{ scorecard_home | safe }}
+    </div>
+    <p class="dim small mt2">
+      Out# columns read left-to-right; each cell is one PA. Diamond shows
+      base advancement; small dots top-left = stays; J<sub>n</sub> top-right =
+      joker insertion; <em>WB→3</em> on a HR = Walk-Back live runner.
+    </p>
+  </div>
+  {% endif %}
 
   {# ── PITCHING LOG ── #}
   {% if sections.spells %}
