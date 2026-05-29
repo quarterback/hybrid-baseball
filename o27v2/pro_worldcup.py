@@ -252,6 +252,11 @@ _COUNTRY_DISPLAY: dict[str, tuple[str, str]] = {
     "ZA": ("South Africa", "RSA"),   "ZW": ("Zimbabwe", "ZIM"),
     "NA": ("Namibia", "NAM"),        "CV": ("Cape Verde", "CPV"),
     "MU": ("Mauritius", "MRI"),      "UG": ("Uganda", "UGA"),
+    "NG": ("Nigeria", "NGR"),        "GH": ("Ghana", "GHA"),
+    "ET": ("Ethiopia", "ETH"),       "KE": ("Kenya", "KEN"),
+    "TZ": ("Tanzania", "TAN"),       "AO": ("Angola", "ANG"),
+    "MZ": ("Mozambique", "MOZ"),     "MG": ("Madagascar", "MAD"),
+    "EG": ("Egypt", "EGY"),
     # Asia
     "IN": ("India", "IND"),          "PK": ("Pakistan", "PAK"),
     "MY": ("Malaysia", "MAS"),       "PH": ("Philippines", "PHI"),

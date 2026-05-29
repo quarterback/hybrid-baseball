@@ -1,7 +1,7 @@
 {
   "id": "world_pool",
   "label": "World Pool \u2014 6 leagues, worldwide WC field",
-  "team_count": 42,
+  "team_count": 44,
   "level": "MLB",
   "games_per_team": 60,
   "season_days": 150,
@@ -48,7 +48,7 @@
     },
     {
       "name": "African Premier Division",
-      "teams": 8,
+      "teams": 10,
       "divisions": 2
     }
   ],
@@ -66,11 +66,12 @@
     "World League": "global",
     "Frontier League": "south_asia",
     "African Premier Division": {
-      "africa_cricket": 0.5,
-      "namibia": 0.16,
-      "uganda": 0.13,
-      "mauritius": 0.11,
-      "cape_verde": 0.1
+      "africa": 0.4,
+      "africa_cricket": 0.35,
+      "namibia": 0.09,
+      "uganda": 0.06,
+      "mauritius": 0.05,
+      "cape_verde": 0.05
     }
   },
   "park_profiles": {},
