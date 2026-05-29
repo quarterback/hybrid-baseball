@@ -1150,8 +1150,46 @@ enddef;
 def draw_joker_glyph(expr joker_id, xstart, ystart, clr) =
     begingroup
         label.urt(btex {\tiny J} etex, (xstart+4, ystart+30)) withcolor clr;
-        label.urt(decimal joker_id infont "phvr8r" scaled 0.5,
-                  (xstart+11, ystart+30)) withcolor clr;
+        label.urt(decimal joker_id, (xstart+12, ystart+30)) withcolor clr;
+    endgroup
+enddef;
+
+% O27 graft. draw_pitcher_arc_bar — a horizontal strip plotted against
+% the out ruler, showing each pitcher's appearance window as a colored
+% bar spanning the outs they were on the mound for. Replaces the
+% "by inning" pitcher accounting that doesn't apply in O27.
+%
+% Origin is at (bx, by) (typically below the totals strip). `total_outs`
+% is the right-edge out number (usually 27 in regulation, or however
+% deep extras went). Each bar is one call to draw_pitcher_arc_segment.
+def draw_pitcher_arc_bar_frame(expr bx, by, total_outs, clr) =
+    begingroup
+        pickup pencircle scaled thickline_t;
+        bar_w := 8 * total_outs;   % 8 units per out, fits 27 outs in 216
+        bar_h := 24;
+        draw (bx, by)--(bx+bar_w, by)--(bx+bar_w, by+bar_h)--(bx, by+bar_h)--cycle withcolor clr;
+        label.lft(btex {\midsf Pitcher arc} etex, (bx, by + bar_h/2)) withcolor clr;
+        % out-number ticks every 3 outs
+        pickup pencircle scaled thinline_t;
+        for tick := 0 step 3 until total_outs:
+            draw (bx + tick*8, by)--(bx + tick*8, by-3) withcolor clr;
+            label.bot(decimal tick, (bx + tick*8, by-3)) withcolor clr;
+        endfor
+    endgroup
+enddef;
+
+def draw_pitcher_arc_segment(expr bx, by, out_start, out_end, label_str, clr) =
+    begingroup
+        pickup pencircle scaled (thickline_t * 3);
+        seg_x0 := bx + out_start * 8;
+        seg_x1 := bx + out_end * 8;
+        draw (seg_x0, by+12)--(seg_x1, by+12) withcolor clr;
+        % small ticks at the boundaries
+        pickup pencircle scaled thinline_t;
+        draw (seg_x0, by+4)--(seg_x0, by+20) withcolor clr;
+        draw (seg_x1, by+4)--(seg_x1, by+20) withcolor clr;
+        % name above
+        label.top(label_str, ((seg_x0+seg_x1)/2, by+22)) withcolor clr;
     endgroup
 enddef;
 

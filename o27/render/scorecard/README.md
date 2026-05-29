@@ -40,11 +40,15 @@ out-counter ruler. Everything else hangs off that ruler.
 - [ ] Lineup grid: 9 rows → 12 rows (8 fielders + SP + 3 DH)
 - [ ] PA cells laid out against the out ruler rather than into fixed
       inning columns — column width follows PA sequence
-- [ ] Stay tickmarks (1–3) in diamond corner
-- [ ] Joker cooldown ticks (resets when the lineup turns over — visible
-      from the lineup row but not a structural column)
-- [ ] Walk-Back annotation + side-margin runner tracker
-- [ ] Pitcher arc bar across the bottom plotted against the out ruler
+- [x] Stay tickmarks (1–3) in diamond corner. Macro: `draw_stay_ticks`.
+- [x] Joker insertion glyph (J + identity) in cell corner. Macro:
+      `draw_joker_glyph`. Per-turnover cooldown is enforced upstream
+      from PBP, not on the card.
+- [x] Walk-Back annotation in the at-bat cell. Macro: `draw_walk_back_mark`.
+      A side-margin live-runner tracker is still TODO and may not be
+      needed once the cell-level marker is in place.
+- [x] Pitcher arc bar across the bottom plotted against the out ruler.
+      Macros: `draw_pitcher_arc_bar_frame` + `draw_pitcher_arc_segment`.
 - [x] Declared Seconds: a thick vertical decoration line at the column
       where the manager declared, plus a freeform "declared at out N"
       entry in the Notes area. Nothing drawn when no declaration

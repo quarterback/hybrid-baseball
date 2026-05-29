@@ -144,6 +144,20 @@ inject += (
     f"(0, -360)) withcolor scoring;\n"
 )
 
+# Pitcher arc demo. Origin in the lower-left footer area. 27 outs at 8
+# units each = 216 units wide. Sample game: SP (Pitcher One) outs 0-15,
+# RP1 (Pitcher Two) outs 16-21, ending early at out 21 because of the
+# Declared Seconds (the bottom of the half spent the banked outs in
+# extras, but the arc bar here is regulation only — extras would extend
+# past 27 if present).
+arc_x, arc_y = 400, -420
+arc_demos = [
+    f'draw_pitcher_arc_bar_frame({arc_x}, {arc_y}, 27, scoring)',
+    f'draw_pitcher_arc_segment({arc_x}, {arc_y}, 0, 15, btex {{SP}} etex, scoring)',
+    f'draw_pitcher_arc_segment({arc_x}, {arc_y}, 15, 21, btex {{RP1}} etex, scoring)',
+]
+inject += "".join(f"    {d};\n" for d in arc_demos)
+
 for path in (os.path.join(OUT, "scorecard_away.mp"),):
     with open(path) as fd:
         text = fd.read()
