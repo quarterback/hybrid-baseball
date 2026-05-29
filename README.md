@@ -18,7 +18,7 @@ If you want the long version of the design argument, the post that goes through 
 
 **Lineup and roster**
 - 12 batters per side: 8 fielders + the starting pitcher + 3 DHs. The SP must bat — no DH replacing him.
-- 3 jokers per roster: tactical insertions the manager can drop into any spot in the rotation, anytime. There's no per-cycle or per-game cap — the same joker can be brought back as many times as the manager wants. The only hard constraint is they can't be at the plate while still on base from a prior PA. Jokers don't take a roster slot or a field position. They add a PA to the rotation when used. A manager who never deploys his jokers leaves offense on the table. Each team rosters one joker of each archetype (power, speed, contact).
+- 3 jokers per roster: tactical insertions the manager can drop into any spot in the rotation. Cooldown is per-turnover — each joker can be deployed once per time through the order, then resets when the lineup cycles. No overall cap on deployments, so in a long, high-scoring half a single joker can be brought back cycle after cycle. The other hard constraint is they can't be at the plate while still on base from a prior PA. Jokers don't take a roster slot or a field position; they add a PA to the rotation when used. A manager who never deploys his jokers leaves offense on the table. By convention most teams carry one joker of each archetype (power, speed, contact) for tactical flexibility, but the archetype mix is a roster-construction choice — a team with a specific style philosophy can load up on a single archetype.
 - Pinch hitting still exists separately and works as in MLB — the pinch hitter replaces a regular permanently in the lineup and the field.
 - Active roster is 34 players (12 fielders + 3 DH + 19 pitchers), with 13 reserves behind them. Reserves promote ephemerally to cover injuries — no DB-level "callup," just whoever fits the hole that day.
 
@@ -41,10 +41,10 @@ If you want the long version of the design argument, the post that goes through 
 
 **Two O27-native wrinkles**
 - **Walk-Back.** A home run returns the hitter to third base as a live, persistent bonus runner — he stays there until he's driven in, put out, or the half ends, exactly like any other runner.
-- **Declared Seconds.** A manager may end his side's regulation half early and *bank* the unused outs, buying a second trip through the lineup later in the game. A genuine risk/reward lever with no equivalent in real baseball.
+- **Declared Seconds.** A manager may end his side's regulation half early and *bank* the unused outs, buying a second trip through the lineup later in the game. A genuine risk/reward lever with no equivalent in real baseball. Declaring is regulation-only — a manager cannot declare in extras. Extra-inning frames must be played out as normal 3-out frames.
 
 **Game length**
-- Tied games go to extra innings: each side bats a normal 3-out frame, repeated until a winner. (An earlier 5-out "super-inning" format was dropped after it let offenses run up double-digit frames.)
+- Tied games go to extra innings: each side bats a normal 3-out frame, repeated until a winner. Declared Seconds is not available in extras — every extra frame is played to its third out. (An earlier 5-out "super-inning" format was dropped after it let offenses run up double-digit frames.)
 - Regular season length is per league config (8/12/16/24/30/36 teams, plus a 56-team tiered config). The default 30-team config plays 162 games per team.
 
 ## How the Stats Are Different

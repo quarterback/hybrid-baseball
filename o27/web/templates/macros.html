@@ -15,7 +15,7 @@
       <td>
         {{ p.name }}
         {% if p.is_joker %}
-        <span class="ab ab-{{ p.get('joker_archetype', '') | lower }}">{{ p.get('joker_archetype', 'JKR') }}</span>
+        <span class="ab">J</span>
         {% endif %}
       </td>
       <td class="pos">{{ p.position }}</td>
@@ -47,8 +47,8 @@
     <tr{% if p.is_joker %} class="jr"{% endif %}>
       <td>
         {{ p.name }}
-        {% if p.is_joker and p.archetype %}
-        <span class="ab ab-{{ p.archetype | lower }}">{{ p.archetype }}</span>
+        {% if p.is_joker %}
+        <span class="ab">J</span>
         {% endif %}
       </td>
       <td class="pos">{{ p.pos }}</td>

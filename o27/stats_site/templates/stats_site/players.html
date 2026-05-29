@@ -43,7 +43,7 @@
   <tr>
     <td>
       <a href="/stats/player/{{ row.team.abbrev }}_{{ row.player.name|replace(' ','_')|replace('.','') }}">{{ row.player.name }}</a>
-      {% if row.player.is_joker %}<span class="tag tag-joker">{{ row.player.joker_archetype }}</span>{% endif %}
+      {% if row.player.is_joker %}<span class="tag tag-joker">J</span>{% endif %}
     </td>
     <td><a href="/stats/team/{{ row.team.abbrev }}">{{ row.team.display }}</a></td>
     <td><span class="tag tag-pos">{{ row.player.position }}</span></td>

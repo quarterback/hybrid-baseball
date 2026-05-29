@@ -322,7 +322,7 @@ def _generate_roster(team_seed: int) -> list[dict]:
         cqt    = _clamp(rng.gauss(0.40, 0.07))
         players.append({
             "name": _name(),
-            "position": f"JKR-{arch['label'][:3]}",
+            "position": "J",
             "is_pitcher": False, "is_joker": True,
             "joker_archetype": arch["label"],
             "skill": round(skill, 3), "speed": round(speed, 3),
@@ -387,7 +387,7 @@ def _engine_team_to_dict(team, abbrev: str, city: str = "", level: str = "") -> 
         archetype = ""
         if p.is_joker:
             archetype = "Power" if p.speed < 0.50 else ("Speed" if p.speed > 0.65 else "Contact")
-            pos = f"JKR-{archetype[:3]}"
+            pos = "J"
         elif p.is_pitcher:
             pos = "P"
         players.append({
