@@ -75,7 +75,8 @@ And two mechanics that show how far the design goes once you pull the thread:
   persistent bonus runner, scored or put out like any other.
 - **Declared Seconds** — a manager can end his regulation half early and *bank*
   the unused outs for a second trip through the lineup later. A genuinely novel
-  risk decision with no equivalent in the real game.
+  risk decision with no equivalent in the real game. Regulation only — not
+  available in extras, which must be played out as normal 3-out frames.
 
 The whole sport runs on a structural conceit — every pitcher throws sidearm or
 submarine — which reshapes the value of velocity, deception, and arsenal depth,

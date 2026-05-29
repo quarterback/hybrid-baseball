@@ -45,7 +45,9 @@ out-counter ruler. Everything else hangs off that ruler.
       from the lineup row but not a structural column)
 - [ ] Walk-Back annotation + side-margin runner tracker
 - [ ] Pitcher arc bar across the bottom plotted against the out ruler
-- [ ] Declared Seconds: a marker on the ruler at the bank point ("outs
-      X–27 banked"), reappearing wherever they're spent later in the
-      sequence. No separate ledger.
+- [x] Declared Seconds: a thick vertical decoration line at the column
+      where the manager declared, plus a freeform "declared at out N"
+      entry in the Notes area. Nothing drawn when no declaration
+      happened. (Declaring is regulation-only — extras must be played
+      out, see top-level README rule.) Macro: `draw_declared_seconds_divider`.
 - [ ] Extras: outs 28+ on the same ruler, no special block

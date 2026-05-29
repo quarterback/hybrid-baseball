@@ -41,10 +41,10 @@ If you want the long version of the design argument, the post that goes through 
 
 **Two O27-native wrinkles**
 - **Walk-Back.** A home run returns the hitter to third base as a live, persistent bonus runner — he stays there until he's driven in, put out, or the half ends, exactly like any other runner.
-- **Declared Seconds.** A manager may end his side's regulation half early and *bank* the unused outs, buying a second trip through the lineup later in the game. A genuine risk/reward lever with no equivalent in real baseball.
+- **Declared Seconds.** A manager may end his side's regulation half early and *bank* the unused outs, buying a second trip through the lineup later in the game. A genuine risk/reward lever with no equivalent in real baseball. Declaring is regulation-only — a manager cannot declare in extras. Extra-inning frames must be played out as normal 3-out frames.
 
 **Game length**
-- Tied games go to extra innings: each side bats a normal 3-out frame, repeated until a winner. (An earlier 5-out "super-inning" format was dropped after it let offenses run up double-digit frames.)
+- Tied games go to extra innings: each side bats a normal 3-out frame, repeated until a winner. Declared Seconds is not available in extras — every extra frame is played to its third out. (An earlier 5-out "super-inning" format was dropped after it let offenses run up double-digit frames.)
 - Regular season length is per league config (8/12/16/24/30/36 teams, plus a 56-team tiered config). The default 30-team config plays 162 games per team.
 
 ## How the Stats Are Different

@@ -627,7 +627,7 @@ def set_batter_name_vars(expr lineup_pos, lineup_line) =
         iposwidth := 40;
         namewidth := 250;
         box_size := 32;
-        max_y := box_size * 4 * 9; % top of the topmost name box.
+        max_y := box_size * 4 * 12; % top of the topmost name box.
 
         player_y := max_y - (box_size * (4 * (lineup_pos - 1) + lineup_line));
 
@@ -689,7 +689,7 @@ enddef;
 def set_inning_num_label_vars(expr xstart) =
     begingroup
     pair top_inn_label, bot_inn_label;
-    top_inn_label := 1/2[(xstart, 1152),(xstart+128,1152+32)];
+    top_inn_label := 1/2[(xstart, 1536),(xstart+128,1536+32)];
     bot_inn_label := 1/2[(xstart, 0),(xstart+128,-32)];
     endgroup
 enddef;
@@ -743,7 +743,7 @@ def set_batter_total_vars(expr lineup_pos, lineup_line, innings) =
         stat_box_size := 32;
         ab_box_size := 128;
         xstart := (ab_box_size * innings);
-        max_y := stat_box_size * 4 * 9; % top of the topmost name box.
+        max_y := stat_box_size * 4 * 12; % top of the topmost name box.
         player_y := max_y - (stat_box_size * (4 * (lineup_pos - 1) + lineup_line));
 
         pair batter_ab, batter_r, batter_h, batter_rbi, batter_bb, batter_so;
@@ -1104,6 +1104,21 @@ def draw_strikeout_looking(expr outlabel, clr) =
     endgroup
 enddef;
 
+% O27 graft. draw_declared_seconds_divider — a thick vertical decoration
+% line spanning the full lineup grid at column `col` (1-indexed PA column,
+% drawn at its left edge), marking the boundary between the regulation
+% portion of the half and the banked-out "second" portion. Only invoked
+% when the manager actually declared seconds during this half. Declaration
+% in extras is not legal (see rules).
+def draw_declared_seconds_divider(expr col, clr) =
+    begingroup
+        pickup pencircle scaled (thickline_t * 2);
+        xstart := (col - 1) * 128;
+        draw (xstart, 0)--(xstart, 1536) withcolor clr;
+        label.top(btex {\midsf DECLARED} etex, (xstart, 1536)) withcolor clr;
+    endgroup
+enddef;
+
 def draw_reserve_player_box(expr xstart, ystart, clr, bullpen) =
     begingroup
         namewidth := 224;
@@ -1187,7 +1202,7 @@ def draw_full_scorecard(expr innings) =
         xstart := 0;
 
         % Draw first nine position boxes
-        for ystart := 0 step 128 until 1024:
+        for ystart := 0 step 128 until 1408:
             draw_player_box(xstart,ystart,clr,true);
         endfor
 
@@ -1199,15 +1214,18 @@ def draw_full_scorecard(expr innings) =
         ystart := 128;
         playerbox_h := 32;
         yoffset := 6;
-        label(btex {\sf 1} etex, (-324, ystart * 8 + playerbox_h * 4 - yoffset)) withcolor clr;
-        label(btex {\sf 2} etex, (-324, ystart * 7 + playerbox_h * 4 - yoffset)) withcolor clr;
-        label(btex {\sf 3} etex, (-324, ystart * 6 + playerbox_h * 4 - yoffset)) withcolor clr;
-        label(btex {\sf 4} etex, (-324, ystart * 5 + playerbox_h * 4 - yoffset)) withcolor clr;
-        label(btex {\sf 5} etex, (-324, ystart * 4 + playerbox_h * 4 - yoffset)) withcolor clr;
-        label(btex {\sf 6} etex, (-324, ystart * 3 + playerbox_h * 4 - yoffset)) withcolor clr;
-        label(btex {\sf 7} etex, (-324, ystart * 2 + playerbox_h * 4 - yoffset)) withcolor clr;
-        label(btex {\sf 8} etex, (-324, ystart * 1 + playerbox_h * 4 - yoffset)) withcolor clr;
-        label(btex {\sf 9} etex, (-324, ystart * 0 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 1}  etex, (-324, ystart * 11 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 2}  etex, (-324, ystart * 10 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 3}  etex, (-324, ystart *  9 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 4}  etex, (-324, ystart *  8 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 5}  etex, (-324, ystart *  7 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 6}  etex, (-324, ystart *  6 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 7}  etex, (-324, ystart *  5 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 8}  etex, (-324, ystart *  4 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 9}  etex, (-324, ystart *  3 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 10} etex, (-324, ystart *  2 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 11} etex, (-324, ystart *  1 + playerbox_h * 4 - yoffset)) withcolor clr;
+        label(btex {\sf 12} etex, (-324, ystart *  0 + playerbox_h * 4 - yoffset)) withcolor clr;
 
         % Draw key for column totals
         for ystart := -224 step 96 until -128:
@@ -1239,7 +1257,7 @@ def draw_full_scorecard(expr innings) =
         label(btex {\bigsf P}  etex, 1/2[1/2[(0,ystart-midpoint),(-iposwidth,ystart-(midpoint*2))],(0,ystart-(midpoint*2))]) withcolor clr;
 
         % Draw all the at-bat boxes
-        for ystart := 0 step box_size until (box_size * 8):
+        for ystart := 0 step box_size until (box_size * 11):
             for xstart := 0 step box_size until (innings - 1) * box_size:
                 draw_at_bat_box(xstart, ystart);
             endfor
@@ -1254,7 +1272,7 @@ def draw_full_scorecard(expr innings) =
         endfor
 
         % Draw all the row totals boxes
-        for ystart := 0 step 128 until 1024:
+        for ystart := 0 step 128 until 1408:
             for xstart := (innings * box_size) step 96 until ((innings * box_size) + 96):
                 draw_row_summary_box(xstart,ystart,4,clr);
             endfor
@@ -1328,7 +1346,7 @@ def draw_full_scorecard(expr innings) =
         % Side information
         xstart := (box_size * innings) + (32 * 6);
         ystart := -32;
-        yend := 1152;
+        yend := 1536;
         xoffset := 128;
         midpoint := 32;
 
@@ -1361,7 +1379,7 @@ def draw_full_scorecard(expr innings) =
 
         % Title boxes
         xstart := 0;
-        ystart := 1152;
+        ystart := 1536;
         iposwidth := 40;
 
         pickup pencircle scaled thickline_t;
@@ -1370,11 +1388,11 @@ def draw_full_scorecard(expr innings) =
         draw (xstart,ystart)--(xstart-iposwidth*2,ystart)--(xstart-iposwidth*2,ystart+32)--(xstart,ystart+32)--cycle withcolor clr;
         draw (xstart-iposwidth,ystart)--(xstart-iposwidth,ystart+32) withcolor clr;
         label(btex {\bigsf Pos} etex, 1/2[(xstart-iposwidth*2,ystart),(xstart-iposwidth,ystart+32)]) withcolor clr;
-        label(btex {\bigsf Inn} etex, 1/2[(xstart-iposwidth,ystart),(xstart,ystart+32)]) withcolor clr;
+        label(btex {\bigsf Out \#} etex, 1/2[(xstart-iposwidth,ystart),(xstart,ystart+32)]) withcolor clr;
 
         % Title boxes
         xstart := 0;
-        ystart := 1152;
+        ystart := 1536;
         iposwidth := 40;
 
         pickup pencircle scaled thickline_t;
@@ -1393,16 +1411,16 @@ def draw_full_scorecard(expr innings) =
         draw (xstart,ystart)--(xstart-iposwidth*2,ystart)--(xstart-iposwidth*2,ystart+32)--(xstart,ystart+32)--cycle withcolor clr;
         draw (xstart-iposwidth,ystart)--(xstart-iposwidth,ystart+32) withcolor clr;
         label(btex {\bigsf Pos} etex, 1/2[(xstart-iposwidth*2,ystart),(xstart-iposwidth,ystart+32)]) withcolor clr;
-        label(btex {\bigsf Inn} etex, 1/2[(xstart-iposwidth,ystart),(xstart,ystart+32)]) withcolor clr;
+        label(btex {\bigsf Out \#} etex, 1/2[(xstart-iposwidth,ystart),(xstart,ystart+32)]) withcolor clr;
 
         % Inning boxes
-        ystart := 1152;
+        ystart := 1536;
         for xstart := 0 step 128 until ((innings - 1) * box_size):
             draw (xstart,ystart)--(xstart+128,ystart)--(xstart+128,ystart+32)--(xstart,ystart+32)--cycle withcolor clr;
         endfor
 
         % Batter stats boxes
-        ystart := 1152;
+        ystart := 1536;
         for xstart := (box_size * innings) step 32 until (box_size * innings)+32*5:
             draw (xstart,ystart)--(xstart+32,ystart)--(xstart+32,ystart+32)--(xstart,ystart+32)--cycle withcolor clr;
         endfor
