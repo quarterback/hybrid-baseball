@@ -1,7 +1,7 @@
 {
   "id": "world_pool",
-  "label": "World Pool \u2014 5 leagues, worldwide WC field",
-  "team_count": 34,
+  "label": "World Pool \u2014 6 leagues, worldwide WC field",
+  "team_count": 42,
   "level": "MLB",
   "games_per_team": 60,
   "season_days": 150,
@@ -10,7 +10,8 @@
     "Pacific League",
     "European League",
     "World League",
-    "Frontier League"
+    "Frontier League",
+    "African Premier Division"
   ],
   "schedule_mode": "independent",
   "postseason": "none",
@@ -44,20 +45,33 @@
       "name": "Frontier League",
       "teams": 6,
       "divisions": 1
+    },
+    {
+      "name": "African Premier Division",
+      "teams": 8,
+      "divisions": 2
     }
   ],
   "style_profiles": {
     "Continental League": "dominican",
     "Pacific League": "npb",
     "European League": "european",
-    "Frontier League": "athletic"
+    "Frontier League": "athletic",
+    "African Premier Division": "athletic"
   },
   "name_regions": {
     "Continental League": "latin_america",
     "Pacific League": "east_asia",
     "European League": "europe_western",
     "World League": "global",
-    "Frontier League": "south_asia"
+    "Frontier League": "south_asia",
+    "African Premier Division": {
+      "africa_cricket": 0.5,
+      "namibia": 0.16,
+      "uganda": 0.13,
+      "mauritius": 0.11,
+      "cape_verde": 0.1
+    }
   },
   "park_profiles": {},
   "intra_division_weight": 0.5,
