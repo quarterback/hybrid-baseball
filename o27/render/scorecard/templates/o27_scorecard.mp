@@ -1119,6 +1119,42 @@ def draw_declared_seconds_divider(expr col, clr) =
     endgroup
 enddef;
 
+% O27 graft. draw_stay_ticks — small dots in the top-left corner of the
+% at-bat cell, one per contact event before the AB resolved (max 3).
+% Stays don't end the AB but advance runners at the cost of a strike;
+% this is the visual signature of a stay-heavy AB.
+def draw_stay_ticks(expr stays, xstart, ystart, clr) =
+    begingroup
+        pickup pencircle scaled (thinline_t * 3);
+        if stays >= 1: draw (xstart+10, ystart+118) withcolor clr; fi
+        if stays >= 2: draw (xstart+18, ystart+118) withcolor clr; fi
+        if stays >= 3: draw (xstart+26, ystart+118) withcolor clr; fi
+    endgroup
+enddef;
+
+% O27 graft. draw_walk_back_mark — a "WB→3" tag tucked in the at-bat cell
+% on a home run, indicating that the hitter has been returned to 3B as a
+% live bonus runner. Drawn alongside the standard HR notation.
+def draw_walk_back_mark(expr xstart, ystart, clr) =
+    begingroup
+        label.lrt(btex {\tiny WB$\rightarrow$3} etex,
+                  (xstart+74, ystart+108)) withcolor clr;
+    endgroup
+enddef;
+
+% O27 graft. draw_joker_glyph — marks an at-bat as a joker insertion,
+% with a small "J" badge in the bottom-left corner of the cell. The
+% joker's identity (1/2/3) is the parameter — archetype is roster
+% metadata, not scoring metadata. Per-turnover cooldown is enforced
+% upstream; the card just records the insertion.
+def draw_joker_glyph(expr joker_id, xstart, ystart, clr) =
+    begingroup
+        label.urt(btex {\tiny J} etex, (xstart+4, ystart+30)) withcolor clr;
+        label.urt(decimal joker_id infont "phvr8r" scaled 0.5,
+                  (xstart+11, ystart+30)) withcolor clr;
+    endgroup
+enddef;
+
 def draw_reserve_player_box(expr xstart, ystart, clr, bullpen) =
     begingroup
         namewidth := 224;

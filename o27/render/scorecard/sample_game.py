@@ -118,18 +118,36 @@ game.winning_pitcher(31)
 game.losing_pitcher(21, is_away_team=True)
 game.generate_scorecard()
 
-# Demo: away manager declared seconds after out 20 — illustrate the
-# decoration line. PBP-driven render will infer this from the game state.
+# Demo: away manager declared seconds after out 20, plus a few example
+# stays, a walk-back, and a joker insertion to illustrate the new
+# macros. PBP-driven render will derive all of this from the game state.
 DECLARED_AT_OUT = 20
+
+def cell_origin(lineup_pos: int, col: int) -> tuple[int, int]:
+    """Map a (1-indexed lineup position, 1-indexed PA column) to the
+    (xstart, ystart) corner of the at-bat cell."""
+    return ((col - 1) * 128, (12 - lineup_pos) * 128)
+
+demos = []
+demos.append(f"draw_declared_seconds_divider({DECLARED_AT_OUT + 1}, scoring)")
+
+x, y = cell_origin(3, 2);  demos.append(f"draw_stay_ticks(3, {x}, {y}, scoring)")
+x, y = cell_origin(2, 5);  demos.append(f"draw_stay_ticks(2, {x}, {y}, scoring)")
+x, y = cell_origin(7, 3);  demos.append(f"draw_stay_ticks(1, {x}, {y}, scoring)")
+x, y = cell_origin(4, 4);  demos.append(f"draw_walk_back_mark({x}, {y}, scoring)")
+x, y = cell_origin(5, 6);  demos.append(f"draw_joker_glyph(2, {x}, {y}, scoring)")
+x, y = cell_origin(11, 8); demos.append(f"draw_joker_glyph(1, {x}, {y}, scoring)")
+
+inject = "".join(f"    {d};\n" for d in demos)
+inject += (
+    f"    label.top(btex {{\\midsf Notes: declared at out {DECLARED_AT_OUT}}} etex, "
+    f"(0, -360)) withcolor scoring;\n"
+)
+
 for path in (os.path.join(OUT, "scorecard_away.mp"),):
     with open(path) as fd:
         text = fd.read()
-    text = text.replace(
-        "endfig;",
-        f"    draw_declared_seconds_divider({DECLARED_AT_OUT + 1}, scoring);\n"
-        f"    label.top(btex {{\\midsf Notes: declared at out {DECLARED_AT_OUT}}} etex, "
-        f"(0, -360)) withcolor scoring;\nendfig;",
-    )
+    text = text.replace("endfig;", inject + "endfig;")
     with open(path, "w") as fd:
         fd.write(text)
 
