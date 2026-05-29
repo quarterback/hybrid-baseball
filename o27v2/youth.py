@@ -166,6 +166,10 @@ _COUNTRY_REGION: dict[str, str] = {
     "ZA": "Africa",         "ZW": "Africa",         "NA": "Africa",
     # Africa (Frontier Cup)
     "CV": "Africa",         "MU": "Africa",         "UG": "Africa",
+    # Africa (West / East / Central / North)
+    "NG": "Africa",         "GH": "Africa",         "ET": "Africa",
+    "KE": "Africa",         "TZ": "Africa",         "AO": "Africa",
+    "MZ": "Africa",         "MG": "Africa",         "EG": "Africa",
     # Asia
     "IN": "Asia",           "PK": "Asia",           "MY": "Asia",
     "PH": "Asia",           "JP": "Asia",           "KR": "Asia",

@@ -60,24 +60,25 @@ _WC_REGION_ROLLUP: dict[str, str] = {
     "South America": "Americas",
     "Europe":        "Europe",
     "Asia":          "Asia",
-    "Africa":        "Other",
+    "Africa":        "Africa",
     "Oceania":       "Other",
     "Other":         "Other",
 }
 
-WC_REGION_ORDER: list[str] = ["Americas", "Asia", "Europe", "Other"]
+WC_REGION_ORDER: list[str] = ["Americas", "Asia", "Africa", "Europe", "Other"]
 
 # Quotas (sum = 24) — the per-region count that advances out of qualifying
 # into the 24-nation main bracket. Tuned to the realistic talent depth
 # distribution: Americas dominates (US/DR/PR/Cuba/Venezuela/Mexico/etc.),
-# Asia is strong (Japan/Korea/Taiwan), Europe is the third pole (Nether-
-# lands/Italy/Germany), Other has limited depth but always gets a couple
-# of berths so Australia + RSA don't sit out every cycle.
+# Asia is strong (Japan/Korea/Taiwan), Africa is now its own pot
+# (RSA/Nigeria/Ethiopia/Namibia/...), Europe is a pole (Netherlands/Italy/
+# Germany), and Other is Oceania + the long tail (Australia/NZ/Pacific).
 WC_REGIONAL_QUOTAS: dict[str, int] = {
-    "Americas": 9,
-    "Asia":     7,
-    "Europe":   6,
-    "Other":    2,
+    "Americas": 8,
+    "Asia":     6,
+    "Africa":   4,
+    "Europe":   3,
+    "Other":    3,
 }
 
 # Max nations per region that enter qualifying. Caps total qualifying-stage
