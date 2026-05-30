@@ -1530,6 +1530,15 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
     state = GameState(visitors=visitors_team, home=home_team)
     state.is_playoff = bool(game.get("is_playoff"))
     state.current_pitcher_id = _find_pitcher_id(home_team)
+    # Power Play (optional rule) is a per-league opt-in stamped on the team
+    # rows at league creation. When this league opted in, force the per-game
+    # override ON (the engine honors it ahead of the global cfg flag). When it
+    # did NOT, leave the override unset (None) so the rule falls back to the
+    # global Engine Settings toggle — the two controls thus compose as
+    # "per-league opt-in OR global default". Both teams share a league, so the
+    # home row is authoritative.
+    if bool((home_row.get("power_play_enabled") if home_row else 0) or 0):
+        state.power_play_enabled = True
     # Stamp the per-game weather context (drawn at schedule time). prob.py
     # reads this; everything else passes it through.
     from o27.engine.weather import Weather

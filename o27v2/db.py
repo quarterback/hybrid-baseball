@@ -116,7 +116,11 @@ CREATE TABLE IF NOT EXISTS teams (
     -- Empty = neutral generation. Set when a config opts into mechanical
     -- style diversity; drives a per-attribute bias at seed time and is
     -- surfaced as a badge in the UI.
-    style_profile      TEXT    DEFAULT ''
+    style_profile      TEXT    DEFAULT '',
+    -- Power Play (optional rule) — per-league opt-in set at league creation
+    -- (the checkbox on new_league.html). Stamped onto every team in the
+    -- league; sim.py reads it into state.power_play_enabled per game. 0 = off.
+    power_play_enabled INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -1144,6 +1148,16 @@ def init_db() -> None:
         # / IBB rebalance pass. Legacy rows default to 0.5 (neutral).
         try:
             conn.execute("ALTER TABLE teams ADD COLUMN mgr_ibb_aggression REAL DEFAULT 0.5")
+            conn.commit()
+        except Exception:
+            pass
+        # Power Play (optional rule) — per-league opt-in set at league
+        # creation. Stamped onto every team in a league whose creator ticked
+        # the box, read by sim.py into state.power_play_enabled per game.
+        # Legacy rows default to 0 (rule off), so existing leagues are
+        # byte-for-byte unchanged.
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN power_play_enabled INTEGER DEFAULT 0")
             conn.commit()
         except Exception:
             pass

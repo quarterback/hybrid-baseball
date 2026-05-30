@@ -6966,6 +6966,13 @@ def new_league_post():
                   config=custom_cfg)
     set_active_league_meta(rng_seed, meta_cfg_id)
 
+    # Power Play (optional rule) — opt-in at league creation via the checkbox
+    # on new_league.html. Stamp it onto every team so sim.py can read the
+    # per-league flag at game time. Applies to whichever config (preset or
+    # custom) was just seeded; off by default leaves the column at 0.
+    if request.form.get("power_play_enabled"):
+        db.execute("UPDATE teams SET power_play_enabled = 1")
+
     # Optional pre-season auction. Opt-in at league creation via the
     # checkbox on new_league.html; works for any preset or custom config
     # (the auction module is mode-agnostic — it reads teams off the DB).
