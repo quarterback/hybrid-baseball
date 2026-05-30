@@ -27,6 +27,12 @@ from o27.stats.batter import BatterStats
 from o27.stats.pitcher import PitcherStats
 from o27.stats.team import TeamStats
 from o27.engine.pa import _pick_walk_back_sponsor
+from o27.engine import power_play as _power_play
+
+
+def _power_play_line(state) -> Optional[str]:
+    """Box-score `Powerplays:` line (None when the optional rule is off)."""
+    return _power_play.format_powerplays_line(state)
 
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -530,6 +536,9 @@ class Renderer:
             # rendered as `runs(outs)` so the seconds / SI rounds carry their
             # banked-outs context. Phase 0 always renders just runs.
             line_phases=self._line_score_phases(state),
+            # Power Play (optional rule) — surface each team's nickel window(s)
+            # under the line score, mirroring the Declared Seconds line.
+            powerplays_line=_power_play_line(state),
         ).rstrip("\n")
         return rendered.split("\n") if rendered else []
 

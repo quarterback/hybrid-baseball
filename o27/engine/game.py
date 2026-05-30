@@ -308,6 +308,10 @@ def run_half(
     # team has flipped, so the stale joker (now an opponent player) bats and
     # his out is misattributed to the wrong team. Clear it at every half start.
     state.batter_override = None
+    # Power Play windows never carry across halves — a fresh decision is made
+    # each half (and a Declared Seconds frame gets its own window).
+    from o27.engine import power_play
+    power_play.clear_window(state)
     while not state.is_half_over():
         if renderer:
             ctx = renderer.capture_context(state)

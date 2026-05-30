@@ -25,6 +25,7 @@ from . import stay as stay_mod
 from . import manager as mgr
 from . import weather as wx
 from o27 import config as cfg
+from o27.engine import power_play
 
 
 # ---------------------------------------------------------------------------
@@ -1725,6 +1726,12 @@ def resolve_contact(
                     caught_fly = False
                     shift_effect = "hit_lost"
 
+    # Power Play (optional rule): while the nickel fielder is on the field, the
+    # extra outfielder cuts off gaps — some XBH drop to singles and some
+    # shallow outfield singles get run down for outs.
+    hit_type, batter_safe, caught_fly, nickel_putout = power_play.apply_nickel_defense(
+        rng, state, hit_type, batter_safe, caught_fly)
+
     # Error chance — only on plays that resolved as an out. Worse defense =
     # higher error rate. Caught flies don't generate errors at this layer
     # (they're clean catches by the time we get here).
@@ -1764,8 +1771,14 @@ def resolve_contact(
 
     # Per-fielder play attribution. Stamps the fielder_id of the player
     # credited with this play (PO for outs, E for errors). Returns None
-    # for hits — those don't get a fielder credit.
-    fielder_id = _select_fielder(rng, hit_type, fielding)
+    # for hits — those don't get a fielder credit. While a Power Play window
+    # is active the nickel fielder picks up the plays he makes (logged as NF).
+    nickel_id = power_play.nickel_putout_for(state, hit_type, rng, nickel_putout)
+    if nickel_id is not None:
+        fielder_id = nickel_id
+        power_play.credit_nickel_putout(state)
+    else:
+        fielder_id = _select_fielder(rng, hit_type, fielding)
 
     return {
         "hit_type": hit_type,
@@ -1779,6 +1792,8 @@ def resolve_contact(
         "fielder_id": fielder_id,
         "quality": quality,
         "shift_effect": shift_effect,
+        "nickel_play": nickel_id is not None,
+        "fielder_pos": power_play.NICKEL_POS if nickel_id is not None else None,
     }
 
 
@@ -2084,6 +2099,7 @@ class ProbabilisticProvider:
             self._manager_checked = False
             state.current_ab_shift_decided = False
             state.current_ab_shift_type = "none"
+            state.power_play_checked_this_ab = False
 
         # Defensive shift decision — fires once per AB before the first
         # pitch. Two alignments available:
@@ -2133,6 +2149,13 @@ class ProbabilisticProvider:
             else:
                 batter.shift_streak = 1
                 batter.last_shift_alignment = state.current_ab_shift_type
+
+        # Power Play (optional rule): the fielding manager considers deploying
+        # the nickel once per AB, before the first pitch. No-op unless the rule
+        # is on and the window is available.
+        if not state.power_play_checked_this_ab:
+            state.power_play_checked_this_ab = True
+            power_play.maybe_open_window(state, self.rng)
 
         # Refresh today_form whenever the pitcher changes (half start or
         # mid-game change). Cheap; a single deterministic gauss draw.
