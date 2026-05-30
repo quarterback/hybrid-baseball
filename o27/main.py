@@ -132,12 +132,21 @@ def make_foxes() -> Team:
     roster[7].defense_catcher = 0.70   # K. Yamada — backup C
     roster[7].game_calling    = 0.52
     roster[7].arm             = 0.58
+    # Reserve catcher (in roster, NOT in lineup → the rotation pool the manager
+    # draws from when the everyday catcher tires). A late-inning DEFENSIVE
+    # specialist: elite glove + arm + game-calling, light bat.
+    _fox_res_c = _player("FR1", "Q. Bauer", skill=0.34, speed=0.40,
+                         stay_aggressiveness=0.05, contact_quality_threshold=0.20)
+    _fox_res_c.defense_catcher = 0.88
+    _fox_res_c.game_calling    = 0.74
+    _fox_res_c.arm             = 0.82
+    roster.append(_fox_res_c)
     jokers = [p for p in roster if p.is_joker]
     team = Team(
         team_id="visitors",
         name="Millbrook Foxes",
         roster=roster,
-        lineup=list(roster),
+        lineup=[p for p in roster if p is not _fox_res_c],
         jokers_available=list(jokers),
     )
     team.catcher_arm = roster[3].arm   # everyday catcher's arm
@@ -200,12 +209,21 @@ def make_bears() -> Team:
     roster[5].defense_catcher = 0.66   # T. Wachowski — backup C
     roster[5].game_calling    = 0.48
     roster[5].arm             = 0.54
+    # Reserve catcher (rotation pool, not in lineup). A SPARK-PLUG bat: average
+    # glove behind the plate but real offense + legs, so the manager reaches for
+    # him when the Bears are chasing runs late.
+    _bear_res_c = _player("BR1", "L. Russo", skill=0.66, speed=0.74,
+                          stay_aggressiveness=0.06, contact_quality_threshold=0.24)
+    _bear_res_c.defense_catcher = 0.58
+    _bear_res_c.game_calling    = 0.50
+    _bear_res_c.arm             = 0.55
+    roster.append(_bear_res_c)
     jokers = [p for p in roster if p.is_joker]
     team = Team(
         team_id="home",
         name="Ironvale Bears",
         roster=roster,
-        lineup=list(roster),
+        lineup=[p for p in roster if p is not _bear_res_c],
         jokers_available=list(jokers),
     )
     team.catcher_arm = roster[4].arm   # everyday catcher's arm
