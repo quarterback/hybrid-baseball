@@ -147,6 +147,7 @@ _CATCHER_USAGE_THIRD       = 0.3
 _HITTER_DEV_ATTRS = (
     "skill", "speed", "contact", "power", "eye",
     "defense", "arm", "defense_infield", "defense_outfield", "defense_catcher",
+    "game_calling",
     "baserunning", "run_aggressiveness",
 )
 
