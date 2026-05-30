@@ -2482,8 +2482,11 @@ def generate_players(
     # Corner backups.
     for pos in ("3B", "1B", "LF"):
         players.append(_hitter(pos, is_active=1))
-    # Extra-depth backups (for PH/PR/DEF substitution pool).
-    for pos in ("RF", "CF", "SS", "2B"):
+    # Extra-depth backups (for PH/PR/DEF substitution pool). One is a THIRD
+    # catcher — catching is a wear position (in-game game-calling fatigue +
+    # season erosion), so every club needs 3 catchers to survive the 27-out
+    # arc and rotate.
+    for pos in ("RF", "CF", "SS", "C"):
         players.append(_hitter(pos, is_active=1))
 
     # ---- Active jokers (the DH role; one of each archetype) ----
@@ -2501,8 +2504,8 @@ def generate_players(
     for _ in range(ACTIVE_PITCHERS):
         players.append(_pitcher(is_active=1))
 
-    # ---- Reserve pool ----
-    _RESERVE_POSITIONS = ("RF", "CF", "SS")
+    # ---- Reserve pool ----  (incl. a 4th catcher in the taxi pool)
+    _RESERVE_POSITIONS = ("C", "CF", "SS")
     for i in range(RESERVE_HITTERS):
         pos = _RESERVE_POSITIONS[i % len(_RESERVE_POSITIONS)]
         players.append(_hitter(pos, is_active=0))
@@ -2561,8 +2564,11 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     ("3B", 1, 0), ("1B", 1, 0), ("LF", 1, 0),
     # Extra depth (4 more backups across high-rotation + outfield) so
     # the substitution candidate pool has bodies to spend on PH/PR/DEF
-    # without leaving the team a defensive replacement short.
-    ("RF", 1, 0), ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0),
+    # without leaving the team a defensive replacement short. One of these
+    # is a THIRD catcher: catching is a wear position (in-game game-calling
+    # fatigue + season-long erosion), so every club needs 3 catchers to get
+    # through the 27-out arc and rotate — the live sim assumes this depth.
+    ("RF", 1, 0), ("CF", 1, 0), ("SS", 1, 0), ("C", 1, 0),
     # Situational specialists drafted explicitly (Item 4 follow-up #6):
     # 1 PR specialist + 2 PH specialists per team = 3 specialists
     # guaranteed in every roster. Built by _make_specialist with tight
@@ -2570,8 +2576,10 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     # ph_specialist rather than spilling into the bat_first pool.
     (SPEC_PR, 1, 0),
     (SPEC_PH, 2, 0),
-    # Reserve depth (slim — active is 42).
-    ("RF", 0, 1), ("CF", 0, 1), ("SS", 0, 1),
+    # Reserve depth (slim — active is 42). Includes a FOURTH catcher in the
+    # taxi/reserve pool — the depth piece called up when a catcher is injured
+    # or eroded, the way some clubs carry a 4th the way football carries a 3rd QB.
+    ("C", 0, 1), ("CF", 0, 1), ("SS", 0, 1),
     # Pitchers (17 active + 3 reserve).
     ("P", 17, 3),
 ]
