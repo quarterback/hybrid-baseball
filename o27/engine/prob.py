@@ -1720,6 +1720,16 @@ def resolve_contact(
         elif quality == "medium":
             table = _redistribute(table, _seq_medium_edges(), seq_power_dev)
 
+    # RISP hit-type suppression: with a runner in scoring position, the hits
+    # that fall in are mostly singles — pull HR/triple/double weight back into
+    # singles (sum-preserving, so hit count is untouched, only slugging). The
+    # big bases-clearing swing becomes the exception with runners on, so runners
+    # advance station-to-station and pile up rather than scoring in bunches.
+    if _is_risp(state):
+        risp_edges = _risp_xbh_edges(quality)
+        if risp_edges:
+            table = _redistribute(table, risp_edges, 1.0)
+
     # Pitch launch-angle bias: roll ground_out↔fly_out weight by the pitch's
     # launch_angle_bias (sum-preserving). Negative bias (sinker, peeled_drop,
     # drop_knuck) drives grounders; positive (riseball, rise_knuck) drives
@@ -2518,6 +2528,7 @@ class ProbabilisticProvider:
             target_pressure_shift=tp_shift,
             joker_decay=joker_decay,
             familiarity=familiarity,
+            risp_penalty=_risp_talent_penalty(rng, state),
         )
         is_hr     = False
         is_triple = False
