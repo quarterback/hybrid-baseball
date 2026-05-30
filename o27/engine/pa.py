@@ -309,7 +309,10 @@ def _end_at_bat(state: GameState) -> list[str]:
     # Per-PA leadership flares — restore all mutated rating fields to
     # their original values before the next batter steps in. Safe no-op
     # when no flare was active this PA. See prob.apply_pa_leadership_flares
-    # for the matching PA-start hook.
+    # for the matching PA-start hook. The Power Play presence lift is unwound
+    # FIRST (LIFO) since it layers on top of any flare at PA start.
+    from o27.engine import power_play as _power_play
+    _power_play.release_presence_lift(state)
     _prob.release_pa_leadership_flares(state)
     # Per-game batter stat bookkeeping. PA counter ticks every AB. If
     # this AB was a joker insertion, the joker_pa counter ticks too —

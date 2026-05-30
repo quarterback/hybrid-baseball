@@ -66,6 +66,7 @@ def clear_window(state: GameState) -> None:
     state.power_play_deploy_team_id = None
     state.power_play_nickel_id = None
     state.power_play_checked_this_ab = False
+    state.power_play_presence = 0.0
 
 
 def is_window_active(state: GameState) -> bool:
@@ -129,6 +130,26 @@ def _nickel_field_grade(p: Player, positions: set) -> float:
     # General glove acts as a floor so a strong all-rounder isn't penalized.
     grades.append(float(getattr(p, "defense", 0.5) or 0.5))
     return max(grades) if grades else 0.5
+
+
+def _presence_for(nickel: Optional[Player]) -> float:
+    """Presence-lift fraction for this nickel, banded in
+    [POWER_PLAY_PRESENCE_MIN, POWER_PLAY_PRESENCE_MAX] and scaled by his glove.
+
+    The eligibility floor (POWER_PLAY_NICKEL_FIELD_MIN) maps to the bottom of
+    the band and a perfect glove (1.0) to the top, so any eligible nickel lands
+    inside the band — a replacement-grade glove barely moves it, an elite one
+    lands near 4.4%.
+    """
+    lo = float(getattr(cfg, "POWER_PLAY_PRESENCE_MIN", 0.001))
+    hi = float(getattr(cfg, "POWER_PLAY_PRESENCE_MAX", 0.044))
+    if nickel is None:
+        return lo
+    grade = _nickel_field_grade(nickel, _positions_for(nickel))
+    floor = float(getattr(cfg, "POWER_PLAY_NICKEL_FIELD_MIN", 0.58))
+    span = max(1e-6, 1.0 - floor)
+    frac01 = max(0.0, min(1.0, (grade - floor) / span))
+    return lo + frac01 * (hi - lo)
 
 
 def _has_appeared(state: GameState, p: Player) -> bool:
@@ -277,6 +298,7 @@ def maybe_open_window(state: GameState, rng: random.Random) -> None:
     state.power_play_deploy_team_id = team.team_id
     state.power_play_nickel_id = nickel_id
     nickel = team.get_player(nickel_id)
+    state.power_play_presence = _presence_for(nickel)
     state.power_play_deployments.append({
         "team_id": team.team_id,
         "team_name": team.name,
@@ -340,6 +362,73 @@ def apply_nickel_defense(
         return hit_type, batter_safe, caught_fly, False
 
     return hit_type, batter_safe, caught_fly, False
+
+
+# ---------------------------------------------------------------------------
+# Presence effect (per-PA, stash-and-restore — mirrors leadership flares)
+# ---------------------------------------------------------------------------
+
+# Fielding-team scalar the presence lift tightens (read by error chance,
+# ground-out conversion and borderline plays — i.e. "across the lineup").
+_PRESENCE_DEFENSE_ATTRS = ("defense_rating",)
+# Active pitcher's effectiveness attrs ("all pitching effectiveness").
+_PRESENCE_PITCHER_ATTRS = ("command", "pitcher_skill", "movement", "grit")
+
+
+def _mult_attr(originals: list, obj, attr: str, frac: float) -> None:
+    cur = getattr(obj, attr, None)
+    if cur is None:
+        return
+    try:
+        val = float(cur)
+    except (TypeError, ValueError):
+        return
+    originals.append((obj, attr, cur))
+    setattr(obj, attr, max(0.0, min(1.0, val * (1.0 + frac))))
+
+
+def apply_presence_lift(state: GameState, pitcher: Optional[Player]) -> None:
+    """Called at PA start (alongside the leadership flare). While the window is
+    open, multiply the fielding team's defense_rating and the active pitcher's
+    effectiveness attrs by (1 + presence), so every downstream roll for this PA
+    sees a tighter defense and a sharper pitcher. Restored at PA end by
+    release_presence_lift. No-op when the rule is off, the window is closed, the
+    deploying team isn't the one fielding, or the lift is already active."""
+    if getattr(state, "pp_presence_active", False):
+        return
+    if not is_window_active(state):
+        return
+    fielding = state.fielding_team
+    if fielding is None or fielding.team_id != getattr(state, "power_play_deploy_team_id", None):
+        return
+    frac = float(getattr(state, "power_play_presence", 0.0) or 0.0)
+    if frac <= 0.0:
+        return
+    originals: list = []
+    for a in _PRESENCE_DEFENSE_ATTRS:
+        _mult_attr(originals, fielding, a, frac)
+    if pitcher is not None:
+        for a in _PRESENCE_PITCHER_ATTRS:
+            _mult_attr(originals, pitcher, a, frac)
+    if not originals:
+        return
+    state.pp_presence_originals = originals
+    state.pp_presence_active = True
+
+
+def release_presence_lift(state: GameState) -> None:
+    """Called at PA end (before the flare release, so lifts unwind LIFO).
+    Restores every attr the presence lift touched and clears the active flag."""
+    originals = getattr(state, "pp_presence_originals", None)
+    if not getattr(state, "pp_presence_active", False) and not originals:
+        return
+    for obj, attr, val in reversed(originals or []):
+        try:
+            setattr(obj, attr, val)
+        except (TypeError, ValueError, AttributeError):
+            pass
+    state.pp_presence_originals = []
+    state.pp_presence_active = False
 
 
 def nickel_putout_for(state: GameState, hit_type: str, rng: random.Random,
