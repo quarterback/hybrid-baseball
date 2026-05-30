@@ -464,20 +464,6 @@ def render_batting_annotations(
     rows = list(rows)
     lines: list[str] = []
 
-    def _pick(field: str) -> list[tuple[str, int]]:
-        out: list[tuple[str, int]] = []
-        for r in rows:
-            n = r.get(field, 0) or 0
-            if n > 0:
-                out.append((_last_name(r.get("player_name") or ""), n))
-        return out
-
-    def _items(pairs: list[tuple[str, int]]) -> str:
-        parts = []
-        for name, n in pairs:
-            parts.append(f"{name} {n}" if n > 1 else name)
-        return ", ".join(parts)
-
     def _xbh_items(game_field: str, season_field: str) -> list[str]:
         """2B/3B with a season-to-date total in parens, matching the HR
         line and real newspaper convention: 'Konan 2 (9)' = 2 doubles
@@ -527,24 +513,19 @@ def render_batting_annotations(
         hr_items.append(item)
     if hr_items:
         lines.append(f"  HR: {'; '.join(hr_items)}.")
-    sb = _xbh_items("sb", "season_sb")
-    if sb:
-        lines.append(f"  SB: {', '.join(sb)}.")
-    pairs = _pick("cs")
-    if pairs:
-        lines.append(f"  CS: {_items(pairs)}.")
-    pairs = _pick("e")
-    if pairs:
-        lines.append(f"  E: {_items(pairs)}.")
-    pairs = _pick("hbp")
-    if pairs:
-        lines.append(f"  HBP: {_items(pairs)}.")
-    pairs = _pick("gidp")
-    if pairs:
-        lines.append(f"  GIDP: {_items(pairs)}.")
-    pairs = _pick("gitp")
-    if pairs:
-        lines.append(f"  GITP: {_items(pairs)}.")
+    # Every remaining counting line carries the same season-to-date
+    # parenthetical (label, game field, season field).
+    for label, game_field, season_field in (
+        ("SB",   "sb",   "season_sb"),
+        ("CS",   "cs",   "season_cs"),
+        ("E",    "e",    "season_e"),
+        ("HBP",  "hbp",  "season_hbp"),
+        ("GIDP", "gidp", "season_gidp"),
+        ("GITP", "gitp", "season_gitp"),
+    ):
+        items = _xbh_items(game_field, season_field)
+        if items:
+            lines.append(f"  {label}: {', '.join(items)}.")
 
     return "\n".join(lines)
 

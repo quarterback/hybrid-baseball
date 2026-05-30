@@ -927,19 +927,24 @@ def _pitcher_wl_map(through_game: dict | None = None) -> dict[int, dict[str, int
     return out
 
 
+# Counting stats that get a season-to-date parenthetical in the box-score
+# annotation lines (2B / 3B / HR / SB / CS / E / HBP / GIDP / GITP). The
+# annotation field name in the renderer matches the DB column except the
+# extra-base hits, which the renderer keys as doubles/triples.
+_SEASON_ANNOT_FIELDS = ("doubles", "triples", "hr", "sb", "cs", "e",
+                        "hbp", "gidp", "gitp")
+
+
 def _season_xbh_through(team_id: int, game_date: str,
                         game_id: int) -> dict[int, dict[str, int]]:
-    """Per-player season doubles / triples / HR / SB totals for one team,
-    accumulated through (and including) the given game. Powers the
-    box-score '2B: Konan 2 (9)' / 'SB: Young-ju (7)' newspaper
-    annotations, where the parenthetical is the season-to-date count,
-    not the game count."""
+    """Per-player season counting-stat totals for one team, accumulated
+    through (and including) the given game. Covers every stat that gets a
+    box-score annotation line — 2B/3B/HR/SB/CS/E/HBP/GIDP/GITP — so the
+    parenthetical reads as the season-to-date count, not the game count
+    ('SB: Young-ju (7)' = his 7th steal of the year)."""
+    sums = ", ".join(f"SUM(bs.{f}) AS {f}" for f in _SEASON_ANNOT_FIELDS)
     rows = db.fetchall(
-        """SELECT bs.player_id AS pid,
-                  SUM(bs.doubles) AS d2,
-                  SUM(bs.triples) AS d3,
-                  SUM(bs.hr)      AS hr,
-                  SUM(bs.sb)      AS sb
+        f"""SELECT bs.player_id AS pid, {sums}
            FROM game_batter_stats bs JOIN games g ON bs.game_id = g.id
            WHERE bs.team_id = ?
              AND (g.game_date < ? OR (g.game_date = ? AND g.id <= ?))
@@ -947,27 +952,21 @@ def _season_xbh_through(team_id: int, game_date: str,
         (team_id, game_date, game_date, game_id),
     )
     return {
-        r["pid"]: {
-            "doubles": int(r["d2"] or 0),
-            "triples": int(r["d3"] or 0),
-            "hr":      int(r["hr"] or 0),
-            "sb":      int(r["sb"] or 0),
-        }
+        r["pid"]: {f: int(r[f] or 0) for f in _SEASON_ANNOT_FIELDS}
         for r in rows
     }
 
 
 def _inject_season_xbh(rows: list[dict], xbh_map: dict[int, dict]) -> None:
     """Decorate consolidated batting rows in place with season-to-date
-    doubles / triples / HR / SB (`season_doubles`, `season_triples`,
-    `season_hr`, `season_sb`). Falls back to the game count when a player
-    is absent from the map (e.g. legacy rows)."""
+    counts (`season_doubles`, `season_triples`, `season_hr`, `season_sb`,
+    `season_cs`, `season_e`, `season_hbp`, `season_gidp`, `season_gitp`).
+    Falls back to the game count when a player is absent from the map
+    (e.g. legacy rows)."""
     for r in rows:
         m = xbh_map.get(r.get("player_id"), {})
-        r["season_doubles"] = m.get("doubles", r.get("doubles") or 0)
-        r["season_triples"] = m.get("triples", r.get("triples") or 0)
-        r["season_hr"]      = m.get("hr",      r.get("hr") or 0)
-        r["season_sb"]      = m.get("sb",      r.get("sb") or 0)
+        for f in _SEASON_ANNOT_FIELDS:
+            r[f"season_{f}"] = m.get(f, r.get(f) or 0)
 
 
 def _attach_decisions(games: list[dict]) -> None:
@@ -3295,7 +3294,7 @@ def game_detail_export(game_id: int):
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                 "rbi", "bb", "k", "stays", "outs_recorded", "hbp", "sb",
                 "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits",
-                "roe", "po", "e")
+                "roe", "po", "e", "gidp", "gitp")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs", "sb_allowed", "cs_caught",
@@ -8424,12 +8423,10 @@ def youth_game_view(game_id: int):
         r.setdefault("entry_type", "starter")
         r.setdefault("entered_inning", 0)
         r.setdefault("box_position", r.get("position") or "")
-        # Tournament boxes have no cross-game season context; the
+        # Tournament boxes have no cross-game season context; every
         # parenthetical falls back to the game count.
-        r["season_hr"]      = r.get("hr") or 0
-        r["season_doubles"] = r.get("doubles") or 0
-        r["season_triples"] = r.get("triples") or 0
-        r["season_sb"]      = r.get("sb") or 0
+        for _f in _SEASON_ANNOT_FIELDS:
+            r[f"season_{_f}"] = r.get(_f) or 0
     line_for = lambda rows: {
         "runs":    {0: sum((r.get("runs") or 0) for r in rows)},
         "hits":    {0: sum((r.get("hits") or 0) for r in rows)},
@@ -8528,12 +8525,10 @@ def pro_worldcup_game_view(game_id: int):
         r.setdefault("entry_type", "starter")
         r.setdefault("entered_inning", 0)
         r.setdefault("box_position", r.get("position") or "")
-        # Tournament boxes have no cross-game season context; the
+        # Tournament boxes have no cross-game season context; every
         # parenthetical falls back to the game count.
-        r["season_hr"]      = r.get("hr") or 0
-        r["season_doubles"] = r.get("doubles") or 0
-        r["season_triples"] = r.get("triples") or 0
-        r["season_sb"]      = r.get("sb") or 0
+        for _f in _SEASON_ANNOT_FIELDS:
+            r[f"season_{_f}"] = r.get(_f) or 0
     line_for = lambda rows: {
         "runs":    {0: sum((r.get("runs") or 0) for r in rows)},
         "hits":    {0: sum((r.get("hits") or 0) for r in rows)},

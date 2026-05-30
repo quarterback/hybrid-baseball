@@ -290,12 +290,21 @@ def _batting_annotations(
     d3 = _xbh_items("triples", "season_triples")
     if d3:
         parts.append("3B: " + ", ".join(d3) + ".")
-    sb = _xbh_items("sb", "season_sb")
-    if sb:
-        parts.append("SB: " + ", ".join(sb) + ".")
     hr_items = _hr_items()
     if hr_items:
-        parts.append("HR: " + "; ".join(hr_items))
+        parts.append("HR: " + "; ".join(hr_items) + ".")
+    # Remaining counting lines, each season-accumulated like the above.
+    for label, game_field, season_field in (
+        ("SB",   "sb",   "season_sb"),
+        ("CS",   "cs",   "season_cs"),
+        ("E",    "e",    "season_e"),
+        ("HBP",  "hbp",  "season_hbp"),
+        ("GIDP", "gidp", "season_gidp"),
+        ("GITP", "gitp", "season_gitp"),
+    ):
+        items = _xbh_items(game_field, season_field)
+        if items:
+            parts.append(f"{label}: " + ", ".join(items) + ".")
     if parts:
         out.append("  " + " ".join(parts))
     return out

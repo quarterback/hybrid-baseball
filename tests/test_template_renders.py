@@ -275,8 +275,9 @@ def test_box_score_annotations_show_season_xbh_totals():
     renders as 'Konan 2 (9)' = two doubles today, nine on the season."""
     from o27v2.web.box_score import render_batting_annotations
     rows = [
-        _row(1, "Konan", "3b", doubles=2, hr=1,
-             **{"season_doubles": 9, "season_hr": 8}),
+        _row(1, "Konan", "3b", doubles=2, hr=1, cs=1, e=1, hbp=1, gidp=1,
+             **{"season_doubles": 9, "season_hr": 8, "season_cs": 2,
+                "season_e": 3, "season_hbp": 5, "season_gidp": 2}),
         _row(2, "Beard", "rf", doubles=1, **{"season_doubles": 3}),
         _row(3, "Yongwa", "cf", triples=1, sb=2,
              **{"season_triples": 2, "season_sb": 7}),
@@ -286,6 +287,11 @@ def test_box_score_annotations_show_season_xbh_totals():
     assert "3B: Yongwa (2)." in out
     assert "HR: Konan (8)." in out
     assert "SB: Yongwa 2 (7)." in out
+    # Every remaining counting line is season-accumulated too.
+    assert "CS: Konan (2)." in out
+    assert "E: Konan (3)." in out
+    assert "HBP: Konan (5)." in out
+    assert "GIDP: Konan (2)." in out
 
 
 def test_box_score_pitcher_decision_carries_season_record():
@@ -309,7 +315,8 @@ def test_box_text_annotations_and_decision_are_cumulative():
     from o27v2.web.box_text import _batting_annotations, _pitching_block
     rows = [
         {"player_id": 1, "player_name": "E. Konan", "doubles": 2, "hr": 1,
-         "season_doubles": 9, "season_hr": 8},
+         "cs": 1, "gidp": 1, "season_doubles": 9, "season_hr": 8,
+         "season_cs": 2, "season_gidp": 4},
         {"player_id": 3, "player_name": "N. Yongwa", "triples": 1, "sb": 1,
          "season_triples": 2, "season_sb": 7},
     ]
@@ -318,6 +325,8 @@ def test_box_text_annotations_and_decision_are_cumulative():
     assert "3B: N. Yongwa (2)." in ann
     assert "SB: N. Yongwa (7)." in ann
     assert "HR: E. Konan (8)" in ann
+    assert "CS: E. Konan (2)." in ann
+    assert "GIDP: E. Konan (4)." in ann
 
     pit = [{"player_id": 10, "player_name": "S. Morii", "batters_faced": 33,
             "pitches": 116, "outs_recorded": 27, "hits_allowed": 13,
