@@ -2877,9 +2877,10 @@ class ProbabilisticProvider:
         #   - 1B occupied → 1B runner forced at 2B. (Standard DP.)
         #   - 1B empty, 2B occupied → 2B runner thrown out at 3B. (Tag play.)
         #   - 1B empty, 2B empty, 3B occupied → 3B runner thrown out at home.
-        # With 1B+2B both occupied AND 0 outs, a slice of DPs promote to
-        # triple plays (force at 3B AND force at 2B, then batter at 1B).
-        # Bases loaded extends this. Errors short-circuit the whole thing.
+        # With 1B+2B both occupied (and room left for three outs), a slice
+        # of DPs promote to triple plays (force at 3B AND force at 2B, then
+        # batter at 1B). Bases loaded extends this. Errors short-circuit the
+        # whole thing.
         # Stay (2C) plays don't allow a true DP — the batter isn't running
         # so there's no force at 1B — but a separate reduced-rate fielders'
         # choice block below tags out the lead runner.
@@ -2910,14 +2911,20 @@ class ProbabilisticProvider:
                 adv = list(outcome_dict.get("runner_advances", [1, 1, 1]))
                 adv[lead_idx] = 0
                 outcome_dict["runner_advances"] = adv
-                # Triple play: 1B+2B both occupied + 0 outs. Force-chain:
-                # batter forces 1B runner at 2B; 1B runner forces 2B runner
-                # at 3B. Lead runner from 3B (if loaded) holds. Bonus from
-                # poor baserunning on the lead forced runner (errors
-                # induce TPs in real baseball).
+                # Triple play: 1B+2B both occupied + room for three outs.
+                # Force-chain: batter forces 1B runner at 2B; 1B runner
+                # forces 2B runner at 3B. Lead runner from 3B (if loaded)
+                # holds. Bonus from poor baserunning on the lead forced
+                # runner (errors induce TPs in real baseball).
+                # O27 gate: NOT MLB's per-inning "nobody out" rule. As with
+                # the DP gate above, there are no innings — one continuous
+                # 27-out half — so gating on `outs == 0` let a TP fire only
+                # on the half's very first out, which made triple plays dead
+                # code (0 in a 400-game sample). The half only needs room to
+                # record the three outs a TP turns.
                 if (state.bases[0] is not None
                         and state.bases[1] is not None
-                        and state.outs == 0):
+                        and state.outs <= state.out_cap() - 3):
                     tp_p = cfg.TRIPLE_PLAY_GIVEN_DP_PROB
                     lead_pid = state.bases[1]   # 2B runner — most exposed
                     lead_br, _ = _get_baserunning(lead_pid, state)
