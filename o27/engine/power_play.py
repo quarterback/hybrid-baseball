@@ -384,11 +384,9 @@ def apply_nickel_defense(
 
 def _credit_pitcher_support(state: GameState, key: str) -> None:
     """Attribute a nickel save (an XBH held to a single, or a single run down
-    for an out) to the FIELDING pitcher on the mound — the protected side. This
-    is "defensive support received", the fielding cousin of run support; it is
-    NOT a pitcher-quality metric and is surfaced in its own context section.
-    Keyed by pitcher_id on state.pp_pitcher_support; sim.py folds it into the
-    Power Play pitcher rows."""
+    for an out) to the FIELDING pitcher on the mound — the pitcher with the
+    nickel behind him. Keyed by pitcher_id on state.pp_pitcher_support; sim.py
+    folds it into the Power Play pitcher rows."""
     pid = getattr(state, "current_pitcher_id", None)
     if pid is None:
         return

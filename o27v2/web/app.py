@@ -4520,10 +4520,9 @@ def leaders():
             pp_offense.append(r)
     power_play_on_in_league = bool(pp_rows)
 
-    # Power Play PITCHING (the protected side) — own dataset, deliberately kept
-    # OUT of the ERA/wERA leaders so defense-aided outs never inflate a pitcher.
-    # Coverage% needs the pitcher's TOTAL outs (how much of his work had the
-    # nickel behind him), so join season outs from game_pitcher_stats.
+    # Power Play PITCHING — its own dataset (the pitcher with the nickel behind
+    # him). Coverage% needs the pitcher's TOTAL outs (how much of his work had
+    # the nickel out there), so join season outs from game_pitcher_stats.
     pp_pitch_rows = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
                   t.abbrev as team_abbrev, t.id as team_id,

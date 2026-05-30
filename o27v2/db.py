@@ -546,11 +546,11 @@ CREATE TABLE IF NOT EXISTS game_power_play_stats (
     sh_pa      INTEGER DEFAULT 0,
     sh_ab      INTEGER DEFAULT 0,
     sh_hits    INTEGER DEFAULT 0,
-    -- Power Play PITCHING (the protected side — the pitcher with the nickel
-    -- behind him). Framed as support/context, NOT a quality metric: K/BB are
-    -- defense-independent (his own), while BIP outcomes and the saves are the
-    -- defense bailing him out. ppp_tot_* span the WHOLE game (window or not) so
-    -- the BABIP split (with-nickel vs without) is derivable.
+    -- Power Play PITCHING — the pitcher with the nickel deployed behind him.
+    -- K/BB are defense-independent (they never reach the extra fielder); BIP
+    -- outcomes and the saves reflect the loaded defense. ppp_tot_* span the
+    -- WHOLE game (window or not) so the BABIP split (with-nickel vs without) is
+    -- derivable.
     ppp_bf        INTEGER DEFAULT 0,  -- batters faced while the nickel was deployed
     ppp_outs      INTEGER DEFAULT 0,  -- outs recorded during those windows
     ppp_k         INTEGER DEFAULT 0,  -- strikeouts during windows (his own)

@@ -213,22 +213,21 @@
   {{ card('SH-PA',  'sh_pa',   '%d',   true, pp_offense, tooltip='Short-handed plate appearances — PAs taken against a deployed nickel.') }}
 </div>
 
-<h4 class="mt-4">Power Play · Pitching <span class="text-secondary" style="font-size:.7rem;font-weight:normal">(support / context — NOT a quality ranking)</span></h4>
+<h4 class="mt-4">Power Play · Pitching</h4>
 <div class="text-secondary small mb-2">
-  How a pitcher fared with the nickel deployed behind him — the <em>protected</em>
-  side. K% / BB% are his own (they never reach the extra fielder); BABIP and the
-  saves are the defense bailing him out. Kept separate from the ERA leaders on
-  purpose, so defense-aided outs don't inflate a pitcher.
+  How a pitcher fared with the nickel deployed behind him. K% / BB% are his own
+  (they never reach the extra fielder); BABIP reflects the loaded defense behind
+  him.
 </div>
 <div class="row g-3 mb-3">
-  {{ card('PP-BABIP', 'ppp_babip',       '%.3f', false, pp_pitching, tooltip='Batting average on balls in play allowed WITH the nickel deployed. Lower = the loaded defense suppressed more hits. A defense-dependent number — read it as support, not skill.') }}
-  {{ card('BABIP Δ',  'ppp_babip_split', '%+.3f', false, pp_pitching, tooltip='PP-BABIP minus his BABIP without the nickel. Negative = the 10th fielder lowered his BABIP-against (the bailout, isolated). Sorted most-helped first.') }}
-  {{ card('PP-K%',    'ppp_k_pct',       '%.3f', true,  pp_pitching, tooltip='Strikeout rate while the nickel was deployed (K / batters faced). Defense-independent — strikeouts never reach the extra fielder, so this is genuinely his.') }}
+  {{ card('PP-BABIP', 'ppp_babip',       '%.3f', false, pp_pitching, tooltip='Batting average on balls in play allowed while the nickel was deployed behind him. Lower = the loaded defense suppressed more hits.') }}
+  {{ card('BABIP Δ',  'ppp_babip_split', '%+.3f', false, pp_pitching, tooltip='PP-BABIP minus his BABIP without the nickel. Negative = the 10th fielder lowered his BABIP-against. Sorted most-helped first.') }}
+  {{ card('PP-K%',    'ppp_k_pct',       '%.3f', true,  pp_pitching, tooltip='Strikeout rate while the nickel was deployed (K / batters faced). Defense-independent — strikeouts never reach the extra fielder.') }}
   {{ card('PP-BB%',   'ppp_bb_pct',      '%.3f', false, pp_pitching, tooltip='Walk rate while the nickel was deployed (BB / batters faced). Defense-independent (fewest = best).') }}
-  {{ card('PP-Cov%',  'ppp_coverage',    '%.3f', true,  pp_pitching, tooltip='Coverage — share of the pitcher\'s total outs recorded with the nickel behind him. A usage/protection measure, not a result.') }}
+  {{ card('PP-Cov%',  'ppp_coverage',    '%.3f', true,  pp_pitching, tooltip='Coverage — share of the pitcher\'s total outs recorded with the nickel behind him.') }}
   {{ card('PP-BF',    'ppp_bf',          '%d',   true,  pp_pitching, tooltip='Batters faced with the nickel deployed behind him.') }}
-  {{ card('H-Saved',  'ppp_hits_saved',  '%d',   true,  pp_pitching, tooltip='Singles the nickel ran down for outs behind him — hits the defense erased. Support received, not merit.') }}
-  {{ card('XBH-Saved','ppp_xbh_saved',   '%d',   true,  pp_pitching, tooltip='Extra-base hits the nickel held to singles behind him. Support received, not merit.') }}
+  {{ card('H-Saved',  'ppp_hits_saved',  '%d',   true,  pp_pitching, tooltip='Singles the nickel ran down for outs behind him — hits the defense erased.') }}
+  {{ card('XBH-Saved','ppp_xbh_saved',   '%d',   true,  pp_pitching, tooltip='Extra-base hits the nickel held to singles behind him.') }}
 </div>
 {% endif %}
 

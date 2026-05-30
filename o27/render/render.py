@@ -121,7 +121,7 @@ class Renderer:
         self._batter_current_ab: dict = {}      # batter_id -> in-progress ab number
         # Power Play pitcher accumulator (keyed by pitcher player_id). Window
         # counters (pp_*) accrue only while the pitcher's defense had its nickel
-        # deployed behind him (the protected side); total BIP counters accrue
+        # deployed behind him; total BIP counters accrue
         # always, so sim.py can build the BABIP split (with-nickel vs without).
         self._pp_pitcher: dict[str, dict] = {}
         self._batter_swing_idx: dict = {}       # batter_id -> swing_idx within current ab
@@ -246,8 +246,8 @@ class Renderer:
             _sh_s.sh_pa   += _sh_s.pa   - _sh_before[0]
             _sh_s.sh_ab   += _sh_s.ab   - _sh_before[1]
             _sh_s.sh_hits += _sh_s.hits - _sh_before[2]
-        # Power Play pitcher (the protected side): when short-handed is active,
-        # ctx["pitcher"] IS the fielding pitcher with the nickel behind him.
+        # Power Play pitcher: when short-handed is active, ctx["pitcher"] IS the
+        # fielding pitcher with the nickel deployed behind him.
         # Window counters come from the same batter deltas (BF = pa delta, etc.);
         # total BIP counters accrue on every ball-in-play regardless of window so
         # the BABIP split can be computed downstream.
