@@ -242,14 +242,6 @@ def _batting_annotations(
     hr_off_pitchers maps batter_player_id_str → [pitcher last names] so
     HR notes render AP-style: "HR: Smith (1), off Hernandez".
     """
-    def _collect(field: str) -> list[tuple[str, int]]:
-        items = []
-        for r in rows:
-            n = r.get(field) or 0
-            if n > 0:
-                items.append((_short_name(r.get("player_name", "?")), n))
-        return items
-
     def _xbh_items(game_field: str, season_field: str) -> list[str]:
         """Real-newspaper convention: the parenthetical is the player's
         SEASON total of that stat through this game, not the game count.
@@ -298,10 +290,9 @@ def _batting_annotations(
     d3 = _xbh_items("triples", "season_triples")
     if d3:
         parts.append("3B: " + ", ".join(d3) + ".")
-    # SB stays a plain per-game count (not accumulated here).
-    sb = _collect("sb")
+    sb = _xbh_items("sb", "season_sb")
     if sb:
-        parts.append("SB: " + _join_names(sb))
+        parts.append("SB: " + ", ".join(sb) + ".")
     hr_items = _hr_items()
     if hr_items:
         parts.append("HR: " + "; ".join(hr_items))

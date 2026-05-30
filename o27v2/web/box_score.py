@@ -527,9 +527,9 @@ def render_batting_annotations(
         hr_items.append(item)
     if hr_items:
         lines.append(f"  HR: {'; '.join(hr_items)}.")
-    pairs = _pick("sb")
-    if pairs:
-        lines.append(f"  SB: {_items(pairs)}.")
+    sb = _xbh_items("sb", "season_sb")
+    if sb:
+        lines.append(f"  SB: {', '.join(sb)}.")
     pairs = _pick("cs")
     if pairs:
         lines.append(f"  CS: {_items(pairs)}.")

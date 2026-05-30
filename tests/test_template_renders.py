@@ -278,12 +278,14 @@ def test_box_score_annotations_show_season_xbh_totals():
         _row(1, "Konan", "3b", doubles=2, hr=1,
              **{"season_doubles": 9, "season_hr": 8}),
         _row(2, "Beard", "rf", doubles=1, **{"season_doubles": 3}),
-        _row(3, "Yongwa", "cf", triples=1, **{"season_triples": 2}),
+        _row(3, "Yongwa", "cf", triples=1, sb=2,
+             **{"season_triples": 2, "season_sb": 7}),
     ]
     out = render_batting_annotations(rows)
     assert "2B: Konan 2 (9), Beard (3)." in out
     assert "3B: Yongwa (2)." in out
     assert "HR: Konan (8)." in out
+    assert "SB: Yongwa 2 (7)." in out
 
 
 def test_box_score_pitcher_decision_carries_season_record():
@@ -308,12 +310,13 @@ def test_box_text_annotations_and_decision_are_cumulative():
     rows = [
         {"player_id": 1, "player_name": "E. Konan", "doubles": 2, "hr": 1,
          "season_doubles": 9, "season_hr": 8},
-        {"player_id": 3, "player_name": "N. Yongwa", "triples": 1,
-         "season_triples": 2},
+        {"player_id": 3, "player_name": "N. Yongwa", "triples": 1, "sb": 1,
+         "season_triples": 2, "season_sb": 7},
     ]
     ann = "\n".join(_batting_annotations(rows))
     assert "2B: E. Konan 2 (9)." in ann
     assert "3B: N. Yongwa (2)." in ann
+    assert "SB: N. Yongwa (7)." in ann
     assert "HR: E. Konan (8)" in ann
 
     pit = [{"player_id": 10, "player_name": "S. Morii", "batters_faced": 33,
