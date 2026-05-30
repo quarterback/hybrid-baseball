@@ -339,6 +339,36 @@ def _fresh_ethic_roll(rng: _random.Random) -> int:
     return rng.randint(min(lo, 80), min(hi, 80))
 
 
+def _catcher_season_usage(team_id: int) -> dict:
+    """Real in-season catcher usage from the game log: {player_id: usage 0..1}
+    where usage = games this player started at catcher (game_batter_stats rows
+    with game_position='C') / his team's games played. The everyday catcher
+    lands near 1.0, backups lower — whatever the manager's rotation produced.
+    Empty dict when no games are logged (fresh league) so the caller falls back
+    to a depth-chart proxy. Defensive against a missing game_batter_stats table."""
+    try:
+        gp = db.fetchall(
+            "SELECT COUNT(DISTINCT game_id) AS g FROM game_batter_stats "
+            "WHERE team_id = ?", (team_id,))
+        team_games = int(gp[0]["g"]) if gp and gp[0].get("g") else 0
+        if team_games <= 0:
+            return {}
+        caught = db.fetchall(
+            "SELECT player_id, COUNT(DISTINCT game_id) AS gc "
+            "FROM game_batter_stats "
+            "WHERE team_id = ? AND game_position = 'C' "
+            "GROUP BY player_id", (team_id,))
+    except Exception:
+        return {}
+    usage: dict = {}
+    for r in caught:
+        pid = r.get("player_id")
+        gc = int(r.get("gc") or 0)
+        if pid is not None and gc > 0:
+            usage[pid] = min(1.0, gc / team_games)
+    return usage
+
+
 def develop_players_for_team(team_id: int, org_strength: int,
                              rng: _random.Random,
                              style_dev: Optional[dict[str, float]] = None) -> int:
@@ -348,17 +378,22 @@ def develop_players_for_team(team_id: int, org_strength: int,
     `style_dev` (optional) is the league's development-trajectory bias,
     applied to every player on the team so league culture shapes careers."""
     rows = db.fetchall("SELECT * FROM players WHERE team_id = ?", (team_id,))
-    # Catcher usage map — the team's primary catcher (best defense_catcher among
-    # its catchers) absorbs most of the season's innings and wears fastest;
-    # depth catchers catch less. Drives usage-based catcher erosion below.
-    catchers = [r for r in rows if r.get("position") == "C"]
-    catchers.sort(key=lambda r: (r.get("defense_catcher") or 0), reverse=True)
-    usage_by_id: dict = {}
-    for rank, c in enumerate(catchers):
-        usage_by_id[c["id"]] = (
-            _CATCHER_USAGE_STARTER if rank == 0
-            else _CATCHER_USAGE_BACKUP if rank == 1
-            else _CATCHER_USAGE_THIRD)
+    # Catcher usage map — drives usage-based catcher erosion below. Catching is
+    # a wear position; the more a backstop actually caught this season, the more
+    # his skills erode. Use REAL in-season usage (games started at C / team
+    # games played, from the game log) so how a manager rotates a 3-4 catcher
+    # corps genuinely shapes careers — ride your starter every day and he wears
+    # fast; spread the load and the corps lasts. Falls back to a depth-chart
+    # proxy only when no season has been logged yet (fresh league rollover).
+    usage_by_id: dict = _catcher_season_usage(team_id)
+    if not usage_by_id:
+        catchers = [r for r in rows if r.get("position") == "C"]
+        catchers.sort(key=lambda r: (r.get("defense_catcher") or 0), reverse=True)
+        for rank, c in enumerate(catchers):
+            usage_by_id[c["id"]] = (
+                _CATCHER_USAGE_STARTER if rank == 0
+                else _CATCHER_USAGE_BACKUP if rank == 1
+                else _CATCHER_USAGE_THIRD)
     n = 0
     for p in rows:
         is_pitcher = bool(p.get("is_pitcher"))
