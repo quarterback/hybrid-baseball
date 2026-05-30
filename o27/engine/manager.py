@@ -1553,11 +1553,32 @@ def should_swap_catcher(state: GameState, rng=None) -> Optional[dict]:
     ]
     if not bench:
         return None
-    fresh = max(bench, key=lambda pl: float(getattr(pl, "defense_catcher", 0.5) or 0.5))
-    if float(getattr(fresh, "defense_catcher", 0.5) or 0.5) < 0.5:
+    reserve_catchers = [
+        pl for pl in bench
+        if float(getattr(pl, "defense_catcher", 0.5) or 0.5) >= 0.5
+    ]
+    if not reserve_catchers:
         return None  # no credible reserve catcher on the bench
 
-    return {"player_out": current, "player_in": fresh}
+    # Situational pick (RFC): protecting a lead (or tied) → defensive
+    # specialist (glove + arm + game-calling); chasing → spark-plug bat
+    # (the catcher's lineup spot matters more than the position).
+    fs = int(state.score.get(fielding.team_id, 0) or 0)
+    opp_id = "home" if fielding.team_id == "visitors" else "visitors"
+    os_ = int(state.score.get(opp_id, 0) or 0)
+    if fs - os_ < 0:
+        fresh = max(reserve_catchers,
+                    key=lambda pl: float(getattr(pl, "skill", 0.5) or 0.5)
+                    + 0.3 * float(getattr(pl, "speed", 0.5) or 0.5))
+        role = "spark plug"
+    else:
+        fresh = max(reserve_catchers,
+                    key=lambda pl: float(getattr(pl, "defense_catcher", 0.5) or 0.5)
+                    + float(getattr(pl, "arm", 0.5) or 0.5)
+                    + float(getattr(pl, "game_calling", 0.5) or 0.5))
+        role = "defensive"
+
+    return {"player_out": current, "player_in": fresh, "role": role}
 
 
 def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Player]:

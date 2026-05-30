@@ -550,6 +550,21 @@ def _catcher_gc_shift(state) -> float:
     return (gc - 0.5) * 2.0 * getattr(cfg, "CATCHER_GAME_CALLING_SHIFT_SCALE", 0.0)
 
 
+def _catcher_arm_eff(state) -> float:
+    """Fielding team's catcher arm, degraded by catcher fatigue — a gassed
+    catcher's throws to the bases weaken (RFC: fatigue degrades game_calling
+    AND arm). Mirrors the game-calling decay; identity when no fatigue."""
+    fld = getattr(state, "fielding_team", None)
+    arm = float(getattr(fld, "catcher_arm", 0.5) or 0.5)
+    outs = int(getattr(fld, "catcher_outs_caught", 0) or 0)
+    thr = getattr(cfg, "CATCHER_FATIGUE_THRESHOLD", 10 ** 9)
+    if outs > thr:
+        fatigue = min(getattr(cfg, "CATCHER_FATIGUE_MAX", 0.0),
+                      (outs - thr) / getattr(cfg, "CATCHER_FATIGUE_SCALE", 1.0))
+        arm *= max(0.0, 1.0 - fatigue * getattr(cfg, "CATCHER_FATIGUE_ARM_SCALE", 0.0))
+    return arm
+
+
 def contact_quality(
     rng: random.Random,
     batter: Player,
@@ -2302,7 +2317,7 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
             pid = state.bases[0]
             speed = _get_speed(pid, state)
             pitcher_skill = pitcher.pitcher_skill if pitcher else 0.5
-            cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
+            cat_arm = _catcher_arm_eff(state)
             success_p = (
                 cfg.SB_SUCCESS_BASE
                 + (speed - 0.5) * cfg.SB_SUCCESS_SPEED_SCALE
@@ -2350,7 +2365,7 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
             # An elite-arm catcher (arm ≥ 0.85) shuts down the running game;
             # a noodle-arm (≤ 0.30) is exploited mercilessly. Identity at
             # arm = 0.5 → no shift on success_p.
-            cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
+            cat_arm = _catcher_arm_eff(state)
             success_p = (
                 cfg.SB_SUCCESS_BASE
                 + (speed - 0.5) * cfg.SB_SUCCESS_SPEED_SCALE
@@ -3022,7 +3037,7 @@ class ProbabilisticProvider:
             # the 2C feel risky; bad defenses let it run wild.
             if adv > 0 and any(state.bases):
                 team_def = float(getattr(state.fielding_team, "defense_rating", 0.5) or 0.5)
-                cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
+                cat_arm = _catcher_arm_eff(state)
                 p_read = (cfg.STAY_DEFENSE_READ_BASE
                           + (team_def - 0.5) * cfg.STAY_DEFENSE_READ_TEAM_SCALE
                           + (cat_arm  - 0.5) * cfg.STAY_DEFENSE_READ_CATCHER_SCALE)

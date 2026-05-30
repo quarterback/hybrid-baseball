@@ -819,6 +819,7 @@ CATCHER_FATIGUE_THRESHOLD: int           = 18    # outs caught before fatigue bi
 CATCHER_FATIGUE_SCALE: float             = 9.0   # (outs-threshold)/this → fatigue
 CATCHER_FATIGUE_MAX: float               = 0.80  # cap on the fatigue fraction
 CATCHER_FATIGUE_GAME_CALLING_SCALE: float = 0.30 # fatigue * this drops game_calling
+CATCHER_FATIGUE_ARM_SCALE: float         = 0.25  # fatigue * this drops catcher arm
 CATCHER_ROTATION_OUT_GATE: int           = 6     # no swap before this (first-batter guard)
 
 # ---------------------------------------------------------------------------
