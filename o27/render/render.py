@@ -1144,6 +1144,16 @@ class Renderer:
             d["batted_ball_name"] = (event.get("outcome") or {}).get(
                 "batted_ball_name", ""
             )
+            # Defensive gem — a fielder robbed a hit. Surface the play + the
+            # fielder's name so the play-by-play can flag the great play.
+            gem = (event.get("outcome") or {}).get("gem_effect")
+            d["gem_effect"] = gem or ""
+            d["gem_fielder_name"] = ""
+            if gem:
+                _gfid = (event.get("outcome") or {}).get("fielder_id")
+                if _gfid and state_after.fielding_team:
+                    _gf = state_after.fielding_team.get_player(_gfid)
+                    d["gem_fielder_name"] = _gf.name if _gf else ""
             d["batter_safe"] = batter_safe
             d["new_bases"] = state_after.bases_summary()
 

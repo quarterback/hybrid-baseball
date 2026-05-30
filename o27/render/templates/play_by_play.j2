@@ -44,6 +44,11 @@
 {% endif %}
 {% else %}
   {{ batter_name }} runs → {{ hit_type_display }}.
+{% if gem_effect == "robbed_xbh" %}
+  ROBBED! {{ gem_fielder_name }} runs it down — a sure extra-base hit erased!
+{% elif gem_effect == "robbed_liner" %}
+  ROBBED! {{ gem_fielder_name }} lays out for the diving grab — a hit turned into an out!
+{% endif %}
 {% if not batter_safe %}
   {{ batter_name }} is out.
 {% endif %}

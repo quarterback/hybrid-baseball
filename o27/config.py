@@ -767,7 +767,7 @@ STAY_DEFENSE_READ_MAX: float           = 0.28
 # Range modifier — better team defense converts more BIPs into outs.
 # Applied as a probabilistic flip: when an outcome resolves to an out OR a
 # single, a small fraction of cases flip in proportion to (defense - 0.5).
-DEFENSE_RANGE_SHIFT_SCALE: float = 0.10   # max ±10% out↔single conversion swing
+DEFENSE_RANGE_SHIFT_SCALE: float = 0.15   # max ±15% out↔single conversion swing
 
 # Error rate — share of would-be-out plays that become a "reached on
 # error" instead. Scales inversely with team defense. The earlier ~1.8%
@@ -779,6 +779,24 @@ DEFENSE_ERROR_BASE: float        = 0.045   # ~4.5% of would-be-outs at neutral D
 DEFENSE_ERROR_SCALE: float       = 0.060   # (0.5 - team_def) * this adds to E rate
 DEFENSE_ERROR_MIN: float         = 0.010
 DEFENSE_ERROR_MAX: float         = 0.090
+
+# ---------------------------------------------------------------------------
+# Defensive gems — fielding ratings turn would-be hits into outs
+# ---------------------------------------------------------------------------
+# A fielder makes a spectacular play that erases a hit. Deliberately
+# PROBABILISTIC and per-FIELDER, not a fixed trait: a base rate means anyone
+# in the position with a decent glove can flash one, and the individual
+# fielder's defense/arm scales the rate up (elite) or toward zero (poor). So
+# you get "even a guy you don't think of as a defensive wizard robs one
+# sometimes," while the genuine glove does it far more often. Surfaced in the
+# play-by-play as a "ROBBED!" / great-play line (see render). All-zero base =
+# identity (no gems). These erase a hit, so they also nudge BA/H down slightly.
+GEM_BASE_XBH: float      = 0.075  # base chance an extra-base hit is run down / robbed
+GEM_BASE_SINGLE: float   = 0.050  # base chance a single is turned into an out
+GEM_HARD_MULT: float     = 1.35   # hard contact is more rob-able (carry / hang time)
+GEM_FIELDER_SCALE: float = 1.30   # (fielder_def - 0.5)*2 * this scales the base rate
+GEM_ARM_SCALE: float     = 0.40   # (fielder_arm - 0.5)*2 * this adds (arm → more outs)
+GEM_MAX: float           = 0.42   # cap — even elite fielders don't rob everything
 
 # ---------------------------------------------------------------------------
 # Emergency position-player pitcher (PP-pitching)
@@ -853,16 +871,18 @@ STAY_LATE_GAME_MULT: float         = 1.55
 # Telemetry: state.fielding_team.shift_outs_added / shift_hits_lost
 # accumulate per game, so we can see exactly how much each shift call
 # contributed.
-SHIFT_PULL_OUT_PROB: float       = 0.30   # infield shift: pull single → out
+SHIFT_PULL_OUT_PROB: float       = 0.42   # infield shift: pull single → out
 SHIFT_OPPO_HIT_PROB: float       = 0.25   # infield shift: oppo gnd_out → single
-SHIFT_DECISION_SCALE: float      = 1.0    # tunable knob on decision frequency
+SHIFT_DECISION_SCALE: float      = 1.8    # tunable knob on decision frequency
+SHIFT_BASE_PROB: float           = 0.35   # floor so even neutral-spray batters get shifted
+SHIFT_DECISION_MAX: float        = 0.95   # cap on per-AB shift probability
 
 # Outfield shift (4-man OF / infielders shallow). Trades infield coverage
 # for outfield range against pull-power FB hitters. Effects:
 #   pull-side double/triple → single   (the 4th OFer cuts off the gap)
 #   pull-side fly_out stays            (already an out)
 #   oppo-side ground_out → single      (one fewer IFer = more gaps)
-SHIFT_OF_XBH_HELD_PROB: float    = 0.30   # OF shift: pull double → single
+SHIFT_OF_XBH_HELD_PROB: float    = 0.40   # OF shift: pull double → single
 SHIFT_OF_OPPO_HIT_PROB: float    = 0.35   # OF shift: oppo gnd_out → single
 # Threshold for picking outfield shift over infield shift: pull-heavy
 # batter with this much power or more goes to outfield shift.

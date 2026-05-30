@@ -1906,6 +1906,8 @@ def resolve_contact(
         def_dev -= cfg.FIELDING_FATIGUE_PENALTY
 
     is_error = False
+    gem_effect = None        # set when a fielder robs a hit (great-play render hook)
+    gem_fielder_id = None    # the specific fielder credited with the gem
 
     # Range shift: probabilistically flip a single-or-out outcome.
     # Better defense (def_dev > 0) → some "single" results flip to ground_out.
@@ -1976,6 +1978,58 @@ def resolve_contact(
                     caught_fly = False
                     shift_effect = "hit_lost"
 
+    # ---- Defensive gem -----------------------------------------------------
+    # A fielder turns a would-be hit into an out with a spectacular play.
+    # Per-FIELDER + probabilistic: a base rate lets anyone in the position with
+    # a decent glove flash one occasionally, and the individual fielder's
+    # defense/arm scales the rate up (elite) or toward zero (poor) — so the
+    # great glove robs hits far more often, but it's never a fixed "only this
+    # guy" trait. A robbed extra-base hit is run down (caught fly); a robbed
+    # single is a diving liner grab. Surfaced as a "ROBBED!" play in the
+    # play-by-play via outcome["gem_effect"]. Identity when GEM_BASE_* = 0.
+    if batter_safe and not is_error and hit_type in ("single", "double", "triple"):
+        if hit_type in ("double", "triple"):
+            gem_base, gem_out_type, gem_caught, gem_pos, gem_label = (
+                cfg.GEM_BASE_XBH, "fly_out", True, "fly_out", "robbed_xbh")
+        else:
+            gem_base, gem_out_type, gem_caught, gem_pos, gem_label = (
+                cfg.GEM_BASE_SINGLE, "line_out", False, "line_out", "robbed_liner")
+        if quality == "hard":
+            gem_base *= cfg.GEM_HARD_MULT
+        # Pick the fielder who makes the play from the position-player pool,
+        # weighted toward better gloves. Positions aren't plumbed onto Players
+        # in O27, so we weight by the relevant defense rating rather than a
+        # fixed slot — which IS the "anyone in that spot with a good glove can
+        # do it, the elite glove does it more" model. _ = gem_pos (kept for
+        # readability of which alignment the play came from).
+        _ = gem_pos
+        def_key = "defense_outfield" if gem_label == "robbed_xbh" else "defense_infield"
+        pool = [p for p in getattr(fielding, "roster", [])
+                if not getattr(p, "is_pitcher", False)]
+        gem_fid = None
+        f_def = f_arm = 0.5
+        if pool:
+            def _grate(p):
+                r = getattr(p, def_key, None)
+                if r is None:
+                    r = getattr(p, "defense", 0.5)
+                return float(r or 0.5)
+            weights = [0.5 + _grate(p) for p in pool]
+            gp = rng.choices(pool, weights=weights, k=1)[0]
+            gem_fid = gp.player_id
+            f_def = _grate(gp)
+            f_arm = float(getattr(gp, "arm", 0.5) or 0.5)
+        gem_p = gem_base * max(0.0, 1.0
+                               + (f_def - 0.5) * 2.0 * cfg.GEM_FIELDER_SCALE
+                               + (f_arm - 0.5) * 2.0 * cfg.GEM_ARM_SCALE)
+        gem_p = min(cfg.GEM_MAX, gem_p)
+        if rng.random() < gem_p:
+            hit_type = gem_out_type
+            batter_safe = False
+            caught_fly = gem_caught
+            gem_effect = gem_label
+            gem_fielder_id = gem_fid
+
     # Error chance — only on plays that resolved as an out. Worse defense =
     # higher error rate. Caught flies don't generate errors at this layer
     # (they're clean catches by the time we get here).
@@ -2024,6 +2078,9 @@ def resolve_contact(
     # credited with this play (PO for outs, E for errors). Returns None
     # for hits — those don't get a fielder credit.
     fielder_id = _select_fielder(rng, hit_type, fielding)
+    # A defensive gem credits the specific fielder who made the play.
+    if gem_fielder_id is not None:
+        fielder_id = gem_fielder_id
 
     return {
         "hit_type": hit_type,
@@ -2038,6 +2095,7 @@ def resolve_contact(
         "fielder_id": fielder_id,
         "quality": quality,
         "shift_effect": shift_effect,
+        "gem_effect": gem_effect,
     }
 
 
@@ -2362,7 +2420,11 @@ class ProbabilisticProvider:
                                       "mgr_shift_aggression", 0.5) or 0.5)
             batter_pull = float(getattr(batter, "pull_pct", 0.5) or 0.5)
             extremity = abs(batter_pull - 0.5) * 2.0
-            shift_p = extremity * mgr_shift * cfg.SHIFT_DECISION_SCALE
+            # Aggressive baseline: a floor (SHIFT_BASE_PROB) means even
+            # neutral-spray batters draw a shift sometimes, and pull-heavy
+            # batters get shifted nearly every time. O27 defenses shift
+            # constantly — it's a primary lever, not a situational gimmick.
+            shift_p = (cfg.SHIFT_BASE_PROB + extremity) * mgr_shift * cfg.SHIFT_DECISION_SCALE
 
             # Leverage ratchet — RISP AND late arc both fire, the shift
             # decision lifts to "prevent defense" mode. Either alone is
@@ -2372,6 +2434,7 @@ class ProbabilisticProvider:
             if risp and late:
                 shift_p *= cfg.SHIFT_LEVERAGE_MULT
 
+            shift_p = min(cfg.SHIFT_DECISION_MAX, shift_p)
             if self.rng.random() < shift_p:
                 power = float(getattr(batter, "power", 0.5) or 0.5)
                 if power >= cfg.SHIFT_OF_POWER_THRESHOLD:
