@@ -799,6 +799,17 @@ GEM_ARM_SCALE: float     = 0.40   # (fielder_arm - 0.5)*2 * this adds (arm → m
 GEM_MAX: float           = 0.42   # cap — even elite fielders don't rob everything
 
 # ---------------------------------------------------------------------------
+# Catcher game-calling — "calling a good O27 game" as a real lever
+# ---------------------------------------------------------------------------
+# The catcher's game_calling rating shifts contact_quality away from hard
+# contact: a great caller sequences pitches to the pitcher's strengths and the
+# batter's holes, a poor one lets hitters square it up. Applies only to whoever
+# is currently behind the plate (the fielding team's catcher). Identity at 0.5.
+# This is the offense-suppressing counterweight that rewards a defensive,
+# pitch-and-catch club. (NOT framing — O27 skips framing by design.)
+CATCHER_GAME_CALLING_SHIFT_SCALE: float = 0.16   # (gc-0.5)*2 * this → contact shift
+
+# ---------------------------------------------------------------------------
 # Emergency position-player pitcher (PP-pitching)
 # ---------------------------------------------------------------------------
 # In an absolute blowout, a strong-arm position player can come in to

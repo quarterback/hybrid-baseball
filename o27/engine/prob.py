@@ -509,6 +509,46 @@ def pitch_outcome(
 # Contact quality model
 # ---------------------------------------------------------------------------
 
+def _fielding_catcher(state):
+    """The player currently behind the plate for the fielding team: the
+    lineup's non-pitcher with the best defense_catcher rating. Resolving from
+    the live lineup means a catcher substitution automatically changes who is
+    "the catcher" — no separate bookkeeping needed. Returns None if none."""
+    team = getattr(state, "fielding_team", None)
+    if team is None:
+        return None
+    lineup = getattr(team, "lineup", None) or getattr(team, "roster", []) or []
+    best = None
+    best_dc = -1.0
+    for p in lineup:
+        if getattr(p, "is_pitcher", False):
+            continue
+        dc = float(getattr(p, "defense_catcher", 0.5) or 0.5)
+        if dc > best_dc:
+            best_dc = dc
+            best = p
+    return best
+
+
+def _catcher_gc_shift(state) -> float:
+    """Contact-quality shift from the fielding team's catcher game-calling,
+    degraded by catcher fatigue. Positive = good caller suppressing contact.
+    Identity (0.0) when no catcher / neutral rating."""
+    c = _fielding_catcher(state)
+    if c is None:
+        return 0.0
+    gc = float(getattr(c, "game_calling", 0.5) or 0.5)
+    # Fatigue decay — a gassed catcher calls a worse game. catcher_outs_caught
+    # is accumulated per out (catcher-rotation pass); absent/zero → no decay.
+    outs = int(getattr(state, "catcher_outs_caught", 0) or 0)
+    thr = getattr(cfg, "CATCHER_FATIGUE_THRESHOLD", 10 ** 9)
+    if outs > thr:
+        fatigue = min(getattr(cfg, "CATCHER_FATIGUE_MAX", 0.0),
+                      (outs - thr) / getattr(cfg, "CATCHER_FATIGUE_SCALE", 1.0))
+        gc -= fatigue * getattr(cfg, "CATCHER_FATIGUE_GAME_CALLING_SCALE", 0.0)
+    return (gc - 0.5) * 2.0 * getattr(cfg, "CATCHER_GAME_CALLING_SHIFT_SCALE", 0.0)
+
+
 def contact_quality(
     rng: random.Random,
     batter: Player,
@@ -521,6 +561,7 @@ def contact_quality(
     joker_decay: float = 1.0,
     familiarity: float = 0.0,
     risp_penalty: float = 1.0,
+    catcher_shift: float = 0.0,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
@@ -558,6 +599,12 @@ def contact_quality(
     # they're locked in. Identity at 0.0 so first-batting teams or PAs past
     # the fade window see no change.
     shift += target_pressure_shift
+
+    # Catcher game-calling: a good caller (positive catcher_shift) sequences
+    # the pitcher to suppress hard contact; a poor one lets hitters square up.
+    # Subtracts from the batter-advantage shift. Computed at the call site from
+    # whoever is behind the plate (and their fatigue). Identity at 0.0.
+    shift -= catcher_shift
 
     # Times-through-the-order familiarity: a hitter who has timed this pitcher
     # up doesn't just make more contact (handled in _pitch_probs) — he squares
@@ -2728,6 +2775,7 @@ class ProbabilisticProvider:
             joker_decay=joker_decay,
             familiarity=familiarity,
             risp_penalty=_risp_talent_penalty(rng, state),
+            catcher_shift=_catcher_gc_shift(state),
         )
         is_hr     = False
         is_triple = False

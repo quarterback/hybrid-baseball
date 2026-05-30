@@ -121,14 +121,27 @@ def make_foxes() -> Team:
                 stay_aggressiveness=0.08, contact_quality_threshold=0.34,
                 is_joker=True),
     ]
+    # Designated catching corps. defense_catcher marks who's behind the plate
+    # (the engine resolves the lineup's best defense_catcher as the catcher);
+    # game_calling is the pitch-calling lever; arm feeds SB / stay defense.
+    # L. Moreau is the everyday catcher (strong glove, good caller); K. Yamada
+    # is the backup who comes in when Moreau tires.
+    roster[3].defense_catcher = 0.78   # L. Moreau — starting C
+    roster[3].game_calling    = 0.63
+    roster[3].arm             = 0.66
+    roster[7].defense_catcher = 0.70   # K. Yamada — backup C
+    roster[7].game_calling    = 0.52
+    roster[7].arm             = 0.58
     jokers = [p for p in roster if p.is_joker]
-    return Team(
+    team = Team(
         team_id="visitors",
         name="Millbrook Foxes",
         roster=roster,
         lineup=list(roster),
         jokers_available=list(jokers),
     )
+    team.catcher_arm = roster[3].arm   # everyday catcher's arm
+    return team
 
 
 def make_bears() -> Team:
@@ -177,14 +190,26 @@ def make_bears() -> Team:
                 stay_aggressiveness=0.03, contact_quality_threshold=0.14,
                 is_joker=True),
     ]
+    # Designated catching corps (see make_foxes). The Bears' everyday catcher
+    # R. Colburn is a steady gloveman but a more ordinary game-caller; T.
+    # Wachowski backs up. A power club that leans on its arms more than its
+    # pitch-calling.
+    roster[4].defense_catcher = 0.74   # R. Colburn — starting C
+    roster[4].game_calling    = 0.55
+    roster[4].arm             = 0.62
+    roster[5].defense_catcher = 0.66   # T. Wachowski — backup C
+    roster[5].game_calling    = 0.48
+    roster[5].arm             = 0.54
     jokers = [p for p in roster if p.is_joker]
-    return Team(
+    team = Team(
         team_id="home",
         name="Ironvale Bears",
         roster=roster,
         lineup=list(roster),
         jokers_available=list(jokers),
     )
+    team.catcher_arm = roster[4].arm   # everyday catcher's arm
+    return team
 
 
 # ---------------------------------------------------------------------------

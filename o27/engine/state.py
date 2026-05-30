@@ -160,6 +160,9 @@ class Player:
     defense_infield:   float = 0.5   # 1B / 2B / 3B / SS specific glove
     defense_outfield:  float = 0.5   # LF / CF / RF specific glove
     defense_catcher:   float = 0.5   # catcher-specific framing / blocking
+    game_calling:      float = 0.5   # catcher pitch-calling — a good caller
+                                     # suppresses contact when behind the plate
+                                     # (only applies to whoever is catching)
 
     # Spray tendency — 0.0 = pure opposite-field, 0.5 = neutral spray,
     # 1.0 = pure pull. Drives the shift decision (extreme values invite
