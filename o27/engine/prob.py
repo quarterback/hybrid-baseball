@@ -520,6 +520,7 @@ def contact_quality(
     target_pressure_shift: float = 0.0,
     joker_decay: float = 1.0,
     familiarity: float = 0.0,
+    risp_penalty: float = 1.0,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
