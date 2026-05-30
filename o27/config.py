@@ -642,7 +642,7 @@ TRIPLE_PLAY_BASERUNNING_BONUS: float   = 0.06   # added when lead runner is belo
 # whether the slide beats the throw. Identity preserved at neutral inputs:
 # at speed = baserunning = aggressiveness = 0.5 the attempt probability
 # from RUNNER_EXTRA_SPEED_SCALE is already 0, so TOOTBLAN never fires.
-TOOTBLAN_SAFE_BASE: float  = 0.62   # baseline safe rate when an attempt fires
+TOOTBLAN_SAFE_BASE: float  = 0.46   # baseline safe rate when an attempt fires
 TOOTBLAN_SKILL_SCALE: float = 0.40  # +(baserunning - 0.5) * this
 TOOTBLAN_SPEED_SCALE: float = 0.20  # +(speed       - 0.5) * this
 TOOTBLAN_SAFE_MIN: float    = 0.32  # floor — even bad runners aren't always out
@@ -658,11 +658,11 @@ TOOTBLAN_SAFE_MAX: float    = 0.88  # ceiling — even elite runners aren't auto
 # Tuning note: real-MLB pickoff outs are rare (~0.05/game per side).
 # Keep attempt rate low and success rate modest so they're a flavor
 # event, not a CS-rate inflator.
-PICKOFF_ATTEMPT_BASE: float        = 0.004  # per pitch, 1B with avg-aggression runner
+PICKOFF_ATTEMPT_BASE: float        = 0.035  # per pitch, 1B with avg-aggression runner
 PICKOFF_AGGRESSION_SCALE: float    = 0.012  # +(run_aggressiveness - 0.5) * this
 PICKOFF_LHP_1B_BONUS: float        = 0.005  # absolute boost vs 1B runner from LHP
 PICKOFF_2B_DAMPENER: float         = 0.40   # 2B pickoffs much rarer than 1B
-PICKOFF_SUCCESS_BASE: float        = 0.10   # baseline catch rate when a move fires
+PICKOFF_SUCCESS_BASE: float        = 0.38   # baseline catch rate when a move fires
 PICKOFF_SUCCESS_PITCHER_SCALE: float = 0.25 # +pitcher.pitcher_skill * this
 PICKOFF_SUCCESS_AGGRESSION_SCALE: float = 0.30  # +(aggression - 0.5) * this
 PICKOFF_SUCCESS_BR_SCALE: float    = 0.30   # -(baserunning - 0.5) * this

@@ -61,8 +61,6 @@
 {% elif event_type == "pickoff_attempt" %}
 {% if pickoff_success %}
   Pickoff — runner out at {{ pickoff_base }}!
-{% else %}
-  Pickoff attempt — runner safe.
 {% endif %}
 {% elif event_type == "joker_insertion" %}
   {{ batting_team_name }} sends in joker {{ joker_name }} for an extra plate appearance (joker #{{ joker_count }}).

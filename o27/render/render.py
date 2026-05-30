@@ -225,11 +225,19 @@ class Renderer:
         # Update batter stats.
         self._update_stats(event, ctx, state_after, disp)
 
-        # Render via Jinja2 template.
-        tmpl = self._env.get_template("play_by_play.j2")
-        rendered = tmpl.render(**disp).rstrip("\n")
-        if rendered:
-            lines.append(rendered)
+        # Render via Jinja2 template. A failed pickoff is a routine throw-over —
+        # keep it out of the play-by-play entirely (not even the bare
+        # [outs|count|bases] header line), while stats/snapshots above still
+        # run. Only an actual pickout (runner caught) earns a line.
+        _silent_pickoff = (
+            etype == "pickoff_attempt"
+            and not (event.get("success") or disp.get("pickoff_success"))
+        )
+        if not _silent_pickoff:
+            tmpl = self._env.get_template("play_by_play.j2")
+            rendered = tmpl.render(**disp).rstrip("\n")
+            if rendered:
+                lines.append(rendered)
 
         # Append runner advancement narrative computed from state delta.
         runner_lines = self._compute_runner_lines(ctx, state_after, etype, disp, event)
