@@ -443,12 +443,16 @@ class Team:
 
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-PA based on
-    # leverage. Any joker can be inserted any number of times per game —
-    # there is no per-cycle or per-game cap. Insertions add an extra PA
-    # to the rotation; the joker bats then returns to the bench without
-    # taking a roster slot or a field position.
+    # leverage. Cooldown is per-turnover: each joker may be deployed at
+    # most once per time through the order, then becomes eligible again
+    # when the base lineup cycles (jokers_used_this_cycle is cleared in
+    # advance_lineup). There is no overall per-game cap, so across a long
+    # half a joker can be brought back cycle after cycle — but never more
+    # than once within a single cycle. Insertions add an extra PA to the
+    # rotation; the joker bats then returns to the bench without taking a
+    # roster slot or a field position.
     jokers_available: list = field(default_factory=list)
-    jokers_used_this_cycle: set = field(default_factory=set)   # legacy, unused
+    jokers_used_this_cycle: set = field(default_factory=set)   # reset on lineup wrap
     jokers_used_this_half: set = field(default_factory=set)    # legacy alias
     lineup_cycle_number: int = 0   # increments when lineup_position wraps
 
@@ -484,6 +488,12 @@ class Team:
         if new_pos == 0 and n > 0:
             # Lineup wrapped to top of order — start of a new cycle.
             self.lineup_cycle_number += 1
+            # Per-cycle joker cooldown resets here. A joker may be deployed
+            # at most once per time through the order; once every base
+            # hitter has batted (joker PAs do NOT advance the lineup, so
+            # they never count toward a cycle) the whole pool is eligible
+            # again. See manager.can_insert_joker / should_insert_joker.
+            self.jokers_used_this_cycle = set()
         self.lineup_position = new_pos
 
     def reset_half(self) -> None:
