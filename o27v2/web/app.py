@@ -4482,6 +4482,91 @@ def leaders():
             "li":          e["li"],
         })
 
+    # ----- Power Play / short-handed leaderboards ------------------
+    # Only populated in leagues that opted into the Power Play rule (the
+    # game_power_play_stats table is empty otherwise), so the template
+    # renders the whole section conditionally on a non-empty dataset.
+    #   pp_defense  — the nickel fielders: deployments, outs covered, XBH
+    #                 held, hits run down, putouts.
+    #   pp_offense  — short-handed hitters: SH-PA/AB/H and SH-AVG (min PA).
+    pp_rows = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  SUM(pp.pp_deploys)        as pp_deploys,
+                  SUM(pp.pp_outs)           as pp_outs,
+                  SUM(pp.pp_xbh_held)       as pp_xbh_held,
+                  SUM(pp.pp_hits_converted) as pp_hits_converted,
+                  SUM(pp.nickel_po)         as nickel_po,
+                  SUM(pp.nickel_a)          as nickel_a,
+                  SUM(pp.nickel_e)          as nickel_e,
+                  SUM(pp.sh_pa)             as sh_pa,
+                  SUM(pp.sh_ab)             as sh_ab,
+                  SUM(pp.sh_hits)           as sh_hits
+           FROM game_power_play_stats pp
+           JOIN players p ON pp.player_id = p.id
+           JOIN teams   t ON pp.team_id   = t.id
+           {lg_where}
+           GROUP BY p.id""",
+        lg_param,
+    )
+    pp_defense, pp_offense = [], []
+    for r in pp_rows:
+        if (r.get("pp_deploys") or 0) > 0:
+            pp_defense.append(r)
+        sh_ab = int(r.get("sh_ab") or 0)
+        if int(r.get("sh_pa") or 0) > 0:
+            # SH-AVG = hits / at-bats while short-handed (None when no AB).
+            r["sh_avg"] = (int(r.get("sh_hits") or 0) / sh_ab) if sh_ab else None
+            pp_offense.append(r)
+    power_play_on_in_league = bool(pp_rows)
+
+    # Power Play PITCHING — its own dataset (the pitcher with the nickel behind
+    # him). Coverage% needs the pitcher's TOTAL outs (how much of his work had
+    # the nickel out there), so join season outs from game_pitcher_stats.
+    pp_pitch_rows = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  SUM(pp.ppp_bf)           as ppp_bf,
+                  SUM(pp.ppp_outs)         as ppp_outs,
+                  SUM(pp.ppp_k)            as ppp_k,
+                  SUM(pp.ppp_bb)           as ppp_bb,
+                  SUM(pp.ppp_bip)          as ppp_bip,
+                  SUM(pp.ppp_bip_hits)     as ppp_bip_hits,
+                  SUM(pp.ppp_tot_bip)      as ppp_tot_bip,
+                  SUM(pp.ppp_tot_bip_hits) as ppp_tot_bip_hits,
+                  SUM(pp.ppp_hits_saved)   as ppp_hits_saved,
+                  SUM(pp.ppp_xbh_saved)    as ppp_xbh_saved,
+                  (SELECT COALESCE(SUM(gps.outs_recorded),0)
+                     FROM game_pitcher_stats gps WHERE gps.player_id = p.id) as tot_outs
+           FROM game_power_play_stats pp
+           JOIN players p ON pp.player_id = p.id
+           JOIN teams   t ON pp.team_id   = t.id
+           {lg_where}
+           GROUP BY p.id
+          HAVING SUM(pp.ppp_bf) > 0""",
+        lg_param,
+    )
+    pp_pitching = []
+    for r in pp_pitch_rows:
+        bf  = int(r.get("ppp_bf") or 0)
+        bip = int(r.get("ppp_bip") or 0)
+        tot_bip = int(r.get("ppp_tot_bip") or 0)
+        non_bip = tot_bip - bip
+        # Defense-independent rates (K and BB never reach the nickel's glove).
+        r["ppp_k_pct"]  = (int(r.get("ppp_k")  or 0) / bf) if bf else None
+        r["ppp_bb_pct"] = (int(r.get("ppp_bb") or 0) / bf) if bf else None
+        # BABIP-against with the nickel deployed, and the split vs without it.
+        r["ppp_babip"]  = (int(r.get("ppp_bip_hits") or 0) / bip) if bip else None
+        non_babip = ((int(r.get("ppp_tot_bip_hits") or 0)
+                      - int(r.get("ppp_bip_hits") or 0)) / non_bip) if non_bip else None
+        # Negative split = lower BABIP with the nickel = the defense helped him.
+        r["ppp_babip_split"] = (r["ppp_babip"] - non_babip) \
+            if (r["ppp_babip"] is not None and non_babip is not None) else None
+        # Coverage: share of the pitcher's outs taken with the nickel behind him.
+        tot_outs = int(r.get("tot_outs") or 0)
+        r["ppp_coverage"] = (int(r.get("ppp_outs") or 0) / tot_outs) if tot_outs else None
+        pp_pitching.append(r)
+
     # ----- XO Crossover scale toggle ------------------------------
     # ?scale=xo flips the leaderboard table cells to their MLB-readable
     # values. Rank order is identical (the z-anchor map is monotonic);
@@ -4496,6 +4581,8 @@ def leaders():
         min_pa=min_pa, min_outs=min_outs, min_chances=min_chances,
         batting=batting, pitching=pitching,
         fielding=fielding, fielding_qual=fielding_qual,
+        pp_defense=pp_defense, pp_offense=pp_offense, pp_pitching=pp_pitching,
+        power_play_on_in_league=power_play_on_in_league,
         salaries=salaries,
         top_outings=top_outings,
         top_games=top_games,
@@ -6965,6 +7052,13 @@ def new_league_post():
                   config_id=meta_cfg_id if custom_cfg is None else "custom",
                   config=custom_cfg)
     set_active_league_meta(rng_seed, meta_cfg_id)
+
+    # Power Play (optional rule) — opt-in at league creation via the checkbox
+    # on new_league.html. Stamp it onto every team so sim.py can read the
+    # per-league flag at game time. Applies to whichever config (preset or
+    # custom) was just seeded; off by default leaves the column at 0.
+    if request.form.get("power_play_enabled"):
+        db.execute("UPDATE teams SET power_play_enabled = 1")
 
     # Optional pre-season auction. Opt-in at league creation via the
     # checkbox on new_league.html; works for any preset or custom config

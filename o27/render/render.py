@@ -119,6 +119,11 @@ class Renderer:
         # observed in-progress AB number (changes when prior AB completed).
         self._pa_log: list[dict] = []
         self._batter_current_ab: dict = {}      # batter_id -> in-progress ab number
+        # Power Play pitcher accumulator (keyed by pitcher player_id). Window
+        # counters (pp_*) accrue only while the pitcher's defense had its nickel
+        # deployed behind him; total BIP counters accrue
+        # always, so sim.py can build the BABIP split (with-nickel vs without).
+        self._pp_pitcher: dict[str, dict] = {}
         self._batter_swing_idx: dict = {}       # batter_id -> swing_idx within current ab
         # Pesäpallo-style per-PA advancement tracking. At PA start we
         # snapshot which runners were on which bases; during the PA we
@@ -228,8 +233,26 @@ class Renderer:
         # Build the template context dict (all display values pre-computed).
         disp = self._build_disp(event, ctx, state_after)
 
-        # Update batter stats.
+        # Update batter stats. When the batting team is facing an active nickel
+        # window (short-handed), mirror whatever pa/ab/hits this event credits
+        # into the batter's short-handed counters via a before/after delta —
+        # avoids instrumenting every outcome branch in _update_stats.
+        _sh = bool(getattr(state_after, "power_play_sh_active", False))
+        _sh_s = self._get_stats(batter) if _sh else None
+        _sh_before = ((_sh_s.pa, _sh_s.ab, _sh_s.hits, _sh_s.k, _sh_s.bb,
+                       _sh_s.outs_recorded) if _sh else None)
         self._update_stats(event, ctx, state_after, disp)
+        if _sh:
+            _sh_s.sh_pa   += _sh_s.pa   - _sh_before[0]
+            _sh_s.sh_ab   += _sh_s.ab   - _sh_before[1]
+            _sh_s.sh_hits += _sh_s.hits - _sh_before[2]
+        # Power Play pitcher: when short-handed is active, ctx["pitcher"] IS the
+        # fielding pitcher with the nickel deployed behind him.
+        # Window counters come from the same batter deltas (BF = pa delta, etc.);
+        # total BIP counters accrue on every ball-in-play regardless of window so
+        # the BABIP split can be computed downstream.
+        self._credit_pp_pitcher(event, ctx, disp, _sh,
+                                _sh_before, _sh_s)
 
         # Render via Jinja2 template.
         tmpl = self._env.get_template("play_by_play.j2")
@@ -879,6 +902,48 @@ class Renderer:
                 player_id=player.player_id, name=player.name
             )
         return self._batter_stats[player.player_id]
+
+    # Hit types that count as a ball-in-play hit for pitcher BABIP (HR excluded).
+    _PP_BIP_HITS = frozenset(("single", "infield_single", "double", "triple"))
+    # All ball-in-play hit_types (hits + outs on contact), i.e. the BABIP
+    # denominator. HR and errors are excluded from BABIP by convention.
+    _PP_BIP_ALL = frozenset(("single", "infield_single", "double", "triple",
+                             "ground_out", "fly_out", "line_out",
+                             "fielders_choice"))
+
+    def _credit_pp_pitcher(self, event, ctx, disp, sh, sh_before, sh_s) -> None:
+        """Accumulate Power Play pitcher counters keyed by the fielding pitcher.
+
+        Window counters (pp_*) only accrue while `sh` is True (the nickel was
+        deployed behind him); BF/K/BB/outs are read from the batter's stat
+        deltas captured around _update_stats. Total BIP counters (tot_*) accrue
+        on every ball-in-play regardless of window, so the BABIP split
+        (with-nickel vs without) is computable in sim.py.
+        """
+        pitcher = ctx.get("pitcher")
+        if pitcher is None:
+            return
+        rec = self._pp_pitcher.setdefault(pitcher.player_id, {
+            "pp_bf": 0, "pp_outs": 0, "pp_k": 0, "pp_bb": 0,
+            "pp_bip": 0, "pp_bip_hits": 0, "tot_bip": 0, "tot_bip_hits": 0,
+        })
+        # Ball-in-play classification (independent of the window) for BABIP.
+        if event.get("type") == "ball_in_play":
+            ht = disp.get("hit_type", "")
+            if ht in self._PP_BIP_ALL:
+                rec["tot_bip"] += 1
+                if ht in self._PP_BIP_HITS:
+                    rec["tot_bip_hits"] += 1
+                if sh:
+                    rec["pp_bip"] += 1
+                    if ht in self._PP_BIP_HITS:
+                        rec["pp_bip_hits"] += 1
+        # Window counting stats from the batter deltas (BF = a completed PA).
+        if sh and sh_before is not None:
+            rec["pp_bf"]   += sh_s.pa            - sh_before[0]
+            rec["pp_k"]    += sh_s.k             - sh_before[3]
+            rec["pp_bb"]   += sh_s.bb            - sh_before[4]
+            rec["pp_outs"] += sh_s.outs_recorded - sh_before[5]
 
     def _pick_dp_pivot(self, state_after, exclude_id):
         """Pick an infielder distinct from `exclude_id` to credit the

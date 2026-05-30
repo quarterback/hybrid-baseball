@@ -650,6 +650,14 @@ class GameState:
     power_play_presence: float = 0.0
     pp_presence_originals: list = field(default_factory=list)
     pp_presence_active: bool = False
+    # Snapshotted once per AB (at PA start, after the deploy check): True when
+    # the batting team is facing an active nickel window. Read by the renderer
+    # to charge the batter's short-handed offense counters for the whole PA.
+    power_play_sh_active: bool = False
+    # Nickel saves attributed to the FIELDING pitcher on the mound (the one
+    # with the nickel behind him): {pitcher_id: {"xbh_saved", "hits_saved"}}.
+    # Folded into the Power Play pitcher rows by sim.py.
+    pp_pitcher_support: dict = field(default_factory=dict)
 
     # --- Joker insertion override ---
     # When the manager inserts a joker, this field holds the joker Player

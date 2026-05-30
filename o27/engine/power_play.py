@@ -69,6 +69,22 @@ def clear_window(state: GameState) -> None:
     state.power_play_presence = 0.0
 
 
+def short_handed_for_batting(state: GameState) -> bool:
+    """True when the team currently batting is facing an active nickel window
+    (the defense deployed its 10th man). From the offense's point of view this
+    is the "short-handed" condition — a man down against a loaded defense.
+
+    Evaluated at PA start (once per AB) and snapshotted onto
+    state.power_play_sh_active so the per-batter short-handed counters are
+    charged for the whole PA even if its final out closes the window.
+    """
+    if not is_window_active(state):
+        return False
+    fielding = state.fielding_team
+    return fielding is not None and fielding.team_id == getattr(
+        state, "power_play_deploy_team_id", None)
+
+
 def is_window_active(state: GameState) -> bool:
     """True while the nickel is on the field."""
     open_out = getattr(state, "power_play_open_out", None)
@@ -351,6 +367,7 @@ def apply_nickel_defense(
     if hit_type in ("double", "triple"):
         if rng.random() < cfg.POWER_PLAY_XBH_HELD_PROB:
             fielding.pp_xbh_held = int(getattr(fielding, "pp_xbh_held", 0) or 0) + 1
+            _credit_pitcher_support(state, "xbh_saved")
             return "single", True, False, False
         return hit_type, batter_safe, caught_fly, False
 
@@ -358,10 +375,24 @@ def apply_nickel_defense(
     if hit_type == "single":
         if rng.random() < cfg.POWER_PLAY_SINGLE_OUT_PROB:
             fielding.pp_hits_converted = int(getattr(fielding, "pp_hits_converted", 0) or 0) + 1
+            _credit_pitcher_support(state, "hits_saved")
             return "fly_out", False, True, True
         return hit_type, batter_safe, caught_fly, False
 
     return hit_type, batter_safe, caught_fly, False
+
+
+def _credit_pitcher_support(state: GameState, key: str) -> None:
+    """Attribute a nickel save (an XBH held to a single, or a single run down
+    for an out) to the FIELDING pitcher on the mound — the pitcher with the
+    nickel behind him. Keyed by pitcher_id on state.pp_pitcher_support; sim.py
+    folds it into the Power Play pitcher rows."""
+    pid = getattr(state, "current_pitcher_id", None)
+    if pid is None:
+        return
+    support = state.pp_pitcher_support.setdefault(
+        pid, {"xbh_saved": 0, "hits_saved": 0})
+    support[key] += 1
 
 
 # ---------------------------------------------------------------------------
