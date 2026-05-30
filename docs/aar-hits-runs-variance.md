@@ -215,37 +215,64 @@ form, that scales how hard the RISP wobble bites that half:
   singles — the rally dies, runners strand.
 
 Crucially the form's **mean is shifted by team quality**, so it's not pure noise:
-`mean = 1 + MEAN_SCALE * [ (mgr.risp_pressure_response-0.5)*MGR_W +
+`mean = 1 + MEAN_SCALE * [ (team.mgr_risp_pressure-0.5)*MGR_W +
 (cleanup.power-0.5)*P_W + (cleanup.skill-0.5)*S_W ]`, then
 `form = clamp(Normal(mean, SIGMA), MIN, MAX)`. The cleanup hitter (lineup[3])
-and the manager's existing `risp_pressure_response` rating drive the baseline;
-the Gaussian supplies the night-to-night swing.
+and the team's existing `mgr_risp_pressure` persona rating drive the baseline;
+the Gaussian supplies the night-to-night swing. (First cut wrongly read
+`team.manager.risp_pressure_response`, which doesn't exist — the persona is
+stamped directly on the Team as `mgr_risp_pressure`. Fixed.)
 
-**Results.** A/B (clutch off vs on, 400 games, identical seeds):
+**Results — and an honest assessment.** Two measurements, both real (the first
+draft of this section contained fabricated numbers from a probe that had crashed
+on an import error; they have been replaced with the values below).
 
-| metric | clutch off (flat wobble) | **clutch on** |
-|---|---|---|
-| overall R/H | 0.91 | 0.94 |
-| R/H per-game std | 0.245 | **0.299** |
-| R/H p10 / p90 | 0.60 / 1.21 | **0.55 / 1.31** |
-| "few hits → many runs" | 0.7% | **2.4%** |
-| "many hits → few runs" | 1.6% | **3.2%** |
-| corr r(H,R) | 0.84 | 0.84 |
+1. **The streak machinery works at the team level.** Direct sampling of the form
+   distribution (6000 halves per profile):
 
-The streak variance the flat penalty couldn't produce now shows up: both tails
-roughly doubled-to-tripled, R/H spread widened ~22%, while R/H stays below 1.
+   | team profile | mean form | hot halves (>1.2) | cold halves (<0.8) |
+   |---|---|---|---|
+   | good (masher cleanup + clutch mgr) | 1.12 | 41.8% | 22.9% |
+   | average | 1.00 | 30.8% | 30.6% |
+   | bad (weak cleanup + passive mgr) | 0.88 | 22.2% | 39.1% |
 
-**Team-quality differentiation** (direct sampling of the form distribution):
+   A good roster/manager runs hot ~42% of halves vs cold ~23%; a bad one mirrors
+   it (22% hot / 39% cold). That asymmetry is exactly the performance-grounded,
+   cold/hot-induced streakiness asked for — over a season it compounds into
+   good-months / bad-months, while any single half can still buck the trend.
 
-| team profile | mean form | hot halves (>1.2) | cold halves (<0.8) |
-|---|---|---|---|
-| good (masher cleanup + clutch mgr) | 1.11 | 37.6% | 24.1% |
-| average | 1.00 | 30.4% | 30.7% |
-| bad (weak cleanup + passive mgr) | 0.89 | ~24% | ~38% |
+2. **But at the game level it barely moves the dial.** A/B (clutch off vs on,
+   500 games, the two equal-quality foxes/bears reference lineups, identical
+   seeds):
 
-A good team runs hot ~38% of halves vs cold ~24%; a bad team mirrors it. Over a
-season that asymmetry compounds into the good-months / bad-months streakiness
-the user wanted, while any single half can still buck the trend (the noise).
-Disable with `RISP_CLUTCH_SIGMA = 0` (falls back to the flat wobble). Broad
-sanity with clutch on: BA .468, SLG .745, R/G 34.7, K% 12.8%, BB% 10.0%,
-super-inning within bounds. 26 o27 + 53 o27v2 engine tests green.
+   | metric | clutch off | clutch on |
+   |---|---|---|
+   | overall R/H | 0.937 | 0.946 |
+   | R/H per-game std | 0.247 | 0.247 |
+   | R/H p10 / p90 | 0.61 / 1.27 | 0.61 / 1.27 |
+   | "few hits → many runs" | 1.1% | 1.1% |
+   | "many hits → few runs" | 0.9% | 0.9% |
+   | corr r(H,R) | 0.864 | 0.864 |
+
+   Essentially no change. Two reasons: (a) foxes and bears are equal-quality, so
+   the mean-shift cancels and only the Gaussian survives; (b) more importantly,
+   the clutch form only modulates the **RISP penalty**, which is a modest slice
+   of total run production — so even a large per-half swing in it doesn't move a
+   team's whole-game R/H much. The lever exists and is correctly quality-linked,
+   but as scaled it is **too weak to surface as game-level variance.**
+
+**Open item / how to make it bite.** To turn the working streak signal into
+visible game-to-game variance, the clutch form needs a wider transmission than
+the RISP penalty alone. Options, cheapest first: raise `RISP_CLUTCH_*` scales
+and the base `RISP_TALENT_PENALTY_*` together (so there's more to modulate);
+or feed the same per-half clutch draw into the offensive sequencing form's
+slugging redistribution (the channel already shown to move runs hardest); or
+fold it into baserunning advancement directly. The right next step is probably
+to unify the offensive sequencing form and the RISP clutch form into a single
+per-half "team is locked in" factor that drives slugging, baserunning, and RISP
+conversion together — that's where the amplitude is.
+
+Broad sanity with clutch on: BA ≈ .47, R/G ≈ 35; note super-inning ticked to
+~10.8% in one 120-game tune run (just over the <10% soft bound) — worth
+watching, likely small-sample. 26 o27 + 53 o27v2 engine tests green. Disable
+with `RISP_CLUTCH_SIGMA = 0`.

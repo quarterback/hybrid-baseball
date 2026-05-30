@@ -1274,8 +1274,9 @@ def _risp_clutch_form(rng: random.Random, state: GameState) -> float:
     half = getattr(state, "half", None)
     if getattr(state, "_risp_clutch_half", object()) != half:
         team = getattr(state, "batting_team", None)
-        mgr = getattr(team, "manager", None)
-        risp_resp = float(getattr(mgr, "risp_pressure_response", 0.5) or 0.5)
+        # Team-level manager persona knob (see state.Team.mgr_risp_pressure).
+        # 0.5 = neutral; higher = a skipper whose clubs convert in the clutch.
+        risp_resp = float(getattr(team, "mgr_risp_pressure", 0.5) or 0.5)
         # Cleanup hitter = 4th in the order; fall back to neutral if unset.
         lineup = list(getattr(team, "lineup", []) or [])
         cleanup = lineup[3] if len(lineup) >= 4 else None
