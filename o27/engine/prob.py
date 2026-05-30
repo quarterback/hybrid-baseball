@@ -2042,7 +2042,6 @@ def resolve_contact(
                     caught_fly = False
                     shift_effect = "hit_lost"
 
-<<<<<<< HEAD
     # ---- Defensive gem -----------------------------------------------------
     # A fielder turns a would-be hit into an out with a spectacular play.
     # Per-FIELDER + probabilistic: a base rate lets anyone in the position with
@@ -2094,13 +2093,13 @@ def resolve_contact(
             caught_fly = gem_caught
             gem_effect = gem_label
             gem_fielder_id = gem_fid
-=======
+
     # Power Play (optional rule): while the nickel fielder is on the field, the
     # extra outfielder cuts off gaps — some XBH drop to singles and some
-    # shallow outfield singles get run down for outs.
+    # shallow outfield singles get run down for outs. Runs after the gem so a
+    # robbed hit isn't double-converted.
     hit_type, batter_safe, caught_fly, nickel_putout = power_play.apply_nickel_defense(
         rng, state, hit_type, batter_safe, caught_fly)
->>>>>>> origin/main
 
     # Error chance — only on plays that resolved as an out. Worse defense =
     # higher error rate. Caught flies don't generate errors at this layer
@@ -2148,13 +2147,6 @@ def resolve_contact(
 
     # Per-fielder play attribution. Stamps the fielder_id of the player
     # credited with this play (PO for outs, E for errors). Returns None
-<<<<<<< HEAD
-    # for hits — those don't get a fielder credit.
-    fielder_id = _select_fielder(rng, hit_type, fielding)
-    # A defensive gem credits the specific fielder who made the play.
-    if gem_fielder_id is not None:
-        fielder_id = gem_fielder_id
-=======
     # for hits — those don't get a fielder credit. While a Power Play window
     # is active the nickel fielder picks up the plays he makes (logged as NF).
     nickel_id = power_play.nickel_putout_for(state, hit_type, rng, nickel_putout)
@@ -2163,7 +2155,10 @@ def resolve_contact(
         power_play.credit_nickel_putout(state)
     else:
         fielder_id = _select_fielder(rng, hit_type, fielding)
->>>>>>> origin/main
+    # A defensive gem credits the specific fielder who made the spectacular play
+    # (takes precedence over the generic/nickel pick).
+    if gem_fielder_id is not None:
+        fielder_id = gem_fielder_id
 
     return {
         "hit_type": hit_type,
@@ -2178,12 +2173,9 @@ def resolve_contact(
         "fielder_id": fielder_id,
         "quality": quality,
         "shift_effect": shift_effect,
-<<<<<<< HEAD
         "gem_effect": gem_effect,
-=======
         "nickel_play": nickel_id is not None,
         "fielder_pos": power_play.NICKEL_POS if nickel_id is not None else None,
->>>>>>> origin/main
     }
 
 
