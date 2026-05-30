@@ -1262,11 +1262,13 @@ def _risp_clutch_form(rng: random.Random, state: GameState) -> float:
     (RISP_CLUTCH_SIGMA <= 0). >1 = the lineup is clicking with runners on;
     <1 = the rally keeps dying.
 
-    The mean is shifted by team quality (manager risp_pressure_response +
-    cleanup hitter power/skill) so good teams run hot more often than bad ones
-    — performance-based streaks, not pure noise — then a Gaussian draw supplies
-    the night-to-night hot/cold swing. Rolled lazily off the same rng stream as
-    the rest of contact resolution, so it stays seed-deterministic.
+    The mean is shifted by team quality so good teams run hot more often than
+    bad ones — performance-based streaks, not pure noise — then a Gaussian draw
+    supplies the night-to-night hot/cold swing. The quality anchor is the team's
+    BEST HITTER (the strongest power+skill bat in the lineup, wherever he hits),
+    with the manager persona as a small "vibes" nudge on top. Rolled lazily off
+    the same rng stream as the rest of contact resolution, so it stays
+    seed-deterministic.
     """
     sigma = getattr(cfg, "RISP_CLUTCH_SIGMA", 0.0)
     if not sigma or sigma <= 0.0:
@@ -1274,18 +1276,22 @@ def _risp_clutch_form(rng: random.Random, state: GameState) -> float:
     half = getattr(state, "half", None)
     if getattr(state, "_risp_clutch_half", object()) != half:
         team = getattr(state, "batting_team", None)
-        # Team-level manager persona knob (see state.Team.mgr_risp_pressure).
-        # 0.5 = neutral; higher = a skipper whose clubs convert in the clutch.
-        risp_resp = float(getattr(team, "mgr_risp_pressure", 0.5) or 0.5)
-        # Cleanup hitter = 4th in the order; fall back to neutral if unset.
+        # Performance anchor: the team's best hitter, scored as a power/skill
+        # blend, taken as the MAX over the lineup — the streak rides on whether
+        # the club has a real bat to carry it, not on a fixed lineup slot.
         lineup = list(getattr(team, "lineup", []) or [])
-        cleanup = lineup[3] if len(lineup) >= 4 else None
-        c_power = float(getattr(cleanup, "power", 0.5) or 0.5)
-        c_skill = float(getattr(cleanup, "skill", 0.5) or 0.5)
+        best = 0.5
+        if lineup:
+            best = max(
+                cfg.RISP_CLUTCH_BAT_POWER_W * float(getattr(p, "power", 0.5) or 0.5)
+                + cfg.RISP_CLUTCH_BAT_SKILL_W * float(getattr(p, "skill", 0.5) or 0.5)
+                for p in lineup
+            )
+        # Manager persona = the small vibes nudge (see Team.mgr_risp_pressure).
+        risp_resp = float(getattr(team, "mgr_risp_pressure", 0.5) or 0.5)
         quality = (
-            (risp_resp - 0.5) * cfg.RISP_CLUTCH_MGR_W
-            + (c_power - 0.5) * cfg.RISP_CLUTCH_CLEANUP_POWER_W
-            + (c_skill - 0.5) * cfg.RISP_CLUTCH_CLEANUP_SKILL_W
+            (best - 0.5) * cfg.RISP_CLUTCH_BAT_W
+            + (risp_resp - 0.5) * cfg.RISP_CLUTCH_MGR_W
         )
         mean = 1.0 + quality * cfg.RISP_CLUTCH_MEAN_SCALE
         draw = rng.gauss(mean, sigma)

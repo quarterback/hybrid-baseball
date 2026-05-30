@@ -426,20 +426,22 @@ RISP_XBH_MED_D2S: float     = 0.40   # medium double -> single
 # real blow-it-open vs leave-em-loaded games instead of averaging out.
 #
 # The form is NOT pure noise. Its MEAN is shifted by team quality so good teams
-# get hot more often than bad ones (performance-based, but cold/hot-induced):
-#   mean = 1 + MEAN_SCALE * [ (mgr.risp_pressure_response - 0.5) * MGR_W
-#                           + (cleanup.power - 0.5)            * CLEANUP_POWER_W
-#                           + (cleanup.skill - 0.5)            * CLEANUP_SKILL_W ]
-# then form = clamp(Normal(mean, SIGMA), MIN, MAX). Over a season a good
-# roster/manager staggers hot halves into good months; a bad one tanks the same
-# way. Set RISP_CLUTCH_SIGMA <= 0 to disable (falls back to the flat penalty).
+# get hot more often than bad ones (performance-based, but cold/hot-induced).
+# The anchor is the team's BEST HITTER (max over the lineup of a power/skill
+# blend, wherever he bats), with the manager persona as a small vibes nudge:
+#   best    = max_p [ BAT_POWER_W*p.power + BAT_SKILL_W*p.skill ]
+#   quality = (best - 0.5)*BAT_W + (mgr_risp_pressure - 0.5)*MGR_W
+#   mean    = 1 + MEAN_SCALE * quality;  form = clamp(Normal(mean, SIGMA), MIN, MAX)
+# Over a season a good roster staggers hot halves into good months; a bad one
+# tanks the same way. Set RISP_CLUTCH_SIGMA <= 0 to disable (flat penalty).
 RISP_CLUTCH_SIGMA: float            = 0.45   # per-half hot/cold spread
 RISP_CLUTCH_MIN: float              = 0.12   # coldest clutch-half
 RISP_CLUTCH_MAX: float              = 1.95   # hottest clutch-half
 RISP_CLUTCH_MEAN_SCALE: float       = 0.55   # how strongly team quality moves the mean
-RISP_CLUTCH_MGR_W: float            = 0.40   # weight: manager risp_pressure_response
-RISP_CLUTCH_CLEANUP_POWER_W: float  = 0.35   # weight: cleanup hitter power
-RISP_CLUTCH_CLEANUP_SKILL_W: float  = 0.25   # weight: cleanup hitter skill
+RISP_CLUTCH_BAT_W: float            = 0.85   # weight: best hitter's quality (the anchor)
+RISP_CLUTCH_BAT_POWER_W: float      = 0.5    # best-hitter score: power share
+RISP_CLUTCH_BAT_SKILL_W: float      = 0.5    # best-hitter score: skill share
+RISP_CLUTCH_MGR_W: float            = 0.15   # weight: manager persona (small vibes nudge)
 RISP_CLUTCH_PENALTY_RELIEF: float   = 0.85   # hot-form relief on the talent penalty
 RISP_CLUTCH_XBH_RELIEF: float       = 0.90   # hot-form relief on XBH suppression
 

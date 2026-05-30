@@ -272,7 +272,42 @@ to unify the offensive sequencing form and the RISP clutch form into a single
 per-half "team is locked in" factor that drives slugging, baserunning, and RISP
 conversion together — that's where the amplitude is.
 
-Broad sanity with clutch on: BA ≈ .47, R/G ≈ 35; note super-inning ticked to
-~10.8% in one 120-game tune run (just over the <10% soft bound) — worth
-watching, likely small-sample. 26 o27 + 53 o27v2 engine tests green. Disable
+Broad sanity with clutch on: BA ≈ .47, R/G ≈ 35; super-inning 5.67% on a
+300-game run (the ~10.8% seen on 120 games was small-sample). 26 o27 + 53 o27v2
+engine tests green.
+
+## Follow-up 3 — re-anchor the clutch form on the best hitter
+
+Per user direction, the clutch form's quality anchor was changed from the
+cleanup hitter (a fixed lineup slot) to the team's **best hitter** — the max
+over the lineup of a power/skill blend, wherever he bats — with the manager
+persona demoted from a co-equal driver to a small "vibes" nudge. "It should
+just be over the best hitter on the team… based on performance and vibes,
+although vibes can help a little bit." Weights: `RISP_CLUTCH_BAT_W = 0.85`
+(performance) vs `RISP_CLUTCH_MGR_W = 0.15` (vibes).
+
+Team-quality differentiation holds with the best bat planted in slot 6 (not
+cleanup), confirming lineup slot is now irrelevant:
+
+| team profile | mean form | hot halves (>1.2) | cold halves (<0.8) |
+|---|---|---|---|
+| good (star bat + clutch mgr) | 1.10 | 39.6% | 24.6% |
+| average | 1.00 | 30.8% | 30.6% |
+| bad (no bat + passive mgr) | 0.88 | 22.2% | 39.1% |
+
+And it now shows up at the game level when teams actually differ in quality —
+a good vs bad offensive club, 300 games each (visitors measured):
+
+| club | R/g | H/g | R/H |
+|---|---|---|---|
+| good (best bat boosted, clutch mgr) | 20.4 | 16.9 | **1.21** |
+| bad (no bat, passive mgr) | 18.1 | 17.7 | **0.88** |
+
+The good club converts at R/H 1.21 while the bad club strands at 0.88 — despite
+the bad club collecting *more* hits (17.7 vs 16.9). That's a **+2.3 runs/game**
+spread driven purely by clutch conversion, which compounds into a real
+good-offense / bad-offense gap over a season. This is the "performance-based but
+cold/hot-induced" behavior the user wanted: who your best bat is (not which slot
+he hits in) determines how often the team gets hot with runners on. 26 o27 + 53
+o27v2 engine tests green. Disable
 with `RISP_CLUTCH_SIGMA = 0`.
