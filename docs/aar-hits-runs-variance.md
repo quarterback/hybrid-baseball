@@ -121,22 +121,66 @@ Per-team-per-game, 500 games:
 Broad sanity (tune.py): BA .485, SLG .835, R/G 41, K% 12.8%, BB% 9.9%,
 super-inning 6.7% (<10% ✓). All 79 non-web engine tests pass.
 
+## Follow-up — the RISP wobble (the breakthrough)
+
+After the first pass landed the hit increase but barely moved the correlation,
+the user supplied the key idea: the engine *fiats* hits from talent + dice
+**regardless of situation**, so make converting runners in scoring position a
+genuine, high-variance struggle instead of a formality. Spec, in their words:
+at RISP, knock the hitter's effective talent down ~29–41% (a per-at-bat random
+draw — "the wobble"), and make the hits that do happen "largely singles," with
+doubles/triples/HR rarer.
+
+Implemented as two situational levers (both in `o27/config.py` +
+`o27/engine/prob.py`, both individually disable-able):
+
+- **Talent wobble** (`RISP_TALENT_PENALTY_MIN/MAX`): with a runner on 2B/3B, a
+  fresh `1 - uniform(0.29, 0.41)` multiplier is folded into the batter's
+  condition term in `contact_quality`, sagging matchup, power and eye together.
+  Success simply becomes less likely, and the per-AB draw is the randomness.
+- **XBH suppression** (`RISP_XBH_*`): a sum-preserving HR/triple/double→single
+  redistribution at RISP, so runners advance station-to-station and pile up
+  rather than being driven in all at once.
+
+This is the lever that finally broke the structural floor — because it both
+makes outs *and* weakens hits exactly where the runners are, runners strand:
+
+| metric | baseline | after hit/form/DP | **+ RISP wobble** |
+|---|---|---|---|
+| mean hits / team | 14.88 | 19.62 | 17.94 |
+| overall R/H | 1.134 | 1.037 | **0.916** |
+| R/H per-game median | 1.12 | 1.00 | **0.89** |
+| corr r(H,R) | 0.888 | 0.868 | **0.830** |
+| R/H per-game std | 0.265 | 0.273 | **0.330** |
+| R/H 10th / 90th pct | 0.80 / 1.45 | 0.68 / 1.38 | **0.55 / 1.31** |
+| "few hits → many runs" | 0.9% | 1.7% | **3.1%** |
+| "many hits → few runs" | 0.2% | 1.0% | **5.5%** |
+
+Runs now sit clearly below hits (R/H 0.92), the correlation is off its ceiling,
+and both efficiency tails are real — "many hits, few runs" went from a rounding
+error (0.2%) to 1 game in 18 (5.5%). Broad sanity (tune.py): BA .411, SLG .643,
+R/G 33, K% 12.9%, BB% 10.0%, super-inning 7.3% (<10% ✓).
+
+Two walk-back tests asserted "≥1 HR in 200 hard-contact draws" against a
+fixtured runner-on-2B state — an assumption the intended RISP suppression now
+contradicts. Fixed the tests to run the HR demonstration with bases empty and
+the form pinned neutral (those features have their own coverage). All 79
+non-web engine tests pass.
+
 ## Limitations / honest take
 
 The hit increase (primary ask) is solidly delivered and the run distribution is
-meaningfully more varied (run std +33%, both efficiency tails grew, low tail
-deepened). **But the H~R *correlation* barely moved (0.888 → 0.868) and R/H is
-still ≈ 1 — and this is structural, not a tuning shortfall.** The 27-out single
-inning brings ~87% of baserunners home no matter how conversion is tuned; the
-only way to move the correlation materially is to *erase* baserunners (the DP
-lever) at rates that, pushed far enough, would make the sport feel like a
-double-play derby. Real "16 hits, 4 runs" games come from stranding runners at
-inning's end — a thing O27's format deliberately does not have.
+now genuinely varied — the RISP wobble was the lever that did it, by attacking
+the 87%-of-baserunners-score floor where the runners actually are. The H~R
+correlation still won't go to zero (0.83 floor): the no-innings format means H
+and R share a large common dependence on plate-appearance volume, and that's
+the sport, not a bug. But the "dry 1:1" feel is gone — runs are below hits, the
+ratio swings game to game, and blow-it-open and leave-em-loaded games both show
+up at realistic rates.
 
-Levers for a future pass that wants to push harder: `SEQ_FORM_SIGMA` /
-`SEQ_FORM_GIDP_SCALE` (more rally-killer variance), `GIDP_MAX_PROB`, or a
-fundamental reconsideration of whether the one-inning structure should permit
-some form of rally-ending event.
+Levers for a future pass: `RISP_TALENT_PENALTY_*` (harder/easier clutch),
+`RISP_XBH_*` (how single-only RISP hits get), `SEQ_FORM_SIGMA` /
+`SEQ_FORM_GIDP_SCALE` (rally-killer variance), `GIDP_MAX_PROB`.
 
 `scripts/measure_hr_coupling.py` is committed as the diagnostic for any future
 H~R work (Pearson r, partial-on-PA, R/H distribution, efficiency tails).

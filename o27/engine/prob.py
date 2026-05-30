@@ -538,7 +538,7 @@ def contact_quality(
     # Joker decay folds into b_cond so power_tilt and matchup both feel
     # the rating sag from successive joker insertions in one game.
     p_cond = getattr(pitcher, "today_condition", 1.0)
-    b_cond = getattr(batter,  "today_condition", 1.0) * joker_decay
+    b_cond = getattr(batter,  "today_condition", 1.0) * joker_decay * risp_penalty
     # Per-pitch quality draws — same model as _pitch_probs. Each batted-
     # ball event samples within the pitcher's static stuff/movement range.
     pv = float(getattr(pitcher, "pitch_variance", 0.0) or 0.0)
@@ -1245,6 +1245,43 @@ def _resolve_table(
         if r < cum:
             return name
     return adjusted[-1][0]
+
+
+def _is_risp(state: GameState) -> bool:
+    """Runner in scoring position — a man on 2B or 3B."""
+    b = state.bases
+    return (b[1] is not None) or (b[2] is not None)
+
+
+def _risp_talent_penalty(rng: random.Random, state: GameState) -> float:
+    """Per-at-bat batter-talent multiplier for the RISP wobble.
+
+    Returns 1.0 with no runner in scoring position. With RISP, returns
+    1 - uniform(MIN, MAX) — a fresh draw each at-bat (the "wobble"), so the
+    same hitter's effective capability sags 29-41% in the clutch. Folded into
+    contact_quality's batter-condition term, so it pulls matchup, power and eye
+    down together. Disabled when RISP_TALENT_PENALTY_MAX <= 0.
+    """
+    hi = getattr(cfg, "RISP_TALENT_PENALTY_MAX", 0.0)
+    if hi <= 0.0 or not _is_risp(state):
+        return 1.0
+    lo = getattr(cfg, "RISP_TALENT_PENALTY_MIN", 0.0)
+    return 1.0 - rng.uniform(min(lo, hi), hi)
+
+
+def _risp_xbh_edges(quality: str) -> list[tuple[str, str, float]]:
+    """Sum-preserving XBH→single edges applied when RISP — so the hits that do
+    fall in with runners on are mostly singles, not bases-clearing extra-base
+    hits. Empty (identity) for weak contact, which has no XBH to suppress."""
+    if quality == "hard":
+        return [
+            ("hr",     "single", cfg.RISP_XBH_HARD_HR2S),
+            ("triple", "single", cfg.RISP_XBH_HARD_T2S),
+            ("double", "single", cfg.RISP_XBH_HARD_D2S),
+        ]
+    if quality == "medium":
+        return [("double", "single", cfg.RISP_XBH_MED_D2S)]
+    return []
 
 
 def _batting_seq_form(rng: random.Random, state: GameState) -> float:

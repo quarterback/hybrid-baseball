@@ -378,6 +378,39 @@ SEQ_REDIST_MED_S2D: float    = 0.75  # medium single -> double
 SEQ_FORM_GIDP_SCALE: float   = 1.10
 
 # ---------------------------------------------------------------------------
+# RISP pressure ("the wobble")
+# ---------------------------------------------------------------------------
+# The engine otherwise fiats hits from talent + dice regardless of situation,
+# which — in a 27-out inning where ~87% of baserunners already score — is why
+# runs track hits ~1:1. This makes converting runners in scoring position a
+# genuine, high-variance struggle instead of a formality:
+#
+#   1. TALENT WOBBLE. With a runner on 2B or 3B, the hitter's effective
+#      capability is knocked down by a per-at-bat random draw in
+#      [RISP_TALENT_PENALTY_MIN, MAX] (≈ 29-41%). It's a multiplier folded into
+#      the batter's condition term in contact_quality, so it sags matchup, power
+#      and eye together — success (a single or more) simply becomes less likely.
+#      The per-AB draw IS the wobble: same hitter, different pressure each time.
+#   2. WEAKER HITS. When a RISP at-bat does produce a hit, it's mostly a single.
+#      A sum-preserving redistribution pulls HR/triple/double weight back into
+#      singles, so the big multi-run, bases-clearing hit is rarer with runners
+#      on — runners advance station-to-station and pile up instead of being
+#      driven in all at once.
+#
+# Together these cap RISP conversion and let a high-hit offense still strand the
+# yard. Set RISP_TALENT_PENALTY_MAX = 0.0 to disable the wobble; set the
+# RISP_XBH_* scales to 0.0 to disable the hit-type suppression.
+RISP_TALENT_PENALTY_MIN: float = 0.29   # min fraction knocked off batter talent
+RISP_TALENT_PENALTY_MAX: float = 0.41   # max fraction (per-AB uniform draw)
+
+# Sum-preserving "XBH → single" suppression at RISP. At dev 1.0 (always applied
+# when RISP), `scale` fraction of the from-row migrates into singles.
+RISP_XBH_HARD_HR2S: float   = 0.45   # hard hr     -> single
+RISP_XBH_HARD_T2S: float    = 0.55   # hard triple -> single
+RISP_XBH_HARD_D2S: float    = 0.35   # hard double -> single
+RISP_XBH_MED_D2S: float     = 0.40   # medium double -> single
+
+# ---------------------------------------------------------------------------
 # Inside-the-park home runs
 # ---------------------------------------------------------------------------
 # Modern MLB sees ~10-20 inside-the-park HRs a SEASON: small, circular,
