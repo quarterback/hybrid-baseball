@@ -1195,12 +1195,17 @@ def _resolve_table(
     speed_dev: float,
     arm_dev: float,
     has_out: bool,
+    score_shift: float = 0.0,
 ) -> str:
     """Pick an outcome from a (label, base_prob) table after applying
     speed (raises the first/score outcome) and arm (raises the out
     outcome where present) modifiers.
 
-    Identity: speed_dev = arm_dev = 0 returns the base table draw.
+    `score_shift` is an extra additive bump to the score outcome (e.g. the
+    per-half offensive sequencing form). Positive = runners more likely to
+    take the extra base / score.
+
+    Identity: speed_dev = arm_dev = score_shift = 0 returns the base table draw.
     """
     speed_shift = speed_dev * cfg.SPEED_ADVANCE_MOD * 2.0  # ±0.12 at extremes
     arm_shift   = arm_dev   * cfg.ARM_ADVANCE_MOD   * 2.0  # ±0.11 at extremes
@@ -1209,7 +1214,7 @@ def _resolve_table(
     # Last entry is "out" (if has_out) — arm pushes it up, speed down.
     adjusted = [(name, p) for name, p in table]
     score_name, score_p = adjusted[0]
-    score_p_adj = score_p + speed_shift - arm_shift
+    score_p_adj = score_p + speed_shift - arm_shift + score_shift
     score_p_adj = max(0.02, min(0.97, score_p_adj))
     adjusted[0] = (score_name, score_p_adj)
 
@@ -1242,6 +1247,27 @@ def _resolve_table(
     return adjusted[-1][0]
 
 
+def _batting_seq_form(rng: random.Random, state: GameState) -> float:
+    """The current batting half's offensive sequencing form (see config).
+
+    One draw per half, cached on the state and re-rolled whenever the half
+    label changes. Returns 1.0 (identity) when the mechanism is disabled
+    (SEQ_FORM_SIGMA <= 0). Rolled lazily off the same rng stream as the rest
+    of contact resolution, so it stays seed-deterministic.
+    """
+    half = getattr(state, "half", None)
+    if getattr(state, "_seq_form_half", object()) != half:
+        sigma = getattr(cfg, "SEQ_FORM_SIGMA", 0.0)
+        if sigma and sigma > 0.0:
+            draw = rng.gauss(1.0, sigma)
+            form = max(cfg.SEQ_FORM_MIN, min(cfg.SEQ_FORM_MAX, draw))
+        else:
+            form = 1.0
+        state._seq_form = form
+        state._seq_form_half = half
+    return getattr(state, "_seq_form", 1.0)
+
+
 def runner_advances_for_hit(
     rng: random.Random,
     hit_type: str,
@@ -1255,6 +1281,15 @@ def runner_advances_for_hit(
     were clean. Multiple TOAs on the same play are allowed (e.g. 2B-runner
     nailed at home AND 1B-runner nailed at second).
     """
+    # Per-half offensive sequencing form → additive shift on every score roll
+    # this half. This is the lever that decouples a game's runs from its hits:
+    # a hot half scores runners on contact that a cold half strands, and the
+    # shift is shared across all the half's PAs so it compounds into real
+    # game-to-game run variance instead of averaging out.
+    seq_shift = (_batting_seq_form(rng, state) - 1.0) * getattr(
+        cfg, "SEQ_FORM_SCORE_SCALE", 0.0
+    )
+
     s1 = _get_speed(bases[0], state)
     s2 = _get_speed(bases[1], state)
     s3 = _get_speed(bases[2], state)
@@ -1280,6 +1315,7 @@ def runner_advances_for_hit(
                  ("hold",  cfg.ADVANCE_3B_ON_1B_HOLD),
                  ("out",   cfg.ADVANCE_3B_ON_1B_OUT)],
                 _spd_dev(2), arm_dev, has_out=True,
+                score_shift=seq_shift,
             )
             if outcome == "score":
                 adv[2] = 1
@@ -1295,6 +1331,7 @@ def runner_advances_for_hit(
                  ("hold_3b", cfg.ADVANCE_2B_ON_1B_HOLD_3B),
                  ("out",     cfg.ADVANCE_2B_ON_1B_OUT)],
                 _spd_dev(1), arm_dev, has_out=True,
+                score_shift=seq_shift,
             )
             if outcome == "score":
                 adv[1] = 2
@@ -1332,6 +1369,7 @@ def runner_advances_for_hit(
                  ("hold_3b", cfg.ADVANCE_2B_ON_2B_HOLD_3B),
                  ("out",     cfg.ADVANCE_2B_ON_2B_OUT)],
                 _spd_dev(1), arm_dev, has_out=True,
+                score_shift=seq_shift,
             )
             if outcome == "score":
                 adv[1] = 2
@@ -1348,6 +1386,7 @@ def runner_advances_for_hit(
                  ("hold_2b",   cfg.ADVANCE_1B_ON_2B_HOLD_2B),
                  ("out",       cfg.ADVANCE_1B_ON_2B_OUT)],
                 _spd_dev(0), arm_dev, has_out=True,
+                score_shift=seq_shift,
             )
             if outcome == "score":
                 adv[0] = 3
@@ -1376,7 +1415,7 @@ def runner_advances_for_hit(
     elif hit_type in ("ground_out", "fielders_choice"):
         def _resolve(idx: int, base: int, speed: float, extra: float, br: float, ag: float) -> int:
             adv_n, thrown_out = _runner_advance(
-                rng, base, speed, extra_chance=extra,
+                rng, base, speed, extra_chance=max(0.0, extra + seq_shift),
                 baserunning=br, aggressiveness=ag,
             )
             if thrown_out and bases[idx] is not None:
@@ -1389,9 +1428,11 @@ def runner_advances_for_hit(
         return [adv1, adv2, adv3], out_idxs
 
     elif hit_type == "fly_out":
-        # Sac fly: skill matters as much as speed (timing the tag-up).
+        # Sac fly: skill matters as much as speed (timing the tag-up). The
+        # sequencing form rides on top — a hot half gets the runner home from
+        # 3B on contact, a cold half leaves him standing there.
         adv3, thrown_out = _runner_advance(
-            rng, 0, s3, extra_chance=0.55,
+            rng, 0, s3, extra_chance=max(0.0, 0.55 + seq_shift),
             baserunning=br3, aggressiveness=ag3,
         )
         if thrown_out and bases[2] is not None:
@@ -1546,6 +1587,23 @@ def _weak_edges() -> list[tuple[str, str, float]]:
     ]
 
 
+# Per-half sequencing-form redistribution edges. Much larger scales than the
+# per-batter power edges: the form is the decoupler and needs to swing the
+# single↔XBH↔HR mix hard. Sum-preserving (single→double→hr just relabels hit
+# mass), so the hit COUNT is untouched while slugging — and thus runs — moves.
+def _seq_hard_edges() -> list[tuple[str, str, float]]:
+    return [
+        ("single",   "hr",     cfg.SEQ_REDIST_HARD_S2HR),
+        ("double",   "hr",     cfg.SEQ_REDIST_HARD_D2HR),
+        ("line_out", "hr",     cfg.SEQ_REDIST_HARD_LO2HR),
+    ]
+
+def _seq_medium_edges() -> list[tuple[str, str, float]]:
+    return [
+        ("single", "double", cfg.SEQ_REDIST_MED_S2D),
+    ]
+
+
 def _pick_from_table(rng: random.Random, table: list) -> tuple:
     """Pick a row from a (name, batter_safe, caught_fly, weight) table."""
     total = sum(row[3] for row in table)
@@ -1606,6 +1664,23 @@ def resolve_contact(
         table = _redistribute(table, _medium_edges(), power_dev)
     elif quality == "weak":
         table = _redistribute(table, _weak_edges(), power_dev)
+
+    # Per-half offensive form → its OWN strong, sum-preserving single↔XBH↔HR
+    # redistribution. This is the primary H~R decoupler. The per-batter power
+    # edges above are deliberately gentle; the form needs a much wider swing to
+    # move a half's run total off its hit count, so it gets dedicated big-scale
+    # edges. A hot half turns singles into doubles and homers (runs spike, hit
+    # COUNT unchanged — a single and a homer are both one hit); a cold half
+    # leaves nothing but singles that pile up and strand. Total table weight is
+    # invariant, so this shifts slugging, not how many balls fall in.
+    seq_power_dev = (_batting_seq_form(rng, state) - 1.0) * getattr(
+        cfg, "SEQ_FORM_POWER_SCALE", 0.0
+    )
+    if seq_power_dev:
+        if quality == "hard":
+            table = _redistribute(table, _seq_hard_edges(), seq_power_dev)
+        elif quality == "medium":
+            table = _redistribute(table, _seq_medium_edges(), seq_power_dev)
 
     # Pitch launch-angle bias: roll ground_out↔fly_out weight by the pitch's
     # launch_angle_bias (sum-preserving). Negative bias (sinker, peeled_drop,
@@ -2664,12 +2739,23 @@ class ProbabilisticProvider:
         # Stay (2C) plays don't allow a true DP — the batter isn't running
         # so there's no force at 1B — but a separate reduced-rate fielders'
         # choice block below tags out the lead runner.
+        # O27 gate: NOT MLB's per-inning "< 2 outs". There are no innings —
+        # one continuous 27-out half — so the only real constraint is that the
+        # half has room to record the two outs a DP turns. Gating on `outs < 2`
+        # (the literal MLB rule) made double plays dead code for 25 of every 27
+        # outs, which is the single biggest reason ~87% of baserunners came
+        # around to score and runs tracked hits almost 1:1. Letting DPs fire all
+        # half long is the structurally-correct runner-erasing event — and the
+        # per-half form rides on top: a cold ("rally-killer") half hits into
+        # more twin-killings, a hot half stays out of them.
         if (choice == "run"
                 and outcome_dict.get("hit_type") == "ground_out"
                 and not outcome_dict.get("is_error")
                 and any(state.bases)
-                and state.outs < 2):
-            dp_p = _gidp_probability(state, batter, quality)
+                and state.outs <= state.out_cap() - 2):
+            form = _batting_seq_form(rng, state)
+            dp_form_mult = 1.0 + (1.0 - form) * getattr(cfg, "SEQ_FORM_GIDP_SCALE", 0.0)
+            dp_p = _gidp_probability(state, batter, quality) * max(0.1, dp_form_mult)
             if rng.random() < dp_p:
                 # Identify the lead force/tag-out target. Prefer 1B (force
                 # at 2B); fall back to 2B (tag at 3B), then 3B (tag at home).
@@ -2707,7 +2793,7 @@ class ProbabilisticProvider:
                 and outcome_dict.get("hit_type") == "ground_out"
                 and not outcome_dict.get("is_error")
                 and any(state.bases)
-                and state.outs < 2
+                and state.outs < state.out_cap()
                 and outcome_dict.get("runner_out_idx") is None):
             tag_p = _gidp_probability(state, batter, quality) * cfg.GIDP_STAY_MULTIPLIER
             if rng.random() < tag_p:
