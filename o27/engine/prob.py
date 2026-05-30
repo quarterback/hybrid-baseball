@@ -1197,6 +1197,7 @@ def _resolve_table(
     arm_dev: float,
     has_out: bool,
     score_shift: float = 0.0,
+    out_shift: float = 0.0,
 ) -> str:
     """Pick an outcome from a (label, base_prob) table after applying
     speed (raises the first/score outcome) and arm (raises the out
@@ -1206,7 +1207,15 @@ def _resolve_table(
     per-half offensive sequencing form). Positive = runners more likely to
     take the extra base / score.
 
-    Identity: speed_dev = arm_dev = score_shift = 0 returns the base table draw.
+    `out_shift` is an extra additive bump to the "out" (runner thrown out
+    advancing) outcome — the batted-ball texture lever. Positive = the runner
+    is more likely to be erased (a grounder draws the throw); this is what
+    actually lowers runs-per-hit, since holding a runner in a 27-out inning
+    only delays his run. A positive out_shift also lifts the out cap so the
+    texture can bite past the default 0.30 ceiling.
+
+    Identity: speed_dev = arm_dev = score_shift = out_shift = 0 returns the
+    base table draw.
     """
     speed_shift = speed_dev * cfg.SPEED_ADVANCE_MOD * 2.0  # ±0.12 at extremes
     arm_shift   = arm_dev   * cfg.ARM_ADVANCE_MOD   * 2.0  # ±0.11 at extremes
@@ -1221,8 +1230,9 @@ def _resolve_table(
 
     if has_out:
         out_name, out_p = adjusted[-1]
-        out_p_adj = out_p + arm_shift - 0.5 * speed_shift
-        out_p_adj = max(0.0, min(0.30, out_p_adj))
+        out_p_adj = out_p + arm_shift - 0.5 * speed_shift + out_shift
+        out_cap = min(0.55, 0.30 + max(0.0, out_shift))
+        out_p_adj = max(0.0, min(out_cap, out_p_adj))
         adjusted[-1] = (out_name, out_p_adj)
 
     # Whatever is left between score and out goes to the middle "hold"
@@ -1431,10 +1441,13 @@ def runner_advances_for_hit(
     seq_shift = (_batting_seq_form(rng, state) - 1.0) * getattr(
         cfg, "SEQ_FORM_SCORE_SCALE", 0.0
     )
-    # Batted-ball texture shift — a grounder single strands runners a liner
-    # single would score. Folded into the per-runner score rolls below alongside
-    # the sequencing form. Empty/unknown texture → 0.0 (identity).
+    # Batted-ball texture shifts. The SCORE shift (small) folds into the score
+    # roll below; the OUT shift is the real lever — it raises the chance a
+    # runner is thrown out advancing on a grounder, ERASING him (the only thing
+    # that lowers runs-per-hit in a 27-out inning, since a held runner just
+    # scores later). Empty/unknown texture → 0.0 (identity).
     seq_shift += getattr(cfg, "BATTED_BALL_SCORE_SHIFT", {}).get(batted_ball, 0.0)
+    bb_out = getattr(cfg, "BATTED_BALL_OUT_SHIFT", {}).get(batted_ball, 0.0)
 
     s1 = _get_speed(bases[0], state)
     s2 = _get_speed(bases[1], state)
@@ -1461,7 +1474,7 @@ def runner_advances_for_hit(
                  ("hold",  cfg.ADVANCE_3B_ON_1B_HOLD),
                  ("out",   cfg.ADVANCE_3B_ON_1B_OUT)],
                 _spd_dev(2), arm_dev, has_out=True,
-                score_shift=seq_shift,
+                score_shift=seq_shift, out_shift=bb_out,
             )
             if outcome == "score":
                 adv[2] = 1
@@ -1477,7 +1490,7 @@ def runner_advances_for_hit(
                  ("hold_3b", cfg.ADVANCE_2B_ON_1B_HOLD_3B),
                  ("out",     cfg.ADVANCE_2B_ON_1B_OUT)],
                 _spd_dev(1), arm_dev, has_out=True,
-                score_shift=seq_shift,
+                score_shift=seq_shift, out_shift=bb_out,
             )
             if outcome == "score":
                 adv[1] = 2
@@ -1493,6 +1506,7 @@ def runner_advances_for_hit(
                  ("to_2b", cfg.ADVANCE_1B_ON_1B_TO_2B),
                  ("out",   cfg.ADVANCE_1B_ON_1B_OUT)],
                 _spd_dev(0), arm_dev, has_out=True,
+                out_shift=bb_out,
             )
             if outcome == "to_3b":
                 adv[0] = 2
@@ -1515,7 +1529,7 @@ def runner_advances_for_hit(
                  ("hold_3b", cfg.ADVANCE_2B_ON_2B_HOLD_3B),
                  ("out",     cfg.ADVANCE_2B_ON_2B_OUT)],
                 _spd_dev(1), arm_dev, has_out=True,
-                score_shift=seq_shift,
+                score_shift=seq_shift, out_shift=bb_out,
             )
             if outcome == "score":
                 adv[1] = 2
@@ -1532,7 +1546,7 @@ def runner_advances_for_hit(
                  ("hold_2b",   cfg.ADVANCE_1B_ON_2B_HOLD_2B),
                  ("out",       cfg.ADVANCE_1B_ON_2B_OUT)],
                 _spd_dev(0), arm_dev, has_out=True,
-                score_shift=seq_shift,
+                score_shift=seq_shift, out_shift=bb_out,
             )
             if outcome == "score":
                 adv[0] = 3

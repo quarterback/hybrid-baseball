@@ -302,6 +302,48 @@ ARM_ADVANCE_MOD: float           = 0.11
 
 RUNNER_EXTRA_SPEED_SCALE: float = 0.35
 
+# ---------------------------------------------------------------------------
+# Batted-ball texture (the "wasted hits" mechanism)
+# ---------------------------------------------------------------------------
+# A hit's TEXTURE — how it was struck — decides how productive it is. Rolled
+# from contact quality + batter power into {dribbler, grounder, liner, flyball}
+# and carried as outcome_dict["batted_ball"] (NOT a hit_type, so all the hit/AB
+# stat-counting that switches on hit_type strings is untouched). Low-power
+# contact hitters spray grounders; sluggers hit liners — player-differentiated.
+#
+# CRITICAL LESSON (learned the hard way): in O27's single continuous 27-out
+# inning, making a runner HOLD on a grounder does NOT reduce runs — there is no
+# inning-end to strand him, so he scores on a later PA (~87% of baserunners
+# score eventually). The only thing that lowers runs-per-hit is ERASING a
+# runner. So texture's run effect is primarily an additive bump to the "out"
+# (thrown-out-advancing) bucket of the advancement tables, not a score haircut.
+# All-zero shifts reproduce pre-texture behavior exactly (identity).
+BATTED_BALL_WEIGHTS = {
+    # quality:   (dribbler, grounder, liner, flyball)
+    "weak":      (0.30, 0.45, 0.20, 0.05),
+    "medium":    (0.12, 0.40, 0.38, 0.10),
+    "hard":      (0.0,  0.12, 0.53, 0.35),
+}
+BATTED_BALL_POWER_TILT: float = 0.30   # power_dev shifts grounder→liner→flyball
+
+# Additive bump to the "out" outcome (runner gunned down advancing) in the
+# single/double advancement tables, by texture. This ERASES runners → the real
+# H/R lever. Grounders/dribblers draw more throws and force plays; liners let
+# runners move cleanly (slightly negative).
+BATTED_BALL_OUT_SHIFT = {
+    "dribbler": 0.30,
+    "grounder": 0.40,
+    "liner":   -0.03,
+    "flyball":  0.00,
+}
+# Secondary score-bucket nudge (small — mostly flavor / a few held runners).
+BATTED_BALL_SCORE_SHIFT = {
+    "dribbler": -0.20,
+    "grounder": -0.12,
+    "liner":    +0.05,
+    "flyball":   0.00,
+}
+
 # Baseline extra-base attempt probability for the runner on 1B on a double.
 # Without this baseline, every double produced an identical [2, 2, 1] runner
 # advancement and runs scored were rigidly tied to the hit type — fast and
