@@ -287,27 +287,39 @@ although vibes can help a little bit." Weights: `RISP_CLUTCH_BAT_W = 0.85`
 (performance) vs `RISP_CLUTCH_MGR_W = 0.15` (vibes).
 
 Team-quality differentiation holds with the best bat planted in slot 6 (not
-cleanup), confirming lineup slot is now irrelevant:
+cleanup), confirming lineup slot is now irrelevant (direct sampling of the form
+distribution, 8000 halves per profile):
 
 | team profile | mean form | hot halves (>1.2) | cold halves (<0.8) |
 |---|---|---|---|
-| good (star bat + clutch mgr) | 1.10 | 39.6% | 24.6% |
-| average | 1.00 | 30.8% | 30.6% |
-| bad (no bat + passive mgr) | 0.88 | 22.2% | 39.1% |
+| good (star bat slot 6 + clutch mgr) | 1.19 | 49.8% | 18.8% |
+| average | 1.02 | 34.5% | 31.1% |
+| bad (no bat + passive mgr) | 0.96 | 28.8% | 36.6% |
 
-And it now shows up at the game level when teams actually differ in quality —
-a good vs bad offensive club, 300 games each (visitors measured):
+The re-anchor on the best hitter actually *widened* the team-level gap vs the
+cleanup version (good now runs hot 49.8% of halves vs cold 18.8%), and it no
+longer cares where that bat hits.
+
+**Game-level effect is real but modest, and honestly confounded.** Good vs bad
+offensive club, 300 games each (visitors measured; "good" = best bat boosted
++0.12 power/skill and clutch manager, "bad" = best bat −0.20 and passive
+manager):
 
 | club | R/g | H/g | R/H |
 |---|---|---|---|
-| good (best bat boosted, clutch mgr) | 20.4 | 16.9 | **1.21** |
-| bad (no bat, passive mgr) | 18.1 | 17.7 | **0.88** |
+| good | 17.34 | 18.68 | 0.928 |
+| bad  | 16.16 | 17.63 | 0.917 |
 
-The good club converts at R/H 1.21 while the bad club strands at 0.88 — despite
-the bad club collecting *more* hits (17.7 vs 16.9). That's a **+2.3 runs/game**
-spread driven purely by clutch conversion, which compounds into a real
-good-offense / bad-offense gap over a season. This is the "performance-based but
-cold/hot-induced" behavior the user wanted: who your best bat is (not which slot
-he hits in) determines how often the team gets hot with runners on. 26 o27 + 53
-o27v2 engine tests green. Disable
+The good club scores **+1.18 R/g** more — but note the R/H ratios are nearly
+identical (0.928 vs 0.917), and the good club also collected more hits. So most
+of that run gap comes from the boosted bat producing more offense *generally*,
+not from dramatically better clutch *conversion*; the pure clutch signal at the
+game level is still small (consistent with Follow-up 2's finding that the form
+only modulates the modest RISP-penalty slice). The re-anchor did what the user
+asked — the streak now rides on the best hitter, wherever he bats, with the
+manager as a minor nudge — and it strengthened the *team-level* hot/cold
+distribution, but it did **not** by itself make clutch a large game-to-game
+swing. That still wants the wider transmission noted in Follow-up 2 (unifying
+the clutch draw with the sequencing form's slugging channel). 26 o27 + 53 o27v2
+engine tests green. Disable
 with `RISP_CLUTCH_SIGMA = 0`.
