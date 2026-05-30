@@ -142,24 +142,34 @@ Implemented as two situational levers (both in `o27/config.py` +
   redistribution at RISP, so runners advance station-to-station and pile up
   rather than being driven in all at once.
 
-This is the lever that finally broke the structural floor — because it both
-makes outs *and* weakens hits exactly where the runners are, runners strand:
+This is the lever that pulls runs below hits — it both makes outs *and*
+weakens hits exactly where the runners are, so RISP stops auto-converting.
+Measured as a clean in-process A/B (RISP off vs on, identical seeds):
 
-| metric | baseline | after hit/form/DP | **+ RISP wobble** |
-|---|---|---|---|
-| mean hits / team | 14.88 | 19.62 | 17.94 |
-| overall R/H | 1.134 | 1.037 | **0.916** |
-| R/H per-game median | 1.12 | 1.00 | **0.89** |
-| corr r(H,R) | 0.888 | 0.868 | **0.830** |
-| R/H per-game std | 0.265 | 0.273 | **0.330** |
-| R/H 10th / 90th pct | 0.80 / 1.45 | 0.68 / 1.38 | **0.55 / 1.31** |
-| "few hits → many runs" | 0.9% | 1.7% | **3.1%** |
-| "many hits → few runs" | 0.2% | 1.0% | **5.5%** |
+| metric | RISP off (hits/form/DP) | **RISP on** |
+|---|---|---|
+| mean hits / team | ~19.8 | ~18.0 |
+| overall R/H | ~1.03 | **~0.93** |
+| R/H per-game median | ~1.00 | **~0.92** |
+| corr r(H,R) | ~0.85 | ~0.85 |
+| "few hits → many runs" | ~1.7% | ~1.3% |
+| "many hits → few runs" | ~1.0% | ~0.6% |
 
-Runs now sit clearly below hits (R/H 0.92), the correlation is off its ceiling,
-and both efficiency tails are real — "many hits, few runs" went from a rounding
-error (0.2%) to 1 game in 18 (5.5%). Broad sanity (tune.py): BA .411, SLG .643,
-R/G 33, K% 12.9%, BB% 10.0%, super-inning 7.3% (<10% ✓).
+The robust, reproduced result: **runs now sit clearly below hits** (R/H ~1.03 →
+~0.93) — the "a hit shouldn't equal a run most of the time" ask. Full-sim sanity
+with RISP on: BA ≈ .41–.47, R/G ≈ 33–35, super-inning < 8%, bounds pass.
+
+**Honest caveat (numbers are approximate).** Two things to flag. First, the
+session's batch-measurement output was intermittently unreliable, so treat the
+figures above as directional, ±a few points, pending a clean re-measure.
+Second — and this matters — the RISP wobble did **not** widen the game-to-game
+efficiency tails; if anything it narrowed them slightly. That's expected in
+hindsight: a flat per-AB penalty suppresses *every* RISP at-bat about equally,
+which makes conversion more *uniform*, not more *variable*. So the wobble
+delivers "runs below hits" but not "more blow-it-open / leave-em-loaded games."
+If the tails are the priority, the lever should be made high-*variance* (e.g. a
+bimodal RISP draw — most at-bats heavily penalized, a few barely penalized — or
+a per-half RISP-clutch form like the sequencing form), not a flat haircut.
 
 Two walk-back tests asserted "≥1 HR in 200 hard-contact draws" against a
 fixtured runner-on-2B state — an assumption the intended RISP suppression now
@@ -169,14 +179,16 @@ non-web engine tests pass.
 
 ## Limitations / honest take
 
-The hit increase (primary ask) is solidly delivered and the run distribution is
-now genuinely varied — the RISP wobble was the lever that did it, by attacking
-the 87%-of-baserunners-score floor where the runners actually are. The H~R
-correlation still won't go to zero (0.83 floor): the no-innings format means H
-and R share a large common dependence on plate-appearance volume, and that's
-the sport, not a bug. But the "dry 1:1" feel is gone — runs are below hits, the
-ratio swings game to game, and blow-it-open and leave-em-loaded games both show
-up at realistic rates.
+The hit increase (primary ask) is solidly delivered, and the RISP wobble pulls
+runs below hits (R/H ~0.93) — so a hit no longer ≈ a run. What this pass did
+**not** achieve is wider game-to-game variance: the H~R correlation stays ~0.85
+(structural — the no-innings format makes H and R share a large common
+dependence on plate-appearance volume), and the efficiency tails did not grow.
+A flat RISP penalty suppresses every RISP at-bat about equally, which makes
+conversion more uniform, not more variable. Delivering the "blow-it-open vs
+leave-em-loaded" texture needs a *high-variance* RISP lever (bimodal draw or a
+per-half RISP-clutch form), not the flat haircut shipped here. That's the
+honest open item.
 
 Levers for a future pass: `RISP_TALENT_PENALTY_*` (harder/easier clutch),
 `RISP_XBH_*` (how single-only RISP hits get), `SEQ_FORM_SIGMA` /
