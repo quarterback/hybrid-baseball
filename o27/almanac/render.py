@@ -422,11 +422,19 @@ def _streak_badge(p: dict) -> dict | None:
         tier = 2
     if hot:
         label = ("Heating Up", "Hot", "Scorching")[tier]
-        icon = "\U0001F525"          # 🔥
+        icon = (
+            "\U0001F975",                 # 🥵 heating up
+            "\U0001F426‍\U0001F525", # 🐦‍🔥 hot (phoenix)
+            "☄️",               # ☄️ scorching (comet)
+        )[tier]
         cls = "streak-hot"
     else:
         label = ("Cooling Off", "Cold", "Ice Cold")[tier]
-        icon = "\U0001F9CA"          # 🧊
+        icon = (
+            "❄️",               # ❄️ cooling off (snowflake)
+            "\U0001F976",                 # 🥶 cold
+            "\U0001F9CA",                 # 🧊 ice cold
+        )[tier]
         cls = "streak-cold"
     wk = weeks + 1                    # human-friendly "in week N"
     return {
