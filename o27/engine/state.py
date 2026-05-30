@@ -391,6 +391,9 @@ class Team:
     # Catcher's arm rating, stamped at game start. Drives SB-success
     # suppression. 0.5 = neutral.
     catcher_arm:    float = 0.5
+    # Outs caught by the current catcher this game (fatigue accumulator). Resets
+    # to 0 when the manager rotates a fresh catcher in. Drives game-calling decay.
+    catcher_outs_caught: int = 0
 
     # Manager persona — stamped at game start from the team row. 0.5 = neutral.
     # Re-rolled per league seed (see o27v2/managers.py). The engine's

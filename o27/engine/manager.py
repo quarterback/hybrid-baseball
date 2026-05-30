@@ -1509,6 +1509,57 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     return {"player_out": worst, "player_in": best_cand}
 
 
+def should_swap_catcher(state: GameState, rng=None) -> Optional[dict]:
+    """Rotate a tiring catcher out for a fresh one from the catching corps.
+
+    No catcher squats for all 27 outs — as outs pile up his game-calling
+    decays (see prob._catcher_gc_shift). When he's gassed and the bench holds a
+    credible reserve catcher, the manager spends him. How a club prioritizes
+    its catchers (start the best caller, hold a defender for the late innings)
+    swings the back third of a game.
+
+    Returns {'player_out': tired_catcher, 'player_in': fresh_catcher} or None.
+    Inert for rosters that carry no reserve catcher (bench empty) — same as
+    should_defensive_sub.
+    """
+    if state.is_super_inning or state.in_seconds_phase:
+        return None
+    if state.outs < getattr(cfg, "CATCHER_ROTATION_OUT_GATE", 6):
+        return None
+    fielding = state.fielding_team
+
+    # Fatigue gate — only rotate once the current catcher is actually tiring.
+    outs_caught = int(getattr(fielding, "catcher_outs_caught", 0) or 0)
+    if outs_caught <= getattr(cfg, "CATCHER_FATIGUE_THRESHOLD", 18):
+        return None
+
+    # Current catcher = lineup's best defense_catcher non-pitcher.
+    lineup = list(fielding.lineup)
+    in_lineup_catchers = [pl for pl in lineup if not pl.is_pitcher]
+    if not in_lineup_catchers:
+        return None
+    current = max(in_lineup_catchers,
+                  key=lambda pl: float(getattr(pl, "defense_catcher", 0.5) or 0.5))
+
+    # Reserve catcher = best defense_catcher among available bench (roster not
+    # in lineup, non-pitcher, non-joker). Must be a credible catcher.
+    lineup_ids = {pl.player_id for pl in lineup}
+    bench = [
+        pl for pl in fielding.roster
+        if not pl.is_pitcher
+        and pl.player_id not in lineup_ids
+        and fielding.is_available(pl.player_id)
+        and not _is_joker(pl)
+    ]
+    if not bench:
+        return None
+    fresh = max(bench, key=lambda pl: float(getattr(pl, "defense_catcher", 0.5) or 0.5))
+    if float(getattr(fresh, "defense_catcher", 0.5) or 0.5) < 0.5:
+        return None  # no credible reserve catcher on the bench
+
+    return {"player_out": current, "player_in": fresh}
+
+
 def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Player]:
     """Mid-batting-half offensive→defensive swap — routed through the
     unified leverage trigger.

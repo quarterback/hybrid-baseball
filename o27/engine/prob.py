@@ -538,9 +538,10 @@ def _catcher_gc_shift(state) -> float:
     if c is None:
         return 0.0
     gc = float(getattr(c, "game_calling", 0.5) or 0.5)
-    # Fatigue decay — a gassed catcher calls a worse game. catcher_outs_caught
-    # is accumulated per out (catcher-rotation pass); absent/zero → no decay.
-    outs = int(getattr(state, "catcher_outs_caught", 0) or 0)
+    # Fatigue decay — a gassed catcher calls a worse game. The fielding team's
+    # catcher_outs_caught accumulates per out behind the plate; absent → no decay.
+    outs = int(getattr(getattr(state, "fielding_team", None),
+                       "catcher_outs_caught", 0) or 0)
     thr = getattr(cfg, "CATCHER_FATIGUE_THRESHOLD", 10 ** 9)
     if outs > thr:
         fatigue = min(getattr(cfg, "CATCHER_FATIGUE_MAX", 0.0),
@@ -2600,6 +2601,18 @@ class ProbabilisticProvider:
                 "type": "defensive_sub",
                 "player_out": def_sub["player_out"],
                 "player_in":  def_sub["player_in"],
+            }
+
+        # Catcher rotation — pull a gassed catcher for a fresh one from the
+        # corps. Reuses the defensive_sub event/handler; resets the fatigue
+        # accumulator so the new catcher starts rested.
+        cat_swap = mgr.should_swap_catcher(state, rng=self.rng)
+        if cat_swap is not None:
+            state.fielding_team.catcher_outs_caught = 0
+            return {
+                "type": "defensive_sub",
+                "player_out": cat_swap["player_out"],
+                "player_in":  cat_swap["player_in"],
             }
 
         # Pinch runner — late-game, close score, slow runner on base.

@@ -156,6 +156,13 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
     state.outs += 1
     state.pitcher_outs_this_spell += 1
 
+    # Catcher workload — the team in the field is squatting every pitch. Tally
+    # outs caught by the current catcher so fatigue degrades their game-calling
+    # and forces a rotation (reset to 0 on a catcher swap).
+    _fld = state.fielding_team
+    if _fld is not None:
+        _fld.catcher_outs_caught = int(getattr(_fld, "catcher_outs_caught", 0) or 0) + 1
+
     # Walk-Back resolution: if the runner being retired is a live Walk-Back
     # runner, his fate is settled as a STOP — tick wb_faced (charged to the
     # pitcher on the mound) and drop him from tracking so _reconcile_walk_back

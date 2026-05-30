@@ -809,6 +809,18 @@ GEM_MAX: float           = 0.42   # cap — even elite fielders don't rob everyt
 # pitch-and-catch club. (NOT framing — O27 skips framing by design.)
 CATCHER_GAME_CALLING_SHIFT_SCALE: float = 0.16   # (gc-0.5)*2 * this → contact shift
 
+# Catcher fatigue + rotation. No catcher squats for all 27 outs — as the outs
+# pile up behind the plate his game-calling slips, which is the PRESSURE that
+# forces a manager to spend a bench catcher. Fatigue ramps once outs caught
+# pass the threshold; it degrades game_calling (and could be extended to arm).
+# A manager with a rested backup rotates the tiring starter out; how a club
+# prioritizes its catching corps swings the late innings.
+CATCHER_FATIGUE_THRESHOLD: int           = 18    # outs caught before fatigue bites
+CATCHER_FATIGUE_SCALE: float             = 9.0   # (outs-threshold)/this → fatigue
+CATCHER_FATIGUE_MAX: float               = 0.80  # cap on the fatigue fraction
+CATCHER_FATIGUE_GAME_CALLING_SCALE: float = 0.30 # fatigue * this drops game_calling
+CATCHER_ROTATION_OUT_GATE: int           = 6     # no swap before this (first-batter guard)
+
 # ---------------------------------------------------------------------------
 # Emergency position-player pitcher (PP-pitching)
 # ---------------------------------------------------------------------------
