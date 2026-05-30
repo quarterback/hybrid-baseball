@@ -9,12 +9,19 @@
 ## The problem this solves
 
 There are currently **two independent per-half random draws** in
-`o27/engine/prob.py`, both rolled once at the top of each batting half:
+`o27/engine/prob.py`. Both use the *identical* mechanism — one Gaussian draw,
+clamped, lazily cached on `state` and re-rolled when the `(inning, half)` label
+changes (no explicit half-start hook; first contact-resolution call in the half
+triggers the draw):
 
-| draw | fn | anchor | channels it drives |
-|---|---|---|---|
-| sequencing form | `_sequencing_form` | lineup average (`_team_off_quality`) | single↔XBH↔HR redistribution, baserunner score-roll shift, GIDP rate |
-| RISP clutch form | `_risp_clutch_form` | **best hitter** (`_team_best_hitter_quality`) + manager vibes | RISP talent penalty, RISP XBH suppression |
+| draw | fn (line) | cache keys | anchor | channels it drives |
+|---|---|---|---|---|
+| sequencing form | `_batting_seq_form` (1295) | `state._seq_form` / `._seq_form_half` | flat mean 1.0 | single↔XBH↔HR redistribution, baserunner score-roll shift, GIDP rate |
+| RISP clutch form | `_risp_clutch_form` (1257) | `state._risp_clutch` / `._risp_clutch_half` | **best hitter** (max over lineup of `0.5·power + 0.5·skill`) + manager `mgr_risp_pressure` vibes | RISP talent penalty, RISP XBH suppression |
+
+Read sites today (5 total): seq form at `prob.py:1380` (baserunning shift),
+`:1767` (slugging redistribution), `:2864` (GIDP); clutch form at `:1321`
+(talent penalty), `:1787` (XBH suppression relief).
 
 The AAR's repeated finding: the RISP clutch form **signal works** (good rosters
 run hot ~50% of halves, bad ones ~37% cold) but its **transmission is too
@@ -47,19 +54,25 @@ cancelling** — which is the mechanism that finally widens the efficiency tails
 
 ### 1. One draw, best-hitter anchored
 
-Add `_team_locked_in_form(rng, batting_team)` modeled on the existing
-`_risp_clutch_form` (keep the best-hitter + vibes anchor from Follow-up 3,
-since that's what the user asked for):
+Rename/repurpose `_risp_clutch_form` → `_locked_in_form(rng, state)` (it already
+has the best-hitter + vibes anchor from Follow-up 3, exactly what the user
+asked for) and **retire `_batting_seq_form`** as a separate draw — both become
+one cached value:
 
 ```
 mean = 1.0 + LOCKED_MEAN_SCALE * [ LOCKED_BAT_W*(best_bat - 0.5)
                                    + LOCKED_MGR_W*(mgr_risp_pressure - 0.5) ]
-form = clamp(rng.gauss(mean, LOCKED_SIGMA), LOCKED_MIN, LOCKED_MAX)
+form = clamp(rng.gauss(mean, LOCKED_SIGMA), LOCKED_MIN, LOCKED_MAX)   # cached on state per (inning,half)
 ```
 
-with `LOCKED_BAT_W = 0.85`, `LOCKED_MGR_W = 0.15` (carried over from the
-re-anchor). One draw per batting half, scoped locally exactly like the two it
-replaces (not stashed on `state`).
+with `LOCKED_BAT_W = 0.85`, `LOCKED_MGR_W = 0.15` (carried from the re-anchor).
+Keep the existing lazy `state`-cache pattern (`state._locked_form` /
+`._locked_form_half`) — it's what guarantees one draw per half and seed
+reproducibility. **RNG-stream note:** collapsing two `rng.gauss` calls into one
+shifts every downstream draw, so existing seeded outputs will change. That's
+expected (it's a behavior change), but it means "split vs unified" can't be a
+pure same-seed diff — compare them distributionally over many games, not
+game-for-game.
 
 ### 2. Per-channel transmission gains
 
@@ -85,19 +98,37 @@ gidp_prob *= 1.0 + (form - 1.0) * LOCKED_GIDP_GAIN           # hot → fewer DPs
 
 ### 3. Config — one block, replaces the two
 
-In `o27/config.py`, add a `LOCKED_*` block and **keep the old `SEQ_FORM_*` /
-`RISP_CLUTCH_*` names as aliases** mapping onto the new transmission gains, so
-nothing else that imports them breaks during the transition. Initial values
-ported from current: `LOCKED_SIGMA ≈ 0.52` (between the two), clamp
-`[0.35, 1.80]`, and per-channel gains seeded from today's effective strengths
-(SLG/score/GIDP from `SEQ_*`, RISP/XBH from `RISP_CLUTCH_*`). Then the tuning
-pass raises the gains **together** to widen the tails.
+In `o27/config.py`, add a `LOCKED_*` block. The two existing draws have
+**different σ and clamps** today — seq form σ=0.62, clamp [0.08, 2.10]; clutch
+form σ=0.45, clamp [0.12, 1.95] — so the unified σ is a genuine tuning choice,
+not a mechanical port. Start `LOCKED_SIGMA ≈ 0.55`, clamp `[0.10, 2.00]`.
+
+**Per-channel gains seeded from today's effective strengths** so the *first*
+run (gains at their ported values) is close to today's behavior, isolating the
+correlation effect before amplitude tuning:
+
+| new gain | ported from | current value |
+|---|---|---|
+| `LOCKED_SLG_GAIN` | `SEQ_FORM_POWER_SCALE` | 1.30 |
+| `LOCKED_SCORE_GAIN` | `SEQ_FORM_SCORE_SCALE` | 1.00 |
+| `LOCKED_GIDP_GAIN` | `SEQ_FORM_GIDP_SCALE` | 1.10 |
+| `LOCKED_RISP_GAIN` | `RISP_CLUTCH_PENALTY_RELIEF` | 0.85 |
+| `LOCKED_XBH_GAIN` | `RISP_CLUTCH_XBH_RELIEF` | 0.90 |
+
+Keep the old `SEQ_FORM_*` / `RISP_CLUTCH_*` constants defined (as the source of
+those ported values / for any external importers) but route all 5 prob.py read
+sites through the `LOCKED_*` gains. The tuning pass then raises the gains
+**together** to widen the tails.
 
 ### 4. Wiring
 
-In `simulate_half_inning`, replace the two draws (`seq_form` + `risp_clutch`)
-with the single `locked_form`, and update the 5 read sites to consume it via
-their gains. No new state, no signature changes outside the half-inning scope.
+There is no `simulate_half_inning` to edit — the draws are lazy. Point all 5
+existing read sites (`prob.py:1321, 1380, 1767, 1787, 2864`) at
+`_locked_in_form(rng, state)` instead of the two old functions, each applying
+its own `LOCKED_*_GAIN`. `_batting_seq_form` and `_risp_clutch_form` can become
+thin shims returning `_locked_in_form(...)` (so nothing dangles) or be deleted
+once all call sites are migrated. No new state fields beyond the one cache pair,
+no signature changes.
 
 ## Verification protocol (this is the part that matters)
 
