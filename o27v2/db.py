@@ -111,6 +111,11 @@ CREATE TABLE IF NOT EXISTS teams (
     fo_aggression      REAL    DEFAULT 0.5,
     fo_archetype_bias  TEXT    DEFAULT '',
     fo_losing_streak   INTEGER DEFAULT 0,
+    -- Team-wide performance streak overlay (see o27v2/streaks.py).
+    streak_state       INTEGER DEFAULT 0,
+    streak_weeks       INTEGER DEFAULT 0,
+    streak_games       INTEGER DEFAULT 0,
+    streak_heat        REAL    DEFAULT 0.0,
     fo_last_trade_date TEXT    DEFAULT '',
     -- Per-league playing-style profile (see o27v2/league.py _STYLE_PROFILES).
     -- Empty = neutral generation. Set when a config opts into mechanical
@@ -209,6 +214,12 @@ CREATE TABLE IF NOT EXISTS players (
     -- 0.50 = identity (no fatigue ramp change). Also damps today_form
     -- per-game variance — high-grit arms swing less day-to-day.
     grit           REAL  DEFAULT 0.5,
+    -- Performance streaks (see o27v2/streaks.py). A multi-week hot/cold run
+    -- that ramps over weeks and reverts to the true rating when it ends.
+    streak_state   INTEGER DEFAULT 0,   -- -1 cold / 0 none / +1 hot
+    streak_weeks   INTEGER DEFAULT 0,   -- completed weekly ramp ticks
+    streak_games   INTEGER DEFAULT 0,   -- games logged in the current week
+    streak_heat    REAL    DEFAULT 0.0, -- rolling [-1,1] performance signal
     -- Substitution-economy role tags (see o27v2/archetypes.py). Stamped at
     -- generation, re-derived in development. `roster_slot` drives roster
     -- composition; `role_*` flags drive substitution candidate filtering.
@@ -1471,6 +1482,39 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+
+        # Performance streaks (see o27v2/streaks.py). Per-player hot/cold
+        # streak that ramps over weeks like an illness — slow to start, then
+        # accelerating — and reverts to the player's true rating when it ends.
+        #   streak_state : -1 cold / 0 none / +1 hot
+        #   streak_weeks : completed weekly ramp ticks (drives the magnitude)
+        #   streak_games : games logged in the current week (ticks a week at 6)
+        #   streak_heat  : rolling performance signal in [-1, 1] that ignites
+        #                  or breaks a streak (good play pushes +, bad pushes -)
+        for col in ("streak_state", "streak_weeks", "streak_games"):
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN streak_heat REAL DEFAULT 0.0")
+            conn.commit()
+        except Exception:
+            pass
+        # Team-wide streak overlay — a club catching fire (or going cold)
+        # together, lighter than the per-player swing. Same column semantics.
+        for col in ("streak_state", "streak_weeks", "streak_games"):
+            try:
+                conn.execute(f"ALTER TABLE teams ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN streak_heat REAL DEFAULT 0.0")
+            conn.commit()
+        except Exception:
+            pass
 
     # Step 2: wipe stale pre-Phase-8 data
     _wipe_if_stale()

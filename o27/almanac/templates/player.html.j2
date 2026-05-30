@@ -15,6 +15,7 @@
       {% if player.country %}· {{ player.country }}{% endif %}
       · {{ player.team_name }}
       {% if player.archetype %}· {{ player.archetype }}{% endif %}
+      {% if player.streak %}· <span class="streak-badge {{ player.streak.cls }}" title="{{ player.streak.title }}">{{ player.streak.icon }} {{ player.streak.label }}</span>{% endif %}
     </div>
   </div>
   <div>
