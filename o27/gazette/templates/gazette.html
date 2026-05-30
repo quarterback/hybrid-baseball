@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}The O27 Gazette{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+  <h4 class="mb-0" style="font-family:Georgia,'Times New Roman',serif; letter-spacing:.5px">
+    📰 The O27 Gazette
+  </h4>
+  {% if slate_date %}
+  <div class="d-flex align-items-center gap-2">
+    {% if prev_date %}
+    <a href="?date={{ prev_date }}&voice={{ voice.id }}" title="Previous edition"
+       style="text-decoration:none; font-size:1.3rem; color:var(--link)">&laquo;</a>
+    {% else %}
+    <span style="font-size:1.3rem; color:var(--text-secondary,#999)">&laquo;</span>
+    {% endif %}
+    <span class="fw-bold">{{ slate_date }}</span>
+    {% if next_date %}
+    <a href="?date={{ next_date }}&voice={{ voice.id }}" title="Next edition"
+       style="text-decoration:none; font-size:1.3rem; color:var(--link)">&raquo;</a>
+    {% else %}
+    <span style="font-size:1.3rem; color:var(--text-secondary,#999)">&raquo;</span>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+<p class="text-secondary small mb-3" style="border-bottom:2px solid var(--accent); padding-bottom:.4rem">
+  A steerable, LLM-ready news desk. The slate below is serialized into a structured
+  <em>Game Context</em> payload with real win-probability inflection points — pick a
+  writer, then paste the prompt into any model to print the day's paper.
+</p>
+
+{% if not slate_date %}
+  <div class="alert alert-secondary">
+    No finished games yet. Sim a day, then come back to read the edition.
+  </div>
+{% elif payload.games_played == 0 %}
+  <div class="alert alert-secondary">
+    No games were played on {{ slate_date }}. Use the arrows to find an edition
+    with finished games.
+  </div>
+{% else %}
+
+  {# ---- Steer: pick a writer voice ---- #}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <label class="small text-secondary mb-0">Writer:</label>
+    <select class="form-select form-select-sm" style="width:auto"
+            onchange="location.href='?date={{ slate_date }}&voice=' + this.value">
+      {% for v in voices %}
+      <option value="{{ v.id }}" {% if v.id == voice.id %}selected{% endif %}>
+        {{ v.name }}
+      </option>
+      {% endfor %}
+    </select>
+    <span class="small text-secondary fst-italic">{{ voice.blurb }}</span>
+  </div>
+
+  {# ---- Action bar: copy the ready-to-paste prompt, or grab raw payloads ---- #}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <button class="copy-md btn btn-sm btn-primary"
+            data-md-url="{{ url_for('gazette.export_txt') }}?date={{ slate_date }}&voice={{ voice.id }}"
+            title="Copy the chosen writer's prompt + slate JSON, ready to paste into any LLM">
+      Copy {{ voice.name }} prompt
+    </button>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('gazette.export_txt') }}?date={{ slate_date }}&voice={{ voice.id }}" target="_blank">
+      View prompt (.txt)
+    </a>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('gazette.export_json') }}?date={{ slate_date }}" target="_blank">
+      Raw payload (.json)
+    </a>
+    {% if prompt_chars %}
+    <span class="text-secondary small">~{{ "{:,}".format(prompt_chars) }} chars ·
+      {{ payload.games_played }} game{{ 's' if payload.games_played != 1 else '' }}</span>
+    {% endif %}
+  </div>
+
+  {# ---- Per-game structured cards: what the model will be handed ---- #}
+  {% for g in payload.games %}
+  <div class="panel mb-3">
+    <div class="panel-body">
+      <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2">
+        <div>
+          <span class="fw-bold">
+            {{ g.matchup.away.name }} {{ g.final.away_score }},
+            {{ g.matchup.home.name }} {{ g.final.home_score }}
+          </span>
+          <a class="small ms-2" href="{{ url_for('game_detail', game_id=g.game_id) }}">box &rarr;</a>
+        </div>
+        <div class="small text-secondary">
+          {% if g.went_to_extras %}<span class="badge bg-warning text-dark">extras</span>{% endif %}
+          {% if g.declared_seconds %}<span class="badge bg-info text-dark">declared seconds</span>{% endif %}
+          {% if g.power_play %}<span class="badge bg-secondary">nickel</span>{% endif %}
+          {{ g.matchup.home.park or g.matchup.home.city }}
+        </div>
+      </div>
+
+      {% if g.inflection_points %}
+      <div class="mt-2">
+        <div class="small text-secondary text-uppercase" style="letter-spacing:.5px">
+          Where it turned · win-probability swings
+        </div>
+        <ul class="mb-0 small" style="list-style:none; padding-left:0">
+          {% for ip in g.inflection_points %}
+          <li class="py-1" style="border-bottom:1px dotted var(--border)">
+            <span class="fw-bold" style="font-variant-numeric:tabular-nums;
+                  color:{% if ip.win_prob_swing_pct >= 0 %}var(--good,#2a8){% else %}var(--bad,#c44){% endif %}">
+              {{ '%+.1f'|format(ip.win_prob_swing_pct) }}%
+            </span>
+            <span class="text-secondary">[{{ ip.swing_for }}]</span>
+            out {{ ip.out_window }}/27, {{ ip.bases }} —
+            {{ ip.note }}{% if ip.pitcher %} <span class="text-secondary">off {{ ip.pitcher }}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+      <div class="small text-secondary mt-2">
+        No strong win-probability swings recorded (early-season WP table is thin,
+        or a wire-to-wire result).
+      </div>
+      {% endif %}
+
+      {% if g.standouts %}
+      <div class="small text-secondary mt-2">
+        {% set s = g.standouts %}
+        {% if s.away_bat %}<strong>{{ s.away_bat.name }}</strong> ({{ g.matchup.away.abbrev }}) {{ s.away_bat.line }}.{% endif %}
+        {% if s.home_bat %}<strong>{{ s.home_bat.name }}</strong> ({{ g.matchup.home.abbrev }}) {{ s.home_bat.line }}.{% endif %}
+        {% if s.away_arm %}{{ s.away_arm.name }}: {{ s.away_arm.line }}.{% endif %}
+        {% if s.home_arm %}{{ s.home_arm.name }}: {{ s.home_arm.line }}.{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  {# ---- The exact payload + the active writer's system prompt ---- #}
+  <details class="mt-3">
+    <summary class="small text-secondary" style="cursor:pointer">
+      Show the raw Game Context JSON ({{ payload.games_played }} games)
+    </summary>
+    <pre style="font-family:'Courier New',Consolas,Menlo,monospace; font-size:12px;
+                line-height:1.35; white-space:pre-wrap; background:var(--bg-soft,transparent);
+                padding:1rem; margin-top:.5rem; border:1px solid var(--border);
+                border-radius:6px; overflow-x:auto; max-height:480px">{{ payload_json }}</pre>
+  </details>
+
+  <details class="mt-2">
+    <summary class="small text-secondary" style="cursor:pointer">
+      Show the {{ voice.name }} system prompt
+    </summary>
+    <pre style="font-family:'Courier New',Consolas,Menlo,monospace; font-size:12px;
+                line-height:1.4; white-space:pre-wrap; background:var(--bg-soft,transparent);
+                padding:1rem; margin-top:.5rem; border:1px solid var(--border);
+                border-radius:6px; overflow-x:auto; max-height:360px">{{ voice.system_prompt() }}</pre>
+  </details>
+
+{% endif %}
+
+{% endblock %}

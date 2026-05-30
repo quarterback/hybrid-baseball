@@ -52,6 +52,9 @@ app.config["SECRET_KEY"] = "o27v2-dev-key"
 from o27.almanac.blueprint import almanac_bp
 app.register_blueprint(almanac_bp)
 
+from o27.gazette.blueprint import gazette_bp
+app.register_blueprint(gazette_bp)
+
 
 # Presentation filters live in o27v2.web.formatters (pure value formatters,
 # no app dependency). Import and register them on the Jinja environment.
