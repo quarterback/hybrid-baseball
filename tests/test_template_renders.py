@@ -269,6 +269,63 @@ def test_box_score_chained_sub_names_prior_sub():
     assert "—" not in fn
 
 
+def test_box_score_annotations_show_season_xbh_totals():
+    """2B/3B/HR annotation lines carry the player's season-to-date total in
+    parens (newspaper convention), not the game count. A multi-XBH game
+    renders as 'Konan 2 (9)' = two doubles today, nine on the season."""
+    from o27v2.web.box_score import render_batting_annotations
+    rows = [
+        _row(1, "Konan", "3b", doubles=2, hr=1,
+             **{"season_doubles": 9, "season_hr": 8}),
+        _row(2, "Beard", "rf", doubles=1, **{"season_doubles": 3}),
+        _row(3, "Yongwa", "cf", triples=1, **{"season_triples": 2}),
+    ]
+    out = render_batting_annotations(rows)
+    assert "2B: Konan 2 (9), Beard (3)." in out
+    assert "3B: Yongwa (2)." in out
+    assert "HR: Konan (8)." in out
+
+
+def test_box_score_pitcher_decision_carries_season_record():
+    """The W/L decision shows the pitcher's season W-L through this game —
+    '(W, 5-3)' — when a season_wl map is supplied, and degrades to a bare
+    '(W)' when it isn't (e.g. tournament boxes)."""
+    from o27v2.web.box_score import render_pitching_table
+    pit = [{"player_id": 10, "player_name": "S. Morii", "batters_faced": 33,
+            "outs_recorded": 27, "hits_allowed": 13, "runs_allowed": 5,
+            "er": 5, "bb": 5, "k": 14, "hr_allowed": 0, "pitches": 116}]
+    with_rec = render_pitching_table("Brewers", pit, decisions={10: "W"},
+                                     season_wl={10: {"w": 5, "l": 3}})
+    assert "Morii (W, 5-3)" in with_rec
+    bare = render_pitching_table("Brewers", pit, decisions={10: "W"})
+    assert "Morii (W)" in bare and "Morii (W," not in bare
+
+
+def test_box_text_annotations_and_decision_are_cumulative():
+    """The plaintext export renderer (box_text) accumulates season totals
+    too: 2B/3B/HR parentheticals and the pitcher decision's W-L record."""
+    from o27v2.web.box_text import _batting_annotations, _pitching_block
+    rows = [
+        {"player_id": 1, "player_name": "E. Konan", "doubles": 2, "hr": 1,
+         "season_doubles": 9, "season_hr": 8},
+        {"player_id": 3, "player_name": "N. Yongwa", "triples": 1,
+         "season_triples": 2},
+    ]
+    ann = "\n".join(_batting_annotations(rows))
+    assert "2B: E. Konan 2 (9)." in ann
+    assert "3B: N. Yongwa (2)." in ann
+    assert "HR: E. Konan (8)" in ann
+
+    pit = [{"player_id": 10, "player_name": "S. Morii", "batters_faced": 33,
+            "pitches": 116, "outs_recorded": 27, "hits_allowed": 13,
+            "runs_allowed": 5, "er": 5, "bb": 5, "k": 14, "hr_allowed": 0,
+            "gsc_avg": 63}]
+    block = "\n".join(_pitching_block("Brewers", pit, win_pid=10,
+                                      lose_pid=None, denom_outs=27,
+                                      season_wl={10: {"w": 5, "l": 3}}))
+    assert "S. Morii (W, 5-3)" in block
+
+
 def test_game_notes_state_batting_order():
     """The notes footer spells out whether the home team batted first or
     second so a reader can't misread an un-batted line-score cell. Omitted

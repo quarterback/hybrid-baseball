@@ -478,12 +478,26 @@ def render_batting_annotations(
             parts.append(f"{name} {n}" if n > 1 else name)
         return ", ".join(parts)
 
-    pairs = _pick("doubles")
-    if pairs:
-        lines.append(f"  2B: {_items(pairs)}.")
-    pairs = _pick("triples")
-    if pairs:
-        lines.append(f"  3B: {_items(pairs)}.")
+    def _xbh_items(game_field: str, season_field: str) -> list[str]:
+        """2B/3B with a season-to-date total in parens, matching the HR
+        line and real newspaper convention: 'Konan 2 (9)' = 2 doubles
+        today, 9 on the season; 'Beard (3)' = his 3rd of the season."""
+        out: list[str] = []
+        for r in rows:
+            n = r.get(game_field, 0) or 0
+            if n <= 0:
+                continue
+            last = _last_name(r.get("player_name") or "")
+            season = r.get(season_field) or n
+            out.append(f"{last} {n} ({season})" if n > 1 else f"{last} ({season})")
+        return out
+
+    d2 = _xbh_items("doubles", "season_doubles")
+    if d2:
+        lines.append(f"  2B: {', '.join(d2)}.")
+    d3 = _xbh_items("triples", "season_triples")
+    if d3:
+        lines.append(f"  3B: {', '.join(d3)}.")
     # HR: include season total in parentheses, real-newspaper convention.
     # "Smith (12)"  =  hit a HR; that was his 12th of the season.
     # "Smith 2 (12)" = hit 2 HR today; season total stands at 12.
@@ -536,11 +550,15 @@ def render_batting_annotations(
 
 
 def render_pitching_table(team_name: str, rows: Iterable[dict],
-                          decisions: Optional[dict[int, str]] = None) -> str:
+                          decisions: Optional[dict[int, str]] = None,
+                          season_wl: Optional[dict] = None) -> str:
     """Per-team pitching block: TEAM PITCHING, header row, pitcher rows
-    with W/L/S inline by name."""
+    with W/L/S inline by name. When `season_wl` is supplied the decision
+    carries the pitcher's season W-L through this game — '(W, 5-3)' —
+    real-newspaper style."""
     rows = list(rows)
     decisions = decisions or {}
+    season_wl = season_wl or {}
     out = [f"{team_name.upper()} PITCHING"]
     cols = ["BF", "OUT", "OS%", "H", "R", "ER", "BB", "K", "HR", "P"]
     header = " " * NAME_POS_WIDTH + "".join(f"{c:>{PIT_STAT_W}}" for c in cols)
@@ -551,7 +569,11 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
         pid  = r.get("player_id")
         dec  = decisions.get(pid, "")
         if dec:
-            head = f"{last} ({dec})"
+            rec = season_wl.get(pid)
+            if rec:
+                head = f"{last} ({dec}, {rec.get('w', 0)}-{rec.get('l', 0)})"
+            else:
+                head = f"{last} ({dec})"
         else:
             head = last
         if len(head) > NAME_POS_WIDTH - 1:
@@ -673,6 +695,7 @@ def render_box_score(
     home_pitching: list[dict],
     decisions: Optional[dict[int, str]] = None,
     hr_off_pitchers: Optional[dict] = None,
+    season_wl: Optional[dict] = None,
 ) -> str:
     rule = "=" * RULE_WIDTH
 
@@ -691,9 +714,9 @@ def render_box_score(
         render_batting_annotations(home_batting, hr_off_pitchers),
         _sub_footnotes_for(home_batting),
         "",
-        render_pitching_table(game.get("away_name", "Away"), away_pitching, decisions),
+        render_pitching_table(game.get("away_name", "Away"), away_pitching, decisions, season_wl),
         "",
-        render_pitching_table(game.get("home_name", "Home"), home_pitching, decisions),
+        render_pitching_table(game.get("home_name", "Home"), home_pitching, decisions, season_wl),
         "",
         render_game_notes(game),
         rule,

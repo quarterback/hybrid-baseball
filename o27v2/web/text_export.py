@@ -66,7 +66,8 @@ def export_box_score(game: dict,
                      away_line: dict,
                      home_line: dict,
                      phases: list[int],
-                     hr_off_pitchers: dict | None = None) -> str:
+                     hr_off_pitchers: dict | None = None,
+                     season_wl: dict | None = None) -> str:
     """Newspaper-style monospace plaintext box score, fence-wrapped.
 
     The earlier markdown-table version rendered as a database-dump grid in
@@ -96,6 +97,7 @@ def export_box_score(game: dict,
         home_pitching=home_pitching,
         weather=Weather.from_row(game),
         hr_off_pitchers=hr_off_pitchers,
+        season_wl=season_wl,
     )
     return "```\n" + body + "\n```\n"
 
