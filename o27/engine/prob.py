@@ -1254,27 +1254,31 @@ def _is_risp(state: GameState) -> bool:
     return (b[1] is not None) or (b[2] is not None)
 
 
-def _risp_clutch_form(rng: random.Random, state: GameState) -> float:
-    """The current batting half's RISP clutch form — the hot/cold streak lever.
+def _locked_in_form(rng: random.Random, state: GameState) -> float:
+    """The current batting half's unified "locked in tonight" form.
 
-    One draw per half, cached on the state and re-rolled when the half label
-    changes. Returns 1.0 (neutral, no streak effect) when disabled
-    (RISP_CLUTCH_SIGMA <= 0). >1 = the lineup is clicking with runners on;
-    <1 = the rally keeps dying.
+    ONE draw per batting half, cached on the state and re-rolled when the half
+    label changes, returned to EVERY per-half channel — slugging redistribution,
+    baserunner advancement, GIDP rate, RISP talent penalty, and RISP XBH
+    suppression. Sharing a single latent draw across all of them is the whole
+    point: a hot night relieves the RISP wobble AND slugs AND runs AND stays out
+    of double plays together, so the effects compound into real blow-it-open /
+    leave-em-loaded games instead of averaging out across the ~45 PAs.
 
-    The mean is shifted by team quality so good teams run hot more often than
-    bad ones — performance-based streaks, not pure noise — then a Gaussian draw
-    supplies the night-to-night hot/cold swing. The quality anchor is the team's
-    BEST HITTER (the strongest power+skill bat in the lineup, wherever he hits),
-    with the manager persona as a small "vibes" nudge on top. Rolled lazily off
+    Returns 1.0 (neutral — every channel identity) when disabled
+    (LOCKED_FORM_SIGMA <= 0). >1 = the lineup is locked in; <1 = nothing's
+    falling. The mean is shifted by team quality so good teams run hot more
+    often than bad ones (performance-grounded, not pure noise): the anchor is
+    the team's BEST HITTER (max over the lineup of a power/skill blend, wherever
+    he bats), with the manager persona as a small vibes nudge. Rolled lazily off
     the same rng stream as the rest of contact resolution, so it stays
     seed-deterministic.
     """
-    sigma = getattr(cfg, "RISP_CLUTCH_SIGMA", 0.0)
+    sigma = getattr(cfg, "LOCKED_FORM_SIGMA", 0.0)
     if not sigma or sigma <= 0.0:
         return 1.0
     half = getattr(state, "half", None)
-    if getattr(state, "_risp_clutch_half", object()) != half:
+    if getattr(state, "_locked_form_half", object()) != half:
         team = getattr(state, "batting_team", None)
         # Performance anchor: the team's best hitter, scored as a power/skill
         # blend, taken as the MAX over the lineup — the streak rides on whether
@@ -1283,21 +1287,29 @@ def _risp_clutch_form(rng: random.Random, state: GameState) -> float:
         best = 0.5
         if lineup:
             best = max(
-                cfg.RISP_CLUTCH_BAT_POWER_W * float(getattr(p, "power", 0.5) or 0.5)
-                + cfg.RISP_CLUTCH_BAT_SKILL_W * float(getattr(p, "skill", 0.5) or 0.5)
+                cfg.LOCKED_FORM_BAT_POWER_W * float(getattr(p, "power", 0.5) or 0.5)
+                + cfg.LOCKED_FORM_BAT_SKILL_W * float(getattr(p, "skill", 0.5) or 0.5)
                 for p in lineup
             )
         # Manager persona = the small vibes nudge (see Team.mgr_risp_pressure).
         risp_resp = float(getattr(team, "mgr_risp_pressure", 0.5) or 0.5)
         quality = (
-            (best - 0.5) * cfg.RISP_CLUTCH_BAT_W
-            + (risp_resp - 0.5) * cfg.RISP_CLUTCH_MGR_W
+            (best - 0.5) * cfg.LOCKED_FORM_BAT_W
+            + (risp_resp - 0.5) * cfg.LOCKED_FORM_MGR_W
         )
-        mean = 1.0 + quality * cfg.RISP_CLUTCH_MEAN_SCALE
+        mean = getattr(cfg, "LOCKED_FORM_MEAN_BASE", 1.0) + quality * cfg.LOCKED_FORM_MEAN_SCALE
         draw = rng.gauss(mean, sigma)
-        state._risp_clutch = max(cfg.RISP_CLUTCH_MIN, min(cfg.RISP_CLUTCH_MAX, draw))
-        state._risp_clutch_half = half
-    return getattr(state, "_risp_clutch", 1.0)
+        state._locked_form = max(cfg.LOCKED_FORM_MIN, min(cfg.LOCKED_FORM_MAX, draw))
+        state._locked_form_half = half
+    return getattr(state, "_locked_form", 1.0)
+
+
+def _risp_clutch_form(rng: random.Random, state: GameState) -> float:
+    """Back-compat shim — the RISP clutch form is now the unified per-half
+    "locked in" draw (see _locked_in_form). Kept as a named entry point so the
+    RISP read sites read clearly as "the clutch form."
+    """
+    return _locked_in_form(rng, state)
 
 
 def _risp_talent_penalty(rng: random.Random, state: GameState) -> float:
@@ -1339,24 +1351,17 @@ def _risp_xbh_edges(quality: str) -> list[tuple[str, str, float]]:
 
 
 def _batting_seq_form(rng: random.Random, state: GameState) -> float:
-    """The current batting half's offensive sequencing form (see config).
+    """The current batting half's offensive sequencing form (slugging /
+    baserunning / GIDP channels).
 
-    One draw per half, cached on the state and re-rolled whenever the half
-    label changes. Returns 1.0 (identity) when the mechanism is disabled
-    (SEQ_FORM_SIGMA <= 0). Rolled lazily off the same rng stream as the rest
-    of contact resolution, so it stays seed-deterministic.
+    Now an alias onto the unified per-half "locked in" draw (_locked_in_form):
+    the sequencing channels share the SAME latent form as the RISP clutch
+    channels, so a hot half slugs, runs, AND converts with runners on together.
+    The dedicated SEQ_FORM_*_SCALE constants still set each sequencing channel's
+    strength at the call sites; only the DRAW is shared now. Returns 1.0 when
+    the mechanism is disabled (LOCKED_FORM_SIGMA <= 0).
     """
-    half = getattr(state, "half", None)
-    if getattr(state, "_seq_form_half", object()) != half:
-        sigma = getattr(cfg, "SEQ_FORM_SIGMA", 0.0)
-        if sigma and sigma > 0.0:
-            draw = rng.gauss(1.0, sigma)
-            form = max(cfg.SEQ_FORM_MIN, min(cfg.SEQ_FORM_MAX, draw))
-        else:
-            form = 1.0
-        state._seq_form = form
-        state._seq_form_half = half
-    return getattr(state, "_seq_form", 1.0)
+    return _locked_in_form(rng, state)
 
 
 def runner_advances_for_hit(

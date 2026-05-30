@@ -325,6 +325,47 @@ RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.22
 RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.05
 
 # ---------------------------------------------------------------------------
+# Unified per-half "locked in" form  (the shared draw behind the two below)
+# ---------------------------------------------------------------------------
+# The offensive sequencing form (slugging / baserunning / GIDP) and the RISP
+# clutch form (talent penalty / XBH suppression) used to be rolled as TWO
+# independent Gaussian draws per batting half. Independent draws de-correlate
+# the channels: a hot-slugging half and a hot-converting half rarely lined up,
+# so within a game the effects averaged out instead of compounding — which is
+# why every prior pass lowered R/H but never widened the game-to-game efficiency
+# tails ("blow-it-open vs leave-em-loaded").
+#
+# This unifies them into ONE latent draw per half — "the lineup is locked in
+# tonight" — that feeds ALL of those channels at once. Because one draw now
+# moves conversion AND slugging AND baserunning together, a hot night compounds
+# into a blowout and a cold night into a stranded-rally loss. The per-channel
+# strengths stay as their own constants (SEQ_FORM_*_SCALE, RISP_CLUTCH_*_RELIEF
+# below) so each channel is still independently tunable / disable-able; this
+# block governs only the shared DRAW.
+#
+# Same best-hitter + manager-vibes anchor the old clutch form used (performance-
+# grounded, not pure noise):
+#   best    = max_p [ BAT_POWER_W*p.power + BAT_SKILL_W*p.skill ]
+#   quality = (best - 0.5)*BAT_W + (mgr_risp_pressure - 0.5)*MGR_W
+#   mean    = 1 + MEAN_SCALE*quality;  form = clamp(Normal(mean, SIGMA), MIN, MAX)
+# Set LOCKED_FORM_SIGMA <= 0 to disable the whole mechanism (every half at 1.0).
+LOCKED_FORM_SIGMA: float        = 0.66   # shared per-half hot/cold spread
+LOCKED_FORM_MIN: float          = 0.08   # coldest possible half
+LOCKED_FORM_MAX: float          = 2.15   # hottest possible half
+# Base center of the draw before the team-quality shift. The channels are
+# asymmetric — a hot half (form>1) relieving the RISP penalty AND slugging adds
+# more runs than an equally-cold half strands (floor effects) — so widening the
+# spread via SIGMA also drifts mean R/H upward. Setting the base center a touch
+# below 1.0 pulls the mean back so we widen the game-to-game SPREAD without
+# shifting the league's mean R/H off "a hit ≠ a run" (~0.93). 1.0 = no offset.
+LOCKED_FORM_MEAN_BASE: float    = 0.94
+LOCKED_FORM_MEAN_SCALE: float   = 0.55   # how strongly team quality shifts the mean
+LOCKED_FORM_BAT_W: float        = 0.85   # weight: best hitter's quality (the anchor)
+LOCKED_FORM_BAT_POWER_W: float  = 0.5    # best-hitter score: power share
+LOCKED_FORM_BAT_SKILL_W: float  = 0.5    # best-hitter score: skill share
+LOCKED_FORM_MGR_W: float        = 0.15   # weight: manager persona (small vibes nudge)
+
+# ---------------------------------------------------------------------------
 # Offensive sequencing form (the H~R decoupler)
 # ---------------------------------------------------------------------------
 # The structural problem: with ~45 PAs per team in a single 27-out arc, the
@@ -344,10 +385,12 @@ RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.05
 # the advancement tables is (form - 1.0) * SEQ_FORM_SCORE_SCALE: a hot half
 # pushes runners home on contact, a cold half strands them. Set SEQ_FORM_SIGMA
 # to 0.0 to disable the mechanism entirely (every half plays at form 1.0).
-SEQ_FORM_SIGMA: float       = 0.62   # spread of the per-half conversion draw
-SEQ_FORM_MIN: float         = 0.08   # coldest possible offense-day
-SEQ_FORM_MAX: float         = 2.10   # hottest possible offense-day
-SEQ_FORM_SCORE_SCALE: float = 1.00   # form deviation → additive score-prob shift
+# NOTE: the DRAW is now the unified LOCKED_FORM_* above; SEQ_FORM_SIGMA/MIN/MAX
+# are retained only for reference (no longer roll a separate sequencing draw).
+SEQ_FORM_SIGMA: float       = 0.62   # (superseded by LOCKED_FORM_SIGMA)
+SEQ_FORM_MIN: float         = 0.08   # (superseded by LOCKED_FORM_MIN)
+SEQ_FORM_MAX: float         = 2.10   # (superseded by LOCKED_FORM_MAX)
+SEQ_FORM_SCORE_SCALE: float = 1.20   # LIVE: form deviation → additive score-prob shift
 
 # The dominant decoupler. H counts a single and a homer the same; R does not.
 # The reason runs track hits ~1:1 in O27 is that per-game contact QUALITY
@@ -359,7 +402,7 @@ SEQ_FORM_SCORE_SCALE: float = 1.00   # form deviation → additive score-prob sh
 # as hits but strand. That single↔XBH swing, not baserunning, is what pulls a
 # game's runs off its hit total and opens the "8 hits / 11 runs" and
 # "16 hits / 4 runs" tails. form 1.0 = identity (no quality shift).
-SEQ_FORM_POWER_SCALE: float = 1.30   # form deviation → redistribution strength
+SEQ_FORM_POWER_SCALE: float = 1.45   # LIVE: form deviation → redistribution strength
 
 # Edge scales for the form's dedicated single<->XBH<->HR redistribution. Large
 # on purpose (the per-batter POWER_REDIST_* edges are gentle by comparison): at
@@ -375,7 +418,7 @@ SEQ_REDIST_MED_S2D: float    = 0.75  # medium single -> double
 # cold half (form < 1) hits into MORE double plays — rallies die on the bases
 # instead of every runner coming around; a hot half (form > 1) stays out of
 # them. This is what lets a cold offense pile up hits that go nowhere.
-SEQ_FORM_GIDP_SCALE: float   = 1.10
+SEQ_FORM_GIDP_SCALE: float   = 1.20   # LIVE
 
 # ---------------------------------------------------------------------------
 # RISP pressure ("the wobble")
@@ -434,16 +477,20 @@ RISP_XBH_MED_D2S: float     = 0.40   # medium double -> single
 #   mean    = 1 + MEAN_SCALE * quality;  form = clamp(Normal(mean, SIGMA), MIN, MAX)
 # Over a season a good roster staggers hot halves into good months; a bad one
 # tanks the same way. Set RISP_CLUTCH_SIGMA <= 0 to disable (flat penalty).
-RISP_CLUTCH_SIGMA: float            = 0.45   # per-half hot/cold spread
-RISP_CLUTCH_MIN: float              = 0.12   # coldest clutch-half
-RISP_CLUTCH_MAX: float              = 1.95   # hottest clutch-half
-RISP_CLUTCH_MEAN_SCALE: float       = 0.55   # how strongly team quality moves the mean
-RISP_CLUTCH_BAT_W: float            = 0.85   # weight: best hitter's quality (the anchor)
-RISP_CLUTCH_BAT_POWER_W: float      = 0.5    # best-hitter score: power share
-RISP_CLUTCH_BAT_SKILL_W: float      = 0.5    # best-hitter score: skill share
-RISP_CLUTCH_MGR_W: float            = 0.15   # weight: manager persona (small vibes nudge)
-RISP_CLUTCH_PENALTY_RELIEF: float   = 0.85   # hot-form relief on the talent penalty
-RISP_CLUTCH_XBH_RELIEF: float       = 0.90   # hot-form relief on XBH suppression
+# NOTE: the DRAW + its anchor are now the unified LOCKED_FORM_* block above.
+# The SIGMA/MIN/MAX/MEAN_SCALE/BAT_*/MGR_W constants here are retained only for
+# reference; only the two RELIEF constants below are still LIVE (they set how
+# hard the shared form modulates the RISP channels).
+RISP_CLUTCH_SIGMA: float            = 0.45   # (superseded by LOCKED_FORM_SIGMA)
+RISP_CLUTCH_MIN: float              = 0.12   # (superseded by LOCKED_FORM_MIN)
+RISP_CLUTCH_MAX: float              = 1.95   # (superseded by LOCKED_FORM_MAX)
+RISP_CLUTCH_MEAN_SCALE: float       = 0.55   # (superseded by LOCKED_FORM_MEAN_SCALE)
+RISP_CLUTCH_BAT_W: float            = 0.85   # (superseded by LOCKED_FORM_BAT_W)
+RISP_CLUTCH_BAT_POWER_W: float      = 0.5    # (superseded by LOCKED_FORM_BAT_POWER_W)
+RISP_CLUTCH_BAT_SKILL_W: float      = 0.5    # (superseded by LOCKED_FORM_BAT_SKILL_W)
+RISP_CLUTCH_MGR_W: float            = 0.15   # (superseded by LOCKED_FORM_MGR_W)
+RISP_CLUTCH_PENALTY_RELIEF: float   = 0.95   # LIVE: hot-form relief on the talent penalty
+RISP_CLUTCH_XBH_RELIEF: float       = 1.00   # LIVE: hot-form relief on XBH suppression
 
 # ---------------------------------------------------------------------------
 # Inside-the-park home runs

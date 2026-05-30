@@ -1,6 +1,9 @@
 # Build Plan — Unified per-half "locked in" form (RISP follow-up)
 
-**Status:** plan / not yet implemented
+**Status:** ✅ IMPLEMENTED (see `aar-hits-runs-variance.md` Follow-up 4 for
+results). The shipped values differ from the plan's seed estimates after tuning
+(σ 0.66, moderate gains, + a `LOCKED_FORM_MEAN_BASE` center knob that the plan
+didn't anticipate but the convex stacking required).
 **Branch:** `claude/baseball-hits-runs-variance-Cv0iW`
 **Closes the open item from:** `aar-hits-runs-variance.md` (Follow-ups 2 & 3)
 

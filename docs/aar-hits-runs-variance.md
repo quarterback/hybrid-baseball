@@ -323,3 +323,93 @@ swing. That still wants the wider transmission noted in Follow-up 2 (unifying
 the clutch draw with the sequencing form's slugging channel). 26 o27 + 53 o27v2
 engine tests green. Disable
 with `RISP_CLUTCH_SIGMA = 0`.
+
+## Follow-up 4 — unify the two per-half draws (the wider transmission)
+
+This is the step Follow-ups 2 and 3 kept pointing at. The diagnosis was never
+"the clutch lever is too small" — it was "too **narrow** and **uncorrelated**."
+There were **two independent per-half Gaussian draws** in `o27/engine/prob.py`:
+`_batting_seq_form` (slugging redistribution, baserunner score-roll, GIDP) and
+`_risp_clutch_form` (RISP talent penalty, XBH suppression). Because they rolled
+independently, a hot-slugging half and a hot-converting half rarely lined up —
+within a game the channels averaged out instead of compounding, so the tails
+never widened.
+
+**The change.** Collapse both into ONE latent per-half draw — `_locked_in_form`
+("the lineup is locked in tonight") — keeping the best-hitter + manager-vibes
+anchor from Follow-up 3, fed to **all five** channels at once. Mechanically:
+`_risp_clutch_form` and `_batting_seq_form` are now thin shims that both return
+`_locked_in_form(rng, state)`, so every channel reads the *same* cached draw per
+half. The per-channel strengths stay as their own live constants
+(`SEQ_FORM_POWER_SCALE`/`SCORE_SCALE`/`GIDP_SCALE`, `RISP_CLUTCH_PENALTY_RELIEF`/
+`XBH_RELIEF`) — only the **draw** is shared. New config block `LOCKED_FORM_*`
+governs the shared draw (`SIGMA/MIN/MAX/MEAN_SCALE/MEAN_BASE/BAT_*/MGR_W`); the
+old `SEQ_FORM_SIGMA` and `RISP_CLUTCH_SIGMA`/anchor constants are retained for
+reference but no longer roll anything (clearly marked "superseded" vs "LIVE").
+
+**RNG note:** collapsing two `rng.gauss` calls into one shifts the downstream
+stream, so seeded outputs change — this is a behavior change, and "split vs
+unified" is a distributional comparison, not a same-seed diff.
+
+**Tuning.** The tail-widening is real and immediate, but correlated hot halves
+stack *convexly* (a hot half relieving the RISP penalty AND slugging AND running
+adds more runs than an equally-cold half strands), so pushing σ up also drifts
+mean R/H upward — undoing "a hit ≠ a run." Added `LOCKED_FORM_MEAN_BASE` (base
+center, set 0.94) to pull the mean back while keeping the spread. Settled on a
+**moderate** amplification that widens the tails without blowing R/G out of band
+(σ 0.66, clamp [0.08, 2.15], gains slg 1.45 / score 1.20 / gidp 1.20 /
+risp-relief 0.95 / xbh-relief 1.00). Over-amplified variants (σ 0.85, gains ~2×)
+widened the tails further but pushed R/H to ~1.07 and run-std to 15 — too hot.
+
+**Results.** In-process A/B on the foxes/bears reference lineups, off (σ=0) vs
+the shipped unified form, plus the committed-config direct measure
+(`scripts/measure_hr_coupling.py`, `scripts/ab_locked_form.py`):
+
+| metric | OFF (σ=0) | **unified (shipped)** |
+|---|---|---|
+| mean hits / team | 17.86 | 18.68 |
+| mean runs / team | 16.07 | 18.07 |
+| run std (abs) | 7.09 | **9.73** |
+| overall R/H | 0.900 | 0.967 |
+| R/H per-game std | ~0.22 | **0.269** |
+| R/H p10 / p90 | 0.62 / 1.16 | **0.62 / 1.30** |
+| **p90−p10 spread** | **0.54** | **0.68** |
+| "few hits → many runs" | 0.9% | **2.4%** |
+| "many hits → few runs" | 0.8% | **1.3%** |
+
+The efficiency tails finally widen — the metric **every prior pass failed to
+move**: the spread grows ~26%, run-std +37%, and both tail shares roughly
+double-to-triple. Mean R/H stays **0.96** (a hit still ≠ a run).
+
+**Performance grounding is now strong (and unconfounded).** Good vs bad club,
+300 games each (best bats ±, measured as visitors):
+
+| club | R/g | H/g | R/H | run-std |
+|---|---|---|---|---|
+| good (+0.12 bats) | 20.07 | 19.96 | **1.006** | 10.72 |
+| bad (−0.20 bats)  | 13.55 | 16.10 | **0.841** | 7.12 |
+
+A **+6.5 R/g** gap — and unlike Follow-up 3 (where the good club's *R/H* was
+nearly identical to the bad club's, so the gap was just "more hits"), here the
+good club **converts better too** (R/H 1.006 vs 0.841) and swings wider
+(run-std 10.7 vs 7.1). The unified draw turned the already-working team-level
+streak signal into real game-to-game variance that rewards the better roster
+with blow-it-open games.
+
+Broad sanity (tune.py, 200 games): BA .482, SLG .773, K% 13.2%, BB% 10.1%,
+**super-inning 3.0% (<10% ✓)**, all bounds OK. 42 o27+RISP +
+(archetypes/linear-weights/managers/engine-config/streaks) 67 o27v2 tests green.
+
+**Disable / tune.** `LOCKED_FORM_SIGMA = 0` turns the whole mechanism off (every
+half plays at form 1.0, every channel identity). Widen the tails further by
+raising `LOCKED_FORM_SIGMA` + the per-channel gains together, and pull the mean
+back with `LOCKED_FORM_MEAN_BASE`. Harness: `scripts/ab_locked_form.py`
+(off/ported/amp/mod/risp/base scenarios on identical seeds).
+
+**Honest caveats.** (1) The convex stacking means spread and mean trade off —
+you can't widen the tails arbitrarily without lifting R/H; the shipped values
+are a deliberate middle. (2) Numbers are from the two equal-quality reference
+lineups + synthetic good/bad clubs, not a full-league season; directionally
+solid, but a multi-team season measure would firm them up. (3) The mean R/H
+crept from ~0.93 (Follow-up 3) to ~0.96 — still "a hit ≠ a run," but slightly
+hotter; `LOCKED_FORM_MEAN_BASE` is the dial if it should come back down.
