@@ -2337,6 +2337,10 @@ class ProbabilisticProvider:
                 and state.current_at_bat_swings == 0
                 and not state.flare_lift_active):
             apply_pa_leadership_flares(rng, state, batter, pitcher)
+            # Power Play presence: while the nickel window is open, the same
+            # PA also sees a tighter defense and a sharper pitcher. Layered on
+            # top of any flare and unwound LIFO at PA end.
+            power_play.apply_presence_lift(state, pitcher)
 
         weather = getattr(state, "weather", None)
 

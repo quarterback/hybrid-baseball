@@ -642,6 +642,14 @@ class GameState:
     power_play_deployments: list = field(default_factory=list)
     # Set once per AB so the deploy decision is considered at most once per AB.
     power_play_checked_this_ab: bool = False
+    # Presence lift — banded multiplicative boost to fielding defense_rating and
+    # the active pitcher's effectiveness while the window is open. `presence` is
+    # the fraction rolled at window open (scaled by the nickel's glove); the
+    # originals/active pair mirror the leadership-flare stash so the lift is
+    # restored every PA boundary and leaks nothing.
+    power_play_presence: float = 0.0
+    pp_presence_originals: list = field(default_factory=list)
+    pp_presence_active: bool = False
 
     # --- Joker insertion override ---
     # When the manager inserts a joker, this field holds the joker Player

@@ -46,6 +46,7 @@ The window is **use it or lose it**:
 | `POWER_PLAY_XBH_HELD_PROB` | `0.35` | While active: a double/triple is cut to a single. |
 | `POWER_PLAY_SINGLE_OUT_PROB` | `0.12` | While active: a shallow outfield single is run down for a fly-out. |
 | `POWER_PLAY_NICKEL_PO_SHARE` | `0.33` | Share of routine OF putouts re-credited to the nickel (logged under `NF`). |
+| `POWER_PLAY_PRESENCE_MIN / _MAX` | `0.001 / 0.044` | Presence lift band: 0.1%–4.4% multiplicative boost to fielding `defense_rating` and pitcher effectiveness while active, scaled by the nickel's glove. |
 | `POWER_PLAY_NICKEL_ARM_MIN` | `0.62` | Strong-arm bar for nickel eligibility. |
 | `POWER_PLAY_NICKEL_FIELD_MIN` | `0.58` | Good-glove bar (OF or SS) for nickel eligibility. |
 | `POWER_PLAY_SKIP_GAME_PROB` | `0.05` | Chance a team never deploys it this game. |
@@ -156,6 +157,39 @@ reconciliation and the stat invariants stay intact.
 
 ---
 
+## The presence effect (`apply_presence_lift`, `power_play.py`)
+
+The conversions above are balls hit *at* the nickel. But a 10th defender taking the field also
+*settles the whole unit* — the defense plays tighter and the pitcher works with more margin for as
+long as the window is open. That's modeled as a small **banded multiplicative lift**, applied per
+PA on the exact same stash-and-restore lifecycle as the leadership flares
+(`prob.apply_pa_leadership_flares`):
+
+- **fielding team `defense_rating` × (1 + presence)** — this is the "across the lineup" knob: error
+  chance (`prob.py:894`), single→ground-out conversion (`prob.py:1662`) and borderline plays
+  (`prob.py:939`, `:1037`) all read it, so lifting it tightens *every* fielder, not just the nickel;
+- **active pitcher `command` / `pitcher_skill` (Stuff) / `movement` / `grit` × (1 + presence)** —
+  "all pitching effectiveness," feeding the pitch model and `contact_quality` upstream (more
+  strikes, fewer walks, weaker contact).
+
+Lifecycle (`prob.py:2339`, `pa.py:313`): the lift is applied at PA start right after the flare
+(layered on top of it) and unwound **LIFO** at PA end — presence first, then the flare — so the
+originals restore exactly and nothing drifts. It's gated on `is_window_active` AND the deploying
+team being the one fielding, so it's inert the instant the window closes and a byte-for-byte no-op
+when the rule is off.
+
+**The band, and why it's not a magic pill.** `power_play_presence` is rolled once at window open by
+`_presence_for(nickel)`, mapping the nickel's glove from the eligibility floor
+(`POWER_PLAY_NICKEL_FIELD_MIN`) to a perfect glove across
+`[POWER_PLAY_PRESENCE_MIN, POWER_PLAY_PRESENCE_MAX]` = **0.1% – 4.4% per power play**. A
+replacement-grade nickel barely moves the needle; an elite one lands near 4.4%. Mechanistically a
+top-of-band lift shaves only ~0.27% of hits through the fielding channel alone (paired-CRN micro,
+N=300k), with the pitching channel compounding on top — directional and measurable, but the sport
+advantages the runner everywhere else, so offense still wins most exchanges. By design: this is the
+one lever the defense has, not a cudgel.
+
+---
+
 ## Window lifecycle (open → tick → close)
 
 - **Open:** `maybe_open_window` stamps `power_play_open_out = state.outs` (`state.py:635`),
@@ -248,11 +282,19 @@ hot (~33 R/G), so treat the *magnitude* as illustrative and the *direction/shape
 A calibrated season-level pass (real seeded league DB, league R/G·H·2B·3B on vs. off) is the
 follow-up when wanted.
 
+The **presence lift is below the whole-game noise floor by design** (a ~3% rating nudge over the
+~15% of outs a window is open). It's verified mechanistically instead: in a paired-CRN micro
+(N=300k, fixing draws so only the rating moves), a top-of-band +4.4% `defense_rating` adds
+~+0.15pts of outs and shaves ~0.27% of hits through the fielding channel alone, fading to ~nil at
+the 0.1% floor — directional, monotonic in the band, and deliberately small. The pitcher-
+effectiveness channel compounds on top upstream in the pitch model. This is the "not a magic pill"
+property made explicit: the lever moves, but the sport still advantages the runner.
+
 ---
 
 ## Tests
 
-`o27/tests/test_power_play.py` — 24 cases:
+`o27/tests/test_power_play.py` — 30 cases:
 
 - **off by default**: `power_play_on` False, deploy is a no-op, footer line `None`; per-game
   override beats config both ways;
@@ -263,6 +305,10 @@ follow-up when wanted.
   never in a super-inning; `clear_window` prevents carryover; blowout suppresses deployment;
 - **effect**: XBH held to a single; single run down for an out with the nickel credited; the
   putout tallies to the live deployment; inert when the window is closed;
+- **presence**: the band scales with glove (floor→`MIN`, elite→`MAX`); the lift multiplies
+  `defense_rating` and every pitcher attr and restores exactly; idempotent within a PA; inert when
+  the window is closed or the deploying team isn't fielding; window-open sets it and `clear_window`
+  zeroes it;
 - **box-score line**: `None`, single-window (with/without PO), two-team, and the
   regulation+seconds forms for both the same-nickel and different-nickel cases.
 

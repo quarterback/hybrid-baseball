@@ -687,6 +687,24 @@ POWER_PLAY_SINGLE_OUT_PROB: float = 0.12   # outfield single → fly_out (run do
 # under position "NF"). Roughly the slice of the outfield the nickel patrols.
 POWER_PLAY_NICKEL_PO_SHARE: float = 0.33
 
+# Presence effect — the *mere* arrival of the 10th defender tightens the whole
+# unit for as long as the window is open, beyond just balls hit at the nickel.
+# While active we apply a small MULTIPLICATIVE lift to the fielding team's
+# defense_rating (the "across the lineup" knob — error chance, ground-out
+# conversion, borderline plays all read it) and to the active pitcher's
+# effectiveness attrs (command / Stuff / movement / grit), so every downstream
+# roll sees a settled defense and a pitcher who can work the zone. The lift is
+# stashed-and-restored per PA (same lifecycle as leadership flares), so nothing
+# drifts and it's inert the instant the window closes.
+#
+# Banded 0.1%–4.4% PER POWER PLAY, scaled by the nickel's glove: a replacement-
+# grade nickel barely moves the needle, an elite one lands near the top. It is
+# deliberately NOT a magic pill — the sport advantages the runner everywhere
+# else, so offense still wins most exchanges; this just makes the defense's one
+# lever measurable.
+POWER_PLAY_PRESENCE_MIN: float = 0.001   # 0.1% — floor (any eligible nickel)
+POWER_PLAY_PRESENCE_MAX: float = 0.044   # 4.4% — cap (elite-glove nickel)
+
 # Nickel eligibility. A rostered player NOT currently on the field, eligible at
 # OF or SS, who clears BOTH bars below. Pitchers qualify only as a wild card
 # (lightly-used arms) and only if they have not already appeared in the game.

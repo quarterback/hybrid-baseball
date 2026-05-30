@@ -384,3 +384,112 @@ def test_powerplays_line_regulation_plus_seconds_diff_nickels():
     ]
     assert pp.format_powerplays_line(state) == \
         "Powerplays: Boston — Reyes NF (1: O11), Ortiz NF (2: O25, 1 PO)"
+
+
+# ---------------------------------------------------------------------------
+# Presence effect (banded team-wide lift while the window is open)
+# ---------------------------------------------------------------------------
+
+def _mk_active_pitcher():
+    p = _mk_pitcher("home_sp2", "ActiveP")
+    p.command = 0.50
+    p.movement = 0.50
+    p.grit = 0.50
+    p.pitcher_skill = 0.50
+    return p
+
+
+def test_presence_for_bands_with_glove():
+    floor = _mk_fielder("a", "Floor", glove=cfg.POWER_PLAY_NICKEL_FIELD_MIN)
+    elite = _mk_fielder("b", "Elite", glove=1.0)
+    mid = _mk_fielder("c", "Mid", glove=0.75)
+    assert pp._presence_for(floor) == pytest.approx(cfg.POWER_PLAY_PRESENCE_MIN)
+    assert pp._presence_for(elite) == pytest.approx(cfg.POWER_PLAY_PRESENCE_MAX)
+    assert cfg.POWER_PLAY_PRESENCE_MIN < pp._presence_for(mid) < cfg.POWER_PLAY_PRESENCE_MAX
+    # Better glove ⇒ stronger presence.
+    assert pp._presence_for(mid) > pp._presence_for(floor)
+
+
+def test_presence_lift_applies_and_restores():
+    state = _mk_state()
+    state.power_play_enabled = True
+    state.outs = 14
+    _open_window(state)
+    state.power_play_presence = 0.04
+    fielding = state.fielding_team           # home (top half)
+    fielding.defense_rating = 0.50
+    pitcher = _mk_active_pitcher()
+
+    pp.apply_presence_lift(state, pitcher)
+    assert state.pp_presence_active is True
+    # Multiplicative: 0.50 * 1.04 = 0.52 on defense AND every pitcher attr.
+    assert fielding.defense_rating == pytest.approx(0.52)
+    assert pitcher.command == pytest.approx(0.52)
+    assert pitcher.pitcher_skill == pytest.approx(0.52)
+    assert pitcher.movement == pytest.approx(0.52)
+    assert pitcher.grit == pytest.approx(0.52)
+
+    pp.release_presence_lift(state)
+    assert state.pp_presence_active is False
+    assert fielding.defense_rating == pytest.approx(0.50)
+    assert pitcher.command == pytest.approx(0.50)
+    assert pitcher.pitcher_skill == pytest.approx(0.50)
+
+
+def test_presence_idempotent_within_pa():
+    state = _mk_state()
+    state.power_play_enabled = True
+    state.outs = 14
+    _open_window(state)
+    state.power_play_presence = 0.04
+    state.fielding_team.defense_rating = 0.50
+    pitcher = _mk_active_pitcher()
+    pp.apply_presence_lift(state, pitcher)
+    pp.apply_presence_lift(state, pitcher)   # second call is a no-op
+    assert state.fielding_team.defense_rating == pytest.approx(0.52)
+    pp.release_presence_lift(state)
+    assert state.fielding_team.defense_rating == pytest.approx(0.50)
+
+
+def test_presence_inert_when_window_closed():
+    state = _mk_state()
+    state.power_play_enabled = True
+    # No window opened → open_out is None → inert even if a stale fraction lingers.
+    state.power_play_presence = 0.04
+    fielding = state.fielding_team
+    fielding.defense_rating = 0.50
+    pitcher = _mk_active_pitcher()
+    pp.apply_presence_lift(state, pitcher)
+    assert state.pp_presence_active is False
+    assert fielding.defense_rating == pytest.approx(0.50)
+    assert pitcher.command == pytest.approx(0.50)
+
+
+def test_presence_inert_for_non_deploying_team():
+    state = _mk_state()
+    state.power_play_enabled = True
+    state.outs = 14
+    _open_window(state)
+    # Window belongs to home, but pretend the visitors are fielding.
+    state.power_play_deploy_team_id = "visitors_not_fielding"
+    state.power_play_presence = 0.04
+    fielding = state.fielding_team
+    fielding.defense_rating = 0.50
+    pp.apply_presence_lift(state, _mk_active_pitcher())
+    assert state.pp_presence_active is False
+    assert fielding.defense_rating == pytest.approx(0.50)
+
+
+def test_open_window_sets_and_clear_resets_presence(monkeypatch):
+    monkeypatch.setattr(cfg, "POWER_PLAY_DEPLOY_BASE_MID", 1.0)
+    state = _mk_state()
+    state.power_play_enabled = True
+    nickel = _mk_fielder("home_nf", "Reyes", arm=0.9, glove=0.9)
+    state.home.bench = [nickel]
+    state.home.roster.append(nickel)
+    state.outs = 13
+    pp.maybe_open_window(state, random.Random(1))
+    assert cfg.POWER_PLAY_PRESENCE_MIN <= state.power_play_presence <= cfg.POWER_PLAY_PRESENCE_MAX
+    assert state.power_play_presence > cfg.POWER_PLAY_PRESENCE_MIN   # strong glove
+    pp.clear_window(state)
+    assert state.power_play_presence == 0.0
