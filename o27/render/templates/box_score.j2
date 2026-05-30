@@ -78,4 +78,7 @@ Required run rate ({{ home_name }}): {{ "%.3f" | format(required_rr) }} R/out (n
 {% else %}Seconds: {{ _hs }}
 {% endif %}
 {% endif %}
+{% if powerplays_line %}
+{{ powerplays_line }}
+{% endif %}
 ============================================================

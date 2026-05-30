@@ -432,6 +432,15 @@ class Team:
     shift_outs_added:  int = 0   # outs the shift converted from singles
     shift_hits_lost:   int = 0   # hits the shift gave up (oppo through the gap)
 
+    # Power Play (optional rule) — per-game manager-behavior rolls and
+    # telemetry. The skip / mistime flags are rolled lazily once per game
+    # (None = not yet rolled) so they vary game-to-game, not per manager.
+    power_play_skip:    Optional[bool] = None   # never deploy this game
+    power_play_mistime: Optional[bool] = None   # deploy too early / too late
+    power_play_mistime_late: bool = False       # mistime flavor: True=late, False=early
+    pp_xbh_held:        int = 0   # XBH the nickel cut down to singles
+    pp_hits_converted:  int = 0   # outfield singles the nickel turned into outs
+
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-PA based on
     # leverage. Any joker can be inserted any number of times per game —
@@ -615,6 +624,32 @@ class GameState:
     # detection in ProbabilisticProvider.__call__.
     current_ab_shift_type: str = "none"     # "none" | "infield" | "outfield"
     current_ab_shift_decided: bool = False  # have we rolled this AB?
+
+    # --- Power Play (optional rule) ---
+    # When None, the engine falls back to cfg.POWER_PLAY_ENABLED (the league
+    # toggle). Tests set it explicitly to force the rule on/off per game.
+    power_play_enabled: Optional[bool] = None
+    # Active nickel window. `open_out` is state.outs at the moment of
+    # deployment (the window covers the next POWER_PLAY_WINDOW_OUTS outs);
+    # cleared at every half start in run_half so it never carries over.
+    power_play_open_out: Optional[int] = None
+    power_play_deploy_team_id: Optional[str] = None   # which fielding side deployed
+    power_play_nickel_id: Optional[str] = None        # the chosen nickel player_id
+    # Per-(phase, fielding team) "already used this half" keys — use-or-lose.
+    power_play_used: set = field(default_factory=set)
+    # Box-score record, one dict per deployment:
+    #   {team_id, team_name, start_out, end_out, phase}
+    power_play_deployments: list = field(default_factory=list)
+    # Set once per AB so the deploy decision is considered at most once per AB.
+    power_play_checked_this_ab: bool = False
+    # Presence lift — banded multiplicative boost to fielding defense_rating and
+    # the active pitcher's effectiveness while the window is open. `presence` is
+    # the fraction rolled at window open (scaled by the nickel's glove); the
+    # originals/active pair mirror the leadership-flare stash so the lift is
+    # restored every PA boundary and leaks nothing.
+    power_play_presence: float = 0.0
+    pp_presence_originals: list = field(default_factory=list)
+    pp_presence_active: bool = False
 
     # --- Joker insertion override ---
     # When the manager inserts a joker, this field holds the joker Player
