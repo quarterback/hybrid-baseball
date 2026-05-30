@@ -276,14 +276,30 @@ def maybe_open_window(state: GameState, rng: random.Random) -> None:
     state.power_play_open_out = state.outs
     state.power_play_deploy_team_id = team.team_id
     state.power_play_nickel_id = nickel_id
+    nickel = team.get_player(nickel_id)
     state.power_play_deployments.append({
         "team_id": team.team_id,
         "team_name": team.name,
         "phase": state.phase_number,
         "start_out": state.outs + 1,        # first out the nickel is on the field for
         "end_out": state.outs + 1,          # extended by note_out as outs accrue
+        "nickel_id": nickel_id,
+        "nickel_name": nickel.name if nickel else nickel_id,
+        "po": 0,                            # putouts the nickel records in this window
         "_open": True,
     })
+
+
+def credit_nickel_putout(state: GameState) -> None:
+    """Tally a putout to the active nickel window (for the box-score line).
+
+    Called from resolve_contact whenever the nickel is credited with the play.
+    The full PO/A/E still accrue to the player's fielding line via the
+    renderer's _credit_fielder; this counter just feeds the Powerplays note.
+    """
+    deployments = getattr(state, "power_play_deployments", None)
+    if deployments and deployments[-1].get("_open"):
+        deployments[-1]["po"] = int(deployments[-1].get("po", 0)) + 1
 
 
 # ---------------------------------------------------------------------------
@@ -354,12 +370,20 @@ def nickel_putout_for(state: GameState, hit_type: str, rng: random.Random,
 # Box-score rendering
 # ---------------------------------------------------------------------------
 
+def _po_suffix(po: int) -> str:
+    return f", {po} PO" if po else ""
+
+
 def format_powerplays_line(state: GameState) -> Optional[str]:
     """The `Powerplays:` box-score line, or None when the rule is off.
 
-    Single deployment:  "New York (O14-17)"
-    Two deployments:    "Boston (1: O11, 2: O25)"   (regulation + seconds)
-    Neither team used:  "Powerplays: None"
+    The nickel never bats, so he gets no batting row — instead his deployment
+    and defensive line ride here, naming the player (NF) and his putouts:
+
+      Single window:        "New York — Reyes NF (O14-17, 2 PO)"
+      Two windows, one guy:  "Boston — Reyes NF (1: O11, 2: O25, 3 PO)"
+      Two windows, two guys: "Boston — Reyes NF (1: O11), Ortiz NF (2: O25, 1 PO)"
+      Neither team used it:  "Powerplays: None"
     """
     if not power_play_on(state):
         return None
@@ -377,13 +401,29 @@ def format_powerplays_line(state: GameState) -> Optional[str]:
     parts = []
     for tid in order:
         recs = sorted(by_team[tid], key=lambda r: r["start_out"])
-        name = recs[0]["team_name"]
-        if len(recs) == 1:
+        team_name = recs[0]["team_name"]
+        names = {r.get("nickel_name") for r in recs}
+        if len(names) == 1 and len(recs) > 1:
+            # Same nickel held the role across both windows — one name, the
+            # window list, and his combined putouts.
+            windows = ", ".join(f"{i}: O{r['start_out']}"
+                                for i, r in enumerate(recs, start=1))
+            total_po = sum(int(r.get("po", 0)) for r in recs)
+            nickel = recs[0].get("nickel_name") or "?"
+            parts.append(f"{team_name} — {nickel} NF ({windows}{_po_suffix(total_po)})")
+        elif len(recs) == 1:
             r = recs[0]
-            parts.append(f"{name} (O{r['start_out']}-{r['end_out']})")
-        else:
-            inner = ", ".join(
-                f"{i}: O{r['start_out']}" for i, r in enumerate(recs, start=1)
+            nickel = r.get("nickel_name") or "?"
+            po = int(r.get("po", 0))
+            parts.append(
+                f"{team_name} — {nickel} NF (O{r['start_out']}-{r['end_out']}{_po_suffix(po)})"
             )
-            parts.append(f"{name} ({inner})")
+        else:
+            # Different nickels across windows — name each with its window.
+            subs = []
+            for i, r in enumerate(recs, start=1):
+                nickel = r.get("nickel_name") or "?"
+                po = int(r.get("po", 0))
+                subs.append(f"{nickel} NF ({i}: O{r['start_out']}{_po_suffix(po)})")
+            parts.append(f"{team_name} — " + ", ".join(subs))
     return "Powerplays: " + ", ".join(parts)

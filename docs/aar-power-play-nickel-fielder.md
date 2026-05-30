@@ -176,14 +176,41 @@ reconciliation and the stat invariants stay intact.
 
 When the rule is on, the box score gains a `Powerplays:` line directly under the `Seconds:` line
 (`o27/render/render.py:33-35`, `:541`; template `o27/render/templates/box_score.j2:81-83`). It
-mirrors the Declared Seconds footer:
+mirrors the Declared Seconds footer.
 
-- **single window:** `Powerplays: New York (O14-17)` — the out range the nickel covered;
-- **two windows** (a team that deployed in regulation *and* its seconds frame):
-  `Powerplays: Boston (1: O11, 2: O25)` — each deployment's start out, labeled `1:`/`2:`;
+**The nickel never bats, so he has no batting row** — by design we did *not* force a 0-PA line
+into the batting table (that would risk the PA↔out reconciliation invariants). Instead the
+deployment *and the nickel's defensive line* ride in this footer note, naming the player (NF) and
+his putouts for the game:
+
+- **single window:** `Powerplays: New York — Reyes NF (O14-17, 2 PO)`;
+- **two windows, same nickel** (regulation *and* a seconds frame):
+  `Powerplays: Boston — Reyes NF (1: O11, 2: O25, 3 PO)`;
+- **two windows, different nickels:**
+  `Powerplays: Boston — Reyes NF (1: O11), Ortiz NF (2: O25, 1 PO)`;
 - **neither team used it:** `Powerplays: None`.
 
-When the rule is off the line is omitted entirely.
+The PO count comes from a per-deployment counter (`credit_nickel_putout`, `power_play.py`)
+incremented at the fielder-attribution step whenever the nickel is credited; a `0 PO` line just
+omits the suffix. This counter is independent of the renderer, so it's available even on the raw
+engine path. The **full PO/A/E** still accrue to the nickel's fielding line the normal way —
+`_credit_fielder` (`o27/render/render.py:853`) stamps a stat row keyed by `fielder_id` even for a
+player who never batted — so a season's nickel work shows up as a real defensive line under the
+hood. When the rule is off the footer line is omitted entirely.
+
+### Eligibility / role / substitution — design choices
+
+- **"Starting nickel" is emergent, not a roster slot.** `find_nickel` always takes the
+  best-arm/best-glove eligible bench OF/SS, and because starters are already on the field the pool
+  skews to the 4th-OF / utility defender. The same specialist therefore owns the role game after
+  game and accrues the stats, with others rotating in only when he's unavailable — no new roster
+  modeling required.
+- **The appearance is ephemeral (joker-like).** Deploying the nickel never adds him to
+  `substituted_out` (`power_play.py` only *reads* that set to exclude one-way-exited players), so
+  he comes in for the window, leaves when it closes, stays available for normal pinch-hit /
+  defensive-sub use, and can be re-deployed in a seconds window. **There is no mid-window
+  substitution** — it was judged not worth the bookkeeping over a 4-out window, and platooning the
+  nickel by handedness is meaningless since he never bats.
 
 ---
 
@@ -204,9 +231,28 @@ not anything the Power Play introduced.)
 
 ---
 
+## Measured impact (does it actually suppress offense?)
+
+A matched-seed A/B (same seed, rule off vs. on, synthetic teams with eligible bench nickels):
+
+| Scenario | Deploys/game | Runs Δ (both teams) | XBH→single /game | Hits→out /game |
+|----------|--------------|---------------------|------------------|----------------|
+| Default deploy rates (1,500 games) | 1.70 | **−0.78 ± 0.65** (95% CI) | 0.40 | 0.20 |
+| Forced: nickel every half (1,500)  | 2.74 | −0.65 ± 0.64           | 0.60 | 0.32 |
+
+The **direct conversions are the clean signal** and scale monotonically with usage: each
+deployment holds ~0.24 XBH (down to singles) and erases ~0.13 hits (to fly-outs). Net runs go
+**down**, and at default rates the 95% CI excludes zero, but the whole-game run delta is noisy
+(the matched-seed RNG streams fork after the first changed outcome) and the synthetic teams run
+hot (~33 R/G), so treat the *magnitude* as illustrative and the *direction/shape* as the finding.
+A calibrated season-level pass (real seeded league DB, league R/G·H·2B·3B on vs. off) is the
+follow-up when wanted.
+
+---
+
 ## Tests
 
-`o27/tests/test_power_play.py` — 21 cases:
+`o27/tests/test_power_play.py` — 24 cases:
 
 - **off by default**: `power_play_on` False, deploy is a no-op, footer line `None`; per-game
   override beats config both ways;
@@ -215,9 +261,10 @@ not anything the Power Play introduced.)
   player qualifies; a pitcher who has appeared is excluded; an on-field player is excluded;
 - **lifecycle**: window opens and expires after exactly `WINDOW_OUTS`; use-or-lose (one per half);
   never in a super-inning; `clear_window` prevents carryover; blowout suppresses deployment;
-- **effect**: XBH held to a single; single run down for an out with the nickel credited; inert
-  when the window is closed;
-- **box-score line**: `None`, single-window, two-team, and regulation+seconds (`1:/2:`) forms.
+- **effect**: XBH held to a single; single run down for an out with the nickel credited; the
+  putout tallies to the live deployment; inert when the window is closed;
+- **box-score line**: `None`, single-window (with/without PO), two-team, and the
+  regulation+seconds forms for both the same-nickel and different-nickel cases.
 
 Regression: the engine, render, declared-seconds, realism-identity, and `engine_config` suites all
 pass with the new toggle exposed.

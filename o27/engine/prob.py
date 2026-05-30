@@ -1776,6 +1776,7 @@ def resolve_contact(
     nickel_id = power_play.nickel_putout_for(state, hit_type, rng, nickel_putout)
     if nickel_id is not None:
         fielder_id = nickel_id
+        power_play.credit_nickel_putout(state)
     else:
         fielder_id = _select_fielder(rng, hit_type, fielding)
 

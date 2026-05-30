@@ -287,6 +287,25 @@ def test_nickel_runs_down_single_for_out(monkeypatch):
     assert pp.nickel_putout_for(state, "fly_out", random.Random(0), True) == "home_nf"
 
 
+def test_nickel_putout_tallies_to_deployment(monkeypatch):
+    monkeypatch.setattr(cfg, "POWER_PLAY_DEPLOY_BASE_MID", 1.0)
+    state = _mk_state()
+    state.power_play_enabled = True
+    nickel = _mk_fielder("home_nf", "Reyes", position="CF", arm=0.9, glove=0.9)
+    state.home.bench = [nickel]
+    state.home.roster.append(nickel)
+    state.outs = 13
+    pp.maybe_open_window(state, random.Random(1))
+    rec = state.power_play_deployments[-1]
+    assert rec["nickel_name"] == "Reyes" and rec["po"] == 0
+    # Two putouts credited during the window.
+    pp.credit_nickel_putout(state)
+    pp.credit_nickel_putout(state)
+    assert state.power_play_deployments[-1]["po"] == 2
+    assert pp.format_powerplays_line(state) == \
+        "Powerplays: H — Reyes NF (O14-14, 2 PO)"
+
+
 def test_nickel_effect_inert_when_window_closed():
     state = _mk_state()
     state.power_play_enabled = True
@@ -311,9 +330,21 @@ def test_powerplays_line_single_window():
     state.power_play_enabled = True
     state.power_play_deployments = [
         {"team_id": "visitors", "team_name": "New York", "phase": 0,
-         "start_out": 14, "end_out": 17},
+         "start_out": 14, "end_out": 17, "nickel_name": "Reyes", "po": 2},
     ]
-    assert pp.format_powerplays_line(state) == "Powerplays: New York (O14-17)"
+    assert pp.format_powerplays_line(state) == \
+        "Powerplays: New York — Reyes NF (O14-17, 2 PO)"
+
+
+def test_powerplays_line_omits_zero_po():
+    state = _mk_state()
+    state.power_play_enabled = True
+    state.power_play_deployments = [
+        {"team_id": "visitors", "team_name": "New York", "phase": 0,
+         "start_out": 14, "end_out": 17, "nickel_name": "Reyes", "po": 0},
+    ]
+    assert pp.format_powerplays_line(state) == \
+        "Powerplays: New York — Reyes NF (O14-17)"
 
 
 def test_powerplays_line_two_teams():
@@ -321,22 +352,35 @@ def test_powerplays_line_two_teams():
     state.power_play_enabled = True
     state.power_play_deployments = [
         {"team_id": "visitors", "team_name": "New York", "phase": 0,
-         "start_out": 14, "end_out": 17},
+         "start_out": 14, "end_out": 17, "nickel_name": "Reyes", "po": 1},
         {"team_id": "home", "team_name": "Carolina", "phase": 0,
-         "start_out": 24, "end_out": 27},
+         "start_out": 24, "end_out": 27, "nickel_name": "Jones", "po": 0},
     ]
     assert pp.format_powerplays_line(state) == \
-        "Powerplays: New York (O14-17), Carolina (O24-27)"
+        "Powerplays: New York — Reyes NF (O14-17, 1 PO), Carolina — Jones NF (O24-27)"
 
 
-def test_powerplays_line_regulation_plus_seconds():
+def test_powerplays_line_regulation_plus_seconds_same_nickel():
     state = _mk_state()
     state.power_play_enabled = True
     state.power_play_deployments = [
         {"team_id": "home", "team_name": "Boston", "phase": 0,
-         "start_out": 11, "end_out": 14},
+         "start_out": 11, "end_out": 14, "nickel_name": "Reyes", "po": 2},
         {"team_id": "home", "team_name": "Boston", "phase": 1,
-         "start_out": 25, "end_out": 27},
+         "start_out": 25, "end_out": 27, "nickel_name": "Reyes", "po": 1},
     ]
     assert pp.format_powerplays_line(state) == \
-        "Powerplays: Boston (1: O11, 2: O25)"
+        "Powerplays: Boston — Reyes NF (1: O11, 2: O25, 3 PO)"
+
+
+def test_powerplays_line_regulation_plus_seconds_diff_nickels():
+    state = _mk_state()
+    state.power_play_enabled = True
+    state.power_play_deployments = [
+        {"team_id": "home", "team_name": "Boston", "phase": 0,
+         "start_out": 11, "end_out": 14, "nickel_name": "Reyes", "po": 0},
+        {"team_id": "home", "team_name": "Boston", "phase": 1,
+         "start_out": 25, "end_out": 27, "nickel_name": "Ortiz", "po": 1},
+    ]
+    assert pp.format_powerplays_line(state) == \
+        "Powerplays: Boston — Reyes NF (1: O11), Ortiz NF (2: O25, 1 PO)"
