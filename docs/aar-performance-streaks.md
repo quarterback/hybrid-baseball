@@ -119,6 +119,38 @@ shifts). Set `STREAK_WEEK1 = 0` (or never ignite) to effectively disable.
 - **Pitcher hot/cold streaks are out of scope** here — this layer is the bat
   streak the user described. Pitching day-to-day already has `today_form` /
   `today_condition`; a parallel pitcher-streak could follow this same shape.
-- **No UI surfacing yet.** The streak state is persisted but not shown in the
-  box score / almanac. A "🔥 hot / 🥶 cold" tag would make it legible to
-  readers; left for a follow-up since web work needs flask.
+- ~~**No UI surfacing yet.**~~ Done — see Follow-up below.
+
+## Follow-up — almanac streak badge (UI surfacing)
+
+Per the user: surface the streak **only in the almanac**, not in box scores or
+game pages. The almanac is the static-site renderer under `o27/almanac/`; its
+loader already does `SELECT * FROM players`, so the `streak_state/weeks/heat`
+columns flow through with no loader change.
+
+Added `_streak_badge(p)` in `o27/almanac/render.py`: maps a player's persisted
+streak state to a small qualitative badge, returning `None` (renders nothing)
+for the common no-streak case and for legacy rows missing the columns. Intensity
+tiers track the ramp (`streak_weeks`):
+
+| state | week 1 | weeks 2–3 | weeks 4+ |
+|---|---|---|---|
+| hot (+1) | 🔥 Heating Up | 🔥 Hot | 🔥 Scorching |
+| cold (−1) | 🧊 Cooling Off | 🧊 Cold | 🧊 Ice Cold |
+
+Wired into `player_ctx` and rendered in the player-header subline
+(`player.html.j2`), next to the archetype — hot badge in the red `--bad`
+palette, cold in the blue `--link` palette, with a tooltip ("Scorching — hot
+streak, week 6"). CSS `.streak-badge` added to `almanac.css`.
+
+**Scoping verified end-to-end.** Built the almanac from a full 8-team
+streak-laden season: 165/537 players carried an active streak in the DB, and
+exactly 165 **player pages** rendered a badge — **0** in games (box scores),
+leaders, teams, or index pages. A pipeline test
+(`test_badge_only_renders_on_player_pages`) asserts the badge markup appears
+under `players/` and nowhere else, so the "almanac only" constraint can't
+silently regress.
+
+8 new badge tests + 15 almanac build tests green. (The almanac *blueprint* test
+needs flask, which isn't installed in this environment — unrelated to this
+change; the render-pipeline tests that exercise the badge all pass.)
