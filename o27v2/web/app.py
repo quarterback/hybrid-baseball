@@ -4482,6 +4482,44 @@ def leaders():
             "li":          e["li"],
         })
 
+    # ----- Power Play / short-handed leaderboards ------------------
+    # Only populated in leagues that opted into the Power Play rule (the
+    # game_power_play_stats table is empty otherwise), so the template
+    # renders the whole section conditionally on a non-empty dataset.
+    #   pp_defense  — the nickel fielders: deployments, outs covered, XBH
+    #                 held, hits run down, putouts.
+    #   pp_offense  — short-handed hitters: SH-PA/AB/H and SH-AVG (min PA).
+    pp_rows = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  SUM(pp.pp_deploys)        as pp_deploys,
+                  SUM(pp.pp_outs)           as pp_outs,
+                  SUM(pp.pp_xbh_held)       as pp_xbh_held,
+                  SUM(pp.pp_hits_converted) as pp_hits_converted,
+                  SUM(pp.nickel_po)         as nickel_po,
+                  SUM(pp.nickel_a)          as nickel_a,
+                  SUM(pp.nickel_e)          as nickel_e,
+                  SUM(pp.sh_pa)             as sh_pa,
+                  SUM(pp.sh_ab)             as sh_ab,
+                  SUM(pp.sh_hits)           as sh_hits
+           FROM game_power_play_stats pp
+           JOIN players p ON pp.player_id = p.id
+           JOIN teams   t ON pp.team_id   = t.id
+           {lg_where}
+           GROUP BY p.id""",
+        lg_param,
+    )
+    pp_defense, pp_offense = [], []
+    for r in pp_rows:
+        if (r.get("pp_deploys") or 0) > 0:
+            pp_defense.append(r)
+        sh_ab = int(r.get("sh_ab") or 0)
+        if int(r.get("sh_pa") or 0) > 0:
+            # SH-AVG = hits / at-bats while short-handed (None when no AB).
+            r["sh_avg"] = (int(r.get("sh_hits") or 0) / sh_ab) if sh_ab else None
+            pp_offense.append(r)
+    power_play_on_in_league = bool(pp_rows)
+
     # ----- XO Crossover scale toggle ------------------------------
     # ?scale=xo flips the leaderboard table cells to their MLB-readable
     # values. Rank order is identical (the z-anchor map is monotonic);
@@ -4496,6 +4534,8 @@ def leaders():
         min_pa=min_pa, min_outs=min_outs, min_chances=min_chances,
         batting=batting, pitching=pitching,
         fielding=fielding, fielding_qual=fielding_qual,
+        pp_defense=pp_defense, pp_offense=pp_offense,
+        power_play_on_in_league=power_play_on_in_league,
         salaries=salaries,
         top_outings=top_outings,
         top_games=top_games,

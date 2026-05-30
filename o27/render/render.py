@@ -228,8 +228,18 @@ class Renderer:
         # Build the template context dict (all display values pre-computed).
         disp = self._build_disp(event, ctx, state_after)
 
-        # Update batter stats.
+        # Update batter stats. When the batting team is facing an active nickel
+        # window (short-handed), mirror whatever pa/ab/hits this event credits
+        # into the batter's short-handed counters via a before/after delta —
+        # avoids instrumenting every outcome branch in _update_stats.
+        _sh = bool(getattr(state_after, "power_play_sh_active", False))
+        _sh_s = self._get_stats(batter) if _sh else None
+        _sh_before = (_sh_s.pa, _sh_s.ab, _sh_s.hits) if _sh else None
         self._update_stats(event, ctx, state_after, disp)
+        if _sh:
+            _sh_s.sh_pa   += _sh_s.pa   - _sh_before[0]
+            _sh_s.sh_ab   += _sh_s.ab   - _sh_before[1]
+            _sh_s.sh_hits += _sh_s.hits - _sh_before[2]
 
         # Render via Jinja2 template.
         tmpl = self._env.get_template("play_by_play.j2")

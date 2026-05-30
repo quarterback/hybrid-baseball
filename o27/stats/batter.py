@@ -101,3 +101,13 @@ class BatterStats:
     po: int = 0     # Putouts — outs recorded as the primary fielder on a play
     a:  int = 0     # Assists — credited on throwing outs and DP / TP chains
     e:  int = 0     # Errors committed
+
+    # Short-handed offense (Power Play optional rule). Charged to the BATTER
+    # for plate appearances taken while the opposing defense had its nickel
+    # fielder deployed (state.power_play_sh_active snapshotted at PA start).
+    # These are subsets of the player's overall pa/ab/hits, sliced to the
+    # short-handed condition so "who hits through a loaded defense" is
+    # measurable. Only ever non-zero in leagues where the rule is on.
+    sh_pa:  int = 0   # short-handed plate appearances
+    sh_ab:  int = 0   # short-handed at-bats
+    sh_hits: int = 0  # short-handed hits

@@ -2156,6 +2156,10 @@ class ProbabilisticProvider:
         if not state.power_play_checked_this_ab:
             state.power_play_checked_this_ab = True
             power_play.maybe_open_window(state, self.rng)
+            # Snapshot the short-handed condition for this PA (the offense is a
+            # man down against the deployed nickel). Charged to the batter's
+            # short-handed counters in the renderer for the whole PA.
+            state.power_play_sh_active = power_play.short_handed_for_batting(state)
 
         # Refresh today_form whenever the pitcher changes (half start or
         # mid-game change). Cheap; a single deterministic gauss draw.

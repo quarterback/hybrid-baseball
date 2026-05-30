@@ -69,6 +69,22 @@ def clear_window(state: GameState) -> None:
     state.power_play_presence = 0.0
 
 
+def short_handed_for_batting(state: GameState) -> bool:
+    """True when the team currently batting is facing an active nickel window
+    (the defense deployed its 10th man). From the offense's point of view this
+    is the "short-handed" condition — a man down against a loaded defense.
+
+    Evaluated at PA start (once per AB) and snapshotted onto
+    state.power_play_sh_active so the per-batter short-handed counters are
+    charged for the whole PA even if its final out closes the window.
+    """
+    if not is_window_active(state):
+        return False
+    fielding = state.fielding_team
+    return fielding is not None and fielding.team_id == getattr(
+        state, "power_play_deploy_team_id", None)
+
+
 def is_window_active(state: GameState) -> bool:
     """True while the nickel is on the field."""
     open_out = getattr(state, "power_play_open_out", None)

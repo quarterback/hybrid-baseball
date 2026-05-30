@@ -650,6 +650,10 @@ class GameState:
     power_play_presence: float = 0.0
     pp_presence_originals: list = field(default_factory=list)
     pp_presence_active: bool = False
+    # Snapshotted once per AB (at PA start, after the deploy check): True when
+    # the batting team is facing an active nickel window. Read by the renderer
+    # to charge the batter's short-handed offense counters for the whole PA.
+    power_play_sh_active: bool = False
 
     # --- Joker insertion override ---
     # When the manager inserts a joker, this field holds the joker Player

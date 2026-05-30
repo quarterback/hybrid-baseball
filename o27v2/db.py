@@ -516,6 +516,39 @@ CREATE TABLE IF NOT EXISTS team_phase_outs (
     PRIMARY KEY (game_id, team_id, phase)
 );
 
+-- Power Play (optional rule) per-game stat rack. Only written for games where
+-- the rule was on (power_play_on(state) true), so leagues that never enable it
+-- have an empty table. One row per (game, team, player) carrying that player's
+-- power-play contribution that game. Two complementary roles share the table:
+--   * DEFENSE  — the nickel fielder: deployments he started (pp_deploys),
+--     outs the team's windows covered (pp_outs), extra-base hits he held to
+--     singles (pp_xbh_held) and shallow hits he ran down (pp_hits_converted),
+--     plus his PO/A/E AS the nickel (already in game_batter_stats too, mirrored
+--     here for the power-play leaderboards).
+--   * OFFENSE  — short-handed batting: PA/AB/H taken while the OPPOSING defense
+--     had its nickel deployed (sh_pa / sh_ab / sh_hits). SH-AVG = sh_hits/sh_ab.
+-- A player can have both roles in different games; the columns for the role
+-- that didn't apply stay 0.
+CREATE TABLE IF NOT EXISTS game_power_play_stats (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id    INTEGER NOT NULL REFERENCES games(id),
+    team_id    INTEGER NOT NULL REFERENCES teams(id),
+    player_id  INTEGER NOT NULL REFERENCES players(id),
+    -- Defense (nickel) line.
+    pp_deploys        INTEGER DEFAULT 0,  -- windows this player started as nickel
+    pp_outs           INTEGER DEFAULT 0,  -- outs his deployment windows covered
+    pp_xbh_held       INTEGER DEFAULT 0,  -- XBH cut to singles while he patrolled
+    pp_hits_converted INTEGER DEFAULT 0,  -- shallow hits run down for outs
+    nickel_po         INTEGER DEFAULT 0,  -- putouts recorded as the nickel
+    nickel_a          INTEGER DEFAULT 0,  -- assists recorded as the nickel
+    nickel_e          INTEGER DEFAULT 0,  -- errors as the nickel
+    -- Short-handed offense line.
+    sh_pa      INTEGER DEFAULT 0,
+    sh_ab      INTEGER DEFAULT 0,
+    sh_hits    INTEGER DEFAULT 0,
+    UNIQUE(player_id, game_id)
+);
+
 CREATE TABLE IF NOT EXISTS sim_meta (
     key   TEXT PRIMARY KEY,
     value TEXT

@@ -110,6 +110,28 @@ GLOSSARY_SECTIONS: list[dict] = [
         ],
     },
     {
+        "title": "Power Play / Short-handed",
+        "blurb": "Optional-rule stats, only populated in leagues that enabled the Power Play (the fielding manager may deploy a 10th defender — the nickel fielder — for a short use-or-lose window). 'Power Play' is the deploying defense; 'short-handed' is the offense facing it a man down.",
+        "entries": [
+            {"key": "pp_deploys", "abbr": "PPD", "name": "Power Plays Deployed",
+             "desc": "Windows this player started as the nickel fielder (the 10th defender)."},
+            {"key": "pp_outs", "abbr": "PPO", "name": "Power Play Outs",
+             "desc": "Outs the nickel's deployment windows covered — the time he was on the field."},
+            {"key": "pp_xbh_held", "abbr": "XBHH", "name": "Extra-Base Hits Held",
+             "desc": "Doubles/triples the nickel cut down to singles by covering the outfield gap while deployed."},
+            {"key": "pp_hits_converted", "abbr": "HC", "name": "Hits Converted",
+             "desc": "Shallow outfield singles the nickel ran down and turned into outs while deployed."},
+            {"key": "nickel_po", "abbr": "NF-PO", "name": "Nickel Putouts",
+             "desc": "Putouts recorded while playing as the nickel fielder (position NF)."},
+            {"key": "sh_avg", "abbr": "SH-AVG", "name": "Short-handed Average",
+             "desc": "Batting average (hits / at-bats) for plate appearances taken while the opposing defense had its nickel fielder deployed."},
+            {"key": "sh_hits", "abbr": "SH-H", "name": "Short-handed Hits",
+             "desc": "Hits recorded against a deployed nickel fielder."},
+            {"key": "sh_pa", "abbr": "SH-PA", "name": "Short-handed Plate Appearances",
+             "desc": "Plate appearances taken while the opposing defense had its nickel deployed."},
+        ],
+    },
+    {
         "title": "Pitching · Result-Tier",
         "blurb": "O27's run-prevention trio. The 27-out structure and lineup-cycling make raw ERA misleading, so these correct for arc position and contact quality.",
         "entries": [
