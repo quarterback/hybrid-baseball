@@ -2817,6 +2817,14 @@ class ProbabilisticProvider:
         hit_type = outcome_dict["hit_type"]
         caught_fly = outcome_dict["caught_fly"]
 
+        # Rich descriptive name from the (EV, LA, spray) we just sampled +
+        # the now-final hit_type. Purely for display (box score / play-by-
+        # play); never read back by mechanics.
+        from o27.engine.batted_ball import classify_batted_ball as _classify_bb
+        outcome_dict["batted_ball_name"] = _classify_bb(
+            ev_v, la_v, spray_v, hit_type if not caught_fly else "fly_out"
+        )
+
         is_hr     = (hit_type == "hr")
         is_triple = (hit_type == "triple")
         # ITPHR / out-at-home are terminal run outcomes — force "run" so the

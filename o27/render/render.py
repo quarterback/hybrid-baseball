@@ -1131,6 +1131,11 @@ class Renderer:
             d["hit_type_display"] = _HIT_TYPE_DISPLAY.get(
                 hit_type, hit_type.replace("_", " ")
             )
+            # Rich descriptive flavor ("frozen rope", "Texas leaguer",
+            # "swinging bunt") from the batted-ball taxonomy, when present.
+            d["batted_ball_name"] = (event.get("outcome") or {}).get(
+                "batted_ball_name", ""
+            )
             d["batter_safe"] = batter_safe
             d["new_bases"] = state_after.bases_summary()
 
