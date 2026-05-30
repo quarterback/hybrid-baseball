@@ -1254,20 +1254,66 @@ def _is_risp(state: GameState) -> bool:
     return (b[1] is not None) or (b[2] is not None)
 
 
+def _risp_clutch_form(rng: random.Random, state: GameState) -> float:
+    """The current batting half's RISP clutch form — the hot/cold streak lever.
+
+    One draw per half, cached on the state and re-rolled when the half label
+    changes. Returns 1.0 (neutral, no streak effect) when disabled
+    (RISP_CLUTCH_SIGMA <= 0). >1 = the lineup is clicking with runners on;
+    <1 = the rally keeps dying.
+
+    The mean is shifted by team quality (manager risp_pressure_response +
+    cleanup hitter power/skill) so good teams run hot more often than bad ones
+    — performance-based streaks, not pure noise — then a Gaussian draw supplies
+    the night-to-night hot/cold swing. Rolled lazily off the same rng stream as
+    the rest of contact resolution, so it stays seed-deterministic.
+    """
+    sigma = getattr(cfg, "RISP_CLUTCH_SIGMA", 0.0)
+    if not sigma or sigma <= 0.0:
+        return 1.0
+    half = getattr(state, "half", None)
+    if getattr(state, "_risp_clutch_half", object()) != half:
+        team = getattr(state, "batting_team", None)
+        mgr = getattr(team, "manager", None)
+        risp_resp = float(getattr(mgr, "risp_pressure_response", 0.5) or 0.5)
+        # Cleanup hitter = 4th in the order; fall back to neutral if unset.
+        lineup = list(getattr(team, "lineup", []) or [])
+        cleanup = lineup[3] if len(lineup) >= 4 else None
+        c_power = float(getattr(cleanup, "power", 0.5) or 0.5)
+        c_skill = float(getattr(cleanup, "skill", 0.5) or 0.5)
+        quality = (
+            (risp_resp - 0.5) * cfg.RISP_CLUTCH_MGR_W
+            + (c_power - 0.5) * cfg.RISP_CLUTCH_CLEANUP_POWER_W
+            + (c_skill - 0.5) * cfg.RISP_CLUTCH_CLEANUP_SKILL_W
+        )
+        mean = 1.0 + quality * cfg.RISP_CLUTCH_MEAN_SCALE
+        draw = rng.gauss(mean, sigma)
+        state._risp_clutch = max(cfg.RISP_CLUTCH_MIN, min(cfg.RISP_CLUTCH_MAX, draw))
+        state._risp_clutch_half = half
+    return getattr(state, "_risp_clutch", 1.0)
+
+
 def _risp_talent_penalty(rng: random.Random, state: GameState) -> float:
     """Per-at-bat batter-talent multiplier for the RISP wobble.
 
     Returns 1.0 with no runner in scoring position. With RISP, returns
-    1 - uniform(MIN, MAX) — a fresh draw each at-bat (the "wobble"), so the
-    same hitter's effective capability sags 29-41% in the clutch. Folded into
-    contact_quality's batter-condition term, so it pulls matchup, power and eye
-    down together. Disabled when RISP_TALENT_PENALTY_MAX <= 0.
+    1 - penalty, where penalty = uniform(MIN, MAX) (the per-AB "wobble") scaled
+    by the per-half clutch form: a hot half shrinks the penalty toward zero
+    (the team converts), a cold half deepens it (the team strands). So the same
+    hitter's clutch capability swings both within the half (jitter) and across
+    halves (the streak). Folded into contact_quality's batter-condition term,
+    so it pulls matchup, power and eye down together. Disabled when
+    RISP_TALENT_PENALTY_MAX <= 0.
     """
     hi = getattr(cfg, "RISP_TALENT_PENALTY_MAX", 0.0)
     if hi <= 0.0 or not _is_risp(state):
         return 1.0
     lo = getattr(cfg, "RISP_TALENT_PENALTY_MIN", 0.0)
-    return 1.0 - rng.uniform(min(lo, hi), hi)
+    penalty = rng.uniform(min(lo, hi), hi)
+    # Clutch form modulates the bite. form>1 (hot) relieves; form<1 (cold) deepens.
+    form_dev = _risp_clutch_form(rng, state) - 1.0
+    penalty *= max(0.0, 1.0 - form_dev * getattr(cfg, "RISP_CLUTCH_PENALTY_RELIEF", 0.0))
+    return 1.0 - max(0.0, min(0.75, penalty))
 
 
 def _risp_xbh_edges(quality: str) -> list[tuple[str, str, float]]:
@@ -1728,7 +1774,13 @@ def resolve_contact(
     if _is_risp(state):
         risp_edges = _risp_xbh_edges(quality)
         if risp_edges:
-            table = _redistribute(table, risp_edges, 1.0)
+            # Clutch form scales the suppression: a hot half lifts it (XBH allowed
+            # — the lineup clears the bases), a cold half pushes past full (every
+            # RISP hit a single). Neutral/disabled → dev 1.0 (flat suppression).
+            form_dev = _risp_clutch_form(rng, state) - 1.0
+            xbh_dev = max(0.0, 1.0 - form_dev * getattr(cfg, "RISP_CLUTCH_XBH_RELIEF", 0.0))
+            if xbh_dev > 0.0:
+                table = _redistribute(table, risp_edges, xbh_dev)
 
     # Pitch launch-angle bias: roll ground_out↔fly_out weight by the pitch's
     # launch_angle_bias (sum-preserving). Negative bias (sinker, peeled_drop,

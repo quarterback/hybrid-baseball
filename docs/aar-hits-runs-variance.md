@@ -196,3 +196,56 @@ Levers for a future pass: `RISP_TALENT_PENALTY_*` (harder/easier clutch),
 
 `scripts/measure_hr_coupling.py` is committed as the diagnostic for any future
 H~R work (Pearson r, partial-on-PA, R/H distribution, efficiency tails).
+
+## Follow-up 2 — the per-half RISP clutch form (the streak lever)
+
+The flat RISP wobble lowered R/H but, as flagged above, made clutch conversion
+*uniformly* bad rather than *variable*. The user's direction: make it a per-half
+"clutch form" so teams visibly click / get hot / go on streaks, with the
+streakiness grounded in roster + manager quality — "good teams stagger good days
+into good months into a good season; a bad team tanks the same way; variability
+that's performance-based but seemingly cold/hot induced."
+
+Implemented as `_risp_clutch_form` (`o27/engine/prob.py`, `RISP_CLUTCH_*` in
+config) — one draw per batting half, same machinery as the offensive sequencing
+form, that scales how hard the RISP wobble bites that half:
+- a **hot** half (form > 1) relieves the talent penalty *and* lifts the XBH
+  suppression — the lineup squares up with runners on and clears the bases;
+- a **cold** half (form < 1) deepens the penalty and clamps RISP hits to
+  singles — the rally dies, runners strand.
+
+Crucially the form's **mean is shifted by team quality**, so it's not pure noise:
+`mean = 1 + MEAN_SCALE * [ (mgr.risp_pressure_response-0.5)*MGR_W +
+(cleanup.power-0.5)*P_W + (cleanup.skill-0.5)*S_W ]`, then
+`form = clamp(Normal(mean, SIGMA), MIN, MAX)`. The cleanup hitter (lineup[3])
+and the manager's existing `risp_pressure_response` rating drive the baseline;
+the Gaussian supplies the night-to-night swing.
+
+**Results.** A/B (clutch off vs on, 400 games, identical seeds):
+
+| metric | clutch off (flat wobble) | **clutch on** |
+|---|---|---|
+| overall R/H | 0.91 | 0.94 |
+| R/H per-game std | 0.245 | **0.299** |
+| R/H p10 / p90 | 0.60 / 1.21 | **0.55 / 1.31** |
+| "few hits → many runs" | 0.7% | **2.4%** |
+| "many hits → few runs" | 1.6% | **3.2%** |
+| corr r(H,R) | 0.84 | 0.84 |
+
+The streak variance the flat penalty couldn't produce now shows up: both tails
+roughly doubled-to-tripled, R/H spread widened ~22%, while R/H stays below 1.
+
+**Team-quality differentiation** (direct sampling of the form distribution):
+
+| team profile | mean form | hot halves (>1.2) | cold halves (<0.8) |
+|---|---|---|---|
+| good (masher cleanup + clutch mgr) | 1.11 | 37.6% | 24.1% |
+| average | 1.00 | 30.4% | 30.7% |
+| bad (weak cleanup + passive mgr) | 0.89 | ~24% | ~38% |
+
+A good team runs hot ~38% of halves vs cold ~24%; a bad team mirrors it. Over a
+season that asymmetry compounds into the good-months / bad-months streakiness
+the user wanted, while any single half can still buck the trend (the noise).
+Disable with `RISP_CLUTCH_SIGMA = 0` (falls back to the flat wobble). Broad
+sanity with clutch on: BA .468, SLG .745, R/G 34.7, K% 12.8%, BB% 10.0%,
+super-inning within bounds. 26 o27 + 53 o27v2 engine tests green.

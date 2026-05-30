@@ -403,12 +403,45 @@ SEQ_FORM_GIDP_SCALE: float   = 1.10
 RISP_TALENT_PENALTY_MIN: float = 0.29   # min fraction knocked off batter talent
 RISP_TALENT_PENALTY_MAX: float = 0.41   # max fraction (per-AB uniform draw)
 
-# Sum-preserving "XBH → single" suppression at RISP. At dev 1.0 (always applied
-# when RISP), `scale` fraction of the from-row migrates into singles.
+# Sum-preserving "XBH → single" suppression at RISP. At dev 1.0 (the neutral
+# per-half clutch level), `scale` fraction of the from-row migrates into singles.
 RISP_XBH_HARD_HR2S: float   = 0.45   # hard hr     -> single
 RISP_XBH_HARD_T2S: float    = 0.55   # hard triple -> single
 RISP_XBH_HARD_D2S: float    = 0.35   # hard double -> single
 RISP_XBH_MED_D2S: float     = 0.40   # medium double -> single
+
+# ---------------------------------------------------------------------------
+# Per-half RISP clutch form (the streak/hot-cold lever)
+# ---------------------------------------------------------------------------
+# A flat RISP penalty makes clutch conversion uniformly bad, which lowers R/H
+# but does NOT create the game-to-game variance the sport wants — teams that
+# "click," guys getting hot, good clubs stringing good days into good months.
+# This rolls ONE clutch form per batting half (same idea as the offensive
+# sequencing form) that scales how hard the RISP wobble bites that half:
+#   - a HOT half (form > 1) relieves the talent penalty AND lifts the XBH
+#     suppression — the lineup squares up with runners on and clears the bases;
+#   - a COLD half (form < 1) deepens the penalty and clamps hits to singles —
+#     the rally dies, runners strand.
+# Because it's shared across every RISP at-bat in the half, it compounds into
+# real blow-it-open vs leave-em-loaded games instead of averaging out.
+#
+# The form is NOT pure noise. Its MEAN is shifted by team quality so good teams
+# get hot more often than bad ones (performance-based, but cold/hot-induced):
+#   mean = 1 + MEAN_SCALE * [ (mgr.risp_pressure_response - 0.5) * MGR_W
+#                           + (cleanup.power - 0.5)            * CLEANUP_POWER_W
+#                           + (cleanup.skill - 0.5)            * CLEANUP_SKILL_W ]
+# then form = clamp(Normal(mean, SIGMA), MIN, MAX). Over a season a good
+# roster/manager staggers hot halves into good months; a bad one tanks the same
+# way. Set RISP_CLUTCH_SIGMA <= 0 to disable (falls back to the flat penalty).
+RISP_CLUTCH_SIGMA: float            = 0.45   # per-half hot/cold spread
+RISP_CLUTCH_MIN: float              = 0.12   # coldest clutch-half
+RISP_CLUTCH_MAX: float              = 1.95   # hottest clutch-half
+RISP_CLUTCH_MEAN_SCALE: float       = 0.55   # how strongly team quality moves the mean
+RISP_CLUTCH_MGR_W: float            = 0.40   # weight: manager risp_pressure_response
+RISP_CLUTCH_CLEANUP_POWER_W: float  = 0.35   # weight: cleanup hitter power
+RISP_CLUTCH_CLEANUP_SKILL_W: float  = 0.25   # weight: cleanup hitter skill
+RISP_CLUTCH_PENALTY_RELIEF: float   = 0.85   # hot-form relief on the talent penalty
+RISP_CLUTCH_XBH_RELIEF: float       = 0.90   # hot-form relief on XBH suppression
 
 # ---------------------------------------------------------------------------
 # Inside-the-park home runs
