@@ -544,20 +544,20 @@ ITP_HR_FAIL_OUT_AGGRO_SCALE: float = 0.40    # +P(out) per (run_aggressiveness -
 #   3. BATTER SPEED — slow batters lose the relay race.
 #   4. TEAM DEFENSE — strong infields turn more DPs.
 # Tuning targets (after all factors compose, before clamp):
-#   - Low end (~6%):  3B alone, hard contact, fast batter, weak defense.
-#   - Mid (~13-14%):  1B alone, medium contact, neutral attributes.
-#   - High end (~23%): bases loaded, weak contact, slow batter, elite defense.
+#   - Low end (~9%):  3B alone, hard contact, fast batter, weak defense.
+#   - Mid (~17-18%):  1B alone, medium contact, neutral attributes.
+#   - High end (~30%): bases loaded, weak contact, slow batter, elite defense.
 # Rates raised as part of the H~R decoupling pass. With the DP gate fixed to
 # fire all half long (see prob.py) instead of only the first 2 outs, the double
 # play is now O27's real runner-erasing event — the thing that lets a high-hit
 # offense still strand and post a low run total. The band is widened so a cold,
 # rally-killing half (with the form multiplier on top) can turn grounders into
 # twin-killings at a much higher clip than the old per-inning MLB rate.
-GIDP_BASE_PROB: float    = 0.20
+GIDP_BASE_PROB: float    = 0.26
 GIDP_SPEED_SCALE: float  = 0.20
 GIDP_DEFENSE_SCALE: float = 0.15
-GIDP_MIN_PROB: float     = 0.07
-GIDP_MAX_PROB: float     = 0.42
+GIDP_MIN_PROB: float     = 0.09
+GIDP_MAX_PROB: float     = 0.50
 
 # Force-factor table — multiplier applied based on which bases are
 # occupied. The (1B-only) case is the canonical 1.0 baseline.
@@ -584,13 +584,20 @@ GIDP_QUALITY_HARD: float    = 0.55
 GIDP_STAY_MULTIPLIER: float = 0.30
 
 # Triple play — at least 2 forceable runners on (1B+2B or bases loaded)
-# and 0 outs. Real MLB rate is ~1 per 700 opportunities; we keep it
-# rare. Conditional on a DP firing in the eligible base config, this
-# probability promotes it to a TP. Set to 0 to disable.
+# and room left in the half to record three outs. Conditional on a DP
+# firing in the eligible base config, this probability promotes it to a
+# TP. Set to 0 to disable.
+# NOTE (O27 gate): like the DP gate, the trigger is NOT MLB's per-inning
+# "nobody out" rule. There are no innings — one continuous 27-out half —
+# so the literal `outs == 0` gate let a TP fire only on the very first out
+# of the entire half, making triple plays effectively dead code (0 in a
+# 400-game sample). The eligibility now mirrors the DP gate: the half just
+# has to have room for the three outs a TP records. The base rate is kept
+# low so that, fired all half long, TPs land at a believably rare clip.
 # Baserunner errors can also induce a TP — a runner with low baserunning
 # skill (poor read off the bat, late tag-up) inflates the TP probability
 # via the SKILL bonus below.
-TRIPLE_PLAY_GIVEN_DP_PROB: float       = 0.04
+TRIPLE_PLAY_GIVEN_DP_PROB: float       = 0.05
 TRIPLE_PLAY_BASERUNNING_BONUS: float   = 0.06   # added when lead runner is below-average
 
 # ---------------------------------------------------------------------------
