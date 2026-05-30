@@ -212,21 +212,28 @@ TALENT_2C_SHIFT_SCALE: float = 1.00   # ±1.5 nominal swing; bounded 0.05-0.95
 # Format per row: (hit_type, batter_safe, caught_fly, weight)
 # Weights are relative (do not need to sum to 1.0; engine normalises).
 
+# H~R variance pass: single weights raised in the WEAK/MEDIUM tiers so balls in
+# play turn into hits far more often (the primary ask — more hits, college-ball
+# contact levels). Ground-ball volume is kept high enough to feed the now-live
+# double-play channel (see prob.py). The hit total is the lever here; the
+# game-to-game decoupling of runs from hits lives in the per-half sequencing
+# form and the double-play rate further below. See docs/aar-hits-runs-variance.md
+# for the full story, including why the H~R correlation is largely structural.
 WEAK_CONTACT: list = [
-    ("ground_out",      False, False, 0.50),
-    ("fly_out",         False, True,  0.18),
-    ("line_out",        False, False, 0.10),
-    ("single",          True,  False, 0.18),
+    ("ground_out",      False, False, 0.42),
+    ("fly_out",         False, True,  0.13),
+    ("line_out",        False, False, 0.07),
+    ("single",          True,  False, 0.34),
     ("fielders_choice", True,  False, 0.04),
 ]
 
 MEDIUM_CONTACT: list = [
-    ("ground_out",      False, False, 0.22),
-    ("fly_out",         False, True,  0.14),
-    ("line_out",        False, False, 0.12),
-    ("single",          True,  False, 0.32),
-    ("double",          True,  False, 0.12),
-    ("fielders_choice", True,  False, 0.08),
+    ("ground_out",      False, False, 0.18),
+    ("fly_out",         False, True,  0.10),
+    ("line_out",        False, False, 0.08),
+    ("single",          True,  False, 0.44),
+    ("double",          True,  False, 0.14),
+    ("fielders_choice", True,  False, 0.06),
 ]
 
 HARD_CONTACT: list = [
@@ -249,30 +256,33 @@ HARD_CONTACT: list = [
 # to them on contact. Fuzzy off-round percentages intentional — keeps
 # the numbers looking observed rather than designed.
 
-# Single, runner on 3B (rarely cut down — runner is 90 ft from home —
-# but elite-arm corner OFs still nail one occasionally on a contact
-# play with the throw home).
-ADVANCE_3B_ON_1B_SCORE: float    = 0.71
-ADVANCE_3B_ON_1B_HOLD: float     = 0.25
-ADVANCE_3B_ON_1B_OUT: float      = 0.04
+# Single, runner on 3B. These are the MEAN conversion rates; the per-half
+# sequencing form (below) swings them widely game to game. A moderate mean
+# (down from the old near-automatic 0.71) keeps a single from reliably
+# dripping in a run, but the real variance now lives in the form — a hot half
+# clears 3B on contact, a cold half strands him.
+ADVANCE_3B_ON_1B_SCORE: float    = 0.44
+ADVANCE_3B_ON_1B_HOLD: float     = 0.50
+ADVANCE_3B_ON_1B_OUT: float      = 0.06
 
-# Single, runner on 2B — the classic close play at the plate.
-ADVANCE_2B_ON_1B_SCORE: float    = 0.49
-ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.37
-ADVANCE_2B_ON_1B_OUT: float      = 0.14
+# Single, runner on 2B — the classic close play at the plate. Low mean (most
+# 2B runners stop at 3B on a single), wide game-to-game swing from the form.
+ADVANCE_2B_ON_1B_SCORE: float    = 0.20
+ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.65
+ADVANCE_2B_ON_1B_OUT: float      = 0.15
 
 # Double, runner on 2B (almost auto, occasionally held with a deep relay
 # and the rare turn-2 chase that catches the runner short).
-ADVANCE_2B_ON_2B_SCORE: float    = 0.83
-ADVANCE_2B_ON_2B_HOLD_3B: float  = 0.13
+ADVANCE_2B_ON_2B_SCORE: float    = 0.62
+ADVANCE_2B_ON_2B_HOLD_3B: float  = 0.34
 ADVANCE_2B_ON_2B_OUT: float      = 0.04
 
-# Double, runner on 1B — 1B-to-home on a double is the lever everyone
-# wants. Around half score, a third stop at 3B, the slow ones get held
-# at 2B because the throw beats them, occasionally the throw nails 'em.
-ADVANCE_1B_ON_2B_SCORE: float    = 0.40
-ADVANCE_1B_ON_2B_TO_3B: float    = 0.37
-ADVANCE_1B_ON_2B_HOLD_2B: float  = 0.16
+# Double, runner on 1B — 1B-to-home on a double. Pulled down off the old 0.40
+# so a double with a man on first usually leaves him at third; the run comes
+# when the form is hot or the next ball is squared up, not automatically.
+ADVANCE_1B_ON_2B_SCORE: float    = 0.26
+ADVANCE_1B_ON_2B_TO_3B: float    = 0.48
+ADVANCE_1B_ON_2B_HOLD_2B: float  = 0.19
 ADVANCE_1B_ON_2B_OUT: float      = 0.07
 
 # Single, runner on 1B — almost always 1B → 2B; some 1B → 3B; TOA risk
@@ -313,6 +323,174 @@ RUNNER_THROWN_OUT_AT_HOME_BASE: float        = 0.18
 RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.22
 RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.22
 RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.05
+
+# ---------------------------------------------------------------------------
+# Unified per-half "locked in" form  (the shared draw behind the two below)
+# ---------------------------------------------------------------------------
+# The offensive sequencing form (slugging / baserunning / GIDP) and the RISP
+# clutch form (talent penalty / XBH suppression) used to be rolled as TWO
+# independent Gaussian draws per batting half. Independent draws de-correlate
+# the channels: a hot-slugging half and a hot-converting half rarely lined up,
+# so within a game the effects averaged out instead of compounding — which is
+# why every prior pass lowered R/H but never widened the game-to-game efficiency
+# tails ("blow-it-open vs leave-em-loaded").
+#
+# This unifies them into ONE latent draw per half — "the lineup is locked in
+# tonight" — that feeds ALL of those channels at once. Because one draw now
+# moves conversion AND slugging AND baserunning together, a hot night compounds
+# into a blowout and a cold night into a stranded-rally loss. The per-channel
+# strengths stay as their own constants (SEQ_FORM_*_SCALE, RISP_CLUTCH_*_RELIEF
+# below) so each channel is still independently tunable / disable-able; this
+# block governs only the shared DRAW.
+#
+# Same best-hitter + manager-vibes anchor the old clutch form used (performance-
+# grounded, not pure noise):
+#   best    = max_p [ BAT_POWER_W*p.power + BAT_SKILL_W*p.skill ]
+#   quality = (best - 0.5)*BAT_W + (mgr_risp_pressure - 0.5)*MGR_W
+#   mean    = 1 + MEAN_SCALE*quality;  form = clamp(Normal(mean, SIGMA), MIN, MAX)
+# Set LOCKED_FORM_SIGMA <= 0 to disable the whole mechanism (every half at 1.0).
+LOCKED_FORM_SIGMA: float        = 0.66   # shared per-half hot/cold spread
+LOCKED_FORM_MIN: float          = 0.08   # coldest possible half
+LOCKED_FORM_MAX: float          = 2.15   # hottest possible half
+# Base center of the draw before the team-quality shift. The channels are
+# asymmetric — a hot half (form>1) relieving the RISP penalty AND slugging adds
+# more runs than an equally-cold half strands (floor effects) — so widening the
+# spread via SIGMA also drifts mean R/H upward. Setting the base center a touch
+# below 1.0 pulls the mean back so we widen the game-to-game SPREAD without
+# shifting the league's mean R/H off "a hit ≠ a run" (~0.93). 1.0 = no offset.
+LOCKED_FORM_MEAN_BASE: float    = 0.94
+LOCKED_FORM_MEAN_SCALE: float   = 0.55   # how strongly team quality shifts the mean
+LOCKED_FORM_BAT_W: float        = 0.85   # weight: best hitter's quality (the anchor)
+LOCKED_FORM_BAT_POWER_W: float  = 0.5    # best-hitter score: power share
+LOCKED_FORM_BAT_SKILL_W: float  = 0.5    # best-hitter score: skill share
+LOCKED_FORM_MGR_W: float        = 0.15   # weight: manager persona (small vibes nudge)
+
+# ---------------------------------------------------------------------------
+# Offensive sequencing form (the H~R decoupler)
+# ---------------------------------------------------------------------------
+# The structural problem: with ~45 PAs per team in a single 27-out arc, the
+# law of large numbers crushes per-game conversion variance — no matter where
+# the per-event ADVANCE_* rates sit, every game's runs-per-baserunner
+# converges to nearly the same ratio, so R tracks H almost 1:1 with no tails.
+# Real "few hits / many runs" and "many hits / few runs" box scores come from
+# SEQUENCING: whether a lineup strings its hits and walks together with traffic
+# on base, or sprays them across dead innings. To reproduce that, each half
+# draws ONE offensive sequencing form (a team-wide "we're clicking tonight" vs
+# "we left the bases loaded all night" factor). It shifts every base-advancement
+# SCORE roll that half in the same direction, correlating conversion across all
+# the half's PAs — which is what actually inflates Var(R | H) and pulls the
+# H~R correlation down off the structural ceiling.
+#
+# form ~ Normal(1.0, SEQ_FORM_SIGMA), clamped to [MIN, MAX]. The shift fed to
+# the advancement tables is (form - 1.0) * SEQ_FORM_SCORE_SCALE: a hot half
+# pushes runners home on contact, a cold half strands them. Set SEQ_FORM_SIGMA
+# to 0.0 to disable the mechanism entirely (every half plays at form 1.0).
+# NOTE: the DRAW is now the unified LOCKED_FORM_* above; SEQ_FORM_SIGMA/MIN/MAX
+# are retained only for reference (no longer roll a separate sequencing draw).
+SEQ_FORM_SIGMA: float       = 0.62   # (superseded by LOCKED_FORM_SIGMA)
+SEQ_FORM_MIN: float         = 0.08   # (superseded by LOCKED_FORM_MIN)
+SEQ_FORM_MAX: float         = 2.10   # (superseded by LOCKED_FORM_MAX)
+SEQ_FORM_SCORE_SCALE: float = 1.20   # LIVE: form deviation → additive score-prob shift
+
+# The dominant decoupler. H counts a single and a homer the same; R does not.
+# The reason runs track hits ~1:1 in O27 is that per-game contact QUALITY
+# (the single↔double↔HR mix) barely varies — large-PA averaging pins every
+# game's slugging near the mean. This scale routes the same per-half form into
+# a sum-preserving power redistribution (identical machinery to the per-batter
+# power rating), so a hot half turns its hits into extra-base hits — runs
+# spike while the hit COUNT holds — and a cold half dinks singles that pile up
+# as hits but strand. That single↔XBH swing, not baserunning, is what pulls a
+# game's runs off its hit total and opens the "8 hits / 11 runs" and
+# "16 hits / 4 runs" tails. form 1.0 = identity (no quality shift).
+SEQ_FORM_POWER_SCALE: float = 1.45   # LIVE: form deviation → redistribution strength
+
+# Edge scales for the form's dedicated single<->XBH<->HR redistribution. Large
+# on purpose (the per-batter POWER_REDIST_* edges are gentle by comparison): at
+# a +1 form deviation, `scale` fraction of the `from` row migrates to the `to`
+# row. Hot halves move singles/doubles into homers; cold halves (negative dev)
+# pull HRs back down into singles. Sum-preserving, so hit count is unchanged.
+SEQ_REDIST_HARD_S2HR: float  = 0.55  # hard single   -> hr
+SEQ_REDIST_HARD_D2HR: float  = 0.45  # hard double   -> hr
+SEQ_REDIST_HARD_LO2HR: float = 0.60  # hard line_out -> hr (squared-up vs caught)
+SEQ_REDIST_MED_S2D: float    = 0.75  # medium single -> double
+
+# Form sensitivity of the double-play rate (the runner-erasing channel). A
+# cold half (form < 1) hits into MORE double plays — rallies die on the bases
+# instead of every runner coming around; a hot half (form > 1) stays out of
+# them. This is what lets a cold offense pile up hits that go nowhere.
+SEQ_FORM_GIDP_SCALE: float   = 1.20   # LIVE
+
+# ---------------------------------------------------------------------------
+# RISP pressure ("the wobble")
+# ---------------------------------------------------------------------------
+# The engine otherwise fiats hits from talent + dice regardless of situation,
+# which — in a 27-out inning where ~87% of baserunners already score — is why
+# runs track hits ~1:1. This makes converting runners in scoring position a
+# genuine, high-variance struggle instead of a formality:
+#
+#   1. TALENT WOBBLE. With a runner on 2B or 3B, the hitter's effective
+#      capability is knocked down by a per-at-bat random draw in
+#      [RISP_TALENT_PENALTY_MIN, MAX] (≈ 29-41%). It's a multiplier folded into
+#      the batter's condition term in contact_quality, so it sags matchup, power
+#      and eye together — success (a single or more) simply becomes less likely.
+#      The per-AB draw IS the wobble: same hitter, different pressure each time.
+#   2. WEAKER HITS. When a RISP at-bat does produce a hit, it's mostly a single.
+#      A sum-preserving redistribution pulls HR/triple/double weight back into
+#      singles, so the big multi-run, bases-clearing hit is rarer with runners
+#      on — runners advance station-to-station and pile up instead of being
+#      driven in all at once.
+#
+# Together these cap RISP conversion and let a high-hit offense still strand the
+# yard. Set RISP_TALENT_PENALTY_MAX = 0.0 to disable the wobble; set the
+# RISP_XBH_* scales to 0.0 to disable the hit-type suppression.
+RISP_TALENT_PENALTY_MIN: float = 0.29   # min fraction knocked off batter talent
+RISP_TALENT_PENALTY_MAX: float = 0.41   # max fraction (per-AB uniform draw)
+
+# Sum-preserving "XBH → single" suppression at RISP. At dev 1.0 (the neutral
+# per-half clutch level), `scale` fraction of the from-row migrates into singles.
+RISP_XBH_HARD_HR2S: float   = 0.45   # hard hr     -> single
+RISP_XBH_HARD_T2S: float    = 0.55   # hard triple -> single
+RISP_XBH_HARD_D2S: float    = 0.35   # hard double -> single
+RISP_XBH_MED_D2S: float     = 0.40   # medium double -> single
+
+# ---------------------------------------------------------------------------
+# Per-half RISP clutch form (the streak/hot-cold lever)
+# ---------------------------------------------------------------------------
+# A flat RISP penalty makes clutch conversion uniformly bad, which lowers R/H
+# but does NOT create the game-to-game variance the sport wants — teams that
+# "click," guys getting hot, good clubs stringing good days into good months.
+# This rolls ONE clutch form per batting half (same idea as the offensive
+# sequencing form) that scales how hard the RISP wobble bites that half:
+#   - a HOT half (form > 1) relieves the talent penalty AND lifts the XBH
+#     suppression — the lineup squares up with runners on and clears the bases;
+#   - a COLD half (form < 1) deepens the penalty and clamps hits to singles —
+#     the rally dies, runners strand.
+# Because it's shared across every RISP at-bat in the half, it compounds into
+# real blow-it-open vs leave-em-loaded games instead of averaging out.
+#
+# The form is NOT pure noise. Its MEAN is shifted by team quality so good teams
+# get hot more often than bad ones (performance-based, but cold/hot-induced).
+# The anchor is the team's BEST HITTER (max over the lineup of a power/skill
+# blend, wherever he bats), with the manager persona as a small vibes nudge:
+#   best    = max_p [ BAT_POWER_W*p.power + BAT_SKILL_W*p.skill ]
+#   quality = (best - 0.5)*BAT_W + (mgr_risp_pressure - 0.5)*MGR_W
+#   mean    = 1 + MEAN_SCALE * quality;  form = clamp(Normal(mean, SIGMA), MIN, MAX)
+# Over a season a good roster staggers hot halves into good months; a bad one
+# tanks the same way. Set RISP_CLUTCH_SIGMA <= 0 to disable (flat penalty).
+# NOTE: the DRAW + its anchor are now the unified LOCKED_FORM_* block above.
+# The SIGMA/MIN/MAX/MEAN_SCALE/BAT_*/MGR_W constants here are retained only for
+# reference; only the two RELIEF constants below are still LIVE (they set how
+# hard the shared form modulates the RISP channels).
+RISP_CLUTCH_SIGMA: float            = 0.45   # (superseded by LOCKED_FORM_SIGMA)
+RISP_CLUTCH_MIN: float              = 0.12   # (superseded by LOCKED_FORM_MIN)
+RISP_CLUTCH_MAX: float              = 1.95   # (superseded by LOCKED_FORM_MAX)
+RISP_CLUTCH_MEAN_SCALE: float       = 0.55   # (superseded by LOCKED_FORM_MEAN_SCALE)
+RISP_CLUTCH_BAT_W: float            = 0.85   # (superseded by LOCKED_FORM_BAT_W)
+RISP_CLUTCH_BAT_POWER_W: float      = 0.5    # (superseded by LOCKED_FORM_BAT_POWER_W)
+RISP_CLUTCH_BAT_SKILL_W: float      = 0.5    # (superseded by LOCKED_FORM_BAT_SKILL_W)
+RISP_CLUTCH_MGR_W: float            = 0.15   # (superseded by LOCKED_FORM_MGR_W)
+RISP_CLUTCH_PENALTY_RELIEF: float   = 0.95   # LIVE: hot-form relief on the talent penalty
+RISP_CLUTCH_XBH_RELIEF: float       = 1.00   # LIVE: hot-form relief on XBH suppression
 
 # ---------------------------------------------------------------------------
 # Inside-the-park home runs
@@ -369,11 +547,17 @@ ITP_HR_FAIL_OUT_AGGRO_SCALE: float = 0.40    # +P(out) per (run_aggressiveness -
 #   - Low end (~6%):  3B alone, hard contact, fast batter, weak defense.
 #   - Mid (~13-14%):  1B alone, medium contact, neutral attributes.
 #   - High end (~23%): bases loaded, weak contact, slow batter, elite defense.
-GIDP_BASE_PROB: float    = 0.13
+# Rates raised as part of the H~R decoupling pass. With the DP gate fixed to
+# fire all half long (see prob.py) instead of only the first 2 outs, the double
+# play is now O27's real runner-erasing event — the thing that lets a high-hit
+# offense still strand and post a low run total. The band is widened so a cold,
+# rally-killing half (with the form multiplier on top) can turn grounders into
+# twin-killings at a much higher clip than the old per-inning MLB rate.
+GIDP_BASE_PROB: float    = 0.20
 GIDP_SPEED_SCALE: float  = 0.20
 GIDP_DEFENSE_SCALE: float = 0.15
-GIDP_MIN_PROB: float     = 0.06
-GIDP_MAX_PROB: float     = 0.23
+GIDP_MIN_PROB: float     = 0.07
+GIDP_MAX_PROB: float     = 0.42
 
 # Force-factor table — multiplier applied based on which bases are
 # occupied. The (1B-only) case is the canonical 1.0 baseline.

@@ -1,0 +1,99 @@
+{
+  "id": "world_pool",
+  "label": "World Pool \u2014 7 leagues, worldwide 32-nation WC field",
+  "team_count": 50,
+  "level": "MLB",
+  "games_per_team": 60,
+  "season_days": 150,
+  "leagues": [
+    "Continental League",
+    "Pacific League",
+    "European League",
+    "World League",
+    "Frontier League",
+    "African Premier Division",
+    "Oceania League"
+  ],
+  "schedule_mode": "independent",
+  "postseason": "none",
+  "award_names": {
+    "mvp": "Hitter of the Year",
+    "cy_young": "Pitcher of the Year"
+  },
+  "team_naming": "generated",
+  "league_specs": [
+    {
+      "name": "Continental League",
+      "teams": 8,
+      "divisions": 2
+    },
+    {
+      "name": "Pacific League",
+      "teams": 6,
+      "divisions": 1
+    },
+    {
+      "name": "European League",
+      "teams": 6,
+      "divisions": 1
+    },
+    {
+      "name": "World League",
+      "teams": 8,
+      "divisions": 2
+    },
+    {
+      "name": "Frontier League",
+      "teams": 6,
+      "divisions": 1
+    },
+    {
+      "name": "African Premier Division",
+      "teams": 10,
+      "divisions": 2
+    },
+    {
+      "name": "Oceania League",
+      "teams": 6,
+      "divisions": 1
+    }
+  ],
+  "style_profiles": {
+    "Continental League": "dominican",
+    "Pacific League": "npb",
+    "European League": "european",
+    "Frontier League": "athletic",
+    "African Premier Division": "athletic",
+    "Oceania League": "balanced"
+  },
+  "name_regions": {
+    "Continental League": "latin_america",
+    "Pacific League": "east_asia",
+    "European League": "europe_western",
+    "World League": "global",
+    "Frontier League": "south_asia",
+    "African Premier Division": {
+      "africa": 0.32,
+      "africa_cricket": 0.28,
+      "north_africa": 0.18,
+      "namibia": 0.07,
+      "uganda": 0.05,
+      "mauritius": 0.05,
+      "cape_verde": 0.05
+    },
+    "Oceania League": {
+      "anzac": 0.55,
+      "pacific_islands": 0.45
+    }
+  },
+  "park_profiles": {},
+  "intra_division_weight": 0.5,
+  "inter_division_weight": 0.5,
+  "season_year": 2026,
+  "season_start_month": 4,
+  "season_start_day": 1,
+  "all_star_break_month": 7,
+  "all_star_break_day": 13,
+  "all_star_break_days": 4,
+  "gender": "male"
+}

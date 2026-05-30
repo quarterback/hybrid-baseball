@@ -31,6 +31,7 @@ from o27.render.render import Renderer
 from o27v2 import db
 import o27v2.config as v2cfg
 from o27v2 import scout as _scout
+from o27v2 import streaks as _streaks
 
 
 # Process-wide serialisation for sim execution. Flask's dev server is
@@ -360,6 +361,12 @@ def _db_team_to_engine(
     rest_excluded = recently_used_pitcher_ids or set()
     workload = workload or {}
 
+    # Performance-streak overlay (see o27v2/streaks.py). The team-wide streak
+    # delta is the same for every hitter in this lineup; per-player deltas are
+    # applied individually below. Both are temporary overlays on the engine
+    # Player — the stored ratings are never touched.
+    _team_streak_delta = _streaks.team_streak_unit_delta(team_row)
+
     engine_players: list[Player] = []
     fielders: list[Player] = []
     pitchers: list[Player] = []
@@ -475,6 +482,9 @@ def _db_team_to_engine(
                     ]
                 except (ValueError, TypeError, KeyError):
                     player.repertoire = []
+        # Apply the hot/cold streak overlay (per-player ramp + team streak)
+        # to this player's offensive ratings before he enters the lineup.
+        _streaks.apply_player_streak(player, p, team_delta=_team_streak_delta)
         engine_players.append(player)
         engine_to_db_id[player.player_id] = int(p["id"])
         # Joker detection: the new substitution-economy model tags
@@ -2030,6 +2040,22 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                                 away_bstats + away_pstats, rng)
             _motivator_cup_fill(home_team_id,
                                 home_bstats + home_pstats, rng)
+        except Exception:
+            pass
+
+    # Performance streaks (see o27v2/streaks.py). Fold each hitter's game line
+    # into his hot/cold heat and advance the multi-week ramp; fold each team's
+    # W/L into its team-wide streak. Regular season only — the streak overlay
+    # is a season-arc mechanic — and best-effort so legacy DBs without the
+    # streak_* columns simply no-op.
+    if not game.get("is_playoff"):
+        try:
+            _streaks.update_player_streaks(away_bstats + home_bstats)
+            if winner_team_id is not None:
+                _streaks.update_team_streak(home_team_id,
+                                            won=(winner_team_id == home_team_id))
+                _streaks.update_team_streak(away_team_id,
+                                            won=(winner_team_id == away_team_id))
         except Exception:
             pass
 

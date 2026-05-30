@@ -22,6 +22,7 @@ from typing import Any
 
 from o27v2 import config as v2cfg
 from o27v2 import scout as _scout
+from o27v2 import nation_talent as _nt
 from o27v2.archetypes import (
     classify_position_player,
     classify_roster_slot,
@@ -1860,8 +1861,14 @@ def _make_hitter(
 
     `team_shift` is added to every tier roll so all players on a strong
     org skew higher and all players on a weak org skew lower. Set by
-    `generate_players` once per team.
+    `generate_players` once per team. The player's nationality adds its
+    own talent lift on top (see o27v2.nation_talent), and a per-player
+    elite roll (scaled by the nation's investment) can floor a hitter's
+    marquee grades into the world-class band.
     """
+    team_shift += _nt.talent_shift(country)
+    elite = _nt.roll_elite(country, rng)
+
     def roll(attr: str | None = None) -> int:
         bias = style.get(attr, 0) if (style and attr) else 0
         return _roll_tier_grade(rng, team_shift + bias + _gen_shift(attr))
@@ -1873,6 +1880,13 @@ def _make_hitter(
     contact_g  = roll("contact")
     power_g    = roll("power")
     eye_g      = roll("eye")
+    if elite:
+        # World-class bat: floor the marquee offensive grades. Elite+
+        # (81-95) is still earned via development; the seed ceiling is 80.
+        skill_g   = max(skill_g,   rng.randint(*_nt.ELITE_HEADLINE))
+        contact_g = max(contact_g, rng.randint(*_nt.ELITE_SUPPORT))
+        power_g   = max(power_g,   rng.randint(*_nt.ELITE_SUPPORT))
+        eye_g     = max(eye_g,     rng.randint(*_nt.ELITE_SUPPORT))
     bats_roll  = _roll_bats(rng)
     # Spray tendency: base N(0.5, 0.12), nudged toward pull by power
     # (sluggers turn on the ball) and by LHB tendency. Clamped [0.05, 0.95].
@@ -2336,7 +2350,14 @@ def _make_pitcher(
     time from the live attribute values, so an aging arm with decayed
     Stamina automatically slides from rotation into middle relief without
     any persisted re-tagging.
+
+    Nationality adds its talent lift to `team_shift`, and a per-player
+    elite roll (scaled by the nation's investment) can floor an ace's
+    marquee grades into the world-class band (see o27v2.nation_talent).
     """
+    team_shift += _nt.talent_shift(country)
+    elite = _nt.roll_elite(country, rng)
+
     def roll(attr: str | None = None) -> int:
         bias = style.get(attr, 0) if (style and attr) else 0
         return _roll_tier_grade(rng, team_shift + bias + _gen_shift(attr))
@@ -2348,6 +2369,11 @@ def _make_pitcher(
     # = low BB regardless of Stuff; high Movement = ground-ball pitcher.
     command_g  = roll("command")
     movement_g = roll("movement")
+    if elite:
+        # World-class arm: floor Stuff + supporting command/movement.
+        stuff_g    = max(stuff_g,    rng.randint(*_nt.ELITE_HEADLINE))
+        command_g  = max(command_g,  rng.randint(*_nt.ELITE_SUPPORT))
+        movement_g = max(movement_g, rng.randint(*_nt.ELITE_SUPPORT))
     # Pitchers also get defense/arm — they field comebackers and bunts,
     # and high-arm pitchers help suppress steals. Capped lower than
     # position players since pitcher fielding matters less in O27.

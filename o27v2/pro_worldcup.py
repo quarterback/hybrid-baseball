@@ -2,20 +2,23 @@
 Pro World Cup — international tournament for the pro player pool.
 
 End-of-season showcase that pulls real pro players onto national teams,
-runs a regional qualifying phase to fill a 24-nation field, then plays
-4 groups of 6 → 8-team knockout. Each season rolls a fresh WC.
+runs a regional qualifying phase to fill a 32-nation field, then plays
+8 groups of 4 → 16-team knockout. Each season rolls a fresh WC.
 
 Three-phase pipeline:
   1. **Qualifying**: every eligible nation (≥9 active hitters + ≥5
      pitchers in the pro pool) enters a regional round-robin
-     (Americas / Asia / Europe / Other). Regional quotas sum to 24.
+     (Americas / Asia / Africa / Europe / Oceania / Rest). The regional
+     quotas fill 28 direct berths; the last 4 of the 32-nation field
+     come from a FIFA-style intercontinental playoff among the best
+     non-qualifiers.
   2. **Rosters**: each qualified nation gets an auto-rolled 30-man
      roster (WBC-standard tournament size) — 8 canonical starters,
      6 fielder backups, 3 jokers (the DH role, matching the pro
      league's structural convention), and 13 pitchers. The web UI
      lets the user swap players before the main tournament starts.
-  3. **Main tournament**: 4 groups of 6, top 2 advance to an 8-team
-     knockout (QF → SF → Final).
+  3. **Main tournament**: 8 groups of 4, top 2 advance to a 16-team
+     knockout (R16 → QF → SF → Final).
 
 Player eligibility:
   * Auto-pick: only `players.country` (primary nationality).
@@ -49,10 +52,10 @@ from o27.render.render import Renderer
 # Region rollup + quotas
 # ---------------------------------------------------------------------------
 #
-# The youth `_COUNTRY_REGION` map uses 7 sub-regions; the WC rolls those up
-# to 4 broader pots so regional quotas balance to exactly 24 main-bracket
-# slots. Africa + Oceania share an "Other" pot — together they have just
-# enough nations to be competitive for the 2 berths.
+# The youth `_COUNTRY_REGION` map uses several sub-regions; the WC rolls
+# those up to 6 broader pots (Americas / Asia / Africa / Europe / Oceania /
+# Rest). The five regional pots fill 28 direct berths; "Rest" is the catch-
+# all that only earns berths through the intercontinental playoff.
 
 _WC_REGION_ROLLUP: dict[str, str] = {
     "North America": "Americas",
@@ -60,25 +63,37 @@ _WC_REGION_ROLLUP: dict[str, str] = {
     "South America": "Americas",
     "Europe":        "Europe",
     "Asia":          "Asia",
-    "Africa":        "Other",
-    "Oceania":       "Other",
-    "Other":         "Other",
+    "Africa":        "Africa",
+    "Oceania":       "Oceania",
+    "Other":         "Rest",
 }
 
-WC_REGION_ORDER: list[str] = ["Americas", "Asia", "Europe", "Other"]
+WC_REGION_ORDER: list[str] = ["Americas", "Asia", "Africa", "Europe", "Oceania", "Rest"]
 
-# Quotas (sum = 24) — the per-region count that advances out of qualifying
-# into the 24-nation main bracket. Tuned to the realistic talent depth
-# distribution: Americas dominates (US/DR/PR/Cuba/Venezuela/Mexico/etc.),
-# Asia is strong (Japan/Korea/Taiwan), Europe is the third pole (Nether-
-# lands/Italy/Germany), Other has limited depth but always gets a couple
-# of berths so Australia + RSA don't sit out every cycle.
+# Direct regional berths (sum = 28). The remaining 4 of the 32-nation field
+# come from the intercontinental playoff among the best non-qualifiers (see
+# WC_PLAYOFF_SLOTS). Tuned to realistic talent depth: Americas dominates
+# (US/DR/PR/Cuba/Venezuela/Mexico/etc.), Asia is strong (Japan/Korea/Taiwan),
+# Africa is its own pot (RSA/Nigeria/Ethiopia/Namibia/...), Europe a pole
+# (Netherlands/Italy/Germany), Oceania gets one guaranteed berth (Australia/
+# NZ). "Rest" is the catch-all that earns berths only through the playoff.
 WC_REGIONAL_QUOTAS: dict[str, int] = {
     "Americas": 9,
-    "Asia":     7,
-    "Europe":   6,
-    "Other":    2,
+    "Asia":     8,
+    "Africa":   6,
+    "Europe":   4,
+    "Oceania":  1,
+    "Rest":     0,
 }
+
+# The 32-nation main bracket = 28 direct berths + 4 intercontinental-playoff
+# winners. The playoff is a single knockout round among the best non-
+# qualifiers (FIFA-style repechage): up to 2×slots entrants, top seeds get
+# byes when fewer are available.
+WC_FIELD_SIZE   = 32
+WC_DIRECT_BERTHS = sum(WC_REGIONAL_QUOTAS.values())   # 28
+WC_PLAYOFF_SLOTS = WC_FIELD_SIZE - WC_DIRECT_BERTHS   # 4
+assert WC_DIRECT_BERTHS + WC_PLAYOFF_SLOTS == WC_FIELD_SIZE
 
 # Max nations per region that enter qualifying. Caps total qualifying-stage
 # games. A region with more eligible nations takes its top N by pool
@@ -88,7 +103,7 @@ WC_MAX_PER_REGION = 12
 
 def _country_wc_region(country_code: str) -> str:
     sub = _youth.country_region(country_code)
-    return _WC_REGION_ROLLUP.get(sub, "Other")
+    return _WC_REGION_ROLLUP.get(sub, "Rest")
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +158,7 @@ _SCHEMA_GAMES = """
 CREATE TABLE IF NOT EXISTS wc_games (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     season          INTEGER NOT NULL,
-    phase           TEXT NOT NULL,   -- 'qual' | 'group' | 'qf' | 'sf' | 'final'
+    phase           TEXT NOT NULL,   -- 'qual'|'playoff'|'group'|'r16'|'qf'|'sf'|'final'
     group_id        INTEGER REFERENCES wc_groups(id),
     bracket_slot    INTEGER,
     home_wc_team_id INTEGER NOT NULL REFERENCES wc_teams(id),
@@ -252,6 +267,13 @@ _COUNTRY_DISPLAY: dict[str, tuple[str, str]] = {
     "ZA": ("South Africa", "RSA"),   "ZW": ("Zimbabwe", "ZIM"),
     "NA": ("Namibia", "NAM"),        "CV": ("Cape Verde", "CPV"),
     "MU": ("Mauritius", "MRI"),      "UG": ("Uganda", "UGA"),
+    "NG": ("Nigeria", "NGR"),        "GH": ("Ghana", "GHA"),
+    "ET": ("Ethiopia", "ETH"),       "KE": ("Kenya", "KEN"),
+    "TZ": ("Tanzania", "TAN"),       "AO": ("Angola", "ANG"),
+    "MZ": ("Mozambique", "MOZ"),     "MG": ("Madagascar", "MAD"),
+    "EG": ("Egypt", "EGY"),          "MA": ("Morocco", "MAR"),
+    "DZ": ("Algeria", "ALG"),        "TN": ("Tunisia", "TUN"),
+    "LY": ("Libya", "LBA"),
     # Asia
     "IN": ("India", "IND"),          "PK": ("Pakistan", "PAK"),
     "MY": ("Malaysia", "MAS"),       "PH": ("Philippines", "PHI"),
@@ -904,14 +926,19 @@ def initialize_qualifying(season: int | None = None,
     for region in WC_REGION_ORDER:
         members = by_region.get(region, [])
         if len(members) < 2:
-            # Region too small to run qualifying — auto-qualify everyone
-            # in it up to the regional quota, no games played.
-            for cc, strength in members:
+            # Region too small to run qualifying — auto-qualify up to the
+            # regional quota (members are pre-sorted by strength), no games
+            # played. Any beyond the quota (or all of them when quota is 0,
+            # e.g. "Rest") are inserted as non-qualified so they can still
+            # contest the intercontinental playoff.
+            quota = WC_REGIONAL_QUOTAS.get(region, 0)
+            for idx, (cc, strength) in enumerate(members):
                 name, abbrev = _display_for(cc)
+                q = 1 if idx < quota else 0
                 db.execute(
                     "INSERT INTO wc_teams (season, country_code, name, abbrev, "
-                    " region, pool_strength, qualified) VALUES (?, ?, ?, ?, ?, ?, 1)",
-                    (season, cc, name, abbrev, region, strength),
+                    " region, pool_strength, qualified) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (season, cc, name, abbrev, region, strength, q),
                 )
                 inserted_teams += 1
             continue
@@ -1023,52 +1050,107 @@ def _regional_qualifying_table(season: int) -> dict[str, list[dict]]:
     return out
 
 
-def lock_qualifiers(season: int | None = None) -> dict:
-    """After qualifying completes, mark the top-N per region as
-    `qualified=1`. Quotas come from WC_REGIONAL_QUOTAS, with leftover
-    slots cascading to the next-best across all regions to keep the
-    field at exactly 24."""
+def _build_intercontinental_playoff(season: int, rng: random.Random,
+                                    qualified_ids: set[int]) -> list[dict]:
+    """FIFA-style repechage for the final WC_PLAYOFF_SLOTS berths.
+
+    The best non-qualifiers across ALL regions (by qualifying record, then
+    pool strength) enter a single knockout round. Up to 2×slots teams play;
+    when fewer are available the top seeds get byes so the slots still fill.
+    Returns the playoff game specs that were scheduled (winners are marked
+    qualified once those games are played)."""
+    table = _regional_qualifying_table(season)
+    pool: list[dict] = []
+    for region in WC_REGION_ORDER:
+        for r in table.get(region, []):
+            if r["team_id"] not in qualified_ids:
+                pool.append(r)
+    # Seed: most qualifying wins, then deepest pool.
+    pool.sort(key=lambda r: (-(r["w"] or 0), -(r.get("pool_strength") or 0)))
+
+    need = WC_PLAYOFF_SLOTS
+    entrants = pool[:2 * need]
+    if not entrants:
+        return []
+
+    # Top seeds that get a bye straight into the field (when the pool is
+    # smaller than a full 2×slots bracket).
+    byes = max(0, 2 * need - len(entrants))
+    byes = min(byes, len(entrants))
+    for r in entrants[:byes]:
+        db.execute("UPDATE wc_teams SET qualified = 1 WHERE id = ?", (r["team_id"],))
+        qualified_ids.add(r["team_id"])
+
+    contested = entrants[byes:]            # even count: pairs best-vs-worst
+    specs: list[dict] = []
+    n = len(contested)
+    for i in range(n // 2):
+        a = contested[i]["team_id"]
+        b = contested[n - 1 - i]["team_id"]
+        home, away = (a, b) if rng.random() < 0.5 else (b, a)
+        db.execute(
+            "INSERT INTO wc_games (season, phase, home_wc_team_id, "
+            " away_wc_team_id, seed) VALUES (?, 'playoff', ?, ?, ?)",
+            (season, home, away, rng.randint(1, 2**31 - 1)),
+        )
+        specs.append({"home": home, "away": away})
+    return specs
+
+
+def lock_qualifiers(season: int | None = None, rng_seed: int = 0) -> dict:
+    """After regional qualifying completes, mark the per-region direct
+    berths (WC_REGIONAL_QUOTAS, sum = WC_DIRECT_BERTHS), then run the
+    intercontinental playoff for the remaining WC_PLAYOFF_SLOTS berths so
+    the field lands at exactly WC_FIELD_SIZE."""
     init_wc_schema()
     if season is None:
         season = _current_season()
 
-    table = _regional_qualifying_table(season)
-    target = 24
-    qualified_ids: list[int] = []
+    # Idempotent: once qualifying has been locked (phase advanced past
+    # 'qualifying', or a playoff already exists) re-running must NOT mint
+    # fresh berths — return the field as-is.
+    meta = db.fetchone("SELECT phase FROM wc_meta WHERE season = ?", (season,))
+    if meta and meta["phase"] and meta["phase"] != "qualifying":
+        already = [r["id"] for r in db.fetchall(
+            "SELECT id FROM wc_teams WHERE season = ? AND qualified = 1", (season,))]
+        return {"season": season, "qualified_count": len(already),
+                "qualified_ids": already, "playoff_games": 0,
+                "already_locked": True}
 
-    # First pass: take the quota from each region.
-    overflow_pool: list[dict] = []   # next-best after quota — used to fill
+    table = _regional_qualifying_table(season)
+    qualified_ids: set[int] = set()
+
+    # Direct berths: the quota from each region (plus any pre-qualified
+    # small-region auto-advances).
     for region in WC_REGION_ORDER:
-        rows = [r for r in table.get(region, []) if not r["qualified"]]
-        # Pre-qualified rows (small regions auto-advanced at init):
         for r in table.get(region, []):
             if r["qualified"]:
-                qualified_ids.append(r["team_id"])
+                qualified_ids.add(r["team_id"])
+        rows = [r for r in table.get(region, []) if not r["qualified"]]
         quota = WC_REGIONAL_QUOTAS.get(region, 0)
-        take = min(quota, len(rows))
-        for r in rows[:take]:
-            qualified_ids.append(r["team_id"])
-        # Remainder feeds the overflow pool with a strength tiebreak.
-        for r in rows[take:]:
-            overflow_pool.append(r)
+        for r in rows[:max(0, quota - sum(
+                1 for x in table.get(region, []) if x["qualified"]))]:
+            qualified_ids.add(r["team_id"])
 
-    # Second pass: fill any remaining slot with the best overflow nations
-    # (W desc, then pool_strength desc).
-    if len(qualified_ids) < target and overflow_pool:
-        overflow_pool.sort(key=lambda r: (-r["w"], -(r.get("pool_strength") or 0)))
-        for r in overflow_pool:
-            if len(qualified_ids) >= target:
-                break
-            qualified_ids.append(r["team_id"])
-
-    # Truncate (defensive — never have more than 24 qualifiers).
-    qualified_ids = qualified_ids[:target]
     if qualified_ids:
         placeholders = ",".join("?" for _ in qualified_ids)
         db.execute(
             f"UPDATE wc_teams SET qualified = 1 WHERE id IN ({placeholders})",
             tuple(qualified_ids),
         )
+
+    # Intercontinental playoff for the final WC_PLAYOFF_SLOTS berths.
+    rng = random.Random((rng_seed or 0) ^ 0xC07_5B)
+    playoff_specs = _build_intercontinental_playoff(season, rng, qualified_ids)
+    for r in db.fetchall(
+        "SELECT id, seed FROM wc_games WHERE season = ? AND phase = 'playoff' "
+        "AND played = 0 ORDER BY id", (season,),
+    ):
+        res = simulate_wc_game(r["id"], seed=r["seed"])
+        if res.get("winner"):
+            db.execute("UPDATE wc_teams SET qualified = 1 WHERE id = ?",
+                       (res["winner"],))
+            qualified_ids.add(res["winner"])
 
     db.execute(
         "INSERT OR REPLACE INTO wc_meta (season, phase, rosters_locked) "
@@ -1078,7 +1160,8 @@ def lock_qualifiers(season: int | None = None) -> dict:
     return {
         "season":          season,
         "qualified_count": len(qualified_ids),
-        "qualified_ids":   qualified_ids,
+        "qualified_ids":   sorted(qualified_ids),
+        "playoff_games":   len(playoff_specs),
     }
 
 
@@ -1230,50 +1313,52 @@ def lock_rosters(season: int | None = None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 3: Main tournament (4 groups of 6 → QF/SF/Final)
+# Phase 3: Main tournament (8 groups of 4 → R16/QF/SF/Final)
 # ---------------------------------------------------------------------------
 
-MAIN_GROUP_LETTERS = ["A", "B", "C", "D"]
-MAIN_TEAMS_PER_GROUP = 6
+MAIN_GROUP_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H"]
+MAIN_TEAMS_PER_GROUP = 4
 
 
 def _seed_main_groups(season: int, rng: random.Random) -> list[dict]:
-    """Snake-draw 24 qualified nations into 4 groups of 6 using a
-    pot-based seeding: pots are formed by pool_strength, then teams from
-    the same pot get distributed across all groups so no group stacks
-    the elite tier."""
+    """Snake-draw the qualified field into MAIN_GROUP_LETTERS groups of
+    MAIN_TEAMS_PER_GROUP using pot-based seeding: pots are formed by
+    pool_strength, then teams from the same pot get distributed across all
+    groups so no group stacks the elite tier."""
+    n_groups = len(MAIN_GROUP_LETTERS)
+    field = MAIN_TEAMS_PER_GROUP * n_groups          # 32
     qualified = db.fetchall(
         "SELECT * FROM wc_teams WHERE season = ? AND qualified = 1 "
         "ORDER BY pool_strength DESC",
         (season,),
     )
     qualified = [dict(t) for t in qualified]
-    if len(qualified) < 24:
-        # Fill from the next-best non-qualifiers to reach 24.
+    if len(qualified) < field:
+        # Fill from the next-best non-qualifiers to reach a full field.
         backups = db.fetchall(
             "SELECT * FROM wc_teams WHERE season = ? AND qualified = 0 "
             "ORDER BY pool_strength DESC LIMIT ?",
-            (season, 24 - len(qualified)),
+            (season, field - len(qualified)),
         )
         for b in backups:
             d = dict(b)
             db.execute("UPDATE wc_teams SET qualified = 1 WHERE id = ?", (d["id"],))
             d["qualified"] = 1
             qualified.append(d)
-    qualified = qualified[:24]
+    qualified = qualified[:field]
 
-    pot_size = 6
-    pots: list[list[dict]] = [qualified[i:i + pot_size] for i in range(0, 24, pot_size)]
+    # One pot per "seeding band": pot k holds the k-th best team from each
+    # group slot. With pot_size == n_groups each pot deals exactly one team
+    # to every group.
+    pot_size = n_groups
+    pots: list[list[dict]] = [qualified[i:i + pot_size] for i in range(0, field, pot_size)]
     # Shuffle WITHIN each pot so the elite group isn't always
     # geographically deterministic.
     for pot in pots:
         rng.shuffle(pot)
 
-    # Rotating snake assignment. With 6-team pots and 4 groups, the
-    # straight i%4 mapping would always stack the "extra 2" from each
-    # pot onto groups A/B — biasing those groups stronger. Rotating the
-    # start index by `pot_size` between pots spreads the overflow evenly
-    # across all four groups over the four pots.
+    # Rotating snake assignment. Rotating the start index by the pot length
+    # between pots spreads any overflow evenly across all groups.
     groups: list[list[dict]] = [[] for _ in MAIN_GROUP_LETTERS]
     start = 0
     for pot in pots:
@@ -1369,7 +1454,8 @@ def _build_knockout(season: int, rng: random.Random) -> int:
         if rows:
             by_letter[rows[0]["group_letter"]] = rows
 
-    # QF pairings: A1/B2, B1/A2, C1/D2, D1/C2 — adjacent-group cross.
+    # First knockout round: adjacent-group cross (A1/B2, B1/A2, C1/D2, …).
+    # With 8 groups this is the Round of 16; with 4 it is the quarter-finals.
     pairs: list[tuple[int, int]] = []
     for i in range(0, len(MAIN_GROUP_LETTERS), 2):
         a = by_letter.get(MAIN_GROUP_LETTERS[i], [])
@@ -1377,13 +1463,14 @@ def _build_knockout(season: int, rng: random.Random) -> int:
         if len(a) >= 2 and len(b) >= 2:
             pairs.append((a[0]["team_id"], b[1]["team_id"]))
             pairs.append((b[0]["team_id"], a[1]["team_id"]))
+    first_round = "r16" if len(MAIN_GROUP_LETTERS) >= 8 else "qf"
     n = 0
     for slot, (home, away) in enumerate(pairs):
         db.execute(
             "INSERT INTO wc_games (season, phase, bracket_slot, "
             " home_wc_team_id, away_wc_team_id, seed) "
-            "VALUES (?, 'qf', ?, ?, ?, ?)",
-            (season, slot, home, away, rng.randint(1, 2**31 - 1)),
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (season, first_round, slot, home, away, rng.randint(1, 2**31 - 1)),
         )
         n += 1
     return n
@@ -1454,13 +1541,24 @@ def run_main_tournament(season: int | None = None,
 
     _simulate_main_round(season, "group", rng)
 
-    already_qf = db.fetchone(
-        "SELECT COUNT(*) AS n FROM wc_games WHERE season = ? AND phase = 'qf'",
-        (season,),
+    # First knockout round: R16 for an 8-group field, else QF.
+    first_round = "r16" if len(MAIN_GROUP_LETTERS) >= 8 else "qf"
+    already_first = db.fetchone(
+        "SELECT COUNT(*) AS n FROM wc_games WHERE season = ? AND phase = ?",
+        (season, first_round),
     )
-    if not (already_qf and already_qf["n"]):
+    if not (already_first and already_first["n"]):
         _build_knockout(season, rng)
-    _simulate_main_round(season, "qf", rng)
+    _simulate_main_round(season, first_round, rng)
+
+    if first_round == "r16":
+        already_qf = db.fetchone(
+            "SELECT COUNT(*) AS n FROM wc_games WHERE season = ? AND phase = 'qf'",
+            (season,),
+        )
+        if not (already_qf and already_qf["n"]):
+            _advance_knockout(season, "r16", "qf", rng)
+        _simulate_main_round(season, "qf", rng)
 
     already_sf = db.fetchone(
         "SELECT COUNT(*) AS n FROM wc_games WHERE season = ? AND phase = 'sf'",
@@ -1498,6 +1596,13 @@ def run_main_tournament(season: int | None = None,
         "VALUES (?, 'complete', 1)",
         (season,),
     )
+
+    # Per-nation talent drifts on the back of these results: deep knockout
+    # runs fund investment, participation grows grassroots, and everyone
+    # mean-reverts toward neutral. Idempotent per season, so re-running a
+    # completed tournament won't double-count.
+    from o27v2 import nation_talent as _nt
+    _nt.drift_from_worldcup(season)
     return summarise(season)
 
 
@@ -1515,7 +1620,7 @@ def run_full_world_cup(season: int | None = None,
         season = _current_season()
     initialize_qualifying(season=season, rng_seed=rng_seed)
     simulate_qualifying(season=season, rng_seed=rng_seed)
-    lock_qualifiers(season=season)
+    lock_qualifiers(season=season, rng_seed=rng_seed)
     auto_pick_rosters(season=season, overwrite=False)
     lock_rosters(season=season)
     return run_main_tournament(season=season, rng_seed=rng_seed)
@@ -1550,11 +1655,13 @@ def summarise(season: int | None = None) -> dict[str, Any] | None:
         "LEFT JOIN wc_teams at ON at.id = wg.away_wc_team_id "
         "WHERE wg.season = ? "
         "ORDER BY CASE wg.phase "
-        "         WHEN 'qual'  THEN 0 "
-        "         WHEN 'group' THEN 1 "
-        "         WHEN 'qf'    THEN 2 "
-        "         WHEN 'sf'    THEN 3 "
-        "         WHEN 'final' THEN 4 ELSE 5 END, "
+        "         WHEN 'qual'    THEN 0 "
+        "         WHEN 'playoff' THEN 1 "
+        "         WHEN 'group'   THEN 2 "
+        "         WHEN 'r16'     THEN 3 "
+        "         WHEN 'qf'      THEN 4 "
+        "         WHEN 'sf'      THEN 5 "
+        "         WHEN 'final'   THEN 6 ELSE 7 END, "
         "         wg.id",
         (season,),
     )

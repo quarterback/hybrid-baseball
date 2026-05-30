@@ -275,6 +275,7 @@ def render_site(
             "throws":     p.get("throws", "R"),
             "team_name":  team_label(t),
             "archetype":  p.get("archetype", ""),
+            "streak":     _streak_badge(p),
         }
         bat_log = views.game_logs_batter.get(p["id"], [])
         pit_log = views.game_logs_pitcher.get(p["id"], [])
@@ -385,6 +386,62 @@ def _box_row(r: dict, players_by_id: dict[int, dict]) -> dict:
         **{k: v for k, v in r.items()},
         "name": p.get("name", f"#{r['player_id']}"),
         "slug": _slugify(p.get("name") or str(r["player_id"])),
+    }
+
+
+def _streak_badge(p: dict) -> dict | None:
+    """Almanac-only hot/cold streak flag for a player (see o27v2/streaks.py).
+
+    The streak is a temporary, performance-ignited overlay persisted on the
+    player row (streak_state -1/0/+1, streak_weeks = how many weeks it has
+    ramped). We surface it ONLY in the almanac — never in box scores or game
+    pages — as a small qualitative badge. Returns None when the player has no
+    active streak (the common case), so the template renders nothing.
+
+    Intensity tiers track the ramp: a streak that has held for more completed
+    weeks is hotter/colder and gets the stronger label + class.
+    """
+    try:
+        state = int(p.get("streak_state") or 0)
+    except (TypeError, ValueError):
+        state = 0
+    if state == 0:
+        return None
+    try:
+        weeks = int(p.get("streak_weeks") or 0)
+    except (TypeError, ValueError):
+        weeks = 0
+    hot = state > 0
+    # rung = weeks the streak has ramped (0 = first week). Tier by how far it's
+    # climbed: just heating up → on a tear → scorching (mirror for cold).
+    if weeks <= 0:
+        tier = 0
+    elif weeks <= 2:
+        tier = 1
+    else:
+        tier = 2
+    if hot:
+        label = ("Heating Up", "Hot", "Scorching")[tier]
+        icon = (
+            "\U0001F975",                 # 🥵 heating up
+            "\U0001F426‍\U0001F525", # 🐦‍🔥 hot (phoenix)
+            "☄️",               # ☄️ scorching (comet)
+        )[tier]
+        cls = "streak-hot"
+    else:
+        label = ("Cooling Off", "Cold", "Ice Cold")[tier]
+        icon = (
+            "❄️",               # ❄️ cooling off (snowflake)
+            "\U0001F976",                 # 🥶 cold
+            "\U0001F9CA",                 # 🧊 ice cold
+        )[tier]
+        cls = "streak-cold"
+    wk = weeks + 1                    # human-friendly "in week N"
+    return {
+        "cls": cls,
+        "icon": icon,
+        "label": label,
+        "title": f"{label} — {'hot' if hot else 'cold'} streak, week {wk}",
     }
 
 
