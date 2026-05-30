@@ -7322,7 +7322,15 @@ def league_edit_get():
     div_rows = db.fetchall(
         "SELECT division, league, COUNT(*) AS n FROM teams "
         "GROUP BY division, league ORDER BY league, division")
-    return _serve("league_edit.html", leagues=leagues, divisions=div_rows)
+    # Current Power Play state per league (a league is "on" if its teams carry
+    # the flag). Lets the user see and flip the optional rule for an existing
+    # league without recreating it.
+    pp_by_league = {
+        r["league"]: bool(r["pp"]) for r in db.fetchall(
+            "SELECT league, MAX(power_play_enabled) AS pp FROM teams GROUP BY league")
+    }
+    return _serve("league_edit.html", leagues=leagues, divisions=div_rows,
+                  pp_by_league=pp_by_league)
 
 
 @app.route("/league/edit", methods=["POST"])
@@ -7331,15 +7339,31 @@ def league_edit_post():
 
     league_old = request.form.getlist("league_old")
     league_new = request.form.getlist("league_new")
+    league_pp  = request.form.getlist("league_pp")   # "1"/"0" per league, aligned
     div_old    = request.form.getlist("division_old")
     div_new    = request.form.getlist("division_new")
 
     renamed_lg = 0
-    for old, new in zip(league_old, league_new):
-        new = (new or "").strip()
+    pp_changed = 0
+    for i, old in enumerate(league_old):
+        new = (league_new[i] if i < len(league_new) else "") or ""
+        new = new.strip()
+        # Resolve the league's name after any rename, so the Power Play update
+        # below targets the right rows.
+        name = old
         if new and new != old:
             db.execute("UPDATE teams SET league = ? WHERE league = ?", (new, old))
             renamed_lg += 1
+            name = new
+        # Power Play toggle (always submitted as 0/1 by the select).
+        if i < len(league_pp):
+            want = 1 if league_pp[i] == "1" else 0
+            cur = db.fetchone(
+                "SELECT MAX(power_play_enabled) AS p FROM teams WHERE league = ?", (name,))
+            if cur is not None and int(cur["p"] or 0) != want:
+                db.execute("UPDATE teams SET power_play_enabled = ? WHERE league = ?",
+                           (want, name))
+                pp_changed += 1
 
     renamed_div = 0
     for old, new in zip(div_old, div_new):
@@ -7348,10 +7372,11 @@ def league_edit_post():
             db.execute("UPDATE teams SET division = ? WHERE division = ?", (new, old))
             renamed_div += 1
 
-    if renamed_lg or renamed_div:
-        flash(f"Renamed {renamed_lg} league(s) and {renamed_div} division(s).", "info")
-    else:
-        flash("No changes made.", "info")
+    bits = []
+    if renamed_lg:  bits.append(f"renamed {renamed_lg} league(s)")
+    if renamed_div: bits.append(f"renamed {renamed_div} division(s)")
+    if pp_changed:  bits.append(f"changed Power Play on {pp_changed} league(s)")
+    flash(("Saved: " + ", ".join(bits) + ".") if bits else "No changes made.", "info")
     return redirect(url_for("league_edit_get"))
 
 
