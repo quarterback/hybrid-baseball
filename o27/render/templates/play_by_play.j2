@@ -34,13 +34,13 @@
 {% elif event_type == "ball_in_play" %}
 {% if choice == "stay" %}
 {% if stay_batter_out %}
-  {{ batter_name }} STAYS — but is OUT (2-strike contact or caught fly).
+  {{ batter_name }} takes a SECOND CHANCE — but is OUT (2-strike contact or caught fly).
 {% else %}
-  {{ batter_name }} STAYS at the plate.
+  {{ batter_name }} takes a SECOND CHANCE at the plate.
 {% if stay_hit_credited %}
-  Hit credited (stay). Total this AB: {{ at_bat_hits }}.
+  Hit credited (second chance). Total this AB: {{ at_bat_hits }}.
 {% endif %}
-  Stay — fresh 0-0 count.
+  Second chance — fresh 0-0 count.
 {% endif %}
 {% else %}
   {{ batter_name }} runs → {{ hit_type_display }}.

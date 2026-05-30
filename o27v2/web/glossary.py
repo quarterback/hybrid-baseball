@@ -61,10 +61,10 @@ GLOSSARY_SECTIONS: list[dict] = [
     },
     {
         "title": "Batting · O27-Native (Second Chance)",
-        "blurb": "The load-bearing O27 mechanic: on a contact event the batter may 'stay' (spend a strike from their AB budget) instead of running.",
+        "blurb": "The load-bearing O27 mechanic: on a contact event the batter may take a second chance (spend a strike from their AB budget) instead of running.",
         "entries": [
             {"key": "stays", "abbr": "2C", "name": "Second-Chance ABs",
-             "desc": "Contact events where the batter chose to stay (spending a strike) instead of running. The signature O27 decision."},
+             "desc": "Contact events where the batter took a second chance (spending a strike) instead of running. The signature O27 decision."},
             {"key": "stay_hits", "abbr": "2C-H", "name": "Second-Chance Hits",
              "desc": "Hits credited on 2C events (a subset of total H)."},
             {"key": "stay_conv_pct", "abbr": "2C-Conv%", "name": "Second-Chance Conversion %",

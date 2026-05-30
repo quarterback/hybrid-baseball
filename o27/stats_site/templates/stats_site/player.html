@@ -31,7 +31,7 @@
       ('Skill (Bat)', player.skill),
       ('Speed', player.speed),
       ('Pitcher Skill', player.pitcher_skill),
-      ('Stay Aggressiveness', player.stay_aggressiveness),
+      ('Second-Chance Aggressiveness', player.stay_aggressiveness),
     ] %}
     {% for name, val in attrs %}
     {% set grade = (val * 60 + 20)|round|int %}
@@ -120,7 +120,7 @@
       <th class="num">RBI</th>
       <th class="num">BB</th>
       <th class="num">SO</th>
-      <th class="num">STY</th>
+      <th class="num">2C</th>
       <th class="num">AVG</th>
     </tr>
   </thead>
@@ -156,7 +156,7 @@
       <th class="num">RBI</th>
       <th class="num">BB</th>
       <th class="num">SO</th>
-      <th class="num">STY</th>
+      <th class="num">2C</th>
       <th class="num">AVG</th>
       <th>Box</th>
     </tr>
