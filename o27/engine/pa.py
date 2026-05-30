@@ -156,6 +156,10 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
     state.outs += 1
     state.pitcher_outs_this_spell += 1
 
+    # Power Play: extend / retire the nickel window against the new out count.
+    from o27.engine import power_play
+    power_play.note_out(state)
+
     # Walk-Back resolution: if the runner being retired is a live Walk-Back
     # runner, his fate is settled as a STOP — tick wb_faced (charged to the
     # pitcher on the mound) and drop him from tracking so _reconcile_walk_back

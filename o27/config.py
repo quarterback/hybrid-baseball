@@ -660,6 +660,53 @@ ADAPTABILITY_SCALE: float        = 0.10
 BUNT_AGAINST_SHIFT_BASE_PROB: float = 0.18   # baseline scaled by speed dev
 
 # ---------------------------------------------------------------------------
+# Power Play (optional league rule)
+# ---------------------------------------------------------------------------
+# An opt-in, per-league rule. When enabled, the FIELDING manager may deploy a
+# 10th defender — the "nickel fielder" (NF / scorekeeping position 10), a
+# middle outfielder — for a use-or-lose window of up to POWER_PLAY_WINDOW_OUTS
+# outs. The nickel covers the outfield gaps, suppressing extra-base hits and
+# running some would-be singles down. The window:
+#   - opens at most once per defensive half (use it or lose it),
+#   - lasts up to 4 outs but always ends when the half ends (no carryover),
+#   - is available again, fresh, in a Declared Seconds frame,
+#   - is NEVER available in extra (super) innings.
+#
+# POWER_PLAY_ENABLED is a plain bool, so o27v2.engine_config auto-exposes it as
+# a dashboard toggle that saves per environment — that IS the per-league
+# checkbox (off by default, so identical talent can be A/B-tested on vs. off).
+POWER_PLAY_ENABLED: bool = False     # league opt-in; off = zero behavior change
+
+POWER_PLAY_WINDOW_OUTS: int = 4      # max outs the nickel stays on the field
+
+# Fielding effect while the window is active (applied in resolve_contact,
+# after the shift layer). The nickel covers center-outfield gaps.
+POWER_PLAY_XBH_HELD_PROB: float   = 0.35   # double/triple → single (gap cut off)
+POWER_PLAY_SINGLE_OUT_PROB: float = 0.12   # outfield single → fly_out (run down)
+# Share of outfield putouts re-credited to the nickel while active (PO logged
+# under position "NF"). Roughly the slice of the outfield the nickel patrols.
+POWER_PLAY_NICKEL_PO_SHARE: float = 0.33
+
+# Nickel eligibility. A rostered player NOT currently on the field, eligible at
+# OF or SS, who clears BOTH bars below. Pitchers qualify only as a wild card
+# (lightly-used arms) and only if they have not already appeared in the game.
+POWER_PLAY_NICKEL_ARM_MIN: float   = 0.62  # strong throwing arm
+POWER_PLAY_NICKEL_FIELD_MIN: float = 0.58  # good glove at OF/SS
+
+# Manager deployment behavior. Rolled per game per fielding team (not a sticky
+# manager trait), so the same skipper varies game to game.
+POWER_PLAY_SKIP_GAME_PROB: float = 0.05    # team never deploys this game
+POWER_PLAY_MISTIME_PROB: float   = 0.09    # team deploys too early / too late
+# Suppress deployment when the game is out of hand (no good reason to spend it).
+POWER_PLAY_BLOWOUT_MARGIN: int   = 8       # |run diff| ≥ this → hold the window
+# Per-AB deploy-probability ramp across the out arc (engine settles naturally).
+POWER_PLAY_DEPLOY_BASE_EARLY: float = 0.03   # outs < 12
+POWER_PLAY_DEPLOY_BASE_MID: float   = 0.15   # 12 ≤ outs < late threshold
+POWER_PLAY_DEPLOY_BASE_LATE: float  = 0.50   # late arc
+POWER_PLAY_DEPLOY_BASE_FORCED: float = 0.90  # ≤ window outs remain (use-or-lose)
+POWER_PLAY_CLOSE_GAME_MULT: float   = 1.4    # tight game raises deploy urgency
+
+# ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------
 # Each pitch samples uniformly in [rating - pitch_variance, rating + pitch_variance]
