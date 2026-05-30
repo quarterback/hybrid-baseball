@@ -1364,11 +1364,57 @@ def _batting_seq_form(rng: random.Random, state: GameState) -> float:
     return _locked_in_form(rng, state)
 
 
+def _roll_batted_ball(rng: random.Random, quality: str, hit_type: str,
+                      batter) -> str:
+    """Roll the batted-ball texture for a HIT (the 'wasted hits' mechanism).
+
+    Returns one of {dribbler, grounder, liner, flyball}. Rolled from contact
+    quality + batter power so it's player-differentiated: low-power contact
+    hitters spray grounders (hits that clog the bases and don't score runners),
+    sluggers hit liners/flyballs (hits that drive runs). HR/triple are always
+    well-struck; the texture mainly matters for singles and doubles. Carried as
+    outcome_dict["batted_ball"] — NOT a hit_type — so stat-counting is untouched.
+    """
+    if hit_type == "hr":
+        return "flyball"
+    if hit_type == "triple":
+        return "liner"
+    base = getattr(cfg, "BATTED_BALL_WEIGHTS", {}).get(quality)
+    if not base:
+        return "liner"
+    dribbler, grounder, liner, flyball = base
+    # Power tilts weight grounder→liner→flyball (high power) or reverse (low).
+    pdev = (float(getattr(batter, "power", 0.5) or 0.5) - 0.5) * 2.0
+    tilt = pdev * getattr(cfg, "BATTED_BALL_POWER_TILT", 0.0)
+    if tilt > 0:
+        moved = min(grounder, grounder * tilt) + min(dribbler, dribbler * tilt)
+        grounder -= grounder * tilt
+        dribbler -= dribbler * tilt
+        liner += moved * 0.6
+        flyball += moved * 0.4
+    elif tilt < 0:
+        t = -tilt
+        moved = min(liner, liner * t) + min(flyball, flyball * t)
+        liner -= liner * t
+        flyball -= flyball * t
+        grounder += moved * 0.6
+        dribbler += moved * 0.4
+    weights = [max(0.0, w) for w in (dribbler, grounder, liner, flyball)]
+    total = sum(weights) or 1.0
+    r = rng.random() * total
+    for label, w in zip(("dribbler", "grounder", "liner", "flyball"), weights):
+        r -= w
+        if r <= 0:
+            return label
+    return "liner"
+
+
 def runner_advances_for_hit(
     rng: random.Random,
     hit_type: str,
     bases: list,
     state: GameState,
+    batted_ball: str = "",
 ) -> tuple[list, list[int]]:
     """Return ([adv_1B, adv_2B, adv_3B], runner_out_idxs).
 
@@ -1385,6 +1431,10 @@ def runner_advances_for_hit(
     seq_shift = (_batting_seq_form(rng, state) - 1.0) * getattr(
         cfg, "SEQ_FORM_SCORE_SCALE", 0.0
     )
+    # Batted-ball texture shift — a grounder single strands runners a liner
+    # single would score. Folded into the per-runner score rolls below alongside
+    # the sequencing form. Empty/unknown texture → 0.0 (identity).
+    seq_shift += getattr(cfg, "BATTED_BALL_SCORE_SHIFT", {}).get(batted_ball, 0.0)
 
     s1 = _get_speed(bases[0], state)
     s2 = _get_speed(bases[1], state)
@@ -1928,7 +1978,14 @@ def resolve_contact(
     # Compute runner advances based on (possibly flipped) hit type.
     # An "error" advances runners like a single — same conservative shape.
     advance_type = "single" if hit_type == "error" else hit_type
-    runner_adv, br_out_idxs = runner_advances_for_hit(rng, advance_type, state.bases, state)
+    # Roll batted-ball texture for hits — a grounder single advances runners
+    # worse than a liner single (the "wasted hits" mechanism). Only meaningful
+    # for actual hits; outs/errors get no texture.
+    batted_ball = ""
+    if hit_type in ("single", "double", "triple", "hr"):
+        batted_ball = _roll_batted_ball(rng, quality, hit_type, batter)
+    runner_adv, br_out_idxs = runner_advances_for_hit(
+        rng, advance_type, state.bases, state, batted_ball=batted_ball)
 
     # For fielder's choice: throw out the lead runner. TOA outs from the
     # probabilistic advancement table get mapped onto runner_out_idx /
@@ -1956,6 +2013,7 @@ def resolve_contact(
 
     return {
         "hit_type": hit_type,
+        "batted_ball": batted_ball,
         "batter_safe": batter_safe,
         "caught_fly": caught_fly,
         "runner_advances": runner_adv,
