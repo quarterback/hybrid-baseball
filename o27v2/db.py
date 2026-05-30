@@ -546,6 +546,21 @@ CREATE TABLE IF NOT EXISTS game_power_play_stats (
     sh_pa      INTEGER DEFAULT 0,
     sh_ab      INTEGER DEFAULT 0,
     sh_hits    INTEGER DEFAULT 0,
+    -- Power Play PITCHING (the protected side — the pitcher with the nickel
+    -- behind him). Framed as support/context, NOT a quality metric: K/BB are
+    -- defense-independent (his own), while BIP outcomes and the saves are the
+    -- defense bailing him out. ppp_tot_* span the WHOLE game (window or not) so
+    -- the BABIP split (with-nickel vs without) is derivable.
+    ppp_bf        INTEGER DEFAULT 0,  -- batters faced while the nickel was deployed
+    ppp_outs      INTEGER DEFAULT 0,  -- outs recorded during those windows
+    ppp_k         INTEGER DEFAULT 0,  -- strikeouts during windows (his own)
+    ppp_bb        INTEGER DEFAULT 0,  -- walks during windows (his own)
+    ppp_bip       INTEGER DEFAULT 0,  -- balls in play during windows
+    ppp_bip_hits  INTEGER DEFAULT 0,  -- hits on those balls in play (BABIP numerator)
+    ppp_tot_bip      INTEGER DEFAULT 0,  -- total balls in play all game
+    ppp_tot_bip_hits INTEGER DEFAULT 0,  -- total hits on balls in play all game
+    ppp_hits_saved INTEGER DEFAULT 0, -- singles the nickel ran down behind him
+    ppp_xbh_saved  INTEGER DEFAULT 0, -- extra-base hits the nickel held behind him
     UNIQUE(player_id, game_id)
 );
 
@@ -1194,6 +1209,18 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        # Power Play PITCHING columns — added to game_power_play_stats after the
+        # initial defense/offense version of the table. No-op on fresh DBs (the
+        # CREATE TABLE already has them) and on DBs without the table yet.
+        for col in ("ppp_bf", "ppp_outs", "ppp_k", "ppp_bb", "ppp_bip",
+                    "ppp_bip_hits", "ppp_tot_bip", "ppp_tot_bip_hits",
+                    "ppp_hits_saved", "ppp_xbh_saved"):
+            try:
+                conn.execute(
+                    f"ALTER TABLE game_power_play_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
         # Adaptability — batter rating that erodes shift effectiveness
         # when the manager keeps the same alignment for multiple consecutive
         # ABs against this batter. 20-80 scale like other ratings.

@@ -367,6 +367,7 @@ def apply_nickel_defense(
     if hit_type in ("double", "triple"):
         if rng.random() < cfg.POWER_PLAY_XBH_HELD_PROB:
             fielding.pp_xbh_held = int(getattr(fielding, "pp_xbh_held", 0) or 0) + 1
+            _credit_pitcher_support(state, "xbh_saved")
             return "single", True, False, False
         return hit_type, batter_safe, caught_fly, False
 
@@ -374,10 +375,26 @@ def apply_nickel_defense(
     if hit_type == "single":
         if rng.random() < cfg.POWER_PLAY_SINGLE_OUT_PROB:
             fielding.pp_hits_converted = int(getattr(fielding, "pp_hits_converted", 0) or 0) + 1
+            _credit_pitcher_support(state, "hits_saved")
             return "fly_out", False, True, True
         return hit_type, batter_safe, caught_fly, False
 
     return hit_type, batter_safe, caught_fly, False
+
+
+def _credit_pitcher_support(state: GameState, key: str) -> None:
+    """Attribute a nickel save (an XBH held to a single, or a single run down
+    for an out) to the FIELDING pitcher on the mound — the protected side. This
+    is "defensive support received", the fielding cousin of run support; it is
+    NOT a pitcher-quality metric and is surfaced in its own context section.
+    Keyed by pitcher_id on state.pp_pitcher_support; sim.py folds it into the
+    Power Play pitcher rows."""
+    pid = getattr(state, "current_pitcher_id", None)
+    if pid is None:
+        return
+    support = state.pp_pitcher_support.setdefault(
+        pid, {"xbh_saved": 0, "hits_saved": 0})
+    support[key] += 1
 
 
 # ---------------------------------------------------------------------------

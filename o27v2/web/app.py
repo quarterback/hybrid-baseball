@@ -4520,6 +4520,54 @@ def leaders():
             pp_offense.append(r)
     power_play_on_in_league = bool(pp_rows)
 
+    # Power Play PITCHING (the protected side) — own dataset, deliberately kept
+    # OUT of the ERA/wERA leaders so defense-aided outs never inflate a pitcher.
+    # Coverage% needs the pitcher's TOTAL outs (how much of his work had the
+    # nickel behind him), so join season outs from game_pitcher_stats.
+    pp_pitch_rows = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  SUM(pp.ppp_bf)           as ppp_bf,
+                  SUM(pp.ppp_outs)         as ppp_outs,
+                  SUM(pp.ppp_k)            as ppp_k,
+                  SUM(pp.ppp_bb)           as ppp_bb,
+                  SUM(pp.ppp_bip)          as ppp_bip,
+                  SUM(pp.ppp_bip_hits)     as ppp_bip_hits,
+                  SUM(pp.ppp_tot_bip)      as ppp_tot_bip,
+                  SUM(pp.ppp_tot_bip_hits) as ppp_tot_bip_hits,
+                  SUM(pp.ppp_hits_saved)   as ppp_hits_saved,
+                  SUM(pp.ppp_xbh_saved)    as ppp_xbh_saved,
+                  (SELECT COALESCE(SUM(gps.outs_recorded),0)
+                     FROM game_pitcher_stats gps WHERE gps.player_id = p.id) as tot_outs
+           FROM game_power_play_stats pp
+           JOIN players p ON pp.player_id = p.id
+           JOIN teams   t ON pp.team_id   = t.id
+           {lg_where}
+           GROUP BY p.id
+          HAVING SUM(pp.ppp_bf) > 0""",
+        lg_param,
+    )
+    pp_pitching = []
+    for r in pp_pitch_rows:
+        bf  = int(r.get("ppp_bf") or 0)
+        bip = int(r.get("ppp_bip") or 0)
+        tot_bip = int(r.get("ppp_tot_bip") or 0)
+        non_bip = tot_bip - bip
+        # Defense-independent rates (K and BB never reach the nickel's glove).
+        r["ppp_k_pct"]  = (int(r.get("ppp_k")  or 0) / bf) if bf else None
+        r["ppp_bb_pct"] = (int(r.get("ppp_bb") or 0) / bf) if bf else None
+        # BABIP-against with the nickel deployed, and the split vs without it.
+        r["ppp_babip"]  = (int(r.get("ppp_bip_hits") or 0) / bip) if bip else None
+        non_babip = ((int(r.get("ppp_tot_bip_hits") or 0)
+                      - int(r.get("ppp_bip_hits") or 0)) / non_bip) if non_bip else None
+        # Negative split = lower BABIP with the nickel = the defense helped him.
+        r["ppp_babip_split"] = (r["ppp_babip"] - non_babip) \
+            if (r["ppp_babip"] is not None and non_babip is not None) else None
+        # Coverage: share of the pitcher's outs taken with the nickel behind him.
+        tot_outs = int(r.get("tot_outs") or 0)
+        r["ppp_coverage"] = (int(r.get("ppp_outs") or 0) / tot_outs) if tot_outs else None
+        pp_pitching.append(r)
+
     # ----- XO Crossover scale toggle ------------------------------
     # ?scale=xo flips the leaderboard table cells to their MLB-readable
     # values. Rank order is identical (the z-anchor map is monotonic);
@@ -4534,7 +4582,7 @@ def leaders():
         min_pa=min_pa, min_outs=min_outs, min_chances=min_chances,
         batting=batting, pitching=pitching,
         fielding=fielding, fielding_qual=fielding_qual,
-        pp_defense=pp_defense, pp_offense=pp_offense,
+        pp_defense=pp_defense, pp_offense=pp_offense, pp_pitching=pp_pitching,
         power_play_on_in_league=power_play_on_in_league,
         salaries=salaries,
         top_outings=top_outings,

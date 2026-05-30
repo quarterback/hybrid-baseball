@@ -103,5 +103,41 @@ def test_glossary_keys_resolve():
     # power-play key must have an entry or the link 404s the anchor.
     from o27v2.web.glossary import GLOSSARY_BY_KEY
     for k in ("pp_deploys", "pp_outs", "pp_xbh_held", "pp_hits_converted",
-              "nickel_po", "sh_avg", "sh_hits", "sh_pa"):
+              "nickel_po", "sh_avg", "sh_hits", "sh_pa",
+              "ppp_babip", "ppp_babip_split", "ppp_k_pct", "ppp_bb_pct",
+              "ppp_coverage", "ppp_bf", "ppp_hits_saved", "ppp_xbh_saved"):
         assert k in GLOSSARY_BY_KEY, f"missing glossary entry for {k}"
+
+
+def test_pitching_support_populates_and_babip_bounded():
+    path, db = _fresh_db()
+    try:
+        db.execute("UPDATE teams SET power_play_enabled = 1")
+        _sim_first(40, db)
+        rows = db.fetchall("SELECT * FROM game_power_play_stats WHERE ppp_bf > 0")
+        assert rows, "expected protected-pitcher rows once the rule is on"
+        for r in rows:
+            # PP-BABIP numerator <= denominator => BABIP in [0, 1].
+            assert r["ppp_bip_hits"] <= r["ppp_bip"]
+            # Window BIP can't exceed total BIP.
+            assert r["ppp_bip"] <= r["ppp_tot_bip"]
+            # K and walks are real PAs (defense-independent), bounded by BF.
+            assert r["ppp_k"] + r["ppp_bb"] <= r["ppp_bf"]
+
+    finally:
+        os.unlink(path)
+
+
+def test_pitching_section_only_when_on():
+    path, db = _fresh_db()
+    try:
+        db.execute("UPDATE teams SET power_play_enabled = 1")
+        _sim_first(40, db)
+        import o27v2.web.app as web
+        web.app.config["TESTING"] = True
+        html = web.app.test_client().get("/leaders").get_data(as_text=True)
+        assert "Power Play · Pitching" in html
+        for tok in ("PP-BABIP", "PP-K%", "PP-Cov%", "H-Saved", "XBH-Saved"):
+            assert tok in html, f"missing pitcher card {tok}"
+    finally:
+        os.unlink(path)

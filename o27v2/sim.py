@@ -847,6 +847,9 @@ def _extract_power_play_stats(renderer, final_state, team_id: int, players: list
             "pp_deploys": 0, "pp_outs": 0, "pp_xbh_held": 0,
             "pp_hits_converted": 0, "nickel_po": 0, "nickel_a": 0,
             "nickel_e": 0, "sh_pa": 0, "sh_ab": 0, "sh_hits": 0,
+            "ppp_bf": 0, "ppp_outs": 0, "ppp_k": 0, "ppp_bb": 0,
+            "ppp_bip": 0, "ppp_bip_hits": 0, "ppp_tot_bip": 0,
+            "ppp_tot_bip_hits": 0, "ppp_hits_saved": 0, "ppp_xbh_saved": 0,
         })
 
     # --- Defense: nickel deployments for THIS team's windows. ----------------
@@ -905,6 +908,33 @@ def _extract_power_play_stats(renderer, final_state, team_id: int, players: list
             r["sh_pa"] += sh_pa
             r["sh_ab"] += sh_ab
             r["sh_hits"] += sh_h
+
+    # --- Pitching: the protected side (nickel deployed behind him). ----------
+    # Window/total counters come from the renderer accumulator; the nickel
+    # "saves" come from the engine's per-pitcher attribution. Only pitchers with
+    # window exposure (ppp_bf > 0) get a row — the totals ride along for the
+    # BABIP split.
+    pp_pitcher = dict(getattr(renderer, "_pp_pitcher", {}) or {})
+    support = dict(getattr(final_state, "pp_pitcher_support", {}) or {})
+    for engine_pid, rec in pp_pitcher.items():
+        try:
+            pid = int(engine_pid)
+        except (TypeError, ValueError):
+            continue
+        if pid not in team_player_ids or int(rec.get("pp_bf", 0) or 0) <= 0:
+            continue
+        r = _row(pid)
+        r["ppp_bf"]   += int(rec.get("pp_bf", 0) or 0)
+        r["ppp_outs"] += int(rec.get("pp_outs", 0) or 0)
+        r["ppp_k"]    += int(rec.get("pp_k", 0) or 0)
+        r["ppp_bb"]   += int(rec.get("pp_bb", 0) or 0)
+        r["ppp_bip"]  += int(rec.get("pp_bip", 0) or 0)
+        r["ppp_bip_hits"]     += int(rec.get("pp_bip_hits", 0) or 0)
+        r["ppp_tot_bip"]      += int(rec.get("tot_bip", 0) or 0)
+        r["ppp_tot_bip_hits"] += int(rec.get("tot_bip_hits", 0) or 0)
+        sup = support.get(engine_pid) or {}
+        r["ppp_hits_saved"] += int(sup.get("hits_saved", 0) or 0)
+        r["ppp_xbh_saved"]  += int(sup.get("xbh_saved", 0) or 0)
 
     # Drop all-zero rows.
     out = []
@@ -1838,12 +1868,17 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                    (game_id, team_id, player_id,
                     pp_deploys, pp_outs, pp_xbh_held, pp_hits_converted,
                     nickel_po, nickel_a, nickel_e,
-                    sh_pa, sh_ab, sh_hits)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    sh_pa, sh_ab, sh_hits,
+                    ppp_bf, ppp_outs, ppp_k, ppp_bb, ppp_bip, ppp_bip_hits,
+                    ppp_tot_bip, ppp_tot_bip_hits, ppp_hits_saved, ppp_xbh_saved)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"],
                  r["pp_deploys"], r["pp_outs"], r["pp_xbh_held"],
                  r["pp_hits_converted"], r["nickel_po"], r["nickel_a"],
-                 r["nickel_e"], r["sh_pa"], r["sh_ab"], r["sh_hits"]),
+                 r["nickel_e"], r["sh_pa"], r["sh_ab"], r["sh_hits"],
+                 r["ppp_bf"], r["ppp_outs"], r["ppp_k"], r["ppp_bb"],
+                 r["ppp_bip"], r["ppp_bip_hits"], r["ppp_tot_bip"],
+                 r["ppp_tot_bip_hits"], r["ppp_hits_saved"], r["ppp_xbh_saved"]),
             )
         # Phase 11D — per-PA event log (ball_in_play events only).
         # Engine team_ids are role-strings ("home"/"visitors") — see
