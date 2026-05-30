@@ -586,20 +586,20 @@ ITP_HR_FAIL_OUT_AGGRO_SCALE: float = 0.40    # +P(out) per (run_aggressiveness -
 #   3. BATTER SPEED — slow batters lose the relay race.
 #   4. TEAM DEFENSE — strong infields turn more DPs.
 # Tuning targets (after all factors compose, before clamp):
-#   - Low end (~6%):  3B alone, hard contact, fast batter, weak defense.
-#   - Mid (~13-14%):  1B alone, medium contact, neutral attributes.
-#   - High end (~23%): bases loaded, weak contact, slow batter, elite defense.
+#   - Low end (~9%):  3B alone, hard contact, fast batter, weak defense.
+#   - Mid (~17-18%):  1B alone, medium contact, neutral attributes.
+#   - High end (~30%): bases loaded, weak contact, slow batter, elite defense.
 # Rates raised as part of the H~R decoupling pass. With the DP gate fixed to
 # fire all half long (see prob.py) instead of only the first 2 outs, the double
 # play is now O27's real runner-erasing event — the thing that lets a high-hit
 # offense still strand and post a low run total. The band is widened so a cold,
 # rally-killing half (with the form multiplier on top) can turn grounders into
 # twin-killings at a much higher clip than the old per-inning MLB rate.
-GIDP_BASE_PROB: float    = 0.20
+GIDP_BASE_PROB: float    = 0.26
 GIDP_SPEED_SCALE: float  = 0.20
 GIDP_DEFENSE_SCALE: float = 0.15
-GIDP_MIN_PROB: float     = 0.07
-GIDP_MAX_PROB: float     = 0.42
+GIDP_MIN_PROB: float     = 0.09
+GIDP_MAX_PROB: float     = 0.50
 
 # Force-factor table — multiplier applied based on which bases are
 # occupied. The (1B-only) case is the canonical 1.0 baseline.
@@ -626,13 +626,20 @@ GIDP_QUALITY_HARD: float    = 0.55
 GIDP_STAY_MULTIPLIER: float = 0.30
 
 # Triple play — at least 2 forceable runners on (1B+2B or bases loaded)
-# and 0 outs. Real MLB rate is ~1 per 700 opportunities; we keep it
-# rare. Conditional on a DP firing in the eligible base config, this
-# probability promotes it to a TP. Set to 0 to disable.
+# and room left in the half to record three outs. Conditional on a DP
+# firing in the eligible base config, this probability promotes it to a
+# TP. Set to 0 to disable.
+# NOTE (O27 gate): like the DP gate, the trigger is NOT MLB's per-inning
+# "nobody out" rule. There are no innings — one continuous 27-out half —
+# so the literal `outs == 0` gate let a TP fire only on the very first out
+# of the entire half, making triple plays effectively dead code (0 in a
+# 400-game sample). The eligibility now mirrors the DP gate: the half just
+# has to have room for the three outs a TP records. The base rate is kept
+# low so that, fired all half long, TPs land at a believably rare clip.
 # Baserunner errors can also induce a TP — a runner with low baserunning
 # skill (poor read off the bat, late tag-up) inflates the TP probability
 # via the SKILL bonus below.
-TRIPLE_PLAY_GIVEN_DP_PROB: float       = 0.04
+TRIPLE_PLAY_GIVEN_DP_PROB: float       = 0.05
 TRIPLE_PLAY_BASERUNNING_BONUS: float   = 0.06   # added when lead runner is below-average
 
 # ---------------------------------------------------------------------------
@@ -928,6 +935,71 @@ ADAPTABILITY_SCALE: float        = 0.10
 # push a bunt the other way for an easy hit. This adds a no-runner bunt
 # path on top of the existing sac-bunt logic.
 BUNT_AGAINST_SHIFT_BASE_PROB: float = 0.18   # baseline scaled by speed dev
+
+# ---------------------------------------------------------------------------
+# Power Play (optional league rule)
+# ---------------------------------------------------------------------------
+# An opt-in, per-league rule. When enabled, the FIELDING manager may deploy a
+# 10th defender — the "nickel fielder" (NF / scorekeeping position 10), a
+# middle outfielder — for a use-or-lose window of up to POWER_PLAY_WINDOW_OUTS
+# outs. The nickel covers the outfield gaps, suppressing extra-base hits and
+# running some would-be singles down. The window:
+#   - opens at most once per defensive half (use it or lose it),
+#   - lasts up to 4 outs but always ends when the half ends (no carryover),
+#   - is available again, fresh, in a Declared Seconds frame,
+#   - is NEVER available in extra (super) innings.
+#
+# POWER_PLAY_ENABLED is a plain bool, so o27v2.engine_config auto-exposes it as
+# a dashboard toggle that saves per environment — that IS the per-league
+# checkbox (off by default, so identical talent can be A/B-tested on vs. off).
+POWER_PLAY_ENABLED: bool = False     # league opt-in; off = zero behavior change
+
+POWER_PLAY_WINDOW_OUTS: int = 4      # max outs the nickel stays on the field
+
+# Fielding effect while the window is active (applied in resolve_contact,
+# after the shift layer). The nickel covers center-outfield gaps.
+POWER_PLAY_XBH_HELD_PROB: float   = 0.35   # double/triple → single (gap cut off)
+POWER_PLAY_SINGLE_OUT_PROB: float = 0.12   # outfield single → fly_out (run down)
+# Share of outfield putouts re-credited to the nickel while active (PO logged
+# under position "NF"). Roughly the slice of the outfield the nickel patrols.
+POWER_PLAY_NICKEL_PO_SHARE: float = 0.33
+
+# Presence effect — the *mere* arrival of the 10th defender tightens the whole
+# unit for as long as the window is open, beyond just balls hit at the nickel.
+# While active we apply a small MULTIPLICATIVE lift to the fielding team's
+# defense_rating (the "across the lineup" knob — error chance, ground-out
+# conversion, borderline plays all read it) and to the active pitcher's
+# effectiveness attrs (command / Stuff / movement / grit), so every downstream
+# roll sees a settled defense and a pitcher who can work the zone. The lift is
+# stashed-and-restored per PA (same lifecycle as leadership flares), so nothing
+# drifts and it's inert the instant the window closes.
+#
+# Banded 0.1%–4.4% PER POWER PLAY, scaled by the nickel's glove: a replacement-
+# grade nickel barely moves the needle, an elite one lands near the top. It is
+# deliberately NOT a magic pill — the sport advantages the runner everywhere
+# else, so offense still wins most exchanges; this just makes the defense's one
+# lever measurable.
+POWER_PLAY_PRESENCE_MIN: float = 0.001   # 0.1% — floor (any eligible nickel)
+POWER_PLAY_PRESENCE_MAX: float = 0.044   # 4.4% — cap (elite-glove nickel)
+
+# Nickel eligibility. A rostered player NOT currently on the field, eligible at
+# OF or SS, who clears BOTH bars below. Pitchers qualify only as a wild card
+# (lightly-used arms) and only if they have not already appeared in the game.
+POWER_PLAY_NICKEL_ARM_MIN: float   = 0.62  # strong throwing arm
+POWER_PLAY_NICKEL_FIELD_MIN: float = 0.58  # good glove at OF/SS
+
+# Manager deployment behavior. Rolled per game per fielding team (not a sticky
+# manager trait), so the same skipper varies game to game.
+POWER_PLAY_SKIP_GAME_PROB: float = 0.05    # team never deploys this game
+POWER_PLAY_MISTIME_PROB: float   = 0.09    # team deploys too early / too late
+# Suppress deployment when the game is out of hand (no good reason to spend it).
+POWER_PLAY_BLOWOUT_MARGIN: int   = 8       # |run diff| ≥ this → hold the window
+# Per-AB deploy-probability ramp across the out arc (engine settles naturally).
+POWER_PLAY_DEPLOY_BASE_EARLY: float = 0.03   # outs < 12
+POWER_PLAY_DEPLOY_BASE_MID: float   = 0.15   # 12 ≤ outs < late threshold
+POWER_PLAY_DEPLOY_BASE_LATE: float  = 0.50   # late arc
+POWER_PLAY_DEPLOY_BASE_FORCED: float = 0.90  # ≤ window outs remain (use-or-lose)
+POWER_PLAY_CLOSE_GAME_MULT: float   = 1.4    # tight game raises deploy urgency
 
 # ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)

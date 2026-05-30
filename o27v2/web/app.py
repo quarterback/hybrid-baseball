@@ -52,6 +52,9 @@ app.config["SECRET_KEY"] = "o27v2-dev-key"
 from o27.almanac.blueprint import almanac_bp
 app.register_blueprint(almanac_bp)
 
+from o27.gazette.blueprint import gazette_bp
+app.register_blueprint(gazette_bp)
+
 
 # Presentation filters live in o27v2.web.formatters (pure value formatters,
 # no app dependency). Import and register them on the Jinja environment.
@@ -829,9 +832,14 @@ def _stamp_per_game_decay(rows: list[dict], drift: float = 0.0) -> None:
         r["g_total"]         = meta["g_total"]
 
 
-def _pitcher_wl_map() -> dict[int, dict[str, int]]:
+def _pitcher_wl_map(through_game: dict | None = None) -> dict[int, dict[str, int]]:
     """Award W/L per MLB-style rules adapted to the O27 27-out-per-side
     structure.
+
+    When `through_game` (a games row with `game_date` and `id`) is passed,
+    only games up to and including that game count — yielding the season
+    W-L *through this game*, the figure a box score reports next to the
+    decision. Without it, the full-season record is returned.
 
     Winning team:
       - Starting pitcher (earliest appearance, lowest game_pitcher_stats
@@ -852,8 +860,14 @@ def _pitcher_wl_map() -> dict[int, dict[str, int]]:
     "hard to figure out how" and it requires lead-state tracking we
     don't currently capture in game_pitcher_stats.
     """
+    where = "WHERE g.played = 1"
+    params: tuple = ()
+    if through_game is not None:
+        where += " AND (g.game_date < ? OR (g.game_date = ? AND g.id <= ?))"
+        params = (through_game["game_date"], through_game["game_date"],
+                  through_game["id"])
     rows = db.fetchall(
-        """SELECT ps.game_id, ps.team_id, ps.player_id,
+        f"""SELECT ps.game_id, ps.team_id, ps.player_id,
                   ps.outs_recorded AS outs,
                   ps.runs_allowed  AS runs,
                   ps.er            AS er,
@@ -861,8 +875,9 @@ def _pitcher_wl_map() -> dict[int, dict[str, int]]:
                   g.winner_id
              FROM game_pitcher_stats ps
              JOIN games g ON g.id = ps.game_id
-            WHERE g.played = 1
-            ORDER BY ps.game_id, ps.team_id, ps.rowid"""
+            {where}
+            ORDER BY ps.game_id, ps.team_id, ps.rowid""",
+        params,
     )
 
     # Group by (game_id, team_id) so we can apply the W/L decision logic
@@ -910,6 +925,48 @@ def _pitcher_wl_map() -> dict[int, dict[str, int]]:
             rec = out.setdefault(charged, {"w": 0, "l": 0})
             rec["l"] += 1
     return out
+
+
+# Counting stats that get a season-to-date parenthetical in the box-score
+# annotation lines (2B / 3B / HR / SB / CS / E / HBP / GIDP / GITP). The
+# annotation field name in the renderer matches the DB column except the
+# extra-base hits, which the renderer keys as doubles/triples.
+_SEASON_ANNOT_FIELDS = ("doubles", "triples", "hr", "sb", "cs", "e",
+                        "hbp", "gidp", "gitp")
+
+
+def _season_xbh_through(team_id: int, game_date: str,
+                        game_id: int) -> dict[int, dict[str, int]]:
+    """Per-player season counting-stat totals for one team, accumulated
+    through (and including) the given game. Covers every stat that gets a
+    box-score annotation line — 2B/3B/HR/SB/CS/E/HBP/GIDP/GITP — so the
+    parenthetical reads as the season-to-date count, not the game count
+    ('SB: Young-ju (7)' = his 7th steal of the year)."""
+    sums = ", ".join(f"SUM(bs.{f}) AS {f}" for f in _SEASON_ANNOT_FIELDS)
+    rows = db.fetchall(
+        f"""SELECT bs.player_id AS pid, {sums}
+           FROM game_batter_stats bs JOIN games g ON bs.game_id = g.id
+           WHERE bs.team_id = ?
+             AND (g.game_date < ? OR (g.game_date = ? AND g.id <= ?))
+           GROUP BY bs.player_id""",
+        (team_id, game_date, game_date, game_id),
+    )
+    return {
+        r["pid"]: {f: int(r[f] or 0) for f in _SEASON_ANNOT_FIELDS}
+        for r in rows
+    }
+
+
+def _inject_season_xbh(rows: list[dict], xbh_map: dict[int, dict]) -> None:
+    """Decorate consolidated batting rows in place with season-to-date
+    counts (`season_doubles`, `season_triples`, `season_hr`, `season_sb`,
+    `season_cs`, `season_e`, `season_hbp`, `season_gidp`, `season_gitp`).
+    Falls back to the game count when a player is absent from the map
+    (e.g. legacy rows)."""
+    for r in rows:
+        m = xbh_map.get(r.get("player_id"), {})
+        for f in _SEASON_ANNOT_FIELDS:
+            r[f"season_{f}"] = m.get(f, r.get(f) or 0)
 
 
 def _attach_decisions(games: list[dict]) -> None:
@@ -3035,24 +3092,19 @@ def game_detail(game_id: int):
     from o27.engine.weather import Weather
     weather_label = Weather.from_row(game).short_label()
 
-    # Season HR totals through this game — for the box-score "HR: Smith (12)"
-    # annotation. One round-trip per side; cheap.
-    def _season_hr_through(team_id: int) -> dict[int, int]:
-        rows = db.fetchall(
-            """SELECT bs.player_id AS pid, SUM(bs.hr) AS hr_total
-               FROM game_batter_stats bs JOIN games g ON bs.game_id = g.id
-               WHERE bs.team_id = ?
-                 AND (g.game_date < ? OR (g.game_date = ? AND g.id <= ?))
-               GROUP BY bs.player_id""",
-            (team_id, game["game_date"], game["game_date"], game_id),
-        )
-        return {r["pid"]: int(r["hr_total"] or 0) for r in rows}
-    away_season_hr = _season_hr_through(game["away_team_id"])
-    home_season_hr = _season_hr_through(game["home_team_id"])
-    for r in away_batting_consolidated:
-        r["season_hr"] = away_season_hr.get(r["player_id"], 0)
-    for r in home_batting_consolidated:
-        r["season_hr"] = home_season_hr.get(r["player_id"], 0)
+    # Season 2B/3B/HR totals through this game — for the box-score
+    # "2B: Konan 2 (9)" / "HR: Smith (12)" annotations, where the
+    # parenthetical is the season-to-date count. One round-trip per side.
+    _inject_season_xbh(
+        away_batting_consolidated,
+        _season_xbh_through(game["away_team_id"], game["game_date"], game_id),
+    )
+    _inject_season_xbh(
+        home_batting_consolidated,
+        _season_xbh_through(game["home_team_id"], game["game_date"], game_id),
+    )
+    # Pitcher season W-L through this game — for "(W, 5-3)" on the decision.
+    _season_wl = _pitcher_wl_map(through_game=game)
 
     # Newspaper-style plaintext box score. Built from the consolidated
     # per-player rows and the line-score totals computed above. Rendered
@@ -3110,6 +3162,7 @@ def game_detail(game_id: int):
         home_pitching=home_pitching_consolidated,
         decisions=_decisions,
         hr_off_pitchers=hr_off_map,
+        season_wl=_season_wl,
     )
 
     # Pesäpallo-style scoring events log — one row per run that crossed
@@ -3241,7 +3294,7 @@ def game_detail_export(game_id: int):
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                 "rbi", "bb", "k", "stays", "outs_recorded", "hbp", "sb",
                 "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits",
-                "roe", "po", "e")
+                "roe", "po", "e", "gidp", "gitp")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs", "sb_allowed", "cs_caught",
@@ -3269,6 +3322,14 @@ def game_detail_export(game_id: int):
     home_b_c = _consolidate(home_b, _BAT_NUM)
     away_p_c = _consolidate(away_p, _PIT_NUM)
     home_p_c = _consolidate(home_p, _PIT_NUM)
+
+    # Season-to-date 2B/3B/HR (parenthetical in the annotations) and the
+    # pitcher's season W-L through this game (shown on the decision).
+    _inject_season_xbh(
+        away_b_c, _season_xbh_through(game["away_team_id"], game["game_date"], game_id))
+    _inject_season_xbh(
+        home_b_c, _season_xbh_through(game["home_team_id"], game["game_date"], game_id))
+    season_wl = _pitcher_wl_map(through_game=game)
 
     # Decorate the pitcher rows so each carries gsc_avg.
     baselines = _league_baselines()
@@ -3327,6 +3388,7 @@ def game_detail_export(game_id: int):
         _line(away_b), _line(home_b),
         phases,
         hr_off_pitchers=hr_off_map_md,
+        season_wl=season_wl,
     ))
 
 
@@ -4482,6 +4544,91 @@ def leaders():
             "li":          e["li"],
         })
 
+    # ----- Power Play / short-handed leaderboards ------------------
+    # Only populated in leagues that opted into the Power Play rule (the
+    # game_power_play_stats table is empty otherwise), so the template
+    # renders the whole section conditionally on a non-empty dataset.
+    #   pp_defense  — the nickel fielders: deployments, outs covered, XBH
+    #                 held, hits run down, putouts.
+    #   pp_offense  — short-handed hitters: SH-PA/AB/H and SH-AVG (min PA).
+    pp_rows = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  SUM(pp.pp_deploys)        as pp_deploys,
+                  SUM(pp.pp_outs)           as pp_outs,
+                  SUM(pp.pp_xbh_held)       as pp_xbh_held,
+                  SUM(pp.pp_hits_converted) as pp_hits_converted,
+                  SUM(pp.nickel_po)         as nickel_po,
+                  SUM(pp.nickel_a)          as nickel_a,
+                  SUM(pp.nickel_e)          as nickel_e,
+                  SUM(pp.sh_pa)             as sh_pa,
+                  SUM(pp.sh_ab)             as sh_ab,
+                  SUM(pp.sh_hits)           as sh_hits
+           FROM game_power_play_stats pp
+           JOIN players p ON pp.player_id = p.id
+           JOIN teams   t ON pp.team_id   = t.id
+           {lg_where}
+           GROUP BY p.id""",
+        lg_param,
+    )
+    pp_defense, pp_offense = [], []
+    for r in pp_rows:
+        if (r.get("pp_deploys") or 0) > 0:
+            pp_defense.append(r)
+        sh_ab = int(r.get("sh_ab") or 0)
+        if int(r.get("sh_pa") or 0) > 0:
+            # SH-AVG = hits / at-bats while short-handed (None when no AB).
+            r["sh_avg"] = (int(r.get("sh_hits") or 0) / sh_ab) if sh_ab else None
+            pp_offense.append(r)
+    power_play_on_in_league = bool(pp_rows)
+
+    # Power Play PITCHING — its own dataset (the pitcher with the nickel behind
+    # him). Coverage% needs the pitcher's TOTAL outs (how much of his work had
+    # the nickel out there), so join season outs from game_pitcher_stats.
+    pp_pitch_rows = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  SUM(pp.ppp_bf)           as ppp_bf,
+                  SUM(pp.ppp_outs)         as ppp_outs,
+                  SUM(pp.ppp_k)            as ppp_k,
+                  SUM(pp.ppp_bb)           as ppp_bb,
+                  SUM(pp.ppp_bip)          as ppp_bip,
+                  SUM(pp.ppp_bip_hits)     as ppp_bip_hits,
+                  SUM(pp.ppp_tot_bip)      as ppp_tot_bip,
+                  SUM(pp.ppp_tot_bip_hits) as ppp_tot_bip_hits,
+                  SUM(pp.ppp_hits_saved)   as ppp_hits_saved,
+                  SUM(pp.ppp_xbh_saved)    as ppp_xbh_saved,
+                  (SELECT COALESCE(SUM(gps.outs_recorded),0)
+                     FROM game_pitcher_stats gps WHERE gps.player_id = p.id) as tot_outs
+           FROM game_power_play_stats pp
+           JOIN players p ON pp.player_id = p.id
+           JOIN teams   t ON pp.team_id   = t.id
+           {lg_where}
+           GROUP BY p.id
+          HAVING SUM(pp.ppp_bf) > 0""",
+        lg_param,
+    )
+    pp_pitching = []
+    for r in pp_pitch_rows:
+        bf  = int(r.get("ppp_bf") or 0)
+        bip = int(r.get("ppp_bip") or 0)
+        tot_bip = int(r.get("ppp_tot_bip") or 0)
+        non_bip = tot_bip - bip
+        # Defense-independent rates (K and BB never reach the nickel's glove).
+        r["ppp_k_pct"]  = (int(r.get("ppp_k")  or 0) / bf) if bf else None
+        r["ppp_bb_pct"] = (int(r.get("ppp_bb") or 0) / bf) if bf else None
+        # BABIP-against with the nickel deployed, and the split vs without it.
+        r["ppp_babip"]  = (int(r.get("ppp_bip_hits") or 0) / bip) if bip else None
+        non_babip = ((int(r.get("ppp_tot_bip_hits") or 0)
+                      - int(r.get("ppp_bip_hits") or 0)) / non_bip) if non_bip else None
+        # Negative split = lower BABIP with the nickel = the defense helped him.
+        r["ppp_babip_split"] = (r["ppp_babip"] - non_babip) \
+            if (r["ppp_babip"] is not None and non_babip is not None) else None
+        # Coverage: share of the pitcher's outs taken with the nickel behind him.
+        tot_outs = int(r.get("tot_outs") or 0)
+        r["ppp_coverage"] = (int(r.get("ppp_outs") or 0) / tot_outs) if tot_outs else None
+        pp_pitching.append(r)
+
     # ----- XO Crossover scale toggle ------------------------------
     # ?scale=xo flips the leaderboard table cells to their MLB-readable
     # values. Rank order is identical (the z-anchor map is monotonic);
@@ -4496,6 +4643,8 @@ def leaders():
         min_pa=min_pa, min_outs=min_outs, min_chances=min_chances,
         batting=batting, pitching=pitching,
         fielding=fielding, fielding_qual=fielding_qual,
+        pp_defense=pp_defense, pp_offense=pp_offense, pp_pitching=pp_pitching,
+        power_play_on_in_league=power_play_on_in_league,
         salaries=salaries,
         top_outings=top_outings,
         top_games=top_games,
@@ -6966,6 +7115,13 @@ def new_league_post():
                   config=custom_cfg)
     set_active_league_meta(rng_seed, meta_cfg_id)
 
+    # Power Play (optional rule) — opt-in at league creation via the checkbox
+    # on new_league.html. Stamp it onto every team so sim.py can read the
+    # per-league flag at game time. Applies to whichever config (preset or
+    # custom) was just seeded; off by default leaves the column at 0.
+    if request.form.get("power_play_enabled"):
+        db.execute("UPDATE teams SET power_play_enabled = 1")
+
     # Optional pre-season auction. Opt-in at league creation via the
     # checkbox on new_league.html; works for any preset or custom config
     # (the auction module is mode-agnostic — it reads teams off the DB).
@@ -7143,6 +7299,11 @@ def universe_new_post():
     customs   = request.form.getlist("lg_custom")
     locales   = request.form.getlist("lg_locale")
     parks     = request.form.getlist("lg_park")
+    # Per-league Power Play opt-in. A <select> (Off/On) rather than a checkbox
+    # so every league row submits exactly one value, keeping this list aligned
+    # by index with lg_name/lg_teams/etc. (unchecked checkboxes don't submit and
+    # would break the positional getlist correspondence).
+    power_plays = request.form.getlist("lg_power_play")
     leagues = []
     for i, nm in enumerate(names):
         if not (nm or "").strip():
@@ -7164,6 +7325,7 @@ def universe_new_post():
             "style":     style_val,
             "locale":    (locales[i] if i < len(locales) else "") or "",
             "park":      (parks[i] if i < len(parks) else "") or "",
+            "power_play_enabled": (i < len(power_plays) and power_plays[i] == "1"),
         })
 
     try:
@@ -7198,6 +7360,13 @@ def universe_new_post():
     seed_league(rng_seed=rng_seed, config_id=uid)
     seed_schedule(rng_seed=rng_seed, config_id=uid)
     set_active_league_meta(rng_seed, uid)
+    # Power Play (per-league) — stamp only the teams of leagues that opted in.
+    # teams.league holds the league NAME verbatim (build_universe_config keeps
+    # it unchanged), so the name match is exact.
+    for lg in leagues:
+        if lg.get("power_play_enabled"):
+            db.execute("UPDATE teams SET power_play_enabled = 1 WHERE league = ?",
+                       (lg["name"],))
     flash(f"Built universe '{cfg['label']}' — {len(leagues)} leagues, "
           f"{cfg['team_count']} teams.", "info")
     return redirect(url_for("index"))
@@ -7212,7 +7381,15 @@ def league_edit_get():
     div_rows = db.fetchall(
         "SELECT division, league, COUNT(*) AS n FROM teams "
         "GROUP BY division, league ORDER BY league, division")
-    return _serve("league_edit.html", leagues=leagues, divisions=div_rows)
+    # Current Power Play state per league (a league is "on" if its teams carry
+    # the flag). Lets the user see and flip the optional rule for an existing
+    # league without recreating it.
+    pp_by_league = {
+        r["league"]: bool(r["pp"]) for r in db.fetchall(
+            "SELECT league, MAX(power_play_enabled) AS pp FROM teams GROUP BY league")
+    }
+    return _serve("league_edit.html", leagues=leagues, divisions=div_rows,
+                  pp_by_league=pp_by_league)
 
 
 @app.route("/league/edit", methods=["POST"])
@@ -7221,15 +7398,31 @@ def league_edit_post():
 
     league_old = request.form.getlist("league_old")
     league_new = request.form.getlist("league_new")
+    league_pp  = request.form.getlist("league_pp")   # "1"/"0" per league, aligned
     div_old    = request.form.getlist("division_old")
     div_new    = request.form.getlist("division_new")
 
     renamed_lg = 0
-    for old, new in zip(league_old, league_new):
-        new = (new or "").strip()
+    pp_changed = 0
+    for i, old in enumerate(league_old):
+        new = (league_new[i] if i < len(league_new) else "") or ""
+        new = new.strip()
+        # Resolve the league's name after any rename, so the Power Play update
+        # below targets the right rows.
+        name = old
         if new and new != old:
             db.execute("UPDATE teams SET league = ? WHERE league = ?", (new, old))
             renamed_lg += 1
+            name = new
+        # Power Play toggle (always submitted as 0/1 by the select).
+        if i < len(league_pp):
+            want = 1 if league_pp[i] == "1" else 0
+            cur = db.fetchone(
+                "SELECT MAX(power_play_enabled) AS p FROM teams WHERE league = ?", (name,))
+            if cur is not None and int(cur["p"] or 0) != want:
+                db.execute("UPDATE teams SET power_play_enabled = ? WHERE league = ?",
+                           (want, name))
+                pp_changed += 1
 
     renamed_div = 0
     for old, new in zip(div_old, div_new):
@@ -7238,10 +7431,11 @@ def league_edit_post():
             db.execute("UPDATE teams SET division = ? WHERE division = ?", (new, old))
             renamed_div += 1
 
-    if renamed_lg or renamed_div:
-        flash(f"Renamed {renamed_lg} league(s) and {renamed_div} division(s).", "info")
-    else:
-        flash("No changes made.", "info")
+    bits = []
+    if renamed_lg:  bits.append(f"renamed {renamed_lg} league(s)")
+    if renamed_div: bits.append(f"renamed {renamed_div} division(s)")
+    if pp_changed:  bits.append(f"changed Power Play on {pp_changed} league(s)")
+    flash(("Saved: " + ", ".join(bits) + ".") if bits else "No changes made.", "info")
     return redirect(url_for("league_edit_get"))
 
 
@@ -8254,7 +8448,10 @@ def youth_game_view(game_id: int):
         r.setdefault("entry_type", "starter")
         r.setdefault("entered_inning", 0)
         r.setdefault("box_position", r.get("position") or "")
-        r["season_hr"] = r.get("hr") or 0
+        # Tournament boxes have no cross-game season context; every
+        # parenthetical falls back to the game count.
+        for _f in _SEASON_ANNOT_FIELDS:
+            r[f"season_{_f}"] = r.get(_f) or 0
     line_for = lambda rows: {
         "runs":    {0: sum((r.get("runs") or 0) for r in rows)},
         "hits":    {0: sum((r.get("hits") or 0) for r in rows)},
@@ -8322,6 +8519,7 @@ def pro_worldcup_view():
 @app.route("/pro-worldcup/team/<int:wc_team_id>")
 def pro_worldcup_team_view(wc_team_id: int):
     from o27v2 import pro_worldcup as _wc
+    from o27v2 import nation_talent as _talent
     team = _wc.get_team(wc_team_id)
     if not team:
         abort(404)
@@ -8329,9 +8527,10 @@ def pro_worldcup_team_view(wc_team_id: int):
     roster = _wc.get_roster(wc_team_id)
     eligible = _wc.get_eligible_for_team(wc_team_id)
     locked = bool(summary and summary.get("rosters_locked"))
+    talent = _talent.describe(team["country_code"])
     return _serve("pro_worldcup_team.html",
                   team=team, roster=roster, eligible=eligible, locked=locked,
-                  roster_size=_wc.WC_ROSTER_SIZE)
+                  roster_size=_wc.WC_ROSTER_SIZE, talent=talent)
 
 
 @app.route("/pro-worldcup/game/<int:game_id>")
@@ -8351,7 +8550,10 @@ def pro_worldcup_game_view(game_id: int):
         r.setdefault("entry_type", "starter")
         r.setdefault("entered_inning", 0)
         r.setdefault("box_position", r.get("position") or "")
-        r["season_hr"] = r.get("hr") or 0
+        # Tournament boxes have no cross-game season context; every
+        # parenthetical falls back to the game count.
+        for _f in _SEASON_ANNOT_FIELDS:
+            r[f"season_{_f}"] = r.get(_f) or 0
     line_for = lambda rows: {
         "runs":    {0: sum((r.get("runs") or 0) for r in rows)},
         "hits":    {0: sum((r.get("hits") or 0) for r in rows)},
@@ -8403,7 +8605,7 @@ def api_pro_worldcup_finish_qualifying():
     rng_seed = int(data.get("rng_seed") or 0)
     # Make sure any still-unplayed qualifying games are run first.
     _wc.simulate_qualifying(rng_seed=rng_seed)
-    info = _wc.lock_qualifiers()
+    info = _wc.lock_qualifiers(rng_seed=rng_seed)
     _wc.auto_pick_rosters(season=info["season"], overwrite=False)
     return jsonify({"ok": True, "info": info})
 
@@ -8446,6 +8648,25 @@ def api_pro_worldcup_team_roster(wc_team_id: int):
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True, "info": info})
+
+
+@app.route("/api/pro-worldcup/team/<int:wc_team_id>/talent", methods=["POST"])
+def api_pro_worldcup_team_talent(wc_team_id: int):
+    from o27v2 import pro_worldcup as _wc
+    from o27v2 import nation_talent as _talent
+    team = _wc.get_team(wc_team_id)
+    if not team:
+        return jsonify({"ok": False, "error": "team not found"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        investment = int(data.get("investment"))
+        grassroots = int(data.get("grassroots"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "investment/grassroots must be integers"}), 400
+    if not (0 <= investment <= 100 and 0 <= grassroots <= 100):
+        return jsonify({"ok": False, "error": "ratings must be 0-100"}), 400
+    _talent.set_rating(team["country_code"], investment, grassroots)
+    return jsonify({"ok": True, "talent": _talent.describe(team["country_code"])})
 
 
 @app.route("/api/pro-worldcup/run-tournament", methods=["POST"])

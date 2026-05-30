@@ -1,0 +1,35 @@
+{
+  "_doc": [
+    "Per-nation talent-generation metrics, keyed by ISO 3166-1 alpha-2 code.",
+    "Two 0-100 ratings (default 50 = league-neutral when a code is absent):",
+    "  investment  - top-end funding (academies, pro pathways). Drives the",
+    "                elite-talent spike (chance a generated player is world-class).",
+    "  grassroots  - breadth of development. Drives the average-quality lift",
+    "                applied to every player from that nation.",
+    "Edit freely to make programmes ebb and flow between seasons. See",
+    "o27v2/nation_talent.py for how these map to player generation."
+  ],
+  "ratings": {
+    "US": {"investment": 90, "grassroots": 82},
+    "DO": {"investment": 78, "grassroots": 95},
+    "JP": {"investment": 95, "grassroots": 85},
+    "VE": {"investment": 68, "grassroots": 88},
+    "PR": {"investment": 72, "grassroots": 82},
+    "CU": {"investment": 60, "grassroots": 90},
+    "KR": {"investment": 85, "grassroots": 72},
+    "TW": {"investment": 80, "grassroots": 74},
+    "MX": {"investment": 62, "grassroots": 66},
+    "NL": {"investment": 66, "grassroots": 52},
+    "CO": {"investment": 52, "grassroots": 60},
+    "CA": {"investment": 58, "grassroots": 56},
+    "AU": {"investment": 55, "grassroots": 54},
+    "PA": {"investment": 50, "grassroots": 58},
+    "NI": {"investment": 46, "grassroots": 56},
+    "IT": {"investment": 52, "grassroots": 44},
+    "GB": {"investment": 44, "grassroots": 42},
+    "CN": {"investment": 56, "grassroots": 40},
+    "IN": {"investment": 48, "grassroots": 46},
+    "ZA": {"investment": 46, "grassroots": 44},
+    "NG": {"investment": 38, "grassroots": 42}
+  }
+}

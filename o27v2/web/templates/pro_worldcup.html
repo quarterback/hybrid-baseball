@@ -5,7 +5,7 @@
   <div>
     <h2 class="mb-0">Pro World Cup{% if season %} — Season {{ season }}{% endif %}</h2>
     <div class="text-secondary small">
-      Regional qualifying → 24-nation group stage → 8-team knockout. Pros play for their birth country (or a heritage call-up via secondary nationality).
+      Regional qualifying + intercontinental playoff → 32-nation group stage → 16-team knockout. Pros play for their birth country (or a heritage call-up via secondary nationality).
     </div>
   </div>
   <div class="d-flex gap-2">
@@ -14,7 +14,7 @@
     {% else %}
       <button id="reset-btn" class="btn btn-outline-danger btn-sm">Reset & Re-run</button>
       {% if summary.phase == 'qualifying' %}
-        <button id="advance-btn" class="btn btn-warning btn-sm">Run Qualifying → Lock 24</button>
+        <button id="advance-btn" class="btn btn-warning btn-sm">Run Qualifying + Playoff → Lock 32</button>
       {% elif summary.phase == 'rosters' %}
         <button id="auto-all-btn" class="btn btn-outline-warning btn-sm">Auto-fill All Rosters</button>
         <button id="run-btn" class="btn btn-warning btn-sm">Lock Rosters & Run Tournament</button>
@@ -59,7 +59,7 @@
         </span>
         {% if not loop.last %}<span class="text-secondary">→</span>{% endif %}
       {% endfor %}
-      <span class="text-secondary ms-auto">{{ summary.qualified_count }} of 24 nations qualified</span>
+      <span class="text-secondary ms-auto">{{ summary.qualified_count }} of 32 nations qualified</span>
     </div>
   </div>
 
@@ -70,7 +70,7 @@
   <div class="dense mb-4">
     <div class="panel-title">Regional qualifying</div>
     <div class="text-secondary small mb-2">
-      Single round-robin per region. Top of the line qualifies for the 24-nation main bracket.
+      Single round-robin per region. Top of the line qualifies directly; the best non-qualifiers drop into the intercontinental playoff for the last 4 berths of the 32-nation main bracket.
     </div>
     <div class="row g-3">
       {% for block in summary.qualifying_groups %}
@@ -112,6 +112,38 @@
       </div>
       {% endfor %}
     </div>
+  </div>
+  {% endif %}
+
+  {# ============================================================
+     Intercontinental playoff — the last 4 berths
+     ============================================================ #}
+  {% set playoff_games = summary.by_phase.get('playoff') %}
+  {% if playoff_games %}
+  <div class="dense mb-4">
+    <div class="panel-title">Intercontinental playoff</div>
+    <div class="text-secondary small mb-2">
+      The best non-qualifiers across all regions play off for the final 4 berths. Winners advance to the 32-nation bracket.
+    </div>
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr><th>Match</th><th class="num">Score</th><th>Winner</th><th></th></tr></thead>
+      <tbody>
+      {% for g in playoff_games %}
+        <tr>
+          <td>
+            <span class="team-abbrev">{{ g.home_abbrev }}</span> {{ g.home_name }}
+            <span class="text-secondary mx-2">vs</span>
+            <span class="team-abbrev">{{ g.away_abbrev }}</span> {{ g.away_name }}
+          </td>
+          <td class="num">{% if g.played %}{{ g.home_score }}–{{ g.away_score }}{% else %}—{% endif %}</td>
+          <td>
+            {% if g.played %}<strong>{% if g.winner_wc_team_id == g.home_wc_team_id %}{{ g.home_abbrev }}{% else %}{{ g.away_abbrev }}{% endif %}</strong>{% else %}<span class="text-secondary">—</span>{% endif %}
+          </td>
+          <td>{% if g.played %}<a class="small" href="{{ url_for('pro_worldcup_game_view', game_id=g.id) }}">Box →</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% endif %}
 
@@ -194,7 +226,7 @@
   {# ============================================================
      Knockout bracket
      ============================================================ #}
-  {% set rounds = [('qf', 'Quarter-finals'), ('sf', 'Semi-finals'), ('final', 'Final')] %}
+  {% set rounds = [('r16', 'Round of 16'), ('qf', 'Quarter-finals'), ('sf', 'Semi-finals'), ('final', 'Final')] %}
   {% for code, label in rounds %}
     {% set games = summary.by_phase.get(code) %}
     {% if games %}

@@ -206,17 +206,20 @@ def can_insert_joker(state: GameState, joker: Player) -> tuple[bool, str]:
       - Joker must be in team.jokers_available (game-time pool of 3).
       - Super-innings disable joker insertion (the 5-batter format
         has its own selection mechanic).
+      - Per-turnover cooldown: a joker that has already batted this time
+        through the order can't be re-inserted until the base lineup
+        cycles (jokers_used_this_cycle, cleared in advance_lineup).
 
-    Jokers are unrestricted on rate: any joker in the pool can be
-    inserted in any PA, any number of times per game. The on-base
-    safety check (a joker on base can't also be batting) is enforced
-    in should_insert_joker.
+    The on-base safety check (a joker on base can't also be batting) is
+    enforced in should_insert_joker.
     """
     if state.is_super_inning:
         return False, "Joker insertion not allowed in super-innings."
     team = state.batting_team
     if joker.player_id not in {j.player_id for j in team.jokers_available}:
         return False, "Joker not in available pool."
+    if joker.player_id in team.jokers_used_this_cycle:
+        return False, "Joker already used this time through the order."
     return True, ""
 
 
@@ -225,9 +228,10 @@ def insert_joker(state: GameState, joker: Player, lineup_position: int = -1) -> 
 
     The joker bats in place of the base-lineup batter for ONE plate
     appearance, then returns to the bench. The base lineup position is
-    NOT advanced by the joker AB (handled in pa._end_at_bat). The same
-    joker can be re-inserted in any later PA — there is no per-cycle
-    or per-game cap on insertions.
+    NOT advanced by the joker AB (handled in pa._end_at_bat). A joker may
+    be deployed at most once per time through the order; he becomes
+    eligible again only after the base lineup cycles (the cooldown set is
+    cleared in advance_lineup). There is no overall per-game cap.
 
     `lineup_position` is accepted for back-compat but ignored — the
     joker insertion is always "before the next scheduled batter."
@@ -237,6 +241,7 @@ def insert_joker(state: GameState, joker: Player, lineup_position: int = -1) -> 
     if not ok:
         return [f"  [Joker insert rejected: {reason}]"]
     team = state.batting_team
+    team.jokers_used_this_cycle.add(joker.player_id)
     state.batter_override = joker
     state.events.append({
         "type": "joker_inserted",
@@ -574,10 +579,13 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     if not team.jokers_available:
         return None
     # A joker on base from a prior PA can't physically also be at bat —
-    # Bonds can't be at 2B and "also" inserted to bat again.
+    # Bonds can't be at 2B and "also" inserted to bat again. And a joker
+    # already used this time through the order is on cooldown until the
+    # base lineup cycles.
     on_base_ids = {pid for pid in state.bases if pid is not None}
     eligible = [j for j in team.jokers_available
-                if j.player_id not in on_base_ids]
+                if j.player_id not in on_base_ids
+                and j.player_id not in team.jokers_used_this_cycle]
     if not eligible:
         return None
 

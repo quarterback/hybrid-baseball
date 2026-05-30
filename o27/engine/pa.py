@@ -156,12 +156,18 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
     state.outs += 1
     state.pitcher_outs_this_spell += 1
 
+<<<<<<< HEAD
     # Catcher workload — the team in the field is squatting every pitch. Tally
     # outs caught by the current catcher so fatigue degrades their game-calling
     # and forces a rotation (reset to 0 on a catcher swap).
     _fld = state.fielding_team
     if _fld is not None:
         _fld.catcher_outs_caught = int(getattr(_fld, "catcher_outs_caught", 0) or 0) + 1
+=======
+    # Power Play: extend / retire the nickel window against the new out count.
+    from o27.engine import power_play
+    power_play.note_out(state)
+>>>>>>> origin/main
 
     # Walk-Back resolution: if the runner being retired is a live Walk-Back
     # runner, his fate is settled as a STOP — tick wb_faced (charged to the
@@ -312,7 +318,10 @@ def _end_at_bat(state: GameState) -> list[str]:
     # Per-PA leadership flares — restore all mutated rating fields to
     # their original values before the next batter steps in. Safe no-op
     # when no flare was active this PA. See prob.apply_pa_leadership_flares
-    # for the matching PA-start hook.
+    # for the matching PA-start hook. The Power Play presence lift is unwound
+    # FIRST (LIFO) since it layers on top of any flare at PA start.
+    from o27.engine import power_play as _power_play
+    _power_play.release_presence_lift(state)
     _prob.release_pa_leadership_flares(state)
     # Per-game batter stat bookkeeping. PA counter ticks every AB. If
     # this AB was a joker insertion, the joker_pa counter ticks too —

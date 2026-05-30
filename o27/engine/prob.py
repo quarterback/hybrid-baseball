@@ -25,6 +25,7 @@ from . import stay as stay_mod
 from . import manager as mgr
 from . import weather as wx
 from o27 import config as cfg
+from o27.engine import power_play
 
 
 # ---------------------------------------------------------------------------
@@ -2041,6 +2042,7 @@ def resolve_contact(
                     caught_fly = False
                     shift_effect = "hit_lost"
 
+<<<<<<< HEAD
     # ---- Defensive gem -----------------------------------------------------
     # A fielder turns a would-be hit into an out with a spectacular play.
     # Per-FIELDER + probabilistic: a base rate lets anyone in the position with
@@ -2092,6 +2094,13 @@ def resolve_contact(
             caught_fly = gem_caught
             gem_effect = gem_label
             gem_fielder_id = gem_fid
+=======
+    # Power Play (optional rule): while the nickel fielder is on the field, the
+    # extra outfielder cuts off gaps — some XBH drop to singles and some
+    # shallow outfield singles get run down for outs.
+    hit_type, batter_safe, caught_fly, nickel_putout = power_play.apply_nickel_defense(
+        rng, state, hit_type, batter_safe, caught_fly)
+>>>>>>> origin/main
 
     # Error chance — only on plays that resolved as an out. Worse defense =
     # higher error rate. Caught flies don't generate errors at this layer
@@ -2139,11 +2148,22 @@ def resolve_contact(
 
     # Per-fielder play attribution. Stamps the fielder_id of the player
     # credited with this play (PO for outs, E for errors). Returns None
+<<<<<<< HEAD
     # for hits — those don't get a fielder credit.
     fielder_id = _select_fielder(rng, hit_type, fielding)
     # A defensive gem credits the specific fielder who made the play.
     if gem_fielder_id is not None:
         fielder_id = gem_fielder_id
+=======
+    # for hits — those don't get a fielder credit. While a Power Play window
+    # is active the nickel fielder picks up the plays he makes (logged as NF).
+    nickel_id = power_play.nickel_putout_for(state, hit_type, rng, nickel_putout)
+    if nickel_id is not None:
+        fielder_id = nickel_id
+        power_play.credit_nickel_putout(state)
+    else:
+        fielder_id = _select_fielder(rng, hit_type, fielding)
+>>>>>>> origin/main
 
     return {
         "hit_type": hit_type,
@@ -2158,7 +2178,12 @@ def resolve_contact(
         "fielder_id": fielder_id,
         "quality": quality,
         "shift_effect": shift_effect,
+<<<<<<< HEAD
         "gem_effect": gem_effect,
+=======
+        "nickel_play": nickel_id is not None,
+        "fielder_pos": power_play.NICKEL_POS if nickel_id is not None else None,
+>>>>>>> origin/main
     }
 
 
@@ -2464,6 +2489,7 @@ class ProbabilisticProvider:
             self._manager_checked = False
             state.current_ab_shift_decided = False
             state.current_ab_shift_type = "none"
+            state.power_play_checked_this_ab = False
 
         # Defensive shift decision — fires once per AB before the first
         # pitch. Two alignments available:
@@ -2518,6 +2544,17 @@ class ProbabilisticProvider:
             else:
                 batter.shift_streak = 1
                 batter.last_shift_alignment = state.current_ab_shift_type
+
+        # Power Play (optional rule): the fielding manager considers deploying
+        # the nickel once per AB, before the first pitch. No-op unless the rule
+        # is on and the window is available.
+        if not state.power_play_checked_this_ab:
+            state.power_play_checked_this_ab = True
+            power_play.maybe_open_window(state, self.rng)
+            # Snapshot the short-handed condition for this PA (the offense is a
+            # man down against the deployed nickel). Charged to the batter's
+            # short-handed counters in the renderer for the whole PA.
+            state.power_play_sh_active = power_play.short_handed_for_batting(state)
 
         # Refresh today_form whenever the pitcher changes (half start or
         # mid-game change). Cheap; a single deterministic gauss draw.
@@ -2711,6 +2748,10 @@ class ProbabilisticProvider:
                 and state.current_at_bat_swings == 0
                 and not state.flare_lift_active):
             apply_pa_leadership_flares(rng, state, batter, pitcher)
+            # Power Play presence: while the nickel window is open, the same
+            # PA also sees a tighter defense and a sharper pitcher. Layered on
+            # top of any flare and unwound LIFO at PA end.
+            power_play.apply_presence_lift(state, pitcher)
 
         weather = getattr(state, "weather", None)
 
@@ -3065,9 +3106,10 @@ class ProbabilisticProvider:
         #   - 1B occupied → 1B runner forced at 2B. (Standard DP.)
         #   - 1B empty, 2B occupied → 2B runner thrown out at 3B. (Tag play.)
         #   - 1B empty, 2B empty, 3B occupied → 3B runner thrown out at home.
-        # With 1B+2B both occupied AND 0 outs, a slice of DPs promote to
-        # triple plays (force at 3B AND force at 2B, then batter at 1B).
-        # Bases loaded extends this. Errors short-circuit the whole thing.
+        # With 1B+2B both occupied (and room left for three outs), a slice
+        # of DPs promote to triple plays (force at 3B AND force at 2B, then
+        # batter at 1B). Bases loaded extends this. Errors short-circuit the
+        # whole thing.
         # Stay (2C) plays don't allow a true DP — the batter isn't running
         # so there's no force at 1B — but a separate reduced-rate fielders'
         # choice block below tags out the lead runner.
@@ -3098,14 +3140,20 @@ class ProbabilisticProvider:
                 adv = list(outcome_dict.get("runner_advances", [1, 1, 1]))
                 adv[lead_idx] = 0
                 outcome_dict["runner_advances"] = adv
-                # Triple play: 1B+2B both occupied + 0 outs. Force-chain:
-                # batter forces 1B runner at 2B; 1B runner forces 2B runner
-                # at 3B. Lead runner from 3B (if loaded) holds. Bonus from
-                # poor baserunning on the lead forced runner (errors
-                # induce TPs in real baseball).
+                # Triple play: 1B+2B both occupied + room for three outs.
+                # Force-chain: batter forces 1B runner at 2B; 1B runner
+                # forces 2B runner at 3B. Lead runner from 3B (if loaded)
+                # holds. Bonus from poor baserunning on the lead forced
+                # runner (errors induce TPs in real baseball).
+                # O27 gate: NOT MLB's per-inning "nobody out" rule. As with
+                # the DP gate above, there are no innings — one continuous
+                # 27-out half — so gating on `outs == 0` let a TP fire only
+                # on the half's very first out, which made triple plays dead
+                # code (0 in a 400-game sample). The half only needs room to
+                # record the three outs a TP turns.
                 if (state.bases[0] is not None
                         and state.bases[1] is not None
-                        and state.outs == 0):
+                        and state.outs <= state.out_cap() - 3):
                     tp_p = cfg.TRIPLE_PLAY_GIVEN_DP_PROB
                     lead_pid = state.bases[1]   # 2B runner — most exposed
                     lead_br, _ = _get_baserunning(lead_pid, state)

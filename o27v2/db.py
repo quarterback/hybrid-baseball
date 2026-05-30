@@ -121,7 +121,11 @@ CREATE TABLE IF NOT EXISTS teams (
     -- Empty = neutral generation. Set when a config opts into mechanical
     -- style diversity; drives a per-attribute bias at seed time and is
     -- surfaced as a badge in the UI.
-    style_profile      TEXT    DEFAULT ''
+    style_profile      TEXT    DEFAULT '',
+    -- Power Play (optional rule) — per-league opt-in set at league creation
+    -- (the checkbox on new_league.html). Stamped onto every team in the
+    -- league; sim.py reads it into state.power_play_enabled per game. 0 = off.
+    power_play_enabled INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -524,6 +528,54 @@ CREATE TABLE IF NOT EXISTS team_phase_outs (
     phase             INTEGER NOT NULL DEFAULT 0,
     unattributed_outs INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (game_id, team_id, phase)
+);
+
+-- Power Play (optional rule) per-game stat rack. Only written for games where
+-- the rule was on (power_play_on(state) true), so leagues that never enable it
+-- have an empty table. One row per (game, team, player) carrying that player's
+-- power-play contribution that game. Two complementary roles share the table:
+--   * DEFENSE  — the nickel fielder: deployments he started (pp_deploys),
+--     outs the team's windows covered (pp_outs), extra-base hits he held to
+--     singles (pp_xbh_held) and shallow hits he ran down (pp_hits_converted),
+--     plus his PO/A/E AS the nickel (already in game_batter_stats too, mirrored
+--     here for the power-play leaderboards).
+--   * OFFENSE  — short-handed batting: PA/AB/H taken while the OPPOSING defense
+--     had its nickel deployed (sh_pa / sh_ab / sh_hits). SH-AVG = sh_hits/sh_ab.
+-- A player can have both roles in different games; the columns for the role
+-- that didn't apply stay 0.
+CREATE TABLE IF NOT EXISTS game_power_play_stats (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id    INTEGER NOT NULL REFERENCES games(id),
+    team_id    INTEGER NOT NULL REFERENCES teams(id),
+    player_id  INTEGER NOT NULL REFERENCES players(id),
+    -- Defense (nickel) line.
+    pp_deploys        INTEGER DEFAULT 0,  -- windows this player started as nickel
+    pp_outs           INTEGER DEFAULT 0,  -- outs his deployment windows covered
+    pp_xbh_held       INTEGER DEFAULT 0,  -- XBH cut to singles while he patrolled
+    pp_hits_converted INTEGER DEFAULT 0,  -- shallow hits run down for outs
+    nickel_po         INTEGER DEFAULT 0,  -- putouts recorded as the nickel
+    nickel_a          INTEGER DEFAULT 0,  -- assists recorded as the nickel
+    nickel_e          INTEGER DEFAULT 0,  -- errors as the nickel
+    -- Short-handed offense line.
+    sh_pa      INTEGER DEFAULT 0,
+    sh_ab      INTEGER DEFAULT 0,
+    sh_hits    INTEGER DEFAULT 0,
+    -- Power Play PITCHING — the pitcher with the nickel deployed behind him.
+    -- K/BB are defense-independent (they never reach the extra fielder); BIP
+    -- outcomes and the saves reflect the loaded defense. ppp_tot_* span the
+    -- WHOLE game (window or not) so the BABIP split (with-nickel vs without) is
+    -- derivable.
+    ppp_bf        INTEGER DEFAULT 0,  -- batters faced while the nickel was deployed
+    ppp_outs      INTEGER DEFAULT 0,  -- outs recorded during those windows
+    ppp_k         INTEGER DEFAULT 0,  -- strikeouts during windows (his own)
+    ppp_bb        INTEGER DEFAULT 0,  -- walks during windows (his own)
+    ppp_bip       INTEGER DEFAULT 0,  -- balls in play during windows
+    ppp_bip_hits  INTEGER DEFAULT 0,  -- hits on those balls in play (BABIP numerator)
+    ppp_tot_bip      INTEGER DEFAULT 0,  -- total balls in play all game
+    ppp_tot_bip_hits INTEGER DEFAULT 0,  -- total hits on balls in play all game
+    ppp_hits_saved INTEGER DEFAULT 0, -- singles the nickel ran down behind him
+    ppp_xbh_saved  INTEGER DEFAULT 0, -- extra-base hits the nickel held behind him
+    UNIQUE(player_id, game_id)
 );
 
 CREATE TABLE IF NOT EXISTS sim_meta (
@@ -1161,6 +1213,28 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        # Power Play (optional rule) — per-league opt-in set at league
+        # creation. Stamped onto every team in a league whose creator ticked
+        # the box, read by sim.py into state.power_play_enabled per game.
+        # Legacy rows default to 0 (rule off), so existing leagues are
+        # byte-for-byte unchanged.
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN power_play_enabled INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+        # Power Play PITCHING columns — added to game_power_play_stats after the
+        # initial defense/offense version of the table. No-op on fresh DBs (the
+        # CREATE TABLE already has them) and on DBs without the table yet.
+        for col in ("ppp_bf", "ppp_outs", "ppp_k", "ppp_bb", "ppp_bip",
+                    "ppp_bip_hits", "ppp_tot_bip", "ppp_tot_bip_hits",
+                    "ppp_hits_saved", "ppp_xbh_saved"):
+            try:
+                conn.execute(
+                    f"ALTER TABLE game_power_play_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
         # Adaptability — batter rating that erodes shift effectiveness
         # when the manager keeps the same alignment for multiple consecutive
         # ABs against this batter. 20-80 scale like other ratings.

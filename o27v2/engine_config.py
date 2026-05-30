@@ -133,6 +133,10 @@ _CURATED: list[tuple[str, list[tuple[str, str]]]] = [
     ("Stolen bases", [
         ("SB_SUCCESS_BASE", "Stolen-base success baseline"),
     ]),
+    ("Optional rules", [
+        ("POWER_PLAY_ENABLED", "Power Play (deploy a 10th defender — the nickel fielder)"),
+        ("IBB_ENABLE",         "Intentional walks"),
+    ]),
     ("Context (o27v2)", [
         ("HOME_ADVANTAGE_SKILL", "Home-field skill bonus"),
     ]),

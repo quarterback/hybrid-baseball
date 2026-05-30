@@ -835,6 +835,126 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict],
     return rows
 
 
+def _extract_power_play_stats(renderer, final_state, team_id: int, players: list[dict],
+                              engine_team) -> list[dict]:
+    """Build game_power_play_stats rows for one team — only meaningful when the
+    Power Play rule was on for this game.
+
+    Merges two per-player contributions, keyed by player_id:
+      * DEFENSE — the nickel: deployments he started + outs those windows
+        covered (from final_state.power_play_deployments), the team's
+        XBH-held / hits-converted counters (engine Team), and his PO/A/E as a
+        fielder (from the renderer's BatterStats, where the nickel's defensive
+        line already lives).
+      * OFFENSE — short-handed PA/AB/H (BatterStats.sh_*).
+    Rows that would be all-zero are dropped.
+    """
+    team_player_ids = {p["id"] for p in players}
+    acc: dict[int, dict] = {}
+
+    def _row(pid: int) -> dict:
+        return acc.setdefault(pid, {
+            "team_id": team_id, "player_id": pid,
+            "pp_deploys": 0, "pp_outs": 0, "pp_xbh_held": 0,
+            "pp_hits_converted": 0, "nickel_po": 0, "nickel_a": 0,
+            "nickel_e": 0, "sh_pa": 0, "sh_ab": 0, "sh_hits": 0,
+            "ppp_bf": 0, "ppp_outs": 0, "ppp_k": 0, "ppp_bb": 0,
+            "ppp_bip": 0, "ppp_bip_hits": 0, "ppp_tot_bip": 0,
+            "ppp_tot_bip_hits": 0, "ppp_hits_saved": 0, "ppp_xbh_saved": 0,
+        })
+
+    # --- Defense: nickel deployments for THIS team's windows. ----------------
+    # power_play_deployments records team_id as the engine role-string
+    # ("home"/"visitors"); map it to the DB team_id via engine_team.team_id.
+    role = getattr(engine_team, "team_id", None)
+    for dep in (getattr(final_state, "power_play_deployments", None) or []):
+        if dep.get("team_id") != role:
+            continue
+        try:
+            nid = int(dep.get("nickel_id"))
+        except (TypeError, ValueError):
+            continue
+        if nid not in team_player_ids:
+            continue
+        r = _row(nid)
+        r["pp_deploys"] += 1
+        # outs the window covered = end_out - start_out + 1 (clamped >= 0).
+        r["pp_outs"] += max(0, int(dep.get("end_out", 0)) - int(dep.get("start_out", 0)) + 1)
+
+    # Team-level XBH-held / hits-converted — credited to the team's nickel(s).
+    # When a single nickel held the role all game (the common case) it lands on
+    # him; if multiple shared it the team totals attach to the first deployer,
+    # which is good enough for the leaderboard and never double-counts.
+    xbh_held = int(getattr(engine_team, "pp_xbh_held", 0) or 0)
+    hits_conv = int(getattr(engine_team, "pp_hits_converted", 0) or 0)
+    if (xbh_held or hits_conv) and acc:
+        first_nickel = next(iter(acc))
+        acc[first_nickel]["pp_xbh_held"] += xbh_held
+        acc[first_nickel]["pp_hits_converted"] += hits_conv
+
+    # Nickel PO/A/E from the renderer's BatterStats (the nickel's fielding line).
+    nickel_ids = {r["player_id"] for r in acc.values() if r["pp_deploys"] > 0}
+    bstats = dict(getattr(renderer, "_batter_stats", {}) or {})
+    for nid in nickel_ids:
+        bs = bstats.get(str(nid))
+        if bs is not None:
+            r = _row(nid)
+            r["nickel_po"] += int(getattr(bs, "po", 0) or 0)
+            r["nickel_a"]  += int(getattr(bs, "a", 0) or 0)
+            r["nickel_e"]  += int(getattr(bs, "e", 0) or 0)
+
+    # --- Offense: short-handed PA/AB/H per batter. ---------------------------
+    for engine_pid, bs in bstats.items():
+        try:
+            pid = int(engine_pid)
+        except (TypeError, ValueError):
+            continue
+        if pid not in team_player_ids:
+            continue
+        sh_pa = int(getattr(bs, "sh_pa", 0) or 0)
+        sh_ab = int(getattr(bs, "sh_ab", 0) or 0)
+        sh_h  = int(getattr(bs, "sh_hits", 0) or 0)
+        if sh_pa or sh_ab or sh_h:
+            r = _row(pid)
+            r["sh_pa"] += sh_pa
+            r["sh_ab"] += sh_ab
+            r["sh_hits"] += sh_h
+
+    # --- Pitching: the protected side (nickel deployed behind him). ----------
+    # Window/total counters come from the renderer accumulator; the nickel
+    # "saves" come from the engine's per-pitcher attribution. Only pitchers with
+    # window exposure (ppp_bf > 0) get a row — the totals ride along for the
+    # BABIP split.
+    pp_pitcher = dict(getattr(renderer, "_pp_pitcher", {}) or {})
+    support = dict(getattr(final_state, "pp_pitcher_support", {}) or {})
+    for engine_pid, rec in pp_pitcher.items():
+        try:
+            pid = int(engine_pid)
+        except (TypeError, ValueError):
+            continue
+        if pid not in team_player_ids or int(rec.get("pp_bf", 0) or 0) <= 0:
+            continue
+        r = _row(pid)
+        r["ppp_bf"]   += int(rec.get("pp_bf", 0) or 0)
+        r["ppp_outs"] += int(rec.get("pp_outs", 0) or 0)
+        r["ppp_k"]    += int(rec.get("pp_k", 0) or 0)
+        r["ppp_bb"]   += int(rec.get("pp_bb", 0) or 0)
+        r["ppp_bip"]  += int(rec.get("pp_bip", 0) or 0)
+        r["ppp_bip_hits"]     += int(rec.get("pp_bip_hits", 0) or 0)
+        r["ppp_tot_bip"]      += int(rec.get("tot_bip", 0) or 0)
+        r["ppp_tot_bip_hits"] += int(rec.get("tot_bip_hits", 0) or 0)
+        sup = support.get(engine_pid) or {}
+        r["ppp_hits_saved"] += int(sup.get("hits_saved", 0) or 0)
+        r["ppp_xbh_saved"]  += int(sup.get("xbh_saved", 0) or 0)
+
+    # Drop all-zero rows.
+    out = []
+    for r in acc.values():
+        if any(r[k] for k in r if k not in ("team_id", "player_id")):
+            out.append(r)
+    return out
+
+
 def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) -> list[dict]:
     """Extract per-phase pitcher stats from state.spell_log for DB insertion.
 
@@ -1541,6 +1661,15 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
     state = GameState(visitors=visitors_team, home=home_team)
     state.is_playoff = bool(game.get("is_playoff"))
     state.current_pitcher_id = _find_pitcher_id(home_team)
+    # Power Play (optional rule) is a per-league opt-in stamped on the team
+    # rows at league creation. When this league opted in, force the per-game
+    # override ON (the engine honors it ahead of the global cfg flag). When it
+    # did NOT, leave the override unset (None) so the rule falls back to the
+    # global Engine Settings toggle — the two controls thus compose as
+    # "per-league opt-in OR global default". Both teams share a league, so the
+    # home row is authoritative.
+    if bool((home_row.get("power_play_enabled") if home_row else 0) or 0):
+        state.power_play_enabled = True
     # Stamp the per-game weather context (drawn at schedule time). prob.py
     # reads this; everything else passes it through.
     from o27.engine.weather import Weather
@@ -1597,6 +1726,16 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                                         engine_team=home_team)
     away_pstats = _extract_pitcher_stats(final_state, away_team_id, all_away_players)
     home_pstats = _extract_pitcher_stats(final_state, home_team_id, all_home_players)
+    # Power Play stat rack — only when the rule was on for this game. Empty
+    # lists for rule-off games, so the table stays empty in leagues without it.
+    from o27.engine import power_play as _pp
+    if _pp.power_play_on(final_state):
+        away_ppstats = _extract_power_play_stats(
+            renderer, final_state, away_team_id, all_away_players, visitors_team)
+        home_ppstats = _extract_power_play_stats(
+            renderer, final_state, home_team_id, all_home_players, home_team)
+    else:
+        away_ppstats = home_ppstats = []
     # Per-pitcher hit-type + pitch-type breakdown, computed from the PA log.
     # Decorates each row in away_pstats/home_pstats in place.
     _decorate_pitcher_pitch_mix(renderer, away_pstats + home_pstats)
@@ -1617,6 +1756,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
         conn.execute("DELETE FROM game_pa_log        WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM team_phase_outs    WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM game_pbp           WHERE game_id = ?", (game_id,))
+        conn.execute("DELETE FROM game_power_play_stats WHERE game_id = ?", (game_id,))
         # Declared Seconds: project the engine's first/second-batting team
         # state onto away/home columns. Away maps to visitors; home to home.
         h_bats_first  = bool(getattr(final_state, "home_bats_first", False))
@@ -1731,6 +1871,25 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                  r.get("gidp", 0), r.get("gitp", 0),
                  r.get("roe", 0),
                  r.get("po", 0), r.get("a", 0), r.get("e", 0)),
+            )
+        # Power Play stat rack (empty unless the rule was on this game).
+        for r in away_ppstats + home_ppstats:
+            conn.execute(
+                """INSERT INTO game_power_play_stats
+                   (game_id, team_id, player_id,
+                    pp_deploys, pp_outs, pp_xbh_held, pp_hits_converted,
+                    nickel_po, nickel_a, nickel_e,
+                    sh_pa, sh_ab, sh_hits,
+                    ppp_bf, ppp_outs, ppp_k, ppp_bb, ppp_bip, ppp_bip_hits,
+                    ppp_tot_bip, ppp_tot_bip_hits, ppp_hits_saved, ppp_xbh_saved)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (game_id, r["team_id"], r["player_id"],
+                 r["pp_deploys"], r["pp_outs"], r["pp_xbh_held"],
+                 r["pp_hits_converted"], r["nickel_po"], r["nickel_a"],
+                 r["nickel_e"], r["sh_pa"], r["sh_ab"], r["sh_hits"],
+                 r["ppp_bf"], r["ppp_outs"], r["ppp_k"], r["ppp_bb"],
+                 r["ppp_bip"], r["ppp_bip_hits"], r["ppp_tot_bip"],
+                 r["ppp_tot_bip_hits"], r["ppp_hits_saved"], r["ppp_xbh_saved"]),
             )
         # Phase 11D — per-PA event log (ball_in_play events only).
         # Engine team_ids are role-strings ("home"/"visitors") — see
