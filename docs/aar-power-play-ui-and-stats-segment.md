@@ -62,14 +62,22 @@ auto-discovers every editable bool/int/float there, rendering bools as checkboxe
 friendly **"Power Play"** checkbox on the **Engine Settings** page (`/engine/settings`)
 instead of being buried under its raw key in "All other constants".
 
-### Why the checkbox is missing in the deployed app
+### Why the checkbox seemed missing in the app
 
-Two independent reasons, both real:
+**Correction:** an earlier draft of this AAR claimed the feature was unmerged. That was
+wrong — it came from a **stale local `origin/main`** that hadn't been fetched. After
+`git fetch origin main`: **PR #136 is merged**, `main` HEAD is `0be80a2`, and all five
+power-play commits are on `main`, including the "Power Play" checkbox on Engine Settings.
+The feature is shipped. The lesson: always `git fetch` before asserting merge state.
 
-1. **The feature is unmerged.** `hybrid-baseball.fly.dev` deploys `origin/main`, which
-   contains **no power-play code** — all five commits are branch-only. Until the branch
-   is merged and the app redeployed, nothing PP-related (checkbox included) can appear.
-   This is the immediate cause of "the checkbox does not appear."
+The real reasons the user didn't see the checkbox:
+
+1. **Wrong page.** The checkbox lives on the **Engine Settings** page
+   (`/engine/settings`, under "Optional rules") — confirmed present on `main`. The user's
+   screenshots are the **new-league builder**, where there is no such control (confirmed:
+   no `POWER_PLAY`/`nickel` reference in `new_league.html` / `universe_new.html` /
+   `league_edit.html` on `main`). Possible secondary factor: fly.dev deploy lag if the
+   app hadn't rebuilt from the freshly-merged `main` yet.
 
 2. **It's global, not per-league — but the expectation is per-league.** `engine_config`
    stores one override blob in `sim_meta` (key `engine_config`) that applies to **every**
@@ -162,8 +170,7 @@ where the rule was on**, so rule-off leagues are untouched.
 
 ## 6. Open decisions for the user
 
-1. **Merge** the branch so the (global) checkbox + rule actually ship to the deployed
-   app — this alone resolves "the checkbox does not appear."
+1. *(Done — PR #136 is merged; the global checkbox + rule are on `main`.)*
 2. **Per-league vs global**: should Power Play become a per-league flag on the new-league
    builder (recommended, matches "by league"), with the global Engine Settings toggle
    demoted to a default? This is prerequisite framing for the stat rack's rule-gating.
