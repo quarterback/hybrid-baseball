@@ -7237,6 +7237,11 @@ def universe_new_post():
     customs   = request.form.getlist("lg_custom")
     locales   = request.form.getlist("lg_locale")
     parks     = request.form.getlist("lg_park")
+    # Per-league Power Play opt-in. A <select> (Off/On) rather than a checkbox
+    # so every league row submits exactly one value, keeping this list aligned
+    # by index with lg_name/lg_teams/etc. (unchecked checkboxes don't submit and
+    # would break the positional getlist correspondence).
+    power_plays = request.form.getlist("lg_power_play")
     leagues = []
     for i, nm in enumerate(names):
         if not (nm or "").strip():
@@ -7258,6 +7263,7 @@ def universe_new_post():
             "style":     style_val,
             "locale":    (locales[i] if i < len(locales) else "") or "",
             "park":      (parks[i] if i < len(parks) else "") or "",
+            "power_play_enabled": (i < len(power_plays) and power_plays[i] == "1"),
         })
 
     try:
@@ -7292,6 +7298,13 @@ def universe_new_post():
     seed_league(rng_seed=rng_seed, config_id=uid)
     seed_schedule(rng_seed=rng_seed, config_id=uid)
     set_active_league_meta(rng_seed, uid)
+    # Power Play (per-league) — stamp only the teams of leagues that opted in.
+    # teams.league holds the league NAME verbatim (build_universe_config keeps
+    # it unchanged), so the name match is exact.
+    for lg in leagues:
+        if lg.get("power_play_enabled"):
+            db.execute("UPDATE teams SET power_play_enabled = 1 WHERE league = ?",
+                       (lg["name"],))
     flash(f"Built universe '{cfg['label']}' — {len(leagues)} leagues, "
           f"{cfg['team_count']} teams.", "info")
     return redirect(url_for("index"))
