@@ -1489,6 +1489,29 @@ class Renderer:
             s.hbp += 1
             s.rbi += runs_scored
 
+        elif etype == "sac_bunt":
+            # Manager-called bunt (manager.should_bunt). Three outcomes:
+            #   hit       — bunt single: 1 PA, 1 AB, 1 H (a bunt hit IS an AB).
+            #   sacrifice — successful sac: 1 PA, NO AB, 1 SH; batter out.
+            #   fail      — popped up / forced: 1 PA, 1 AB, batter out.
+            # The batter's OUT (sacrifice/fail) is charged by the out-
+            # reconciliation tail below (engine bumped state.outs), and any
+            # runs are credited by the tail's _credit_runs — same as every
+            # other PA event. We only record the batting line here.
+            outcome = event.get("outcome", "sacrifice")
+            s.pa += 1
+            if outcome == "hit":
+                s.ab += 1
+                s.hits += 1
+                s.rbi += runs_scored
+                _check_multi_hit(terminal_hit=True)
+            elif outcome == "fail":
+                s.ab += 1
+                _check_multi_hit()
+            else:  # sacrifice
+                s.sh += 1
+                s.rbi += runs_scored
+
         elif etype == "ball_in_play":
             choice = disp.get("choice", "run")
             hit_type = disp.get("hit_type", "")

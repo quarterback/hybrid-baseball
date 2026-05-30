@@ -711,8 +711,8 @@ HIT_AND_RUN_CONTACT_K_REDUCTION: float = 0.25  # multiplicative on K probability
 # Lower-`mgr_leverage_aware` skippers are more likely to call this (it's
 # generally a -EV play in modern analytics). Speed influences whether
 # the bunt becomes a hit.
-SAC_BUNT_BASE_PROB: float          = 0.05   # base call rate when conditions align
-SAC_BUNT_RUNGAME_SCALE: float      = 0.20   # mgr_run_game * this multiplies
+SAC_BUNT_BASE_PROB: float          = 0.16   # base call rate when conditions align
+SAC_BUNT_RUNGAME_SCALE: float      = 0.50   # mgr_run_game * this multiplies
 SAC_BUNT_LEVERAGE_DAMPER: float    = 0.50   # (1 - leverage_aware) * this multiplies
 SAC_BUNT_HIT_BASE: float           = 0.10   # baseline bunt-for-hit rate
 SAC_BUNT_HIT_SPEED_SCALE: float    = 0.30   # +(speed - 0.5) * this
