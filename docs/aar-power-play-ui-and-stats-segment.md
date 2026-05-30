@@ -166,6 +166,33 @@ that never enable the rule. Cleaner to gate to rule-on leagues and easy to drop.
 Gating principle throughout: write/aggregate/display PP stats **only for games/leagues
 where the rule was on**, so rule-off leagues are untouched.
 
+### Status: BUILT (per-league checkbox + stat rack)
+
+Both shipped on this branch after the decisions above.
+
+**Per-league checkbox** — `teams.power_play_enabled` column (CREATE TABLE + ALTER
+migration, default 0); an "Optional rules → Power Play" checkbox on `new_league.html`
+(shared preset/custom row); `new_league_post` stamps every team after seeding when
+ticked; `sim.py` reads the home team's flag and, when set, forces
+`state.power_play_enabled = True`, leaving it `None` otherwise so the rule composes as
+**per-league opt-in OR global Engine Settings default** (verified: global OFF + league
+ON ⇒ on; global ON + league None ⇒ on).
+
+**Stat rack** — dedicated `game_power_play_stats` table; pitching deferred. Defense:
+PPD / PPO / XBHH / HC / NF-PO. Short-handed offense: SH-PA / SH-AB / SH-H / SH-AVG.
+Engine snapshot `state.power_play_sh_active` (PA start) + `short_handed_for_batting()`;
+`BatterStats.sh_pa/sh_ab/sh_hits` filled by a before/after delta around `_update_stats`;
+`_extract_power_play_stats` merges nickel deployments + team counters + the nickel's
+fielding line + each batter's short-handed slice; INSERT gated on `power_play_on`.
+`/leaders` renders a Power Play section only when the dataset is non-empty; glossary
+gains a "Power Play / Short-handed" section so the cards deep-link.
+
+Note on an apparent invariant: `SH-H` can exceed `SH-AB` — the engine's Second-Chance
+mechanic credits multiple hits per AB (the overall batting table has the same property),
+which is why the app leads with PA-denominated rates. The real invariant `SH-AB ≤ SH-PA`
+holds with zero violations. Tests: `tests/test_power_play_stats.py` (5) + engine suite
+(30) green; rule-off leagues write zero rows and show no section.
+
 ---
 
 ## 6. Open decisions for the user
