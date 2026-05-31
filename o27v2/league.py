@@ -2058,6 +2058,7 @@ def _make_specialist(
     name: str,
     team_shift: int = 0,
     country: str = "",
+    position: str = "",
 ) -> dict:
     """Build a single-tool specialist player.
 
@@ -2118,18 +2119,24 @@ def _make_specialist(
         cat_g      = low_roll()
         skill_g    = rng.randint(65, 82)
         ra_g       = rng.randint(40, 60)
-    else:  # ph_specialist
-        position   = "DH"
+    else:  # ph_specialist — a loud BAT who also carries a real glove, so he
+        # can pinch-hit AND field, cover an injury, or come in as the nickel.
+        # Teams no longer carry bat-only DH bench filler beyond the 3 jokers;
+        # any bench player can pinch-hit if needed (per the operator).
+        def field_roll() -> int:
+            # Playable, roughly average glove — a real fielder, not a butcher.
+            return rng.randint(45, 62)
+        position   = position or "LF"
         power_g    = high_roll()
         contact_g  = rng.randint(48, 65)
         eye_g      = rng.randint(45, 65)
-        speed_g    = low_roll()
-        baserunning_g = low_roll()
-        defense_g  = low_roll()
-        arm_g      = low_roll()
-        if_g       = low_roll()
-        of_g       = low_roll()
-        cat_g      = low_roll()
+        speed_g    = rng.randint(40, 58)
+        baserunning_g = rng.randint(40, 58)
+        defense_g  = field_roll()
+        arm_g      = field_roll()
+        if_g       = field_roll() if position in ("1B", "2B", "3B", "SS") else low_roll()
+        of_g       = field_roll() if position in ("LF", "CF", "RF") else low_roll()
+        cat_g      = field_roll() if position == "C" else low_roll()
         skill_g    = rng.randint(58, 75)
         ra_g       = rng.randint(40, 60)
 
@@ -2512,6 +2519,11 @@ def generate_players(
         nm, country = _name()
         return _make_specialist(rng, kind, name=nm, country=country)
 
+    def _spec_at(kind: str, position: str) -> dict:
+        nm, country = _name()
+        return _make_specialist(rng, kind, name=nm, country=country,
+                                position=position)
+
     # ---- Active position players: 8 canonical starters + 11 fielder backups ----
     for pos in FIELDER_POSITIONS:
         players.append(_hitter(pos, is_active=1))
@@ -2535,9 +2547,13 @@ def generate_players(
         players.append(jk)
 
     # ---- Active situational specialists ----
+    # 1 pinch-runner + 2 loud-bat fielders. The PH bats now carry real
+    # positions + gloves (placed at thin corners) instead of being bat-only
+    # DHs, so the only dedicated DH slots are the 3 jokers — every other bench
+    # bat can also field, cover an injury, or come in as the nickel.
     players.append(_spec("pr_specialist"))
-    players.append(_spec("ph_specialist"))
-    players.append(_spec("ph_specialist"))
+    players.append(_spec_at("ph_specialist", "LF"))
+    players.append(_spec_at("ph_specialist", "RF"))
 
     # ---- Active pitching staff ----
     for _ in range(ACTIVE_PITCHERS):
