@@ -118,11 +118,22 @@ def test_find_nickel_allows_shortstop():
     assert pp.find_nickel(state, team) == "b_ss"
 
 
-def test_find_nickel_rejects_ineligible_position():
+def test_find_nickel_eligibility_is_by_ability_not_position():
+    # Policy: eligibility is by fielding ABILITY, not listed position. A
+    # strong-armed, sure-handed corner infielder now qualifies as the 10th man.
     state = _mk_state()
     firstbase = _mk_fielder("b_1b", "Cornerguy", position="1B",
                             arm=0.95, glove=0.95)
     team = _team_with_bench(firstbase)
+    assert pp.find_nickel(state, team) == "b_1b"
+
+
+def test_find_nickel_rejects_below_ability_threshold():
+    # ...but a weak glove/arm is rejected regardless of position.
+    state = _mk_state()
+    butter = _mk_fielder("b_bad", "ButterHands", position="CF",
+                         arm=0.20, glove=0.20)
+    team = _team_with_bench(butter)
     assert pp.find_nickel(state, team) is None
 
 

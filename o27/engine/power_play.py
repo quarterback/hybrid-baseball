@@ -30,9 +30,13 @@ from typing import Optional
 from o27 import config as cfg
 from o27.engine.state import GameState, Player, Team
 
-# Positions that make a player nickel-eligible (outfield or shortstop).
+# Positions that make a player nickel-eligible. "N" is the dedicated nickel
+# reserve (a glove-first bench defender) — always eligible. Beyond that,
+# eligibility is by fielding ABILITY, not a fixed position (see _is_eligible),
+# so any rangy infielder/outfielder/catcher who clears the bar can come in.
 _OF_POSITIONS = {"CF", "LF", "RF", "OF"}
-_NICKEL_POSITIONS = _OF_POSITIONS | {"SS"}
+NICKEL_FIELD_POS = "N"          # roster position tag for the dedicated reserve
+_NICKEL_POSITIONS = _OF_POSITIONS | {"SS", NICKEL_FIELD_POS}
 
 # Scorekeeping tag / position number for the nickel fielder.
 NICKEL_POS = "NF"
@@ -135,17 +139,17 @@ def _positions_for(p: Player) -> set:
     return out
 
 
-def _nickel_field_grade(p: Player, positions: set) -> float:
-    """Best applicable glove grade for the positions that make this player
-    nickel-eligible (outfield glove for OF, infield glove for SS)."""
-    grades = []
-    if positions & _OF_POSITIONS:
-        grades.append(float(getattr(p, "defense_outfield", 0.5) or 0.5))
-    if "SS" in positions:
-        grades.append(float(getattr(p, "defense_infield", 0.5) or 0.5))
-    # General glove acts as a floor so a strong all-rounder isn't penalized.
-    grades.append(float(getattr(p, "defense", 0.5) or 0.5))
-    return max(grades) if grades else 0.5
+def _nickel_field_grade(p: Player, positions: set | None = None) -> float:
+    """Best field-glove grade across all groups — eligibility is by fielding
+    ABILITY, not a fixed position, so the rangiest available defender grades
+    highest regardless of where he's listed. General `defense`, infield, and
+    outfield gloves are all considered (catcher framing is excluded — it isn't
+    range). `positions` is accepted for back-compat but no longer needed."""
+    return max(
+        float(getattr(p, "defense", 0.5) or 0.5),
+        float(getattr(p, "defense_infield", 0.5) or 0.5),
+        float(getattr(p, "defense_outfield", 0.5) or 0.5),
+    )
 
 
 def _presence_for(nickel: Optional[Player]) -> float:
@@ -182,18 +186,21 @@ def _has_appeared(state: GameState, p: Player) -> bool:
 def _is_eligible(state: GameState, team: Team, p: Player) -> bool:
     if p.player_id in getattr(team, "substituted_out", set()):
         return False
-    positions = _positions_for(p)
-    if not (positions & _NICKEL_POSITIONS):
+    # A pitcher who has already taken the mound can't be pulled in to field.
+    if getattr(p, "is_pitcher", False) and _has_appeared(state, p):
         return False
+    # The dedicated nickel reserve ("N") is always eligible — it's generated
+    # glove-first for exactly this role.
+    if NICKEL_FIELD_POS in _positions_for(p):
+        return True
+    # Otherwise eligibility is by fielding ABILITY, not listed position: any
+    # player with a strong enough arm AND glove can come in as the 10th man.
+    # This is what guarantees a candidate exists even on a DH-heavy bench.
     arm = float(getattr(p, "arm", 0.5) or 0.5)
     if arm < cfg.POWER_PLAY_NICKEL_ARM_MIN:
         return False
-    if _nickel_field_grade(p, positions) < cfg.POWER_PLAY_NICKEL_FIELD_MIN:
+    if _nickel_field_grade(p) < cfg.POWER_PLAY_NICKEL_FIELD_MIN:
         return False
-    if getattr(p, "is_pitcher", False):
-        # Wild-card two-way arm: only if he hasn't already pitched today.
-        if _has_appeared(state, p):
-            return False
     return True
 
 
@@ -315,6 +322,13 @@ def maybe_open_window(state: GameState, rng: random.Random) -> None:
     state.power_play_nickel_id = nickel_id
     nickel = team.get_player(nickel_id)
     state.power_play_presence = _presence_for(nickel)
+    # Stamp his per-game fielding position as NF so the appearance shows up in
+    # his stat line as "played nickel" — distinct from any other position. If
+    # he'd already taken the field elsewhere this game, extend (e.g. "SS-NF").
+    if nickel is not None:
+        cur = (getattr(nickel, "game_position", "") or "").strip()
+        if NICKEL_POS not in cur:
+            nickel.game_position = f"{cur}-{NICKEL_POS}" if cur else NICKEL_POS
     state.power_play_deployments.append({
         "team_id": team.team_id,
         "team_name": team.name,

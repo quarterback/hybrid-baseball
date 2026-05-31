@@ -5345,6 +5345,15 @@ def player_detail(player_id: int):
     ) or {}
     current_style_label = style_profile_label(cur_team.get("style_profile"))
 
+    # Nickel (NF) appearances — surfaced distinctly from a player's listed
+    # position so a fielder's record shows when he came in as the 10th defender.
+    # Compound spots like "SS-NF" count.
+    nickel_games = (db.fetchone(
+        """SELECT COUNT(DISTINCT game_id) AS g FROM game_batter_stats
+           WHERE player_id = ? AND game_position LIKE '%NF%'""",
+        (player_id,),
+    ) or {}).get("g", 0) or 0
+
     return _serve(
         "player.html",
         player=player,
@@ -5357,6 +5366,7 @@ def player_detail(player_id: int):
         handedness_splits=handedness_splits,
         baselines=baselines,
         player_est_value=player_est_value,
+        nickel_games=nickel_games,
         transfer_leagues=list(transfer_leagues.values()),
         current_league=cur_team.get("league") or "",
         current_style_label=current_style_label,
@@ -6363,6 +6373,24 @@ def team_detail(team_id: int):
 
     wl = _pitcher_wl_map()
     baselines = _league_baselines()
+    # Power Play (nickel) eligibility tag. Active for this team when the rule is
+    # on per-league OR globally; eligibility mirrors the engine — a strong arm
+    # AND glove (best of general/infield/outfield), graded on the unit scale.
+    from o27v2 import scout as _scout
+    _eff = engine_config.effective()
+    _pp_active = bool(team["power_play_enabled"]) or bool(_eff.get("POWER_PLAY_ENABLED"))
+    _arm_min = float(_eff.get("POWER_PLAY_NICKEL_ARM_MIN", 0.62))
+    _field_min = float(_eff.get("POWER_PLAY_NICKEL_FIELD_MIN", 0.58))
+
+    def _nickel_ok(p) -> bool:
+        if not _pp_active:
+            return False
+        arm = _scout.to_unit(p.get("arm") or 50)
+        glove = max(_scout.to_unit(p.get("defense") or 50),
+                    _scout.to_unit(p.get("defense_infield") or 50),
+                    _scout.to_unit(p.get("defense_outfield") or 50))
+        return arm >= _arm_min and glove >= _field_min
+
     batters: list[dict] = []
     pitchers: list[dict] = []
     for p in roster:
@@ -6375,6 +6403,7 @@ def team_detail(team_id: int):
             row = dict(p)
             row.update(bstats.get(p["id"], {}))
             _aggregate_batter_rows([row], baselines=baselines)
+            row["nickel_eligible"] = _nickel_ok(p)
             batters.append(row)
 
     recent = db.fetchall(
