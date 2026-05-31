@@ -255,7 +255,10 @@ def _assign_footnotes(ordered: list[tuple[dict, int]]) -> dict[int, str]:
         if not indent:
             continue
         et = r.get("entry_type", "starter")
-        if et not in ("PH", "PR", "DEF", "joker", "joker_field"):
+        # Jokers in the batting order ("joker") are NOT footnoted — they just
+        # appear at the end of the lineup with their line. joker_field (a joker
+        # pulled in to play the field) IS a real sub and keeps its footnote.
+        if et not in ("PH", "PR", "DEF", "joker_field"):
             continue
         # a, b, ... z, aa, ab, ...
         if n < 26:
@@ -344,11 +347,6 @@ def _render_sub_footnotes(
             # "Replaced Smith at SS" / "Entered at SS" when no name resolved.
             verb = f"Replaced {replaced_name}" if replaced_name else "Entered"
             lines.append(f"  {letter}-{verb}{slot}{inning_phrase}.")
-        elif et == "joker":
-            # A joker is one of the 3 designated jokers cutting into the
-            # 9-person order (once per time through) — NOT a pinch-hitter and
-            # not a replacement for anyone.
-            lines.append(f"  {letter}-Joker cut-in{inning_phrase}.")
         elif et == "joker_field":
             pos = (r.get("box_position") or r.get("position") or "").upper()
             slot = f" at {pos}" if pos else ""
