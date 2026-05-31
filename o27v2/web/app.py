@@ -6257,6 +6257,24 @@ def team_detail(team_id: int):
 
     wl = _pitcher_wl_map()
     baselines = _league_baselines()
+    # Power Play (nickel) eligibility tag. Active for this team when the rule is
+    # on per-league OR globally; eligibility mirrors the engine — a strong arm
+    # AND glove (best of general/infield/outfield), graded on the unit scale.
+    from o27v2 import scout as _scout
+    _eff = engine_config.effective()
+    _pp_active = bool(team["power_play_enabled"]) or bool(_eff.get("POWER_PLAY_ENABLED"))
+    _arm_min = float(_eff.get("POWER_PLAY_NICKEL_ARM_MIN", 0.62))
+    _field_min = float(_eff.get("POWER_PLAY_NICKEL_FIELD_MIN", 0.58))
+
+    def _nickel_ok(p) -> bool:
+        if not _pp_active:
+            return False
+        arm = _scout.to_unit(p.get("arm") or 50)
+        glove = max(_scout.to_unit(p.get("defense") or 50),
+                    _scout.to_unit(p.get("defense_infield") or 50),
+                    _scout.to_unit(p.get("defense_outfield") or 50))
+        return arm >= _arm_min and glove >= _field_min
+
     batters: list[dict] = []
     pitchers: list[dict] = []
     for p in roster:
@@ -6269,6 +6287,7 @@ def team_detail(team_id: int):
             row = dict(p)
             row.update(bstats.get(p["id"], {}))
             _aggregate_batter_rows([row], baselines=baselines)
+            row["nickel_eligible"] = _nickel_ok(p)
             batters.append(row)
 
     recent = db.fetchall(
