@@ -69,37 +69,48 @@ In short: nickel-as-hitter should be one sanctioned move — *nickel assumes the
 pitcher's bat → becomes a DH* — not "any bench guy who pinch-hit and happened to
 also be the nickel."
 
-## 4. Open questions before implementing the refined rule
+## 4. How the refined rule maps onto O27 (correcting an earlier error)
 
-The refined rule is clean in a traditional lineup, but O27's lineup model needs
-translation, so these need the operator's call:
+> **Correction:** an earlier draft of this report claimed O27 "has no pitcher in
+> the batting order" and that "the 3 jokers ARE the DH." That was **wrong** — it
+> came from a stale comment in `league.py` (now fixed). The engine
+> (`_ordered_lineup`) and every box score play it correctly: **the batting order
+> is NINE — the 8 position starters PLUS the starting pitcher, and the pitcher
+> bats** (e.g. "N. Shaughnessy p … 3 AB, 1 H"). Jokers are **tactical cut-ins**,
+> not a fixed DH slot: the manager may insert a joker in front of any batter at
+> most once per time through the order (up to 12 hitters in a cycle), after which
+> the order returns to the top. The pitcher keeps his at-bats unless replaced.
 
-1. **O27 has no pitcher in the batting order.** The lineup is **8 fielders + 3
-   jokers** (the jokers ARE the DH role); the pitcher does **not** bat. So
-   "replace the pitcher's batting slot" has no direct slot to take. Options:
-   - (a) The nickel takes one of the **joker/DH** slots (he becomes a 4th DH-type
-     bat, displacing a joker) — closest analog to "becomes a DH."
-   - (b) The nickel takes the slot of the **fielder he replaced** when he came in
-     (current-ish behavior, just formalized).
-   - (c) Re-introduce an actual pitcher batting slot only when a nickel converts —
-     the most literal reading of the operator's rule, but the biggest change.
+Because the pitcher genuinely bats, the operator's rule maps **directly** — no
+translation needed:
 
-2. **"Once replaced, the pitcher has to hit."** In O27 the pitcher never hits, so
-   this consequence only bites under option (c). Under (a)/(b) there's no pitcher
-   bat to fall back to — so we'd need a different "cost" (e.g. the nickel
-   conversion burns a joker slot for the rest of the game).
+- A deployed nickel may **take over the pitcher's spot in the batting order**,
+  becoming a DH for the pitcher. He's eligible to do this precisely because he's
+  already in the field (deployed as the nickel).
+- **If the nickel later leaves, the pitcher resumes hitting** — exactly "once
+  replaced, the pitcher has to hit" (the MLB DH-forfeit rule).
 
-3. **Restrict the path:** today *any* bench player can pinch-hit (including the
-   nickel). The refined rule implies the nickel's ONLY route to batting is the
-   sanctioned conversion — should we actively *prevent* a deployed nickel from
-   being used as an ordinary pinch-hitter, leaving only the pitcher-slot/DH
-   conversion?
+### What that means to build
+
+1. **Conversion move:** when the manager elects, swap the deployed nickel into
+   the pitcher's batting-order slot (nickel hits, pitcher does not). The nickel
+   stays the active fielder too — he's a true two-way 10th man until the window
+   ends, then a DH.
+2. **Forfeit on exit:** if that nickel is later removed/replaced, the pitcher's
+   slot reverts to the pitcher hitting (no free re-DH).
+3. **Restrict the path (operator's intent):** a deployed nickel's ONLY route to
+   batting is this pitcher-slot conversion — he should NOT also be usable as an
+   ordinary pinch-hitter for some other lineup spot. (Today any bench bat,
+   including the nickel, can be pinch-hit anywhere; the refined rule narrows the
+   nickel specifically to the pitcher slot.)
 
 ## 5. Status & recommendation
 
 - **Current behavior is not a bug** — it's "technically legal" by the operator's
   own re-entry reasoning, and it's recorded honestly (NF + footnote + badge).
-- The refined rule is a **design change to lineup mechanics**, gated on the
-  answers in §4 — especially how "the pitcher's slot" maps onto O27's
-  no-pitcher-batting, joker-as-DH lineup. Recommend settling §4(1) and §4(2)
-  before any implementation.
+- The refined rule maps **directly** onto O27 (the pitcher really does bat, §4),
+  so it's implementable as specified: a deployed nickel may take the pitcher's
+  batting slot (becomes a DH); if he leaves, the pitcher hits again; and the
+  nickel's only route to batting is that conversion. The build is a lineup-
+  mechanics change (the pitcher-slot swap + forfeit-on-exit + restricting the
+  nickel's pinch-hit path), not a roster or scoring change.
