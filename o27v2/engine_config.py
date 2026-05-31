@@ -418,6 +418,16 @@ def is_overridden(name: str) -> bool:
 
 
 _applied = False
+# Signature (the raw stored-blob string) of the overrides this process last
+# applied. ensure_applied() re-applies when it changes, so a setting toggled
+# after startup — or saved by another worker — takes effect without a restart.
+_applied_sig: str | None = None
+
+
+def _stored_signature() -> str:
+    """Cheap fingerprint of the stored override blob (one indexed lookup)."""
+    row = db.fetchone("SELECT value FROM sim_meta WHERE key = ?", (_META_KEY,))
+    return (row.get("value") if row else "") or ""
 
 
 def apply_values(overrides: dict) -> None:
@@ -438,17 +448,30 @@ def apply_overrides(force: bool = False) -> None:
     """Push the effective stored config onto the config modules. Idempotent
     and cheap (a few hundred setattrs); the DB is read once per process unless
     force=True."""
-    global _applied
+    global _applied, _applied_sig
     if _applied and not force:
         return
     apply_values(load_overrides())
     _applied = True
+    _applied_sig = _stored_signature()
 
 
 def ensure_applied() -> None:
-    """Apply once per process (called at the top of every game sim)."""
-    if not _applied:
-        apply_overrides()
+    """Apply at the top of every game sim, re-reading the stored tuning if it
+    changed since this process last applied it.
+
+    The check is a single indexed lookup; the full re-apply only runs when the
+    blob actually changed. This is what makes an Engine Settings edit (e.g.
+    toggling Power Play) take effect on the next sim WITHOUT a server restart —
+    even when the sim runs in a different worker process than the one that saved
+    it. Previously this applied once per process and silently ignored every
+    later edit, so a freshly-checked setting never reached the simulator."""
+    global _applied, _applied_sig
+    sig = _stored_signature()
+    if not _applied or sig != _applied_sig:
+        apply_values(load_overrides())
+        _applied = True
+        _applied_sig = sig
 
 
 def save_overrides(partial: dict) -> dict[str, object]:
