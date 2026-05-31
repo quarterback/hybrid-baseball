@@ -347,19 +347,19 @@ def print_metrics(agg: dict) -> None:
     print(_row("  Avg PAs/half  (top)",   f"{top_pa['mean']:.1f}"))
     print(_row("  Avg PAs/half  (bottom)", f"{bot_pa['mean']:.1f}"))
 
-    # --- Stays ---
-    print(f"\n  {'STAY MECHANIC':}")
+    # --- Second-Chance ABs ---
+    print(f"\n  {'SECOND-CHANCE MECHANIC':}")
     print(_hr())
     st = agg["stays"]
-    print(_row("Avg stays/game",
+    print(_row("Avg 2C ABs/game",
                f"{st['mean']:.3f}",
                "(observed — not a target)"))
     print(_row("  Median / Std / Min / Max",
                f"{st['median']:.1f} / {st['std']:.2f} / {int(st['min'])} / {int(st['max'])}"))
     vst = agg["v_stays"]
     hst = agg["h_stays"]
-    print(_row("  Avg stays/game  visitors", f"{vst['mean']:.3f}"))
-    print(_row("  Avg stays/game  home",     f"{hst['mean']:.3f}"))
+    print(_row("  Avg 2C ABs/game  visitors", f"{vst['mean']:.3f}"))
+    print(_row("  Avg 2C ABs/game  home",     f"{hst['mean']:.3f}"))
     mh = agg["multi_hit_abs"]
     pa_mean = agg["pas"]["mean"] if agg["pas"]["mean"] > 0 else 1.0
     mh_rate = mh["mean"] / pa_mean * 100.0

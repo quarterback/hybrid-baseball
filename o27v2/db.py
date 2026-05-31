@@ -179,6 +179,9 @@ CREATE TABLE IF NOT EXISTS players (
     defense_infield   INTEGER DEFAULT 50,
     defense_outfield  INTEGER DEFAULT 50,
     defense_catcher   INTEGER DEFAULT 50,
+    -- Catcher pitch-calling — suppresses contact when this player is behind
+    -- the plate (see o27/engine/prob._catcher_gc_shift). NOT framing.
+    game_calling      INTEGER DEFAULT 50,
     -- Baserunning skill (reads, routes, slides) and aggressiveness
     -- (willingness to risk extra base). Independent of foot speed.
     baserunning         INTEGER DEFAULT 50,
@@ -1266,7 +1269,7 @@ def init_db() -> None:
         # player be a true specialist (elite at one group, replacement
         # elsewhere) or a legit utility guy (decent across groups).
         for col in ("defense", "arm", "defense_infield",
-                    "defense_outfield", "defense_catcher"):
+                    "defense_outfield", "defense_catcher", "game_calling"):
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT 50")
                 conn.commit()
