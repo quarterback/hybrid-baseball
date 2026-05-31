@@ -626,6 +626,14 @@
 {# ======================== FIELDING TAB ======================== #}
 <div class="tab-pane fade" id="tab-fielding">
 
+  {% if nickel_games %}
+  <div class="mb-3">
+    <span class="si-badge">🪙 Nickel</span>
+    <span class="text-secondary small">Came in as the 10th defender (NF, Power Play) in
+      <strong>{{ nickel_games }}</strong> game{{ '' if nickel_games == 1 else 's' }}.</span>
+  </div>
+  {% endif %}
+
   <div class="dense mb-3">
     <div class="panel-title">Standard Fielding</div>
     <table class="table table-sm dense-table mb-0">

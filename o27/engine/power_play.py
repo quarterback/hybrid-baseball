@@ -322,6 +322,13 @@ def maybe_open_window(state: GameState, rng: random.Random) -> None:
     state.power_play_nickel_id = nickel_id
     nickel = team.get_player(nickel_id)
     state.power_play_presence = _presence_for(nickel)
+    # Stamp his per-game fielding position as NF so the appearance shows up in
+    # his stat line as "played nickel" — distinct from any other position. If
+    # he'd already taken the field elsewhere this game, extend (e.g. "SS-NF").
+    if nickel is not None:
+        cur = (getattr(nickel, "game_position", "") or "").strip()
+        if NICKEL_POS not in cur:
+            nickel.game_position = f"{cur}-{NICKEL_POS}" if cur else NICKEL_POS
     state.power_play_deployments.append({
         "team_id": team.team_id,
         "team_name": team.name,

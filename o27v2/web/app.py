@@ -5239,6 +5239,15 @@ def player_detail(player_id: int):
     ) or {}
     current_style_label = style_profile_label(cur_team.get("style_profile"))
 
+    # Nickel (NF) appearances — surfaced distinctly from a player's listed
+    # position so a fielder's record shows when he came in as the 10th defender.
+    # Compound spots like "SS-NF" count.
+    nickel_games = (db.fetchone(
+        """SELECT COUNT(DISTINCT game_id) AS g FROM game_batter_stats
+           WHERE player_id = ? AND game_position LIKE '%NF%'""",
+        (player_id,),
+    ) or {}).get("g", 0) or 0
+
     return _serve(
         "player.html",
         player=player,
@@ -5251,6 +5260,7 @@ def player_detail(player_id: int):
         handedness_splits=handedness_splits,
         baselines=baselines,
         player_est_value=player_est_value,
+        nickel_games=nickel_games,
         transfer_leagues=list(transfer_leagues.values()),
         current_league=cur_team.get("league") or "",
         current_style_label=current_style_label,
