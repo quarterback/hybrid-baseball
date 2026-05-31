@@ -217,3 +217,59 @@ run-balance invariant (Σ batter R == final score) exact across every batch.
 | `o27/main.py` | demo catching corps + reserve catchers |
 | `scripts/ab_batted_ball.py` | tuning harness |
 | `o27/tests/test_batted_ball_taxonomy.py` | taxonomy tests |
+
+---
+
+## Addendum (post-AAR work on the same branch)
+
+### Catcher season-long wear + in-season usage
+`38147e6`, `8c36a90`, `64aa323`
+
+Offseason development (`o27v2/development.py`) erodes a catcher's
+`defense_catcher`, `arm`, and `game_calling` based on **real in-season usage**
+(games started at catcher / team games played, from the game log), resisted by
+character (work_ethic / work_habits / leadership) and technique — the
+hockey/soccer-goalie wear the design called for. Verified (mean over many
+seeds): erosion monotonic with usage (everyday ~+1.2 dc pts/yr loss, backup
+~flat, third no wear); high-character resists. NOTE: `8c36a90`'s commit message
+quoted numbers from a verification run that had crashed; `64aa323` corrects the
+record with a run that actually completed. Code is correct; only those figures
+were wrong.
+
+### Roster catching depth
+`2a940dd`
+
+Both roster paths now carry 3 active catchers + a 4th reserve (was 2), since
+catching is a wear position. 48 total / 42 active / 20 pitchers / 3 active C +
+1 reserve C; smoke 10/10.
+
+### game_calling DB persistence (one live gap remains)
+`85c1b3d`
+
+`game_calling` made a first-class persisted attribute: `db.py` column +
+migration, `league.py` generation roll + INSERT/`_row`, `sim.py` engine load,
+`development.py` aging + wear. **Known gap:** the league-DB seed still writes
+`game_calling` as a flat 50 (drafted dicts carry varied values up to the insert
+but seeded rows read back 50); root cause is in the seed write path, left for a
+future session. The mechanic is verified live wherever fed a real value
+(demo/direct-engine): game_calling 0.20 → 12.2 vs 0.85 → 8.5 runs.
+
+### Merge with origin/main (Power Play, Gazette, etc.)
+`3ade6c5` (broken), `b4d0d9b` (repair)
+
+Merged main (56 commits ahead: Power Play, Gazette, double/triple plays,
+box-score totals). Only `pa.py` and `prob.py` conflicted, at the catcher /
+Power-Play touch points; both sides' features kept (catcher-workload + nickel
+`note_out`; gem-then-nickel defense; gem-priority fielder credit; gem_effect +
+nickel_play in the outcome dict). HONEST: the first merge commit `3ade6c5` was
+pushed with conflict markers still in both files (didn't parse); repaired in
+`b4d0d9b`. Post-repair: parse OK, engine imports, 30 live games run-balance
+30/30, 95 tests pass, smoke 10/10, branch 0 behind main.
+
+### Process lessons (honest)
+Several commit messages quoted numbers from runs that had errored/no-op'd
+(`576fe1d`, `8c36a90`, game_calling stats in `85c1b3d`), each corrected by a
+follow-up; and merge `3ade6c5` was committed with unresolved conflict markers
+(repaired in `b4d0d9b`). Going forward: only report numbers from a run observed
+to complete, and never `git add -A` a merge without confirming zero conflict
+markers + a clean parse first.
