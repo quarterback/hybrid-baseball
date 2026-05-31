@@ -192,3 +192,34 @@ def test_characterize_labels_by_run_environment():
         == "Normal-power · normal-scoring"
     assert ec.characterize({"hr_per_game": 6.0, "r_per_game": 33}) \
         == "Extreme-power · explosive"
+
+
+def test_ensure_applied_picks_up_edit_made_after_startup(fresh_db):
+    """Regression: a setting toggled (or saved by another worker) AFTER a
+    process first applied config must take effect on the next ensure_applied()
+    — without a restart. Previously ensure_applied() ran once per process and
+    silently ignored later edits, so e.g. checking Power Play in Engine Settings
+    never reached the simulator and the rule never fired."""
+    # Worker applies at startup with the rule off (no overrides yet).
+    ec.apply_overrides(force=True)
+    assert cfg.POWER_PLAY_ENABLED is False
+
+    # Another process (the web worker) saves the toggle — store only, the DB
+    # blob changes but THIS process hasn't applied it.
+    ec._store({"POWER_PLAY_ENABLED": True})
+    assert cfg.POWER_PLAY_ENABLED is False   # not yet seen by this process
+
+    # The top of every sim calls ensure_applied(); it must re-read the change.
+    ec.ensure_applied()
+    assert cfg.POWER_PLAY_ENABLED is True
+
+    # And it must NOT thrash when nothing changed.
+    calls = {"n": 0}
+    orig = ec.apply_values
+    ec.apply_values = lambda o: (calls.__setitem__("n", calls["n"] + 1), orig(o))[1]
+    try:
+        for _ in range(4):
+            ec.ensure_applied()
+    finally:
+        ec.apply_values = orig
+    assert calls["n"] == 0
