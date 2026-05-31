@@ -160,6 +160,9 @@ class Player:
     defense_infield:   float = 0.5   # 1B / 2B / 3B / SS specific glove
     defense_outfield:  float = 0.5   # LF / CF / RF specific glove
     defense_catcher:   float = 0.5   # catcher-specific framing / blocking
+    game_calling:      float = 0.5   # catcher pitch-calling — a good caller
+                                     # suppresses contact when behind the plate
+                                     # (only applies to whoever is catching)
 
     # Spray tendency — 0.0 = pure opposite-field, 0.5 = neutral spray,
     # 1.0 = pure pull. Drives the shift decision (extreme values invite
@@ -388,6 +391,9 @@ class Team:
     # Catcher's arm rating, stamped at game start. Drives SB-success
     # suppression. 0.5 = neutral.
     catcher_arm:    float = 0.5
+    # Outs caught by the current catcher this game (fatigue accumulator). Resets
+    # to 0 when the manager rotates a fresh catcher in. Drives game-calling decay.
+    catcher_outs_caught: int = 0
 
     # Manager persona — stamped at game start from the team row. 0.5 = neutral.
     # Re-rolled per league seed (see o27v2/managers.py). The engine's
@@ -443,12 +449,16 @@ class Team:
 
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-PA based on
-    # leverage. Any joker can be inserted any number of times per game —
-    # there is no per-cycle or per-game cap. Insertions add an extra PA
-    # to the rotation; the joker bats then returns to the bench without
-    # taking a roster slot or a field position.
+    # leverage. Cooldown is per-turnover: each joker may be deployed at
+    # most once per time through the order, then becomes eligible again
+    # when the base lineup cycles (jokers_used_this_cycle is cleared in
+    # advance_lineup). There is no overall per-game cap, so across a long
+    # half a joker can be brought back cycle after cycle — but never more
+    # than once within a single cycle. Insertions add an extra PA to the
+    # rotation; the joker bats then returns to the bench without taking a
+    # roster slot or a field position.
     jokers_available: list = field(default_factory=list)
-    jokers_used_this_cycle: set = field(default_factory=set)   # legacy, unused
+    jokers_used_this_cycle: set = field(default_factory=set)   # reset on lineup wrap
     jokers_used_this_half: set = field(default_factory=set)    # legacy alias
     lineup_cycle_number: int = 0   # increments when lineup_position wraps
 
@@ -484,6 +494,12 @@ class Team:
         if new_pos == 0 and n > 0:
             # Lineup wrapped to top of order — start of a new cycle.
             self.lineup_cycle_number += 1
+            # Per-cycle joker cooldown resets here. A joker may be deployed
+            # at most once per time through the order; once every base
+            # hitter has batted (joker PAs do NOT advance the lineup, so
+            # they never count toward a cycle) the whole pool is eligible
+            # again. See manager.can_insert_joker / should_insert_joker.
+            self.jokers_used_this_cycle = set()
         self.lineup_position = new_pos
 
     def reset_half(self) -> None:

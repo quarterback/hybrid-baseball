@@ -87,7 +87,7 @@ The structural rules compound into a sport that produces different baseball outc
 
 ## What Got Built on Top of the Rules
 
-The sim has grown well past "rules engine + box score." A non-exhaustive list of the systems that wrap around the engine:
+The sim has grown well past "rules engine + box score." It got there in about a month — from a genesis PRD in early May, through a fast Replit build of the engine and league, a move to Claude Code, and a variance-first tuning pivot on May 17 that made the mechanics (not a target band) decide the run environment, into a late-May sprint of new systems landing every few days. The full story — the phases, the pivots, and a dated changelog — is in [`docs/project-trajectory.md`](docs/project-trajectory.md). A non-exhaustive list of the systems that now wrap around the engine:
 
 - **Player archetypes.** Position players classify into archetypes from their attribute grades (e.g. contact hitter, three-true-outcomes slugger, defense-first up-the-middle). Pitcher arsenal and shape work similarly.
 - **Currency, valuation, auctions.** Every player has a salary in *guilders*, derived from current attributes. Live auction-style player markets sit on top.
@@ -101,7 +101,7 @@ The sim has grown well past "rules engine + box score." A non-exhaustive list of
 - **Stat invariants test suite.** `make test-invariants` runs nine assertions that catch every mathematically-impossible-stat bug the project has shipped before (phase-out caps, OR reconciliation, pitcher↔batter cross-check, OS% bounds, league FIP within 0.05 of league ERA, etc.). Required to pass before any release.
 - **Newspaper-style box score and Markdown export** for LLM-friendly game writeups.
 
-Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoning, the tradeoffs, and the verification numbers — that's where the design history actually lives.
+Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoning, the tradeoffs, and the verification numbers — that's where the design history actually lives. [`docs/project-trajectory.md`](docs/project-trajectory.md) is the reading order through them: the month-long arc, narrated, with a dated changelog.
 
 ## Repository Structure
 
@@ -126,7 +126,7 @@ Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoni
   - `data/league_configs/` — `8teams.json` through `36teams.json` plus `56teams_tiered.json`.
   - `tests/` — archetype, linear-weights, RISP-pressure, trade, migration tests.
 - `tests/` — top-level invariant suite (`make test-invariants`) that runs against a populated DB.
-- `docs/` — methodology references and ~40 AARs documenting every system shipped.
+- `docs/` — methodology references and ~70 AARs documenting every system shipped, plus [`project-trajectory.md`](docs/project-trajectory.md) (the narrated month-long arc + changelog) and the [five-inning blog post](docs/blog-o27-vs-five-inning-baseball.md).
 - `Dockerfile`, `fly.toml`, `DEPLOY.md` — Fly.io deployment for `hybrid-baseball.fly.dev`.
 - `scripts/`, `pnpm-workspace.yaml` — peripheral TypeScript workspace (codegen, design mockups). Independent of the Python sim.
 
@@ -170,7 +170,7 @@ Deployment to Fly.io (`hybrid-baseball` app, `ams` region, `o27v2_data` volume m
 
 ## Status
 
-Active development. Engine, stats methodology, web UI, economy, trades, playoffs, and the youth pipeline are functional and producing complete simulated seasons. New systems land continuously; recent additions include a Hall of Fame and career leaderboards, a re-themed WCAG-AA light/dark UI with grouped navigation and a mobile layout, a runtime engine-tunables dashboard (presets, randomizer, saved environments), infrastructure-driven regional leagues with per-league park geometry, defensive shifts, and a motivation-driven trade engine with front-office personalities. The pitch repertoire system, ballpark geometry, and weather model all continue to evolve.
+Active development, and moving fast — see [`docs/project-trajectory.md`](docs/project-trajectory.md) for the month-long arc and changelog. Engine, stats methodology, web UI, economy, trades, playoffs, and the youth pipeline are functional and producing complete simulated seasons. New systems land continuously; the late-May run added the Power Play (the first optional, per-league rule), multi-week performance streaks, a hits/runs-variance recalibration, times-through-the-order familiarity and a softball/underhand arsenal, the Zaryanovia nation with its Zora currency and a Pro World Cup, career leaderboards, a re-themed WCAG-AA light/dark UI with grouped navigation and a mobile layout, a runtime engine-tunables dashboard (presets, randomizer, saved environments), and infrastructure-driven regional leagues with per-league park geometry. The pitch repertoire system, ballpark geometry, and weather model all continue to evolve.
 
 The sim is not a complete game product. There's no manager-mode play, no human-driven GM workflow. It's a data exploration tool for browsing what the rules produce, with views designed to surface stats and archetypes for human reading or LLM ingestion.
 

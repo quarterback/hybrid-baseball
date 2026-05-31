@@ -156,6 +156,12 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
     state.outs += 1
     state.pitcher_outs_this_spell += 1
 
+    # Catcher workload — the team in the field is squatting every pitch. Tally
+    # outs caught by the current catcher so fatigue degrades their game-calling
+    # and forces a rotation (reset to 0 on a catcher swap).
+    _fld = state.fielding_team
+    if _fld is not None:
+        _fld.catcher_outs_caught = int(getattr(_fld, "catcher_outs_caught", 0) or 0) + 1
     # Power Play: extend / retire the nickel window against the new out count.
     from o27.engine import power_play
     power_play.note_out(state)

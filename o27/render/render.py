@@ -254,11 +254,19 @@ class Renderer:
         self._credit_pp_pitcher(event, ctx, disp, _sh,
                                 _sh_before, _sh_s)
 
-        # Render via Jinja2 template.
-        tmpl = self._env.get_template("play_by_play.j2")
-        rendered = tmpl.render(**disp).rstrip("\n")
-        if rendered:
-            lines.append(rendered)
+        # Render via Jinja2 template. A failed pickoff is a routine throw-over —
+        # keep it out of the play-by-play entirely (not even the bare
+        # [outs|count|bases] header line), while stats/snapshots above still
+        # run. Only an actual pickout (runner caught) earns a line.
+        _silent_pickoff = (
+            etype == "pickoff_attempt"
+            and not (event.get("success") or disp.get("pickoff_success"))
+        )
+        if not _silent_pickoff:
+            tmpl = self._env.get_template("play_by_play.j2")
+            rendered = tmpl.render(**disp).rstrip("\n")
+            if rendered:
+                lines.append(rendered)
 
         # Append runner advancement narrative computed from state delta.
         runner_lines = self._compute_runner_lines(ctx, state_after, etype, disp, event)
@@ -1205,6 +1213,21 @@ class Renderer:
             d["hit_type_display"] = _HIT_TYPE_DISPLAY.get(
                 hit_type, hit_type.replace("_", " ")
             )
+            # Rich descriptive flavor ("frozen rope", "Texas leaguer",
+            # "swinging bunt") from the batted-ball taxonomy, when present.
+            d["batted_ball_name"] = (event.get("outcome") or {}).get(
+                "batted_ball_name", ""
+            )
+            # Defensive gem — a fielder robbed a hit. Surface the play + the
+            # fielder's name so the play-by-play can flag the great play.
+            gem = (event.get("outcome") or {}).get("gem_effect")
+            d["gem_effect"] = gem or ""
+            d["gem_fielder_name"] = ""
+            if gem:
+                _gfid = (event.get("outcome") or {}).get("fielder_id")
+                if _gfid and state_after.fielding_team:
+                    _gf = state_after.fielding_team.get_player(_gfid)
+                    d["gem_fielder_name"] = _gf.name if _gf else ""
             d["batter_safe"] = batter_safe
             d["new_bases"] = state_after.bases_summary()
 
@@ -1562,6 +1585,29 @@ class Renderer:
             s.pa += 1
             s.hbp += 1
             s.rbi += runs_scored
+
+        elif etype == "sac_bunt":
+            # Manager-called bunt (manager.should_bunt). Three outcomes:
+            #   hit       — bunt single: 1 PA, 1 AB, 1 H (a bunt hit IS an AB).
+            #   sacrifice — successful sac: 1 PA, NO AB, 1 SH; batter out.
+            #   fail      — popped up / forced: 1 PA, 1 AB, batter out.
+            # The batter's OUT (sacrifice/fail) is charged by the out-
+            # reconciliation tail below (engine bumped state.outs), and any
+            # runs are credited by the tail's _credit_runs — same as every
+            # other PA event. We only record the batting line here.
+            outcome = event.get("outcome", "sacrifice")
+            s.pa += 1
+            if outcome == "hit":
+                s.ab += 1
+                s.hits += 1
+                s.rbi += runs_scored
+                _check_multi_hit(terminal_hit=True)
+            elif outcome == "fail":
+                s.ab += 1
+                _check_multi_hit()
+            else:  # sacrifice
+                s.sh += 1
+                s.rbi += runs_scored
 
         elif etype == "ball_in_play":
             choice = disp.get("choice", "run")

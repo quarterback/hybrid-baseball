@@ -1011,7 +1011,7 @@
       {#- Grouped navigation. Each top menu is active when the current
           endpoint (or path, for the Almanac) belongs to it. -#}
       {% set ep = request.endpoint %}
-      {% set g_games   = ['index', 'standings', 'schedule', 'playoffs_view'] %}
+      {% set g_games   = ['index', 'gazette.view', 'standings', 'schedule', 'playoffs_view'] %}
       {% set g_players = ['players', 'player_detail', 'teams', 'team_detail', 'compare', 'free_agents'] %}
       {% set g_stats   = ['leaders', 'stats_browse', 'analytics', 'distributions', 'glossary'] %}
       {% set g_league  = ['league', 'transactions', 'auction_view', 'auction_live', 'youth_view', 'youth_team_view', 'youth_tournament_view', 'pro_worldcup_view', 'pro_worldcup_team_view', 'financials_view'] %}
@@ -1023,6 +1023,7 @@
           <a class="nav-link dropdown-toggle {% if ep in g_games %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Games</a>
           <ul class="dropdown-menu">
             <li><a class="dropdown-item {% if ep == 'index' %}active{% endif %}" href="{{ url_for('index') }}">Scores</a></li>
+            <li><a class="dropdown-item {% if ep == 'gazette.view' %}active{% endif %}" href="{{ url_for('gazette.view') }}">📰 Gazette</a></li>
             <li><a class="dropdown-item {% if ep == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a></li>
             <li><a class="dropdown-item {% if ep == 'schedule' %}active{% endif %}" href="{{ url_for('schedule') }}">Schedule</a></li>
             <li><a class="dropdown-item {% if ep == 'playoffs_view' %}active{% endif %}" href="{{ url_for('playoffs_view') }}">Playoffs</a></li>
