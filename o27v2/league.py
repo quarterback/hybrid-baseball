@@ -1811,16 +1811,18 @@ def _park_surname_pool(rng: random.Random, count: int = 60) -> list[str]:
 
 # Roster shape — substitution-economy 42-player baseline (Item 2).
 #
-# Per the operator's clarification: in O27, the 3 jokers ARE the DH
-# role (analogous to MLB's 1 DH, just with 3 of them). There is NO
-# separate DH player class. The lineup is 8 fielders + 3 jokers = 11
-# batters; the pitcher does NOT bat (jokers replace pitcher batting,
-# same way MLB's DH does). Jokers are FIXED in the lineup pre-game and
-# CANNOT be substituted out.
+# Per the operator: O27's batting order is NINE — the 8 position starters PLUS
+# the starting pitcher (the pitcher DOES bat). There is no fixed DH slot. The
+# jokers are NOT a fixed part of the order: they are tactical cut-ins the manager
+# may insert in front of any batter, at most once per time through the order, for
+# up to 12 hitters in a cycle before it returns to the top. The pitcher keeps his
+# at-bats unless he's replaced by a substitute at that spot. Jokers themselves
+# can't be subbed out (they're a finite per-game resource), but they don't
+# occupy a lineup slot pre-game.
 #
 #   -  8 fielders (canonical starters, 1 each at C/1B/2B/3B/SS/LF/CF/RF)
 #   - 11 fielder backups (depth at every position for PH/PR/DEF subs)
-#   -  3 jokers (drafted explicitly as elite-bat / no-glove; the DH role)
+#   -  3 jokers (drafted explicitly as elite-bat / no-glove; tactical cut-ins)
 #   -  3 situational specialists (1 PR + 2 PH for bench leverage)
 #   - 17 pitchers (bulk + leverage + emergency)
 # Total active: 42.

@@ -255,7 +255,10 @@ def _assign_footnotes(ordered: list[tuple[dict, int]]) -> dict[int, str]:
         if not indent:
             continue
         et = r.get("entry_type", "starter")
-        if et not in ("PH", "PR", "DEF", "joker", "joker_field"):
+        # Jokers in the batting order ("joker") are NOT footnoted — they just
+        # appear at the end of the lineup with their line. joker_field (a joker
+        # pulled in to play the field) IS a real sub and keeps its footnote.
+        if et not in ("PH", "PR", "DEF", "joker_field"):
             continue
         # a, b, ... z, aa, ab, ...
         if n < 26:
@@ -321,28 +324,34 @@ def _render_sub_footnotes(
             continue
         et = r.get("entry_type", "starter")
         replaced_pid = r.get("replaced_player_id")
-        replaced_name = "—"
+        replaced_name = ""
         if replaced_pid is not None:
             rep = row_by_id.get(int(replaced_pid))
             if rep is not None:
-                replaced_name = _last_name(rep.get("player_name", "")) or "—"
+                replaced_name = _last_name(rep.get("player_name", ""))
+        # "for <name>" only when we actually resolved a name. Jokers are
+        # tactical cut-ins (no player replaced) and chained/legacy subs may
+        # point at a row not in this team's box — in both cases drop the
+        # dangling "for —" rather than print a bare dash.
+        for_phrase = f" for {replaced_name}" if replaced_name else ""
         inning = int(r.get("entered_inning", 0) or 0)
         inning_phrase = f" in the {_ordinal(inning)}" if inning else ""
         if et == "PH":
             verb = _sub_outcome_phrase(r)
-            lines.append(f"  {letter}-{verb} for {replaced_name}{inning_phrase}.")
+            lines.append(f"  {letter}-{verb}{for_phrase}{inning_phrase}.")
         elif et == "PR":
-            lines.append(f"  {letter}-Ran for {replaced_name}{inning_phrase}.")
+            lines.append(f"  {letter}-Ran{for_phrase}{inning_phrase}.")
         elif et == "DEF":
             pos = (r.get("box_position") or r.get("position") or "").upper()
             slot = f" at {pos}" if pos else ""
-            lines.append(f"  {letter}-Replaced {replaced_name}{slot}{inning_phrase}.")
-        elif et == "joker":
-            lines.append(f"  {letter}-Pinch-hit (joker) for {replaced_name}{inning_phrase}.")
+            # "Replaced Smith at SS" / "Entered at SS" when no name resolved.
+            verb = f"Replaced {replaced_name}" if replaced_name else "Entered"
+            lines.append(f"  {letter}-{verb}{slot}{inning_phrase}.")
         elif et == "joker_field":
             pos = (r.get("box_position") or r.get("position") or "").upper()
             slot = f" at {pos}" if pos else ""
-            lines.append(f"  {letter}-Replaced {replaced_name}{slot} (joker to field){inning_phrase}.")
+            verb = f"Replaced {replaced_name}" if replaced_name else "Entered"
+            lines.append(f"  {letter}-{verb}{slot} (joker to field){inning_phrase}.")
     return "\n".join(lines)
 
 
@@ -639,6 +648,39 @@ def render_game_notes(game: dict) -> str:
     return "\n".join(parts)
 
 
+def _powerplays_note(away_batting: Iterable[dict], home_batting: Iterable[dict],
+                     game: dict) -> str:
+    """Footer line naming the nickel deployment(s), read off the batter rows
+    tagged at position NF (the deployed 10th defender), with the team-OUT number
+    each window opened at (e.g. "O14"; "O14, O25" for two windows). Only a side
+    that actually deployed a nickel is listed — a team that didn't use its Power
+    Play does not appear. Returns '' when neither side deployed."""
+    sides = (
+        (away_batting, game.get("away_name") or game.get("away_abbrev") or "Away"),
+        (home_batting, game.get("home_name") or game.get("home_abbrev") or "Home"),
+    )
+    parts: list[str] = []
+    for rows, team in sides:
+        names: list[str] = []
+        for r in rows:
+            pos = str(r.get("box_position") or r.get("position") or "")
+            toks = [t.strip().upper() for t in pos.replace("/", "-").split("-")]
+            if "NF" not in toks:
+                continue
+            nm = _last_name(r.get("player_name") or r.get("name") or "")
+            # Team-out number(s) the window(s) opened at — stored as a CSV.
+            outs = [o.strip() for o in str(r.get("pp_start_outs") or "").split(",")
+                    if o.strip()]
+            when = f" (O{', O'.join(outs)})" if outs else ""
+            tag = (f"{nm} NF{when}" if nm else f"NF{when}")
+            if tag not in names:
+                names.append(tag)
+        # Only list a side that actually deployed.
+        if names:
+            parts.append(f"{team} — " + ", ".join(names))
+    return ("  Powerplays: " + "; ".join(parts)) if parts else ""
+
+
 # --------------------------------------------------------------------------
 # Top-level
 # --------------------------------------------------------------------------
@@ -680,6 +722,12 @@ def render_box_score(
 ) -> str:
     rule = "=" * RULE_WIDTH
 
+    # Footer notes + a Powerplays line naming any nickel deployment(s).
+    notes = render_game_notes(game)
+    pp = _powerplays_note(away_batting, home_batting, game)
+    if pp:
+        notes = (notes + "\n" + pp) if notes else pp
+
     sections = [
         rule,
         render_header(game, away_line["total_r"], home_line["total_r"]),
@@ -699,7 +747,7 @@ def render_box_score(
         "",
         render_pitching_table(game.get("home_name", "Home"), home_pitching, decisions, season_wl),
         "",
-        render_game_notes(game),
+        notes,
         rule,
     ]
     # Drop empty section results (annotations may produce "") but keep the

@@ -3257,6 +3257,19 @@ def game_detail(game_id: int):
             continue
         hr_off_map.setdefault(str(row["batter_id"]), []).append(last)
 
+    # Stamp the nickel's window start-out(s) onto his batting row so the
+    # Powerplays footer can say WHEN (which team-out) the deployment opened.
+    _pp_starts = {
+        r["player_id"]: (r["pp_start_outs"] or "")
+        for r in db.fetchall(
+            "SELECT player_id, pp_start_outs FROM game_power_play_stats "
+            "WHERE game_id = ? AND pp_deploys > 0", (game_id,))
+    }
+    if _pp_starts:
+        for _r in (away_batting_consolidated + home_batting_consolidated):
+            if _r.get("player_id") in _pp_starts:
+                _r["pp_start_outs"] = _pp_starts[_r["player_id"]]
+
     box_score_text = _render_box_score(
         game=game_for_box,
         phases=phases,
