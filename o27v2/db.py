@@ -551,6 +551,7 @@ CREATE TABLE IF NOT EXISTS game_power_play_stats (
     -- Defense (nickel) line.
     pp_deploys        INTEGER DEFAULT 0,  -- windows this player started as nickel
     pp_outs           INTEGER DEFAULT 0,  -- outs his deployment windows covered
+    pp_start_outs     TEXT DEFAULT '',    -- CSV of the team-out number each window opened at (e.g. "14,25")
     pp_xbh_held       INTEGER DEFAULT 0,  -- XBH cut to singles while he patrolled
     pp_hits_converted INTEGER DEFAULT 0,  -- shallow hits run down for outs
     nickel_po         INTEGER DEFAULT 0,  -- putouts recorded as the nickel
@@ -1235,6 +1236,14 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+        # Per-window start-out (the team-out number each nickel window opened
+        # at) — added so the box-score Powerplays note can say WHEN it deployed.
+        try:
+            conn.execute(
+                "ALTER TABLE game_power_play_stats ADD COLUMN pp_start_outs TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
         # Adaptability — batter rating that erodes shift effectiveness
         # when the manager keeps the same alignment for multiple consecutive
         # ABs against this batter. 20-80 scale like other ratings.

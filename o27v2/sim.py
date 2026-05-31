@@ -855,7 +855,7 @@ def _extract_power_play_stats(renderer, final_state, team_id: int, players: list
     def _row(pid: int) -> dict:
         return acc.setdefault(pid, {
             "team_id": team_id, "player_id": pid,
-            "pp_deploys": 0, "pp_outs": 0, "pp_xbh_held": 0,
+            "pp_deploys": 0, "pp_outs": 0, "pp_start_outs": [], "pp_xbh_held": 0,
             "pp_hits_converted": 0, "nickel_po": 0, "nickel_a": 0,
             "nickel_e": 0, "sh_pa": 0, "sh_ab": 0, "sh_hits": 0,
             "ppp_bf": 0, "ppp_outs": 0, "ppp_k": 0, "ppp_bb": 0,
@@ -880,6 +880,8 @@ def _extract_power_play_stats(renderer, final_state, team_id: int, players: list
         r["pp_deploys"] += 1
         # outs the window covered = end_out - start_out + 1 (clamped >= 0).
         r["pp_outs"] += max(0, int(dep.get("end_out", 0)) - int(dep.get("start_out", 0)) + 1)
+        # Record the team-out number this window opened at (for the box note).
+        r["pp_start_outs"].append(int(dep.get("start_out", 0)))
 
     # Team-level XBH-held / hits-converted — credited to the team's nickel(s).
     # When a single nickel held the role all game (the common case) it lands on
@@ -1877,14 +1879,16 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
             conn.execute(
                 """INSERT INTO game_power_play_stats
                    (game_id, team_id, player_id,
-                    pp_deploys, pp_outs, pp_xbh_held, pp_hits_converted,
+                    pp_deploys, pp_outs, pp_start_outs, pp_xbh_held, pp_hits_converted,
                     nickel_po, nickel_a, nickel_e,
                     sh_pa, sh_ab, sh_hits,
                     ppp_bf, ppp_outs, ppp_k, ppp_bb, ppp_bip, ppp_bip_hits,
                     ppp_tot_bip, ppp_tot_bip_hits, ppp_hits_saved, ppp_xbh_saved)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"],
-                 r["pp_deploys"], r["pp_outs"], r["pp_xbh_held"],
+                 r["pp_deploys"], r["pp_outs"],
+                 ",".join(str(o) for o in r.get("pp_start_outs", [])),
+                 r["pp_xbh_held"],
                  r["pp_hits_converted"], r["nickel_po"], r["nickel_a"],
                  r["nickel_e"], r["sh_pa"], r["sh_ab"], r["sh_hits"],
                  r["ppp_bf"], r["ppp_outs"], r["ppp_k"], r["ppp_bb"],

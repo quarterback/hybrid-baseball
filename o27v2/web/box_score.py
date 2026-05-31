@@ -642,10 +642,10 @@ def render_game_notes(game: dict) -> str:
 def _powerplays_note(away_batting: Iterable[dict], home_batting: Iterable[dict],
                      game: dict) -> str:
     """Footer line naming the nickel deployment(s), read off the batter rows
-    tagged at position NF (the deployed 10th defender), with the inning each
-    came on. Only a side that actually deployed a nickel is listed — a team
-    that didn't use its Power Play does not appear at all. Returns '' when
-    neither side deployed."""
+    tagged at position NF (the deployed 10th defender), with the team-OUT number
+    each window opened at (e.g. "O14"; "O14, O25" for two windows). Only a side
+    that actually deployed a nickel is listed — a team that didn't use its Power
+    Play does not appear. Returns '' when neither side deployed."""
     sides = (
         (away_batting, game.get("away_name") or game.get("away_abbrev") or "Away"),
         (home_batting, game.get("home_name") or game.get("home_abbrev") or "Home"),
@@ -659,8 +659,10 @@ def _powerplays_note(away_batting: Iterable[dict], home_batting: Iterable[dict],
             if "NF" not in toks:
                 continue
             nm = _last_name(r.get("player_name") or r.get("name") or "")
-            inning = int(r.get("entered_inning", 0) or 0)
-            when = f" ({_ordinal(inning)})" if inning else ""
+            # Team-out number(s) the window(s) opened at — stored as a CSV.
+            outs = [o.strip() for o in str(r.get("pp_start_outs") or "").split(",")
+                    if o.strip()]
+            when = f" (O{', O'.join(outs)})" if outs else ""
             tag = (f"{nm} NF{when}" if nm else f"NF{when}")
             if tag not in names:
                 names.append(tag)
