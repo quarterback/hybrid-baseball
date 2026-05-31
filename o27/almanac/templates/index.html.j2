@@ -19,7 +19,7 @@
   <div class="card"><div class="card-label">League ERA</div><div class="card-value">{{ '%.2f'|format(views.league_totals.era) }}</div></div>
   <div class="card"><div class="card-label">League WHIP</div><div class="card-value">{{ '%.2f'|format(views.league_totals.whip) }}</div></div>
   <div class="card"><div class="card-label">League FIP</div><div class="card-value">{{ '%.2f'|format(views.league_totals.fip) }}</div></div>
-  <div class="card"><div class="card-label">Stays/PA</div><div class="card-value">{{ '%.3f'|format((views.league_totals.stays or 0) / (views.league_totals.pa or 1)) }}</div></div>
+  <div class="card"><div class="card-label">2C/PA</div><div class="card-value">{{ '%.3f'|format((views.league_totals.stays or 0) / (views.league_totals.pa or 1)) }}</div></div>
 </section>
 
 <section>

@@ -1961,6 +1961,15 @@ def _make_hitter(
             if_g, of_g, cat_g = spec_low_a, spec_low_b, spec_high
     # Pitcher_skill on a position player is only used in emergencies.
     pskill_g = roll() // 2 + 10  # cap fielder-pitching at low grades
+    # Catcher game-calling (pitch sequencing) — only meaningful behind the
+    # plate, so a catcher (catcher is his strongest glove group) gets a full
+    # independent tier roll; everyone else gets a low/replacement value (a
+    # non-catcher pressed into catching calls a poor game). Independent of
+    # receiving skill so a strong glove can still be a weak caller.
+    if cat_g >= if_g and cat_g >= of_g:
+        game_calling_g = roll()
+    else:
+        game_calling_g = max(20, roll() // 2 + 10)
     result = {
         "name": name,
         "country": country,
@@ -2006,6 +2015,7 @@ def _make_hitter(
         "defense_infield":  if_g,
         "defense_outfield": of_g,
         "defense_catcher":  cat_g,
+        "game_calling":     game_calling_g,
         # Baserunning skill + aggressiveness, independent rolls. A smart
         # average-speed runner (high baserunning, mid speed) is just as
         # useful on the bases as a pure burner.
@@ -2165,6 +2175,8 @@ def _make_specialist(
         "defense_infield":  if_g,
         "defense_outfield": of_g,
         "defense_catcher":  cat_g,
+        # Specialists (joker/PR/PH) never catch — replacement game-calling.
+        "game_calling":     max(20, cat_g // 2 + 10),
         "baserunning":        baserunning_g,
         "run_aggressiveness": ra_g,
         "work_ethic":  rng.randint(40, 70),
@@ -2428,6 +2440,7 @@ def _make_pitcher(
         "defense_infield":  50,   # pitchers field their own mound; sub-groups neutral
         "defense_outfield": 50,
         "defense_catcher":  50,
+        "game_calling":     20,   # pitchers never catch
         # Pitchers don't bat in O27 → baserunning is academic. Neutral.
         "baserunning":        50,
         "run_aggressiveness": 50,
@@ -2508,8 +2521,11 @@ def generate_players(
     # Corner backups.
     for pos in ("3B", "1B", "LF"):
         players.append(_hitter(pos, is_active=1))
-    # Extra-depth backups (for PH/PR/DEF substitution pool).
-    for pos in ("RF", "CF", "SS", "2B"):
+    # Extra-depth backups (for PH/PR/DEF substitution pool). One is a THIRD
+    # catcher — catching is a wear position (in-game game-calling fatigue +
+    # season erosion), so every club needs 3 catchers to survive the 27-out
+    # arc and rotate.
+    for pos in ("RF", "CF", "SS", "C"):
         players.append(_hitter(pos, is_active=1))
 
     # ---- Active jokers (the DH role; one of each archetype) ----
@@ -2527,8 +2543,8 @@ def generate_players(
     for _ in range(ACTIVE_PITCHERS):
         players.append(_pitcher(is_active=1))
 
-    # ---- Reserve pool ----
-    _RESERVE_POSITIONS = ("RF", "CF", "SS")
+    # ---- Reserve pool ----  (incl. a 4th catcher in the taxi pool)
+    _RESERVE_POSITIONS = ("C", "CF", "SS")
     for i in range(RESERVE_HITTERS):
         pos = _RESERVE_POSITIONS[i % len(_RESERVE_POSITIONS)]
         players.append(_hitter(pos, is_active=0))
@@ -2587,8 +2603,11 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     ("3B", 1, 0), ("1B", 1, 0), ("LF", 1, 0),
     # Extra depth (4 more backups across high-rotation + outfield) so
     # the substitution candidate pool has bodies to spend on PH/PR/DEF
-    # without leaving the team a defensive replacement short.
-    ("RF", 1, 0), ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0),
+    # without leaving the team a defensive replacement short. One of these
+    # is a THIRD catcher: catching is a wear position (in-game game-calling
+    # fatigue + season-long erosion), so every club needs 3 catchers to get
+    # through the 27-out arc and rotate — the live sim assumes this depth.
+    ("RF", 1, 0), ("CF", 1, 0), ("SS", 1, 0), ("C", 1, 0),
     # Situational specialists drafted explicitly (Item 4 follow-up #6):
     # 1 PR specialist + 2 PH specialists per team = 3 specialists
     # guaranteed in every roster. Built by _make_specialist with tight
@@ -2596,8 +2615,10 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     # ph_specialist rather than spilling into the bat_first pool.
     (SPEC_PR, 1, 0),
     (SPEC_PH, 2, 0),
-    # Reserve depth (slim — active is 42).
-    ("RF", 0, 1), ("CF", 0, 1), ("SS", 0, 1),
+    # Reserve depth (slim — active is 42). Includes a FOURTH catcher in the
+    # taxi/reserve pool — the depth piece called up when a catcher is injured
+    # or eroded, the way some clubs carry a 4th the way football carries a 3rd QB.
+    ("C", 0, 1), ("CF", 0, 1), ("SS", 0, 1),
     # Pitchers (17 active + 3 reserve).
     ("P", 17, 3),
 ]
@@ -3077,14 +3098,14 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          age, stamina, is_active,
          contact, power, eye, command, movement, bats, throws,
          defense, arm,
-         defense_infield, defense_outfield, defense_catcher,
+         defense_infield, defense_outfield, defense_catcher, game_calling,
          baserunning, run_aggressiveness,
          work_ethic, work_habits, habit_cup, salary,
          release_angle, pitch_variance, grit, repertoire,
          pull_pct, adaptability, leadership,
          roster_slot, role_hit, role_run, role_two_way, role_field_pos,
          hometown, birthday, secondary_country)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -3109,6 +3130,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("defense_infield", 50),
                 p.get("defense_outfield", 50),
                 p.get("defense_catcher", 50),
+                p.get("game_calling", 50),
                 p.get("baserunning", 50),
                 p.get("run_aggressiveness", 50),
                 p.get("work_ethic", 50), p.get("work_habits", 50),

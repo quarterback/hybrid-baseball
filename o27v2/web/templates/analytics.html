@@ -177,7 +177,7 @@
             {% for evt in ['HR','3B','2B','1B','BB','HBP','STAY','K_over_out','out'] %}
               {% if rv.get(evt) is not none %}
               <tr>
-                <td>{{ evt }}</td>
+                <td>{{ '2C' if evt == 'STAY' else evt }}</td>
                 <td class="num fw-bold"
                     style="color:{% if rv[evt] > 0 %}var(--good){% elif rv[evt] < 0 %}var(--bad){% else %}inherit{% endif %}">
                   {{ '%+.3f' | format(rv[evt]) }}
@@ -189,8 +189,8 @@
         </table>
         <div class="text-secondary small">
           Out RV is negative (an out costs the offense ~0.4 runs vs
-          prior expectation). STAY is the empirical RV of a credited
-          2C stay event — broken out from 1B so the single's value
+          prior expectation). 2C is the empirical RV of a credited
+          Second-Chance event — broken out from 1B so the single's value
           reflects true singles only.
         </div>
       </div>
@@ -214,7 +214,7 @@
                 {% set fit = ww[evt] %}
                 {% set mlb = mlb_woba.get(evt) %}
                 <tr>
-                  <td>{{ evt }}</td>
+                  <td>{{ '2C' if evt == 'STAY' else evt }}</td>
                   <td class="num fw-bold">{{ '%.3f' | format(fit) }}</td>
                   {% if mlb is none %}
                     <td class="num text-secondary">—</td>

@@ -302,6 +302,48 @@ ARM_ADVANCE_MOD: float           = 0.11
 
 RUNNER_EXTRA_SPEED_SCALE: float = 0.35
 
+# ---------------------------------------------------------------------------
+# Batted-ball texture (the "wasted hits" mechanism)
+# ---------------------------------------------------------------------------
+# A hit's TEXTURE — how it was struck — decides how productive it is. Rolled
+# from contact quality + batter power into {dribbler, grounder, liner, flyball}
+# and carried as outcome_dict["batted_ball"] (NOT a hit_type, so all the hit/AB
+# stat-counting that switches on hit_type strings is untouched). Low-power
+# contact hitters spray grounders; sluggers hit liners — player-differentiated.
+#
+# CRITICAL LESSON (learned the hard way): in O27's single continuous 27-out
+# inning, making a runner HOLD on a grounder does NOT reduce runs — there is no
+# inning-end to strand him, so he scores on a later PA (~87% of baserunners
+# score eventually). The only thing that lowers runs-per-hit is ERASING a
+# runner. So texture's run effect is primarily an additive bump to the "out"
+# (thrown-out-advancing) bucket of the advancement tables, not a score haircut.
+# All-zero shifts reproduce pre-texture behavior exactly (identity).
+BATTED_BALL_WEIGHTS = {
+    # quality:   (dribbler, grounder, liner, flyball)
+    "weak":      (0.30, 0.45, 0.20, 0.05),
+    "medium":    (0.12, 0.40, 0.38, 0.10),
+    "hard":      (0.0,  0.12, 0.53, 0.35),
+}
+BATTED_BALL_POWER_TILT: float = 0.30   # power_dev shifts grounder→liner→flyball
+
+# Additive bump to the "out" outcome (runner gunned down advancing) in the
+# single/double advancement tables, by texture. This ERASES runners → the real
+# H/R lever. Grounders/dribblers draw more throws and force plays; liners let
+# runners move cleanly (slightly negative).
+BATTED_BALL_OUT_SHIFT = {
+    "dribbler": 0.30,
+    "grounder": 0.40,
+    "liner":   -0.03,
+    "flyball":  0.00,
+}
+# Secondary score-bucket nudge (small — mostly flavor / a few held runners).
+BATTED_BALL_SCORE_SHIFT = {
+    "dribbler": -0.20,
+    "grounder": -0.12,
+    "liner":    +0.05,
+    "flyball":   0.00,
+}
+
 # Baseline extra-base attempt probability for the runner on 1B on a double.
 # Without this baseline, every double produced an identical [2, 2, 1] runner
 # advancement and runs scored were rigidly tied to the hit type — fast and
@@ -607,7 +649,7 @@ TRIPLE_PLAY_BASERUNNING_BONUS: float   = 0.06   # added when lead runner is belo
 # whether the slide beats the throw. Identity preserved at neutral inputs:
 # at speed = baserunning = aggressiveness = 0.5 the attempt probability
 # from RUNNER_EXTRA_SPEED_SCALE is already 0, so TOOTBLAN never fires.
-TOOTBLAN_SAFE_BASE: float  = 0.62   # baseline safe rate when an attempt fires
+TOOTBLAN_SAFE_BASE: float  = 0.46   # baseline safe rate when an attempt fires
 TOOTBLAN_SKILL_SCALE: float = 0.40  # +(baserunning - 0.5) * this
 TOOTBLAN_SPEED_SCALE: float = 0.20  # +(speed       - 0.5) * this
 TOOTBLAN_SAFE_MIN: float    = 0.32  # floor — even bad runners aren't always out
@@ -623,11 +665,11 @@ TOOTBLAN_SAFE_MAX: float    = 0.88  # ceiling — even elite runners aren't auto
 # Tuning note: real-MLB pickoff outs are rare (~0.05/game per side).
 # Keep attempt rate low and success rate modest so they're a flavor
 # event, not a CS-rate inflator.
-PICKOFF_ATTEMPT_BASE: float        = 0.004  # per pitch, 1B with avg-aggression runner
+PICKOFF_ATTEMPT_BASE: float        = 0.035  # per pitch, 1B with avg-aggression runner
 PICKOFF_AGGRESSION_SCALE: float    = 0.012  # +(run_aggressiveness - 0.5) * this
 PICKOFF_LHP_1B_BONUS: float        = 0.005  # absolute boost vs 1B runner from LHP
 PICKOFF_2B_DAMPENER: float         = 0.40   # 2B pickoffs much rarer than 1B
-PICKOFF_SUCCESS_BASE: float        = 0.10   # baseline catch rate when a move fires
+PICKOFF_SUCCESS_BASE: float        = 0.38   # baseline catch rate when a move fires
 PICKOFF_SUCCESS_PITCHER_SCALE: float = 0.25 # +pitcher.pitcher_skill * this
 PICKOFF_SUCCESS_AGGRESSION_SCALE: float = 0.30  # +(aggression - 0.5) * this
 PICKOFF_SUCCESS_BR_SCALE: float    = 0.30   # -(baserunning - 0.5) * this
@@ -676,8 +718,8 @@ HIT_AND_RUN_CONTACT_K_REDUCTION: float = 0.25  # multiplicative on K probability
 # Lower-`mgr_leverage_aware` skippers are more likely to call this (it's
 # generally a -EV play in modern analytics). Speed influences whether
 # the bunt becomes a hit.
-SAC_BUNT_BASE_PROB: float          = 0.05   # base call rate when conditions align
-SAC_BUNT_RUNGAME_SCALE: float      = 0.20   # mgr_run_game * this multiplies
+SAC_BUNT_BASE_PROB: float          = 0.16   # base call rate when conditions align
+SAC_BUNT_RUNGAME_SCALE: float      = 0.50   # mgr_run_game * this multiplies
 SAC_BUNT_LEVERAGE_DAMPER: float    = 0.50   # (1 - leverage_aware) * this multiplies
 SAC_BUNT_HIT_BASE: float           = 0.10   # baseline bunt-for-hit rate
 SAC_BUNT_HIT_SPEED_SCALE: float    = 0.30   # +(speed - 0.5) * this
@@ -732,7 +774,7 @@ STAY_DEFENSE_READ_MAX: float           = 0.28
 # Range modifier — better team defense converts more BIPs into outs.
 # Applied as a probabilistic flip: when an outcome resolves to an out OR a
 # single, a small fraction of cases flip in proportion to (defense - 0.5).
-DEFENSE_RANGE_SHIFT_SCALE: float = 0.10   # max ±10% out↔single conversion swing
+DEFENSE_RANGE_SHIFT_SCALE: float = 0.15   # max ±15% out↔single conversion swing
 
 # Error rate — share of would-be-out plays that become a "reached on
 # error" instead. Scales inversely with team defense. The earlier ~1.8%
@@ -744,6 +786,48 @@ DEFENSE_ERROR_BASE: float        = 0.045   # ~4.5% of would-be-outs at neutral D
 DEFENSE_ERROR_SCALE: float       = 0.060   # (0.5 - team_def) * this adds to E rate
 DEFENSE_ERROR_MIN: float         = 0.010
 DEFENSE_ERROR_MAX: float         = 0.090
+
+# ---------------------------------------------------------------------------
+# Defensive gems — fielding ratings turn would-be hits into outs
+# ---------------------------------------------------------------------------
+# A fielder makes a spectacular play that erases a hit. Deliberately
+# PROBABILISTIC and per-FIELDER, not a fixed trait: a base rate means anyone
+# in the position with a decent glove can flash one, and the individual
+# fielder's defense/arm scales the rate up (elite) or toward zero (poor). So
+# you get "even a guy you don't think of as a defensive wizard robs one
+# sometimes," while the genuine glove does it far more often. Surfaced in the
+# play-by-play as a "ROBBED!" / great-play line (see render). All-zero base =
+# identity (no gems). These erase a hit, so they also nudge BA/H down slightly.
+GEM_BASE_XBH: float      = 0.075  # base chance an extra-base hit is run down / robbed
+GEM_BASE_SINGLE: float   = 0.050  # base chance a single is turned into an out
+GEM_HARD_MULT: float     = 1.35   # hard contact is more rob-able (carry / hang time)
+GEM_FIELDER_SCALE: float = 1.30   # (fielder_def - 0.5)*2 * this scales the base rate
+GEM_ARM_SCALE: float     = 0.40   # (fielder_arm - 0.5)*2 * this adds (arm → more outs)
+GEM_MAX: float           = 0.42   # cap — even elite fielders don't rob everything
+
+# ---------------------------------------------------------------------------
+# Catcher game-calling — "calling a good O27 game" as a real lever
+# ---------------------------------------------------------------------------
+# The catcher's game_calling rating shifts contact_quality away from hard
+# contact: a great caller sequences pitches to the pitcher's strengths and the
+# batter's holes, a poor one lets hitters square it up. Applies only to whoever
+# is currently behind the plate (the fielding team's catcher). Identity at 0.5.
+# This is the offense-suppressing counterweight that rewards a defensive,
+# pitch-and-catch club. (NOT framing — O27 skips framing by design.)
+CATCHER_GAME_CALLING_SHIFT_SCALE: float = 0.16   # (gc-0.5)*2 * this → contact shift
+
+# Catcher fatigue + rotation. No catcher squats for all 27 outs — as the outs
+# pile up behind the plate his game-calling slips, which is the PRESSURE that
+# forces a manager to spend a bench catcher. Fatigue ramps once outs caught
+# pass the threshold; it degrades game_calling (and could be extended to arm).
+# A manager with a rested backup rotates the tiring starter out; how a club
+# prioritizes its catching corps swings the late innings.
+CATCHER_FATIGUE_THRESHOLD: int           = 18    # outs caught before fatigue bites
+CATCHER_FATIGUE_SCALE: float             = 9.0   # (outs-threshold)/this → fatigue
+CATCHER_FATIGUE_MAX: float               = 0.80  # cap on the fatigue fraction
+CATCHER_FATIGUE_GAME_CALLING_SCALE: float = 0.30 # fatigue * this drops game_calling
+CATCHER_FATIGUE_ARM_SCALE: float         = 0.25  # fatigue * this drops catcher arm
+CATCHER_ROTATION_OUT_GATE: int           = 6     # no swap before this (first-batter guard)
 
 # ---------------------------------------------------------------------------
 # Emergency position-player pitcher (PP-pitching)
@@ -818,16 +902,18 @@ STAY_LATE_GAME_MULT: float         = 1.55
 # Telemetry: state.fielding_team.shift_outs_added / shift_hits_lost
 # accumulate per game, so we can see exactly how much each shift call
 # contributed.
-SHIFT_PULL_OUT_PROB: float       = 0.30   # infield shift: pull single → out
+SHIFT_PULL_OUT_PROB: float       = 0.42   # infield shift: pull single → out
 SHIFT_OPPO_HIT_PROB: float       = 0.25   # infield shift: oppo gnd_out → single
-SHIFT_DECISION_SCALE: float      = 1.0    # tunable knob on decision frequency
+SHIFT_DECISION_SCALE: float      = 1.8    # tunable knob on decision frequency
+SHIFT_BASE_PROB: float           = 0.35   # floor so even neutral-spray batters get shifted
+SHIFT_DECISION_MAX: float        = 0.95   # cap on per-AB shift probability
 
 # Outfield shift (4-man OF / infielders shallow). Trades infield coverage
 # for outfield range against pull-power FB hitters. Effects:
 #   pull-side double/triple → single   (the 4th OFer cuts off the gap)
 #   pull-side fly_out stays            (already an out)
 #   oppo-side ground_out → single      (one fewer IFer = more gaps)
-SHIFT_OF_XBH_HELD_PROB: float    = 0.30   # OF shift: pull double → single
+SHIFT_OF_XBH_HELD_PROB: float    = 0.40   # OF shift: pull double → single
 SHIFT_OF_OPPO_HIT_PROB: float    = 0.35   # OF shift: oppo gnd_out → single
 # Threshold for picking outfield shift over infield shift: pull-heavy
 # batter with this much power or more goes to outfield shift.

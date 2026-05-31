@@ -510,6 +510,62 @@ def pitch_outcome(
 # Contact quality model
 # ---------------------------------------------------------------------------
 
+def _fielding_catcher(state):
+    """The player currently behind the plate for the fielding team: the
+    lineup's non-pitcher with the best defense_catcher rating. Resolving from
+    the live lineup means a catcher substitution automatically changes who is
+    "the catcher" — no separate bookkeeping needed. Returns None if none."""
+    team = getattr(state, "fielding_team", None)
+    if team is None:
+        return None
+    lineup = getattr(team, "lineup", None) or getattr(team, "roster", []) or []
+    best = None
+    best_dc = -1.0
+    for p in lineup:
+        if getattr(p, "is_pitcher", False):
+            continue
+        dc = float(getattr(p, "defense_catcher", 0.5) or 0.5)
+        if dc > best_dc:
+            best_dc = dc
+            best = p
+    return best
+
+
+def _catcher_gc_shift(state) -> float:
+    """Contact-quality shift from the fielding team's catcher game-calling,
+    degraded by catcher fatigue. Positive = good caller suppressing contact.
+    Identity (0.0) when no catcher / neutral rating."""
+    c = _fielding_catcher(state)
+    if c is None:
+        return 0.0
+    gc = float(getattr(c, "game_calling", 0.5) or 0.5)
+    # Fatigue decay — a gassed catcher calls a worse game. The fielding team's
+    # catcher_outs_caught accumulates per out behind the plate; absent → no decay.
+    outs = int(getattr(getattr(state, "fielding_team", None),
+                       "catcher_outs_caught", 0) or 0)
+    thr = getattr(cfg, "CATCHER_FATIGUE_THRESHOLD", 10 ** 9)
+    if outs > thr:
+        fatigue = min(getattr(cfg, "CATCHER_FATIGUE_MAX", 0.0),
+                      (outs - thr) / getattr(cfg, "CATCHER_FATIGUE_SCALE", 1.0))
+        gc -= fatigue * getattr(cfg, "CATCHER_FATIGUE_GAME_CALLING_SCALE", 0.0)
+    return (gc - 0.5) * 2.0 * getattr(cfg, "CATCHER_GAME_CALLING_SHIFT_SCALE", 0.0)
+
+
+def _catcher_arm_eff(state) -> float:
+    """Fielding team's catcher arm, degraded by catcher fatigue — a gassed
+    catcher's throws to the bases weaken (RFC: fatigue degrades game_calling
+    AND arm). Mirrors the game-calling decay; identity when no fatigue."""
+    fld = getattr(state, "fielding_team", None)
+    arm = float(getattr(fld, "catcher_arm", 0.5) or 0.5)
+    outs = int(getattr(fld, "catcher_outs_caught", 0) or 0)
+    thr = getattr(cfg, "CATCHER_FATIGUE_THRESHOLD", 10 ** 9)
+    if outs > thr:
+        fatigue = min(getattr(cfg, "CATCHER_FATIGUE_MAX", 0.0),
+                      (outs - thr) / getattr(cfg, "CATCHER_FATIGUE_SCALE", 1.0))
+        arm *= max(0.0, 1.0 - fatigue * getattr(cfg, "CATCHER_FATIGUE_ARM_SCALE", 0.0))
+    return arm
+
+
 def contact_quality(
     rng: random.Random,
     batter: Player,
@@ -522,6 +578,7 @@ def contact_quality(
     joker_decay: float = 1.0,
     familiarity: float = 0.0,
     risp_penalty: float = 1.0,
+    catcher_shift: float = 0.0,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
@@ -559,6 +616,12 @@ def contact_quality(
     # they're locked in. Identity at 0.0 so first-batting teams or PAs past
     # the fade window see no change.
     shift += target_pressure_shift
+
+    # Catcher game-calling: a good caller (positive catcher_shift) sequences
+    # the pitcher to suppress hard contact; a poor one lets hitters square up.
+    # Subtracts from the batter-advantage shift. Computed at the call site from
+    # whoever is behind the plate (and their fatigue). Identity at 0.0.
+    shift -= catcher_shift
 
     # Times-through-the-order familiarity: a hitter who has timed this pitcher
     # up doesn't just make more contact (handled in _pitch_probs) — he squares
@@ -1198,6 +1261,7 @@ def _resolve_table(
     arm_dev: float,
     has_out: bool,
     score_shift: float = 0.0,
+    out_shift: float = 0.0,
 ) -> str:
     """Pick an outcome from a (label, base_prob) table after applying
     speed (raises the first/score outcome) and arm (raises the out
@@ -1207,7 +1271,15 @@ def _resolve_table(
     per-half offensive sequencing form). Positive = runners more likely to
     take the extra base / score.
 
-    Identity: speed_dev = arm_dev = score_shift = 0 returns the base table draw.
+    `out_shift` is an extra additive bump to the "out" (runner thrown out
+    advancing) outcome — the batted-ball texture lever. Positive = the runner
+    is more likely to be erased (a grounder draws the throw); this is what
+    actually lowers runs-per-hit, since holding a runner in a 27-out inning
+    only delays his run. A positive out_shift also lifts the out cap so the
+    texture can bite past the default 0.30 ceiling.
+
+    Identity: speed_dev = arm_dev = score_shift = out_shift = 0 returns the
+    base table draw.
     """
     speed_shift = speed_dev * cfg.SPEED_ADVANCE_MOD * 2.0  # ±0.12 at extremes
     arm_shift   = arm_dev   * cfg.ARM_ADVANCE_MOD   * 2.0  # ±0.11 at extremes
@@ -1222,8 +1294,9 @@ def _resolve_table(
 
     if has_out:
         out_name, out_p = adjusted[-1]
-        out_p_adj = out_p + arm_shift - 0.5 * speed_shift
-        out_p_adj = max(0.0, min(0.30, out_p_adj))
+        out_p_adj = out_p + arm_shift - 0.5 * speed_shift + out_shift
+        out_cap = min(0.55, 0.30 + max(0.0, out_shift))
+        out_p_adj = max(0.0, min(out_cap, out_p_adj))
         adjusted[-1] = (out_name, out_p_adj)
 
     # Whatever is left between score and out goes to the middle "hold"
@@ -1365,11 +1438,57 @@ def _batting_seq_form(rng: random.Random, state: GameState) -> float:
     return _locked_in_form(rng, state)
 
 
+def _roll_batted_ball(rng: random.Random, quality: str, hit_type: str,
+                      batter) -> str:
+    """Roll the batted-ball texture for a HIT (the 'wasted hits' mechanism).
+
+    Returns one of {dribbler, grounder, liner, flyball}. Rolled from contact
+    quality + batter power so it's player-differentiated: low-power contact
+    hitters spray grounders (hits that clog the bases and don't score runners),
+    sluggers hit liners/flyballs (hits that drive runs). HR/triple are always
+    well-struck; the texture mainly matters for singles and doubles. Carried as
+    outcome_dict["batted_ball"] — NOT a hit_type — so stat-counting is untouched.
+    """
+    if hit_type == "hr":
+        return "flyball"
+    if hit_type == "triple":
+        return "liner"
+    base = getattr(cfg, "BATTED_BALL_WEIGHTS", {}).get(quality)
+    if not base:
+        return "liner"
+    dribbler, grounder, liner, flyball = base
+    # Power tilts weight grounder→liner→flyball (high power) or reverse (low).
+    pdev = (float(getattr(batter, "power", 0.5) or 0.5) - 0.5) * 2.0
+    tilt = pdev * getattr(cfg, "BATTED_BALL_POWER_TILT", 0.0)
+    if tilt > 0:
+        moved = min(grounder, grounder * tilt) + min(dribbler, dribbler * tilt)
+        grounder -= grounder * tilt
+        dribbler -= dribbler * tilt
+        liner += moved * 0.6
+        flyball += moved * 0.4
+    elif tilt < 0:
+        t = -tilt
+        moved = min(liner, liner * t) + min(flyball, flyball * t)
+        liner -= liner * t
+        flyball -= flyball * t
+        grounder += moved * 0.6
+        dribbler += moved * 0.4
+    weights = [max(0.0, w) for w in (dribbler, grounder, liner, flyball)]
+    total = sum(weights) or 1.0
+    r = rng.random() * total
+    for label, w in zip(("dribbler", "grounder", "liner", "flyball"), weights):
+        r -= w
+        if r <= 0:
+            return label
+    return "liner"
+
+
 def runner_advances_for_hit(
     rng: random.Random,
     hit_type: str,
     bases: list,
     state: GameState,
+    batted_ball: str = "",
 ) -> tuple[list, list[int]]:
     """Return ([adv_1B, adv_2B, adv_3B], runner_out_idxs).
 
@@ -1386,6 +1505,13 @@ def runner_advances_for_hit(
     seq_shift = (_batting_seq_form(rng, state) - 1.0) * getattr(
         cfg, "SEQ_FORM_SCORE_SCALE", 0.0
     )
+    # Batted-ball texture shifts. The SCORE shift (small) folds into the score
+    # roll below; the OUT shift is the real lever — it raises the chance a
+    # runner is thrown out advancing on a grounder, ERASING him (the only thing
+    # that lowers runs-per-hit in a 27-out inning, since a held runner just
+    # scores later). Empty/unknown texture → 0.0 (identity).
+    seq_shift += getattr(cfg, "BATTED_BALL_SCORE_SHIFT", {}).get(batted_ball, 0.0)
+    bb_out = getattr(cfg, "BATTED_BALL_OUT_SHIFT", {}).get(batted_ball, 0.0)
 
     s1 = _get_speed(bases[0], state)
     s2 = _get_speed(bases[1], state)
@@ -1412,7 +1538,7 @@ def runner_advances_for_hit(
                  ("hold",  cfg.ADVANCE_3B_ON_1B_HOLD),
                  ("out",   cfg.ADVANCE_3B_ON_1B_OUT)],
                 _spd_dev(2), arm_dev, has_out=True,
-                score_shift=seq_shift,
+                score_shift=seq_shift, out_shift=bb_out,
             )
             if outcome == "score":
                 adv[2] = 1
@@ -1428,7 +1554,7 @@ def runner_advances_for_hit(
                  ("hold_3b", cfg.ADVANCE_2B_ON_1B_HOLD_3B),
                  ("out",     cfg.ADVANCE_2B_ON_1B_OUT)],
                 _spd_dev(1), arm_dev, has_out=True,
-                score_shift=seq_shift,
+                score_shift=seq_shift, out_shift=bb_out,
             )
             if outcome == "score":
                 adv[1] = 2
@@ -1444,6 +1570,7 @@ def runner_advances_for_hit(
                  ("to_2b", cfg.ADVANCE_1B_ON_1B_TO_2B),
                  ("out",   cfg.ADVANCE_1B_ON_1B_OUT)],
                 _spd_dev(0), arm_dev, has_out=True,
+                out_shift=bb_out,
             )
             if outcome == "to_3b":
                 adv[0] = 2
@@ -1466,7 +1593,7 @@ def runner_advances_for_hit(
                  ("hold_3b", cfg.ADVANCE_2B_ON_2B_HOLD_3B),
                  ("out",     cfg.ADVANCE_2B_ON_2B_OUT)],
                 _spd_dev(1), arm_dev, has_out=True,
-                score_shift=seq_shift,
+                score_shift=seq_shift, out_shift=bb_out,
             )
             if outcome == "score":
                 adv[1] = 2
@@ -1483,7 +1610,7 @@ def runner_advances_for_hit(
                  ("hold_2b",   cfg.ADVANCE_1B_ON_2B_HOLD_2B),
                  ("out",       cfg.ADVANCE_1B_ON_2B_OUT)],
                 _spd_dev(0), arm_dev, has_out=True,
-                score_shift=seq_shift,
+                score_shift=seq_shift, out_shift=bb_out,
             )
             if outcome == "score":
                 adv[0] = 3
@@ -1843,6 +1970,8 @@ def resolve_contact(
         def_dev -= cfg.FIELDING_FATIGUE_PENALTY
 
     is_error = False
+    gem_effect = None        # set when a fielder robs a hit (great-play render hook)
+    gem_fielder_id = None    # the specific fielder credited with the gem
 
     # Range shift: probabilistically flip a single-or-out outcome.
     # Better defense (def_dev > 0) → some "single" results flip to ground_out.
@@ -1913,9 +2042,62 @@ def resolve_contact(
                     caught_fly = False
                     shift_effect = "hit_lost"
 
+    # ---- Defensive gem -----------------------------------------------------
+    # A fielder turns a would-be hit into an out with a spectacular play.
+    # Per-FIELDER + probabilistic: a base rate lets anyone in the position with
+    # a decent glove flash one occasionally, and the individual fielder's
+    # defense/arm scales the rate up (elite) or toward zero (poor) — so the
+    # great glove robs hits far more often, but it's never a fixed "only this
+    # guy" trait. A robbed extra-base hit is run down (caught fly); a robbed
+    # single is a diving liner grab. Surfaced as a "ROBBED!" play in the
+    # play-by-play via outcome["gem_effect"]. Identity when GEM_BASE_* = 0.
+    if batter_safe and not is_error and hit_type in ("single", "double", "triple"):
+        if hit_type in ("double", "triple"):
+            gem_base, gem_out_type, gem_caught, gem_pos, gem_label = (
+                cfg.GEM_BASE_XBH, "fly_out", True, "fly_out", "robbed_xbh")
+        else:
+            gem_base, gem_out_type, gem_caught, gem_pos, gem_label = (
+                cfg.GEM_BASE_SINGLE, "line_out", False, "line_out", "robbed_liner")
+        if quality == "hard":
+            gem_base *= cfg.GEM_HARD_MULT
+        # Pick the fielder who makes the play from the position-player pool,
+        # weighted toward better gloves. Positions aren't plumbed onto Players
+        # in O27, so we weight by the relevant defense rating rather than a
+        # fixed slot — which IS the "anyone in that spot with a good glove can
+        # do it, the elite glove does it more" model. _ = gem_pos (kept for
+        # readability of which alignment the play came from).
+        _ = gem_pos
+        def_key = "defense_outfield" if gem_label == "robbed_xbh" else "defense_infield"
+        pool = [p for p in getattr(fielding, "roster", [])
+                if not getattr(p, "is_pitcher", False)]
+        gem_fid = None
+        f_def = f_arm = 0.5
+        if pool:
+            def _grate(p):
+                r = getattr(p, def_key, None)
+                if r is None:
+                    r = getattr(p, "defense", 0.5)
+                return float(r or 0.5)
+            weights = [0.5 + _grate(p) for p in pool]
+            gp = rng.choices(pool, weights=weights, k=1)[0]
+            gem_fid = gp.player_id
+            f_def = _grate(gp)
+            f_arm = float(getattr(gp, "arm", 0.5) or 0.5)
+        gem_p = gem_base * max(0.0, 1.0
+                               + (f_def - 0.5) * 2.0 * cfg.GEM_FIELDER_SCALE
+                               + (f_arm - 0.5) * 2.0 * cfg.GEM_ARM_SCALE)
+        gem_p = min(cfg.GEM_MAX, gem_p)
+        if rng.random() < gem_p:
+            hit_type = gem_out_type
+            batter_safe = False
+            caught_fly = gem_caught
+            gem_effect = gem_label
+            gem_fielder_id = gem_fid
+
     # Power Play (optional rule): while the nickel fielder is on the field, the
     # extra outfielder cuts off gaps — some XBH drop to singles and some
-    # shallow outfield singles get run down for outs.
+    # shallow outfield singles get run down for outs. Runs after the gem so a
+    # robbed hit isn't double-converted.
     hit_type, batter_safe, caught_fly, nickel_putout = power_play.apply_nickel_defense(
         rng, state, hit_type, batter_safe, caught_fly)
 
@@ -1935,7 +2117,14 @@ def resolve_contact(
     # Compute runner advances based on (possibly flipped) hit type.
     # An "error" advances runners like a single — same conservative shape.
     advance_type = "single" if hit_type == "error" else hit_type
-    runner_adv, br_out_idxs = runner_advances_for_hit(rng, advance_type, state.bases, state)
+    # Roll batted-ball texture for hits — a grounder single advances runners
+    # worse than a liner single (the "wasted hits" mechanism). Only meaningful
+    # for actual hits; outs/errors get no texture.
+    batted_ball = ""
+    if hit_type in ("single", "double", "triple", "hr"):
+        batted_ball = _roll_batted_ball(rng, quality, hit_type, batter)
+    runner_adv, br_out_idxs = runner_advances_for_hit(
+        rng, advance_type, state.bases, state, batted_ball=batted_ball)
 
     # For fielder's choice: throw out the lead runner. TOA outs from the
     # probabilistic advancement table get mapped onto runner_out_idx /
@@ -1966,9 +2155,14 @@ def resolve_contact(
         power_play.credit_nickel_putout(state)
     else:
         fielder_id = _select_fielder(rng, hit_type, fielding)
+    # A defensive gem credits the specific fielder who made the spectacular play
+    # (takes precedence over the generic/nickel pick).
+    if gem_fielder_id is not None:
+        fielder_id = gem_fielder_id
 
     return {
         "hit_type": hit_type,
+        "batted_ball": batted_ball,
         "batter_safe": batter_safe,
         "caught_fly": caught_fly,
         "runner_advances": runner_adv,
@@ -1979,6 +2173,7 @@ def resolve_contact(
         "fielder_id": fielder_id,
         "quality": quality,
         "shift_effect": shift_effect,
+        "gem_effect": gem_effect,
         "nickel_play": nickel_id is not None,
         "fielder_pos": power_play.NICKEL_POS if nickel_id is not None else None,
     }
@@ -2139,7 +2334,7 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
             pid = state.bases[0]
             speed = _get_speed(pid, state)
             pitcher_skill = pitcher.pitcher_skill if pitcher else 0.5
-            cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
+            cat_arm = _catcher_arm_eff(state)
             success_p = (
                 cfg.SB_SUCCESS_BASE
                 + (speed - 0.5) * cfg.SB_SUCCESS_SPEED_SCALE
@@ -2187,7 +2382,7 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
             # An elite-arm catcher (arm ≥ 0.85) shuts down the running game;
             # a noodle-arm (≤ 0.30) is exploited mercilessly. Identity at
             # arm = 0.5 → no shift on success_p.
-            cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
+            cat_arm = _catcher_arm_eff(state)
             success_p = (
                 cfg.SB_SUCCESS_BASE
                 + (speed - 0.5) * cfg.SB_SUCCESS_SPEED_SCALE
@@ -2306,7 +2501,11 @@ class ProbabilisticProvider:
                                       "mgr_shift_aggression", 0.5) or 0.5)
             batter_pull = float(getattr(batter, "pull_pct", 0.5) or 0.5)
             extremity = abs(batter_pull - 0.5) * 2.0
-            shift_p = extremity * mgr_shift * cfg.SHIFT_DECISION_SCALE
+            # Aggressive baseline: a floor (SHIFT_BASE_PROB) means even
+            # neutral-spray batters draw a shift sometimes, and pull-heavy
+            # batters get shifted nearly every time. O27 defenses shift
+            # constantly — it's a primary lever, not a situational gimmick.
+            shift_p = (cfg.SHIFT_BASE_PROB + extremity) * mgr_shift * cfg.SHIFT_DECISION_SCALE
 
             # Leverage ratchet — RISP AND late arc both fire, the shift
             # decision lifts to "prevent defense" mode. Either alone is
@@ -2316,6 +2515,7 @@ class ProbabilisticProvider:
             if risp and late:
                 shift_p *= cfg.SHIFT_LEVERAGE_MULT
 
+            shift_p = min(cfg.SHIFT_DECISION_MAX, shift_p)
             if self.rng.random() < shift_p:
                 power = float(getattr(batter, "power", 0.5) or 0.5)
                 if power >= cfg.SHIFT_OF_POWER_THRESHOLD:
@@ -2445,6 +2645,18 @@ class ProbabilisticProvider:
                 "type": "defensive_sub",
                 "player_out": def_sub["player_out"],
                 "player_in":  def_sub["player_in"],
+            }
+
+        # Catcher rotation — pull a gassed catcher for a fresh one from the
+        # corps. Reuses the defensive_sub event/handler; resets the fatigue
+        # accumulator so the new catcher starts rested.
+        cat_swap = mgr.should_swap_catcher(state, rng=self.rng)
+        if cat_swap is not None:
+            state.fielding_team.catcher_outs_caught = 0
+            return {
+                "type": "defensive_sub",
+                "player_out": cat_swap["player_out"],
+                "player_in":  cat_swap["player_in"],
             }
 
         # Pinch runner — late-game, close score, slow runner on base.
@@ -2624,6 +2836,7 @@ class ProbabilisticProvider:
             joker_decay=joker_decay,
             familiarity=familiarity,
             risp_penalty=_risp_talent_penalty(rng, state),
+            catcher_shift=_catcher_gc_shift(state),
         )
         is_hr     = False
         is_triple = False
@@ -2776,6 +2989,14 @@ class ProbabilisticProvider:
         hit_type = outcome_dict["hit_type"]
         caught_fly = outcome_dict["caught_fly"]
 
+        # Rich descriptive name from the (EV, LA, spray) we just sampled +
+        # the now-final hit_type. Purely for display (box score / play-by-
+        # play); never read back by mechanics.
+        from o27.engine.batted_ball import classify_batted_ball as _classify_bb
+        outcome_dict["batted_ball_name"] = _classify_bb(
+            ev_v, la_v, spray_v, hit_type if not caught_fly else "fly_out"
+        )
+
         is_hr     = (hit_type == "hr")
         is_triple = (hit_type == "triple")
         # ITPHR / out-at-home are terminal run outcomes — force "run" so the
@@ -2849,7 +3070,7 @@ class ProbabilisticProvider:
             # the 2C feel risky; bad defenses let it run wild.
             if adv > 0 and any(state.bases):
                 team_def = float(getattr(state.fielding_team, "defense_rating", 0.5) or 0.5)
-                cat_arm = float(getattr(state.fielding_team, "catcher_arm", 0.5) or 0.5)
+                cat_arm = _catcher_arm_eff(state)
                 p_read = (cfg.STAY_DEFENSE_READ_BASE
                           + (team_def - 0.5) * cfg.STAY_DEFENSE_READ_TEAM_SCALE
                           + (cat_arm  - 0.5) * cfg.STAY_DEFENSE_READ_CATCHER_SCALE)

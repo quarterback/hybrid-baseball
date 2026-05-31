@@ -21,6 +21,7 @@ class BatterStats:
     ibb: int = 0     # Intentional walks (subset of bb).
     k: int = 0
     hbp: int = 0
+    sh: int = 0            # Sacrifice bunts (successful — advances a runner, not an AB)
     sty: int = 0           # Stays (internal only — not displayed in UI)
     outs_recorded: int = 0  # OR — times this batter was retired
     stay_rbi: int = 0

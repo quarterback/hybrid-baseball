@@ -1,14 +1,14 @@
 {% extends "_base.html.j2" %}
 {% block title %}Stay Leaders — {{ site_title }}{% endblock %}
 {% block content %}
-<h1 class="page-title">Stay Mechanic Leaders</h1>
+<h1 class="page-title">Second-Chance Leaders</h1>
 <p class="page-subtitle">O27-specific second-chance AB metrics · the rate at which batters work the stay to drive runners</p>
 
 <div class="section-bar">
   <div class="tabs">
     <a href="batting.html">Batting</a>
     <a href="pitching.html">Pitching</a>
-    <a class="active" href="stays.html">Stays</a>
+    <a class="active" href="stays.html">Second Chance</a>
   </div>
   <div class="btn-row">
     <input class="search-box" data-filter-table="#stays-tbl" data-filter-cols="0,1" placeholder="Find batter…">
@@ -23,13 +23,13 @@
       <th class="sticky-col" data-type="text">Player</th>
       <th data-type="text">Team</th>
       <th>PA</th><th>AB</th>
-      <th data-heat="hi">STY</th>
-      <th data-heat="hi">STAY_H</th>
-      <th data-heat="hi">STAY_RBI</th>
+      <th data-heat="hi">2C</th>
+      <th data-heat="hi">2C-H</th>
+      <th data-heat="hi">2C-RBI</th>
       <th data-heat="hi">MHAB</th>
-      <th data-heat="hi">STAY%</th>
+      <th data-heat="hi">2C%</th>
       <th data-heat="hi">STAY_CONV%</th>
-      <th data-heat="hi">STAY_RBI%</th>
+      <th data-heat="hi">2C-RBI%</th>
       <th data-heat="hi">RAD</th>
       <th data-heat="hi">RAD/PA</th>
       <th data-heat="hi">BAVG</th>
