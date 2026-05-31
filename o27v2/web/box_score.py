@@ -321,28 +321,38 @@ def _render_sub_footnotes(
             continue
         et = r.get("entry_type", "starter")
         replaced_pid = r.get("replaced_player_id")
-        replaced_name = "—"
+        replaced_name = ""
         if replaced_pid is not None:
             rep = row_by_id.get(int(replaced_pid))
             if rep is not None:
-                replaced_name = _last_name(rep.get("player_name", "")) or "—"
+                replaced_name = _last_name(rep.get("player_name", ""))
+        # "for <name>" only when we actually resolved a name. Jokers are
+        # tactical cut-ins (no player replaced) and chained/legacy subs may
+        # point at a row not in this team's box — in both cases drop the
+        # dangling "for —" rather than print a bare dash.
+        for_phrase = f" for {replaced_name}" if replaced_name else ""
         inning = int(r.get("entered_inning", 0) or 0)
         inning_phrase = f" in the {_ordinal(inning)}" if inning else ""
         if et == "PH":
             verb = _sub_outcome_phrase(r)
-            lines.append(f"  {letter}-{verb} for {replaced_name}{inning_phrase}.")
+            lines.append(f"  {letter}-{verb}{for_phrase}{inning_phrase}.")
         elif et == "PR":
-            lines.append(f"  {letter}-Ran for {replaced_name}{inning_phrase}.")
+            lines.append(f"  {letter}-Ran{for_phrase}{inning_phrase}.")
         elif et == "DEF":
             pos = (r.get("box_position") or r.get("position") or "").upper()
             slot = f" at {pos}" if pos else ""
-            lines.append(f"  {letter}-Replaced {replaced_name}{slot}{inning_phrase}.")
+            # "Replaced Smith at SS" / "Entered at SS" when no name resolved.
+            verb = f"Replaced {replaced_name}" if replaced_name else "Entered"
+            lines.append(f"  {letter}-{verb}{slot}{inning_phrase}.")
         elif et == "joker":
-            lines.append(f"  {letter}-Pinch-hit (joker) for {replaced_name}{inning_phrase}.")
+            # A joker cuts into the order rather than replacing anyone.
+            tail = for_phrase if for_phrase else " (cut-in)"
+            lines.append(f"  {letter}-Pinch-hit (joker){tail}{inning_phrase}.")
         elif et == "joker_field":
             pos = (r.get("box_position") or r.get("position") or "").upper()
             slot = f" at {pos}" if pos else ""
-            lines.append(f"  {letter}-Replaced {replaced_name}{slot} (joker to field){inning_phrase}.")
+            verb = f"Replaced {replaced_name}" if replaced_name else "Entered"
+            lines.append(f"  {letter}-{verb}{slot} (joker to field){inning_phrase}.")
     return "\n".join(lines)
 
 
