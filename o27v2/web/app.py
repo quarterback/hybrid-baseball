@@ -169,6 +169,35 @@ def inject_app_version():
     }}
 
 
+@app.context_processor
+def inject_nav_leagues():
+    """Feed the global league chooser in the top nav. Empty list for
+    single-league universes, which hides the chooser entirely."""
+    try:
+        leagues = _all_leagues()
+    except Exception:
+        leagues = []
+    return {
+        "nav_leagues": leagues,
+        "nav_league":  _persisted_league(leagues) if leagues else "all",
+    }
+
+
+@app.after_request
+def _persist_league_scope(resp):
+    """Remember an explicit ?league= choice in a cookie so the scope sticks
+    as the user moves between pages. Only writes when the request actually
+    carried a league arg, so normal navigation never clobbers the saved
+    preference."""
+    arg = request.args.get("league")
+    if arg:
+        resp.set_cookie(
+            _LEAGUE_COOKIE, arg,
+            max_age=60 * 60 * 24 * 365, samesite="Lax",
+        )
+    return resp
+
+
 def _end_of_month(d: _dt.date) -> _dt.date:
     if d.month == 12:
         return _dt.date(d.year, 12, 31)
@@ -354,11 +383,18 @@ def _independent_leagues() -> list[str]:
 def _selected_league(leagues: list[str]) -> str | None:
     """Resolve the ?league= query param against the available leagues,
     defaulting to the first (pooling across independent leagues is
-    meaningless, so we never default to 'all')."""
+    meaningless, so we never default to 'all'). Falls back to the persisted
+    `league_pref` cookie so a league chosen on one page stays selected when
+    the user navigates to another."""
     if not leagues:
         return None
     sel = request.args.get("league")
-    return sel if sel in leagues else leagues[0]
+    if sel in leagues:
+        return sel
+    ck = request.cookies.get("league_pref")
+    if ck in leagues:
+        return ck
+    return leagues[0]
 
 
 def _league_team_ids(league: str | None) -> list[int] | None:
@@ -2679,6 +2715,14 @@ def standings():
         if lbl:
             league_styles[row["league"]] = lbl
 
+    # League scope — narrow the per-league/division sections to one league.
+    # Tiered universes are a single promotion ladder, not peer leagues, so
+    # the chooser doesn't apply there.
+    all_leagues     = _all_leagues()
+    selected_league = _persisted_league(all_leagues)
+    if not is_tiered and selected_league != "all" and selected_league in leagues:
+        leagues = {selected_league: leagues[selected_league]}
+
     return _serve("standings.html",
                            leagues=leagues,
                            extras=extras,
@@ -2690,6 +2734,8 @@ def standings():
                            tier_meta=tier_meta,
                            tiered_view=tiered_view,
                            league_styles=league_styles,
+                           all_leagues=all_leagues,
+                           selected_league=selected_league,
                            all_games_played=_all_games_played())
 
 
@@ -6887,8 +6933,23 @@ def transactions():
     team_id    = request.args.get("team", type=int)
     event_type = request.args.get("type")
 
+    all_leagues     = _all_leagues()
+    selected_league = _persisted_league(all_leagues)
+
     txns  = get_transactions(team_id=team_id, event_type=event_type or None, limit=300)
-    teams = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
+    # League scope — transactions carry a team_id, so map each to its league
+    # and keep only this league's moves (team-less, league-wide rows fall out
+    # of a single-league view, which is what the user is asking to see).
+    if selected_league != "all":
+        team_league = {r["id"]: r["league"]
+                       for r in db.fetchall("SELECT id, league FROM teams")}
+        txns = [tx for tx in txns
+                if team_league.get(tx.get("team_id")) == selected_league]
+        teams = db.fetchall(
+            "SELECT id, name, abbrev FROM teams WHERE league = ? ORDER BY name",
+            (selected_league,))
+    else:
+        teams = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
 
     event_types = ["injury", "return", "promotion", "penalty",
                    "trade_block_breaking", "trade_injury_backfill",
@@ -6915,6 +6976,8 @@ def transactions():
                            selected_team=selected_team,
                            event_type=event_type or "",
                            event_types=event_types,
+                           all_leagues=all_leagues,
+                           selected_league=selected_league,
                            counts=counts)
 
 

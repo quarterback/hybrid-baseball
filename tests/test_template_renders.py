@@ -120,6 +120,26 @@ def test_schedule_renders_with_league_filter(tiny_db_app):
         assert r.status_code == 200, f"qs={qs!r}: {r.get_data(as_text=True)[:500]}"
 
 
+def test_standings_renders_with_league_filter(tiny_db_app):
+    for qs in ("", "?league=AL", "?league=all"):
+        r = tiny_db_app.get(f"/standings{qs}")
+        assert r.status_code == 200, f"qs={qs!r}: {r.get_data(as_text=True)[:500]}"
+
+
+def test_transactions_renders_with_league_filter(tiny_db_app):
+    for qs in ("", "?league=AL", "?league=all", "?team=1&league=AL"):
+        r = tiny_db_app.get(f"/transactions{qs}")
+        assert r.status_code == 200, f"qs={qs!r}: {r.get_data(as_text=True)[:500]}"
+
+
+def test_league_scope_cookie_persists(tiny_db_app):
+    # An explicit ?league= is written to the league_pref cookie so the scope
+    # follows the user to the next page.
+    r = tiny_db_app.get("/standings?league=AL")
+    cookie = r.headers.get("Set-Cookie", "")
+    assert "league_pref=AL" in cookie, cookie
+
+
 def test_compare_page_renders(tiny_db_app):
     r = tiny_db_app.get("/compare?ids=1,2")
     assert r.status_code == 200, r.get_data(as_text=True)[:500]
