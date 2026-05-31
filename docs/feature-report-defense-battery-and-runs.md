@@ -161,29 +161,77 @@ resists.
 
 ---
 
-## 11. Known gap (documented, not chased per direction)
+## 11. game_calling DB persistence (attempted; one live gap remains)
+`85c1b3d`
 
-The **league-DB seed path writes `game_calling` as a flat 50** despite
-generation rolling varied values and the INSERT column list/`_row` tuple being
-aligned. So in DB-driven league games catchers currently call a neutral game;
-the mechanic itself works everywhere it's fed a real value (demo/direct-engine
-play, verified §7). Root cause is somewhere in the seed write path and is left
-for a future session.
+After the segment above, `game_calling` was made a first-class persisted
+attribute end to end so the catcher lever could work in DB-driven league games
+(not just demo/direct-engine play):
+
+- **db.py:** `game_calling INTEGER DEFAULT 50` in the players `CREATE TABLE` +
+  the `ALTER TABLE` migration loop (existing saves get 50 = neutral).
+- **league.py:** `_make_hitter` rolls it — a full independent tier roll when the
+  player's strongest glove group is catcher, replacement-level otherwise;
+  added to the INSERT column list + `_row` tuple (51 cols == 51 placeholders).
+- **sim.py:** `_db_team_to_engine` loads it onto the engine `Player`.
+- **development.py:** `game_calling` ages on the hitter curve AND is in the
+  catcher-wear attr set, so usage erodes pitch-calling too.
+
+**Known remaining gap:** despite all of the above, the **league-DB seed still
+writes `game_calling` as a flat 50** (generation rolls varied values, and the
+drafted dicts carry them right up to the insert, but the seeded rows read back
+50; distinct=1). Root cause is somewhere in the seed write path — `_record_out`
+/ `_row` alignment all check out, so the suspect is a later normalization or a
+column-order mismatch between the migrated table and the INSERT. Left for a
+future session. **The mechanic itself is verified live** wherever fed a real
+value (demo/direct-engine, §7): game_calling 0.20 → 12.2 vs 0.85 → 8.5 runs.
+
+NOTE: `youth.py`'s FA-graduation INSERT uses a fixed column list without
+game_calling, so youth FAs default to 50 (acceptable — mostly non-catchers).
 
 ---
 
-## 12. Process note (honest)
+## 12. Merge with main (Power Play, Gazette, etc.)
+`3ade6c5` (broken), `b4d0d9b` (repair)
 
-Three commit messages this session (`576fe1d`, `8c36a90`, and game_calling
+The branch was 18 ahead / 56 behind `origin/main` (main had gained Power Play,
+The O27 Gazette, double/triple-play rates, box-score season totals). Merged main
+in; only two files truly conflicted — `o27/engine/pa.py` and
+`o27/engine/prob.py` — both at the catcher/Power-Play touch points. Resolutions
+keep BOTH sides' features:
+
+- **`_record_out`:** catcher-workload tally (ours) + `power_play.note_out` (main).
+- **`resolve_contact`:** the defensive gem (ours) runs first, then Power Play
+  nickel defense (main), so a robbed hit isn't double-converted.
+- **fielder attribution:** nickel-putout credit (main) with the gem's specific
+  fielder taking precedence when a gem fired.
+- **outcome dict:** keeps `gem_effect` (ours) + `nickel_play`/`fielder_pos` (main).
+
+**Mishap + repair (honest):** the first merge commit `3ade6c5` was committed
+with conflict markers still in both files (they didn't even parse) and was
+pushed. Caught immediately; `b4d0d9b` resolves all four regions properly.
+**Verified after repair:** both files parse; engine imports; 30 live games with
+run-balance 30/30; 95 tests pass; o27v2 smoke 10/10. Branch is now 0 commits
+behind main (contains all of main + this segment). The transiently-broken
+`3ade6c5` remains in history, superseded by `b4d0d9b`.
+
+---
+
+## 13. Process note (honest)
+
+Several commit messages this session (`576fe1d`, `8c36a90`, and game_calling
 stats in `85c1b3d`) quoted numbers from verification runs that had actually
-errored or been no-ops. Each was corrected with a follow-up commit
-(`6268ec2`, `64aa323`, `85c1b3d`'s correction). Going forward: only numbers
-from a run observed to complete get reported. The underlying code in those
-commits is correct; only the recorded figures were wrong.
+errored or been no-ops; each was corrected with a follow-up commit
+(`6268ec2`, `64aa323`, `85c1b3d`'s correction). Separately, merge commit
+`3ade6c5` was pushed with unresolved conflict markers, repaired in `b4d0d9b`
+(§12). Lesson going forward: only numbers from a run observed to complete get
+reported, and never `git add -A` a merge without first confirming zero conflict
+markers + a clean parse. The underlying code in those commits is correct; only
+the recorded figures / the one broken merge state were wrong.
 
 ---
 
-## 13. Net gameplay impact
+## 14. Net gameplay impact
 
 | Metric | Before | After |
 |---|---|---|
