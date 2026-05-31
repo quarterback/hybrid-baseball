@@ -641,9 +641,11 @@ def render_game_notes(game: dict) -> str:
 
 def _powerplays_note(away_batting: Iterable[dict], home_batting: Iterable[dict],
                      game: dict) -> str:
-    """Footer line naming each side's nickel deployment(s), read off the batter
-    rows tagged at position NF (the deployed 10th defender). Returns '' when no
-    nickel was used, so the line is omitted."""
+    """Footer line naming the nickel deployment(s), read off the batter rows
+    tagged at position NF (the deployed 10th defender), with the inning each
+    came on. Only a side that actually deployed a nickel is listed — a team
+    that didn't use its Power Play does not appear at all. Returns '' when
+    neither side deployed."""
     sides = (
         (away_batting, game.get("away_name") or game.get("away_abbrev") or "Away"),
         (home_batting, game.get("home_name") or game.get("home_abbrev") or "Home"),
@@ -654,11 +656,15 @@ def _powerplays_note(away_batting: Iterable[dict], home_batting: Iterable[dict],
         for r in rows:
             pos = str(r.get("box_position") or r.get("position") or "")
             toks = [t.strip().upper() for t in pos.replace("/", "-").split("-")]
-            if "NF" in toks:
-                nm = _last_name(r.get("player_name") or r.get("name") or "")
-                tag = f"{nm} NF" if nm else "NF"
-                if tag not in names:
-                    names.append(tag)
+            if "NF" not in toks:
+                continue
+            nm = _last_name(r.get("player_name") or r.get("name") or "")
+            inning = int(r.get("entered_inning", 0) or 0)
+            when = f" ({_ordinal(inning)})" if inning else ""
+            tag = (f"{nm} NF{when}" if nm else f"NF{when}")
+            if tag not in names:
+                names.append(tag)
+        # Only list a side that actually deployed.
         if names:
             parts.append(f"{team} — " + ", ".join(names))
     return ("  Powerplays: " + "; ".join(parts)) if parts else ""
