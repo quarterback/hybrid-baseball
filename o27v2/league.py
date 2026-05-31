@@ -1006,6 +1006,9 @@ def _gen_shift(attr: str | None) -> int:
 # speed, one contact — per team. The per-archetype grade centers live in
 # o27v2/config.py and are read at call time so the dashboard can re-tune them.
 _JOKER_ARCH_ORDER = ("power", "speed", "contact")
+# Actual field position a joker is listed at (he's a bat-first usage role, not a
+# real "DH" position). Spread across thin corners by archetype.
+_JOKER_FIELD_POS = {"power": "1B", "speed": "RF", "contact": "3B"}
 
 
 def _joker_center(archetype: str, tool: str, default: float) -> float:
@@ -1041,6 +1044,12 @@ def _shape_joker(p: dict, archetype: str, rng: random.Random) -> None:
     # Jokers carry their own archetype label (the classifier returns "" for
     # them by design), so stamp it directly.
     p["archetype"] = archetype
+    # A joker is a usage ROLE (is_joker / roster_slot="joker"), not a position.
+    # Give him his actual field position — where he'd play if pressed — instead
+    # of the placeholder "DH", placed at a thin corner by archetype. He keeps a
+    # weak glove, so he won't be a defensive sub or nickel; the position is just
+    # an honest label of his fielding home.
+    p["position"] = _JOKER_FIELD_POS.get(archetype, "1B")
 
 
 def _roll_org_grade(rng: random.Random) -> int:
@@ -2106,7 +2115,9 @@ def _make_specialist(
         # Joker = pure bat, no glove. Stronger than ph_specialist on
         # average because jokers are fixed in the lineup and need to
         # carry their slot every PA, not just situational appearances.
-        position   = "DH"
+        # Position is a real field spot (set definitively by _shape_joker via
+        # archetype); "1B" here is just the default for any unshaped joker.
+        position   = "1B"
         power_g    = elite_roll()
         contact_g  = elite_roll()
         eye_g      = rng.randint(55, 75)
