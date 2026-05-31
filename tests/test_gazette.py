@@ -135,3 +135,41 @@ def test_blueprint_serves_page_and_exports():
         assert js.get_json()["publication"] == "The O27 Gazette"
     finally:
         os.unlink(path)
+
+
+def test_render_not_configured_raises_and_page_degrades():
+    path, db = _fresh_db()
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+    try:
+        _sim_first(40, db)
+        import o27.gazette as gz
+        from o27.gazette import render
+        assert render.is_configured() is False
+        payload = gz.build_daily_payload(gz.latest_slate_date())
+        with pytest.raises(render.GazetteNotConfigured):
+            render.generate(payload, "beat")
+        # The page still serves and tells the user how to enable generation.
+        import o27v2.web.app as web
+        web.app.config["TESTING"] = True
+        html = web.app.test_client().get("/gazette/").get_data(as_text=True)
+        assert "ANTHROPIC_API_KEY" in html
+    finally:
+        os.unlink(path)
+
+
+def test_article_cache_roundtrip():
+    path, db = _fresh_db()
+    try:
+        from o27.gazette import render
+        assert render.get_cached("2026-04-17", "beat") is None
+        render._save("2026-04-17", "beat", "claude-opus-4-8", "HEADLINE\n\nBody.")
+        row = render.get_cached("2026-04-17", "beat")
+        assert row and row["article"].startswith("HEADLINE")
+        assert row["model"] == "claude-opus-4-8"
+        # Upsert replaces, doesn't duplicate.
+        render._save("2026-04-17", "beat", "claude-opus-4-8", "NEW BODY")
+        assert render.get_cached("2026-04-17", "beat")["article"] == "NEW BODY"
+        n = db.fetchone("SELECT COUNT(*) AS n FROM gazette_articles")["n"]
+        assert n == 1
+    finally:
+        os.unlink(path)

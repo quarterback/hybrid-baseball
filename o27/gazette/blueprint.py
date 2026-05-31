@@ -2,23 +2,27 @@
 
 Mounted at /gazette on the o27v2 web app. Reads through `o27v2.db`, so it
 tracks whichever save the host app has active. The page renders the day's
-structured slate, lets you pick a writer voice, and hands you a copyable
-prompt; the .txt / .json endpoints expose the prompt and raw payload.
+structured slate, lets you pick a writer voice, and — when an API key is
+configured — generates and caches the finished article in-page. The .txt /
+.json endpoints expose the prompt and raw payload.
 
 Routes:
   /gazette                  → the news desk (HTML); ?date= and ?voice= steer it
+  /gazette/generate (POST)  → generate (or regenerate) the article via Claude
   /gazette/export.txt       → full ready-to-paste prompt (text/plain)
   /gazette/export.json      → raw structured Game Context payload
 """
 from __future__ import annotations
 
+import json
 import os
 
 from flask import (
-    Blueprint, Response, abort, jsonify, render_template, request,
+    Blueprint, Response, abort, flash, jsonify, redirect, render_template,
+    request, url_for,
 )
 
-from . import serialize, prompt as _prompt
+from . import serialize, prompt as _prompt, render as _render
 from .voices import all_voices, get_voice, DEFAULT_VOICE_ID
 
 
@@ -43,22 +47,28 @@ def _resolve_voice_id() -> str:
 
 @gazette_bp.route("/")
 def view():
-    """The news desk: structured slate + voice picker + copyable prompt."""
+    """The news desk: structured slate + voice picker + the article."""
     slate_date = _resolve_date()
     voice = get_voice(_resolve_voice_id())
     voices = all_voices()
+    common = {
+        "voices": voices,
+        "voice": voice,
+        "api_configured": _render.is_configured(),
+        "model_name": _render.model_id(),
+    }
     if not slate_date:
         return render_template(
             "gazette.html", slate_date=None, payload=None, payload_json=None,
-            prev_date=None, next_date=None, prompt_chars=0,
-            voices=voices, voice=voice)
+            prev_date=None, next_date=None, prompt_chars=0, article=None,
+            **common)
 
     payload = serialize.build_daily_payload(slate_date)
     prev_date, next_date = serialize.adjacent_slate_dates(slate_date)
     prompt_chars = (
         len(_prompt.build_prompt(payload, voice=voice)) if payload["games"] else 0
     )
-    import json
+    cached = _render.get_cached(slate_date, voice.id) if payload["games"] else None
     return render_template(
         "gazette.html",
         slate_date=slate_date,
@@ -67,9 +77,32 @@ def view():
         prev_date=prev_date,
         next_date=next_date,
         prompt_chars=prompt_chars,
-        voices=voices,
-        voice=voice,
+        article=cached,
+        **common,
     )
+
+
+@gazette_bp.route("/generate", methods=["POST"])
+def generate():
+    """Generate (or regenerate) the article for a slate+voice via Claude."""
+    slate_date = request.form.get("date") or serialize.latest_slate_date()
+    voice_id = request.form.get("voice") or DEFAULT_VOICE_ID
+    back = url_for("gazette.view", date=slate_date, voice=voice_id)
+    if not slate_date:
+        return redirect(back)
+
+    payload = serialize.build_daily_payload(slate_date)
+    if not payload["games"]:
+        flash("No finished games on that date — nothing to write.")
+        return redirect(back)
+    try:
+        _render.generate(payload, voice_id)
+    except _render.GazetteNotConfigured:
+        flash("Live generation needs ANTHROPIC_API_KEY set on the server. "
+              "Until then, use the copyable prompt below.")
+    except Exception as e:  # surface API/network errors without 500ing the page
+        flash(f"The presses jammed: {e}")
+    return redirect(back)
 
 
 @gazette_bp.route("/export.txt")
