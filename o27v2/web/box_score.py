@@ -639,6 +639,31 @@ def render_game_notes(game: dict) -> str:
     return "\n".join(parts)
 
 
+def _powerplays_note(away_batting: Iterable[dict], home_batting: Iterable[dict],
+                     game: dict) -> str:
+    """Footer line naming each side's nickel deployment(s), read off the batter
+    rows tagged at position NF (the deployed 10th defender). Returns '' when no
+    nickel was used, so the line is omitted."""
+    sides = (
+        (away_batting, game.get("away_name") or game.get("away_abbrev") or "Away"),
+        (home_batting, game.get("home_name") or game.get("home_abbrev") or "Home"),
+    )
+    parts: list[str] = []
+    for rows, team in sides:
+        names: list[str] = []
+        for r in rows:
+            pos = str(r.get("box_position") or r.get("position") or "")
+            toks = [t.strip().upper() for t in pos.replace("/", "-").split("-")]
+            if "NF" in toks:
+                nm = _last_name(r.get("player_name") or r.get("name") or "")
+                tag = f"{nm} NF" if nm else "NF"
+                if tag not in names:
+                    names.append(tag)
+        if names:
+            parts.append(f"{team} — " + ", ".join(names))
+    return ("  Powerplays: " + "; ".join(parts)) if parts else ""
+
+
 # --------------------------------------------------------------------------
 # Top-level
 # --------------------------------------------------------------------------
@@ -680,6 +705,12 @@ def render_box_score(
 ) -> str:
     rule = "=" * RULE_WIDTH
 
+    # Footer notes + a Powerplays line naming any nickel deployment(s).
+    notes = render_game_notes(game)
+    pp = _powerplays_note(away_batting, home_batting, game)
+    if pp:
+        notes = (notes + "\n" + pp) if notes else pp
+
     sections = [
         rule,
         render_header(game, away_line["total_r"], home_line["total_r"]),
@@ -699,7 +730,7 @@ def render_box_score(
         "",
         render_pitching_table(game.get("home_name", "Home"), home_pitching, decisions, season_wl),
         "",
-        render_game_notes(game),
+        notes,
         rule,
     ]
     # Drop empty section results (annotations may produce "") but keep the
