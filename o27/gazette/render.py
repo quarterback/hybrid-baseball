@@ -8,7 +8,7 @@ given edition only generates once.
 Credentials/config:
   - ANTHROPIC_API_KEY  — required (set it as a Fly secret). Absent ⇒ the page
     falls back to the copyable prompt; `generate()` raises GazetteNotConfigured.
-  - O27_GAZETTE_MODEL  — optional model override (default: claude-opus-4-8).
+  - O27_GAZETTE_MODEL  — optional model override (default: claude-sonnet-4-6).
 
 Uses the official `anthropic` SDK. The cache table is created on first use, so
 this carries no schema migration of its own.
@@ -22,7 +22,9 @@ from o27v2 import db
 from .voices import Voice, get_voice
 
 
-DEFAULT_MODEL = "claude-opus-4-8"
+# Sonnet 4.6 — strong prose at a third of Opus's cost; ample for a slate recap.
+# Override per-deploy with O27_GAZETTE_MODEL.
+DEFAULT_MODEL = "claude-sonnet-4-6"
 
 # A slate recap is short; this is plenty of headroom for ~400 words and keeps
 # the request well under the SDK's non-streaming timeout guard.
@@ -98,8 +100,8 @@ def generate(payload: dict, voice: str | Voice | None = None, *,
     slate_date = payload.get("edition_date", "")
 
     # Thinking is left off for a snappy page render; the explicit
-    # final-answer-only instruction keeps Opus 4.8 from leaking reasoning into
-    # the article body (per the model's thinking-disabled behavior).
+    # final-answer-only instruction keeps the model from leaking any reasoning
+    # or preamble into the article body.
     system = (
         v.system_prompt()
         + "\n\nOutput ONLY the finished article text — no preamble, no notes "
