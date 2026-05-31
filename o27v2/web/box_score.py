@@ -345,9 +345,10 @@ def _render_sub_footnotes(
             verb = f"Replaced {replaced_name}" if replaced_name else "Entered"
             lines.append(f"  {letter}-{verb}{slot}{inning_phrase}.")
         elif et == "joker":
-            # A joker cuts into the order rather than replacing anyone.
-            tail = for_phrase if for_phrase else " (cut-in)"
-            lines.append(f"  {letter}-Pinch-hit (joker){tail}{inning_phrase}.")
+            # A joker is one of the 3 designated jokers cutting into the
+            # 9-person order (once per time through) — NOT a pinch-hitter and
+            # not a replacement for anyone.
+            lines.append(f"  {letter}-Joker cut-in{inning_phrase}.")
         elif et == "joker_field":
             pos = (r.get("box_position") or r.get("position") or "").upper()
             slot = f" at {pos}" if pos else ""
