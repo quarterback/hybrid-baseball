@@ -422,6 +422,27 @@ def _all_leagues() -> list[str]:
     return leagues if len(leagues) > 1 else []
 
 
+# Cookie that remembers the user's league scope across pages. It's a pure
+# UI preference (not security-sensitive), so an unsigned cookie is fine —
+# which matters because the app sets no Flask secret_key.
+_LEAGUE_COOKIE = "league_pref"
+
+
+def _persisted_league(all_leagues: list[str], default: str = "all") -> str:
+    """Resolve the active league scope for list views (schedule, standings,
+    transactions). Precedence: explicit ?league= arg, then the persisted
+    cookie, then `default`. Values are validated against the known leagues
+    plus the sentinel "all" so a stale cookie can never wedge a view."""
+    valid = set(all_leagues) | {"all"}
+    arg = request.args.get("league")
+    if arg in valid:
+        return arg
+    ck = request.cookies.get(_LEAGUE_COOKIE)
+    if ck in valid:
+        return ck
+    return default if default in valid else "all"
+
+
 def _tiered_standings(cfg: dict) -> tuple[dict[str, list[dict]], dict[str, dict]]:
     """Build tier-ordered standings + per-tier cut-line metadata for a
     tiered config. Returns (tiers, meta) where:

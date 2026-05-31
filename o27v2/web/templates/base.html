@@ -1085,6 +1085,22 @@
         </li>
 
       </ul>
+      {% if nav_leagues %}
+      {# Global league scope — sticks across pages via the league_pref cookie.
+         Changing it reloads the current page with ?league=, which every
+         league-aware view honours and the after_request hook persists. #}
+      <div class="d-flex align-items-center ms-xl-3 mt-2 mt-xl-0">
+        <label for="navLeagueScope" class="form-label small text-secondary mb-0 me-1 d-none d-xl-inline">League</label>
+        <select id="navLeagueScope" class="form-select form-select-sm" style="max-width:14rem"
+                aria-label="League scope"
+                onchange="var u=new URL(window.location.href);u.searchParams.set('league',this.value);window.location.assign(u.toString());">
+          <option value="all" {% if nav_league == 'all' %}selected{% endif %}>All Leagues</option>
+          {% for lg in nav_leagues %}
+          <option value="{{ lg }}" {% if nav_league == lg %}selected{% endif %}>{{ lg }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
     </div>
   </div>
 </nav>

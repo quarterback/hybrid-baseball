@@ -235,6 +235,19 @@
 {# Non-tiered fallback: league/division layout. For a peer-league universe
    each league renders as its own panel (side by side / stacked), tagged
    with its playing-style flavour. #}
+{% if all_leagues and all_leagues|length > 1 %}
+<form method="get" class="filter-bar d-flex flex-wrap gap-2 align-items-end mb-3">
+  <div>
+    <label class="form-label small text-secondary mb-1">League</label>
+    <select name="league" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="all" {% if selected_league == 'all' %}selected{% endif %}>All Leagues</option>
+      {% for lg in all_leagues %}
+      <option value="{{ lg }}" {% if selected_league == lg %}selected{% endif %}>{{ lg }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+{% endif %}
 {% for league_name, league_divs in leagues.items() %}
 <div class="dense mb-4">
   <div class="panel-title d-flex flex-wrap align-items-center gap-2">
