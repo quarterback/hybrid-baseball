@@ -74,6 +74,19 @@ app.jinja_env.filters["repertoire"] = _repertoire
 app.jinja_env.filters["money"] = _money
 
 
+def _first_pitch(g) -> str:
+    """First-pitch clock string for a game row, e.g. '7:05 PM ET'. Empty
+    for legacy rows that predate the stamped start time."""
+    from o27.engine.gametime import format_start
+    try:
+        return format_start(g["start_minute"], g["start_utc_offset"])
+    except Exception:
+        return ""
+
+
+app.jinja_env.filters["first_pitch"] = _first_pitch
+
+
 @app.context_processor
 def inject_currency_rates():
     return {"currency_rates": currency.rates_for_js()}
@@ -6813,6 +6826,7 @@ def _reroll_weather_for_team(team_id: int, city: str, lat, lon) -> int:
     """Re-roll stamped weather for this team's unplayed home games using
     the (possibly new) location. Returns the count re-rolled."""
     from o27.engine.weather import draw_weather
+    from o27.engine.gametime import draw_game_time
     import random as _random
     unplayed_home = db.fetchall(
         "SELECT id, game_date FROM games WHERE home_team_id = ? AND played = 0",
@@ -6824,11 +6838,15 @@ def _reroll_weather_for_team(team_id: int, city: str, lat, lon) -> int:
     n = 0
     for g in unplayed_home:
         w = draw_weather(rng, city, g["game_date"], lat=lat, lon=lon)
+        gt = draw_game_time(rng, g["game_date"], lat=lat, lon=lon, city=city)
         db.execute(
             """UPDATE games SET temperature_tier=?, wind_tier=?,
-               humidity_tier=?, precip_tier=?, cloud_tier=?
+               humidity_tier=?, precip_tier=?, cloud_tier=?,
+               temperature_f=?, start_minute=?, start_utc_offset=?, low_light=?
                WHERE id=?""",
-            (w.temperature, w.wind, w.humidity, w.precip, w.cloud, g["id"]),
+            (w.temperature, w.wind, w.humidity, w.precip, w.cloud,
+             w.temperature_f, gt.start_minute, gt.utc_offset, int(gt.low_light),
+             g["id"]),
         )
         n += 1
     return n

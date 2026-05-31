@@ -442,22 +442,26 @@ def _schedule_series_game(series_id: int, game_num: int, base_date: _dt.date,
 
     game_date = (base_date + _dt.timedelta(days=game_num - 1)).isoformat()
 
-    # Weather: re-roll per playoff game using the home park's city.
+    # Weather + first-pitch: re-roll per playoff game using the home park.
     from o27.engine.weather import draw_weather
+    from o27.engine.gametime import draw_game_time
     home_row = db.fetchone("SELECT city, lat, lon FROM teams WHERE id = ?", (home_id,))
     home_city = (home_row or {}).get("city") or ""
     h_lat = (home_row or {}).get("lat")
     h_lon = (home_row or {}).get("lon")
     rng = _random.Random((rng_seed or 0) ^ (series_id * 1009 + game_num))
     w = draw_weather(rng, home_city, game_date, lat=h_lat, lon=h_lon)
+    gt = draw_game_time(rng, game_date, lat=h_lat, lon=h_lon, city=home_city)
 
     return db.execute(
         "INSERT INTO games (season, game_date, home_team_id, away_team_id, "
         "temperature_tier, wind_tier, humidity_tier, precip_tier, cloud_tier, "
+        "temperature_f, start_minute, start_utc_offset, low_light, "
         "series_id, is_playoff) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,1)",
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
         (season, game_date, home_id, away_id,
          w.temperature, w.wind, w.humidity, w.precip, w.cloud,
+         w.temperature_f, gt.start_minute, gt.utc_offset, int(gt.low_light),
          series_id),
     )
 

@@ -628,6 +628,10 @@ def render_game_notes(game: dict) -> str:
         parts.append("  Seconds: " + ", ".join(entries) + ".")
 
     bits = []
+    from o27.engine.gametime import format_start
+    first_pitch = format_start(game.get("start_minute"), game.get("start_utc_offset"))
+    if first_pitch:
+        bits.append(f"First pitch {first_pitch}")
     weather = game.get("weather") or game.get("weather_label")
     if weather:
         bits.append(f"Weather: {weather}")

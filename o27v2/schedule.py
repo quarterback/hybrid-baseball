@@ -969,6 +969,7 @@ def seed_schedule(
     # before the game is played. RNG forks off the schedule seed so reseeds
     # land deterministically.
     from o27.engine.weather import draw_weather
+    from o27.engine.gametime import draw_game_time
     city_by_id = {t["id"]: (t.get("city") or "") for t in teams}
     coords_by_id = {t["id"]: (t["lat"], t["lon"]) for t in teams}
     weather_rng = random.Random((rng_seed or 0) ^ 0xBA5EBA11)
@@ -978,15 +979,19 @@ def seed_schedule(
         home_city = city_by_id.get(g["home_team_id"], "")
         h_lat, h_lon = coords_by_id.get(g["home_team_id"], (None, None))
         w = draw_weather(weather_rng, home_city, g["game_date"], lat=h_lat, lon=h_lon)
+        gt = draw_game_time(weather_rng, g["game_date"],
+                            lat=h_lat, lon=h_lon, city=home_city)
         rows.append((
             g["season"], g["game_date"], g["home_team_id"], g["away_team_id"],
             w.temperature, w.wind, w.humidity, w.precip, w.cloud,
+            w.temperature_f, gt.start_minute, gt.utc_offset, int(gt.low_light),
         ))
 
     db.executemany(
         "INSERT INTO games (season, game_date, home_team_id, away_team_id, "
-        "temperature_tier, wind_tier, humidity_tier, precip_tier, cloud_tier) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "temperature_tier, wind_tier, humidity_tier, precip_tier, cloud_tier, "
+        "temperature_f, start_minute, start_utc_offset, low_light) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         rows,
     )
     return len(games)
