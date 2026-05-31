@@ -501,6 +501,10 @@ def render_box_score(
     lines.append("")
 
     footer_bits = []
+    from o27.engine.gametime import format_start
+    first_pitch = format_start(game.get("start_minute"), game.get("start_utc_offset"))
+    if first_pitch:
+        footer_bits.append(f"First pitch {first_pitch}.")
     if weather is not None:
         footer_bits.append(f"Weather: {weather.box_score_line()}")
     seed = game.get("seed")

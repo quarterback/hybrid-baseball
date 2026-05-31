@@ -45,7 +45,7 @@ TEMPERATURE_TIERS = ("cold", "mild", "warm", "hot")
 WIND_TIERS        = ("out", "neutral", "in", "cross")
 HUMIDITY_TIERS    = ("dry", "normal", "humid")
 PRECIP_TIERS      = ("none", "light", "heavy")
-CLOUD_TIERS       = ("clear", "overcast", "dusk")
+CLOUD_TIERS       = ("clear", "overcast")
 
 
 @dataclass(frozen=True)
@@ -55,6 +55,15 @@ class Weather:
     humidity:    str = "normal"
     precip:      str = "none"
     cloud:       str = "clear"
+    # Exact rolled temperature (°F), drawn within the tier's range so the
+    # box score shows a real number, not a fixed per-bucket midpoint.
+    # None on legacy rows → fall back to the tier midpoint.
+    temperature_f: int | None = None
+    # Fading-light flag. Conceptually a property of the game's start time
+    # (see o27/engine/gametime.py), but it rides on Weather because the
+    # engine reads game conditions through this one context object. Drives
+    # the K / error penalty that used to live on the retired `dusk` cloud.
+    low_light:   bool = False
 
     def to_row(self) -> dict:
         return {
@@ -63,31 +72,37 @@ class Weather:
             "humidity_tier":    self.humidity,
             "precip_tier":      self.precip,
             "cloud_tier":       self.cloud,
+            "temperature_f":    self.temperature_f,
         }
 
     @classmethod
     def from_row(cls, row: dict) -> "Weather":
         if not row:
             return NEUTRAL
+        cloud = str(row.get("cloud_tier") or "clear")
+        if cloud == "dusk":      # retired tier on legacy rows → treat as overcast
+            cloud = "overcast"
+        tf = row.get("temperature_f")
         return cls(
             temperature=str(row.get("temperature_tier") or "mild"),
             wind=str(row.get("wind_tier") or "neutral"),
             humidity=str(row.get("humidity_tier") or "normal"),
             precip=str(row.get("precip_tier") or "none"),
-            cloud=str(row.get("cloud_tier") or "clear"),
+            cloud=cloud,
+            temperature_f=int(tf) if tf is not None else None,
+            low_light=bool(row.get("low_light")),
         )
 
     def short_label(self) -> str:
         """Compact one-line string for the box-score weather strip."""
-        temp = {"cold": "Cold", "mild": "Mild", "warm": "Warm", "hot": "Hot"}[self.temperature]
         wind = {
             "out":     "Wind out",
             "neutral": "Wind calm",
             "in":      "Wind in",
             "cross":   "Wind cross",
         }[self.wind]
-        cloud = {"clear": "Clear", "overcast": "Overcast", "dusk": "Dusk"}[self.cloud]
-        bits = [temp, wind, cloud]
+        cloud = {"clear": "Clear", "overcast": "Overcast"}.get(self.cloud, "Clear")
+        bits = [f"{self.fahrenheit()}°F", wind, cloud]
         if self.precip == "light":
             bits.append("Light rain")
         elif self.precip == "heavy":
@@ -98,12 +113,20 @@ class Weather:
             bits.append("Dry")
         return " · ".join(bits)
 
-    # Representative °F for each tier — midpoint of the rough real-world
-    # range we associate with the categorical bucket. Used by the
-    # newspaper-style box-score footer.
-    _F_BY_TEMP = {"cold": 52, "mild": 66, "warm": 78, "hot": 90}
+    # Rough real-world °F range for each categorical bucket. draw_weather()
+    # rolls an exact temperature within the tier's range; the midpoint is
+    # the fallback for legacy rows that predate the rolled value.
+    _F_RANGE_BY_TEMP = {
+        "cold": (38, 55),
+        "mild": (56, 72),
+        "warm": (73, 85),
+        "hot":  (86, 99),
+    }
+    _F_BY_TEMP = {"cold": 47, "mild": 64, "warm": 79, "hot": 92}
 
     def fahrenheit(self) -> int:
+        if self.temperature_f is not None:
+            return int(self.temperature_f)
         return self._F_BY_TEMP.get(self.temperature, 70)
 
     def box_score_line(self) -> str:
@@ -119,7 +142,7 @@ class Weather:
             "in":      "wind in",
             "cross":   "wind cross",
         }[self.wind]
-        cloud = {"clear": "clear", "overcast": "overcast", "dusk": "dusk"}[self.cloud]
+        cloud = {"clear": "clear", "overcast": "overcast"}.get(self.cloud, "clear")
         bits = [f"{self.fahrenheit()}°F", wind, cloud]
         raining = self.precip in ("light", "heavy")
         if self.precip == "light":
@@ -1407,7 +1430,7 @@ _TABLES: dict[str, dict] = {
 # day-to-day for a small table to capture meaningfully, and the engine
 # effects are already small. One global distribution per variable.
 _WIND_DIST  = {"neutral": 6, "out": 2, "in": 1, "cross": 2}
-_CLOUD_DIST = {"clear": 6, "overcast": 3, "dusk": 1}
+_CLOUD_DIST = {"clear": 6, "overcast": 3}
 
 
 def _choose(rng: random.Random, dist: dict[str, float]) -> str:
@@ -1456,12 +1479,15 @@ def draw_weather(rng: random.Random, city: str, game_date: str,
             archetype = archetype_for_city(city)
         table = _TABLES.get(archetype, _CONTINENTAL_WARM).get(month_key, {})
 
+    temp = _choose(rng, table.get("temperature", {"mild": 1}))
+    lo, hi = Weather._F_RANGE_BY_TEMP.get(temp, (60, 75))
     return Weather(
-        temperature=_choose(rng, table.get("temperature", {"mild": 1})),
+        temperature=temp,
         humidity=_choose(rng, table.get("humidity", {"normal": 1})),
         precip=_choose(rng, table.get("precip", {"none": 1})),
         wind=_choose(rng, _WIND_DIST),
         cloud=_choose(rng, _CLOUD_DIST),
+        temperature_f=rng.randint(lo, hi),
     )
 
 
@@ -1487,15 +1513,19 @@ _HR_PRE  = {"none": 1.00, "light":   0.98, "heavy": 0.96}
 _HC_TEMP = {"cold": 0.98, "mild": 1.00, "warm": 1.01, "hot": 1.02}
 _HC_PRE  = {"none": 1.00, "light": 0.98, "heavy": 0.96}
 
-# Strikeout rate. Dusk ball is harder to see; small hot-K reduction.
-_K_TEMP  = {"cold": 1.01, "mild": 1.00, "warm": 0.995, "hot": 0.98}
-_K_CLOUD = {"clear": 1.00, "overcast": 1.005, "dusk": 1.03}
+# Strikeout rate. Fading light makes the ball harder to see; small hot-K
+# reduction. The low-light factor replaces the retired `dusk` cloud tier
+# and now keys off the game's start time (see o27/engine/gametime.py).
+_K_TEMP     = {"cold": 1.01, "mild": 1.00, "warm": 0.995, "hot": 0.98}
+_K_CLOUD    = {"clear": 1.00, "overcast": 1.005}
+_K_LOWLIGHT = 1.03
 
 # Error rate. Wet ball + low light = fumbles. Errors are rare so larger
 # percentage swings here barely move league offense.
-_E_PRE   = {"none": 1.00, "light": 1.08, "heavy": 1.15}
-_E_CLOUD = {"clear": 1.00, "overcast": 1.02, "dusk": 1.05}
-_E_TEMP  = {"cold": 1.04, "mild": 1.00, "warm": 1.00, "hot": 1.01}
+_E_PRE      = {"none": 1.00, "light": 1.08, "heavy": 1.15}
+_E_CLOUD    = {"clear": 1.00, "overcast": 1.02}
+_E_TEMP     = {"cold": 1.04, "mild": 1.00, "warm": 1.00, "hot": 1.01}
+_E_LOWLIGHT = 1.05
 
 # Stamina decay (fatigue ramp). Hot+humid wears pitchers down faster;
 # cool/dry weather extends them slightly. Returns a multiplier on the
@@ -1528,13 +1558,19 @@ def hard_contact_multiplier(w: Weather | None) -> float:
 def k_multiplier(w: Weather | None) -> float:
     if w is None:
         return 1.0
-    return _mult(_K_TEMP[w.temperature], _K_CLOUD[w.cloud])
+    m = _mult(_K_TEMP[w.temperature], _K_CLOUD.get(w.cloud, 1.0))
+    if getattr(w, "low_light", False):
+        m *= _K_LOWLIGHT
+    return m
 
 
 def error_multiplier(w: Weather | None) -> float:
     if w is None:
         return 1.0
-    return _mult(_E_PRE[w.precip], _E_CLOUD[w.cloud], _E_TEMP[w.temperature])
+    m = _mult(_E_PRE[w.precip], _E_CLOUD.get(w.cloud, 1.0), _E_TEMP[w.temperature])
+    if getattr(w, "low_light", False):
+        m *= _E_LOWLIGHT
+    return m
 
 
 def stamina_decay_multiplier(w: Weather | None) -> float:

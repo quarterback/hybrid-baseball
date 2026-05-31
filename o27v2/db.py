@@ -257,6 +257,14 @@ CREATE TABLE IF NOT EXISTS games (
     humidity_tier    TEXT DEFAULT 'normal',
     precip_tier      TEXT DEFAULT 'none',
     cloud_tier       TEXT DEFAULT 'clear',
+    -- Exact rolled temperature (°F) and first-pitch clock time. Start time
+    -- is local to the home park; start_utc_offset carries the park's zone
+    -- so the box score can label it. low_light = game runs into fading
+    -- light (drives the K/error penalty). See o27/engine/gametime.py.
+    temperature_f    INTEGER,
+    start_minute     INTEGER,
+    start_utc_offset INTEGER,
+    low_light        INTEGER DEFAULT 0,
     -- Defensive-shift telemetry (per-team, per-game). Stamped from the
     -- engine at game end so the value of each manager's shift calls is
     -- visible at the game level — sums to season-level shift impact.
@@ -985,6 +993,20 @@ def init_db() -> None:
         for col, sql_type, defval in [
             ("series_id",  "INTEGER", "NULL"),
             ("is_playoff", "INTEGER", "0"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE games ADD COLUMN {col} {sql_type} DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Weather/start-time: exact rolled °F + first-pitch clock time on
+        # `games`. Older DBs gain the columns without losing data.
+        for col, sql_type, defval in [
+            ("temperature_f",    "INTEGER", "NULL"),
+            ("start_minute",     "INTEGER", "NULL"),
+            ("start_utc_offset", "INTEGER", "NULL"),
+            ("low_light",        "INTEGER", "0"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE games ADD COLUMN {col} {sql_type} DEFAULT {defval}")
