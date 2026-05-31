@@ -369,6 +369,23 @@ def _league_team_ids(league: str | None) -> list[int] | None:
     return [r["id"] for r in rows]
 
 
+def _all_leagues() -> list[str]:
+    """Every distinct, non-empty league name in the active universe, sorted.
+
+    Unlike `_independent_leagues()` (which is about *stat pooling* and only
+    fires for `schedule_mode == "independent"`), this is purely for organizing
+    list views — schedule, browsing — so the user can scope to one league no
+    matter how the universe is configured. Returns [] for a single-league
+    universe, so single-league setups render no league chooser at all.
+    """
+    rows = db.fetchall(
+        "SELECT DISTINCT league FROM teams "
+        "WHERE league IS NOT NULL AND league != '' ORDER BY league"
+    )
+    leagues = [r["league"] for r in rows]
+    return leagues if len(leagues) > 1 else []
+
+
 def _tiered_standings(cfg: dict) -> tuple[dict[str, list[dict]], dict[str, dict]]:
     """Build tier-ordered standings + per-tier cut-line metadata for a
     tiered config. Returns (tiers, meta) where:
@@ -2681,10 +2698,16 @@ def schedule():
     team_id = request.args.get("team", type=int)
     status  = request.args.get("status", "all")
 
+    all_leagues     = _all_leagues()
+    league_arg      = request.args.get("league") or "all"
+    selected_league = league_arg if league_arg in all_leagues else "all"
+
     sql = """
         SELECT g.*,
                ht.name as home_name, ht.abbrev as home_abbrev,
+               ht.league as home_league,
                at.name as away_name, at.abbrev as away_abbrev,
+               at.league as away_league,
                wt.abbrev as winner_abbrev
         FROM games g
         JOIN teams ht ON g.home_team_id = ht.id
@@ -2697,6 +2720,11 @@ def schedule():
     if team_id:
         where_clauses.append("(g.home_team_id = ? OR g.away_team_id = ?)")
         params += [team_id, team_id]
+    # League scope: include a game if either club belongs to the league, so
+    # any (rare) interleague game shows under both of its leagues.
+    if selected_league != "all":
+        where_clauses.append("(ht.league = ? OR at.league = ?)")
+        params += [selected_league, selected_league]
     if status == "played":
         where_clauses.append("g.played = 1")
     elif status == "unplayed":
@@ -2706,8 +2734,17 @@ def schedule():
         sql += " WHERE " + " AND ".join(where_clauses)
     sql += " ORDER BY g.game_date, g.id LIMIT 200"
 
-    games       = db.fetchall(sql, tuple(params))
-    teams       = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
+    games = db.fetchall(sql, tuple(params))
+    # Team chooser is scoped to the selected league and grouped by league so a
+    # multi-league universe stays navigable.
+    if selected_league != "all":
+        teams = db.fetchall(
+            "SELECT id, name, abbrev, league FROM teams WHERE league = ? "
+            "ORDER BY name", (selected_league,))
+    else:
+        teams = db.fetchall(
+            "SELECT id, name, abbrev, league FROM teams "
+            "ORDER BY league, name")
     selected_team = None
     if team_id:
         selected_team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
@@ -2716,7 +2753,9 @@ def schedule():
                            games=games,
                            teams=teams,
                            selected_team=selected_team,
-                           status=status)
+                           status=status,
+                           all_leagues=all_leagues,
+                           selected_league=selected_league)
 
 
 @app.route("/game/<int:game_id>")

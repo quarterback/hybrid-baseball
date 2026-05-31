@@ -113,6 +113,13 @@ def test_stats_browse_renders(tiny_db_app):
         assert r.status_code == 200, f"view={view}: {r.get_data(as_text=True)[:500]}"
 
 
+def test_schedule_renders_with_league_filter(tiny_db_app):
+    # Bare page, a league scope, and a team scope must all render cleanly.
+    for qs in ("", "?league=AL", "?team=1", "?league=AL&status=played"):
+        r = tiny_db_app.get(f"/schedule{qs}")
+        assert r.status_code == 200, f"qs={qs!r}: {r.get_data(as_text=True)[:500]}"
+
+
 def test_compare_page_renders(tiny_db_app):
     r = tiny_db_app.get("/compare?ids=1,2")
     assert r.status_code == 200, r.get_data(as_text=True)[:500]

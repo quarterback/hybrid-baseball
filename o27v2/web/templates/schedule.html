@@ -11,13 +11,34 @@
 </div>
 
 <form class="filter-bar d-flex flex-wrap gap-2 align-items-end" method="get">
+  {% if all_leagues and all_leagues|length > 1 %}
+  <div>
+    <label class="form-label small text-secondary mb-1">League</label>
+    <select name="league" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="all" {% if selected_league == 'all' %}selected{% endif %}>All Leagues</option>
+      {% for lg in all_leagues %}
+      <option value="{{ lg }}" {% if selected_league == lg %}selected{% endif %}>{{ lg }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
   <div>
     <label class="form-label small text-secondary mb-1">Team</label>
     <select name="team" class="form-select form-select-sm">
       <option value="">All Teams</option>
-      {% for t in teams %}
-      <option value="{{ t.id }}" {% if selected_team and selected_team.id == t.id %}selected{% endif %}>{{ t.abbrev }} — {{ t.name }}</option>
-      {% endfor %}
+      {% if all_leagues and all_leagues|length > 1 and selected_league == 'all' %}
+        {% for lg, lg_teams in teams|groupby('league') %}
+        <optgroup label="{{ lg or 'Unaffiliated' }}">
+          {% for t in lg_teams %}
+          <option value="{{ t.id }}" {% if selected_team and selected_team.id == t.id %}selected{% endif %}>{{ t.abbrev }} — {{ t.name }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+      {% else %}
+        {% for t in teams %}
+        <option value="{{ t.id }}" {% if selected_team and selected_team.id == t.id %}selected{% endif %}>{{ t.abbrev }} — {{ t.name }}</option>
+        {% endfor %}
+      {% endif %}
     </select>
   </div>
   <div>
@@ -32,15 +53,19 @@
 </form>
 
 <div class="dense">
+  {% set show_league_col = all_leagues and all_leagues|length > 1 %}
   {% if games %}
-  <table class="table table-sm dense-table mb-0">
+  <table class="table table-sm dense-table mb-0 sortable">
     <thead><tr>
-      <th>Date</th><th>Away</th><th></th><th>Home</th><th class="num">Score</th><th>Status</th>
+      <th>Date</th>
+      {% if show_league_col %}<th>League</th>{% endif %}
+      <th>Away</th><th data-nosort></th><th>Home</th><th class="num">Score</th><th data-nosort>Status</th>
     </tr></thead>
     <tbody>
     {% for g in games %}
     <tr>
       <td class="text-secondary small">{{ g.game_date }}</td>
+      {% if show_league_col %}<td class="text-secondary small" data-sort-value="{{ g.home_league }}">{{ g.home_league }}</td>{% endif %}
       <td>
         <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}" class="team-abbrev">{{ g.away_abbrev }}</a>
         <span class="text-secondary small ms-1">{{ g.away_name }}</span>
