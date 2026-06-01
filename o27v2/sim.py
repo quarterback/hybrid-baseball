@@ -2204,6 +2204,11 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_
 
     Runs the weekly Sunday match-day sweep first if `date` is a Sunday
     (idempotent — see o27v2/waivers.py).
+
+    Co-sims college games on the same date when a college league is
+    seeded (college and pro share the date axis — pro is the master
+    clock; college games for the year that matches `date` get
+    simulated alongside via `college_league.sim_through_date`).
     """
     from o27v2.waivers import maybe_run_sweep
     try:
@@ -2225,6 +2230,30 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_
             continue
         except Exception as e:
             results.append({"game_id": g["id"], "error": str(e)})
+
+    # Co-sim college games on this date (no-op if the college table
+    # doesn't exist or has nothing for this year). Pro sim is the
+    # master clock; college rides along.
+    try:
+        college_row = db.fetchone(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='college_games'"
+        )
+        if college_row:
+            try:
+                season_for_date = int(date[:4])
+            except (TypeError, ValueError):
+                season_for_date = None
+            if season_for_date:
+                from o27v2 import college_league as _cl
+                co = _cl.sim_through_date(season_for_date, date,
+                                          rng_seed=seed_base or 0)
+                if co["games_played"]:
+                    results.append({"college_games": co["games_played"],
+                                    "date": date,
+                                    "season": season_for_date})
+    except Exception as e:
+        results.append({"college_sim_error": str(e), "date": date})
+
     return results
 
 

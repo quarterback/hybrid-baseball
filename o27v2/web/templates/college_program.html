@@ -176,9 +176,15 @@
                   {% set my  = g.home_score if is_home else g.away_score %}
                   {% set opp = g.away_score if is_home else g.home_score %}
                   {% set won = my > opp %}
-                  <span class="badge bg-{{ 'success' if won else 'danger' }}">{{ 'W' if won else 'L' }}</span>
-                  {{ my }}-{{ opp }}
-                {% else %}<span class="text-secondary small">—</span>{% endif %}
+                  <a class="text-decoration-none" href="{{ url_for('college_game_view', game_id=g.id) }}">
+                    <span class="badge bg-{{ 'success' if won else 'danger' }}">{{ 'W' if won else 'L' }}</span>
+                    {{ my }}-{{ opp }}
+                  </a>
+                {% else %}
+                  <form method="post" action="{{ url_for('api_college_sim_game', game_id=g.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-outline-primary" style="padding:1px 8px;font-size:.72rem">Sim</button>
+                  </form>
+                {% endif %}
               </td>
             </tr>
           {% endfor %}

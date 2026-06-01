@@ -8521,9 +8521,11 @@ def college_view():
         "WHERE season=? AND phase='regular' AND played=0",
         (season,),
     )
+    next_date = _cl.next_sim_date(season)
     return _serve("college_index.html",
                   season=season, conferences=by_conf, meta=meta,
-                  unplayed_count=(unplayed or {}).get("n") or 0)
+                  unplayed_count=(unplayed or {}).get("n") or 0,
+                  next_date=next_date)
 
 
 @app.route("/college/program/<int:program_id>")
@@ -8651,7 +8653,59 @@ def api_college_sim_season():
     if season is None:
         abort(400, "no college league seeded")
     result = _cl.sim_all_unplayed(season, rng_seed=request.form.get("rng_seed", type=int) or 0)
+    flash(f"Sim'd {result['games_played']} games (full remainder of regular season).",
+          "info")
     return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/sim-day", methods=["POST"])
+def api_college_sim_day():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    seed = request.form.get("rng_seed", type=int) or 0
+    result = _cl.sim_day(season, rng_seed=seed)
+    if result["date"] is None:
+        flash("Regular season complete — nothing to sim.", "info")
+    else:
+        flash(f"Sim'd {result['games_played']} games on {result['date']} "
+              f"({result['remaining']} unplayed remaining).", "info")
+    return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/sim-week", methods=["POST"])
+def api_college_sim_week():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    seed = request.form.get("rng_seed", type=int) or 0
+    result = _cl.sim_week(season, rng_seed=seed)
+    if result["start"] is None:
+        flash("Regular season complete — nothing to sim.", "info")
+    else:
+        flash(f"Sim'd {result['games_played']} games "
+              f"({result['start']} → {result['end']}) — "
+              f"{result['remaining']} unplayed remaining.", "info")
+    return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/sim-game/<int:game_id>", methods=["POST"])
+def api_college_sim_game(game_id: int):
+    from o27v2 import college_league as _cl
+    try:
+        result = _cl.sim_game(game_id,
+                              rng_seed=request.form.get("rng_seed", type=int) or 0)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("college_view"))
+    if result.get("already_played"):
+        flash("That game is already played.", "info")
+    else:
+        flash(f"Sim'd game #{game_id}: "
+              f"home {result['home_score']} – {result['away_score']} away.", "info")
+    return redirect(request.referrer or url_for("college_game_view", game_id=game_id))
 
 
 @app.route("/api/college/run-postseason", methods=["POST"])

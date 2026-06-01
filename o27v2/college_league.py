@@ -810,6 +810,65 @@ def sim_all_unplayed(season: int, rng_seed: int = 0) -> dict:
     return {"games_played": n, "season": season}
 
 
+def next_sim_date(season: int) -> str | None:
+    """The earliest unplayed regular-season game date — what `sim_day`
+    will operate on next. None if the regular season is complete."""
+    row = db.fetchone(
+        "SELECT MIN(game_date) AS d FROM college_games "
+        "WHERE season = ? AND phase = 'regular' AND played = 0",
+        (season,),
+    )
+    return (row or {}).get("d")
+
+
+def sim_through_date(season: int, end_date: str, rng_seed: int = 0) -> dict:
+    """Sim every unplayed regular-season game with `game_date <= end_date`.
+
+    Returns {"games_played": N, "last_date": ISO|None, "remaining": N}."""
+    rows = db.fetchall(
+        "SELECT id, game_date FROM college_games "
+        "WHERE season = ? AND phase = 'regular' AND played = 0 "
+        "  AND game_date <= ? ORDER BY game_date, id",
+        (season, end_date),
+    )
+    last = None
+    for r in rows:
+        sim_game(r["id"], rng_seed=rng_seed)
+        last = r["game_date"]
+    remaining = db.fetchone(
+        "SELECT COUNT(*) AS n FROM college_games "
+        "WHERE season = ? AND phase = 'regular' AND played = 0",
+        (season,),
+    )
+    return {"games_played": len(rows),
+            "last_date":    last,
+            "remaining":    (remaining or {}).get("n") or 0,
+            "season":       season}
+
+
+def sim_day(season: int, rng_seed: int = 0) -> dict:
+    """Sim every unplayed game on the next unplayed date. Returns
+    {"date": ISO, "games_played": N, "remaining": N} — or empty payload
+    if the regular season is already complete."""
+    d = next_sim_date(season)
+    if d is None:
+        return {"date": None, "games_played": 0, "remaining": 0, "season": season}
+    return {"date": d, **sim_through_date(season, d, rng_seed=rng_seed)}
+
+
+def sim_week(season: int, rng_seed: int = 0) -> dict:
+    """Sim every unplayed game in the next 7-day window (starting from
+    the next unplayed date)."""
+    from datetime import date as _d, timedelta as _td
+    start = next_sim_date(season)
+    if start is None:
+        return {"start": None, "end": None, "games_played": 0,
+                "remaining": 0, "season": season}
+    end = (_d.fromisoformat(start) + _td(days=6)).isoformat()
+    return {"start": start, "end": end,
+            **sim_through_date(season, end, rng_seed=rng_seed)}
+
+
 # ---------------------------------------------------------------------------
 # Standings + leaders
 # ---------------------------------------------------------------------------
