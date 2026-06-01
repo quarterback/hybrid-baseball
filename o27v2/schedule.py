@@ -953,6 +953,10 @@ def seed_schedule(
         db.execute("DELETE FROM team_phase_outs")
         db.execute("DELETE FROM sim_meta WHERE key = 'sim_date'")
 
+    # Fill any missing team coordinates from the city gazetteer first, so
+    # weather and first-pitch time zones stamp from real locations rather
+    # than name-only fallbacks.
+    db.fill_missing_team_coords()
     teams = db.fetchall("SELECT id, division, league, city, lat, lon FROM teams ORDER BY id")
     if not teams:
         raise RuntimeError("seed_league() must be called before seed_schedule()")
