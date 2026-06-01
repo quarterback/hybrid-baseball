@@ -15,6 +15,98 @@
   </a>
 </div>
 
+{# Team season totals strip #}
+{% if team_totals %}
+{% set bt = team_totals.batting %}
+{% set pt = team_totals.pitching %}
+<div class="panel mb-3" style="padding:12px 16px">
+  <div class="row small g-3">
+    <div class="col-lg-6">
+      <div class="text-secondary mb-1" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Team batting</div>
+      <div>
+        <strong>{{ bt.pa }}</strong> PA ·
+        <strong>{{ "%.3f"|format(bt.avg) }}</strong>/<strong>{{ "%.3f"|format(bt.obp) }}</strong>/<strong>{{ "%.3f"|format(bt.slg) }}</strong>
+        ({{ "%.3f"|format(bt.ops) }} OPS) ·
+        {{ bt.h }} H · {{ bt.hr }} HR · {{ bt.rbi }} RBI ·
+        {{ bt.bb }} BB · {{ bt.k }} K · {{ bt.sb }} SB
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="text-secondary mb-1" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Team pitching</div>
+      <div>
+        <strong>{{ "%.1f"|format(pt.ip) }}</strong> IP ·
+        <strong>{{ "%.2f"|format(pt.era) }}</strong> ERA ·
+        <strong>{{ "%.2f"|format(pt.whip) }}</strong> WHIP ·
+        {{ pt.k }} K · {{ pt.bb }} BB · {{ pt.h }} H · {{ pt.hr }} HR ·
+        {{ pt.bf }} BF
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# Top batters + top pitchers on this team #}
+{% if team_bat_top or team_pit_top %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="panel h-100">
+      <div class="panel-title"><strong>{{ program.short_name }} top batters</strong></div>
+      <div class="panel-body p-0">
+        <table class="table table-sm dense-table mb-0" style="font-size:.8rem">
+          <thead><tr>
+            <th>Player</th><th>Yr</th>
+            <th class="text-end">PA</th><th class="text-end">AVG</th>
+            <th class="text-end">HR</th><th class="text-end">RBI</th>
+            <th class="text-end">OPS</th>
+          </tr></thead>
+          <tbody>
+            {% for b in team_bat_top %}
+            <tr>
+              <td><a href="{{ url_for('college_player_view', player_id=b.player_id) }}">{{ b.name }}</a></td>
+              <td>{{ {1:'Fr',2:'So',3:'Jr',4:'Sr'}.get(b.college_year, b.college_year) }}</td>
+              <td class="text-end">{{ b.pa }}</td>
+              <td class="text-end">{{ "%.3f"|format(b.avg) }}</td>
+              <td class="text-end">{{ b.hr }}</td>
+              <td class="text-end">{{ b.rbi }}</td>
+              <td class="text-end">{{ "%.3f"|format(b.ops) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="panel h-100">
+      <div class="panel-title"><strong>{{ program.short_name }} top pitchers</strong></div>
+      <div class="panel-body p-0">
+        <table class="table table-sm dense-table mb-0" style="font-size:.8rem">
+          <thead><tr>
+            <th>Player</th><th>Yr</th>
+            <th class="text-end">IP</th><th class="text-end">ERA</th>
+            <th class="text-end">WHIP</th><th class="text-end">K</th>
+            <th class="text-end">K/9</th>
+          </tr></thead>
+          <tbody>
+            {% for p in team_pit_top %}
+            <tr>
+              <td><a href="{{ url_for('college_player_view', player_id=p.player_id) }}">{{ p.name }}</a></td>
+              <td>{{ {1:'Fr',2:'So',3:'Jr',4:'Sr'}.get(p.college_year, p.college_year) }}</td>
+              <td class="text-end">{{ "%.1f"|format(p.ip) }}</td>
+              <td class="text-end">{{ "%.2f"|format(p.era) }}</td>
+              <td class="text-end">{{ "%.2f"|format(p.whip) }}</td>
+              <td class="text-end">{{ p.k }}</td>
+              <td class="text-end">{{ "%.1f"|format(p.k9) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="row g-3">
   {# Roster #}
   <div class="col-lg-7">

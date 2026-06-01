@@ -850,12 +850,27 @@ def standings(season: int) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def batter_leaders(season: int, *, sort: str = "avg",
-                   min_pa: int = 50, limit: int = 50) -> list[dict]:
-    """Top batters in `season` sorted by `sort` (avg | hr | rbi | h | r)."""
-    rows = db.fetchall(
-        """SELECT pl.id AS player_id, pl.name, pl.position, pl.college_year,
+                   min_pa: int = 50, limit: int = 50,
+                   conference: str | None = None,
+                   program_id: int | None = None) -> list[dict]:
+    """Top batters in `season` sorted by `sort` (avg | hr | rbi | h | r | ops).
+
+    Filter knobs:
+      * `conference`: limit to one conference (e.g. 'SEC')
+      * `program_id`: limit to one team
+    """
+    where = ["g.season = ?", "pl.is_pitcher = 0"]
+    args: list = [season]
+    if conference:
+        where.append("prg.conference = ?")
+        args.append(conference)
+    if program_id:
+        where.append("pl.program_id = ?")
+        args.append(program_id)
+    sql = f"""SELECT pl.id AS player_id, pl.name, pl.position, pl.college_year,
                   pl.is_pitcher, prg.id AS program_id,
                   prg.short_name AS program_short, prg.name AS program_name,
+                  prg.conference,
                   SUM(s.pa)      AS pa,
                   SUM(s.ab)      AS ab,
                   SUM(s.h)       AS h,
@@ -871,11 +886,11 @@ def batter_leaders(season: int, *, sort: str = "avg",
              JOIN college_players  pl  ON pl.id = s.player_id
              JOIN college_programs prg ON prg.id = s.program_id
              JOIN college_games    g   ON g.id  = s.game_id
-            WHERE g.season = ? AND pl.is_pitcher = 0
+            WHERE {' AND '.join(where)}
             GROUP BY pl.id
-           HAVING pa >= ?""",
-        (season, min_pa),
-    )
+           HAVING pa >= ?"""
+    args.append(min_pa)
+    rows = db.fetchall(sql, tuple(args))
     out = []
     for r in rows:
         d = dict(r)
@@ -896,12 +911,22 @@ def batter_leaders(season: int, *, sort: str = "avg",
 
 
 def pitcher_leaders(season: int, *, sort: str = "era",
-                    min_outs: int = 60, limit: int = 50) -> list[dict]:
-    """Top pitchers; sort by era (asc) / k (desc) / ip (desc) / w (desc)."""
-    rows = db.fetchall(
-        """SELECT pl.id AS player_id, pl.name, pl.position, pl.college_year,
+                    min_outs: int = 60, limit: int = 50,
+                    conference: str | None = None,
+                    program_id: int | None = None) -> list[dict]:
+    """Top pitchers; sort by era (asc) / k (desc) / ip (desc) / whip (asc)."""
+    where = ["g.season = ?", "pl.is_pitcher = 1"]
+    args: list = [season]
+    if conference:
+        where.append("prg.conference = ?")
+        args.append(conference)
+    if program_id:
+        where.append("pl.program_id = ?")
+        args.append(program_id)
+    sql = f"""SELECT pl.id AS player_id, pl.name, pl.position, pl.college_year,
                   prg.id AS program_id,
                   prg.short_name AS program_short, prg.name AS program_name,
+                  prg.conference,
                   SUM(s.outs) AS outs,
                   SUM(s.h)    AS h,
                   SUM(s.r)    AS r,
@@ -914,11 +939,11 @@ def pitcher_leaders(season: int, *, sort: str = "era",
              JOIN college_players  pl  ON pl.id = s.player_id
              JOIN college_programs prg ON prg.id = s.program_id
              JOIN college_games    g   ON g.id  = s.game_id
-            WHERE g.season = ? AND pl.is_pitcher = 1
+            WHERE {' AND '.join(where)}
             GROUP BY pl.id
-           HAVING outs >= ?""",
-        (season, min_outs),
-    )
+           HAVING outs >= ?"""
+    args.append(min_outs)
+    rows = db.fetchall(sql, tuple(args))
     out = []
     for r in rows:
         d = dict(r)
@@ -938,6 +963,75 @@ def pitcher_leaders(season: int, *, sort: str = "era",
         key = {"k": "k", "ip": "ip", "k9": "k9"}.get(sort, "k")
         out.sort(key=lambda x: (x.get(key) or 0), reverse=True)
     return out[:limit]
+
+
+def program_team_totals(program_id: int, season: int) -> dict:
+    """Team-aggregate batting + pitching line for one program in one season."""
+    bat = db.fetchone(
+        """SELECT SUM(s.pa) AS pa, SUM(s.ab) AS ab, SUM(s.h) AS h,
+                  SUM(s.doubles) AS d, SUM(s.triples) AS t, SUM(s.hr) AS hr,
+                  SUM(s.rbi) AS rbi, SUM(s.r) AS r,
+                  SUM(s.bb) AS bb, SUM(s.k) AS k, SUM(s.sb) AS sb
+             FROM college_batter_stats s
+             JOIN college_games g ON g.id = s.game_id
+            WHERE s.program_id = ? AND g.season = ?""",
+        (program_id, season),
+    ) or {}
+    pit = db.fetchone(
+        """SELECT SUM(s.outs) AS outs, SUM(s.h) AS h,
+                  SUM(s.r) AS r, SUM(s.er) AS er,
+                  SUM(s.bb) AS bb, SUM(s.k) AS k,
+                  SUM(s.hr) AS hr, SUM(s.bf) AS bf
+             FROM college_pitcher_stats s
+             JOIN college_games g ON g.id = s.game_id
+            WHERE s.program_id = ? AND g.season = ?""",
+        (program_id, season),
+    ) or {}
+
+    out: dict = {"batting": {}, "pitching": {}}
+    ab = bat.get("ab") or 0
+    h  = bat.get("h") or 0
+    bb = bat.get("bb") or 0
+    d  = bat.get("d") or 0
+    t  = bat.get("t") or 0
+    hr = bat.get("hr") or 0
+    singles = h - d - t - hr
+    out["batting"] = {
+        "pa":  bat.get("pa") or 0,
+        "ab":  ab, "h": h, "d": d, "t": t, "hr": hr,
+        "rbi": bat.get("rbi") or 0, "r": bat.get("r") or 0,
+        "bb":  bb, "k": bat.get("k") or 0, "sb": bat.get("sb") or 0,
+        "avg": (h / ab) if ab else 0.0,
+        "obp": ((h + bb) / (ab + bb)) if (ab + bb) else 0.0,
+        "slg": ((singles + 2 * d + 3 * t + 4 * hr) / ab) if ab else 0.0,
+    }
+    out["batting"]["ops"] = out["batting"]["obp"] + out["batting"]["slg"]
+
+    outs = pit.get("outs") or 0
+    ip = outs / 3.0
+    er = pit.get("er") or 0
+    out["pitching"] = {
+        "ip":  ip,
+        "h":   pit.get("h") or 0,
+        "r":   pit.get("r") or 0,
+        "er":  er,
+        "bb":  pit.get("bb") or 0,
+        "k":   pit.get("k") or 0,
+        "hr":  pit.get("hr") or 0,
+        "bf":  pit.get("bf") or 0,
+        "era": (er * 9.0 / ip) if ip else 0.0,
+        "whip":(((pit.get("bb") or 0) + (pit.get("h") or 0)) / ip) if ip else 0.0,
+    }
+    return out
+
+
+def list_conferences(season: int) -> list[str]:
+    """Distinct conference names for the season — drives the filter dropdown."""
+    rows = db.fetchall(
+        "SELECT DISTINCT conference FROM college_programs "
+        "WHERE season = ? ORDER BY conference", (season,),
+    )
+    return [r["conference"] for r in rows]
 
 
 def game_box(game_id: int) -> dict | None:

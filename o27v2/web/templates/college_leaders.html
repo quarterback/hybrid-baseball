@@ -4,15 +4,30 @@
 
 <div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
   <div>
-    <h2 class="mb-1">College Leaders</h2>
+    <h2 class="mb-1">College Leaders{% if conference %} <span class="text-secondary">· {{ conference }}</span>{% endif %}</h2>
     <div class="text-secondary small">
       Top batters (min 20 PA) and pitchers (min 30 outs) for the season.
-      Click a column header to re-sort.
+      Filter by conference below; clear by picking <em>All conferences</em>.
     </div>
   </div>
   {% if season %}
-    <span class="badge bg-secondary">Season {{ season }}</span>
-    <a href="{{ url_for('college_view', season=season) }}" class="btn btn-sm btn-outline-secondary">← Standings</a>
+    <div class="d-flex gap-2 align-items-center">
+      <form method="get" action="{{ url_for('college_leaders_view') }}" class="d-flex gap-2 align-items-center">
+        <input type="hidden" name="season" value="{{ season }}">
+        <input type="hidden" name="bat_sort" value="{{ bat_sort }}">
+        <input type="hidden" name="pit_sort" value="{{ pit_sort }}">
+        <label class="form-label small mb-0">Conference:</label>
+        <select name="conf" class="form-select form-select-sm" style="max-width:200px"
+                onchange="this.form.submit()">
+          <option value="">All conferences</option>
+          {% for c in conferences %}
+            <option value="{{ c }}" {% if c == conference %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      <span class="badge bg-secondary">Season {{ season }}</span>
+      <a href="{{ url_for('college_view', season=season) }}" class="btn btn-sm btn-outline-secondary">← Standings</a>
+    </div>
   {% endif %}
 </div>
 
@@ -27,7 +42,7 @@
         <strong>Batters</strong>
         <div class="btn-group" role="group">
           {% for s, label in [('hr','HR'),('avg','AVG'),('ops','OPS'),('rbi','RBI'),('h','H')] %}
-            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=s, pit_sort=pit_sort) }}"
+            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=s, pit_sort=pit_sort, conf=conference) }}"
                class="btn btn-sm btn-outline-secondary {% if bat_sort == s %}active{% endif %}">{{ label }}</a>
           {% endfor %}
         </div>
@@ -68,7 +83,7 @@
         <strong>Pitchers</strong>
         <div class="btn-group" role="group">
           {% for s, label in [('era','ERA'),('whip','WHIP'),('k','K'),('ip','IP'),('k9','K/9')] %}
-            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=bat_sort, pit_sort=s) }}"
+            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=bat_sort, pit_sort=s, conf=conference) }}"
                class="btn btn-sm btn-outline-secondary {% if pit_sort == s %}active{% endif %}">{{ label }}</a>
           {% endfor %}
         </div>

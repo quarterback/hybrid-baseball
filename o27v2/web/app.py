@@ -8559,9 +8559,21 @@ def college_program_view(program_id: int):
         else:
             if g["away_score"] > g["home_score"]: wins += 1
             elif g["away_score"] < g["home_score"]: losses += 1
+    # Team totals + top players for this program in the active season.
+    from o27v2 import college_league as _cl
+    team_totals = _cl.program_team_totals(program_id, program["season"])
+    team_bat_top = _cl.batter_leaders(program["season"], sort="hr",
+                                       min_pa=1, limit=8,
+                                       program_id=program_id)
+    team_pit_top = _cl.pitcher_leaders(program["season"], sort="era",
+                                        min_outs=1, limit=8,
+                                        program_id=program_id)
     return _serve("college_program.html",
                   program=program, roster=roster, schedule=sched,
-                  wins=wins, losses=losses)
+                  wins=wins, losses=losses,
+                  team_totals=team_totals,
+                  team_bat_top=team_bat_top,
+                  team_pit_top=team_pit_top)
 
 
 @app.route("/college/player/<int:player_id>")
@@ -8661,14 +8673,20 @@ def college_leaders_view():
     if season is None:
         return _serve("college_leaders.html",
                       season=None, batters=[], pitchers=[],
-                      bat_sort="hr", pit_sort="era")
+                      bat_sort="hr", pit_sort="era",
+                      conference=None, conferences=[])
     bat_sort = request.args.get("bat_sort", "hr")
     pit_sort = request.args.get("pit_sort", "era")
-    batters  = _cl.batter_leaders(season,  sort=bat_sort, min_pa=20, limit=50)
-    pitchers = _cl.pitcher_leaders(season, sort=pit_sort, min_outs=30, limit=50)
+    conference = request.args.get("conf") or None
+    batters  = _cl.batter_leaders(season,  sort=bat_sort, min_pa=20, limit=50,
+                                  conference=conference)
+    pitchers = _cl.pitcher_leaders(season, sort=pit_sort, min_outs=30, limit=50,
+                                  conference=conference)
     return _serve("college_leaders.html",
                   season=season, batters=batters, pitchers=pitchers,
-                  bat_sort=bat_sort, pit_sort=pit_sort)
+                  bat_sort=bat_sort, pit_sort=pit_sort,
+                  conference=conference,
+                  conferences=_cl.list_conferences(season))
 
 
 @app.route("/college/game/<int:game_id>")
