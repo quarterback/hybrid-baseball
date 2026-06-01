@@ -8905,11 +8905,40 @@ def api_college_rollover():
 @app.route("/auction")
 def auction_view():
     from o27v2 import auction as _auction
+    from o27v2.transactions import current_season
     summary = _auction.get_auction()
     cfg = _active_config()
+    # Phase E reconciliation history: group trade transactions from the
+    # current season by detail-string (all moves in one fired trade share
+    # the same detail), so the UI can render each trade as one row.
+    season = current_season() if cfg else 1
+    rows = db.fetchall(
+        "SELECT t.game_date, t.event_type, t.detail, t.team_id, t.player_id, "
+        "       p.name AS player_name, p.position AS player_position, "
+        "       tm.abbrev AS team_abbrev "
+        "FROM transactions t "
+        "LEFT JOIN players p ON p.id = t.player_id "
+        "LEFT JOIN teams tm ON tm.id = t.team_id "
+        "WHERE t.season = ? AND t.event_type = 'trade' "
+        "ORDER BY t.id DESC",
+        (season,),
+    )
+    trade_groups: dict[str, list[dict]] = {}
+    trade_order: list[str] = []
+    for r in rows:
+        key = f"{r['game_date']}|{r['detail']}"
+        if key not in trade_groups:
+            trade_groups[key] = []
+            trade_order.append(key)
+        trade_groups[key].append(dict(r))
+    recon_trades = [{"date":   trade_groups[k][0]["game_date"],
+                     "detail": trade_groups[k][0]["detail"],
+                     "moves":  trade_groups[k]}
+                    for k in trade_order]
     return _serve("auction.html",
                   auction=summary,
                   has_league=bool(cfg),
+                  recon_trades=recon_trades,
                   config_summary=(cfg.get("auction") if cfg else None))
 
 
@@ -8953,6 +8982,33 @@ def api_auction_run():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
     return jsonify({"ok": True, "auction": report})
+
+
+@app.route("/api/trades/reconcile", methods=["POST"])
+def api_trades_reconcile():
+    """Run the Phase E post-auction trade reconciliation pass. Iteratively
+    finds blockbuster / star-for-star / 3-cycle / surplus / arbitrage
+    trades that fix depth-chart pathologies the auction couldn't unwind,
+    rescoring from current state after each fire so no double-dips."""
+    from o27v2 import post_auction_trades as _pat
+    cfg = _active_config()
+    if not cfg:
+        return jsonify({
+            "ok": False,
+            "error": "No active league.",
+        }), 400
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    per_team_cap = int(data.get("per_team_cap") or _pat.PER_TEAM_CAP)
+    try:
+        report = _pat.run_post_auction_trades(
+            rng_seed=rng_seed,
+            per_team_cap=per_team_cap,
+        )
+    except Exception as e:
+        app.logger.exception("post-auction trades failed: %s", e)
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "report": report})
 
 
 @app.route("/api/league-configs")
