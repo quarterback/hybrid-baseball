@@ -10,6 +10,17 @@
       {% if last_sweep %}· last match-day sweep <strong>{{ last_sweep }}</strong>{% endif %}
     </div>
   </div>
+  <form method="post" action="{{ url_for('api_fa_sign_round') }}" class="d-flex gap-2 align-items-center">
+    <select name="scope" class="form-select form-select-sm" style="max-width:180px">
+      <option value="all" selected>All FAs (prospects → existing)</option>
+      <option value="prospects">Prospects only (from college)</option>
+      <option value="existing">Existing FAs only</option>
+    </select>
+    <button class="btn btn-sm btn-primary" type="submit"
+            title="Run a non-destructive signing round — teams bid based on need + valuation; rostered players are not touched.">
+      Run signing round
+    </button>
+  </form>
 </div>
 
 <p class="text-secondary small mb-3" style="max-width:780px">

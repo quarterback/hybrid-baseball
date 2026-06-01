@@ -8771,17 +8771,47 @@ def api_college_bulk_sign():
     if mode == "assigned" and not team_id:
         flash("Pick a team to assign these players to.", "warning")
         return redirect(url_for("college_import_view"))
-    result = _cl.bulk_import_graduates(ids, mode=mode, team_id=team_id)
+
+    # 'fa_and_sign' = sign all to FA pool, then run the FA signing round
+    # so teams actually pick them up. Internally still 'fa' for the
+    # bulk_import_graduates call.
+    base_mode = "fa" if mode in ("fa", "fa_and_sign") else mode
+    result = _cl.bulk_import_graduates(ids, mode=base_mode, team_id=team_id)
     n = len(result["signed"])
+    msg_parts = [f"Imported {n} college graduates"]
     if result["errors"]:
-        flash(f"Signed {n} of {len(ids)}; {len(result['errors'])} errors.",
-              "warning")
-    else:
-        where = ("free-agent pool" if mode == "fa"
-                 else f"team #{team_id}")
-        flash(f"Imported {n} college graduates → {where}.", "info")
+        msg_parts.append(f"({len(result['errors'])} errors)")
+
+    if mode == "fa_and_sign":
+        from o27v2 import fa_signing as _fas
+        report = _fas.run_signing_round(scope="all",
+            rng_seed=request.form.get("rng_seed", type=int) or 0)
+        signed = report["total_signed"]
+        msg_parts.append(f"→ FA signing round picked up {signed} (prospects + existing)")
+        flash(" ".join(msg_parts) + ".", "info")
+        return redirect(url_for("free_agents"))
+
+    where = ("free-agent pool" if mode == "fa" else f"team #{team_id}")
+    flash(" ".join(msg_parts) + f" → {where}.", "info")
     return redirect(url_for("free_agents") if mode == "fa"
                     else url_for("team_detail", team_id=team_id))
+
+
+@app.route("/api/fa/sign-round", methods=["POST"])
+def api_fa_sign_round():
+    """Run a free-agent signing round across the current league.
+
+    Scope ('all' default) covers both newly-signed college prospects
+    (signed-from-college FAs) and the broader FA pool. Non-destructive:
+    rostered players aren't touched, only FA pool entries move.
+    """
+    from o27v2 import fa_signing as _fas
+    scope = request.form.get("scope") or request.args.get("scope") or "all"
+    rng_seed = request.form.get("rng_seed", type=int) or 0
+    report = _fas.run_signing_round(scope=scope, rng_seed=rng_seed)
+    flash(f"FA signing round ({scope}): {report['total_signed']} signed across "
+          f"{len(report['rounds'])} phase(s).", "info")
+    return redirect(url_for("free_agents"))
 
 
 @app.route("/api/college/rollover", methods=["POST"])

@@ -37,8 +37,12 @@
       </div>
       <div class="ms-auto d-flex flex-wrap gap-3 align-items-center">
         <label class="form-label small mb-0">
-          <input type="radio" name="mode" value="fa" checked>
-          Free agency pool
+          <input type="radio" name="mode" value="fa_and_sign" checked>
+          FA pool + signing round
+        </label>
+        <label class="form-label small mb-0">
+          <input type="radio" name="mode" value="fa">
+          FA pool only
         </label>
         <label class="form-label small mb-0">
           <input type="radio" name="mode" value="assigned">
@@ -54,13 +58,19 @@
       </div>
     </div>
     <div class="text-secondary small mt-2" style="line-height:1.4">
-      <strong>FA pool</strong> — players become free agents (team_id = NULL).
-      The off-season auction reads them on its next run; teams can also
-      sign them directly through the existing FA UI.
+      <strong>FA pool + signing round</strong> — players land in the FA pool,
+      then a league-wide signing round runs immediately: every team bids
+      on every available FA (prospects first, then existing FAs) and the
+      highest valuer signs them. Non-destructive — rostered players are
+      left alone. Recommended for normal use.
+      <br>
+      <strong>FA pool only</strong> — players become free agents
+      (team_id = NULL), no signing round triggered. They wait for the
+      next manual signing round or off-season auction.
       <br>
       <strong>Assign to team</strong> — players go straight onto the chosen
-      team's active roster. Skips the auction. Useful for testing a
-      specific prospect on a specific team.
+      team's active roster, skipping the FA pool entirely. Useful for
+      testing a specific prospect on a specific team.
     </div>
   </div>
 
