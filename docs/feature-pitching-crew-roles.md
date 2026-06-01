@@ -104,6 +104,39 @@ AN · 2 PI`, scaling cleanly to any staff size (`_role_counts`).
 - on **injury call-ups**, the cover logic leans on the steering tier (`injuries.py`);
 - and **by hand** on the rotation page (auto-assign button, or per-arm pin).
 
+## 5a. The manager's situational staff review
+
+The structural re-derivations above all key on *skill*. On top of them sits the
+**skipper's own review of how his arms are actually throwing** — usage- and
+form-driven, not skill-driven, and deliberately **not run every game**.
+
+`maybe_review_staffs(game_date)` rides the same idempotent `sim_meta` cadence as the
+weekly waiver sweep, but on a slower **~14-day** interval (a manager re-reads his
+staff every couple of weeks, not every night). It's wired into all three sim drivers
+(`simulate_next_n` / `simulate_date` / `simulate_through`) right next to the sweep,
+and wrapped so a review failure never blocks the games.
+
+Per team, `review_staff_for_team`:
+
+1. Reads each active arm's **recent run prevention** (ER / outs over a 21-day window)
+   and **self-normalizes** it against the staff's own recent rates — robust to O27's
+   run environment, and it compares a man to his teammates, not an absolute bar.
+2. Folds that hot/cold signal into each arm's **perceived Stuff only** (never Stamina
+   — a physical attribute), then re-derives the crew on the adjusted ratings.
+3. **Scales the whole swing by the skipper's reactivity** — a blend of his
+   `quick_hook` and `bullpen_aggression`. A dead-ball traditionalist (reactivity
+   < 0.12) doesn't re-tool mid-stream at all; a modern fireman-ball manager churns
+   roles readily. *Managers keep a man in his role while it works* — only a clear
+   enough swing, scaled by how reactive the skipper is, moves anyone.
+4. Persists only the arms that actually moved and returns role-change events
+   (`event_type: "staff_review"`) for the news feed.
+
+So a Pilot who gets shelled for two weeks slides down the leverage ladder while a
+Skidder who's been untouchable climbs it — but a patient skipper rides his guys, and
+nobody is re-judged off a three-out cameo (a minimum-sample gate). Verified by
+`test_rotation.py` (hot promoted / cold demoted, patient-manager no-op, cadence
+idempotency) and an 8-team season smoke.
+
 ## 6. How the engine consumes them (canonical default + live override)
 
 - **Steering pick** (`sim.py`, `_db_team_to_engine`): today's starter is chosen
@@ -138,7 +171,9 @@ bullpen filling relief by role (Bosun bulk most-used, then Pilot/Skidder/Anchor/
 ## 8. Tests & migrations
 
 - `o27v2/tests/test_rotation.py` — assignment, team-relativity, two-Helms slotting,
-  the voyage relief preference, thin-staff fill, empty-staff no-op.
+  the voyage relief preference, thin-staff fill, empty-staff no-op; plus the manager
+  review: hot-promoted/cold-demoted, patient-manager no-op, persona blend, cadence
+  idempotency.
 - `o27v2/tests/test_phase8_db_migration.py` — updated: every **active** arm seeds
   with a valid crew code and every staff carries a Helms (was: asserting the role is
   never persisted).

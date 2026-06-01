@@ -96,3 +96,117 @@ def test_thin_staff_fills_priority_roles_first():
 
 def test_empty_staff_is_a_noop():
     assert _rotation.assign_staff_roles([]) == []
+
+
+def test_manager_reactivity_blends_persona():
+    patient = {"mgr_quick_hook": 0.0, "mgr_bullpen_aggression": 0.0}
+    churner = {"mgr_quick_hook": 1.0, "mgr_bullpen_aggression": 1.0}
+    assert _rotation._manager_reactivity(patient) == 0.0
+    assert _rotation._manager_reactivity(churner) == 1.0
+    mixed = {"mgr_quick_hook": 0.8, "mgr_bullpen_aggression": 0.2}
+    assert abs(_rotation._manager_reactivity(mixed) - 0.5) < 1e-9
+
+
+# ---- DB-backed review tests (tiny hand-built league) ----------------------
+import os
+import tempfile
+
+
+def _mini_staff_db():
+    """Init a temp DB with one team and a uniform 8-arm staff. Returns
+    (restore_fn, team_id, [player_ids])."""
+    from o27v2 import db
+    orig = db._DB_PATH
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    db._DB_PATH = path
+    db.init_db()
+    db.execute(
+        "INSERT INTO teams (id, name, abbrev, city, division, league, "
+        "mgr_quick_hook, mgr_bullpen_aggression) "
+        "VALUES (1, 'Testers', 'TST', 'Testville', 'East', 'TestLg', 0.8, 0.8)"
+    )
+    pids = []
+    for i in range(8):
+        # Two clear Helms (high stamina); the rest uniform so recent form
+        # is what separates them.
+        stamina = 80 if i < 2 else 50
+        pid = db.execute(
+            "INSERT INTO players (team_id, name, position, is_pitcher, is_active, "
+            "pitcher_skill, stamina, movement, command) "
+            "VALUES (1, ?, 'P', 1, 1, 50, ?, 50, 50)",
+            (f"Arm{i}", stamina),
+        )
+        pids.append(pid)
+    _rotation.assign_roles_for_team(1)
+
+    def restore():
+        db._DB_PATH = orig
+        os.unlink(path)
+    return restore, 1, pids
+
+
+def _log_appearance(team_id, player_id, game_date, outs, er):
+    from o27v2 import db
+    gid = db.execute(
+        "INSERT INTO games (season, game_date, home_team_id, away_team_id, played) "
+        "VALUES (1, ?, 1, 1, 1)",
+        (game_date,),
+    )
+    db.execute(
+        "INSERT INTO game_pitcher_stats (game_id, team_id, player_id, outs_recorded, er) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (gid, team_id, player_id, outs, er),
+    )
+
+
+def test_review_promotes_hot_demotes_cold():
+    from o27v2 import db
+    restore, team_id, pids = _mini_staff_db()
+    try:
+        # Among the six non-Helms arms, give one a sparkling line and one a
+        # shelling, with the rest middling, over the review window.
+        hot, cold = pids[2], pids[3]
+        for d in ("2026-04-10", "2026-04-13", "2026-04-16"):
+            _log_appearance(team_id, hot,  d, outs=9, er=0)   # 0.00 ER/out
+            _log_appearance(team_id, cold, d, outs=9, er=8)   # awful
+            for mid in pids[4:]:
+                _log_appearance(team_id, mid, d, outs=9, er=3)
+        events = _rotation.review_staff_for_team(team_id, "2026-04-20")
+        assert events, "a clear hot/cold split should move someone"
+        roles = {p["id"]: p["pitcher_role"]
+                 for p in db.fetchall(
+                     "SELECT id, pitcher_role FROM players WHERE team_id = 1")}
+        high_leverage = {_rotation.PILOT, _rotation.ANCHOR, _rotation.SKIDDER}
+        assert roles[hot] in high_leverage, roles[hot]
+        assert roles[cold] not in high_leverage | set(_rotation.STEER_ROLES), roles[cold]
+    finally:
+        restore()
+
+
+def test_patient_manager_does_not_re_tool():
+    from o27v2 import db
+    restore, team_id, pids = _mini_staff_db()
+    try:
+        db.execute("UPDATE teams SET mgr_quick_hook = 0.0, "
+                   "mgr_bullpen_aggression = 0.0 WHERE id = 1")
+        for d in ("2026-04-10", "2026-04-13", "2026-04-16"):
+            _log_appearance(team_id, pids[2], d, outs=9, er=0)
+            _log_appearance(team_id, pids[3], d, outs=9, er=8)
+        assert _rotation.review_staff_for_team(team_id, "2026-04-20") == []
+    finally:
+        restore()
+
+
+def test_maybe_review_is_idempotent_within_interval():
+    from o27v2 import db
+    restore, team_id, pids = _mini_staff_db()
+    try:
+        for d in ("2026-04-10", "2026-04-13", "2026-04-16"):
+            _log_appearance(team_id, pids[2], d, outs=9, er=0)
+            _log_appearance(team_id, pids[3], d, outs=9, er=8)
+        _rotation.maybe_review_staffs("2026-04-20")
+        # A second call a few days later (inside the interval) is a no-op.
+        assert _rotation.maybe_review_staffs("2026-04-22") == []
+    finally:
+        restore()

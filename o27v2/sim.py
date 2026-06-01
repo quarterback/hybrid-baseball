@@ -2276,6 +2276,10 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None,
                 maybe_run_sweep(g["game_date"])
             except Exception as e:
                 results.append({"sweep_error": str(e), "date": g["game_date"]})
+            try:
+                _rotation.maybe_review_staffs(g["game_date"])
+            except Exception as e:
+                results.append({"staff_review_error": str(e), "date": g["game_date"]})
         seed = None if seed_base is None else seed_base + i
         try:
             r = simulate_game(g["id"], seed=seed, detail=detail)
@@ -2437,6 +2441,10 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_
         results: list[dict] = [{"sweep_error": str(e), "date": date}]
     else:
         results = []
+    try:
+        _rotation.maybe_review_staffs(date)
+    except Exception as e:
+        results.append({"staff_review_error": str(e), "date": date})
     games = db.fetchall(
         "SELECT id FROM games WHERE played = 0 AND game_date = ? ORDER BY id LIMIT ?",
         (date, max_games),
@@ -2503,6 +2511,10 @@ def simulate_through(
                     maybe_run_sweep(g["game_date"])
                 except Exception as e:
                     results.append({"sweep_error": str(e), "date": g["game_date"]})
+                try:
+                    _rotation.maybe_review_staffs(g["game_date"])
+                except Exception as e:
+                    results.append({"staff_review_error": str(e), "date": g["game_date"]})
             seed = None if seed_base is None else seed_base + len(seen_game_ids)
             try:
                 results.append(simulate_game(g["id"], seed=seed, detail=detail))

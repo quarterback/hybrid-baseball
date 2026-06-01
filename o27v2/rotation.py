@@ -288,6 +288,198 @@ def assign_roles_for_team(team_id: int) -> int:
     return n
 
 
+# ---------------------------------------------------------------------------
+# Manager staff review — situational re-evaluation from recent usage/form
+# ---------------------------------------------------------------------------
+# Unlike the structural re-derivations (seed / rollover / trade), this is the
+# skipper reading how his arms are actually throwing and deciding who pitches
+# where. It runs on a slow cadence (not every game), and a manager keeps a man
+# in his role while it works — only a clear enough hot/cold swing, scaled by
+# how reactive the skipper is, moves anyone.
+
+# Days of game log a review looks back over.
+REVIEW_LOOKBACK_DAYS = 21
+# Minimum outs an arm must have thrown in the window to be judged on form;
+# below this his role rides on raw skill (too small a sample to react to).
+REVIEW_MIN_OUTS = 9
+# How many days between reviews (idempotent via sim_meta).
+REVIEW_INTERVAL_DAYS = 14
+# Largest Stuff-grade swing recent form can apply, before manager scaling.
+REVIEW_MAX_FORM_SWING = 16.0
+_REVIEW_DATE_KEY = "staff_review_date"
+
+
+def _manager_reactivity(team_row: dict) -> float:
+    """How readily this skipper reshuffles his crew on recent form, in
+    [0, 1]. Blends quick-hook and bullpen aggression — a patient old-school
+    manager barely reacts; a modern fireman-ball skipper churns roles."""
+    # NB: `x or 0.5` would turn a genuine 0.0 (max-patient skipper) into
+    # 0.5 — read None explicitly so a dead-ball traditionalist stays at 0.
+    qh = team_row.get("mgr_quick_hook")
+    ba = team_row.get("mgr_bullpen_aggression")
+    qh = 0.5 if qh is None else float(qh)
+    ba = 0.5 if ba is None else float(ba)
+    return max(0.0, min(1.0, 0.5 * qh + 0.5 * ba))
+
+
+def _recent_pitcher_form(team_id: int, game_date: str,
+                         lookback_days: int = REVIEW_LOOKBACK_DAYS) -> dict[int, dict]:
+    """Per-pitcher recent workload over the window ending at `game_date`:
+    {player_id: {"outs": int, "er": int}}. Empty when there's no log yet."""
+    from o27v2 import db
+    from datetime import date, timedelta
+
+    try:
+        end = date.fromisoformat(game_date)
+    except (TypeError, ValueError):
+        return {}
+    start = (end - timedelta(days=lookback_days)).isoformat()
+    rows = db.fetchall(
+        """SELECT gps.player_id AS pid,
+                  COALESCE(SUM(gps.outs_recorded), 0) AS outs,
+                  COALESCE(SUM(gps.er), 0)            AS er
+           FROM game_pitcher_stats gps
+           JOIN games g ON g.id = gps.game_id
+           WHERE gps.team_id = ?
+             AND g.played = 1
+             AND g.game_date > ? AND g.game_date <= ?
+           GROUP BY gps.player_id""",
+        (team_id, start, game_date),
+    )
+    return {r["pid"]: {"outs": int(r["outs"] or 0), "er": int(r["er"] or 0)}
+            for r in rows}
+
+
+def review_staff_for_team(team_id: int, game_date: str,
+                          lookback_days: int = REVIEW_LOOKBACK_DAYS) -> list[dict]:
+    """The skipper's situational re-evaluation: re-derive crew roles with
+    recent form folded into each arm's perceived Stuff, scaled by how
+    reactive the manager is. Persists any changes and returns a list of
+    role-change events (for the news feed). Roles a manager is happy with
+    don't move — only a clear enough hot/cold swing does.
+
+    Form moves the *Stuff* axis only (how the arm is playing), never
+    Stamina (a physical attribute), so a hot finisher climbs the
+    high-leverage roles without being miscast as a workhorse Helms.
+    """
+    from o27v2 import db
+
+    team = db.fetchone(
+        "SELECT id, name, mgr_quick_hook, mgr_bullpen_aggression FROM teams WHERE id = ?",
+        (team_id,),
+    )
+    if not team:
+        return []
+    reactivity = _manager_reactivity(dict(team))
+    # A genuinely patient skipper effectively never re-tools mid-stream.
+    if reactivity < 0.12:
+        return []
+
+    arms = db.fetchall(
+        "SELECT id, name, pitcher_skill, stamina, movement, command, "
+        "pitcher_role, rotation_slot "
+        "FROM players WHERE team_id = ? AND is_pitcher = 1 AND is_active = 1 "
+        "ORDER BY id",
+        (team_id,),
+    )
+    if len(arms) < 2:
+        return []
+
+    form = _recent_pitcher_form(team_id, game_date, lookback_days)
+    # Self-normalize against the staff's own recent run-prevention so the
+    # signal is robust to O27's run environment. Need a couple of arms with
+    # real samples or there's nothing to compare.
+    rates: list[float] = []
+    for a in arms:
+        f = form.get(a["id"])
+        if f and f["outs"] >= REVIEW_MIN_OUTS:
+            rates.append(f["er"] / f["outs"])
+    if len(rates) < 2:
+        return []
+    mean = sum(rates) / len(rates)
+    var = sum((r - mean) ** 2 for r in rates) / len(rates)
+    std = var ** 0.5
+    if std <= 1e-6:
+        return []
+
+    swing = REVIEW_MAX_FORM_SWING * reactivity
+    before = {a["id"]: (a["pitcher_role"], a["rotation_slot"]) for a in arms}
+
+    # Build form-adjusted copies and re-derive on them. Lower recent ER/out
+    # than the staff → positive Stuff bump (hot); higher → negative (cold).
+    adjusted: list[dict] = []
+    for a in arms:
+        rec = dict(a)
+        f = form.get(a["id"])
+        if f and f["outs"] >= REVIEW_MIN_OUTS:
+            z = (f["er"] / f["outs"] - mean) / std
+            delta = max(-swing, min(swing, -z * swing))
+            rec["pitcher_skill"] = max(1, min(99, float(a["pitcher_skill"]) + delta))
+        adjusted.append(rec)
+
+    assign_staff_roles(adjusted)
+
+    events: list[dict] = []
+    for rec in adjusted:
+        new_role, new_slot = rec["pitcher_role"], int(rec.get("rotation_slot", 0) or 0)
+        old_role, old_slot = before[rec["id"]]
+        if new_role != old_role:
+            db.execute(
+                "UPDATE players SET pitcher_role = ?, rotation_slot = ? WHERE id = ?",
+                (new_role, new_slot, rec["id"]),
+            )
+            events.append({
+                "event_type": "staff_review",
+                "team_id": team_id,
+                "player_id": rec["id"],
+                "detail": (
+                    f"{team['name']}: {rec['name']} moved "
+                    f"{ROLE_LABELS.get(old_role, old_role or 'unassigned')} → "
+                    f"{ROLE_LABELS.get(new_role, new_role)}"
+                ),
+            })
+        elif new_slot != old_slot:
+            db.execute(
+                "UPDATE players SET rotation_slot = ? WHERE id = ?",
+                (new_slot, rec["id"]),
+            )
+    return events
+
+
+def maybe_review_staffs(game_date: str,
+                        min_interval_days: int = REVIEW_INTERVAL_DAYS) -> list[dict]:
+    """Idempotent cadence gate for the manager staff review. Runs at most
+    once per `min_interval_days`, league-wide, and never twice for the same
+    window. Mirrors the weekly waiver-sweep pattern (sim_meta-tracked).
+    Returns all role-change events across teams (may be empty)."""
+    from o27v2 import db
+
+    last = db.fetchone(
+        "SELECT value FROM sim_meta WHERE key = ?", (_REVIEW_DATE_KEY,)
+    )
+    if last and last["value"]:
+        from datetime import date
+        try:
+            prev = date.fromisoformat(last["value"])
+            now  = date.fromisoformat(game_date)
+            if (now - prev).days < min_interval_days:
+                return []
+        except (TypeError, ValueError):
+            pass
+
+    events: list[dict] = []
+    for team in db.fetchall("SELECT id FROM teams"):
+        try:
+            events.extend(review_staff_for_team(team["id"], game_date))
+        except Exception:
+            pass  # a single team's review must never block the sim
+    db.execute(
+        "INSERT OR REPLACE INTO sim_meta (key, value) VALUES (?, ?)",
+        (_REVIEW_DATE_KEY, game_date),
+    )
+    return events
+
+
 def set_player_role(player_id: int, role: str, rotation_slot: int = 1) -> bool:
     """Manual override: pin one arm to a crew role from the team page.
     Validates the code; returns True on a successful write. The next
