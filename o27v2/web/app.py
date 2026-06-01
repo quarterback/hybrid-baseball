@@ -8084,6 +8084,41 @@ def season_detail(season_id: int):
     except Exception:
         league_champions = []
 
+    # Phase E AAR: archived transactions + auction ledger. Both queries
+    # return [] for legacy seasons that pre-date the snapshot wiring,
+    # so the template gracefully degrades.
+    season_txs = db.fetchall(
+        "SELECT * FROM season_transactions "
+        "WHERE season_id = ? ORDER BY id",
+        (season_id,),
+    )
+    tx_counts: dict[str, int] = {}
+    for r in season_txs:
+        tx_counts[r["event_type"]] = tx_counts.get(r["event_type"], 0) + 1
+
+    # Group post-auction trade events by detail string so each fired
+    # trade renders once (rather than once per moved player).
+    trade_groups: dict[str, list[dict]] = {}
+    trade_order: list[str] = []
+    for r in season_txs:
+        if r["event_type"] != "trade":
+            continue
+        key = f"{r['game_date']}|{r['detail']}"
+        if key not in trade_groups:
+            trade_groups[key] = []
+            trade_order.append(key)
+        trade_groups[key].append(dict(r))
+    recon_trades = [{"date":   trade_groups[k][0]["game_date"],
+                     "detail": trade_groups[k][0]["detail"],
+                     "moves":  trade_groups[k]}
+                    for k in trade_order]
+
+    season_auction = db.fetchall(
+        "SELECT * FROM season_auction_results "
+        "WHERE season_id = ? ORDER BY winning_bid DESC NULLS LAST "
+        "LIMIT 30",
+        (season_id,),
+    )
     return _serve(
         "season_detail.html",
         season=season,
@@ -8092,6 +8127,10 @@ def season_detail(season_id: int):
         batting=bat_by_cat,
         pitching=pit_by_cat,
         stars=stars,
+        season_txs=season_txs,
+        tx_counts=tx_counts,
+        recon_trades=recon_trades,
+        season_auction=season_auction,
     )
 
 

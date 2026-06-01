@@ -681,6 +681,47 @@ CREATE TABLE IF NOT EXISTS playoff_series (
     ended_at            TEXT
 );
 
+-- Phase E: snapshot of the per-season transactions log (auction signs,
+-- FA signings, college sign-throughs, manual assigns, post-auction
+-- reconciliation trades, in-season trades). Mirrors the live
+-- `transactions` table — keyed to seasons.id so it survives the
+-- offseason wipe. Player + team identity denormalised so the row
+-- stays meaningful after roster shuffles. Filled by
+-- season_archive._snapshot_transactions at archive time.
+CREATE TABLE IF NOT EXISTS season_transactions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id     INTEGER NOT NULL REFERENCES seasons(id),
+    game_date     TEXT NOT NULL,
+    event_type    TEXT NOT NULL,
+    team_id       INTEGER REFERENCES teams(id),
+    team_abbrev   TEXT,
+    player_id     INTEGER REFERENCES players(id),
+    player_name   TEXT,
+    detail        TEXT NOT NULL DEFAULT ''
+);
+
+-- Phase E: snapshot of the per-season auction lot ledger. Mirrors
+-- auction_results — keyed to seasons.id. Denormalises winner /
+-- traded-to abbrev + player name so an archived season's auction
+-- page still renders after roster/team churn.
+CREATE TABLE IF NOT EXISTS season_auction_results (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id           INTEGER NOT NULL REFERENCES seasons(id),
+    lot_order           INTEGER,
+    player_id           INTEGER REFERENCES players(id),
+    player_name         TEXT,
+    player_position     TEXT,
+    player_overall      INTEGER,
+    winner_team_id      INTEGER REFERENCES teams(id),
+    winner_abbrev       TEXT,
+    winning_bid         INTEGER,
+    second_bid          INTEGER,
+    price               INTEGER,
+    traded_to_team_id   INTEGER REFERENCES teams(id),
+    traded_to_abbrev    TEXT,
+    trade_price         INTEGER
+);
+
 -- Phase 4: regular-season + WS-MVP awards. One row per (category, season)
 -- so a fresh league can re-award without colliding with prior seasons'
 -- archived rows. Player ID denormalised to name/abbrev so the row

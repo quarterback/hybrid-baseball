@@ -444,6 +444,76 @@ def _snapshot_career_lines(season_id: int, season_number: int,
         )
 
 
+def _snapshot_transactions(season_id: int) -> None:
+    """Phase E archive — copy the season's transactions log into
+    `season_transactions` keyed by season_id. The live `transactions`
+    table gets wiped at season reset; this snapshot preserves the
+    auction signs, FA signings, college sign-throughs, post-auction
+    reconciliation trades, and any in-season trades for the AAR.
+
+    Player name + team abbrev are denormalised so the row stays
+    meaningful even after rosters churn.
+    """
+    db.execute(
+        """INSERT INTO season_transactions
+             (season_id, game_date, event_type, team_id, team_abbrev,
+              player_id, player_name, detail)
+           SELECT ?,
+                  tx.game_date, tx.event_type,
+                  tx.team_id, tm.abbrev,
+                  tx.player_id, p.name,
+                  tx.detail
+             FROM transactions tx
+             LEFT JOIN teams tm   ON tm.id = tx.team_id
+             LEFT JOIN players p  ON p.id  = tx.player_id
+            ORDER BY tx.id""",
+        (season_id,),
+    )
+
+
+def _snapshot_auction_results(season_id: int) -> None:
+    """Phase E archive — copy auction lot results into
+    `season_auction_results`. Auction settings (keepers, purse, demand
+    scale) aren't here — they're inferable from team_budgets and the
+    league config; this table just preserves the per-lot ledger so an
+    archived season's auction page can still render the top sales,
+    Vickrey winners, and any post-clear sellback trades.
+
+    Player position + winner abbrev denormalised so the row survives
+    roster wipes.
+    """
+    rows = db.fetchall(
+        """SELECT ar.lot_order, ar.player_id, p.name AS player_name,
+                  p.position AS player_position, ar.player_overall,
+                  ar.winner_team_id, tm.abbrev AS winner_abbrev,
+                  ar.winning_bid, ar.second_bid, ar.price,
+                  ar.traded_to_team_id, tt.abbrev AS traded_to_abbrev,
+                  ar.trade_price
+             FROM auction_results ar
+             LEFT JOIN players p  ON p.id  = ar.player_id
+             LEFT JOIN teams   tm ON tm.id = ar.winner_team_id
+             LEFT JOIN teams   tt ON tt.id = ar.traded_to_team_id
+            ORDER BY ar.lot_order"""
+    )
+    if not rows:
+        return
+    db.executemany(
+        """INSERT INTO season_auction_results
+             (season_id, lot_order, player_id, player_name,
+              player_position, player_overall,
+              winner_team_id, winner_abbrev,
+              winning_bid, second_bid, price,
+              traded_to_team_id, traded_to_abbrev, trade_price)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        [(season_id, r["lot_order"], r["player_id"], r["player_name"],
+          r["player_position"], r["player_overall"],
+          r["winner_team_id"], r["winner_abbrev"],
+          r["winning_bid"], r["second_bid"], r["price"],
+          r["traded_to_team_id"], r["traded_to_abbrev"], r["trade_price"])
+         for r in rows]
+    )
+
+
 def _snapshot_player_lines(season_id: int) -> None:
     """Persist every player's full batting/pitching season line so career
     (multi-season) leaderboards can aggregate by a stable player_id. The
@@ -642,6 +712,13 @@ def archive_current_season(
     _snapshot_standings(new_id)
     _snapshot_leaders(new_id)
     _snapshot_player_lines(new_id)
+    # Phase E archive — transactions + auction ledger. Wrapped so an
+    # archive bug doesn't abort the rest of the season-close.
+    try:
+        _snapshot_transactions(new_id)
+        _snapshot_auction_results(new_id)
+    except Exception:
+        traceback.print_exc()
     # Hall of Fame: snapshot every qualified player's full season line (the
     # only surviving source of career totals once the offseason wipes the
     # per-game stats) and then evaluate inductions. Wrapped so a HOF bug
