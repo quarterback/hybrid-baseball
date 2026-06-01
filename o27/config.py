@@ -1449,6 +1449,25 @@ PARK_HR_MAX:    float = 1.20
 PARK_HITS_MIN:  float = 0.93
 PARK_HITS_MAX:  float = 1.08
 
+# --- Exit-velocity BABIP texture (park_effects, physics → outcome) ---------
+# Beyond fence geometry, the (EV, LA) sample reaches in to re-decide a small
+# slice of *marginal* balls in play, so contact quality — not just the
+# categorical roll — drives whether a borderline ball falls. The four rules
+# are deliberately paired so league offense stays ~flat: two turn an out into
+# a hit (scorched grounder through the hole; soft fly that dies for a bloop),
+# two turn a hit into an out (scorched liner snared; soft roller fielded
+# routinely). Net effect is BABIP *variance* tied to EV, not a run-environment
+# shift. EV cuts are read off the live league distribution (p~92 median,
+# ~108 = top decile, ~76 = bottom decile), NOT MLB's 95-mph anchor.
+# Set any probability to 0.0 to disable that rule. Identity is preserved when
+# park_dims is None (the whole hook no-ops), so legacy DBs are unaffected.
+EV_SCORCHED:        float = 108.0   # mph — "hit it on the screws"
+EV_SOFT:            float = 78.0    # mph — "dying quail / weak roller"
+EV_SCORCH_THRU_P:   float = 0.35    # scorched grounder → seeing-eye single
+EV_ATEM_P:          float = 0.18    # scorched liner → lineout (at-'em ball)
+EV_BLOOP_P:         float = 0.28    # soft fly/liner → bloop single
+EV_ROLLER_P:        float = 0.25    # soft grounder hit → routine ground out
+
 # --- Attribute blend weights ----------------------------------------------
 # When folding the new multi-D ratings into the existing probability code,
 # we blend them with the legacy single-skill / single-stuff terms so that

@@ -24,6 +24,14 @@ Two findings:
    already contains an xwOBA engine, RE24, and percentile-distribution math.
    "Build Savant" is mostly **re-presentation**, not new data capture.
 
+> **Correction (2026-06-01, same day):** the bracketed "does not drive
+> fielding" claim below was overstated — see
+> `docs/aar-ev-texture-park-hook.md`. EV/LA *does* feed back into outcomes
+> via `o27/engine/park_effects.apply_park_effects` (fence geometry), and that
+> hook was subsequently extended so exit velocity also re-decides a thin slice
+> of marginal balls in play. The "re-encoding, not measurement" point still
+> holds for the *base* hit/out roll; it's just no longer absolute.
+
 2. **The data is synthetic, and that bounds what the metrics can mean.** The
    EV/LA/spray triple is sampled by `o27/engine/batted_ball.py` *from the
    categorical outcome* (contact quality + hit_type + power rating) — it does
