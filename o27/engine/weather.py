@@ -1047,6 +1047,21 @@ _CITY_COORDS: dict[str, tuple[float, float]] = dict(_BASE_COORDS)
 for _xname, (_xlat, _xlon, _xarch) in _EXTRA_CITIES.items():
     _CITY_COORDS[_xname] = (_xlat, _xlon)
 
+
+def coords_for_city(city: str) -> tuple[float, float] | None:
+    """(lat, lon) for `city` from the gazetteer, or None when unknown.
+    Same name normalization as archetype_for_city: exact match, then the
+    name with a trailing country code stripped."""
+    if not city:
+        return None
+    s = city.strip()
+    if s in _CITY_COORDS:
+        return _CITY_COORDS[s]
+    bare, _ = _strip_country_code(s)
+    if bare in _CITY_COORDS:
+        return _CITY_COORDS[bare]
+    return None
+
 # Coordinate anchors for nearest-city lookup: every city we know both a
 # location AND an archetype for. (name, lat, lon, archetype).
 _CLIMATE_ANCHORS: list[tuple[str, float, float, str]] = [

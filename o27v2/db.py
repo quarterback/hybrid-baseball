@@ -1644,6 +1644,37 @@ def init_db() -> None:
     except Exception:
         pass  # game_batter_stats may not exist on a fresh DB
 
+    # One-time backfill: heal first-pitch time-zone offsets stamped before
+    # the gazetteer fallback existed. Teams without coordinates defaulted to
+    # UTC+0 ("GMT"); recompute each game's offset from its home park's
+    # location (longitude, or the city gazetteer). Touches only the zone
+    # label — never the rolled start time or any result.
+    try:
+        with get_conn() as conn:
+            done = conn.execute(
+                "SELECT value FROM sim_meta WHERE key = 'start_tz_backfilled'"
+            ).fetchone()
+            if not done:
+                from o27.engine.gametime import utc_offset_for
+                rows = conn.execute(
+                    "SELECT g.id AS id, t.city AS city, t.lon AS lon "
+                    "FROM games g JOIN teams t ON g.home_team_id = t.id "
+                    "WHERE g.start_minute IS NOT NULL"
+                ).fetchall()
+                for r in rows:
+                    off = utc_offset_for(r["city"] or "", r["lon"])
+                    conn.execute(
+                        "UPDATE games SET start_utc_offset = ? WHERE id = ?",
+                        (off, r["id"]),
+                    )
+                conn.execute(
+                    "INSERT OR REPLACE INTO sim_meta (key, value) "
+                    "VALUES ('start_tz_backfilled', '1')"
+                )
+                conn.commit()
+    except Exception:
+        pass  # games / teams / sim_meta may be absent on a fresh DB
+
 
 def drop_all() -> None:
     """Drop all tables (for re-seeding)."""
