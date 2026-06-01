@@ -105,11 +105,18 @@ class Player:
     # long relief; high-Stuff arms are preferred for late-inning leverage.
     stamina: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL
 
-    # Pitcher usage role — legacy "workhorse" | "committee" | "starter" |
-    # "reliever" | "". Task #65 retired role-based usage; the field is
-    # left in place for back-compat with old DB rows but the manager AI
-    # no longer reads it.
+    # Canonical crew role — "" | "HM" | "1C" | "2C" | "BO" | "SK" | "AN" |
+    # "PI" (see o27v2/rotation.py: Helms / First & Second Change / Bosun /
+    # Skidder / Anchor / Pilot). Drives the steering pick (sim.py) and the
+    # relief-role preference in pick_new_pitcher (manager.py). "" means no
+    # crew role (legacy rows) → live-derivation fallback. Any unrecognized
+    # legacy value reads as "no crew role" too.
     pitcher_role: str = ""
+
+    # Usage rank within the crew role (1 = primary; the two Helms alternate
+    # as slot 1 / slot 2 so the steering arm can go ~every other day).
+    # 0 for relievers / non-pitchers.
+    rotation_slot: int = 0
 
     # Legacy Phase-8 archetype fields. None are read by the probability
     # code anymore: the `hr_weight_bonus` (HR boost) and

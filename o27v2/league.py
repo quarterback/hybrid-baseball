@@ -2378,10 +2378,12 @@ def _make_pitcher(
     """Build one pitcher dict with Stuff (`pitcher_skill`) and Stamina
     rolled INDEPENDENTLY against the tier ladder.
 
-    No pitcher_role is set — the manager AI derives today's role at game
-    time from the live attribute values, so an aging arm with decayed
-    Stamina automatically slides from rotation into middle relief without
-    any persisted re-tagging.
+    No pitcher_role is set here — at generation the arm is team-blind. The
+    canonical rotation + bullpen roles are stamped per team after the snake
+    draft (and re-derived at season rollover / after trades) by
+    o27v2.rotation, so an aging arm with decayed Stamina slides from the
+    rotation into the bullpen the next time roles are assigned. The engine
+    still applies live overrides on top of the stored role at game time.
 
     Nationality adds its talent lift to `team_shift`, and a per-player
     elite roll (scaled by the nation's investment) can floor an ace's
@@ -3123,7 +3125,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     insert_sql = """INSERT INTO players
         (team_id, name, country, position, is_pitcher, skill, speed,
          pitcher_skill, stay_aggressiveness, contact_quality_threshold,
-         archetype, pitcher_role, hard_contact_delta, hr_weight_bonus,
+         archetype, pitcher_role, rotation_slot, hard_contact_delta, hr_weight_bonus,
          age, stamina, is_active,
          contact, power, eye, command, movement, bats, throws,
          defense, arm,
@@ -3134,7 +3136,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          pull_pct, adaptability, leadership,
          roster_slot, role_hit, role_run, role_two_way, role_field_pos,
          hometown, birthday, secondary_country)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -3148,6 +3150,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p["skill"], p["speed"], p["pitcher_skill"],
                 p["stay_aggressiveness"], p["contact_quality_threshold"],
                 p.get("archetype", ""), p.get("pitcher_role", ""),
+                int(p.get("rotation_slot", 0) or 0),
                 p.get("hard_contact_delta", 0.0), p.get("hr_weight_bonus", 0.0),
                 p.get("age", 27),
                 p.get("stamina", p.get("pitcher_skill", 50)),
@@ -3195,6 +3198,19 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
             assignments.get(team_id, []),
             team_archetype.get(team_id, ""),
         )
+
+    # Canonical crew assignment — run AFTER the archetype tilt has finalized
+    # each roster's active/reserve split, so every active arm (including any
+    # reserve a deep-bench skipper just promoted) gets a nautical role. Roles
+    # are relative to THIS staff: the same arm grades differently on a thin
+    # vs. a deep club. Reserve depth stays '' until called up. (o27v2/rotation.py)
+    from o27v2 import rotation as _rotation
+    for team_id in team_ids:
+        _active_pitchers = [
+            p for p in assignments.get(team_id, [])
+            if p.get("is_pitcher") and int(p.get("is_active", 1) or 0) == 1
+        ]
+        _rotation.assign_staff_roles(_active_pitchers)
 
     for team_id in team_ids:
         roster = assignments.get(team_id, [])

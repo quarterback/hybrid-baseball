@@ -59,14 +59,22 @@ def test_init_db_wipes_stale_and_reseeds(stale_db):
 
         league.seed_league(rng_seed=7)
 
-        # Pitchers seed cleanly. pitcher_role is intentionally NOT stored
-        # (Task #65: roles are derived live at game time), so the column is
-        # blank for every pitcher in a healthy modern league.
-        pitchers = db.fetchall("SELECT pitcher_role FROM players WHERE is_pitcher = 1")
-        assert len(pitchers) > 0, "No pitchers seeded"
-        assert all((p["pitcher_role"] or "") == "" for p in pitchers), (
-            "pitcher_role is live-derived and must not be persisted; got "
-            + str(sorted({p["pitcher_role"] for p in pitchers}))
+        # Pitchers seed cleanly and carry their canonical crew role
+        # (o27v2/rotation.py): the active staff is stamped with a nautical
+        # role (HM/1C/2C/BO/SK/AN/PI) at seed. Reserve depth stays blank
+        # until called up. So every ACTIVE arm must carry a valid crew code.
+        from o27v2 import rotation as _rotation
+        active = db.fetchall(
+            "SELECT pitcher_role FROM players WHERE is_pitcher = 1 AND is_active = 1"
+        )
+        assert len(active) > 0, "No active pitchers seeded"
+        assert all(p["pitcher_role"] in _rotation.ALL_ROLES for p in active), (
+            "every active arm must carry a canonical crew role; got "
+            + str(sorted({p["pitcher_role"] for p in active}))
+        )
+        # Every staff should have at least one Helms steering the voyage.
+        assert any(p["pitcher_role"] in _rotation.STEER_ROLES for p in active), (
+            "expected at least one Helms across seeded staffs"
         )
 
         # Reseed produced a modern, archetyped roster — the invariant

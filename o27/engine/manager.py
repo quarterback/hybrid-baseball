@@ -900,6 +900,24 @@ def should_change_pitcher(state: GameState) -> bool:
     return state.pitcher_spell_count >= threshold
 
 
+# Crew-role codes (mirror of o27v2.rotation; kept inline so the engine has
+# no upward dependency on the o27v2 layer). HM Helms / 1C First Change /
+# 2C Second Change / BO Bosun / SK Skidder / AN Anchor / PI Pilot.
+def _preferred_relief_roles(outs: int) -> tuple[str, ...]:
+    """Crew roles to prefer for a relief call at this out count (0..26),
+    port-bound. Mirrors o27v2.rotation.preferred_relief_roles — keep the two
+    in sync. The Helms steers the start and is not a relief option."""
+    if outs >= 24:
+        return ("PI", "AN")          # into port — Pilot, Anchor
+    if outs >= 19:
+        return ("AN", "PI", "SK")    # late hold — Anchor, Pilot, Skidder
+    if outs >= 12:
+        return ("SK", "2C", "BO")    # rough patch — Skidder, 2nd Change, Bosun
+    if outs >= 6:
+        return ("2C", "1C", "BO")    # middle watch
+    return ("1C", "BO")              # first change / bulk after a short Helms
+
+
 def pick_new_pitcher(state: GameState) -> Optional[Player]:
     """
     Task #65: derive the next pitcher's role LIVE from each candidate's
@@ -974,6 +992,20 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         if rested:
             pitcher_candidates = rested
             break
+
+    # Crew-role preference (canonical default + live override). Each moment
+    # of the 27-out voyage has preferred crew roles (source of truth:
+    # o27v2.rotation.preferred_relief_roles — duplicated here as a tiny
+    # mapping so the engine stays independent of the o27v2 layer). We scope
+    # the rested candidates to the role(s) that fit this moment; if no
+    # role-matched arm is rested/available, we fall through to the full pool
+    # so fatigue/Stuff/matchup still decide — the role never traps a call.
+    preferred = _preferred_relief_roles(outs)
+    if preferred and any(getattr(p, "pitcher_role", "") for p in pitcher_candidates):
+        scoped = [p for p in pitcher_candidates
+                  if getattr(p, "pitcher_role", "") in preferred]
+        if scoped:
+            pitcher_candidates = scoped
 
     def _stuff(p: Player) -> float:
         return float(getattr(p, "pitcher_skill", 0.5) or 0.5)
