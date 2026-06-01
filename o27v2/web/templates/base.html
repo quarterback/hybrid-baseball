@@ -944,6 +944,41 @@
       z-index: 3;
     }
 
+    /* ---- Frozen identity column (Baseball-Reference-style) ----
+       The leading label column(s) — player name, team, rank — stay pinned
+       to the left while the numeric columns scroll under them, so a row of
+       numbers is never anonymous on a phone. JS flags the cells and writes
+       each one's `left` offset (measured from live column widths); the rules
+       below own the backgrounds, the edge divider, and the z-index layering
+       against the already-sticky header. */
+    .dense-table th.o27-sticky-col,
+    .dense-table td.o27-sticky-col {
+      position: sticky;
+      z-index: 1;
+      background: var(--bg-card);
+    }
+    .dense-table thead th.o27-sticky-col {
+      z-index: 5;                 /* above the scrolling header (2) + frozen body (1) */
+      background: var(--bg-alt);  /* match the header row */
+    }
+    /* Carry the row's stripe / hover / focus colour onto the pinned cell too,
+       otherwise it floats over the row as a mismatched block. */
+    .table-striped > tbody > tr:nth-of-type(odd) > td.o27-sticky-col { background: var(--bg-soft); }
+    .dense-table tbody tr:hover > td.o27-sticky-col { background: var(--bg-warm); }
+    .dense-table tbody tr.div-divider > td.o27-sticky-col { background: var(--bg-alt); }
+    /* The right edge of the frozen block gets a divider, and a soft shadow
+       that only shows once the table is actually scrolled sideways. */
+    .o27-scroll-x .dense-table .o27-sticky-col-last { border-right: 1px solid var(--border-soft); }
+    .o27-scroll-x.scrolled-x .dense-table th.o27-sticky-col-last,
+    .o27-scroll-x.scrolled-x .dense-table td.o27-sticky-col-last {
+      border-right-color: var(--border-strong);
+      box-shadow: 6px 0 6px -6px rgba(0,0,0,.28);
+    }
+
+    /* Tap-to-highlight a row so you don't lose your place mid-scroll (the
+       bbref mobile trick). Toggled by JS on taps that miss a link/control. */
+    .dense-table tbody tr.row-focus > * { background: var(--accent-soft) !important; }
+
     /* Touch ergonomics on phones: roomier tap targets where taps land —
        tabs, topbar links, pagination/pill buttons. 44px is the iOS/Android
        minimum comfortable target. */
@@ -1676,20 +1711,87 @@
   function refresh(w) {
     const more = w.scrollWidth - w.clientWidth - w.scrollLeft > 2;
     w.classList.toggle('scroll-more', more);
+    w.classList.toggle('scrolled-x', w.scrollLeft > 2);
   }
+
+  // Pin the leading label column(s) of a wide stat table to the left, so the
+  // player/team/rank stays visible while the numeric columns scroll under it.
+  // We freeze *through* the first non-numeric (text) column — that lands the
+  // name in the frozen block whether the table opens with it (team rosters)
+  // or with a rank/number ahead of it (leaders) — capped at 3 columns, and
+  // skipped entirely if the frozen block would swallow most of the viewport.
+  function freezeLabelCols(w) {
+    const table = w.querySelector('table.dense-table:not(.dense-table--fit)');
+    if (!table || !table.tHead || !table.tHead.rows[0]) return;
+    if (table.id === 'league-table') return;  // this one stacks into cards on mobile
+
+    // Clear any prior pinning so a resize recomputes cleanly.
+    table.querySelectorAll('.o27-sticky-col').forEach(c => {
+      c.classList.remove('o27-sticky-col', 'o27-sticky-col-last');
+      c.style.left = '';
+    });
+    if (!w.clientWidth) return;  // hidden tab — recomputed on shown.bs.tab
+
+    const ths = Array.from(table.tHead.rows[0].cells);
+    let count = 0;
+    for (let i = 0; i < ths.length && i < 3; i++) {
+      count = i + 1;
+      if (!ths[i].classList.contains('num')) break;  // include the text col, then stop
+    }
+    if (!count) return;
+
+    const lefts = [];
+    let acc = 0;
+    for (let i = 0; i < count; i++) { lefts.push(acc); acc += ths[i].offsetWidth; }
+    if (!acc || acc > w.clientWidth * 0.6) return;  // 0 = not laid out; too wide = skip
+
+    const pin = (cell, i) => {
+      cell.classList.add('o27-sticky-col');
+      if (i === count - 1) cell.classList.add('o27-sticky-col-last');
+      cell.style.left = lefts[i] + 'px';
+    };
+    for (let i = 0; i < count; i++) pin(ths[i], i);
+    Array.from(table.tBodies).forEach(tb => {
+      Array.from(tb.rows).forEach(row => {
+        if (row.cells.length < ths.length) return;  // skip spanning rows (dividers, "no data")
+        for (let i = 0; i < count; i++) {
+          if (row.cells[i] && row.cells[i].colSpan === 1) pin(row.cells[i], i);
+        }
+      });
+    });
+  }
+
+  function refreshAll() { wrappers.forEach(w => { freezeLabelCols(w); refresh(w); }); }
+
   wrappers.forEach(w => {
+    freezeLabelCols(w);
     refresh(w);
     w.addEventListener('scroll', () => refresh(w), {passive: true});
   });
   let raf = null;
   window.addEventListener('resize', () => {
     if (raf) return;
-    raf = requestAnimationFrame(() => { raf = null; wrappers.forEach(refresh); });
+    raf = requestAnimationFrame(() => { raf = null; refreshAll(); });
   }, {passive: true});
 
-  // Re-evaluate after a sort (row count/width can change) and when a
-  // Bootstrap tab is shown (hidden panes report zero width until visible).
-  document.addEventListener('shown.bs.tab', () => wrappers.forEach(refresh));
+  // Re-evaluate after a sort (row order changes — re-pin the new cells) and
+  // when a Bootstrap tab is shown (hidden panes report zero width until then).
+  document.addEventListener('shown.bs.tab', refreshAll);
+  document.querySelectorAll('table.sortable.dense-table').forEach(t => {
+    if (t.tHead) t.tHead.addEventListener('click', () => requestAnimationFrame(refreshAll));
+  });
+
+  // Tap-to-highlight a row (bbref mobile trick): one focused row per table
+  // body, toggled by a tap that doesn't land on a link or control.
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, input, select, label, .o27-money-pill, .cmp-add, .sort-arrow')) return;
+    const row = e.target.closest('table.dense-table tbody tr');
+    if (!row || row.classList.contains('div-divider')) return;
+    const body = row.parentElement;
+    const wasFocus = row.classList.contains('row-focus');
+    body.querySelectorAll('tr.row-focus').forEach(r => r.classList.remove('row-focus'));
+    if (!wasFocus) row.classList.add('row-focus');
+  });
 })();
 </script>
 {% block scripts %}{% endblock %}

@@ -138,8 +138,27 @@
 </div>
 {% endif %}
 
-<div class="row g-3">
-  <div class="col-lg-7">
+{# Batting / Pitching are each full-width; a tab toggle swaps between them
+   instead of cramming both into half the page. The shared scroll-x JS
+   re-pins the frozen name column when a hidden pane is first shown. #}
+<ul class="nav nav-tabs mb-3" id="teamStatTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tab-batting-btn" data-bs-toggle="tab"
+            data-bs-target="#tab-batting" type="button" role="tab"
+            aria-controls="tab-batting" aria-selected="true">
+      Batting{% if batters %} <span class="text-secondary">· {{ batters|length }}</span>{% endif %}
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-pitching-btn" data-bs-toggle="tab"
+            data-bs-target="#tab-pitching" type="button" role="tab"
+            aria-controls="tab-pitching" aria-selected="false">
+      Pitching{% if pitchers %} <span class="text-secondary">· {{ pitchers|length }}</span>{% endif %}
+    </button>
+  </li>
+</ul>
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="tab-batting" role="tabpanel" aria-labelledby="tab-batting-btn">
     <div class="dense">
       <div class="panel-title">Batting</div>
       {% if batters %}
@@ -187,7 +206,7 @@
     </div>
   </div>
 
-  <div class="col-lg-5">
+  <div class="tab-pane fade" id="tab-pitching" role="tabpanel" aria-labelledby="tab-pitching-btn">
     <div class="dense">
       <div class="panel-title d-flex justify-content-between align-items-baseline">
         <span>Pitching</span>
