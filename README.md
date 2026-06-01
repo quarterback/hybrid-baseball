@@ -96,7 +96,7 @@ The sim has grown well past "rules engine + box score." It got there in about a 
 - **Schedule, playoffs, awards.** Configurable team counts (8–36 + tiered), division-aware round-robin, playoff bracket, end-of-season awards and scouting.
 - **Youth pipeline.** A separate development sim feeds prospects into the league, with a 48-team youth World Cup.
 - **Hall of Fame & career records.** A gated league hall plus criteria-based team halls, and multi-season career leaderboards surfaced in the almanac.
-- **Runtime tuning & world-building.** A web dashboard exposes every engine constant with era/stylistic presets, a guard-railed randomizer, and a saved-environment library (each auto-labelled by the run environment it produces). A peer-universe builder composes co-equal, independently-styled leagues whose play styles emerge from their field geometry, climate, and talent pipeline rather than national stereotype; configs support promotion/relegation tiers.
+- **Runtime tuning & world-building.** A web dashboard exposes every engine constant with era/stylistic presets, a guard-railed randomizer, and a saved-environment library (each auto-labelled by the run environment it produces). A peer-universe builder composes co-equal, independently-styled leagues whose play styles emerge from their field geometry, climate, and talent pipeline rather than national stereotype; configs support promotion/relegation tiers. For building your own styles, [`docs/tuning-guide-for-llms.md`](docs/tuning-guide-for-llms.md) is a self-contained guide you hand to an LLM to generate Engine-Tunables override blobs from a plain-English description ("a deadball pitcher's duel", "a launch-angle circus").
 - **Realism layer.** Ballparks (with pre-modern shapes), weather, batted-ball physics (EV / LA / spray), handedness splits, defensive shifts, RISP-pressure modifier, leadership flare on the firing side of a leverage swing.
 - **Stat invariants test suite.** `make test-invariants` runs nine assertions that catch every mathematically-impossible-stat bug the project has shipped before (phase-out caps, OR reconciliation, pitcher↔batter cross-check, OS% bounds, league FIP within 0.05 of league ERA, etc.). Required to pass before any release.
 - **Newspaper-style box score and Markdown export** for LLM-friendly game writeups.
@@ -126,7 +126,7 @@ Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoni
   - `data/league_configs/` — `8teams.json` through `36teams.json` plus `56teams_tiered.json`.
   - `tests/` — archetype, linear-weights, RISP-pressure, trade, migration tests.
 - `tests/` — top-level invariant suite (`make test-invariants`) that runs against a populated DB.
-- `docs/` — methodology references and ~70 AARs documenting every system shipped, plus [`project-trajectory.md`](docs/project-trajectory.md) (the narrated month-long arc + changelog) and the [five-inning blog post](docs/blog-o27-vs-five-inning-baseball.md).
+- `docs/` — methodology references and ~70 AARs documenting every system shipped, plus [`project-trajectory.md`](docs/project-trajectory.md) (the narrated month-long arc + changelog), the [tuning guide for LLMs](docs/tuning-guide-for-llms.md) (generate Engine-Tunables blobs from a plain-English style), and the [five-inning blog post](docs/blog-o27-vs-five-inning-baseball.md).
 - `Dockerfile`, `fly.toml`, `DEPLOY.md` — Fly.io deployment for `hybrid-baseball.fly.dev`.
 - `scripts/`, `pnpm-workspace.yaml` — peripheral TypeScript workspace (codegen, design mockups). Independent of the Python sim.
 
