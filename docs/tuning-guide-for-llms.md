@@ -499,11 +499,16 @@ for a named identity — copy the shape, adjust to taste.
 making O27 play like softball:
 ```json
 {"CONTACT_WEAK_BASE":0.26,"CONTACT_MEDIUM_BASE":0.56,"CONTACT_HARD_BASE":0.18,
- "CONTACT_MATCHUP_SHIFT":0.30,"POWER_REDIST_HR":0.12,"POWER_REDIST_HARD_S2D":0.24,
- "POWER_REDIST_HARD_D2T":0.10,"PITCHER_DOM_SWINGING":0.05,"PITCHER_DOM_CONTACT":-0.08,
+ "CONTACT_MATCHUP_SHIFT":0.32,"POWER_REDIST_HR":0.12,"POWER_REDIST_HARD_S2D":0.24,
+ "POWER_REDIST_HARD_D2T":0.10,"PITCHER_DOM_SWINGING":0.055,"PITCHER_DOM_CONTACT":-0.10,
  "BATTER_DOM_SWINGING":-0.05,"BATTER_EYE_BALL":0.04,"PARK_HR_MAX":1.00,
- "GIDP_BASE_PROB":0.20,"GEN_SHIFT_POWER":-10,"GEN_SHIFT_CONTACT":8,"GEN_SHIFT_PITCHING":6}
+ "GIDP_BASE_PROB":0.13,"GEN_SHIFT_POWER":-10,"GEN_SHIFT_CONTACT":8,"GEN_SHIFT_PITCHING":6}
 ```
+Calibrated to 2026 NCAA Div I team data (national averages, below the top-50
+leaderboards): ~.295 BA, ~5 R/G, ERA ~3.7, and **rare double plays** (leader
+0.84/G, ~half of baseball) — so run suppression comes from the circle (pitcher
+dominance + a big ace-vs-field `CONTACT_MATCHUP_SHIFT`), not from DPs. Benchmarks
+to ~6.7 R/team/game, the softball-scaled low-scoring band.
 
 (The engine also ships *1987 Lively Ball*, *Contact Carnival*, *Workhorse Era*,
 and two intentional stress tests — *Knife's Edge* max-offense and *Pitcher's

@@ -299,29 +299,35 @@ PRESETS: dict[str, dict[str, object]] = {
         "GEN_SHIFT_POWER":       -6,
     },
     # College-softball SCORING ENVIRONMENT (not a softball conversion — no slap/
-    # circle identity). Reproduces the *shape* of D1 softball offense in O27:
-    # high contact / high BABIP (hits fall in), low power, and pitching that
-    # keeps the big inning in check, so it settles into the low-scoring band.
-    # Anchored to ~.295 AVG, ~1.0 HR/game, ~5.25 R/game over a 21-out softball
-    # game (≈ a low-power, low-scoring O27 run environment once scaled to 27
-    # outs and discounted for the Walk-Back HR tail). The absolute R/G is
-    # governed by O27's structure — verify with a benchmark and read the
-    # characterize() band ("Low-power · low-scoring") rather than expecting
-    # exact parity.
+    # steal identity). Reproduces the *shape* of D1 softball offense in O27:
+    # high batting average / high BABIP (hits fall in), low power, and the circle
+    # (pitching) — not double plays — keeping the big inning in check, so it
+    # settles into the low-scoring band.
+    #
+    # Anchored to 2026 NCAA Div I team data (national averages, which sit below
+    # the top-50 leaderboards): ~.295 BA, ~5 R/game and ERA ~3.7 over a 21-out
+    # softball game → ~6.4 R/team/game once scaled to O27's 27 outs and
+    # discounted for the Walk-Back HR tail. Two signatures the data makes
+    # explicit: (1) a huge ace-vs-field spread — ERA leaders at ~1.35 vs a ~3.7
+    # mean → high CONTACT_MATCHUP_SHIFT + strong pitcher dominance; (2) double
+    # plays are RARE (national leader only 0.84/game, ~half of baseball) → GIDP
+    # is pushed BELOW O27 default, and run suppression comes from the circle
+    # instead. The absolute R/G is governed by O27's structure — verify with a
+    # benchmark and read the characterize() band rather than expecting parity.
     "college_scoring": {
-        "CONTACT_WEAK_BASE":      0.26,   # contact-rich: hits fall in (high BABIP)
+        "CONTACT_WEAK_BASE":      0.26,   # contact-rich: hits fall in (high BABIP/BA)
         "CONTACT_MEDIUM_BASE":    0.56,
         "CONTACT_HARD_BASE":      0.18,   # low hard contact → few XBH/HR
-        "CONTACT_MATCHUP_SHIFT":  0.30,   # big ace-vs-field spread (circle dominance)
+        "CONTACT_MATCHUP_SHIFT":  0.32,   # big ace-vs-field spread (ERA 1.35 → ~3.7)
         "POWER_REDIST_HR":        0.12,   # power suppressed hard
         "POWER_REDIST_HARD_S2D":  0.24,   # some gap doubles survive
         "POWER_REDIST_HARD_D2T":  0.10,
-        "PITCHER_DOM_SWINGING":   0.05,   # elite arms miss bats
-        "PITCHER_DOM_CONTACT":   -0.08,   # and suppress contact (keeps runs down)
-        "BATTER_DOM_SWINGING":   -0.05,   # but the field puts the ball in play
+        "PITCHER_DOM_SWINGING":   0.055,  # elite arms miss bats
+        "PITCHER_DOM_CONTACT":   -0.10,   # circle suppresses contact (the run check)
+        "BATTER_DOM_SWINGING":   -0.05,   # but the field still puts the ball in play
         "BATTER_EYE_BALL":        0.04,   # moderate walks
         "PARK_HR_MAX":            1.00,   # no hitter-park HR boost
-        "GIDP_BASE_PROB":         0.20,   # strand some of those baserunners
+        "GIDP_BASE_PROB":         0.13,   # softball turns few DPs (≈half of baseball)
         "GEN_SHIFT_POWER":       -10,
         "GEN_SHIFT_CONTACT":       8,
         "GEN_SHIFT_PITCHING":      6,
