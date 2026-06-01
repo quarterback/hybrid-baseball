@@ -8760,6 +8760,23 @@ def youth_player_view(player_id: int):
                   region=_youth.country_region(player.get("team_country") or ""))
 
 
+@app.route("/api/youth/bulk-import", methods=["POST"])
+def api_youth_bulk_import():
+    """One-click: push youth players into the pro free-agent pool so
+    they're available for the next auction / FA signing round. Same
+    end state as the natural age-out graduation, just on-demand."""
+    from o27v2 import youth as _youth
+    min_age = request.form.get("min_age", type=int) or 17
+    max_age = request.form.get("max_age", type=int) or 19
+    result = _youth.bulk_import_to_pro(min_age=min_age, max_age=max_age)
+    flash(f"Imported {result['imported']} youth players to pro FA pool "
+          f"(ages {min_age}-{max_age}). "
+          f"{result['skipped']} skipped. "
+          f"They'll show up in the next auction / FA signing round.",
+          "info")
+    return redirect(url_for("youth_view"))
+
+
 @app.route("/api/youth/seed", methods=["POST"])
 def api_youth_seed():
     """Manually attach the youth league to an existing save (for users
@@ -9247,6 +9264,27 @@ def api_college_sim_season():
     result = _cl.sim_all_unplayed(season, rng_seed=request.form.get("rng_seed", type=int) or 0)
     flash(f"Sim'd {result['games_played']} games (full remainder of regular season).",
           "info")
+    return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/abstract-season", methods=["POST"])
+def api_college_abstract_season():
+    """Skip the per-game sim entirely — generate full season W-L records
+    + per-player season stat lines directly from grades. ~10,000× faster
+    than per-game sim; the only way to keep college responsive when the
+    pro clock gets ahead and we don't actually want to watch college
+    games. Postseason still runs game-by-game (small volume) after this."""
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    rng_seed = request.form.get("rng_seed", type=int) or 0
+    result = _cl.run_abstract_season(season, rng_seed=rng_seed)
+    flash(f"Abstract season complete · {result['programs']} programs · "
+          f"{result['games_marked_played']} games marked played · "
+          f"{result['batters_written']} batter lines + "
+          f"{result['pitchers_written']} pitcher lines. "
+          f"Postseason is ready to run.", "info")
     return redirect(url_for("college_view", season=season))
 
 

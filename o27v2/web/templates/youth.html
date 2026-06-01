@@ -30,6 +30,13 @@
       <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('youth_graduates_view') }}" title="Players who graduated into the pro pool">
         Graduates →
       </a>
+      <form method="post" action="{{ url_for('api_youth_bulk_import') }}" class="d-inline"
+            onsubmit="return confirm('Push all 17-19 year old youth players into the pro FA pool now? They become available for the next auction / FA signing round. Same end state as natural age-out graduation.');">
+        <button class="btn btn-sm btn-success" type="submit"
+                title="Bulk-import every age-eligible youth player into the pro free-agent pool. Skips the natural age-out cycle.">
+          Import to pro FA pool
+        </button>
+      </form>
     {% endif %}
     {% if not teams %}
     <button id="youth-seed-btn" class="btn btn-sm btn-warning"

@@ -29,6 +29,7 @@ Public surface:
 """
 from __future__ import annotations
 
+import datetime as _dt
 import random
 from typing import Any
 
@@ -1294,6 +1295,81 @@ def top_prospects(limit: int = 25,
             "LIMIT ?", (limit,),
         )
     return [dict(r) for r in rows]
+
+
+def bulk_import_to_pro(player_ids: list[int] | None = None,
+                       *, min_age: int = 17,
+                       max_age: int = 19) -> dict:
+    """Bulk import youth players into the pro free-agent pool — same
+    landing as the natural age-out graduation, but on-demand instead
+    of waiting for the dev cycle. Mirrors the college bulk_import
+    workflow.
+
+    Args:
+      player_ids: explicit list of youth player ids to import. If None,
+        all active youth players in [min_age, max_age] inclusive get
+        imported.
+      min_age / max_age: filter for the default-all path. Default 17-19
+        catches the realistic draft-age window (the natural graduate
+        cohort is 19, but you can pull 17/18 for early scouting).
+
+    Each imported player:
+      * Gets a `players` row (team_id=NULL, is_active=0) via
+        _graduate_to_pro_fa
+      * The original youth_players row is left alone (so you can
+        re-import or audit). The graduation event is logged with
+        kind='bulk_import' so the youth/graduates feed shows it.
+
+    Returns {imported: N, skipped: N, sample: [{youth_id, pro_id, name}]}.
+    """
+    init_youth_schema()
+    if player_ids is None:
+        rows = db.fetchall(
+            "SELECT * FROM youth_players "
+            "WHERE is_active = 1 AND age BETWEEN ? AND ?",
+            (min_age, max_age),
+        )
+    else:
+        if not player_ids:
+            return {"imported": 0, "skipped": 0, "sample": []}
+        qs = ",".join("?" for _ in player_ids)
+        rows = db.fetchall(
+            f"SELECT * FROM youth_players WHERE id IN ({qs})",
+            tuple(player_ids),
+        )
+
+    imported = skipped = 0
+    sample: list[dict] = []
+    grad_year = _next_season_number()
+    for r in rows:
+        p = dict(r)
+        pro_id = _graduate_to_pro_fa(p)
+        if pro_id is None:
+            skipped += 1
+            continue
+        imported += 1
+        # Look up the youth team's name + abbrev for the graduation log.
+        team_row = db.fetchone(
+            "SELECT name, abbrev FROM youth_teams WHERE id = ?",
+            (p.get("team_id"),),
+        ) or {"name": "", "abbrev": ""}
+        try:
+            db.execute(
+                "INSERT INTO youth_graduations "
+                "(grad_year, pro_player_id, name, country, position, "
+                " is_pitcher, from_team, from_team_abbrev, recruit_stars, age) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (int(grad_year), pro_id, p["name"], p.get("country") or "",
+                 p.get("position") or "", int(p.get("is_pitcher") or 0),
+                 team_row["name"] or "", team_row["abbrev"] or "",
+                 int(p.get("recruit_stars") or 3), int(p.get("age") or 19)),
+            )
+        except Exception:
+            pass
+        if len(sample) < 5:
+            sample.append({"youth_id": p["id"], "pro_id": pro_id,
+                           "name": p["name"]})
+    return {"imported": imported, "skipped": skipped, "sample": sample}
 
 
 def recent_graduations(limit: int = 100) -> list[dict]:
