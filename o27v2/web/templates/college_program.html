@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}{{ program.name }}{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">{{ program.name }} <span class="text-secondary small">· {{ program.short_name }}</span></h2>
+    <div class="text-secondary small">
+      {{ program.conference }} · {{ program.region }} · {{ program.home_city }} ·
+      <strong>{{ wins }}-{{ losses }}</strong>
+    </div>
+  </div>
+  <a href="{{ url_for('college_view', season=program.season) }}" class="btn btn-sm btn-outline-secondary">
+    ← Standings
+  </a>
+</div>
+
+<div class="row g-3">
+  {# Roster #}
+  <div class="col-lg-7">
+    <div class="panel">
+      <div class="panel-title"><strong>Roster</strong> · displayed grades only (full potential hidden until pro signing)</div>
+      <div class="panel-body">
+        <table class="table table-sm dense-table mb-0" style="font-size:.84rem">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Pos</th>
+              <th class="text-end">Yr</th>
+              <th class="text-end">SKL</th>
+              <th class="text-end">CON</th>
+              <th class="text-end">POW</th>
+              <th class="text-end">EYE</th>
+              <th class="text-end">SPD</th>
+              <th class="text-end">PIT</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for p in roster %}
+            <tr>
+              <td><a href="{{ url_for('college_player_view', player_id=p.id) }}">{{ p.name }}</a>
+                  {% if p.is_joker %}<span class="badge bg-warning text-dark ms-1">DH</span>{% endif %}</td>
+              <td>{{ p.position or '—' }}</td>
+              <td class="text-end">{{ {1:'Fr', 2:'So', 3:'Jr', 4:'Sr'}.get(p.college_year, p.college_year) }}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.skill }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.contact }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.power }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.eye }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.speed }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if p.is_pitcher %}{{ p.pitcher_skill }}{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# Schedule #}
+  <div class="col-lg-5">
+    <div class="panel">
+      <div class="panel-title"><strong>Schedule / Results</strong></div>
+      <div class="panel-body" style="max-height:520px;overflow-y:auto">
+        <table class="table table-sm dense-table mb-0" style="font-size:.78rem">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Phase</th>
+              <th>Opponent</th>
+              <th class="text-end">Result</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for g in schedule %}
+            {% set is_home = (g.home_program_id == program.id) %}
+            {% set opp_name = g.away_short if is_home else g.home_short %}
+            <tr>
+              <td>{{ g.game_date }}</td>
+              <td><span class="text-secondary small">{{ g.phase }}</span></td>
+              <td>{{ 'vs' if is_home else '@' }}
+                  <a href="{{ url_for('college_program_view', program_id=g.away_program_id if is_home else g.home_program_id) }}">{{ opp_name }}</a></td>
+              <td class="text-end">
+                {% if g.played %}
+                  {% set my  = g.home_score if is_home else g.away_score %}
+                  {% set opp = g.away_score if is_home else g.home_score %}
+                  {% set won = my > opp %}
+                  <span class="badge bg-{{ 'success' if won else 'danger' }}">{{ 'W' if won else 'L' }}</span>
+                  {{ my }}-{{ opp }}
+                {% else %}<span class="text-secondary small">—</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

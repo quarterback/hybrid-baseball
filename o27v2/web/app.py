@@ -8462,6 +8462,191 @@ def api_pro_worldcup_reset():
     return jsonify({"ok": True, "deleted_games": n})
 
 
+# ---------------------------------------------------------------------------
+# College tier — landing, program detail, player detail, postseason,
+# admin actions (seed / sim season / run postseason / roll over)
+# ---------------------------------------------------------------------------
+
+def _college_current_season() -> int | None:
+    """Latest season present in college_programs, or None if unseeded."""
+    row = db.fetchone(
+        "SELECT MAX(season) AS s FROM college_programs"
+    ) if _table_exists("college_programs") else None
+    return (row or {}).get("s")
+
+
+def _table_exists(name: str) -> bool:
+    row = db.fetchone(
+        "SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    )
+    return bool(row)
+
+
+@app.route("/college")
+def college_view():
+    from o27v2 import college_league as _cl
+    _cl.init_college_schema()
+    season = request.args.get("season", type=int) or _college_current_season()
+    if season is None:
+        return _serve("college_index.html",
+                      season=None, conferences={}, meta=None,
+                      unplayed_count=0)
+    meta = db.fetchone("SELECT * FROM college_meta WHERE season = ?", (season,))
+    s = _cl.standings(season)
+    by_conf: dict[str, list[dict]] = {}
+    for row in s:
+        by_conf.setdefault(row["conference"], []).append(row)
+    unplayed = db.fetchone(
+        "SELECT COUNT(*) AS n FROM college_games "
+        "WHERE season=? AND phase='regular' AND played=0",
+        (season,),
+    )
+    return _serve("college_index.html",
+                  season=season, conferences=by_conf, meta=meta,
+                  unplayed_count=(unplayed or {}).get("n") or 0)
+
+
+@app.route("/college/program/<int:program_id>")
+def college_program_view(program_id: int):
+    program = db.fetchone(
+        "SELECT * FROM college_programs WHERE id = ?", (program_id,)
+    )
+    if not program:
+        abort(404)
+    roster = db.fetchall(
+        "SELECT * FROM college_players WHERE program_id = ? AND is_active = 1 "
+        "ORDER BY is_pitcher, college_year DESC, name", (program_id,)
+    )
+    sched = db.fetchall(
+        """SELECT g.*,
+                  ph.name AS home_name, ph.short_name AS home_short,
+                  pa.name AS away_name, pa.short_name AS away_short
+             FROM college_games g
+             JOIN college_programs ph ON ph.id = g.home_program_id
+             JOIN college_programs pa ON pa.id = g.away_program_id
+            WHERE (g.home_program_id = ? OR g.away_program_id = ?)
+              AND g.season = ?
+            ORDER BY g.game_date, g.id""",
+        (program_id, program_id, program["season"]),
+    )
+    # Quick win/loss count
+    wins = losses = 0
+    for g in sched:
+        if not g["played"]: continue
+        if g["home_program_id"] == program_id:
+            if g["home_score"] > g["away_score"]: wins += 1
+            elif g["home_score"] < g["away_score"]: losses += 1
+        else:
+            if g["away_score"] > g["home_score"]: wins += 1
+            elif g["away_score"] < g["home_score"]: losses += 1
+    return _serve("college_program.html",
+                  program=program, roster=roster, schedule=sched,
+                  wins=wins, losses=losses)
+
+
+@app.route("/college/player/<int:player_id>")
+def college_player_view(player_id: int):
+    player = db.fetchone(
+        "SELECT * FROM college_players WHERE id = ?", (player_id,)
+    )
+    if not player:
+        abort(404)
+    program = db.fetchone(
+        "SELECT * FROM college_programs WHERE id = ?", (player["program_id"],)
+    )
+    # Scouting reports for the player — only seniors get them.
+    reports = db.fetchall(
+        "SELECT * FROM college_scouting_reports WHERE player_id = ? "
+        "ORDER BY season DESC, source", (player_id,)
+    )
+    return _serve("college_player.html",
+                  player=player, program=program, reports=reports)
+
+
+@app.route("/college/postseason")
+def college_postseason_view():
+    season = request.args.get("season", type=int) or _college_current_season()
+    if season is None:
+        return _serve("college_postseason.html",
+                      season=None, regional=[], super_regional=[], cws=[])
+    regional = db.fetchall(
+        """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short
+             FROM college_games g
+             JOIN college_programs ph ON ph.id = g.home_program_id
+             JOIN college_programs pa ON pa.id = g.away_program_id
+            WHERE g.season = ? AND g.phase = 'regional'
+            ORDER BY g.bracket_meta, g.id""",
+        (season,),
+    )
+    super_regional = db.fetchall(
+        """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short
+             FROM college_games g
+             JOIN college_programs ph ON ph.id = g.home_program_id
+             JOIN college_programs pa ON pa.id = g.away_program_id
+            WHERE g.season = ? AND g.phase = 'super_regional'
+            ORDER BY g.bracket_meta, g.id""",
+        (season,),
+    )
+    cws = db.fetchall(
+        """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short
+             FROM college_games g
+             JOIN college_programs ph ON ph.id = g.home_program_id
+             JOIN college_programs pa ON pa.id = g.away_program_id
+            WHERE g.season = ? AND g.phase = 'cws'
+            ORDER BY g.id""",
+        (season,),
+    )
+    return _serve("college_postseason.html",
+                  season=season, regional=regional,
+                  super_regional=super_regional, cws=cws)
+
+
+@app.route("/api/college/seed", methods=["POST"])
+def api_college_seed():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or 2026
+    summary = _cl.seed_college_league(season=season,
+                                       rng_seed=request.form.get("rng_seed", type=int) or 0)
+    if summary["created_programs"] > 0:
+        _cl.generate_schedule(season=season)
+    return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/sim-season", methods=["POST"])
+def api_college_sim_season():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    result = _cl.sim_all_unplayed(season, rng_seed=request.form.get("rng_seed", type=int) or 0)
+    return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/run-postseason", methods=["POST"])
+def api_college_run_postseason():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    _cl.run_postseason(season, rng_seed=request.form.get("rng_seed", type=int) or 0)
+    _cl.generate_scouting_reports(season,
+                                    rng_seed=request.form.get("rng_seed", type=int) or 0)
+    return redirect(url_for("college_postseason_view", season=season))
+
+
+@app.route("/api/college/rollover", methods=["POST"])
+def api_college_rollover():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    next_season = season + 1
+    _cl.annual_rollover(season, next_season,
+                         rng_seed=request.form.get("rng_seed", type=int) or 0)
+    _cl.generate_schedule(season=next_season)
+    return redirect(url_for("college_view", season=next_season))
+
+
 @app.route("/auction")
 def auction_view():
     from o27v2 import auction as _auction
