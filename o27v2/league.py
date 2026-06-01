@@ -360,9 +360,37 @@ def build_universe_config(
                 f"{ndiv} divisions."
             )
         style  = lg.get("style")
-        locale = (lg.get("locale") or "").strip()
-        if locale and locale not in valid_regions:
-            raise ValueError(f"League {name!r}: unknown locale {locale!r}.")
+        locale_raw = lg.get("locale")
+        if isinstance(locale_raw, dict):
+            # Per-league custom blend: {region_id: weight}. Each key must
+            # resolve to a known region (presets aren't valid INSIDE a
+            # blend — a blend is a flat region:weight mix).
+            cleaned: dict[str, float] = {}
+            for rid, w in locale_raw.items():
+                rid_s = str(rid).strip()
+                if not rid_s:
+                    continue
+                if rid_s not in get_name_regions():
+                    raise ValueError(
+                        f"League {name!r}: blend includes unknown region "
+                        f"{rid_s!r} (must be a region, not a preset)."
+                    )
+                try:
+                    wv = float(w)
+                except (TypeError, ValueError):
+                    raise ValueError(
+                        f"League {name!r}: blend weight for {rid_s!r} must be a number."
+                    )
+                if wv > 0:
+                    cleaned[rid_s] = wv
+            if not cleaned:
+                locale = ""
+            else:
+                locale = cleaned  # type: ignore[assignment]
+        else:
+            locale = (locale_raw or "").strip()
+            if locale and locale not in valid_regions:
+                raise ValueError(f"League {name!r}: unknown locale {locale!r}.")
         park = (lg.get("park") or "").strip()
         if park and park not in _PARK_PROFILES:
             raise ValueError(f"League {name!r}: unknown park profile {park!r}.")
@@ -392,6 +420,9 @@ def build_universe_config(
                 raise ValueError(f"League {name!r}: unknown style {s!r}.")
             style_profiles[name] = s
         if locale:
+            # `locale` is either a string id (preset or single region) or
+            # a {region: weight} dict for an inline blend. Both shapes are
+            # consumed by resolve_name_region_weights / team_naming.
             name_regions[name] = locale
         if park:
             park_profiles[name] = park

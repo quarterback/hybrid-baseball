@@ -2987,6 +2987,48 @@
       "weights": {
         "us": 1.0
       }
+    },
+    "africa_pro": {
+      "label": "African (broad-mix)",
+      "weights": {
+        "africa": 0.4,
+        "africa_cricket": 0.2,
+        "north_africa": 0.15,
+        "uganda": 0.08,
+        "namibia": 0.07,
+        "cape_verde": 0.05,
+        "mauritius": 0.05
+      }
+    },
+    "oceania": {
+      "label": "Oceania (ANZAC + Pacific)",
+      "weights": {
+        "anzac": 0.55,
+        "pacific_islands": 0.3,
+        "guam": 0.1,
+        "philippines": 0.05
+      }
+    },
+    "us_majority": {
+      "label": "USA majority + global (70/30)",
+      "weights": {
+        "us": 0.7,
+        "latin_america": 0.1,
+        "east_asia": 0.05,
+        "europe_western": 0.05,
+        "anzac": 0.05,
+        "africa": 0.05
+      }
+    },
+    "east_asia_majority": {
+      "label": "East Asia majority + global (75/25)",
+      "weights": {
+        "east_asia": 0.75,
+        "us": 0.1,
+        "latin_america": 0.05,
+        "southeast_asia": 0.05,
+        "philippines": 0.05
+      }
     }
   }
 }

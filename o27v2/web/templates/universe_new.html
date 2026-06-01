@@ -209,11 +209,15 @@
         <input type="hidden" name="lg_custom" class="lg-custom" value="">
       </label>
       <label class="block">
-        <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Home region</span>
-        <select name="lg_locale" class="block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+        <span class="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+          <span>Home region</span>
+          <button type="button" class="lg-blend-toggle text-[0.65rem] uppercase tracking-wider font-semibold text-indigo-600 dark:text-indigo-400 hover:underline" title="Build a custom blend across multiple regions">🎨 Blend…</button>
+        </span>
+        <select class="lg-locale-sel block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
           <option value="">(default mix)</option>
           {% for o in locale_options %}<option value="{{ o.id }}">{{ o.label }} — {{ o.group }}</option>{% endfor %}
         </select>
+        <input type="hidden" name="lg_locale" class="lg-locale-hidden" value="">
       </label>
       <label class="block">
         <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Park geometry</span>
@@ -229,6 +233,26 @@
           <option value="1">On</option>
         </select>
       </label>
+    </div>
+
+    {# Blend editor — hidden by default; toggled with the 🎨 Blend link. #}
+    <div class="lg-blend-panel hidden rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50/60 dark:bg-indigo-950/30 px-4 py-3 mb-3">
+      <div class="flex items-start justify-between gap-3 mb-2 flex-wrap">
+        <div class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl">
+          <span class="font-semibold">Custom blend:</span> pick multiple regions with relative weights. Weights are
+          auto-normalized so they only need to be proportional (e.g. 70 / 20 / 10 or 7 / 2 / 1 both work). When the
+          blend has any rows, it overrides the single-region dropdown above.
+        </div>
+        <div class="flex items-center gap-2">
+          <select class="lg-blend-add rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+            <option value="">+ Add region…</option>
+            {% for r in region_options %}<option value="{{ r.id }}">{{ r.label }}</option>{% endfor %}
+          </select>
+          <button type="button" class="lg-blend-clear text-[0.65rem] uppercase tracking-wider font-semibold text-rose-600 dark:text-rose-400 hover:underline">Clear all</button>
+        </div>
+      </div>
+      <div class="lg-blend-rows space-y-1.5"></div>
+      <div class="lg-blend-summary text-[0.65rem] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400 mt-2"></div>
     </div>
 
     {# Custom style panel — collapsible, lights up when style="custom" #}
@@ -299,13 +323,16 @@
   // user can drop in a configured league with one click instead of typing.
   // Keeps the locale list aligned with what the backend already accepts.
   const QUICK_PRESETS = [
-    {label: '⚾ O27 MLB',    name: 'O27 MLB',   teams: 8, divisions: 2, style: 'dominican', locale: 'us'},
-    {label: '🇯🇵 O27 NPB',    name: 'O27 NPB',   teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia'},
-    {label: '🇰🇷 O27 KBO',    name: 'O27 KBO',   teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia'},
-    {label: '🇪🇺 European',   name: 'O27 EBL',   teams: 6, divisions: 1, style: 'european',  locale: 'european'},
-    {label: '🌴 Caribbean',   name: 'O27 LIDOM', teams: 6, divisions: 1, style: 'caribbean', locale: 'latin_america'},
-    {label: '🏃 Athletic',    name: 'O27 ABL',   teams: 6, divisions: 1, style: 'athletic',  locale: 'us'},
-    {label: '🌍 Zaryanovia',  name: 'Z-League',  teams: 8, divisions: 2, style: 'balanced',  locale: 'zaryanovia'},
+    {label: '⚾ O27 MLB',     name: 'O27 MLB',     teams: 8, divisions: 2, style: 'dominican', locale: 'americas_pro'},
+    {label: '🇯🇵 O27 NPB',     name: 'O27 NPB',     teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia_majority'},
+    {label: '🇰🇷 O27 KBO',     name: 'O27 KBO',     teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia_majority'},
+    {label: '🇪🇺 European',    name: 'O27 EBL',     teams: 6, divisions: 1, style: 'european',  locale: 'european'},
+    {label: '🌴 Caribbean',    name: 'O27 LIDOM',   teams: 6, divisions: 1, style: 'caribbean', locale: 'latin_america'},
+    {label: '🏃 Athletic',     name: 'O27 ABL',     teams: 6, divisions: 1, style: 'athletic',  locale: 'us_majority'},
+    {label: '🌍 Zaryanovia',   name: 'Z-League',    teams: 8, divisions: 2, style: 'balanced',  locale: 'zaryanovia'},
+    {label: '🌍 Africa',       name: 'O27 AFC',     teams: 6, divisions: 1, style: 'balanced',  locale: 'africa_pro'},
+    {label: '🇦🇺 Oceania',     name: 'O27 OBL',     teams: 6, divisions: 1, style: 'balanced',  locale: 'oceania'},
+    {label: '🌐 Global mix',   name: 'O27 Global',  teams: 8, divisions: 2, style: 'balanced',  locale: 'global'},
   ];
 
   function clamp(v) { return Math.max(-STYLE_MAX, Math.min(STYLE_MAX, v)); }
@@ -356,6 +383,90 @@
     const hidden   = card.querySelector('.lg-custom');
     const panel    = card.querySelector('.lg-custom-panel');
     const presetSel = panel.querySelector('.lg-preset');
+    const localeSel  = card.querySelector('.lg-locale-sel');
+    const localeHid  = card.querySelector('.lg-locale-hidden');
+    const blendPanel = card.querySelector('.lg-blend-panel');
+    const blendRows  = card.querySelector('.lg-blend-rows');
+    const blendAdd   = card.querySelector('.lg-blend-add');
+    const blendClear = card.querySelector('.lg-blend-clear');
+    const blendSummary = card.querySelector('.lg-blend-summary');
+    const blendToggle  = card.querySelector('.lg-blend-toggle');
+
+    // Region label map for the blend row rendering.
+    const REGION_LABELS = {};
+    blendAdd.querySelectorAll('option').forEach(o => {
+      if (o.value) REGION_LABELS[o.value] = o.textContent;
+    });
+
+    function snapshotBlend() {
+      const out = {};
+      blendRows.querySelectorAll('.lg-blend-row').forEach(r => {
+        const rid = r.dataset.rid;
+        const w   = parseFloat(r.querySelector('.lg-blend-w').value) || 0;
+        if (rid && w > 0) out[rid] = w;
+      });
+      return out;
+    }
+
+    function refreshLocaleHidden() {
+      const blend = snapshotBlend();
+      const keys = Object.keys(blend);
+      if (keys.length) {
+        // Normalize so the values display as proportions but the dict
+        // remains correct (the backend normalizes too, but showing the
+        // normalized share is nicer feedback).
+        const total = keys.reduce((s, k) => s + blend[k], 0) || 1;
+        localeHid.value = JSON.stringify(blend);
+        localeSel.disabled = true;
+        localeSel.classList.add('opacity-50');
+        blendSummary.textContent = keys.length + ' regions · '
+          + keys.map(k => REGION_LABELS[k] + ' ' + Math.round(100 * blend[k] / total) + '%').join(' · ');
+      } else {
+        localeHid.value = localeSel.value;
+        localeSel.disabled = false;
+        localeSel.classList.remove('opacity-50');
+        blendSummary.textContent = '';
+      }
+    }
+
+    function addBlendRow(rid, weight) {
+      if (!rid) return;
+      if (blendRows.querySelector(`[data-rid="${rid}"]`)) return; // already present
+      const row = document.createElement('div');
+      row.className = 'lg-blend-row flex items-center gap-2';
+      row.dataset.rid = rid;
+      row.innerHTML = `
+        <span class="text-xs text-slate-700 dark:text-slate-200 flex-1 truncate">${REGION_LABELS[rid] || rid}</span>
+        <input type="number" min="0" step="1" value="${weight || 10}"
+               class="lg-blend-w w-20 rounded border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs font-mono text-right text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+        <span class="text-[0.65rem] text-slate-400">weight</span>
+        <button type="button" class="lg-blend-rm text-rose-600 hover:text-rose-700 text-xs">✕</button>
+      `;
+      row.querySelector('.lg-blend-w').addEventListener('input', refreshLocaleHidden);
+      row.querySelector('.lg-blend-rm').addEventListener('click', () => {
+        row.remove(); refreshLocaleHidden();
+      });
+      blendRows.appendChild(row);
+    }
+
+    blendAdd.addEventListener('change', () => {
+      if (blendAdd.value) {
+        addBlendRow(blendAdd.value);
+        blendAdd.value = '';
+        // Open the blend panel as soon as the first row lands so the user
+        // sees what they just added.
+        blendPanel.classList.remove('hidden');
+        refreshLocaleHidden();
+      }
+    });
+    blendClear.addEventListener('click', () => {
+      blendRows.innerHTML = '';
+      refreshLocaleHidden();
+    });
+    blendToggle.addEventListener('click', () => {
+      blendPanel.classList.toggle('hidden');
+    });
+    localeSel.addEventListener('change', refreshLocaleHidden);
 
     function syncPanel() {
       const isCustom = styleSel.value === 'custom';
@@ -390,14 +501,15 @@
     });
 
     card.querySelector('.lg-clone').addEventListener('click', () => {
-      // Snapshot every input/select in this card, then build a fresh one
-      // pre-filled with the same values. Clones the custom-style values too.
+      // Snapshot the card: form values + custom-style biases + blend rows.
+      const blendSnap = snapshotBlend();
+      const hasBlend = Object.keys(blendSnap).length > 0;
       const snapshot = {
         name:      card.querySelector('[name=lg_name]').value + ' (copy)',
         teams:     card.querySelector('[name=lg_teams]').value,
         divisions: card.querySelector('[name=lg_divisions]').value,
         style:     styleSel.value,
-        locale:    card.querySelector('[name=lg_locale]').value,
+        locale:    hasBlend ? blendSnap : localeSel.value,
         park:      card.querySelector('[name=lg_park]').value,
         power_play: card.querySelector('[name=lg_power_play]').value,
       };
@@ -430,11 +542,21 @@
       if (preset.teams)     card.querySelector('[name=lg_teams]').value = preset.teams;
       if (preset.divisions) card.querySelector('[name=lg_divisions]').value = preset.divisions;
       if (preset.style)     styleSel.value = preset.style;
-      if (preset.locale)    card.querySelector('[name=lg_locale]').value = preset.locale;
       if (preset.park)      card.querySelector('[name=lg_park]').value = preset.park;
       if (preset.power_play !== undefined) card.querySelector('[name=lg_power_play]').value = preset.power_play;
+      // Locale can arrive as a string id (preset/region) OR an object blend.
+      // Object form populates the blend editor and disables the dropdown.
+      if (preset.locale !== undefined && preset.locale !== null) {
+        if (typeof preset.locale === 'object') {
+          Object.entries(preset.locale).forEach(([rid, w]) => addBlendRow(rid, w));
+          blendPanel.classList.remove('hidden');
+        } else if (preset.locale) {
+          localeSel.value = preset.locale;
+        }
+      }
     }
 
+    refreshLocaleHidden();
     stack.appendChild(frag);
     syncPanel();
     updateSummary();
