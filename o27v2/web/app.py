@@ -8707,10 +8707,11 @@ def college_game_view(game_id: int):
 @app.route("/college/draft")
 def college_draft_view():
     from o27v2 import college_league as _cl
-    draft = _cl.draft_class(season=request.args.get("season", type=int)
-                                    or _college_current_season())
-    # Group reports per player for the triangulation view (one row per
-    # player, with shared+service-vs-team report cells side-by-side).
+    season = request.args.get("season", type=int) or _college_current_season()
+    position = request.args.get("position") or None
+    if position not in _cl.DRAFT_POSITIONS:
+        position = None
+    draft = _cl.draft_class(season=season, position=position)
     for p in draft:
         by_src: dict[str, dict] = {}
         for r in p["reports"]:
@@ -8718,7 +8719,9 @@ def college_draft_view():
         p["report_service"] = by_src.get("service")
         p["report_first_team"] = next((v for k, v in by_src.items()
                                        if k.startswith("team:")), None)
-    return _serve("college_draft.html", draft=draft)
+    return _serve("college_draft.html", draft=draft,
+                  position=position, positions=_cl.DRAFT_POSITIONS,
+                  season=season)
 
 
 @app.route("/api/college/sign/<int:college_player_id>", methods=["POST"])
@@ -8739,8 +8742,11 @@ def college_import_view():
     their reports, and choose where to land them: FA pool (auction-
     ready) or directly on a specific team's roster."""
     from o27v2 import college_league as _cl
-    draft = _cl.draft_class(season=request.args.get("season", type=int)
-                                    or _college_current_season())
+    season = request.args.get("season", type=int) or _college_current_season()
+    position = request.args.get("position") or None
+    if position not in _cl.DRAFT_POSITIONS:
+        position = None
+    draft = _cl.draft_class(season=season, position=position)
     for p in draft:
         by_src: dict[str, dict] = {}
         for r in p["reports"]:
@@ -8751,7 +8757,9 @@ def college_import_view():
     teams = db.fetchall(
         "SELECT id, name, league FROM teams ORDER BY league, name"
     ) if _table_exists("teams") else []
-    return _serve("college_import.html", draft=draft, teams=teams)
+    return _serve("college_import.html", draft=draft, teams=teams,
+                  position=position, positions=_cl.DRAFT_POSITIONS,
+                  season=season)
 
 
 @app.route("/api/college/bulk-sign", methods=["POST"])

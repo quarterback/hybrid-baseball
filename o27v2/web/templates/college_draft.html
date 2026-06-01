@@ -13,7 +13,20 @@
       on that attribute. Sign at your own risk.
     </div>
   </div>
-  <a href="{{ url_for('college_view') }}" class="btn btn-sm btn-outline-secondary">← Standings</a>
+  <div class="d-flex gap-2 align-items-center">
+    <form method="get" action="{{ url_for('college_draft_view') }}" class="d-flex gap-2 align-items-center">
+      {% if season %}<input type="hidden" name="season" value="{{ season }}">{% endif %}
+      <label class="form-label small mb-0">Position:</label>
+      <select name="position" class="form-select form-select-sm" style="max-width:140px"
+              onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for p in positions %}
+          <option value="{{ p }}" {% if p == position %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <a href="{{ url_for('college_view') }}" class="btn btn-sm btn-outline-secondary">← Standings</a>
+  </div>
 </div>
 
 {% if not draft %}

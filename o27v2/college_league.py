@@ -1072,21 +1072,43 @@ def player_season_totals(player_id: int) -> dict:
     return _career_stats(player_id)
 
 
-def draft_class(season: int) -> list[dict]:
-    """Graduated seniors for a season — the available signing pool —
-    with both scouting reports zipped in side-by-side for triangulation."""
-    rows = db.fetchall(
-        """SELECT pl.*, prg.short_name AS program_short, prg.name AS program_name
-             FROM college_players pl
-             JOIN college_programs prg ON prg.id = pl.program_id
-            WHERE pl.graduated = 1 AND pl.signed_pro_player_id IS NULL
-            ORDER BY pl.is_pitcher, pl.name""",
+def draft_class(season: int | None = None,
+                *,
+                position: str | None = None) -> list[dict]:
+    """Graduated seniors — the available signing pool — with both
+    scouting reports zipped in side-by-side for triangulation.
+
+    Filter knobs:
+      * `season`   — scope to a specific season's class (None = any
+                     year still-unsigned). Filtered via the program's
+                     season since each yearly rollover duplicates the
+                     program row.
+      * `position` — canonical position code; 'P' returns all pitchers,
+                     CF/SS/2B/3B/RF/LF/1B/C return positional players.
+    """
+    where = ["pl.graduated = 1", "pl.signed_pro_player_id IS NULL"]
+    args: list = []
+
+    if season is not None:
+        where.append("prg.season = ?")
+        args.append(season)
+
+    if position:
+        where.append("pl.position = ?")
+        args.append(position)
+
+    sql = (
+        "SELECT pl.*, prg.short_name AS program_short, prg.name AS program_name, "
+        "       prg.conference "
+        "  FROM college_players pl "
+        "  JOIN college_programs prg ON prg.id = pl.program_id "
+        " WHERE " + " AND ".join(where) +
+        " ORDER BY pl.is_pitcher, pl.position, pl.name"
     )
+    rows = db.fetchall(sql, tuple(args))
     out = []
     for r in rows:
         p = dict(r)
-        # Reports come from generate_scouting_reports. Two-key zip:
-        # {'service': {...}, 'team:42': {...}, ...}
         reports = db.fetchall(
             "SELECT * FROM college_scouting_reports WHERE player_id = ? "
             "ORDER BY source", (p["id"],),
@@ -1094,6 +1116,11 @@ def draft_class(season: int) -> list[dict]:
         p["reports"] = [dict(r2) for r2 in reports]
         out.append(p)
     return out
+
+
+# Canonical position codes for filter dropdowns ('P' covers all pitchers).
+DRAFT_POSITIONS: tuple[str, ...] = ("P", "C", "1B", "2B", "3B", "SS",
+                                     "LF", "CF", "RF")
 
 
 # ---------------------------------------------------------------------------
