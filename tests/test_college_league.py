@@ -25,7 +25,8 @@ def test_seed_creates_real_conferences_with_rosters(college_db):
     summary = cl.seed_college_league(season=2026, rng_seed=42)
     # Real D1 + selected D3 catalog — 18 conferences, ~195 programs.
     assert summary["created_programs"] >= 180
-    assert summary["created_players"] == 23 * summary["created_programs"]
+    # 35-man rosters per program (real NCAA D1 active-roster size).
+    assert summary["created_players"] == 35 * summary["created_programs"]
 
     progs = db.fetchall("SELECT * FROM college_programs WHERE season = 2026")
     assert len(progs) == summary["created_programs"]

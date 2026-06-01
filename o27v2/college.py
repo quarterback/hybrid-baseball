@@ -320,44 +320,75 @@ def make_engine_player(player: dict, *, home_bonus: float = 0.0):
 # Roster + engine Team construction
 # ---------------------------------------------------------------------------
 
+# Real NCAA D1 baseball active rosters are 35-man (27 travel-eligible).
+# Shape mirrors the pro convention's structural conventions enough for
+# the engine builder to slot players into starters / backups / jokers /
+# pitching staff without surprises.
+ROSTER_SIZE = 35
+
+
 def generate_college_roster(rng: random.Random,
                             program_name: str = "Program",
                             *, country: str = "US") -> list[dict]:
-    """Build a full college roster — 8 canonical-position starters,
-    3 jokers (the DH slot, mirrors pro convention), 4 fielder backups,
-    and 8 pitchers. Players get auto-assigned `position` per slot."""
+    """Build a 35-man college roster — 8 canonical-position starters,
+    3 jokers (the DH slot), 11 fielder backups for PH/PR/defensive
+    depth, 13 pitchers (rotation + bullpen). Each player gets an
+    auto-assigned `position`."""
     roster: list[dict] = []
-    # Starters at each canonical position.
+
+    # 8 canonical starters (one at each fielding position).
     for pos in _FIELDING_POSITIONS:
-        roster.append(generate_college_player(rng, is_pitcher=False,
-                                              name=f"{program_name} {pos}",
-                                              country=country, position=pos))
-    # Jokers (DH role).
+        roster.append(generate_college_player(
+            rng, is_pitcher=False,
+            name=f"{program_name} {pos}",
+            country=country, position=pos,
+        ))
+
+    # 3 jokers (the DH role — drafted explicitly as bat-only, fixed
+    # in the lineup). Stat profile leans hit-skill heavy.
     for i in range(3):
         jk = generate_college_player(rng, is_pitcher=False,
                                      name=f"{program_name} J{i+1}",
                                      country=country, position="")
-        jk["is_joker"]     = 1
-        jk["roster_slot"]  = "joker"
-        # Jokers are pure bats — bump hit-skill grades a touch
+        jk["is_joker"]    = 1
+        jk["roster_slot"] = "joker"
         for attr in ("skill", "contact", "power"):
             jk[f"potential_{attr}"] = min(80, jk[f"potential_{attr}"] + 6)
             jk[attr] = _displayed_grade(jk[f"potential_{attr}"], jk[f"access_{attr}"])
         roster.append(jk)
-    # Fielder backups (varied positions).
-    backup_positions = ("CF", "SS", "2B", "C")
+
+    # 11 fielder backups for PH / PR / defensive substitution coverage.
+    # High-rotation positions get double-deep (CF/SS/2B/C), the rest
+    # get one body each — mirrors the pro convention so engine subs
+    # land naturally.
+    backup_positions = (
+        # High-rotation depth (4)
+        "CF", "SS", "2B", "C",
+        # Corner backups (3)
+        "3B", "1B", "LF",
+        # Extra-depth (4)
+        "RF", "CF", "SS", "2B",
+    )
     for pos in backup_positions:
-        roster.append(generate_college_player(rng, is_pitcher=False,
-                                              name=f"{program_name} bk-{pos}",
-                                              country=country, position=pos))
-    # Pitching staff.
-    for i in range(8):
-        roster.append(generate_college_player(rng, is_pitcher=True,
-                                              name=f"{program_name} P{i+1}",
-                                              country=country, position="P"))
-    # Stamp synthetic ids so engine has player_id keys.
+        roster.append(generate_college_player(
+            rng, is_pitcher=False,
+            name=f"{program_name} bk-{pos}",
+            country=country, position=pos,
+        ))
+
+    # 13 pitchers — rotation (4) + bullpen (9). Engine picks the SP
+    # per game and the rest are available out of the pen.
+    for i in range(13):
+        roster.append(generate_college_player(
+            rng, is_pitcher=True,
+            name=f"{program_name} P{i+1}",
+            country=country, position="P",
+        ))
+
+    # Stamp synthetic ids so the engine has player_id keys.
     for idx, pl in enumerate(roster):
         pl["id"] = pl.get("id") or idx + 1
+    assert len(roster) == ROSTER_SIZE, (len(roster), ROSTER_SIZE)
     return roster
 
 

@@ -212,17 +212,23 @@ def test_make_engine_player_builds_and_sees_displayed():
 # ---------------------------------------------------------------------------
 
 def test_generate_college_roster_has_full_shape():
-    """Default roster: 8 starters at canonical positions + 3 jokers
-    + 4 backups + 8 pitchers = 23 players."""
+    """35-man NCAA D1 active roster: 8 starters at canonical positions
+    + 11 fielder backups + 3 jokers + 13 pitchers."""
     rng = random.Random(100)
     roster = cg.generate_college_roster(rng, "Test U")
-    assert len(roster) == 23
+    assert len(roster) == cg.ROSTER_SIZE == 35
     starters_pos = {p["position"] for p in roster
                     if not p.get("is_pitcher") and not p.get("is_joker")
                     and p["position"] in cg._FIELDING_POSITIONS}
     assert starters_pos == set(cg._FIELDING_POSITIONS)
     assert sum(1 for p in roster if p.get("is_joker")) == 3
-    assert sum(1 for p in roster if p.get("is_pitcher")) == 8
+    assert sum(1 for p in roster if p.get("is_pitcher")) == 13
+    # Backups: 35 total - 8 starters - 3 jokers - 13 pitchers = 11
+    backups = [p for p in roster
+               if not p.get("is_pitcher") and not p.get("is_joker")
+               and p["position"] in cg._FIELDING_POSITIONS
+               and p["name"].startswith("Test U bk-")]
+    assert len(backups) == 11
 
 
 def test_sim_one_college_game_through_the_engine():
