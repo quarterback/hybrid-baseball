@@ -8966,6 +8966,57 @@ def api_health():
 
 
 # ---------------------------------------------------------------------------
+# League economy — budgets + demand + bid aggression
+# ---------------------------------------------------------------------------
+
+@app.route("/economy")
+def economy_view():
+    from o27v2 import economy as _econ
+    from o27v2.transactions import current_season
+    season = request.args.get("season", type=int) or current_season()
+    cfg = _econ.get_config(season)
+    budgets = _econ.all_budgets(season)
+    # Sample asking prices at common overall grades so the user can
+    # see what the demand_scale knob translates to.
+    sample_grades = [(g, _econ.player_ask(g, season))
+                     for g in (30, 40, 50, 55, 60, 65, 70, 75, 80)]
+    return _serve("economy.html",
+                  season=season, cfg=cfg, budgets=budgets,
+                  sample_grades=sample_grades)
+
+
+@app.route("/api/economy/save", methods=["POST"])
+def api_economy_save():
+    from o27v2 import economy as _econ
+    from o27v2.transactions import current_season
+    season = request.form.get("season", type=int) or current_season()
+    budget = request.form.get("budget_per_team", type=int) or _econ.DEFAULT_BUDGET_PER_TEAM
+    demand = request.form.get("demand_scale", type=float) or _econ.DEFAULT_DEMAND_SCALE
+    aggro  = request.form.get("bid_aggression", type=float) or _econ.DEFAULT_BID_AGGRESSION
+    # Clamp to sane ranges
+    budget = max(1_000, min(10_000_000, budget))
+    demand = max(0.1, min(5.0, demand))
+    aggro  = max(0.1, min(2.0, aggro))
+    _econ.set_config(season, budget, demand, aggro)
+    flash(f"Economy updated for season {season} · "
+          f"ƒ{budget:,}/team · demand ×{demand} · aggression ×{aggro}.",
+          "info")
+    return redirect(url_for("economy_view", season=season))
+
+
+@app.route("/api/economy/init-budgets", methods=["POST"])
+def api_economy_init_budgets():
+    from o27v2 import economy as _econ
+    from o27v2.transactions import current_season
+    season = request.form.get("season", type=int) or current_season()
+    force = bool(request.form.get("force"))
+    n = _econ.init_budgets(season, force=force)
+    action = "Reset" if force else "Initialized"
+    flash(f"{action} budgets for {n} teams (season {season}).", "info")
+    return redirect(url_for("economy_view", season=season))
+
+
+# ---------------------------------------------------------------------------
 # Financials — live FX board for the two in-game fictional currencies
 # (guilder, zora) plus every real-world currency the game references.
 # ---------------------------------------------------------------------------
