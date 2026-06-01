@@ -57,6 +57,15 @@
           Sim week
         </button>
       </form>
+      <form method="post" action="{{ url_for('api_college_abstract_season') }}" class="d-inline-block"
+            onsubmit="return confirm('Skip the per-game sim and generate a full season worth of stats + W-L records directly from player grades? Way faster than playing every game, and the auction pipeline still works after. Postseason will run normally after this.');">
+        <input type="hidden" name="season" value="{{ season }}">
+        <button class="btn btn-sm btn-success" type="submit"
+                {% if meta and meta.phase != 'regular' %}disabled{% endif %}
+                title="Generate season stats + standings without iterating individual games (~10,000× faster than the per-game sim). Use this when you don't care about watching college games and just want the data + scouting reports + auction-ready graduates.">
+          Auto-run season (skip games)
+        </button>
+      </form>
       <form method="post" action="{{ url_for('api_college_run_postseason') }}" class="d-inline-block">
         <input type="hidden" name="season" value="{{ season }}">
         <button class="btn btn-sm btn-outline-primary" type="submit"

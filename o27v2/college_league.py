@@ -40,6 +40,7 @@ from datetime import date, timedelta
 
 from o27v2 import db
 from o27v2 import college as _cg
+from o27v2 import auction as _au
 
 
 # ---------------------------------------------------------------------------
@@ -949,6 +950,283 @@ def _persist_fast_game(game_id: int, home_program_id: int,
                 (game_id, prog_id, p["player_id"], p["ip_outs"], p["h"],
                  p["r"], p["er"], p["bb"], p["k"], p["hr"], p["bf"]),
             )
+
+
+def _abstract_player_line(player: dict, league_pitcher_ovr: float,
+                          league_hitter_ovr: float,
+                          *, games_per_team: int = 55,
+                          is_starter: bool = True,
+                          is_rotation: bool = True,
+                          rng: random.Random) -> dict:
+    """One player's season stat line in aggregate — no per-game iteration.
+
+    For HITTERS: PAs scale with role (starter ~230, backup ~110). H/HR/BB/K
+    sampled in bulk from the player's per-PA outcome probabilities vs
+    league-average opposition. Same probability shape as `_fast_sim_game`
+    so a player gets the same expected line either way.
+
+    For PITCHERS: outs scale with rotation role (SP ~210 outs ≈ 70 IP,
+    long-relief ~120 outs, short-relief ~60 outs). Hits/walks/Ks sampled
+    against league-average opposition.
+
+    `league_pitcher_ovr` / `league_hitter_ovr` are the league-wide
+    averages used as the OPPONENT in the matchup formulas. Avoids the
+    O(N²) program-vs-program iteration entirely.
+    """
+    if player.get("is_pitcher"):
+        skill = int(player.get("pitcher_skill", 50))
+        cmd   = int(player.get("command", 50))
+        mov   = int(player.get("movement", 50))
+        ovr = (skill + cmd + mov) // 3
+        # Workload: rotation arms get ~12 starts × ~6 IP = 72 IP (216 outs).
+        # Long relief: ~120 outs; short relief: ~60 outs.
+        if is_rotation:
+            outs = max(60, int(rng.gauss(216, 30)))
+        else:
+            base = 100 if is_starter else 50
+            outs = max(20, int(rng.gauss(base, 18)))
+        bf = int(outs * 1.35)   # ~1.35 batters faced per out is league-typical
+        # Per-PA against this pitcher (calibrated to fast_sim formulas).
+        p_bb = max(0.03, min(0.20, 0.07 + 0.0035 * (league_hitter_ovr - cmd)))
+        p_k  = max(0.10, min(0.45, 0.20 + 0.0040 * (skill - league_hitter_ovr)))
+        bb = int(round(bf * p_bb))
+        k  = int(round(bf * p_k))
+        ab = bf - bb
+        in_play = ab - k
+        p_hit_on_ab = max(0.18, min(0.45,
+                          0.25 + 0.0040 * (league_hitter_ovr - skill)))
+        p_hr_on_hit = max(0.05, min(0.30,
+                          0.10 + 0.0035 * (league_hitter_ovr - mov)))
+        h = int(round(p_hit_on_ab / max(0.01, 1.0 - p_k) * in_play))
+        h = min(h, in_play)
+        hr = int(round(h * p_hr_on_hit))
+        # ER ≈ 0.95 × R; R itself ≈ hits × 0.55 + walks × 0.25 + hr (each = 1 run minimum)
+        r = int(round(h * 0.55 + bb * 0.20 + hr))
+        er = int(round(r * 0.92))
+        return {"player_id": int(player["id"]),
+                "outs": outs, "h": h, "r": r, "er": er, "bb": bb,
+                "k": k, "hr": hr, "bf": bf}
+
+    skill   = int(player.get("skill", 50))
+    contact = int(player.get("contact", 50))
+    power   = int(player.get("power", 50))
+    eye     = int(player.get("eye", 50))
+    pa_target = (228 if is_starter else 110)
+    pa = max(20, int(rng.gauss(pa_target, pa_target * 0.12)))
+    p_bb = max(0.03, min(0.20, 0.07 + 0.0035 * (eye - league_pitcher_ovr)))
+    p_k  = max(0.10, min(0.45, 0.20 + 0.0040 * (league_pitcher_ovr - contact)))
+    p_hit_on_ab = max(0.18, min(0.45,
+                      0.25 + 0.0040 * (contact - league_pitcher_ovr)))
+    p_hr_on_hit = max(0.05, min(0.30,
+                      0.10 + 0.0035 * (power - league_pitcher_ovr)))
+    bb = int(round(pa * p_bb))
+    ab = pa - bb
+    k = int(round(ab * p_k))
+    in_play = ab - k
+    h = int(round(p_hit_on_ab / max(0.01, 1.0 - p_k) * in_play))
+    h = min(h, in_play)
+    hr = int(round(h * p_hr_on_hit))
+    xbh_rest = max(0, int(round((h - hr) * 0.22)))
+    doubles = int(xbh_rest * 0.85)
+    triples = xbh_rest - doubles
+    rbi = int(round(h * 0.45 + hr * 1.5))
+    r_scored = int(round(h * 0.40 + hr * 1.0))
+    return {"player_id": int(player["id"]),
+            "pa": pa, "ab": ab, "h": h,
+            "doubles": doubles, "triples": triples, "hr": hr,
+            "rbi": rbi, "r": r_scored, "bb": bb, "k": k,
+            "sb": 0, "cs": 0}
+
+
+def run_abstract_season(season: int, *, rng_seed: int = 0,
+                        games_per_team: int = 55) -> dict:
+    """Generate a full college season's worth of stats + W-L records
+    WITHOUT iterating any games. ~10,000x faster than per-game sim;
+    intended for users who don't want to watch college games and just
+    need the season totals + scouting signal so the auction pipeline
+    works.
+
+    What it does:
+      * Computes per-program team strength (lineup vs staff OVR).
+      * Samples each program's W-L via Pythagorean win-pct against
+        the league mean, plus noise. Total wins league-wide stays
+        ≈ games_per_team × n_programs / 2 by construction.
+      * Stamps all scheduled `played=0` games with synthetic 1-0 / 0-1
+        scores aggregating to those W-L records, so standings(season)
+        keeps working unchanged.
+      * Computes ONE season stat line per player (no per-game rows)
+        from their grades vs league-average opposition. Persists into
+        college_batter_stats / college_pitcher_stats against a single
+        synthetic phase='season_summary' game so the leaders / per-
+        player queries work without schema changes.
+      * Sets college_meta phase = 'regular' (postseason still runs as
+        normal — small volume, fast).
+
+    Returns {programs: N, games_marked_played: N, batters_written: N,
+             pitchers_written: N}.
+    """
+    init_college_schema()
+    rng = random.Random((rng_seed or 0) ^ season ^ 0xAB57AC7)
+
+    progs = db.fetchall(
+        "SELECT id, name, short_name, conference, region "
+        "FROM college_programs WHERE season = ? ORDER BY id", (season,))
+    if not progs:
+        return {"programs": 0, "games_marked_played": 0,
+                "batters_written": 0, "pitchers_written": 0}
+
+    # Per-program team strength + sorted hitters/pitchers (to identify
+    # starters vs depth at stat-line time).
+    prog_meta: dict[int, dict] = {}
+    league_hitter_sum = league_hitter_n = 0
+    league_pitcher_sum = league_pitcher_n = 0
+    for prog in progs:
+        roster = _roster_for_program(prog["id"])
+        if not roster:
+            continue
+        hitters = sorted(
+            (p for p in roster if not p.get("is_pitcher")),
+            key=_au._player_overall, reverse=True)
+        pitchers = sorted(
+            (p for p in roster if p.get("is_pitcher")),
+            key=_au._player_overall, reverse=True)
+        # Top-9 hitter OVR avg + top-4 pitcher OVR avg = team strength
+        top9 = hitters[:9] or hitters
+        top4 = pitchers[:4] or pitchers
+        h_ovr = (sum(_au._player_overall(p) for p in top9) / max(1, len(top9)))
+        p_ovr = (sum(_au._player_overall(p) for p in top4) / max(1, len(top4)))
+        # Lineup OVR weighted 60 / pitching OVR weighted 40 — typical
+        # offense vs pitching contribution to win expectancy in college.
+        team_strength = h_ovr * 0.60 + p_ovr * 0.40
+        prog_meta[prog["id"]] = {
+            "hitters": hitters, "pitchers": pitchers,
+            "team_strength": team_strength,
+        }
+        for h in hitters:
+            league_hitter_sum += _au._player_overall(h)
+            league_hitter_n   += 1
+        for p in pitchers:
+            league_pitcher_sum += _au._player_overall(p)
+            league_pitcher_n   += 1
+
+    if not prog_meta:
+        return {"programs": 0, "games_marked_played": 0,
+                "batters_written": 0, "pitchers_written": 0}
+
+    league_hitter_ovr  = league_hitter_sum  / max(1, league_hitter_n)
+    league_pitcher_ovr = league_pitcher_sum / max(1, league_pitcher_n)
+    league_mean_strength = (
+        sum(m["team_strength"] for m in prog_meta.values())
+        / max(1, len(prog_meta))
+    )
+
+    # --- Stamp the existing scheduled games as played with synthetic scores ---
+    # Sampled using log-odds(home_strength - away_strength) so the natural
+    # W-L per program emerges from the schedule + team-strength signal.
+    # No need to pre-compute target W-L: per-game sampling against
+    # proper strength differentials produces the right distribution.
+    scheduled = db.fetchall(
+        "SELECT id, home_program_id, away_program_id FROM college_games "
+        "WHERE season = ? AND phase = 'regular' AND played = 0", (season,))
+    bulk_updates: list[tuple] = []
+    for g in scheduled:
+        h_id, a_id = g["home_program_id"], g["away_program_id"]
+        h_str = prog_meta.get(h_id, {}).get("team_strength", league_mean_strength)
+        a_str = prog_meta.get(a_id, {}).get("team_strength", league_mean_strength)
+        log_odds = 0.05 * (h_str - a_str)
+        p_home = 1.0 / (1.0 + 2.71828 ** (-log_odds))
+        home_wins = rng.random() < p_home
+        h_score, a_score = (5, 3) if home_wins else (3, 5)
+        bulk_updates.append((h_score, a_score, g["id"]))
+
+    if bulk_updates:
+        db.executemany(
+            "UPDATE college_games SET home_score = ?, away_score = ?, "
+            "played = 1 WHERE id = ?",
+            bulk_updates,
+        )
+
+    # --- Synthetic season-summary game (carries all per-player season stats) ---
+    today = date.today().isoformat()
+    # Re-use any existing summary game so re-runs are idempotent.
+    existing_summary = db.fetchone(
+        "SELECT id FROM college_games WHERE season = ? "
+        "AND phase = 'season_summary' LIMIT 1", (season,))
+    if existing_summary:
+        summary_id = existing_summary["id"]
+        db.execute(
+            "DELETE FROM college_batter_stats WHERE game_id = ?",
+            (summary_id,),
+        )
+        db.execute(
+            "DELETE FROM college_pitcher_stats WHERE game_id = ?",
+            (summary_id,),
+        )
+    else:
+        first_prog = progs[0]["id"]
+        last_prog  = progs[-1]["id"] if len(progs) > 1 else first_prog
+        summary_id = db.execute(
+            "INSERT INTO college_games (season, game_date, home_program_id, "
+            "away_program_id, home_score, away_score, played, phase) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (season, today, first_prog, last_prog, 0, 0, 1, "season_summary"),
+        )
+
+    # --- Per-player season stat lines ---
+    batter_rows: list[tuple] = []
+    pitcher_rows: list[tuple] = []
+    for pid, meta in prog_meta.items():
+        # Hitters: top 9 = starters (full PA load), rest = backups.
+        for i, h in enumerate(meta["hitters"]):
+            line = _abstract_player_line(
+                h, league_pitcher_ovr, league_hitter_ovr,
+                games_per_team=games_per_team,
+                is_starter=(i < 9), is_rotation=False, rng=rng,
+            )
+            batter_rows.append((summary_id, pid, line["player_id"],
+                                line["pa"], line["ab"], line["h"],
+                                line["doubles"], line["triples"], line["hr"],
+                                line["rbi"], line["r"], line["bb"], line["k"],
+                                line["sb"], line["cs"]))
+        # Pitchers: top 4 = rotation starters, rest = bullpen.
+        for i, p in enumerate(meta["pitchers"]):
+            line = _abstract_player_line(
+                p, league_pitcher_ovr, league_hitter_ovr,
+                games_per_team=games_per_team,
+                is_starter=(i < 4), is_rotation=(i < 4), rng=rng,
+            )
+            pitcher_rows.append((summary_id, pid, line["player_id"],
+                                 line["outs"], line["h"], line["r"],
+                                 line["er"], line["bb"], line["k"],
+                                 line["hr"], line["bf"]))
+
+    if batter_rows:
+        db.executemany(
+            "INSERT OR REPLACE INTO college_batter_stats "
+            "(game_id, program_id, player_id, pa, ab, h, doubles, triples, "
+            " hr, rbi, r, bb, k, sb, cs) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            batter_rows,
+        )
+    if pitcher_rows:
+        db.executemany(
+            "INSERT OR REPLACE INTO college_pitcher_stats "
+            "(game_id, program_id, player_id, outs, h, r, er, bb, k, hr, bf) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            pitcher_rows,
+        )
+
+    db.execute(
+        "INSERT OR REPLACE INTO college_meta (season, phase) VALUES (?, ?)",
+        (season, "regular"),
+    )
+
+    return {
+        "programs":             len(prog_meta),
+        "games_marked_played":  len(bulk_updates),
+        "batters_written":      len(batter_rows),
+        "pitchers_written":     len(pitcher_rows),
+    }
 
 
 def sim_game(game_id: int, rng_seed: int = 0,
