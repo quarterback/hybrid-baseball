@@ -3123,7 +3123,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     # Phase 3: persist drafted rosters + free-agent pool, and recompute
     # each team's org_strength from its actual roster.
     insert_sql = """INSERT INTO players
-        (team_id, name, country, position, is_pitcher, skill, speed,
+        (team_id, name, country, position, is_pitcher, is_joker, skill, speed,
          pitcher_skill, stay_aggressiveness, contact_quality_threshold,
          archetype, pitcher_role, rotation_slot, hard_contact_delta, hr_weight_bonus,
          age, stamina, is_active,
@@ -3136,7 +3136,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          pull_pct, adaptability, leadership,
          roster_slot, role_hit, role_run, role_two_way, role_field_pos,
          hometown, birthday, secondary_country)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -3147,6 +3147,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         salary = estimate_player_value(p, league_name=league_name)
         return (team_id_or_none, p["name"], p.get("country", ""),
                 p["position"], p["is_pitcher"],
+                int(p.get("is_joker", 0) or 0),
                 p["skill"], p["speed"], p["pitcher_skill"],
                 p["stay_aggressiveness"], p["contact_quality_threshold"],
                 p.get("archetype", ""), p.get("pitcher_role", ""),
