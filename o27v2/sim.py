@@ -31,6 +31,8 @@ from o27.render.render import Renderer
 from o27v2 import db
 import o27v2.config as v2cfg
 from o27v2 import scout as _scout
+from o27v2 import streaks as _streaks
+from o27v2 import rotation as _rotation
 
 
 # Process-wide serialisation for sim execution. Flask's dev server is
@@ -360,6 +362,12 @@ def _db_team_to_engine(
     rest_excluded = recently_used_pitcher_ids or set()
     workload = workload or {}
 
+    # Performance-streak overlay (see o27v2/streaks.py). The team-wide streak
+    # delta is the same for every hitter in this lineup; per-player deltas are
+    # applied individually below. Both are temporary overlays on the engine
+    # Player — the stored ratings are never touched.
+    _team_streak_delta = _streaks.team_streak_unit_delta(team_row)
+
     engine_players: list[Player] = []
     fielders: list[Player] = []
     pitchers: list[Player] = []
@@ -411,6 +419,7 @@ def _db_team_to_engine(
             defense_infield=_scout.to_unit(p.get("defense_infield") or 50),
             defense_outfield=_scout.to_unit(p.get("defense_outfield") or 50),
             defense_catcher=_scout.to_unit(p.get("defense_catcher") or 50),
+            game_calling=_scout.to_unit(p.get("game_calling") or 50),
             baserunning=_scout.to_unit(p.get("baserunning") or 50),
             run_aggressiveness=_scout.to_unit(p.get("run_aggressiveness") or 50),
             position=str(p.get("position") or ""),
@@ -459,6 +468,9 @@ def _db_team_to_engine(
         # engine treats as "no typed pitches" and falls back to the
         # aggregate Stuff/Command/Movement path.
         if p.get("is_pitcher"):
+            # Crew-role usage rank (1 = primary). Drives the steering pick
+            # above and tie-breaks the relief-role preference in the engine.
+            player.rotation_slot = int(p.get("rotation_slot") or 0)
             player.release_angle  = float(p.get("release_angle")  if p.get("release_angle")  is not None else 0.5)
             player.pitch_variance = float(p.get("pitch_variance") if p.get("pitch_variance") is not None else 0.0)
             rep_json = p.get("repertoire")
@@ -475,6 +487,9 @@ def _db_team_to_engine(
                     ]
                 except (ValueError, TypeError, KeyError):
                     player.repertoire = []
+        # Apply the hot/cold streak overlay (per-player ramp + team streak)
+        # to this player's offensive ratings before he enters the lineup.
+        _streaks.apply_player_streak(player, p, team_delta=_team_streak_delta)
         engine_players.append(player)
         engine_to_db_id[player.player_id] = int(p["id"])
         # Joker detection: the new substitution-economy model tags
@@ -496,32 +511,41 @@ def _db_team_to_engine(
         else:
             fielders.append(player)
 
-    # ---- Pick today's SP via rest-tiered, stamina-weighted selection ----
-    # Real rotations want 4 days rest between starts. We tier candidates by
-    # rest level and pick the highest-Stamina arm in the best non-empty tier.
-    # Critical: never just fall back to "anyone" — that produces a workhorse
-    # who throws every single day. If no arm has the ideal rest, we still
-    # pick the MOST-RESTED arm so the rotation keeps cycling.
+    # ---- Pick today's steering arm (who takes the ball) -----------------
+    # Fatigue governs first — exactly like any pitcher. We tier the whole
+    # staff by rest and, within the freshest non-empty tier, prefer the
+    # Helms (the crew's nominal steering arm; o27v2/rotation.py) and then
+    # the higher-Stamina arm. So the manager keeps handing the Helms the
+    # ball while he's fresh, but a gassed Helms drops a tier and the staff
+    # spot-steers with whoever is rested — the role is a default, not a
+    # mandate. With two Helms the freshest one naturally takes his turn.
+    # No crew roles (legacy / pre-crew save) → the preference is inert and
+    # this reduces to the old rest-tiered, Stamina-weighted pick.
     todays_sp: list[Player] = []
     if pitchers:
-        # Pre-rank: highest stamina first, with debt as a tiebreaker (less
-        # debt = fresher arm). Done once so each tier filter just slices it.
-        ranked = sorted(
-            pitchers,
-            key=lambda pl: (-pl.stamina, pl.pitch_debt),
-        )
-        # Tier the candidates by minimum days rest. Once a tier has any
-        # qualifying arm, take the top-stamina one in that tier.
+        def _steer_key(pl: Player) -> tuple:
+            is_helms = getattr(pl, "pitcher_role", "") in _rotation.STEER_ROLES
+            # Prefer Helms, then higher Stamina, then primary slot, then
+            # lower debt. (negate for ascending sort → first element wins)
+            return (
+                0 if is_helms else 1,
+                -float(getattr(pl, "stamina", 0.5) or 0.5),
+                int(getattr(pl, "rotation_slot", 99) or 99),
+                int(getattr(pl, "pitch_debt", 0) or 0),
+            )
         for min_rest in (4, 3, 2, 1):
-            tier = [p for p in ranked if p.days_rest >= min_rest]
+            tier = [p for p in pitchers
+                    if int(getattr(p, "days_rest", 99) or 99) >= min_rest]
             if tier:
-                todays_sp = [tier[0]]
+                todays_sp = [min(tier, key=_steer_key)]
                 break
-        # Last-resort: every arm pitched yesterday or today. Pick the one
-        # with the most rest (most rested) and lowest debt — emergency only.
+        # Last resort: every arm pitched yesterday/today — most-rested goes.
         if not todays_sp:
-            ranked.sort(key=lambda pl: (-pl.days_rest, pl.pitch_debt))
-            todays_sp = [ranked[0]]
+            todays_sp = [min(
+                pitchers,
+                key=lambda pl: (-int(getattr(pl, "days_rest", 99) or 99),
+                                int(getattr(pl, "pitch_debt", 0) or 0)),
+            )]
 
     # Cap fielders at the canonical 8 starting positions; remaining ones
     # are bench depth that lives in the roster but does not bat. Cap DHs
@@ -824,6 +848,128 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict],
     return rows
 
 
+def _extract_power_play_stats(renderer, final_state, team_id: int, players: list[dict],
+                              engine_team) -> list[dict]:
+    """Build game_power_play_stats rows for one team — only meaningful when the
+    Power Play rule was on for this game.
+
+    Merges two per-player contributions, keyed by player_id:
+      * DEFENSE — the nickel: deployments he started + outs those windows
+        covered (from final_state.power_play_deployments), the team's
+        XBH-held / hits-converted counters (engine Team), and his PO/A/E as a
+        fielder (from the renderer's BatterStats, where the nickel's defensive
+        line already lives).
+      * OFFENSE — short-handed PA/AB/H (BatterStats.sh_*).
+    Rows that would be all-zero are dropped.
+    """
+    team_player_ids = {p["id"] for p in players}
+    acc: dict[int, dict] = {}
+
+    def _row(pid: int) -> dict:
+        return acc.setdefault(pid, {
+            "team_id": team_id, "player_id": pid,
+            "pp_deploys": 0, "pp_outs": 0, "pp_start_outs": [], "pp_xbh_held": 0,
+            "pp_hits_converted": 0, "nickel_po": 0, "nickel_a": 0,
+            "nickel_e": 0, "sh_pa": 0, "sh_ab": 0, "sh_hits": 0,
+            "ppp_bf": 0, "ppp_outs": 0, "ppp_k": 0, "ppp_bb": 0,
+            "ppp_bip": 0, "ppp_bip_hits": 0, "ppp_tot_bip": 0,
+            "ppp_tot_bip_hits": 0, "ppp_hits_saved": 0, "ppp_xbh_saved": 0,
+        })
+
+    # --- Defense: nickel deployments for THIS team's windows. ----------------
+    # power_play_deployments records team_id as the engine role-string
+    # ("home"/"visitors"); map it to the DB team_id via engine_team.team_id.
+    role = getattr(engine_team, "team_id", None)
+    for dep in (getattr(final_state, "power_play_deployments", None) or []):
+        if dep.get("team_id") != role:
+            continue
+        try:
+            nid = int(dep.get("nickel_id"))
+        except (TypeError, ValueError):
+            continue
+        if nid not in team_player_ids:
+            continue
+        r = _row(nid)
+        r["pp_deploys"] += 1
+        # outs the window covered = end_out - start_out + 1 (clamped >= 0).
+        r["pp_outs"] += max(0, int(dep.get("end_out", 0)) - int(dep.get("start_out", 0)) + 1)
+        # Record the team-out number this window opened at (for the box note).
+        r["pp_start_outs"].append(int(dep.get("start_out", 0)))
+
+    # Team-level XBH-held / hits-converted — credited to the team's nickel(s).
+    # When a single nickel held the role all game (the common case) it lands on
+    # him; if multiple shared it the team totals attach to the first deployer,
+    # which is good enough for the leaderboard and never double-counts.
+    xbh_held = int(getattr(engine_team, "pp_xbh_held", 0) or 0)
+    hits_conv = int(getattr(engine_team, "pp_hits_converted", 0) or 0)
+    if (xbh_held or hits_conv) and acc:
+        first_nickel = next(iter(acc))
+        acc[first_nickel]["pp_xbh_held"] += xbh_held
+        acc[first_nickel]["pp_hits_converted"] += hits_conv
+
+    # Nickel PO/A/E from the renderer's BatterStats (the nickel's fielding line).
+    nickel_ids = {r["player_id"] for r in acc.values() if r["pp_deploys"] > 0}
+    bstats = dict(getattr(renderer, "_batter_stats", {}) or {})
+    for nid in nickel_ids:
+        bs = bstats.get(str(nid))
+        if bs is not None:
+            r = _row(nid)
+            r["nickel_po"] += int(getattr(bs, "po", 0) or 0)
+            r["nickel_a"]  += int(getattr(bs, "a", 0) or 0)
+            r["nickel_e"]  += int(getattr(bs, "e", 0) or 0)
+
+    # --- Offense: short-handed PA/AB/H per batter. ---------------------------
+    for engine_pid, bs in bstats.items():
+        try:
+            pid = int(engine_pid)
+        except (TypeError, ValueError):
+            continue
+        if pid not in team_player_ids:
+            continue
+        sh_pa = int(getattr(bs, "sh_pa", 0) or 0)
+        sh_ab = int(getattr(bs, "sh_ab", 0) or 0)
+        sh_h  = int(getattr(bs, "sh_hits", 0) or 0)
+        if sh_pa or sh_ab or sh_h:
+            r = _row(pid)
+            r["sh_pa"] += sh_pa
+            r["sh_ab"] += sh_ab
+            r["sh_hits"] += sh_h
+
+    # --- Pitching: the protected side (nickel deployed behind him). ----------
+    # Window/total counters come from the renderer accumulator; the nickel
+    # "saves" come from the engine's per-pitcher attribution. Only pitchers with
+    # window exposure (ppp_bf > 0) get a row — the totals ride along for the
+    # BABIP split.
+    pp_pitcher = dict(getattr(renderer, "_pp_pitcher", {}) or {})
+    support = dict(getattr(final_state, "pp_pitcher_support", {}) or {})
+    for engine_pid, rec in pp_pitcher.items():
+        try:
+            pid = int(engine_pid)
+        except (TypeError, ValueError):
+            continue
+        if pid not in team_player_ids or int(rec.get("pp_bf", 0) or 0) <= 0:
+            continue
+        r = _row(pid)
+        r["ppp_bf"]   += int(rec.get("pp_bf", 0) or 0)
+        r["ppp_outs"] += int(rec.get("pp_outs", 0) or 0)
+        r["ppp_k"]    += int(rec.get("pp_k", 0) or 0)
+        r["ppp_bb"]   += int(rec.get("pp_bb", 0) or 0)
+        r["ppp_bip"]  += int(rec.get("pp_bip", 0) or 0)
+        r["ppp_bip_hits"]     += int(rec.get("pp_bip_hits", 0) or 0)
+        r["ppp_tot_bip"]      += int(rec.get("tot_bip", 0) or 0)
+        r["ppp_tot_bip_hits"] += int(rec.get("tot_bip_hits", 0) or 0)
+        sup = support.get(engine_pid) or {}
+        r["ppp_hits_saved"] += int(sup.get("hits_saved", 0) or 0)
+        r["ppp_xbh_saved"]  += int(sup.get("xbh_saved", 0) or 0)
+
+    # Drop all-zero rows.
+    out = []
+    for r in acc.values():
+        if any(r[k] for k in r if k not in ("team_id", "player_id")):
+            out.append(r)
+    return out
+
+
 def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) -> list[dict]:
     """Extract per-phase pitcher stats from state.spell_log for DB insertion.
 
@@ -872,6 +1018,10 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
         k_a1,  k_a2,  k_a3  = _sum_arc("k_arc")
         fo_a1, fo_a2, fo_a3 = _sum_arc("fo_arc")
         bf_a1, bf_a2, bf_a3 = _sum_arc("bf_arc")
+        # Times-through-the-order buckets (1st / 2nd / 3rd+ look).
+        k_t1,  k_t2,  k_t3  = _sum_arc("k_tto")
+        fo_t1, fo_t2, fo_t3 = _sum_arc("fo_tto")
+        bf_t1, bf_t2, bf_t3 = _sum_arc("bf_tto")
 
         # is_starter: this pitcher began the game on the mound for this
         # team. Detect via the first spell's start_batter_num == 1 AND
@@ -912,6 +1062,9 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "k_arc1":  k_a1,  "k_arc2":  k_a2,  "k_arc3":  k_a3,
             "fo_arc1": fo_a1, "fo_arc2": fo_a2, "fo_arc3": fo_a3,
             "bf_arc1": bf_a1, "bf_arc2": bf_a2, "bf_arc3": bf_a3,
+            "k_tto1":  k_t1,  "k_tto2":  k_t2,  "k_tto3":  k_t3,
+            "fo_tto1": fo_t1, "fo_tto2": fo_t2, "fo_tto3": fo_t3,
+            "bf_tto1": bf_t1, "bf_tto2": bf_t2, "bf_tto3": bf_t3,
             "is_starter": is_starter,
             "wb_faced": wb_faced,
             "wb_runs":  wb_runs,
@@ -939,9 +1092,11 @@ def _decorate_pitcher_pitch_mix(renderer, pstats: list[dict]) -> None:
     fb_keys      = {"four_seam", "sinker", "cutter"}
     breaking_keys = {"slider", "sisko_slider", "walking_slider",
                      "curveball", "curve_10_to_2", "screwball",
-                     "gyroball", "spitter"}
+                     "gyroball", "spitter", "peeled_drop"}
     offspeed_keys = {"changeup", "vulcan_changeup", "splitter",
-                     "palmball", "knuckleball", "eephus"}
+                     "palmball", "knuckleball", "eephus",
+                     "riseball", "backhand_changeup", "sky_eephus",
+                     "slither_knuck", "drop_knuck", "rise_knuck"}
 
     # Aggregate by (pitcher_id_int, phase).
     agg: dict[tuple[int, int], dict] = {}
@@ -1521,6 +1676,15 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
     state = GameState(visitors=visitors_team, home=home_team)
     state.is_playoff = bool(game.get("is_playoff"))
     state.current_pitcher_id = _find_pitcher_id(home_team)
+    # Power Play (optional rule) is a per-league opt-in stamped on the team
+    # rows at league creation. When this league opted in, force the per-game
+    # override ON (the engine honors it ahead of the global cfg flag). When it
+    # did NOT, leave the override unset (None) so the rule falls back to the
+    # global Engine Settings toggle — the two controls thus compose as
+    # "per-league opt-in OR global default". Both teams share a league, so the
+    # home row is authoritative.
+    if bool((home_row.get("power_play_enabled") if home_row else 0) or 0):
+        state.power_play_enabled = True
     # Stamp the per-game weather context (drawn at schedule time). prob.py
     # reads this; everything else passes it through.
     from o27.engine.weather import Weather
@@ -1577,6 +1741,16 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                                         engine_team=home_team)
     away_pstats = _extract_pitcher_stats(final_state, away_team_id, all_away_players)
     home_pstats = _extract_pitcher_stats(final_state, home_team_id, all_home_players)
+    # Power Play stat rack — only when the rule was on for this game. Empty
+    # lists for rule-off games, so the table stays empty in leagues without it.
+    from o27.engine import power_play as _pp
+    if _pp.power_play_on(final_state):
+        away_ppstats = _extract_power_play_stats(
+            renderer, final_state, away_team_id, all_away_players, visitors_team)
+        home_ppstats = _extract_power_play_stats(
+            renderer, final_state, home_team_id, all_home_players, home_team)
+    else:
+        away_ppstats = home_ppstats = []
     # Per-pitcher hit-type + pitch-type breakdown, computed from the PA log.
     # Decorates each row in away_pstats/home_pstats in place.
     _decorate_pitcher_pitch_mix(renderer, away_pstats + home_pstats)
@@ -1597,6 +1771,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
         conn.execute("DELETE FROM game_pa_log        WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM team_phase_outs    WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM game_pbp           WHERE game_id = ?", (game_id,))
+        conn.execute("DELETE FROM game_power_play_stats WHERE game_id = ?", (game_id,))
         # Declared Seconds: project the engine's first/second-batting team
         # state onto away/home columns. Away maps to visitors; home to home.
         h_bats_first  = bool(getattr(final_state, "home_bats_first", False))
@@ -1712,6 +1887,27 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                  r.get("roe", 0),
                  r.get("po", 0), r.get("a", 0), r.get("e", 0)),
             )
+        # Power Play stat rack (empty unless the rule was on this game).
+        for r in away_ppstats + home_ppstats:
+            conn.execute(
+                """INSERT INTO game_power_play_stats
+                   (game_id, team_id, player_id,
+                    pp_deploys, pp_outs, pp_start_outs, pp_xbh_held, pp_hits_converted,
+                    nickel_po, nickel_a, nickel_e,
+                    sh_pa, sh_ab, sh_hits,
+                    ppp_bf, ppp_outs, ppp_k, ppp_bb, ppp_bip, ppp_bip_hits,
+                    ppp_tot_bip, ppp_tot_bip_hits, ppp_hits_saved, ppp_xbh_saved)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (game_id, r["team_id"], r["player_id"],
+                 r["pp_deploys"], r["pp_outs"],
+                 ",".join(str(o) for o in r.get("pp_start_outs", [])),
+                 r["pp_xbh_held"],
+                 r["pp_hits_converted"], r["nickel_po"], r["nickel_a"],
+                 r["nickel_e"], r["sh_pa"], r["sh_ab"], r["sh_hits"],
+                 r["ppp_bf"], r["ppp_outs"], r["ppp_k"], r["ppp_bb"],
+                 r["ppp_bip"], r["ppp_bip_hits"], r["ppp_tot_bip"],
+                 r["ppp_tot_bip_hits"], r["ppp_hits_saved"], r["ppp_xbh_saved"]),
+            )
         # Phase 11D — per-PA event log (ball_in_play events only).
         # Engine team_ids are role-strings ("home"/"visitors") — see
         # o27/engine/state.py:Team.team_id. The legacy mapping used "away"
@@ -1795,11 +1991,14 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                     k_arc1,  k_arc2,  k_arc3,
                     fo_arc1, fo_arc2, fo_arc3,
                     bf_arc1, bf_arc2, bf_arc3,
+                    k_tto1,  k_tto2,  k_tto3,
+                    fo_tto1, fo_tto2, fo_tto3,
+                    bf_tto1, bf_tto2, bf_tto3,
                     is_starter,
                     singles_allowed, doubles_allowed, triples_allowed,
                     fastball_pct, breaking_pct, offspeed_pct, primary_pitch,
                     wb_faced, wb_runs)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
                  r["runs_allowed"], r.get("er", r["runs_allowed"]),
@@ -1812,6 +2011,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                  r.get("k_arc1",  0), r.get("k_arc2",  0), r.get("k_arc3",  0),
                  r.get("fo_arc1", 0), r.get("fo_arc2", 0), r.get("fo_arc3", 0),
                  r.get("bf_arc1", 0), r.get("bf_arc2", 0), r.get("bf_arc3", 0),
+                 r.get("k_tto1",  0), r.get("k_tto2",  0), r.get("k_tto3",  0),
+                 r.get("fo_tto1", 0), r.get("fo_tto2", 0), r.get("fo_tto3", 0),
+                 r.get("bf_tto1", 0), r.get("bf_tto2", 0), r.get("bf_tto3", 0),
                  r.get("is_starter", 0),
                  r.get("singles_allowed", 0), r.get("doubles_allowed", 0),
                  r.get("triples_allowed", 0),
@@ -1856,6 +2058,22 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                                 away_bstats + away_pstats, rng)
             _motivator_cup_fill(home_team_id,
                                 home_bstats + home_pstats, rng)
+        except Exception:
+            pass
+
+    # Performance streaks (see o27v2/streaks.py). Fold each hitter's game line
+    # into his hot/cold heat and advance the multi-week ramp; fold each team's
+    # W/L into its team-wide streak. Regular season only — the streak overlay
+    # is a season-arc mechanic — and best-effort so legacy DBs without the
+    # streak_* columns simply no-op.
+    if not game.get("is_playoff"):
+        try:
+            _streaks.update_player_streaks(away_bstats + home_bstats)
+            if winner_team_id is not None:
+                _streaks.update_team_streak(home_team_id,
+                                            won=(winner_team_id == home_team_id))
+                _streaks.update_team_streak(away_team_id,
+                                            won=(winner_team_id == away_team_id))
         except Exception:
             pass
 
@@ -2003,9 +2221,12 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
             k_arc1,  k_arc2,  k_arc3,
             fo_arc1, fo_arc2, fo_arc3,
             bf_arc1, bf_arc2, bf_arc3,
+            k_tto1,  k_tto2,  k_tto3,
+            fo_tto1, fo_tto2, fo_tto3,
+            bf_tto1, bf_tto2, bf_tto3,
             is_starter,
             wb_faced, wb_runs)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["batters_faced"],
           r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
           r.get("er", r["runs_allowed"]),
@@ -2017,6 +2238,9 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
           r.get("k_arc1",  0), r.get("k_arc2",  0), r.get("k_arc3",  0),
           r.get("fo_arc1", 0), r.get("fo_arc2", 0), r.get("fo_arc3", 0),
           r.get("bf_arc1", 0), r.get("bf_arc2", 0), r.get("bf_arc3", 0),
+          r.get("k_tto1",  0), r.get("k_tto2",  0), r.get("k_tto3",  0),
+          r.get("fo_tto1", 0), r.get("fo_tto2", 0), r.get("fo_tto3", 0),
+          r.get("bf_tto1", 0), r.get("bf_tto2", 0), r.get("bf_tto3", 0),
           r.get("is_starter", 0),
           r.get("wb_faced", 0), r.get("wb_runs", 0))
          for r in rows],
@@ -2052,6 +2276,10 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None,
                 maybe_run_sweep(g["game_date"])
             except Exception as e:
                 results.append({"sweep_error": str(e), "date": g["game_date"]})
+            try:
+                _rotation.maybe_review_staffs(g["game_date"])
+            except Exception as e:
+                results.append({"staff_review_error": str(e), "date": g["game_date"]})
         seed = None if seed_base is None else seed_base + i
         try:
             r = simulate_game(g["id"], seed=seed, detail=detail)
@@ -2218,6 +2446,10 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_
         results: list[dict] = [{"sweep_error": str(e), "date": date}]
     else:
         results = []
+    try:
+        _rotation.maybe_review_staffs(date)
+    except Exception as e:
+        results.append({"staff_review_error": str(e), "date": date})
     games = db.fetchall(
         "SELECT id FROM games WHERE played = 0 AND game_date = ? ORDER BY id LIMIT ?",
         (date, max_games),
@@ -2308,6 +2540,10 @@ def simulate_through(
                     maybe_run_sweep(g["game_date"])
                 except Exception as e:
                     results.append({"sweep_error": str(e), "date": g["game_date"]})
+                try:
+                    _rotation.maybe_review_staffs(g["game_date"])
+                except Exception as e:
+                    results.append({"staff_review_error": str(e), "date": g["game_date"]})
             seed = None if seed_base is None else seed_base + len(seen_game_ids)
             try:
                 results.append(simulate_game(g["id"], seed=seed, detail=detail))

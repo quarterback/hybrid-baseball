@@ -219,6 +219,11 @@ def compute_views(dataset: dict[str, Any]) -> Views:
     for r in v.pa_log:
         v.pa_log_by_game.setdefault(r["game_id"], []).append(r)
 
+    # Batted-ball profile (GB/LD/FB), times-through-order contact splits, and
+    # the repertoire-driven Deception grade — attached onto the season pitcher
+    # rows. Derived from the PA-log (balls-in-play) + repertoire.
+    _attach_pitcher_battedball_tto(v.pitching_by_player, players_by_id, v.pa_log)
+
     # Monthly splits.
     v.monthly_splits = _monthly_splits(dataset.get("batting") or [],
                                        dataset.get("pitching") or [],
@@ -667,6 +672,9 @@ _PITCHING_SUM_FIELDS = [
     "k_arc1",  "k_arc2",  "k_arc3",
     "fo_arc1", "fo_arc2", "fo_arc3",
     "bf_arc1", "bf_arc2", "bf_arc3",
+    "k_tto1",  "k_tto2",  "k_tto3",
+    "fo_tto1", "fo_tto2", "fo_tto3",
+    "bf_tto1", "bf_tto2", "bf_tto3",
     "singles_allowed", "doubles_allowed", "triples_allowed",
     "fastball_pct", "breaking_pct", "offspeed_pct",
 ]
@@ -835,6 +843,23 @@ def _augment_pitchers(rows: list[dict], league: dict[str, float],
         r["early_k_pct"] = ((k1 + fo1) / bf1) if bf1 else 0.0
         r["arc3_reach_pct"] = (1.0 if bf3 > 0 else 0.0)
 
+        # Times-through-the-order (FAMILIARITY axis — the engine TTO buckets).
+        # K% (incl. foul-outs, matching the arc K% convention) by how many
+        # times the batter has faced this pitcher in the game.
+        kt1, kt2, kt3 = r.get("k_tto1") or 0, r.get("k_tto2") or 0, r.get("k_tto3") or 0
+        ft1, ft2, ft3 = r.get("fo_tto1") or 0, r.get("fo_tto2") or 0, r.get("fo_tto3") or 0
+        bt1, bt2, bt3 = r.get("bf_tto1") or 0, r.get("bf_tto2") or 0, r.get("bf_tto3") or 0
+        r["tto1_k_pct"] = ((kt1 + ft1) / bt1) if bt1 else 0.0
+        r["tto2_k_pct"] = ((kt2 + ft2) / bt2) if bt2 else 0.0
+        r["tto3_k_pct"] = ((kt3 + ft3) / bt3) if bt3 else 0.0
+        r["tto1_bf"], r["tto2_bf"], r["tto3_bf"] = bt1, bt2, bt3
+        # TTO K-Decay: K% points lost from the 1st look to the 3rd+ look.
+        # Positive = the lineup cracks his code across repeat looks (low
+        # deception); ~0 / negative = he holds his whiffs as familiarity grows
+        # (high deception — the arbitrage arm). The familiarity-axis sibling
+        # of Decay (which is the fatigue/arc axis).
+        r["tto_k_decay"] = (r["tto1_k_pct"] - r["tto3_k_pct"]) * 100.0
+
         # Per-arc ER rates (R/9-style)
         r["arc1_era"] = (er1 * 27.0 / (bf1 * (outs / bf))) if (bf and bf1 and outs) else 0.0
         r["arc2_era"] = (er2 * 27.0 / (bf2 * (outs / bf))) if (bf and bf2 and outs) else 0.0
@@ -869,6 +894,126 @@ def _augment_pitchers(rows: list[dict], league: dict[str, float],
         r["primary_pitch"] = prim
 
         r["qualified"] = outs >= MIN_OUTS_QUALIFIED
+
+
+# Launch-angle batted-ball classification (degrees). Mirrors the bands the
+# batted-ball model samples around: < 10 grounder, 10-25 line drive, > 25 fly.
+_GB_MAX_LA = 10.0
+_LD_MAX_LA = 25.0
+
+
+def _deception_grade(repertoire_json) -> int:
+    """Repertoire-weighted timing_resistance → 20-80 scouting grade.
+
+    The "Deception" grade: how un-timeable a pitcher's arsenal is across a
+    27-out arc (knuckle / eephus / softball junk grade high; pure velocity
+    grades low). Reads per-pitch timing_resistance from the engine catalog;
+    returns 50 (league-neutral) when the pitcher has no typed repertoire.
+    """
+    import json as _json
+    from o27 import config as _cfg
+    raw = repertoire_json
+    if isinstance(raw, str):
+        try:
+            raw = _json.loads(raw)
+        except (ValueError, TypeError):
+            return 50
+    if not isinstance(raw, list) or not raw:
+        return 50
+    acc = tot = 0.0
+    for e in raw:
+        if not isinstance(e, dict):
+            continue
+        cat = _cfg.PITCH_CATALOG.get(e.get("pitch_type"))
+        if cat is None:
+            continue
+        w = float(e.get("usage_weight", 1.0) or 0.0)
+        if w <= 0:
+            continue
+        acc += float(cat.get("timing_resistance", 0.5)) * w
+        tot += w
+    if tot <= 0:
+        return 50
+    tr = max(0.0, min(1.0, acc / tot))
+    return int(round(20 + tr * 60))
+
+
+def _attach_pitcher_battedball_tto(
+    pitching_by_player: dict, players_by_id: dict, pa_log: list[dict]
+) -> None:
+    """Attach batted-ball profile (#1), times-through-order contact splits (#2),
+    and the Deception grade (#4) to each pitcher's season row.
+
+    All derived from game_pa_log (balls-in-play only — no K/BB rows exist
+    there) plus the player's repertoire. The times-through "look" number is
+    the rank of an AB's ab_seq within each (game, pitcher, batter) group, so
+    it survives multi-row stay ABs. K%-by-look is NOT computable here (strike-
+    outs aren't logged); that dimension needs engine-side TTO buckets.
+    """
+    by_pit: dict = {}
+    by_gpb: dict = {}
+    for e in pa_log:
+        pid = e.get("pitcher_id")
+        if pid is None:
+            continue
+        by_pit.setdefault(pid, []).append(e)
+        by_gpb.setdefault((e.get("game_id"), pid, e.get("batter_id")), []).append(e)
+
+    # Map each event to a look bucket (0 = 1st time facing, 1 = 2nd, 2 = 3rd+).
+    look_bucket: dict = {}
+    for evs in by_gpb.values():
+        seqs = sorted({ev.get("ab_seq") for ev in evs if ev.get("ab_seq") is not None})
+        rank = {s: i for i, s in enumerate(seqs)}
+        for ev in evs:
+            look = rank.get(ev.get("ab_seq"), 0)
+            look_bucket[id(ev)] = 0 if look == 0 else (1 if look == 1 else 2)
+
+    # Deception grade for every pitcher with a row (repertoire-driven).
+    for pid, row in pitching_by_player.items():
+        row["deception"] = _deception_grade(
+            (players_by_id.get(pid) or {}).get("repertoire")
+        )
+
+    for pid, evs in by_pit.items():
+        row = pitching_by_player.get(pid)
+        if row is None:
+            continue
+        gb = ld = fb = bip = 0
+        tto = [[0, 0] for _ in range(3)]  # per look bucket: [hard, total_contact]
+        for e in evs:
+            la = e.get("launch_angle")
+            if la is not None:
+                bip += 1
+                if la < _GB_MAX_LA:
+                    gb += 1
+                elif la <= _LD_MAX_LA:
+                    ld += 1
+                else:
+                    fb += 1
+            q = e.get("quality")
+            if q in ("weak", "medium", "hard"):
+                b = look_bucket.get(id(e), 0)
+                tto[b][1] += 1
+                if q == "hard":
+                    tto[b][0] += 1
+        if bip:
+            row["gb_pct"] = gb / bip
+            row["ld_pct"] = ld / bip
+            row["fb_pct"] = fb / bip
+            row["go_ao"]  = (gb / fb) if fb else float(gb)
+            row["bip_tracked"] = bip
+
+        def _hh(b: int) -> float:
+            return (tto[b][0] / tto[b][1]) if tto[b][1] else 0.0
+        row["tto1_hardhit"] = _hh(0)
+        row["tto2_hardhit"] = _hh(1)
+        row["tto3_hardhit"] = _hh(2)
+        # Familiarity signal: how much harder hitters square the pitcher up by
+        # the 3rd+ look vs the 1st. Positive = gets figured out; ~0 / negative
+        # = resists familiarity (the deception arms should sit here).
+        row["tto_hardhit_delta"] = _hh(2) - _hh(0)
+        row["tto1_contacts"] = tto[0][1]
+        row["tto3_contacts"] = tto[2][1]
 
 
 def _format_ip(outs: int) -> str:

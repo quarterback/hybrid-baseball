@@ -91,7 +91,7 @@
       <th class="num">RBI</th>
       <th class="num">BB</th>
       <th class="num">SO</th>
-      <th class="num"><span class="stat-tip" data-tip="Stay choices made — batter stayed at home plate with runners on base">STY</span></th>
+      <th class="num"><span class="stat-tip" data-tip="Second-Chance ABs — batter took a second chance at the plate with runners on base instead of running">2C</span></th>
       <th class="num">AVG</th>
     </tr>
   </thead>
@@ -100,7 +100,7 @@
   <tr>
     <td>
       <a href="/stats/player/{{ visitors_abbrev }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a>
-      {% if r.is_joker %}<span class="tag tag-joker">JKR</span>{% endif %}
+      {% if r.is_joker %}<span class="tag tag-joker">J</span>{% endif %}
     </td>
     <td style="color:var(--fg-dim)">{{ r.pos }}</td>
     <td class="num">{{ r.ab }}</td>
@@ -142,7 +142,7 @@
       <th class="num">RBI</th>
       <th class="num">BB</th>
       <th class="num">SO</th>
-      <th class="num"><span class="stat-tip" data-tip="Stay choices made — batter stayed at home plate with runners on base">STY</span></th>
+      <th class="num"><span class="stat-tip" data-tip="Second-Chance ABs — batter took a second chance at the plate with runners on base instead of running">2C</span></th>
       <th class="num">AVG</th>
     </tr>
   </thead>
@@ -151,7 +151,7 @@
   <tr>
     <td>
       <a href="/stats/player/{{ home_abbrev }}_{{ r.name|replace(' ','_')|replace('.','') }}">{{ r.name }}</a>
-      {% if r.is_joker %}<span class="tag tag-joker">JKR</span>{% endif %}
+      {% if r.is_joker %}<span class="tag tag-joker">J</span>{% endif %}
     </td>
     <td style="color:var(--fg-dim)">{{ r.pos }}</td>
     <td class="num">{{ r.ab }}</td>

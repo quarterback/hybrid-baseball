@@ -26,6 +26,11 @@
 
     <form method="POST" action="{{ url_for('league_edit_post') }}">
       <h5 class="mb-2">Leagues</h5>
+      <div class="text-secondary small mb-2">
+        Power Play (the optional 10th-defender rule) is per league — flip it on
+        here to enable it for an existing league without rebuilding. Newly
+        simulated games then use it; already-played games are unaffected.
+      </div>
       <div class="row g-2 mb-4">
         {% for lg in leagues %}
         <div class="col-md-6 d-flex align-items-center gap-2">
@@ -33,6 +38,11 @@
           <input type="hidden" name="league_old" value="{{ lg }}">
           <input type="text" name="league_new" value="{{ lg }}" maxlength="40"
                  class="form-control form-control-sm">
+          <select name="league_pp" class="form-select form-select-sm" style="max-width:6.8rem"
+                  title="Power Play (nickel fielder) for this league">
+            <option value="0" {{ 'selected' if not pp_by_league.get(lg) }}>PP&nbsp;Off</option>
+            <option value="1" {{ 'selected' if pp_by_league.get(lg) }}>PP&nbsp;On</option>
+          </select>
         </div>
         {% endfor %}
       </div>

@@ -15,6 +15,7 @@
       {% if player.country %}· {{ player.country }}{% endif %}
       · {{ player.team_name }}
       {% if player.archetype %}· {{ player.archetype }}{% endif %}
+      {% if player.streak %}· <span class="streak-badge {{ player.streak.cls }}" title="{{ player.streak.title }}">{{ player.streak.icon }} {{ player.streak.label }}</span>{% endif %}
     </div>
   </div>
   <div>
@@ -76,7 +77,7 @@
         <th>1B</th><th>2B</th><th>3B</th><th>HR</th><th>TB</th><th>XBH</th>
         <th>RBI</th><th>BB</th><th>K</th><th>HBP</th>
         <th>SB</th><th>CS</th><th>SB%</th>
-        <th>STY</th><th>FO</th><th>ROE</th><th>GIDP</th>
+        <th>2C</th><th>FO</th><th>ROE</th><th>GIDP</th>
         <th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th>
         <th>ISO</th><th>BABIP</th>
         <th>BB%</th><th>K%</th><th>HR%</th><th>BB/K</th>
@@ -130,12 +131,12 @@
 </section>
 
 <section>
-  <div class="section-bar"><h2>Stay Mechanic + Advancement</h2></div>
+  <div class="section-bar"><h2>Second-Chance + Advancement</h2></div>
   <div class="tablewrap short">
     <table class="stat-table">
       <thead><tr>
-        <th>STY</th><th>STAY_H</th><th>STAY_RBI</th><th>MHAB</th>
-        <th>STAY%</th><th>CONV%</th><th>STAY_RBI%</th>
+        <th>2C</th><th>2C-H</th><th>2C-RBI</th><th>MHAB</th>
+        <th>2C%</th><th>CONV%</th><th>2C-RBI%</th>
         <th>RAD</th><th>RAD/PA</th><th>BAVG</th><th>Δ</th>
         <th>FO</th><th>FO%</th>
         <th>2C·1B</th><th>2C·2B</th><th>2C·3B</th>
@@ -206,7 +207,7 @@
         <th data-type="text">Opp</th>
         <th>PA</th><th>AB</th><th>R</th><th>H</th>
         <th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
-        <th>BB</th><th>K</th><th>STY</th>
+        <th>BB</th><th>K</th><th>2C</th>
         <th data-type="text">Box</th>
       </tr></thead>
       <tbody>
@@ -347,6 +348,39 @@
       </tr></tbody>
     </table>
   </div>
+</section>
+{% endif %}
+
+{% if season.bip_tracked %}
+<section>
+  <div class="section-bar"><h2>Batted-Ball Profile</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr><th>GB %</th><th>LD %</th><th>FB %</th><th>GO/AO</th><th>Deception</th></tr></thead>
+      <tbody><tr>
+        <td>{{ '%.0f'|format(season.gb_pct * 100) }}%</td>
+        <td>{{ '%.0f'|format(season.ld_pct * 100) }}%</td>
+        <td>{{ '%.0f'|format(season.fb_pct * 100) }}%</td>
+        <td>{{ '%.2f'|format(season.go_ao) }}</td>
+        <td>{{ season.deception }}</td>
+      </tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>Times Through the Order</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr><th class="t-left">Look</th><th>K %</th><th>Hard-Hit %</th><th>Batters Faced</th></tr></thead>
+      <tbody>
+        <tr><td class="t-left">1st time</td><td>{{ '%.0f'|format(season.tto1_k_pct * 100) }}%</td><td>{{ '%.0f'|format(season.tto1_hardhit * 100) }}%</td><td>{{ season.tto1_bf or 0 }}</td></tr>
+        <tr><td class="t-left">2nd time</td><td>{{ '%.0f'|format(season.tto2_k_pct * 100) }}%</td><td>{{ '%.0f'|format(season.tto2_hardhit * 100) }}%</td><td>{{ season.tto2_bf or 0 }}</td></tr>
+        <tr><td class="t-left">3rd+ time</td><td>{{ '%.0f'|format(season.tto3_k_pct * 100) }}%</td><td>{{ '%.0f'|format(season.tto3_hardhit * 100) }}%</td><td>{{ season.tto3_bf or 0 }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Performance by how many times the lineup has faced this pitcher in the game (the familiarity axis, distinct from the arc/fatigue axis behind Decay). <strong>TTO K-Decay {{ '%+.1f'|format(season.tto_k_decay or 0) }}</strong> K%-pts from the 1st look to the 3rd+ — positive means the lineup cracks his code across looks; flat or negative means he resists being timed up (the deception arbitrage, also captured by his Deception grade). Hard-hit% is the contact-quality companion from the batted-ball log.</p>
 </section>
 {% endif %}
 

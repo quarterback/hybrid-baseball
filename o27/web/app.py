@@ -45,8 +45,49 @@ from o27.engine.state import GameState, Team, Player, PitchEntry
 from o27.engine.game import run_game
 from o27.engine.prob import ProbabilisticProvider
 from o27.render.render import Renderer
+from o27.render.svg_scorecard import (
+    extract_pa_records, from_renderer_records, render_scorecard,
+)
 from o27.main import make_foxes, make_bears
 import o27.data as data
+
+
+def _build_scorecards(final_state, log_lines, v_batting, h_batting, renderer=None):
+    """Compute the two scorecard SVGs from a finished game's PBP. Prefers
+    structured PA records from the engine renderer; falls back to parsing
+    the text PBP if not available (older cached game data)."""
+    try:
+        meta: dict = {}
+        arc_top: list = []
+        arc_bot: list = []
+        if renderer is not None and getattr(renderer, "pa_records", None):
+            pa_records, meta = from_renderer_records(renderer.pa_records)
+            for seg in renderer.pitcher_arc.get("top", []):
+                arc_top.append((seg["start_out"], seg["end_out"], seg["pitcher"].split(" ")[-1] if seg["pitcher"] else ""))
+            for seg in renderer.pitcher_arc.get("bot", []):
+                arc_bot.append((seg["start_out"], seg["end_out"], seg["pitcher"].split(" ")[-1] if seg["pitcher"] else ""))
+        else:
+            pa_records = extract_pa_records(log_lines)
+        vis_lineup = [
+            {"name": b["name"], "pos": b.get("pos", "")} for b in v_batting[:12]
+        ]
+        hom_lineup = [
+            {"name": b["name"], "pos": b.get("pos", "")} for b in h_batting[:12]
+        ]
+        return render_scorecard(
+            visitors_name=final_state.visitors.name,
+            home_name=final_state.home.name,
+            visitors_lineup=vis_lineup,
+            home_lineup=hom_lineup,
+            pa_records=pa_records,
+            declared_visitors=meta.get("declared_visitors_at"),
+            declared_home=meta.get("declared_home_at"),
+            visitors_pitcher_arc=arc_top,
+            home_pitcher_arc=arc_bot,
+        )
+    except Exception:
+        # Scorecard is a nice-to-have; never break the box score on it.
+        return {"visitors": "", "home": ""}
 
 app = Flask(__name__, template_folder="templates")
 app.secret_key = os.environ.get("SECRET_KEY", "o27-dev-secret-key")
@@ -289,8 +330,10 @@ def _structured_stats(final_state, renderer: Renderer) -> tuple[list, list, list
             if not p.is_joker:
                 pos_idx += 1
             if p.is_joker:
+                # Joker is a DH-style slot; archetype is a tendency, not a
+                # position. Position label is just "J".
                 archetype = "Power" if p.speed < 0.50 else ("Speed" if p.speed > 0.65 else "Contact")
-                pos = f"JKR-{archetype[:3]}"
+                pos = "J"
             else:
                 archetype = ""
             s = bs.get(p.player_id)
@@ -592,6 +635,41 @@ def view_game(game_id):
         h_pitching=h_pitching,
         v_hits=v_hits,
         h_hits=h_hits,
+    )
+
+
+@app.route("/game/<game_id>/scorecard")
+def game_scorecard(game_id):
+    """Dedicated scorecard view — only renders when the user follows
+    the link from the box score, so the scorecard cost stays off the
+    main game page."""
+    g = data.get_game(game_id)
+    parts = game_id.split("_", 2)
+    if len(parts) != 3:
+        return redirect(url_for("index"))
+    try:
+        seed = int(parts[0])
+    except ValueError:
+        return redirect(url_for("index"))
+    v_abbrev, h_abbrev = parts[1], parts[2]
+
+    final_state, log_lines, renderer = _run(seed, v_abbrev, h_abbrev)
+    v_batting, h_batting, _, _ = _structured_stats(final_state, renderer)
+    cards = _build_scorecards(final_state, log_lines, v_batting, h_batting, renderer)
+    return render_template(
+        "game_scorecard.html",
+        active="boxscores",
+        game_id=game_id,
+        seed=seed,
+        visitors_abbrev=v_abbrev,
+        home_abbrev=h_abbrev,
+        visitors_name=final_state.visitors.name,
+        home_name=final_state.home.name,
+        visitors_score=final_state.score.get("visitors", 0),
+        home_score=final_state.score.get("home", 0),
+        winner_id=final_state.winner or "",
+        scorecard_visitors=cards.get("visitors", ""),
+        scorecard_home=cards.get("home", ""),
     )
 
 

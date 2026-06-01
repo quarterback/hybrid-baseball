@@ -125,6 +125,21 @@ def _arc_index(outs: int) -> int:
         return 1
     return 2
 
+
+def _tto_bucket(state: GameState) -> int:
+    """Look bucket for the current matchup: 0 = 1st time this batter has faced
+    the pitcher on the mound this game, 1 = 2nd, 2 = 3rd+.
+
+    Reads matchup_count, which is the PRIOR count (this PA is ticked onto it
+    only in _end_at_bat), so the value is the correct 0-based look index for
+    the PA in progress. Must be read BEFORE _end_at_bat ticks the matchup.
+    """
+    b = state.current_batter
+    p = state.get_current_pitcher()
+    if b is None or p is None:
+        return 0
+    return min(state.matchup_count(p.player_id, b.player_id), 2)
+
 def _record_out(state: GameState, batter_id: str) -> list[str]:
     """
     Record one out. Handles partnership tracking. Returns log lines.
@@ -140,6 +155,16 @@ def _record_out(state: GameState, batter_id: str) -> list[str]:
         return log
     state.outs += 1
     state.pitcher_outs_this_spell += 1
+
+    # Catcher workload — the team in the field is squatting every pitch. Tally
+    # outs caught by the current catcher so fatigue degrades their game-calling
+    # and forces a rotation (reset to 0 on a catcher swap).
+    _fld = state.fielding_team
+    if _fld is not None:
+        _fld.catcher_outs_caught = int(getattr(_fld, "catcher_outs_caught", 0) or 0) + 1
+    # Power Play: extend / retire the nickel window against the new out count.
+    from o27.engine import power_play
+    power_play.note_out(state)
 
     # Walk-Back resolution: if the runner being retired is a live Walk-Back
     # runner, his fate is settled as a STOP — tick wb_faced (charged to the
@@ -290,18 +315,31 @@ def _end_at_bat(state: GameState) -> list[str]:
     # Per-PA leadership flares — restore all mutated rating fields to
     # their original values before the next batter steps in. Safe no-op
     # when no flare was active this PA. See prob.apply_pa_leadership_flares
-    # for the matching PA-start hook.
+    # for the matching PA-start hook. The Power Play presence lift is unwound
+    # FIRST (LIFO) since it layers on top of any flare at PA start.
+    from o27.engine import power_play as _power_play
+    _power_play.release_presence_lift(state)
     _prob.release_pa_leadership_flares(state)
     # Per-game batter stat bookkeeping. PA counter ticks every AB. If
     # this AB was a joker insertion, the joker_pa counter ticks too —
     # the joker's effective ratings in prob.py decay against this count
     # on their NEXT joker insertion.
+    # Capture this PA's look bucket BEFORE matchup_pa is ticked below, so the
+    # BF-by-look counter lands in the same bucket as any K/FO from this PA.
+    _bf_tto_bucket = _tto_bucket(state)
     batter = state.current_batter
     if batter is not None:
         bgs = state.bgs(batter.player_id)
         bgs["pa"] += 1
         if state.batter_override is not None:
             bgs["joker_pa"] += 1
+        # Times-through-the-order: tick this batter's PA count against the
+        # pitcher he just faced, so his NEXT look at the same arm carries
+        # familiarity. Charged to whoever was on the mound for this PA.
+        _pitcher = state.get_current_pitcher()
+        if _pitcher is not None:
+            key = (_pitcher.player_id, batter.player_id)
+            state.matchup_pa[key] = state.matchup_pa.get(key, 0) + 1
 
     # Joker AB: clear the override and DO NOT advance the base lineup.
     # The joker insertion was an EXTRA PA — the base lineup position
@@ -316,6 +354,7 @@ def _end_at_bat(state: GameState) -> list[str]:
     # BF arc anchored to the OUTS the AB started in (not the outs the
     # AB ends at), so K/BB/FO and BF for the same AB share an arc.
     state.pitcher_bf_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+    state.pitcher_bf_tto_this_spell[_bf_tto_bucket] += 1
     # Snapshot start-of-PA outs for the upcoming PA.
     state.pa_start_outs = state.outs
     return log
@@ -406,6 +445,7 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
             log.append(f"  Foul #{state.count.fouls} — FOUL OUT.")
             state.pitcher_fo_induced_this_spell += 1
             state.pitcher_fo_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+            state.pitcher_fo_tto_this_spell[_tto_bucket(state)] += 1
             batter_id = state.current_batter.player_id
             log += _record_out(state, batter_id)
             log += _end_at_bat(state)
@@ -420,6 +460,7 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
         log.append("  Foul tip caught — STRIKEOUT.")
         state.pitcher_k_this_spell += 1
         state.pitcher_k_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+        state.pitcher_k_tto_this_spell[_tto_bucket(state)] += 1
         batter_id = state.current_batter.player_id
         log += _record_out(state, batter_id)
         log += _end_at_bat(state)
@@ -917,6 +958,7 @@ def _strike(state: GameState, log: list, swinging: bool) -> list[str]:
         log.append(f"  STRIKEOUT.")
         state.pitcher_k_this_spell += 1
         state.pitcher_k_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+        state.pitcher_k_tto_this_spell[_tto_bucket(state)] += 1
         log += _record_out(state, batter_id)
         log += _end_at_bat(state)
     return log

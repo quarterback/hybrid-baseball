@@ -105,6 +105,45 @@ _PITCHER_ARCHETYPES = [
             ("changeup",  1.5), ("eephus",   0.8),
         ],
     },
+    # ── Softball-mechanics deception aces — the "elite stopper" outliers ──────
+    # Rare mythical-character profiles built entirely around gravity manipulation
+    # and timing disruption from a true underhand / low-submarine slot. Their
+    # pitches are slot-locked (max_release gates) so the low release band is not
+    # optional — it's what makes the arsenal legal. The stamina_bonus encodes the
+    # fatigue-immunity the low-stress mechanics earn: these aces hold movement
+    # deep into the 27-out arc where a velocity arm would be decaying. Combined
+    # with their high pitch timing_resistance, they're the deception arbitrage's
+    # apex predators — the lineup never cracks the code on them.
+    {
+        "name":    "knuckleball_ace",     # "Chaos Elite" — pure 3-pitch knuckleballer
+        "weight":  0.03,                  # very rare
+        "release": (0.10, 0.32),
+        "stamina_bonus": 0.18,
+        "pitches": [
+            ("slither_knuck", 3.0), ("drop_knuck", 2.5),
+            ("rise_knuck",    2.0),
+        ],
+    },
+    {
+        "name":    "softball_riseballer",
+        "weight":  0.04,
+        "release": (0.05, 0.25),
+        "stamina_bonus": 0.15,
+        "pitches": [
+            ("riseball",     3.0), ("peeled_drop", 2.0),
+            ("backhand_changeup", 1.5), ("sinker",  1.0),
+        ],
+    },
+    {
+        "name":    "underhand_eephus_artist",
+        "weight":  0.03,
+        "release": (0.08, 0.30),
+        "stamina_bonus": 0.15,
+        "pitches": [
+            ("sky_eephus",   1.6), ("peeled_drop", 2.0),
+            ("backhand_changeup", 1.8), ("drop_knuck", 1.2),
+        ],
+    },
 ]
 
 # Cumulative weight for weighted draw.
@@ -127,7 +166,9 @@ def _generate_pitcher_attrs(rng: random.Random, pitcher_skill: float) -> dict:
 
     command       = _clamp(rng.gauss(0.50, 0.12))
     movement      = _clamp(rng.gauss(0.50, 0.12))
-    stamina       = _clamp(rng.gauss(0.50, 0.12))
+    # Low-stress softball/knuckle archetypes carry a stamina baseline bump:
+    # underhand/knuckle mechanics let them hold movement deep into the arc.
+    stamina       = _clamp(rng.gauss(0.50, 0.12) + arch.get("stamina_bonus", 0.0))
     grit          = _clamp(rng.gauss(0.50, 0.10), lo=0.25, hi=0.75)
     pitch_variance = _clamp(rng.gauss(0.06, 0.02), lo=0.03, hi=0.12)
 
@@ -281,7 +322,7 @@ def _generate_roster(team_seed: int) -> list[dict]:
         cqt    = _clamp(rng.gauss(0.40, 0.07))
         players.append({
             "name": _name(),
-            "position": f"JKR-{arch['label'][:3]}",
+            "position": "J",
             "is_pitcher": False, "is_joker": True,
             "joker_archetype": arch["label"],
             "skill": round(skill, 3), "speed": round(speed, 3),
@@ -346,7 +387,7 @@ def _engine_team_to_dict(team, abbrev: str, city: str = "", level: str = "") -> 
         archetype = ""
         if p.is_joker:
             archetype = "Power" if p.speed < 0.50 else ("Speed" if p.speed > 0.65 else "Contact")
-            pos = f"JKR-{archetype[:3]}"
+            pos = "J"
         elif p.is_pitcher:
             pos = "P"
         players.append({

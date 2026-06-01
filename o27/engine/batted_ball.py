@@ -106,6 +106,7 @@ def sample_batted_ball(
     batter_power: float,
     pitch_hard_contact_shift: float,
     batter_bats: str = "",
+    pitch_launch_bias: float = 0.0,
 ) -> tuple[float, float, float]:
     """Sample (exit_velocity_mph, launch_angle_deg, spray_angle_deg) for a
     single ball-in-play event. The triple is persisted on game_pa_log
@@ -132,6 +133,10 @@ def sample_batted_ball(
     la_mu, la_sigma = _LA_BY_HIT_TYPE.get(hit_type, (+10.0, 12.0))
     # High-Power batters tilt a few degrees more elevation.
     la_mu += (float(batter_power) - 0.5) * 4.0
+    # Pitch launch bias: grounder pitches (negative) shave degrees off, popup
+    # pitches (positive) add them — keeps the synthetic LA consistent with the
+    # ground_out↔fly_out tilt applied to the categorical outcome.
+    la_mu += float(pitch_launch_bias) * 8.0
     la = _clamp(rng.gauss(la_mu, la_sigma), -45.0, 60.0)
 
     # Spray angle --------------------------------------------------------
@@ -139,3 +144,124 @@ def sample_batted_ball(
     spray = _clamp(rng.gauss(pull_mu, 16.0), -44.0, 44.0)
 
     return round(ev, 1), round(la, 1), round(spray, 1)
+
+
+# ---------------------------------------------------------------------------
+# Descriptive batted-ball taxonomy
+# ---------------------------------------------------------------------------
+# Turn the (EV, LA, spray) the engine already samples into a rich, human name
+# for the box score / play-by-play — "swinging bunt", "frozen rope", "Texas
+# leaguer", "no-doubter". PURELY DESCRIPTIVE: it is derived from physics that
+# are themselves derived from the categorical outcome, so it NEVER feeds back
+# into mechanics. The name is reconciled with the final hit_type so it can't
+# contradict the result (a ball that carried out is named in the HR family; a
+# caught fly is a "flyout", not a "double").
+
+_GB_LA = 10.0    # launch angle below this  → on the ground
+_LD_LA = 26.0    # [_GB_LA, _LD_LA)         → line drive
+_FB_LA = 50.0    # [_LD_LA, _FB_LA)         → fly ball;  >= _FB_LA → popup
+
+_HIT_TYPES = frozenset(("single", "infield_single", "double", "triple"))
+_OUT_TYPES = frozenset(("ground_out", "fly_out", "line_out",
+                        "fielders_choice", "double_play", "triple_play"))
+
+
+def _ev_tier(ev: float) -> int:
+    """0 weak · 1 medium · 2 hard · 3 crushed."""
+    if ev < 80.0:
+        return 0
+    if ev < 95.0:
+        return 1
+    if ev < 103.0:
+        return 2
+    return 3
+
+
+def _zone(spray) -> str:
+    a = abs(float(spray or 0.0))
+    if a >= 32.0:
+        return "down the line"
+    if a <= 12.0:
+        return "up the middle"
+    return "in the gap"
+
+
+def classify_batted_ball(ev, la, spray, hit_type: str = "") -> str:
+    """Return a rich descriptive name for a batted ball from its EV/LA/spray
+    and the final categorical hit_type. Descriptive only — for display.
+
+    Examples: "swinging bunt", "seeing-eye grounder up the middle",
+    "scorched one-hopper down the line", "frozen rope", "bloop into the gap",
+    "can of corn", "warning-track flyout", "no-doubter down the line".
+    """
+    ht = (hit_type or "").lower()
+    ev = float(ev if ev is not None else 88.0)
+    la = float(la if la is not None else 12.0)
+    tier = _ev_tier(ev)
+    zone = _zone(spray)
+    is_hit = ht in _HIT_TYPES
+
+    # Home runs name themselves by how far they were hit (EV proxy).
+    if ht in ("hr", "home_run"):
+        if ev >= 106.0:
+            base = "no-doubter"
+        elif ev >= 100.0:
+            base = "deep drive"
+        elif ev >= 95.0:
+            base = "home run"
+        else:
+            base = "wall-scraper"
+        return f"{base} {zone}"
+
+    # Popups (very high launch angle).
+    if la >= _FB_LA:
+        if is_hit:
+            return f"bloop {zone}"          # a popup that found grass
+        return "infield popup" if tier <= 1 else "towering popup"
+
+    # Fly balls.
+    if la >= _LD_LA:
+        if is_hit:
+            if ht == "triple":
+                return f"deep drive {zone}"
+            if ht == "double":
+                return f"{'scorched' if tier >= 2 else 'flared'} fly {zone}"
+            return f"{'Texas leaguer' if tier <= 1 else 'looping fly'} {zone}"
+        # Fly OUT.
+        if tier >= 3:
+            return f"warning-track flyout {zone}"
+        if tier <= 0:
+            return "can of corn"
+        return f"routine flyout {zone}"
+
+    # Line drives.
+    if la >= _GB_LA:
+        if is_hit:
+            if ht in ("double", "triple"):
+                return f"line-drive gapper {zone}" if zone == "in the gap" \
+                    else f"{'scorched' if tier >= 2 else 'sharp'} liner {zone}"
+            if tier >= 3:
+                return f"frozen rope {zone}"
+            if tier >= 2:
+                return f"line-drive single {zone}"
+            return f"soft liner {zone}"
+        # Line OUT — caught on a line.
+        return f"{'scorched' if tier >= 2 else 'sharp'} lineout {zone}"
+
+    # Ground balls (low launch angle).
+    if is_hit:
+        if ht == "infield_single":
+            if tier <= 0:
+                return "swinging bunt" if abs(float(spray or 0)) >= 28 else "dribbler"
+            return f"infield single {zone}"
+        if tier <= 0:
+            return f"seeing-eye grounder {zone}"
+        if tier >= 3:
+            return f"scorched one-hopper {zone}"
+        return f"ground-ball single {zone}"
+    # Ground OUT / FC / DP.
+    if tier <= 0:
+        return f"slow roller {zone}"
+    if tier >= 3:
+        return f"scorched grounder {zone}"
+    return f"ground ball {zone}"

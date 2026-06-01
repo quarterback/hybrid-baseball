@@ -66,7 +66,8 @@ Three borrowed and invented mechanics that turn out to belong together:
   the plate and advance runners at the cost of a strike. The lever a skilled
   hitter keeps over an at-bat; the source of most of O27's RBI.
 - **The joker** — three tactical pinch-batters a manager can drop into any spot,
-  any time, as often as he likes. Offense left on the table if unused.
+  once per joker per time through the order. No overall cap, so the same joker
+  comes back as the lineup cycles. Offense left on the table if unused.
 
 And two mechanics that show how far the design goes once you pull the thread:
 
@@ -74,7 +75,8 @@ And two mechanics that show how far the design goes once you pull the thread:
   persistent bonus runner, scored or put out like any other.
 - **Declared Seconds** — a manager can end his regulation half early and *bank*
   the unused outs for a second trip through the lineup later. A genuinely novel
-  risk decision with no equivalent in the real game.
+  risk decision with no equivalent in the real game. Regulation only — not
+  available in extras, which must be played out as normal 3-out frames.
 
 The whole sport runs on a structural conceit — every pitcher throws sidearm or
 submarine — which reshapes the value of velocity, deception, and arsenal depth,

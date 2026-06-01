@@ -27,6 +27,12 @@ from o27.stats.batter import BatterStats
 from o27.stats.pitcher import PitcherStats
 from o27.stats.team import TeamStats
 from o27.engine.pa import _pick_walk_back_sponsor
+from o27.engine import power_play as _power_play
+
+
+def _power_play_line(state) -> Optional[str]:
+    """Box-score `Powerplays:` line (None when the optional rule is off)."""
+    return _power_play.format_powerplays_line(state)
 
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -113,6 +119,11 @@ class Renderer:
         # observed in-progress AB number (changes when prior AB completed).
         self._pa_log: list[dict] = []
         self._batter_current_ab: dict = {}      # batter_id -> in-progress ab number
+        # Power Play pitcher accumulator (keyed by pitcher player_id). Window
+        # counters (pp_*) accrue only while the pitcher's defense had its nickel
+        # deployed behind him; total BIP counters accrue
+        # always, so sim.py can build the BABIP split (with-nickel vs without).
+        self._pp_pitcher: dict[str, dict] = {}
         self._batter_swing_idx: dict = {}       # batter_id -> swing_idx within current ab
         # Pesäpallo-style per-PA advancement tracking. At PA start we
         # snapshot which runners were on which bases; during the PA we
@@ -136,6 +147,18 @@ class Renderer:
         # Per-game running count of joker insertions per batting team, keyed
         # by team_id. Surfaced in the joker play-by-play line as a usage tally.
         self._joker_insertions: dict[str, int] = {}
+        # Structured per-PA records for downstream consumers (the SVG
+        # scorecard, future analytics). One entry per completed plate
+        # appearance. Derived from BatterStats diffs at PA boundary so the
+        # outcome is whatever the engine actually credited, not parsed from
+        # text. Populated by _finalize_pa_record / _start_pa_record.
+        self.pa_records: list[dict] = []
+        self._pa_record_in_progress: dict | None = None
+        # Pitcher arc records: one entry per pitcher's appearance window
+        # (start_out, end_out, pitcher name, half). Closed when the next
+        # pitcher comes in or at game end.
+        self.pitcher_arc: dict[str, list[dict]] = {"top": [], "bot": []}
+        self._current_arc_segment: dict | None = None
 
     # -----------------------------------------------------------------------
     # Public API — called by the game loop
@@ -193,6 +216,7 @@ class Renderer:
             # us which starting-base runners advanced vs were retired.
             if self._current_pa_batter_id is not None:
                 self._credit_pa_advancement(self._current_pa_batter_id)
+                self._finalize_pa_record(ctx)
             # Reset PA-scoped state for the incoming batter. The new PA's
             # starting bases = the bases standing right now (this event's
             # pre-event snapshot). Within a half this equals the previous
@@ -202,20 +226,47 @@ class Renderer:
             self._pa_start_bases = tuple(ctx.get("bases_list") or (None, None, None))
             self._pa_runners_out = set()
             self._on_new_pa(batter)
+            self._start_pa_record(batter, ctx)
             lines.append(self._batter_intro(batter))
             self._current_pa_batter_id = batter.player_id
 
         # Build the template context dict (all display values pre-computed).
         disp = self._build_disp(event, ctx, state_after)
 
-        # Update batter stats.
+        # Update batter stats. When the batting team is facing an active nickel
+        # window (short-handed), mirror whatever pa/ab/hits this event credits
+        # into the batter's short-handed counters via a before/after delta —
+        # avoids instrumenting every outcome branch in _update_stats.
+        _sh = bool(getattr(state_after, "power_play_sh_active", False))
+        _sh_s = self._get_stats(batter) if _sh else None
+        _sh_before = ((_sh_s.pa, _sh_s.ab, _sh_s.hits, _sh_s.k, _sh_s.bb,
+                       _sh_s.outs_recorded) if _sh else None)
         self._update_stats(event, ctx, state_after, disp)
+        if _sh:
+            _sh_s.sh_pa   += _sh_s.pa   - _sh_before[0]
+            _sh_s.sh_ab   += _sh_s.ab   - _sh_before[1]
+            _sh_s.sh_hits += _sh_s.hits - _sh_before[2]
+        # Power Play pitcher: when short-handed is active, ctx["pitcher"] IS the
+        # fielding pitcher with the nickel deployed behind him.
+        # Window counters come from the same batter deltas (BF = pa delta, etc.);
+        # total BIP counters accrue on every ball-in-play regardless of window so
+        # the BABIP split can be computed downstream.
+        self._credit_pp_pitcher(event, ctx, disp, _sh,
+                                _sh_before, _sh_s)
 
-        # Render via Jinja2 template.
-        tmpl = self._env.get_template("play_by_play.j2")
-        rendered = tmpl.render(**disp).rstrip("\n")
-        if rendered:
-            lines.append(rendered)
+        # Render via Jinja2 template. A failed pickoff is a routine throw-over —
+        # keep it out of the play-by-play entirely (not even the bare
+        # [outs|count|bases] header line), while stats/snapshots above still
+        # run. Only an actual pickout (runner caught) earns a line.
+        _silent_pickoff = (
+            etype == "pickoff_attempt"
+            and not (event.get("success") or disp.get("pickoff_success"))
+        )
+        if not _silent_pickoff:
+            tmpl = self._env.get_template("play_by_play.j2")
+            rendered = tmpl.render(**disp).rstrip("\n")
+            if rendered:
+                lines.append(rendered)
 
         # Append runner advancement narrative computed from state delta.
         runner_lines = self._compute_runner_lines(ctx, state_after, etype, disp, event)
@@ -249,6 +300,11 @@ class Renderer:
 
     def render_halftime(self, state) -> list[str]:
         """Render the halftime break announcement."""
+        # Close the last PA of the top half (no next-batter event will fire
+        # to trigger _finalize_pa_record).
+        if self._pa_record_in_progress is not None:
+            self._finalize_pa_record({"outs": state.outs})
+            self._current_pa_batter_id = None
         v_score = state.score["visitors"]
         target_runs = v_score + 1
         required_rr = target_runs / 27
@@ -511,6 +567,9 @@ class Renderer:
             # rendered as `runs(outs)` so the seconds / SI rounds carry their
             # banked-outs context. Phase 0 always renders just runs.
             line_phases=self._line_score_phases(state),
+            # Power Play (optional rule) — surface each team's nickel window(s)
+            # under the line score, mirroring the Declared Seconds line.
+            powerplays_line=_power_play_line(state),
         ).rstrip("\n")
         return rendered.split("\n") if rendered else []
 
@@ -597,6 +656,11 @@ class Renderer:
 
     def render_game_over(self, state) -> list[str]:
         """Render the final game-over banner."""
+        # Close the trailing PA if the game ended mid-half (walk-off, etc.)
+        if self._pa_record_in_progress is not None:
+            self._finalize_pa_record({"outs": state.outs})
+            self._current_pa_batter_id = None
+        self._populate_pitcher_arc(state)
         winner = state.winner
         sep = "=" * 60
         if not winner:
@@ -634,6 +698,114 @@ class Renderer:
         # 0-0). This hook stays as a "first time we see this batter at
         # the plate" marker — the actual stat increment happens elsewhere.
         return
+
+    # Halves where the visitors are batting (so opposing pitchers face them
+    # and show up on the visitors' scorecard arc).
+    _TOP_HALVES = {"top", "seconds_first", "supreg_top", "super_top"}
+
+    def _populate_pitcher_arc(self, state) -> None:
+        """Build pitcher_arc[bucket] from state.spell_log at game end. Each
+        segment is {start_out, end_out, pitcher, half}. Out positions run on
+        a single continuous ruler per side."""
+        top_cursor = 0
+        bot_cursor = 0
+        for spell in state.spell_log:
+            is_top = spell.half in self._TOP_HALVES
+            bucket = "top" if is_top else "bot"
+            cursor = top_cursor if is_top else bot_cursor
+            seg_end = cursor + spell.outs_recorded
+            self.pitcher_arc[bucket].append({
+                "start_out": cursor,
+                "end_out": seg_end,
+                "pitcher": spell.pitcher_name,
+                "half": spell.half,
+            })
+            if is_top:
+                top_cursor = seg_end
+            else:
+                bot_cursor = seg_end
+
+    def _stats_snapshot(self, player_id: str) -> dict:
+        """Return a flat snapshot of the batter's accumulator fields."""
+        s = self._batter_stats.get(player_id)
+        if s is None:
+            return {"pa": 0, "ab": 0, "hits": 0, "doubles": 0, "triples": 0,
+                    "hr": 0, "bb": 0, "ibb": 0, "k": 0, "hbp": 0, "sty": 0,
+                    "outs_recorded": 0}
+        return {"pa": s.pa, "ab": s.ab, "hits": s.hits, "doubles": s.doubles,
+                "triples": s.triples, "hr": s.hr, "bb": s.bb, "ibb": s.ibb,
+                "k": s.k, "hbp": s.hbp, "sty": s.sty,
+                "outs_recorded": s.outs_recorded}
+
+    def _start_pa_record(self, batter, ctx) -> None:
+        """Open a PA record for the incoming batter."""
+        self._pa_record_in_progress = {
+            "batter_id": batter.player_id,
+            "batter_name": batter.name,
+            "is_joker": bool(getattr(batter, "is_joker", False)),
+            "joker_id": self._joker_insertions.get(ctx.get("batting_team_id", ""), 0) or None,
+            "pitcher_name": ctx["pitcher"].name if ctx.get("pitcher") else "",
+            "half": ctx.get("half", "top"),
+            "outs_at_start": ctx.get("outs", 0),
+            "phase": ctx.get("phase", 0),
+            "pre": self._stats_snapshot(batter.player_id),
+        }
+
+    def _finalize_pa_record(self, ctx_after) -> None:
+        """Close the in-progress PA record when the next PA starts (or the
+        half ends). Derives the outcome from the BatterStats delta so it
+        reflects what the engine actually credited, not a text parse."""
+        pa = self._pa_record_in_progress
+        if pa is None:
+            return
+        post = self._stats_snapshot(pa["batter_id"])
+        pre = pa["pre"]
+        d = {k: post[k] - pre[k] for k in post}
+
+        # Outcome derivation from the diff.
+        outcome, is_out = "OUT", True
+        if d["hr"] > 0:
+            outcome, is_out = "HR", False
+        elif d["triples"] > 0:
+            outcome, is_out = "3B", False
+        elif d["doubles"] > 0:
+            outcome, is_out = "2B", False
+        elif d["hits"] > 0:
+            outcome, is_out = "1B", False
+        elif d["ibb"] > 0:
+            outcome, is_out = "IBB", False
+        elif d["bb"] > 0:
+            outcome, is_out = "BB", False
+        elif d["hbp"] > 0:
+            outcome, is_out = "HBP", False
+        elif d["k"] > 0:
+            outcome, is_out = "K", True
+        elif d["outs_recorded"] > 0:
+            outcome, is_out = "OUT", True
+        else:
+            # No definite outcome (FC where the batter advances on a runner
+            # being put out, sac fly, etc.). Mark as a generic out only if
+            # the half-game outs ticked up across this PA.
+            outs_now = ctx_after.get("outs", pa["outs_at_start"])
+            is_out = outs_now > pa["outs_at_start"]
+            outcome = "FC" if is_out else "?"
+
+        self.pa_records.append({
+            "batter": pa["batter_name"],
+            "batter_id": pa["batter_id"],
+            "pitcher": pa["pitcher_name"],
+            "half": pa["half"],
+            "phase": pa["phase"],
+            "outs_at_start": pa["outs_at_start"],
+            "outs_at_end": pa["outs_at_start"] + (1 if is_out else 0),
+            "is_out": is_out,
+            "outcome": outcome,
+            "stays": d["sty"],
+            "is_joker": pa["is_joker"],
+            "joker_id": pa["joker_id"],
+            "is_walk_back": outcome == "HR",
+        })
+        self._pa_record_in_progress = None
 
     def _accumulate_pa_runners_out(self, event, ctx) -> None:
         """Track runners retired during the current PA. Called per-event
@@ -738,6 +910,48 @@ class Renderer:
                 player_id=player.player_id, name=player.name
             )
         return self._batter_stats[player.player_id]
+
+    # Hit types that count as a ball-in-play hit for pitcher BABIP (HR excluded).
+    _PP_BIP_HITS = frozenset(("single", "infield_single", "double", "triple"))
+    # All ball-in-play hit_types (hits + outs on contact), i.e. the BABIP
+    # denominator. HR and errors are excluded from BABIP by convention.
+    _PP_BIP_ALL = frozenset(("single", "infield_single", "double", "triple",
+                             "ground_out", "fly_out", "line_out",
+                             "fielders_choice"))
+
+    def _credit_pp_pitcher(self, event, ctx, disp, sh, sh_before, sh_s) -> None:
+        """Accumulate Power Play pitcher counters keyed by the fielding pitcher.
+
+        Window counters (pp_*) only accrue while `sh` is True (the nickel was
+        deployed behind him); BF/K/BB/outs are read from the batter's stat
+        deltas captured around _update_stats. Total BIP counters (tot_*) accrue
+        on every ball-in-play regardless of window, so the BABIP split
+        (with-nickel vs without) is computable in sim.py.
+        """
+        pitcher = ctx.get("pitcher")
+        if pitcher is None:
+            return
+        rec = self._pp_pitcher.setdefault(pitcher.player_id, {
+            "pp_bf": 0, "pp_outs": 0, "pp_k": 0, "pp_bb": 0,
+            "pp_bip": 0, "pp_bip_hits": 0, "tot_bip": 0, "tot_bip_hits": 0,
+        })
+        # Ball-in-play classification (independent of the window) for BABIP.
+        if event.get("type") == "ball_in_play":
+            ht = disp.get("hit_type", "")
+            if ht in self._PP_BIP_ALL:
+                rec["tot_bip"] += 1
+                if ht in self._PP_BIP_HITS:
+                    rec["tot_bip_hits"] += 1
+                if sh:
+                    rec["pp_bip"] += 1
+                    if ht in self._PP_BIP_HITS:
+                        rec["pp_bip_hits"] += 1
+        # Window counting stats from the batter deltas (BF = a completed PA).
+        if sh and sh_before is not None:
+            rec["pp_bf"]   += sh_s.pa            - sh_before[0]
+            rec["pp_k"]    += sh_s.k             - sh_before[3]
+            rec["pp_bb"]   += sh_s.bb            - sh_before[4]
+            rec["pp_outs"] += sh_s.outs_recorded - sh_before[5]
 
     def _pick_dp_pivot(self, state_after, exclude_id):
         """Pick an infielder distinct from `exclude_id` to credit the
@@ -999,6 +1213,21 @@ class Renderer:
             d["hit_type_display"] = _HIT_TYPE_DISPLAY.get(
                 hit_type, hit_type.replace("_", " ")
             )
+            # Rich descriptive flavor ("frozen rope", "Texas leaguer",
+            # "swinging bunt") from the batted-ball taxonomy, when present.
+            d["batted_ball_name"] = (event.get("outcome") or {}).get(
+                "batted_ball_name", ""
+            )
+            # Defensive gem — a fielder robbed a hit. Surface the play + the
+            # fielder's name so the play-by-play can flag the great play.
+            gem = (event.get("outcome") or {}).get("gem_effect")
+            d["gem_effect"] = gem or ""
+            d["gem_fielder_name"] = ""
+            if gem:
+                _gfid = (event.get("outcome") or {}).get("fielder_id")
+                if _gfid and state_after.fielding_team:
+                    _gf = state_after.fielding_team.get_player(_gfid)
+                    d["gem_fielder_name"] = _gf.name if _gf else ""
             d["batter_safe"] = batter_safe
             d["new_bases"] = state_after.bases_summary()
 
@@ -1356,6 +1585,29 @@ class Renderer:
             s.pa += 1
             s.hbp += 1
             s.rbi += runs_scored
+
+        elif etype == "sac_bunt":
+            # Manager-called bunt (manager.should_bunt). Three outcomes:
+            #   hit       — bunt single: 1 PA, 1 AB, 1 H (a bunt hit IS an AB).
+            #   sacrifice — successful sac: 1 PA, NO AB, 1 SH; batter out.
+            #   fail      — popped up / forced: 1 PA, 1 AB, batter out.
+            # The batter's OUT (sacrifice/fail) is charged by the out-
+            # reconciliation tail below (engine bumped state.outs), and any
+            # runs are credited by the tail's _credit_runs — same as every
+            # other PA event. We only record the batting line here.
+            outcome = event.get("outcome", "sacrifice")
+            s.pa += 1
+            if outcome == "hit":
+                s.ab += 1
+                s.hits += 1
+                s.rbi += runs_scored
+                _check_multi_hit(terminal_hit=True)
+            elif outcome == "fail":
+                s.ab += 1
+                _check_multi_hit()
+            else:  # sacrifice
+                s.sh += 1
+                s.rbi += runs_scored
 
         elif etype == "ball_in_play":
             choice = disp.get("choice", "run")

@@ -684,3 +684,49 @@ def test_invariant_9_walk_back_runs_le_faced(played_game_ids):
             for r in bad2[:5]
         )
     )
+
+
+def test_invariant_10_tto_buckets_reconcile(played_game_ids):
+    """Times-through-the-order buckets must reconcile with the headline
+    counters: per pitcher row, bf_tto1+2+3 == batters_faced (every PA ticks
+    exactly one look bucket) and k_tto1+2+3 == k (every strikeout ticks one).
+    Guards the whole TTO accumulation → SpellRecord → DB pipeline.
+
+    Legacy rows written before the TTO buckets existed carry all-zero tto
+    columns; those are skipped (bf_tto sum 0 but batters_faced > 0).
+    """
+    from o27v2.web.app import _PSTATS_DEDUP_SQL
+
+    extra, params = _game_filter_clause("ps")
+    rows = db.fetchall(
+        f"""SELECT ps.player_id, ps.game_id,
+                   COALESCE(ps.batters_faced, 0) AS bf,
+                   COALESCE(ps.k, 0) AS k,
+                   COALESCE(ps.bf_tto1,0)+COALESCE(ps.bf_tto2,0)+COALESCE(ps.bf_tto3,0) AS bf_tto,
+                   COALESCE(ps.k_tto1,0) +COALESCE(ps.k_tto2,0) +COALESCE(ps.k_tto3,0)  AS k_tto
+              FROM {_PSTATS_DEDUP_SQL} ps
+              JOIN games g ON g.id = ps.game_id
+             WHERE g.played = 1{extra}""",
+        params,
+    )
+    # Only rows that actually carry TTO data (post-migration sims).
+    live = [r for r in rows if (r["bf_tto"] or 0) > 0]
+    if not live:
+        pytest.skip("no TTO-bucketed pitcher rows in scope")
+
+    bf_bad = [r for r in live if r["bf_tto"] != r["bf"]]
+    assert not bf_bad, (
+        f"bf_tto sum != batters_faced for {len(bf_bad)} rows; first 5: "
+        + "; ".join(
+            f"player={r['player_id']} game={r['game_id']} bf={r['bf']} bf_tto={r['bf_tto']}"
+            for r in bf_bad[:5]
+        )
+    )
+    k_bad = [r for r in live if r["k_tto"] != r["k"]]
+    assert not k_bad, (
+        f"k_tto sum != k for {len(k_bad)} rows; first 5: "
+        + "; ".join(
+            f"player={r['player_id']} game={r['game_id']} k={r['k']} k_tto={r['k_tto']}"
+            for r in k_bad[:5]
+        )
+    )

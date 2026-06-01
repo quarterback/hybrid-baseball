@@ -22,6 +22,7 @@ from typing import Any
 
 from o27v2 import config as v2cfg
 from o27v2 import scout as _scout
+from o27v2 import nation_talent as _nt
 from o27v2.archetypes import (
     classify_position_player,
     classify_roster_slot,
@@ -1005,6 +1006,9 @@ def _gen_shift(attr: str | None) -> int:
 # speed, one contact — per team. The per-archetype grade centers live in
 # o27v2/config.py and are read at call time so the dashboard can re-tune them.
 _JOKER_ARCH_ORDER = ("power", "speed", "contact")
+# Actual field position a joker is listed at (he's a bat-first usage role, not a
+# real "DH" position). Spread across thin corners by archetype.
+_JOKER_FIELD_POS = {"power": "1B", "speed": "RF", "contact": "3B"}
 
 
 def _joker_center(archetype: str, tool: str, default: float) -> float:
@@ -1040,6 +1044,12 @@ def _shape_joker(p: dict, archetype: str, rng: random.Random) -> None:
     # Jokers carry their own archetype label (the classifier returns "" for
     # them by design), so stamp it directly.
     p["archetype"] = archetype
+    # A joker is a usage ROLE (is_joker / roster_slot="joker"), not a position.
+    # Give him his actual field position — where he'd play if pressed — instead
+    # of the placeholder "DH", placed at a thin corner by archetype. He keeps a
+    # weak glove, so he won't be a defensive sub or nickel; the position is just
+    # an honest label of his fielding home.
+    p["position"] = _JOKER_FIELD_POS.get(archetype, "1B")
 
 
 def _roll_org_grade(rng: random.Random) -> int:
@@ -1801,16 +1811,18 @@ def _park_surname_pool(rng: random.Random, count: int = 60) -> list[str]:
 
 # Roster shape — substitution-economy 42-player baseline (Item 2).
 #
-# Per the operator's clarification: in O27, the 3 jokers ARE the DH
-# role (analogous to MLB's 1 DH, just with 3 of them). There is NO
-# separate DH player class. The lineup is 8 fielders + 3 jokers = 11
-# batters; the pitcher does NOT bat (jokers replace pitcher batting,
-# same way MLB's DH does). Jokers are FIXED in the lineup pre-game and
-# CANNOT be substituted out.
+# Per the operator: O27's batting order is NINE — the 8 position starters PLUS
+# the starting pitcher (the pitcher DOES bat). There is no fixed DH slot. The
+# jokers are NOT a fixed part of the order: they are tactical cut-ins the manager
+# may insert in front of any batter, at most once per time through the order, for
+# up to 12 hitters in a cycle before it returns to the top. The pitcher keeps his
+# at-bats unless he's replaced by a substitute at that spot. Jokers themselves
+# can't be subbed out (they're a finite per-game resource), but they don't
+# occupy a lineup slot pre-game.
 #
 #   -  8 fielders (canonical starters, 1 each at C/1B/2B/3B/SS/LF/CF/RF)
 #   - 11 fielder backups (depth at every position for PH/PR/DEF subs)
-#   -  3 jokers (drafted explicitly as elite-bat / no-glove; the DH role)
+#   -  3 jokers (drafted explicitly as elite-bat / no-glove; tactical cut-ins)
 #   -  3 situational specialists (1 PR + 2 PH for bench leverage)
 #   - 17 pitchers (bulk + leverage + emergency)
 # Total active: 42.
@@ -1860,8 +1872,14 @@ def _make_hitter(
 
     `team_shift` is added to every tier roll so all players on a strong
     org skew higher and all players on a weak org skew lower. Set by
-    `generate_players` once per team.
+    `generate_players` once per team. The player's nationality adds its
+    own talent lift on top (see o27v2.nation_talent), and a per-player
+    elite roll (scaled by the nation's investment) can floor a hitter's
+    marquee grades into the world-class band.
     """
+    team_shift += _nt.talent_shift(country)
+    elite = _nt.roll_elite(country, rng)
+
     def roll(attr: str | None = None) -> int:
         bias = style.get(attr, 0) if (style and attr) else 0
         return _roll_tier_grade(rng, team_shift + bias + _gen_shift(attr))
@@ -1873,6 +1891,13 @@ def _make_hitter(
     contact_g  = roll("contact")
     power_g    = roll("power")
     eye_g      = roll("eye")
+    if elite:
+        # World-class bat: floor the marquee offensive grades. Elite+
+        # (81-95) is still earned via development; the seed ceiling is 80.
+        skill_g   = max(skill_g,   rng.randint(*_nt.ELITE_HEADLINE))
+        contact_g = max(contact_g, rng.randint(*_nt.ELITE_SUPPORT))
+        power_g   = max(power_g,   rng.randint(*_nt.ELITE_SUPPORT))
+        eye_g     = max(eye_g,     rng.randint(*_nt.ELITE_SUPPORT))
     bats_roll  = _roll_bats(rng)
     # Spray tendency: base N(0.5, 0.12), nudged toward pull by power
     # (sluggers turn on the ball) and by LHB tendency. Clamped [0.05, 0.95].
@@ -1947,6 +1972,15 @@ def _make_hitter(
             if_g, of_g, cat_g = spec_low_a, spec_low_b, spec_high
     # Pitcher_skill on a position player is only used in emergencies.
     pskill_g = roll() // 2 + 10  # cap fielder-pitching at low grades
+    # Catcher game-calling (pitch sequencing) — only meaningful behind the
+    # plate, so a catcher (catcher is his strongest glove group) gets a full
+    # independent tier roll; everyone else gets a low/replacement value (a
+    # non-catcher pressed into catching calls a poor game). Independent of
+    # receiving skill so a strong glove can still be a weak caller.
+    if cat_g >= if_g and cat_g >= of_g:
+        game_calling_g = roll()
+    else:
+        game_calling_g = max(20, roll() // 2 + 10)
     result = {
         "name": name,
         "country": country,
@@ -1992,6 +2026,7 @@ def _make_hitter(
         "defense_infield":  if_g,
         "defense_outfield": of_g,
         "defense_catcher":  cat_g,
+        "game_calling":     game_calling_g,
         # Baserunning skill + aggressiveness, independent rolls. A smart
         # average-speed runner (high baserunning, mid speed) is just as
         # useful on the bases as a pure burner.
@@ -2034,6 +2069,7 @@ def _make_specialist(
     name: str,
     team_shift: int = 0,
     country: str = "",
+    position: str = "",
 ) -> dict:
     """Build a single-tool specialist player.
 
@@ -2081,7 +2117,9 @@ def _make_specialist(
         # Joker = pure bat, no glove. Stronger than ph_specialist on
         # average because jokers are fixed in the lineup and need to
         # carry their slot every PA, not just situational appearances.
-        position   = "DH"
+        # Position is a real field spot (set definitively by _shape_joker via
+        # archetype); "1B" here is just the default for any unshaped joker.
+        position   = "1B"
         power_g    = elite_roll()
         contact_g  = elite_roll()
         eye_g      = rng.randint(55, 75)
@@ -2094,18 +2132,24 @@ def _make_specialist(
         cat_g      = low_roll()
         skill_g    = rng.randint(65, 82)
         ra_g       = rng.randint(40, 60)
-    else:  # ph_specialist
-        position   = "DH"
+    else:  # ph_specialist — a loud BAT who also carries a real glove, so he
+        # can pinch-hit AND field, cover an injury, or come in as the nickel.
+        # Teams no longer carry bat-only DH bench filler beyond the 3 jokers;
+        # any bench player can pinch-hit if needed (per the operator).
+        def field_roll() -> int:
+            # Playable, roughly average glove — a real fielder, not a butcher.
+            return rng.randint(45, 62)
+        position   = position or "LF"
         power_g    = high_roll()
         contact_g  = rng.randint(48, 65)
         eye_g      = rng.randint(45, 65)
-        speed_g    = low_roll()
-        baserunning_g = low_roll()
-        defense_g  = low_roll()
-        arm_g      = low_roll()
-        if_g       = low_roll()
-        of_g       = low_roll()
-        cat_g      = low_roll()
+        speed_g    = rng.randint(40, 58)
+        baserunning_g = rng.randint(40, 58)
+        defense_g  = field_roll()
+        arm_g      = field_roll()
+        if_g       = field_roll() if position in ("1B", "2B", "3B", "SS") else low_roll()
+        of_g       = field_roll() if position in ("LF", "CF", "RF") else low_roll()
+        cat_g      = field_roll() if position == "C" else low_roll()
         skill_g    = rng.randint(58, 75)
         ra_g       = rng.randint(40, 60)
 
@@ -2151,6 +2195,8 @@ def _make_specialist(
         "defense_infield":  if_g,
         "defense_outfield": of_g,
         "defense_catcher":  cat_g,
+        # Specialists (joker/PR/PH) never catch — replacement game-calling.
+        "game_calling":     max(20, cat_g // 2 + 10),
         "baserunning":        baserunning_g,
         "run_aggressiveness": ra_g,
         "work_ethic":  rng.randint(40, 70),
@@ -2332,11 +2378,20 @@ def _make_pitcher(
     """Build one pitcher dict with Stuff (`pitcher_skill`) and Stamina
     rolled INDEPENDENTLY against the tier ladder.
 
-    No pitcher_role is set — the manager AI derives today's role at game
-    time from the live attribute values, so an aging arm with decayed
-    Stamina automatically slides from rotation into middle relief without
-    any persisted re-tagging.
+    No pitcher_role is set here — at generation the arm is team-blind. The
+    canonical rotation + bullpen roles are stamped per team after the snake
+    draft (and re-derived at season rollover / after trades) by
+    o27v2.rotation, so an aging arm with decayed Stamina slides from the
+    rotation into the bullpen the next time roles are assigned. The engine
+    still applies live overrides on top of the stored role at game time.
+
+    Nationality adds its talent lift to `team_shift`, and a per-player
+    elite roll (scaled by the nation's investment) can floor an ace's
+    marquee grades into the world-class band (see o27v2.nation_talent).
     """
+    team_shift += _nt.talent_shift(country)
+    elite = _nt.roll_elite(country, rng)
+
     def roll(attr: str | None = None) -> int:
         bias = style.get(attr, 0) if (style and attr) else 0
         return _roll_tier_grade(rng, team_shift + bias + _gen_shift(attr))
@@ -2348,6 +2403,11 @@ def _make_pitcher(
     # = low BB regardless of Stuff; high Movement = ground-ball pitcher.
     command_g  = roll("command")
     movement_g = roll("movement")
+    if elite:
+        # World-class arm: floor Stuff + supporting command/movement.
+        stuff_g    = max(stuff_g,    rng.randint(*_nt.ELITE_HEADLINE))
+        command_g  = max(command_g,  rng.randint(*_nt.ELITE_SUPPORT))
+        movement_g = max(movement_g, rng.randint(*_nt.ELITE_SUPPORT))
     # Pitchers also get defense/arm — they field comebackers and bunts,
     # and high-arm pitchers help suppress steals. Capped lower than
     # position players since pitcher fielding matters less in O27.
@@ -2402,6 +2462,7 @@ def _make_pitcher(
         "defense_infield":  50,   # pitchers field their own mound; sub-groups neutral
         "defense_outfield": 50,
         "defense_catcher":  50,
+        "game_calling":     20,   # pitchers never catch
         # Pitchers don't bat in O27 → baserunning is academic. Neutral.
         "baserunning":        50,
         "run_aggressiveness": 50,
@@ -2473,6 +2534,11 @@ def generate_players(
         nm, country = _name()
         return _make_specialist(rng, kind, name=nm, country=country)
 
+    def _spec_at(kind: str, position: str) -> dict:
+        nm, country = _name()
+        return _make_specialist(rng, kind, name=nm, country=country,
+                                position=position)
+
     # ---- Active position players: 8 canonical starters + 11 fielder backups ----
     for pos in FIELDER_POSITIONS:
         players.append(_hitter(pos, is_active=1))
@@ -2482,8 +2548,11 @@ def generate_players(
     # Corner backups.
     for pos in ("3B", "1B", "LF"):
         players.append(_hitter(pos, is_active=1))
-    # Extra-depth backups (for PH/PR/DEF substitution pool).
-    for pos in ("RF", "CF", "SS", "2B"):
+    # Extra-depth backups (for PH/PR/DEF substitution pool). One is a THIRD
+    # catcher — catching is a wear position (in-game game-calling fatigue +
+    # season erosion), so every club needs 3 catchers to survive the 27-out
+    # arc and rotate.
+    for pos in ("RF", "CF", "SS", "C"):
         players.append(_hitter(pos, is_active=1))
 
     # ---- Active jokers (the DH role; one of each archetype) ----
@@ -2493,16 +2562,20 @@ def generate_players(
         players.append(jk)
 
     # ---- Active situational specialists ----
+    # 1 pinch-runner + 2 loud-bat fielders. The PH bats now carry real
+    # positions + gloves (placed at thin corners) instead of being bat-only
+    # DHs, so the only dedicated DH slots are the 3 jokers — every other bench
+    # bat can also field, cover an injury, or come in as the nickel.
     players.append(_spec("pr_specialist"))
-    players.append(_spec("ph_specialist"))
-    players.append(_spec("ph_specialist"))
+    players.append(_spec_at("ph_specialist", "LF"))
+    players.append(_spec_at("ph_specialist", "RF"))
 
     # ---- Active pitching staff ----
     for _ in range(ACTIVE_PITCHERS):
         players.append(_pitcher(is_active=1))
 
-    # ---- Reserve pool ----
-    _RESERVE_POSITIONS = ("RF", "CF", "SS")
+    # ---- Reserve pool ----  (incl. a 4th catcher in the taxi pool)
+    _RESERVE_POSITIONS = ("C", "CF", "SS")
     for i in range(RESERVE_HITTERS):
         pos = _RESERVE_POSITIONS[i % len(_RESERVE_POSITIONS)]
         players.append(_hitter(pos, is_active=0))
@@ -2561,8 +2634,11 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     ("3B", 1, 0), ("1B", 1, 0), ("LF", 1, 0),
     # Extra depth (4 more backups across high-rotation + outfield) so
     # the substitution candidate pool has bodies to spend on PH/PR/DEF
-    # without leaving the team a defensive replacement short.
-    ("RF", 1, 0), ("CF", 1, 0), ("SS", 1, 0), ("2B", 1, 0),
+    # without leaving the team a defensive replacement short. One of these
+    # is a THIRD catcher: catching is a wear position (in-game game-calling
+    # fatigue + season-long erosion), so every club needs 3 catchers to get
+    # through the 27-out arc and rotate — the live sim assumes this depth.
+    ("RF", 1, 0), ("CF", 1, 0), ("SS", 1, 0), ("C", 1, 0),
     # Situational specialists drafted explicitly (Item 4 follow-up #6):
     # 1 PR specialist + 2 PH specialists per team = 3 specialists
     # guaranteed in every roster. Built by _make_specialist with tight
@@ -2570,8 +2646,10 @@ _DRAFT_SLOTS: list[tuple[str, int, int]] = [
     # ph_specialist rather than spilling into the bat_first pool.
     (SPEC_PR, 1, 0),
     (SPEC_PH, 2, 0),
-    # Reserve depth (slim — active is 42).
-    ("RF", 0, 1), ("CF", 0, 1), ("SS", 0, 1),
+    # Reserve depth (slim — active is 42). Includes a FOURTH catcher in the
+    # taxi/reserve pool — the depth piece called up when a catcher is injured
+    # or eroded, the way some clubs carry a 4th the way football carries a 3rd QB.
+    ("C", 0, 1), ("CF", 0, 1), ("SS", 0, 1),
     # Pitchers (17 active + 3 reserve).
     ("P", 17, 3),
 ]
@@ -3047,18 +3125,18 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     insert_sql = """INSERT INTO players
         (team_id, name, country, position, is_pitcher, skill, speed,
          pitcher_skill, stay_aggressiveness, contact_quality_threshold,
-         archetype, pitcher_role, hard_contact_delta, hr_weight_bonus,
+         archetype, pitcher_role, rotation_slot, hard_contact_delta, hr_weight_bonus,
          age, stamina, is_active,
          contact, power, eye, command, movement, bats, throws,
          defense, arm,
-         defense_infield, defense_outfield, defense_catcher,
+         defense_infield, defense_outfield, defense_catcher, game_calling,
          baserunning, run_aggressiveness,
          work_ethic, work_habits, habit_cup, salary,
          release_angle, pitch_variance, grit, repertoire,
          pull_pct, adaptability, leadership,
          roster_slot, role_hit, role_run, role_two_way, role_field_pos,
          hometown, birthday, secondary_country)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -3072,6 +3150,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p["skill"], p["speed"], p["pitcher_skill"],
                 p["stay_aggressiveness"], p["contact_quality_threshold"],
                 p.get("archetype", ""), p.get("pitcher_role", ""),
+                int(p.get("rotation_slot", 0) or 0),
                 p.get("hard_contact_delta", 0.0), p.get("hr_weight_bonus", 0.0),
                 p.get("age", 27),
                 p.get("stamina", p.get("pitcher_skill", 50)),
@@ -3083,6 +3162,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("defense_infield", 50),
                 p.get("defense_outfield", 50),
                 p.get("defense_catcher", 50),
+                p.get("game_calling", 50),
                 p.get("baserunning", 50),
                 p.get("run_aggressiveness", 50),
                 p.get("work_ethic", 50), p.get("work_habits", 50),
@@ -3118,6 +3198,19 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
             assignments.get(team_id, []),
             team_archetype.get(team_id, ""),
         )
+
+    # Canonical crew assignment — run AFTER the archetype tilt has finalized
+    # each roster's active/reserve split, so every active arm (including any
+    # reserve a deep-bench skipper just promoted) gets a nautical role. Roles
+    # are relative to THIS staff: the same arm grades differently on a thin
+    # vs. a deep club. Reserve depth stays '' until called up. (o27v2/rotation.py)
+    from o27v2 import rotation as _rotation
+    for team_id in team_ids:
+        _active_pitchers = [
+            p for p in assignments.get(team_id, [])
+            if p.get("is_pitcher") and int(p.get("is_active", 1) or 0) == 1
+        ]
+        _rotation.assign_staff_roles(_active_pitchers)
 
     for team_id in team_ids:
         roster = assignments.get(team_id, [])

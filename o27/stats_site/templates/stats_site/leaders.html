@@ -124,11 +124,11 @@
 </div>
 
 <div>
-  <h2>Batting — Stays (STY)</h2>
-  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">Stay = batter chose to remain at home plate with runners on base; successful stay credits a hit and restarts the at-bat.</p>
+  <h2>Batting — Second-Chance ABs (2C)</h2>
+  <p style="font-size:10px;color:var(--fg-dim);margin-bottom:6px">Second-Chance AB = batter chose to take another swing with runners on base instead of running; a successful second chance credits a hit and restarts the at-bat.</p>
   {% if by_sty %}
   <table>
-    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">STY</th></tr></thead>
+    <thead><tr><th class="num">#</th><th>Player</th><th>Team</th><th class="num">2C</th></tr></thead>
     <tbody>
     {% for r in by_sty %}
     <tr>

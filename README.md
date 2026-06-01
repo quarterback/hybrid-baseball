@@ -18,7 +18,7 @@ If you want the long version of the design argument, the post that goes through 
 
 **Lineup and roster**
 - 12 batters per side: 8 fielders + the starting pitcher + 3 DHs. The SP must bat — no DH replacing him.
-- 3 jokers per roster: tactical insertions the manager can drop into any spot in the rotation, anytime. There's no per-cycle or per-game cap — the same joker can be brought back as many times as the manager wants. The only hard constraint is they can't be at the plate while still on base from a prior PA. Jokers don't take a roster slot or a field position. They add a PA to the rotation when used. A manager who never deploys his jokers leaves offense on the table. Each team rosters one joker of each archetype (power, speed, contact).
+- 3 jokers per roster: tactical insertions the manager can drop into any spot in the rotation. Cooldown is per-turnover — each joker can be deployed once per time through the order, then resets when the lineup cycles. No overall cap on deployments, so in a long, high-scoring half a single joker can be brought back cycle after cycle. The other hard constraint is they can't be at the plate while still on base from a prior PA. Jokers don't take a roster slot or a field position; they add a PA to the rotation when used. A manager who never deploys his jokers leaves offense on the table. By convention most teams carry one joker of each archetype (power, speed, contact) for tactical flexibility, but the archetype mix is a roster-construction choice — a team with a specific style philosophy can load up on a single archetype.
 - Pinch hitting still exists separately and works as in MLB — the pinch hitter replaces a regular permanently in the lineup and the field.
 - Active roster is 34 players (12 fielders + 3 DH + 19 pitchers), with 13 reserves behind them. Reserves promote ephemerally to cover injuries — no DB-level "callup," just whoever fits the hole that day.
 
@@ -32,7 +32,7 @@ If you want the long version of the design argument, the post that goes through 
 - All pitchers in O27 throw sidearm or submarine. This is a structural feature of the sport's history, not a rule that's enforced game-to-game.
 - 17-pitch catalog including conventional pitches (four-seam, sinker, cutter, slider, curveball, changeup, splitter) and O27-specific pitches that the sport's structure makes viable (knuckleball, spitter, eephus, screwball, gyroball, palmball, Vulcan changeup, Sisko slider, walking slider, 10-to-2 curve).
 - Each pitcher has a per-pitcher repertoire (typically 2–5 pitches) with individual quality ratings, count-aware usage patterns, and platoon effects.
-- No persisted starter/reliever role. The manager AI picks today's SP as the highest-Stamina arm not used in the last four sim days, and assigns relievers at appearance time based on where in the 27-out arc the call is happening: late-arc → max Stuff, mid-arc → mid, early-arc → max Stamina.
+- Pitching staffs carry a **nautical crew**, not a baseball rotation/bullpen. A game is one continuous 27-out voyage, and the crew conducts it through its moments: **Helms** (steers the voyage out — the primary daily arm), **First/Second Change** (the watch changes who relieve him), **Bosun** (durable bulk hand), **Skidder** (situational/deception arm for a rough patch), **Anchor** (late hold), **Pilot** (final-outs finisher). Roles are not titles anybody owns — they are skill-derived and **relative to the team** (the same arm is a Helms on a thin staff and a Skidder on a deep one), and they're re-derived whenever the staff changes (season rollover, trades, call-ups) or by hand on the team's rotation page. Player cards just read Starter/Reliever; the crew is shown on the rotation page. In-game the stored crew is only a default — the manager flexes it live by **fatigue, Stuff and matchup**, so who's actually throwing each moment still emerges from the situation.
 
 **Defense, parks, weather**
 - Each park has its own fence geometry (asymmetric where appropriate), shape archetype, and architectural quirks; spray charts and HR rates reflect the park, not a league-wide constant. Pre-modern park shapes are part of the catalog.
@@ -41,10 +41,10 @@ If you want the long version of the design argument, the post that goes through 
 
 **Two O27-native wrinkles**
 - **Walk-Back.** A home run returns the hitter to third base as a live, persistent bonus runner — he stays there until he's driven in, put out, or the half ends, exactly like any other runner.
-- **Declared Seconds.** A manager may end his side's regulation half early and *bank* the unused outs, buying a second trip through the lineup later in the game. A genuine risk/reward lever with no equivalent in real baseball.
+- **Declared Seconds.** A manager may end his side's regulation half early and *bank* the unused outs, buying a second trip through the lineup later in the game. A genuine risk/reward lever with no equivalent in real baseball. Declaring is regulation-only — a manager cannot declare in extras. Extra-inning frames must be played out as normal 3-out frames.
 
 **Game length**
-- Tied games go to extra innings: each side bats a normal 3-out frame, repeated until a winner. (An earlier 5-out "super-inning" format was dropped after it let offenses run up double-digit frames.)
+- Tied games go to extra innings: each side bats a normal 3-out frame, repeated until a winner. Declared Seconds is not available in extras — every extra frame is played to its third out. (An earlier 5-out "super-inning" format was dropped after it let offenses run up double-digit frames.)
 - Regular season length is per league config (8/12/16/24/30/36 teams, plus a 56-team tiered config). The default 30-team config plays 162 games per team.
 
 ## How the Stats Are Different
@@ -87,7 +87,7 @@ The structural rules compound into a sport that produces different baseball outc
 
 ## What Got Built on Top of the Rules
 
-The sim has grown well past "rules engine + box score." A non-exhaustive list of the systems that wrap around the engine:
+The sim has grown well past "rules engine + box score." It got there in about a month — from a genesis PRD in early May, through a fast Replit build of the engine and league, a move to Claude Code, and a variance-first tuning pivot on May 17 that made the mechanics (not a target band) decide the run environment, into a late-May sprint of new systems landing every few days. The full story — the phases, the pivots, and a dated changelog — is in [`docs/project-trajectory.md`](docs/project-trajectory.md). A non-exhaustive list of the systems that now wrap around the engine:
 
 - **Player archetypes.** Position players classify into archetypes from their attribute grades (e.g. contact hitter, three-true-outcomes slugger, defense-first up-the-middle). Pitcher arsenal and shape work similarly.
 - **Currency, valuation, auctions.** Every player has a salary in *guilders*, derived from current attributes. Live auction-style player markets sit on top.
@@ -96,12 +96,12 @@ The sim has grown well past "rules engine + box score." A non-exhaustive list of
 - **Schedule, playoffs, awards.** Configurable team counts (8–36 + tiered), division-aware round-robin, playoff bracket, end-of-season awards and scouting.
 - **Youth pipeline.** A separate development sim feeds prospects into the league, with a 48-team youth World Cup.
 - **Hall of Fame & career records.** A gated league hall plus criteria-based team halls, and multi-season career leaderboards surfaced in the almanac.
-- **Runtime tuning & world-building.** A web dashboard exposes every engine constant with era/stylistic presets, a guard-railed randomizer, and a saved-environment library (each auto-labelled by the run environment it produces). A peer-universe builder composes co-equal, independently-styled leagues whose play styles emerge from their field geometry, climate, and talent pipeline rather than national stereotype; configs support promotion/relegation tiers.
+- **Runtime tuning & world-building.** A web dashboard exposes every engine constant with era/stylistic presets, a guard-railed randomizer, and a saved-environment library (each auto-labelled by the run environment it produces). A peer-universe builder composes co-equal, independently-styled leagues whose play styles emerge from their field geometry, climate, and talent pipeline rather than national stereotype; configs support promotion/relegation tiers. For building your own styles, [`docs/tuning-guide-for-llms.md`](docs/tuning-guide-for-llms.md) is a self-contained guide you hand to an LLM to generate Engine-Tunables override blobs from a plain-English description ("a deadball pitcher's duel", "a launch-angle circus").
 - **Realism layer.** Ballparks (with pre-modern shapes), weather, batted-ball physics (EV / LA / spray), handedness splits, defensive shifts, RISP-pressure modifier, leadership flare on the firing side of a leverage swing.
 - **Stat invariants test suite.** `make test-invariants` runs nine assertions that catch every mathematically-impossible-stat bug the project has shipped before (phase-out caps, OR reconciliation, pitcher↔batter cross-check, OS% bounds, league FIP within 0.05 of league ERA, etc.). Required to pass before any release.
 - **Newspaper-style box score and Markdown export** for LLM-friendly game writeups.
 
-Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoning, the tradeoffs, and the verification numbers — that's where the design history actually lives.
+Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoning, the tradeoffs, and the verification numbers — that's where the design history actually lives. [`docs/project-trajectory.md`](docs/project-trajectory.md) is the reading order through them: the month-long arc, narrated, with a dated changelog.
 
 ## Repository Structure
 
@@ -126,7 +126,7 @@ Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoni
   - `data/league_configs/` — `8teams.json` through `36teams.json` plus `56teams_tiered.json`.
   - `tests/` — archetype, linear-weights, RISP-pressure, trade, migration tests.
 - `tests/` — top-level invariant suite (`make test-invariants`) that runs against a populated DB.
-- `docs/` — methodology references and ~40 AARs documenting every system shipped.
+- `docs/` — methodology references and ~70 AARs documenting every system shipped, plus [`project-trajectory.md`](docs/project-trajectory.md) (the narrated month-long arc + changelog), the [tuning guide for LLMs](docs/tuning-guide-for-llms.md) (generate Engine-Tunables blobs from a plain-English style), and the [five-inning blog post](docs/blog-o27-vs-five-inning-baseball.md).
 - `Dockerfile`, `fly.toml`, `DEPLOY.md` — Fly.io deployment for `hybrid-baseball.fly.dev`.
 - `scripts/`, `pnpm-workspace.yaml` — peripheral TypeScript workspace (codegen, design mockups). Independent of the Python sim.
 
@@ -170,7 +170,7 @@ Deployment to Fly.io (`hybrid-baseball` app, `ams` region, `o27v2_data` volume m
 
 ## Status
 
-Active development. Engine, stats methodology, web UI, economy, trades, playoffs, and the youth pipeline are functional and producing complete simulated seasons. New systems land continuously; recent additions include a Hall of Fame and career leaderboards, a re-themed WCAG-AA light/dark UI with grouped navigation and a mobile layout, a runtime engine-tunables dashboard (presets, randomizer, saved environments), infrastructure-driven regional leagues with per-league park geometry, defensive shifts, and a motivation-driven trade engine with front-office personalities. The pitch repertoire system, ballpark geometry, and weather model all continue to evolve.
+Active development, and moving fast — see [`docs/project-trajectory.md`](docs/project-trajectory.md) for the month-long arc and changelog. Engine, stats methodology, web UI, economy, trades, playoffs, and the youth pipeline are functional and producing complete simulated seasons. New systems land continuously; the late-May run added the Power Play (the first optional, per-league rule), multi-week performance streaks, a hits/runs-variance recalibration, times-through-the-order familiarity and a softball/underhand arsenal, the Zaryanovia nation with its Zora currency and a Pro World Cup, career leaderboards, a re-themed WCAG-AA light/dark UI with grouped navigation and a mobile layout, a runtime engine-tunables dashboard (presets, randomizer, saved environments), and infrastructure-driven regional leagues with per-league park geometry. The pitch repertoire system, ballpark geometry, and weather model all continue to evolve.
 
 The sim is not a complete game product. There's no manager-mode play, no human-driven GM workflow. It's a data exploration tool for browsing what the rules produce, with views designed to surface stats and archetypes for human reading or LLM ingestion.
 

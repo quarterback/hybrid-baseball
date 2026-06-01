@@ -88,9 +88,7 @@ function buildRosterTable(abbrev) {
   if (!team) return '<p class="dim" style="padding:.5rem .85rem;font-size:.78rem;">No roster data.</p>';
   let rows = '';
   for (const p of team.players) {
-    const badge = p.is_joker
-      ? `<span class="ab ab-${escHtml((p.archetype||'').toLowerCase())}">${escHtml(p.archetype||'JKR')}</span>`
-      : '';
+    const badge = p.is_joker ? '<span class="ab">J</span>' : '';
     const cls = p.is_joker ? ' class="jr"' : '';
     rows += `<tr${cls}>
       <td>${escHtml(p.name)}${badge}</td>

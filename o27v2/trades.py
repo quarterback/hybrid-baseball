@@ -60,13 +60,18 @@ def trade_value(player: dict) -> float:
     arch = player.get("archetype", "")
 
     from o27v2 import scout as _scout
+    from o27v2 import rotation as _rotation
     batting  = _scout.to_unit(player.get("skill", 50))
     pitching = _scout.to_unit(player.get("pitcher_skill", 50))
     speed    = _scout.to_unit(player.get("speed", 50))
 
-    if role == "workhorse":
+    # A steering arm (the Helms tier — or the legacy "workhorse") is valued
+    # as a front-line pitcher; the rest of the crew (or a legacy "committee"
+    # arm) as a swing/relief pitcher; everyone else as a bat. Weights are
+    # unchanged from the pre-crew model so valuation._BANDS stays calibrated.
+    if role == "workhorse" or _rotation.is_steer_role(role):
         skill_score = pitching * 0.65 + batting * 0.20 + speed * 0.15
-    elif role == "committee":
+    elif role == "committee" or (role and role in _rotation.RELIEF_ROLES):
         skill_score = pitching * 0.50 + batting * 0.30 + speed * 0.20
     else:
         skill_score = batting * 0.60 + speed * 0.25 + pitching * 0.15
@@ -803,6 +808,14 @@ def _do_trade(
         conn.execute("UPDATE teams SET fo_last_trade_date = ? WHERE id IN (?, ?)",
                      (game_date, from_team["id"], to_team["id"]))
         conn.commit()
+    # A trade reshapes both staffs — re-derive each crew so an arm slots into
+    # his new club relative to the company he now keeps (a Helms on his old
+    # team may be a Skidder on a deeper one, and vice versa). (o27v2/rotation.py)
+    if any(p for p in send if p.get("is_pitcher")) or \
+       any(p for p in recv if p.get("is_pitcher")):
+        from o27v2 import rotation as _rotation
+        _rotation.assign_roles_for_team(from_team["id"])
+        _rotation.assign_roles_for_team(to_team["id"])
     return events
 
 

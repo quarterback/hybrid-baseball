@@ -2750,6 +2750,63 @@
           ]
         }
       ]
+    },
+    "north_africa": {
+      "label": "North Africa (Maghreb & Egypt)",
+      "subregions": [
+        {
+          "weight": 0.3,
+          "country": "EG",
+          "first_keys": [
+            "egyptian"
+          ],
+          "surname_keys": [
+            "egyptian"
+          ]
+        },
+        {
+          "weight": 0.25,
+          "country": "MA",
+          "first_keys": [
+            "maghrebi"
+          ],
+          "surname_keys": [
+            "maghrebi"
+          ]
+        },
+        {
+          "weight": 0.24,
+          "country": "DZ",
+          "first_keys": [
+            "maghrebi"
+          ],
+          "surname_keys": [
+            "maghrebi"
+          ]
+        },
+        {
+          "weight": 0.15,
+          "country": "TN",
+          "first_keys": [
+            "maghrebi"
+          ],
+          "surname_keys": [
+            "maghrebi"
+          ]
+        },
+        {
+          "weight": 0.06,
+          "country": "LY",
+          "first_keys": [
+            "maghrebi",
+            "arabic"
+          ],
+          "surname_keys": [
+            "maghrebi",
+            "arabic"
+          ]
+        }
+      ]
     }
   },
   "presets": {

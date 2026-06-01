@@ -255,7 +255,10 @@ def _assign_footnotes(ordered: list[tuple[dict, int]]) -> dict[int, str]:
         if not indent:
             continue
         et = r.get("entry_type", "starter")
-        if et not in ("PH", "PR", "DEF", "joker", "joker_field"):
+        # Jokers in the batting order ("joker") are NOT footnoted — they just
+        # appear at the end of the lineup with their line. joker_field (a joker
+        # pulled in to play the field) IS a real sub and keeps its footnote.
+        if et not in ("PH", "PR", "DEF", "joker_field"):
             continue
         # a, b, ... z, aa, ab, ...
         if n < 26:
@@ -321,28 +324,34 @@ def _render_sub_footnotes(
             continue
         et = r.get("entry_type", "starter")
         replaced_pid = r.get("replaced_player_id")
-        replaced_name = "—"
+        replaced_name = ""
         if replaced_pid is not None:
             rep = row_by_id.get(int(replaced_pid))
             if rep is not None:
-                replaced_name = _last_name(rep.get("player_name", "")) or "—"
+                replaced_name = _last_name(rep.get("player_name", ""))
+        # "for <name>" only when we actually resolved a name. Jokers are
+        # tactical cut-ins (no player replaced) and chained/legacy subs may
+        # point at a row not in this team's box — in both cases drop the
+        # dangling "for —" rather than print a bare dash.
+        for_phrase = f" for {replaced_name}" if replaced_name else ""
         inning = int(r.get("entered_inning", 0) or 0)
         inning_phrase = f" in the {_ordinal(inning)}" if inning else ""
         if et == "PH":
             verb = _sub_outcome_phrase(r)
-            lines.append(f"  {letter}-{verb} for {replaced_name}{inning_phrase}.")
+            lines.append(f"  {letter}-{verb}{for_phrase}{inning_phrase}.")
         elif et == "PR":
-            lines.append(f"  {letter}-Ran for {replaced_name}{inning_phrase}.")
+            lines.append(f"  {letter}-Ran{for_phrase}{inning_phrase}.")
         elif et == "DEF":
             pos = (r.get("box_position") or r.get("position") or "").upper()
             slot = f" at {pos}" if pos else ""
-            lines.append(f"  {letter}-Replaced {replaced_name}{slot}{inning_phrase}.")
-        elif et == "joker":
-            lines.append(f"  {letter}-Pinch-hit (joker) for {replaced_name}{inning_phrase}.")
+            # "Replaced Smith at SS" / "Entered at SS" when no name resolved.
+            verb = f"Replaced {replaced_name}" if replaced_name else "Entered"
+            lines.append(f"  {letter}-{verb}{slot}{inning_phrase}.")
         elif et == "joker_field":
             pos = (r.get("box_position") or r.get("position") or "").upper()
             slot = f" at {pos}" if pos else ""
-            lines.append(f"  {letter}-Replaced {replaced_name}{slot} (joker to field){inning_phrase}.")
+            verb = f"Replaced {replaced_name}" if replaced_name else "Entered"
+            lines.append(f"  {letter}-{verb}{slot} (joker to field){inning_phrase}.")
     return "\n".join(lines)
 
 
@@ -464,26 +473,26 @@ def render_batting_annotations(
     rows = list(rows)
     lines: list[str] = []
 
-    def _pick(field: str) -> list[tuple[str, int]]:
-        out: list[tuple[str, int]] = []
+    def _xbh_items(game_field: str, season_field: str) -> list[str]:
+        """2B/3B with a season-to-date total in parens, matching the HR
+        line and real newspaper convention: 'Konan 2 (9)' = 2 doubles
+        today, 9 on the season; 'Beard (3)' = his 3rd of the season."""
+        out: list[str] = []
         for r in rows:
-            n = r.get(field, 0) or 0
-            if n > 0:
-                out.append((_last_name(r.get("player_name") or ""), n))
+            n = r.get(game_field, 0) or 0
+            if n <= 0:
+                continue
+            last = _last_name(r.get("player_name") or "")
+            season = r.get(season_field) or n
+            out.append(f"{last} {n} ({season})" if n > 1 else f"{last} ({season})")
         return out
 
-    def _items(pairs: list[tuple[str, int]]) -> str:
-        parts = []
-        for name, n in pairs:
-            parts.append(f"{name} {n}" if n > 1 else name)
-        return ", ".join(parts)
-
-    pairs = _pick("doubles")
-    if pairs:
-        lines.append(f"  2B: {_items(pairs)}.")
-    pairs = _pick("triples")
-    if pairs:
-        lines.append(f"  3B: {_items(pairs)}.")
+    d2 = _xbh_items("doubles", "season_doubles")
+    if d2:
+        lines.append(f"  2B: {', '.join(d2)}.")
+    d3 = _xbh_items("triples", "season_triples")
+    if d3:
+        lines.append(f"  3B: {', '.join(d3)}.")
     # HR: include season total in parentheses, real-newspaper convention.
     # "Smith (12)"  =  hit a HR; that was his 12th of the season.
     # "Smith 2 (12)" = hit 2 HR today; season total stands at 12.
@@ -513,34 +522,33 @@ def render_batting_annotations(
         hr_items.append(item)
     if hr_items:
         lines.append(f"  HR: {'; '.join(hr_items)}.")
-    pairs = _pick("sb")
-    if pairs:
-        lines.append(f"  SB: {_items(pairs)}.")
-    pairs = _pick("cs")
-    if pairs:
-        lines.append(f"  CS: {_items(pairs)}.")
-    pairs = _pick("e")
-    if pairs:
-        lines.append(f"  E: {_items(pairs)}.")
-    pairs = _pick("hbp")
-    if pairs:
-        lines.append(f"  HBP: {_items(pairs)}.")
-    pairs = _pick("gidp")
-    if pairs:
-        lines.append(f"  GIDP: {_items(pairs)}.")
-    pairs = _pick("gitp")
-    if pairs:
-        lines.append(f"  GITP: {_items(pairs)}.")
+    # Every remaining counting line carries the same season-to-date
+    # parenthetical (label, game field, season field).
+    for label, game_field, season_field in (
+        ("SB",   "sb",   "season_sb"),
+        ("CS",   "cs",   "season_cs"),
+        ("E",    "e",    "season_e"),
+        ("HBP",  "hbp",  "season_hbp"),
+        ("GIDP", "gidp", "season_gidp"),
+        ("GITP", "gitp", "season_gitp"),
+    ):
+        items = _xbh_items(game_field, season_field)
+        if items:
+            lines.append(f"  {label}: {', '.join(items)}.")
 
     return "\n".join(lines)
 
 
 def render_pitching_table(team_name: str, rows: Iterable[dict],
-                          decisions: Optional[dict[int, str]] = None) -> str:
+                          decisions: Optional[dict[int, str]] = None,
+                          season_wl: Optional[dict] = None) -> str:
     """Per-team pitching block: TEAM PITCHING, header row, pitcher rows
-    with W/L/S inline by name."""
+    with W/L/S inline by name. When `season_wl` is supplied the decision
+    carries the pitcher's season W-L through this game — '(W, 5-3)' —
+    real-newspaper style."""
     rows = list(rows)
     decisions = decisions or {}
+    season_wl = season_wl or {}
     out = [f"{team_name.upper()} PITCHING"]
     cols = ["BF", "OUT", "OS%", "H", "R", "ER", "BB", "K", "HR", "P"]
     header = " " * NAME_POS_WIDTH + "".join(f"{c:>{PIT_STAT_W}}" for c in cols)
@@ -551,7 +559,11 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
         pid  = r.get("player_id")
         dec  = decisions.get(pid, "")
         if dec:
-            head = f"{last} ({dec})"
+            rec = season_wl.get(pid)
+            if rec:
+                head = f"{last} ({dec}, {rec.get('w', 0)}-{rec.get('l', 0)})"
+            else:
+                head = f"{last} ({dec})"
         else:
             head = last
         if len(head) > NAME_POS_WIDTH - 1:
@@ -625,6 +637,10 @@ def render_game_notes(game: dict) -> str:
         parts.append("  Seconds: " + ", ".join(entries) + ".")
 
     bits = []
+    from o27.engine.gametime import format_start
+    first_pitch = format_start(game.get("start_minute"), game.get("start_utc_offset"))
+    if first_pitch:
+        bits.append(f"First pitch {first_pitch}")
     weather = game.get("weather") or game.get("weather_label")
     if weather:
         bits.append(f"Weather: {weather}")
@@ -634,6 +650,39 @@ def render_game_notes(game: dict) -> str:
     if bits:
         parts.append("  " + ". ".join(bits) + ".")
     return "\n".join(parts)
+
+
+def _powerplays_note(away_batting: Iterable[dict], home_batting: Iterable[dict],
+                     game: dict) -> str:
+    """Footer line naming the nickel deployment(s), read off the batter rows
+    tagged at position NF (the deployed 10th defender), with the team-OUT number
+    each window opened at (e.g. "O14"; "O14, O25" for two windows). Only a side
+    that actually deployed a nickel is listed — a team that didn't use its Power
+    Play does not appear. Returns '' when neither side deployed."""
+    sides = (
+        (away_batting, game.get("away_name") or game.get("away_abbrev") or "Away"),
+        (home_batting, game.get("home_name") or game.get("home_abbrev") or "Home"),
+    )
+    parts: list[str] = []
+    for rows, team in sides:
+        names: list[str] = []
+        for r in rows:
+            pos = str(r.get("box_position") or r.get("position") or "")
+            toks = [t.strip().upper() for t in pos.replace("/", "-").split("-")]
+            if "NF" not in toks:
+                continue
+            nm = _last_name(r.get("player_name") or r.get("name") or "")
+            # Team-out number(s) the window(s) opened at — stored as a CSV.
+            outs = [o.strip() for o in str(r.get("pp_start_outs") or "").split(",")
+                    if o.strip()]
+            when = f" (O{', O'.join(outs)})" if outs else ""
+            tag = (f"{nm} NF{when}" if nm else f"NF{when}")
+            if tag not in names:
+                names.append(tag)
+        # Only list a side that actually deployed.
+        if names:
+            parts.append(f"{team} — " + ", ".join(names))
+    return ("  Powerplays: " + "; ".join(parts)) if parts else ""
 
 
 # --------------------------------------------------------------------------
@@ -673,8 +722,15 @@ def render_box_score(
     home_pitching: list[dict],
     decisions: Optional[dict[int, str]] = None,
     hr_off_pitchers: Optional[dict] = None,
+    season_wl: Optional[dict] = None,
 ) -> str:
     rule = "=" * RULE_WIDTH
+
+    # Footer notes + a Powerplays line naming any nickel deployment(s).
+    notes = render_game_notes(game)
+    pp = _powerplays_note(away_batting, home_batting, game)
+    if pp:
+        notes = (notes + "\n" + pp) if notes else pp
 
     sections = [
         rule,
@@ -691,11 +747,11 @@ def render_box_score(
         render_batting_annotations(home_batting, hr_off_pitchers),
         _sub_footnotes_for(home_batting),
         "",
-        render_pitching_table(game.get("away_name", "Away"), away_pitching, decisions),
+        render_pitching_table(game.get("away_name", "Away"), away_pitching, decisions, season_wl),
         "",
-        render_pitching_table(game.get("home_name", "Home"), home_pitching, decisions),
+        render_pitching_table(game.get("home_name", "Home"), home_pitching, decisions, season_wl),
         "",
-        render_game_notes(game),
+        notes,
         rule,
     ]
     # Drop empty section results (annotations may produce "") but keep the

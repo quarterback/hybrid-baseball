@@ -105,11 +105,18 @@ class Player:
     # long relief; high-Stuff arms are preferred for late-inning leverage.
     stamina: float = _cfg.PLAYER_DEFAULT_PITCHER_SKILL
 
-    # Pitcher usage role — legacy "workhorse" | "committee" | "starter" |
-    # "reliever" | "". Task #65 retired role-based usage; the field is
-    # left in place for back-compat with old DB rows but the manager AI
-    # no longer reads it.
+    # Canonical crew role — "" | "HM" | "1C" | "2C" | "BO" | "SK" | "AN" |
+    # "PI" (see o27v2/rotation.py: Helms / First & Second Change / Bosun /
+    # Skidder / Anchor / Pilot). Drives the steering pick (sim.py) and the
+    # relief-role preference in pick_new_pitcher (manager.py). "" means no
+    # crew role (legacy rows) → live-derivation fallback. Any unrecognized
+    # legacy value reads as "no crew role" too.
     pitcher_role: str = ""
+
+    # Usage rank within the crew role (1 = primary; the two Helms alternate
+    # as slot 1 / slot 2 so the steering arm can go ~every other day).
+    # 0 for relievers / non-pitchers.
+    rotation_slot: int = 0
 
     # Legacy Phase-8 archetype fields. None are read by the probability
     # code anymore: the `hr_weight_bonus` (HR boost) and
@@ -160,6 +167,9 @@ class Player:
     defense_infield:   float = 0.5   # 1B / 2B / 3B / SS specific glove
     defense_outfield:  float = 0.5   # LF / CF / RF specific glove
     defense_catcher:   float = 0.5   # catcher-specific framing / blocking
+    game_calling:      float = 0.5   # catcher pitch-calling — a good caller
+                                     # suppresses contact when behind the plate
+                                     # (only applies to whoever is catching)
 
     # Spray tendency — 0.0 = pure opposite-field, 0.5 = neutral spray,
     # 1.0 = pure pull. Drives the shift decision (extreme values invite
@@ -333,6 +343,15 @@ class SpellRecord:
     k_arc:   list = field(default_factory=lambda: [0, 0, 0])
     fo_arc:  list = field(default_factory=lambda: [0, 0, 0])
     bf_arc:  list = field(default_factory=lambda: [0, 0, 0])
+    # Times-through-the-order counters. Indices 0/1/2 = the 1st / 2nd / 3rd+
+    # time each batter faced this pitcher this game (the look number), so
+    # K%/FO%/contact can be split by familiarity. Distinct from the arc
+    # buckets (which split by out position / fatigue): a pitcher can be on
+    # his 1st look deep in the arc (fresh reliever) or his 4th look early
+    # (top of the order in a marathon). Powers the Deception decay stat.
+    k_tto:   list = field(default_factory=lambda: [0, 0, 0])
+    fo_tto:  list = field(default_factory=lambda: [0, 0, 0])
+    bf_tto:  list = field(default_factory=lambda: [0, 0, 0])
 
 
 @dataclass
@@ -379,6 +398,9 @@ class Team:
     # Catcher's arm rating, stamped at game start. Drives SB-success
     # suppression. 0.5 = neutral.
     catcher_arm:    float = 0.5
+    # Outs caught by the current catcher this game (fatigue accumulator). Resets
+    # to 0 when the manager rotates a fresh catcher in. Drives game-calling decay.
+    catcher_outs_caught: int = 0
 
     # Manager persona — stamped at game start from the team row. 0.5 = neutral.
     # Re-rolled per league seed (see o27v2/managers.py). The engine's
@@ -423,14 +445,27 @@ class Team:
     shift_outs_added:  int = 0   # outs the shift converted from singles
     shift_hits_lost:   int = 0   # hits the shift gave up (oppo through the gap)
 
+    # Power Play (optional rule) — per-game manager-behavior rolls and
+    # telemetry. The skip / mistime flags are rolled lazily once per game
+    # (None = not yet rolled) so they vary game-to-game, not per manager.
+    power_play_skip:    Optional[bool] = None   # never deploy this game
+    power_play_mistime: Optional[bool] = None   # deploy too early / too late
+    power_play_mistime_late: bool = False       # mistime flavor: True=late, False=early
+    pp_xbh_held:        int = 0   # XBH the nickel cut down to singles
+    pp_hits_converted:  int = 0   # outfield singles the nickel turned into outs
+
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-PA based on
-    # leverage. Any joker can be inserted any number of times per game —
-    # there is no per-cycle or per-game cap. Insertions add an extra PA
-    # to the rotation; the joker bats then returns to the bench without
-    # taking a roster slot or a field position.
+    # leverage. Cooldown is per-turnover: each joker may be deployed at
+    # most once per time through the order, then becomes eligible again
+    # when the base lineup cycles (jokers_used_this_cycle is cleared in
+    # advance_lineup). There is no overall per-game cap, so across a long
+    # half a joker can be brought back cycle after cycle — but never more
+    # than once within a single cycle. Insertions add an extra PA to the
+    # rotation; the joker bats then returns to the bench without taking a
+    # roster slot or a field position.
     jokers_available: list = field(default_factory=list)
-    jokers_used_this_cycle: set = field(default_factory=set)   # legacy, unused
+    jokers_used_this_cycle: set = field(default_factory=set)   # reset on lineup wrap
     jokers_used_this_half: set = field(default_factory=set)    # legacy alias
     lineup_cycle_number: int = 0   # increments when lineup_position wraps
 
@@ -466,6 +501,12 @@ class Team:
         if new_pos == 0 and n > 0:
             # Lineup wrapped to top of order — start of a new cycle.
             self.lineup_cycle_number += 1
+            # Per-cycle joker cooldown resets here. A joker may be deployed
+            # at most once per time through the order; once every base
+            # hitter has batted (joker PAs do NOT advance the lineup, so
+            # they never count toward a cycle) the whole pool is eligible
+            # again. See manager.can_insert_joker / should_insert_joker.
+            self.jokers_used_this_cycle = set()
         self.lineup_position = new_pos
 
     def reset_half(self) -> None:
@@ -562,6 +603,12 @@ class GameState:
     pitcher_k_arc_this_spell:  list = field(default_factory=lambda: [0, 0, 0])
     pitcher_fo_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
     pitcher_bf_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
+    # Live times-through-the-order counters for the current spell (look
+    # buckets: 1st / 2nd / 3rd+ time the batter has faced this pitcher this
+    # game). Persisted onto SpellRecord.{k,fo,bf}_tto at spell end.
+    pitcher_k_tto_this_spell:  list = field(default_factory=lambda: [0, 0, 0])
+    pitcher_fo_tto_this_spell: list = field(default_factory=lambda: [0, 0, 0])
+    pitcher_bf_tto_this_spell: list = field(default_factory=lambda: [0, 0, 0])
     # Outs at the start of the current PA — used to bucket BF/K/BB/FO so
     # an out-producing AB charges its event to the arc the AB began in,
     # not the arc the resulting out crossed into.
@@ -601,6 +648,40 @@ class GameState:
     current_ab_shift_type: str = "none"     # "none" | "infield" | "outfield"
     current_ab_shift_decided: bool = False  # have we rolled this AB?
 
+    # --- Power Play (optional rule) ---
+    # When None, the engine falls back to cfg.POWER_PLAY_ENABLED (the league
+    # toggle). Tests set it explicitly to force the rule on/off per game.
+    power_play_enabled: Optional[bool] = None
+    # Active nickel window. `open_out` is state.outs at the moment of
+    # deployment (the window covers the next POWER_PLAY_WINDOW_OUTS outs);
+    # cleared at every half start in run_half so it never carries over.
+    power_play_open_out: Optional[int] = None
+    power_play_deploy_team_id: Optional[str] = None   # which fielding side deployed
+    power_play_nickel_id: Optional[str] = None        # the chosen nickel player_id
+    # Per-(phase, fielding team) "already used this half" keys — use-or-lose.
+    power_play_used: set = field(default_factory=set)
+    # Box-score record, one dict per deployment:
+    #   {team_id, team_name, start_out, end_out, phase}
+    power_play_deployments: list = field(default_factory=list)
+    # Set once per AB so the deploy decision is considered at most once per AB.
+    power_play_checked_this_ab: bool = False
+    # Presence lift — banded multiplicative boost to fielding defense_rating and
+    # the active pitcher's effectiveness while the window is open. `presence` is
+    # the fraction rolled at window open (scaled by the nickel's glove); the
+    # originals/active pair mirror the leadership-flare stash so the lift is
+    # restored every PA boundary and leaks nothing.
+    power_play_presence: float = 0.0
+    pp_presence_originals: list = field(default_factory=list)
+    pp_presence_active: bool = False
+    # Snapshotted once per AB (at PA start, after the deploy check): True when
+    # the batting team is facing an active nickel window. Read by the renderer
+    # to charge the batter's short-handed offense counters for the whole PA.
+    power_play_sh_active: bool = False
+    # Nickel saves attributed to the FIELDING pitcher on the mound (the one
+    # with the nickel behind him): {pitcher_id: {"xbh_saved", "hits_saved"}}.
+    # Folded into the Power Play pitcher rows by sim.py.
+    pp_pitcher_support: dict = field(default_factory=dict)
+
     # --- Joker insertion override ---
     # When the manager inserts a joker, this field holds the joker Player
     # for one PA. The current_batter property checks this first, so the
@@ -636,6 +717,15 @@ class GameState:
     #     reads pa / h to decide whether to give a free pass).
     # Resets naturally each new GameState (fresh dict per game).
     batter_game_stats: dict = field(default_factory=dict)
+
+    # --- Per-game batter-vs-pitcher matchup counts ---
+    # Keyed by (pitcher_id, batter_id) → number of COMPLETED PAs this batter
+    # has had against this pitcher this game. Read by the times-through-the-
+    # order familiarity model in prob.py: the more times a hitter has faced
+    # an arm, the more he's timed it up. Keying on the pitcher means a fresh
+    # reliever resets familiarity to zero against everyone — bringing in a
+    # new look is itself a lever. Incremented in pa._end_at_bat at PA close.
+    matchup_pa: dict = field(default_factory=dict)
 
     # --- Raw event log ---
     events: list = field(default_factory=list)
@@ -748,6 +838,14 @@ class GameState:
         return self.batter_game_stats.setdefault(
             pid, {"pa": 0, "h": 0, "bb": 0, "joker_pa": 0}
         )
+
+    def matchup_count(self, pitcher_id: str, batter_id: str) -> int:
+        """Prior completed PAs of this batter vs this pitcher this game.
+
+        0 the first time they meet (familiarity model collapses to identity),
+        1 the second time, etc. Drives the times-through-the-order penalty.
+        """
+        return self.matchup_pa.get((pitcher_id, batter_id), 0)
 
     def out_cap(self) -> int:
         """Numeric out ceiling for the current phase, ignoring walk-offs.

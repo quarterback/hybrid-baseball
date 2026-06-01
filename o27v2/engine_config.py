@@ -133,6 +133,10 @@ _CURATED: list[tuple[str, list[tuple[str, str]]]] = [
     ("Stolen bases", [
         ("SB_SUCCESS_BASE", "Stolen-base success baseline"),
     ]),
+    ("Optional rules", [
+        ("POWER_PLAY_ENABLED", "Power Play (deploy a 10th defender — the nickel fielder)"),
+        ("IBB_ENABLE",         "Intentional walks"),
+    ]),
     ("Context (o27v2)", [
         ("HOME_ADVANTAGE_SKILL", "Home-field skill bonus"),
     ]),
@@ -294,6 +298,63 @@ PRESETS: dict[str, dict[str, object]] = {
         "GEN_SHIFT_CONTACT":      12,
         "GEN_SHIFT_POWER":       -6,
     },
+    # College-softball SCORING ENVIRONMENT (not a softball conversion — no slap/
+    # steal identity). Reproduces the *shape* of D1 softball offense in O27:
+    # high batting average / high BABIP (hits fall in), modest power, low
+    # strikeouts, and the circle (pitching) keeping the big inning in check, so
+    # it settles into the low-scoring band.
+    #
+    # Calibrated to 2026 NCAA Div I NATIONAL TOTALS (true league averages, per
+    # team per 21-out game): R 5.11, BA .291, OBP .376, SLG .449, ISO .157,
+    # BABIP .316, HR 0.81, K% 13.4, BB% 10.3, ERA 3.44. Scaled to O27's 27 outs
+    # that's ~6.6 R/team/game (low-scoring band); the benchmark lands there.
+    # Signatures the data makes explicit: a big ace-vs-field spread (ERA leaders
+    # ~1.35 vs the 3.44 mean → high CONTACT_MATCHUP_SHIFT, contact-suppressing
+    # PITCHER_DOM_CONTACT) but a LOW overall strikeout rate (13.4% → swing-strike
+    # knob kept modest; dominance is weak contact, not whiffs) and modest power
+    # (ISO .157 → low POWER_REDIST_HR / hard-contact).
+    #
+    # NOTE on double plays: softball's DPs are rare (~0.2/game) ONLY because the
+    # bases are 60 ft; O27 is played on 90-ft basepaths, so that rarity is a
+    # geometry artifact, not a scoring-environment feature — GIDP is deliberately
+    # left at the O27 default, NOT suppressed.
+    "college_scoring": {
+        "CONTACT_WEAK_BASE":      0.26,   # contact-rich: hits fall in (BA .291 / BABIP .316)
+        "CONTACT_MEDIUM_BASE":    0.56,
+        "CONTACT_HARD_BASE":      0.18,   # low hard contact → modest power (ISO .157, HR 0.81)
+        "CONTACT_MATCHUP_SHIFT":  0.32,   # big ace-vs-field spread (ERA 1.35 → 3.44 mean)
+        "POWER_REDIST_HR":        0.12,   # power suppressed
+        "POWER_REDIST_HARD_S2D":  0.24,   # some gap doubles survive (2B 1.32/game)
+        "POWER_REDIST_HARD_D2T":  0.10,
+        "PITCHER_DOM_SWINGING":   0.03,   # K% is LOW (13.4%) — don't over-whiff
+        "PITCHER_DOM_CONTACT":   -0.10,   # the run check is weak contact, not strikeouts
+        "BATTER_DOM_SWINGING":   -0.05,   # field puts the ball in play (low K)
+        "BATTER_EYE_BALL":        0.04,   # moderate-high walks (BB% 10.3)
+        "PARK_HR_MAX":            1.00,   # no hitter-park HR boost
+        "GEN_SHIFT_POWER":       -10,
+        "GEN_SHIFT_CONTACT":       8,
+        "GEN_SHIFT_PITCHING":      6,
+    },
+    # Put-it-in-play league — borrows softball's CONTACT TEXTURE (low strikeouts,
+    # high BABIP, lots of balls in play, modest power) but reflects it onto O27's
+    # NATURAL run level instead of porting softball's circle dominance. The
+    # difference vs college_scoring: pitcher dominance, the ace-vs-field matchup
+    # shift, and GIDP are all left at O27 default, so scoring stays where O27
+    # naturally sits (~9 R/team/game) rather than being dragged to softball's
+    # ~5. This is the "keep the texture, not the sport" tuning: few whiffs, hits
+    # fall in, power dialed back a notch. Benchmarks to ~9 R/team/game.
+    "put_it_in_play": {
+        "CONTACT_WEAK_BASE":       0.20,   # contact-rich, hits fall in (high BABIP)
+        "CONTACT_MEDIUM_BASE":     0.54,
+        "CONTACT_HARD_BASE":       0.26,   # power present but a notch below default
+        "BATTER_DOM_SWINGING":    -0.08,   # batters rarely whiff (low K)
+        "BATTER_CONTACT_SWINGING": -0.12,  # swings become contact, not strikes
+        "PITCHER_DOM_SWINGING":   -0.01,   # pitchers don't rack up Ks either
+        "POWER_REDIST_HR":         0.40,   # modest power (default 0.50)
+        "BATTER_EYE_BALL":         0.04,   # moderate walks
+        "GEN_SHIFT_CONTACT":       8,
+        "GEN_SHIFT_POWER":        -4,
+    },
     "speed_demon": {
         "SB_ATTEMPT_PROB_PER_PITCH": 0.09,
         "SB_SUCCESS_BASE":        0.70,
@@ -373,6 +434,8 @@ PRESET_LABELS = {
     "junkball": "Junkball League (soft stuff, weak contact, low K)",
     "launch_circus": "Launch-Angle Circus (extreme three-true-outcomes)",
     "contact_carnival": "Contact Carnival (highest BABIP, lowest K)",
+    "college_scoring": "College Softball scoring environment (high contact, low power, low-scoring)",
+    "put_it_in_play": "Put-it-in-play (low K, high BABIP, modest power — softball texture, natural scoring)",
     "speed_demon": "Speed Demon League (steals, triples, inside-the-park HRs)",
     "workhorse": "Workhorse Era (starters go deep, bullpen quiet)",
     "knifes_edge": "Knife's Edge (max-offense stress test)",
@@ -414,6 +477,16 @@ def is_overridden(name: str) -> bool:
 
 
 _applied = False
+# Signature (the raw stored-blob string) of the overrides this process last
+# applied. ensure_applied() re-applies when it changes, so a setting toggled
+# after startup — or saved by another worker — takes effect without a restart.
+_applied_sig: str | None = None
+
+
+def _stored_signature() -> str:
+    """Cheap fingerprint of the stored override blob (one indexed lookup)."""
+    row = db.fetchone("SELECT value FROM sim_meta WHERE key = ?", (_META_KEY,))
+    return (row.get("value") if row else "") or ""
 
 
 def apply_values(overrides: dict) -> None:
@@ -434,17 +507,30 @@ def apply_overrides(force: bool = False) -> None:
     """Push the effective stored config onto the config modules. Idempotent
     and cheap (a few hundred setattrs); the DB is read once per process unless
     force=True."""
-    global _applied
+    global _applied, _applied_sig
     if _applied and not force:
         return
     apply_values(load_overrides())
     _applied = True
+    _applied_sig = _stored_signature()
 
 
 def ensure_applied() -> None:
-    """Apply once per process (called at the top of every game sim)."""
-    if not _applied:
-        apply_overrides()
+    """Apply at the top of every game sim, re-reading the stored tuning if it
+    changed since this process last applied it.
+
+    The check is a single indexed lookup; the full re-apply only runs when the
+    blob actually changed. This is what makes an Engine Settings edit (e.g.
+    toggling Power Play) take effect on the next sim WITHOUT a server restart —
+    even when the sim runs in a different worker process than the one that saved
+    it. Previously this applied once per process and silently ignored every
+    later edit, so a freshly-checked setting never reached the simulator."""
+    global _applied, _applied_sig
+    sig = _stored_signature()
+    if not _applied or sig != _applied_sig:
+        apply_values(load_overrides())
+        _applied = True
+        _applied_sig = sig
 
 
 def save_overrides(partial: dict) -> dict[str, object]:

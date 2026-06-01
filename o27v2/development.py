@@ -118,6 +118,26 @@ _ORG_MEAN_REVERSION = 0.30
 _ORG_PERF_SCALE     = 60.0
 _ORG_NOISE_SIGMA    = 3.0
 
+# Catcher wear — usage-driven erosion ON TOP of the age curve. Catching is the
+# sport's most physically taxing position (hockey/soccer-goalie style): the more
+# a backstop is run out there over the 27-out arc, the faster his catching skill
+# and arm erode season to season. Resisted by conditioning/character (work
+# ethic, work habits, leadership) and a touch by his own catching technique.
+# Applied to the PERSISTED catcher skills (defense_catcher, arm) — the ones the
+# engine actually reads in a real game. Identity (no extra wear) for
+# non-catchers and for catchers who barely caught (usage 0). NOTE: game_calling
+# is not yet a DB column, so it can't be eroded here — see the AAR follow-up.
+_CATCHER_WEAR_BASE         = -1.4   # grade pts/season at full starter usage
+_CATCHER_WEAR_SIGMA        = 0.8    # season-to-season noise on the wear draw
+_CATCHER_WEAR_RESIST_SCALE = 0.60   # work-ethic/habits/leadership resistance
+_CATCHER_WEAR_SKILL_RESIST = 0.15   # better technique resists a little wear
+_CATCHER_WEAR_ATTRS        = ("defense_catcher", "arm")
+# Usage tiers by depth-chart rank among a team's catchers. The starter absorbs
+# the bulk of the innings (most wear); the rotation/relief backups catch less.
+_CATCHER_USAGE_STARTER     = 1.0
+_CATCHER_USAGE_BACKUP      = 0.5
+_CATCHER_USAGE_THIRD       = 0.3
+
 
 # Attributes that follow the development curve. Speed and stamina
 # decline with age in real life, so they're in here too. baserunning is
@@ -127,6 +147,7 @@ _ORG_NOISE_SIGMA    = 3.0
 _HITTER_DEV_ATTRS = (
     "skill", "speed", "contact", "power", "eye",
     "defense", "arm", "defense_infield", "defense_outfield", "defense_catcher",
+    "game_calling",
     "baserunning", "run_aggressiveness",
 )
 
@@ -201,13 +222,18 @@ def _style_dev_bias(style_profile: Optional[str]) -> dict[str, float]:
 
 def _develop_player(p: dict, org_strength: int, rng: _random.Random,
                     is_pitcher: bool,
-                    style_dev: Optional[dict[str, float]] = None) -> tuple[dict, int]:
+                    style_dev: Optional[dict[str, float]] = None,
+                    catcher_usage: float = 0.0) -> tuple[dict, int]:
     """Apply one season of development to a player. Returns
     (updated_attribute_dict, new_age). Caller writes back to DB.
 
     `style_dev` (optional) is a per-attribute μ nudge derived from the
     player's league style profile, so league culture imprints on career
-    trajectories (see _style_dev_bias)."""
+    trajectories (see _style_dev_bias).
+
+    `catcher_usage` (0.0–1.0) drives usage-based catcher wear on top of the age
+    curve: the team's primary catcher (usage 1.0) erodes his catching skill and
+    arm fastest, backups less. 0.0 = no catcher wear (non-catchers / FAs)."""
     new_age = (p.get("age") or 27) + 1
     mu_age  = _mu_age(new_age)
     mu_org  = _mu_org(org_strength)
@@ -237,6 +263,26 @@ def _develop_player(p: dict, org_strength: int, rng: _random.Random,
         # Clamp to [20, 95] — Elite+ tier is reachable here, that's
         # the whole point of the dev engine.
         updated[attr] = max(20, min(95, new_val))
+
+    # Catcher wear — usage-driven erosion applied ON TOP of the age draw above.
+    # Only for catchers who actually caught (catcher_usage > 0). Resisted by
+    # conditioning/character (work ethic, work habits, leadership) and a touch
+    # by the catcher's own technique; a fragile, low-character everyday backstop
+    # wears out years before a durable, high-character one.
+    if catcher_usage > 0 and not is_pitcher:
+        we = float(p.get("work_ethic") or 50)
+        wh = float(p.get("work_habits") or 50)
+        ld = float(p.get("leadership") or 50)
+        cond_dev = ((we + wh + ld) / 3.0 - 50.0) / 45.0   # ~[-0.67, +0.67]
+        resist = 1.0 - cond_dev * _CATCHER_WEAR_RESIST_SCALE
+        resist = max(0.40, min(1.80, resist))
+        skill_dev = (float(p.get("defense_catcher") or 50) - 50.0) / 45.0
+        resist *= max(0.70, 1.0 - skill_dev * _CATCHER_WEAR_SKILL_RESIST)
+        for attr in _CATCHER_WEAR_ATTRS:
+            if attr in updated:
+                wear = _CATCHER_WEAR_BASE * catcher_usage * resist
+                wear += rng.gauss(0.0, _CATCHER_WEAR_SIGMA)
+                updated[attr] = max(20, min(95, round(updated[attr] + wear)))
 
     # Phase 5e — work-ethic / work-habits offseason re-roll with age
     # locks. Both use a "soft re-roll": new value blends 60% of the
@@ -294,6 +340,36 @@ def _fresh_ethic_roll(rng: _random.Random) -> int:
     return rng.randint(min(lo, 80), min(hi, 80))
 
 
+def _catcher_season_usage(team_id: int) -> dict:
+    """Real in-season catcher usage from the game log: {player_id: usage 0..1}
+    where usage = games this player started at catcher (game_batter_stats rows
+    with game_position='C') / his team's games played. The everyday catcher
+    lands near 1.0, backups lower — whatever the manager's rotation produced.
+    Empty dict when no games are logged (fresh league) so the caller falls back
+    to a depth-chart proxy. Defensive against a missing game_batter_stats table."""
+    try:
+        gp = db.fetchall(
+            "SELECT COUNT(DISTINCT game_id) AS g FROM game_batter_stats "
+            "WHERE team_id = ?", (team_id,))
+        team_games = int(gp[0]["g"]) if gp and gp[0].get("g") else 0
+        if team_games <= 0:
+            return {}
+        caught = db.fetchall(
+            "SELECT player_id, COUNT(DISTINCT game_id) AS gc "
+            "FROM game_batter_stats "
+            "WHERE team_id = ? AND game_position = 'C' "
+            "GROUP BY player_id", (team_id,))
+    except Exception:
+        return {}
+    usage: dict = {}
+    for r in caught:
+        pid = r.get("player_id")
+        gc = int(r.get("gc") or 0)
+        if pid is not None and gc > 0:
+            usage[pid] = min(1.0, gc / team_games)
+    return usage
+
+
 def develop_players_for_team(team_id: int, org_strength: int,
                              rng: _random.Random,
                              style_dev: Optional[dict[str, float]] = None) -> int:
@@ -303,11 +379,28 @@ def develop_players_for_team(team_id: int, org_strength: int,
     `style_dev` (optional) is the league's development-trajectory bias,
     applied to every player on the team so league culture shapes careers."""
     rows = db.fetchall("SELECT * FROM players WHERE team_id = ?", (team_id,))
+    # Catcher usage map — drives usage-based catcher erosion below. Catching is
+    # a wear position; the more a backstop actually caught this season, the more
+    # his skills erode. Use REAL in-season usage (games started at C / team
+    # games played, from the game log) so how a manager rotates a 3-4 catcher
+    # corps genuinely shapes careers — ride your starter every day and he wears
+    # fast; spread the load and the corps lasts. Falls back to a depth-chart
+    # proxy only when no season has been logged yet (fresh league rollover).
+    usage_by_id: dict = _catcher_season_usage(team_id)
+    if not usage_by_id:
+        catchers = [r for r in rows if r.get("position") == "C"]
+        catchers.sort(key=lambda r: (r.get("defense_catcher") or 0), reverse=True)
+        for rank, c in enumerate(catchers):
+            usage_by_id[c["id"]] = (
+                _CATCHER_USAGE_STARTER if rank == 0
+                else _CATCHER_USAGE_BACKUP if rank == 1
+                else _CATCHER_USAGE_THIRD)
     n = 0
     for p in rows:
         is_pitcher = bool(p.get("is_pitcher"))
         updated, new_age = _develop_player(p, org_strength, rng, is_pitcher,
-                                           style_dev=style_dev)
+                                           style_dev=style_dev,
+                                           catcher_usage=usage_by_id.get(p["id"], 0.0))
         if not updated and (p.get("age") or 0) == new_age:
             continue
         cols   = list(updated.keys()) + ["age"]
@@ -315,6 +408,12 @@ def develop_players_for_team(team_id: int, org_strength: int,
         sql = "UPDATE players SET " + ", ".join(f"{c} = ?" for c in cols) + " WHERE id = ?"
         db.execute(sql, tuple(values))
         n += 1
+    # Re-derive the crew roles now that a season's worth of development /
+    # decay has reshuffled the staff — an arm who lost Stamina to age slides
+    # out of the Helms tier, a riser climbs the depth chart. Roles are always
+    # relative to the current staff. (o27v2/rotation.py)
+    from o27v2 import rotation as _rotation
+    _rotation.assign_roles_for_team(team_id)
     return n
 
 

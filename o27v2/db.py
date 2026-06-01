@@ -111,12 +111,21 @@ CREATE TABLE IF NOT EXISTS teams (
     fo_aggression      REAL    DEFAULT 0.5,
     fo_archetype_bias  TEXT    DEFAULT '',
     fo_losing_streak   INTEGER DEFAULT 0,
+    -- Team-wide performance streak overlay (see o27v2/streaks.py).
+    streak_state       INTEGER DEFAULT 0,
+    streak_weeks       INTEGER DEFAULT 0,
+    streak_games       INTEGER DEFAULT 0,
+    streak_heat        REAL    DEFAULT 0.0,
     fo_last_trade_date TEXT    DEFAULT '',
     -- Per-league playing-style profile (see o27v2/league.py _STYLE_PROFILES).
     -- Empty = neutral generation. Set when a config opts into mechanical
     -- style diversity; drives a per-attribute bias at seed time and is
     -- surfaced as a badge in the UI.
-    style_profile      TEXT    DEFAULT ''
+    style_profile      TEXT    DEFAULT '',
+    -- Power Play (optional rule) — per-league opt-in set at league creation
+    -- (the checkbox on new_league.html). Stamped onto every team in the
+    -- league; sim.py reads it into state.power_play_enabled per game. 0 = off.
+    power_play_enabled INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -136,7 +145,15 @@ CREATE TABLE IF NOT EXISTS players (
     adaptability INTEGER DEFAULT 50,
     leadership   INTEGER DEFAULT 50,   -- batter mental attribute. Stacks with `grit` in the RISP-pressure bonus so a low-eye/contact bench guy with elite leadership+grit can still tip a high-leverage AB (joker archetype).
     archetype             TEXT DEFAULT '',
+    -- Canonical crew role (see o27v2/rotation.py): '' / HM / 1C / 2C / BO /
+    -- SK / AN / PI (Helms, First/Second Change, Bosun, Skidder, Anchor,
+    -- Pilot). Re-derived relative to the team at seed, season rollover, and
+    -- after roster changes. '' = no crew role (legacy / pre-crew saves) →
+    -- consumers fall back to live derivation.
     pitcher_role          TEXT DEFAULT '',
+    -- Usage rank within a crew role (1 = primary; e.g. the two Helms
+    -- alternate as slot 1 / slot 2). 0 for non-pitchers / unroled arms.
+    rotation_slot         INTEGER DEFAULT 0,
     hard_contact_delta    REAL DEFAULT 0.0,
     hr_weight_bonus       REAL DEFAULT 0.0,
     age                   INTEGER DEFAULT 27,
@@ -170,6 +187,9 @@ CREATE TABLE IF NOT EXISTS players (
     defense_infield   INTEGER DEFAULT 50,
     defense_outfield  INTEGER DEFAULT 50,
     defense_catcher   INTEGER DEFAULT 50,
+    -- Catcher pitch-calling — suppresses contact when this player is behind
+    -- the plate (see o27/engine/prob._catcher_gc_shift). NOT framing.
+    game_calling      INTEGER DEFAULT 50,
     -- Baserunning skill (reads, routes, slides) and aggressiveness
     -- (willingness to risk extra base). Independent of foot speed.
     baserunning         INTEGER DEFAULT 50,
@@ -209,6 +229,12 @@ CREATE TABLE IF NOT EXISTS players (
     -- 0.50 = identity (no fatigue ramp change). Also damps today_form
     -- per-game variance — high-grit arms swing less day-to-day.
     grit           REAL  DEFAULT 0.5,
+    -- Performance streaks (see o27v2/streaks.py). A multi-week hot/cold run
+    -- that ramps over weeks and reverts to the true rating when it ends.
+    streak_state   INTEGER DEFAULT 0,   -- -1 cold / 0 none / +1 hot
+    streak_weeks   INTEGER DEFAULT 0,   -- completed weekly ramp ticks
+    streak_games   INTEGER DEFAULT 0,   -- games logged in the current week
+    streak_heat    REAL    DEFAULT 0.0, -- rolling [-1,1] performance signal
     -- Substitution-economy role tags (see o27v2/archetypes.py). Stamped at
     -- generation, re-derived in development. `roster_slot` drives roster
     -- composition; `role_*` flags drive substitution candidate filtering.
@@ -239,6 +265,14 @@ CREATE TABLE IF NOT EXISTS games (
     humidity_tier    TEXT DEFAULT 'normal',
     precip_tier      TEXT DEFAULT 'none',
     cloud_tier       TEXT DEFAULT 'clear',
+    -- Exact rolled temperature (°F) and first-pitch clock time. Start time
+    -- is local to the home park; start_utc_offset carries the park's zone
+    -- so the box score can label it. low_light = game runs into fading
+    -- light (drives the K/error penalty). See o27/engine/gametime.py.
+    temperature_f    INTEGER,
+    start_minute     INTEGER,
+    start_utc_offset INTEGER,
+    low_light        INTEGER DEFAULT 0,
     -- Defensive-shift telemetry (per-team, per-game). Stamped from the
     -- engine at game end so the value of each manager's shift calls is
     -- visible at the game level — sums to season-level shift impact.
@@ -466,6 +500,18 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     bf_arc1        INTEGER DEFAULT 0,
     bf_arc2        INTEGER DEFAULT 0,
     bf_arc3        INTEGER DEFAULT 0,
+    -- Times-through-the-order buckets (1st / 2nd / 3rd+ look a batter has had
+    -- at this pitcher in the game). Powers K%-by-look splits and the
+    -- Deception decay stat (familiarity axis, vs Decay's fatigue axis).
+    k_tto1         INTEGER DEFAULT 0,
+    k_tto2         INTEGER DEFAULT 0,
+    k_tto3         INTEGER DEFAULT 0,
+    fo_tto1        INTEGER DEFAULT 0,
+    fo_tto2        INTEGER DEFAULT 0,
+    fo_tto3        INTEGER DEFAULT 0,
+    bf_tto1        INTEGER DEFAULT 0,
+    bf_tto2        INTEGER DEFAULT 0,
+    bf_tto3        INTEGER DEFAULT 0,
     is_starter     INTEGER DEFAULT 0,   -- 1 if this pitcher started the game
     -- Walk-Back rule (post-HR rule-placed runner). wb_faced = PAs this
     -- pitcher pitched with a Walk-Back runner pending. wb_runs = subset
@@ -498,6 +544,55 @@ CREATE TABLE IF NOT EXISTS team_phase_outs (
     phase             INTEGER NOT NULL DEFAULT 0,
     unattributed_outs INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (game_id, team_id, phase)
+);
+
+-- Power Play (optional rule) per-game stat rack. Only written for games where
+-- the rule was on (power_play_on(state) true), so leagues that never enable it
+-- have an empty table. One row per (game, team, player) carrying that player's
+-- power-play contribution that game. Two complementary roles share the table:
+--   * DEFENSE  — the nickel fielder: deployments he started (pp_deploys),
+--     outs the team's windows covered (pp_outs), extra-base hits he held to
+--     singles (pp_xbh_held) and shallow hits he ran down (pp_hits_converted),
+--     plus his PO/A/E AS the nickel (already in game_batter_stats too, mirrored
+--     here for the power-play leaderboards).
+--   * OFFENSE  — short-handed batting: PA/AB/H taken while the OPPOSING defense
+--     had its nickel deployed (sh_pa / sh_ab / sh_hits). SH-AVG = sh_hits/sh_ab.
+-- A player can have both roles in different games; the columns for the role
+-- that didn't apply stay 0.
+CREATE TABLE IF NOT EXISTS game_power_play_stats (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id    INTEGER NOT NULL REFERENCES games(id),
+    team_id    INTEGER NOT NULL REFERENCES teams(id),
+    player_id  INTEGER NOT NULL REFERENCES players(id),
+    -- Defense (nickel) line.
+    pp_deploys        INTEGER DEFAULT 0,  -- windows this player started as nickel
+    pp_outs           INTEGER DEFAULT 0,  -- outs his deployment windows covered
+    pp_start_outs     TEXT DEFAULT '',    -- CSV of the team-out number each window opened at (e.g. "14,25")
+    pp_xbh_held       INTEGER DEFAULT 0,  -- XBH cut to singles while he patrolled
+    pp_hits_converted INTEGER DEFAULT 0,  -- shallow hits run down for outs
+    nickel_po         INTEGER DEFAULT 0,  -- putouts recorded as the nickel
+    nickel_a          INTEGER DEFAULT 0,  -- assists recorded as the nickel
+    nickel_e          INTEGER DEFAULT 0,  -- errors as the nickel
+    -- Short-handed offense line.
+    sh_pa      INTEGER DEFAULT 0,
+    sh_ab      INTEGER DEFAULT 0,
+    sh_hits    INTEGER DEFAULT 0,
+    -- Power Play PITCHING — the pitcher with the nickel deployed behind him.
+    -- K/BB are defense-independent (they never reach the extra fielder); BIP
+    -- outcomes and the saves reflect the loaded defense. ppp_tot_* span the
+    -- WHOLE game (window or not) so the BABIP split (with-nickel vs without) is
+    -- derivable.
+    ppp_bf        INTEGER DEFAULT 0,  -- batters faced while the nickel was deployed
+    ppp_outs      INTEGER DEFAULT 0,  -- outs recorded during those windows
+    ppp_k         INTEGER DEFAULT 0,  -- strikeouts during windows (his own)
+    ppp_bb        INTEGER DEFAULT 0,  -- walks during windows (his own)
+    ppp_bip       INTEGER DEFAULT 0,  -- balls in play during windows
+    ppp_bip_hits  INTEGER DEFAULT 0,  -- hits on those balls in play (BABIP numerator)
+    ppp_tot_bip      INTEGER DEFAULT 0,  -- total balls in play all game
+    ppp_tot_bip_hits INTEGER DEFAULT 0,  -- total hits on balls in play all game
+    ppp_hits_saved INTEGER DEFAULT 0, -- singles the nickel ran down behind him
+    ppp_xbh_saved  INTEGER DEFAULT 0, -- extra-base hits the nickel held behind him
+    UNIQUE(player_id, game_id)
 );
 
 CREATE TABLE IF NOT EXISTS sim_meta (
@@ -922,6 +1017,9 @@ def init_db() -> None:
         # Task #65 columns: per-pitcher Stamina rolled independently from
         # tier distribution, plus active/reserve roster split flag.
         task65_int  = [("stamina", "50"), ("is_active", "1")]
+        # Canonical pitching-roles column (see o27v2/rotation.py). Starter
+        # rotation order; 0 for relievers / legacy rows.
+        rotation_int = [("rotation_slot", "0")]
 
         for col, defval in phase8_text + phase9_text:
             try:
@@ -935,7 +1033,7 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        for col, defval in phase9_int + task65_int:
+        for col, defval in phase9_int + task65_int + rotation_int:
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT {defval}")
                 conn.commit()
@@ -947,6 +1045,20 @@ def init_db() -> None:
         for col, sql_type, defval in [
             ("series_id",  "INTEGER", "NULL"),
             ("is_playoff", "INTEGER", "0"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE games ADD COLUMN {col} {sql_type} DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Weather/start-time: exact rolled °F + first-pitch clock time on
+        # `games`. Older DBs gain the columns without losing data.
+        for col, sql_type, defval in [
+            ("temperature_f",    "INTEGER", "NULL"),
+            ("start_minute",     "INTEGER", "NULL"),
+            ("start_utc_offset", "INTEGER", "NULL"),
+            ("low_light",        "INTEGER", "0"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE games ADD COLUMN {col} {sql_type} DEFAULT {defval}")
@@ -1176,6 +1288,36 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        # Power Play (optional rule) — per-league opt-in set at league
+        # creation. Stamped onto every team in a league whose creator ticked
+        # the box, read by sim.py into state.power_play_enabled per game.
+        # Legacy rows default to 0 (rule off), so existing leagues are
+        # byte-for-byte unchanged.
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN power_play_enabled INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+        # Power Play PITCHING columns — added to game_power_play_stats after the
+        # initial defense/offense version of the table. No-op on fresh DBs (the
+        # CREATE TABLE already has them) and on DBs without the table yet.
+        for col in ("ppp_bf", "ppp_outs", "ppp_k", "ppp_bb", "ppp_bip",
+                    "ppp_bip_hits", "ppp_tot_bip", "ppp_tot_bip_hits",
+                    "ppp_hits_saved", "ppp_xbh_saved"):
+            try:
+                conn.execute(
+                    f"ALTER TABLE game_power_play_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+        # Per-window start-out (the team-out number each nickel window opened
+        # at) — added so the box-score Powerplays note can say WHEN it deployed.
+        try:
+            conn.execute(
+                "ALTER TABLE game_power_play_stats ADD COLUMN pp_start_outs TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
         # Adaptability — batter rating that erodes shift effectiveness
         # when the manager keeps the same alignment for multiple consecutive
         # ABs against this batter. 20-80 scale like other ratings.
@@ -1210,7 +1352,7 @@ def init_db() -> None:
         # player be a true specialist (elite at one group, replacement
         # elsewhere) or a legit utility guy (decent across groups).
         for col in ("defense", "arm", "defense_infield",
-                    "defense_outfield", "defense_catcher"):
+                    "defense_outfield", "defense_catcher", "game_calling"):
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT 50")
                 conn.commit()
@@ -1301,6 +1443,21 @@ def init_db() -> None:
             "is_starter",
         )
         for col in _arc_cols:
+            try:
+                conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Times-through-the-order buckets (1st / 2nd / 3rd+ look). Powers
+        # K%-by-look splits + the Deception decay stat. Default 0 on legacy
+        # rows (familiarity stats simply read empty for pre-migration games).
+        _tto_cols = (
+            "k_tto1",  "k_tto2",  "k_tto3",
+            "fo_tto1", "fo_tto2", "fo_tto3",
+            "bf_tto1", "bf_tto2", "bf_tto3",
+        )
+        for col in _tto_cols:
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()
@@ -1485,6 +1642,39 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+
+        # Performance streaks (see o27v2/streaks.py). Per-player hot/cold
+        # streak that ramps over weeks like an illness — slow to start, then
+        # accelerating — and reverts to the player's true rating when it ends.
+        #   streak_state : -1 cold / 0 none / +1 hot
+        #   streak_weeks : completed weekly ramp ticks (drives the magnitude)
+        #   streak_games : games logged in the current week (ticks a week at 6)
+        #   streak_heat  : rolling performance signal in [-1, 1] that ignites
+        #                  or breaks a streak (good play pushes +, bad pushes -)
+        for col in ("streak_state", "streak_weeks", "streak_games"):
+            try:
+                conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN streak_heat REAL DEFAULT 0.0")
+            conn.commit()
+        except Exception:
+            pass
+        # Team-wide streak overlay — a club catching fire (or going cold)
+        # together, lighter than the per-player swing. Same column semantics.
+        for col in ("streak_state", "streak_weeks", "streak_games"):
+            try:
+                conn.execute(f"ALTER TABLE teams ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN streak_heat REAL DEFAULT 0.0")
+            conn.commit()
+        except Exception:
+            pass
 
     # Step 2: wipe stale pre-Phase-8 data
     _wipe_if_stale()

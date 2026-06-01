@@ -36,8 +36,8 @@
       <tr{% if row.player.is_joker %} class="jr"{% endif %}>
         <td>
           <a href="/player/{{ row.team.abbrev }}_{{ row.player.name | replace(' ','_') | replace('.','') }}" class="link">{{ row.player.name }}</a>
-          {% if row.player.is_joker and row.player.joker_archetype %}
-          <span class="ab ab-{{ row.player.joker_archetype | lower }}">{{ row.player.joker_archetype }}</span>
+          {% if row.player.is_joker %}
+          <span class="ab">J</span>
           {% endif %}
         </td>
         <td><a href="/team/{{ row.team.abbrev }}" class="link">{{ row.team.abbrev }}</a></td>

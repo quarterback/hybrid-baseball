@@ -5,7 +5,7 @@
 {%- macro pitcher_row(p) -%}
 {{ "%-20s" | format(p.name) }}  {{ "%3d" | format(p.batters_faced) }}  {{ "%3d" | format(p.outs_recorded) }}  {{ "%3d" | format(p.hits_allowed) }}  {{ "%3d" | format(p.runs_allowed) }}  {{ "%3d" | format(p.bb) }}  {{ "%3d" | format(p.k) }}  {{ "%3d" | format(p.hbp) }}
 {%- endmacro -%}
-{%- set col_head = "Player                PA   AB    R    H   2B   3B   HR    RBI   BB    K  HBP  STY  SRBI   MH" -%}
+{%- set col_head = "Player                PA   AB    R    H   2B   3B   HR    RBI   BB    K  HBP   2C  2C-R   MH" -%}
 {%- set p_col_head = "Pitcher                BF  OUT    H    R   BB    K  HBP" -%}
 {%- set div = "────────────────────────────────────────────────────────────────────────────────────────────────" -%}
 {%- set p_div = "──────────────────────────────────────────────────────" -%}
@@ -60,7 +60,7 @@ LINE SCORE
 
 ============================================================
 Run rate:  {{ visitors_name }}  {{ "%.3f" | format(visitors_rr) }}    {{ home_name }}  {{ "%.3f" | format(home_rr) }}
-Stays:     {{ visitors_name }}  {{ visitors_stays }}    {{ home_name }}  {{ home_stays }}
+Second-Chance ABs:  {{ visitors_name }}  {{ visitors_stays }}    {{ home_name }}  {{ home_stays }}
 {% if visitors_ibb_note %}
 IBB ({{ visitors_name }}): {{ visitors_ibb_note }}.
 {% endif %}
@@ -77,5 +77,8 @@ Required run rate ({{ home_name }}): {{ "%.3f" | format(required_rr) }} R/out (n
 {% elif visitors_declared_at is not none %}Seconds: {{ _vs }}
 {% else %}Seconds: {{ _hs }}
 {% endif %}
+{% endif %}
+{% if powerplays_line %}
+{{ powerplays_line }}
 {% endif %}
 ============================================================

@@ -242,13 +242,23 @@ def _batting_annotations(
     hr_off_pitchers maps batter_player_id_str → [pitcher last names] so
     HR notes render AP-style: "HR: Smith (1), off Hernandez".
     """
-    def _collect(field: str) -> list[tuple[str, int]]:
-        items = []
+    def _xbh_items(game_field: str, season_field: str) -> list[str]:
+        """Real-newspaper convention: the parenthetical is the player's
+        SEASON total of that stat through this game, not the game count.
+        'Konan 2 (9)' = 2 doubles today, 9 on the season; 'Beard (3)' =
+        one double today, his 3rd of the season."""
+        out_items: list[str] = []
         for r in rows:
-            n = r.get(field) or 0
-            if n > 0:
-                items.append((_short_name(r.get("player_name", "?")), n))
-        return items
+            n = r.get(game_field) or 0
+            if n <= 0:
+                continue
+            name = _short_name(r.get("player_name", "?"))
+            season = r.get(season_field) or n
+            if n > 1:
+                out_items.append(f"{name} {n} ({season})")
+            else:
+                out_items.append(f"{name} ({season})")
+        return out_items
 
     def _hr_items() -> list[str]:
         out_items: list[str] = []
@@ -257,7 +267,8 @@ def _batting_annotations(
             if n <= 0:
                 continue
             name = _short_name(r.get("player_name", "?"))
-            base = f"{name} {n}" if n > 1 else name
+            season = r.get("season_hr") or n
+            base = f"{name} {n} ({season})" if n > 1 else f"{name} ({season})"
             if hr_off_pitchers:
                 pid = str(r.get("player_id") or "")
                 pitchers = hr_off_pitchers.get(pid) or []
@@ -272,13 +283,28 @@ def _batting_annotations(
 
     out = []
     parts = []
-    for label, field in (("2B", "doubles"), ("3B", "triples"), ("SB", "sb")):
-        items = _collect(field)
-        if items:
-            parts.append(f"{label}: {_join_names(items)}")
+    # 2B / 3B carry a season-to-date total in parens (newspaper style).
+    d2 = _xbh_items("doubles", "season_doubles")
+    if d2:
+        parts.append("2B: " + ", ".join(d2) + ".")
+    d3 = _xbh_items("triples", "season_triples")
+    if d3:
+        parts.append("3B: " + ", ".join(d3) + ".")
     hr_items = _hr_items()
     if hr_items:
-        parts.append("HR: " + "; ".join(hr_items))
+        parts.append("HR: " + "; ".join(hr_items) + ".")
+    # Remaining counting lines, each season-accumulated like the above.
+    for label, game_field, season_field in (
+        ("SB",   "sb",   "season_sb"),
+        ("CS",   "cs",   "season_cs"),
+        ("E",    "e",    "season_e"),
+        ("HBP",  "hbp",  "season_hbp"),
+        ("GIDP", "gidp", "season_gidp"),
+        ("GITP", "gitp", "season_gitp"),
+    ):
+        items = _xbh_items(game_field, season_field)
+        if items:
+            parts.append(f"{label}: " + ", ".join(items) + ".")
     if parts:
         out.append("  " + " ".join(parts))
     return out
@@ -341,20 +367,31 @@ def _pick_decisions(away_rows: list[dict], home_rows: list[dict],
 
 def _pitching_block(team_name: str, rows: list[dict],
                     win_pid: int | None, lose_pid: int | None,
-                    denom_outs: int) -> list[str]:
+                    denom_outs: int,
+                    season_wl: dict | None = None) -> list[str]:
     head = (
         ((team_name or "").upper() + " PITCHING")[:_PRE_NUM].ljust(_PRE_NUM)
         + _PIT_HEADER
     )
     out = [head]
+    season_wl = season_wl or {}
+
+    def _decorate(nm: str, pid, mark: str) -> str:
+        # "S. Morii (W, 5-3)" — the record is the pitcher's season W-L
+        # through this game, real-newspaper style. Falls back to a bare
+        # "(W)" when no season record is supplied (e.g. tournament boxes).
+        rec = season_wl.get(pid)
+        if rec:
+            return f"{nm} ({mark}, {rec.get('w', 0)}-{rec.get('l', 0)})"
+        return f"{nm} ({mark})"
 
     for r in rows:
         nm = _short_name(r.get("player_name", ""))
         pid = r.get("player_id")
         if pid == win_pid:
-            nm = f"{nm} (W)"
+            nm = _decorate(nm, pid, "W")
         elif pid == lose_pid:
-            nm = f"{nm} (L)"
+            nm = _decorate(nm, pid, "L")
 
         bf  = r.get("batters_faced", 0) or 0
         pi  = r.get("pitches", 0) or 0
@@ -418,6 +455,7 @@ def render_box_score(
     home_pitching: list[dict],
     weather,  # o27.engine.weather.Weather
     hr_off_pitchers: dict | None = None,
+    season_wl: dict | None = None,
 ) -> str:
     rule = "=" * _RULE_WIDTH
 
@@ -449,10 +487,12 @@ def render_box_score(
     lines.append("")
     lines.extend(_pitching_block(
         game.get("away_name", ""), away_pitching, win_pid, lose_pid, pitch_denom,
+        season_wl,
     ))
     lines.append("")
     lines.extend(_pitching_block(
         game.get("home_name", ""), home_pitching, win_pid, lose_pid, pitch_denom,
+        season_wl,
     ))
     pa = _pitching_annotations(away_pitching, home_pitching)
     if pa:
@@ -461,6 +501,10 @@ def render_box_score(
     lines.append("")
 
     footer_bits = []
+    from o27.engine.gametime import format_start
+    first_pitch = format_start(game.get("start_minute"), game.get("start_utc_offset"))
+    if first_pitch:
+        footer_bits.append(f"First pitch {first_pitch}.")
     if weather is not None:
         footer_bits.append(f"Weather: {weather.box_score_line()}")
     seed = game.get("seed")

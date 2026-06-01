@@ -186,6 +186,52 @@
 </div>
 
 {# ============================================================
+   POWER PLAY / SHORT-HANDED  (only in leagues that enabled the rule)
+   ============================================================ #}
+{% if power_play_on_in_league %}
+<h4 class="mt-4">Power Play · Defense (the nickel)</h4>
+<div class="text-secondary small mb-2">
+  The 10th defender. Counting lines for players deployed as the nickel fielder
+  while their league runs the Power Play rule.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('PPD',  'pp_deploys',        '%d', true, pp_defense, tooltip='Power Plays Deployed — windows this player started as the nickel fielder.') }}
+  {{ card('PPO',  'pp_outs',           '%d', true, pp_defense, tooltip='Outs the nickel\'s deployment windows covered (the time he was on the field).') }}
+  {{ card('XBHH', 'pp_xbh_held',       '%d', true, pp_defense, tooltip='Extra-base hits the nickel held to singles by cutting off the gap.') }}
+  {{ card('HC',   'pp_hits_converted', '%d', true, pp_defense, tooltip='Hits Converted — shallow outfield singles the nickel ran down for outs.') }}
+  {{ card('NF-PO','nickel_po',         '%d', true, pp_defense, tooltip='Putouts recorded while playing as the nickel fielder.') }}
+</div>
+
+<h4 class="mt-4">Power Play · Short-handed Offense</h4>
+<div class="text-secondary small mb-2">
+  How hitters fared while the opposing defense had its nickel deployed — a man
+  down against a loaded defense.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('SH-AVG', 'sh_avg',  '%.3f', true, pp_offense, tooltip='Short-handed batting average — hits / at-bats taken while the defense had its nickel fielder deployed.') }}
+  {{ card('SH-H',   'sh_hits', '%d',   true, pp_offense, tooltip='Short-handed hits — hits with the opposing nickel on the field.') }}
+  {{ card('SH-PA',  'sh_pa',   '%d',   true, pp_offense, tooltip='Short-handed plate appearances — PAs taken against a deployed nickel.') }}
+</div>
+
+<h4 class="mt-4">Power Play · Pitching</h4>
+<div class="text-secondary small mb-2">
+  How a pitcher fared with the nickel deployed behind him. K% / BB% are his own
+  (they never reach the extra fielder); BABIP reflects the loaded defense behind
+  him.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('PP-BABIP', 'ppp_babip',       '%.3f', false, pp_pitching, tooltip='Batting average on balls in play allowed while the nickel was deployed behind him. Lower = the loaded defense suppressed more hits.') }}
+  {{ card('BABIP Δ',  'ppp_babip_split', '%+.3f', false, pp_pitching, tooltip='PP-BABIP minus his BABIP without the nickel. Negative = the 10th fielder lowered his BABIP-against. Sorted most-helped first.') }}
+  {{ card('PP-K%',    'ppp_k_pct',       '%.3f', true,  pp_pitching, tooltip='Strikeout rate while the nickel was deployed (K / batters faced). Defense-independent — strikeouts never reach the extra fielder.') }}
+  {{ card('PP-BB%',   'ppp_bb_pct',      '%.3f', false, pp_pitching, tooltip='Walk rate while the nickel was deployed (BB / batters faced). Defense-independent (fewest = best).') }}
+  {{ card('PP-Cov%',  'ppp_coverage',    '%.3f', true,  pp_pitching, tooltip='Coverage — share of the pitcher\'s total outs recorded with the nickel behind him.') }}
+  {{ card('PP-BF',    'ppp_bf',          '%d',   true,  pp_pitching, tooltip='Batters faced with the nickel deployed behind him.') }}
+  {{ card('H-Saved',  'ppp_hits_saved',  '%d',   true,  pp_pitching, tooltip='Singles the nickel ran down for outs behind him — hits the defense erased.') }}
+  {{ card('XBH-Saved','ppp_xbh_saved',   '%d',   true,  pp_pitching, tooltip='Extra-base hits the nickel held to singles behind him.') }}
+</div>
+{% endif %}
+
+{# ============================================================
    PITCHING
    ============================================================ #}
 <h4 class="mt-4">Pitching · Result-Tier (the trio)</h4>

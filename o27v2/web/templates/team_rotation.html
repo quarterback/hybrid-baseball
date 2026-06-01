@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}{{ team.name }} — Rotation &amp; Crew{% endblock %}
+{% block content %}
+
+<nav aria-label="breadcrumb" class="mb-2">
+  <ol class="breadcrumb small mb-0">
+    <li class="breadcrumb-item"><a href="{{ url_for('teams') }}">Teams</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('team_detail', team_id=team.id) }}">{{ team.name }}</a></li>
+    <li class="breadcrumb-item active">Rotation &amp; Crew</li>
+  </ol>
+</nav>
+
+<div class="dense p-2 mb-3 d-flex flex-wrap align-items-center gap-3">
+  <span class="team-abbrev" style="font-size:1.4rem">{{ team.abbrev }}</span>
+  <span class="fw-bold fs-5">{{ team.name }}</span>
+  <span class="text-secondary">— pitching crew</span>
+  <form method="post" action="{{ url_for('team_rotation_auto', team_id=team.id) }}" class="ms-auto">
+    <button class="btn btn-sm btn-outline-secondary" type="submit"
+            title="Re-derive every crew role from current skills, relative to this staff">
+      Auto-assign from skills
+    </button>
+  </form>
+</div>
+
+<p class="text-secondary small mb-3" style="max-width:60rem">
+  These are <strong>roles, not titles</strong>. A game is one continuous 27-out voyage,
+  and the crew conducts it through its handful of moments. Where an arm slots depends on
+  the company he keeps — the same pitcher is a <em>Helms</em> on a thin staff and only a
+  <em>Skidder</em> on a deep one. The board below is the club's <em>nominal</em> crew;
+  in-game the manager flexes it by <strong>fatigue, Stuff and the matchup</strong>, and
+  keeps a man in a role only while it works — injury, tiredness or a rough patch move him.
+</p>
+
+{% for role in crew %}
+<div class="dense mb-2">
+  <div class="panel-title d-flex align-items-baseline gap-2">
+    <span>{{ role.label }}</span>
+    {% if role.steer %}<span class="badge bg-secondary">steers</span>{% endif %}
+    <span class="text-secondary small fw-normal">— {{ role.blurb }}</span>
+  </div>
+  {% if role.arms %}
+  <table class="table table-sm dense-table mb-0">
+    <thead><tr>
+      <th style="width:1.5rem">#</th>
+      <th>Name</th>
+      <th title="Throws">T</th>
+      <th class="num">Age</th>
+      <th class="num" title="Stuff (pitcher_skill)">Stuff</th>
+      <th class="num" title="Stamina">Stam</th>
+      <th>Re-slot</th>
+    </tr></thead>
+    <tbody>
+    {% for p in role.arms %}
+    <tr style="color:#79c0ff">
+      <td class="text-secondary num">{{ p.rotation_slot or '—' }}</td>
+      <td>
+        {% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}
+        <a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>
+      </td>
+      <td class="text-secondary small">{{ p.throws or '—' }}</td>
+      <td class="num text-secondary">{{ p.age }}</td>
+      <td class="num fw-bold">{{ p.pitcher_skill }}</td>
+      <td class="num">{{ p.stamina }}</td>
+      <td>
+        <form method="post" action="{{ url_for('team_rotation_set', team_id=team.id) }}"
+              class="d-flex gap-1 align-items-center">
+          <input type="hidden" name="player_id" value="{{ p.id }}">
+          <select name="role" class="form-select form-select-sm" style="width:auto">
+            {% for code, label in role_choices %}
+            <option value="{{ code }}" {% if code == p.pitcher_role %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-sm btn-outline-secondary" type="submit">Set</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="p-2 text-center text-secondary small">No arm currently in this role.</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if unroled %}
+<div class="dense mb-2">
+  <div class="panel-title">Unassigned active arms</div>
+  <table class="table table-sm dense-table mb-0">
+    <tbody>
+    {% for p in unroled %}
+    <tr style="color:#79c0ff">
+      <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a></td>
+      <td class="num text-secondary">Stuff {{ p.pitcher_skill }} · Stam {{ p.stamina }}</td>
+      <td>
+        <form method="post" action="{{ url_for('team_rotation_set', team_id=team.id) }}"
+              class="d-flex gap-1 align-items-center">
+          <input type="hidden" name="player_id" value="{{ p.id }}">
+          <select name="role" class="form-select form-select-sm" style="width:auto">
+            {% for code, label in role_choices %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-sm btn-outline-secondary" type="submit">Set</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if reserve %}
+<div class="dense">
+  <div class="panel-title">Reserve depth <span class="text-secondary small fw-normal">— not roled until called up</span></div>
+  <table class="table table-sm dense-table mb-0">
+    <tbody>
+    {% for p in reserve %}
+    <tr class="text-secondary">
+      <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a></td>
+      <td class="num">Stuff {{ p.pitcher_skill }} · Stam {{ p.stamina }} · Age {{ p.age }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

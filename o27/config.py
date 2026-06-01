@@ -212,21 +212,28 @@ TALENT_2C_SHIFT_SCALE: float = 1.00   # ±1.5 nominal swing; bounded 0.05-0.95
 # Format per row: (hit_type, batter_safe, caught_fly, weight)
 # Weights are relative (do not need to sum to 1.0; engine normalises).
 
+# H~R variance pass: single weights raised in the WEAK/MEDIUM tiers so balls in
+# play turn into hits far more often (the primary ask — more hits, college-ball
+# contact levels). Ground-ball volume is kept high enough to feed the now-live
+# double-play channel (see prob.py). The hit total is the lever here; the
+# game-to-game decoupling of runs from hits lives in the per-half sequencing
+# form and the double-play rate further below. See docs/aar-hits-runs-variance.md
+# for the full story, including why the H~R correlation is largely structural.
 WEAK_CONTACT: list = [
-    ("ground_out",      False, False, 0.50),
-    ("fly_out",         False, True,  0.18),
-    ("line_out",        False, False, 0.10),
-    ("single",          True,  False, 0.18),
+    ("ground_out",      False, False, 0.42),
+    ("fly_out",         False, True,  0.13),
+    ("line_out",        False, False, 0.07),
+    ("single",          True,  False, 0.34),
     ("fielders_choice", True,  False, 0.04),
 ]
 
 MEDIUM_CONTACT: list = [
-    ("ground_out",      False, False, 0.22),
-    ("fly_out",         False, True,  0.14),
-    ("line_out",        False, False, 0.12),
-    ("single",          True,  False, 0.32),
-    ("double",          True,  False, 0.12),
-    ("fielders_choice", True,  False, 0.08),
+    ("ground_out",      False, False, 0.18),
+    ("fly_out",         False, True,  0.10),
+    ("line_out",        False, False, 0.08),
+    ("single",          True,  False, 0.44),
+    ("double",          True,  False, 0.14),
+    ("fielders_choice", True,  False, 0.06),
 ]
 
 HARD_CONTACT: list = [
@@ -249,30 +256,33 @@ HARD_CONTACT: list = [
 # to them on contact. Fuzzy off-round percentages intentional — keeps
 # the numbers looking observed rather than designed.
 
-# Single, runner on 3B (rarely cut down — runner is 90 ft from home —
-# but elite-arm corner OFs still nail one occasionally on a contact
-# play with the throw home).
-ADVANCE_3B_ON_1B_SCORE: float    = 0.71
-ADVANCE_3B_ON_1B_HOLD: float     = 0.25
-ADVANCE_3B_ON_1B_OUT: float      = 0.04
+# Single, runner on 3B. These are the MEAN conversion rates; the per-half
+# sequencing form (below) swings them widely game to game. A moderate mean
+# (down from the old near-automatic 0.71) keeps a single from reliably
+# dripping in a run, but the real variance now lives in the form — a hot half
+# clears 3B on contact, a cold half strands him.
+ADVANCE_3B_ON_1B_SCORE: float    = 0.44
+ADVANCE_3B_ON_1B_HOLD: float     = 0.50
+ADVANCE_3B_ON_1B_OUT: float      = 0.06
 
-# Single, runner on 2B — the classic close play at the plate.
-ADVANCE_2B_ON_1B_SCORE: float    = 0.49
-ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.37
-ADVANCE_2B_ON_1B_OUT: float      = 0.14
+# Single, runner on 2B — the classic close play at the plate. Low mean (most
+# 2B runners stop at 3B on a single), wide game-to-game swing from the form.
+ADVANCE_2B_ON_1B_SCORE: float    = 0.20
+ADVANCE_2B_ON_1B_HOLD_3B: float  = 0.65
+ADVANCE_2B_ON_1B_OUT: float      = 0.15
 
 # Double, runner on 2B (almost auto, occasionally held with a deep relay
 # and the rare turn-2 chase that catches the runner short).
-ADVANCE_2B_ON_2B_SCORE: float    = 0.83
-ADVANCE_2B_ON_2B_HOLD_3B: float  = 0.13
+ADVANCE_2B_ON_2B_SCORE: float    = 0.62
+ADVANCE_2B_ON_2B_HOLD_3B: float  = 0.34
 ADVANCE_2B_ON_2B_OUT: float      = 0.04
 
-# Double, runner on 1B — 1B-to-home on a double is the lever everyone
-# wants. Around half score, a third stop at 3B, the slow ones get held
-# at 2B because the throw beats them, occasionally the throw nails 'em.
-ADVANCE_1B_ON_2B_SCORE: float    = 0.40
-ADVANCE_1B_ON_2B_TO_3B: float    = 0.37
-ADVANCE_1B_ON_2B_HOLD_2B: float  = 0.16
+# Double, runner on 1B — 1B-to-home on a double. Pulled down off the old 0.40
+# so a double with a man on first usually leaves him at third; the run comes
+# when the form is hot or the next ball is squared up, not automatically.
+ADVANCE_1B_ON_2B_SCORE: float    = 0.26
+ADVANCE_1B_ON_2B_TO_3B: float    = 0.48
+ADVANCE_1B_ON_2B_HOLD_2B: float  = 0.19
 ADVANCE_1B_ON_2B_OUT: float      = 0.07
 
 # Single, runner on 1B — almost always 1B → 2B; some 1B → 3B; TOA risk
@@ -291,6 +301,48 @@ ARM_ADVANCE_MOD: float           = 0.11
 # Extra-base probability: chance += max(0, (speed - 0.5) * RUNNER_EXTRA_SPEED_SCALE)
 
 RUNNER_EXTRA_SPEED_SCALE: float = 0.35
+
+# ---------------------------------------------------------------------------
+# Batted-ball texture (the "wasted hits" mechanism)
+# ---------------------------------------------------------------------------
+# A hit's TEXTURE — how it was struck — decides how productive it is. Rolled
+# from contact quality + batter power into {dribbler, grounder, liner, flyball}
+# and carried as outcome_dict["batted_ball"] (NOT a hit_type, so all the hit/AB
+# stat-counting that switches on hit_type strings is untouched). Low-power
+# contact hitters spray grounders; sluggers hit liners — player-differentiated.
+#
+# CRITICAL LESSON (learned the hard way): in O27's single continuous 27-out
+# inning, making a runner HOLD on a grounder does NOT reduce runs — there is no
+# inning-end to strand him, so he scores on a later PA (~87% of baserunners
+# score eventually). The only thing that lowers runs-per-hit is ERASING a
+# runner. So texture's run effect is primarily an additive bump to the "out"
+# (thrown-out-advancing) bucket of the advancement tables, not a score haircut.
+# All-zero shifts reproduce pre-texture behavior exactly (identity).
+BATTED_BALL_WEIGHTS = {
+    # quality:   (dribbler, grounder, liner, flyball)
+    "weak":      (0.30, 0.45, 0.20, 0.05),
+    "medium":    (0.12, 0.40, 0.38, 0.10),
+    "hard":      (0.0,  0.12, 0.53, 0.35),
+}
+BATTED_BALL_POWER_TILT: float = 0.30   # power_dev shifts grounder→liner→flyball
+
+# Additive bump to the "out" outcome (runner gunned down advancing) in the
+# single/double advancement tables, by texture. This ERASES runners → the real
+# H/R lever. Grounders/dribblers draw more throws and force plays; liners let
+# runners move cleanly (slightly negative).
+BATTED_BALL_OUT_SHIFT = {
+    "dribbler": 0.30,
+    "grounder": 0.40,
+    "liner":   -0.03,
+    "flyball":  0.00,
+}
+# Secondary score-bucket nudge (small — mostly flavor / a few held runners).
+BATTED_BALL_SCORE_SHIFT = {
+    "dribbler": -0.20,
+    "grounder": -0.12,
+    "liner":    +0.05,
+    "flyball":   0.00,
+}
 
 # Baseline extra-base attempt probability for the runner on 1B on a double.
 # Without this baseline, every double produced an identical [2, 2, 1] runner
@@ -313,6 +365,174 @@ RUNNER_THROWN_OUT_AT_HOME_BASE: float        = 0.18
 RUNNER_THROWN_OUT_AT_HOME_SPEED_SCALE: float = 0.22
 RUNNER_THROWN_OUT_AT_HOME_SKILL_SCALE: float = 0.22
 RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.05
+
+# ---------------------------------------------------------------------------
+# Unified per-half "locked in" form  (the shared draw behind the two below)
+# ---------------------------------------------------------------------------
+# The offensive sequencing form (slugging / baserunning / GIDP) and the RISP
+# clutch form (talent penalty / XBH suppression) used to be rolled as TWO
+# independent Gaussian draws per batting half. Independent draws de-correlate
+# the channels: a hot-slugging half and a hot-converting half rarely lined up,
+# so within a game the effects averaged out instead of compounding — which is
+# why every prior pass lowered R/H but never widened the game-to-game efficiency
+# tails ("blow-it-open vs leave-em-loaded").
+#
+# This unifies them into ONE latent draw per half — "the lineup is locked in
+# tonight" — that feeds ALL of those channels at once. Because one draw now
+# moves conversion AND slugging AND baserunning together, a hot night compounds
+# into a blowout and a cold night into a stranded-rally loss. The per-channel
+# strengths stay as their own constants (SEQ_FORM_*_SCALE, RISP_CLUTCH_*_RELIEF
+# below) so each channel is still independently tunable / disable-able; this
+# block governs only the shared DRAW.
+#
+# Same best-hitter + manager-vibes anchor the old clutch form used (performance-
+# grounded, not pure noise):
+#   best    = max_p [ BAT_POWER_W*p.power + BAT_SKILL_W*p.skill ]
+#   quality = (best - 0.5)*BAT_W + (mgr_risp_pressure - 0.5)*MGR_W
+#   mean    = 1 + MEAN_SCALE*quality;  form = clamp(Normal(mean, SIGMA), MIN, MAX)
+# Set LOCKED_FORM_SIGMA <= 0 to disable the whole mechanism (every half at 1.0).
+LOCKED_FORM_SIGMA: float        = 0.66   # shared per-half hot/cold spread
+LOCKED_FORM_MIN: float          = 0.08   # coldest possible half
+LOCKED_FORM_MAX: float          = 2.15   # hottest possible half
+# Base center of the draw before the team-quality shift. The channels are
+# asymmetric — a hot half (form>1) relieving the RISP penalty AND slugging adds
+# more runs than an equally-cold half strands (floor effects) — so widening the
+# spread via SIGMA also drifts mean R/H upward. Setting the base center a touch
+# below 1.0 pulls the mean back so we widen the game-to-game SPREAD without
+# shifting the league's mean R/H off "a hit ≠ a run" (~0.93). 1.0 = no offset.
+LOCKED_FORM_MEAN_BASE: float    = 0.94
+LOCKED_FORM_MEAN_SCALE: float   = 0.55   # how strongly team quality shifts the mean
+LOCKED_FORM_BAT_W: float        = 0.85   # weight: best hitter's quality (the anchor)
+LOCKED_FORM_BAT_POWER_W: float  = 0.5    # best-hitter score: power share
+LOCKED_FORM_BAT_SKILL_W: float  = 0.5    # best-hitter score: skill share
+LOCKED_FORM_MGR_W: float        = 0.15   # weight: manager persona (small vibes nudge)
+
+# ---------------------------------------------------------------------------
+# Offensive sequencing form (the H~R decoupler)
+# ---------------------------------------------------------------------------
+# The structural problem: with ~45 PAs per team in a single 27-out arc, the
+# law of large numbers crushes per-game conversion variance — no matter where
+# the per-event ADVANCE_* rates sit, every game's runs-per-baserunner
+# converges to nearly the same ratio, so R tracks H almost 1:1 with no tails.
+# Real "few hits / many runs" and "many hits / few runs" box scores come from
+# SEQUENCING: whether a lineup strings its hits and walks together with traffic
+# on base, or sprays them across dead innings. To reproduce that, each half
+# draws ONE offensive sequencing form (a team-wide "we're clicking tonight" vs
+# "we left the bases loaded all night" factor). It shifts every base-advancement
+# SCORE roll that half in the same direction, correlating conversion across all
+# the half's PAs — which is what actually inflates Var(R | H) and pulls the
+# H~R correlation down off the structural ceiling.
+#
+# form ~ Normal(1.0, SEQ_FORM_SIGMA), clamped to [MIN, MAX]. The shift fed to
+# the advancement tables is (form - 1.0) * SEQ_FORM_SCORE_SCALE: a hot half
+# pushes runners home on contact, a cold half strands them. Set SEQ_FORM_SIGMA
+# to 0.0 to disable the mechanism entirely (every half plays at form 1.0).
+# NOTE: the DRAW is now the unified LOCKED_FORM_* above; SEQ_FORM_SIGMA/MIN/MAX
+# are retained only for reference (no longer roll a separate sequencing draw).
+SEQ_FORM_SIGMA: float       = 0.62   # (superseded by LOCKED_FORM_SIGMA)
+SEQ_FORM_MIN: float         = 0.08   # (superseded by LOCKED_FORM_MIN)
+SEQ_FORM_MAX: float         = 2.10   # (superseded by LOCKED_FORM_MAX)
+SEQ_FORM_SCORE_SCALE: float = 1.20   # LIVE: form deviation → additive score-prob shift
+
+# The dominant decoupler. H counts a single and a homer the same; R does not.
+# The reason runs track hits ~1:1 in O27 is that per-game contact QUALITY
+# (the single↔double↔HR mix) barely varies — large-PA averaging pins every
+# game's slugging near the mean. This scale routes the same per-half form into
+# a sum-preserving power redistribution (identical machinery to the per-batter
+# power rating), so a hot half turns its hits into extra-base hits — runs
+# spike while the hit COUNT holds — and a cold half dinks singles that pile up
+# as hits but strand. That single↔XBH swing, not baserunning, is what pulls a
+# game's runs off its hit total and opens the "8 hits / 11 runs" and
+# "16 hits / 4 runs" tails. form 1.0 = identity (no quality shift).
+SEQ_FORM_POWER_SCALE: float = 1.45   # LIVE: form deviation → redistribution strength
+
+# Edge scales for the form's dedicated single<->XBH<->HR redistribution. Large
+# on purpose (the per-batter POWER_REDIST_* edges are gentle by comparison): at
+# a +1 form deviation, `scale` fraction of the `from` row migrates to the `to`
+# row. Hot halves move singles/doubles into homers; cold halves (negative dev)
+# pull HRs back down into singles. Sum-preserving, so hit count is unchanged.
+SEQ_REDIST_HARD_S2HR: float  = 0.55  # hard single   -> hr
+SEQ_REDIST_HARD_D2HR: float  = 0.45  # hard double   -> hr
+SEQ_REDIST_HARD_LO2HR: float = 0.60  # hard line_out -> hr (squared-up vs caught)
+SEQ_REDIST_MED_S2D: float    = 0.75  # medium single -> double
+
+# Form sensitivity of the double-play rate (the runner-erasing channel). A
+# cold half (form < 1) hits into MORE double plays — rallies die on the bases
+# instead of every runner coming around; a hot half (form > 1) stays out of
+# them. This is what lets a cold offense pile up hits that go nowhere.
+SEQ_FORM_GIDP_SCALE: float   = 1.20   # LIVE
+
+# ---------------------------------------------------------------------------
+# RISP pressure ("the wobble")
+# ---------------------------------------------------------------------------
+# The engine otherwise fiats hits from talent + dice regardless of situation,
+# which — in a 27-out inning where ~87% of baserunners already score — is why
+# runs track hits ~1:1. This makes converting runners in scoring position a
+# genuine, high-variance struggle instead of a formality:
+#
+#   1. TALENT WOBBLE. With a runner on 2B or 3B, the hitter's effective
+#      capability is knocked down by a per-at-bat random draw in
+#      [RISP_TALENT_PENALTY_MIN, MAX] (≈ 29-41%). It's a multiplier folded into
+#      the batter's condition term in contact_quality, so it sags matchup, power
+#      and eye together — success (a single or more) simply becomes less likely.
+#      The per-AB draw IS the wobble: same hitter, different pressure each time.
+#   2. WEAKER HITS. When a RISP at-bat does produce a hit, it's mostly a single.
+#      A sum-preserving redistribution pulls HR/triple/double weight back into
+#      singles, so the big multi-run, bases-clearing hit is rarer with runners
+#      on — runners advance station-to-station and pile up instead of being
+#      driven in all at once.
+#
+# Together these cap RISP conversion and let a high-hit offense still strand the
+# yard. Set RISP_TALENT_PENALTY_MAX = 0.0 to disable the wobble; set the
+# RISP_XBH_* scales to 0.0 to disable the hit-type suppression.
+RISP_TALENT_PENALTY_MIN: float = 0.29   # min fraction knocked off batter talent
+RISP_TALENT_PENALTY_MAX: float = 0.41   # max fraction (per-AB uniform draw)
+
+# Sum-preserving "XBH → single" suppression at RISP. At dev 1.0 (the neutral
+# per-half clutch level), `scale` fraction of the from-row migrates into singles.
+RISP_XBH_HARD_HR2S: float   = 0.45   # hard hr     -> single
+RISP_XBH_HARD_T2S: float    = 0.55   # hard triple -> single
+RISP_XBH_HARD_D2S: float    = 0.35   # hard double -> single
+RISP_XBH_MED_D2S: float     = 0.40   # medium double -> single
+
+# ---------------------------------------------------------------------------
+# Per-half RISP clutch form (the streak/hot-cold lever)
+# ---------------------------------------------------------------------------
+# A flat RISP penalty makes clutch conversion uniformly bad, which lowers R/H
+# but does NOT create the game-to-game variance the sport wants — teams that
+# "click," guys getting hot, good clubs stringing good days into good months.
+# This rolls ONE clutch form per batting half (same idea as the offensive
+# sequencing form) that scales how hard the RISP wobble bites that half:
+#   - a HOT half (form > 1) relieves the talent penalty AND lifts the XBH
+#     suppression — the lineup squares up with runners on and clears the bases;
+#   - a COLD half (form < 1) deepens the penalty and clamps hits to singles —
+#     the rally dies, runners strand.
+# Because it's shared across every RISP at-bat in the half, it compounds into
+# real blow-it-open vs leave-em-loaded games instead of averaging out.
+#
+# The form is NOT pure noise. Its MEAN is shifted by team quality so good teams
+# get hot more often than bad ones (performance-based, but cold/hot-induced).
+# The anchor is the team's BEST HITTER (max over the lineup of a power/skill
+# blend, wherever he bats), with the manager persona as a small vibes nudge:
+#   best    = max_p [ BAT_POWER_W*p.power + BAT_SKILL_W*p.skill ]
+#   quality = (best - 0.5)*BAT_W + (mgr_risp_pressure - 0.5)*MGR_W
+#   mean    = 1 + MEAN_SCALE * quality;  form = clamp(Normal(mean, SIGMA), MIN, MAX)
+# Over a season a good roster staggers hot halves into good months; a bad one
+# tanks the same way. Set RISP_CLUTCH_SIGMA <= 0 to disable (flat penalty).
+# NOTE: the DRAW + its anchor are now the unified LOCKED_FORM_* block above.
+# The SIGMA/MIN/MAX/MEAN_SCALE/BAT_*/MGR_W constants here are retained only for
+# reference; only the two RELIEF constants below are still LIVE (they set how
+# hard the shared form modulates the RISP channels).
+RISP_CLUTCH_SIGMA: float            = 0.45   # (superseded by LOCKED_FORM_SIGMA)
+RISP_CLUTCH_MIN: float              = 0.12   # (superseded by LOCKED_FORM_MIN)
+RISP_CLUTCH_MAX: float              = 1.95   # (superseded by LOCKED_FORM_MAX)
+RISP_CLUTCH_MEAN_SCALE: float       = 0.55   # (superseded by LOCKED_FORM_MEAN_SCALE)
+RISP_CLUTCH_BAT_W: float            = 0.85   # (superseded by LOCKED_FORM_BAT_W)
+RISP_CLUTCH_BAT_POWER_W: float      = 0.5    # (superseded by LOCKED_FORM_BAT_POWER_W)
+RISP_CLUTCH_BAT_SKILL_W: float      = 0.5    # (superseded by LOCKED_FORM_BAT_SKILL_W)
+RISP_CLUTCH_MGR_W: float            = 0.15   # (superseded by LOCKED_FORM_MGR_W)
+RISP_CLUTCH_PENALTY_RELIEF: float   = 0.95   # LIVE: hot-form relief on the talent penalty
+RISP_CLUTCH_XBH_RELIEF: float       = 1.00   # LIVE: hot-form relief on XBH suppression
 
 # ---------------------------------------------------------------------------
 # Inside-the-park home runs
@@ -366,14 +586,20 @@ ITP_HR_FAIL_OUT_AGGRO_SCALE: float = 0.40    # +P(out) per (run_aggressiveness -
 #   3. BATTER SPEED — slow batters lose the relay race.
 #   4. TEAM DEFENSE — strong infields turn more DPs.
 # Tuning targets (after all factors compose, before clamp):
-#   - Low end (~6%):  3B alone, hard contact, fast batter, weak defense.
-#   - Mid (~13-14%):  1B alone, medium contact, neutral attributes.
-#   - High end (~23%): bases loaded, weak contact, slow batter, elite defense.
-GIDP_BASE_PROB: float    = 0.13
+#   - Low end (~9%):  3B alone, hard contact, fast batter, weak defense.
+#   - Mid (~17-18%):  1B alone, medium contact, neutral attributes.
+#   - High end (~30%): bases loaded, weak contact, slow batter, elite defense.
+# Rates raised as part of the H~R decoupling pass. With the DP gate fixed to
+# fire all half long (see prob.py) instead of only the first 2 outs, the double
+# play is now O27's real runner-erasing event — the thing that lets a high-hit
+# offense still strand and post a low run total. The band is widened so a cold,
+# rally-killing half (with the form multiplier on top) can turn grounders into
+# twin-killings at a much higher clip than the old per-inning MLB rate.
+GIDP_BASE_PROB: float    = 0.26
 GIDP_SPEED_SCALE: float  = 0.20
 GIDP_DEFENSE_SCALE: float = 0.15
-GIDP_MIN_PROB: float     = 0.06
-GIDP_MAX_PROB: float     = 0.23
+GIDP_MIN_PROB: float     = 0.09
+GIDP_MAX_PROB: float     = 0.50
 
 # Force-factor table — multiplier applied based on which bases are
 # occupied. The (1B-only) case is the canonical 1.0 baseline.
@@ -400,13 +626,20 @@ GIDP_QUALITY_HARD: float    = 0.55
 GIDP_STAY_MULTIPLIER: float = 0.30
 
 # Triple play — at least 2 forceable runners on (1B+2B or bases loaded)
-# and 0 outs. Real MLB rate is ~1 per 700 opportunities; we keep it
-# rare. Conditional on a DP firing in the eligible base config, this
-# probability promotes it to a TP. Set to 0 to disable.
+# and room left in the half to record three outs. Conditional on a DP
+# firing in the eligible base config, this probability promotes it to a
+# TP. Set to 0 to disable.
+# NOTE (O27 gate): like the DP gate, the trigger is NOT MLB's per-inning
+# "nobody out" rule. There are no innings — one continuous 27-out half —
+# so the literal `outs == 0` gate let a TP fire only on the very first out
+# of the entire half, making triple plays effectively dead code (0 in a
+# 400-game sample). The eligibility now mirrors the DP gate: the half just
+# has to have room for the three outs a TP records. The base rate is kept
+# low so that, fired all half long, TPs land at a believably rare clip.
 # Baserunner errors can also induce a TP — a runner with low baserunning
 # skill (poor read off the bat, late tag-up) inflates the TP probability
 # via the SKILL bonus below.
-TRIPLE_PLAY_GIVEN_DP_PROB: float       = 0.04
+TRIPLE_PLAY_GIVEN_DP_PROB: float       = 0.05
 TRIPLE_PLAY_BASERUNNING_BONUS: float   = 0.06   # added when lead runner is below-average
 
 # ---------------------------------------------------------------------------
@@ -416,7 +649,7 @@ TRIPLE_PLAY_BASERUNNING_BONUS: float   = 0.06   # added when lead runner is belo
 # whether the slide beats the throw. Identity preserved at neutral inputs:
 # at speed = baserunning = aggressiveness = 0.5 the attempt probability
 # from RUNNER_EXTRA_SPEED_SCALE is already 0, so TOOTBLAN never fires.
-TOOTBLAN_SAFE_BASE: float  = 0.62   # baseline safe rate when an attempt fires
+TOOTBLAN_SAFE_BASE: float  = 0.46   # baseline safe rate when an attempt fires
 TOOTBLAN_SKILL_SCALE: float = 0.40  # +(baserunning - 0.5) * this
 TOOTBLAN_SPEED_SCALE: float = 0.20  # +(speed       - 0.5) * this
 TOOTBLAN_SAFE_MIN: float    = 0.32  # floor — even bad runners aren't always out
@@ -432,11 +665,11 @@ TOOTBLAN_SAFE_MAX: float    = 0.88  # ceiling — even elite runners aren't auto
 # Tuning note: real-MLB pickoff outs are rare (~0.05/game per side).
 # Keep attempt rate low and success rate modest so they're a flavor
 # event, not a CS-rate inflator.
-PICKOFF_ATTEMPT_BASE: float        = 0.004  # per pitch, 1B with avg-aggression runner
+PICKOFF_ATTEMPT_BASE: float        = 0.035  # per pitch, 1B with avg-aggression runner
 PICKOFF_AGGRESSION_SCALE: float    = 0.012  # +(run_aggressiveness - 0.5) * this
 PICKOFF_LHP_1B_BONUS: float        = 0.005  # absolute boost vs 1B runner from LHP
 PICKOFF_2B_DAMPENER: float         = 0.40   # 2B pickoffs much rarer than 1B
-PICKOFF_SUCCESS_BASE: float        = 0.10   # baseline catch rate when a move fires
+PICKOFF_SUCCESS_BASE: float        = 0.38   # baseline catch rate when a move fires
 PICKOFF_SUCCESS_PITCHER_SCALE: float = 0.25 # +pitcher.pitcher_skill * this
 PICKOFF_SUCCESS_AGGRESSION_SCALE: float = 0.30  # +(aggression - 0.5) * this
 PICKOFF_SUCCESS_BR_SCALE: float    = 0.30   # -(baserunning - 0.5) * this
@@ -485,8 +718,8 @@ HIT_AND_RUN_CONTACT_K_REDUCTION: float = 0.25  # multiplicative on K probability
 # Lower-`mgr_leverage_aware` skippers are more likely to call this (it's
 # generally a -EV play in modern analytics). Speed influences whether
 # the bunt becomes a hit.
-SAC_BUNT_BASE_PROB: float          = 0.05   # base call rate when conditions align
-SAC_BUNT_RUNGAME_SCALE: float      = 0.20   # mgr_run_game * this multiplies
+SAC_BUNT_BASE_PROB: float          = 0.16   # base call rate when conditions align
+SAC_BUNT_RUNGAME_SCALE: float      = 0.50   # mgr_run_game * this multiplies
 SAC_BUNT_LEVERAGE_DAMPER: float    = 0.50   # (1 - leverage_aware) * this multiplies
 SAC_BUNT_HIT_BASE: float           = 0.10   # baseline bunt-for-hit rate
 SAC_BUNT_HIT_SPEED_SCALE: float    = 0.30   # +(speed - 0.5) * this
@@ -541,7 +774,7 @@ STAY_DEFENSE_READ_MAX: float           = 0.28
 # Range modifier — better team defense converts more BIPs into outs.
 # Applied as a probabilistic flip: when an outcome resolves to an out OR a
 # single, a small fraction of cases flip in proportion to (defense - 0.5).
-DEFENSE_RANGE_SHIFT_SCALE: float = 0.10   # max ±10% out↔single conversion swing
+DEFENSE_RANGE_SHIFT_SCALE: float = 0.15   # max ±15% out↔single conversion swing
 
 # Error rate — share of would-be-out plays that become a "reached on
 # error" instead. Scales inversely with team defense. The earlier ~1.8%
@@ -553,6 +786,48 @@ DEFENSE_ERROR_BASE: float        = 0.045   # ~4.5% of would-be-outs at neutral D
 DEFENSE_ERROR_SCALE: float       = 0.060   # (0.5 - team_def) * this adds to E rate
 DEFENSE_ERROR_MIN: float         = 0.010
 DEFENSE_ERROR_MAX: float         = 0.090
+
+# ---------------------------------------------------------------------------
+# Defensive gems — fielding ratings turn would-be hits into outs
+# ---------------------------------------------------------------------------
+# A fielder makes a spectacular play that erases a hit. Deliberately
+# PROBABILISTIC and per-FIELDER, not a fixed trait: a base rate means anyone
+# in the position with a decent glove can flash one, and the individual
+# fielder's defense/arm scales the rate up (elite) or toward zero (poor). So
+# you get "even a guy you don't think of as a defensive wizard robs one
+# sometimes," while the genuine glove does it far more often. Surfaced in the
+# play-by-play as a "ROBBED!" / great-play line (see render). All-zero base =
+# identity (no gems). These erase a hit, so they also nudge BA/H down slightly.
+GEM_BASE_XBH: float      = 0.075  # base chance an extra-base hit is run down / robbed
+GEM_BASE_SINGLE: float   = 0.050  # base chance a single is turned into an out
+GEM_HARD_MULT: float     = 1.35   # hard contact is more rob-able (carry / hang time)
+GEM_FIELDER_SCALE: float = 1.30   # (fielder_def - 0.5)*2 * this scales the base rate
+GEM_ARM_SCALE: float     = 0.40   # (fielder_arm - 0.5)*2 * this adds (arm → more outs)
+GEM_MAX: float           = 0.42   # cap — even elite fielders don't rob everything
+
+# ---------------------------------------------------------------------------
+# Catcher game-calling — "calling a good O27 game" as a real lever
+# ---------------------------------------------------------------------------
+# The catcher's game_calling rating shifts contact_quality away from hard
+# contact: a great caller sequences pitches to the pitcher's strengths and the
+# batter's holes, a poor one lets hitters square it up. Applies only to whoever
+# is currently behind the plate (the fielding team's catcher). Identity at 0.5.
+# This is the offense-suppressing counterweight that rewards a defensive,
+# pitch-and-catch club. (NOT framing — O27 skips framing by design.)
+CATCHER_GAME_CALLING_SHIFT_SCALE: float = 0.16   # (gc-0.5)*2 * this → contact shift
+
+# Catcher fatigue + rotation. No catcher squats for all 27 outs — as the outs
+# pile up behind the plate his game-calling slips, which is the PRESSURE that
+# forces a manager to spend a bench catcher. Fatigue ramps once outs caught
+# pass the threshold; it degrades game_calling (and could be extended to arm).
+# A manager with a rested backup rotates the tiring starter out; how a club
+# prioritizes its catching corps swings the late innings.
+CATCHER_FATIGUE_THRESHOLD: int           = 18    # outs caught before fatigue bites
+CATCHER_FATIGUE_SCALE: float             = 9.0   # (outs-threshold)/this → fatigue
+CATCHER_FATIGUE_MAX: float               = 0.80  # cap on the fatigue fraction
+CATCHER_FATIGUE_GAME_CALLING_SCALE: float = 0.30 # fatigue * this drops game_calling
+CATCHER_FATIGUE_ARM_SCALE: float         = 0.25  # fatigue * this drops catcher arm
+CATCHER_ROTATION_OUT_GATE: int           = 6     # no swap before this (first-batter guard)
 
 # ---------------------------------------------------------------------------
 # Emergency position-player pitcher (PP-pitching)
@@ -627,16 +902,18 @@ STAY_LATE_GAME_MULT: float         = 1.55
 # Telemetry: state.fielding_team.shift_outs_added / shift_hits_lost
 # accumulate per game, so we can see exactly how much each shift call
 # contributed.
-SHIFT_PULL_OUT_PROB: float       = 0.30   # infield shift: pull single → out
+SHIFT_PULL_OUT_PROB: float       = 0.42   # infield shift: pull single → out
 SHIFT_OPPO_HIT_PROB: float       = 0.25   # infield shift: oppo gnd_out → single
-SHIFT_DECISION_SCALE: float      = 1.0    # tunable knob on decision frequency
+SHIFT_DECISION_SCALE: float      = 1.8    # tunable knob on decision frequency
+SHIFT_BASE_PROB: float           = 0.35   # floor so even neutral-spray batters get shifted
+SHIFT_DECISION_MAX: float        = 0.95   # cap on per-AB shift probability
 
 # Outfield shift (4-man OF / infielders shallow). Trades infield coverage
 # for outfield range against pull-power FB hitters. Effects:
 #   pull-side double/triple → single   (the 4th OFer cuts off the gap)
 #   pull-side fly_out stays            (already an out)
 #   oppo-side ground_out → single      (one fewer IFer = more gaps)
-SHIFT_OF_XBH_HELD_PROB: float    = 0.30   # OF shift: pull double → single
+SHIFT_OF_XBH_HELD_PROB: float    = 0.40   # OF shift: pull double → single
 SHIFT_OF_OPPO_HIT_PROB: float    = 0.35   # OF shift: oppo gnd_out → single
 # Threshold for picking outfield shift over infield shift: pull-heavy
 # batter with this much power or more goes to outfield shift.
@@ -658,6 +935,71 @@ ADAPTABILITY_SCALE: float        = 0.10
 # push a bunt the other way for an easy hit. This adds a no-runner bunt
 # path on top of the existing sac-bunt logic.
 BUNT_AGAINST_SHIFT_BASE_PROB: float = 0.18   # baseline scaled by speed dev
+
+# ---------------------------------------------------------------------------
+# Power Play (optional league rule)
+# ---------------------------------------------------------------------------
+# An opt-in, per-league rule. When enabled, the FIELDING manager may deploy a
+# 10th defender — the "nickel fielder" (NF / scorekeeping position 10), a
+# middle outfielder — for a use-or-lose window of up to POWER_PLAY_WINDOW_OUTS
+# outs. The nickel covers the outfield gaps, suppressing extra-base hits and
+# running some would-be singles down. The window:
+#   - opens at most once per defensive half (use it or lose it),
+#   - lasts up to 4 outs but always ends when the half ends (no carryover),
+#   - is available again, fresh, in a Declared Seconds frame,
+#   - is NEVER available in extra (super) innings.
+#
+# POWER_PLAY_ENABLED is a plain bool, so o27v2.engine_config auto-exposes it as
+# a dashboard toggle that saves per environment — that IS the per-league
+# checkbox (off by default, so identical talent can be A/B-tested on vs. off).
+POWER_PLAY_ENABLED: bool = False     # league opt-in; off = zero behavior change
+
+POWER_PLAY_WINDOW_OUTS: int = 4      # max outs the nickel stays on the field
+
+# Fielding effect while the window is active (applied in resolve_contact,
+# after the shift layer). The nickel covers center-outfield gaps.
+POWER_PLAY_XBH_HELD_PROB: float   = 0.35   # double/triple → single (gap cut off)
+POWER_PLAY_SINGLE_OUT_PROB: float = 0.12   # outfield single → fly_out (run down)
+# Share of outfield putouts re-credited to the nickel while active (PO logged
+# under position "NF"). Roughly the slice of the outfield the nickel patrols.
+POWER_PLAY_NICKEL_PO_SHARE: float = 0.33
+
+# Presence effect — the *mere* arrival of the 10th defender tightens the whole
+# unit for as long as the window is open, beyond just balls hit at the nickel.
+# While active we apply a small MULTIPLICATIVE lift to the fielding team's
+# defense_rating (the "across the lineup" knob — error chance, ground-out
+# conversion, borderline plays all read it) and to the active pitcher's
+# effectiveness attrs (command / Stuff / movement / grit), so every downstream
+# roll sees a settled defense and a pitcher who can work the zone. The lift is
+# stashed-and-restored per PA (same lifecycle as leadership flares), so nothing
+# drifts and it's inert the instant the window closes.
+#
+# Banded 0.1%–4.4% PER POWER PLAY, scaled by the nickel's glove: a replacement-
+# grade nickel barely moves the needle, an elite one lands near the top. It is
+# deliberately NOT a magic pill — the sport advantages the runner everywhere
+# else, so offense still wins most exchanges; this just makes the defense's one
+# lever measurable.
+POWER_PLAY_PRESENCE_MIN: float = 0.001   # 0.1% — floor (any eligible nickel)
+POWER_PLAY_PRESENCE_MAX: float = 0.044   # 4.4% — cap (elite-glove nickel)
+
+# Nickel eligibility. A rostered player NOT currently on the field, eligible at
+# OF or SS, who clears BOTH bars below. Pitchers qualify only as a wild card
+# (lightly-used arms) and only if they have not already appeared in the game.
+POWER_PLAY_NICKEL_ARM_MIN: float   = 0.62  # strong throwing arm
+POWER_PLAY_NICKEL_FIELD_MIN: float = 0.58  # good glove at OF/SS
+
+# Manager deployment behavior. Rolled per game per fielding team (not a sticky
+# manager trait), so the same skipper varies game to game.
+POWER_PLAY_SKIP_GAME_PROB: float = 0.05    # team never deploys this game
+POWER_PLAY_MISTIME_PROB: float   = 0.09    # team deploys too early / too late
+# Suppress deployment when the game is out of hand (no good reason to spend it).
+POWER_PLAY_BLOWOUT_MARGIN: int   = 8       # |run diff| ≥ this → hold the window
+# Per-AB deploy-probability ramp across the out arc (engine settles naturally).
+POWER_PLAY_DEPLOY_BASE_EARLY: float = 0.03   # outs < 12
+POWER_PLAY_DEPLOY_BASE_MID: float   = 0.15   # 12 ≤ outs < late threshold
+POWER_PLAY_DEPLOY_BASE_LATE: float  = 0.50   # late arc
+POWER_PLAY_DEPLOY_BASE_FORCED: float = 0.90  # ≤ window outs remain (use-or-lose)
+POWER_PLAY_CLOSE_GAME_MULT: float   = 1.4    # tight game raises deploy urgency
 
 # ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
@@ -928,6 +1270,32 @@ PITCHER_COMMAND_CALLED: float = +0.03
 CONTACT_POWER_TILT:    float = 0.10
 CONTACT_MOVEMENT_TILT: float = 0.10   # parity with power tilt — high-movement pitcher suppresses hard contact as strongly as a slugger creates it
 
+# --- Times-through-the-order familiarity ----------------------------------
+# "Any sport has arbitrage — guys eventually crack the code." In a 27-out arc
+# the top of the order can face one pitcher 5–7 times in a single game (vs 2–3
+# in MLB), so batter familiarity is a first-class pitching dynamic here, not a
+# rounding error. Each prior PA a batter has had against THIS pitcher this game
+# tilts the matchup toward the hitter — he's timing the arm up. The penalty is
+# attenuated by the pitcher's repertoire-weighted timing_resistance: a
+# knuckleballer / eephus artist / junkballer stays un-timeable (near-zero
+# penalty), while a pure-velocity "flamethrower" gets solved by the 4th look.
+# This is the lever that makes the deception archetypes the sport's arbitrage —
+# the workhorse who keeps showing the lineup something un-timeable out-survives
+# the velocity arm over a marathon half-inning.
+#
+# fam dominance = FAMILIARITY_PER_LOOK * min(looks, MAX) * factor, where
+#   factor = clamp((1 - timing_resistance) * 2, 0, 2)
+#   (resistance 0.5 → factor 1.0 baseline; 1.0 → 0 immune; 0.0 → 2.0 amplified)
+# At looks=0 (first time facing this pitcher) fam == 0 → all terms collapse to
+# the legacy surface, preserving the realism identity invariant.
+FAMILIARITY_PER_LOOK:   float = 0.18    # familiarity-dominance accrued per prior PA (pre-attenuation)
+FAMILIARITY_MAX_LOOKS:  int   = 7       # cap on prior PAs counted (top-of-order can see an SP this often)
+FAMILIARITY_SWINGING:   float = -0.022  # fewer whiffs as the batter times the arm up
+FAMILIARITY_CALLED:     float = -0.009  # lays off borderline pitches he's now seen
+FAMILIARITY_CONTACT:    float = +0.020  # more balls in play
+FAMILIARITY_HARD_TILT:  float = +0.028  # contact-quality batter-advantage shift per unit fam (mistakes get punished)
+DEFAULT_TIMING_RESISTANCE: float = 0.5  # repertoire-less pitchers fall back to a movement-derived value around this
+
 # --- Power → in-play distribution redistribution --------------------------
 # Phase 10.2: power was previously a one-trick HR additive (POWER_HR_WEIGHT_
 # SCALE=0.08 was added to the HR row weight, INCREASING total HARD weight
@@ -960,6 +1328,17 @@ POWER_REDIST_HARD_D2T:  float = 0.10
 POWER_REDIST_MED_S2D:   float = 0.20
 POWER_REDIST_MED_GO2FO: float = 0.15
 POWER_REDIST_WEAK_S2FO: float = 0.20
+
+# --- Pitch launch-angle redistribution ------------------------------------
+# Per-pitch launch_angle_bias rolls ground_out↔fly_out weight inside each
+# contact-quality table (sum-preserving, same mechanism as the power axis).
+# This is what turns "grounder pitch" vs "popup pitch" into a real outcome
+# split instead of flavor on top of weak contact. FRACTION of the from-row
+# weight moved at |launch_angle_bias| = 1.0:
+#   bias < 0 (grounder inducer): fly_out → ground_out
+#   bias > 0 (fly/popup inducer): ground_out → fly_out
+# Identity at bias = 0.0. Applied AFTER power redistribution, BEFORE park.
+LAUNCH_REDIST_GO2FO: float = 0.35
 
 # ---------------------------------------------------------------------------
 # Walk-Back sponsorship
@@ -1117,6 +1496,25 @@ RELEASE_FATIGUE_SCALE: float = 0.10   # fatigue-dominance: 0.20 → 0.10; submar
 #   arm_stress        multiplier on per-pitch fatigue contribution (>1 = harder on arm)
 #   max_release       Optional upper bound — pitch doesn't work above this angle
 #   count_bias        "all" | "ahead" | "behind" | "2strike" — usage weight bias
+#   timing_resistance [0,1] — how un-timeable the pitch stays as a hitter sees it
+#                     repeatedly across a 27-out arc. 1.0 = a hitter never "times
+#                     it up" no matter how many looks (knuckleball, eephus); 0.0 =
+#                     fully solved after one look (raw velocity). ~0.5 = neutral.
+#                     Drives the times-through-the-order familiarity penalty: a
+#                     pitcher's repertoire-weighted mean sets how fast the lineup
+#                     cracks his code on the 4th–7th time through. See FAMILIARITY_*.
+#   launch_angle_bias [-1,1] — pushes BATTED-BALL launch angle. Negative = grounder
+#                     inducer (rolls ground_out↔fly_out weight toward ground_out in
+#                     resolve_contact, sum-preserving; e.g. sinker, peeled_drop,
+#                     drop_knuck); positive = fly-ball / popup inducer (riseball,
+#                     rise_knuck, four-seam). 0.0 (default) = neutral / identity.
+#                     This is the lever that makes "grounder pitch" vs "popup pitch"
+#                     a REAL outcome split, not just flavor on top of weak contact.
+#   foul_delta        added to foul probability (positive = more fouls). In O27
+#                     every foul spends one of the batter's 3 contact events, so a
+#                     positive foul_delta literally burns down the AB toward a
+#                     foul-out — the mechanism behind "rise"-type popup/foul pitches.
+#                     0.0 (default) = identity.
 #
 # All deltas are quality-scaled: they represent the shift at quality=1.0 and
 # collapse to 0 at quality=0.0. Identity at pitch_type=None.
@@ -1126,6 +1524,10 @@ PITCH_CATALOG: dict = {
     # ── FASTBALLS ─────────────────────────────────────────────────────────────
     "four_seam": {
         "velocity_class":     "high",
+        "timing_resistance":  0.20,   # pure velocity — the lineup times it up fast
+        "launch_angle_bias":  +0.30,  # flyball-prone from the higher slot
+        "foul_delta":         +0.01,  # high heat gets fouled straight back
+
         # From sidearm, the four-seam lacks the downward plane that creates
         # swing-and-miss in MLB. It's a setup pitch more than a put-away.
         "k_delta":            +0.02,
@@ -1143,6 +1545,9 @@ PITCH_CATALOG: dict = {
     },
     "sinker": {
         "velocity_class":     "high",
+        "timing_resistance":  0.40,   # movement helps, but it's still a fastball
+        "launch_angle_bias":  -0.45,  # the GB-heavy workhorse fastball
+
         # O27's workhorse fastball. All movement, GB-heavy, HR-suppressing.
         "k_delta":            -0.02,
         "bb_delta":           -0.01,
@@ -1159,6 +1564,8 @@ PITCH_CATALOG: dict = {
     },
     "cutter": {
         "velocity_class":     "high",
+        "timing_resistance":  0.45,   # late break buys some resistance
+
         # Late-breaking. Drives weak contact, bonus vs opposite-handed.
         "k_delta":            +0.01,
         "bb_delta":           -0.01,
@@ -1175,6 +1582,8 @@ PITCH_CATALOG: dict = {
     },
     "palmball": {
         "velocity_class":     "low",
+        "timing_resistance":  0.70,   # velocity mismatch keeps hitters off-balance
+
         # Deception over velocity. 78–82 mph that plays up because the arm
         # action looks like a regular fastball. Suppresses Ks but induces
         # unusual soft contact from the velocity mismatch. The "lost velocity"
@@ -1196,6 +1605,8 @@ PITCH_CATALOG: dict = {
     # ── BREAKING BALLS ────────────────────────────────────────────────────────
     "slider": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.50,   # neutral
+
         # Standard hard slider. K-driving. Genuinely neutral platoon.
         "k_delta":            +0.04,
         "bb_delta":           +0.01,
@@ -1212,6 +1623,8 @@ PITCH_CATALOG: dict = {
     },
     "sisko_slider": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.55,   # reverse break stays surprising
+
         # O27-original. Reverse-breaking — breaks INTO same-handed batters
         # rather than away. From sidearm the surprise is amplified: batters
         # expect the natural side-arm break to go away; the Sisko goes the
@@ -1231,6 +1644,8 @@ PITCH_CATALOG: dict = {
     },
     "walking_slider": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.60,   # slow lateral drift defeats timing
+
         # Slow lateral slider — doesn't snap sharply but walks across the zone.
         # Batter commits before it arrives; the crafty veteran's version.
         "k_delta":            +0.02,
@@ -1248,6 +1663,8 @@ PITCH_CATALOG: dict = {
     },
     "curveball": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.50,   # neutral
+
         # Standard 12-to-6 curve. Hard-contact suppression, moderate K.
         # Worse from sidearm — the 12-to-6 topspin requires height to load.
         # Less common in O27 precisely because of the structural sidearm world.
@@ -1266,6 +1683,9 @@ PITCH_CATALOG: dict = {
     },
     "curve_10_to_2": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.60,   # diagonal break is hard to square repeatedly
+        "launch_angle_bias":  -0.50,  # diagonal break drives grounders to the pull side
+
         # Sidearm/submarine specialist curve. Breaks diagonally — the pitcher
         # "steers" the batter's eye across the plate. Extreme weak contact,
         # GB-heavy. From sidearm a righty produces grounders to the right side.
@@ -1287,6 +1707,8 @@ PITCH_CATALOG: dict = {
     # ── OFF-SPEED ─────────────────────────────────────────────────────────────
     "changeup": {
         "velocity_class":     "low",
+        "timing_resistance":  0.55,   # velocity differential resists timing
+
         # Velocity differential. Reverse-platoon advantage (same-sided pitcher
         # changeup arm-side, boring in on the same-handed batter — works like
         # a screwball at reduced arm stress).
@@ -1305,6 +1727,8 @@ PITCH_CATALOG: dict = {
     },
     "vulcan_changeup": {
         "velocity_class":     "low",
+        "timing_resistance":  0.60,   # tumbling action on top of the velo gap
+
         # Tumbling action from the split-finger grip (middle+ring finger).
         # Higher K than regular changeup, devastating opposite-handed.
         "k_delta":            +0.03,
@@ -1322,6 +1746,9 @@ PITCH_CATALOG: dict = {
     },
     "splitter": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.50,   # neutral — sharp but readable arm action
+        "launch_angle_bias":  -0.25,  # sharp downward break → grounders
+
         # Hard off-speed with sharp downward break. K-driving, GB-heavy.
         "k_delta":            +0.04,
         "bb_delta":           +0.01,
@@ -1340,6 +1767,8 @@ PITCH_CATALOG: dict = {
     # ── SPECIALTY / O27-REVIVED ───────────────────────────────────────────────
     "knuckleball": {
         "velocity_class":     "low",
+        "timing_resistance":  0.95,   # un-timeable — even the pitcher can't predict it
+
         # Velocity-independent. Durability monster — knuckleballers pitch into
         # their late 40s. 2C-suppressing because nobody extends on a knuckler.
         "k_delta":            -0.01,
@@ -1357,6 +1786,9 @@ PITCH_CATALOG: dict = {
     },
     "spitter": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.65,   # erratic tumble — never the same twice
+        "launch_angle_bias":  -0.55,  # tumbles in → extreme groundball
+
         # Legal in O27 lore. Extreme weak contact / GB, low K, low BB —
         # it tumbles into the zone and batters can't get under it.
         "k_delta":            -0.02,
@@ -1374,6 +1806,10 @@ PITCH_CATALOG: dict = {
     },
     "eephus": {
         "velocity_class":     "low",
+        "timing_resistance":  0.85,   # timing disruption is the entire point
+        "launch_angle_bias":  +0.20,  # high arc → weak fly / popup when hit
+        "foul_delta":         +0.02,  # mistimed hacks foul it off
+
         # 2C-disruption weapon when used selectively — never a primary pitch.
         # The batter can't reconcile the velocity with the arm action. When it
         # works, it works big; the rest of the time it's a ball or a foul.
@@ -1392,6 +1828,8 @@ PITCH_CATALOG: dict = {
     },
     "screwball": {
         "velocity_class":     "mid",
+        "timing_resistance":  0.60,   # reverse break keeps hitters guessing
+
         # Reverse-breaking. Reverse-platoon advantage (righty screwball is the
         # righty's weapon against lefty bats). Higher arm stress.
         "k_delta":            +0.02,
@@ -1409,6 +1847,8 @@ PITCH_CATALOG: dict = {
     },
     "gyroball": {
         "velocity_class":     "high",
+        "timing_resistance":  0.75,   # arrives where the eye didn't predict
+
         # Bullet gyrospin — minimal break but extreme deception. The ball
         # arrives at a different location than the batter's eye predicted.
         # Rare: maybe 3-4% of O27 pitchers throw one at elite quality.
@@ -1423,6 +1863,174 @@ PITCH_CATALOG: dict = {
         "release_window":      0.40,
         "arm_stress":          1.10,
         "max_release":         None,
+        "count_bias":          "2strike",
+    },
+
+    # ── SOFTBALL-DERIVED / UNDERHAND ──────────────────────────────────────────
+    # A true underhand or ultra-low submarine slot shares the mechanical path of
+    # a fastpitch-softball delivery, which opens spin axes that are physically
+    # impossible from a normal baseball arm slot. These pitches are HARD-gated to
+    # low release angles (max_release ~0.30–0.45): they simply don't exist above
+    # sidearm. They trade velocity for un-timeable movement and are extremely
+    # arm-friendly (low arm_stress) — the structural basis for the "fatigue-immune
+    # ace" who can carry elite movement all the way to out 27. All carry very high
+    # timing_resistance: the whole point is that a lineup can't crack the code on
+    # them no matter how many times through they get in a 27-out arc.
+    #
+    # ENGINE-MODELING NOTE: the catalog's only batted-ball lever is contact
+    # quality (weak/medium/hard → EV); the engine has no per-pitch launch-angle
+    # field, so "induces grounders" vs "induces popups" both reduce to weak
+    # contact + EV suppression here. The grounder/popup distinction in the design
+    # notes is flavor the batted-ball model can't yet separate — see the AAR.
+    "riseball": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.85,   # pure backspin off the dirt — un-timeable ladder
+        "launch_angle_bias":  +0.70,  # climbs → swing-under, weak fly, popups
+        "foul_delta":         +0.04,  # the ladder pitch: fouled up, burns the AB
+        # Heavy pure backspin from a dead-underhand slot. Climbs through the top
+        # of the zone against a level swing plane → swing-and-miss and weak fly.
+        # The anti-power "ladder" pitch: hunts Ks and popups, punishes uppercut.
+        "k_delta":            +0.06,
+        "bb_delta":           +0.02,
+        "contact_delta":      -0.03,
+        "hard_contact_shift": -0.06,
+        "weak_contact_shift": +0.03,
+        "platoon_mode":       "standard",
+        "platoon_scale":       0.8,
+        "release_optimal":     0.10,   # dead underhand
+        "release_window":      0.18,
+        "arm_stress":          0.55,
+        "max_release":         0.32,   # impossible above low submarine
+        "count_bias":          "2strike",
+    },
+    "peeled_drop": {
+        "velocity_class":     "mid",
+        "timing_resistance":  0.70,
+        "launch_angle_bias":  -0.70,  # dives into the dirt → extreme groundball
+        # Pure topspin rolled over the top out of the underhand whip — a 12-to-6
+        # break that happens entirely below the waist. Dives into the dirt:
+        # extreme weak contact, big EV suppression. The grounder/runner-freeze
+        # tool that counters pesäpallo-style stay advancement.
+        "k_delta":            -0.01,
+        "bb_delta":           +0.01,
+        "contact_delta":      +0.02,
+        "hard_contact_shift": -0.08,
+        "weak_contact_shift": +0.09,
+        "platoon_mode":       "standard",
+        "platoon_scale":       1.0,
+        "release_optimal":     0.08,
+        "release_window":      0.18,
+        "arm_stress":          0.55,
+        "max_release":         0.30,
+        "count_bias":          "ahead",
+    },
+    "backhand_changeup": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.80,
+        "launch_angle_bias":  -0.10,  # slight under-the-ball weak contact
+        # Flipped hand at release, ball pushed out of the back of the hand. Mimics
+        # fastball arm speed but arrives 15–20 mph slower with near-zero spin.
+        # Punishes aggressive hitters who pull the trigger early on second-chance
+        # contact — racks up strikes without spending outs.
+        "k_delta":            +0.03,
+        "bb_delta":           +0.02,
+        "contact_delta":      -0.01,
+        "hard_contact_shift": -0.04,
+        "weak_contact_shift": +0.05,
+        "platoon_mode":       "reverse",
+        "platoon_scale":       1.0,
+        "release_optimal":     0.15,
+        "release_window":      0.25,
+        "arm_stress":          0.55,
+        "max_release":         0.45,
+        "count_bias":          "2strike",
+    },
+    "sky_eephus": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.92,   # ~50 mph vertical parabola — timing window in ms
+        "launch_angle_bias":  +0.30,  # near-vertical drop → mistimed pop-ups
+        "foul_delta":         +0.03,  # batters foul off the slow arc
+        # The "Sky-Drop": a slowpitch-softball arc launched from the underhand
+        # slot, apex above the batter's eye, dropping near-vertically through the
+        # back of the zone at roughly half a sidearm fastball's speed. The most
+        # extreme timing-disruption weapon in the catalog; a surprise put-away,
+        # never a primary. More extreme and slot-locked than the standard eephus.
+        "k_delta":            +0.07,
+        "bb_delta":           +0.04,
+        "contact_delta":      -0.04,
+        "hard_contact_shift": -0.02,
+        "weak_contact_shift": +0.03,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.2,
+        "release_optimal":     0.12,
+        "release_window":      0.40,
+        "arm_stress":          0.45,   # the most arm-friendly pitch in the game
+        "max_release":         0.35,
+        "count_bias":          "2strike",
+    },
+
+    # ── 3-PITCH KNUCKLEBALL ACE ("Chaos Elite") ───────────────────────────────
+    # The pure visual-illusionist knuckleballer discards velocity entirely and
+    # carries three distinct knuckle variations off the low slot. All near-immune
+    # to timing (timing_resistance ~0.93) and arm-friendly; handedness is
+    # irrelevant (platoon_scale 0). Command is the price — elevated bb_delta.
+    "slither_knuck": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.93,
+        "launch_angle_bias":   0.0,   # horizontal break — no vertical tilt
+        # Heavy horizontal deflection — breaks sideways on seam-catch. The
+        # put-away knuck that misses bats, aimed at high-eye contact hitters.
+        "k_delta":            +0.05,
+        "bb_delta":           +0.04,
+        "contact_delta":      -0.03,
+        "hard_contact_shift": -0.04,
+        "weak_contact_shift": +0.02,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.0,
+        "release_optimal":     0.20,
+        "release_window":      0.40,
+        "arm_stress":          0.55,
+        "max_release":         None,   # works from any slot like a knuckler
+        "count_bias":          "2strike",
+    },
+    "drop_knuck": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.93,
+        "launch_angle_bias":  -0.60,  # tumbles into the dirt → groundball knuck
+        # Dead-stalling action that tumbles into the dirt at the plate. Extreme
+        # weak contact, low whiff — the groundball knuck that neutralizes the
+        # "stay" mechanic by denying the offense anything to advance on.
+        "k_delta":            -0.01,
+        "bb_delta":           +0.03,
+        "contact_delta":      +0.01,
+        "hard_contact_shift": -0.06,
+        "weak_contact_shift": +0.08,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.0,
+        "release_optimal":     0.18,
+        "release_window":      0.45,
+        "arm_stress":          0.55,
+        "max_release":         None,
+        "count_bias":          "all",
+    },
+    "rise_knuck": {
+        "velocity_class":     "low",
+        "timing_resistance":  0.93,
+        "launch_angle_bias":  +0.50,  # hovers at the letters → popups
+        "foul_delta":         +0.03,  # burns the AB's 3-contact limit with foul pops
+        # Released low on an upward path, hovers at the letters. Triggers weak
+        # popups and whiffs up — burns through an AB's 3-contact limit.
+        "k_delta":            +0.04,
+        "bb_delta":           +0.03,
+        "contact_delta":      -0.02,
+        "hard_contact_shift": -0.05,
+        "weak_contact_shift": +0.02,
+        "platoon_mode":       "neutral",
+        "platoon_scale":       0.0,
+        "release_optimal":     0.15,
+        "release_window":      0.40,
+        "arm_stress":          0.55,
+        "max_release":         0.35,
         "count_bias":          "2strike",
     },
 }

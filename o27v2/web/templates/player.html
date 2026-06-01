@@ -668,6 +668,14 @@
 {# ======================== FIELDING TAB ======================== #}
 <div class="tab-pane fade" id="tab-fielding">
 
+  {% if nickel_games %}
+  <div class="mb-3">
+    <span class="si-badge">🪙 Nickel</span>
+    <span class="text-secondary small">Came in as the 10th defender (NF, Power Play) in
+      <strong>{{ nickel_games }}</strong> game{{ '' if nickel_games == 1 else 's' }}.</span>
+  </div>
+  {% endif %}
+
   <div class="dense mb-3">
     <div class="panel-title">Standard Fielding</div>
     <table class="table table-sm dense-table mb-0">
@@ -1047,7 +1055,7 @@
               </td>
             </tr>
             <tr><td class="text-secondary">2C aggressiveness</td><td><strong>{{ '%.2f'|format(player.stay_aggressiveness or 0) }}</strong></td><td class="text-secondary small">Probability of choosing 2C when eligible</td></tr>
-            <tr><td class="text-secondary">Contact-quality threshold</td><td><strong>{{ '%.2f'|format(player.contact_quality_threshold or 0) }}</strong></td><td class="text-secondary small">Stay-eligibility on medium contact</td></tr>
+            <tr><td class="text-secondary">Contact-quality threshold</td><td><strong>{{ '%.2f'|format(player.contact_quality_threshold or 0) }}</strong></td><td class="text-secondary small">Second-Chance eligibility on medium contact</td></tr>
             {% if player.injured_until %}
             <tr><td class="text-secondary">IL status</td><td><strong class="text-warning">{{ player.il_tier or 'IL' }}</strong></td><td class="text-secondary small">Out until {{ player.injured_until }}</td></tr>
             {% endif %}

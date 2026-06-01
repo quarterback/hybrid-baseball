@@ -141,7 +141,7 @@ def test_extreme_weather_within_calibration_envelope(seeded_db):
     hr_friendly = Weather(temperature="hot", wind="out", humidity="dry",
                           precip="none", cloud="clear")
     hr_killer   = Weather(temperature="cold", wind="in", humidity="humid",
-                          precip="light", cloud="dusk")
+                          precip="light", cloud="overcast", low_light=True)
 
     up   = _rates(_sim_n_with_weather(hr_friendly, n, base_seed=2000))
     down = _rates(_sim_n_with_weather(hr_killer,   n, base_seed=3000))

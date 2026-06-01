@@ -74,16 +74,22 @@ def test_re_at_start_equals_league_mean_runs_per_half():
 
 
 def test_re_curve_overall_decreasing():
-    """RE@start should be at least 4× RE@end (it's the integral of all
-    remaining run-scoring opportunities). Local up-ticks at arc boundaries
-    are allowed — they reflect real engine behaviour (joker deployment,
-    bullpen turnover at outs 9 / 18) and are themselves a SABR finding.
+    """RE@start should dominate RE@end (it's the integral of all remaining
+    run-scoring opportunities). Local up-ticks at arc boundaries are allowed —
+    they reflect real engine behaviour (joker deployment, bullpen turnover at
+    outs 9 / 18) and are themselves a SABR finding.
+
+    Threshold relaxed 4× → 3.5×: the times-through-the-order familiarity model
+    deliberately raises LATE-arc offense (more looks at the same arm = more
+    runs), which lifts RE@end and compresses the start:end ratio. That higher-
+    run environment is intentional (no offsetting tune), so the heuristic is
+    re-baselined to match it while still catching gross inversions of the curve.
     """
     from o27v2.analytics.run_expectancy import build_re_by_outs_remaining
     c = build_re_by_outs_remaining()
     re_start = c["curve"][0]["re"]
     re_end   = c["curve"][-1]["re"]
-    assert re_start > 4 * re_end, (
+    assert re_start > 3.5 * re_end, (
         f"RE@start ({re_start}) should dominate RE@end ({re_end})"
     )
 

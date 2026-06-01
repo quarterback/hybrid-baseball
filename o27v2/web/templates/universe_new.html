@@ -123,6 +123,7 @@
         <th>Style (talent profile)</th>
         <th>Home region (names)</th>
         <th>Field geometry (parks)</th>
+        <th>Power Play</th>
         <th></th>
       </tr></thead>
       <tbody id="league-rows"></tbody>
@@ -158,10 +159,16 @@
         {% for p in park_options %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
       </select>
     </td>
+    <td data-label="Power Play">
+      <select name="lg_power_play" class="form-select form-select-sm" title="Let the fielding manager deploy a 10th defender (the nickel) in this league — like the IPL's Impact Player, a per-league rule">
+        <option value="0">Off</option>
+        <option value="1">On</option>
+      </select>
+    </td>
     <td class="lg-actions-cell"><button type="button" class="btn btn-sm btn-link text-danger p-0 rm-league">Remove</button></td>
   </tr>
   <tr class="lg-custom-panel" style="display:none">
-    <td colspan="7" style="background:var(--bg-warm)">
+    <td colspan="8" style="background:var(--bg-warm)">
       <div class="cust-head">
         <div class="small text-secondary" style="line-height:1.5">
           <strong>0 = neutral</strong> · range −{{ custom_style_max }}…+{{ custom_style_max }} grade points

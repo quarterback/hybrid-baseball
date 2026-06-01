@@ -235,6 +235,19 @@ section { margin-bottom: 22px; }
 .streak-W { color: var(--good); font-weight: 600; }
 .streak-L { color: var(--bad);  font-weight: 600; }
 
+/* Hot/cold performance-streak badge (almanac player header only). */
+.streak-badge {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.streak-badge.streak-hot  { background: var(--bad-soft); color: var(--bad); }
+.streak-badge.streak-cold { background: var(--bg-alt); color: var(--link); border: 1px solid var(--link); }
+
 .pos-badge {
   display: inline-block;
   padding: 0 4px;

@@ -27,6 +27,18 @@
 </div>
 
 <form method="get" class="filter-bar mb-3">
+  {% if all_leagues and all_leagues|length > 1 %}
+  <div>
+    <label class="form-label" for="f-league">League</label>
+    <select id="f-league" name="league" class="form-select form-select-sm" style="width:200px"
+            onchange="this.form.submit()">
+      <option value="all" {% if selected_league == 'all' %}selected{% endif %}>All Leagues</option>
+      {% for lg in all_leagues %}
+      <option value="{{ lg }}" {% if selected_league == lg %}selected{% endif %}>{{ lg }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
   <div>
     <label class="form-label" for="f-team">Team</label>
     <select id="f-team" name="team" class="form-select form-select-sm" style="width:200px">
