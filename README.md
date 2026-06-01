@@ -6,6 +6,8 @@ It's not written in the rules anywhere, but assume every pitcher in this sport e
 
 This repository contains the rules, the simulation engine, the stats methodology, and the web UI for browsing simulated O27 seasons. A live build runs at [hybrid-baseball.fly.dev](https://hybrid-baseball.fly.dev).
 
+> **New here?** There's a lot. Start with the [**user guide**](docs/user-guide.md) — it gets you from "what is this" to "I know what I'm looking at" in a few minutes, then points you at everything else.
+
 ## What O27 Is
 
 O27 is baseball with one structural change: each side bats until they record 27 outs. There are no innings. The starting pitcher takes the mound at out 0 and pitches until he's pulled. Hitters cycle through the lineup as many times as the half lasts. The home team can stop early if they're winning at out 27 of the bottom half.
@@ -126,7 +128,7 @@ Every meaningful change is logged in [`docs/`](docs/) as an AAR with the reasoni
   - `data/league_configs/` — `8teams.json` through `36teams.json` plus `56teams_tiered.json`.
   - `tests/` — archetype, linear-weights, RISP-pressure, trade, migration tests.
 - `tests/` — top-level invariant suite (`make test-invariants`) that runs against a populated DB.
-- `docs/` — methodology references and ~70 AARs documenting every system shipped, plus [`project-trajectory.md`](docs/project-trajectory.md) (the narrated month-long arc + changelog), the [tuning guide for LLMs](docs/tuning-guide-for-llms.md) (generate Engine-Tunables blobs from a plain-English style), and the [five-inning blog post](docs/blog-o27-vs-five-inning-baseball.md).
+- `docs/` — methodology references and ~85 AARs documenting every system shipped, plus the [`user-guide.md`](docs/user-guide.md) (start here if you're new), [`project-trajectory.md`](docs/project-trajectory.md) (the narrated month-long arc + changelog), the [tuning guide for LLMs](docs/tuning-guide-for-llms.md) (generate Engine-Tunables blobs from a plain-English style), and the [five-inning blog post](docs/blog-o27-vs-five-inning-baseball.md).
 - `Dockerfile`, `fly.toml`, `DEPLOY.md` — Fly.io deployment for `hybrid-baseball.fly.dev`.
 - `scripts/`, `pnpm-workspace.yaml` — peripheral TypeScript workspace (codegen, design mockups). Independent of the Python sim.
 
@@ -170,7 +172,7 @@ Deployment to Fly.io (`hybrid-baseball` app, `ams` region, `o27v2_data` volume m
 
 ## Status
 
-Active development, and moving fast — see [`docs/project-trajectory.md`](docs/project-trajectory.md) for the month-long arc and changelog. Engine, stats methodology, web UI, economy, trades, playoffs, and the youth pipeline are functional and producing complete simulated seasons. New systems land continuously; the late-May run added the Power Play (the first optional, per-league rule), multi-week performance streaks, a hits/runs-variance recalibration, times-through-the-order familiarity and a softball/underhand arsenal, the Zaryanovia nation with its Zora currency and a Pro World Cup, career leaderboards, a re-themed WCAG-AA light/dark UI with grouped navigation and a mobile layout, a runtime engine-tunables dashboard (presets, randomizer, saved environments), and infrastructure-driven regional leagues with per-league park geometry. The pitch repertoire system, ballpark geometry, and weather model all continue to evolve.
+Active development, and moving fast — see [`docs/project-trajectory.md`](docs/project-trajectory.md) for the month-long arc and changelog, and [`docs/user-guide.md`](docs/user-guide.md) if you're arriving cold. Engine, stats methodology, web UI, economy, trades, playoffs, and the youth pipeline are functional and producing complete simulated seasons. New systems land continuously; the most recent run added a nautical pitching-crew model, a college tier (64 NCAA-inspired programs feeding the pros), the Gazette (an LLM-ready news desk), an LLM tuning guide with softball-derived scoring presets, randomized weather and location-based start times, and revived double/triple plays — on top of the late-May Power Play (the first optional, per-league rule), performance streaks, the Zaryanovia nation with its Zora currency and a Pro World Cup, career leaderboards, a WCAG-AA light/dark UI, and a runtime engine-tunables dashboard. The pitch repertoire system, ballpark geometry, and weather model all continue to evolve.
 
 The sim is not a complete game product. There's no manager-mode play, no human-driven GM workflow. It's a data exploration tool for browsing what the rules produce, with views designed to surface stats and archetypes for human reading or LLM ingestion.
 

@@ -3,12 +3,13 @@
 A narrative of how O27 went from a tweet-sized idea to a fully simulated sport in
 roughly a month, plus a dated changelog of everything that landed. The README is
 the snapshot — *what exists now*. This is the arc — *how it got here, and why each
-turn was taken*.
+turn was taken*. New to the project and not sure where to start? Read the
+[user guide](user-guide.md) first; this doc is the history behind it.
 
-The design history in detail lives in the ~70 After-Action Reports under
-[`docs/`](.). Each AAR records the ask, the tradeoffs, the verification numbers,
-and the honest open gaps. This document is the reading order through them: the
-spine that the AARs hang off.
+The design history in detail lives in the ~85 After-Action and feature reports
+under [`docs/`](.). Each AAR records the ask, the tradeoffs, the verification
+numbers, and the honest open gaps. This document is the reading order through
+them: the spine that the AARs hang off.
 
 > **A note on dates.** O27 began in Replit in early May and moved to Claude Code
 > around May 3; the git history you see begins May 17–18, and the bulk of the
@@ -144,14 +145,82 @@ one-pitch phantom into a persistent runner), and refusing the easy version (the
 worldwide-leagues feature was rebuilt to derive style from infrastructure rather
 than national stereotype).
 
+### Phase 5 — Depth, debugging, and onboarding (May 31 → June 1)
+
+The turn of the month deepened the engine and, for the first time, turned the
+project's attention outward — toward a reader coming in cold and toward steering
+the sim in plain language.
+
+On the engine side: the run-game got more texture with the
+[double-play band raised and triple plays revived](aar-double-triple-play-rates.md),
+a [scorecard audit that hardened the per-cycle joker cooldown](aar-scorecard-audit-and-joker-cooldown.md),
+a [defense / battery / runs-hits decoupling pass](aar-defense-battery-and-runs-decoupling.md),
+and [randomized weather plus location-based first-pitch times](aar-randomized-weather-and-start-times.md)
+replacing the old fixed per-tier values. The Power Play got three more segments of
+operator-driven debugging —
+[why the nickel never deployed](aar-power-play-deploy-and-eligibility-segment.md)
+and [why it wasn't showing in the box-score notes](aar-power-play-box-score-notes-segment.md) —
+the kind of close-the-loop work that only surfaces once a real operator is running
+the live site.
+
+Then three larger systems landed on June 1. The pitching model was reframed around
+a [**nautical crew**](feature-pitching-crew-roles.md): instead of role-less,
+fully-live-derived arms, a staff now carries skill-derived, team-relative roles
+(Helms, the Changes, Bosun, Skidder, Anchor, Pilot) that re-derive on any staff
+change but still flex live by fatigue, Stuff, and matchup. A whole
+[**college tier**](aar-college-tier.md) — 64 NCAA-inspired programs with their own
+schedule, postseason, potential-growth model, and a draft/sign pipeline into the
+pro league — gave the youth system a feeder above it. And the
+[**Gazette**](feature-gazette.md) shipped: a read-only, LLM-ready news desk that
+turns a day's slate into a steerable, voiced writeup with no engine or schema
+changes.
+
+Crucially, June 1 is also when the project started explaining itself. The
+[**LLM tuning guide**](aar-llm-tuning-guide-and-softball-scoring-presets.md) (a
+self-contained [`tuning-guide-for-llms.md`](tuning-guide-for-llms.md) you paste
+into any capable model to generate Engine-Tunables blobs from a plain-English
+style) plus softball-derived scoring presets made the sim *steerable by anyone*.
+This [user guide](user-guide.md) and the expansion of this trajectory doc are part
+of the same turn: the build was far enough along that the bottleneck stopped being
+features and started being onboarding.
+
 ---
 
 ## Changelog
 
-Grouped by phase, newest first. Each entry links to its AAR. Dates for the
-late-May entries are the "date completed" recorded in the AAR; the earlier
+Grouped by phase, newest first. Each entry links to its AAR. Dates for the late-May
+and June entries are the "date completed" recorded in the AAR; the earlier
 foundational work was built across the Replit era and mid-May and written up in
 the May 20 documentation wave.
+
+### Turn of the month — depth & onboarding
+
+**2026-06-01**
+- The **pitching crew** — skill-derived, team-relative nautical staff roles (Helms,
+  Changes, Bosun, Skidder, Anchor, Pilot) replacing the role-less model.
+  [Feature report](feature-pitching-crew-roles.md)
+- **College tier** — 64 NCAA-inspired programs, schedule, postseason,
+  potential-growth model, draft/sign pipeline into the pros. [AAR](aar-college-tier.md)
+- The **Gazette** — read-only, LLM-ready, voiced news desk over the existing DB.
+  [Feature report](feature-gazette.md)
+- **LLM tuning guide + softball-derived scoring presets** — steer the run
+  environment from a plain-English style.
+  [AAR](aar-llm-tuning-guide-and-softball-scoring-presets.md) ·
+  [Guide](tuning-guide-for-llms.md)
+
+**2026-05-31**
+- **Randomized weather + location-based first-pitch times** replacing fixed
+  per-tier values. [AAR](aar-randomized-weather-and-start-times.md)
+- Power Play, [deploy/eligibility debugging](aar-power-play-deploy-and-eligibility-segment.md)
+  and [box-score notes](aar-power-play-box-score-notes-segment.md) segments.
+
+**2026-05-30 (engine depth)**
+- **Defense / battery / runs-hits decoupling** pass.
+  [AAR](aar-defense-battery-and-runs-decoupling.md)
+- **Double-play band raised + triple plays revived.**
+  [AAR](aar-double-triple-play-rates.md)
+- **Scorecard audit + hardened per-cycle joker cooldown.**
+  [AAR](aar-scorecard-audit-and-joker-cooldown.md)
 
 ### Late-May acceleration
 
