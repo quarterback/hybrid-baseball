@@ -7463,6 +7463,25 @@ def new_league_post():
                 app.logger.exception("pre-season auction failed: %s", e)
                 flash(f"Pre-season auction failed: {e}", "error")
 
+    # Optional college tier — 195 NCAA-style programs in their own pool,
+    # alongside the pro league. The college sim co-runs on the pro clock
+    # so the new graduating class clears through FA/auction each offseason.
+    if request.form.get("seed_college_on_start"):
+        from o27v2 import college_league as _cl
+        try:
+            summary = _cl.seed_college_league(season=2026, rng_seed=rng_seed)
+            if summary["created_programs"] > 0:
+                _cl.generate_schedule(season=2026)
+                flash(f"College tier seeded: {summary['created_programs']} programs, "
+                      f"{summary.get('created_players', 0)} players. "
+                      f"View at /college.", "info")
+            else:
+                flash("College tier already exists for season 2026 — skipped.",
+                      "info")
+        except Exception as e:
+            app.logger.exception("college tier seed failed: %s", e)
+            flash(f"College tier seed failed: {e}", "error")
+
     # Surface a schedule-quality report so the user sees imbalance
     # warnings (uneven opponent counts, off-day spread, etc.) before
     # they get deep into a season and notice a lopsided play sample.
