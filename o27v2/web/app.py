@@ -9324,15 +9324,34 @@ def college_leaders_view():
     bat_sort = request.args.get("bat_sort", "hr")
     pit_sort = request.args.get("pit_sort", "era")
     conference = request.args.get("conf") or None
-    batters  = _cl.batter_leaders(season,  sort=bat_sort, min_pa=20, limit=50,
+    # Adaptive qualifying threshold — fixed 20 PA / 30 outs excluded
+    # everyone early in the season. Use 2.0 PA per team-game (college
+    # rosters rotate more than MLB so per-player PA growth is slower
+    # than the 3.1 rule of thumb) and 2.5 outs per team-game.
+    gp_row = db.fetchone(
+        "SELECT COUNT(*) AS n FROM college_games "
+        "WHERE season = ? AND played = 1", (season,))
+    progs_row = db.fetchone(
+        "SELECT COUNT(*) AS n FROM college_programs WHERE season = ?",
+        (season,))
+    games_played = (gp_row or {}).get("n") or 0
+    n_progs = (progs_row or {}).get("n") or 1
+    games_per_team = max(1, (games_played * 2) // max(1, n_progs))
+    min_pa = max(5, int(2.0 * games_per_team))
+    min_outs = max(5, int(2.5 * games_per_team))
+    batters  = _cl.batter_leaders(season,  sort=bat_sort,
+                                  min_pa=min_pa, limit=50,
                                   conference=conference)
-    pitchers = _cl.pitcher_leaders(season, sort=pit_sort, min_outs=30, limit=50,
+    pitchers = _cl.pitcher_leaders(season, sort=pit_sort,
+                                  min_outs=min_outs, limit=50,
                                   conference=conference)
     return _serve("college_leaders.html",
                   season=season, batters=batters, pitchers=pitchers,
                   bat_sort=bat_sort, pit_sort=pit_sort,
                   conference=conference,
-                  conferences=_cl.list_conferences(season))
+                  conferences=_cl.list_conferences(season),
+                  min_pa=min_pa, min_outs=min_outs,
+                  games_per_team=games_per_team)
 
 
 @app.route("/college/game/<int:game_id>")
