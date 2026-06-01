@@ -9853,6 +9853,8 @@ def api_auction_full_cycle():
             "fa_signings": signing_report["total_signed"],
         }), 500
 
+    cut_report = _auction.apply_roster_cut()
+
     return jsonify({
         "ok": True,
         "imported_grads": len(import_result["signed"]),
@@ -9860,7 +9862,22 @@ def api_auction_full_cycle():
         "fa_signings": signing_report["total_signed"],
         "fa_rounds": signing_report["rounds"],
         "auction": auction_report,
+        "roster_cut": cut_report,
     })
+
+
+@app.route("/api/roster/cut", methods=["POST"])
+def api_roster_cut():
+    """Roster cut day — trim every team from the ROSTER_DRAFT_CAP=50
+    post-auction window back to the ROSTER_FINAL_CAP=47 regular-season
+    cap. Releases lowest-overall reserves to the FA pool; actives are
+    never touched. Idempotent."""
+    from o27v2 import auction as _auction
+    try:
+        report = _auction.apply_roster_cut()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "report": report})
 
 
 @app.route("/api/trades/reconcile", methods=["POST"])

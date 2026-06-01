@@ -19,8 +19,12 @@
               title="Run the Phase E post-auction trade reconciliation: surface blockbuster, star-for-star, 3-team cycle, surplus, and arbitrage trades that the auction can't unwind on its own. Iterative — every fire rescans state so no double-dips.">
         ⇄ Run trade reconciliation
       </button>
+      <button id="run-roster-cut-btn" class="btn btn-outline-warning btn-sm"
+              title="Roster cut day. Trim every team from the 50-slot draft cap back to the 47-slot regular-season cap. Releases the lowest-overall reserves to the FA pool — actives are never cut. Run this AFTER any post-auction trades.">
+        ✂ Roster cut day
+      </button>
       <button id="run-full-cycle-btn" class="btn btn-outline-warning btn-sm"
-              title="Mid-season testing: import every unsigned college graduate into the FA pool, run an FA signing round, then run the pro auction in one shot. Lets you exercise the college → pro pipeline without waiting for season rollover.">
+              title="Mid-season testing: import every unsigned college graduate into the FA pool, run an FA signing round, then run the pro auction, then enforce the 47-player roster cap — all in one shot. Lets you exercise the college → pro pipeline without waiting for season rollover.">
         ⇩ Full off-season cycle
       </button>
       <button id="run-auction-btn" class="btn btn-warning btn-sm">
@@ -194,18 +198,41 @@
     if (!confirm('Run the full off-season cycle now? This will:\n\n' +
                  '  1. Import every unsigned college graduate into the FA pool\n' +
                  '  2. Run an FA signing round (prospects + existing)\n' +
-                 '  3. Run the pro auction\n\n' +
+                 '  3. Run the pro auction (fills up to 50 per team)\n' +
+                 '  4. Roster cut day (trims back to 47 per team)\n\n' +
                  'Every team\'s non-keeper players will be redistributed.')) return;
     btn.disabled = true; btn.textContent = 'Cycling…';
     try {
       const r = await fetch('/api/auction/full-cycle', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || 'request failed');
-      alert(`Imported ${data.imported_grads} grads · FA-signed ${data.fa_signings} · auction cleared.`);
+      const ncut = (data.roster_cut && data.roster_cut.n_cut) || 0;
+      alert(`Imported ${data.imported_grads} grads · FA-signed ${data.fa_signings} · auction cleared · cut ${ncut} on cut day.`);
       window.location.reload();
     } catch (err) {
       alert('Full cycle failed: ' + err.message);
       btn.disabled = false; btn.textContent = '⇩ Full off-season cycle';
+    }
+  });
+})();
+(function () {
+  const btn = document.getElementById('run-roster-cut-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    if (!confirm('Run roster cut day? Every team gets trimmed to 47 players; the lowest-overall reserves are released to the FA pool. Actives are never cut.')) return;
+    btn.disabled = true; btn.textContent = 'Cutting…';
+    try {
+      const r = await fetch('/api/roster/cut', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'request failed');
+      const n = (data.report && data.report.n_cut) || 0;
+      alert(n === 0
+        ? 'No cuts needed — every team is already at or below 47.'
+        : `Released ${n} player${n === 1 ? '' : 's'} to the FA pool.`);
+      window.location.reload();
+    } catch (err) {
+      alert('Roster cut failed: ' + err.message);
+      btn.disabled = false; btn.textContent = '✂ Roster cut day';
     }
   });
 })();
