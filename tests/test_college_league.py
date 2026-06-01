@@ -21,17 +21,23 @@ def college_db(tmp_path):
         db._DB_PATH = original
 
 
-def test_seed_creates_64_programs_with_rosters(college_db):
+def test_seed_creates_real_conferences_with_rosters(college_db):
     summary = cl.seed_college_league(season=2026, rng_seed=42)
-    assert summary["created_programs"] == 64
-    # 23 roster per program × 64 programs = 1472 players
-    assert summary["created_players"] == 23 * 64
+    # Real D1 + selected D3 catalog — 18 conferences, ~195 programs.
+    assert summary["created_programs"] >= 180
+    assert summary["created_players"] == 23 * summary["created_programs"]
 
     progs = db.fetchall("SELECT * FROM college_programs WHERE season = 2026")
-    assert len(progs) == 64
-    # Eight conferences × eight teams
+    assert len(progs) == summary["created_programs"]
     confs = {p["conference"] for p in progs}
-    assert len(confs) == 8
+    # Spot-check real conference names — SEC, ACC, Big 12, Big Ten,
+    # the new Pac-12, plus an academic D3 (UAA).
+    assert "SEC"          in confs
+    assert "ACC"          in confs
+    assert "Big 12"       in confs
+    assert "Big Ten"      in confs
+    assert "Pac-12 (new)" in confs
+    assert "UAA (D3)"     in confs
 
     # Players spread across college_year 1-4 (no all-freshmen season)
     by_year = db.fetchall(
@@ -50,10 +56,11 @@ def test_seed_is_idempotent(college_db):
 def test_schedule_creates_full_slate(college_db):
     cl.seed_college_league(season=2026, rng_seed=1)
     n_games = cl.generate_schedule(season=2026)
-    # 8 conferences × 28 conference series × 3 games/series = 672 conference games
-    # plus mid-week non-conf games to total roughly 55 per team / 2 = ~1750
-    assert n_games > 1500
-    # Per-team game count target: ≥ 50 each, ≤ 65 each
+    # ~195 programs × ~55 games / 2 ≈ 5000 regular-season games.
+    # Bigger conferences (SEC/Big Ten = 16-18 teams) push individual
+    # teams above 50 games purely from conf round-robin (15-17 weekend
+    # series × 3), so per-team totals scale with conference size.
+    assert n_games > 4000
     per_team = db.fetchall(
         """SELECT p.id, COUNT(*) AS n
              FROM college_programs p
@@ -63,7 +70,10 @@ def test_schedule_creates_full_slate(college_db):
             GROUP BY p.id"""
     )
     counts = [r["n"] for r in per_team]
-    assert all(50 <= c <= 70 for c in counts), (min(counts), max(counts))
+    # Lower bound: ≥35 (the smallest conferences need fewer conf games
+    # but mid-week non-conf fills in). Upper: ≤100 (largest conferences
+    # play the most conf games).
+    assert all(35 <= c <= 100 for c in counts), (min(counts), max(counts))
 
 
 def test_sim_a_few_games(college_db):
@@ -91,6 +101,7 @@ def test_standings_after_partial_season(college_db):
     for r in rows:
         cl.sim_game(r["id"], rng_seed=99)
     s = cl.standings(2026)
-    assert len(s) == 64
+    # One row per program for the seeded season.
+    assert len(s) >= 180
     # Some programs should have non-zero wins by now
     assert any(row["wins"] > 0 for row in s)
