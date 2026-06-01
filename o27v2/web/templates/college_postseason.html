@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}College Postseason{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">College Postseason</h2>
+    <div class="text-secondary small">
+      Regional (16 four-team double-elim) → Super-Regional (8 best-of-3) → CWS (8-team double-elim).
+    </div>
+  </div>
+  {% if season %}
+    <a href="{{ url_for('college_view', season=season) }}" class="btn btn-sm btn-outline-secondary">
+      ← Standings
+    </a>
+  {% endif %}
+</div>
+
+{% if not season %}
+  <div class="text-secondary">No season seeded.</div>
+{% elif not regional and not super_regional and not cws %}
+  <div class="panel" style="padding:16px">
+    <div class="text-secondary">Postseason hasn't run yet — finish the regular season then click
+       <em>Run postseason</em> on the standings page.</div>
+  </div>
+{% else %}
+
+  {# CWS — show first since it's the headline #}
+  {% if cws %}
+  <div class="panel mb-3">
+    <div class="panel-title"><strong>College World Series</strong> <span class="text-secondary small">8-team double-elimination</span></div>
+    <div class="panel-body">
+      <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
+        <thead>
+          <tr><th>Game</th><th>Home</th><th class="text-end">Score</th><th>Away</th></tr>
+        </thead>
+        <tbody>
+        {% for g in cws %}
+          <tr>
+            <td>{{ g.bracket_meta }}</td>
+            <td>{{ g.home_short }}</td>
+            <td class="text-end">{{ g.home_score }} – {{ g.away_score }}</td>
+            <td>{{ g.away_short }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Super-Regionals #}
+  {% if super_regional %}
+  <div class="panel mb-3">
+    <div class="panel-title"><strong>Super-Regionals</strong> <span class="text-secondary small">best-of-3 to advance to CWS</span></div>
+    <div class="panel-body">
+      <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
+        <thead>
+          <tr><th>Bracket</th><th>Home</th><th class="text-end">Score</th><th>Away</th></tr>
+        </thead>
+        <tbody>
+        {% for g in super_regional %}
+          <tr>
+            <td>{{ g.bracket_meta }}</td>
+            <td>{{ g.home_short }}</td>
+            <td class="text-end">{{ g.home_score }} – {{ g.away_score }}</td>
+            <td>{{ g.away_short }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Regionals — long list #}
+  {% if regional %}
+  <div class="panel">
+    <div class="panel-title"><strong>Regionals</strong> <span class="text-secondary small">16 four-team double-elim brackets</span></div>
+    <div class="panel-body" style="max-height:600px;overflow-y:auto">
+      <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
+        <thead>
+          <tr><th>Bracket</th><th>Home</th><th class="text-end">Score</th><th>Away</th></tr>
+        </thead>
+        <tbody>
+        {% for g in regional %}
+          <tr>
+            <td>{{ g.bracket_meta }}</td>
+            <td>{{ g.home_short }}</td>
+            <td class="text-end">{{ g.home_score }} – {{ g.away_score }}</td>
+            <td>{{ g.away_short }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}League Economy{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">League Economy</h2>
+    <div class="text-secondary small">
+      Set the fantasy-style budget per team, player demand multiplier,
+      and team bid aggression for the season. Auction + FA signing
+      paths read these settings.
+    </div>
+  </div>
+  <span class="badge bg-secondary">Season {{ season }}</span>
+</div>
+
+<div class="row g-3">
+  {# Knobs #}
+  <div class="col-lg-7">
+    <div class="panel">
+      <div class="panel-title"><strong>Economy knobs</strong> — applied to all signings + auction</div>
+      <div class="panel-body">
+        <form method="post" action="{{ url_for('api_economy_save') }}" class="d-flex flex-column gap-3">
+          <input type="hidden" name="season" value="{{ season }}">
+
+          <div>
+            <label class="form-label small mb-1" for="budget_per_team">
+              <strong>Budget per team</strong>
+              <span class="text-secondary">— what each team gets to spend across signings this season</span>
+            </label>
+            <input id="budget_per_team" type="number" name="budget_per_team"
+                   class="form-control form-control-sm" style="max-width:200px"
+                   min="1000" max="10000000" step="1000"
+                   value="{{ cfg.budget_per_team }}">
+          </div>
+
+          <div>
+            <label class="form-label small mb-1" for="demand_scale">
+              <strong>Demand scale</strong>
+              <span class="text-secondary">— multiplies player asking prices. 1.0 = baseline; &gt;1 = inflation; &lt;1 = bargain market.</span>
+            </label>
+            <input id="demand_scale" type="number" name="demand_scale"
+                   class="form-control form-control-sm" style="max-width:200px"
+                   min="0.1" max="5.0" step="0.05"
+                   value="{{ cfg.demand_scale }}">
+          </div>
+
+          <div>
+            <label class="form-label small mb-1" for="bid_aggression">
+              <strong>Bid aggression</strong>
+              <span class="text-secondary">— how hard teams stretch toward their remaining budget on a target. 1.0 = bid up to full budget; 0.5 = conservative; 1.5 = aggressive.</span>
+            </label>
+            <input id="bid_aggression" type="number" name="bid_aggression"
+                   class="form-control form-control-sm" style="max-width:200px"
+                   min="0.1" max="2.0" step="0.05"
+                   value="{{ cfg.bid_aggression }}">
+          </div>
+
+          <div>
+            <button type="submit" class="btn btn-sm btn-primary">Save knobs</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {# Sample asks at typical grades #}
+    <div class="panel mt-3">
+      <div class="panel-title"><strong>Sample asking prices</strong>
+        <span class="text-secondary small ms-2">
+          Computed from the knobs above. The auction + FA round read these.
+        </span>
+      </div>
+      <div class="panel-body">
+        <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
+          <thead><tr><th>Overall</th><th class="text-end">Ask</th><th>Tier</th></tr></thead>
+          <tbody>
+            {% for g, ask in sample_grades %}
+            <tr>
+              <td>{{ g }}</td>
+              <td class="text-end" style="font-family:monospace">ƒ{{ "{:,}".format(ask) }}</td>
+              <td class="text-secondary small">
+                {% if g >= 75 %}elite / star
+                {% elif g >= 65 %}everyday starter
+                {% elif g >= 55 %}bench regular
+                {% elif g >= 45 %}depth / spot starter
+                {% else %}org filler
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# Per-team budgets #}
+  <div class="col-lg-5">
+    <div class="panel">
+      <div class="panel-title d-flex justify-content-between align-items-center">
+        <strong>Team budgets</strong>
+        <form method="post" action="{{ url_for('api_economy_init_budgets') }}" class="d-flex gap-2">
+          <input type="hidden" name="season" value="{{ season }}">
+          <button class="btn btn-sm btn-outline-secondary" type="submit"
+                  title="Initialize budgets for any new teams using the current per-team budget setting.">
+            Init new
+          </button>
+          <button class="btn btn-sm btn-outline-warning" type="submit"
+                  name="force" value="1"
+                  onclick="return confirm('Reset every team\\'s budget to ƒ{{ cfg.budget_per_team }}? This wipes spent.');">
+            Reset all
+          </button>
+        </form>
+      </div>
+      <div class="panel-body p-0">
+        {% if not budgets %}
+          <div class="text-secondary p-3 small">
+            No team budgets initialized. Click <em>Init new</em> to seed
+            every team at the current per-team budget.
+          </div>
+        {% else %}
+        <table class="table table-sm dense-table mb-0" style="font-size:.83rem">
+          <thead>
+            <tr>
+              <th>Team</th>
+              <th class="text-end">Total</th>
+              <th class="text-end">Spent</th>
+              <th class="text-end">Remaining</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in budgets %}
+            <tr>
+              <td>
+                <a href="{{ url_for('team_detail', team_id=b.team_id) }}">{{ b.abbrev }}</a>
+                <span class="text-secondary small">· {{ b.name }}</span>
+              </td>
+              <td class="text-end" style="font-family:monospace">ƒ{{ "{:,}".format(b.total_budget) }}</td>
+              <td class="text-end" style="font-family:monospace">ƒ{{ "{:,}".format(b.spent) }}</td>
+              <td class="text-end" style="font-family:monospace">
+                <strong>ƒ{{ "{:,}".format(b.remaining) }}</strong>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -5371,6 +5371,31 @@ def player_detail(player_id: int):
     ) or {}
     current_style_label = style_profile_label(cur_team.get("style_profile"))
 
+    # College origin (if this pro was signed from the college tier).
+    college_origin = None
+    if _table_exists("college_players"):
+        from o27v2 import college_league as _cl
+        co_row = db.fetchone(
+            "SELECT cp.id AS college_player_id, cp.name, cp.position, "
+            "       cp.college_year, prog.id AS program_id, "
+            "       prog.name AS program_name, prog.short_name "
+            "  FROM college_players cp "
+            "  JOIN college_programs prog ON prog.id = cp.program_id "
+            " WHERE cp.signed_pro_player_id = ?",
+            (player_id,),
+        )
+        if co_row:
+            college_origin = dict(co_row)
+            college_origin["career"] = _cl.player_season_totals(
+                co_row["college_player_id"]
+            )
+
+    # Per-player transaction history (signings, trades, transfers, injuries).
+    transactions = []
+    if _table_exists("transactions"):
+        from o27v2.transactions import get_transactions
+        transactions = get_transactions(player_id=player_id, limit=200)
+
     # Nickel (NF) appearances — surfaced distinctly from a player's listed
     # position so a fielder's record shows when he came in as the 10th defender.
     # Compound spots like "SS-NF" count.
@@ -5396,6 +5421,8 @@ def player_detail(player_id: int):
         transfer_leagues=list(transfer_leagues.values()),
         current_league=cur_team.get("league") or "",
         current_style_label=current_style_label,
+        college_origin=college_origin,
+        transactions=transactions,
     )
 
 
@@ -5422,14 +5449,18 @@ def api_player_transfer(player_id: int):
         "UPDATE players SET team_id = ?, is_active = 1 WHERE id = ?",
         (target["id"], player_id),
     )
-    # Best-effort transaction log (table shape varies across saves).
+    # Log the move to the canonical transactions table.
     try:
+        from o27v2.transactions import log_transaction, current_season
         from datetime import date as _date
-        db.execute(
-            "INSERT INTO transactions (date, type, player_id, from_team_id, to_team_id, note) "
-            "VALUES (?, 'transfer', ?, ?, ?, ?)",
-            (_date.today().isoformat(), player_id, from_team_id, target["id"],
-             f"Manual transfer to {target['abbrev']} ({target['league']})"),
+        from_row = db.fetchone(
+            "SELECT abbrev FROM teams WHERE id = ?", (from_team_id,)
+        ) if from_team_id else None
+        from_abbrev = (from_row or {}).get("abbrev") or "FA"
+        log_transaction(
+            current_season(), _date.today().isoformat(),
+            "transfer", target["id"], player_id,
+            f"Transferred from {from_abbrev} → {target['abbrev']} ({target['league']})",
         )
     except Exception:
         pass
@@ -7132,6 +7163,8 @@ def transactions():
         teams = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
 
     event_types = ["injury", "return", "promotion", "penalty",
+                   "auction_sign", "fa_sign", "prospect_sign",
+                   "college_sign", "manual_assign", "transfer",
                    "trade_block_breaking", "trade_injury_backfill",
                    "trade_deadline_buyer", "trade_deadline_seller",
                    "trade_salary_dump", "trade_rebuild_fire_sale",
@@ -8530,6 +8563,41 @@ def season_detail(season_id: int):
     except Exception:
         league_champions = []
 
+    # Phase E AAR: archived transactions + auction ledger. Both queries
+    # return [] for legacy seasons that pre-date the snapshot wiring,
+    # so the template gracefully degrades.
+    season_txs = db.fetchall(
+        "SELECT * FROM season_transactions "
+        "WHERE season_id = ? ORDER BY id",
+        (season_id,),
+    )
+    tx_counts: dict[str, int] = {}
+    for r in season_txs:
+        tx_counts[r["event_type"]] = tx_counts.get(r["event_type"], 0) + 1
+
+    # Group post-auction trade events by detail string so each fired
+    # trade renders once (rather than once per moved player).
+    trade_groups: dict[str, list[dict]] = {}
+    trade_order: list[str] = []
+    for r in season_txs:
+        if r["event_type"] != "trade":
+            continue
+        key = f"{r['game_date']}|{r['detail']}"
+        if key not in trade_groups:
+            trade_groups[key] = []
+            trade_order.append(key)
+        trade_groups[key].append(dict(r))
+    recon_trades = [{"date":   trade_groups[k][0]["game_date"],
+                     "detail": trade_groups[k][0]["detail"],
+                     "moves":  trade_groups[k]}
+                    for k in trade_order]
+
+    season_auction = db.fetchall(
+        "SELECT * FROM season_auction_results "
+        "WHERE season_id = ? ORDER BY winning_bid DESC NULLS LAST "
+        "LIMIT 30",
+        (season_id,),
+    )
     return _serve(
         "season_detail.html",
         season=season,
@@ -8538,6 +8606,10 @@ def season_detail(season_id: int):
         batting=bat_by_cat,
         pitching=pit_by_cat,
         stars=stars,
+        season_txs=season_txs,
+        tx_counts=tx_counts,
+        recon_trades=recon_trades,
+        season_auction=season_auction,
     )
 
 
@@ -8968,14 +9040,450 @@ def api_pro_worldcup_reset():
     return jsonify({"ok": True, "deleted_games": n})
 
 
+# ---------------------------------------------------------------------------
+# College tier — landing, program detail, player detail, postseason,
+# admin actions (seed / sim season / run postseason / roll over)
+# ---------------------------------------------------------------------------
+
+def _college_current_season() -> int | None:
+    """Latest season present in college_programs, or None if unseeded."""
+    row = db.fetchone(
+        "SELECT MAX(season) AS s FROM college_programs"
+    ) if _table_exists("college_programs") else None
+    return (row or {}).get("s")
+
+
+def _table_exists(name: str) -> bool:
+    row = db.fetchone(
+        "SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    )
+    return bool(row)
+
+
+@app.route("/college")
+def college_view():
+    from o27v2 import college_league as _cl
+    _cl.init_college_schema()
+    season = request.args.get("season", type=int) or _college_current_season()
+    if season is None:
+        return _serve("college_index.html",
+                      season=None, conferences={}, meta=None,
+                      unplayed_count=0)
+    meta = db.fetchone("SELECT * FROM college_meta WHERE season = ?", (season,))
+    s = _cl.standings(season)
+    by_conf: dict[str, list[dict]] = {}
+    for row in s:
+        by_conf.setdefault(row["conference"], []).append(row)
+    unplayed = db.fetchone(
+        "SELECT COUNT(*) AS n FROM college_games "
+        "WHERE season=? AND phase='regular' AND played=0",
+        (season,),
+    )
+    next_date = _cl.next_sim_date(season)
+    return _serve("college_index.html",
+                  season=season, conferences=by_conf, meta=meta,
+                  unplayed_count=(unplayed or {}).get("n") or 0,
+                  next_date=next_date)
+
+
+@app.route("/college/program/<int:program_id>")
+def college_program_view(program_id: int):
+    program = db.fetchone(
+        "SELECT * FROM college_programs WHERE id = ?", (program_id,)
+    )
+    if not program:
+        abort(404)
+    roster = db.fetchall(
+        "SELECT * FROM college_players WHERE program_id = ? AND is_active = 1 "
+        "ORDER BY is_pitcher, college_year DESC, name", (program_id,)
+    )
+    sched = db.fetchall(
+        """SELECT g.*,
+                  ph.name AS home_name, ph.short_name AS home_short,
+                  pa.name AS away_name, pa.short_name AS away_short
+             FROM college_games g
+             JOIN college_programs ph ON ph.id = g.home_program_id
+             JOIN college_programs pa ON pa.id = g.away_program_id
+            WHERE (g.home_program_id = ? OR g.away_program_id = ?)
+              AND g.season = ?
+            ORDER BY g.game_date, g.id""",
+        (program_id, program_id, program["season"]),
+    )
+    # Quick win/loss count
+    wins = losses = 0
+    for g in sched:
+        if not g["played"]: continue
+        if g["home_program_id"] == program_id:
+            if g["home_score"] > g["away_score"]: wins += 1
+            elif g["home_score"] < g["away_score"]: losses += 1
+        else:
+            if g["away_score"] > g["home_score"]: wins += 1
+            elif g["away_score"] < g["home_score"]: losses += 1
+    # Team totals + top players for this program in the active season.
+    from o27v2 import college_league as _cl
+    team_totals = _cl.program_team_totals(program_id, program["season"])
+    team_bat_top = _cl.batter_leaders(program["season"], sort="hr",
+                                       min_pa=1, limit=8,
+                                       program_id=program_id)
+    team_pit_top = _cl.pitcher_leaders(program["season"], sort="era",
+                                        min_outs=1, limit=8,
+                                        program_id=program_id)
+    return _serve("college_program.html",
+                  program=program, roster=roster, schedule=sched,
+                  wins=wins, losses=losses,
+                  team_totals=team_totals,
+                  team_bat_top=team_bat_top,
+                  team_pit_top=team_pit_top)
+
+
+@app.route("/college/player/<int:player_id>")
+def college_player_view(player_id: int):
+    player = db.fetchone(
+        "SELECT * FROM college_players WHERE id = ?", (player_id,)
+    )
+    if not player:
+        abort(404)
+    program = db.fetchone(
+        "SELECT * FROM college_programs WHERE id = ?", (player["program_id"],)
+    )
+    # Scouting reports for the player — only seniors get them.
+    reports = db.fetchall(
+        "SELECT * FROM college_scouting_reports WHERE player_id = ? "
+        "ORDER BY season DESC, source", (player_id,)
+    )
+    return _serve("college_player.html",
+                  player=player, program=program, reports=reports)
+
+
+@app.route("/college/postseason")
+def college_postseason_view():
+    season = request.args.get("season", type=int) or _college_current_season()
+    if season is None:
+        return _serve("college_postseason.html",
+                      season=None, regional=[], super_regional=[], cws=[])
+    regional = db.fetchall(
+        """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short
+             FROM college_games g
+             JOIN college_programs ph ON ph.id = g.home_program_id
+             JOIN college_programs pa ON pa.id = g.away_program_id
+            WHERE g.season = ? AND g.phase = 'regional'
+            ORDER BY g.bracket_meta, g.id""",
+        (season,),
+    )
+    super_regional = db.fetchall(
+        """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short
+             FROM college_games g
+             JOIN college_programs ph ON ph.id = g.home_program_id
+             JOIN college_programs pa ON pa.id = g.away_program_id
+            WHERE g.season = ? AND g.phase = 'super_regional'
+            ORDER BY g.bracket_meta, g.id""",
+        (season,),
+    )
+    cws = db.fetchall(
+        """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short
+             FROM college_games g
+             JOIN college_programs ph ON ph.id = g.home_program_id
+             JOIN college_programs pa ON pa.id = g.away_program_id
+            WHERE g.season = ? AND g.phase = 'cws'
+            ORDER BY g.id""",
+        (season,),
+    )
+    return _serve("college_postseason.html",
+                  season=season, regional=regional,
+                  super_regional=super_regional, cws=cws)
+
+
+@app.route("/api/college/seed", methods=["POST"])
+def api_college_seed():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or 2026
+    summary = _cl.seed_college_league(season=season,
+                                       rng_seed=request.form.get("rng_seed", type=int) or 0)
+    if summary["created_programs"] > 0:
+        _cl.generate_schedule(season=season)
+    return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/sim-season", methods=["POST"])
+def api_college_sim_season():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    result = _cl.sim_all_unplayed(season, rng_seed=request.form.get("rng_seed", type=int) or 0)
+    flash(f"Sim'd {result['games_played']} games (full remainder of regular season).",
+          "info")
+    return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/sim-day", methods=["POST"])
+def api_college_sim_day():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    seed = request.form.get("rng_seed", type=int) or 0
+    result = _cl.sim_day(season, rng_seed=seed)
+    if result["date"] is None:
+        flash("Regular season complete — nothing to sim.", "info")
+    else:
+        flash(f"Sim'd {result['games_played']} games on {result['date']} "
+              f"({result['remaining']} unplayed remaining).", "info")
+    return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/sim-week", methods=["POST"])
+def api_college_sim_week():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    seed = request.form.get("rng_seed", type=int) or 0
+    result = _cl.sim_week(season, rng_seed=seed)
+    if result["start"] is None:
+        flash("Regular season complete — nothing to sim.", "info")
+    else:
+        flash(f"Sim'd {result['games_played']} games "
+              f"({result['start']} → {result['end']}) — "
+              f"{result['remaining']} unplayed remaining.", "info")
+    return redirect(url_for("college_view", season=season))
+
+
+@app.route("/api/college/sim-game/<int:game_id>", methods=["POST"])
+def api_college_sim_game(game_id: int):
+    from o27v2 import college_league as _cl
+    try:
+        result = _cl.sim_game(game_id,
+                              rng_seed=request.form.get("rng_seed", type=int) or 0)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("college_view"))
+    if result.get("already_played"):
+        flash("That game is already played.", "info")
+    else:
+        flash(f"Sim'd game #{game_id}: "
+              f"home {result['home_score']} – {result['away_score']} away.", "info")
+    return redirect(request.referrer or url_for("college_game_view", game_id=game_id))
+
+
+@app.route("/api/college/run-postseason", methods=["POST"])
+def api_college_run_postseason():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    _cl.run_postseason(season, rng_seed=request.form.get("rng_seed", type=int) or 0)
+    _cl.generate_scouting_reports(season,
+                                    rng_seed=request.form.get("rng_seed", type=int) or 0)
+    return redirect(url_for("college_postseason_view", season=season))
+
+
+@app.route("/college/leaders")
+def college_leaders_view():
+    from o27v2 import college_league as _cl
+    season = request.args.get("season", type=int) or _college_current_season()
+    if season is None:
+        return _serve("college_leaders.html",
+                      season=None, batters=[], pitchers=[],
+                      bat_sort="hr", pit_sort="era",
+                      conference=None, conferences=[])
+    bat_sort = request.args.get("bat_sort", "hr")
+    pit_sort = request.args.get("pit_sort", "era")
+    conference = request.args.get("conf") or None
+    batters  = _cl.batter_leaders(season,  sort=bat_sort, min_pa=20, limit=50,
+                                  conference=conference)
+    pitchers = _cl.pitcher_leaders(season, sort=pit_sort, min_outs=30, limit=50,
+                                  conference=conference)
+    return _serve("college_leaders.html",
+                  season=season, batters=batters, pitchers=pitchers,
+                  bat_sort=bat_sort, pit_sort=pit_sort,
+                  conference=conference,
+                  conferences=_cl.list_conferences(season))
+
+
+@app.route("/college/game/<int:game_id>")
+def college_game_view(game_id: int):
+    from o27v2 import college_league as _cl
+    box = _cl.game_box(game_id)
+    if box is None:
+        abort(404)
+    away_id = box["game"]["away_program_id"]
+    home_id = box["game"]["home_program_id"]
+    box["away_batters"]  = [b for b in box["batters"]  if b["program_id"] == away_id]
+    box["home_batters"]  = [b for b in box["batters"]  if b["program_id"] == home_id]
+    box["away_pitchers"] = [p for p in box["pitchers"] if p["program_id"] == away_id]
+    box["home_pitchers"] = [p for p in box["pitchers"] if p["program_id"] == home_id]
+    return _serve("college_game.html", box=box)
+
+
+@app.route("/college/draft")
+def college_draft_view():
+    from o27v2 import college_league as _cl
+    season = request.args.get("season", type=int) or _college_current_season()
+    position = request.args.get("position") or None
+    if position not in _cl.DRAFT_POSITIONS:
+        position = None
+    draft = _cl.draft_class(season=season, position=position)
+    for p in draft:
+        by_src: dict[str, dict] = {}
+        for r in p["reports"]:
+            by_src[r["source"]] = r
+        p["report_service"] = by_src.get("service")
+        p["report_first_team"] = next((v for k, v in by_src.items()
+                                       if k.startswith("team:")), None)
+    return _serve("college_draft.html", draft=draft,
+                  position=position, positions=_cl.DRAFT_POSITIONS,
+                  season=season)
+
+
+@app.route("/api/college/sign/<int:college_player_id>", methods=["POST"])
+def api_college_sign(college_player_id: int):
+    from o27v2 import college_league as _cl
+    try:
+        pro_id = _cl.sign_graduate_to_pro(college_player_id)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("college_draft_view"))
+    flash(f"Signed → pro player #{pro_id}", "info")
+    return redirect(url_for("player_detail", player_id=pro_id))
+
+
+@app.route("/college/import")
+def college_import_view():
+    """Bulk-import workflow — preview every draft-eligible senior with
+    their reports, and choose where to land them: FA pool (auction-
+    ready) or directly on a specific team's roster."""
+    from o27v2 import college_league as _cl
+    season = request.args.get("season", type=int) or _college_current_season()
+    position = request.args.get("position") or None
+    if position not in _cl.DRAFT_POSITIONS:
+        position = None
+    draft = _cl.draft_class(season=season, position=position)
+    for p in draft:
+        by_src: dict[str, dict] = {}
+        for r in p["reports"]:
+            by_src[r["source"]] = r
+        p["report_service"] = by_src.get("service")
+        p["report_first_team"] = next((v for k, v in by_src.items()
+                                       if k.startswith("team:")), None)
+    teams = db.fetchall(
+        "SELECT id, name, league FROM teams ORDER BY league, name"
+    ) if _table_exists("teams") else []
+    return _serve("college_import.html", draft=draft, teams=teams,
+                  position=position, positions=_cl.DRAFT_POSITIONS,
+                  season=season)
+
+
+@app.route("/api/college/bulk-sign", methods=["POST"])
+def api_college_bulk_sign():
+    from o27v2 import college_league as _cl
+    ids_raw = request.form.getlist("college_player_ids")
+    if not ids_raw:
+        flash("Pick at least one player to import.", "warning")
+        return redirect(url_for("college_import_view"))
+    try:
+        ids = [int(s) for s in ids_raw]
+    except (TypeError, ValueError):
+        flash("Bad college player ids in form.", "error")
+        return redirect(url_for("college_import_view"))
+    mode = request.form.get("mode", "fa")
+    team_id = request.form.get("team_id", type=int)
+    if mode == "assigned" and not team_id:
+        flash("Pick a team to assign these players to.", "warning")
+        return redirect(url_for("college_import_view"))
+
+    # 'fa_and_sign' = sign all to FA pool, then run the FA signing round
+    # so teams actually pick them up. Internally still 'fa' for the
+    # bulk_import_graduates call.
+    base_mode = "fa" if mode in ("fa", "fa_and_sign") else mode
+    result = _cl.bulk_import_graduates(ids, mode=base_mode, team_id=team_id)
+    n = len(result["signed"])
+    msg_parts = [f"Imported {n} college graduates"]
+    if result["errors"]:
+        msg_parts.append(f"({len(result['errors'])} errors)")
+
+    if mode == "fa_and_sign":
+        from o27v2 import fa_signing as _fas
+        report = _fas.run_signing_round(scope="all",
+            rng_seed=request.form.get("rng_seed", type=int) or 0)
+        signed = report["total_signed"]
+        msg_parts.append(f"→ FA signing round picked up {signed} (prospects + existing)")
+        flash(" ".join(msg_parts) + ".", "info")
+        return redirect(url_for("free_agents"))
+
+    where = ("free-agent pool" if mode == "fa" else f"team #{team_id}")
+    flash(" ".join(msg_parts) + f" → {where}.", "info")
+    return redirect(url_for("free_agents") if mode == "fa"
+                    else url_for("team_detail", team_id=team_id))
+
+
+@app.route("/api/fa/sign-round", methods=["POST"])
+def api_fa_sign_round():
+    """Run a free-agent signing round across the current league.
+
+    Scope ('all' default) covers both newly-signed college prospects
+    (signed-from-college FAs) and the broader FA pool. Non-destructive:
+    rostered players aren't touched, only FA pool entries move.
+    """
+    from o27v2 import fa_signing as _fas
+    scope = request.form.get("scope") or request.args.get("scope") or "all"
+    rng_seed = request.form.get("rng_seed", type=int) or 0
+    report = _fas.run_signing_round(scope=scope, rng_seed=rng_seed)
+    flash(f"FA signing round ({scope}): {report['total_signed']} signed across "
+          f"{len(report['rounds'])} phase(s).", "info")
+    return redirect(url_for("free_agents"))
+
+
+@app.route("/api/college/rollover", methods=["POST"])
+def api_college_rollover():
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or _college_current_season()
+    if season is None:
+        abort(400, "no college league seeded")
+    next_season = season + 1
+    _cl.annual_rollover(season, next_season,
+                         rng_seed=request.form.get("rng_seed", type=int) or 0)
+    _cl.generate_schedule(season=next_season)
+    return redirect(url_for("college_view", season=next_season))
+
+
 @app.route("/auction")
 def auction_view():
     from o27v2 import auction as _auction
+    from o27v2.transactions import current_season
     summary = _auction.get_auction()
     cfg = _active_config()
+    # Phase E reconciliation history: group trade transactions from the
+    # current season by detail-string (all moves in one fired trade share
+    # the same detail), so the UI can render each trade as one row.
+    season = current_season() if cfg else 1
+    rows = db.fetchall(
+        "SELECT t.game_date, t.event_type, t.detail, t.team_id, t.player_id, "
+        "       p.name AS player_name, p.position AS player_position, "
+        "       tm.abbrev AS team_abbrev "
+        "FROM transactions t "
+        "LEFT JOIN players p ON p.id = t.player_id "
+        "LEFT JOIN teams tm ON tm.id = t.team_id "
+        "WHERE t.season = ? AND t.event_type = 'trade' "
+        "ORDER BY t.id DESC",
+        (season,),
+    )
+    trade_groups: dict[str, list[dict]] = {}
+    trade_order: list[str] = []
+    for r in rows:
+        key = f"{r['game_date']}|{r['detail']}"
+        if key not in trade_groups:
+            trade_groups[key] = []
+            trade_order.append(key)
+        trade_groups[key].append(dict(r))
+    recon_trades = [{"date":   trade_groups[k][0]["game_date"],
+                     "detail": trade_groups[k][0]["detail"],
+                     "moves":  trade_groups[k]}
+                    for k in trade_order]
     return _serve("auction.html",
                   auction=summary,
                   has_league=bool(cfg),
+                  recon_trades=recon_trades,
                   config_summary=(cfg.get("auction") if cfg else None))
 
 
@@ -9021,6 +9529,33 @@ def api_auction_run():
     return jsonify({"ok": True, "auction": report})
 
 
+@app.route("/api/trades/reconcile", methods=["POST"])
+def api_trades_reconcile():
+    """Run the Phase E post-auction trade reconciliation pass. Iteratively
+    finds blockbuster / star-for-star / 3-cycle / surplus / arbitrage
+    trades that fix depth-chart pathologies the auction couldn't unwind,
+    rescoring from current state after each fire so no double-dips."""
+    from o27v2 import post_auction_trades as _pat
+    cfg = _active_config()
+    if not cfg:
+        return jsonify({
+            "ok": False,
+            "error": "No active league.",
+        }), 400
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    per_team_cap = int(data.get("per_team_cap") or _pat.PER_TEAM_CAP)
+    try:
+        report = _pat.run_post_auction_trades(
+            rng_seed=rng_seed,
+            per_team_cap=per_team_cap,
+        )
+    except Exception as e:
+        app.logger.exception("post-auction trades failed: %s", e)
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "report": report})
+
+
 @app.route("/api/league-configs")
 def api_league_configs():
     return jsonify(list(get_league_configs().values()))
@@ -9029,6 +9564,57 @@ def api_league_configs():
 @app.route("/api/health")
 def api_health():
     return jsonify({"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# League economy — budgets + demand + bid aggression
+# ---------------------------------------------------------------------------
+
+@app.route("/economy")
+def economy_view():
+    from o27v2 import economy as _econ
+    from o27v2.transactions import current_season
+    season = request.args.get("season", type=int) or current_season()
+    cfg = _econ.get_config(season)
+    budgets = _econ.all_budgets(season)
+    # Sample asking prices at common overall grades so the user can
+    # see what the demand_scale knob translates to.
+    sample_grades = [(g, _econ.player_ask(g, season))
+                     for g in (30, 40, 50, 55, 60, 65, 70, 75, 80)]
+    return _serve("economy.html",
+                  season=season, cfg=cfg, budgets=budgets,
+                  sample_grades=sample_grades)
+
+
+@app.route("/api/economy/save", methods=["POST"])
+def api_economy_save():
+    from o27v2 import economy as _econ
+    from o27v2.transactions import current_season
+    season = request.form.get("season", type=int) or current_season()
+    budget = request.form.get("budget_per_team", type=int) or _econ.DEFAULT_BUDGET_PER_TEAM
+    demand = request.form.get("demand_scale", type=float) or _econ.DEFAULT_DEMAND_SCALE
+    aggro  = request.form.get("bid_aggression", type=float) or _econ.DEFAULT_BID_AGGRESSION
+    # Clamp to sane ranges
+    budget = max(1_000, min(10_000_000, budget))
+    demand = max(0.1, min(5.0, demand))
+    aggro  = max(0.1, min(2.0, aggro))
+    _econ.set_config(season, budget, demand, aggro)
+    flash(f"Economy updated for season {season} · "
+          f"ƒ{budget:,}/team · demand ×{demand} · aggression ×{aggro}.",
+          "info")
+    return redirect(url_for("economy_view", season=season))
+
+
+@app.route("/api/economy/init-budgets", methods=["POST"])
+def api_economy_init_budgets():
+    from o27v2 import economy as _econ
+    from o27v2.transactions import current_season
+    season = request.form.get("season", type=int) or current_season()
+    force = bool(request.form.get("force"))
+    n = _econ.init_budgets(season, force=force)
+    action = "Reset" if force else "Initialized"
+    flash(f"{action} budgets for {n} teams (season {season}).", "info")
+    return redirect(url_for("economy_view", season=season))
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}College Leaders{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">College Leaders{% if conference %} <span class="text-secondary">· {{ conference }}</span>{% endif %}</h2>
+    <div class="text-secondary small">
+      Top batters (min 20 PA) and pitchers (min 30 outs) for the season.
+      Filter by conference below; clear by picking <em>All conferences</em>.
+    </div>
+  </div>
+  {% if season %}
+    <div class="d-flex gap-2 align-items-center">
+      <form method="get" action="{{ url_for('college_leaders_view') }}" class="d-flex gap-2 align-items-center">
+        <input type="hidden" name="season" value="{{ season }}">
+        <input type="hidden" name="bat_sort" value="{{ bat_sort }}">
+        <input type="hidden" name="pit_sort" value="{{ pit_sort }}">
+        <label class="form-label small mb-0">Conference:</label>
+        <select name="conf" class="form-select form-select-sm" style="max-width:200px"
+                onchange="this.form.submit()">
+          <option value="">All conferences</option>
+          {% for c in conferences %}
+            <option value="{{ c }}" {% if c == conference %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      <span class="badge bg-secondary">Season {{ season }}</span>
+      <a href="{{ url_for('college_view', season=season) }}" class="btn btn-sm btn-outline-secondary">← Standings</a>
+    </div>
+  {% endif %}
+</div>
+
+{% if not season %}
+  <div class="text-secondary">No season seeded.</div>
+{% else %}
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="panel">
+      <div class="panel-title d-flex justify-content-between align-items-center">
+        <strong>Batters</strong>
+        <div class="btn-group" role="group">
+          {% for s, label in [('hr','HR'),('avg','AVG'),('ops','OPS'),('rbi','RBI'),('h','H')] %}
+            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=s, pit_sort=pit_sort, conf=conference) }}"
+               class="btn btn-sm btn-outline-secondary {% if bat_sort == s %}active{% endif %}">{{ label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="panel-body">
+        <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
+          <thead><tr>
+            <th>#</th><th>Player</th><th>Program</th><th>Yr</th>
+            <th class="text-end">PA</th><th class="text-end">AB</th><th class="text-end">H</th>
+            <th class="text-end">HR</th><th class="text-end">RBI</th>
+            <th class="text-end">AVG</th><th class="text-end">OPS</th>
+          </tr></thead>
+          <tbody>
+          {% for b in batters %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><a href="{{ url_for('college_player_view', player_id=b.player_id) }}">{{ b.name }}</a></td>
+              <td><a href="{{ url_for('college_program_view', program_id=b.program_id) }}">{{ b.program_short }}</a></td>
+              <td>{{ {1:'Fr',2:'So',3:'Jr',4:'Sr'}.get(b.college_year, b.college_year) }}</td>
+              <td class="text-end">{{ b.pa }}</td>
+              <td class="text-end">{{ b.ab }}</td>
+              <td class="text-end">{{ b.h }}</td>
+              <td class="text-end">{{ b.hr }}</td>
+              <td class="text-end">{{ b.rbi }}</td>
+              <td class="text-end">{{ "%.3f"|format(b.avg) }}</td>
+              <td class="text-end">{{ "%.3f"|format(b.ops) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="panel">
+      <div class="panel-title d-flex justify-content-between align-items-center">
+        <strong>Pitchers</strong>
+        <div class="btn-group" role="group">
+          {% for s, label in [('era','ERA'),('whip','WHIP'),('k','K'),('ip','IP'),('k9','K/9')] %}
+            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=bat_sort, pit_sort=s, conf=conference) }}"
+               class="btn btn-sm btn-outline-secondary {% if pit_sort == s %}active{% endif %}">{{ label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="panel-body">
+        <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
+          <thead><tr>
+            <th>#</th><th>Player</th><th>Program</th><th>Yr</th>
+            <th class="text-end">IP</th><th class="text-end">ERA</th>
+            <th class="text-end">WHIP</th><th class="text-end">K</th><th class="text-end">K/9</th>
+          </tr></thead>
+          <tbody>
+          {% for p in pitchers %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><a href="{{ url_for('college_player_view', player_id=p.player_id) }}">{{ p.name }}</a></td>
+              <td><a href="{{ url_for('college_program_view', program_id=p.program_id) }}">{{ p.program_short }}</a></td>
+              <td>{{ {1:'Fr',2:'So',3:'Jr',4:'Sr'}.get(p.college_year, p.college_year) }}</td>
+              <td class="text-end">{{ "%.1f"|format(p.ip) }}</td>
+              <td class="text-end">{{ "%.2f"|format(p.era) }}</td>
+              <td class="text-end">{{ "%.2f"|format(p.whip) }}</td>
+              <td class="text-end">{{ p.k }}</td>
+              <td class="text-end">{{ "%.1f"|format(p.k9) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}

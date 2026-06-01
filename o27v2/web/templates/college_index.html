@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}College Baseball{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">College Baseball</h2>
+    <div class="text-secondary small">
+      Sub-pro tier — 64 programs across 8 conferences. Hidden potential + access-lens
+      mechanics; senior class gets scouting reports for the pro draft.
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    {% if season %}
+      <span class="badge bg-secondary">Season {{ season }}</span>
+      {% if meta %}<span class="badge bg-info text-dark">{{ meta.phase }}</span>{% endif %}
+      {% if unplayed_count and unplayed_count > 0 %}
+        <span class="text-secondary small">{{ unplayed_count }} unplayed</span>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if not season %}
+  <div class="panel mb-3" style="padding:16px">
+    <div class="text-secondary mb-3">No college league seeded yet.</div>
+    <form method="post" action="{{ url_for('api_college_seed') }}" class="d-inline-block">
+      <input type="hidden" name="season" value="2026">
+      <button class="btn btn-primary" type="submit">Seed 2026 college league</button>
+    </form>
+  </div>
+{% else %}
+
+  {# Sim controls — college rides the pro sim clock on combined saves.
+     For college-only saves the day/week buttons drive directly. #}
+  <div class="panel mb-3" style="padding:12px 16px">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <span class="text-secondary small me-2">
+        {% if next_date %}
+          Next game date: <strong>{{ next_date }}</strong>
+          · {{ unplayed_count }} unplayed
+        {% else %}
+          Regular season complete
+        {% endif %}
+      </span>
+      <form method="post" action="{{ url_for('api_college_sim_day') }}" class="d-inline-block">
+        <input type="hidden" name="season" value="{{ season }}">
+        <button class="btn btn-sm btn-primary" type="submit"
+                {% if not next_date %}disabled{% endif %}>
+          Sim {{ next_date or 'today' }}
+        </button>
+      </form>
+      <form method="post" action="{{ url_for('api_college_sim_week') }}" class="d-inline-block">
+        <input type="hidden" name="season" value="{{ season }}">
+        <button class="btn btn-sm btn-outline-primary" type="submit"
+                {% if not next_date %}disabled{% endif %}>
+          Sim week
+        </button>
+      </form>
+      <form method="post" action="{{ url_for('api_college_run_postseason') }}" class="d-inline-block">
+        <input type="hidden" name="season" value="{{ season }}">
+        <button class="btn btn-sm btn-outline-primary" type="submit"
+                {% if next_date or (meta and meta.phase == 'complete') %}disabled{% endif %}>
+          Run postseason + scouting reports
+        </button>
+      </form>
+      <form method="post" action="{{ url_for('api_college_rollover') }}" class="d-inline-block">
+        <input type="hidden" name="season" value="{{ season }}">
+        <button class="btn btn-sm btn-outline-secondary" type="submit"
+                {% if not meta or meta.phase != 'complete' %}disabled{% endif %}>
+          Roll over to {{ season + 1 }}
+        </button>
+      </form>
+    </div>
+    <div class="text-secondary small mt-2" style="line-height:1.4">
+      On combined pro + college saves, the main game clock (top-right
+      sim badge) auto-sims college games on the same date. The Day /
+      Week buttons here drive the college schedule directly — useful
+      when you want to advance college standalone, or run a few games
+      ahead of the pro clock.
+    </div>
+  </div>
+
+  <div class="panel mb-3" style="padding:12px 16px">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <strong class="me-2">Browse:</strong>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('college_leaders_view', season=season) }}">Leaders</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('college_postseason_view', season=season) }}">Postseason bracket</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('college_draft_view', season=season) }}">Draft board</a>
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('college_import_view', season=season) }}">Import class to pro</a>
+    </div>
+  </div>
+
+  {# Standings by conference #}
+  <div class="row g-3">
+    {% for conf, rows in conferences.items() %}
+    <div class="col-lg-6">
+      <div class="panel">
+        <div class="panel-title">
+          <strong>{{ conf }}</strong>
+        </div>
+        <div class="panel-body">
+          <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
+            <thead>
+              <tr>
+                <th>Program</th>
+                <th class="text-end">W</th>
+                <th class="text-end">L</th>
+                <th class="text-end">Pct</th>
+                <th class="text-end">GP</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for p in rows %}
+              <tr>
+                <td><a href="{{ url_for('college_program_view', program_id=p.id) }}">{{ p.short_name }}</a>
+                    <span class="text-secondary small">· {{ p.name }}</span></td>
+                <td class="text-end">{{ p.wins }}</td>
+                <td class="text-end">{{ p.losses }}</td>
+                <td class="text-end">{{ "%.3f"|format(p.pct) }}</td>
+                <td class="text-end">{{ p.games_played }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+{% endif %}
+
+{% endblock %}

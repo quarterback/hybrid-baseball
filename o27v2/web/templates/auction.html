@@ -15,6 +15,10 @@
       </a>
     {% endif %}
     {% if has_league %}
+      <button id="run-recon-btn" class="btn btn-outline-warning btn-sm"
+              title="Run the Phase E post-auction trade reconciliation: surface blockbuster, star-for-star, 3-team cycle, surplus, and arbitrage trades that the auction can't unwind on its own. Iterative — every fire rescans state so no double-dips.">
+        ⇄ Run trade reconciliation
+      </button>
       <button id="run-auction-btn" class="btn btn-warning btn-sm">
         {% if auction %}Re-run Auction{% else %}Run Auction{% endif %}
       </button>
@@ -97,6 +101,44 @@
     </table>
   </div>
 
+  {% if recon_trades %}
+  <div class="dense mb-4">
+    <div class="panel-title">
+      Post-auction trade reconciliation
+      <span class="text-secondary small ms-2">
+        Blockbuster / star-for-star / 3-cycle / surplus / arbitrage trades that
+        unwound depth-chart pathologies after the auction cleared.
+      </span>
+    </div>
+    <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
+      <thead><tr>
+        <th>Date</th>
+        <th>Trade</th>
+      </tr></thead>
+      <tbody>
+        {% for t in recon_trades %}
+          <tr>
+            <td class="text-secondary small" style="white-space:nowrap">{{ t.date }}</td>
+            <td>
+              <div>{{ t.detail }}</div>
+              {% if t.moves %}
+                <div class="text-secondary small mt-1">
+                  Arrived:
+                  {% for m in t.moves %}
+                    <span class="team-abbrev">{{ m.team_abbrev or '—' }}</span>
+                    ←
+                    {{ m.player_name }}{% if m.player_position %} ({{ m.player_position }}){% endif %}{% if not loop.last %} &nbsp;·&nbsp; {% endif %}
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   <div class="dense mb-4">
     <div class="panel-title">Keepers by team</div>
     <div class="row g-2">
@@ -138,6 +180,27 @@
     } catch (err) {
       alert('Auction failed: ' + err.message);
       btn.disabled = false; btn.textContent = 'Run Auction';
+    }
+  });
+})();
+(function () {
+  const btn = document.getElementById('run-recon-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    if (!confirm('Run post-auction trade reconciliation? Fires any blockbuster, star-for-star, 3-team cycle, surplus, or arbitrage trades the engine finds. Rescores after each fire so no double-dips.')) return;
+    btn.disabled = true; btn.textContent = 'Reconciling…';
+    try {
+      const r = await fetch('/api/trades/reconcile', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'request failed');
+      const n = (data.report && data.report.total_trades) || 0;
+      alert(n === 0
+        ? 'No depth-chart trades cleared the both-sides-improve threshold. Rosters look balanced.'
+        : `Fired ${n} reconciliation trade${n === 1 ? '' : 's'}.`);
+      window.location.reload();
+    } catch (err) {
+      alert('Reconciliation failed: ' + err.message);
+      btn.disabled = false; btn.textContent = '⇄ Run trade reconciliation';
     }
   });
 })();

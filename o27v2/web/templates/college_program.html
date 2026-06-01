@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}{{ program.name }}{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">{{ program.name }} <span class="text-secondary small">· {{ program.short_name }}</span></h2>
+    <div class="text-secondary small">
+      {{ program.conference }} · {{ program.region }} · {{ program.home_city }} ·
+      <strong>{{ wins }}-{{ losses }}</strong>
+    </div>
+  </div>
+  <a href="{{ url_for('college_view', season=program.season) }}" class="btn btn-sm btn-outline-secondary">
+    ← Standings
+  </a>
+</div>
+
+{# Team season totals strip #}
+{% if team_totals %}
+{% set bt = team_totals.batting %}
+{% set pt = team_totals.pitching %}
+<div class="panel mb-3" style="padding:12px 16px">
+  <div class="row small g-3">
+    <div class="col-lg-6">
+      <div class="text-secondary mb-1" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Team batting</div>
+      <div>
+        <strong>{{ bt.pa }}</strong> PA ·
+        <strong>{{ "%.3f"|format(bt.avg) }}</strong>/<strong>{{ "%.3f"|format(bt.obp) }}</strong>/<strong>{{ "%.3f"|format(bt.slg) }}</strong>
+        ({{ "%.3f"|format(bt.ops) }} OPS) ·
+        {{ bt.h }} H · {{ bt.hr }} HR · {{ bt.rbi }} RBI ·
+        {{ bt.bb }} BB · {{ bt.k }} K · {{ bt.sb }} SB
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="text-secondary mb-1" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.04em">Team pitching</div>
+      <div>
+        <strong>{{ "%.1f"|format(pt.ip) }}</strong> IP ·
+        <strong>{{ "%.2f"|format(pt.era) }}</strong> ERA ·
+        <strong>{{ "%.2f"|format(pt.whip) }}</strong> WHIP ·
+        {{ pt.k }} K · {{ pt.bb }} BB · {{ pt.h }} H · {{ pt.hr }} HR ·
+        {{ pt.bf }} BF
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# Top batters + top pitchers on this team #}
+{% if team_bat_top or team_pit_top %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="panel h-100">
+      <div class="panel-title"><strong>{{ program.short_name }} top batters</strong></div>
+      <div class="panel-body p-0">
+        <table class="table table-sm dense-table mb-0" style="font-size:.8rem">
+          <thead><tr>
+            <th>Player</th><th>Yr</th>
+            <th class="text-end">PA</th><th class="text-end">AVG</th>
+            <th class="text-end">HR</th><th class="text-end">RBI</th>
+            <th class="text-end">OPS</th>
+          </tr></thead>
+          <tbody>
+            {% for b in team_bat_top %}
+            <tr>
+              <td><a href="{{ url_for('college_player_view', player_id=b.player_id) }}">{{ b.name }}</a></td>
+              <td>{{ {1:'Fr',2:'So',3:'Jr',4:'Sr'}.get(b.college_year, b.college_year) }}</td>
+              <td class="text-end">{{ b.pa }}</td>
+              <td class="text-end">{{ "%.3f"|format(b.avg) }}</td>
+              <td class="text-end">{{ b.hr }}</td>
+              <td class="text-end">{{ b.rbi }}</td>
+              <td class="text-end">{{ "%.3f"|format(b.ops) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="panel h-100">
+      <div class="panel-title"><strong>{{ program.short_name }} top pitchers</strong></div>
+      <div class="panel-body p-0">
+        <table class="table table-sm dense-table mb-0" style="font-size:.8rem">
+          <thead><tr>
+            <th>Player</th><th>Yr</th>
+            <th class="text-end">IP</th><th class="text-end">ERA</th>
+            <th class="text-end">WHIP</th><th class="text-end">K</th>
+            <th class="text-end">K/9</th>
+          </tr></thead>
+          <tbody>
+            {% for p in team_pit_top %}
+            <tr>
+              <td><a href="{{ url_for('college_player_view', player_id=p.player_id) }}">{{ p.name }}</a></td>
+              <td>{{ {1:'Fr',2:'So',3:'Jr',4:'Sr'}.get(p.college_year, p.college_year) }}</td>
+              <td class="text-end">{{ "%.1f"|format(p.ip) }}</td>
+              <td class="text-end">{{ "%.2f"|format(p.era) }}</td>
+              <td class="text-end">{{ "%.2f"|format(p.whip) }}</td>
+              <td class="text-end">{{ p.k }}</td>
+              <td class="text-end">{{ "%.1f"|format(p.k9) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  {# Roster #}
+  <div class="col-lg-7">
+    <div class="panel">
+      <div class="panel-title"><strong>Roster</strong> · displayed grades only (full potential hidden until pro signing)</div>
+      <div class="panel-body">
+        <table class="table table-sm dense-table mb-0" style="font-size:.84rem">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Pos</th>
+              <th class="text-end">Yr</th>
+              <th class="text-end">SKL</th>
+              <th class="text-end">CON</th>
+              <th class="text-end">POW</th>
+              <th class="text-end">EYE</th>
+              <th class="text-end">SPD</th>
+              <th class="text-end">PIT</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for p in roster %}
+            <tr>
+              <td><a href="{{ url_for('college_player_view', player_id=p.id) }}">{{ p.name }}</a>
+                  {% if p.is_joker %}<span class="badge bg-warning text-dark ms-1">DH</span>{% endif %}</td>
+              <td>{{ p.position or '—' }}</td>
+              <td class="text-end">{{ {1:'Fr', 2:'So', 3:'Jr', 4:'Sr'}.get(p.college_year, p.college_year) }}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.skill }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.contact }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.power }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.eye }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if not p.is_pitcher %}{{ p.speed }}{% else %}—{% endif %}</td>
+              <td class="text-end">{% if p.is_pitcher %}{{ p.pitcher_skill }}{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# Schedule #}
+  <div class="col-lg-5">
+    <div class="panel">
+      <div class="panel-title"><strong>Schedule / Results</strong></div>
+      <div class="panel-body" style="max-height:520px;overflow-y:auto">
+        <table class="table table-sm dense-table mb-0" style="font-size:.78rem">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Phase</th>
+              <th>Opponent</th>
+              <th class="text-end">Result</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for g in schedule %}
+            {% set is_home = (g.home_program_id == program.id) %}
+            {% set opp_name = g.away_short if is_home else g.home_short %}
+            <tr>
+              <td>{{ g.game_date }}</td>
+              <td><span class="text-secondary small">{{ g.phase }}</span></td>
+              <td>{{ 'vs' if is_home else '@' }}
+                  <a href="{{ url_for('college_program_view', program_id=g.away_program_id if is_home else g.home_program_id) }}">{{ opp_name }}</a></td>
+              <td class="text-end">
+                {% if g.played %}
+                  {% set my  = g.home_score if is_home else g.away_score %}
+                  {% set opp = g.away_score if is_home else g.home_score %}
+                  {% set won = my > opp %}
+                  <a class="text-decoration-none" href="{{ url_for('college_game_view', game_id=g.id) }}">
+                    <span class="badge bg-{{ 'success' if won else 'danger' }}">{{ 'W' if won else 'L' }}</span>
+                    {{ my }}-{{ opp }}
+                  </a>
+                {% else %}
+                  <form method="post" action="{{ url_for('api_college_sim_game', game_id=g.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-outline-primary" style="padding:1px 8px;font-size:.72rem">Sim</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

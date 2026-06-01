@@ -9,6 +9,16 @@ from __future__ import annotations
 from o27v2 import db
 
 
+def current_season() -> int:
+    """Best-effort lookup of the active season number for tx-log emits.
+    Falls back to 1 if the seasons table is absent or empty."""
+    try:
+        row = db.fetchone("SELECT MAX(season_number) AS s FROM seasons")
+        return (row or {}).get("s") or 1
+    except Exception:
+        return 1
+
+
 def log_transaction(
     season: int,
     game_date: str,
@@ -42,6 +52,7 @@ def log_many(season: int, game_date: str, events: list[dict]) -> None:
 def get_transactions(
     team_id: int | None = None,
     event_type: str | None = None,
+    player_id: int | None = None,
     limit: int = 200,
 ) -> list[dict]:
     """
@@ -67,6 +78,9 @@ def get_transactions(
     if event_type:
         where.append("tx.event_type = ?")
         params.append(event_type)
+    if player_id is not None:
+        where.append("tx.player_id = ?")
+        params.append(player_id)
 
     if where:
         sql += " WHERE " + " AND ".join(where)

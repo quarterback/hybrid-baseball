@@ -143,9 +143,16 @@ def _select_keepers(team_id: int, n_keepers: int) -> list[dict]:
 
 def _team_position_need(team_id: int, position: str,
                         is_pitcher: bool) -> int:
-    """Return the count of slots a team needs at this position. A team
-    that already has 19 active pitchers won't outbid a team that needs
-    arms. Naive but produces sensible auction shape."""
+    """Return SIGNED need at this position: positive = under-stocked
+    (team wants this player), negative = over-stocked (team would
+    rather skip). Drives the Assistant-GM-style valuation multiplier
+    that prevents one team from stacking the same position.
+
+    Targets:
+      * pitchers      24 (19 active + 5 reserve)
+      * high-rotation  4 (CF/SS/2B/C)
+      * other positions 2 (1B/3B/LF/RF/DH-style)
+    """
     if is_pitcher:
         row = db.fetchone(
             "SELECT COUNT(*) AS n FROM players "
@@ -153,17 +160,31 @@ def _team_position_need(team_id: int, position: str,
             (team_id,),
         )
         have = (row or {}).get("n", 0)
-        # Target: 19 pitchers per active roster + 5 reserves.
-        return max(0, 24 - have)
+        return 24 - have
     row = db.fetchone(
         "SELECT COUNT(*) AS n FROM players "
         "WHERE team_id = ? AND is_pitcher = 0 AND position = ?",
         (team_id, position),
     )
     have = (row or {}).get("n", 0)
-    # Most positions: target 2 (a starter + backup). 4 for high-rotation.
     target = 4 if position in ("CF", "SS", "2B", "C") else 2
-    return max(0, target - have)
+    return target - have
+
+
+def _need_multiplier(need: int) -> float:
+    """Roster-gap-aware valuation multiplier — the Assistant GM piece.
+
+    Pushes bids UP when the team has a real gap at this position;
+    DAMPERS bids hard when the team is already stuffed there. The
+    over-stuffed damper is the antidote to the old behavior where
+    one team would win 12 of 13 lots because nothing checked whether
+    they'd already filled the slot.
+    """
+    if need >= 2:  return 1.30   # multiple open slots — push hard
+    if need == 1:  return 1.15   # one open slot — push
+    if need == 0:  return 0.90   # target met — mild damper
+    if need == -1: return 0.50   # one over — strong damper
+    return 0.15                  # 2+ over — essentially won't bid
 
 
 # Bid base curve. A linear `overall × const` produces too-tight Vickrey
@@ -292,12 +313,18 @@ def _per_lot_cap(purse_remaining: int, lot_order: int,
 
 
 def _team_valuation_noisefree(player: dict, team_id: int,
-                              profile: dict[str, float]) -> int:
+                              profile: dict[str, float],
+                              big_bid_pct: float = 0.0) -> int:
     """Deterministic willingness-to-pay for a player — same shape as
     `_team_bid` but with the per-lot noise term collapsed to 1.0 and
     no cap. Used by the post-clear trade phase: the question is "would
     team X pay more than the cleared price for this player on average,"
     not "did team X happen to roll a high noise this lot."
+
+    `big_bid_pct` (default 0.0) is the team's largest single winning
+    bid so far as a fraction of their purse; see `_apron_damper`. FA
+    signing or post-clear trade callers can leave this at 0.0 since
+    there's no in-auction history outside the auction loop.
     """
     overall = _player_overall(player)
     base = _bid_base(overall)
@@ -309,9 +336,10 @@ def _team_valuation_noisefree(player: dict, team_id: int,
     is_pitcher = bool(player.get("is_pitcher"))
     position = player.get("position", "P" if is_pitcher else "DH")
     need = _team_position_need(team_id, position, is_pitcher)
-    need_mult = min(1.5, 1.0 + 0.15 * need)
+    need_mult = _need_multiplier(need)
+    apron_mult = _apron_damper(big_bid_pct)
 
-    return int(base * need_mult * profile["aggression"])
+    return int(base * need_mult * apron_mult * profile["aggression"])
 
 
 # Sellback / post-clear trade thresholds. The buyer's noise-free
@@ -333,6 +361,37 @@ def _team_valuation_noisefree(player: dict, team_id: int,
 TRADE_THRESHOLD: float = 0.05    # buyer must value at ≥ 5% above winning bid
 TRADE_LOT_LIMIT: int   = 50      # trades only allowed in lots 1..50
 TRADE_SALES_PER_TEAM: int = 1    # max sellbacks per team per auction
+
+
+def _apron_damper(big_bid_pct: float) -> float:
+    """NBA-apron-style escalating penalty for whale-bid behavior.
+
+    The signal is the team's LARGEST single winning bid so far in the
+    auction, as a fraction of their initial purse. Cumulative spend
+    isn't the right axis here: a team eating on lots of low-tier
+    talent isn't the same problem as a team dropping huge bids to
+    sweep up the stars. The position-need damper already handles the
+    "13 cheap lots at one position" stacking failure; the apron is
+    aimed specifically at the whale who keeps outbidding on marquee
+    lots.
+
+    Once a team has made a notably big bid, subsequent bids get
+    damped progressively — so the whale gets one star, then has to
+    sit out future star bidding while less-spent teams take the rest.
+
+        peak ≤ 5%:   1.00   (no marquee bid yet — no premium)
+        peak ≤ 15%:  0.85
+        peak ≤ 30%:  0.65
+        peak ≤ 50%:  0.45
+        peak ≤ 70%:  0.30
+        peak >  70%: 0.20   (clear whale — effectively out of the running)
+    """
+    if big_bid_pct <= 0.05: return 1.00
+    if big_bid_pct <= 0.15: return 0.85
+    if big_bid_pct <= 0.30: return 0.65
+    if big_bid_pct <= 0.50: return 0.45
+    if big_bid_pct <= 0.70: return 0.30
+    return 0.20
 
 
 def _team_pressure(purse_remaining: int, lot_order: int,
@@ -363,7 +422,8 @@ def _team_bid(player: dict, team_id: int, purse_remaining: int,
               n_keepers: int, rng: random.Random,
               *, min_bid: int, lot_order: int,
               profile: dict[str, float],
-              pressure: float = 1.0) -> int:
+              pressure: float = 1.0,
+              big_bid_pct: float = 0.0) -> int:
     """Compute a single team's private valuation for a player, in
     guilders. The team's `profile` (from `_team_auction_profile`) is
     fixed for the whole auction — the only per-lot randomness is the
@@ -395,7 +455,8 @@ def _team_bid(player: dict, team_id: int, purse_remaining: int,
     is_pitcher = bool(player.get("is_pitcher"))
     position = player.get("position", "P" if is_pitcher else "DH")
     need = _team_position_need(team_id, position, is_pitcher)
-    need_mult = min(1.5, 1.0 + 0.15 * need)
+    need_mult = _need_multiplier(need)
+    apron_mult = _apron_damper(big_bid_pct)
 
     # Noise band tightens with discipline. The full ±55%/+50% band
     # lives at the bottom-end org-strength; well-run franchises (org
@@ -407,7 +468,7 @@ def _team_bid(player: dict, team_id: int, purse_remaining: int,
     noise = rng.uniform(1.0 - half_lo, 1.0 + half_hi)
 
     effective_aggression = profile["aggression"] * pressure
-    max_bid = int(base * need_mult * effective_aggression * noise)
+    max_bid = int(base * need_mult * apron_mult * effective_aggression * noise)
 
     remaining_slots = max(1, ROSTER_TARGET - n_keepers)
     cap = _per_lot_cap(purse_remaining, lot_order, remaining_slots, min_bid)
@@ -539,7 +600,17 @@ def apply_auction(
     draft_pool   = pool[auction_lot_limit:]
 
     # Step 3: per-team purse, slot tracking, auction loop.
-    purse = {tid: purse_init for tid in team_ids}
+    # If economy.team_budgets is initialized for this season, each team's
+    # starting purse is THEIR specific remaining budget (fantasy-style
+    # per-team caps). Otherwise everyone shares `purse_init` from the
+    # auction config (legacy behavior).
+    initial_purses = _initial_purses_from_budgets(season, team_ids, purse_init)
+    purse = dict(initial_purses)
+    # Apron tracker: each team's biggest single winning bid so far, in
+    # guilders. Used to compute `big_bid_pct` = peak / purse_init, fed
+    # into `_apron_damper` so the whale who outbids on stars gets
+    # damped on subsequent lots.
+    biggest_win: dict[int, int] = {tid: 0 for tid in team_ids}
     won_by_team: dict[int, list[dict]] = {tid: [] for tid in team_ids}
     # Per-team sales count for the sellback mechanic. Capped at 1 so
     # no team can churn dozens of player → cash flips and exit the
@@ -567,12 +638,20 @@ def apply_auction(
                 continue
             tp = _team_pressure(purse[tid], lot_order,
                                 auction_lot_limit, purse_init)
+            # Apron damper key: biggest single winning bid this team has
+            # made so far, as fraction of their starting purse. A team
+            # that's been winning cheap lots has a low peak and pays no
+            # premium; a whale who already dropped a marquee bid is
+            # damped on subsequent lots.
+            init_p = max(1, initial_purses.get(tid, purse_init))
+            big_bid_pct = biggest_win[tid] / init_p
             bid = _team_bid(player, tid, purse[tid],
                             n_keepers + won_so_far, rng,
                             min_bid=min_bid,
                             lot_order=lot_order,
                             profile=profiles[tid],
-                            pressure=tp)
+                            pressure=tp,
+                            big_bid_pct=big_bid_pct)
             if bid >= min_bid:
                 bids.append((bid, tid))
 
@@ -619,6 +698,10 @@ def apply_auction(
 
         purse[winner_tid] -= price
         won_by_team[winner_tid].append(player)
+        # Apron bookkeeping: bump the team's peak winning bid so the
+        # damper kicks in on subsequent lots for whales.
+        if price > biggest_win[winner_tid]:
+            biggest_win[winner_tid] = price
 
         winner_team = next((t for t in teams if t["id"] == winner_tid), None)
         winner_abbrev = winner_team["abbrev"] if winner_team else ""
@@ -660,8 +743,10 @@ def apply_auction(
         # price. The original winning_bid is sunk cost for the seller —
         # what matters is whether the cash they'd receive exceeds
         # their own valuation of the player.
+        w_init_p = max(1, initial_purses.get(winner_tid, purse_init))
         winner_val = _team_valuation_noisefree(
             player, winner_tid, profiles[winner_tid],
+            big_bid_pct=biggest_win[winner_tid] / w_init_p,
         )
         val_threshold = int(winner_val * (1.0 + TRADE_THRESHOLD))
 
@@ -677,7 +762,10 @@ def apply_auction(
                 buyer_pressure = _team_pressure(
                     purse[tid], lot_order, auction_lot_limit, purse_init,
                 )
-                val = int(_team_valuation_noisefree(player, tid, profiles[tid])
+                b_init_p = max(1, initial_purses.get(tid, purse_init))
+                val = int(_team_valuation_noisefree(
+                              player, tid, profiles[tid],
+                              big_bid_pct=biggest_win[tid] / b_init_p)
                           * buyer_pressure)
                 if val >= val_threshold:
                     candidates.append((val, tid))
@@ -699,6 +787,10 @@ def apply_auction(
                 ]
                 won_by_team[buyer_tid].append(player)
                 sales_count[winner_tid] += 1
+                # Apron bookkeeping: the buyer just committed `t_price`
+                # — that's a real big-bid signal, bump their peak.
+                if t_price > biggest_win[buyer_tid]:
+                    biggest_win[buyer_tid] = t_price
                 traded_to_tid = buyer_tid
                 trade_price = t_price
                 buyer_team = next(
@@ -864,11 +956,13 @@ def apply_auction(
                 (k["id"],),
             )
 
-    # Per-team summary for the UI.
+    # Per-team summary for the UI. Spent is the per-team delta against
+    # THAT team's initial purse (which may be its own team_budget remaining
+    # when economy is configured, not the global purse_init).
     summary = []
     for t in teams:
         won = won_by_team[t["id"]]
-        spent = purse_init - purse[t["id"]]
+        spent = initial_purses.get(t["id"], purse_init) - purse[t["id"]]
         summary.append({
             "team_id":     t["id"],
             "abbrev":      t["abbrev"],
@@ -879,6 +973,14 @@ def apply_auction(
             "spent":       spent,
             "remaining":   purse[t["id"]],
         })
+
+    # Emit auction_sign transaction rows for every winner — feeds the
+    # /transactions page and the player-card history tab.
+    _emit_auction_signs(season, log)
+
+    # Persist each team's net auction spend into team_budgets so the
+    # league economy stays in sync with the auction outcome.
+    _persist_auction_spend(season, initial_purses, purse)
 
     return {
         "ok":         True,
@@ -895,6 +997,73 @@ def apply_auction(
             "min_bid":          min_bid,
         },
     }
+
+
+def _emit_auction_signs(season: int, log: list[dict]) -> None:
+    """Log one `auction_sign` transaction per winning lot."""
+    from o27v2.transactions import log_many
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    events = []
+    for entry in log:
+        if entry.get("result") != "sold":
+            continue
+        tid = entry.get("winner_team_id")
+        pid = entry.get("player_id")
+        price = entry.get("price")
+        if tid is None or pid is None:
+            continue
+        events.append({
+            "event_type": "auction_sign",
+            "team_id":    tid,
+            "player_id":  pid,
+            "detail":     f"Won at auction for ƒ{price}" if price else "Won at auction",
+        })
+    if events:
+        log_many(season, today, events)
+
+
+def _initial_purses_from_budgets(season: int, team_ids: list[int],
+                                  fallback_purse: int) -> dict[int, int]:
+    """If league_economy / team_budgets are configured, return each
+    team's REMAINING budget as their auction starting purse. Otherwise
+    fall back to `fallback_purse` for every team (legacy behavior)."""
+    try:
+        from o27v2 import economy as _econ
+        # Has the user actually saved any economy config for this season?
+        from o27v2 import db as _db
+        has_econ = _db.fetchone(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='team_budgets'"
+        )
+        if not has_econ:
+            return {tid: fallback_purse for tid in team_ids}
+        _econ.init_budgets(season)
+        return {tid: _econ.budget_for_team(tid, season)["remaining"]
+                for tid in team_ids}
+    except Exception:
+        return {tid: fallback_purse for tid in team_ids}
+
+
+def _persist_auction_spend(season: int, initial_purses: dict[int, int],
+                            final_purses: dict[int, int]) -> None:
+    """Walk each team's spend (initial - remaining) and deduct from
+    team_budgets so the per-season ledger stays accurate. Silent no-op
+    when economy isn't configured."""
+    try:
+        from o27v2 import economy as _econ
+        from o27v2 import db as _db
+        has_econ = _db.fetchone(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='team_budgets'"
+        )
+        if not has_econ:
+            return
+        for tid, initial in initial_purses.items():
+            remaining = final_purses.get(tid, initial)
+            spent = max(0, initial - remaining)
+            if spent > 0:
+                _econ.deduct(tid, season, spent, allow_overdraft=True)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
