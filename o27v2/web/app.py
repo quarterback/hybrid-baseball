@@ -5106,6 +5106,12 @@ def player_detail(player_id: int):
                 co_row["college_player_id"]
             )
 
+    # Per-player transaction history (signings, trades, transfers, injuries).
+    transactions = []
+    if _table_exists("transactions"):
+        from o27v2.transactions import get_transactions
+        transactions = get_transactions(player_id=player_id, limit=200)
+
     return _serve(
         "player.html",
         player=player,
@@ -5122,6 +5128,7 @@ def player_detail(player_id: int):
         current_league=cur_team.get("league") or "",
         current_style_label=current_style_label,
         college_origin=college_origin,
+        transactions=transactions,
     )
 
 

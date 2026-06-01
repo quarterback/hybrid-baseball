@@ -251,6 +251,12 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-splits">Splits</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ratings">Ratings</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-gamelog">Game Log</button></li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-transactions"
+            title="Roster history — signings, trades, transfers, injuries">
+      Transactions{% if transactions %} <span class="badge bg-secondary">{{ transactions|length }}</span>{% endif %}
+    </button>
+  </li>
   {% if (bt_totals and bt_totals.xo) or (pt_totals and pt_totals.xo) %}
   <li class="nav-item">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-xo"
@@ -1254,6 +1260,70 @@
   </div>
 </div>
 {% endif %}
+
+{# ======================== TRANSACTIONS TAB ======================== #}
+<div class="tab-pane fade" id="tab-transactions">
+  <div class="panel">
+    <div class="panel-title"><strong>Roster history</strong>
+      <span class="text-secondary small ms-2">
+        Signings, transfers, injuries, trades — every roster move recorded
+        for {{ player.name }}.
+      </span>
+    </div>
+    <div class="panel-body p-0">
+      {% if not transactions %}
+        <div class="text-secondary p-3">
+          No transactions logged yet for this player.
+        </div>
+      {% else %}
+        <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Season</th>
+              <th>Event</th>
+              <th>Team</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for tx in transactions %}
+            <tr>
+              <td>{{ tx.game_date }}</td>
+              <td>{{ tx.season }}</td>
+              <td>
+                {% set tx_class = {
+                  'auction_sign':  'bg-success',
+                  'fa_sign':       'bg-success',
+                  'prospect_sign': 'bg-info text-dark',
+                  'college_sign':  'bg-info text-dark',
+                  'manual_assign': 'bg-secondary',
+                  'transfer':      'bg-primary',
+                  'injury':        'bg-danger',
+                  'return':        'bg-success',
+                  'waiver_release':'bg-warning text-dark',
+                  'waiver_claim':  'bg-info text-dark',
+                  'inseason_trade':'bg-primary',
+                  'deadline_trade':'bg-primary',
+                }.get(tx.event_type, 'bg-secondary') %}
+                <span class="badge {{ tx_class }}">{{ tx.event_type }}</span>
+              </td>
+              <td>
+                {% if tx.team_id %}
+                  <a href="{{ url_for('team_detail', team_id=tx.team_id) }}">{{ tx.team_abbrev or tx.team_id }}</a>
+                {% else %}
+                  <span class="text-secondary small">—</span>
+                {% endif %}
+              </td>
+              <td>{{ tx.detail }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+  </div>
+</div>
 
 </div> {# /tab-content #}
 
