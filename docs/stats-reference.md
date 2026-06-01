@@ -159,7 +159,7 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 
 | Stat | Abbr | Meaning | Formula | Source |
 |---|---|---|---|---|
-| Weighted ERA | wERA | ERA weighted by when runs scored across the three arcs | `(0.85·ER_ARC1 + 1.00·ER_ARC2 + 1.20·ER_ARC3) × 27 / outs × C_w` | `o27v2/web/app.py:1147` |
+| Weighted ERA | wERA | Arc-weighted ERA, shrunk toward league for short outings | `(0.85·ER_ARC1 + 1.00·ER_ARC2 + 1.20·ER_ARC3)·C_w` regressed with a 9-out league-average prior: `(adj_wER + (league_wERA/27)·9) × 27 / (outs + 9)` | `o27v2/web/app.py:_aggregate_pitcher_rows` |
 | Expected FIP | xFIP | Expected runs from pitcher-controlled events only | `(13·HR + 3·BB − 2·(K + FO)) × 27 / outs + C_x` | `o27v2/web/app.py:1153-1161` |
 | Decay | DECAY | Late-game K-rate degradation, league-corrected | `(K%_ARC1 − K%_ARC3) × 100 − league_drift` | `o27v2/web/app.py:1175-1180` |
 | Decay (Raw) | DECAY_RAW | Decay before league-drift correction | `(K%_ARC1 − K%_ARC3) × 100` | `o27v2/web/app.py:1179` |
@@ -174,6 +174,8 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 | Game Score | GSc | Single-number outing summary, clamped to [0, 100] | `clamp(0, 100, 50 + outs + 2·max(0, K−3) − 2H − 4ER − 2UER − BB − 4HR + 1·FO)` | `o27v2/web/app.py:839-864` |
 | Batter Game Score | bGSc | Single-number per-game batter summary, clamped to [0, 100] | `clamp(0, 100, 50 + 4·1B + 7·2B + 10·3B + 13·HR + 2·BB + 2·RBI + 1.5·R − 1.5·K − 2·(PA−H−BB))` | `o27v2/web/app.py:_batter_game_score` |
 | Outs Share % | OS% | Pct of the team's 27 outs the pitcher recorded | `outs / 27 × 100` | `o27v2/web/app.py:1207` |
+| Fielding-Omitted Pitching | FOP | Fielding-independent per-game pitching index, 0–100 (50 = league avg) | `100 / (1 + (DIPS-ERA / league_ERA)^2.2)`, clamped [0,100] | `o27v2/web/app.py:_pitcher_fop` |
+| DIPS ERA | DIPS-ERA | FO-inclusive fielding-independent ERA behind FOP | `(13·HR + 3·(BB+HBP) − 2·(K+FO)) / IP + C_dips` (anchored so league DIPS-ERA == league ERA) | `o27v2/web/app.py:_league_dips_constant` |
 
 ---
 
@@ -187,6 +189,7 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 | Weighted ERA Plus | wERA+ | Park-adjusted, league-relative wERA (ERA+ scale; 100 = avg) | `(league_wERA × PF / wERA) × 100` | `o27v2/web/app.py:_aggregate_pitcher_rows` |
 | Avg Outs Reached | AOR | Mean outs per appearance | `outs / G` | `o27v2/web/app.py:1207` |
 | Outs Share Plus | OS+ | League-relative AOR | `(AOR / league_AOR) × 100` | `o27v2/web/app.py:1209-1211` |
+| Game Equivalents | GE | Total workload in complete-game-worths (synthetic IP = GE × 9) | `total_outs / 27` | `o27v2/web/app.py:_aggregate_pitcher_rows` |
 | Workhorse Start % | WS% | Share of starts with ≥18 outs and ≤6 ER | `count(qualifying starts) / starts` | `o27v2/web/app.py:1223` |
 | Per-Game Decay | DECAY_PG | Mean per-appearance Decay (unweighted) | `mean(per-appearance Decay)` | `o27v2/web/app.py:466` |
 | Arc-3 Reach Rate | ARC3_REACH% | Pct of appearances reaching arc 3 | `count(BF_ARC3 > 0) / G` | `o27v2/web/app.py:464` |
