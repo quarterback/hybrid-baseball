@@ -6,7 +6,10 @@
   <div>
     <h2 class="mb-1">College Leaders{% if conference %} <span class="text-secondary">· {{ conference }}</span>{% endif %}</h2>
     <div class="text-secondary small">
-      Top batters (min 20 PA) and pitchers (min 30 outs) for the season.
+      Top batters (min {{ min_pa or 20 }} PA) and pitchers
+      (min {{ min_outs or 30 }} outs){% if games_per_team %} ·
+      {{ games_per_team }} team-game{{ '' if games_per_team == 1 else 's' }} played
+      {% endif %}.
       Filter by conference below; clear by picking <em>All conferences</em>.
     </div>
   </div>

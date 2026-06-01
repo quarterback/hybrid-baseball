@@ -223,12 +223,23 @@ def test_generate_college_roster_has_full_shape():
     assert starters_pos == set(cg._FIELDING_POSITIONS)
     assert sum(1 for p in roster if p.get("is_joker")) == 3
     assert sum(1 for p in roster if p.get("is_pitcher")) == 13
-    # Backups: 35 total - 8 starters - 3 jokers - 13 pitchers = 11
-    backups = [p for p in roster
-               if not p.get("is_pitcher") and not p.get("is_joker")
-               and p["position"] in cg._FIELDING_POSITIONS
-               and p["name"].startswith("Test U bk-")]
-    assert len(backups) == 11
+    # Backups: 35 total - 8 starters - 3 jokers - 13 pitchers = 11.
+    # Counted structurally (not by name prefix) — players use the
+    # real US name pool now, so backups aren't distinguishable by
+    # name from starters. The 19 non-pitcher-non-joker fielders break
+    # into 8 unique-position starters + 11 backups.
+    fielders = [p for p in roster
+                if not p.get("is_pitcher") and not p.get("is_joker")
+                and p["position"] in cg._FIELDING_POSITIONS]
+    assert len(fielders) == 19
+    # Backup_positions duplicate-deep at CF/SS/2B (3 doubles + 1 each
+    # for C/3B/1B/LF/RF/extra CF/SS/2B), so backup positions have
+    # ≥ 2 fielders at certain positions.
+    from collections import Counter
+    pos_counts = Counter(p["position"] for p in fielders)
+    # CF / SS / 2B should have ≥ 3 fielders each (starter + ≥ 2 backups)
+    for pos in ("CF", "SS", "2B"):
+        assert pos_counts[pos] >= 3, (pos, pos_counts[pos])
 
 
 def test_sim_one_college_game_through_the_engine():

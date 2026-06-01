@@ -7463,6 +7463,25 @@ def new_league_post():
                 app.logger.exception("pre-season auction failed: %s", e)
                 flash(f"Pre-season auction failed: {e}", "error")
 
+    # Optional college tier — 195 NCAA-style programs in their own pool,
+    # alongside the pro league. The college sim co-runs on the pro clock
+    # so the new graduating class clears through FA/auction each offseason.
+    if request.form.get("seed_college_on_start"):
+        from o27v2 import college_league as _cl
+        try:
+            summary = _cl.seed_college_league(season=2026, rng_seed=rng_seed)
+            if summary["created_programs"] > 0:
+                _cl.generate_schedule(season=2026)
+                flash(f"College tier seeded: {summary['created_programs']} programs, "
+                      f"{summary.get('created_players', 0)} players. "
+                      f"View at /college.", "info")
+            else:
+                flash("College tier already exists for season 2026 — skipped.",
+                      "info")
+        except Exception as e:
+            app.logger.exception("college tier seed failed: %s", e)
+            flash(f"College tier seed failed: {e}", "error")
+
     # Surface a schedule-quality report so the user sees imbalance
     # warnings (uneven opponent counts, off-day spread, etc.) before
     # they get deep into a season and notice a lopsided play sample.
@@ -9204,6 +9223,21 @@ def api_college_seed():
     return redirect(url_for("college_view", season=season))
 
 
+@app.route("/api/college/rename-synthetic", methods=["POST"])
+def api_college_rename_synthetic():
+    """One-shot backfill for existing college DBs seeded before the
+    pro-name pool was wired in — replaces synthetic names like
+    'FSU 3B' / 'FSU bk-CF' / 'FSU P12' with real US-pool draws."""
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or 2026
+    result = _cl.rename_synthetic_names(
+        rng_seed=request.form.get("rng_seed", type=int) or 0,
+    )
+    flash(f"Renamed {result['renamed']} of {result['scanned']} college "
+          f"players (synthetic → real names from US pool).", "info")
+    return redirect(url_for("college_view", season=season))
+
+
 @app.route("/api/college/sim-season", methods=["POST"])
 def api_college_sim_season():
     from o27v2 import college_league as _cl
@@ -9290,15 +9324,34 @@ def college_leaders_view():
     bat_sort = request.args.get("bat_sort", "hr")
     pit_sort = request.args.get("pit_sort", "era")
     conference = request.args.get("conf") or None
-    batters  = _cl.batter_leaders(season,  sort=bat_sort, min_pa=20, limit=50,
+    # Adaptive qualifying threshold — fixed 20 PA / 30 outs excluded
+    # everyone early in the season. Use 2.0 PA per team-game (college
+    # rosters rotate more than MLB so per-player PA growth is slower
+    # than the 3.1 rule of thumb) and 2.5 outs per team-game.
+    gp_row = db.fetchone(
+        "SELECT COUNT(*) AS n FROM college_games "
+        "WHERE season = ? AND played = 1", (season,))
+    progs_row = db.fetchone(
+        "SELECT COUNT(*) AS n FROM college_programs WHERE season = ?",
+        (season,))
+    games_played = (gp_row or {}).get("n") or 0
+    n_progs = (progs_row or {}).get("n") or 1
+    games_per_team = max(1, (games_played * 2) // max(1, n_progs))
+    min_pa = max(5, int(2.0 * games_per_team))
+    min_outs = max(5, int(2.5 * games_per_team))
+    batters  = _cl.batter_leaders(season,  sort=bat_sort,
+                                  min_pa=min_pa, limit=50,
                                   conference=conference)
-    pitchers = _cl.pitcher_leaders(season, sort=pit_sort, min_outs=30, limit=50,
+    pitchers = _cl.pitcher_leaders(season, sort=pit_sort,
+                                  min_outs=min_outs, limit=50,
                                   conference=conference)
     return _serve("college_leaders.html",
                   season=season, batters=batters, pitchers=pitchers,
                   bat_sort=bat_sort, pit_sort=pit_sort,
                   conference=conference,
-                  conferences=_cl.list_conferences(season))
+                  conferences=_cl.list_conferences(season),
+                  min_pa=min_pa, min_outs=min_outs,
+                  games_per_team=games_per_team)
 
 
 @app.route("/college/game/<int:game_id>")
@@ -9319,11 +9372,21 @@ def college_game_view(game_id: int):
 @app.route("/college/draft")
 def college_draft_view():
     from o27v2 import college_league as _cl
-    season = request.args.get("season", type=int) or _college_current_season()
+    # The draft pool spans every unsigned graduate across ALL seasons —
+    # after the annual rollover, the new current season has fresh
+    # freshmen on its programs, but the graduates still belong to their
+    # ORIGINAL (last-season) program row. Filtering to current season
+    # by default returned an empty board for the most common use case
+    # (right after rollover, when you actually want to sign the new
+    # class). Now we default to None (= every unsigned graduate). The
+    # `season` URL param still lets the user scope to a specific class
+    # year for narrative views.
+    requested_season = request.args.get("season", type=int)
+    current_season = _college_current_season()
     position = request.args.get("position") or None
     if position not in _cl.DRAFT_POSITIONS:
         position = None
-    draft = _cl.draft_class(season=season, position=position)
+    draft = _cl.draft_class(season=requested_season, position=position)
     for p in draft:
         by_src: dict[str, dict] = {}
         for r in p["reports"]:
@@ -9333,7 +9396,8 @@ def college_draft_view():
                                        if k.startswith("team:")), None)
     return _serve("college_draft.html", draft=draft,
                   position=position, positions=_cl.DRAFT_POSITIONS,
-                  season=season)
+                  season=requested_season or current_season,
+                  scoped_to_season=requested_season is not None)
 
 
 @app.route("/api/college/sign/<int:college_player_id>", methods=["POST"])
@@ -9352,13 +9416,20 @@ def api_college_sign(college_player_id: int):
 def college_import_view():
     """Bulk-import workflow — preview every draft-eligible senior with
     their reports, and choose where to land them: FA pool (auction-
-    ready) or directly on a specific team's roster."""
+    ready) or directly on a specific team's roster.
+
+    Like the draft board, the default pool spans every unsigned
+    graduate (not just the current-season class) — after rollover, the
+    just-graduated seniors are still tagged to their last-season
+    program row, so filtering to current season would hide them.
+    """
     from o27v2 import college_league as _cl
-    season = request.args.get("season", type=int) or _college_current_season()
+    requested_season = request.args.get("season", type=int)
+    current_season = _college_current_season()
     position = request.args.get("position") or None
     if position not in _cl.DRAFT_POSITIONS:
         position = None
-    draft = _cl.draft_class(season=season, position=position)
+    draft = _cl.draft_class(season=requested_season, position=position)
     for p in draft:
         by_src: dict[str, dict] = {}
         for r in p["reports"]:
@@ -9371,7 +9442,8 @@ def college_import_view():
     ) if _table_exists("teams") else []
     return _serve("college_import.html", draft=draft, teams=teams,
                   position=position, positions=_cl.DRAFT_POSITIONS,
-                  season=season)
+                  season=requested_season or current_season,
+                  scoped_to_season=requested_season is not None)
 
 
 @app.route("/api/college/bulk-sign", methods=["POST"])

@@ -329,27 +329,43 @@ ROSTER_SIZE = 35
 
 def generate_college_roster(rng: random.Random,
                             program_name: str = "Program",
-                            *, country: str = "US") -> list[dict]:
+                            *, country: str = "US",
+                            name_picker=None) -> list[dict]:
     """Build a 35-man college roster — 8 canonical-position starters,
     3 jokers (the DH slot), 11 fielder backups for PH/PR/defensive
     depth, 13 pitchers (rotation + bullpen). Each player gets an
-    auto-assigned `position`."""
+    auto-assigned `position`.
+
+    `name_picker` is a `() -> (name, country)` callable from
+    `o27v2.league.make_name_picker`. Defaults to a US-only picker so
+    the names match NCAA reality. Mixed gender (matches the pro
+    pool's default) so college rosters aren't all men.
+    """
+    if name_picker is None:
+        from o27v2.league import make_name_picker
+        name_picker = make_name_picker(rng, gender="mixed",
+                                       region_weights={"us": 1.0})
+
+    def _draw_name() -> tuple[str, str]:
+        nm, ctry = name_picker()
+        return nm, (ctry or country)
+
     roster: list[dict] = []
 
     # 8 canonical starters (one at each fielding position).
     for pos in _FIELDING_POSITIONS:
+        nm, ctry = _draw_name()
         roster.append(generate_college_player(
-            rng, is_pitcher=False,
-            name=f"{program_name} {pos}",
-            country=country, position=pos,
+            rng, is_pitcher=False, name=nm,
+            country=ctry, position=pos,
         ))
 
     # 3 jokers (the DH role — drafted explicitly as bat-only, fixed
     # in the lineup). Stat profile leans hit-skill heavy.
-    for i in range(3):
-        jk = generate_college_player(rng, is_pitcher=False,
-                                     name=f"{program_name} J{i+1}",
-                                     country=country, position="")
+    for _i in range(3):
+        nm, ctry = _draw_name()
+        jk = generate_college_player(rng, is_pitcher=False, name=nm,
+                                     country=ctry, position="")
         jk["is_joker"]    = 1
         jk["roster_slot"] = "joker"
         for attr in ("skill", "contact", "power"):
@@ -370,19 +386,19 @@ def generate_college_roster(rng: random.Random,
         "RF", "CF", "SS", "2B",
     )
     for pos in backup_positions:
+        nm, ctry = _draw_name()
         roster.append(generate_college_player(
-            rng, is_pitcher=False,
-            name=f"{program_name} bk-{pos}",
-            country=country, position=pos,
+            rng, is_pitcher=False, name=nm,
+            country=ctry, position=pos,
         ))
 
     # 13 pitchers — rotation (4) + bullpen (9). Engine picks the SP
     # per game and the rest are available out of the pen.
-    for i in range(13):
+    for _i in range(13):
+        nm, ctry = _draw_name()
         roster.append(generate_college_player(
-            rng, is_pitcher=True,
-            name=f"{program_name} P{i+1}",
-            country=country, position="P",
+            rng, is_pitcher=True, name=nm,
+            country=ctry, position="P",
         ))
 
     # Stamp synthetic ids so the engine has player_id keys.

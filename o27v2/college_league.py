@@ -510,6 +510,66 @@ _PLAYER_COLS = (
 )
 
 
+def rename_synthetic_names(rng_seed: int = 0) -> dict:
+    """One-shot backfill: replace synthetic placeholder names
+    (e.g. 'FSU 3B', 'FSU bk-CF', 'FSU P12', 'FSU J1') with real names
+    drawn from the US pool. Idempotent — only touches college_players
+    whose name still matches the synthetic patterns. Returns a
+    {renamed: N, scanned: N} summary so the caller can flash a result.
+
+    The patterns match what `generate_college_roster` used to stamp:
+      "<SHORT_NAME> <POS>"     (starter at a canonical fielding position)
+      "<SHORT_NAME> bk-<POS>"  (backup at a canonical fielding position)
+      "<SHORT_NAME> P<digit>"  (pitcher)
+      "<SHORT_NAME> J<digit>"  (joker / DH)
+    """
+    import re
+    from o27v2.league import make_name_picker
+    init_college_schema()
+    rng = random.Random((rng_seed or 0) ^ 0x5CED01)
+    name_picker = make_name_picker(rng, gender="mixed",
+                                   region_weights={"us": 1.0})
+
+    programs = db.fetchall(
+        "SELECT id, short_name FROM college_programs"
+    )
+    canonical_positions = ("C", "1B", "2B", "3B", "SS", "LF", "CF", "RF")
+    pat_pos    = re.compile(r"^(?P<sn>.+?)\s+(?P<pos>[A-Z0-9]{1,3})$")
+    pat_bk     = re.compile(r"^(?P<sn>.+?)\s+bk-(?P<pos>[A-Z0-9]{1,3})$")
+    pat_pitch  = re.compile(r"^(?P<sn>.+?)\s+P\d+$")
+    pat_joker  = re.compile(r"^(?P<sn>.+?)\s+J\d+$")
+
+    by_short = {p["short_name"]: p["id"] for p in programs}
+    renamed = 0
+    scanned = 0
+    rows = db.fetchall("SELECT id, name FROM college_players")
+    for r in rows:
+        scanned += 1
+        nm = r["name"] or ""
+        # The bk-/P/J patterns are unambiguously synthetic; the bare
+        # "<sn> <pos>" pattern only renames when <pos> is a canonical
+        # fielding code AND the leading token matches a known short_name
+        # (avoids renaming a player whose real surname happens to be
+        # a 2-3 letter token).
+        is_synth = False
+        if pat_bk.match(nm) or pat_pitch.match(nm) or pat_joker.match(nm):
+            is_synth = True
+        else:
+            m = pat_pos.match(nm)
+            if (m and m.group("pos") in canonical_positions
+                    and m.group("sn") in by_short):
+                is_synth = True
+        if not is_synth:
+            continue
+        new_name, _country = name_picker()
+        db.execute(
+            "UPDATE college_players SET name = ? WHERE id = ?",
+            (new_name, r["id"]),
+        )
+        renamed += 1
+    return {"renamed": renamed, "scanned": scanned}
+
+
 def _insert_player(program_id: int, p: dict) -> int:
     """Insert one college player; returns the new id."""
     values = [program_id] + [p.get(c) if c != "program_id" else program_id
