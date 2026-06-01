@@ -1011,6 +1011,82 @@ def apply_auction(
     }
 
 
+def preview_auction(n_keepers: int = 3) -> dict[str, Any]:
+    """Dry-run the keeper-selection step + snapshot the FA pool so the
+    UI can show, BEFORE running the auction, exactly who's eligible.
+
+    Returns:
+      {
+        "keepers": [{"team_id", "team_abbrev", "team_name",
+                     "players": [{id,name,position,overall,is_pitcher}]}],
+        "pool":    same shape as keepers — non-keeper rostered players,
+                   grouped by current team, who'll get auctioned.
+        "free_agents": flat list of players with team_id IS NULL.
+        "n_keepers", "n_pool", "n_free_agents": counts.
+      }
+    """
+    teams = db.fetchall(
+        "SELECT id, abbrev, name FROM teams ORDER BY id"
+    )
+
+    keepers_out: list[dict] = []
+    pool_out: list[dict] = []
+    n_keepers_total = 0
+    n_pool_total = 0
+    for t in teams:
+        roster = db.fetchall(
+            "SELECT * FROM players WHERE team_id = ?", (t["id"],)
+        )
+        ranked = sorted((dict(r) for r in roster),
+                        key=lambda p: -_player_overall(p))
+        keep = ranked[:n_keepers]
+        rest = ranked[n_keepers:]
+        def _shape(plist):
+            return [{
+                "id":       p["id"],
+                "name":     p["name"],
+                "position": p.get("position"),
+                "is_pitcher": bool(p.get("is_pitcher")),
+                "is_active":  bool(p.get("is_active")),
+                "overall":  _player_overall(p),
+            } for p in plist]
+        keepers_out.append({
+            "team_id":     t["id"],
+            "team_abbrev": t["abbrev"],
+            "team_name":   t["name"],
+            "players":     _shape(keep),
+        })
+        pool_out.append({
+            "team_id":     t["id"],
+            "team_abbrev": t["abbrev"],
+            "team_name":   t["name"],
+            "players":     _shape(rest),
+        })
+        n_keepers_total += len(keep)
+        n_pool_total += len(rest)
+
+    fa_rows = db.fetchall("SELECT * FROM players WHERE team_id IS NULL")
+    free_agents = sorted(
+        ({
+            "id":         r["id"],
+            "name":       r["name"],
+            "position":   r.get("position") if isinstance(r, dict) else r["position"],
+            "is_pitcher": bool(r["is_pitcher"]),
+            "overall":    _player_overall(dict(r)),
+        } for r in fa_rows),
+        key=lambda p: -p["overall"],
+    )
+
+    return {
+        "keepers":       keepers_out,
+        "pool":          pool_out,
+        "free_agents":   free_agents,
+        "n_keepers":     n_keepers_total,
+        "n_pool":        n_pool_total,
+        "n_free_agents": len(free_agents),
+    }
+
+
 def apply_roster_cut(season: int | None = None) -> dict[str, Any]:
     """Roster cut day. Trim every team back to ROSTER_FINAL_CAP = 47.
 
