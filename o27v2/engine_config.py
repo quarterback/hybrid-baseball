@@ -300,34 +300,37 @@ PRESETS: dict[str, dict[str, object]] = {
     },
     # College-softball SCORING ENVIRONMENT (not a softball conversion — no slap/
     # steal identity). Reproduces the *shape* of D1 softball offense in O27:
-    # high batting average / high BABIP (hits fall in), low power, and the circle
-    # (pitching) — not double plays — keeping the big inning in check, so it
-    # settles into the low-scoring band.
+    # high batting average / high BABIP (hits fall in), modest power, low
+    # strikeouts, and the circle (pitching) keeping the big inning in check, so
+    # it settles into the low-scoring band.
     #
-    # Anchored to 2026 NCAA Div I team data (national averages, which sit below
-    # the top-50 leaderboards): ~.295 BA, ~5 R/game and ERA ~3.7 over a 21-out
-    # softball game → ~6.4 R/team/game once scaled to O27's 27 outs and
-    # discounted for the Walk-Back HR tail. Two signatures the data makes
-    # explicit: (1) a huge ace-vs-field spread — ERA leaders at ~1.35 vs a ~3.7
-    # mean → high CONTACT_MATCHUP_SHIFT + strong pitcher dominance; (2) double
-    # plays are RARE (national leader only 0.84/game, ~half of baseball) → GIDP
-    # is pushed BELOW O27 default, and run suppression comes from the circle
-    # instead. The absolute R/G is governed by O27's structure — verify with a
-    # benchmark and read the characterize() band rather than expecting parity.
+    # Calibrated to 2026 NCAA Div I NATIONAL TOTALS (true league averages, per
+    # team per 21-out game): R 5.11, BA .291, OBP .376, SLG .449, ISO .157,
+    # BABIP .316, HR 0.81, K% 13.4, BB% 10.3, ERA 3.44. Scaled to O27's 27 outs
+    # that's ~6.6 R/team/game (low-scoring band); the benchmark lands there.
+    # Signatures the data makes explicit: a big ace-vs-field spread (ERA leaders
+    # ~1.35 vs the 3.44 mean → high CONTACT_MATCHUP_SHIFT, contact-suppressing
+    # PITCHER_DOM_CONTACT) but a LOW overall strikeout rate (13.4% → swing-strike
+    # knob kept modest; dominance is weak contact, not whiffs) and modest power
+    # (ISO .157 → low POWER_REDIST_HR / hard-contact).
+    #
+    # NOTE on double plays: softball's DPs are rare (~0.2/game) ONLY because the
+    # bases are 60 ft; O27 is played on 90-ft basepaths, so that rarity is a
+    # geometry artifact, not a scoring-environment feature — GIDP is deliberately
+    # left at the O27 default, NOT suppressed.
     "college_scoring": {
-        "CONTACT_WEAK_BASE":      0.26,   # contact-rich: hits fall in (high BABIP/BA)
+        "CONTACT_WEAK_BASE":      0.26,   # contact-rich: hits fall in (BA .291 / BABIP .316)
         "CONTACT_MEDIUM_BASE":    0.56,
-        "CONTACT_HARD_BASE":      0.18,   # low hard contact → few XBH/HR
-        "CONTACT_MATCHUP_SHIFT":  0.32,   # big ace-vs-field spread (ERA 1.35 → ~3.7)
-        "POWER_REDIST_HR":        0.12,   # power suppressed hard
-        "POWER_REDIST_HARD_S2D":  0.24,   # some gap doubles survive
+        "CONTACT_HARD_BASE":      0.18,   # low hard contact → modest power (ISO .157, HR 0.81)
+        "CONTACT_MATCHUP_SHIFT":  0.32,   # big ace-vs-field spread (ERA 1.35 → 3.44 mean)
+        "POWER_REDIST_HR":        0.12,   # power suppressed
+        "POWER_REDIST_HARD_S2D":  0.24,   # some gap doubles survive (2B 1.32/game)
         "POWER_REDIST_HARD_D2T":  0.10,
-        "PITCHER_DOM_SWINGING":   0.055,  # elite arms miss bats
-        "PITCHER_DOM_CONTACT":   -0.10,   # circle suppresses contact (the run check)
-        "BATTER_DOM_SWINGING":   -0.05,   # but the field still puts the ball in play
-        "BATTER_EYE_BALL":        0.04,   # moderate walks
+        "PITCHER_DOM_SWINGING":   0.03,   # K% is LOW (13.4%) — don't over-whiff
+        "PITCHER_DOM_CONTACT":   -0.10,   # the run check is weak contact, not strikeouts
+        "BATTER_DOM_SWINGING":   -0.05,   # field puts the ball in play (low K)
+        "BATTER_EYE_BALL":        0.04,   # moderate-high walks (BB% 10.3)
         "PARK_HR_MAX":            1.00,   # no hitter-park HR boost
-        "GIDP_BASE_PROB":         0.13,   # softball turns few DPs (≈half of baseball)
         "GEN_SHIFT_POWER":       -10,
         "GEN_SHIFT_CONTACT":       8,
         "GEN_SHIFT_PITCHING":      6,
