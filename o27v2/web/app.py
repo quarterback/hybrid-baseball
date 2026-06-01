@@ -9372,11 +9372,21 @@ def college_game_view(game_id: int):
 @app.route("/college/draft")
 def college_draft_view():
     from o27v2 import college_league as _cl
-    season = request.args.get("season", type=int) or _college_current_season()
+    # The draft pool spans every unsigned graduate across ALL seasons —
+    # after the annual rollover, the new current season has fresh
+    # freshmen on its programs, but the graduates still belong to their
+    # ORIGINAL (last-season) program row. Filtering to current season
+    # by default returned an empty board for the most common use case
+    # (right after rollover, when you actually want to sign the new
+    # class). Now we default to None (= every unsigned graduate). The
+    # `season` URL param still lets the user scope to a specific class
+    # year for narrative views.
+    requested_season = request.args.get("season", type=int)
+    current_season = _college_current_season()
     position = request.args.get("position") or None
     if position not in _cl.DRAFT_POSITIONS:
         position = None
-    draft = _cl.draft_class(season=season, position=position)
+    draft = _cl.draft_class(season=requested_season, position=position)
     for p in draft:
         by_src: dict[str, dict] = {}
         for r in p["reports"]:
@@ -9386,7 +9396,8 @@ def college_draft_view():
                                        if k.startswith("team:")), None)
     return _serve("college_draft.html", draft=draft,
                   position=position, positions=_cl.DRAFT_POSITIONS,
-                  season=season)
+                  season=requested_season or current_season,
+                  scoped_to_season=requested_season is not None)
 
 
 @app.route("/api/college/sign/<int:college_player_id>", methods=["POST"])
@@ -9405,13 +9416,20 @@ def api_college_sign(college_player_id: int):
 def college_import_view():
     """Bulk-import workflow — preview every draft-eligible senior with
     their reports, and choose where to land them: FA pool (auction-
-    ready) or directly on a specific team's roster."""
+    ready) or directly on a specific team's roster.
+
+    Like the draft board, the default pool spans every unsigned
+    graduate (not just the current-season class) — after rollover, the
+    just-graduated seniors are still tagged to their last-season
+    program row, so filtering to current season would hide them.
+    """
     from o27v2 import college_league as _cl
-    season = request.args.get("season", type=int) or _college_current_season()
+    requested_season = request.args.get("season", type=int)
+    current_season = _college_current_season()
     position = request.args.get("position") or None
     if position not in _cl.DRAFT_POSITIONS:
         position = None
-    draft = _cl.draft_class(season=season, position=position)
+    draft = _cl.draft_class(season=requested_season, position=position)
     for p in draft:
         by_src: dict[str, dict] = {}
         for r in p["reports"]:
@@ -9424,7 +9442,8 @@ def college_import_view():
     ) if _table_exists("teams") else []
     return _serve("college_import.html", draft=draft, teams=teams,
                   position=position, positions=_cl.DRAFT_POSITIONS,
-                  season=season)
+                  season=requested_season or current_season,
+                  scoped_to_season=requested_season is not None)
 
 
 @app.route("/api/college/bulk-sign", methods=["POST"])
