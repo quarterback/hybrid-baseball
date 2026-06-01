@@ -3495,6 +3495,83 @@ def game_pbp(game_id: int):
     )
 
 
+@app.route("/game/<int:game_id>/scorecard")
+def game_scorecard(game_id: int):
+    """Read-only visual scorecard (inline SVG) for a completed game.
+
+    Built from the persisted text play-by-play (`game_pbp`) — the same blob
+    the /pbp view serves — parsed into per-PA records and laid out by
+    `o27.render.svg_scorecard`. Gated behind a link from the box score so the
+    parse/render cost never touches the main game page. Games simulated in
+    "lite" mode have no stored PBP and get a friendly notice.
+
+    Note: the half→side mapping is by the PBP's "TOP/BOTTOM HALF" label, not
+    batting order, so home-bats-first games render on the correct side.
+    """
+    from o27.render.svg_scorecard import extract_pa_records, render_scorecard
+
+    game = db.fetchone(
+        """SELECT g.id, g.played, g.game_date,
+                  g.home_team_id, g.away_team_id,
+                  g.home_score, g.away_score, g.winner_id,
+                  ht.abbrev as home_abbrev, at.abbrev as away_abbrev,
+                  ht.name as home_name, at.name as away_name
+           FROM games g
+           JOIN teams ht ON g.home_team_id = ht.id
+           JOIN teams at ON g.away_team_id = at.id
+           WHERE g.id = ?""", (game_id,)
+    )
+    if not game:
+        abort(404)
+
+    row = db.fetchone("SELECT pbp_text FROM game_pbp WHERE game_id = ?", (game_id,))
+    pbp_text = row["pbp_text"] if row else None
+
+    scorecard_visitors = scorecard_home = ""
+    if pbp_text:
+        # The 12-row lineup column is the base batting order — jokers render
+        # as in-cell glyphs (J), not lineup rows — in first-appearance order.
+        # Jokers are tagged by roster_slot='joker' (is_joker is legacy/unset
+        # in the modern schema), so exclude both. Names must be the full
+        # engine name so they match the PBP's "Now batting: <name>" lines the
+        # records are keyed on.
+        def _lineup(team_id: int) -> list[dict]:
+            lr = db.fetchall(
+                """SELECT p.name AS name, p.position AS pos, MIN(bs.id) AS ord
+                   FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
+                   WHERE bs.game_id = ? AND bs.team_id = ?
+                     AND COALESCE(p.is_joker, 0) = 0
+                     AND COALESCE(p.roster_slot, '') <> 'joker'
+                   GROUP BY bs.player_id
+                   ORDER BY ord
+                   LIMIT 12""",
+                (game_id, team_id),
+            )
+            return [{"name": r["name"], "pos": (r["pos"] or "")} for r in lr]
+
+        try:
+            pa_records = extract_pa_records(pbp_text.split("\n"))
+            cards = render_scorecard(
+                visitors_name=game["away_name"],
+                home_name=game["home_name"],
+                visitors_lineup=_lineup(game["away_team_id"]),
+                home_lineup=_lineup(game["home_team_id"]),
+                pa_records=pa_records,
+            )
+            scorecard_visitors = cards.get("visitors", "")
+            scorecard_home = cards.get("home", "")
+        except Exception:
+            # The scorecard is a nice-to-have; never 500 the page over it.
+            scorecard_visitors = scorecard_home = ""
+
+    return _serve(
+        "game_scorecard.html",
+        game=game,
+        scorecard_visitors=scorecard_visitors,
+        scorecard_home=scorecard_home,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Markdown text-export endpoints — for forum / GitHub / LLM paste.
 # Each returns Content-Type: text/plain; charset=utf-8 so browsers display

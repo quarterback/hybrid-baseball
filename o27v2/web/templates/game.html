@@ -203,6 +203,9 @@
     <a class="btn btn-sm btn-outline-secondary"
        href="{{ url_for('game_pbp', game_id=game.id) }}"
        title="Full text play-by-play for this game">Play-by-Play</a>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('game_scorecard', game_id=game.id) }}"
+       title="Visual per-PA scorecard for this game">Scorecard</a>
     {% endif %}
     <div class="btn-group btn-group-sm">
       {% if prev_game_id %}<a href="{{ url_for('game_detail', game_id=prev_game_id) }}" class="btn btn-outline-secondary">&larr; Prev</a>
