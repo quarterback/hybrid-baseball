@@ -8733,6 +8733,57 @@ def api_college_sign(college_player_id: int):
     return redirect(url_for("player_detail", player_id=pro_id))
 
 
+@app.route("/college/import")
+def college_import_view():
+    """Bulk-import workflow — preview every draft-eligible senior with
+    their reports, and choose where to land them: FA pool (auction-
+    ready) or directly on a specific team's roster."""
+    from o27v2 import college_league as _cl
+    draft = _cl.draft_class(season=request.args.get("season", type=int)
+                                    or _college_current_season())
+    for p in draft:
+        by_src: dict[str, dict] = {}
+        for r in p["reports"]:
+            by_src[r["source"]] = r
+        p["report_service"] = by_src.get("service")
+        p["report_first_team"] = next((v for k, v in by_src.items()
+                                       if k.startswith("team:")), None)
+    teams = db.fetchall(
+        "SELECT id, name, league FROM teams ORDER BY league, name"
+    ) if _table_exists("teams") else []
+    return _serve("college_import.html", draft=draft, teams=teams)
+
+
+@app.route("/api/college/bulk-sign", methods=["POST"])
+def api_college_bulk_sign():
+    from o27v2 import college_league as _cl
+    ids_raw = request.form.getlist("college_player_ids")
+    if not ids_raw:
+        flash("Pick at least one player to import.", "warning")
+        return redirect(url_for("college_import_view"))
+    try:
+        ids = [int(s) for s in ids_raw]
+    except (TypeError, ValueError):
+        flash("Bad college player ids in form.", "error")
+        return redirect(url_for("college_import_view"))
+    mode = request.form.get("mode", "fa")
+    team_id = request.form.get("team_id", type=int)
+    if mode == "assigned" and not team_id:
+        flash("Pick a team to assign these players to.", "warning")
+        return redirect(url_for("college_import_view"))
+    result = _cl.bulk_import_graduates(ids, mode=mode, team_id=team_id)
+    n = len(result["signed"])
+    if result["errors"]:
+        flash(f"Signed {n} of {len(ids)}; {len(result['errors'])} errors.",
+              "warning")
+    else:
+        where = ("free-agent pool" if mode == "fa"
+                 else f"team #{team_id}")
+        flash(f"Imported {n} college graduates → {where}.", "info")
+    return redirect(url_for("free_agents") if mode == "fa"
+                    else url_for("team_detail", team_id=team_id))
+
+
 @app.route("/api/college/rollover", methods=["POST"])
 def api_college_rollover():
     from o27v2 import college_league as _cl

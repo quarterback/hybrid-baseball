@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Import College Class{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Import College Class</h2>
+    <div class="text-secondary small">
+      Bring graduated seniors from the college tier into the pro
+      league. Pick where they land — drop them in the free-agent pool
+      so the off-season auction reads them, or assign all of them to
+      one team directly. Signing reveals each player's true grades —
+      the asymmetry game plays out at sign-decision time, not after.
+    </div>
+  </div>
+  <a href="{{ url_for('college_view') }}" class="btn btn-sm btn-outline-secondary">← College</a>
+</div>
+
+{% if not draft %}
+  <div class="panel" style="padding:16px">
+    <div class="text-secondary">
+      No graduates available. Run a full season + postseason + rollover
+      first; the seniors that age out in rollover become signing-eligible.
+    </div>
+  </div>
+{% else %}
+
+<form method="post" action="{{ url_for('api_college_bulk_sign') }}" id="import-form">
+
+  {# Action toolbar — sticks to the top above the table #}
+  <div class="panel mb-3" style="padding:14px 16px;position:sticky;top:0;z-index:5">
+    <div class="d-flex flex-wrap gap-3 align-items-center">
+      <div class="d-flex gap-2 align-items-center">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="select-all">Select all</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="select-none">Clear</button>
+        <span id="select-count" class="text-secondary small">0 selected</span>
+      </div>
+      <div class="ms-auto d-flex flex-wrap gap-3 align-items-center">
+        <label class="form-label small mb-0">
+          <input type="radio" name="mode" value="fa" checked>
+          Free agency pool
+        </label>
+        <label class="form-label small mb-0">
+          <input type="radio" name="mode" value="assigned">
+          Assign to team
+        </label>
+        <select name="team_id" class="form-select form-select-sm" style="max-width:240px">
+          <option value="">(pick a team)</option>
+          {% for t in teams %}
+            <option value="{{ t.id }}">{{ t.name }}{% if t.league %} · {{ t.league }}{% endif %}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-sm btn-primary" id="import-btn">Import selected</button>
+      </div>
+    </div>
+    <div class="text-secondary small mt-2" style="line-height:1.4">
+      <strong>FA pool</strong> — players become free agents (team_id = NULL).
+      The off-season auction reads them on its next run; teams can also
+      sign them directly through the existing FA UI.
+      <br>
+      <strong>Assign to team</strong> — players go straight onto the chosen
+      team's active roster. Skips the auction. Useful for testing a
+      specific prospect on a specific team.
+    </div>
+  </div>
+
+  {# Draft table — two rows per player so you can compare reports #}
+  <div class="panel">
+    <div class="panel-body p-0">
+      <table class="table table-sm dense-table mb-0" style="font-size:.78rem">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="hdr-check"></th>
+            <th>Player</th>
+            <th>Program</th>
+            <th>Pos</th>
+            <th>Source</th>
+            <th class="text-end">SKL</th>
+            <th class="text-end">CON</th>
+            <th class="text-end">POW</th>
+            <th class="text-end">EYE</th>
+            <th class="text-end">SPD</th>
+            <th class="text-end">PIT</th>
+            <th class="text-end">CMD</th>
+            <th class="text-end">MOV</th>
+            <th class="text-end">STA</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in draft %}
+          <tr style="border-top:2px solid var(--border)">
+            <td rowspan="2">
+              <input type="checkbox" name="college_player_ids" value="{{ p.id }}" class="player-check">
+            </td>
+            <td rowspan="2">
+              <a href="{{ url_for('college_player_view', player_id=p.id) }}">{{ p.name }}</a>
+              {% if p.is_pitcher %}<span class="badge bg-info text-dark ms-1">P</span>{% endif %}
+            </td>
+            <td rowspan="2">{{ p.program_short }}</td>
+            <td rowspan="2">{{ p.position or '—' }}</td>
+            <td><span class="badge bg-info text-dark">service</span></td>
+            {% set r = p.report_service %}
+            {% for k in ['skill','contact','power','eye','speed','pitcher_skill','command','movement','stamina'] %}
+              <td class="text-end">{{ r['grade_' ~ k] if r and r['grade_' ~ k] else '—' }}</td>
+            {% endfor %}
+          </tr>
+          <tr>
+            <td><span class="badge bg-secondary">your dept</span></td>
+            {% set r = p.report_first_team %}
+            {% for k in ['skill','contact','power','eye','speed','pitcher_skill','command','movement','stamina'] %}
+              {% set g_svc = p.report_service['grade_' ~ k] if p.report_service else 0 %}
+              {% set g_us  = r['grade_' ~ k] if r else 0 %}
+              {% set diff = (g_us - g_svc) if (r and p.report_service and g_us and g_svc) else 0 %}
+              <td class="text-end"
+                  style="{% if r and g_us %}background:{{ 'rgba(40,167,69,.12)' if diff > 0 else 'rgba(220,53,69,.12)' if diff < 0 else 'transparent' }}{% endif %}">
+                {{ g_us if r and g_us else '—' }}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</form>
+
+<script>
+(function() {
+  const form = document.getElementById('import-form');
+  const checks = form.querySelectorAll('.player-check');
+  const hdr = document.getElementById('hdr-check');
+  const count = document.getElementById('select-count');
+  function refresh() {
+    const n = Array.from(checks).filter(c => c.checked).length;
+    count.textContent = n + ' selected';
+  }
+  hdr.addEventListener('change', () => {
+    checks.forEach(c => { c.checked = hdr.checked; });
+    refresh();
+  });
+  checks.forEach(c => c.addEventListener('change', refresh));
+  document.getElementById('select-all').addEventListener('click', () => {
+    checks.forEach(c => { c.checked = true; }); refresh();
+  });
+  document.getElementById('select-none').addEventListener('click', () => {
+    checks.forEach(c => { c.checked = false; }); refresh();
+  });
+})();
+</script>
+
+{% endif %}
+
+{% endblock %}

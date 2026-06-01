@@ -1353,6 +1353,8 @@ def sign_graduate_to_pro(college_player_id: int) -> int:
     p = dict(row)
     if not p.get("graduated"):
         raise ValueError("only graduated players can be signed")
+    if p.get("signed_pro_player_id"):
+        return int(p["signed_pro_player_id"])    # idempotent
 
     pro_player = _cg.sign_to_pro(p, college_career_stats=_career_stats(college_player_id))
 
@@ -1381,6 +1383,41 @@ def sign_graduate_to_pro(college_player_id: int) -> int:
         (pro_id, college_player_id),
     )
     return pro_id
+
+
+def bulk_import_graduates(player_ids: list[int],
+                          *,
+                          mode: str = "fa",
+                          team_id: int | None = None) -> dict:
+    """Bulk version of sign_graduate_to_pro — for the import workflow.
+
+    Modes:
+      'fa'       — sign each player; leaves them in the free-agent
+                   pool (team_id = NULL). Default.
+      'assigned' — sign each player and place them on `team_id` as an
+                   active roster member. Caller must pass a team_id.
+
+    The 'auction' option from the UI is just 'fa' with a follow-up
+    prompt to run the off-season auction — same DB result. The pool
+    is what the auction reads from.
+
+    Returns {"signed": [pro_id, ...], "errors": [{"college_id":..., "error":...}, ...]}
+    """
+    signed: list[int] = []
+    errors: list[dict] = []
+    for cid in player_ids:
+        try:
+            pro_id = sign_graduate_to_pro(int(cid))
+            if mode == "assigned" and team_id is not None:
+                db.execute(
+                    "UPDATE players SET team_id = ?, is_active = 1 WHERE id = ?",
+                    (team_id, pro_id),
+                )
+            signed.append(pro_id)
+        except (ValueError, KeyError, TypeError) as e:
+            errors.append({"college_id": int(cid), "error": str(e)})
+    return {"signed": signed, "errors": errors, "mode": mode,
+            "team_id": team_id}
 
 
 def _career_stats(college_player_id: int) -> dict:
