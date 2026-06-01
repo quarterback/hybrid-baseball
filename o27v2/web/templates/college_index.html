@@ -71,6 +71,14 @@
           Roll over to {{ season + 1 }}
         </button>
       </form>
+      <form method="post" action="{{ url_for('api_college_rename_synthetic') }}" class="d-inline-block"
+            onsubmit="return confirm('Replace synthetic placeholder names (e.g. FSU 3B, FSU P12) with real US-pool draws? Idempotent — only touches rows with the synthetic pattern.');">
+        <input type="hidden" name="season" value="{{ season }}">
+        <button class="btn btn-sm btn-outline-warning" type="submit"
+                title="Backfill: replaces synthetic 'FSU 3B' / 'FSU P12' / 'FSU bk-CF' / 'FSU J1' patterns with real names from the US pro name pool. Only needed for college leagues seeded before the pool was wired in.">
+          Fix synthetic names
+        </button>
+      </form>
     </div>
     <div class="text-secondary small mt-2" style="line-height:1.4">
       On combined pro + college saves, the main game clock (top-right

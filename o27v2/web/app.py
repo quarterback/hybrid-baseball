@@ -9223,6 +9223,21 @@ def api_college_seed():
     return redirect(url_for("college_view", season=season))
 
 
+@app.route("/api/college/rename-synthetic", methods=["POST"])
+def api_college_rename_synthetic():
+    """One-shot backfill for existing college DBs seeded before the
+    pro-name pool was wired in — replaces synthetic names like
+    'FSU 3B' / 'FSU bk-CF' / 'FSU P12' with real US-pool draws."""
+    from o27v2 import college_league as _cl
+    season = request.form.get("season", type=int) or 2026
+    result = _cl.rename_synthetic_names(
+        rng_seed=request.form.get("rng_seed", type=int) or 0,
+    )
+    flash(f"Renamed {result['renamed']} of {result['scanned']} college "
+          f"players (synthetic → real names from US pool).", "info")
+    return redirect(url_for("college_view", season=season))
+
+
 @app.route("/api/college/sim-season", methods=["POST"])
 def api_college_sim_season():
     from o27v2 import college_league as _cl
