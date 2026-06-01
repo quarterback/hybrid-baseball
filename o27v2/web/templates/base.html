@@ -31,7 +31,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+        href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Oswald:wght@300;400;500;600;700&display=swap">
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <style>
@@ -50,87 +50,90 @@
     :root {
       color-scheme: light;
 
-      /* surfaces */
-      --bg:        #f3f4f8;   /* page */
-      --bg-alt:    #e7e9f1;   /* card header / striped row */
+      /* surfaces — Swiss white + hairline grid */
+      --bg:        #ffffff;   /* page */
+      --bg-alt:    #f7f7f7;   /* card header / total row */
       --bg-card:   #ffffff;   /* table & card body */
-      --bg-soft:   #eef0f6;   /* alt-row stripe */
-      --bg-warm:   #fdf3e2;   /* row hover (warm amber tint) */
-      --bg-alt-press: #d9dce7;/* pressed/hover secondary surface */
-      --border:    #d2d6e0;
-      --border-soft:  #e3e6ee;
-      --border-strong:#a3aabb;
+      --bg-soft:   #fafafa;   /* alt surface */
+      --bg-warm:   #f4f4f4;   /* row hover (neutral) */
+      --bg-alt-press: #ececec;/* pressed/hover secondary surface */
+      --border:    #e2e2e2;   /* hairline */
+      --border-soft:  #eeeeee;
+      --border-strong:#111111; /* the strong Swiss/Broadcast rule */
 
       /* text + link (flip per theme) */
-      --text:      #191c26;
-      --text-dim:  #4c5468;
-      --text-muted:#6f7790;
-      --link:      #3538a3;   /* deep indigo */
-      --link-hov:  #9a4708;   /* warm amber on hover */
-      --accent:    #9a4708;   /* amber/leather — active nav, accents */
-      --accent-2:  #7a4a00;   /* warm brown for division headers */
-      --good:      #2e7d32;   /* wins / positive (text role) */
-      --bad:       #c02b2b;   /* losses / negative (text role) */
-      --warn:      #9a5b00;
+      --text:      #111111;
+      --text-dim:  #6b6b6b;
+      --text-muted:#8a8a8a;
+      --link:      #c8102e;   /* red accent, darkened for AA on white */
+      --link-hov:  #111111;
+      --accent:    #e5251f;   /* the single red accent */
+      --accent-2:  #111111;   /* division headers — ink */
+      --good:      #1a8a3c;   /* wins / positive */
+      --bad:       #e5251f;   /* losses / negative */
+      --warn:      #b06a00;
       --gold:      #b8860b;   /* overall-rating diamonds */
 
-      /* fixed fills for solid controls (white text, both themes) */
-      --fill-primary:      #3a3ea8;
-      --fill-primary-press:#2c2f87;
-      --fill-good:         #2e7d32;
-      --fill-good-press:   #245f28;
-      --fill-bad:          #c02b2b;
-      --fill-bad-press:    #9a1f1f;
-      --fill-accent:       #9a4708;
-      --fill-accent-press: #7c3906;
+      /* fixed fills for solid controls */
+      --fill-primary:      #111111;  /* Swiss black buttons */
+      --fill-primary-press:#000000;
+      --fill-good:         #1a8a3c;
+      --fill-good-press:   #136b2e;
+      --fill-bad:          #e5251f;
+      --fill-bad-press:    #c01a15;
+      --fill-accent:       #e5251f;
+      --fill-accent-press: #c01a15;
       --fill-warn:         #d49a3a;  /* dark text */
       --fill-warn-press:   #b07f24;  /* dark text */
       --fill-info:         #1466a0;
-      --fill-si:           #6b3f00;
+      --fill-si:           #111111;
 
       /* tints + effects (flip per theme) */
-      --accent-soft: rgba(53, 56, 163, .09);
-      --focus-ring:  rgba(53, 56, 163, .28);
-      --copied-bg:   #e6f4ea;
-      --shadow-card: 0 4px 12px rgba(20,24,40,.08);
-      --shadow-pop:  0 6px 20px rgba(20,24,40,.18);
+      --accent-soft: rgba(229, 37, 31, .08);
+      --focus-ring:  rgba(229, 37, 31, .30);
+      --copied-bg:   #e9f6ee;
+      --shadow-card: 0 1px 2px rgba(17,17,17,.05);  /* Swiss leans on borders, not shadows */
+      --shadow-pop:  0 6px 20px rgba(17,17,17,.14);
 
       /* flash banners */
       --flash-error-bg: #fdecec; --flash-error-bd: #d2685a; --flash-error-fg: #7a1d0e;
       --flash-warn-bg:  #fff4dc; --flash-warn-bd:  #d49d3a; --flash-warn-fg:  #5a3f00;
       --flash-info-bg:  #e7f0fb; --flash-info-bd:  #5a8fd8; --flash-info-fg:  #16356b;
 
-      --radius:    4px;
+      --radius:    0;          /* sharp Swiss/Broadcast grid */
+      --radius-card: 0;
       --shadow-sm: 0 1px 0 rgba(0,0,0,.04);
     }
 
     [data-theme="dark"] {
       color-scheme: dark;
 
-      --bg:        #111319;
-      --bg-alt:    #20242f;
-      --bg-card:   #191c24;
-      --bg-soft:   #1d212b;
-      --bg-warm:   #2a2536;
-      --bg-alt-press: #2b3140;
-      --border:    #333a48;
-      --border-soft:  #262b36;
-      --border-strong:#4a5266;
+      /* Dark Broadcast variant — the design is light-only, so dark keeps
+         the toggle alive with a near-black canvas and the same red accent. */
+      --bg:        #0e1116;
+      --bg-alt:    #161b22;
+      --bg-card:   #14181f;
+      --bg-soft:   #11151b;
+      --bg-warm:   #1b212b;
+      --bg-alt-press: #232a35;
+      --border:    #232a35;
+      --border-soft:  #1b212b;
+      --border-strong:#e6e9f0;  /* strong light rule on dark */
 
-      --text:      #e7e9f0;
-      --text-dim:  #a7aec0;
-      --text-muted:#828b9e;
-      --link:      #8c90f2;   /* light indigo for dark bg */
-      --link-hov:  #e0a868;
-      --accent:    #e9a24e;   /* brighter amber on dark */
-      --accent-2:  #d8a24a;
-      --good:      #5bbf63;
-      --bad:       #ef5f5f;
+      --text:      #eaeef5;
+      --text-dim:  #8a93a4;
+      --text-muted:#6f7889;
+      --link:      #ff5a54;   /* brighter red for dark bg */
+      --link-hov:  #ffffff;
+      --accent:    #ff4b45;   /* brighter red on dark */
+      --accent-2:  #eaeef5;
+      --good:      #4cc168;
+      --bad:       #ff5a54;
       --warn:      #e0a14d;
       --gold:      #e0b34d;
 
-      --accent-soft: rgba(140, 144, 242, .16);
-      --focus-ring:  rgba(140, 144, 242, .42);
+      --accent-soft: rgba(255, 75, 69, .16);
+      --focus-ring:  rgba(255, 75, 69, .42);
       --copied-bg:   #16321f;
       --shadow-card: 0 4px 14px rgba(0,0,0,.45);
       --shadow-pop:  0 8px 24px rgba(0,0,0,.55);
@@ -143,46 +146,65 @@
     * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
     html, body { background: var(--bg); color: var(--text); }
     body {
-      font-family: "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
-      font-feature-settings: "ss01", "cv11";
+      font-family: "Archivo", -apple-system, "Helvetica Neue", Arial, sans-serif;
       font-size: 14px;
       line-height: 1.45;
     }
-    h1, h2, h3, h4, h5, h6 { color: var(--text); font-weight: 700; letter-spacing: -.005em; }
-    h1 { font-size: 1.55rem; }
-    h2 { font-size: 1.30rem; }
-    h3 { font-size: 1.10rem; }
+    /* Display headlines — condensed Oswald (Broadcast scorebug type). */
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text);
+      font-family: "Oswald", "Archivo", sans-serif;
+      font-weight: 600;
+      letter-spacing: .005em;
+    }
+    h1 { font-size: 1.75rem; }
+    h2 { font-size: 1.42rem; }
+    h3 { font-size: 1.18rem; }
     h4 { font-size: .95rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); margin-bottom: .5rem; }
 
     /* ---- Links ---- */
     a { color: var(--link); text-decoration: none; }
     a:hover { color: var(--link-hov); text-decoration: underline; text-underline-offset: 2px; }
 
-    /* ---- Top bar ---- */
+    /* ---- Top bar (Broadcast×Swiss: white, red wordmark, uppercase nav,
+       red active underline) ---- */
     .topbar {
-      background: var(--bg-alt);
-      border-bottom: 2px solid var(--border-strong);
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-strong);
       padding: 8px 18px;
     }
     .topbar .navbar-brand {
-      font-weight: 800;
-      font-size: 1.05rem;
-      color: var(--link) !important;
-      letter-spacing: .04em;
+      font-family: "Oswald", sans-serif;
+      font-weight: 600;
+      font-size: 1.2rem;
+      color: var(--accent) !important;
+      text-transform: uppercase;
+      letter-spacing: .14em;
       white-space: nowrap;
       padding: 0;
-      margin-right: 14px;
+      margin-right: 18px;
     }
-    .topbar .navbar-brand:hover { color: var(--link-hov) !important; text-decoration: none; }
+    .topbar .navbar-brand:hover { color: var(--accent) !important; text-decoration: none; opacity: .85; }
     .topbar .nav-link {
-      color: var(--text) !important;
+      color: var(--text-dim) !important;
       font-weight: 500;
-      font-size: .92rem;
+      font-size: .82rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
       padding: 4px 10px !important;
       border-radius: var(--radius);
+      position: relative;
     }
-    .topbar .nav-link:hover { color: var(--link) !important; background: var(--accent-soft); }
-    .topbar .nav-link.active { color: var(--accent) !important; font-weight: 700; background: transparent; }
+    .topbar .nav-link:hover { color: var(--text) !important; background: transparent; }
+    .topbar .nav-link.active { color: var(--text) !important; font-weight: 600; background: transparent; }
+    /* red underline marker on the active top-nav item */
+    .topbar .nav-link.active::after {
+      content: "";
+      position: absolute;
+      left: 10px; right: 10px; bottom: -1px;
+      height: 3px;
+      background: var(--accent);
+    }
     .topbar .nav-link.accent { color: var(--accent) !important; }
     .topbar .navbar-toggler {
       border: 1px solid var(--border);
@@ -214,7 +236,7 @@
     /* ---- Sim widget in topbar ---- */
     .sim-widget { display: flex; align-items: center; gap: 8px; }
     .sim-date {
-      font-family: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+      font-family: "Oswald", "SF Mono", "Menlo", monospace;
       font-size: .82rem;
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -252,16 +274,16 @@
     .panel {
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-sm);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-card);
       overflow: hidden;
-      margin-bottom: 14px;
+      margin-bottom: 16px;
     }
     .panel-head {
       background: var(--bg-alt);
       border-bottom: 1px solid var(--border);
-      padding: 6px 10px;
-      font-size: .73rem;
+      padding: 8px 12px 8px 14px;
+      font-size: .74rem;
       text-transform: uppercase;
       letter-spacing: .06em;
       font-weight: 700;
@@ -269,37 +291,55 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      position: relative;
+    }
+    /* Accent bar on the left of every panel header — the ESPN/NBA section
+       marker that gives an otherwise-flat card a point of color. */
+    .panel-head::before, .panel-title::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--accent);
     }
     .panel-head .sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-dim); font-size: .78rem; }
     /* Stat labels that deep-link to the glossary: inherit color, hint with a dotted underline. */
     .glossary-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--text-dim); }
     .glossary-link:hover { color: var(--accent, #0d6efd); border-bottom-color: currentColor; }
-    .panel-body { padding: 10px 12px; }
+    .panel-body { padding: 12px 14px; }
     .panel-body.tight { padding: 0; }
 
     /* legacy aliases */
-    .dense { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm); }
+    .dense {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+      margin-bottom: 16px;
+    }
     .panel-title {
       background: var(--bg-alt);
       border-bottom: 1px solid var(--border);
-      padding: 6px 10px;
-      font-size: .73rem;
+      padding: 8px 12px 8px 14px;
+      font-size: .74rem;
       text-transform: uppercase;
       letter-spacing: .06em;
       font-weight: 700;
       color: var(--text);
+      position: relative;
     }
 
     /* ---- Tables ---- */
     .table { color: var(--text); --bs-table-bg: transparent; margin: 0; }
     .table thead th {
-      background: var(--bg-alt);
+      background: var(--bg-card);
       color: var(--text);
       border: 0;
-      border-bottom: 2px solid var(--border-strong);
+      border-bottom: 2px solid var(--border-strong);  /* the heavy Swiss/Broadcast rule */
       font-size: .68rem;
       text-transform: uppercase;
-      letter-spacing: .04em;
+      letter-spacing: .06em;
       font-weight: 700;
       padding: 6px 8px;
       white-space: nowrap;
@@ -329,7 +369,7 @@
 
     /* numerics */
     .num {
-      font-family: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+      font-family: "Oswald", "SF Mono", "Menlo", monospace;
       font-size: .82rem;
       text-align: right;
       font-variant-numeric: tabular-nums;
@@ -436,7 +476,7 @@
     .badge.bg-primary   { background-color: var(--fill-primary) !important; color: #fff !important; }
 
     /* ---- Specialty visuals ---- */
-    .team-abbrev { font-weight: 700; color: var(--link); letter-spacing: .02em; }
+    .team-abbrev { font-family: "Oswald", sans-serif; font-weight: 600; color: var(--accent); letter-spacing: .04em; text-transform: uppercase; }
     a.team-abbrev:hover { color: var(--link-hov); text-decoration: none; }
     .winner-badge {
       background: var(--fill-good);
@@ -457,9 +497,143 @@
       font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", system-ui, sans-serif;
     }
 
-    .score-big { font-size: 2rem; font-weight: 800; color: var(--text); font-family: "JetBrains Mono", monospace; }
+    .score-big { font-size: 2rem; font-weight: 800; color: var(--text); font-family: "Oswald", monospace; }
     .score-label { font-size: .7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; }
     .stat-pill { display: inline-block; background: var(--bg-soft); border: 1px solid var(--border-soft); border-radius: 2px; padding: 1px 7px; font-size: .76rem; margin: 1px; }
+    /* Neutral Swiss chip — for park quirks, flags, misc tags (no decorative
+       flavour; ink on a hairline). */
+    .tag {
+      display: inline-block;
+      background: var(--bg-soft);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 0;
+      padding: 2px 8px;
+      font-size: .74rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    /* ============================================================
+       Stat tiles + hero header — "richer cards & typography".
+       A self-justifying grid of label/big-number tiles (ESPN/NBA
+       summary-strip idiom) and a hero band for page subjects (team,
+       player). Reusable site-wide; theme-aware via the same tokens.
+       ============================================================ */
+    .stat-tiles {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat-tile {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-sm);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+    }
+    .stat-tile .st-label {
+      font-size: .66rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .stat-tile .st-value {
+      font-family: "Oswald", "SF Mono", "Menlo", monospace;
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .stat-tile .st-sub { font-size: .72rem; color: var(--text-dim); margin-top: 1px; }
+    /* A tile can carry an accent left-rail to flag the headline metric. */
+    .stat-tile.accent { border-left: 3px solid var(--accent); }
+    .stat-tile .st-value.good { color: var(--good); }
+    .stat-tile .st-value.bad  { color: var(--bad); }
+
+    /* Hero band — the subject of the page (team / player). A confident
+       gradient header with a large identity mark, replacing the flat
+       run-on text strip. */
+    .hero {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-bottom: 2px solid var(--border-strong);  /* strong rule under the subject */
+      border-radius: var(--radius-card);
+      padding: 16px 18px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    /* Red scorebug number/identity mark */
+    .hero-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 64px;
+      height: 64px;
+      padding: 0 12px;
+      border-radius: var(--radius-card);
+      background: var(--accent);
+      color: #fff;
+      font-family: "Oswald", sans-serif;
+      font-weight: 600;
+      font-size: 1.9rem;
+      letter-spacing: .02em;
+    }
+    .hero-titles { min-width: 0; }
+    .hero-titles .hero-name {
+      font-family: "Oswald", sans-serif;
+      font-size: 1.9rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .01em;
+      line-height: 1.05;
+      color: var(--text);
+    }
+    .hero-titles .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      margin-top: 4px;
+      font-size: .86rem;
+      color: var(--text-dim);
+    }
+    .hero-titles .hero-meta .dot { color: var(--border-strong); }
+    .hero-record {
+      margin-left: auto;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .hero-record .hr-wl {
+      font-family: "Oswald", "SF Mono", "Menlo", monospace;
+      font-size: 1.9rem;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--text);
+    }
+    .hero-record .hr-pct { font-size: .82rem; color: var(--text-dim); margin-top: 2px; }
+    @media (max-width: 575px) {
+      .hero { padding: 12px 14px; gap: 12px; }
+      .hero-mark { min-width: 52px; height: 52px; font-size: 1.4rem; }
+      .hero-titles .hero-name { font-size: 1.3rem; }
+      .hero-record { margin-left: 0; text-align: left; width: 100%; display: flex; align-items: baseline; gap: 8px; }
+      .hero-record .hr-wl { font-size: 1.5rem; }
+      .stat-tile .st-value { font-size: 1.3rem; }
+    }
 
     /* W/L pill bars */
     .l5pill { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin: 0 1px; vertical-align: middle; }
@@ -507,17 +681,20 @@
     }
     .nav-tabs .nav-link {
       color: var(--text-dim);
-      font-weight: 600;
-      font-size: .85rem;
+      font-weight: 500;
+      font-size: .8rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
       border: 0;
-      border-bottom: 2px solid transparent;
+      border-bottom: 3px solid transparent;
       margin-bottom: -2px;
       padding: 8px 14px;
       border-radius: 0;
       background: transparent;
     }
     .nav-tabs .nav-link:hover { color: var(--text); border-bottom-color: var(--border); background: transparent; }
-    .nav-tabs .nav-link.active { color: var(--accent); border-bottom-color: var(--accent); background: transparent; }
+    /* active tab: ink label + red underline (Broadcast) */
+    .nav-tabs .nav-link.active { color: var(--text); font-weight: 700; border-bottom-color: var(--accent); background: transparent; }
 
     /* ---- Dropdown ---- */
     .dropdown-menu {
@@ -586,8 +763,24 @@
     [style*="background:#1f2937"], [style*="background: #1f2937"] { background: var(--bg-alt) !important; }
     [style*="background:#21262d"], [style*="background: #21262d"] { background: var(--bg-alt) !important; }
     [style*="background:#f0883e"], [style*="background: #f0883e"] { background: var(--accent) !important; color: #fff !important; }
-    [style*="background:#6f42c1"], [style*="background: #6f42c1"] { background: #5a3aa5 !important; color: #fff !important; }
+    [style*="background:#6f42c1"], [style*="background: #6f42c1"] { background: var(--accent-2) !important; color: #fff !important; }
+    [style*="background:#5a3aa5"], [style*="background: #5a3aa5"] { background: var(--accent-2) !important; color: #fff !important; }
     [style*="border-color:#30363d"], [style*="border-color: #30363d"] { border-color: var(--border) !important; }
+
+    /* No decorative flavour — fold remaining off-palette hexes (park-shape
+       blue, amber "quirk" chips, gold call-outs, dark chart panels, tinted
+       info/warn boxes) into the red/ink/grey Swiss system. Many key on a
+       single distinctive colour in the style attr to override the whole chip. */
+    [style*="#9ad0ec"] { color: var(--text-dim) !important; }              /* park-shape label */
+    [style*="#3fb950"] { color: var(--good) !important; }
+    [style*="#f5b041"] { background: var(--bg-soft) !important; color: var(--text) !important; border-color: var(--border) !important; }  /* amber quirk chip */
+    [style*="#f0c024"] { background: var(--bg-soft) !important; color: var(--text) !important; border-left-color: var(--accent) !important; border-color: var(--border) !important; }  /* gold call-out */
+    [style*="rgba(255,193,7"] { background: var(--bg-soft) !important; color: var(--text) !important; border-color: var(--accent) !important; }  /* gold tint */
+    [style*="#0e1421"] { background: var(--bg-alt) !important; }           /* dark chart panel */
+    [style*="#eff5fc"] { background: var(--bg-soft) !important; }          /* info box */
+    [style*="#fff4dc"] { background: var(--bg-soft) !important; }          /* warn box */
+    [style*="#5a3f00"] { color: var(--text) !important; }                  /* warn box text */
+    [style*="#d49d3a"] { border-color: var(--accent) !important; }         /* warn box border */
 
     .text-secondary { color: var(--text-dim) !important; }
     .text-muted { color: var(--text-muted) !important; }
@@ -649,7 +842,7 @@
       font-variant-numeric: tabular-nums;
     }
     .o27-money-label {
-      font-family: "JetBrains Mono", "SF Mono", "Menlo", monospace;
+      font-family: "Oswald", "SF Mono", "Menlo", monospace;
       font-weight: 600;
     }
     .o27-money-pill {
@@ -959,7 +1152,7 @@
     }
     .dense-table thead th.o27-sticky-col {
       z-index: 5;                 /* above the scrolling header (2) + frozen body (1) */
-      background: var(--bg-alt);  /* match the header row */
+      background: var(--bg-card);  /* match the header row */
     }
     /* Carry the row's stripe / hover / focus colour onto the pinned cell too,
        otherwise it floats over the row as a mismatched block. */
@@ -1001,7 +1194,7 @@
 
 <nav class="topbar navbar navbar-expand-xl">
   <div class="container-fluid p-0" style="max-width:1500px">
-    <a class="navbar-brand" href="{{ url_for('index') }}">⚾ O27</a>
+    <a class="navbar-brand" href="{{ url_for('index') }}">O27</a>
     {% if sim.save_name %}
     <a href="{{ url_for('saves_index') }}" class="nav-link py-0 px-2"
        style="font-size:.8rem;align-self:center" title="Active league — click to switch">{{ sim.save_name }}</a>

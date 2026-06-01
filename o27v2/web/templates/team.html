@@ -22,48 +22,70 @@
   </div>
 </nav>
 
-{# ---- Compact header strip ---- #}
-<div class="dense p-2 mb-3 d-flex flex-wrap align-items-center gap-3">
-  <span class="team-abbrev" style="font-size:1.6rem">{{ team.abbrev }}</span>
-  <span class="fw-bold fs-5">{{ team.name }}</span>
-  <span class="text-secondary">{{ team.city }}</span>
-  <span class="text-secondary">·</span>
-  <span class="text-secondary">{{ team.division }}</span>
-  <span class="text-secondary">·</span>
-  <span class="fw-bold num" style="font-size:1.05rem">{{ team.wins }}-{{ team.losses }}</span>
-  <span class="text-secondary num">({{ win_pct(team) }})</span>
+{# ---- Hero header ---- #}
+{% set org_label = ('Elite+' if team.org_strength and team.org_strength >= 81
+  else 'Elite' if team.org_strength and team.org_strength >= 75
+  else 'Excellent' if team.org_strength and team.org_strength >= 65
+  else 'Good' if team.org_strength and team.org_strength >= 55
+  else 'Average' if team.org_strength and team.org_strength >= 45
+  else 'Replacement' if team.org_strength and team.org_strength >= 30
+  else 'Sub-Repl') %}
+<div class="hero">
+  <span class="hero-mark">{{ team.abbrev }}</span>
+  <div class="hero-titles">
+    <div class="hero-name">{{ team.name }}</div>
+    <div class="hero-meta">
+      <span>{{ team.city }}</span>
+      <span class="dot">•</span>
+      <span>{{ team.division }}</span>
+    </div>
+  </div>
+  <div class="hero-record">
+    <div class="hr-wl">{{ team.wins }}–{{ team.losses }}</div>
+    <div class="hr-pct">{{ win_pct(team) }}</div>
+  </div>
+</div>
+
+{# ---- Quick stat tiles ---- #}
+<div class="stat-tiles">
+  <div class="stat-tile accent">
+    <span class="st-label">Record</span>
+    <span class="st-value">{{ team.wins }}–{{ team.losses }}</span>
+    <span class="st-sub">{{ win_pct(team) }} win pct</span>
+  </div>
   {% if team_payroll is defined %}
-  <span class="text-secondary">·</span>
-  <span class="text-secondary small" title="Estimated team payroll — sum of derived player values across the active roster. Toggle the pill to view in USD or EUR.">
-    Payroll {{ team_payroll | money }}
-  </span>
+  <div class="stat-tile"
+       title="Estimated team payroll — sum of derived player values across the active roster. Toggle the pill to view in USD or EUR.">
+    <span class="st-label">Payroll</span>
+    <span class="st-value" style="font-size:1.15rem;white-space:normal">{{ team_payroll | money }}</span>
+  </div>
   {% endif %}
   {% if team.org_strength %}
-  <span class="text-secondary">·</span>
-  <span class="text-secondary small" title="Org strength — team-level talent grade (20-95). Drives an additive shift on every player attribute roll at seed time. 50 = league average; 80+ = elite organization.">
-    Org <strong class="text-dark">{{ team.org_strength }}</strong>
-    {% if team.org_strength >= 81 %}<span class="badge bg-warning text-dark ms-1">Elite+</span>
-    {% elif team.org_strength >= 75 %}<span class="badge bg-warning text-dark ms-1">Elite</span>
-    {% elif team.org_strength >= 65 %}<span class="badge bg-success ms-1">Excellent</span>
-    {% elif team.org_strength >= 55 %}<span class="badge bg-primary ms-1">Good</span>
-    {% elif team.org_strength >= 45 %}<span class="badge bg-secondary ms-1">Average</span>
-    {% elif team.org_strength >= 30 %}<span class="badge bg-danger ms-1">Replacement</span>
-    {% else %}<span class="badge bg-danger ms-1">Sub-Repl</span>{% endif %}
-  </span>
+  <div class="stat-tile"
+       title="Org strength — team-level talent grade (20-95). 50 = league average; 80+ = elite organization.">
+    <span class="st-label">Org Strength</span>
+    <span class="st-value">{{ team.org_strength }}</span>
+    <span class="st-sub">{{ org_label }}</span>
+  </div>
+  {% endif %}
+  {% if staff_wera and staff_wera.staff_wera_mean is not none %}
+  <div class="stat-tile" title="Staff weighted ERA (mean) and its outs-weighted spread (σ).">
+    <span class="st-label">Staff wERA</span>
+    <span class="st-value">{{ '%.2f'|format(staff_wera.staff_wera_mean) }}</span>
+    <span class="st-sub">σ {{ '%.2f'|format(staff_wera.staff_wera_std) }} · {{ staff_wera.n_pitchers }} arms</span>
+  </div>
   {% endif %}
 </div>
 
 {# ---- Manager card (fog-of-war: named character + 5-dot ratings) ---- #}
 {% if team.manager_archetype or team.manager_name %}
-<div class="dense p-2 mb-3" style="font-size:.86rem">
-  <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
-    <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Manager</span>
-    {% if team.manager_name %}<span class="fw-bold" style="color:var(--text);font-size:1rem">{{ team.manager_name }}</span>{% endif %}
-    {% if team.manager_archetype %}
-    <span class="text-secondary">·</span>
-    <span class="text-secondary">{{ team.manager_archetype | archetype_label }}</span>
-    {% endif %}
+<div class="panel">
+  <div class="panel-head">
+    Manager
+    {% if team.manager_name %}<span class="sub fw-bold" style="color:var(--text)">{{ team.manager_name }}</span>{% endif %}
+    {% if team.manager_archetype %}<span class="sub">· {{ team.manager_archetype | archetype_label }}</span>{% endif %}
   </div>
+  <div class="panel-body">
   {# Eight tactical axes rendered as 5-dot ratings. Internal labels
      (mgr_quick_hook, mgr_bullpen_aggression, ...) are mapped to
      customer-facing flavor names to preserve fog of war over the exact
@@ -86,6 +108,7 @@
     {% endif %}
   {% endfor %}
   </div>
+  </div>
 </div>
 {% endif %}
 
@@ -94,15 +117,13 @@
 {% set dims = team.park_dimensions | park_dimensions %}
 {% set shape_meta = team.park_shape | park_shape_meta %}
 {% set quirks = team.park_quirks | park_quirks %}
-<div class="dense p-2 mb-3" style="font-size:.86rem">
-  <div class="d-flex flex-wrap align-items-center gap-3 mb-1">
-    <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Ballpark</span>
-    {% if team.park_name %}<span class="fw-bold" style="color:var(--text);font-size:1rem">{{ team.park_name }}</span>{% endif %}
-    {% if shape_meta.label %}
-    <span class="text-secondary">·</span>
-    <span title="{{ shape_meta.blurb }}" style="color:#9ad0ec;font-weight:600">{{ shape_meta.label }}</span>
-    {% endif %}
+<div class="panel">
+  <div class="panel-head">
+    Ballpark
+    {% if team.park_name %}<span class="sub fw-bold" style="color:var(--text)">{{ team.park_name }}</span>{% endif %}
+    {% if shape_meta.label %}<span class="sub" style="font-weight:600">· {{ shape_meta.label }}</span>{% endif %}
   </div>
+  <div class="panel-body" style="font-size:.86rem">
   {% if dims %}
   <div class="d-flex flex-wrap gap-3 mb-1" style="font-size:.82rem">
     <span class="text-secondary" title="Foul-line / left-center / center / right-center / right-line distances in feet">
@@ -128,13 +149,11 @@
   {% if quirks %}
   <div class="d-flex flex-wrap gap-2 mt-1">
     {% for q in quirks %}
-    <span title="{{ q.blurb }}"
-          style="background:#3a2d1f;color:#f5b041;border:1px solid #5a4423;border-radius:6px;padding:2px 8px;font-size:.78rem;font-weight:600">
-      {{ q.label }}
-    </span>
+    <span class="tag" title="{{ q.blurb }}">{{ q.label }}</span>
     {% endfor %}
   </div>
   {% endif %}
+  </div>
 </div>
 {% endif %}
 
@@ -175,7 +194,7 @@
         </tr></thead>
         <tbody>
         {% for p in batters %}
-        <tr {% if p.is_joker %}style="color:#f0883e"{% endif %}>
+        <tr>
           <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.is_joker %} <span class="si-badge">JKR</span>{% endif %}{% if p.nickel_eligible %} <span title="Nickel-eligible — can deploy as the 10th defender (Power Play)" style="cursor:help">🪙</span>{% endif %}</td>
           <td class="text-secondary">{{ p.position }}</td>
           <td class="text-secondary small">{{ p.bats or '—' }}/{{ p.throws or '—' }}</td>
@@ -248,7 +267,7 @@
         </tr></thead>
         <tbody>
         {% for p in pitchers %}
-        <tr style="color:#79c0ff">
+        <tr>
           <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.staff_label %} <span class="text-secondary small" title="Starter / Reliever — the crew role is a per-game call, set on the rotation page">· {{ p.staff_label }}</span>{% endif %}</td>
           <td class="text-secondary small">{{ p.throws or '—' }}</td>
           <td class="num text-secondary">{{ p.age }}</td>
