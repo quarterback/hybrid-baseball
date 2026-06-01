@@ -2034,6 +2034,13 @@ def annual_rollover(season: int, next_season: int, rng_seed: int = 0) -> dict:
     # to replace the graduated seniors. ~6 fresh freshmen per program
     # (mirrors the original seeding distribution where 25% of the 23-man
     # roster was seniors).
+    # Name picker: matches the initial-seeding default in
+    # generate_college_roster — US-region, mixed gender. Without this
+    # the rollover was passing no `name=` to generate_college_player,
+    # which defaults to "", producing nameless freshmen.
+    from o27v2.league import make_name_picker
+    name_picker = make_name_picker(rng, gender="mixed",
+                                   region_weights={"us": 1.0})
     progs = db.fetchall("SELECT id, short_name FROM college_programs "
                         "WHERE season = ?", (season,))
     # Carry the same programs forward to next_season — duplicate the rows
@@ -2054,8 +2061,10 @@ def annual_rollover(season: int, next_season: int, rng_seed: int = 0) -> dict:
         )
         # Generate ~6 freshmen
         for _ in range(6):
+            nm, ctry = name_picker()
             p = _cg.generate_college_player(rng,
-                                            is_pitcher=(rng.random() < 0.35))
+                                            is_pitcher=(rng.random() < 0.35),
+                                            name=nm, country=ctry)
             _insert_player(new_prog_id, p)
 
     db.execute(

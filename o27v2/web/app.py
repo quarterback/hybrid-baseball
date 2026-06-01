@@ -10014,10 +10014,19 @@ def auction_view():
                      "detail": trade_groups[k][0]["detail"],
                      "moves":  trade_groups[k]}
                     for k in trade_order]
+    # When no auction has been run yet, render an eligibility preview
+    # so the user can see exactly who'll be auctioned + the current FA
+    # pool BEFORE pulling the trigger. Skip when an auction already
+    # exists for this season — the results panels take over.
+    preview = None
+    if cfg and not summary:
+        n_keepers = int((cfg.get("auction") or {}).get("keepers_per_team", 3))
+        preview = _auction.preview_auction(n_keepers=n_keepers)
     return _serve("auction.html",
                   auction=summary,
                   has_league=bool(cfg),
                   recon_trades=recon_trades,
+                  preview=preview,
                   config_summary=(cfg.get("auction") if cfg else None))
 
 
@@ -10106,15 +10115,46 @@ def api_auction_full_cycle():
 
     cut_report = _auction.apply_roster_cut()
 
+    # Counts only — full structures (auction log, fa-round signings,
+    # cut list) can balloon to MB-scale JSON for a full league, which
+    # delays the browser's parse-then-redirect by tens of seconds and
+    # makes the page feel hung. The reloaded /auction view pulls the
+    # detail straight from the DB.
     return jsonify({
         "ok": True,
         "imported_grads": len(import_result["signed"]),
         "import_errors": len(import_result["errors"]),
         "fa_signings": signing_report["total_signed"],
-        "fa_rounds": signing_report["rounds"],
-        "auction": auction_report,
-        "roster_cut": cut_report,
+        "auction": {
+            "ok":        auction_report.get("ok"),
+            "season":    auction_report.get("season"),
+            "n_keepers": auction_report.get("n_keepers"),
+            "n_pool":    auction_report.get("n_pool"),
+            "n_sold":    auction_report.get("n_sold"),
+            "n_unsold":  auction_report.get("n_unsold"),
+        },
+        "roster_cut": {
+            "n_cut": cut_report.get("n_cut"),
+            "cap":   cut_report.get("cap"),
+        },
     })
+
+
+@app.route("/api/names/backfill", methods=["POST"])
+def api_names_backfill():
+    """Buckshot rename pass over players + college_players. Renames any
+    row whose `name` is empty / NULL / contains a junk token (e.g.
+    'CB FF', 'PSV Arias', 'Roscoe sisters'). Replacement names come
+    from the same US-region mixed-gender picker the rest of the league
+    uses. Idempotent — re-running on a clean DB renames nothing."""
+    from o27v2 import name_backfill as _nb
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    try:
+        report = _nb.backfill_junk_names(rng_seed=rng_seed)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "report": report})
 
 
 @app.route("/api/roster/cut", methods=["POST"])

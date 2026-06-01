@@ -23,6 +23,10 @@
               title="Roster cut day. Trim every team from the 50-slot draft cap back to the 47-slot regular-season cap. Releases the lowest-overall reserves to the FA pool — actives are never cut. Run this AFTER any post-auction trades.">
         ✂ Roster cut day
       </button>
+      <button id="run-names-backfill-btn" class="btn btn-outline-warning btn-sm"
+              title="Buckshot fix for existing junk player names — empty/NULL names from old freshman classes, sports-club abbreviations like 'CB FF' or 'PSV Arias', and common-noun junk like 'Roscoe sisters'. Idempotent.">
+        🔫 Backfill junk names
+      </button>
       <button id="run-full-cycle-btn" class="btn btn-outline-warning btn-sm"
               title="Mid-season testing: import every unsigned college graduate into the FA pool, run an FA signing round, then run the pro auction, then enforce the 47-player roster cap — all in one shot. Lets you exercise the college → pro pipeline without waiting for season rollover.">
         ⇩ Full off-season cycle
@@ -39,7 +43,7 @@
   <div class="text-secondary">No active league. Create one from <a href="{{ url_for('new_league_get') }}">+ League</a> to enable the auction.</div>
 </div>
 {% elif not auction %}
-<div class="dense" style="padding:18px;text-align:center">
+<div class="dense mb-3" style="padding:18px;text-align:center">
   <div class="text-secondary mb-2">No auction has been run yet for this season.</div>
   {% if config_summary %}
   <div class="small text-secondary">
@@ -53,6 +57,128 @@
   </div>
   {% endif %}
 </div>
+
+{% if preview %}
+<div class="dense mb-3">
+  <div class="panel-title">
+    Eligibility preview
+    <span class="text-secondary small ms-2">
+      Who's in play before you fire the auction.
+      <a href="{{ url_for('free_agents') }}">FA pool</a> stays separate — only rostered non-keepers go through the bidding loop.
+    </span>
+  </div>
+  <div class="row g-2 mb-2 text-secondary small">
+    <div class="col-md-3">Projected keepers: <strong style="color:var(--text)">{{ preview.n_keepers }}</strong></div>
+    <div class="col-md-3">Eligible auction pool: <strong style="color:var(--text)">{{ preview.n_pool }}</strong></div>
+    <div class="col-md-3">Current FA pool: <strong style="color:var(--text)">{{ preview.n_free_agents }}</strong></div>
+    <div class="col-md-3">Teams: <strong style="color:var(--text)">{{ preview.keepers|length }}</strong></div>
+  </div>
+</div>
+
+<div class="dense mb-3">
+  <div class="panel-title">
+    Projected keepers (top {{ (config_summary.keepers_per_team if config_summary else 3) or 3 }} per team)
+    <span class="text-secondary small ms-2">Top-overall on each roster — won't be auctioned.</span>
+  </div>
+  <div class="row g-2">
+    {% for t in preview.keepers %}
+      <div class="col-md-6 col-lg-4">
+        <div class="panel" style="padding:8px 12px;height:100%">
+          <div class="fw-bold small mb-1">
+            <span class="team-abbrev">{{ t.team_abbrev }}</span>
+            <span class="text-secondary ms-1">{{ t.team_name }}</span>
+          </div>
+          <ul class="mb-0" style="font-size:.82rem;padding-left:18px">
+            {% for p in t.players %}
+              <li>
+                <a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>
+                <span class="text-secondary">— {{ p.position }}{% if p.is_pitcher %} (P){% endif %} · {{ p.overall }}</span>
+                {% if p.college %}
+                  <span class="text-secondary small ms-1" title="Signed from {{ p.college.name }}">🎓 {{ p.college.short }}</span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="dense mb-3">
+  <div class="panel-title">
+    Eligible auction pool ({{ preview.n_pool }})
+    <span class="text-secondary small ms-2">Every rostered non-keeper. These players will be cut to FA, then re-auctioned.</span>
+  </div>
+  <details>
+    <summary class="text-secondary small" style="cursor:pointer">Show by team</summary>
+    <div class="row g-2 mt-2">
+      {% for t in preview.pool %}
+        <div class="col-md-6 col-lg-4">
+          <div class="panel" style="padding:8px 12px;height:100%">
+            <div class="fw-bold small mb-1">
+              <span class="team-abbrev">{{ t.team_abbrev }}</span>
+              <span class="text-secondary ms-1">{{ t.team_name }}</span>
+              <span class="text-secondary small ms-1">({{ t.players|length }})</span>
+            </div>
+            <ul class="mb-0" style="font-size:.78rem;padding-left:18px;max-height:240px;overflow:auto">
+              {% for p in t.players %}
+                <li>
+                  <a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>
+                  <span class="text-secondary">— {{ p.position }}{% if p.is_pitcher %} (P){% endif %} · {{ p.overall }}{% if not p.is_active %} · res{% endif %}</span>
+                  {% if p.college %}
+                    <span class="text-secondary small ms-1" title="Signed from {{ p.college.name }}">🎓 {{ p.college.short }}</span>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+
+<div class="dense mb-3">
+  <div class="panel-title">
+    Free-agent pool ({{ preview.n_free_agents }})
+    <span class="text-secondary small ms-2">Not auctioned. The FA signing round (Step 2 of the full cycle) clears these first.
+      <a href="{{ url_for('free_agents') }}">Browse the full FA list →</a>
+    </span>
+  </div>
+  {% if preview.free_agents %}
+  <details>
+    <summary class="text-secondary small" style="cursor:pointer">Show top 100 by overall</summary>
+    <table class="table table-sm dense-table mb-0 mt-2" style="font-size:.85rem">
+      <thead><tr>
+        <th class="num">#</th>
+        <th>Player</th>
+        <th>Pos</th>
+        <th class="num">Overall</th>
+      </tr></thead>
+      <tbody>
+        {% for p in preview.free_agents[:100] %}
+          <tr>
+            <td class="num text-secondary">{{ loop.index }}</td>
+            <td>
+              <a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>
+              {% if p.college %}
+                <span class="text-secondary small ms-1" title="Signed from {{ p.college.name }}">🎓 {{ p.college.short }}</span>
+              {% endif %}
+            </td>
+            <td>{{ p.position }}{% if p.is_pitcher %} (P){% endif %}</td>
+            <td class="num">{{ p.overall }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% else %}
+  <div class="text-secondary small">FA pool is empty.</div>
+  {% endif %}
+</div>
+{% endif %}
+
 {% else %}
 
   <div class="dense mb-4">
@@ -81,7 +207,12 @@
         {% for r in auction.results[:30] %}
           <tr>
             <td class="num text-secondary">{{ loop.index }}</td>
-            <td>{{ r.player_name }}</td>
+            <td>
+              {{ r.player_name }}
+              {% if r.college %}
+                <span class="text-secondary small ms-1" title="Signed from {{ r.college.name }}">🎓 {{ r.college.short }}</span>
+              {% endif %}
+            </td>
             <td>{{ r.position }}</td>
             <td>
               {% if r.winner_abbrev %}
@@ -95,7 +226,7 @@
             <td class="num text-secondary">{% if r.second_bid %}{{ r.second_bid | money }}{% else %}—{% endif %}</td>
             <td>
               {% if r.traded_to_abbrev %}
-                <span style="color:var(--accent)" title="Sellback trade: {{ r.winner_abbrev }} flipped this player to {{ r.traded_to_abbrev }} for {{ r.trade_price | money }}.">⇄ <span class="team-abbrev">{{ r.traded_to_abbrev }}</span></span>
+                <span style="color:var(--accent)" title="Sellback trade: {{ r.winner_abbrev }} flipped this player to {{ r.traded_to_abbrev }}.">⇄ <span class="team-abbrev">{{ r.traded_to_abbrev }}</span></span>
                 <span class="text-secondary small ms-1">{{ r.trade_price | money }}</span>
               {% elif r.winner_abbrev %}
                 <span class="text-secondary small">—</span>
@@ -162,6 +293,9 @@
               {% for k in ks %}
                 <li>{{ k.player_name }}
                   <span class="text-secondary">— {{ k.position }}{% if k.is_pitcher %} (P){% endif %}</span>
+                  {% if k.college %}
+                    <span class="text-secondary small ms-1" title="Signed from {{ k.college.name }}">🎓 {{ k.college.short }}</span>
+                  {% endif %}
                 </li>
               {% endfor %}
             </ul>
@@ -206,12 +340,31 @@
       const r = await fetch('/api/auction/full-cycle', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
       const data = await r.json();
       if (!r.ok || !data.ok) throw new Error(data.error || 'request failed');
-      const ncut = (data.roster_cut && data.roster_cut.n_cut) || 0;
-      alert(`Imported ${data.imported_grads} grads · FA-signed ${data.fa_signings} · auction cleared · cut ${ncut} on cut day.`);
-      window.location.reload();
+      // Hard nav rather than reload(): some browsers cache the prior
+      // "no auction yet" page and reload() can show stale content.
+      window.location.href = '{{ url_for("auction_view") }}';
     } catch (err) {
       alert('Full cycle failed: ' + err.message);
       btn.disabled = false; btn.textContent = '⇩ Full off-season cycle';
+    }
+  });
+})();
+(function () {
+  const btn = document.getElementById('run-names-backfill-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    if (!confirm('Backfill junk names? Renames any player (pro or college) whose name is empty or matches a junk pattern (CB FF, PSV Arias, Roscoe sisters, etc.). Safe to re-run.')) return;
+    btn.disabled = true; btn.textContent = 'Backfilling…';
+    try {
+      const r = await fetch('/api/names/backfill', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || 'request failed');
+      const rep = data.report || {};
+      alert(`Renamed ${rep.renamed_pro || 0} pro · ${rep.renamed_college || 0} college.`);
+      window.location.reload();
+    } catch (err) {
+      alert('Name backfill failed: ' + err.message);
+      btn.disabled = false; btn.textContent = '🔫 Backfill junk names';
     }
   });
 })();
