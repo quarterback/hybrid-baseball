@@ -945,7 +945,7 @@ def _persist_fast_game(game_id: int, home_program_id: int,
         for p in box["pitchers"]:
             db.execute(
                 "INSERT OR REPLACE INTO college_pitcher_stats "
-                "(game_id, program_id, player_id, ip_outs, h, r, er, bb, k, hr, bf) "
+                "(game_id, program_id, player_id, outs, h, r, er, bb, k, hr, bf) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (game_id, prog_id, p["player_id"], p["ip_outs"], p["h"],
                  p["r"], p["er"], p["bb"], p["k"], p["hr"], p["bf"]),
