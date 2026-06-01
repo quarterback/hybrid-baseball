@@ -6417,6 +6417,7 @@ def team_detail(team_id: int):
                     _scout.to_unit(p.get("defense_outfield") or 50))
         return arm >= _arm_min and glove >= _field_min
 
+    from o27v2 import rotation as _rotation
     batters: list[dict] = []
     pitchers: list[dict] = []
     for p in roster:
@@ -6424,6 +6425,12 @@ def team_detail(team_id: int):
             row = dict(p)
             row.update(pstats.get(p["id"], {}))
             _aggregate_pitcher_rows([row], wl, baselines=baselines)
+            # Player cards carry only the coarse Starter/Reliever read — the
+            # nautical crew role (Helms, Anchor, …) lives on the rotation
+            # page, where it belongs as a game-by-game orchestration call.
+            row["staff_label"] = (
+                "SP" if _rotation.is_steer_role(row.get("pitcher_role", "")) else "RP"
+            )
             pitchers.append(row)
         else:
             row = dict(p)
@@ -6457,6 +6464,98 @@ def team_detail(team_id: int):
                            win_pct=_win_pct,
                            team_payroll=team_payroll,
                            staff_wera=staff_disp)
+
+
+@app.route("/team/<int:team_id>/rotation")
+def team_rotation(team_id: int):
+    """The fleshed-out staff page: the crew, in voyage order. Roles here are
+    the team's nominal depth chart (skill-derived, relative to this staff) —
+    in-game the engine flexes them by fatigue, Stuff and matchup, and a
+    manager keeps a man in a role only while it works."""
+    from o27v2 import rotation as _rotation
+    team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
+    if not team:
+        abort(404)
+    arms = db.fetchall(
+        "SELECT id, name, country, throws, age, pitcher_skill, stamina, "
+        "movement, command, pitcher_role, rotation_slot "
+        "FROM players WHERE team_id = ? AND is_pitcher = 1 AND is_active = 1 "
+        "ORDER BY rotation_slot, id",
+        (team_id,),
+    )
+    by_role: dict[str, list] = {r: [] for r in _rotation.ALL_ROLES}
+    unroled: list[dict] = []
+    for a in arms:
+        row = dict(a)
+        if row.get("pitcher_role") in by_role:
+            by_role[row["pitcher_role"]].append(row)
+        else:
+            unroled.append(row)
+    crew = [
+        {
+            "code":  code,
+            "label": _rotation.ROLE_LABELS[code],
+            "blurb": _rotation.ROLE_BLURBS[code],
+            "steer": _rotation.is_steer_role(code),
+            "arms":  sorted(by_role[code], key=lambda x: x.get("rotation_slot") or 99),
+        }
+        for code in _rotation.ALL_ROLES
+    ]
+    reserve = db.fetchall(
+        "SELECT id, name, country, throws, age, pitcher_skill, stamina "
+        "FROM players WHERE team_id = ? AND is_pitcher = 1 AND is_active = 0 "
+        "ORDER BY pitcher_skill DESC, id",
+        (team_id,),
+    )
+    role_choices = [(c, _rotation.ROLE_LABELS[c]) for c in _rotation.ALL_ROLES]
+    return _serve("team_rotation.html",
+                           team=team, crew=crew, unroled=unroled,
+                           reserve=[dict(r) for r in reserve],
+                           role_choices=role_choices)
+
+
+@app.route("/team/<int:team_id>/rotation/auto", methods=["POST"])
+def team_rotation_auto(team_id: int):
+    """Re-derive the whole crew from current skills (relative to this staff)."""
+    from flask import flash
+    from o27v2 import rotation as _rotation
+    if not db.fetchone("SELECT id FROM teams WHERE id = ?", (team_id,)):
+        abort(404)
+    n = _rotation.assign_roles_for_team(team_id)
+    flash(f"Re-derived crew roles for {n} arm(s) from current skills.", "info")
+    return redirect(url_for("team_rotation", team_id=team_id))
+
+
+@app.route("/team/<int:team_id>/rotation/set", methods=["POST"])
+def team_rotation_set(team_id: int):
+    """Manual override: pin one arm to a crew role. The next automatic
+    re-assignment (trade / season rollover / auto button) can move him
+    again — roles are never permanent titles."""
+    from flask import flash
+    from o27v2 import rotation as _rotation
+    if not db.fetchone("SELECT id FROM teams WHERE id = ?", (team_id,)):
+        abort(404)
+    try:
+        player_id = int(request.form.get("player_id", "0"))
+    except (TypeError, ValueError):
+        player_id = 0
+    role = (request.form.get("role", "") or "").strip().upper()
+    try:
+        slot = int(request.form.get("rotation_slot", "1") or 1)
+    except (TypeError, ValueError):
+        slot = 1
+    owned = db.fetchone(
+        "SELECT id, name FROM players WHERE id = ? AND team_id = ? AND is_pitcher = 1",
+        (player_id, team_id),
+    )
+    if not owned:
+        flash("That pitcher isn't on this staff.", "error")
+    elif _rotation.set_player_role(player_id, role, slot):
+        label = _rotation.ROLE_LABELS.get(role, "unassigned")
+        flash(f"{owned['name']} set to {label}.", "info")
+    else:
+        flash("Unknown crew role.", "error")
+    return redirect(url_for("team_rotation", team_id=team_id))
 
 
 @app.route("/hall-of-fame")

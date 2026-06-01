@@ -53,7 +53,7 @@ def _injury_probability(player: dict, bf_this_season: int = 0) -> float:
 
     if pos == "C":
         rate += CATCHER_BONUS
-    if player.get("pitcher_role") == "workhorse" or player.get("is_pitcher"):
+    if player.get("is_pitcher"):
         rate += PITCHER_BONUS
         if bf_this_season > 600:
             rate += 0.003
@@ -113,22 +113,22 @@ def _depth_chart_events(
         (team_id, game_date),
     )
 
-    role = injured_player.get("pitcher_role", "")
     pos  = injured_player.get("position", "")
     name = injured_player.get("name", "?")
 
     # -- Pitcher position --
-    # Phase 10: pitcher depth = remaining healthy SPs first, then RPs.
-    if role in ("workhorse", "starter", "reliever") or pos == "P":
+    # Pitcher depth: cover an injured arm with a fellow pitcher, leaning on
+    # the steering (Helms) tier first, then the best arm available.
+    if injured_player.get("is_pitcher") or pos == "P":
+        from o27v2 import rotation as _rotation
         backups = [
             p for p in healthy
             if p.get("is_pitcher") and p["id"] != injured_player["id"]
         ]
-        # Prefer fellow starters as fill-in, then relievers, then anyone else.
+        # Prefer a fellow steering arm as fill-in, then the best Stuff.
         backups.sort(
             key=lambda p: (
-                p.get("pitcher_role") in ("starter", "workhorse"),
-                p.get("pitcher_role") == "reliever",
+                _rotation.is_steer_role(p.get("pitcher_role", "")),
                 float(p.get("pitcher_skill", 0.0)),
             ),
             reverse=True,

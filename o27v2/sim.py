@@ -32,6 +32,7 @@ from o27v2 import db
 import o27v2.config as v2cfg
 from o27v2 import scout as _scout
 from o27v2 import streaks as _streaks
+from o27v2 import rotation as _rotation
 
 
 # Process-wide serialisation for sim execution. Flask's dev server is
@@ -467,6 +468,9 @@ def _db_team_to_engine(
         # engine treats as "no typed pitches" and falls back to the
         # aggregate Stuff/Command/Movement path.
         if p.get("is_pitcher"):
+            # Crew-role usage rank (1 = primary). Drives the steering pick
+            # above and tie-breaks the relief-role preference in the engine.
+            player.rotation_slot = int(p.get("rotation_slot") or 0)
             player.release_angle  = float(p.get("release_angle")  if p.get("release_angle")  is not None else 0.5)
             player.pitch_variance = float(p.get("pitch_variance") if p.get("pitch_variance") is not None else 0.0)
             rep_json = p.get("repertoire")
@@ -507,32 +511,41 @@ def _db_team_to_engine(
         else:
             fielders.append(player)
 
-    # ---- Pick today's SP via rest-tiered, stamina-weighted selection ----
-    # Real rotations want 4 days rest between starts. We tier candidates by
-    # rest level and pick the highest-Stamina arm in the best non-empty tier.
-    # Critical: never just fall back to "anyone" — that produces a workhorse
-    # who throws every single day. If no arm has the ideal rest, we still
-    # pick the MOST-RESTED arm so the rotation keeps cycling.
+    # ---- Pick today's steering arm (who takes the ball) -----------------
+    # Fatigue governs first — exactly like any pitcher. We tier the whole
+    # staff by rest and, within the freshest non-empty tier, prefer the
+    # Helms (the crew's nominal steering arm; o27v2/rotation.py) and then
+    # the higher-Stamina arm. So the manager keeps handing the Helms the
+    # ball while he's fresh, but a gassed Helms drops a tier and the staff
+    # spot-steers with whoever is rested — the role is a default, not a
+    # mandate. With two Helms the freshest one naturally takes his turn.
+    # No crew roles (legacy / pre-crew save) → the preference is inert and
+    # this reduces to the old rest-tiered, Stamina-weighted pick.
     todays_sp: list[Player] = []
     if pitchers:
-        # Pre-rank: highest stamina first, with debt as a tiebreaker (less
-        # debt = fresher arm). Done once so each tier filter just slices it.
-        ranked = sorted(
-            pitchers,
-            key=lambda pl: (-pl.stamina, pl.pitch_debt),
-        )
-        # Tier the candidates by minimum days rest. Once a tier has any
-        # qualifying arm, take the top-stamina one in that tier.
+        def _steer_key(pl: Player) -> tuple:
+            is_helms = getattr(pl, "pitcher_role", "") in _rotation.STEER_ROLES
+            # Prefer Helms, then higher Stamina, then primary slot, then
+            # lower debt. (negate for ascending sort → first element wins)
+            return (
+                0 if is_helms else 1,
+                -float(getattr(pl, "stamina", 0.5) or 0.5),
+                int(getattr(pl, "rotation_slot", 99) or 99),
+                int(getattr(pl, "pitch_debt", 0) or 0),
+            )
         for min_rest in (4, 3, 2, 1):
-            tier = [p for p in ranked if p.days_rest >= min_rest]
+            tier = [p for p in pitchers
+                    if int(getattr(p, "days_rest", 99) or 99) >= min_rest]
             if tier:
-                todays_sp = [tier[0]]
+                todays_sp = [min(tier, key=_steer_key)]
                 break
-        # Last-resort: every arm pitched yesterday or today. Pick the one
-        # with the most rest (most rested) and lowest debt — emergency only.
+        # Last resort: every arm pitched yesterday/today — most-rested goes.
         if not todays_sp:
-            ranked.sort(key=lambda pl: (-pl.days_rest, pl.pitch_debt))
-            todays_sp = [ranked[0]]
+            todays_sp = [min(
+                pitchers,
+                key=lambda pl: (-int(getattr(pl, "days_rest", 99) or 99),
+                                int(getattr(pl, "pitch_debt", 0) or 0)),
+            )]
 
     # Cap fielders at the canonical 8 starting positions; remaining ones
     # are bench depth that lives in the roster but does not bat. Cap DHs
@@ -2263,6 +2276,10 @@ def simulate_next_n(n: int = 10, seed_base: int | None = None,
                 maybe_run_sweep(g["game_date"])
             except Exception as e:
                 results.append({"sweep_error": str(e), "date": g["game_date"]})
+            try:
+                _rotation.maybe_review_staffs(g["game_date"])
+            except Exception as e:
+                results.append({"staff_review_error": str(e), "date": g["game_date"]})
         seed = None if seed_base is None else seed_base + i
         try:
             r = simulate_game(g["id"], seed=seed, detail=detail)
@@ -2424,6 +2441,10 @@ def simulate_date(date: str, seed_base: int | None = None, max_games: int = SIM_
         results: list[dict] = [{"sweep_error": str(e), "date": date}]
     else:
         results = []
+    try:
+        _rotation.maybe_review_staffs(date)
+    except Exception as e:
+        results.append({"staff_review_error": str(e), "date": date})
     games = db.fetchall(
         "SELECT id FROM games WHERE played = 0 AND game_date = ? ORDER BY id LIMIT ?",
         (date, max_games),
@@ -2490,6 +2511,10 @@ def simulate_through(
                     maybe_run_sweep(g["game_date"])
                 except Exception as e:
                     results.append({"sweep_error": str(e), "date": g["game_date"]})
+                try:
+                    _rotation.maybe_review_staffs(g["game_date"])
+                except Exception as e:
+                    results.append({"staff_review_error": str(e), "date": g["game_date"]})
             seed = None if seed_base is None else seed_base + len(seen_game_ids)
             try:
                 results.append(simulate_game(g["id"], seed=seed, detail=detail))

@@ -408,6 +408,12 @@ def develop_players_for_team(team_id: int, org_strength: int,
         sql = "UPDATE players SET " + ", ".join(f"{c} = ?" for c in cols) + " WHERE id = ?"
         db.execute(sql, tuple(values))
         n += 1
+    # Re-derive the crew roles now that a season's worth of development /
+    # decay has reshuffled the staff — an arm who lost Stamina to age slides
+    # out of the Helms tier, a riser climbs the depth chart. Roles are always
+    # relative to the current staff. (o27v2/rotation.py)
+    from o27v2 import rotation as _rotation
+    _rotation.assign_roles_for_team(team_id)
     return n
 
 

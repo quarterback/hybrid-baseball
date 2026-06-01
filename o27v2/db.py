@@ -145,7 +145,15 @@ CREATE TABLE IF NOT EXISTS players (
     adaptability INTEGER DEFAULT 50,
     leadership   INTEGER DEFAULT 50,   -- batter mental attribute. Stacks with `grit` in the RISP-pressure bonus so a low-eye/contact bench guy with elite leadership+grit can still tip a high-leverage AB (joker archetype).
     archetype             TEXT DEFAULT '',
+    -- Canonical crew role (see o27v2/rotation.py): '' / HM / 1C / 2C / BO /
+    -- SK / AN / PI (Helms, First/Second Change, Bosun, Skidder, Anchor,
+    -- Pilot). Re-derived relative to the team at seed, season rollover, and
+    -- after roster changes. '' = no crew role (legacy / pre-crew saves) →
+    -- consumers fall back to live derivation.
     pitcher_role          TEXT DEFAULT '',
+    -- Usage rank within a crew role (1 = primary; e.g. the two Helms
+    -- alternate as slot 1 / slot 2). 0 for non-pitchers / unroled arms.
+    rotation_slot         INTEGER DEFAULT 0,
     hard_contact_delta    REAL DEFAULT 0.0,
     hr_weight_bonus       REAL DEFAULT 0.0,
     age                   INTEGER DEFAULT 27,
@@ -968,6 +976,9 @@ def init_db() -> None:
         # Task #65 columns: per-pitcher Stamina rolled independently from
         # tier distribution, plus active/reserve roster split flag.
         task65_int  = [("stamina", "50"), ("is_active", "1")]
+        # Canonical pitching-roles column (see o27v2/rotation.py). Starter
+        # rotation order; 0 for relievers / legacy rows.
+        rotation_int = [("rotation_slot", "0")]
 
         for col, defval in phase8_text + phase9_text:
             try:
@@ -981,7 +992,7 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
-        for col, defval in phase9_int + task65_int:
+        for col, defval in phase9_int + task65_int + rotation_int:
             try:
                 conn.execute(f"ALTER TABLE players ADD COLUMN {col} INTEGER DEFAULT {defval}")
                 conn.commit()
