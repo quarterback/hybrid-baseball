@@ -335,6 +335,26 @@ PRESETS: dict[str, dict[str, object]] = {
         "GEN_SHIFT_CONTACT":       8,
         "GEN_SHIFT_PITCHING":      6,
     },
+    # Put-it-in-play league — borrows softball's CONTACT TEXTURE (low strikeouts,
+    # high BABIP, lots of balls in play, modest power) but reflects it onto O27's
+    # NATURAL run level instead of porting softball's circle dominance. The
+    # difference vs college_scoring: pitcher dominance, the ace-vs-field matchup
+    # shift, and GIDP are all left at O27 default, so scoring stays where O27
+    # naturally sits (~9 R/team/game) rather than being dragged to softball's
+    # ~5. This is the "keep the texture, not the sport" tuning: few whiffs, hits
+    # fall in, power dialed back a notch. Benchmarks to ~9 R/team/game.
+    "put_it_in_play": {
+        "CONTACT_WEAK_BASE":       0.20,   # contact-rich, hits fall in (high BABIP)
+        "CONTACT_MEDIUM_BASE":     0.54,
+        "CONTACT_HARD_BASE":       0.26,   # power present but a notch below default
+        "BATTER_DOM_SWINGING":    -0.08,   # batters rarely whiff (low K)
+        "BATTER_CONTACT_SWINGING": -0.12,  # swings become contact, not strikes
+        "PITCHER_DOM_SWINGING":   -0.01,   # pitchers don't rack up Ks either
+        "POWER_REDIST_HR":         0.40,   # modest power (default 0.50)
+        "BATTER_EYE_BALL":         0.04,   # moderate walks
+        "GEN_SHIFT_CONTACT":       8,
+        "GEN_SHIFT_POWER":        -4,
+    },
     "speed_demon": {
         "SB_ATTEMPT_PROB_PER_PITCH": 0.09,
         "SB_SUCCESS_BASE":        0.70,
@@ -415,6 +435,7 @@ PRESET_LABELS = {
     "launch_circus": "Launch-Angle Circus (extreme three-true-outcomes)",
     "contact_carnival": "Contact Carnival (highest BABIP, lowest K)",
     "college_scoring": "College Softball scoring environment (high contact, low power, low-scoring)",
+    "put_it_in_play": "Put-it-in-play (low K, high BABIP, modest power — softball texture, natural scoring)",
     "speed_demon": "Speed Demon League (steals, triples, inside-the-park HRs)",
     "workhorse": "Workhorse Era (starters go deep, bullpen quiet)",
     "knifes_edge": "Knife's Edge (max-offense stress test)",

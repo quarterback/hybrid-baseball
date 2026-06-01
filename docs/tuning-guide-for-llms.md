@@ -513,6 +513,22 @@ plays — softball's rare DPs are a 60-ft-basepath artifact, and O27 plays on 90
 bases, so `GIDP` is left at default. Benchmarks to ~6.6 R/team/game once scaled to
 O27's 27 outs — the softball low-scoring band.
 
+**Put-it-in-play** — borrows softball's contact *texture* (low strikeouts, high
+BABIP, modest power) but reflects it onto O27's **natural** run level instead of
+porting softball's circle dominance (pitcher dominance, matchup spread, and GIDP
+left at default, so scoring stays ~O27-normal, not softball-low):
+```json
+{"CONTACT_WEAK_BASE":0.20,"CONTACT_MEDIUM_BASE":0.54,"CONTACT_HARD_BASE":0.26,
+ "BATTER_DOM_SWINGING":-0.08,"BATTER_CONTACT_SWINGING":-0.12,"PITCHER_DOM_SWINGING":-0.01,
+ "POWER_REDIST_HR":0.40,"BATTER_EYE_BALL":0.04,"GEN_SHIFT_CONTACT":8,"GEN_SHIFT_POWER":-4}
+```
+This is the "keep the texture, not the sport" cut of `college_scoring`: the
+softball K/BABIP feel without dragging scoring down to the circle-suppressed band.
+The modest-power lean also makes it a real-data anchor for a lower-power
+(e.g. women's-fastpitch-styled) talent pool — push the persistence into
+`GEN_SHIFT_POWER`/`_CONTACT`/`_SPEED` and reseed if you want it baked into the
+population rather than just the per-game physics.
+
 (The engine also ships *1987 Lively Ball*, *Contact Carnival*, *Workhorse Era*,
 and two intentional stress tests — *Knife's Edge* max-offense and *Pitcher's
 Hellscape* min-offense. Same construction: move a coherent cluster of knobs.)
