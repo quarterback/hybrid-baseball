@@ -89,6 +89,9 @@
               <li>
                 <a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>
                 <span class="text-secondary">— {{ p.position }}{% if p.is_pitcher %} (P){% endif %} · {{ p.overall }}</span>
+                {% if p.college %}
+                  <span class="text-secondary small ms-1" title="Signed from {{ p.college.name }}">🎓 {{ p.college.short }}</span>
+                {% endif %}
               </li>
             {% endfor %}
           </ul>
@@ -119,6 +122,9 @@
                 <li>
                   <a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>
                   <span class="text-secondary">— {{ p.position }}{% if p.is_pitcher %} (P){% endif %} · {{ p.overall }}{% if not p.is_active %} · res{% endif %}</span>
+                  {% if p.college %}
+                    <span class="text-secondary small ms-1" title="Signed from {{ p.college.name }}">🎓 {{ p.college.short }}</span>
+                  {% endif %}
                 </li>
               {% endfor %}
             </ul>
@@ -150,7 +156,12 @@
         {% for p in preview.free_agents[:100] %}
           <tr>
             <td class="num text-secondary">{{ loop.index }}</td>
-            <td><a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a></td>
+            <td>
+              <a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>
+              {% if p.college %}
+                <span class="text-secondary small ms-1" title="Signed from {{ p.college.name }}">🎓 {{ p.college.short }}</span>
+              {% endif %}
+            </td>
             <td>{{ p.position }}{% if p.is_pitcher %} (P){% endif %}</td>
             <td class="num">{{ p.overall }}</td>
           </tr>
@@ -192,7 +203,12 @@
         {% for r in auction.results[:30] %}
           <tr>
             <td class="num text-secondary">{{ loop.index }}</td>
-            <td>{{ r.player_name }}</td>
+            <td>
+              {{ r.player_name }}
+              {% if r.college %}
+                <span class="text-secondary small ms-1" title="Signed from {{ r.college.name }}">🎓 {{ r.college.short }}</span>
+              {% endif %}
+            </td>
             <td>{{ r.position }}</td>
             <td>
               {% if r.winner_abbrev %}
@@ -273,6 +289,9 @@
               {% for k in ks %}
                 <li>{{ k.player_name }}
                   <span class="text-secondary">— {{ k.position }}{% if k.is_pitcher %} (P){% endif %}</span>
+                  {% if k.college %}
+                    <span class="text-secondary small ms-1" title="Signed from {{ k.college.name }}">🎓 {{ k.college.short }}</span>
+                  {% endif %}
                 </li>
               {% endfor %}
             </ul>

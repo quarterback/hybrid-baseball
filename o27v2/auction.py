@@ -1011,6 +1011,37 @@ def apply_auction(
     }
 
 
+def _college_map(player_ids: list[int]) -> dict[int, dict]:
+    """Batch lookup: pro_player_id → {short, name} of the college
+    program they were signed from. Returns {} for any pro player
+    without a college backlink, and {} entirely if the college tier
+    isn't present in this save."""
+    if not player_ids:
+        return {}
+    has_college = db.fetchone(
+        "SELECT 1 AS x FROM sqlite_master "
+        "WHERE type='table' AND name='college_players'"
+    )
+    if not has_college:
+        return {}
+    out: dict[int, dict] = {}
+    CHUNK = 500
+    for i in range(0, len(player_ids), CHUNK):
+        chunk = player_ids[i:i + CHUNK]
+        qs = ",".join("?" for _ in chunk)
+        rows = db.fetchall(
+            f"SELECT cp.signed_pro_player_id AS pid, "
+            f"       prg.short_name AS short, prg.name AS name "
+            f"FROM college_players cp "
+            f"JOIN college_programs prg ON prg.id = cp.program_id "
+            f"WHERE cp.signed_pro_player_id IN ({qs})",
+            tuple(chunk),
+        )
+        for r in rows:
+            out[int(r["pid"])] = {"short": r["short"], "name": r["name"]}
+    return out
+
+
 def preview_auction(n_keepers: int = 3) -> dict[str, Any]:
     """Dry-run the keeper-selection step + snapshot the FA pool so the
     UI can show, BEFORE running the auction, exactly who's eligible.
@@ -1033,23 +1064,35 @@ def preview_auction(n_keepers: int = 3) -> dict[str, Any]:
     pool_out: list[dict] = []
     n_keepers_total = 0
     n_pool_total = 0
+    # Pre-fetch every roster row so we can do a single college-lookup
+    # for everyone (including FAs below) rather than per-team queries.
+    all_rostered = db.fetchall(
+        "SELECT * FROM players WHERE team_id IS NOT NULL"
+    )
+    by_team: dict[int, list[dict]] = {}
+    for r in all_rostered:
+        by_team.setdefault(r["team_id"], []).append(dict(r))
+    all_ids = [r["id"] for r in all_rostered]
+    fa_rows_raw = db.fetchall("SELECT * FROM players WHERE team_id IS NULL")
+    all_ids.extend(int(r["id"]) for r in fa_rows_raw)
+    college = _college_map(all_ids)
+
+    def _shape(plist):
+        return [{
+            "id":       p["id"],
+            "name":     p["name"],
+            "position": p.get("position"),
+            "is_pitcher": bool(p.get("is_pitcher")),
+            "is_active":  bool(p.get("is_active")),
+            "overall":  _player_overall(p),
+            "college":  college.get(int(p["id"])),
+        } for p in plist]
+
     for t in teams:
-        roster = db.fetchall(
-            "SELECT * FROM players WHERE team_id = ?", (t["id"],)
-        )
-        ranked = sorted((dict(r) for r in roster),
-                        key=lambda p: -_player_overall(p))
+        roster = by_team.get(t["id"], [])
+        ranked = sorted(roster, key=lambda p: -_player_overall(p))
         keep = ranked[:n_keepers]
         rest = ranked[n_keepers:]
-        def _shape(plist):
-            return [{
-                "id":       p["id"],
-                "name":     p["name"],
-                "position": p.get("position"),
-                "is_pitcher": bool(p.get("is_pitcher")),
-                "is_active":  bool(p.get("is_active")),
-                "overall":  _player_overall(p),
-            } for p in plist]
         keepers_out.append({
             "team_id":     t["id"],
             "team_abbrev": t["abbrev"],
@@ -1065,15 +1108,15 @@ def preview_auction(n_keepers: int = 3) -> dict[str, Any]:
         n_keepers_total += len(keep)
         n_pool_total += len(rest)
 
-    fa_rows = db.fetchall("SELECT * FROM players WHERE team_id IS NULL")
     free_agents = sorted(
         ({
             "id":         r["id"],
             "name":       r["name"],
-            "position":   r.get("position") if isinstance(r, dict) else r["position"],
+            "position":   r["position"] if "position" in r.keys() else None,
             "is_pitcher": bool(r["is_pitcher"]),
             "overall":    _player_overall(dict(r)),
-        } for r in fa_rows),
+            "college":    college.get(int(r["id"])),
+        } for r in fa_rows_raw),
         key=lambda p: -p["overall"],
     )
 
@@ -1449,8 +1492,23 @@ def get_auction(season: int | None = None) -> dict | None:
 
     if not keepers and not results:
         return None
+
+    # Tag any player that came from the college pipeline with their
+    # program so the UI can show e.g. "← NSH" alongside the player name.
+    all_ids = [int(r["player_id"]) for r in keepers] + [int(r["player_id"]) for r in results]
+    college = _college_map(list(set(all_ids)))
+    keepers_out = []
+    for r in keepers:
+        d = dict(r)
+        d["college"] = college.get(int(r["player_id"]))
+        keepers_out.append(d)
+    results_out = []
+    for r in results:
+        d = dict(r)
+        d["college"] = college.get(int(r["player_id"]))
+        results_out.append(d)
     return {
         "season":  season,
-        "keepers": [dict(r) for r in keepers],
-        "results": [dict(r) for r in results],
+        "keepers": keepers_out,
+        "results": results_out,
     }
