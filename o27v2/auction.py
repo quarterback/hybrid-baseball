@@ -539,7 +539,12 @@ def apply_auction(
     draft_pool   = pool[auction_lot_limit:]
 
     # Step 3: per-team purse, slot tracking, auction loop.
-    purse = {tid: purse_init for tid in team_ids}
+    # If economy.team_budgets is initialized for this season, each team's
+    # starting purse is THEIR specific remaining budget (fantasy-style
+    # per-team caps). Otherwise everyone shares `purse_init` from the
+    # auction config (legacy behavior).
+    initial_purses = _initial_purses_from_budgets(season, team_ids, purse_init)
+    purse = dict(initial_purses)
     won_by_team: dict[int, list[dict]] = {tid: [] for tid in team_ids}
     # Per-team sales count for the sellback mechanic. Capped at 1 so
     # no team can churn dozens of player → cash flips and exit the
@@ -864,11 +869,13 @@ def apply_auction(
                 (k["id"],),
             )
 
-    # Per-team summary for the UI.
+    # Per-team summary for the UI. Spent is the per-team delta against
+    # THAT team's initial purse (which may be its own team_budget remaining
+    # when economy is configured, not the global purse_init).
     summary = []
     for t in teams:
         won = won_by_team[t["id"]]
-        spent = purse_init - purse[t["id"]]
+        spent = initial_purses.get(t["id"], purse_init) - purse[t["id"]]
         summary.append({
             "team_id":     t["id"],
             "abbrev":      t["abbrev"],
@@ -883,6 +890,10 @@ def apply_auction(
     # Emit auction_sign transaction rows for every winner — feeds the
     # /transactions page and the player-card history tab.
     _emit_auction_signs(season, log)
+
+    # Persist each team's net auction spend into team_budgets so the
+    # league economy stays in sync with the auction outcome.
+    _persist_auction_spend(season, initial_purses, purse)
 
     return {
         "ok":         True,
@@ -923,6 +934,49 @@ def _emit_auction_signs(season: int, log: list[dict]) -> None:
         })
     if events:
         log_many(season, today, events)
+
+
+def _initial_purses_from_budgets(season: int, team_ids: list[int],
+                                  fallback_purse: int) -> dict[int, int]:
+    """If league_economy / team_budgets are configured, return each
+    team's REMAINING budget as their auction starting purse. Otherwise
+    fall back to `fallback_purse` for every team (legacy behavior)."""
+    try:
+        from o27v2 import economy as _econ
+        # Has the user actually saved any economy config for this season?
+        from o27v2 import db as _db
+        has_econ = _db.fetchone(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='team_budgets'"
+        )
+        if not has_econ:
+            return {tid: fallback_purse for tid in team_ids}
+        _econ.init_budgets(season)
+        return {tid: _econ.budget_for_team(tid, season)["remaining"]
+                for tid in team_ids}
+    except Exception:
+        return {tid: fallback_purse for tid in team_ids}
+
+
+def _persist_auction_spend(season: int, initial_purses: dict[int, int],
+                            final_purses: dict[int, int]) -> None:
+    """Walk each team's spend (initial - remaining) and deduct from
+    team_budgets so the per-season ledger stays accurate. Silent no-op
+    when economy isn't configured."""
+    try:
+        from o27v2 import economy as _econ
+        from o27v2 import db as _db
+        has_econ = _db.fetchone(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='team_budgets'"
+        )
+        if not has_econ:
+            return
+        for tid, initial in initial_purses.items():
+            remaining = final_purses.get(tid, initial)
+            spent = max(0, initial - remaining)
+            if spent > 0:
+                _econ.deduct(tid, season, spent, allow_overdraft=True)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
