@@ -25,7 +25,7 @@ _workspace = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _workspace not in sys.path:
     sys.path.insert(0, _workspace)
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response, flash
+from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, Response, flash, session
 
 from o27v2 import db, currency, valuation, hof, engine_config
 from o27v2.web import text_export
@@ -7719,8 +7719,16 @@ def new_league_post():
     # so the new graduating class clears through FA/auction each offseason.
     if request.form.get("seed_college_on_start"):
         from o27v2 import college_league as _cl
+        # College gender: dedicated knob ("college_gender" on the form),
+        # or fall back to the pro league's gender, or "mixed".
+        college_gender = (request.form.get("college_gender")
+                          or request.form.get("gender")
+                          or "mixed")
+        if college_gender == "same":
+            college_gender = request.form.get("gender") or "mixed"
         try:
-            summary = _cl.seed_college_league(season=2026, rng_seed=rng_seed)
+            summary = _cl.seed_college_league(season=2026, rng_seed=rng_seed,
+                                               gender=college_gender)
             if summary["created_programs"] > 0:
                 _cl.generate_schedule(season=2026)
                 flash(f"College tier seeded: {summary['created_programs']} programs, "
@@ -9423,6 +9431,59 @@ def college_program_view(program_id: int):
                   team_pit_top=team_pit_top)
 
 
+# ---------------------------------------------------------------------------
+# College scouting "Perspective" — god-mode dropdown.
+#
+# The college fog-of-war is a deliberate design (per the Sideline Engineering
+# blog): the user sees displayed grades + two independent scouting projections
+# (Service + a single team), NOT the truth. Showing every team's report
+# averages out the fog visually and lets the user back-derive true potential.
+#
+# Since the sim has no concept of a logged-in "home team," we expose the
+# choice as a session-scoped dropdown. Default = "service" (only the public
+# consensus shows). Switching to a team renders Service + that team's draw,
+# nothing more. Same dropdown drives the player card and the draft board so
+# selecting once persists across navigation.
+# ---------------------------------------------------------------------------
+
+def _get_perspective() -> str:
+    """Return the current scouting perspective: 'service' (default) or
+    'team:<id>'. Invalid stored values fall back to 'service'."""
+    val = session.get("scout_perspective") or "service"
+    if val == "service":
+        return val
+    if val.startswith("team:"):
+        try:
+            tid = int(val.split(":", 1)[1])
+        except ValueError:
+            return "service"
+        # Validate the team still exists (saves can churn).
+        ok = db.fetchone("SELECT 1 AS x FROM teams WHERE id = ?", (tid,))
+        if ok:
+            return val
+    return "service"
+
+
+def _perspective_options() -> list[tuple[str, str]]:
+    """[(value, label), ...] for the perspective dropdown."""
+    out = [("service", "League Scouting Service")]
+    rows = db.fetchall("SELECT id, abbrev, name FROM teams ORDER BY abbrev")
+    for r in rows:
+        out.append((f"team:{r['id']}", f"{r['abbrev']} · {r['name']}"))
+    return out
+
+
+@app.route("/api/scout-perspective", methods=["POST"])
+def api_scout_perspective():
+    """Persist the perspective dropdown choice in the user's session.
+    Form posts here from the dropdown on /college/player/<id> and
+    /college/draft; Referer-redirect so the page reloads in place."""
+    val = (request.form.get("value") or "service").strip()
+    if val == "service" or val.startswith("team:"):
+        session["scout_perspective"] = val
+    return redirect(request.referrer or url_for("college_view"))
+
+
 @app.route("/college/player/<int:player_id>")
 def college_player_view(player_id: int):
     player = db.fetchone(
@@ -9433,13 +9494,51 @@ def college_player_view(player_id: int):
     program = db.fetchone(
         "SELECT * FROM college_programs WHERE id = ?", (player["program_id"],)
     )
-    # Scouting reports for the player — only seniors get them.
-    reports = db.fetchall(
-        "SELECT * FROM college_scouting_reports WHERE player_id = ? "
-        "ORDER BY season DESC, source", (player_id,)
+    # Fog-of-war scouting: ONLY render Service + the team the user has
+    # picked from the perspective dropdown. Default = Service alone.
+    perspective = _get_perspective()
+    service_row = db.fetchone(
+        "SELECT * FROM college_scouting_reports "
+        "WHERE player_id = ? AND source = 'service' "
+        "ORDER BY season DESC LIMIT 1",
+        (player_id,),
     )
+    team_row = None
+    if perspective.startswith("team:"):
+        team_row = db.fetchone(
+            "SELECT * FROM college_scouting_reports "
+            "WHERE player_id = ? AND source = ? "
+            "ORDER BY season DESC LIMIT 1",
+            (player_id, perspective),
+        )
+    visible_reports: list[dict] = []
+    if service_row:
+        visible_reports.append({**dict(service_row),
+                                "label": "League Service"})
+    if team_row:
+        team_id = int(perspective.split(":", 1)[1])
+        team = db.fetchone("SELECT abbrev FROM teams WHERE id = ?",
+                           (team_id,)) or {}
+        visible_reports.append({**dict(team_row),
+                                "label": f"{team.get('abbrev', 'Team')} Scout"})
+    # Per-attribute variance flags (>= 15 between Service and Team draw).
+    variance_flags: dict[str, bool] = {}
+    if len(visible_reports) == 2:
+        a, b = visible_reports[0], visible_reports[1]
+        for k in ("grade_skill", "grade_contact", "grade_power",
+                  "grade_eye", "grade_speed", "grade_pitcher_skill",
+                  "grade_command", "grade_movement", "grade_stamina"):
+            va, vb = a.get(k) or 0, b.get(k) or 0
+            if va and vb and abs(va - vb) >= 15:
+                variance_flags[k] = True
+    debug = request.args.get("debug") == "true"
     return _serve("college_player.html",
-                  player=player, program=program, reports=reports)
+                  player=player, program=program,
+                  reports=visible_reports,
+                  perspective=perspective,
+                  perspective_options=_perspective_options(),
+                  variance_flags=variance_flags,
+                  debug=debug)
 
 
 @app.route("/college/postseason")
@@ -9572,11 +9671,16 @@ def api_college_abstract_season():
         abort(400, "no college league seeded")
     rng_seed = request.form.get("rng_seed", type=int) or 0
     result = _cl.run_abstract_season(season, rng_seed=rng_seed)
-    flash(f"Abstract season complete · {result['programs']} programs · "
-          f"{result['games_marked_played']} games marked played · "
-          f"{result['batters_written']} batter lines + "
-          f"{result['pitchers_written']} pitcher lines. "
-          f"Postseason is ready to run.", "info")
+    parts = [f"Auto-cycle complete · {result['programs']} programs"]
+    if result.get("postseason_run"):
+        parts.append("postseason → champion picked")
+    if result.get("scouting_reports"):
+        parts.append(f"{result['scouting_reports']} scouting reports")
+    if result.get("graduated"):
+        parts.append(f"{result['graduated']} graduates ready for the draft board")
+    if result.get("rollover_next_season"):
+        parts.append(f"rolled to season {result['rollover_next_season']}")
+    flash(" · ".join(parts), "info")
     return redirect(url_for("college_view", season=season))
 
 
@@ -9669,16 +9773,21 @@ def college_leaders_view():
     games_per_team = max(1, (games_played * 2) // max(1, n_progs))
     min_pa = max(5, int(2.0 * games_per_team))
     min_outs = max(5, int(2.5 * games_per_team))
+    class_year = request.args.get("class_year", type=int)
+    if class_year not in (1, 2, 3, 4):
+        class_year = None
     batters  = _cl.batter_leaders(season,  sort=bat_sort,
                                   min_pa=min_pa, limit=50,
-                                  conference=conference)
+                                  conference=conference,
+                                  class_year=class_year)
     pitchers = _cl.pitcher_leaders(season, sort=pit_sort,
                                   min_outs=min_outs, limit=50,
-                                  conference=conference)
+                                  conference=conference,
+                                  class_year=class_year)
     return _serve("college_leaders.html",
                   season=season, batters=batters, pitchers=pitchers,
                   bat_sort=bat_sort, pit_sort=pit_sort,
-                  conference=conference,
+                  conference=conference, class_year=class_year,
                   conferences=_cl.list_conferences(season),
                   min_pa=min_pa, min_outs=min_outs,
                   games_per_team=games_per_team)
@@ -9716,18 +9825,41 @@ def college_draft_view():
     position = request.args.get("position") or None
     if position not in _cl.DRAFT_POSITIONS:
         position = None
+    perspective = _get_perspective()
     draft = _cl.draft_class(season=requested_season, position=position)
     for p in draft:
         by_src: dict[str, dict] = {}
         for r in p["reports"]:
             by_src[r["source"]] = r
         p["report_service"] = by_src.get("service")
-        p["report_first_team"] = next((v for k, v in by_src.items()
-                                       if k.startswith("team:")), None)
+        # Only render the team report matching the current perspective —
+        # no more "first team we found" which leaked an arbitrary team's
+        # truth-projection. Default Service-only = single column view.
+        p["report_perspective"] = by_src.get(perspective) if perspective.startswith("team:") else None
+        # Per-attribute variance flags between Service and the picked team.
+        flags: dict[str, bool] = {}
+        if p["report_service"] and p["report_perspective"]:
+            for k in ("grade_skill", "grade_contact", "grade_power",
+                      "grade_eye", "grade_speed", "grade_pitcher_skill",
+                      "grade_command", "grade_movement", "grade_stamina"):
+                va = p["report_service"].get(k) or 0
+                vb = p["report_perspective"].get(k) or 0
+                if va and vb and abs(va - vb) >= 15:
+                    flags[k] = True
+        p["variance_flags"] = flags
+    perspective_label = None
+    if perspective.startswith("team:"):
+        tid = int(perspective.split(":", 1)[1])
+        row = db.fetchone("SELECT abbrev FROM teams WHERE id = ?", (tid,))
+        if row:
+            perspective_label = f"{row['abbrev']} Scout"
     return _serve("college_draft.html", draft=draft,
                   position=position, positions=_cl.DRAFT_POSITIONS,
                   season=requested_season or current_season,
-                  scoped_to_season=requested_season is not None)
+                  scoped_to_season=requested_season is not None,
+                  perspective=perspective,
+                  perspective_label=perspective_label,
+                  perspective_options=_perspective_options())
 
 
 @app.route("/api/college/sign/<int:college_player_id>", methods=["POST"])
@@ -9929,6 +10061,74 @@ def api_auction_run():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
     return jsonify({"ok": True, "auction": report})
+
+
+@app.route("/api/auction/full-cycle", methods=["POST"])
+def api_auction_full_cycle():
+    """One-shot mid-season testing hook that chains the three steps the
+    off-season engine doesn't run on its own: bulk-import every unsigned
+    college graduate into the FA pool, run an FA signing round across
+    prospects + existing FAs, then run the pro auction. Without this,
+    college grads only land on rosters by manually clicking through
+    college import → FA sign → auction or by waiting for a full season
+    rollover."""
+    from o27v2 import college_league as _cl
+    from o27v2 import fa_signing as _fas
+    from o27v2 import auction as _auction
+    cfg = _active_config()
+    if not cfg:
+        return jsonify({
+            "ok": False,
+            "error": "No active league. Create one from /new-league first.",
+        }), 400
+    cfg = dict(cfg)
+    cfg.setdefault("auction", {"enabled": True})
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+
+    grads = _cl.draft_class()
+    grad_ids = [int(g["id"]) for g in grads]
+    import_result = (_cl.bulk_import_graduates(grad_ids, mode="fa")
+                     if grad_ids else
+                     {"signed": [], "errors": []})
+
+    signing_report = _fas.run_signing_round(scope="all", rng_seed=rng_seed)
+
+    try:
+        auction_report = _auction.apply_auction(cfg, rng_seed=rng_seed)
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"auction failed: {e}",
+            "imported_grads": len(import_result["signed"]),
+            "fa_signings": signing_report["total_signed"],
+        }), 500
+
+    cut_report = _auction.apply_roster_cut()
+
+    return jsonify({
+        "ok": True,
+        "imported_grads": len(import_result["signed"]),
+        "import_errors": len(import_result["errors"]),
+        "fa_signings": signing_report["total_signed"],
+        "fa_rounds": signing_report["rounds"],
+        "auction": auction_report,
+        "roster_cut": cut_report,
+    })
+
+
+@app.route("/api/roster/cut", methods=["POST"])
+def api_roster_cut():
+    """Roster cut day — trim every team from the ROSTER_DRAFT_CAP=50
+    post-auction window back to the ROSTER_FINAL_CAP=47 regular-season
+    cap. Releases lowest-overall reserves to the FA pool; actives are
+    never touched. Idempotent."""
+    from o27v2 import auction as _auction
+    try:
+        report = _auction.apply_roster_cut()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "report": report})
 
 
 @app.route("/api/trades/reconcile", methods=["POST"])

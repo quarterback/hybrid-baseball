@@ -37,6 +37,18 @@ from o27v2 import db
 # default in league.py). Anything beyond gets is_active=0.
 ROSTER_TARGET = 34
 
+# Reserve-slot cap on top of the active roster. Final regular-season
+# total roster size = ROSTER_TARGET + RESERVE_CAP = 47.
+RESERVE_CAP = 13
+ROSTER_FINAL_CAP = ROSTER_TARGET + RESERVE_CAP   # 47
+
+# During the auction itself (and the trade window that immediately
+# follows) teams can carry up to ROSTER_DRAFT_CAP players. The extra
+# slack vs. the 47 regular-season cap is deliberate — it gives teams
+# room to make trades or roster moves before the league-wide cut day
+# enforces 47. Mirrors NFL preseason: 90 → 53 at cut day.
+ROSTER_DRAFT_CAP = 50
+
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -632,7 +644,7 @@ def apply_auction(
             keepers_on_team = len(keepers_by_team.get(tid, []))
             won_so_far = len(won_by_team[tid])
             slots_filled = keepers_on_team + won_so_far
-            if slots_filled >= ROSTER_TARGET + 13:  # active + reserve cap
+            if slots_filled >= ROSTER_DRAFT_CAP:  # draft-day cap (cut later)
                 continue
             if purse[tid] < min_bid:
                 continue
@@ -757,7 +769,7 @@ def apply_auction(
                     continue
                 slots_filled = (len(keepers_by_team.get(tid, []))
                                 + len(won_by_team[tid]))
-                if slots_filled >= ROSTER_TARGET + 13:
+                if slots_filled >= ROSTER_DRAFT_CAP:
                     continue
                 buyer_pressure = _team_pressure(
                     purse[tid], lot_order, auction_lot_limit, purse_init,
@@ -835,7 +847,7 @@ def apply_auction(
         def _team_has_slot(tid: int) -> bool:
             slots_filled = (len(keepers_by_team.get(tid, []))
                             + len(won_by_team[tid]))
-            return slots_filled < ROSTER_TARGET + 13
+            return slots_filled < ROSTER_DRAFT_CAP
 
         def _advance() -> bool:
             """Move snake_idx to the next pickable team. Returns False
@@ -878,7 +890,7 @@ def apply_auction(
             # auction unspent."
             slots_filled = (len(keepers_by_team.get(tid, []))
                             + len(won_by_team[tid]))
-            open_slots = max(1, (ROSTER_TARGET + 13) - slots_filled)
+            open_slots = max(1, ROSTER_DRAFT_CAP - slots_filled)
             price = max(min_bid, purse[tid] // open_slots)
             price = min(price, purse[tid])  # never spend more than we have
             purse[tid] = max(0, purse[tid] - price)
@@ -996,6 +1008,78 @@ def apply_auction(
             "team_purse":       purse_init,
             "min_bid":          min_bid,
         },
+    }
+
+
+def apply_roster_cut(season: int | None = None) -> dict[str, Any]:
+    """Roster cut day. Trim every team back to ROSTER_FINAL_CAP = 47.
+
+    During the auction (and the trade window that follows it) teams
+    can carry up to ROSTER_DRAFT_CAP = 50 so they have slack to make
+    trades and shuffle roster spots. This step enforces the regular-
+    season cap by releasing the lowest-overall reserves to the FA pool.
+    Active players (is_active=1) are never cut — only the deep bench
+    is exposed.
+
+    Idempotent: re-running on an already-trimmed league is a no-op.
+    """
+    if season is None:
+        row = db.fetchone(
+            "SELECT value FROM sim_meta WHERE key = 'season_number'"
+        )
+        try:
+            season = int((row or {}).get("value") or 1)
+        except (TypeError, ValueError):
+            season = 1
+
+    teams = db.fetchall("SELECT id, abbrev, name FROM teams ORDER BY id")
+    cuts: list[dict] = []
+    for t in teams:
+        roster = db.fetchall(
+            "SELECT * FROM players WHERE team_id = ?", (t["id"],)
+        )
+        if len(roster) <= ROSTER_FINAL_CAP:
+            continue
+        rl = [dict(r) for r in roster]
+        # Sort: actives first (never cut), then reserves by overall desc.
+        # Tail past ROSTER_FINAL_CAP is what gets released.
+        rl.sort(key=lambda p: (-(p.get("is_active") or 0),
+                               -_player_overall(p)))
+        keep = rl[:ROSTER_FINAL_CAP]
+        release = rl[ROSTER_FINAL_CAP:]
+        for p in release:
+            db.execute(
+                "UPDATE players SET team_id = NULL, is_active = 0 "
+                "WHERE id = ?", (p["id"],),
+            )
+            cuts.append({
+                "team_id":     t["id"],
+                "team_abbrev": t["abbrev"],
+                "team_name":   t["name"],
+                "player_id":   p["id"],
+                "player_name": p["name"],
+                "position":    p.get("position"),
+                "overall":     _player_overall(p),
+            })
+
+    if cuts:
+        from o27v2.transactions import log_many
+        from datetime import date as _date
+        events = [{
+            "event_type": "roster_cut",
+            "team_id":    c["team_id"],
+            "player_id":  c["player_id"],
+            "detail":     "Roster cut day — released to FA pool",
+        } for c in cuts]
+        log_many(season, _date.today().isoformat(), events)
+
+    return {
+        "ok":     True,
+        "season": season,
+        "cap":    ROSTER_FINAL_CAP,
+        "draft_cap": ROSTER_DRAFT_CAP,
+        "cuts":   cuts,
+        "n_cut":  len(cuts),
     }
 
 

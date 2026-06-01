@@ -447,9 +447,15 @@ def _all_programs_spec() -> list[dict]:
 # Seeding
 # ---------------------------------------------------------------------------
 
-def seed_college_league(season: int, rng_seed: int = 0) -> dict:
+def seed_college_league(season: int, rng_seed: int = 0,
+                        *, gender: str = "mixed") -> dict:
     """Idempotent: creates 64 programs and full freshman rosters for
-    `season` if not already seeded. Returns a summary dict."""
+    `season` if not already seeded. Returns a summary dict.
+
+    `gender` controls the name picker: 'mixed' (default), 'male',
+    or 'female'. Plumbs through to `generate_college_roster` so the
+    whole league uses a consistent gender distribution.
+    """
     init_college_schema()
     existing = db.fetchone(
         "SELECT COUNT(*) AS n FROM college_programs WHERE season = ?", (season,)
@@ -458,6 +464,14 @@ def seed_college_league(season: int, rng_seed: int = 0) -> dict:
         return {"created_programs": 0, "created_players": 0, "season": season}
 
     rng = random.Random((rng_seed or 0) ^ 0xC011E6E5)
+    # Build the name picker once and reuse across all programs so the
+    # whole class shares one gender preference (rather than re-rolling
+    # mixed-gender at every program).
+    from o27v2.league import make_name_picker
+    if gender not in ("mixed", "male", "female"):
+        gender = "mixed"
+    name_picker = make_name_picker(rng, gender=gender,
+                                   region_weights={"us": 1.0})
 
     n_programs = n_players = 0
     for spec in _all_programs_spec():
@@ -469,7 +483,8 @@ def seed_college_league(season: int, rng_seed: int = 0) -> dict:
         )
         n_programs += 1
 
-        roster = _cg.generate_college_roster(rng, spec["short_name"])
+        roster = _cg.generate_college_roster(rng, spec["short_name"],
+                                              name_picker=name_picker)
         # Distribute college_year across the roster so the first season
         # isn't all freshmen (no one to graduate). Mix: 25% each year.
         for i, p in enumerate(roster):
@@ -1039,12 +1054,20 @@ def _abstract_player_line(player: dict, league_pitcher_ovr: float,
 
 
 def run_abstract_season(season: int, *, rng_seed: int = 0,
-                        games_per_team: int = 55) -> dict:
+                        games_per_team: int = 55,
+                        full_pipeline: bool = True) -> dict:
     """Generate a full college season's worth of stats + W-L records
     WITHOUT iterating any games. ~10,000x faster than per-game sim;
     intended for users who don't want to watch college games and just
     need the season totals + scouting signal so the auction pipeline
     works.
+
+    `full_pipeline` (default True): chain into postseason + scouting
+    reports + annual rollover so the draft board actually populates.
+    The draft pool filters on `graduated = 1`, which only the rollover
+    sets — without it the board comes up empty even after a "full
+    season" has played out. Set False to stop after the regular season
+    if you want to drill into the bracket UI before graduating.
 
     What it does:
       * Computes per-program team strength (lineup vs staff OVR).
@@ -1221,12 +1244,45 @@ def run_abstract_season(season: int, *, rng_seed: int = 0,
         (season, "regular"),
     )
 
-    return {
+    result = {
         "programs":             len(prog_meta),
         "games_marked_played":  len(bulk_updates),
         "batters_written":      len(batter_rows),
         "pitchers_written":     len(pitcher_rows),
+        "postseason_run":       False,
+        "scouting_reports":     0,
+        "graduated":            0,
     }
+
+    if full_pipeline:
+        # Postseason — CWS bracket. Small game volume (~140 games), fast.
+        try:
+            ps = run_postseason(season, rng_seed=rng_seed)
+            result["postseason_run"] = True
+            result["champion_program_id"] = ps.get("champion_program_id")
+        except Exception as e:
+            result["postseason_error"] = str(e)
+        # Scouting reports — generated while seniors are still in
+        # college_players (before rollover transforms them).
+        try:
+            n_reports = generate_scouting_reports(season, rng_seed=rng_seed)
+            result["scouting_reports"] = n_reports
+        except Exception as e:
+            result["scouting_error"] = str(e)
+        # Annual rollover: graduates seniors (graduated=1, signable),
+        # ages everyone, spawns next year's freshmen.
+        try:
+            ro = annual_rollover(season, season + 1, rng_seed=rng_seed)
+            grad_row = db.fetchone(
+                "SELECT COUNT(*) AS n FROM college_players "
+                "WHERE graduated = 1 AND signed_pro_player_id IS NULL"
+            )
+            result["graduated"] = (grad_row or {}).get("n") or 0
+            result["rollover_next_season"] = ro.get("next_season")
+        except Exception as e:
+            result["rollover_error"] = str(e)
+
+    return result
 
 
 def sim_game(game_id: int, rng_seed: int = 0,
@@ -1488,12 +1544,14 @@ def standings(season: int) -> list[dict]:
 def batter_leaders(season: int, *, sort: str = "avg",
                    min_pa: int = 50, limit: int = 50,
                    conference: str | None = None,
-                   program_id: int | None = None) -> list[dict]:
+                   program_id: int | None = None,
+                   class_year: int | None = None) -> list[dict]:
     """Top batters in `season` sorted by `sort` (avg | hr | rbi | h | r | ops).
 
     Filter knobs:
       * `conference`: limit to one conference (e.g. 'SEC')
       * `program_id`: limit to one team
+      * `class_year`: 1-4 = Freshman/Sophomore/Junior/Senior
     """
     where = ["g.season = ?", "pl.is_pitcher = 0"]
     args: list = [season]
@@ -1503,6 +1561,9 @@ def batter_leaders(season: int, *, sort: str = "avg",
     if program_id:
         where.append("pl.program_id = ?")
         args.append(program_id)
+    if class_year:
+        where.append("pl.college_year = ?")
+        args.append(class_year)
     sql = f"""SELECT pl.id AS player_id, pl.name, pl.position, pl.college_year,
                   pl.is_pitcher, prg.id AS program_id,
                   prg.short_name AS program_short, prg.name AS program_name,
@@ -1549,8 +1610,10 @@ def batter_leaders(season: int, *, sort: str = "avg",
 def pitcher_leaders(season: int, *, sort: str = "era",
                     min_outs: int = 60, limit: int = 50,
                     conference: str | None = None,
-                    program_id: int | None = None) -> list[dict]:
-    """Top pitchers; sort by era (asc) / k (desc) / ip (desc) / whip (asc)."""
+                    program_id: int | None = None,
+                    class_year: int | None = None) -> list[dict]:
+    """Top pitchers; sort by era (asc) / k (desc) / ip (desc) / whip (asc).
+    `class_year` 1-4 filters to Fr/So/Jr/Sr."""
     where = ["g.season = ?", "pl.is_pitcher = 1"]
     args: list = [season]
     if conference:
@@ -1559,6 +1622,9 @@ def pitcher_leaders(season: int, *, sort: str = "era",
     if program_id:
         where.append("pl.program_id = ?")
         args.append(program_id)
+    if class_year:
+        where.append("pl.college_year = ?")
+        args.append(class_year)
     sql = f"""SELECT pl.id AS player_id, pl.name, pl.position, pl.college_year,
                   prg.id AS program_id,
                   prg.short_name AS program_short, prg.name AS program_name,

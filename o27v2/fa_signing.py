@@ -38,8 +38,11 @@ from o27v2 import db
 from o27v2 import auction as _au
 
 
-# Active roster target — matches the auction module's convention.
-ROSTER_TARGET = 25
+# Active roster target — sourced from the auction module so the two
+# modules stay in lockstep (auction.ROSTER_TARGET = 34 active; +13
+# reserve = 47 total). The old hard-coded 25 here was stale and
+# capped FA signings short of the real active-roster size.
+ROSTER_TARGET = _au.ROSTER_TARGET
 
 
 def _fa_pool(scope: str) -> list[dict]:
