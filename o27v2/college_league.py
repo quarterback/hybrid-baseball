@@ -1468,6 +1468,26 @@ def sign_graduate_to_pro(college_player_id: int) -> int:
         "UPDATE college_players SET signed_pro_player_id = ? WHERE id = ?",
         (pro_id, college_player_id),
     )
+
+    # Emit a college_sign transaction. team_id is NULL at this point
+    # (the player lands in FA pool first); the downstream signing
+    # round / direct-assign will emit additional events when they
+    # finally land on a roster.
+    try:
+        from o27v2.transactions import log_transaction, current_season
+        from datetime import date as _date
+        prog = db.fetchone(
+            "SELECT name, short_name FROM college_programs WHERE id = ?",
+            (p["program_id"],),
+        )
+        detail = (f"Signed pro from {prog['name']} ({prog['short_name']})"
+                  if prog else "Signed pro from college")
+        log_transaction(current_season(), _date.today().isoformat(),
+                        "college_sign", None, pro_id, detail)
+    except Exception:
+        # Don't block the sign on tx-log failures.
+        pass
+
     return pro_id
 
 
@@ -1491,6 +1511,7 @@ def bulk_import_graduates(player_ids: list[int],
     """
     signed: list[int] = []
     errors: list[dict] = []
+    assign_events: list[dict] = []
     for cid in player_ids:
         try:
             pro_id = sign_graduate_to_pro(int(cid))
@@ -1499,9 +1520,21 @@ def bulk_import_graduates(player_ids: list[int],
                     "UPDATE players SET team_id = ?, is_active = 1 WHERE id = ?",
                     (team_id, pro_id),
                 )
+                assign_events.append({
+                    "event_type": "manual_assign",
+                    "team_id":    team_id,
+                    "player_id":  pro_id,
+                    "detail":     "Direct-assigned via college import",
+                })
             signed.append(pro_id)
         except (ValueError, KeyError, TypeError) as e:
             errors.append({"college_id": int(cid), "error": str(e)})
+
+    if assign_events:
+        from o27v2.transactions import log_many, current_season
+        from datetime import date as _date
+        log_many(current_season(), _date.today().isoformat(), assign_events)
+
     return {"signed": signed, "errors": errors, "mode": mode,
             "team_id": team_id}
 

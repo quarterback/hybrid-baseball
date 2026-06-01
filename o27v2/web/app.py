@@ -5148,14 +5148,18 @@ def api_player_transfer(player_id: int):
         "UPDATE players SET team_id = ?, is_active = 1 WHERE id = ?",
         (target["id"], player_id),
     )
-    # Best-effort transaction log (table shape varies across saves).
+    # Log the move to the canonical transactions table.
     try:
+        from o27v2.transactions import log_transaction, current_season
         from datetime import date as _date
-        db.execute(
-            "INSERT INTO transactions (date, type, player_id, from_team_id, to_team_id, note) "
-            "VALUES (?, 'transfer', ?, ?, ?, ?)",
-            (_date.today().isoformat(), player_id, from_team_id, target["id"],
-             f"Manual transfer to {target['abbrev']} ({target['league']})"),
+        from_row = db.fetchone(
+            "SELECT abbrev FROM teams WHERE id = ?", (from_team_id,)
+        ) if from_team_id else None
+        from_abbrev = (from_row or {}).get("abbrev") or "FA"
+        log_transaction(
+            current_season(), _date.today().isoformat(),
+            "transfer", target["id"], player_id,
+            f"Transferred from {from_abbrev} → {target['abbrev']} ({target['league']})",
         )
     except Exception:
         pass
@@ -6720,6 +6724,8 @@ def transactions():
     teams = db.fetchall("SELECT id, name, abbrev FROM teams ORDER BY name")
 
     event_types = ["injury", "return", "promotion", "penalty",
+                   "auction_sign", "fa_sign", "prospect_sign",
+                   "college_sign", "manual_assign", "transfer",
                    "trade_block_breaking", "trade_injury_backfill",
                    "trade_deadline_buyer", "trade_deadline_seller",
                    "trade_salary_dump", "trade_rebuild_fire_sale",

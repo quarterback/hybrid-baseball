@@ -880,6 +880,10 @@ def apply_auction(
             "remaining":   purse[t["id"]],
         })
 
+    # Emit auction_sign transaction rows for every winner — feeds the
+    # /transactions page and the player-card history tab.
+    _emit_auction_signs(season, log)
+
     return {
         "ok":         True,
         "season":     season,
@@ -895,6 +899,30 @@ def apply_auction(
             "min_bid":          min_bid,
         },
     }
+
+
+def _emit_auction_signs(season: int, log: list[dict]) -> None:
+    """Log one `auction_sign` transaction per winning lot."""
+    from o27v2.transactions import log_many
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    events = []
+    for entry in log:
+        if entry.get("result") != "sold":
+            continue
+        tid = entry.get("winner_team_id")
+        pid = entry.get("player_id")
+        price = entry.get("price")
+        if tid is None or pid is None:
+            continue
+        events.append({
+            "event_type": "auction_sign",
+            "team_id":    tid,
+            "player_id":  pid,
+            "detail":     f"Won at auction for ƒ{price}" if price else "Won at auction",
+        })
+    if events:
+        log_many(season, today, events)
 
 
 # ---------------------------------------------------------------------------

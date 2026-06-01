@@ -9,6 +9,16 @@ from __future__ import annotations
 from o27v2 import db
 
 
+def current_season() -> int:
+    """Best-effort lookup of the active season number for tx-log emits.
+    Falls back to 1 if the seasons table is absent or empty."""
+    try:
+        row = db.fetchone("SELECT MAX(season_number) AS s FROM seasons")
+        return (row or {}).get("s") or 1
+    except Exception:
+        return 1
+
+
 def log_transaction(
     season: int,
     game_date: str,

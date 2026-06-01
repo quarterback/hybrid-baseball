@@ -92,6 +92,7 @@ def _run_one_round(scope: str, rng: random.Random) -> dict:
     active_count = {t["id"]: _team_active_count(t["id"]) for t in teams}
 
     signings: list[dict] = []
+    tx_events: list[dict] = []
     for p in pool:
         # Bidders: teams that still have an open active roster slot.
         eligible = [t for t in teams if active_count[t["id"]] < ROSTER_TARGET]
@@ -121,12 +122,29 @@ def _run_one_round(scope: str, rng: random.Random) -> dict:
             "valuation":  best_val,
             "overall":    _au._player_overall(p),
         })
+        # Queue a transaction event — scope tagging in the type so
+        # prospects vs existing FAs can be filtered separately.
+        et = "prospect_sign" if scope == "prospects" else "fa_sign"
+        tx_events.append({
+            "event_type": et,
+            "team_id":    best_team["id"],
+            "player_id":  p["id"],
+            "detail":     f"Signed from FA pool · valuation ƒ{best_val}",
+        })
+
+    # Emit transactions for the round.
+    if tx_events:
+        from o27v2.transactions import log_many, current_season
+        from datetime import date as _date
+        log_many(current_season(), _date.today().isoformat(), tx_events)
 
     remaining = sum(1 for p in pool
                     if p["id"] not in {s["player_id"] for s in signings})
     return {"scope": scope, "signings": signings,
             "remaining_in_pool": remaining,
             "teams_full": sum(1 for c in active_count.values() if c >= ROSTER_TARGET)}
+
+
 
 
 def run_signing_round(*, scope: str = "all",
