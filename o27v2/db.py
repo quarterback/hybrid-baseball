@@ -1744,6 +1744,23 @@ def init_db() -> None:
     except Exception:
         pass  # games / teams / sim_meta may be absent on a fresh DB
 
+    # Joker identity backfill. MLB-league jokers are tagged by
+    # roster_slot='joker' but were historically inserted with is_joker=0
+    # (the players INSERT omitted the column), while youth/college jokers
+    # set is_joker=1. Box-score display ('J' / trailing group),
+    # trade-eligibility exclusion, and other consumers key on is_joker, so
+    # normalize the flag from the authoritative role tag. Idempotent
+    # (only flips 0→1) and cheap.
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE players SET is_joker = 1 "
+                "WHERE roster_slot = 'joker' AND COALESCE(is_joker, 0) = 0"
+            )
+            conn.commit()
+    except Exception:
+        pass  # players / roster_slot may be absent on a very old DB
+
 
 def fill_missing_team_coords() -> int:
     """Fill lat/lon for teams that have none, from the weather city

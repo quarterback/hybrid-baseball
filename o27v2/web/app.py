@@ -3514,6 +3514,7 @@ def game_scorecard(game_id: int):
         """SELECT g.id, g.played, g.game_date,
                   g.home_team_id, g.away_team_id,
                   g.home_score, g.away_score, g.winner_id,
+                  g.away_declared_at, g.home_declared_at,
                   ht.abbrev as home_abbrev, at.abbrev as away_abbrev,
                   ht.name as home_name, at.name as away_name
            FROM games g
@@ -3549,6 +3550,33 @@ def game_scorecard(game_id: int):
             )
             return [{"name": r["name"], "pos": (r["pos"] or "")} for r in lr]
 
+        # Pitcher arc = each opposing pitcher's appearance window on the
+        # batting side's out ruler. A team's batters are faced by the OTHER
+        # team's pitchers, so the visitors' arc is built from the home staff
+        # (and vice-versa). game_pitcher_stats.outs_recorded summed in
+        # first-appearance order gives the contiguous windows; a pitcher with
+        # split spells collapses to one window (a fair approximation without
+        # the live renderer's per-spell tracking).
+        def _arc(team_id: int) -> list[tuple[int, int, str]]:
+            pr = db.fetchall(
+                """SELECT p.name AS name, SUM(ps.outs_recorded) AS outs,
+                          MIN(ps.id) AS ord
+                   FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
+                   WHERE ps.game_id = ? AND ps.team_id = ?
+                   GROUP BY ps.player_id
+                   HAVING outs > 0
+                   ORDER BY ord""",
+                (game_id, team_id),
+            )
+            arc: list[tuple[int, int, str]] = []
+            start = 0
+            for r in pr:
+                end = start + int(r["outs"] or 0)
+                last = (r["name"] or "").split()[-1] if r["name"] else ""
+                arc.append((start, end, last))
+                start = end
+            return arc
+
         try:
             pa_records = extract_pa_records(pbp_text.split("\n"))
             cards = render_scorecard(
@@ -3557,6 +3585,10 @@ def game_scorecard(game_id: int):
                 visitors_lineup=_lineup(game["away_team_id"]),
                 home_lineup=_lineup(game["home_team_id"]),
                 pa_records=pa_records,
+                declared_visitors=game["away_declared_at"],
+                declared_home=game["home_declared_at"],
+                visitors_pitcher_arc=_arc(game["home_team_id"]),
+                home_pitcher_arc=_arc(game["away_team_id"]),
             )
             scorecard_visitors = cards.get("visitors", "")
             scorecard_home = cards.get("home", "")
