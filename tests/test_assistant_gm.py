@@ -110,3 +110,70 @@ def test_overstuffed_team_essentially_wont_bid(two_team_db):
     val_needy       = au._team_valuation_noisefree(test_player, 2, au._team_auction_profile(t2))
     # Overstuffed mult 0.15 vs needy 1.30 = ratio of ~8.7×
     assert val_needy / val_overstuffed >= 7.0
+
+
+# ---------------------------------------------------------------------------
+# Apron damper — penalise whale-bid behavior so a team that's already
+# made a big-money bid value future lots progressively less.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("peak_pct,expected", [
+    (0.00, 1.00),   # no marquee bid yet
+    (0.04, 1.00),   # under deadband
+    (0.10, 0.85),
+    (0.15, 0.85),   # boundary inclusive of upper
+    (0.20, 0.65),
+    (0.30, 0.65),
+    (0.40, 0.45),
+    (0.50, 0.45),
+    (0.60, 0.30),
+    (0.70, 0.30),
+    (0.85, 0.20),
+    (1.20, 0.20),   # past 100% (somehow) — still floored at 0.20
+])
+def test_apron_damper_table(peak_pct, expected):
+    assert au._apron_damper(peak_pct) == expected
+
+
+def test_whale_team_valuation_dampens_vs_clean_team(two_team_db):
+    """Same player, same roster need; T1 has already made a 40%-of-purse
+    win and T2 hasn't bid yet. T1 should value subsequent lots markedly
+    less than T2."""
+    test_player = {"id": 99, "name": "Star OF", "position": "CF",
+                   "is_pitcher": False, "skill": 75, "contact": 75,
+                   "power": 75, "eye": 75, "speed": 75,
+                   "pitcher_skill": 0, "command": 0, "movement": 0,
+                   "stamina": 70}
+    t1 = dict(db.fetchone("SELECT * FROM teams WHERE id=1"))
+    t2 = dict(db.fetchone("SELECT * FROM teams WHERE id=2"))
+    val_whale = au._team_valuation_noisefree(
+        test_player, 1, au._team_auction_profile(t1), big_bid_pct=0.40,
+    )
+    val_clean = au._team_valuation_noisefree(
+        test_player, 2, au._team_auction_profile(t2), big_bid_pct=0.00,
+    )
+    # Whale damper 0.45 vs clean 1.00 → clean values ≥ 2× the whale
+    assert val_clean > val_whale
+    assert val_clean / val_whale >= 2.0
+
+
+def test_cheap_winning_team_pays_no_apron_premium(two_team_db):
+    """A team that's been winning low-tier lots (peak bid stays under
+    the 5% deadband) gets no apron damper — that's the whole point of
+    flagging on biggest-single-bid rather than cumulative spend."""
+    t1 = dict(db.fetchone("SELECT * FROM teams WHERE id=1"))
+    profile = au._team_auction_profile(t1)
+    test_player = {"id": 99, "name": "Mid", "position": "CF",
+                   "is_pitcher": False, "skill": 60, "contact": 60,
+                   "power": 60, "eye": 60, "speed": 60,
+                   "pitcher_skill": 0, "command": 0, "movement": 0,
+                   "stamina": 60}
+    # 4% peak — under the 5% deadband
+    val_cheap_eater = au._team_valuation_noisefree(
+        test_player, 1, profile, big_bid_pct=0.04,
+    )
+    # No peak yet
+    val_fresh = au._team_valuation_noisefree(
+        test_player, 1, profile, big_bid_pct=0.00,
+    )
+    assert val_cheap_eater == val_fresh
