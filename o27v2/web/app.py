@@ -9889,6 +9889,23 @@ def api_auction_full_cycle():
     })
 
 
+@app.route("/api/names/backfill", methods=["POST"])
+def api_names_backfill():
+    """Buckshot rename pass over players + college_players. Renames any
+    row whose `name` is empty / NULL / contains a junk token (e.g.
+    'CB FF', 'PSV Arias', 'Roscoe sisters'). Replacement names come
+    from the same US-region mixed-gender picker the rest of the league
+    uses. Idempotent — re-running on a clean DB renames nothing."""
+    from o27v2 import name_backfill as _nb
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+    try:
+        report = _nb.backfill_junk_names(rng_seed=rng_seed)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True, "report": report})
+
+
 @app.route("/api/roster/cut", methods=["POST"])
 def api_roster_cut():
     """Roster cut day — trim every team from the ROSTER_DRAFT_CAP=50
