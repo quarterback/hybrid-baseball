@@ -1047,6 +1047,29 @@ _CITY_COORDS: dict[str, tuple[float, float]] = dict(_BASE_COORDS)
 for _xname, (_xlat, _xlon, _xarch) in _EXTRA_CITIES.items():
     _CITY_COORDS[_xname] = (_xlat, _xlon)
 
+
+def coords_for_city(city: str) -> tuple[float, float] | None:
+    """(lat, lon) for `city`, or None when unknown. Checks the real-world
+    gazetteer, then the Zaryan far-east cities, with the same name
+    normalization as archetype_for_city (exact match, then the name with a
+    trailing country code stripped)."""
+    if not city:
+        return None
+    s = city.strip()
+    if s in _CITY_COORDS:
+        return _CITY_COORDS[s]
+    from o27.engine import zaryan_climate as _zc
+    z = _zc.coords(s)
+    if z is not None:
+        return z
+    bare, _ = _strip_country_code(s)
+    if bare in _CITY_COORDS:
+        return _CITY_COORDS[bare]
+    z = _zc.coords(bare)
+    if z is not None:
+        return z
+    return None
+
 # Coordinate anchors for nearest-city lookup: every city we know both a
 # location AND an archetype for. (name, lat, lon, archetype).
 _CLIMATE_ANCHORS: list[tuple[str, float, float, str]] = [
@@ -1094,12 +1117,17 @@ def archetype_for_coords(lat: float, lon: float) -> str:
 
 def city_gazetteer() -> list[dict]:
     """Sorted list of known cities with coords + archetype, for UI
-    pickers (the team-location datalist)."""
+    pickers (the team-location datalist). Includes the Zaryan far-east
+    cities so a custom Zaryan club resolves its coordinates by name."""
     out = [
         {"name": name, "lat": lat, "lon": lon, "archetype": _CITY_ARCHETYPES[name]}
         for name, (lat, lon) in _CITY_COORDS.items()
         if name in _CITY_ARCHETYPES
     ]
+    from o27.engine import zaryan_climate as _zc
+    for name, (lat, lon) in _zc.ZARYAN_CITY_COORDS.items():
+        out.append({"name": name, "lat": lat, "lon": lon,
+                    "archetype": archetype_for_coords(lat, lon)})
     out.sort(key=lambda c: c["name"])
     return out
 

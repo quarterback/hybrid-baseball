@@ -73,7 +73,7 @@ _TZ_ABBREV = {
 @dataclass(frozen=True)
 class GameTime:
     start_minute: int           # minutes after local midnight (first pitch)
-    utc_offset:   int           # home-park UTC offset, whole hours
+    utc_offset:   int | None    # home-park UTC offset, whole hours (None if unknown)
     low_light:    bool          # game runs into fading light → see-ball penalty
     convention:   str = "MLB"   # MLB / NPB / KBO — flavor, not persisted
 
@@ -105,19 +105,27 @@ def sunset_minute(lat: float, game_date: str) -> int:
     return int(round((12.0 + hour_angle / 15.0) * 60))
 
 
-def utc_offset_for(city: str, lon: float | None) -> int:
-    """Whole-hour UTC offset for the home park.
+def utc_offset_for(city: str, lon: float | None) -> int | None:
+    """Whole-hour UTC offset for the home park, or None when it can't be
+    determined (caller then omits the zone label rather than guessing).
 
-    Zaryan cities carry explicit offsets (their five zones don't follow
-    a clean longitude rule); everyone else derives from longitude.
+    Zaryan cities carry explicit offsets (their five zones don't follow a
+    clean longitude rule). Otherwise the offset comes from longitude
+    (15° per hour) — and when the team row has no coordinates, we recover
+    them from the weather gazetteer by city name before giving up.
     """
     if city:
         from o27.engine import zaryan_climate as _zc
         off = _zc.utc_offset(city)
         if off is not None:
             return off
+    if lon is None and city:
+        from o27.engine import weather as _wx
+        c = _wx.coords_for_city(city)
+        if c is not None:
+            lon = c[1]
     if lon is None:
-        return 0
+        return None
     return int(round(lon / 15.0))
 
 
