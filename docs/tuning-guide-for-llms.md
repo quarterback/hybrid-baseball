@@ -494,6 +494,17 @@ for a named identity — copy the shape, adjust to taste.
  "GIDP_BASE_PROB":0.17,"GEN_SHIFT_PITCHING":-8,"GEN_SHIFT_POWER":-6}
 ```
 
+**College Softball scoring environment** — borrows softball's *scoring shape*
+(high contact / high BABIP, low power, pitching-checked → low-scoring) without
+making O27 play like softball:
+```json
+{"CONTACT_WEAK_BASE":0.26,"CONTACT_MEDIUM_BASE":0.56,"CONTACT_HARD_BASE":0.18,
+ "CONTACT_MATCHUP_SHIFT":0.30,"POWER_REDIST_HR":0.12,"POWER_REDIST_HARD_S2D":0.24,
+ "POWER_REDIST_HARD_D2T":0.10,"PITCHER_DOM_SWINGING":0.05,"PITCHER_DOM_CONTACT":-0.08,
+ "BATTER_DOM_SWINGING":-0.05,"BATTER_EYE_BALL":0.04,"PARK_HR_MAX":1.00,
+ "GIDP_BASE_PROB":0.20,"GEN_SHIFT_POWER":-10,"GEN_SHIFT_CONTACT":8,"GEN_SHIFT_PITCHING":6}
+```
+
 (The engine also ships *1987 Lively Ball*, *Contact Carnival*, *Workhorse Era*,
 and two intentional stress tests — *Knife's Edge* max-offense and *Pitcher's
 Hellscape* min-offense. Same construction: move a coherent cluster of knobs.)

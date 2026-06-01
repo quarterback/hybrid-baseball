@@ -298,6 +298,34 @@ PRESETS: dict[str, dict[str, object]] = {
         "GEN_SHIFT_CONTACT":      12,
         "GEN_SHIFT_POWER":       -6,
     },
+    # College-softball SCORING ENVIRONMENT (not a softball conversion — no slap/
+    # circle identity). Reproduces the *shape* of D1 softball offense in O27:
+    # high contact / high BABIP (hits fall in), low power, and pitching that
+    # keeps the big inning in check, so it settles into the low-scoring band.
+    # Anchored to ~.295 AVG, ~1.0 HR/game, ~5.25 R/game over a 21-out softball
+    # game (≈ a low-power, low-scoring O27 run environment once scaled to 27
+    # outs and discounted for the Walk-Back HR tail). The absolute R/G is
+    # governed by O27's structure — verify with a benchmark and read the
+    # characterize() band ("Low-power · low-scoring") rather than expecting
+    # exact parity.
+    "college_scoring": {
+        "CONTACT_WEAK_BASE":      0.26,   # contact-rich: hits fall in (high BABIP)
+        "CONTACT_MEDIUM_BASE":    0.56,
+        "CONTACT_HARD_BASE":      0.18,   # low hard contact → few XBH/HR
+        "CONTACT_MATCHUP_SHIFT":  0.30,   # big ace-vs-field spread (circle dominance)
+        "POWER_REDIST_HR":        0.12,   # power suppressed hard
+        "POWER_REDIST_HARD_S2D":  0.24,   # some gap doubles survive
+        "POWER_REDIST_HARD_D2T":  0.10,
+        "PITCHER_DOM_SWINGING":   0.05,   # elite arms miss bats
+        "PITCHER_DOM_CONTACT":   -0.08,   # and suppress contact (keeps runs down)
+        "BATTER_DOM_SWINGING":   -0.05,   # but the field puts the ball in play
+        "BATTER_EYE_BALL":        0.04,   # moderate walks
+        "PARK_HR_MAX":            1.00,   # no hitter-park HR boost
+        "GIDP_BASE_PROB":         0.20,   # strand some of those baserunners
+        "GEN_SHIFT_POWER":       -10,
+        "GEN_SHIFT_CONTACT":       8,
+        "GEN_SHIFT_PITCHING":      6,
+    },
     "speed_demon": {
         "SB_ATTEMPT_PROB_PER_PITCH": 0.09,
         "SB_SUCCESS_BASE":        0.70,
@@ -377,6 +405,7 @@ PRESET_LABELS = {
     "junkball": "Junkball League (soft stuff, weak contact, low K)",
     "launch_circus": "Launch-Angle Circus (extreme three-true-outcomes)",
     "contact_carnival": "Contact Carnival (highest BABIP, lowest K)",
+    "college_scoring": "College Softball scoring environment (high contact, low power, low-scoring)",
     "speed_demon": "Speed Demon League (steals, triples, inside-the-park HRs)",
     "workhorse": "Workhorse Era (starters go deep, bullpen quiet)",
     "knifes_edge": "Knife's Edge (max-offense stress test)",
