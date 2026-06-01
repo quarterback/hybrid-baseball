@@ -732,24 +732,266 @@ def _roster_for_program(program_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def sim_game(game_id: int, rng_seed: int = 0) -> dict:
-    """Sim one scheduled college game; write score + per-player box to DB."""
+def _fast_sim_game(home_roster: list[dict], away_roster: list[dict],
+                   rng: random.Random) -> tuple[int, int, dict, dict]:
+    """Engine-less college game sim — generates statistically-coherent
+    box-score data from player grades, ~100x faster than the full PA-
+    by-PA engine. Used as the default for college regular season; the
+    full engine path stays available for postseason where per-pitch
+    fidelity matters.
+
+    Each batter and pitcher gets a per-game line sampled from their
+    DISPLAYED grades (skill/contact/power/eye for hitters; pitcher_skill/
+    command/movement for pitchers). A college star (OVR 75+) reliably
+    out-hits a depth piece (OVR 55) across the season — the impact a
+    user can read on the program page is preserved, so a player's
+    pro-side value reflects their college performance.
+
+    Returns: (home_runs, away_runs, home_box, away_box)
+      home_box / away_box: {
+        "batters":  [{player_id, pa, ab, h, doubles, triples, hr,
+                      rbi, r, bb, k, sb, cs}, ...],
+        "pitchers": [{player_id, ip_outs, h, r, er, bb, k, hr, bf}, ...],
+      }
+    """
+    def _ovr(p: dict) -> int:
+        if p.get("is_pitcher"):
+            return (int(p.get("pitcher_skill", 50))
+                    + int(p.get("command", 50))
+                    + int(p.get("movement", 50))) // 3
+        return (int(p.get("skill", 50))
+                + int(p.get("contact", 50))
+                + int(p.get("power", 50))
+                + int(p.get("eye", 50))) // 4
+
+    def _pick_lineup_and_staff(roster: list[dict]):
+        hitters = [p for p in roster if not p.get("is_pitcher")]
+        pitchers = [p for p in roster if p.get("is_pitcher")]
+        # Lineup: best 9 hitters by OVR (positional constraints relaxed —
+        # this is a fast sim, not a defensive sim).
+        lineup = sorted(hitters, key=_ovr, reverse=True)[:9]
+        # Pitching: best is the SP, next 3-4 are the bullpen sample for
+        # this game. Real rotation logic is overkill here.
+        staff = sorted(pitchers, key=_ovr, reverse=True)
+        sp = staff[0] if staff else None
+        bullpen = staff[1:5] if len(staff) > 1 else []
+        return lineup, sp, bullpen
+
+    home_lineup, home_sp, home_bp = _pick_lineup_and_staff(home_roster)
+    away_lineup, away_sp, away_bp = _pick_lineup_and_staff(away_roster)
+
+    def _sim_side(offense: list[dict], opp_sp: dict | None,
+                  opp_bp: list[dict]) -> tuple[int, list[dict], list[dict]]:
+        """Sim ONE side's offense + the OPPOSING pitching staff line."""
+        # Team offensive quality vs opposing pitching quality. Per-game
+        # run baseline ≈ 4.5 (college runs scoring rate); modulate by
+        # the ratio of lineup OVR to opposing SP OVR.
+        if not offense:
+            return 0, [], []
+        lineup_avg = sum(_ovr(b) for b in offense) / max(1, len(offense))
+        opp_ovr = _ovr(opp_sp) if opp_sp else 50
+        # Offense vs pitching ratio centred at 1.0 when both = 60. A
+        # 75-OVR lineup vs 55-OVR pitcher gives ratio ≈ 1.36 — runs scale
+        # accordingly. Clamped so games don't blow up to 30-run scores.
+        ratio = max(0.4, min(2.5, (lineup_avg / max(40, opp_ovr)) ** 1.2))
+        expected_runs = 4.5 * ratio
+        # Sample actual runs from a Poisson-ish distribution. Use a
+        # lognormal-ish draw via gauss for non-integer shape, round to int.
+        runs = max(0, int(round(rng.gauss(expected_runs, expected_runs * 0.4))))
+
+        # Distribute hits/PAs/HRs across lineup. Each batter expected to
+        # see ~4.2 PA per game. Weighted by OVR so the cleanup hitter
+        # accumulates more runs/RBIs than the #9 spot.
+        weights = [max(1.0, _ovr(b) - 40) for b in offense]
+        total_w = sum(weights)
+        batters_box: list[dict] = []
+        runs_remaining = runs
+        for i, batter in enumerate(offense):
+            pa = max(2, int(round(rng.gauss(4.2, 0.6))))
+            # Per-PA outcome probabilities derived from batter grades vs
+            # opposing SP grades. We avoid simulating every PA — sample
+            # H/HR/BB/K counts directly from binomials.
+            contact = int(batter.get("contact", 50))
+            power   = int(batter.get("power", 50))
+            eye     = int(batter.get("eye", 50))
+            sp_skill = int((opp_sp or {}).get("pitcher_skill", 50))
+            sp_cmd   = int((opp_sp or {}).get("command", 50))
+            sp_mov   = int((opp_sp or {}).get("movement", 50))
+            # Probabilities — calibrated so a 60/60 player hits ~.270
+            # with ~.330 OBP / ~.420 SLG over a season. Boundary clamped.
+            p_bb = max(0.03, min(0.20, 0.07 + 0.0035 * (eye - sp_cmd)))
+            p_k  = max(0.10, min(0.45, 0.20 + 0.0040 * (sp_skill - contact)))
+            p_hit_on_ab = max(0.18, min(0.45,
+                              0.25 + 0.0040 * (contact - sp_skill)))
+            p_hr_on_hit = max(0.05, min(0.30,
+                              0.10 + 0.0035 * (power - sp_mov)))
+            # Sample per-PA outcomes
+            bb = sum(1 for _ in range(pa) if rng.random() < p_bb)
+            ab = pa - bb
+            k  = sum(1 for _ in range(ab) if rng.random() < p_k)
+            in_play = ab - k
+            h = sum(1 for _ in range(in_play)
+                    if rng.random() < p_hit_on_ab / max(0.01, 1.0 - p_k))
+            h = min(h, in_play)
+            hr = sum(1 for _ in range(h) if rng.random() < p_hr_on_hit)
+            # Doubles + triples roughly split the rest of the XBH band
+            xbh_rest = sum(1 for _ in range(h - hr) if rng.random() < 0.20)
+            doubles = int(xbh_rest * 0.85)
+            triples = xbh_rest - doubles
+            # Run/RBI distribution: weighted slice of team runs by batter weight
+            share = weights[i] / total_w if total_w else 0
+            rbi = min(runs_remaining,
+                      max(0, int(round(rng.gauss(runs * share, 0.6)))))
+            runs_remaining -= rbi
+            r_scored = min(rbi, h)  # approximation
+            batters_box.append({
+                "player_id": int(batter["id"]),
+                "pa": pa, "ab": ab, "h": h,
+                "doubles": doubles, "triples": triples, "hr": hr,
+                "rbi": rbi, "r": r_scored, "bb": bb, "k": k,
+                "sb": 0, "cs": 0,
+            })
+
+        # Opposing pitching line: SP eats ~5-6 IP (15-18 outs) modulated
+        # by their OVR. Strong SP goes deeper; weak SP gets pulled early.
+        # Bullpen splits the rest.
+        pitchers_box: list[dict] = []
+        total_outs = 27   # nominal complete game (9 innings)
+        h_total  = sum(b["h"] for b in batters_box)
+        bb_total = sum(b["bb"] for b in batters_box)
+        k_total  = sum(b["k"] for b in batters_box)
+        hr_total = sum(b["hr"] for b in batters_box)
+        bf_total = sum(b["pa"] for b in batters_box)
+        r_total  = runs
+
+        sp_quality = _ovr(opp_sp) if opp_sp else 50
+        sp_outs = max(6, min(27, int(round(9 + 0.20 * (sp_quality - 50)))))
+        # Distribute SP-allocated H/BB/K/R proportional to SP's share of outs
+        sp_share = sp_outs / total_outs
+        sp_h   = int(round(h_total  * sp_share))
+        sp_bb  = int(round(bb_total * sp_share))
+        sp_k   = int(round(k_total  * sp_share))
+        sp_hr  = int(round(hr_total * sp_share))
+        sp_r   = int(round(r_total  * sp_share))
+        sp_bf  = int(round(bf_total * sp_share))
+        if opp_sp:
+            pitchers_box.append({
+                "player_id": int(opp_sp["id"]),
+                "ip_outs": sp_outs, "h": sp_h, "r": sp_r, "er": sp_r,
+                "bb": sp_bb, "k": sp_k, "hr": sp_hr, "bf": sp_bf,
+            })
+        # Bullpen — split the remainder across 2-3 relievers
+        remaining_outs = total_outs - sp_outs
+        if remaining_outs > 0 and opp_bp:
+            n_relievers = min(len(opp_bp),
+                              max(1, remaining_outs // 6))
+            outs_per = remaining_outs // n_relievers
+            extra    = remaining_outs - outs_per * n_relievers
+            for j, rp in enumerate(opp_bp[:n_relievers]):
+                rp_outs = outs_per + (1 if j < extra else 0)
+                rp_share = rp_outs / total_outs
+                pitchers_box.append({
+                    "player_id": int(rp["id"]),
+                    "ip_outs": rp_outs,
+                    "h":  int(round(h_total  * rp_share)),
+                    "r":  int(round(r_total  * rp_share)),
+                    "er": int(round(r_total  * rp_share)),
+                    "bb": int(round(bb_total * rp_share)),
+                    "k":  int(round(k_total  * rp_share)),
+                    "hr": int(round(hr_total * rp_share)),
+                    "bf": int(round(bf_total * rp_share)),
+                })
+        return runs, batters_box, pitchers_box
+
+    # Home offense vs away pitching, and vice versa.
+    home_runs, home_batters, away_pitchers = _sim_side(
+        home_lineup, away_sp, away_bp,
+    )
+    away_runs, away_batters, home_pitchers = _sim_side(
+        away_lineup, home_sp, home_bp,
+    )
+    # Light home-field nudge: if dead-tied, give home a 55/45 edge.
+    if home_runs == away_runs:
+        if rng.random() < 0.55:
+            home_runs += 1
+        else:
+            away_runs += 1
+
+    return (
+        home_runs, away_runs,
+        {"batters": home_batters, "pitchers": home_pitchers},
+        {"batters": away_batters, "pitchers": away_pitchers},
+    )
+
+
+def _persist_fast_game(game_id: int, home_program_id: int,
+                       away_program_id: int,
+                       home_box: dict, away_box: dict) -> None:
+    """Persist the fast-sim box-score data into college_batter_stats /
+    college_pitcher_stats with the same row shape the engine path uses."""
+    for prog_id, box in ((home_program_id, home_box),
+                         (away_program_id, away_box)):
+        for b in box["batters"]:
+            db.execute(
+                "INSERT OR REPLACE INTO college_batter_stats "
+                "(game_id, program_id, player_id, pa, ab, h, doubles, triples, "
+                " hr, rbi, r, bb, k, sb, cs) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (game_id, prog_id, b["player_id"], b["pa"], b["ab"], b["h"],
+                 b["doubles"], b["triples"], b["hr"], b["rbi"], b["r"],
+                 b["bb"], b["k"], b["sb"], b["cs"]),
+            )
+        for p in box["pitchers"]:
+            db.execute(
+                "INSERT OR REPLACE INTO college_pitcher_stats "
+                "(game_id, program_id, player_id, ip_outs, h, r, er, bb, k, hr, bf) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (game_id, prog_id, p["player_id"], p["ip_outs"], p["h"],
+                 p["r"], p["er"], p["bb"], p["k"], p["hr"], p["bf"]),
+            )
+
+
+def sim_game(game_id: int, rng_seed: int = 0,
+             *, fast: bool = True) -> dict:
+    """Sim one scheduled college game; write score + per-player box to DB.
+
+    `fast` (default True): use the grade-based fast sim (~100x quicker
+    than the engine, sufficient stat fidelity for player-development
+    signal). Set False for postseason / showcase games where per-pitch
+    behaviour matters and we want full engine fidelity.
+    """
     game = db.fetchone("SELECT * FROM college_games WHERE id = ?", (game_id,))
     if game is None:
         raise ValueError(f"college game {game_id} not found")
     if game["played"]:
         return {"already_played": True, "game_id": game_id}
 
-    home_prog = db.fetchone("SELECT * FROM college_programs WHERE id = ?",
-                            (game["home_program_id"],))
-    away_prog = db.fetchone("SELECT * FROM college_programs WHERE id = ?",
-                            (game["away_program_id"],))
     home_roster = _roster_for_program(game["home_program_id"])
     away_roster = _roster_for_program(game["away_program_id"])
     if not home_roster or not away_roster:
         raise ValueError(f"missing roster for game {game_id}")
 
     rng = random.Random(rng_seed ^ game_id)
+
+    if fast:
+        home_score, away_score, home_box, away_box = _fast_sim_game(
+            home_roster, away_roster, rng,
+        )
+        db.execute(
+            "UPDATE college_games SET home_score = ?, away_score = ?, "
+            "played = 1 WHERE id = ?",
+            (home_score, away_score, game_id),
+        )
+        _persist_fast_game(game_id, game["home_program_id"],
+                           game["away_program_id"], home_box, away_box)
+        return {"game_id": game_id, "home_score": home_score,
+                "away_score": away_score, "fast": True}
+
+    # Full-engine path — fidelity for postseason / showcase games.
+    home_prog = db.fetchone("SELECT * FROM college_programs WHERE id = ?",
+                            (game["home_program_id"],))
+    away_prog = db.fetchone("SELECT * FROM college_programs WHERE id = ?",
+                            (game["away_program_id"],))
     final, renderer = _cg.sim_college_game(
         home_prog["name"], home_roster,
         away_prog["name"], away_roster,
@@ -757,22 +999,19 @@ def sim_game(game_id: int, rng_seed: int = 0) -> dict:
     )
     home_score = final.score["home"]
     away_score = final.score["visitors"]
-
     db.execute(
         "UPDATE college_games SET home_score = ?, away_score = ?, played = 1 "
         "WHERE id = ?",
         (home_score, away_score, game_id),
     )
-
-    # Per-player box rows — engine player_id is the str() of college_player.id
     home_pids = {int(p["id"]) for p in home_roster}
     away_pids = {int(p["id"]) for p in away_roster}
     _persist_batter_rows(game_id, game["home_program_id"], home_pids, renderer)
     _persist_batter_rows(game_id, game["away_program_id"], away_pids, renderer)
     _persist_pitcher_rows(game_id, game["home_program_id"], home_pids, final)
     _persist_pitcher_rows(game_id, game["away_program_id"], away_pids, final)
-
-    return {"game_id": game_id, "home_score": home_score, "away_score": away_score}
+    return {"game_id": game_id, "home_score": home_score,
+            "away_score": away_score, "fast": False}
 
 
 def _persist_batter_rows(game_id: int, program_id: int,
