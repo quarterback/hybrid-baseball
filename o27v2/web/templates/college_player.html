@@ -19,12 +19,12 @@
 </div>
 
 <div class="row g-3">
-  {# Displayed grades — what the public + opposing teams see #}
+  {# Displayed grades — only what the box score / engine sees #}
   <div class="col-lg-6">
     <div class="panel">
       <div class="panel-title">
         <strong>Displayed grades</strong>
-        <span class="text-secondary small ms-2">what the engine, scouts, and box scores see</span>
+        <span class="text-secondary small ms-2">what shows in the box score</span>
       </div>
       <div class="panel-body">
         <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
@@ -34,9 +34,6 @@
               <tr>
                 <td><strong>{{ label }}</strong></td>
                 <td class="text-end" style="font-family:monospace">{{ player[attr] }}</td>
-                <td class="text-secondary small text-end">
-                  potential {{ player['potential_' ~ attr]|round(0)|int }} · access {{ "%.2f"|format(player['access_' ~ attr] or 0) }}
-                </td>
               </tr>
               {% endfor %}
             {% else %}
@@ -44,20 +41,30 @@
               <tr>
                 <td><strong>{{ label }}</strong></td>
                 <td class="text-end" style="font-family:monospace">{{ player[attr] }}</td>
-                <td class="text-secondary small text-end">
-                  potential {{ player['potential_' ~ attr]|round(0)|int }} · access {{ "%.2f"|format(player['access_' ~ attr] or 0) }}
-                </td>
               </tr>
               {% endfor %}
             {% endif %}
           </tbody>
         </table>
+        <div class="text-secondary small mt-2">
+          These are the grades the engine plays, the stat line reflects, and
+          opposing teams see. The player's actual ceiling may be higher —
+          use the scouting reports + college stats to project it.
+        </div>
       </div>
     </div>
 
-    <div class="panel mt-3">
-      <div class="panel-title"><strong>Hidden mechanics</strong> <span class="text-secondary small">(unblurred — admin view)</span></div>
+    {% if debug %}
+    <div class="panel mt-3" style="border-left:3px solid var(--accent)">
+      <div class="panel-title">
+        <strong>Hidden Mechanics</strong>
+        <span class="text-secondary small ms-2">debug view (truth — fog removed)</span>
+      </div>
       <div class="panel-body small">
+        <div class="text-secondary mb-2">
+          <em>Append <code>?debug=true</code> opens this panel. Remove it
+          to play with the fog intact.</em>
+        </div>
         <div><strong>Interest rate:</strong> {{ player.interest_rate_percent }}%
             <span class="text-secondary">
             ({% if player.interest_rate_percent <= 100 %}tier 1 — ordinary developer
@@ -65,62 +72,116 @@
             {% else %}tier 3 — rare super-bloomer{% endif %})
             </span></div>
         <div><strong>Fog magnitude:</strong> ±{{ player.fog_magnitude }} on every scouting grade</div>
-        <div class="text-secondary mt-2">
-          Each year, every potential grows via the interest-rate model in
-          <code>college_potential.py</code> · access is fixed at generation ·
-          on pro signing, displayed → revealed (full potential).
-        </div>
+        <table class="table table-sm dense-table mt-2 mb-0" style="font-size:.8rem">
+          <thead><tr><th>Attribute</th><th class="text-end">Displayed</th><th class="text-end">Potential</th><th class="text-end">Access</th></tr></thead>
+          <tbody>
+          {% if not player.is_pitcher %}
+            {% for attr, label in [('skill','Skill'),('contact','Contact'),('power','Power'),('eye','Eye'),('speed','Speed')] %}
+            <tr>
+              <td>{{ label }}</td>
+              <td class="text-end" style="font-family:monospace">{{ player[attr] }}</td>
+              <td class="text-end" style="font-family:monospace">{{ player['potential_' ~ attr]|round(0)|int }}</td>
+              <td class="text-end" style="font-family:monospace">{{ "%.2f"|format(player['access_' ~ attr] or 0) }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            {% for attr, label in [('pitcher_skill','Pitcher Skill'),('command','Command'),('movement','Movement'),('stamina','Stamina')] %}
+            <tr>
+              <td>{{ label }}</td>
+              <td class="text-end" style="font-family:monospace">{{ player[attr] }}</td>
+              <td class="text-end" style="font-family:monospace">{{ player['potential_' ~ attr]|round(0)|int }}</td>
+              <td class="text-end" style="font-family:monospace">{{ "%.2f"|format(player['access_' ~ attr] or 0) }}</td>
+            </tr>
+            {% endfor %}
+          {% endif %}
+          </tbody>
+        </table>
       </div>
     </div>
+    {% else %}
+    <div class="text-secondary small mt-2" style="opacity:.6">
+      Engine internals (potential / access / interest rate / fog) are hidden by default.
+      Append <code>?debug=true</code> to the URL to see them.
+    </div>
+    {% endif %}
   </div>
 
-  {# Scouting reports (seniors only) #}
+  {# Scouting reports — Service by default; perspective dropdown adds one team. #}
   <div class="col-lg-6">
     <div class="panel">
-      <div class="panel-title">
-        <strong>Scouting reports</strong>
-        <span class="text-secondary small ms-2">true potential ± fog · seniors only</span>
+      <div class="panel-title d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <strong>Scouting reports</strong>
+          <span class="text-secondary small ms-2">seniors only · noisy projections, not truth</span>
+        </div>
+        <form method="post" action="{{ url_for('api_scout_perspective') }}" class="d-flex gap-1 align-items-center">
+          <label class="form-label small mb-0 me-1 text-secondary" for="persp-pick">View from:</label>
+          <select id="persp-pick" name="value" class="form-select form-select-sm"
+                  style="max-width:240px;font-size:.82rem"
+                  onchange="this.form.submit()">
+            {% for val, label in perspective_options %}
+              <option value="{{ val }}" {% if val == perspective %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </form>
       </div>
       <div class="panel-body">
         {% if not reports %}
-          <div class="text-secondary small">No reports yet. Reports generate at end-of-season for the senior class.</div>
+          <div class="text-secondary small">
+            No reports yet. The league service and each team's department both
+            run their projections at end-of-season for the senior class.
+          </div>
         {% else %}
           <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
             <thead>
               <tr>
                 <th>Source</th>
+                {% if not player.is_pitcher %}
                 <th class="text-end">SKL</th>
                 <th class="text-end">CON</th>
                 <th class="text-end">POW</th>
                 <th class="text-end">EYE</th>
                 <th class="text-end">SPD</th>
+                {% else %}
                 <th class="text-end">PIT</th>
                 <th class="text-end">CMD</th>
                 <th class="text-end">MOV</th>
                 <th class="text-end">STA</th>
+                {% endif %}
               </tr>
             </thead>
             <tbody>
             {% for r in reports %}
               <tr>
-                <td><span class="badge bg-{{ 'info text-dark' if r.source == 'service' else 'secondary' }}">{{ r.source }}</span></td>
-                <td class="text-end">{{ r.grade_skill or '—' }}</td>
-                <td class="text-end">{{ r.grade_contact or '—' }}</td>
-                <td class="text-end">{{ r.grade_power or '—' }}</td>
-                <td class="text-end">{{ r.grade_eye or '—' }}</td>
-                <td class="text-end">{{ r.grade_speed or '—' }}</td>
-                <td class="text-end">{{ r.grade_pitcher_skill or '—' }}</td>
-                <td class="text-end">{{ r.grade_command or '—' }}</td>
-                <td class="text-end">{{ r.grade_movement or '—' }}</td>
-                <td class="text-end">{{ r.grade_stamina or '—' }}</td>
+                <td>
+                  <span class="badge bg-{{ 'info text-dark' if r.source == 'service' else 'secondary' }}">
+                    {{ r.label }}
+                  </span>
+                </td>
+                {% set grade_keys = ['grade_skill','grade_contact','grade_power','grade_eye','grade_speed'] if not player.is_pitcher else ['grade_pitcher_skill','grade_command','grade_movement','grade_stamina'] %}
+                {% for k in grade_keys %}
+                <td class="text-end"
+                    style="{% if variance_flags.get(k) %}background:rgba(220,53,69,.14);font-weight:600{% endif %}">
+                  {{ r[k] or '—' }}
+                </td>
+                {% endfor %}
               </tr>
             {% endfor %}
             </tbody>
           </table>
+          {% if reports|length == 2 %}
           <div class="text-secondary small mt-2">
-            Each report is an independent ±{{ player.fog_magnitude }} draw against the true potential.
-            When two reports agree, confidence is high. When they disagree wildly, you have a problem.
+            Two independent projections of the player's ceiling. When they
+            agree, confidence is higher. <span style="background:rgba(220,53,69,.14);padding:1px 4px">Red-tinted cells</span>
+            mark attributes where the two scouts disagree by ≥ 15 — you're
+            flying blind on that one.
           </div>
+          {% else %}
+          <div class="text-secondary small mt-2">
+            Only the public consensus is showing. Pick a team from the
+            dropdown above to add their independent draw side-by-side.
+          </div>
+          {% endif %}
         {% endif %}
       </div>
     </div>

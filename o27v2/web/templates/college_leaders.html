@@ -15,7 +15,7 @@
   </div>
   {% if season %}
     <div class="d-flex gap-2 align-items-center">
-      <form method="get" action="{{ url_for('college_leaders_view') }}" class="d-flex gap-2 align-items-center">
+      <form method="get" action="{{ url_for('college_leaders_view') }}" class="d-flex gap-2 align-items-center flex-wrap">
         <input type="hidden" name="season" value="{{ season }}">
         <input type="hidden" name="bat_sort" value="{{ bat_sort }}">
         <input type="hidden" name="pit_sort" value="{{ pit_sort }}">
@@ -26,6 +26,15 @@
           {% for c in conferences %}
             <option value="{{ c }}" {% if c == conference %}selected{% endif %}>{{ c }}</option>
           {% endfor %}
+        </select>
+        <label class="form-label small mb-0">Class:</label>
+        <select name="class_year" class="form-select form-select-sm" style="max-width:140px"
+                onchange="this.form.submit()">
+          <option value="">All classes</option>
+          <option value="1" {% if class_year == 1 %}selected{% endif %}>Freshmen</option>
+          <option value="2" {% if class_year == 2 %}selected{% endif %}>Sophomores</option>
+          <option value="3" {% if class_year == 3 %}selected{% endif %}>Juniors</option>
+          <option value="4" {% if class_year == 4 %}selected{% endif %}>Seniors</option>
         </select>
       </form>
       <span class="badge bg-secondary">Season {{ season }}</span>
@@ -45,7 +54,7 @@
         <strong>Batters</strong>
         <div class="btn-group" role="group">
           {% for s, label in [('hr','HR'),('avg','AVG'),('ops','OPS'),('rbi','RBI'),('h','H')] %}
-            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=s, pit_sort=pit_sort, conf=conference) }}"
+            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=s, pit_sort=pit_sort, conf=conference, class_year=class_year) }}"
                class="btn btn-sm btn-outline-secondary {% if bat_sort == s %}active{% endif %}">{{ label }}</a>
           {% endfor %}
         </div>
@@ -86,7 +95,7 @@
         <strong>Pitchers</strong>
         <div class="btn-group" role="group">
           {% for s, label in [('era','ERA'),('whip','WHIP'),('k','K'),('ip','IP'),('k9','K/9')] %}
-            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=bat_sort, pit_sort=s, conf=conference) }}"
+            <a href="{{ url_for('college_leaders_view', season=season, bat_sort=bat_sort, pit_sort=s, conf=conference, class_year=class_year) }}"
                class="btn btn-sm btn-outline-secondary {% if pit_sort == s %}active{% endif %}">{{ label }}</a>
           {% endfor %}
         </div>

@@ -58,12 +58,11 @@
         </button>
       </form>
       <form method="post" action="{{ url_for('api_college_abstract_season') }}" class="d-inline-block"
-            onsubmit="return confirm('Skip the per-game sim and generate a full season worth of stats + W-L records directly from player grades? Way faster than playing every game, and the auction pipeline still works after. Postseason will run normally after this.');">
+            onsubmit="return confirm('Auto-run the full college cycle in one click: abstract regular season → postseason (CWS bracket) → scouting reports → rollover (graduate seniors). The draft board populates at the end. ~10,000× faster than per-game sim — use this when you just want the talent pipeline.');">
         <input type="hidden" name="season" value="{{ season }}">
         <button class="btn btn-sm btn-success" type="submit"
-                {% if meta and meta.phase != 'regular' %}disabled{% endif %}
-                title="Generate season stats + standings without iterating individual games (~10,000× faster than the per-game sim). Use this when you don't care about watching college games and just want the data + scouting reports + auction-ready graduates.">
-          Auto-run season (skip games)
+                title="One-click: regular season + postseason + scouting reports + rollover. Draft board populates with the graduating senior class at the end.">
+          Auto-run full cycle (regular → CWS → graduate)
         </button>
       </form>
       <form method="post" action="{{ url_for('api_college_run_postseason') }}" class="d-inline-block">
