@@ -494,6 +494,41 @@ for a named identity — copy the shape, adjust to taste.
  "GIDP_BASE_PROB":0.17,"GEN_SHIFT_PITCHING":-8,"GEN_SHIFT_POWER":-6}
 ```
 
+**College Softball scoring environment** — borrows softball's *scoring shape*
+(high contact / high BABIP, low power, pitching-checked → low-scoring) without
+making O27 play like softball:
+```json
+{"CONTACT_WEAK_BASE":0.26,"CONTACT_MEDIUM_BASE":0.56,"CONTACT_HARD_BASE":0.18,
+ "CONTACT_MATCHUP_SHIFT":0.32,"POWER_REDIST_HR":0.12,"POWER_REDIST_HARD_S2D":0.24,
+ "POWER_REDIST_HARD_D2T":0.10,"PITCHER_DOM_SWINGING":0.03,"PITCHER_DOM_CONTACT":-0.10,
+ "BATTER_DOM_SWINGING":-0.05,"BATTER_EYE_BALL":0.04,"PARK_HR_MAX":1.00,
+ "GEN_SHIFT_POWER":-10,"GEN_SHIFT_CONTACT":8,"GEN_SHIFT_PITCHING":6}
+```
+Calibrated to 2026 NCAA Div I **national totals** (true league averages, per team
+per 21-out game): R 5.11, BA .291, OBP .376, SLG .449, ISO .157, BABIP .316, HR
+0.81, **K% 13.4** (a put-it-in-play league, so swing-strikes stay modest), BB%
+10.3, ERA 3.44. Run suppression comes from the circle (weak-contact pitcher
+dominance + a big ace-vs-field `CONTACT_MATCHUP_SHIFT`), **not** from double
+plays — softball's rare DPs are a 60-ft-basepath artifact, and O27 plays on 90-ft
+bases, so `GIDP` is left at default. Benchmarks to ~6.6 R/team/game once scaled to
+O27's 27 outs — the softball low-scoring band.
+
+**Put-it-in-play** — borrows softball's contact *texture* (low strikeouts, high
+BABIP, modest power) but reflects it onto O27's **natural** run level instead of
+porting softball's circle dominance (pitcher dominance, matchup spread, and GIDP
+left at default, so scoring stays ~O27-normal, not softball-low):
+```json
+{"CONTACT_WEAK_BASE":0.20,"CONTACT_MEDIUM_BASE":0.54,"CONTACT_HARD_BASE":0.26,
+ "BATTER_DOM_SWINGING":-0.08,"BATTER_CONTACT_SWINGING":-0.12,"PITCHER_DOM_SWINGING":-0.01,
+ "POWER_REDIST_HR":0.40,"BATTER_EYE_BALL":0.04,"GEN_SHIFT_CONTACT":8,"GEN_SHIFT_POWER":-4}
+```
+This is the "keep the texture, not the sport" cut of `college_scoring`: the
+softball K/BABIP feel without dragging scoring down to the circle-suppressed band.
+The modest-power lean also makes it a real-data anchor for a lower-power
+(e.g. women's-fastpitch-styled) talent pool — push the persistence into
+`GEN_SHIFT_POWER`/`_CONTACT`/`_SPEED` and reseed if you want it baked into the
+population rather than just the per-game physics.
+
 (The engine also ships *1987 Lively Ball*, *Contact Carnival*, *Workhorse Era*,
 and two intentional stress tests — *Knife's Edge* max-offense and *Pitcher's
 Hellscape* min-offense. Same construction: move a coherent cluster of knobs.)
