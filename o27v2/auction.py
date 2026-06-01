@@ -143,9 +143,16 @@ def _select_keepers(team_id: int, n_keepers: int) -> list[dict]:
 
 def _team_position_need(team_id: int, position: str,
                         is_pitcher: bool) -> int:
-    """Return the count of slots a team needs at this position. A team
-    that already has 19 active pitchers won't outbid a team that needs
-    arms. Naive but produces sensible auction shape."""
+    """Return SIGNED need at this position: positive = under-stocked
+    (team wants this player), negative = over-stocked (team would
+    rather skip). Drives the Assistant-GM-style valuation multiplier
+    that prevents one team from stacking the same position.
+
+    Targets:
+      * pitchers      24 (19 active + 5 reserve)
+      * high-rotation  4 (CF/SS/2B/C)
+      * other positions 2 (1B/3B/LF/RF/DH-style)
+    """
     if is_pitcher:
         row = db.fetchone(
             "SELECT COUNT(*) AS n FROM players "
@@ -153,17 +160,31 @@ def _team_position_need(team_id: int, position: str,
             (team_id,),
         )
         have = (row or {}).get("n", 0)
-        # Target: 19 pitchers per active roster + 5 reserves.
-        return max(0, 24 - have)
+        return 24 - have
     row = db.fetchone(
         "SELECT COUNT(*) AS n FROM players "
         "WHERE team_id = ? AND is_pitcher = 0 AND position = ?",
         (team_id, position),
     )
     have = (row or {}).get("n", 0)
-    # Most positions: target 2 (a starter + backup). 4 for high-rotation.
     target = 4 if position in ("CF", "SS", "2B", "C") else 2
-    return max(0, target - have)
+    return target - have
+
+
+def _need_multiplier(need: int) -> float:
+    """Roster-gap-aware valuation multiplier — the Assistant GM piece.
+
+    Pushes bids UP when the team has a real gap at this position;
+    DAMPERS bids hard when the team is already stuffed there. The
+    over-stuffed damper is the antidote to the old behavior where
+    one team would win 12 of 13 lots because nothing checked whether
+    they'd already filled the slot.
+    """
+    if need >= 2:  return 1.30   # multiple open slots — push hard
+    if need == 1:  return 1.15   # one open slot — push
+    if need == 0:  return 0.90   # target met — mild damper
+    if need == -1: return 0.50   # one over — strong damper
+    return 0.15                  # 2+ over — essentially won't bid
 
 
 # Bid base curve. A linear `overall × const` produces too-tight Vickrey
@@ -309,7 +330,7 @@ def _team_valuation_noisefree(player: dict, team_id: int,
     is_pitcher = bool(player.get("is_pitcher"))
     position = player.get("position", "P" if is_pitcher else "DH")
     need = _team_position_need(team_id, position, is_pitcher)
-    need_mult = min(1.5, 1.0 + 0.15 * need)
+    need_mult = _need_multiplier(need)
 
     return int(base * need_mult * profile["aggression"])
 
@@ -395,7 +416,7 @@ def _team_bid(player: dict, team_id: int, purse_remaining: int,
     is_pitcher = bool(player.get("is_pitcher"))
     position = player.get("position", "P" if is_pitcher else "DH")
     need = _team_position_need(team_id, position, is_pitcher)
-    need_mult = min(1.5, 1.0 + 0.15 * need)
+    need_mult = _need_multiplier(need)
 
     # Noise band tightens with discipline. The full ±55%/+50% band
     # lives at the bottom-end org-strength; well-run franchises (org
