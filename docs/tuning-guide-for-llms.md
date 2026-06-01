@@ -169,6 +169,13 @@ manager tactics (bunts, hit-and-run, pitching changes) resolve last. This is the
 **small-ball vs. station-to-station** axis — independent of the power axis, so a
 deadball-but-aggressive league is a real, distinct style.
 
+**Stage F′ — The stay / second-chance decision (O27's signature fork).** On
+marginal contact the batter may *decline to run* (a "stay"): runners advance and
+he gets another swing. This is a distinct stylistic axis with its own knobs —
+see the **Stay / 2C** subsection in §5. A stay-heavy league plays like
+pesäpallo (constant runner movement, worked counts); a stay-light league
+resolves at-bats fast and station-to-station.
+
 ---
 
 ## 5. The high-leverage knobs, with safe ranges
@@ -253,6 +260,68 @@ not the league baseline.
 `FATIGUE_DEBT_PER_PITCH` (0.005), `PITCHER_CHANGE_BASE` (10). Raise the workhorse
 knobs / `RELIEVER_ENTRY_OUTS_MIN` to make starters go deep ("workhorse era").
 
+### Stay / second-chance at-bats — the **2C** mechanic (O27's signature lever)
+
+This is the defining O27 mechanic, borrowed from pesäpallo: on marginal contact a
+batter can **"stay"** instead of running — he declines to advance, the runners
+move up, and he gets **another swing** (a second-chance at-bat). A single plate
+appearance can contain several stays. It's a whole stylistic axis of its own — a
+*stay-heavy* league is a running, runner-advancing, count-working game; a
+*stay-light* league is station-to-station and resolves at-bats faster.
+
+How the stay decision is built each contact (so you know which knob bites):
+
+```
+stay_p = batter.stay_aggressiveness                    # per-player (set at generation)
+  × STAY_RISP_MULT          if a runner is on 2B or 3B
+  × STAY_1B_ONLY_MULT       if only 1B is occupied
+  × STAY_AHEAD_IN_COUNT_MULT if balls > strikes
+  × STAY_LATE_GAME_MULT     if outs ≥ LATE_GAME_OUTS_THRESHOLD
+stay happens if random() < stay_p
+```
+
+So the **live, league-wide 2C-frequency dials** (read every sim — no reseed
+needed) are the four situational multipliers and the late-game threshold. The raw
+per-batter `stay_aggressiveness` is set at player generation and isn't a live
+knob; to crank the *baseline* stay rate league-wide, raise the multipliers
+together (and, for a permanent population shift, regenerate — there's no
+`GEN_SHIFT` for it).
+
+| Constant | Default | Safe range | Effect ↑ |
+| --- | --- | --- | --- |
+| `STAY_RISP_MULT` | 1.40 | 1.0–2.0 | more stays with a runner in scoring position |
+| `STAY_1B_ONLY_MULT` | 0.70 | 0.4–1.3 | more stays with only 1B occupied (>1.0 flips it from a damper to a boost) |
+| `STAY_AHEAD_IN_COUNT_MULT` | 1.15 | 1.0–1.5 | patient hitters stay more when ahead |
+| `STAY_LATE_GAME_MULT` | 1.55 | 1.0–2.2 | late-inning "manufacture runs" push |
+| `LATE_GAME_OUTS_THRESHOLD` | 20 | 16–24 (int) | lower = late-game stay push starts earlier |
+| `TALENT_2C_SHIFT_SCALE` | 1.00 | 0.0–1.5 | talent decides 2C outcomes more (aces convert, weak bats punished) |
+| `SECOND_SWING_EYE_SCALE` | 0.20 | 0.0–0.4 | high-eye batters do more damage on the next swing |
+| `SECOND_SWING_COMMAND_SCALE` | 0.20 | 0.0–0.4 | high-command pitchers shut down the next swing |
+| `GIDP_STAY_MULTIPLIER` | 0.30 | 0.0–1.0 | double-play risk *while staying* (↑ makes 2C riskier) |
+
+Defense's counter to the stay game (raise to suppress 2C, lower to let it run
+free):
+
+| Constant | Default | Safe range | Effect ↑ |
+| --- | --- | --- | --- |
+| `STAY_DEFENSE_READ_BASE` | 0.07 | 0.03–0.20 | defense breaks up more valid stays (lead runner caught) |
+| `STAY_DEFENSE_READ_MAX` | 0.28 | 0.15–0.40 | ceiling on that catch-the-runner rate |
+| `STAY_DEFENSE_READ_MIN` | 0.03 | 0.01–0.10 | floor |
+| `STAY_DEFENSE_READ_TEAM_SCALE` | 0.20 | 0.10–0.35 | how much team defense matters |
+| `STAY_DEFENSE_READ_CATCHER_SCALE` | 0.20 | 0.10–0.35 | how much catcher arm matters |
+
+Related running-game risk (stretching a hit for the extra base — *thrown out
+trying*): `TOOTBLAN_SAFE_BASE` (0.46, range 0.32–0.88), `TOOTBLAN_SKILL_SCALE`
+(0.40), `TOOTBLAN_SPEED_SCALE` (0.20). Lower the safe base for a punishing,
+"don't get greedy" defensive league.
+
+> `PLAYER_DEFAULT_STAY_AGGRESSIVENESS` (0.40) and
+> `PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD` (0.45) appear in the dashboard but —
+> like `GEN_SHIFT_*` — they're player-creation fallbacks; in normal league play
+> every player already carries a generated value, so editing the default only
+> reaches players made without explicit attrs. Use the multipliers above for a
+> live, roster-wide effect.
+
 > Everything else in the dashboard's "All other constants" section is editable
 > too (manager tactics, the "Seconds"/declare-out timing rule `SECONDS_*`, form
 > variance `TODAY_FORM_*` / `LOCKED_FORM_*` / `SEQ_FORM_*`, familiarity / times-
@@ -293,6 +362,15 @@ Reach-for-these cheat sheet. Combine and scale within §5 ranges.
   ↓`FATIGUE_DEBT_PER_PITCH`, ↑`GEN_SHIFT_STAMINA`.
 - **Sloppy / chaotic defense:** ↑`DEFENSE_ERROR_BASE`, ↓`DEFENSE_RANGE_SHIFT_SCALE`,
   ↓`GEN_SHIFT_DEFENSE` & `_ARM`.
+- **Pesäpallo / stay-heavy 2C running game:** ↑`STAY_RISP_MULT`,
+  ↑`STAY_1B_ONLY_MULT` (toward/above 1.0), ↑`STAY_AHEAD_IN_COUNT_MULT` &
+  `STAY_LATE_GAME_MULT`, ↓`LATE_GAME_OUTS_THRESHOLD`, ↓`STAY_DEFENSE_READ_BASE`;
+  pair with high `CONTACT_MEDIUM_BASE` (marginal contact is what triggers a stay).
+- **Station-to-station / stay-light, fast at-bats:** ↓ all `STAY_*_MULT` toward
+  1.0 or below, ↑`STAY_DEFENSE_READ_BASE` & `_MAX` (defense punishes stays),
+  ↑`GIDP_STAY_MULTIPLIER` (staying gets you doubled up).
+- **Talent-defined 2C (stars shine on second chances):** ↑`TALENT_2C_SHIFT_SCALE`,
+  ↑`SECOND_SWING_EYE_SCALE`, ↑`CONTACT_MATCHUP_SHIFT`.
 
 ---
 
@@ -375,6 +453,11 @@ Hellscape* min-offense. Same construction: move a coherent cluster of knobs.)
    the league's spine; gut it and the run environment gets weird fast.
 7. **Booleans are `true`/`false`** (`POWER_PLAY_ENABLED`, `IBB_ENABLE`), not 0/1
    in the JSON.
+8. **The stay/2C multipliers are conditional**, not a global stay rate — each
+   fires only in its situation (RISP, 1B-only, ahead in count, late game). To
+   shift the *overall* 2C frequency, move them as a group, and remember the
+   bases-empty floor comes from per-player aggressiveness (regen-time), not a
+   live knob. `STAY_1B_ONLY_MULT` < 1.0 *suppresses* stays; > 1.0 promotes them.
 
 ---
 
