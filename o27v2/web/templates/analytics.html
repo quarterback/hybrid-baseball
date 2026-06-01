@@ -625,7 +625,7 @@
           <td class="num mono">{{ '%.3f'|format(r.anchor_sd) }}</td>
           <td class="num">
             {% if r.mean_ok %}
-              <span style="color:#3fb950">OK</span>
+              <span style="color:var(--good)">OK</span>
             {% else %}
               <span class="text-secondary">N/A</span>
             {% endif %}

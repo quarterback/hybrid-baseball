@@ -121,7 +121,7 @@
   <div class="panel-head">
     Ballpark
     {% if team.park_name %}<span class="sub fw-bold" style="color:var(--text)">{{ team.park_name }}</span>{% endif %}
-    {% if shape_meta.label %}<span class="sub" style="color:#9ad0ec;font-weight:600">· {{ shape_meta.label }}</span>{% endif %}
+    {% if shape_meta.label %}<span class="sub" style="font-weight:600">· {{ shape_meta.label }}</span>{% endif %}
   </div>
   <div class="panel-body" style="font-size:.86rem">
   {% if dims %}
@@ -149,10 +149,7 @@
   {% if quirks %}
   <div class="d-flex flex-wrap gap-2 mt-1">
     {% for q in quirks %}
-    <span title="{{ q.blurb }}"
-          style="background:#3a2d1f;color:#f5b041;border:1px solid #5a4423;border-radius:6px;padding:2px 8px;font-size:.78rem;font-weight:600">
-      {{ q.label }}
-    </span>
+    <span class="tag" title="{{ q.blurb }}">{{ q.label }}</span>
     {% endfor %}
   </div>
   {% endif %}
@@ -197,7 +194,7 @@
         </tr></thead>
         <tbody>
         {% for p in batters %}
-        <tr {% if p.is_joker %}style="color:#f0883e"{% endif %}>
+        <tr>
           <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.is_joker %} <span class="si-badge">JKR</span>{% endif %}{% if p.nickel_eligible %} <span title="Nickel-eligible — can deploy as the 10th defender (Power Play)" style="cursor:help">🪙</span>{% endif %}</td>
           <td class="text-secondary">{{ p.position }}</td>
           <td class="text-secondary small">{{ p.bats or '—' }}/{{ p.throws or '—' }}</td>
@@ -270,7 +267,7 @@
         </tr></thead>
         <tbody>
         {% for p in pitchers %}
-        <tr style="color:#79c0ff">
+        <tr>
           <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a>{% if p.staff_label %} <span class="text-secondary small" title="Starter / Reliever — the crew role is a per-game call, set on the rotation page">· {{ p.staff_label }}</span>{% endif %}</td>
           <td class="text-secondary small">{{ p.throws or '—' }}</td>
           <td class="num text-secondary">{{ p.age }}</td>

@@ -48,7 +48,7 @@
         <td style="min-width:120px">
           <div class="progress" style="height:10px;background:var(--border-soft)">
             <div class="progress-bar" role="progressbar"
-                 style="width:{{ c.pct_to_threshold }}%;background:{{ 'var(--strk-w, #2e7d32)' if c.in_league_hof else 'var(--link)' }}"></div>
+                 style="width:{{ c.pct_to_threshold }}%;background:{{ 'var(--good)' if c.in_league_hof else 'var(--accent)' }}"></div>
           </div>
         </td>
         <td class="num">{{ c.black_ink or '' }}</td>
