@@ -9812,6 +9812,57 @@ def api_auction_run():
     return jsonify({"ok": True, "auction": report})
 
 
+@app.route("/api/auction/full-cycle", methods=["POST"])
+def api_auction_full_cycle():
+    """One-shot mid-season testing hook that chains the three steps the
+    off-season engine doesn't run on its own: bulk-import every unsigned
+    college graduate into the FA pool, run an FA signing round across
+    prospects + existing FAs, then run the pro auction. Without this,
+    college grads only land on rosters by manually clicking through
+    college import → FA sign → auction or by waiting for a full season
+    rollover."""
+    from o27v2 import college_league as _cl
+    from o27v2 import fa_signing as _fas
+    from o27v2 import auction as _auction
+    cfg = _active_config()
+    if not cfg:
+        return jsonify({
+            "ok": False,
+            "error": "No active league. Create one from /new-league first.",
+        }), 400
+    cfg = dict(cfg)
+    cfg.setdefault("auction", {"enabled": True})
+    data = request.get_json(silent=True) or {}
+    rng_seed = int(data.get("rng_seed") or 0)
+
+    grads = _cl.draft_class()
+    grad_ids = [int(g["id"]) for g in grads]
+    import_result = (_cl.bulk_import_graduates(grad_ids, mode="fa")
+                     if grad_ids else
+                     {"signed": [], "errors": []})
+
+    signing_report = _fas.run_signing_round(scope="all", rng_seed=rng_seed)
+
+    try:
+        auction_report = _auction.apply_auction(cfg, rng_seed=rng_seed)
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": f"auction failed: {e}",
+            "imported_grads": len(import_result["signed"]),
+            "fa_signings": signing_report["total_signed"],
+        }), 500
+
+    return jsonify({
+        "ok": True,
+        "imported_grads": len(import_result["signed"]),
+        "import_errors": len(import_result["errors"]),
+        "fa_signings": signing_report["total_signed"],
+        "fa_rounds": signing_report["rounds"],
+        "auction": auction_report,
+    })
+
+
 @app.route("/api/trades/reconcile", methods=["POST"])
 def api_trades_reconcile():
     """Run the Phase E post-auction trade reconciliation pass. Iteratively
