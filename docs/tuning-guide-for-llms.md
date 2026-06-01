@@ -103,6 +103,44 @@ team, per game). Aim your knobs at the band you want:
 So "Deadball · pitcher-dominant" = HR < 1.0 **and** R < 12; "Extreme-power ·
 explosive" = the launch-circus extreme. Tell the LLM the band and it can target it.
 
+### Rules the tuning lives inside (no knobs — but they shape scoring)
+
+Some O27 rules have **no tunable constants** but materially change the run
+environment, so account for them when you tune. The big one:
+
+- **The Walk-Back rule (always on; not in the original O27 ruleset).** After
+  *every* home run the HR-hitter trots back out and stands on 3B as a bonus
+  runner **for the next batter's PA only**. If the next batter drives him in with
+  the bat (hit, sac fly, productive grounder) it's **+1 extra team run** (an
+  unearned, Manfred-runner-style run, excluded from ERA but counted in the
+  score). If the next batter makes an out without driving him in, he evaporates.
+  **Consequence for tuning:** every HR carries a bonus-run tail, so a chunk of
+  homers are effectively worth ~1.x–2 runs. **Power-heavy tunings score more than
+  their raw HR rate suggests — calibrate `POWER_REDIST_HR` / `CONTACT_HARD_BASE`
+  a notch conservatively, especially if you're also raising on-base (the next
+  batter needs to be up with contact ability to cash the Walk-Back).** There's no
+  knob to disable or scale it; the only related constant is a cosmetic sponsor
+  list. It's part of the sport's identity — surface it in your `summary` so the
+  user knows their HR tuning is amplified.
+- **Other always-or-optionally-on rules:** Power Play (10th "nickel" fielder —
+  toggle `POWER_PLAY_ENABLED`), the "Seconds"/declared-out blowout frame
+  (`SECONDS_*`, `DECLARE_*`), Joker archetypes (one power/speed/contact star per
+  team), and intentional walks (`IBB_ENABLE`). These *do* have knobs and are
+  covered in §5.
+
+### What is *not* a tunable here
+
+- **Weather & start-times** are rolled per game / per league at the
+  infrastructure level — there are **no editable weather engine constants** in
+  this dashboard. You can't dial "rainy pitcher's weather" as a global knob;
+  approximate the effect with the contact/power knobs instead.
+- **Per-park fence geometry** is a property of each ballpark, not a global knob.
+  What you *can* tune league-wide is the **park-factor envelope**:
+  `PARK_HR_MIN/MAX` and `PARK_HITS_MIN/MAX` (in §5) scale how much parks push
+  HRs and hits.
+- **Structural probability tables** (`PITCH_BASE`, `WEAK/MEDIUM/HARD_CONTACT`,
+  `PITCH_CATALOG`) — see §1.
+
 ---
 
 ## 4. How the at-bat pipeline works (the mental model that makes tuning legible)
@@ -168,6 +206,13 @@ HRs (`ITP_HR_*`), double plays (`GIDP_*`), errors (`DEFENSE_ERROR_*`), and
 manager tactics (bunts, hit-and-run, pitching changes) resolve last. This is the
 **small-ball vs. station-to-station** axis — independent of the power axis, so a
 deadball-but-aggressive league is a real, distinct style.
+
+**Stage F′ — The stay / second-chance decision (O27's signature fork).** On
+marginal contact the batter may *decline to run* (a "stay"): runners advance and
+he gets another swing. This is a distinct stylistic axis with its own knobs —
+see the **Stay / 2C** subsection in §5. A stay-heavy league plays like
+pesäpallo (constant runner movement, worked counts); a stay-light league
+resolves at-bats fast and station-to-station.
 
 ---
 
@@ -253,6 +298,93 @@ not the league baseline.
 `FATIGUE_DEBT_PER_PITCH` (0.005), `PITCHER_CHANGE_BASE` (10). Raise the workhorse
 knobs / `RELIEVER_ENTRY_OUTS_MIN` to make starters go deep ("workhorse era").
 
+### Stay / second-chance at-bats — the **2C** mechanic (O27's signature lever)
+
+This is the defining O27 mechanic, borrowed from pesäpallo: on marginal contact a
+batter can **"stay"** instead of running — he declines to advance, the runners
+move up, and he gets **another swing** (a second-chance at-bat). A single plate
+appearance can contain several stays. It's a whole stylistic axis of its own — a
+*stay-heavy* league is a running, runner-advancing, count-working game; a
+*stay-light* league is station-to-station and resolves at-bats faster.
+
+How the stay decision is built each contact (so you know which knob bites):
+
+```
+stay_p = batter.stay_aggressiveness                    # per-player (set at generation)
+  × STAY_RISP_MULT          if a runner is on 2B or 3B
+  × STAY_1B_ONLY_MULT       if only 1B is occupied
+  × STAY_AHEAD_IN_COUNT_MULT if balls > strikes
+  × STAY_LATE_GAME_MULT     if outs ≥ LATE_GAME_OUTS_THRESHOLD
+stay happens if random() < stay_p
+```
+
+So the **live, league-wide 2C-frequency dials** (read every sim — no reseed
+needed) are the four situational multipliers and the late-game threshold. The raw
+per-batter `stay_aggressiveness` is set at player generation and isn't a live
+knob; to crank the *baseline* stay rate league-wide, raise the multipliers
+together (and, for a permanent population shift, regenerate — there's no
+`GEN_SHIFT` for it).
+
+| Constant | Default | Safe range | Effect ↑ |
+| --- | --- | --- | --- |
+| `STAY_RISP_MULT` | 1.40 | 1.0–2.0 | more stays with a runner in scoring position |
+| `STAY_1B_ONLY_MULT` | 0.70 | 0.4–1.3 | more stays with only 1B occupied (>1.0 flips it from a damper to a boost) |
+| `STAY_AHEAD_IN_COUNT_MULT` | 1.15 | 1.0–1.5 | patient hitters stay more when ahead |
+| `STAY_LATE_GAME_MULT` | 1.55 | 1.0–2.2 | late-inning "manufacture runs" push |
+| `LATE_GAME_OUTS_THRESHOLD` | 20 | 16–24 (int) | lower = late-game stay push starts earlier |
+| `TALENT_2C_SHIFT_SCALE` | 1.00 | 0.0–1.5 | talent decides 2C outcomes more (aces convert, weak bats punished) |
+| `SECOND_SWING_EYE_SCALE` | 0.20 | 0.0–0.4 | high-eye batters do more damage on the next swing |
+| `SECOND_SWING_COMMAND_SCALE` | 0.20 | 0.0–0.4 | high-command pitchers shut down the next swing |
+| `GIDP_STAY_MULTIPLIER` | 0.30 | 0.0–1.0 | double-play risk *while staying* (↑ makes 2C riskier) |
+
+Defense's counter to the stay game (raise to suppress 2C, lower to let it run
+free):
+
+| Constant | Default | Safe range | Effect ↑ |
+| --- | --- | --- | --- |
+| `STAY_DEFENSE_READ_BASE` | 0.07 | 0.03–0.20 | defense breaks up more valid stays (lead runner caught) |
+| `STAY_DEFENSE_READ_MAX` | 0.28 | 0.15–0.40 | ceiling on that catch-the-runner rate |
+| `STAY_DEFENSE_READ_MIN` | 0.03 | 0.01–0.10 | floor |
+| `STAY_DEFENSE_READ_TEAM_SCALE` | 0.20 | 0.10–0.35 | how much team defense matters |
+| `STAY_DEFENSE_READ_CATCHER_SCALE` | 0.20 | 0.10–0.35 | how much catcher arm matters |
+
+Related running-game risk (stretching a hit for the extra base — *thrown out
+trying*): `TOOTBLAN_SAFE_BASE` (0.46, range 0.32–0.88), `TOOTBLAN_SKILL_SCALE`
+(0.40), `TOOTBLAN_SPEED_SCALE` (0.20). Lower the safe base for a punishing,
+"don't get greedy" defensive league.
+
+> `PLAYER_DEFAULT_STAY_AGGRESSIVENESS` (0.40) and
+> `PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD` (0.45) appear in the dashboard but —
+> like `GEN_SHIFT_*` — they're player-creation fallbacks; in normal league play
+> every player already carries a generated value, so editing the default only
+> reaches players made without explicit attrs. Use the multipliers above for a
+> live, roster-wide effect.
+
+### Defensive shifts (the offense-aggression counter)
+
+O27's design is "offense is aggressive, defense counters by being nimble" —
+shifts are the main counter. They're decided per-AB from the batter's spray and
+the manager's aggression; on contact, a shift converts some pull-side hits to
+outs (and concedes some oppo-side outs to hits). All tunable:
+
+| Constant | Default | Safe range | Effect ↑ |
+| --- | --- | --- | --- |
+| `SHIFT_BASE_PROB` | 0.35 | 0.10–0.60 | shift floor — even neutral hitters get shifted |
+| `SHIFT_DECISION_SCALE` | 1.8 | 1.0–2.5 | spray-pull sensitivity (steeper = pull hitters shifted harder) |
+| `SHIFT_DECISION_MAX` | 0.95 | 0.7–0.98 | cap on per-AB shift probability |
+| `SHIFT_PULL_OUT_PROB` | 0.42 | 0.25–0.60 | infield shift turns pull singles → outs |
+| `SHIFT_OPPO_HIT_PROB` | 0.25 | 0.10–0.40 | the cost: oppo grounders → singles |
+| `SHIFT_OF_XBH_HELD_PROB` | 0.40 | 0.20–0.55 | outfield shift holds pull doubles → singles |
+| `SHIFT_OF_OPPO_HIT_PROB` | 0.35 | 0.20–0.50 | outfield-shift cost on oppo grounders |
+| `SHIFT_OF_POWER_THRESHOLD` | 0.55 | 0.45–0.70 | power level that triggers OF (4-man) over IF shift |
+| `SHIFT_LEVERAGE_MULT` | 1.45 | 1.0–2.0 | shifts ratchet up in RISP / late-game |
+| `ADAPTABILITY_SCALE` | 0.10 | 0.0–0.25 | hitters read a repeated shift (erodes its effect) |
+| `BUNT_AGAINST_SHIFT_BASE_PROB` | 0.18 | 0.05–0.40 | speedy hitters bunt against the shift for hits |
+
+Raise the shift-out probs and base/scale for a **low-BABIP, defense-wins** league;
+drop them (and raise `ADAPTABILITY_SCALE` / `BUNT_AGAINST_SHIFT_BASE_PROB`) for a
+**shift-proof, hits-fall-in** league.
+
 > Everything else in the dashboard's "All other constants" section is editable
 > too (manager tactics, the "Seconds"/declare-out timing rule `SECONDS_*`, form
 > variance `TODAY_FORM_*` / `LOCKED_FORM_*` / `SEQ_FORM_*`, familiarity / times-
@@ -293,6 +425,20 @@ Reach-for-these cheat sheet. Combine and scale within §5 ranges.
   ↓`FATIGUE_DEBT_PER_PITCH`, ↑`GEN_SHIFT_STAMINA`.
 - **Sloppy / chaotic defense:** ↑`DEFENSE_ERROR_BASE`, ↓`DEFENSE_RANGE_SHIFT_SCALE`,
   ↓`GEN_SHIFT_DEFENSE` & `_ARM`.
+- **Pesäpallo / stay-heavy 2C running game:** ↑`STAY_RISP_MULT`,
+  ↑`STAY_1B_ONLY_MULT` (toward/above 1.0), ↑`STAY_AHEAD_IN_COUNT_MULT` &
+  `STAY_LATE_GAME_MULT`, ↓`LATE_GAME_OUTS_THRESHOLD`, ↓`STAY_DEFENSE_READ_BASE`;
+  pair with high `CONTACT_MEDIUM_BASE` (marginal contact is what triggers a stay).
+- **Station-to-station / stay-light, fast at-bats:** ↓ all `STAY_*_MULT` toward
+  1.0 or below, ↑`STAY_DEFENSE_READ_BASE` & `_MAX` (defense punishes stays),
+  ↑`GIDP_STAY_MULTIPLIER` (staying gets you doubled up).
+- **Talent-defined 2C (stars shine on second chances):** ↑`TALENT_2C_SHIFT_SCALE`,
+  ↑`SECOND_SWING_EYE_SCALE`, ↑`CONTACT_MATCHUP_SHIFT`.
+- **Defense-wins / low-BABIP shift league:** ↑`SHIFT_BASE_PROB`,
+  ↑`SHIFT_DECISION_SCALE`, ↑`SHIFT_PULL_OUT_PROB` & `SHIFT_OF_XBH_HELD_PROB`,
+  ↑`SHIFT_LEVERAGE_MULT`, ↑`GEN_SHIFT_DEFENSE`.
+- **Shift-proof / hits-fall-in league:** ↓`SHIFT_BASE_PROB` & `SHIFT_PULL_OUT_PROB`,
+  ↑`ADAPTABILITY_SCALE` & `BUNT_AGAINST_SHIFT_BASE_PROB`, ↑`CONTACT_HARD_BASE`.
 
 ---
 
@@ -375,6 +521,11 @@ Hellscape* min-offense. Same construction: move a coherent cluster of knobs.)
    the league's spine; gut it and the run environment gets weird fast.
 7. **Booleans are `true`/`false`** (`POWER_PLAY_ENABLED`, `IBB_ENABLE`), not 0/1
    in the JSON.
+8. **The stay/2C multipliers are conditional**, not a global stay rate — each
+   fires only in its situation (RISP, 1B-only, ahead in count, late game). To
+   shift the *overall* 2C frequency, move them as a group, and remember the
+   bases-empty floor comes from per-player aggressiveness (regen-time), not a
+   live knob. `STAY_1B_ONLY_MULT` < 1.0 *suppresses* stays; > 1.0 promotes them.
 
 ---
 
