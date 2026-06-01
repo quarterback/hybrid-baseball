@@ -103,6 +103,44 @@ team, per game). Aim your knobs at the band you want:
 So "Deadball · pitcher-dominant" = HR < 1.0 **and** R < 12; "Extreme-power ·
 explosive" = the launch-circus extreme. Tell the LLM the band and it can target it.
 
+### Rules the tuning lives inside (no knobs — but they shape scoring)
+
+Some O27 rules have **no tunable constants** but materially change the run
+environment, so account for them when you tune. The big one:
+
+- **The Walk-Back rule (always on; not in the original O27 ruleset).** After
+  *every* home run the HR-hitter trots back out and stands on 3B as a bonus
+  runner **for the next batter's PA only**. If the next batter drives him in with
+  the bat (hit, sac fly, productive grounder) it's **+1 extra team run** (an
+  unearned, Manfred-runner-style run, excluded from ERA but counted in the
+  score). If the next batter makes an out without driving him in, he evaporates.
+  **Consequence for tuning:** every HR carries a bonus-run tail, so a chunk of
+  homers are effectively worth ~1.x–2 runs. **Power-heavy tunings score more than
+  their raw HR rate suggests — calibrate `POWER_REDIST_HR` / `CONTACT_HARD_BASE`
+  a notch conservatively, especially if you're also raising on-base (the next
+  batter needs to be up with contact ability to cash the Walk-Back).** There's no
+  knob to disable or scale it; the only related constant is a cosmetic sponsor
+  list. It's part of the sport's identity — surface it in your `summary` so the
+  user knows their HR tuning is amplified.
+- **Other always-or-optionally-on rules:** Power Play (10th "nickel" fielder —
+  toggle `POWER_PLAY_ENABLED`), the "Seconds"/declared-out blowout frame
+  (`SECONDS_*`, `DECLARE_*`), Joker archetypes (one power/speed/contact star per
+  team), and intentional walks (`IBB_ENABLE`). These *do* have knobs and are
+  covered in §5.
+
+### What is *not* a tunable here
+
+- **Weather & start-times** are rolled per game / per league at the
+  infrastructure level — there are **no editable weather engine constants** in
+  this dashboard. You can't dial "rainy pitcher's weather" as a global knob;
+  approximate the effect with the contact/power knobs instead.
+- **Per-park fence geometry** is a property of each ballpark, not a global knob.
+  What you *can* tune league-wide is the **park-factor envelope**:
+  `PARK_HR_MIN/MAX` and `PARK_HITS_MIN/MAX` (in §5) scale how much parks push
+  HRs and hits.
+- **Structural probability tables** (`PITCH_BASE`, `WEAK/MEDIUM/HARD_CONTACT`,
+  `PITCH_CATALOG`) — see §1.
+
 ---
 
 ## 4. How the at-bat pipeline works (the mental model that makes tuning legible)
@@ -322,6 +360,31 @@ trying*): `TOOTBLAN_SAFE_BASE` (0.46, range 0.32–0.88), `TOOTBLAN_SKILL_SCALE`
 > reaches players made without explicit attrs. Use the multipliers above for a
 > live, roster-wide effect.
 
+### Defensive shifts (the offense-aggression counter)
+
+O27's design is "offense is aggressive, defense counters by being nimble" —
+shifts are the main counter. They're decided per-AB from the batter's spray and
+the manager's aggression; on contact, a shift converts some pull-side hits to
+outs (and concedes some oppo-side outs to hits). All tunable:
+
+| Constant | Default | Safe range | Effect ↑ |
+| --- | --- | --- | --- |
+| `SHIFT_BASE_PROB` | 0.35 | 0.10–0.60 | shift floor — even neutral hitters get shifted |
+| `SHIFT_DECISION_SCALE` | 1.8 | 1.0–2.5 | spray-pull sensitivity (steeper = pull hitters shifted harder) |
+| `SHIFT_DECISION_MAX` | 0.95 | 0.7–0.98 | cap on per-AB shift probability |
+| `SHIFT_PULL_OUT_PROB` | 0.42 | 0.25–0.60 | infield shift turns pull singles → outs |
+| `SHIFT_OPPO_HIT_PROB` | 0.25 | 0.10–0.40 | the cost: oppo grounders → singles |
+| `SHIFT_OF_XBH_HELD_PROB` | 0.40 | 0.20–0.55 | outfield shift holds pull doubles → singles |
+| `SHIFT_OF_OPPO_HIT_PROB` | 0.35 | 0.20–0.50 | outfield-shift cost on oppo grounders |
+| `SHIFT_OF_POWER_THRESHOLD` | 0.55 | 0.45–0.70 | power level that triggers OF (4-man) over IF shift |
+| `SHIFT_LEVERAGE_MULT` | 1.45 | 1.0–2.0 | shifts ratchet up in RISP / late-game |
+| `ADAPTABILITY_SCALE` | 0.10 | 0.0–0.25 | hitters read a repeated shift (erodes its effect) |
+| `BUNT_AGAINST_SHIFT_BASE_PROB` | 0.18 | 0.05–0.40 | speedy hitters bunt against the shift for hits |
+
+Raise the shift-out probs and base/scale for a **low-BABIP, defense-wins** league;
+drop them (and raise `ADAPTABILITY_SCALE` / `BUNT_AGAINST_SHIFT_BASE_PROB`) for a
+**shift-proof, hits-fall-in** league.
+
 > Everything else in the dashboard's "All other constants" section is editable
 > too (manager tactics, the "Seconds"/declare-out timing rule `SECONDS_*`, form
 > variance `TODAY_FORM_*` / `LOCKED_FORM_*` / `SEQ_FORM_*`, familiarity / times-
@@ -371,6 +434,11 @@ Reach-for-these cheat sheet. Combine and scale within §5 ranges.
   ↑`GIDP_STAY_MULTIPLIER` (staying gets you doubled up).
 - **Talent-defined 2C (stars shine on second chances):** ↑`TALENT_2C_SHIFT_SCALE`,
   ↑`SECOND_SWING_EYE_SCALE`, ↑`CONTACT_MATCHUP_SHIFT`.
+- **Defense-wins / low-BABIP shift league:** ↑`SHIFT_BASE_PROB`,
+  ↑`SHIFT_DECISION_SCALE`, ↑`SHIFT_PULL_OUT_PROB` & `SHIFT_OF_XBH_HELD_PROB`,
+  ↑`SHIFT_LEVERAGE_MULT`, ↑`GEN_SHIFT_DEFENSE`.
+- **Shift-proof / hits-fall-in league:** ↓`SHIFT_BASE_PROB` & `SHIFT_PULL_OUT_PROB`,
+  ↑`ADAPTABILITY_SCALE` & `BUNT_AGAINST_SHIFT_BASE_PROB`, ↑`CONTACT_HARD_BASE`.
 
 ---
 
