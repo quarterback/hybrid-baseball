@@ -57,7 +57,17 @@ _CONVENTION_NAMES = tuple(_CONVENTIONS)
 # start spends most of itself under fading light. Trips the low-light flag.
 _LOW_LIGHT_LEAD_MIN = 90
 
-_NA_TZ = {-10: "HT", -9: "AKT", -8: "PT", -7: "MT", -6: "CT", -5: "ET", -4: "AT"}
+# Whole-hour UTC offset → local time-zone abbreviation. North America keeps
+# the generic (no S/D) labels; the Russian Far East offsets the Zaryan league
+# spans (+9..+13) use their real zone names; the rest fill in so a game never
+# has to fall back to a bare "UTC+N".
+_TZ_ABBREV = {
+    -11: "SST",  -10: "HT",  -9: "AKT",  -8: "PT",  -7: "MT",  -6: "CT",
+     -5: "ET",   -4: "AT",   -3: "ART",  -2: "GST", -1: "CVT",  0: "GMT",
+      1: "CET",   2: "EET",   3: "MSK",   4: "SAMT", 5: "YEKT",  6: "OMST",
+      7: "KRAT",  8: "IRKT",  9: "YAKT", 10: "VLAT", 11: "MAGT", 12: "PETT",
+     13: "ANAT",
+}
 
 
 @dataclass(frozen=True)
@@ -140,10 +150,11 @@ def draw_game_time(rng: random.Random, game_date: str,
 
 
 def tz_label(utc_offset: int | None) -> str:
-    """North-American abbreviation when it maps, else 'UTC+10' style."""
+    """Local time-zone abbreviation (e.g. 'ET', 'VLAT'). Only an
+    out-of-range offset would fall back to 'UTC+N'."""
     if utc_offset is None:
         return ""
-    return _NA_TZ.get(utc_offset, f"UTC{utc_offset:+d}")
+    return _TZ_ABBREV.get(utc_offset, f"UTC{utc_offset:+d}")
 
 
 def format_start(start_minute: int | None, utc_offset: int | None = None) -> str:
