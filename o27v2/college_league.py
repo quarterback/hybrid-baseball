@@ -673,7 +673,7 @@ def _roster_for_program(program_id: int) -> list[dict]:
 
 
 def sim_game(game_id: int, rng_seed: int = 0) -> dict:
-    """Sim one scheduled college game; write score + box to DB."""
+    """Sim one scheduled college game; write score + per-player box to DB."""
     game = db.fetchone("SELECT * FROM college_games WHERE id = ?", (game_id,))
     if game is None:
         raise ValueError(f"college game {game_id} not found")
@@ -690,8 +690,11 @@ def sim_game(game_id: int, rng_seed: int = 0) -> dict:
         raise ValueError(f"missing roster for game {game_id}")
 
     rng = random.Random(rng_seed ^ game_id)
-    final = _cg.sim_college_game(home_prog["name"], home_roster,
-                                 away_prog["name"], away_roster, rng=rng)
+    final, renderer = _cg.sim_college_game(
+        home_prog["name"], home_roster,
+        away_prog["name"], away_roster,
+        rng=rng, return_renderer=True,
+    )
     home_score = final.score["home"]
     away_score = final.score["visitors"]
 
@@ -700,7 +703,97 @@ def sim_game(game_id: int, rng_seed: int = 0) -> dict:
         "WHERE id = ?",
         (home_score, away_score, game_id),
     )
+
+    # Per-player box rows — engine player_id is the str() of college_player.id
+    home_pids = {int(p["id"]) for p in home_roster}
+    away_pids = {int(p["id"]) for p in away_roster}
+    _persist_batter_rows(game_id, game["home_program_id"], home_pids, renderer)
+    _persist_batter_rows(game_id, game["away_program_id"], away_pids, renderer)
+    _persist_pitcher_rows(game_id, game["home_program_id"], home_pids, final)
+    _persist_pitcher_rows(game_id, game["away_program_id"], away_pids, final)
+
     return {"game_id": game_id, "home_score": home_score, "away_score": away_score}
+
+
+def _persist_batter_rows(game_id: int, program_id: int,
+                         player_ids: set[int], renderer) -> None:
+    """Extract this side's batter stats from the renderer and write rows."""
+    phases = renderer.phases_seen() or [0]
+    agg: dict[int, dict] = {}
+    for phase in phases:
+        try:
+            phase_stats = (renderer.batter_stats_for_phase(phase)
+                            if renderer.phases_seen()
+                            else dict(renderer._batter_stats))
+        except Exception:
+            phase_stats = dict(renderer._batter_stats)
+        for engine_pid, bstat in phase_stats.items():
+            try:
+                pid = int(engine_pid)
+            except (TypeError, ValueError):
+                continue
+            if pid not in player_ids:
+                continue
+            row = agg.setdefault(pid, {
+                "pa": 0, "ab": 0, "h": 0, "doubles": 0, "triples": 0, "hr": 0,
+                "rbi": 0, "r": 0, "bb": 0, "k": 0, "sb": 0, "cs": 0,
+            })
+            row["pa"]      += getattr(bstat, "pa",       0) or 0
+            row["ab"]      += getattr(bstat, "ab",       0) or 0
+            row["h"]       += getattr(bstat, "hits",     0) or 0
+            row["doubles"] += getattr(bstat, "doubles",  0) or 0
+            row["triples"] += getattr(bstat, "triples",  0) or 0
+            row["hr"]      += getattr(bstat, "hr",       0) or 0
+            row["rbi"]     += getattr(bstat, "rbi",      0) or 0
+            row["r"]       += getattr(bstat, "runs",     0) or 0
+            row["bb"]      += getattr(bstat, "bb",       0) or 0
+            row["k"]       += getattr(bstat, "k",        0) or 0
+            row["sb"]      += getattr(bstat, "sb",       0) or 0
+            row["cs"]      += getattr(bstat, "cs",       0) or 0
+    for pid, row in agg.items():
+        db.execute(
+            "INSERT OR REPLACE INTO college_batter_stats "
+            "(game_id, program_id, player_id, pa, ab, h, doubles, triples, "
+            " hr, rbi, r, bb, k, sb, cs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (game_id, program_id, pid,
+             row["pa"], row["ab"], row["h"], row["doubles"], row["triples"],
+             row["hr"], row["rbi"], row["r"], row["bb"], row["k"],
+             row["sb"], row["cs"]),
+        )
+
+
+def _persist_pitcher_rows(game_id: int, program_id: int,
+                          player_ids: set[int], final_state) -> None:
+    """Aggregate this side's pitcher records from the spell log; write rows."""
+    by_pid: dict[int, list] = {}
+    for rec in getattr(final_state, "spell_log", []) or []:
+        try:
+            pid = int(rec.pitcher_id)
+        except (TypeError, ValueError):
+            continue
+        if pid not in player_ids:
+            continue
+        by_pid.setdefault(pid, []).append(rec)
+    if not by_pid:
+        return
+    from o27.stats.pitcher import PitcherStats
+    for pid, spells in by_pid.items():
+        ps = PitcherStats.from_spell_log(spells, str(pid), "")
+        runs = getattr(ps, "runs_allowed", 0) or 0
+        unearned = getattr(ps, "unearned_runs", 0) or 0
+        db.execute(
+            "INSERT OR REPLACE INTO college_pitcher_stats "
+            "(game_id, program_id, player_id, outs, h, r, er, bb, k, hr, bf) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (game_id, program_id, pid,
+             getattr(ps, "outs_recorded", 0) or 0,
+             getattr(ps, "hits_allowed", 0) or 0,
+             runs, max(0, runs - unearned),
+             getattr(ps, "bb", 0) or 0,
+             getattr(ps, "k",  0) or 0,
+             getattr(ps, "hr_allowed", 0) or 0,
+             getattr(ps, "batters_faced", 0) or 0),
+        )
 
 
 def sim_all_unplayed(season: int, rng_seed: int = 0) -> dict:
@@ -749,6 +842,163 @@ def standings(season: int) -> list[dict]:
         d["games_played"] = gp
         d["pct"] = (d["wins"] / gp) if gp else 0.0
         out.append(d)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Stat leaders + per-player season totals
+# ---------------------------------------------------------------------------
+
+def batter_leaders(season: int, *, sort: str = "avg",
+                   min_pa: int = 50, limit: int = 50) -> list[dict]:
+    """Top batters in `season` sorted by `sort` (avg | hr | rbi | h | r)."""
+    rows = db.fetchall(
+        """SELECT pl.id AS player_id, pl.name, pl.position, pl.college_year,
+                  pl.is_pitcher, prg.id AS program_id,
+                  prg.short_name AS program_short, prg.name AS program_name,
+                  SUM(s.pa)      AS pa,
+                  SUM(s.ab)      AS ab,
+                  SUM(s.h)       AS h,
+                  SUM(s.doubles) AS d,
+                  SUM(s.triples) AS t,
+                  SUM(s.hr)      AS hr,
+                  SUM(s.rbi)     AS rbi,
+                  SUM(s.r)       AS r,
+                  SUM(s.bb)      AS bb,
+                  SUM(s.k)       AS k,
+                  SUM(s.sb)      AS sb
+             FROM college_batter_stats s
+             JOIN college_players  pl  ON pl.id = s.player_id
+             JOIN college_programs prg ON prg.id = s.program_id
+             JOIN college_games    g   ON g.id  = s.game_id
+            WHERE g.season = ? AND pl.is_pitcher = 0
+            GROUP BY pl.id
+           HAVING pa >= ?""",
+        (season, min_pa),
+    )
+    out = []
+    for r in rows:
+        d = dict(r)
+        ab = d["ab"] or 0
+        h  = d["h"]  or 0
+        bb = d["bb"] or 0
+        d["avg"] = (h / ab) if ab else 0.0
+        d["obp"] = ((h + bb) / (ab + bb)) if (ab + bb) else 0.0
+        d["slg"] = (((h - (d["d"] or 0) - (d["t"] or 0) - (d["hr"] or 0))
+                     + 2 * (d["d"] or 0) + 3 * (d["t"] or 0) + 4 * (d["hr"] or 0))
+                     / ab) if ab else 0.0
+        d["ops"] = d["obp"] + d["slg"]
+        out.append(d)
+    key = {"avg": "avg", "hr": "hr", "rbi": "rbi", "h": "h", "r": "r",
+           "ops": "ops", "obp": "obp", "slg": "slg"}.get(sort, "avg")
+    out.sort(key=lambda x: (x.get(key) or 0), reverse=True)
+    return out[:limit]
+
+
+def pitcher_leaders(season: int, *, sort: str = "era",
+                    min_outs: int = 60, limit: int = 50) -> list[dict]:
+    """Top pitchers; sort by era (asc) / k (desc) / ip (desc) / w (desc)."""
+    rows = db.fetchall(
+        """SELECT pl.id AS player_id, pl.name, pl.position, pl.college_year,
+                  prg.id AS program_id,
+                  prg.short_name AS program_short, prg.name AS program_name,
+                  SUM(s.outs) AS outs,
+                  SUM(s.h)    AS h,
+                  SUM(s.r)    AS r,
+                  SUM(s.er)   AS er,
+                  SUM(s.bb)   AS bb,
+                  SUM(s.k)    AS k,
+                  SUM(s.hr)   AS hr,
+                  SUM(s.bf)   AS bf
+             FROM college_pitcher_stats s
+             JOIN college_players  pl  ON pl.id = s.player_id
+             JOIN college_programs prg ON prg.id = s.program_id
+             JOIN college_games    g   ON g.id  = s.game_id
+            WHERE g.season = ? AND pl.is_pitcher = 1
+            GROUP BY pl.id
+           HAVING outs >= ?""",
+        (season, min_outs),
+    )
+    out = []
+    for r in rows:
+        d = dict(r)
+        outs = d["outs"] or 0
+        ip = outs / 3.0
+        er = d["er"] or 0
+        d["ip"]  = ip
+        d["era"] = (er * 9.0 / ip) if ip else 0.0
+        d["whip"] = ((d["bb"] or 0) + (d["h"] or 0)) / ip if ip else 0.0
+        d["k9"]  = ((d["k"] or 0) * 9.0 / ip) if ip else 0.0
+        out.append(d)
+    if sort == "era":
+        out.sort(key=lambda x: x["era"] or 999)
+    elif sort == "whip":
+        out.sort(key=lambda x: x["whip"] or 999)
+    else:
+        key = {"k": "k", "ip": "ip", "k9": "k9"}.get(sort, "k")
+        out.sort(key=lambda x: (x.get(key) or 0), reverse=True)
+    return out[:limit]
+
+
+def game_box(game_id: int) -> dict | None:
+    """Return all the per-player rows + program metadata for one game."""
+    game = db.fetchone(
+        """SELECT g.*, ph.name AS home_name, ph.short_name AS home_short,
+                  pa.name AS away_name, pa.short_name AS away_short
+             FROM college_games g
+             JOIN college_programs ph ON ph.id = g.home_program_id
+             JOIN college_programs pa ON pa.id = g.away_program_id
+            WHERE g.id = ?""",
+        (game_id,),
+    )
+    if not game:
+        return None
+    batters = db.fetchall(
+        """SELECT s.*, pl.name AS player_name, pl.position
+             FROM college_batter_stats s
+             JOIN college_players pl ON pl.id = s.player_id
+            WHERE s.game_id = ?
+            ORDER BY s.program_id, s.pa DESC""", (game_id,)
+    )
+    pitchers = db.fetchall(
+        """SELECT s.*, pl.name AS player_name
+             FROM college_pitcher_stats s
+             JOIN college_players pl ON pl.id = s.player_id
+            WHERE s.game_id = ?
+            ORDER BY s.program_id, s.outs DESC""", (game_id,)
+    )
+    return {"game": dict(game),
+            "batters": [dict(b) for b in batters],
+            "pitchers": [dict(p) for p in pitchers]}
+
+
+def player_season_totals(player_id: int) -> dict:
+    """Aggregate batter + pitcher career totals for one player across
+    all college seasons (used by the player page + the FA sign-card)."""
+    return _career_stats(player_id)
+
+
+def draft_class(season: int) -> list[dict]:
+    """Graduated seniors for a season — the available signing pool —
+    with both scouting reports zipped in side-by-side for triangulation."""
+    rows = db.fetchall(
+        """SELECT pl.*, prg.short_name AS program_short, prg.name AS program_name
+             FROM college_players pl
+             JOIN college_programs prg ON prg.id = pl.program_id
+            WHERE pl.graduated = 1 AND pl.signed_pro_player_id IS NULL
+            ORDER BY pl.is_pitcher, pl.name""",
+    )
+    out = []
+    for r in rows:
+        p = dict(r)
+        # Reports come from generate_scouting_reports. Two-key zip:
+        # {'service': {...}, 'team:42': {...}, ...}
+        reports = db.fetchall(
+            "SELECT * FROM college_scouting_reports WHERE player_id = ? "
+            "ORDER BY source", (p["id"],),
+        )
+        p["reports"] = [dict(r2) for r2 in reports]
+        out.append(p)
     return out
 
 
@@ -1013,7 +1263,11 @@ def sign_graduate_to_pro(college_player_id: int) -> int:
     pro_player = _cg.sign_to_pro(p, college_career_stats=_career_stats(college_player_id))
 
     # Insert into pro players table as a free agent (team_id = NULL).
-    pro_cols = ("name", "country", "hometown", "bats", "throws",
+    # Pitchers default to position "P"; hitters carry their college position
+    # but fall back to "RF" if blank (jokers / DH-only types).
+    if not pro_player.get("position"):
+        pro_player["position"] = "P" if pro_player.get("is_pitcher") else "RF"
+    pro_cols = ("name", "position", "country", "hometown", "bats", "throws",
                 "is_pitcher", "is_joker", "roster_slot", "is_active",
                 "skill", "contact", "power", "eye", "speed",
                 "pitcher_skill", "command", "movement", "stamina",

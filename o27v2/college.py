@@ -444,17 +444,30 @@ def build_engine_team(program_name: str, roster: list[dict], *,
 
 def sim_college_game(home_program: str, home_roster: list[dict],
                      away_program: str, away_roster: list[dict],
-                     *, rng: random.Random):
-    """Run one college game through the pro engine. Returns the final
-    GameState; counts live on `final.visitors_score` / `final.home_score`."""
+                     *, rng: random.Random,
+                     return_renderer: bool = False):
+    """Run one college game through the pro engine.
+
+    Default: returns the final GameState (scores on `final.score['home']` /
+    `final.score['visitors']`).
+
+    With `return_renderer=True`: returns (final_state, renderer) so callers
+    can extract per-player box-score rows via the renderer's
+    `batter_stats_for_phase()` / `_batter_stats` and the state's
+    `spell_log` (pitcher records).
+    """
     from o27.engine.state import GameState
     from o27.engine.game  import run_game
     from o27.engine.prob  import ProbabilisticProvider
+    from o27.render.render import Renderer
 
     home_team = build_engine_team(home_program, home_roster,
                                   team_role="home", rng=rng)
     away_team = build_engine_team(away_program, away_roster,
                                   team_role="visitors", rng=rng)
     state = GameState(visitors=away_team, home=home_team)
-    final, _renderer = run_game(state, ProbabilisticProvider(rng))
+    renderer = Renderer() if return_renderer else None
+    final, _lines = run_game(state, ProbabilisticProvider(rng), renderer)
+    if return_renderer:
+        return final, renderer
     return final

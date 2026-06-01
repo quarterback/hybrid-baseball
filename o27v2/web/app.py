@@ -5087,6 +5087,25 @@ def player_detail(player_id: int):
     ) or {}
     current_style_label = style_profile_label(cur_team.get("style_profile"))
 
+    # College origin (if this pro was signed from the college tier).
+    college_origin = None
+    if _table_exists("college_players"):
+        from o27v2 import college_league as _cl
+        co_row = db.fetchone(
+            "SELECT cp.id AS college_player_id, cp.name, cp.position, "
+            "       cp.college_year, prog.id AS program_id, "
+            "       prog.name AS program_name, prog.short_name "
+            "  FROM college_players cp "
+            "  JOIN college_programs prog ON prog.id = cp.program_id "
+            " WHERE cp.signed_pro_player_id = ?",
+            (player_id,),
+        )
+        if co_row:
+            college_origin = dict(co_row)
+            college_origin["career"] = _cl.player_season_totals(
+                co_row["college_player_id"]
+            )
+
     return _serve(
         "player.html",
         player=player,
@@ -5102,6 +5121,7 @@ def player_detail(player_id: int):
         transfer_leagues=list(transfer_leagues.values()),
         current_league=cur_team.get("league") or "",
         current_style_label=current_style_label,
+        college_origin=college_origin,
     )
 
 
@@ -8632,6 +8652,67 @@ def api_college_run_postseason():
     _cl.generate_scouting_reports(season,
                                     rng_seed=request.form.get("rng_seed", type=int) or 0)
     return redirect(url_for("college_postseason_view", season=season))
+
+
+@app.route("/college/leaders")
+def college_leaders_view():
+    from o27v2 import college_league as _cl
+    season = request.args.get("season", type=int) or _college_current_season()
+    if season is None:
+        return _serve("college_leaders.html",
+                      season=None, batters=[], pitchers=[],
+                      bat_sort="hr", pit_sort="era")
+    bat_sort = request.args.get("bat_sort", "hr")
+    pit_sort = request.args.get("pit_sort", "era")
+    batters  = _cl.batter_leaders(season,  sort=bat_sort, min_pa=20, limit=50)
+    pitchers = _cl.pitcher_leaders(season, sort=pit_sort, min_outs=30, limit=50)
+    return _serve("college_leaders.html",
+                  season=season, batters=batters, pitchers=pitchers,
+                  bat_sort=bat_sort, pit_sort=pit_sort)
+
+
+@app.route("/college/game/<int:game_id>")
+def college_game_view(game_id: int):
+    from o27v2 import college_league as _cl
+    box = _cl.game_box(game_id)
+    if box is None:
+        abort(404)
+    away_id = box["game"]["away_program_id"]
+    home_id = box["game"]["home_program_id"]
+    box["away_batters"]  = [b for b in box["batters"]  if b["program_id"] == away_id]
+    box["home_batters"]  = [b for b in box["batters"]  if b["program_id"] == home_id]
+    box["away_pitchers"] = [p for p in box["pitchers"] if p["program_id"] == away_id]
+    box["home_pitchers"] = [p for p in box["pitchers"] if p["program_id"] == home_id]
+    return _serve("college_game.html", box=box)
+
+
+@app.route("/college/draft")
+def college_draft_view():
+    from o27v2 import college_league as _cl
+    draft = _cl.draft_class(season=request.args.get("season", type=int)
+                                    or _college_current_season())
+    # Group reports per player for the triangulation view (one row per
+    # player, with shared+service-vs-team report cells side-by-side).
+    for p in draft:
+        by_src: dict[str, dict] = {}
+        for r in p["reports"]:
+            by_src[r["source"]] = r
+        p["report_service"] = by_src.get("service")
+        p["report_first_team"] = next((v for k, v in by_src.items()
+                                       if k.startswith("team:")), None)
+    return _serve("college_draft.html", draft=draft)
+
+
+@app.route("/api/college/sign/<int:college_player_id>", methods=["POST"])
+def api_college_sign(college_player_id: int):
+    from o27v2 import college_league as _cl
+    try:
+        pro_id = _cl.sign_graduate_to_pro(college_player_id)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("college_draft_view"))
+    flash(f"Signed → pro player #{pro_id}", "info")
+    return redirect(url_for("player_detail", player_id=pro_id))
 
 
 @app.route("/api/college/rollover", methods=["POST"])

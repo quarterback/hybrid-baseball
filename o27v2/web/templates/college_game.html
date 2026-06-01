@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ box.game.away_short }} @ {{ box.game.home_short }}{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">
+      <a href="{{ url_for('college_program_view', program_id=box.game.away_program_id) }}">{{ box.game.away_short }}</a>
+      <span style="font-family:monospace">{{ box.game.away_score }}</span>
+      —
+      <span style="font-family:monospace">{{ box.game.home_score }}</span>
+      <a href="{{ url_for('college_program_view', program_id=box.game.home_program_id) }}">{{ box.game.home_short }}</a>
+    </h2>
+    <div class="text-secondary small">
+      {{ box.game.game_date }} · {{ box.game.phase }}
+      {% if box.game.bracket_meta %}· {{ box.game.bracket_meta }}{% endif %}
+    </div>
+  </div>
+  <a href="{{ url_for('college_view', season=box.game.season) }}" class="btn btn-sm btn-outline-secondary">← Standings</a>
+</div>
+
+{% macro batter_table(name, rows) %}
+<div class="panel mb-3">
+  <div class="panel-title"><strong>{{ name }} — Batting</strong></div>
+  <div class="panel-body">
+    <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
+      <thead><tr>
+        <th>Player</th><th>Pos</th>
+        <th class="text-end">PA</th><th class="text-end">AB</th>
+        <th class="text-end">R</th><th class="text-end">H</th>
+        <th class="text-end">2B</th><th class="text-end">3B</th>
+        <th class="text-end">HR</th><th class="text-end">RBI</th>
+        <th class="text-end">BB</th><th class="text-end">K</th>
+      </tr></thead>
+      <tbody>
+      {% for b in rows %}
+        <tr>
+          <td><a href="{{ url_for('college_player_view', player_id=b.player_id) }}">{{ b.player_name }}</a></td>
+          <td>{{ b.position or '—' }}</td>
+          <td class="text-end">{{ b.pa }}</td>
+          <td class="text-end">{{ b.ab }}</td>
+          <td class="text-end">{{ b.r }}</td>
+          <td class="text-end">{{ b.h }}</td>
+          <td class="text-end">{{ b.doubles }}</td>
+          <td class="text-end">{{ b.triples }}</td>
+          <td class="text-end">{{ b.hr }}</td>
+          <td class="text-end">{{ b.rbi }}</td>
+          <td class="text-end">{{ b.bb }}</td>
+          <td class="text-end">{{ b.k }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro pitcher_table(name, rows) %}
+<div class="panel mb-3">
+  <div class="panel-title"><strong>{{ name }} — Pitching</strong></div>
+  <div class="panel-body">
+    <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
+      <thead><tr>
+        <th>Player</th>
+        <th class="text-end">IP</th>
+        <th class="text-end">H</th><th class="text-end">R</th><th class="text-end">ER</th>
+        <th class="text-end">BB</th><th class="text-end">K</th><th class="text-end">HR</th>
+        <th class="text-end">BF</th>
+      </tr></thead>
+      <tbody>
+      {% for p in rows %}
+        <tr>
+          <td><a href="{{ url_for('college_player_view', player_id=p.player_id) }}">{{ p.player_name }}</a></td>
+          <td class="text-end">{{ "%.1f"|format(p.outs / 3.0) }}</td>
+          <td class="text-end">{{ p.h }}</td>
+          <td class="text-end">{{ p.r }}</td>
+          <td class="text-end">{{ p.er }}</td>
+          <td class="text-end">{{ p.bb }}</td>
+          <td class="text-end">{{ p.k }}</td>
+          <td class="text-end">{{ p.hr }}</td>
+          <td class="text-end">{{ p.bf }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    {{ batter_table(box.game.away_short, box.away_batters) }}
+    {{ pitcher_table(box.game.away_short, box.away_pitchers) }}
+  </div>
+  <div class="col-lg-6">
+    {{ batter_table(box.game.home_short, box.home_batters) }}
+    {{ pitcher_table(box.game.home_short, box.home_pitchers) }}
+  </div>
+</div>
+
+{% endblock %}

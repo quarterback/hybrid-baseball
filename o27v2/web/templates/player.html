@@ -125,6 +125,42 @@
       <span id="transfer-msg" class="small text-secondary"></span>
     </div>
   </div>
+
+  {% if college_origin %}
+  {# College origin card — surfaces when this pro signed out of the college tier. #}
+  <div class="panel mb-3" style="padding:12px 16px;background:var(--bg-soft)">
+    <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2">
+      <div>
+        <strong>Signed from college</strong> ·
+        <a href="{{ url_for('college_program_view', program_id=college_origin.program_id) }}">{{ college_origin.program_name }}</a>
+        · {{ college_origin.position or '—' }}
+        · graduated {{ {1:'Freshman',2:'Sophomore',3:'Junior',4:'Senior'}.get(college_origin.college_year, 'Senior') }}
+        · <a href="{{ url_for('college_player_view', player_id=college_origin.college_player_id) }}">college page →</a>
+      </div>
+    </div>
+    {% if college_origin.career %}
+      <div class="d-flex flex-wrap gap-4 mt-2 small">
+        {% set bc = college_origin.career.get('batting') %}
+        {% if bc %}
+          <div>
+            <strong>College batting:</strong>
+            {{ bc.pa }} PA · {{ "%.3f"|format(bc.avg) }} AVG ·
+            {{ bc.h }} H · {{ bc.hr }} HR · {{ bc.rbi }} RBI ·
+            {{ bc.bb }} BB · {{ bc.k }} K
+          </div>
+        {% endif %}
+        {% set pc = college_origin.career.get('pitching') %}
+        {% if pc %}
+          <div>
+            <strong>College pitching:</strong>
+            {{ "%.1f"|format(pc.ip) }} IP · {{ "%.2f"|format(pc.era) }} ERA ·
+            {{ pc.k }} K · {{ pc.bb }} BB · {{ pc.h }} H · {{ pc.hr }} HR
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+  {% endif %}
   <script>
   (function () {
     var sel = document.getElementById('transfer-team');

@@ -54,8 +54,14 @@
         Roll over to season {{ season + 1 }}
       </button>
     </form>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('college_leaders_view', season=season) }}">
+      Leaders →
+    </a>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('college_postseason_view', season=season) }}">
-      View postseason bracket →
+      Postseason bracket →
+    </a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('college_draft_view', season=season) }}">
+      Draft board →
     </a>
   </div>
 
