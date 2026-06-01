@@ -177,6 +177,155 @@ ZARYAN_CITY_UTC_OFFSET: dict[str, int] = {
 
 
 # ---------------------------------------------------------------------------
+# Coordinates
+# ---------------------------------------------------------------------------
+# Real-world coordinates for the Russian Far East territory each city is
+# anchored to (decimal degrees). Provideniya sits east of the 180° meridian
+# in the WESTERN hemisphere, so its longitude is negative. These feed the
+# weather city gazetteer (archetype + nearest-anchor lookup), sunset-based
+# low-light, and the team-coordinate backfill — so a Zaryan club resolves
+# exactly like a real-world one.
+
+ZARYAN_CITY_COORDS: dict[str, tuple[float, float]] = {
+    # Seaward (UTC+9)
+    "Garrison":          (43.12, 131.89), "Gannibal":      (43.70, 132.50),
+    "New Eldorado":      (42.82, 132.89), "Vostok Harbor": (42.90, 132.34),
+    "Ussuri":            (43.80, 131.95), "Partizansk":    (43.13, 133.13),
+    "Slavyan":           (42.86, 131.38),
+    # Stratton (UTC+10)
+    "Stratton":          (48.79, 132.92), "New Philadelphia": (48.60, 132.20),
+    "Cummings":          (49.10, 131.50),
+    # Lower Amur (UTC+10)
+    "Amargrad":          (48.48, 135.07), "Komsa":         (50.55, 137.01),
+    "Amursk":            (50.23, 136.90), "Nikol":         (53.15, 140.73),
+    # Upper Amur (UTC+9)
+    "Verkhnegrad":       (50.29, 127.54), "Svobodny":      (51.38, 128.13),
+    "Tynda":             (55.15, 124.72),
+    # Zolotoy / Magadan (UTC+11)
+    "Magadan City":      (59.56, 150.80), "Susuman":       (62.78, 148.15),
+    "Ola":               (59.58, 151.29),
+    # Sakhalin (UTC+10)
+    "Neftezma":          (46.96, 142.74), "Korsa":         (46.63, 142.78),
+    "Okha":              (53.59, 142.95), "Nogliki":       (51.83, 143.17),
+    # Kamchatka (UTC+12)
+    "Vulkangrad":        (53.02, 158.65), "Klyuch":        (56.31, 160.84),
+    "Yelizovo":          (53.18, 158.38),
+    # Chukotka (UTC+12 / +13) — Provideniya crosses 180° → WEST longitude
+    "Anadyr":            (64.73, 177.51), "Provideniya":   (64.42, -173.23),
+}
+
+
+# Secondary (farm / B-league) and tertiary (rookie / semi-pro) towns —
+# minor markets and random-draw hometowns across the eight oblasts. Each
+# carries its own coordinates and UTC offset (several Chukotka points sit
+# in the WESTERN hemisphere, so a longitude rule would mis-zone them) and
+# inherits its oblast's climate profile. One source table, folded into the
+# three lookups below so every Zaryan place resolves like the primaries.
+# Fields: (name, lat, lon, utc_offset, profile_key).
+_ZARYAN_MINOR_TOWNS: list[tuple[str, float, float, int, str]] = [
+    # Seaward → Garrison profile (UTC+9)
+    ("Garsun-Posad",       43.05, 131.95,  9, "seaward_garrison"),
+    ("Yeldrado-Pristan",   42.79, 132.91,  9, "seaward_garrison"),
+    ("Kitavoda",           43.40, 131.60,  9, "seaward_garrison"),
+    ("Svetlobor",          43.95, 132.40,  9, "seaward_garrison"),
+    ("Frivuda",            43.55, 132.70,  9, "seaward_garrison"),
+    ("Primore",            43.30, 132.10,  9, "seaward_garrison"),
+    ("Slavyan-Torg",       42.88, 131.42,  9, "seaward_garrison"),
+    ("Olympika",           43.20, 132.55,  9, "seaward_garrison"),
+    ("Belomore",           43.60, 131.50,  9, "seaward_garrison"),
+    ("Sosnovka",           43.85, 131.80,  9, "seaward_garrison"),
+    ("Brookston",          43.00, 132.30,  9, "seaward_garrison"),
+    # Stratton founding core → Stratton profile (UTC+10)
+    ("Stratton-Sloboda",   48.85, 132.98, 10, "heartland_stratton"),
+    ("Cumzion",            49.05, 131.45, 10, "heartland_stratton"),
+    ("Phildelya",          48.55, 132.10, 10, "heartland_stratton"),
+    ("Goodman",            48.70, 132.50, 10, "heartland_stratton"),
+    ("Novy-Heard",         48.40, 133.20, 10, "heartland_stratton"),
+    ("Amur-Zaimka",        48.95, 133.40, 10, "heartland_stratton"),
+    # Lower / Upper Amur heartland → Amargrad profile (+10 Lower, +9 Upper)
+    ("Amargrad-Pristan",   48.52, 135.12, 10, "heartland_amargrad"),
+    ("Nizhne-Komsa",       50.45, 137.10, 10, "heartland_amargrad"),
+    ("Lesozma",            50.10, 136.50, 10, "heartland_amargrad"),
+    ("Verkhne-Klyuch",     49.80, 135.80, 10, "heartland_amargrad"),
+    ("Ryboreche",          53.05, 140.60, 10, "heartland_amargrad"),
+    ("Kitay-Torg",         50.25, 127.60,  9, "heartland_amargrad"),
+    ("Zeyagrad",           51.10, 128.80,  9, "heartland_amargrad"),
+    ("Svobodny-Yar",       51.40, 128.20,  9, "heartland_amargrad"),
+    ("Ust-Tynda",          55.20, 124.80,  9, "heartland_amargrad"),
+    ("Bureya",             49.80, 129.85,  9, "heartland_amargrad"),
+    # Zolotoy gold north → Magadan profile (UTC+11)
+    ("Zolotoy-Prival",     59.70, 150.50, 11, "zolotoy_magadan"),
+    ("Amargol",            60.20, 151.40, 11, "zolotoy_magadan"),
+    ("Goldzma",            61.50, 149.20, 11, "zolotoy_magadan"),
+    ("Susuman-Ridge",      62.85, 148.30, 11, "zolotoy_magadan"),
+    ("Olskaya",            59.62, 151.35, 11, "zolotoy_magadan"),
+    ("Yagodnoye",          62.55, 149.62, 11, "zolotoy_magadan"),
+    # Sakhalin oil island → Neftezma profile (UTC+10)
+    ("Nyefta",             47.05, 142.80, 10, "sakhalin_neftezma"),
+    ("Pilvo",              53.20, 142.50, 10, "sakhalin_neftezma"),
+    ("Tymsk",              51.20, 143.10, 10, "sakhalin_neftezma"),
+    ("Korsa-Gavan",        46.60, 142.82, 10, "sakhalin_neftezma"),
+    ("Aleksandrovsk",      50.90, 142.16, 10, "sakhalin_neftezma"),
+    # Kamchatka volcanic → Vulkangrad profile (UTC+12)
+    ("Vulkangrad-Verkhne", 53.10, 158.70, 12, "kamchatka_vulkangrad"),
+    ("Klyuch-Geyzer",      56.20, 160.70, 12, "kamchatka_vulkangrad"),
+    ("Palanka",            59.10, 159.95, 12, "kamchatka_vulkangrad"),
+    ("Tigilsk",            57.80, 158.65, 12, "kamchatka_vulkangrad"),
+    ("Itelka",             54.50, 161.20, 12, "kamchatka_vulkangrad"),
+    ("Ust-Kamchatsk",      56.25, 162.50, 12, "kamchatka_vulkangrad"),
+    # Chukotka Arctic frontier → Anadyr profile (UTC+12 / +13; some WEST lon)
+    ("Chaungrad",          68.80, 170.60, 12, "chukotka_anadyr"),
+    ("Anakar",             64.70, 177.60, 12, "chukotka_anadyr"),
+    ("Ledport",            69.70, 170.30, 12, "chukotka_anadyr"),
+    ("Egvekinot",          66.34, 179.13, 12, "chukotka_anadyr"),
+    ("Uelka",              66.16, -169.80, 13, "chukotka_anadyr"),
+    ("Provideniya-Reid",   64.42, -173.25, 13, "chukotka_anadyr"),
+    # --- Expansion: fur-trapping outposts, mining settlements, fishing redoubts ---
+    # Seaward (UTC+9)
+    ("Zarya-Vanguard",     43.25, 131.90,  9, "seaward_garrison"),
+    ("Possyet-Gate",       42.67, 130.81,  9, "seaward_garrison"),
+    ("Millstone-Creek",    43.65, 132.12,  9, "seaward_garrison"),
+    ("Shkotova",           43.32, 132.35,  9, "seaward_garrison"),
+    # Stratton founding core (UTC+10, except the Upper-Amur bluff at +9)
+    ("Stratton-North",     48.92, 132.88, 10, "heartland_stratton"),
+    ("Bidzhan-Trail",      48.22, 131.98, 10, "heartland_stratton"),
+    ("Poyarkovo",          49.42, 129.43,  9, "heartland_stratton"),
+    # Lower Amur (UTC+10)
+    ("Komsomol-Vostok",    50.60, 136.95, 10, "heartland_amargrad"),
+    ("Gorin-Siding",       50.75, 136.65, 10, "heartland_amargrad"),
+    ("Bogorodskoye",       52.37, 140.43, 10, "heartland_amargrad"),
+    # Upper Amur (UTC+9)
+    ("Zeya-Dam",           53.75, 127.25,  9, "heartland_amargrad"),
+    ("Skovorodino",        53.98, 123.93,  9, "heartland_amargrad"),
+    ("Albazin-Redoubt",    53.38, 124.08,  9, "heartland_amargrad"),
+    # Zolotoy gold north (UTC+11)
+    ("Magadan-Vostochny",  59.55, 150.92, 11, "zolotoy_magadan"),
+    ("Talaya-Spas",        61.13, 152.39, 11, "zolotoy_magadan"),
+    ("Atka-Pass",          60.83, 151.78, 11, "zolotoy_magadan"),
+    # Sakhalin oil island (UTC+10)
+    ("Kholmsk-Strait",     47.05, 142.04, 10, "sakhalin_neftezma"),
+    ("Smirnykh-Line",      49.75, 142.84, 10, "sakhalin_neftezma"),
+    ("Poronaysk",          49.23, 143.11, 10, "sakhalin_neftezma"),
+    # Kamchatka volcanic (UTC+12)
+    ("Avacha-Sloboda",     53.05, 158.55, 12, "kamchatka_vulkangrad"),
+    ("Milkovo-Plain",      54.68, 158.62, 12, "kamchatka_vulkangrad"),
+    ("Ossora",             59.25, 163.07, 12, "kamchatka_vulkangrad"),
+    # Chukotka Arctic frontier (UTC+12 / +13; Lavrentiya is WEST longitude)
+    ("Pevek-Anchorage",    69.70, 170.31, 12, "chukotka_anadyr"),
+    ("Lavrentiya",         65.58, -171.00, 13, "chukotka_anadyr"),
+    ("Bilibino-Atom",      68.05, 166.45, 12, "chukotka_anadyr"),
+]
+
+# Fold the minor towns into the lookup tables. setdefault keeps the
+# hand-authored primary entries authoritative (e.g. Nogliki, which also
+# appears as a tertiary fallback in the source roster).
+for _zn, _zlat, _zlon, _zoff, _zprof in _ZARYAN_MINOR_TOWNS:
+    ZARYAN_CITY_COORDS.setdefault(_zn, (_zlat, _zlon))
+    ZARYAN_CITY_UTC_OFFSET.setdefault(_zn, _zoff)
+    ZARYAN_CITY_TO_PROFILE.setdefault(_zn, _zprof)
+
+
+# ---------------------------------------------------------------------------
 # Public lookups
 # ---------------------------------------------------------------------------
 
@@ -189,6 +338,11 @@ def monthly_profile(city: str) -> dict | None:
 def utc_offset(city: str) -> int | None:
     """UTC offset for `city`, or None if unknown."""
     return ZARYAN_CITY_UTC_OFFSET.get(city)
+
+
+def coords(city: str) -> tuple[float, float] | None:
+    """(lat, lon) for a Zaryan `city`, or None if unknown."""
+    return ZARYAN_CITY_COORDS.get(city)
 
 
 # ---------------------------------------------------------------------------
