@@ -43,7 +43,7 @@ complete rules are in the [README](../README.md#the-rules).
    instead of nine resets. A starting pitcher keeps going until he's pulled, and
    his fatigue builds the whole way. The home team can stop early if it's already
    ahead.
-2. **The stay.** On contact in play, the batter can *run* (normal baseball) or
+2. **Second-chance ABs.** On contact in play, the batter can *run* (normal baseball) or
    *stay* at the plate — runners advance, the batter keeps hitting, and the contact
    costs a strike. Stays are how runners get driven in. This is why a batting line
    can read multiple hits in one at-bat, and why **batting average can exceed
