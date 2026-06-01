@@ -174,8 +174,8 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 | Game Score | GSc | Single-number outing summary, clamped to [0, 100] | `clamp(0, 100, 50 + outs + 2·max(0, K−3) − 2H − 4ER − 2UER − BB − 4HR + 1·FO)` | `o27v2/web/app.py:839-864` |
 | Batter Game Score | bGSc | Single-number per-game batter summary, clamped to [0, 100] | `clamp(0, 100, 50 + 4·1B + 7·2B + 10·3B + 13·HR + 2·BB + 2·RBI + 1.5·R − 1.5·K − 2·(PA−H−BB))` | `o27v2/web/app.py:_batter_game_score` |
 | Outs Share % | OS% | Pct of the team's 27 outs the pitcher recorded | `outs / 27 × 100` | `o27v2/web/app.py:1207` |
-| Pitching QBR | pQBR | Fielding-independent per-game pitching index, 0–100 (50 = league avg) | `100 / (1 + (DIPS-ERA / league_ERA)^2.2)`, clamped [0,100] | `o27v2/web/app.py:_pitcher_pqbr` |
-| DIPS ERA | DIPS-ERA | FO-inclusive fielding-independent ERA behind pQBR | `(13·HR + 3·(BB+HBP) − 2·(K+FO)) / IP + C_dips` (anchored so league DIPS-ERA == league ERA) | `o27v2/web/app.py:_league_dips_constant` |
+| Fielding-Omitted Pitching | FOP | Fielding-independent per-game pitching index, 0–100 (50 = league avg) | `100 / (1 + (DIPS-ERA / league_ERA)^2.2)`, clamped [0,100] | `o27v2/web/app.py:_pitcher_fop` |
+| DIPS ERA | DIPS-ERA | FO-inclusive fielding-independent ERA behind FOP | `(13·HR + 3·(BB+HBP) − 2·(K+FO)) / IP + C_dips` (anchored so league DIPS-ERA == league ERA) | `o27v2/web/app.py:_league_dips_constant` |
 
 ---
 

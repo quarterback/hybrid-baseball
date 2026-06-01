@@ -175,10 +175,10 @@ GLOSSARY_SECTIONS: list[dict] = [
              "desc": "League-relative Game Score (100 = league average, higher = better)."},
             {"key": "gsc_index", "abbr": "GSc Index", "name": "Game Score Index",
              "desc": "Z-score-normalized Game Score on a 100/15 scale. Accounts for the spread of pitcher talent, so it's comparable across league sizes."},
-            {"key": "pqbr", "abbr": "pQBR", "name": "Pitching QBR",
-             "desc": "Fielding-independent pitching index on a 0–100 QBR scale (50 = league average, higher = better). The DIPS sibling of Game Score: built only from the true outcomes a pitcher controls (K + foul-outs, BB + HBP, HR), so defense and BABIP luck never touch it. Bounded, so a dominant short outing caps near 100 instead of running off the scale the way a raw rate would. Underlying value is a foul-out-inclusive DIPS ERA squashed to 0–100."},
+            {"key": "fop", "abbr": "FOP", "name": "Fielding-Omitted Pitching",
+             "desc": "Fielding-independent pitching index on a 0–100 scale (50 = league average, higher = better). The DIPS sibling of Game Score: built only from the true outcomes a pitcher controls (K + foul-outs, BB + HBP, HR), so defense and BABIP luck never touch it — the 'O' nods to O27's native foul-outs, folded into the strikeout term. Bounded, so a dominant short outing caps near 100 instead of running off the scale the way a raw rate would. Underlying value is a foul-out-inclusive DIPS ERA squashed to 0–100."},
             {"key": "dips_era", "abbr": "DIPS-ERA", "name": "DIPS ERA (FO-inclusive)",
-             "desc": "Fielding-independent ERA-scale estimate behind pQBR: (13·HR + 3·(BB+HBP) − 2·(K+FO)) / IP + league constant. Like FIP but credits O27 foul-outs as strikeouts, and anchored so league DIPS-ERA equals league ERA. Lower is better."},
+             "desc": "Fielding-independent ERA-scale estimate behind FOP: (13·HR + 3·(BB+HBP) − 2·(K+FO)) / IP + league constant. Like FIP but credits O27 foul-outs as strikeouts, and anchored so league DIPS-ERA equals league ERA. Lower is better."},
         ],
     },
     {

@@ -10,17 +10,17 @@
 
 A second look at the per-game pitching suite produced three changes: a fix to
 **wERA** so short outings stop lying, a new fielding-independent per-game
-index (**pQBR**) on a QBR-style 0–100 scale, and an Out-Share-native workload
-number (**Game Equivalents**). Together they close a real gap — O27 had no
-single, bounded, defense-independent number for "how well did this arm pitch,
-game by game" — and they remove a long-standing small-sample distortion in the
-headline run-prevention stat.
+index — **FOP (Fielding-Omitted Pitching)** — on a 0–100 scale, and an
+Out-Share-native workload number (**Game Equivalents**). Together they close a
+real gap — O27 had no single, bounded, defense-independent number for "how well
+did this arm pitch, game by game" — and they remove a long-standing small-sample
+distortion in the headline run-prevention stat.
 
 | Stat | Status | Scale | One-liner |
 |---|---|---|---|
 | **wERA** | Changed | ERA scale | Arc-weighted ERA, now shrunk toward league for short outings |
-| **pQBR** | New | 0–100, 50 = avg | Fielding-independent per-game pitching index (the DIPS sibling of Game Score) |
-| **DIPS-ERA** | New | ERA scale | FO-inclusive fielding-independent ERA that pQBR is built from |
+| **FOP** | New | 0–100, 50 = avg | Fielding-Omitted Pitching — fielding-independent per-game pitching index (the DIPS sibling of Game Score) |
+| **DIPS-ERA** | New | ERA scale | FO-inclusive fielding-independent ERA that FOP is built from |
 | **Game Equivalents (GE)** | New | count | Total workload in complete-game-worths (`outs / 27`) |
 
 ---
@@ -74,7 +74,7 @@ where `adj_wER = weighted_er × C_w`.
 
 ---
 
-## 2. pQBR — the per-game pitching index we lacked
+## 2. FOP (Fielding-Omitted Pitching) — the per-game pitching index we lacked
 
 ### Gap it fills
 None of the existing stats was simultaneously **per-game**, **bounded**,
@@ -86,13 +86,15 @@ None of the existing stats was simultaneously **per-game**, **bounded**,
   scale.
 - **wERA / xRA** are rates, not single-number per-game indices.
 
-pQBR is the missing quadrant: the DIPS philosophy of FIP delivered on a QBR
-0–100 scale.
+FOP is the missing quadrant: the DIPS philosophy of FIP delivered on a fixed
+0–100 scale. The name reads as a blunt classic-baseball acronym, and the **O**
+explicitly nods to O27's native foul-outs, which FOP counts as true-outcome
+strikeout equivalents.
 
 ### Definition
 ```
 DIPS-ERA = (13·HR + 3·(BB+HBP) − 2·(K+FO)) / IP + C_dips
-pQBR     = 100 / (1 + (DIPS-ERA / league_ERA) ^ 2.2)      # clamped to [0, 100]
+FOP      = 100 / (1 + (DIPS-ERA / league_ERA) ^ 2.2)      # clamped to [0, 100]
 ```
 
 - **Inputs are true outcomes only** — strikeouts + foul-outs, walks + HBP,
@@ -101,15 +103,15 @@ pQBR     = 100 / (1 + (DIPS-ERA / league_ERA) ^ 2.2)      # clamped to [0, 100]
   ignores them).
 - **`C_dips`** is a new league constant (`_league_dips_constant()`) chosen so
   league DIPS-ERA equals league ERA — which makes a league-average pitcher
-  map to **exactly pQBR 50**.
-- **The logistic squash** is what makes it QBR-shaped: a dominant 2-out cameo
-  caps near 100 instead of extrapolating off the chart, and a disaster floors
-  near 0. Small samples are bounded by design rather than projected.
+  map to **exactly FOP 50**.
+- **The logistic squash** is what bounds it: a dominant 2-out cameo caps near
+  100 instead of extrapolating off the chart, and a disaster floors near 0.
+  Small samples are bounded by design rather than projected.
 - **Steepness `2.2`** sets the spread: half the league DIPS-ERA ≈ 99, double
   ≈ 14.
 
 ### Verified behavior (league ERA = 4.00)
-| Game | pQBR |
+| Game | FOP |
 |---|---|
 | League-average full game | **50.0** (anchor held) |
 | Half the league DIPS-ERA (dominant) | 98.7 |
@@ -118,7 +120,7 @@ pQBR     = 100 / (1 + (DIPS-ERA / league_ERA) ^ 2.2)      # clamped to [0, 100]
 | Zero outs (no data) | 50.0 (neutral) |
 
 ### Where it's computed
-Single-sourced through `_pitcher_pqbr()` so the **season aggregate**
+Single-sourced through `_pitcher_fop()` so the **season aggregate**
 (`_aggregate_pitcher_rows`) and the **box-score game log**
 (`_top_pitcher_outings`) produce identical values from the same inputs. The
 underlying `dips_era` is exposed alongside it as the ERA-scale companion.
@@ -144,12 +146,12 @@ outs, and synthetic IP, if ever surfaced, is simply `GE × 9`.
 
 ## Documentation & surfaces
 
-- **Glossary** (`o27v2/web/glossary.py`): entries for `pqbr`, `dips_era`, and
+- **Glossary** (`o27v2/web/glossary.py`): entries for `fop`, `dips_era`, and
   `game_equiv`.
 - **Stats reference** (`docs/stats-reference.md`): wERA formula row updated;
-  pQBR, DIPS-ERA, and Game Equivalents rows added to the per-game and workload
+  FOP, DIPS-ERA, and Game Equivalents rows added to the per-game and workload
   sections.
-- **Distributions view** (`/distributions?scope=players`): pQBR and GE added to
+- **Distributions view** (`/distributions?scope=players`): FOP and GE added to
   the pitcher distribution panels.
 
 ---
@@ -158,7 +160,7 @@ outs, and synthetic IP, if ever surfaced, is simply `GE × 9`.
 
 - Syntax + import checks pass; the `tests/test_new_stats.py` suite is green.
 - Both anchors verified numerically: a league-average pitcher maps to wERA =
-  league wERA and pQBR = 50.0 exactly.
+  league wERA and FOP = 50.0 exactly.
 - Two failures visible in CI (`wrc_plus` batting-leader assertion; sqlite
   "no such table" invariant errors) **pre-exist on the base commit** — they
   require a seeded database and are unrelated to this change (confirmed by
@@ -168,11 +170,11 @@ outs, and synthetic IP, if ever surfaced, is simply `GE × 9`.
 
 ## Not in scope (candidates for follow-up)
 
-- **Leaderboard archive** — registering pQBR as a saved/sortable category in
+- **Leaderboard archive** — registering FOP as a saved/sortable category in
   `season_pitching_leaders` needs a DB column and migration.
-- **Per-appearance pQBR average** — an outs-weighted mean across games (the way
+- **Per-appearance FOP average** — an outs-weighted mean across games (the way
   `gsc_avg` is computed via a per-row path) rather than the from-aggregate
   value.
-- **Dial tuning** — the pQBR steepness (`2.2`) and the wERA shrinkage prior
+- **Dial tuning** — the FOP steepness (`2.2`) and the wERA shrinkage prior
   (`9.0` outs) are deliberate, tunable choices; easy to adjust if a flatter/
-  steeper pQBR or harder/softer wERA regression is wanted.
+  steeper FOP or harder/softer wERA regression is wanted.

@@ -1521,11 +1521,11 @@ _XRA_W_HBP   = 0.32
 # out-count, so the league anchor (and wERA+ = 100) is preserved.
 _WERA_PRIOR_OUTS = 9.0
 
-# pQBR steepness — the exponent on the (DIPS-ERA / league-ERA) ratio
-# inside the logistic squash. ~2.2 gives a QBR-like spread: a pitcher at
+# FOP steepness — the exponent on the (DIPS-ERA / league-ERA) ratio
+# inside the logistic squash. ~2.2 gives a wide, readable spread: a pitcher at
 # half the league DIPS-ERA scores ~82, double scores ~18, league-average
 # scores exactly 50.
-_PQBR_STEEPNESS = 2.2
+_FOP_STEEPNESS = 2.2
 
 
 def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
@@ -1655,13 +1655,13 @@ def _league_fip_constant() -> float:
 
 
 def _league_dips_constant() -> float:
-    """League constant for the FO-inclusive DIPS-ERA that feeds pQBR.
+    """League constant for the FO-inclusive DIPS-ERA that feeds FOP.
 
     Identical in spirit to `_league_fip_constant` but folds O27 foul-outs
     into the strikeout term (O27 K% counts foul-outs as Ks, so the
     fielding-independent line should credit them too). Chosen so league
     DIPS-ERA == league ERA, which makes league-average pitching map to
-    exactly pQBR 50. Like FIP it needs no per-PA log, so it survives
+    exactly FOP 50. Like FIP it needs no per-PA log, so it survives
     fast-sim archives. Falls back to an MLB-ish 3.10 on an empty DB.
     """
     row = db.fetchone(
@@ -1687,20 +1687,21 @@ def _league_dips_constant() -> float:
     return lg_era - lg_raw
 
 
-def _pitcher_pqbr(
+def _pitcher_fop(
     outs: float, k: float, fo: float, bb: float, hbp: float, hr: float,
     league_era: float, dips_const: float,
 ) -> float:
-    """Per-appearance / season pQBR — the DIPS sibling of Game Score.
+    """Per-appearance / season FOP — the DIPS sibling of Game Score.
 
-    A fielding-independent, QBR-style pitching index on a fixed 0–100
-    scale (50 = league average, higher = better). Built only from the
-    true outcomes a pitcher controls (HR, BB+HBP, K+FO) so — unlike
-    Game Score — defense and BABIP luck never touch it, and unlike FIP
-    it is bounded, so a dominant 2-out cameo caps near 100 instead of
-    extrapolating off the chart. The 0–100 squash is a logistic on the
-    log of (DIPS-ERA / league-ERA): a pitcher at half the league
-    DIPS-ERA scores ~82, league-average exactly 50, double ~18.
+    FOP = Fielding-Omitted Pitching: a fielding-independent pitching
+    index on a fixed 0–100 scale (50 = league average, higher = better).
+    Built only from the true outcomes a pitcher controls (HR, BB+HBP,
+    K+FO) so — unlike Game Score — defense and BABIP luck never touch it,
+    and unlike FIP it is bounded, so a dominant 2-out cameo caps near 100
+    instead of extrapolating off the chart. The "O" nods to O27's native
+    foul-outs, which FOP folds into the strikeout term. The 0–100 squash
+    is a logistic on the log of (DIPS-ERA / league-ERA): a pitcher at half
+    the league DIPS-ERA scores ~82, league-average exactly 50, double ~18.
 
     Single-sourced so the season aggregator and the box-score game log
     produce identical values from the same inputs.
@@ -1713,7 +1714,7 @@ def _pitcher_pqbr(
     ) / ip + dips_const
     if dips_era <= 0:
         return 100.0  # zero (or negative) expected runs — can't do better
-    val = 100.0 / (1.0 + (dips_era / league_era) ** _PQBR_STEEPNESS)
+    val = 100.0 / (1.0 + (dips_era / league_era) ** _FOP_STEEPNESS)
     return max(0.0, min(100.0, val))
 
 
@@ -2221,7 +2222,7 @@ def _aggregate_pitcher_rows(
     if baselines is None:
         baselines = {"era": 0.0, "league": ""}
     # League means used as fixed anchors below: the wERA shrinkage prior
-    # and the pQBR 50-point reference. Both equal league ERA (== league
+    # and the FOP 50-point reference. Both equal league ERA (== league
     # wERA by the C_w anchor). Global league is used as the regularizer
     # target even when tier baselines exist — it's a stabilizer, not a
     # relativizer, and 0 disables shrinkage so baseline-less callers keep
@@ -2520,16 +2521,17 @@ def _aggregate_pitcher_rows(
             p["bb9"]  = 0.0
             p["hr9"]  = 0.0
             p["fip"]  = 0.0
-        # pQBR — fielding-independent per-game pitching index on a 0–100
-        # QBR scale (50 = league average). The DIPS sibling of Game Score:
-        # GSc rewards results (hits/runs, so defense + luck leak in); pQBR
-        # is built only from K+FO / BB+HBP / HR, bounded so short outings
-        # can't explode it. dips_era is the underlying FO-inclusive DIPS
-        # ERA (the ERA-scale value the squash maps from).
+        # FOP (Fielding-Omitted Pitching) — fielding-independent per-game
+        # pitching index on a 0–100 scale (50 = league average). The DIPS
+        # sibling of Game Score: GSc rewards results (hits/runs, so defense
+        # + luck leak in); FOP is built only from K+FO / BB+HBP / HR,
+        # bounded so short outings can't explode it. dips_era is the
+        # underlying FO-inclusive DIPS ERA (the ERA-scale value the squash
+        # maps from).
         p["dips_era"] = (
             (13.0 * hr + 3.0 * (bb + hbp_a) - 2.0 * (k + fo)) / ip + dips_const
         ) if ip > 0 else 0.0
-        p["pqbr"] = _pitcher_pqbr(
+        p["fop"] = _pitcher_fop(
             outs, k, fo, bb, hbp_a, hr, league_era_ref, dips_const
         )
         # K/BB ratio — None when the pitcher hasn't issued a walk (templates
@@ -4398,7 +4400,7 @@ def _top_pitcher_outings(top_n: int = 10, team_ids: list[int] | None = None) -> 
     """
     _tf = (f" AND ps.team_id IN ({','.join(str(int(i)) for i in team_ids)})"
            if team_ids else "")
-    # League anchors for the per-game pQBR (50 = league average).
+    # League anchors for the per-game FOP (50 = league average).
     dips_const = _league_dips_constant()
     league_era = _league_baselines().get("era") or 0.0
     rows = db.fetchall(
@@ -4435,7 +4437,7 @@ def _top_pitcher_outings(top_n: int = 10, team_ids: list[int] | None = None) -> 
             float(r["hr_allowed"]   or 0),
             float(r["fo_induced"]   or 0),
         )
-        pqbr = _pitcher_pqbr(
+        fop = _pitcher_fop(
             outs,
             float(r["k"]          or 0),
             float(r["fo_induced"] or 0),
@@ -4465,7 +4467,7 @@ def _top_pitcher_outings(top_n: int = 10, team_ids: list[int] | None = None) -> 
             "hr":          int(r["hr_allowed"] or 0),
             "bf":          int(r["batters_faced"] or 0),
             "gsc":         round(gsc, 1),
-            "pqbr":        round(pqbr, 1),
+            "fop":         round(fop, 1),
         })
     enriched.sort(key=lambda d: (-d["gsc"], -d["outs"], d["game_id"]))
     return enriched[:top_n]
@@ -6441,7 +6443,7 @@ def distributions():
         ("decay",         "Decay",     "%+.1f", False),
         ("gsc_avg",       "GSc avg",   "%.1f", False),
         ("gsc_plus",      "GSc+",      "%.0f", False),
-        ("pqbr",          "pQBR",      "%.0f", False),
+        ("fop",           "FOP",       "%.0f", False),
         ("os_plus",       "OS+",       "%.0f", False),
         ("game_equiv",    "GE",        "%.1f", False),
         ("k_pct",         "K%",        "%.1f%%", True),
