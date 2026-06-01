@@ -6,7 +6,7 @@
   <div>
     <h2 class="mb-1">College Postseason</h2>
     <div class="text-secondary small">
-      Regional (16 four-team double-elim) → Super-Regional (8 best-of-3) → CWS (8-team double-elim).
+      64 → 16 regional double-elim winners → 8 super-regional best-of-3 winners → 8-team CWS in Omaha.
     </div>
   </div>
   {% if season %}
@@ -18,84 +18,219 @@
 
 {% if not season %}
   <div class="text-secondary">No season seeded.</div>
-{% elif not regional and not super_regional and not cws %}
+{% elif not regional_brackets and not super_regional_brackets and not cws_brackets %}
   <div class="panel" style="padding:16px">
     <div class="text-secondary">Postseason hasn't run yet — finish the regular season then click
        <em>Run postseason</em> on the standings page.</div>
   </div>
 {% else %}
 
-  {# CWS — show first since it's the headline #}
-  {% if cws %}
-  <div class="panel mb-3">
-    <div class="panel-title"><strong>College World Series</strong> <span class="text-secondary small">8-team double-elimination</span></div>
-    <div class="panel-body">
-      <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
-        <thead>
-          <tr><th>Game</th><th>Home</th><th class="text-end">Score</th><th>Away</th></tr>
-        </thead>
-        <tbody>
-        {% for g in cws %}
-          <tr>
-            <td>{{ g.bracket_meta }}</td>
-            <td>{{ g.home_short }}</td>
-            <td class="text-end">{{ g.home_score }} – {{ g.away_score }}</td>
-            <td>{{ g.away_short }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
+{# ---- Champion headline ---- #}
+{% if cws_brackets and cws_brackets[0].winner %}
+<div class="panel mb-4" style="padding:18px 20px;border-left:4px solid var(--accent)">
+  <div class="text-secondary text-uppercase small">National Champion</div>
+  <div style="font-size:1.6rem;font-weight:700;color:var(--text)">
+    {{ cws_brackets[0].winner.name }}
   </div>
-  {% endif %}
+  <div class="text-secondary small">
+    {{ cws_brackets[0].winner.abbrev }} ·
+    {{ cws_brackets[0].winner.wins }}-{{ cws_brackets[0].winner.losses }} in Omaha
+  </div>
+</div>
+{% endif %}
 
-  {# Super-Regionals #}
-  {% if super_regional %}
-  <div class="panel mb-3">
-    <div class="panel-title"><strong>Super-Regionals</strong> <span class="text-secondary small">best-of-3 to advance to CWS</span></div>
-    <div class="panel-body">
-      <table class="table table-sm dense-table mb-0" style="font-size:.85rem">
-        <thead>
-          <tr><th>Bracket</th><th>Home</th><th class="text-end">Score</th><th>Away</th></tr>
-        </thead>
-        <tbody>
-        {% for g in super_regional %}
-          <tr>
-            <td>{{ g.bracket_meta }}</td>
-            <td>{{ g.home_short }}</td>
-            <td class="text-end">{{ g.home_score }} – {{ g.away_score }}</td>
-            <td>{{ g.away_short }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endif %}
+{# ---- Tab nav ---- #}
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if cws_brackets %}active{% endif %}" data-bs-toggle="tab"
+            data-bs-target="#tab-cws" type="button" role="tab">
+      College World Series
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if super_regional_brackets and not cws_brackets %}active{% endif %}"
+            data-bs-toggle="tab" data-bs-target="#tab-sr" type="button" role="tab">
+      Super Regionals
+      <span class="badge bg-secondary ms-1">{{ super_regional_brackets|length }}</span>
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if regional_brackets and not super_regional_brackets and not cws_brackets %}active{% endif %}"
+            data-bs-toggle="tab" data-bs-target="#tab-regional" type="button" role="tab">
+      Regionals
+      <span class="badge bg-secondary ms-1">{{ regional_brackets|length }}</span>
+    </button>
+  </li>
+</ul>
 
-  {# Regionals — long list #}
-  {% if regional %}
-  <div class="panel">
-    <div class="panel-title"><strong>Regionals</strong> <span class="text-secondary small">16 four-team double-elim brackets</span></div>
-    <div class="panel-body" style="max-height:600px;overflow-y:auto">
-      <table class="table table-sm dense-table mb-0" style="font-size:.82rem">
-        <thead>
-          <tr><th>Bracket</th><th>Home</th><th class="text-end">Score</th><th>Away</th></tr>
-        </thead>
-        <tbody>
-        {% for g in regional %}
-          <tr>
-            <td>{{ g.bracket_meta }}</td>
-            <td>{{ g.home_short }}</td>
-            <td class="text-end">{{ g.home_score }} – {{ g.away_score }}</td>
-            <td>{{ g.away_short }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
+<div class="tab-content">
+
+  {# ============================================================ #}
+  {#                   COLLEGE WORLD SERIES                       #}
+  {# ============================================================ #}
+  <div class="tab-pane fade {% if cws_brackets %}show active{% endif %}" id="tab-cws" role="tabpanel">
+    {% if not cws_brackets %}
+      <div class="text-secondary">CWS hasn't fired yet.</div>
+    {% else %}
+      {% for b in cws_brackets %}
+        <div class="panel mb-3">
+          <div class="panel-title">
+            <strong>Omaha — 8-team double-elim</strong>
+            {% if b.winner %}
+              <span class="ms-2 text-secondary small">
+                · Champion: <strong style="color:var(--accent)">{{ b.winner.abbrev }}</strong>
+              </span>
+            {% endif %}
+          </div>
+          <div class="panel-body">
+            <div class="row g-3">
+              <div class="col-md-5">
+                <strong class="small text-secondary text-uppercase">Standings</strong>
+                <table class="table table-sm dense-table mb-0 mt-1" style="font-size:.85rem">
+                  <thead><tr><th>Team</th><th class="text-end">W-L</th></tr></thead>
+                  <tbody>
+                    {% for t in b.standings %}
+                    <tr {% if loop.index0 == 0 %}style="background:rgba(255,193,7,.10)"{% endif %}>
+                      <td>
+                        {% if loop.index0 == 0 %}🏆 {% endif %}
+                        <span class="team-abbrev">{{ t.abbrev }}</span>
+                        <span class="text-secondary small ms-1">{{ t.name }}</span>
+                      </td>
+                      <td class="text-end" style="font-family:monospace">
+                        {{ t.wins }}-{{ t.losses }}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <div class="col-md-7">
+                <strong class="small text-secondary text-uppercase">Game log</strong>
+                <table class="table table-sm dense-table mb-0 mt-1" style="font-size:.83rem">
+                  <thead>
+                    <tr><th>#</th><th>Matchup</th><th class="text-end">Score</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for g in b.games %}
+                    <tr>
+                      <td class="text-secondary">{{ g.game_no }}</td>
+                      <td>
+                        <span {% if g.home_won %}style="font-weight:600"{% endif %}>{{ g.home_short }}</span>
+                        <span class="text-secondary">vs</span>
+                        <span {% if not g.home_won %}style="font-weight:600"{% endif %}>{{ g.away_short }}</span>
+                      </td>
+                      <td class="text-end" style="font-family:monospace">
+                        {{ g.home_score }}-{{ g.away_score }}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    {% endif %}
   </div>
-  {% endif %}
+
+  {# ============================================================ #}
+  {#                      SUPER REGIONALS                         #}
+  {# ============================================================ #}
+  <div class="tab-pane fade {% if super_regional_brackets and not cws_brackets %}show active{% endif %}" id="tab-sr" role="tabpanel">
+    {% if not super_regional_brackets %}
+      <div class="text-secondary">Super Regionals haven't fired yet.</div>
+    {% else %}
+    <div class="row g-3">
+      {% for b in super_regional_brackets %}
+      <div class="col-md-6 col-lg-4">
+        <div class="panel" style="padding:12px 14px;height:100%">
+          <div class="d-flex justify-content-between align-items-baseline mb-2">
+            <strong class="small">Super Regional #{{ b.idx + 1 }}</strong>
+            <span class="text-secondary small">best-of-3</span>
+          </div>
+          {% for t in b.standings %}
+            <div class="d-flex justify-content-between align-items-center"
+                 style="padding:3px 0;{% if loop.index0 == 0 %}border-left:3px solid var(--accent);padding-left:6px;font-weight:600{% else %}padding-left:9px{% endif %}">
+              <span>
+                {% if loop.index0 == 0 %}✓ {% endif %}
+                <span class="team-abbrev">{{ t.abbrev }}</span>
+                <span class="text-secondary small ms-1">{{ t.name }}</span>
+              </span>
+              <span class="text-secondary small" style="font-family:monospace">
+                {{ t.wins }}-{{ t.losses }}
+              </span>
+            </div>
+          {% endfor %}
+          <hr class="my-2" style="opacity:.3">
+          <div class="small text-secondary">
+            {% for g in b.games %}
+              G{{ g.game_no }}: {{ g.home_short }} {{ g.home_score }}-{{ g.away_score }} {{ g.away_short }}
+              {% if not loop.last %} · {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  {# ============================================================ #}
+  {#                         REGIONALS                            #}
+  {# ============================================================ #}
+  <div class="tab-pane fade {% if regional_brackets and not super_regional_brackets and not cws_brackets %}show active{% endif %}" id="tab-regional" role="tabpanel">
+    {% if not regional_brackets %}
+      <div class="text-secondary">No regional games found.</div>
+    {% else %}
+    <div class="row g-3">
+      {% for b in regional_brackets %}
+      <div class="col-md-6 col-lg-4 col-xl-3">
+        <div class="panel" style="padding:12px 14px;height:100%">
+          <div class="d-flex justify-content-between align-items-baseline mb-2">
+            <strong class="small">Regional #{{ b.idx + 1 }}</strong>
+            <span class="text-secondary small">4-team double-elim</span>
+          </div>
+          {% for t in b.standings %}
+            <div class="d-flex justify-content-between align-items-center"
+                 style="padding:3px 0;{% if loop.index0 == 0 %}border-left:3px solid var(--accent);padding-left:6px;font-weight:600{% else %}padding-left:9px{% endif %}">
+              <span>
+                {% if loop.index0 == 0 %}✓ {% endif %}
+                <span class="team-abbrev">{{ t.abbrev }}</span>
+              </span>
+              <span class="text-secondary small" style="font-family:monospace">
+                {{ t.wins }}-{{ t.losses }}
+              </span>
+            </div>
+          {% endfor %}
+          <hr class="my-2" style="opacity:.3">
+          <details>
+            <summary class="text-secondary small" style="cursor:pointer">
+              {{ b.games|length }} games
+            </summary>
+            <table class="table table-sm dense-table mt-2 mb-0" style="font-size:.78rem">
+              <tbody>
+                {% for g in b.games %}
+                <tr>
+                  <td class="text-secondary">{{ g.game_no }}</td>
+                  <td>
+                    <span {% if g.home_won %}style="font-weight:600"{% endif %}>{{ g.home_short }}</span>
+                    <span class="text-secondary">{{ g.home_score }}-{{ g.away_score }}</span>
+                    <span {% if not g.home_won %}style="font-weight:600"{% endif %}>{{ g.away_short }}</span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </details>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
 
 {% endif %}
 

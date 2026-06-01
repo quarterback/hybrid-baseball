@@ -9193,40 +9193,81 @@ def college_player_view(player_id: int):
 
 @app.route("/college/postseason")
 def college_postseason_view():
+    import json as _json
     season = request.args.get("season", type=int) or _college_current_season()
     if season is None:
         return _serve("college_postseason.html",
                       season=None, regional=[], super_regional=[], cws=[])
-    regional = db.fetchall(
-        """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short
-             FROM college_games g
-             JOIN college_programs ph ON ph.id = g.home_program_id
-             JOIN college_programs pa ON pa.id = g.away_program_id
-            WHERE g.season = ? AND g.phase = 'regional'
-            ORDER BY g.bracket_meta, g.id""",
-        (season,),
+
+    def _games_for_phase(phase: str) -> list[dict]:
+        rows = db.fetchall(
+            """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short,
+                      ph.name AS home_name, pa.name AS away_name
+                 FROM college_games g
+                 JOIN college_programs ph ON ph.id = g.home_program_id
+                 JOIN college_programs pa ON pa.id = g.away_program_id
+                WHERE g.season = ? AND g.phase = ?
+                ORDER BY g.id""",
+            (season, phase),
+        )
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["meta"] = _json.loads(d.get("bracket_meta") or "{}")
+            except Exception:
+                d["meta"] = {}
+            d["bracket_idx"] = d["meta"].get("bracket", 0)
+            d["game_no"]     = d["meta"].get("game_no", 0)
+            d["home_won"]    = (d["home_score"] or 0) > (d["away_score"] or 0)
+            out.append(d)
+        return out
+
+    def _group_brackets(games: list[dict]) -> list[dict]:
+        """Group games by bracket index. For each bracket compute:
+        the team list (in the order they first appear), per-team
+        wins/losses, and the winner (last team still alive)."""
+        by_idx: dict[int, list[dict]] = {}
+        for g in games:
+            by_idx.setdefault(g["bracket_idx"], []).append(g)
+        brackets = []
+        for idx in sorted(by_idx.keys()):
+            bracket_games = sorted(by_idx[idx], key=lambda g: g["game_no"])
+            teams_seen: dict[int, dict] = {}
+            for g in bracket_games:
+                for tid, abbrev, name in (
+                    (g["home_program_id"], g["home_short"], g["home_name"]),
+                    (g["away_program_id"], g["away_short"], g["away_name"]),
+                ):
+                    if tid not in teams_seen:
+                        teams_seen[tid] = {
+                            "id": tid, "abbrev": abbrev, "name": name,
+                            "wins": 0, "losses": 0,
+                        }
+                w_id = (g["home_program_id"] if g["home_won"]
+                        else g["away_program_id"])
+                l_id = (g["away_program_id"] if g["home_won"]
+                        else g["home_program_id"])
+                teams_seen[w_id]["wins"]   += 1
+                teams_seen[l_id]["losses"] += 1
+            standings = sorted(teams_seen.values(),
+                                key=lambda t: (-t["wins"], t["losses"]))
+            winner = standings[0] if standings else None
+            brackets.append({
+                "idx":       idx,
+                "games":     bracket_games,
+                "standings": standings,
+                "winner":    winner,
+            })
+        return brackets
+
+    return _serve(
+        "college_postseason.html",
+        season=season,
+        regional_brackets=_group_brackets(_games_for_phase("regional")),
+        super_regional_brackets=_group_brackets(_games_for_phase("super_regional")),
+        cws_brackets=_group_brackets(_games_for_phase("cws")),
     )
-    super_regional = db.fetchall(
-        """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short
-             FROM college_games g
-             JOIN college_programs ph ON ph.id = g.home_program_id
-             JOIN college_programs pa ON pa.id = g.away_program_id
-            WHERE g.season = ? AND g.phase = 'super_regional'
-            ORDER BY g.bracket_meta, g.id""",
-        (season,),
-    )
-    cws = db.fetchall(
-        """SELECT g.*, ph.short_name AS home_short, pa.short_name AS away_short
-             FROM college_games g
-             JOIN college_programs ph ON ph.id = g.home_program_id
-             JOIN college_programs pa ON pa.id = g.away_program_id
-            WHERE g.season = ? AND g.phase = 'cws'
-            ORDER BY g.id""",
-        (season,),
-    )
-    return _serve("college_postseason.html",
-                  season=season, regional=regional,
-                  super_regional=super_regional, cws=cws)
 
 
 @app.route("/api/college/seed", methods=["POST"])
