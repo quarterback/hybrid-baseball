@@ -8567,12 +8567,7 @@ def universe_new_post():
         save_name, uid, rng_seed, config_id=uid, config=None,
     )
     if not ok:
-        flash(
-            f"Could not build the universe: {err} "
-            f"(too many teams for the available team pool can cause this — "
-            f"try fewer leagues or teams).",
-            "error",
-        )
+        flash(f"Could not build the universe: {err}", "error")
         return redirect(url_for("universe_new_get"))
     # Power Play (per-league) — stamp only the teams of leagues that opted in.
     # teams.league holds the league NAME verbatim (build_universe_config keeps

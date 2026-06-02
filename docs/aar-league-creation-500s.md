@@ -96,13 +96,55 @@ config is too big.
     previous good save and that save **still has its 8 teams** — i.e. the
     failure no longer leaves the user stranded on a broken active save.
 
+## Follow-up: lift the 86-team ceiling instead of just warning at it
+
+The graceful catch turned the oversized-universe crash into a polite
+"couldn't build that" message — but the user's real intent was bigger
+universes, not a nicer wall. So the cap was removed.
+
+The "86" was never structural: it's the row count of the curated
+`o27v2/data/teams_database.json`. `seed_league()` drew teams from that pool
+*without replacement*, so once all 86 distinct teams were dealt, `selected`
+ran short and `_assign_universe_divisions` raised (it requires
+`len(selected) == team_count`).
+
+Crucially, a procedural identity generator **already existed and was already
+wired in**: universe configs set `team_naming: "generated"`, and the insert
+loop overwrites each slot's name/city/abbrev with a locale-appropriate
+identity from `team_naming.generate_league_teams()` (which draws on
+`data/names/*` — regional city pools, mascot pools, "Baseball Club" locale
+spellings — and never runs dry because it wraps its city pool). The pool was
+acting purely as a slot-counter that got entirely renamed.
+
+So the fix is a "Stage 4" in `seed_league()`'s team selection: when the
+curated pool can't fill `n_teams`, pad `selected` with lightweight
+placeholder slots up to `team_count` and flip on generated naming
+(`force_generated`). Then every overflow team gets a real generated identity
+just like the universe path always did. Placeholders deliberately omit
+`lat`/`lon` so the geographic-division sort uses its missing-coord fallback.
+
+Net effect: universes (and custom leagues) of arbitrary size now seed
+instead of capping at 86. Verified:
+
+- **200-team universe** (10 leagues × 20): seeds 200 teams, 198 distinct
+  names, 163 distinct cities, 200 unique abbrevs, 0 placeholders left, 1000
+  games scheduled. Sample identities: *Hamburg Universal Electricians*,
+  *Hong Kong Highlanders*, *Apia Baseball Club*.
+- **120-team bare custom league** (no `home_region`, so the
+  geographic-division path with coord-less placeholders): 120 teams, even
+  20-per-division spread, 0 placeholders, 600 games.
+- **30-team league** (≤ pool): unchanged — keeps real MLB nicknames
+  (`force_generated` stays False).
+
+The earlier "try fewer leagues or teams" hint on the universe form was
+removed since team-pool exhaustion is no longer a failure mode (the
+try/except still guards genuinely-bad configs / other errors).
+
 ### What I did NOT change
 
-- No upper-bound cap was added to `build_universe_config` /
-  `build_custom_config`. The graceful catch is enough to satisfy the
-  "don't crash without warning" ask, and a hard cap risks rejecting configs
-  that *would* succeed if the team pool grows. The error message points the
-  user at the real lever (fewer leagues/teams).
+- No *hard upper-bound* cap was added. Sizes are now limited only by time and
+  memory, not the data file; an absurd request (tens of thousands of teams)
+  would be slow but is still caught by the graceful handler rather than 500ing.
 - `seed_league`/`seed_schedule` are still not transactional — a mid-seed
   failure can leave a partially-written save DB. That no longer matters for the
   user because the whole save is deleted on failure, but a true

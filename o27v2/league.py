@@ -2959,6 +2959,25 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         rng.shuffle(remaining)
         selected += remaining[: n_teams - len(selected)]
 
+    # Stage 4: pool exhausted. The curated team database
+    # (data/teams_database.json) is finite (~86 entries), so a big universe or
+    # custom league can ask for more teams than exist. Rather than crash in
+    # division assignment (which requires len(selected) == team_count), pad the
+    # shortfall with lightweight placeholder slots and force generated naming,
+    # so every overflow team still gets a real, locale-appropriate identity
+    # (city + name + abbrev + coords-less weather) from data/names/* via
+    # generate_league_teams(). Universe and home-region configs already set
+    # team_naming="generated", so for them this is purely the slot top-up; a
+    # bare config only flips to generated when it's genuinely oversized.
+    # Placeholders deliberately omit lat/lon so the geographic-division sort
+    # uses its missing-coord fallback rather than tripping on an explicit None.
+    force_generated = False
+    if len(selected) < n_teams:
+        shortfall = n_teams - len(selected)
+        selected += [{"name": "Team", "city": "", "level": level}
+                     for _ in range(shortfall)]
+        force_generated = True
+
     if config.get("league_specs"):
         div_map = _assign_universe_divisions(selected, config["league_specs"], rng)
     elif config.get("schedule_mode") == "tiered":
@@ -3023,7 +3042,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     # (data/names/*) instead of reusing real MLB franchises. Built per league
     # as a FIFO queue keyed by league name; consumed in the insert loop below.
     gen_team_queue: dict[str, list[dict]] = {}
-    if config.get("team_naming") == "generated":
+    if config.get("team_naming") == "generated" or force_generated:
         from o27v2 import team_naming as _team_naming
         counts: dict[str, int] = {}
         for _ln, _div in div_map:
