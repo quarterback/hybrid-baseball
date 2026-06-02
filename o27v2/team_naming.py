@@ -243,6 +243,23 @@ def supports(league_name: str) -> bool:
 # City pool
 # ---------------------------------------------------------------------------
 
+def _city_well_map() -> dict[str, str]:
+    """City-name → cultural-well tag, merged across every sub-pool that
+    carries a `cities_well` mapping (currently just eurasia_zaryanovia).
+    Used by `generate_league_teams` to stamp each generated team with
+    the well of its assigned city so seed_league can build per-team
+    name pickers that match the city's cultural population history."""
+    c2l = _load("team_naming.json")["category_5_baseball_club"]["city_to_locale"]
+    out: dict[str, str] = {}
+    for key, entry in c2l.items():
+        if key.startswith("_"):
+            continue
+        cw = entry.get("cities_well")
+        if isinstance(cw, dict):
+            out.update(cw)
+    return out
+
+
 def _city_pool(region_key: str | None,
                city_keys: tuple[str, ...] | None = None) -> list[tuple[str, str]]:
     """All (city, locale) pairs to draw from, out of team_naming's
@@ -486,6 +503,11 @@ def generate_league_teams(league_name: str, n_teams: int, rng_seed: int,
     cats = _targets(league_key, n_teams)
     rng.shuffle(cats)
 
+    # Cultural-well lookup so each generated team carries the well of
+    # its assigned city. Used downstream (seed_league) to bias the team's
+    # roster names toward that city's cultural population history.
+    well_map = _city_well_map()
+
     used_names: set[str] = set()
     out = []
     ci = 0
@@ -508,6 +530,7 @@ def generate_league_teams(league_name: str, n_teams: int, rng_seed: int,
             "name": name,
             "city": city,
             "abbrev": _make_abbrev(name, used_abbrev),
+            "well": well_map.get(city),
         })
     return out
 

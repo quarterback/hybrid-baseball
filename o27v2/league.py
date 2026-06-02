@@ -3038,6 +3038,10 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
 
     team_ids: list[int] = []
     team_leagues: list[str] = []
+    # team_id -> cultural-well tag (BAH/RS/CR/IS/KR/MG/CN). Only populated
+    # for Zaryan-city-pool teams; used post-snake-draft to bias each team's
+    # roster names toward its home city's cultural population history.
+    team_wells: dict[int, str] = {}
     for idx, (team_def, (league_name, division)) in enumerate(zip(selected, div_map)):
         abbrev = team_def.get("abbreviation") or team_def.get("abbrev", "???")
         city   = team_def.get("city", "")
@@ -3054,6 +3058,9 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
             city   = ident["city"] or city
             abbrev = ident["abbrev"]
             lat = lon = None
+            _well = ident.get("well")
+        else:
+            _well = None
 
         park_hr, park_hits = _roll_park_factors(rng2)
         park_name = _roll_ballpark_name(rng2, city, surname_pool, used_park_names)
@@ -3105,6 +3112,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         )
         team_ids.append(team_id)
         team_leagues.append(league_name)
+        if _well:
+            team_wells[team_id] = _well
 
     # Phase 2: generate the league-wide draft pool and snake-draft it.
     # No team bias — every player is rolled from the same 9-tier
@@ -3150,6 +3159,26 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         _jokers = [p for p in _roster if p.get("roster_slot") == "joker"]
         for _i, _j in enumerate(_jokers):
             _shape_joker(_j, _JOKER_ARCH_ORDER[_i % len(_JOKER_ARCH_ORDER)], rng2)
+
+    # Per-city-well roster naming for Zaryanovia. The league-wide name
+    # picker generates a creole-majority mix that gets snake-drafted
+    # randomly across teams, which means a Garrison (BAH-well) club ends
+    # up with a Russian or Korean-Zaryan name share that doesn't match
+    # its founding population. Override here: for any team whose home
+    # city carries a well tag, redraw every player's name from a
+    # well-biased Zaryan picker so each club's roster sounds like its
+    # town's actual cultural history. Country code stays ZR — these are
+    # Zaryan citizens of whatever heritage.
+    if team_wells:
+        from o27v2 import zaryan_names as _zy
+        _well_rng = random.Random(rng_seed ^ 0xCE11_5A41)
+        _gender = name_config.get("gender", "male")
+        for tid, _well in team_wells.items():
+            roster = assignments.get(tid) or []
+            for p in roster:
+                nm, ctry = _zy.draw_zaryan_name_for_well(_well_rng, _gender, _well)
+                p["name"] = nm
+                p["country"] = ctry
 
     # Phase 3: persist drafted rosters + free-agent pool, and recompute
     # each team's org_strength from its actual roster.

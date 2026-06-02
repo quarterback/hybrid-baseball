@@ -589,7 +589,8 @@ def _pick_from_weighted(rng: random.Random,
     return active[-1][0], active[-1][1]
 
 
-def draw_zaryan_name(rng: random.Random, gender: str) -> tuple[str, str]:
+def draw_zaryan_name(rng: random.Random, gender: str,
+                     stream_weights: dict[str, float] | None = None) -> tuple[str, str]:
     """Top-level Zaryan name draw — stratified over five streams:
 
       creole    (67%):  through the Zaryanification pipeline
@@ -600,14 +601,20 @@ def draw_zaryan_name(rng: random.Random, gender: str) -> tuple[str, str]:
                         (modern Americans, Africans, Latin Americans,
                         Indians, Europeans, Middle Easterners…)
 
+    `stream_weights` (optional) overrides the default stratification.
+    Used by the per-city-well biased draw so a team from a BAH-well
+    city skews heavily creole, a team from an RS-well city skews
+    russian, etc.
+
     Non-creole picks that come up empty (missing pool) fall through to
     the creole pipeline so a name always succeeds.
     """
     g = "female" if (gender or "male").lower() == "female" else "male"
+    weights = stream_weights or ZARYAN_STREAM_WEIGHTS
     stream = _weighted_choice(
         rng,
-        list(ZARYAN_STREAM_WEIGHTS.keys()),
-        list(ZARYAN_STREAM_WEIGHTS.values()),
+        list(weights.keys()),
+        list(weights.values()),
     )
     if stream == "creole":
         return zaryanify_draw(rng, g)
@@ -622,3 +629,65 @@ def draw_zaryan_name(rng: random.Random, gender: str) -> tuple[str, str]:
         f_key, s_key = _pick_from_weighted(rng, _EXPAT_CULTURES)
         out = _draw_named(rng, g, f_key, s_key)
     return out if out else zaryanify_draw(rng, g)
+
+
+# ----------------------------------------------------------------------
+# Per-city-well stream-weight overrides. Each Zaryan city carries a
+# "well" tag (BAH/RS/CR/IS/KR/MG/CN — see team_naming.json cities_well)
+# capturing the cultural population history of that town. When a team
+# is built around a specific city, its roster's name distribution
+# should reflect that city's well rather than the league-wide creole
+# mean. These overrides bias the stream-stratification accordingly.
+# ----------------------------------------------------------------------
+
+WELL_STREAM_WEIGHTS: dict[str, dict[str, float]] = {
+    # Black-American Heritage cities (Garrison, Stratton, Selma, Tubman…)
+    # — founding-population towns, almost entirely creole-pipeline names.
+    "BAH": {"creole": 0.82, "expat": 0.10, "russian": 0.04,
+            "east_asia": 0.02, "ukrainian": 0.02},
+    # Creole drift towns (Yeldrado-Pristan, Kitay-Torg, Kitavoda…) — the
+    # default Zaryan mix, slightly more cosmopolitan than the founding
+    # weights so the periphery feels distinct from the Stratton core.
+    "CR":  {"creole": 0.72, "russian": 0.12, "east_asia": 0.08,
+            "expat": 0.05, "ukrainian": 0.03},
+    # Russian-settler towns (Amargrad, Vostok Harbor, Vulkangrad…) —
+    # ethnic Russian dominant + Slavic minority + creole tail.
+    "RS":  {"russian": 0.62, "creole": 0.22, "ukrainian": 0.08,
+            "east_asia": 0.05, "expat": 0.03},
+    # Indigenous Siberian towns (Anadyr, Susuman, Tigilsk, Nogliki…) —
+    # the engine has no dedicated indigenous Siberian pool, so route to
+    # russian-administrative substrate + creole tail. Light expat slice
+    # carries the Even / Itelmen / Nivkh / Chukchi populations in via
+    # the central_asian sub-bucket.
+    "IS":  {"russian": 0.50, "creole": 0.25, "expat": 0.12,
+            "east_asia": 0.08, "ukrainian": 0.05},
+}
+
+
+# Wells with a single dominant pool that should bypass the zaryan
+# stratification entirely. Mapped to (first_key, surname_key, country).
+# These return names from the named pool tagged with the Zaryan country
+# code (ZR) — they're still Zaryan citizens, just of that heritage.
+_WELL_DIRECT_POOL: dict[str, tuple[str, str]] = {
+    "MG": ("mongolian", "mongolian"),       # Zaryan-Mongolian border towns
+    "CN": ("chinese",   "chinese"),         # Chinese-heritage Heihegrad
+    "KR": ("korean",    "koryo_saram"),     # Koryo-saram (Korean-Russian)
+}
+
+
+def draw_zaryan_name_for_well(rng: random.Random, gender: str,
+                               well: str | None) -> tuple[str, str]:
+    """Per-city-well biased Zaryan name draw. `well` is one of the
+    BAH/CR/RS/IS/KR/MG/CN tags from team_naming.json's cities_well map.
+    Falls back to the league-wide creole-majority mix when the well is
+    unknown or empty."""
+    w = (well or "").upper()
+    if not w:
+        return draw_zaryan_name(rng, gender)
+    direct = _WELL_DIRECT_POOL.get(w)
+    if direct:
+        g = "female" if (gender or "male").lower() == "female" else "male"
+        out = _draw_named(rng, g, direct[0], direct[1])
+        return out if out else draw_zaryan_name(rng, gender)
+    weights = WELL_STREAM_WEIGHTS.get(w)
+    return draw_zaryan_name(rng, gender, stream_weights=weights)
