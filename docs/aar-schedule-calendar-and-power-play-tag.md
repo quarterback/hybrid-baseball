@@ -79,6 +79,27 @@ redesigned strip:
   day shows the "No games on this day" state. Prev/next-week arrows, the date
   picker, and the Today button render with the season-bounded min/max.
 
+## Follow-up: projected starters for upcoming games
+
+First pass only showed actual starters on played games, on the reasoning that
+O27 commits no rotation so there's no "probable." The user pushed back — MLB
+probables shift constantly too (rest, scratches), so a projected-then-changed
+starter is *more* true to life, not less. Implemented:
+
+- Factored the live SP pick (rest-tiered, Helms/Stamina/slot/debt) out of
+  `_db_team_to_engine` into a shared `_pick_steering_arm()` in `sim.py`, plus a
+  public `projected_starter(team_id, game_date)` that feeds it the same
+  candidate set (`_get_active_players` + `_pitcher_workload_state`). Because
+  both paths call the *same* function, the projection equals what the sim will
+  actually throw when no games run in between — verified 8/8 against
+  `simulate_game` on a freshly seeded DB.
+- The schedule now shows a `PROJ` (amber, italic) starter line on unplayed
+  games and the confirmed `SP` line on played ones; the projected tooltip says
+  it may change as games are played.
+
+This is honest about the model: the projection moves as intervening games
+shift the rest picture, exactly like a real probable.
+
 ## Not done / follow-ups
 
 - The `PP` tag is on the schedule (the dedicated game-browsing surface). The

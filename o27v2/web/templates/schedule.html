@@ -132,8 +132,9 @@
     </div>
 
     {% if g.away_sp or g.home_sp %}
-    <div class="gc-sp text-secondary" title="Starting pitchers — {{ g.away_abbrev }}: {{ g.away_sp or 'n/a' }} · {{ g.home_abbrev }}: {{ g.home_sp or 'n/a' }}">
-      <span class="gc-sp-ico">SP</span>
+    <div class="gc-sp text-secondary{% if g.sp_projected %} projected{% endif %}"
+         title="{{ 'Projected starters' if g.sp_projected else 'Starting pitchers' }} — {{ g.away_abbrev }}: {{ g.away_sp or 'TBD' }} · {{ g.home_abbrev }}: {{ g.home_sp or 'TBD' }}{% if g.sp_projected %} (projected — may change as games are played){% endif %}">
+      <span class="gc-sp-ico">{{ 'PROJ' if g.sp_projected else 'SP' }}</span>
       <span class="gc-sp-name">{{ (g.away_sp.split()[-1] if g.away_sp else 'TBD') }}</span>
       <span class="gc-sp-vs">vs</span>
       <span class="gc-sp-name">{{ (g.home_sp.split()[-1] if g.home_sp else 'TBD') }}</span>
@@ -229,6 +230,9 @@
   }
   .gc-sp { display: flex; align-items: baseline; gap: 5px; margin-top: 5px; font-size: .76rem; }
   .gc-sp-ico { font-size: .58rem; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 2px; padding: 0 3px; }
+  .gc-sp.projected { font-style: italic; }
+  .gc-sp.projected .gc-sp-ico { color: var(--warn); border-color: var(--warn); font-style: normal; }
+  .gc-sp.projected .gc-sp-name { font-weight: 500; }
   .gc-sp-name { color: var(--text); font-weight: 600; }
   .gc-sp-vs { font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
   .gc-foot { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-soft); display: flex; align-items: center; gap: 8px; }

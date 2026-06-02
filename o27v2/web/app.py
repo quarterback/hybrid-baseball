@@ -41,6 +41,7 @@ from o27v2.sim import (
     advance_sim_clock,
     resync_sim_clock,
     get_earliest_unplayed_date,
+    projected_starter,
 )
 from o27v2.league import get_league_configs
 
@@ -3010,6 +3011,26 @@ def schedule():
         for g in games:
             g["away_sp"] = sp.get((g["id"], g["away_team_id"]))
             g["home_sp"] = sp.get((g["id"], g["home_team_id"]))
+
+        # Unplayed games get a *projected* starter — the arm the sim would pick
+        # given today's rest/roster (can change once intervening games run, like
+        # an MLB probable). The pick only depends on (team, view_date), so
+        # compute once per team and fan out across that team's games.
+        unplayed_teams = set()
+        for g in games:
+            if not g["played"]:
+                unplayed_teams.add(g["away_team_id"])
+                unplayed_teams.add(g["home_team_id"])
+        proj = {}
+        for tid in unplayed_teams:
+            s = projected_starter(tid, view_date)
+            if s:
+                proj[tid] = s["name"]
+        for g in games:
+            if not g["played"]:
+                g["away_sp"] = proj.get(g["away_team_id"])
+                g["home_sp"] = proj.get(g["home_team_id"])
+                g["sp_projected"] = True
 
     # Day strip (ESPN/NHL model): a rolling 7-day window centered on the
     # selected day — view_date-3 … view_date+3, each cell carrying its game
