@@ -2,307 +2,600 @@
 {% block title %}Build a Universe{% endblock %}
 {% block content %}
 
-<style>
-  .style-ref > summary { cursor: pointer; font-weight: 600; font-size: .85rem; color: var(--link); }
-  .style-ref > summary:hover { color: var(--link-hov); }
-  .style-ref-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
-  .style-ref-card { border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 8px 10px; background: var(--bg-card); }
-  .style-ref-name { font-weight: 700; font-size: .82rem; margin-bottom: 5px; }
-  .style-ref-biases { display: flex; flex-wrap: wrap; gap: 4px; }
-  .bias-chip { font-size: .7rem; padding: 1px 6px; border-radius: 99px; border: 1px solid var(--border); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .bias-chip.pos { color: var(--good); border-color: var(--good); }
-  .bias-chip.neg { color: var(--bad); border-color: var(--bad); }
+{# ---------------------------------------------------------------------------
+   Tailwind Play CDN — runtime utility compiler. Bound to data-theme so dark
+   mode follows the app's theme toggle. Single-file, no build step; the rest
+   of the app stays on Bootstrap untouched.
+   --------------------------------------------------------------------------- #}
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: ['selector', '[data-theme="dark"]'],
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'system-ui', 'sans-serif'],
+          mono: ['JetBrains Mono', 'SF Mono', 'monospace'],
+        },
+      },
+    },
+  };
+</script>
 
-  .cust-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .cust-start { display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--text-dim); }
-  .cust-start select { width: auto; }
-  .cust-section { margin-bottom: 8px; }
-  .cust-section-title { margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
-  .cust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 12px; }
-  .cust-knob { display: flex; flex-direction: column; gap: 1px; }
-  .cust-knob-head { display: flex; justify-content: space-between; align-items: baseline; }
-  .cust-knob-name { font-size: .8rem; font-weight: 600; }
-  .cust-knob-val { font-family: "JetBrains Mono", "SF Mono", monospace; font-size: .78rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-dim); }
-  .cust-knob-val.pos { color: var(--good); }
-  .cust-knob-val.neg { color: var(--bad); }
-  .cust-knob input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0; }
-  .cust-knob-hint { font-size: .68rem; color: var(--text-muted); line-height: 1.2; }
+<style>
+  /* Scope: reset Bootstrap's body / form element baselines that fight
+     Tailwind utilities inside the universe builder only. */
+  #uni-builder { font-family: 'Inter', system-ui, sans-serif; }
+  #uni-builder input[type=number]::-webkit-outer-spin-button,
+  #uni-builder input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  #uni-builder input[type=number] { -moz-appearance: textfield; }
+  #uni-builder input[type=range] { accent-color: #6366f1; }
+  /* Range input baseline so sliders sit centered without Bootstrap padding. */
+  #uni-builder input[type=range] { padding: 0; }
 </style>
 
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <div>
-    <h2 class="mb-1">Build a Peer-League Universe</h2>
-    <div class="text-secondary small" style="max-width:780px;line-height:1.5">
-      Several co-equal major leagues in one world (the basketball-universe model) — each its own
-      size, home region and playing style. Leagues run <strong>fully independently</strong>
-      (no interleague games); players cross over via transfers and the offseason. Each league's
-      style sets the talent the generator produces, so the leagues play measurably different
-      baseball without any rule changes.
+<div id="uni-builder" class="max-w-7xl mx-auto">
+
+  <header class="flex flex-wrap items-center justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100">Build a peer-league universe</h1>
+      <p class="mt-1 text-sm text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
+        Several co-equal major leagues in one world (the basketball-universe model). Each league sets its own
+        size, region, style and parks. Leagues run <span class="font-medium text-slate-700 dark:text-slate-200">fully
+        independently</span>; players move between them off the field.
+      </p>
     </div>
-  </div>
-  <a class="btn btn-sm btn-secondary" href="{{ url_for('new_league_get') }}">← New league</a>
+    <a class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+       href="{{ url_for('new_league_get') }}">← Single-league setup</a>
+  </header>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in msgs %}
+    <div class="mb-4 rounded-lg border px-4 py-3 text-sm
+                {{ 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-300' if cat=='error'
+                   else 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300' }}">
+      {{ m }}
+    </div>
+    {% endfor %}
+  {% endwith %}
+
+  <form method="POST" action="{{ url_for('universe_new_post') }}" class="space-y-6">
+
+    {# ============================================================
+       UNIVERSE CARD
+       ============================================================ #}
+    <section class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+      <div class="border-b border-slate-200 dark:border-slate-700 px-5 py-3">
+        <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Universe</h2>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 px-5 py-4">
+        {% set ip = "block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500" %}
+        {% set lbl = "block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1" %}
+        <div class="col-span-2 md:col-span-2 lg:col-span-2">
+          <label class="{{ lbl }}">Universe id</label>
+          <input name="universe_id" class="{{ ip }} font-mono" placeholder="my_universe" required>
+        </div>
+        <div class="col-span-2 md:col-span-2 lg:col-span-2">
+          <label class="{{ lbl }}">Label</label>
+          <input name="label" class="{{ ip }}" placeholder="My World">
+        </div>
+        <div>
+          <label class="{{ lbl }}">Gender</label>
+          <select name="gender" class="{{ ip }}">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="mixed">Mixed</option>
+          </select>
+        </div>
+        <div>
+          <label class="{{ lbl }}">Games/team</label>
+          <input type="number" name="games_per_team" value="60" min="2" class="{{ ip }} font-mono">
+        </div>
+        <div>
+          <label class="{{ lbl }}">Season days</label>
+          <input type="number" name="season_days" value="150" min="10" class="{{ ip }} font-mono">
+        </div>
+        <div>
+          <label class="{{ lbl }}">Year</label>
+          <input type="number" name="season_year" value="2026" class="{{ ip }} font-mono">
+        </div>
+        <div>
+          <label class="{{ lbl }}">RNG seed</label>
+          <input type="number" name="rng_seed" value="42" class="{{ ip }} font-mono">
+        </div>
+      </div>
+    </section>
+
+    {# ============================================================
+       LEAGUES — quick-add bar + card stack
+       ============================================================ #}
+    <section class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+      <div class="border-b border-slate-200 dark:border-slate-700 px-5 py-3 flex items-center justify-between gap-2">
+        <div>
+          <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Leagues</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Each league needs an <span class="font-medium">even</span> team count divisible by its division count.
+          </p>
+        </div>
+        <button type="button" id="add-blank"
+                class="inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-slate-100 px-3 py-1.5 text-sm font-medium text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-white">
+          + Blank league
+        </button>
+      </div>
+
+      <div class="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950/40">
+        <div class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Quick-add presets</div>
+        <div class="flex flex-wrap gap-2" id="preset-buttons"></div>
+      </div>
+
+      <details class="border-b border-slate-200 dark:border-slate-700">
+        <summary class="cursor-pointer px-5 py-3 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700">
+          Style reference — what the built-in profiles bias, and the scale
+        </summary>
+        <div class="px-5 pb-4 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+          Biases are <span class="font-medium">scout-grade points</span> on the 20–80 talent scale (50 = league-average).
+          <span class="font-medium">0 is neutral</span>; range is −{{ custom_style_max }}…+{{ custom_style_max }}.
+          A positive value means the league generates more of that trait.
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 px-5 pb-5">
+          {% for p in style_presets %}
+          <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <div class="text-sm font-semibold text-slate-700 dark:text-slate-200">{{ p.label }}</div>
+            <div class="flex flex-wrap gap-1 mt-1.5">
+              {% for k, v in p.biases.items() %}
+              <span class="text-[0.65rem] px-1.5 py-0.5 rounded-full border font-mono
+                           {{ 'text-emerald-700 border-emerald-300 dark:text-emerald-400 dark:border-emerald-700' if v > 0
+                              else 'text-rose-700 border-rose-300 dark:text-rose-400 dark:border-rose-700' }}">
+                {{ attr_labels.get(k, k) }}&nbsp;{{ '+' if v > 0 else '' }}{{ v }}
+              </span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </details>
+
+      <div id="league-stack" class="divide-y divide-slate-200 dark:divide-slate-800"></div>
+
+      <div class="px-5 py-3 bg-slate-50 dark:bg-slate-950/40 rounded-b-xl text-xs text-slate-500 dark:text-slate-400" id="lg-summary">
+        No leagues yet — add one from the presets above.
+      </div>
+    </section>
+
+    <div class="flex items-center gap-4">
+      <button type="submit"
+              class="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+        Build &amp; play universe
+      </button>
+      <span class="text-sm text-slate-500 dark:text-slate-400">Creates a new save and seeds the world.</span>
+    </div>
+  </form>
 </div>
 
-{% with msgs = get_flashed_messages(with_categories=true) %}
-  {% for cat, m in msgs %}
-  <div class="alert alert-{{ 'danger' if cat=='error' else cat }} py-2">{{ m }}</div>
-  {% endfor %}
-{% endwith %}
-
-<form method="POST" action="{{ url_for('universe_new_post') }}">
-  <div class="dense mb-3" style="padding:14px 16px">
-    <div class="panel-title">Universe</div>
-    <div class="row g-2 align-items-end">
-      <div class="col-auto">
-        <label class="form-label small mb-0">Universe id</label>
-        <input name="universe_id" class="form-control form-control-sm" style="width:160px"
-               placeholder="my_universe" required>
-      </div>
-      <div class="col-auto">
-        <label class="form-label small mb-0">Label</label>
-        <input name="label" class="form-control form-control-sm" style="width:240px"
-               placeholder="My World">
-      </div>
-      <div class="col-auto">
-        <label class="form-label small mb-0">Games/team</label>
-        <input type="number" name="games_per_team" value="60" min="2" class="form-control form-control-sm" style="width:90px">
-      </div>
-      <div class="col-auto">
-        <label class="form-label small mb-0">Season days</label>
-        <input type="number" name="season_days" value="150" min="10" class="form-control form-control-sm" style="width:90px">
-      </div>
-      <div class="col-auto">
-        <label class="form-label small mb-0">Year</label>
-        <input type="number" name="season_year" value="2026" class="form-control form-control-sm" style="width:90px">
-      </div>
-      <div class="col-auto">
-        <label class="form-label small mb-0">Seed</label>
-        <input type="number" name="rng_seed" value="42" class="form-control form-control-sm" style="width:90px">
-      </div>
-    </div>
-  </div>
-
-  <div class="dense mb-3" style="padding:14px 16px">
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <div class="panel-title mb-0">Leagues</div>
-      <button type="button" id="add-league" class="btn btn-sm btn-outline-primary">+ Add league</button>
-    </div>
-    <div class="text-secondary small mb-2">
-      Each league needs an <strong>even</strong> team count (for a balanced schedule) divisible by its division count.
+{# ============================================================
+   LEAGUE-CARD TEMPLATE
+   ============================================================ #}
+<template id="lg-card-tpl">
+  <article class="lg-card px-5 py-4" data-collapsed="false">
+    {# Header row: name + actions #}
+    <div class="flex items-center gap-3 mb-3">
+      <input name="lg_name" placeholder="O27 MLB"
+             class="lg-name flex-1 rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500">
+      <button type="button" class="lg-collapse text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-sm" title="Collapse/expand">▾</button>
+      <button type="button" class="lg-clone inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700" title="Clone this league">⎘ Clone</button>
+      <button type="button" class="lg-remove inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950" title="Remove this league">✕ Remove</button>
     </div>
 
-    <details class="style-ref mb-3">
-      <summary>Style reference — what the built-in profiles bias, and the scale</summary>
-      <div class="small text-secondary mt-2 mb-2" style="line-height:1.5">
-        Biases are <strong>scout-grade points</strong> on the 20–80 talent scale (50 = league-average).
-        <strong>0 is neutral</strong>; the range is −{{ custom_style_max }}…+{{ custom_style_max }}. A positive
-        value means the league generates more of that trait. A <em>Custom</em> league starts at all-zero — the
-        profiles below are the built-ins, shown so you can see what a meaningful bias looks like before tuning
-        your own (or use “Start from” inside a custom row to copy one).
-      </div>
-      <div class="style-ref-grid">
-        {% for p in style_presets %}
-        <div class="style-ref-card">
-          <div class="style-ref-name">{{ p.label }}</div>
-          <div class="style-ref-biases">
-            {% for k, v in p.biases.items() %}
-            <span class="bias-chip {{ 'pos' if v > 0 else 'neg' }}">{{ attr_labels.get(k, k) }}&nbsp;{{ '+' if v > 0 else '' }}{{ v }}</span>
-            {% endfor %}
-          </div>
+    {# Compact grid: numeric + selects #}
+    <div class="lg-body grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Teams</span>
+        <input name="lg_teams" type="number" min="2" step="2" value="6"
+               class="block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm font-mono text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+      </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Divisions</span>
+        <input name="lg_divisions" type="number" min="1" value="1"
+               class="block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm font-mono text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+      </label>
+      <label class="block col-span-2">
+        <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Style (talent profile)</span>
+        <select name="lg_style" class="lg-style block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+          {% for s in style_options %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
+          <option value="custom">Custom… (set your own)</option>
+        </select>
+        <input type="hidden" name="lg_custom" class="lg-custom" value="">
+      </label>
+      <label class="block">
+        <span class="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+          <span>Home region</span>
+          <button type="button" class="lg-blend-toggle text-[0.65rem] uppercase tracking-wider font-semibold text-indigo-600 dark:text-indigo-400 hover:underline" title="Build a custom blend across multiple regions">🎨 Blend…</button>
+        </span>
+        <select class="lg-locale-sel block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+          <option value="">(default mix)</option>
+          {% for o in locale_options %}<option value="{{ o.id }}">{{ o.label }} — {{ o.group }}</option>{% endfor %}
+        </select>
+        <input type="hidden" name="lg_locale" class="lg-locale-hidden" value="">
+      </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Park geometry</span>
+        <select name="lg_park" class="block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+          <option value="">(varied — all eras)</option>
+          {% for p in park_options %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Power Play</span>
+        <select name="lg_power_play" class="block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+          <option value="0">Off</option>
+          <option value="1">On</option>
+        </select>
+      </label>
+    </div>
+
+    {# Blend editor — hidden by default; toggled with the 🎨 Blend link. #}
+    <div class="lg-blend-panel hidden rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50/60 dark:bg-indigo-950/30 px-4 py-3 mb-3">
+      <div class="flex items-start justify-between gap-3 mb-2 flex-wrap">
+        <div class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl">
+          <span class="font-semibold">Custom blend:</span> pick multiple regions with relative weights. Weights are
+          auto-normalized so they only need to be proportional (e.g. 70 / 20 / 10 or 7 / 2 / 1 both work). When the
+          blend has any rows, it overrides the single-region dropdown above.
         </div>
-        {% endfor %}
-      </div>
-    </details>
-
-    <div class="table-responsive">
-    <table class="table table-sm dense-table mb-0" id="league-table">
-      <thead><tr>
-        <th>League name</th>
-        <th class="num">Teams</th>
-        <th class="num">Divisions</th>
-        <th>Style (talent profile)</th>
-        <th>Home region (names)</th>
-        <th>Field geometry (parks)</th>
-        <th>Power Play</th>
-        <th></th>
-      </tr></thead>
-      <tbody id="league-rows"></tbody>
-    </table>
-    </div>
-  </div>
-
-  <button type="submit" class="btn btn-primary">Build &amp; play universe</button>
-  <span class="text-secondary small ms-2">Creates a new save and seeds the world.</span>
-</form>
-
-<template id="league-row-tpl">
-  <tr class="lg-main">
-    <td data-label="League name"><input name="lg_name" class="form-control form-control-sm" placeholder="O27 MLB"></td>
-    <td data-label="Teams" class="num"><input name="lg_teams" type="number" min="2" step="2" value="6" class="form-control form-control-sm" style="width:80px"></td>
-    <td data-label="Divisions" class="num"><input name="lg_divisions" type="number" min="1" value="1" class="form-control form-control-sm" style="width:70px"></td>
-    <td data-label="Style (talent profile)">
-      <select name="lg_style" class="form-select form-select-sm lg-style">
-        {% for s in style_options %}<option value="{{ s.key }}">{{ s.label }}</option>{% endfor %}
-        <option value="custom">Custom… (set your own)</option>
-      </select>
-      <input type="hidden" name="lg_custom" class="lg-custom" value="">
-    </td>
-    <td data-label="Home region (names)">
-      <select name="lg_locale" class="form-select form-select-sm">
-        <option value="">(default mix)</option>
-        {% for o in locale_options %}<option value="{{ o.id }}">{{ o.label }} — {{ o.group }}</option>{% endfor %}
-      </select>
-    </td>
-    <td data-label="Field geometry (parks)">
-      <select name="lg_park" class="form-select form-select-sm" title="Field dimensions drive HR vs. triples/inside-the-park and defensive range">
-        <option value="">(varied — all eras)</option>
-        {% for p in park_options %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
-      </select>
-    </td>
-    <td data-label="Power Play">
-      <select name="lg_power_play" class="form-select form-select-sm" title="Let the fielding manager deploy a 10th defender (the nickel) in this league — like the IPL's Impact Player, a per-league rule">
-        <option value="0">Off</option>
-        <option value="1">On</option>
-      </select>
-    </td>
-    <td class="lg-actions-cell"><button type="button" class="btn btn-sm btn-link text-danger p-0 rm-league">Remove</button></td>
-  </tr>
-  <tr class="lg-custom-panel" style="display:none">
-    <td colspan="8" style="background:var(--bg-warm)">
-      <div class="cust-head">
-        <div class="small text-secondary" style="line-height:1.5">
-          <strong>0 = neutral</strong> · range −{{ custom_style_max }}…+{{ custom_style_max }} grade points
-          (50 = league-average on the 20–80 scale). Drag a knob toward <strong>+</strong> to make the league
-          produce more of that trait. Open <em>Style reference</em> above to see the built-in profiles.
+        <div class="flex items-center gap-2">
+          <select class="lg-blend-add rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+            <option value="">+ Add region…</option>
+            {% for r in region_options %}<option value="{{ r.id }}">{{ r.label }}</option>{% endfor %}
+          </select>
+          <button type="button" class="lg-blend-clear text-[0.65rem] uppercase tracking-wider font-semibold text-rose-600 dark:text-rose-400 hover:underline">Clear all</button>
         </div>
-        <label class="cust-start small">
+      </div>
+      <div class="lg-blend-rows space-y-1.5"></div>
+      <div class="lg-blend-summary text-[0.65rem] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400 mt-2"></div>
+    </div>
+
+    {# Custom style panel — collapsible, lights up when style="custom" #}
+    <div class="lg-custom-panel hidden rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30 px-4 py-3">
+      <div class="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <div class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl">
+          <span class="font-semibold">0 = neutral</span> · range −{{ custom_style_max }}…+{{ custom_style_max }} grade points
+          (50 = league-average). Type a number or drag the knob; the two stay in sync.
+        </div>
+        <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
           Start from
-          <select class="lg-preset form-select form-select-sm">
+          <select class="lg-preset rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
             <option value="">preset…</option>
             {% for p in style_presets %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
           </select>
         </label>
       </div>
-      <div class="cust-section">
-        <div class="fw-bold small cust-section-title">Hitters</div>
-        <div class="cust-grid">
+
+      <div class="mb-3">
+        <div class="text-[0.65rem] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400 mb-2">Hitters</div>
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
           {% for a in hitter_attrs %}
-          <label class="cust-knob" title="{{ a.hint }}">
-            <span class="cust-knob-head"><span class="cust-knob-name">{{ a.label }}</span><output class="cust-knob-val">0</output></span>
-            <input type="range" class="cust-attr" data-attr="{{ a.key }}" value="0" min="-{{ custom_style_max }}" max="{{ custom_style_max }}" step="1">
-            <span class="cust-knob-hint">{{ a.hint }}</span>
-          </label>
+          <div class="space-y-1" title="{{ a.hint }}">
+            <div class="flex items-baseline justify-between gap-2">
+              <span class="text-xs font-semibold text-slate-700 dark:text-slate-200">{{ a.label }}</span>
+              <input type="number" class="cust-num w-12 rounded border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-1 py-0.5 text-[0.7rem] font-mono text-right text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                     data-attr="{{ a.key }}" value="0" min="-{{ custom_style_max }}" max="{{ custom_style_max }}" step="1">
+            </div>
+            <input type="range" class="cust-attr w-full" data-attr="{{ a.key }}" value="0"
+                   min="-{{ custom_style_max }}" max="{{ custom_style_max }}" step="1">
+            <div class="text-[0.6rem] text-slate-400 dark:text-slate-500 leading-tight">{{ a.hint }}</div>
+          </div>
           {% endfor %}
         </div>
       </div>
-      <div class="cust-section">
-        <div class="fw-bold small cust-section-title">Pitchers</div>
-        <div class="cust-grid">
+
+      <div>
+        <div class="text-[0.65rem] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400 mb-2">Pitchers</div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           {% for a in pitcher_attrs %}
-          <label class="cust-knob" title="{{ a.hint }}">
-            <span class="cust-knob-head"><span class="cust-knob-name">{{ a.label }}</span><output class="cust-knob-val">0</output></span>
-            <input type="range" class="cust-attr" data-attr="{{ a.key }}" value="0" min="-{{ custom_style_max }}" max="{{ custom_style_max }}" step="1">
-            <span class="cust-knob-hint">{{ a.hint }}</span>
-          </label>
+          <div class="space-y-1" title="{{ a.hint }}">
+            <div class="flex items-baseline justify-between gap-2">
+              <span class="text-xs font-semibold text-slate-700 dark:text-slate-200">{{ a.label }}</span>
+              <input type="number" class="cust-num w-12 rounded border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-1 py-0.5 text-[0.7rem] font-mono text-right text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                     data-attr="{{ a.key }}" value="0" min="-{{ custom_style_max }}" max="{{ custom_style_max }}" step="1">
+            </div>
+            <input type="range" class="cust-attr w-full" data-attr="{{ a.key }}" value="0"
+                   min="-{{ custom_style_max }}" max="{{ custom_style_max }}" step="1">
+            <div class="text-[0.6rem] text-slate-400 dark:text-slate-500 leading-tight">{{ a.hint }}</div>
+          </div>
           {% endfor %}
         </div>
       </div>
-    </td>
-  </tr>
+    </div>
+  </article>
 </template>
 
 <script>
 (function () {
-  var rows = document.getElementById('league-rows');
-  var tpl  = document.getElementById('league-row-tpl');
-  var STYLE_MAX = {{ custom_style_max }};
-  // Named presets keyed for "Start from" + reference. {key: {attr: bias}}
-  var PRESETS = {};
-  ({{ style_presets | tojson }}).forEach(function (p) { PRESETS[p.key] = p.biases || {}; });
+  const stack = document.getElementById('league-stack');
+  const tpl   = document.getElementById('lg-card-tpl');
+  const summaryEl = document.getElementById('lg-summary');
+  const STYLE_MAX = {{ custom_style_max }};
+  const PRESETS = {};
+  ({{ style_presets | tojson }}).forEach(p => { PRESETS[p.key] = p.biases || {}; });
+
+  // Quick-add preset shapes — fill the name, teams, style, and locale so the
+  // user can drop in a configured league with one click instead of typing.
+  // Keeps the locale list aligned with what the backend already accepts.
+  const QUICK_PRESETS = [
+    {label: '⚾ O27 MLB',     name: 'O27 MLB',     teams: 8, divisions: 2, style: 'dominican', locale: 'americas_pro'},
+    {label: '🇯🇵 O27 NPB',     name: 'O27 NPB',     teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia_majority'},
+    {label: '🇰🇷 O27 KBO',     name: 'O27 KBO',     teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia_majority'},
+    {label: '🇪🇺 European',    name: 'O27 EBL',     teams: 6, divisions: 1, style: 'european',  locale: 'european'},
+    {label: '🌴 Caribbean',    name: 'O27 LIDOM',   teams: 6, divisions: 1, style: 'caribbean', locale: 'latin_america'},
+    {label: '🏃 Athletic',     name: 'O27 ABL',     teams: 6, divisions: 1, style: 'athletic',  locale: 'us_majority'},
+    {label: '🌍 Zaryanovia',   name: 'Z-League',    teams: 8, divisions: 2, style: 'balanced',  locale: 'zaryanovia'},
+    {label: '🌏 Far East',     name: 'O27 FE',      teams: 8, divisions: 2, style: 'npb',       locale: 'far_east'},
+    {label: '🌍 Africa',       name: 'O27 AFC',     teams: 6, divisions: 1, style: 'balanced',  locale: 'africa_pro'},
+    {label: '🇦🇺 Oceania',     name: 'O27 OBL',     teams: 6, divisions: 1, style: 'balanced',  locale: 'oceania'},
+    {label: '🌐 Global mix',   name: 'O27 Global',  teams: 8, divisions: 2, style: 'balanced',  locale: 'global'},
+  ];
 
   function clamp(v) { return Math.max(-STYLE_MAX, Math.min(STYLE_MAX, v)); }
 
-  function syncOutput(inp) {
-    var out = inp.parentElement.querySelector('.cust-knob-val');
-    if (out) {
-      var v = parseInt(inp.value, 10) || 0;
-      out.textContent = (v > 0 ? '+' : '') + v;
-      out.classList.toggle('pos', v > 0);
-      out.classList.toggle('neg', v < 0);
+  function updateSummary() {
+    const cards = stack.querySelectorAll('.lg-card');
+    if (!cards.length) {
+      summaryEl.textContent = 'No leagues yet — add one from the presets above.';
+      return;
     }
+    let teamSum = 0;
+    cards.forEach(c => {
+      const t = parseInt(c.querySelector('[name=lg_teams]').value, 10) || 0;
+      teamSum += t;
+    });
+    summaryEl.textContent = `${cards.length} league${cards.length===1?'':'s'} · ${teamSum} teams total`;
+  }
+
+  function syncOutput(card) {
+    // No "value chip" anymore — the number input IS the value. Just mirror
+    // the number into the matching slider (and vice versa) so the two
+    // controls always agree before we serialize.
   }
 
   function serialize(panel, hidden) {
-    var out = {};
-    panel.querySelectorAll('.cust-attr').forEach(function (inp) {
-      var v = clamp(parseInt(inp.value, 10) || 0);
+    const out = {};
+    panel.querySelectorAll('.cust-attr').forEach(inp => {
+      const v = clamp(parseInt(inp.value, 10) || 0);
       if (v) out[inp.dataset.attr] = v;
     });
     hidden.value = Object.keys(out).length ? JSON.stringify(out) : '';
   }
 
-  // Load a preset's biases into a panel's knobs (missing attrs reset to 0).
   function applyPreset(panel, hidden, biases) {
-    panel.querySelectorAll('.cust-attr').forEach(function (inp) {
-      inp.value = clamp(parseInt(biases[inp.dataset.attr], 10) || 0);
-      syncOutput(inp);
+    panel.querySelectorAll('.cust-attr').forEach(slider => {
+      const v = clamp(parseInt(biases[slider.dataset.attr], 10) || 0);
+      slider.value = v;
+      const num = panel.querySelector(`.cust-num[data-attr="${slider.dataset.attr}"]`);
+      if (num) num.value = v;
     });
     serialize(panel, hidden);
   }
 
-  function addRow(preset) {
-    var frag  = tpl.content.cloneNode(true);
-    var main  = frag.querySelector('.lg-main');
-    var panel = frag.querySelector('.lg-custom-panel');
-    var sel    = main.querySelector('.lg-style');
-    var hidden = main.querySelector('.lg-custom');
-    var presetSel = panel.querySelector('.lg-preset');
+  function addCard(preset) {
+    const frag = tpl.content.cloneNode(true);
+    const card = frag.querySelector('.lg-card');
+    const styleSel = card.querySelector('.lg-style');
+    const hidden   = card.querySelector('.lg-custom');
+    const panel    = card.querySelector('.lg-custom-panel');
+    const presetSel = panel.querySelector('.lg-preset');
+    const localeSel  = card.querySelector('.lg-locale-sel');
+    const localeHid  = card.querySelector('.lg-locale-hidden');
+    const blendPanel = card.querySelector('.lg-blend-panel');
+    const blendRows  = card.querySelector('.lg-blend-rows');
+    const blendAdd   = card.querySelector('.lg-blend-add');
+    const blendClear = card.querySelector('.lg-blend-clear');
+    const blendSummary = card.querySelector('.lg-blend-summary');
+    const blendToggle  = card.querySelector('.lg-blend-toggle');
+
+    // Region label map for the blend row rendering.
+    const REGION_LABELS = {};
+    blendAdd.querySelectorAll('option').forEach(o => {
+      if (o.value) REGION_LABELS[o.value] = o.textContent;
+    });
+
+    function snapshotBlend() {
+      const out = {};
+      blendRows.querySelectorAll('.lg-blend-row').forEach(r => {
+        const rid = r.dataset.rid;
+        const w   = parseFloat(r.querySelector('.lg-blend-w').value) || 0;
+        if (rid && w > 0) out[rid] = w;
+      });
+      return out;
+    }
+
+    function refreshLocaleHidden() {
+      const blend = snapshotBlend();
+      const keys = Object.keys(blend);
+      if (keys.length) {
+        // Normalize so the values display as proportions but the dict
+        // remains correct (the backend normalizes too, but showing the
+        // normalized share is nicer feedback).
+        const total = keys.reduce((s, k) => s + blend[k], 0) || 1;
+        localeHid.value = JSON.stringify(blend);
+        localeSel.disabled = true;
+        localeSel.classList.add('opacity-50');
+        blendSummary.textContent = keys.length + ' regions · '
+          + keys.map(k => REGION_LABELS[k] + ' ' + Math.round(100 * blend[k] / total) + '%').join(' · ');
+      } else {
+        localeHid.value = localeSel.value;
+        localeSel.disabled = false;
+        localeSel.classList.remove('opacity-50');
+        blendSummary.textContent = '';
+      }
+    }
+
+    function addBlendRow(rid, weight) {
+      if (!rid) return;
+      if (blendRows.querySelector(`[data-rid="${rid}"]`)) return; // already present
+      const row = document.createElement('div');
+      row.className = 'lg-blend-row flex items-center gap-2';
+      row.dataset.rid = rid;
+      row.innerHTML = `
+        <span class="text-xs text-slate-700 dark:text-slate-200 flex-1 truncate">${REGION_LABELS[rid] || rid}</span>
+        <input type="number" min="0" step="1" value="${weight || 10}"
+               class="lg-blend-w w-20 rounded border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs font-mono text-right text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+        <span class="text-[0.65rem] text-slate-400">weight</span>
+        <button type="button" class="lg-blend-rm text-rose-600 hover:text-rose-700 text-xs">✕</button>
+      `;
+      row.querySelector('.lg-blend-w').addEventListener('input', refreshLocaleHidden);
+      row.querySelector('.lg-blend-rm').addEventListener('click', () => {
+        row.remove(); refreshLocaleHidden();
+      });
+      blendRows.appendChild(row);
+    }
+
+    blendAdd.addEventListener('change', () => {
+      if (blendAdd.value) {
+        addBlendRow(blendAdd.value);
+        blendAdd.value = '';
+        // Open the blend panel as soon as the first row lands so the user
+        // sees what they just added.
+        blendPanel.classList.remove('hidden');
+        refreshLocaleHidden();
+      }
+    });
+    blendClear.addEventListener('click', () => {
+      blendRows.innerHTML = '';
+      refreshLocaleHidden();
+    });
+    blendToggle.addEventListener('click', () => {
+      blendPanel.classList.toggle('hidden');
+    });
+    localeSel.addEventListener('change', refreshLocaleHidden);
 
     function syncPanel() {
-      var isCustom = sel.value === 'custom';
-      panel.style.display = isCustom ? '' : 'none';
+      const isCustom = styleSel.value === 'custom';
+      panel.classList.toggle('hidden', !isCustom);
       if (isCustom) serialize(panel, hidden); else hidden.value = '';
     }
-    sel.addEventListener('change', syncPanel);
-    panel.querySelectorAll('.cust-attr').forEach(function (inp) {
-      syncOutput(inp);
-      inp.addEventListener('input', function () { syncOutput(inp); serialize(panel, hidden); });
+    styleSel.addEventListener('change', syncPanel);
+
+    // Two-way bind: slider ↔ number input for each attribute.
+    panel.querySelectorAll('.cust-attr').forEach(slider => {
+      const num = panel.querySelector(`.cust-num[data-attr="${slider.dataset.attr}"]`);
+      function pushFromSlider() {
+        if (num) num.value = slider.value;
+        serialize(panel, hidden);
+      }
+      function pushFromNum() {
+        const v = clamp(parseInt(num.value, 10) || 0);
+        num.value = v;     // re-clamp visible value
+        slider.value = v;
+        serialize(panel, hidden);
+      }
+      slider.addEventListener('input', pushFromSlider);
+      if (num) num.addEventListener('input', pushFromNum);
     });
-    if (presetSel) {
-      presetSel.addEventListener('change', function () {
-        if (PRESETS[presetSel.value]) applyPreset(panel, hidden, PRESETS[presetSel.value]);
+
+    presetSel.addEventListener('change', () => {
+      if (PRESETS[presetSel.value]) applyPreset(panel, hidden, PRESETS[presetSel.value]);
+    });
+
+    card.querySelector('.lg-remove').addEventListener('click', () => {
+      card.remove(); updateSummary();
+    });
+
+    card.querySelector('.lg-clone').addEventListener('click', () => {
+      // Snapshot the card: form values + custom-style biases + blend rows.
+      const blendSnap = snapshotBlend();
+      const hasBlend = Object.keys(blendSnap).length > 0;
+      const snapshot = {
+        name:      card.querySelector('[name=lg_name]').value + ' (copy)',
+        teams:     card.querySelector('[name=lg_teams]').value,
+        divisions: card.querySelector('[name=lg_divisions]').value,
+        style:     styleSel.value,
+        locale:    hasBlend ? blendSnap : localeSel.value,
+        park:      card.querySelector('[name=lg_park]').value,
+        power_play: card.querySelector('[name=lg_power_play]').value,
+      };
+      const customBiases = {};
+      panel.querySelectorAll('.cust-attr').forEach(s => {
+        const v = clamp(parseInt(s.value, 10) || 0);
+        if (v) customBiases[s.dataset.attr] = v;
       });
-    }
-    main.querySelector('.rm-league').addEventListener('click', function () {
-      main.remove(); panel.remove();
+      const clone = addCard(snapshot);
+      if (snapshot.style === 'custom' && clone) {
+        const cPanel = clone.querySelector('.lg-custom-panel');
+        const cHidden = clone.querySelector('.lg-custom');
+        applyPreset(cPanel, cHidden, customBiases);
+      }
+    });
+
+    card.querySelector('.lg-collapse').addEventListener('click', () => {
+      const body = card.querySelector('.lg-body');
+      const isCustom = styleSel.value === 'custom';
+      const collapsed = card.dataset.collapsed === 'true';
+      const next = !collapsed;
+      card.dataset.collapsed = String(next);
+      body.classList.toggle('hidden', next);
+      if (isCustom) panel.classList.toggle('hidden', next);
+      card.querySelector('.lg-collapse').textContent = next ? '▸' : '▾';
     });
 
     if (preset) {
-      main.querySelector('[name=lg_name]').value = preset.name || '';
-      main.querySelector('[name=lg_teams]').value = preset.teams || 6;
-      if (preset.style)  sel.value = preset.style;
-      if (preset.locale) main.querySelector('[name=lg_locale]').value = preset.locale;
-      if (preset.park)   main.querySelector('[name=lg_park]').value = preset.park;
+      if (preset.name)      card.querySelector('[name=lg_name]').value = preset.name;
+      if (preset.teams)     card.querySelector('[name=lg_teams]').value = preset.teams;
+      if (preset.divisions) card.querySelector('[name=lg_divisions]').value = preset.divisions;
+      if (preset.style)     styleSel.value = preset.style;
+      if (preset.park)      card.querySelector('[name=lg_park]').value = preset.park;
+      if (preset.power_play !== undefined) card.querySelector('[name=lg_power_play]').value = preset.power_play;
+      // Locale can arrive as a string id (preset/region) OR an object blend.
+      // Object form populates the blend editor and disables the dropdown.
+      if (preset.locale !== undefined && preset.locale !== null) {
+        if (typeof preset.locale === 'object') {
+          Object.entries(preset.locale).forEach(([rid, w]) => addBlendRow(rid, w));
+          blendPanel.classList.remove('hidden');
+        } else if (preset.locale) {
+          localeSel.value = preset.locale;
+        }
+      }
     }
-    rows.appendChild(frag);
+
+    refreshLocaleHidden();
+    stack.appendChild(frag);
     syncPanel();
+    updateSummary();
+    return stack.lastElementChild;
   }
 
-  document.getElementById('add-league').addEventListener('click', function () { addRow(); });
-  // Re-serialize all custom panels right before submit so the latest values win.
-  document.querySelector('form').addEventListener('submit', function () {
-    rows.querySelectorAll('.lg-main').forEach(function (main) {
-      if (main.querySelector('.lg-style').value === 'custom') {
-        serialize(main.nextElementSibling, main.querySelector('.lg-custom'));
+  // Listen on team-count changes to keep the summary live.
+  stack.addEventListener('input', e => {
+    if (e.target && e.target.matches('[name=lg_teams]')) updateSummary();
+  });
+
+  // Quick-add preset chips
+  const pbar = document.getElementById('preset-buttons');
+  QUICK_PRESETS.forEach(p => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 hover:border-indigo-300 dark:hover:bg-indigo-950 dark:hover:border-indigo-700';
+    b.textContent = p.label;
+    b.addEventListener('click', () => addCard(p));
+    pbar.appendChild(b);
+  });
+
+  document.getElementById('add-blank').addEventListener('click', () => addCard());
+
+  // Re-serialize all custom panels at submit so the latest knob values win.
+  document.querySelector('form').addEventListener('submit', () => {
+    stack.querySelectorAll('.lg-card').forEach(card => {
+      if (card.querySelector('.lg-style').value === 'custom') {
+        serialize(card.querySelector('.lg-custom-panel'),
+                  card.querySelector('.lg-custom'));
       }
     });
   });
 
-  // Seed with a couple of starter rows so the form isn't empty.
-  [
-    {name: 'O27 MLB', teams: 8, style: 'dominican', locale: 'us'},
-    {name: 'O27 NPB', teams: 6, style: 'npb', locale: 'east_asia'},
-  ].forEach(addRow);
+  // Seed with two starter leagues so the page isn't empty on first load.
+  addCard(QUICK_PRESETS[0]);
+  addCard(QUICK_PRESETS[1]);
 })();
 </script>
+
 {% endblock %}

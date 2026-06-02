@@ -7850,6 +7850,14 @@ def _universe_locale_options():
     return presets + regions
 
 
+def _universe_region_only_options():
+    """Pure regions (no presets) — the building blocks for a custom blend.
+    Presets aren't valid INSIDE a blend; they're already blends."""
+    from o27v2.league import get_name_regions
+    return [{"id": rid, "label": (meta.get("label") or rid)}
+            for rid, meta in sorted(get_name_regions().items())]
+
+
 def _universe_park_options():
     from o27v2.league import get_park_profiles
     return [{"key": k, "label": lbl} for k, lbl in get_park_profiles().items()]
@@ -7860,6 +7868,7 @@ def universe_new_get():
     return _serve("universe_new.html",
                   style_options=_universe_style_options(),
                   locale_options=_universe_locale_options(),
+                  region_options=_universe_region_only_options(),
                   park_options=_universe_park_options(),
                   **_universe_custom_meta())
 
@@ -7911,12 +7920,25 @@ def universe_new_post():
             except ValueError:
                 flash(f"League '{nm.strip()}': custom style biases were malformed.", "error")
                 return redirect(url_for("universe_new_get"))
+        # `lg_locale` can be a single preset/region id OR a JSON-encoded
+        # {region: weight} blend (the UI's "blend mode" packs the weights
+        # this way). Try to parse as JSON dict first; fall back to string.
+        loc_raw = (locales[i] if i < len(locales) else "") or ""
+        loc_val: object = loc_raw
+        if loc_raw.startswith("{"):
+            try:
+                parsed = _json.loads(loc_raw)
+            except ValueError:
+                flash(f"League '{nm.strip()}': locale blend was malformed.", "error")
+                return redirect(url_for("universe_new_get"))
+            if isinstance(parsed, dict):
+                loc_val = parsed
         leagues.append({
             "name":      nm.strip(),
             "teams":     int(teams[i]) if i < len(teams) and teams[i] else 0,
             "divisions": int(divisions[i]) if i < len(divisions) and divisions[i] else 1,
             "style":     style_val,
-            "locale":    (locales[i] if i < len(locales) else "") or "",
+            "locale":    loc_val,
             "park":      (parks[i] if i < len(parks) else "") or "",
             "power_play_enabled": (i < len(power_plays) and power_plays[i] == "1"),
         })
