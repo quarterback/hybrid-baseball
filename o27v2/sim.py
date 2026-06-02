@@ -330,6 +330,43 @@ def _position_player_workload(
     return out
 
 
+def _steer_sort_key(pl) -> tuple:
+    """Sort key for picking the steering arm (today's SP) within a rest tier:
+    prefer a Helms, then higher Stamina, then primary rotation slot, then lower
+    pitch debt. Reads duck-typed attributes so it works on engine Player
+    objects (live sim) and on lightweight projection candidates alike."""
+    is_helms = getattr(pl, "pitcher_role", "") in _rotation.STEER_ROLES
+    return (
+        0 if is_helms else 1,
+        -float(getattr(pl, "stamina", 0.5) or 0.5),
+        int(getattr(pl, "rotation_slot", 99) or 99),
+        int(getattr(pl, "pitch_debt", 0) or 0),
+    )
+
+
+def _pick_steering_arm(pitchers: list):
+    """Pick who takes the ball from a staff: tier by rest (≥4, ≥3, ≥2, ≥1 days)
+    and, within the freshest non-empty tier, apply `_steer_sort_key`. Last
+    resort (everyone pitched yesterday/today): the most-rested, lowest-debt arm.
+    Returns the chosen pitcher object, or None for an empty staff.
+
+    This is the single source of truth for SP selection — `_db_team_to_engine`
+    uses it to set the game starter, and `projected_starter` uses it to show
+    the probable on the schedule, so the two never drift apart."""
+    if not pitchers:
+        return None
+    for min_rest in (4, 3, 2, 1):
+        tier = [p for p in pitchers
+                if int(getattr(p, "days_rest", 99) or 99) >= min_rest]
+        if tier:
+            return min(tier, key=_steer_sort_key)
+    return min(
+        pitchers,
+        key=lambda pl: (-int(getattr(pl, "days_rest", 99) or 99),
+                        int(getattr(pl, "pitch_debt", 0) or 0)),
+    )
+
+
 def _db_team_to_engine(
     team_row: dict,
     players: list[dict],
@@ -523,29 +560,9 @@ def _db_team_to_engine(
     # this reduces to the old rest-tiered, Stamina-weighted pick.
     todays_sp: list[Player] = []
     if pitchers:
-        def _steer_key(pl: Player) -> tuple:
-            is_helms = getattr(pl, "pitcher_role", "") in _rotation.STEER_ROLES
-            # Prefer Helms, then higher Stamina, then primary slot, then
-            # lower debt. (negate for ascending sort → first element wins)
-            return (
-                0 if is_helms else 1,
-                -float(getattr(pl, "stamina", 0.5) or 0.5),
-                int(getattr(pl, "rotation_slot", 99) or 99),
-                int(getattr(pl, "pitch_debt", 0) or 0),
-            )
-        for min_rest in (4, 3, 2, 1):
-            tier = [p for p in pitchers
-                    if int(getattr(p, "days_rest", 99) or 99) >= min_rest]
-            if tier:
-                todays_sp = [min(tier, key=_steer_key)]
-                break
-        # Last resort: every arm pitched yesterday/today — most-rested goes.
-        if not todays_sp:
-            todays_sp = [min(
-                pitchers,
-                key=lambda pl: (-int(getattr(pl, "days_rest", 99) or 99),
-                                int(getattr(pl, "pitch_debt", 0) or 0)),
-            )]
+        pick = _pick_steering_arm(pitchers)
+        if pick is not None:
+            todays_sp = [pick]
 
     # Cap fielders at the canonical 8 starting positions; remaining ones
     # are bench depth that lives in the roster but does not bat. Cap DHs
@@ -1323,6 +1340,44 @@ def _promote_pitcher_role(players: list[dict]) -> list[dict]:
     best = max(pool, key=lambda p: float(p.get("pitcher_skill", 0.0)))
     return [dict(p, is_pitcher=1) if p["id"] == best["id"] else p
             for p in players]
+
+
+def projected_starter(team_id: int, game_date: str) -> dict | None:
+    """Best-effort probable starter for an UNPLAYED game on `game_date`: the
+    arm `_pick_steering_arm` would hand the ball to given the team's rest and
+    active roster as of that date. O27 commits no rotation, so — exactly like
+    an MLB probable — this can change once intervening games run and shift the
+    rest picture; the UI labels it as projected. Returns {"player_id", "name"}
+    or None when the staff is empty. Uses the same selection function the live
+    sim uses, so the projection matches what will actually be thrown when no
+    games run in between."""
+    players = _promote_pitcher_role(_get_active_players(team_id, game_date))
+    pitchers = [p for p in players if p.get("is_pitcher")]
+    if not pitchers:
+        return None
+    wl = _pitcher_workload_state(team_id, game_date)
+
+    class _Cand:
+        __slots__ = ("player_id", "name", "pitcher_role", "stamina",
+                     "rotation_slot", "days_rest", "pitch_debt")
+
+    cands = []
+    for p in pitchers:
+        stamina_grade = p.get("stamina") or 0
+        if not stamina_grade:
+            stamina_grade = p.get("pitcher_skill", 50)
+        st = wl.get(int(p["id"]), {})
+        c = _Cand()
+        c.player_id    = int(p["id"])
+        c.name         = p["name"]
+        c.pitcher_role = str(p.get("pitcher_role") or "")
+        c.stamina      = float(stamina_grade)
+        c.rotation_slot = int(p.get("rotation_slot") or 0)
+        c.days_rest    = int(st.get("days_rest", 99))
+        c.pitch_debt   = int(st.get("pitch_debt", 0))
+        cands.append(c)
+    pick = _pick_steering_arm(cands)
+    return {"player_id": pick.player_id, "name": pick.name} if pick else None
 
 
 # ---------------------------------------------------------------------------

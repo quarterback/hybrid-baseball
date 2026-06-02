@@ -7,7 +7,7 @@
     <li class="breadcrumb-item"><a href="{{ url_for('teams') }}">Teams</a></li>
     <li class="breadcrumb-item active">{{ team.name }}</li>
   </ol>
-  <div class="d-flex gap-2">
+  <div class="d-flex flex-wrap gap-2">
     <a class="btn btn-sm btn-outline-secondary"
        href="{{ url_for('team_hall_of_fame', team_id=team.id) }}"
        title="Team Hall of Fame">Hall of Fame</a>

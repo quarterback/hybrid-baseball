@@ -41,6 +41,7 @@ from o27v2.sim import (
     advance_sim_clock,
     resync_sim_clock,
     get_earliest_unplayed_date,
+    projected_starter,
 )
 from o27v2.league import get_league_configs
 
@@ -2901,6 +2902,12 @@ def standings():
 
 @app.route("/schedule")
 def schedule():
+    """Day-centric schedule. Rather than dumping the whole season into one long
+    scroll, we show a month calendar (days carry a game-count dot) and the games
+    for a single selected day as cards — the way real sports sites present a
+    league schedule. Navigation: ?date=YYYY-MM-DD picks the day, ?month=YYYY-MM
+    flips the calendar without choosing a day. The league/team/status filters
+    scope every query (calendar counts, the day list, and the date bounds)."""
     team_id = request.args.get("team", type=int)
     status  = request.args.get("status", "all")
 
@@ -2908,39 +2915,153 @@ def schedule():
     league_arg      = request.args.get("league") or "all"
     selected_league = league_arg if league_arg in all_leagues else "all"
 
-    sql = """
-        SELECT g.*,
-               ht.name as home_name, ht.abbrev as home_abbrev,
-               ht.league as home_league,
-               at.name as away_name, at.abbrev as away_abbrev,
-               at.league as away_league,
-               wt.abbrev as winner_abbrev
-        FROM games g
-        JOIN teams ht ON g.home_team_id = ht.id
-        JOIN teams at ON g.away_team_id = at.id
-        LEFT JOIN teams wt ON g.winner_id = wt.id
-    """
-    where_clauses = []
-    params: list = []
+    def _valid_iso(d):
+        try:
+            _dt.date.fromisoformat(d)
+            return True
+        except (ValueError, TypeError):
+            return False
 
+    JOIN = ("FROM games g "
+            "JOIN teams ht ON g.home_team_id = ht.id "
+            "JOIN teams at ON g.away_team_id = at.id")
+
+    # Shared filter predicate, reused by every query below.
+    base_w: list = []
+    base_p: list = []
     if team_id:
-        where_clauses.append("(g.home_team_id = ? OR g.away_team_id = ?)")
-        params += [team_id, team_id]
+        base_w.append("(g.home_team_id = ? OR g.away_team_id = ?)")
+        base_p += [team_id, team_id]
     # League scope: include a game if either club belongs to the league, so
     # any (rare) interleague game shows under both of its leagues.
     if selected_league != "all":
-        where_clauses.append("(ht.league = ? OR at.league = ?)")
-        params += [selected_league, selected_league]
+        base_w.append("(ht.league = ? OR at.league = ?)")
+        base_p += [selected_league, selected_league]
     if status == "played":
-        where_clauses.append("g.played = 1")
+        base_w.append("g.played = 1")
     elif status == "unplayed":
-        where_clauses.append("g.played = 0")
+        base_w.append("g.played = 0")
 
-    if where_clauses:
-        sql += " WHERE " + " AND ".join(where_clauses)
-    sql += " ORDER BY g.game_date, g.id LIMIT 200"
+    def _where(extra=None, extra_params=()):
+        ws = base_w + ([extra] if extra else [])
+        clause = (" WHERE " + " AND ".join(ws)) if ws else ""
+        return clause, tuple(base_p + list(extra_params))
 
-    games = db.fetchall(sql, tuple(params))
+    # Date bounds (within filters) — bound calendar month navigation.
+    w, p = _where()
+    bounds = db.fetchone(
+        f"SELECT MIN(g.game_date) AS lo, MAX(g.game_date) AS hi {JOIN}{w}", p)
+    date_lo = bounds["lo"] if bounds else None
+    date_hi = bounds["hi"] if bounds else None
+
+    current_date = get_current_sim_date()
+
+    # Which day to show: explicit ?date=, else the current sim date if it has
+    # games under the filters, else the most recent prior day with games,
+    # else the earliest scheduled day.
+    req_date = request.args.get("date")
+    view_date = req_date if (req_date and _valid_iso(req_date)) else None
+    if view_date is None and date_hi:
+        if current_date:
+            w, p = _where("g.game_date = ?", (current_date,))
+            if db.fetchone(f"SELECT 1 {JOIN}{w} LIMIT 1", p):
+                view_date = current_date
+        if view_date is None:
+            anchor = current_date or date_hi
+            w, p = _where("g.game_date <= ?", (anchor,))
+            r = db.fetchone(f"SELECT MAX(g.game_date) AS d {JOIN}{w}", p)
+            view_date = (r["d"] if r and r["d"] else None) or date_lo
+
+    # Games for the selected day.
+    games: list = []
+    if view_date:
+        w, p = _where("g.game_date = ?", (view_date,))
+        games = [dict(g) for g in db.fetchall(
+            f"""SELECT g.*,
+                       ht.name AS home_name, ht.abbrev AS home_abbrev, ht.league AS home_league,
+                       ht.park_name AS home_park_name, ht.city AS home_city,
+                       at.name AS away_name, at.abbrev AS away_abbrev, at.league AS away_league,
+                       wt.abbrev AS winner_abbrev
+                {JOIN} LEFT JOIN teams wt ON g.winner_id = wt.id{w}
+                ORDER BY g.start_minute, g.id""", p)]
+
+    # Power-play telemetry: a team "used" power play in a game when it deployed
+    # the nickel (pp_deploys > 0). Tag each side so the day cards can flag it.
+    if games:
+        ids = [g["id"] for g in games]
+        qm = ",".join("?" * len(ids))
+        dep = {(r["game_id"], r["team_id"]) for r in db.fetchall(
+            f"""SELECT DISTINCT game_id, team_id FROM game_power_play_stats
+                WHERE pp_deploys > 0 AND game_id IN ({qm})""", tuple(ids))}
+        for g in games:
+            g["pp_home"] = (g["id"], g["home_team_id"]) in dep
+            g["pp_away"] = (g["id"], g["away_team_id"]) in dep
+
+        # Starting-pitcher matchup (ESPN/MLB "Flaherty vs Matz"). O27 picks the
+        # starter live by freshness rather than a committed rotation, so there's
+        # no reliable "probable" for an unplayed game — but every played game
+        # records its actual game-starter (is_starter, phase 0). Populate those.
+        sp = {}
+        for r in db.fetchall(
+            f"""SELECT ps.game_id, ps.team_id, p.name
+                FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
+                WHERE ps.is_starter = 1 AND ps.phase = 0 AND ps.game_id IN ({qm})""",
+            tuple(ids)):
+            sp[(r["game_id"], r["team_id"])] = r["name"]
+        for g in games:
+            g["away_sp"] = sp.get((g["id"], g["away_team_id"]))
+            g["home_sp"] = sp.get((g["id"], g["home_team_id"]))
+
+        # Unplayed games get a *projected* starter — the arm the sim would pick
+        # given today's rest/roster (can change once intervening games run, like
+        # an MLB probable). The pick only depends on (team, view_date), so
+        # compute once per team and fan out across that team's games.
+        unplayed_teams = set()
+        for g in games:
+            if not g["played"]:
+                unplayed_teams.add(g["away_team_id"])
+                unplayed_teams.add(g["home_team_id"])
+        proj = {}
+        for tid in unplayed_teams:
+            s = projected_starter(tid, view_date)
+            if s:
+                proj[tid] = s["name"]
+        for g in games:
+            if not g["played"]:
+                g["away_sp"] = proj.get(g["away_team_id"])
+                g["home_sp"] = proj.get(g["home_team_id"])
+                g["sp_projected"] = True
+
+    # Day strip (ESPN/NHL model): a rolling 7-day window centered on the
+    # selected day — view_date-3 … view_date+3, each cell carrying its game
+    # count. The ‹ › arrows step the window a week at a time; a date picker
+    # and a "Today" jump (the sim clock) cover longer leaps.
+    strip = []
+    prev_week = next_week = None
+    if view_date:
+        vd = _dt.date.fromisoformat(view_date)
+        strip_dates = [vd + _dt.timedelta(days=off) for off in range(-3, 4)]
+        s_lo, s_hi = strip_dates[0].isoformat(), strip_dates[-1].isoformat()
+        w, p = _where("g.game_date BETWEEN ? AND ?", (s_lo, s_hi))
+        strip_counts = {r["d"]: r["n"] for r in db.fetchall(
+            f"SELECT g.game_date AS d, COUNT(*) AS n {JOIN}{w} GROUP BY g.game_date", p)}
+        for d in strip_dates:
+            iso = d.isoformat()
+            strip.append({
+                "date": iso,
+                "dow": d.strftime("%a").upper(),
+                "md": d.strftime("%-m/%-d"),
+                "count": strip_counts.get(iso, 0),
+                "is_selected": iso == view_date,
+                "is_current": iso == current_date,
+            })
+        prev_week = (vd - _dt.timedelta(days=7)).isoformat()
+        next_week = (vd + _dt.timedelta(days=7)).isoformat()
+
+    view_date_label = (
+        _dt.date.fromisoformat(view_date).strftime("%A, %B %-d, %Y")
+        if view_date else None)
+
     # Team chooser is scoped to the selected league and grouped by league so a
     # multi-league universe stays navigable.
     if selected_league != "all":
@@ -2956,12 +3077,20 @@ def schedule():
         selected_team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
 
     return _serve("schedule.html",
-                           games=games,
-                           teams=teams,
-                           selected_team=selected_team,
-                           status=status,
-                           all_leagues=all_leagues,
-                           selected_league=selected_league)
+                  games=games,
+                  teams=teams,
+                  selected_team=selected_team,
+                  status=status,
+                  all_leagues=all_leagues,
+                  selected_league=selected_league,
+                  view_date=view_date,
+                  view_date_label=view_date_label,
+                  current_date=current_date,
+                  strip=strip,
+                  prev_week=prev_week,
+                  next_week=next_week,
+                  date_lo=date_lo,
+                  date_hi=date_hi)
 
 
 @app.route("/game/<int:game_id>")
