@@ -2996,6 +2996,21 @@ def schedule():
             g["pp_home"] = (g["id"], g["home_team_id"]) in dep
             g["pp_away"] = (g["id"], g["away_team_id"]) in dep
 
+        # Starting-pitcher matchup (ESPN/MLB "Flaherty vs Matz"). O27 picks the
+        # starter live by freshness rather than a committed rotation, so there's
+        # no reliable "probable" for an unplayed game — but every played game
+        # records its actual game-starter (is_starter, phase 0). Populate those.
+        sp = {}
+        for r in db.fetchall(
+            f"""SELECT ps.game_id, ps.team_id, p.name
+                FROM game_pitcher_stats ps JOIN players p ON ps.player_id = p.id
+                WHERE ps.is_starter = 1 AND ps.phase = 0 AND ps.game_id IN ({qm})""",
+            tuple(ids)):
+            sp[(r["game_id"], r["team_id"])] = r["name"]
+        for g in games:
+            g["away_sp"] = sp.get((g["id"], g["away_team_id"]))
+            g["home_sp"] = sp.get((g["id"], g["home_team_id"]))
+
     # Day strip (ESPN/NHL model): a rolling 7-day window centered on the
     # selected day — view_date-3 … view_date+3, each cell carrying its game
     # count. The ‹ › arrows step the window a week at a time; a date picker

@@ -131,6 +131,15 @@
       <span class="gc-score">{% if g.played %}{{ g.home_score }}{% else %}<span class="text-secondary">–</span>{% endif %}</span>
     </div>
 
+    {% if g.away_sp or g.home_sp %}
+    <div class="gc-sp text-secondary" title="Starting pitchers — {{ g.away_abbrev }}: {{ g.away_sp or 'n/a' }} · {{ g.home_abbrev }}: {{ g.home_sp or 'n/a' }}">
+      <span class="gc-sp-ico">SP</span>
+      <span class="gc-sp-name">{{ (g.away_sp.split()[-1] if g.away_sp else 'TBD') }}</span>
+      <span class="gc-sp-vs">vs</span>
+      <span class="gc-sp-name">{{ (g.home_sp.split()[-1] if g.home_sp else 'TBD') }}</span>
+    </div>
+    {% endif %}
+
     <div class="gc-foot">
       <span class="gc-venue text-secondary">{{ g.home_park_name or g.home_name }}{% if g.home_city %} · {{ g.home_city }}{% endif %}</span>
       {% if g.played %}
@@ -218,6 +227,10 @@
     font-size: .56rem; font-weight: 700; letter-spacing: .03em; color: var(--fill-info);
     border: 1px solid var(--fill-info); border-radius: 2px; padding: 0 3px; line-height: 1.3;
   }
+  .gc-sp { display: flex; align-items: baseline; gap: 5px; margin-top: 5px; font-size: .76rem; }
+  .gc-sp-ico { font-size: .58rem; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 2px; padding: 0 3px; }
+  .gc-sp-name { color: var(--text); font-weight: 600; }
+  .gc-sp-vs { font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
   .gc-foot { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-soft); display: flex; align-items: center; gap: 8px; }
   .gc-venue { font-size: .72rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gc-link { font-size: .8rem; font-weight: 600; white-space: nowrap; }
