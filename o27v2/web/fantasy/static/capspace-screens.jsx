@@ -1,7 +1,7 @@
 /* ============================================================
    SLATE — screens part 1: Hub, Lobby, Entries, Player drawer
    ============================================================ */
-const { useState } = React;
+const { useState, useEffect } = React;
 
 /* ---------- HUB / GAME LIBRARY ---------- */
 function HubScreen({ onNav, onOpenFormat }) {
@@ -124,53 +124,59 @@ function LobbyScreen({ onNav, onEnterContest }) {
   );
 }
 
-/* ---------- MY ENTRIES ---------- */
-function EntriesScreen({ onNav }) {
+/* ---------- MY ENTRIES (real data) ---------- */
+function EntriesScreen({ onNav, onOpenContest }) {
   const S = window.SLATE;
   const [tab, setTab] = useState('live');
-  const live = [
-    { contest: 'The Crore Room', rank: 6, of: 14820, pts: 164.5, win: 42*S.LAKH, color: 'var(--c-coral)', badge: 'Cr', prog: 0.55 },
-    { contest: 'Tidewater Nightcap', rank: 212, of: 4210, pts: 138.0, win: 0, color: 'var(--c-teal)', badge: 'TN', prog: 0.55 },
-    { contest: 'Rookie Reef (Free)', rank: 30, of: 6400, pts: 151.2, win: 12000, color: 'var(--c-green)', badge: 'F', prog: 0.55 },
-  ];
-  const past = [
-    { contest: 'Double-Up Dockside', rank: 410, of: 1880, pts: 171.8, win: 4*S.LAKH, color: 'var(--c-blue)', badge: '2x', won: true },
-    { contest: 'The Crore Room', rank: 9210, of: 14820, pts: 122.0, win: 0, color: 'var(--c-coral)', badge: 'Cr', won: false },
-    { contest: 'Single Stay Showdown', rank: 1, of: 980, pts: 188.4, win: 8*S.LAKH, color: 'var(--c-violet)', badge: 'SS', won: true },
-  ];
-  const rows = tab === 'past' ? past : live;
+  const [entries, setEntries] = useState(null);
+
+  useEffect(() => {
+    fetch('/fantasy/api/entries').then(r => (r.ok ? r.json() : [])).then(setEntries).catch(() => setEntries([]));
+  }, []);
+
+  const all = entries || [];
+  const bucket = e => (e.games_total > 0 && e.games_done >= e.games_total) ? 'past'
+    : (e.games_done > 0 ? 'live' : 'upcoming');
+  const live = all.filter(e => bucket(e) === 'live');
+  const upcoming = all.filter(e => bucket(e) === 'upcoming');
+  const past = all.filter(e => bucket(e) === 'past');
+  const rows = tab === 'past' ? past : tab === 'upcoming' ? upcoming : live;
+  const prog = e => (e.games_total ? e.games_done / e.games_total : 0);
+
   return (
     <>
       <TopBar title="My Entries" sub="Track your lineups" back onBack={() => onNav('hub')} />
       <div className="app__scroll">
         <div className="page page--narrow">
           <div className="slate-tabs">
-            <Chip active={tab === 'live'} onClick={() => setTab('live')}>Live · 3</Chip>
-            <Chip active={tab === 'upcoming'} onClick={() => setTab('upcoming')}>Upcoming · 0</Chip>
-            <Chip active={tab === 'past'} onClick={() => setTab('past')}>Past</Chip>
+            <Chip active={tab === 'live'} onClick={() => setTab('live')}>Live · {live.length}</Chip>
+            <Chip active={tab === 'upcoming'} onClick={() => setTab('upcoming')}>Upcoming · {upcoming.length}</Chip>
+            <Chip active={tab === 'past'} onClick={() => setTab('past')}>Past · {past.length}</Chip>
           </div>
-          {tab === 'upcoming' ? (
+          {entries === null ? (
+            <div className="card card--pad center" style={{ padding: '48px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>Loading your entries…</div></div>
+          ) : rows.length === 0 ? (
             <div className="card card--pad center" style={{ padding: '48px 20px' }}>
-              <div className="dim" style={{ fontWeight: 600 }}>No upcoming entries.</div>
+              <div className="dim" style={{ fontWeight: 600 }}>No {tab} entries.</div>
               <Btn variant="soft" className="mt-16" onClick={() => onNav('lobby')}>Find a contest</Btn>
             </div>
           ) : (
             <div className="col" style={{ gap: 12 }}>
               {rows.map((e, i) => (
-                <div key={i} className="contest" onClick={() => tab === 'live' && onNav('live')} style={{ cursor: tab === 'live' ? 'pointer' : 'default' }}>
+                <div key={i} className="contest" onClick={() => onOpenContest && onOpenContest(e.contest_id)} style={{ cursor: 'pointer' }}>
                   <span className="contest__badge" style={{ background: e.color }}>{e.badge}</span>
                   <div style={{ minWidth: 0 }}>
                     <div className="contest__name">{e.contest}</div>
                     <div className="contest__meta">
-                      <span>Rank <b className="num">{e.rank.toLocaleString('en-IN')}</b>/{e.of.toLocaleString('en-IN')}</span>
-                      <span><b className="num">{e.pts}</b> pts</span>
-                      {tab === 'past' && <span style={{ color: e.won ? 'var(--live)' : 'var(--ink-3)', fontWeight: 700 }}>{e.won ? 'Cashed' : 'Missed'}</span>}
+                      {e.rank != null && <span>Rank <b className="num">{e.rank.toLocaleString('en-IN')}</b>/{(e.of || 0).toLocaleString('en-IN')}</span>}
+                      <span><b className="num">{e.pts.toFixed(1)}</b> pts</span>
+                      <span style={{ color: e.live ? 'var(--live)' : 'var(--ink-3)', fontWeight: 700 }}>{e.live ? 'Live' : 'Final'}</span>
                     </div>
-                    {tab === 'live' && <div className="fill"><i style={{ width: (e.prog * 100) + '%' }} /></div>}
+                    <div className="fill"><i style={{ width: (prog(e) * 100) + '%' }} /></div>
                   </div>
                   <div className="contest__prize">
-                    <div className="amt" style={{ color: !e.win ? 'var(--ink-3)' : 'var(--live)' }}>{e.win ? S.money(e.win) : '—'}</div>
-                    <div className="lbl">{tab === 'past' ? 'Payout' : 'Winning'}</div>
+                    <div className="amt num">{e.games_done}/{e.games_total}</div>
+                    <div className="lbl">games</div>
                   </div>
                 </div>
               ))}

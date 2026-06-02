@@ -1,7 +1,7 @@
 /* ============================================================
    SLATE — screens part 2: Lineup Builder, Live scoring, Player drawer
    ============================================================ */
-const { useState } = React;
+const { useState, useEffect } = React;
 
 /* color for a 20-80 rating */
 function ratingColor(v) {
@@ -136,28 +136,65 @@ function BuilderScreen({ contest, roster, onAdd, onRemove, onOpenPlayer, onEnter
   );
 }
 
-/* ---------- LIVE SCORING + LEADERBOARD ---------- */
-function LiveScreen({ roster, onNav, onOpenPlayer }) {
+/* ordinal: 1 -> 1st, 2 -> 2nd … */
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n.toLocaleString('en-IN') + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+/* ---------- LIVE SCORING + LEADERBOARD (real data) ---------- */
+function LiveScreen({ roster, contestId, onNav }) {
   const S = window.SLATE;
-  // use built lineup if full, else a realistic demo lineup (1 pilot + 7 hitters)
-  const demoIds = ['p01', 'h01', 'h03', 'h05', 'h07', 'h09', 'h11', 'h15'];
-  const built = Object.values(roster).filter(Boolean);
-  const lineup = built.length === S.SLOTS.length ? built : demoIds.map(id => S.PLAYERS.find(p => p.id === id));
-  // scale live points so the lineup total matches YOUR leaderboard row (keeps the board consistent)
-  const meRow = S.LEADERBOARD.find(r => r.me);
-  const TARGET = meRow ? meRow.pts : 164.5;
-  const rawSum = lineup.reduce((s, p) => s + p.proj, 0) || 1;
-  const scored = lineup.map((p, i) => ({
-    ...p,
-    liveP: +(p.proj / rawSum * TARGET).toFixed(1),
-    done: i < 6, // first 6 final, last 2 still live
-  }));
-  const total = scored.reduce((s, p) => s + p.liveP, 0).toFixed(1);
-  const gamesDone = 2, gamesTotal = 4;
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (contestId == null) { setData(null); return; }
+    setLoading(true);
+    fetch('/fantasy/api/contest/' + contestId)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { setData(j); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [contestId]);
+
+  // no entry yet (e.g. tapped Live directly) — prompt to play
+  if (contestId == null) {
+    return (
+      <>
+        <TopBar title="Live" sub="No live entry yet" back onBack={() => onNav('hub')} />
+        <div className="app__scroll"><div className="page">
+          <div className="card card--pad center" style={{ padding: '48px 20px' }}>
+            <div className="dim" style={{ fontWeight: 600 }}>You don't have a live lineup.</div>
+            <Btn variant="brand" className="mt-16" onClick={() => onNav('lobby')}>Find a contest <Icon name="chev" size={18} /></Btn>
+          </div>
+        </div></div>
+      </>
+    );
+  }
+  if (loading || !data) {
+    return (
+      <>
+        <TopBar title="Live" sub="Scoring…" back onBack={() => onNav('hub')} />
+        <div className="app__scroll"><div className="page">
+          <div className="card card--pad center" style={{ padding: '48px 20px' }}>
+            <div className="dim" style={{ fontWeight: 600 }}>Scoring the board…</div>
+          </div>
+        </div></div>
+      </>
+    );
+  }
+
+  const c = data.contest || {};
+  const lineup = data.lineup || [];
+  const board = data.board || [];
+  const gamesDone = data.games_done, gamesTotal = data.games_total;
+  const meRow = board.find(b => b.me) || {};
+  const winning = meRow.win || 0;
+  const topPct = data.percentile != null ? Math.max(0, 100 - data.percentile) : null;
 
   return (
     <>
-      <TopBar title="The Crore Room" sub="Live · 2 of 4 games final" back onBack={() => onNav('hub')} right={
+      <TopBar title={c.name || 'Live'} sub={`Live · ${gamesDone} of ${gamesTotal} games final`} back onBack={() => onNav('hub')} right={
         <span className="simclock hide-mobile"><span className="dot" /> Live</span>
       } />
       <div className="app__scroll">
@@ -166,15 +203,19 @@ function LiveScreen({ roster, onNav, onOpenPlayer }) {
           <div className="live-head">
             <div className="live-head__rank">
               <div><div className="eyebrow" style={{ color: 'rgba(255,255,255,.6)' }}>Your rank</div>
-              <div className="row" style={{ alignItems: 'baseline', gap: 10 }}><span className="pos">6th</span><span className="of">of 14,820</span></div></div>
+              <div className="row" style={{ alignItems: 'baseline', gap: 10 }}>
+                <span className="pos">{data.your_rank ? ordinal(data.your_rank) : '—'}</span>
+                <span className="of">of {(data.field_total || 0).toLocaleString('en-IN')}</span></div></div>
               <div className="live-head__pts">
                 <div className="eyebrow" style={{ color: 'rgba(255,255,255,.6)' }}>Live points</div>
-                <div className="n">{total}</div>
+                <div className="n">{data.your_points != null ? data.your_points.toFixed(1) : '0.0'}</div>
               </div>
             </div>
             <div className="row" style={{ justifyContent: 'space-between', marginTop: 14, gap: 8 }}>
-              <span style={{ color: 'var(--live)', fontWeight: 700, fontSize: '.85rem', whiteSpace: 'nowrap' }}>▲ up 3 · winning {S.money(42*S.LAKH)}</span>
-              <span style={{ color: 'rgba(255,255,255,.6)', fontWeight: 600, fontSize: '.8rem', whiteSpace: 'nowrap' }}>Cash line 122.0</span>
+              <span style={{ color: winning > 0 ? 'var(--live)' : 'rgba(255,255,255,.7)', fontWeight: 700, fontSize: '.85rem', whiteSpace: 'nowrap' }}>
+                {topPct != null ? 'Top ' + topPct.toFixed(0) + '%' : '—'}{winning > 0 ? ' · winning ' + S.money(winning) : ''}
+              </span>
+              <span style={{ color: 'rgba(255,255,255,.6)', fontWeight: 600, fontSize: '.8rem', whiteSpace: 'nowrap' }}>Par {data.par.toFixed(1)} · cash {data.cash_line.toFixed(1)}</span>
             </div>
             <div className="live-bars">
               {Array.from({ length: gamesTotal }).map((_, i) => <i key={i} className={i < gamesDone ? 'done' : ''} />)}
@@ -189,16 +230,17 @@ function LiveScreen({ roster, onNav, onOpenPlayer }) {
                 <div className="colh">PTS</div>
                 <div className="colh" style={{ width: 60 }}>STATUS</div>
               </div>
-              {scored.map((p, i) => (
+              {lineup.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No lineup on this entry.</div>}
+              {lineup.map((p, i) => (
                 <div key={i} className="score-row">
-                  <div className="prow__id" onClick={() => onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
-                    <PlayerMark p={p} size={38} />
+                  <div className="prow__id">
+                    <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} size={38} />
                     <div style={{ minWidth: 0 }}>
                       <div className="prow__name">{p.name}</div>
                       <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp}</div>
                     </div>
                   </div>
-                  <div className="score-row__pts" style={{ color: p.done ? 'var(--ink)' : 'var(--ink-3)' }}>{p.liveP}</div>
+                  <div className="score-row__pts" style={{ color: p.done ? 'var(--ink)' : 'var(--ink-3)' }}>{p.pts.toFixed(1)}</div>
                   <div style={{ width: 60, textAlign: 'right' }}>
                     {p.done ? <Tag kind="ink">Final</Tag> : <Tag kind="live"><span className="pulse" /> Live</Tag>}
                   </div>
@@ -212,19 +254,18 @@ function LiveScreen({ roster, onNav, onOpenPlayer }) {
                 <div className="prow__sub" style={{ fontWeight: 800 }}>LEADERBOARD</div>
                 <div className="colh" style={{ width: 60 }}>PTS</div>
               </div>
-              {S.LEADERBOARD.map(r => (
-                <div key={r.rank} className={'lb-row' + (r.me ? ' lb-row--me' : '')}>
-                  <div className={'lb-rank' + (r.rank <= 3 ? ' top' : '')}>{r.rank}</div>
+              {board.map((r, i) => (
+                <div key={i} className={'lb-row' + (r.me ? ' lb-row--me' : '')}>
+                  <div className={'lb-rank' + (r.rank <= 3 ? ' top' : '')}>{r.rank.toLocaleString('en-IN')}</div>
                   <div className="lb-user">
-                    <span className="avatar" style={{ width: 30, height: 30, fontSize: '.8rem' }}>{r.av}</span>
+                    <span className="avatar" style={{ width: 30, height: 30, fontSize: '.8rem' }}>{(r.user[0] || '?').toUpperCase()}</span>
                     <b style={{ fontSize: '.9rem' }}>{r.user}</b>
                     {r.me && <Tag kind="new">You</Tag>}
                   </div>
-                  <div className="lb-win hide-narrow">{S.money(r.win)}</div>
-                  <div className="lb-pts">{r.pts}</div>
+                  <div className="lb-win hide-narrow">{r.win ? S.money(r.win) : '—'}</div>
+                  <div className="lb-pts">{r.pts.toFixed(1)}</div>
                 </div>
               ))}
-              <div className="center" style={{ padding: 12 }}><button className="btn btn--ghost btn--sm">View full board</button></div>
             </div>
           </div>
         </div>

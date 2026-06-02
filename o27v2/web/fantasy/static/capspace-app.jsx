@@ -16,6 +16,7 @@ function App() {
   const [roster, setRoster] = useState(EMPTY_ROSTER);
   const [drawer, setDrawer] = useState({ open: false, player: null });
   const [teaser, setTeaser] = useState(null);
+  const [liveContestId, setLiveContestId] = useState(null);
   const [cur, setCur] = useState(() => {
     // USD is CapSpace's default — only the engine's stored preference overrides it.
     try { const v = localStorage.getItem('o27.currencyDisplay'); return VALID_MODES.includes(v) ? v : 'usd'; }
@@ -55,6 +56,22 @@ function App() {
   function enterContest(c) { setContest(c); nav('builder'); }
   function openFormat(f) { setTeaser(f); }
 
+  // Submit the built lineup to the live save, then jump to the live board.
+  // Falls back to a contest-less live view if there's no real contest id
+  // (e.g. the bundled mock data has no server to post to).
+  function submitLineup() {
+    const ids = S.SLOTS.map(s => roster[s.key]).filter(Boolean).map(p => p.id);
+    const cid = contest && typeof contest.id === 'number' ? contest.id : null;
+    if (cid == null) { setLiveContestId(null); nav('live'); return; }
+    fetch('/fantasy/api/enter', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contest_id: cid, player_ids: ids }),
+    }).then(r => r.json()).then(j => {
+      if (j && j.ok) { setLiveContestId(cid); nav('live'); }
+      else { window.alert((j && j.error) || 'Could not enter this lineup.'); }
+    }).catch(() => { setLiveContestId(cid); nav('live'); });
+  }
+
   const inLineup = drawer.player && Object.values(roster).some(x => x && x.id === drawer.player.id);
 
   return (
@@ -62,9 +79,9 @@ function App() {
     <AppShell view={view} onNav={nav} onEnter={() => contest ? nav('builder') : nav('lobby')}>
       {view === 'hub' && <HubScreen onNav={nav} onOpenFormat={openFormat} />}
       {view === 'lobby' && <LobbyScreen onNav={nav} onEnterContest={enterContest} />}
-      {view === 'builder' && <BuilderScreen contest={contest} roster={roster} onAdd={addPlayer} onRemove={removeSlot} onOpenPlayer={openPlayer} onEnter={() => nav('live')} onNav={nav} />}
-      {view === 'live' && <LiveScreen roster={roster} onNav={nav} onOpenPlayer={openPlayer} />}
-      {view === 'entries' && <EntriesScreen onNav={nav} />}
+      {view === 'builder' && <BuilderScreen contest={contest} roster={roster} onAdd={addPlayer} onRemove={removeSlot} onOpenPlayer={openPlayer} onEnter={submitLineup} onNav={nav} />}
+      {view === 'live' && <LiveScreen roster={roster} contestId={liveContestId} onNav={nav} onOpenPlayer={openPlayer} />}
+      {view === 'entries' && <EntriesScreen onNav={nav} onOpenContest={(cid)=>{ setLiveContestId(cid); nav('live'); }} />}
 
       <PlayerDrawer player={drawer.player} open={drawer.open} onClose={() => setDrawer(d => ({ ...d, open: false }))}
         onAdd={view === 'builder' ? addPlayer : null} inLineup={inLineup} />

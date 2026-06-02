@@ -112,14 +112,40 @@ pilots). Trimmed to a realistic per-position DFS depth (top-N by projection:
   renders 200 through the full app (no import cycle).
 - No-games save → page still 200, injects `null`, JS falls back to mock.
 
+## Contests / leaderboard / live (now real — `contests.py`)
+
+The placeholders are wired to a real **computed-field + par** model (the chosen
+solo-player design — no other humans, no bot-GM drafting):
+
+- **Tables:** `dfs_contests` (generated per slate from a template, small dollar
+  fees/prizes) + `dfs_entries` (the user's persisted lineups). Lazy
+  `CREATE TABLE IF NOT EXISTS`.
+- **Endpoints:** `POST /api/enter` (validates positions + cap, persists),
+  `GET /api/contest/<id>` (the live board), `GET /api/entries`. Contests are
+  also injected into the page so the lobby renders real.
+- **Scoring:** one shared `_LiveContext` per slate so a lineup scores
+  identically everywhere — realized DFS points once a player's team game is
+  **final**, else the projection as the in-progress estimate. Reads persisted
+  `game_*_stats`; never re-sims.
+- **The field:** a deterministic, skill-tiered set of synthetic legal lineups
+  scored by the same rule. The user's standing is scaled from their position
+  in the sample up to the contest's advertised field (thousands), so the board
+  reads "921st of 1,001" against **procedurally generated character handles**
+  (roots × tails × number → thousands of distinct in-world usernames).
+- **Par:** a strong best-possible-lineup benchmark (best per slot, then
+  downgrade least-costly-to-give-up spots under the cap) — the number to chase.
+- **Front-end:** Live and My Entries screens fetch the real endpoints; the
+  builder's Enter posts the lineup. All five JSX files transpile clean (checked
+  via Babel). Verified end-to-end on a partially-simmed slate (8/15 games):
+  enter → live board (rank/par/percentile/cash, per-player Final/Live) →
+  entries, with scores consistent across views.
+
 ## What was *not* done (deliberately deferred)
 
-- **Contests, leaderboard, live scoring** remain the design's placeholders.
-  Making them real needs `dfs_contests` + `dfs_entries` tables, a
-  `POST /fantasy/enter`, and the solo benchmark (a computed "par"/field, or
-  bot GMs reusing the auction AI). This is the natural next PR.
 - Pilot pool surfaces all rostered arms by talent, not just projected
   starters — fine for v1, a candidate refinement.
+- Per-entry rank in My Entries uses the contest's best-entry rank (fine for the
+  typical one-entry case); payouts use a toy curve (no real wallet economy).
 - The seven non-DFS formats (2C/Stay, Walk-Back, Pilot Room, Skipper, Beat
   the Voyage, Hot Hand, Joker Draft) are hub cards with teasers only; each is
   a scoring preset over existing columns when built.

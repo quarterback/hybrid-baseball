@@ -225,8 +225,8 @@
       stat: ['Side-game', 'Quick'] },
   ];
 
-  // ---- DFS contests for the slate --------------------------------------
-  const CONTESTS = [
+  // ---- DFS contests for the slate (real when injected) -----------------
+  const CONTESTS = (DATA && DATA.CONTESTS) || [
     { id: 'c1', name: 'The Crore Room',     color: 'var(--c-coral)',  badge: 'Cr', fee: 5*LAKH, prize: 50*CRORE, entries: 14820, cap: 20000, top: 12*CRORE,  kind: 'GPP' },
     { id: 'c2', name: 'Tidewater Nightcap', color: 'var(--c-teal)',   badge: 'TN', fee: 1*LAKH, prize: 5*CRORE,  entries: 4210,  cap: 6000,  top: 1.2*CRORE, kind: 'GPP' },
     { id: 'c3', name: 'Double-Up Dockside', color: 'var(--c-blue)',   badge: '2x', fee: 2*LAKH, prize: 3.6*CRORE,entries: 1880,  cap: 2000,  top: 4*LAKH,   kind: 'Double Up' },
