@@ -4655,6 +4655,14 @@ def glossary():
     return _serve("glossary.html", sections=GLOSSARY_SECTIONS)
 
 
+@app.route("/help")
+def help_page():
+    """In-app quick-start / orientation guide — the gist of
+    `docs/user-guide.md` so a newcomer handed the live site can grasp what O27
+    is and find their way around. Reached via the ℹ️ button in the topbar."""
+    return _serve("help.html")
+
+
 @app.route("/leaders")
 def leaders():
     # In a multi-league independent universe each league is its own
