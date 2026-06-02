@@ -99,6 +99,111 @@ def _quality_table(team_ids=None) -> dict[str, dict]:
     return out
 
 
+# EV / LA bin edges for the physics-native xwOBA. With physics-first
+# resolution the trajectory DRIVES the outcome, so binning by (exit velocity,
+# launch angle) — Statcast's actual method — is now meaningful, where the
+# quality-bucket version (above) only saw weak/medium/hard.
+_EV_EDGES = (80.0, 90.0, 100.0, 110.0)   # → 5 buckets
+_LA_EDGES = (0.0, 12.0, 24.0, 40.0)      # → 5 buckets
+
+
+def _ev_la_bin_sql() -> tuple[str, str]:
+    ev = ("CASE WHEN exit_velocity < %g THEN 0 WHEN exit_velocity < %g THEN 1 "
+          "WHEN exit_velocity < %g THEN 2 WHEN exit_velocity < %g THEN 3 ELSE 4 END"
+          % _EV_EDGES)
+    la = ("CASE WHEN launch_angle < %g THEN 0 WHEN launch_angle < %g THEN 1 "
+          "WHEN launch_angle < %g THEN 2 WHEN launch_angle < %g THEN 3 ELSE 4 END"
+          % _LA_EDGES)
+    return ev, la
+
+
+def build_xwoba_ev_table(min_pa: int = 162, team_ids=None) -> dict:
+    """Per-batter xwOBA where the expected value of each ball in play is the
+    league-average wOBA for its (EV, LA) bin — the physics-native version of
+    build_xwoba_table. Same return shape, plus per-bin diagnostics."""
+    weights = _woba_weights(team_ids)
+    ev_sql, la_sql = _ev_la_bin_sql()
+
+    rows = db.fetchall(
+        f"""
+        SELECT {ev_sql} AS ev_bin, {la_sql} AS la_bin,
+               batter_id AS player_id, hit_type, was_stay, stay_credited,
+               COUNT(*) AS n
+        FROM game_pa_log
+        WHERE phase = 0 AND exit_velocity IS NOT NULL"""
+        + _team_in(team_ids, "team_id")
+        + """
+        GROUP BY ev_bin, la_bin, batter_id, hit_type, was_stay, stay_credited
+        """
+    )
+
+    # Pass 1: league xwOBA-per-BIP for each (ev_bin, la_bin).
+    bin_sum: dict[tuple, float] = defaultdict(float)
+    bin_cnt: dict[tuple, int] = defaultdict(int)
+    for r in rows:
+        key = (r["ev_bin"], r["la_bin"])
+        wpts = _bip_woba_points(weights, r["hit_type"], r["was_stay"], r["stay_credited"])
+        bin_sum[key] += wpts * r["n"]
+        bin_cnt[key] += r["n"]
+    bin_xwoba = {k: (bin_sum[k] / bin_cnt[k]) if bin_cnt[k] else 0.0 for k in bin_cnt}
+
+    # Pass 2: per-batter expected + actual points from the same rows.
+    actual_pts: dict[int, float] = defaultdict(float)
+    expected_pts: dict[int, float] = defaultdict(float)
+    for r in rows:
+        pid = r["player_id"]
+        key = (r["ev_bin"], r["la_bin"])
+        actual_pts[pid] += _bip_woba_points(weights, r["hit_type"], r["was_stay"], r["stay_credited"]) * r["n"]
+        expected_pts[pid] += bin_xwoba.get(key, 0.0) * r["n"]
+
+    bat_rows = db.fetchall(
+        """
+        SELECT b.player_id, p.name AS player_name, t.abbrev AS team_abbrev,
+               SUM(b.pa) AS pa, SUM(b.bb) AS bb, SUM(b.hbp) AS hbp
+        FROM game_batter_stats b
+        JOIN players p ON p.id = b.player_id
+        LEFT JOIN teams t ON t.id = b.team_id
+        WHERE b.phase = 0"""
+        + _team_in(team_ids, "b.team_id")
+        + """
+        GROUP BY b.player_id
+        """
+    )
+
+    leaders = []
+    total_actual = total_expected = 0.0
+    total_pa = 0
+    for r in bat_rows:
+        pid = r["player_id"]
+        pa = r["pa"] or 0
+        if pa <= 0:
+            continue
+        bb = r["bb"] or 0
+        hbp = r["hbp"] or 0
+        actual = actual_pts.get(pid, 0.0) + weights["BB"] * bb + weights["HBP"] * hbp
+        expect = expected_pts.get(pid, 0.0) + weights["BB"] * bb + weights["HBP"] * hbp
+        total_actual += actual
+        total_expected += expect
+        total_pa += pa
+        if pa >= min_pa:
+            leaders.append({
+                "player_id":        pid,
+                "player_name":      r["player_name"],
+                "team_abbrev":      r["team_abbrev"] or "",
+                "pa":               pa,
+                "woba":             round(actual / pa, 3),
+                "xwoba":            round(expect / pa, 3),
+                "woba_minus_xwoba": round((actual - expect) / pa, 3),
+            })
+    leaders.sort(key=lambda x: -x["xwoba"])
+    return {
+        "leaders":      leaders,
+        "league_woba":  (total_actual / total_pa) if total_pa else 0.0,
+        "league_xwoba": (total_expected / total_pa) if total_pa else 0.0,
+        "n_bins":       len(bin_cnt),
+    }
+
+
 def build_xwoba_table(min_pa: int = 162, team_ids=None) -> dict:
     """Compute per-batter xwOBA across the active league.
 

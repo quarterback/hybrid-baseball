@@ -6033,8 +6033,10 @@ def _savant_batter_rows(team_ids, min_bip: int) -> list[dict]:
             WHERE b.phase = 0{rate_team_in}
             GROUP BY b.player_id""")
     rate_by = {r["player_id"]: r for r in rate}
-    from o27v2.analytics import build_xwoba_table
-    xt = build_xwoba_table(min_pa=1, team_ids=team_ids)
+    # Physics-native xwOBA: expected value per (EV, LA) bin. Meaningful now that
+    # the trajectory drives the outcome (vs the weak/med/hard quality version).
+    from o27v2.analytics import build_xwoba_ev_table
+    xt = build_xwoba_ev_table(min_pa=1, team_ids=team_ids)
     xwoba_by = {r["player_id"]: r for r in xt["leaders"]}
 
     rows = []
