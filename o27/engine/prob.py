@@ -1254,6 +1254,23 @@ def _avg_outfielder_arm(state: GameState) -> float:
     return sum(arms) / len(arms)
 
 
+def _avg_infield_arm(state: GameState) -> float:
+    """Average `arm` rating across the fielding team's infield (1B/2B/3B/SS).
+
+    The throw-to-first on a grounder is an infield-arm play, so this is the
+    counterweight to batter foot speed on leg-out infield hits. Falls back to
+    0.5 (neutral) when positions aren't stamped, matching _avg_outfielder_arm.
+    """
+    arms = []
+    for p in getattr(state.fielding_team, "lineup", None) or []:
+        gp = (getattr(p, "game_position", "") or getattr(p, "position", "") or "")
+        if any(tag in gp for tag in ("1B", "2B", "3B", "SS")):
+            arms.append(float(getattr(p, "arm", 0.5) or 0.5))
+    if not arms:
+        return 0.5
+    return sum(arms) / len(arms)
+
+
 def _resolve_table(
     rng: random.Random,
     table: list[tuple[str, float]],
@@ -2925,19 +2942,31 @@ class ProbabilisticProvider:
             # mostly already-hit outcomes so the swing is narrower.
             hit_bonus = (0.15 if quality == "weak" else 0.10) * talent_run
             ht = outcome_dict.get("hit_type", "")
+            # Foot speed vs the fielding infield's arm decides the throw to
+            # first on a borderline grounder. It applies ONLY to infield
+            # grounder plays (ground_out ↔ infield_single) — you don't leg out
+            # a fly ball, so fly_out / line_out / extra-base hits are untouched.
+            # EV/LA aren't sampled until later in this flow, so we gate on the
+            # unambiguous categorical grounder hit_types. A burner vs a weak
+            # infield arm legs more out; a plodder vs rocket arms is rung up.
+            leg_out_dev = (batter.speed - _avg_infield_arm(state)) * cfg.INFIELD_HIT_SPEED_SCALE
             is_safety   = ht in ("single", "infield_single", "double", "triple")
             is_clean_out = (ht in ("ground_out", "fly_out", "line_out")
                             and not outcome_dict.get("batter_safe", True)
                             and not outcome_dict.get("caught_fly"))
-            if is_safety and hit_bonus < 0:
-                # Marginal talent can lose a borderline hit.
-                if rng.random() < min(0.6, abs(hit_bonus)):
+            # Speed protects an infield single; a strong infield arm erases it.
+            down_bonus = hit_bonus - (leg_out_dev if ht == "infield_single" else 0.0)
+            if is_safety and down_bonus < 0:
+                # Marginal talent (or a gunned-down slow runner) loses the hit.
+                if rng.random() < min(0.6, abs(down_bonus)):
                     outcome_dict["hit_type"] = "ground_out"
                     outcome_dict["batter_safe"] = False
                     outcome_dict["runner_advances"] = [0, 0, 0]
-            elif is_clean_out and hit_bonus > 0:
-                # Star talent can flip a borderline out into an infield_single.
-                if rng.random() < min(0.6, hit_bonus):
+            elif is_clean_out:
+                # Star talent — or pure foot speed on a grounder — flips a
+                # borderline out into an infield_single.
+                up_bonus = hit_bonus + (leg_out_dev if ht == "ground_out" else 0.0)
+                if up_bonus > 0 and rng.random() < min(0.6, up_bonus):
                     new_type = "infield_single" if quality == "weak" else "single"
                     outcome_dict["hit_type"] = new_type
                     outcome_dict["batter_safe"] = True

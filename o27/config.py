@@ -298,6 +298,15 @@ ADVANCE_1B_ON_1B_OUT: float      = 0.11
 SPEED_ADVANCE_MOD: float         = 0.12
 ARM_ADVANCE_MOD: float           = 0.11
 
+# Infield-hit leg-out: on a borderline grounder, batter foot speed vs the
+# fielding infield's arm decides whether the throw to first beats the runner.
+# Folded into the weak/medium hit-vs-out flex as an additive bonus on GROUND
+# balls only (fly/line plays are unaffected — you don't leg out a fly). Scale
+# is the deviation (speed - infield_arm), so a burner vs a weak-armed infield
+# legs out more infield singles; a plodder vs rocket arms is rung up. Mean-
+# neutral across the league (symmetric in speed and arm). Identity at 0.0.
+INFIELD_HIT_SPEED_SCALE: float   = 0.20
+
 # Extra-base probability: chance += max(0, (speed - 0.5) * RUNNER_EXTRA_SPEED_SCALE)
 
 RUNNER_EXTRA_SPEED_SCALE: float = 0.35
@@ -1467,6 +1476,19 @@ EV_SCORCH_THRU_P:   float = 0.35    # scorched grounder → seeing-eye single
 EV_ATEM_P:          float = 0.18    # scorched liner → lineout (at-'em ball)
 EV_BLOOP_P:         float = 0.28    # soft fly/liner → bloop single
 EV_ROLLER_P:        float = 0.25    # soft grounder hit → routine ground out
+
+# Tier-1 extensions (rules 10-14). Real batted-ball mechanics, still gated on
+# (EV, LA, spray) only. The two hit-count movers are paired: the lazy-fly
+# can-of-corn (hit→out) offsets the legged-out tapper (out→hit). The three
+# slug movers (frozen rope, down-the-line, wall-ball carom) change only the
+# extra-base mix, not hits/BIP. EV cuts come off the live league spread.
+EV_TAPPER_MAX:      float = 62.0    # mph — dribbler the batter can leg out
+EV_FROZEN:          float = 102.0   # mph — line-drive one-hopper to the wall
+EV_LAZYFLY_P:       float = 0.45    # lazy fly (LA 36-48, EV≤88) → caught fly out
+EV_TAPPER_P:        float = 0.40    # dribbler ground_out → infield single
+EV_FROZENROPE_P:    float = 0.18    # frozen-rope single → double
+EV_DOWNLINE_P:      float = 0.30    # single down the line (|spray|≥40) → double
+EV_WALLBALL_P:      float = 0.30    # double off a tall, deep wall → carom triple
 
 # --- Attribute blend weights ----------------------------------------------
 # When folding the new multi-D ratings into the existing probability code,

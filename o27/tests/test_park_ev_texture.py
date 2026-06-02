@@ -107,3 +107,52 @@ def test_mid_ev_ball_unchanged():
     apply_park_effects(_RNG(0.0), od, ev=92.0, la=4.0, spray=0.0,
                        park_dims=NEUTRAL_PARK)
     assert od["hit_type"] == "ground_out"
+
+
+# --- Tier-1 extensions (rules 10-14) -------------------------------------
+
+def test_rule10_can_of_corn():
+    od = _od("double", True)
+    apply_park_effects(_RNG(0.0), od, ev=84.0, la=42.0, spray=0.0,
+                       park_dims=NEUTRAL_PARK)
+    assert od["hit_type"] == "fly_out"
+    assert od["batter_safe"] is False and od["caught_fly"] is True
+
+
+def test_rule11_legged_out_tapper():
+    od = _od("ground_out", False)
+    apply_park_effects(_RNG(0.0), od, ev=58.0, la=3.0, spray=-2.0,
+                       park_dims=NEUTRAL_PARK)
+    assert od["hit_type"] == "infield_single"
+    assert od["batter_safe"] is True
+
+
+def test_rule12_frozen_rope_double():
+    od = _od("single", True)
+    apply_park_effects(_RNG(0.0), od, ev=cfg.EV_FROZEN + 3, la=18.0, spray=5.0,
+                       park_dims=NEUTRAL_PARK)
+    assert od["hit_type"] == "double"
+
+
+def test_rule13_down_the_line_double():
+    od = _od("single", True)
+    apply_park_effects(_RNG(0.0), od, ev=90.0, la=14.0, spray=42.0,
+                       park_dims=NEUTRAL_PARK)
+    assert od["hit_type"] == "double"
+
+
+def test_rule14_wall_ball_carom_triple():
+    deep_tall = {"lf": 410, "lcf": 430, "cf": 440, "rcf": 430, "rf": 410,
+                 "wall_h": 30}
+    od = _od("double", True)
+    apply_park_effects(_RNG(0.0), od, ev=cfg.EV_FROZEN + 5, la=24.0, spray=20.0,
+                       park_dims=deep_tall)
+    assert od["hit_type"] == "triple"
+
+
+def test_tier1_rolls_respect_probability():
+    # A roll above the gate leaves a frozen-rope single a single.
+    od = _od("single", True)
+    apply_park_effects(_RNG(0.99), od, ev=cfg.EV_FROZEN + 3, la=18.0, spray=5.0,
+                       park_dims=NEUTRAL_PARK)
+    assert od["hit_type"] == "single"
