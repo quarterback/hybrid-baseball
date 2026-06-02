@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Savant{% endblock %}
+{% block content %}
+
+<div class="mb-4">
+  <h2 class="mb-1">O27 Savant</h2>
+  <div class="text-secondary small">
+    Statcast-style analytics · exit velocity drives the outcome, so this is real
+    contact-quality signal · {{ n_qualified }} qualified batters
+  </div>
+</div>
+
+{# ---- Search bar: jump to any player's percentile page ---- #}
+<div class="filter-bar mb-4" style="max-width:620px">
+  <label class="form-label" for="savant-search">
+    Find a player <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">— type a name, then Go</span>
+  </label>
+  <div class="d-flex gap-2">
+    <input id="savant-search" type="text" list="savant-search-list"
+           class="form-control" placeholder="e.g. Samson Goldie" autocomplete="off">
+    <button id="savant-go" class="btn btn-primary" type="button">Go</button>
+  </div>
+  <datalist id="savant-search-list">
+    {% for p in players %}
+      <option data-id="{{ p.id }}" value="{{ p.name }}{% if p.team_abbrev %} ({{ p.team_abbrev }}){% endif %}"></option>
+    {% endfor %}
+  </datalist>
+  <div id="savant-search-err" class="form-text text-danger" style="display:none">
+    No matching player — pick a name from the list.
+  </div>
+</div>
+
+<a class="btn btn-sm btn-outline-secondary mb-4"
+   href="{{ url_for('statcast_leaderboard') }}">Full Statcast leaderboard →</a>
+
+<div class="row g-3">
+  {% for lb in leaderboards %}
+  <div class="col-12 col-md-6 col-lg-4">
+    <div class="card h-100">
+      <div class="card-header py-2 fw-semibold">{{ lb.title }}</div>
+      <ul class="list-group list-group-flush">
+        {% for r in lb.rows %}
+        <li class="list-group-item d-flex justify-content-between align-items-center py-1">
+          <span>
+            <span class="text-secondary me-1">{{ loop.index }}.</span>
+            <a href="{{ url_for('player_savant', player_id=r.player_id) }}">{{ r.player_name }}</a>
+            <span class="text-secondary small">{{ r.team_abbrev }}</span>
+          </span>
+          <span class="fw-semibold" style="font-variant-numeric:tabular-nums">{{ r.display }}</span>
+        </li>
+        {% else %}
+        <li class="list-group-item text-secondary small">No qualified players yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+(function () {
+  const input = document.getElementById('savant-search');
+  const list  = document.getElementById('savant-search-list');
+  const err   = document.getElementById('savant-search-err');
+  function go() {
+    const v = (input.value || '').trim();
+    let id = null;
+    for (const o of list.querySelectorAll('option')) {
+      if (o.value === v) { id = o.getAttribute('data-id'); break; }
+    }
+    if (!id) {  // also accept a bare name match
+      for (const o of list.querySelectorAll('option')) {
+        if (o.value.toLowerCase().startsWith(v.toLowerCase()) && v.length) {
+          id = o.getAttribute('data-id'); break;
+        }
+      }
+    }
+    if (id) { window.location.href = '/player/' + id + '/savant'; }
+    else { err.style.display = 'block'; }
+  }
+  document.getElementById('savant-go').addEventListener('click', go);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+})();
+</script>
+
+{% endblock %}

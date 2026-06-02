@@ -6226,6 +6226,54 @@ def player_savant(player_id: int):
     )
 
 
+@app.route("/savant")
+def savant_home():
+    """Savant landing — a player search bar plus EV/contact leader snapshots."""
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    team_ids        = _league_team_ids(selected_league)
+    _team_csv       = ",".join(str(i) for i in team_ids) if team_ids else ""
+    _gp_where       = f" AND home_team_id IN ({_team_csv})" if _team_csv else ""
+    games_played = db.fetchone(
+        f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
+    min_bip = max(15, games_played // 30)
+
+    bat_rows = _savant_batter_rows(team_ids, min_bip)
+    pit_rows = _savant_pitcher_rows(team_ids, min_bip)
+
+    def _top(rows, key, reverse, n=5):
+        vals = [r for r in rows if r.get(key) is not None]
+        vals.sort(key=lambda r: r[key], reverse=not reverse)
+        return [{"player_id": r["player_id"], "player_name": r.get("player_name"),
+                 "team_abbrev": r.get("team_abbrev"),
+                 "display": _savant_format(r[key], dict((k, f) for k, _l, f, _r
+                            in (_SAVANT_BATTER_METRICS + _SAVANT_PITCHER_METRICS)).get(key, ""))}
+                for r in vals[:n]]
+
+    leaderboards = [
+        {"title": "xwOBA",          "rows": _top(bat_rows, "xwoba", False)},
+        {"title": "Avg Exit Velo",  "rows": _top(bat_rows, "avg_ev", False)},
+        {"title": "Barrel %",       "rows": _top(bat_rows, "barrel", False)},
+        {"title": "Lowest EV Against", "rows": _top(pit_rows, "avg_ev_against", True)},
+        {"title": "Strikeout % (P)", "rows": _top(pit_rows, "k_pct", False)},
+    ]
+
+    # Player list for the search datalist (scoped to the league when filtered).
+    p_where = f" WHERE p.team_id IN ({_team_csv})" if _team_csv else ""
+    players = db.fetchall(
+        f"""SELECT p.id, p.name, t.abbrev AS team_abbrev
+            FROM players p LEFT JOIN teams t ON t.id = p.team_id{p_where}
+            ORDER BY p.name""")
+
+    return _serve(
+        "savant_home.html",
+        leaderboards=leaderboards,
+        players=players,
+        n_qualified=len(bat_rows),
+        leagues=leagues, selected_league=selected_league,
+    )
+
+
 @app.route("/leaderboard/statcast")
 def statcast_leaderboard():
     """Statcast-style batted-ball leaderboards (Barrel%, Hard-Hit%, EV, ...),
