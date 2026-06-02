@@ -8144,6 +8144,54 @@ def new_league_get():
                            park_options=_universe_park_options())
 
 
+def _create_and_seed_save(save_name, meta_cfg_id, rng_seed, *, config_id, config):
+    """Register a new save and seed its league + schedule, rolling back on any
+    failure.
+
+    Seeding a large league/universe can fail deep inside seed_league /
+    seed_schedule (e.g. the finite team-definition pool can't supply enough
+    teams for an oversized universe, a FOREIGN KEY constraint, an out-of-memory
+    on a huge schedule). Those used to bubble up as a raw 500 AND leave the
+    freshly-created (but empty/partial) save active, so the dashboard was
+    broken too. This wraps the whole create-then-seed sequence: on failure it
+    deletes the half-built save and lets delete_save() repoint the active save
+    back to the previously-active one, then returns the error message for the
+    caller to flash. Returns (ok: bool, error_message: str | None).
+    """
+    from o27v2 import saves as _saves
+    from o27v2.league import seed_league
+    from o27v2.schedule import seed_schedule
+    from o27v2.season_archive import set_active_league_meta
+
+    prev_active = _saves.get_active_id()
+    new_id = _saves.new_save(save_name, meta_cfg_id, rng_seed)
+    try:
+        db.init_db()
+        seed_league(rng_seed=rng_seed, config_id=config_id, config=config)
+        seed_schedule(rng_seed=rng_seed, config_id=config_id, config=config)
+        set_active_league_meta(rng_seed, meta_cfg_id)
+        return True, None
+    except Exception as e:
+        app.logger.exception("league seed failed for save %s: %s", new_id, e)
+        # Drop the half-built save. delete_save() automatically repoints the
+        # active save to the most-recent remaining one (the previous league),
+        # so the user lands back on a working save instead of a broken one.
+        try:
+            _saves.delete_save(new_id)
+        except ValueError:
+            # delete_save() refuses to remove the only save (first-ever
+            # league). Nothing to fall back to — leave the empty save so the
+            # user can retry with a smaller config from the dashboard.
+            pass
+        # Belt-and-suspenders: if we somehow lost the active pointer, restore it.
+        if prev_active and _saves.get_active_id() is None:
+            try:
+                _saves.set_active(prev_active)
+            except KeyError:
+                pass
+        return False, str(e)
+
+
 @app.route("/new-league", methods=["POST"])
 def new_league_post():
     from o27v2.league import seed_league, build_custom_config
@@ -8218,15 +8266,14 @@ def new_league_post():
     from o27v2 import saves as _saves
     league_name = (request.form.get("league_name") or "").strip() \
         or f"Save {len(_saves.list_saves()) + 1}"
-    _saves.new_save(league_name, meta_cfg_id, rng_seed)
-    db.init_db()
-    seed_league(rng_seed=rng_seed,
-                config_id=meta_cfg_id if custom_cfg is None else "custom",
-                config=custom_cfg)
-    seed_schedule(rng_seed=rng_seed,
-                  config_id=meta_cfg_id if custom_cfg is None else "custom",
-                  config=custom_cfg)
-    set_active_league_meta(rng_seed, meta_cfg_id)
+    ok, err = _create_and_seed_save(
+        league_name, meta_cfg_id, rng_seed,
+        config_id=(meta_cfg_id if custom_cfg is None else "custom"),
+        config=custom_cfg,
+    )
+    if not ok:
+        flash(f"Could not create the league: {err}", "error")
+        return redirect(url_for("new_league_get"))
 
     # Power Play (optional rule) — opt-in at league creation via the checkbox
     # on new_league.html. Stamp it onto every team so sim.py can read the
@@ -8515,13 +8562,13 @@ def universe_new_post():
 
     # Create a new save and seed the universe (mirrors /new-league).
     rng_seed = int(request.form.get("rng_seed", 42) or 42)
-    from o27v2 import saves as _saves
     save_name = (request.form.get("league_name") or "").strip() or (cfg["label"])
-    _saves.new_save(save_name, uid, rng_seed)
-    db.init_db()
-    seed_league(rng_seed=rng_seed, config_id=uid)
-    seed_schedule(rng_seed=rng_seed, config_id=uid)
-    set_active_league_meta(rng_seed, uid)
+    ok, err = _create_and_seed_save(
+        save_name, uid, rng_seed, config_id=uid, config=None,
+    )
+    if not ok:
+        flash(f"Could not build the universe: {err}", "error")
+        return redirect(url_for("universe_new_get"))
     # Power Play (per-league) — stamp only the teams of leagues that opted in.
     # teams.league holds the league NAME verbatim (build_universe_config keeps
     # it unchanged), so the name match is exact.
