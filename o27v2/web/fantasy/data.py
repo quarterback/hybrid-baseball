@@ -10,8 +10,9 @@ designed placeholders baked into the JS.
 
 Mapping summary
 ---------------
-* salary   ← ``valuation.estimate_player_value`` (persisted ƒ salary, else
-             derived from trade value)
+* salary   ← computed fresh as a small DOLLAR figure from a ratings overall,
+             scaled to the ~$1,000 cap (NOT the game's economy valuations);
+             stored as guilders so the currency switcher converts cleanly
 * ratings  ← the ``players`` 20-80 block, clamped to [20, 80] for display
 * pos      ← engine field positions collapsed to the CapSpace slots
              (P→PILOT, LF/CF/RF→OF, others 1:1)
@@ -27,7 +28,7 @@ with the O27-native stay bonuses the design surfaces.
 
 from __future__ import annotations
 
-from o27v2 import db, valuation
+from o27v2 import db, currency
 
 # CapSpace roster slot for each engine field position. O27 also has a 10th
 # fielder — the Nickelfielder (NF) — which has no dedicated CapSpace slot, so
@@ -179,11 +180,14 @@ def _fmt_time(start_minute) -> str:
     return f"{h12}:{mm:02d}"
 
 
-# DFS salary bands (in guilders), sized to the ƒ1 crore cap so an 8-slot
-# lineup is buildable with real trade-offs: stacking studs (~18L pilot +
-# 15L hitters) blows the cap; a balanced build comes in comfortably under.
-_LAKH = 1_00_000
-_SAL_BANDS = {True: (8 * _LAKH, 18 * _LAKH), False: (5 * _LAKH, 15 * _LAKH)}
+# DFS salaries are small, friendly DOLLAR figures (USD is CapSpace's default
+# display). We deliberately do NOT surface the game's economy valuations —
+# those are season/auction scale. Salaries are computed fresh from a ratings
+# overall and mapped into a per-group dollar band sized to the ~$1,000 cap, so
+# the priciest pilot is only a few hundred dollars. Stored internally as
+# guilders (ƒ100 = $1) so the currency switcher still converts cleanly.
+_USD_BANDS = {True: (80, 260), False: (40, 190)}  # (lo, hi) dollars: pilot, hitter
+_GUILDER_PER_USD = currency.GUILDER_PER_USD
 
 
 # Per-position pool depth. A 15-game slate fields the whole league (every
@@ -205,26 +209,31 @@ def _trim_pool(players: list[dict]) -> list[dict]:
     return out
 
 
-def _calibrate_salaries(players: list[dict]) -> None:
-    """Rescale league-economy valuations (crores) into a DFS salary tier.
+def _overall(p: dict) -> float:
+    """Talent overall = mean of the player's display ratings (20-80)."""
+    r = p.get("r") or {}
+    return sum(r.values()) / len(r) if r else 50.0
 
-    ``estimate_player_value`` returns season/auction-scale guilder figures —
-    far larger than CapSpace's ƒ1 crore daily cap. We rank players by that
-    talent signal *within* the pilot and hitter groups and map each into a
-    band, so salary tracks talent (keeping pts/ƒ value meaningful against the
-    recent-form projection) while the whole pool fits the cap.
+
+def _calibrate_salaries(players: list[dict]) -> None:
+    """Assign DFS dollar salaries from a ratings overall, scaled to the cap.
+
+    Rank players by overall *within* the pilot and hitter groups and map each
+    into its dollar band, so salary tracks talent (keeping pts-per-dollar value
+    meaningful against recent-form projection) and the whole pool fits a
+    ~$1,000 lineup cap with real trade-offs.
     """
     for is_pitcher in (True, False):
         grp = [p for p in players if p["isPitcher"] is is_pitcher]
         if not grp:
             continue
-        grp.sort(key=lambda p: p["salary"])  # ascending raw valuation
-        lo, hi = _SAL_BANDS[is_pitcher]
+        grp.sort(key=_overall)  # ascending talent
+        lo, hi = _USD_BANDS[is_pitcher]
         n = len(grp)
         for i, p in enumerate(grp):
             pct = i / (n - 1) if n > 1 else 1.0
-            sal = lo + pct * (hi - lo)
-            p["salary"] = int(round(sal / 10_000) * 10_000)  # nearest 0.1 lakh
+            usd = round((lo + pct * (hi - lo)) / 5) * 5   # nearest $5
+            p["salary"] = int(usd * _GUILDER_PER_USD)     # store as guilders
 
 
 def build_slate_data() -> dict | None:
@@ -324,7 +333,7 @@ def build_slate_data() -> dict | None:
             "team": r["team_abbrev"],
             "pos": _map_position(r),
             "isPitcher": is_pitcher,
-            "salary": int(valuation.estimate_player_value(dict(r))),
+            "salary": 0,  # assigned by _calibrate_salaries (dollar tier)
             "proj": proj,
             "own": 0,  # placeholder until contest entries exist
             "r": ratings,
@@ -332,10 +341,11 @@ def build_slate_data() -> dict | None:
             "form": pl["form"],
         })
 
-    # Rescale salaries from league economy into the DFS cap tier, then trim
-    # the league-wide field down to a realistic per-position DFS pool.
-    _calibrate_salaries(players)
+    # Trim the league-wide field to a realistic per-position DFS pool, then
+    # price that pool — calibrating after the trim spreads each position across
+    # the full dollar band (cheap punts through studs), not just the top tier.
     players = _trim_pool(players)
+    _calibrate_salaries(players)
 
     # Ownership is a placeholder this pass: rank by projection so the field
     # reads plausibly (chalk at the top) without real entry data.

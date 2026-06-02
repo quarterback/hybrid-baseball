@@ -53,22 +53,37 @@ A new blueprint at **`o27v2/web/fantasy/`** (mirrors `almanac_bp` /
 | --- | --- |
 | slate games | `games` for the live slate date (next date with an unplayed game, else most recent) |
 | player pool | active, non-joker players on the slate's teams |
-| salary | `valuation.estimate_player_value`, **recalibrated** into a DFS tier |
+| salary | small **dollar** figure from a ratings overall, scaled to the ~$1,000 cap (stored as guilders) |
 | ratings (20–80) | the `players` block — hitters `contact/power/eye/stay*/speed/field`, pilots `command/stuff/decay/control/late` |
 | proj | avg DFS fantasy points over recent games, ratings-based fallback |
 | game log / form | `game_batter_stats` / `game_pitcher_stats` joined to `games` |
 | DFS scoring | the `_batter_game_score` weights + O27 stay bonuses |
-| currency | `o27v2/currency.py` (guilder/usd/eur/zora, shared `o27.currencyDisplay`) |
+| currency | `o27v2/currency.py` (USD default; guilder/eur/zora via the switcher; shared `o27.currencyDisplay`) |
 
 ### The salary calibration (the one real gotcha)
 
-`estimate_player_value` returns **league-economy** figures (ƒ100M–ƒ1.8B) — 100–
-1000× the design's **ƒ1 crore** daily cap, so *no* lineup would be buildable.
-Fix: rank players by that talent signal *within* the pilot and hitter groups
-and map each into a band (pilots ƒ8–18L, hitters ƒ5–15L). Salary then tracks
-talent while the projection tracks recent form, so the pts-per-ƒ **value** stat
-stays meaningful. Verified: cheapest full lineup ≈ ƒ44L (fits), priciest ≈
-ƒ123L (busts the cap — real trade-offs).
+DFS salaries are small **dollar** figures (USD is CapSpace's default display —
+the exotic currencies stay available via the switcher but aren't the canonical
+read). We deliberately do **not** surface the game's economy valuations
+(season/auction scale). Instead salary is computed fresh from a ratings overall
+and mapped into a per-group dollar band — pilots **$80–260**, hitters
+**$40–190** — sized so the priciest pilot is only a few hundred dollars and the
+pool fits a **$1,000** lineup cap. Trim happens *before* pricing so each
+position spans the full band (punts → studs). Salary tracks talent while
+projection tracks recent form, keeping the pts-per-$ **value** stat meaningful.
+Verified: cheapest lineup ≈ $585 (fits), priciest ≈ $1,550 (busts the cap —
+real trade-offs). Stored internally as guilders (ƒ100 = $1) so the switcher
+converts cleanly.
+
+### Discovery / entry points
+
+The main O27 app reaches CapSpace two ways (it's otherwise the Swiss "Twilight
+Diamond" app and wouldn't surface a separate product): a permanent glossy amber
+**nav pill** ("🚀 CapSpace", its own top-level link, not a dropdown item) and a
+dismissible site-wide **house "banner ad"** below the topbar — glossy amber,
+the astronaut mascot (reusing the CapSpace favicon), a faux "Sponsored ·
+CapSpace BETA" kicker. The banner reads as an in-world ad against the Swiss
+chrome; dismissal persists in `localStorage` and never blocks the nav pill.
 
 ### Pool trim
 

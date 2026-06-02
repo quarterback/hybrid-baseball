@@ -17,8 +17,9 @@ function App() {
   const [drawer, setDrawer] = useState({ open: false, player: null });
   const [teaser, setTeaser] = useState(null);
   const [cur, setCur] = useState(() => {
-    try { const v = localStorage.getItem('o27.currencyDisplay'); return VALID_MODES.includes(v) ? v : 'guilder'; }
-    catch (e) { return 'guilder'; }
+    // USD is CapSpace's default — only the engine's stored preference overrides it.
+    try { const v = localStorage.getItem('o27.currencyDisplay'); return VALID_MODES.includes(v) ? v : 'usd'; }
+    catch (e) { return 'usd'; }
   });
 
   // make the chosen mode visible to the global money() formatter for this render

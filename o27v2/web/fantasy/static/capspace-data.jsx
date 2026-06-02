@@ -8,7 +8,9 @@
 (function () {
   const LAKH = 100000;
   const CRORE = 100 * LAKH;
-  const CAP = 1 * CRORE; // ƒ1 crore salary cap
+  // Salary cap in stored guilders. CapSpace runs on small DOLLAR figures
+  // (ƒ100 = $1), so ƒ1,00,000 displays as a friendly "$1,000" cap.
+  const CAP = 1_00_000;
 
   // Real save data injected by the blueprint (null ⇒ use bundled mock).
   const DATA = (typeof window !== 'undefined' && window.__CAPSPACE_DATA__) || null;
@@ -52,7 +54,7 @@
   // mode-aware money formatter — reads the live global display mode
   function money(g) {
     g = Math.round(g);
-    const mode = (window.SLATE && window.SLATE.mode) || 'guilder';
+    const mode = (window.SLATE && window.SLATE.mode) || 'usd';
     if (mode === 'usd')  return _western(g / RATES.guilderPerUsd, '$');
     if (mode === 'eur')  return _western(g / RATES.guilderPerEur, '€');
     if (mode === 'zora') return _zora(g);
@@ -199,7 +201,7 @@
   const FORMATS = [
     { id: 'dfs',     name: 'Daily Slate',      color: 'var(--c-coral)', icon: 'diamond',
       tag: 'live', desc: 'Salary-cap lineups on tonight\u2019s games. Build, lock, climb the board.',
-      stat: ['4 games', 'ƒ1Cr cap'], live: true },
+      stat: ['4 games', '$1K cap'], live: true },
     { id: 'stay',    name: '2C League',        color: 'var(--c-teal)', icon: 'rings',
       tag: 'new', desc: 'Draft the second-chance artists. Scores only stays, stay-RBI & RAD grades.',
       stat: ['Season-long', '12 spots'] },
@@ -255,7 +257,7 @@
   ];
 
   window.SLATE = {
-    LAKH, CRORE, CAP, WALLET, money, RATES, CURRENCIES, ZORA_SYMBOL, mode: 'guilder',
+    LAKH, CRORE, CAP, WALLET, money, RATES, CURRENCIES, ZORA_SYMBOL, mode: 'usd',
     TEAMS, SLATE_GAMES, PLAYERS, SLOTS, FORMATS, CONTESTS, LEADERBOARD, SCORING,
   };
 })();
