@@ -312,6 +312,18 @@
 
 <script>
 (function () {
+  // Surface any silent IIFE failure to the page so it's not "nothing
+  // happens, no console open" mystery — most non-dev users won't open
+  // DevTools. Errors get pinned at the top in a red strip.
+  function showFatalError(err) {
+    const bar = document.createElement('div');
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:white;padding:8px 16px;font:14px/1.4 system-ui;';
+    bar.textContent = 'Universe builder JS error: ' + (err && err.message || err);
+    document.body.prepend(bar);
+    console.error('[universe builder]', err);
+  }
+
+  try {
   const stack = document.getElementById('league-stack');
   const tpl   = document.getElementById('lg-card-tpl');
   const summaryEl = document.getElementById('lg-summary');
@@ -569,32 +581,51 @@
     if (e.target && e.target.matches('[name=lg_teams]')) updateSummary();
   });
 
-  // Quick-add preset chips
+  // Quick-add preset chips. Render the buttons first, then wire ONE
+  // delegated click handler on the parent — that way a per-preset
+  // bug only affects that preset's click, never the rest of the bar.
   const pbar = document.getElementById('preset-buttons');
-  QUICK_PRESETS.forEach(p => {
+  QUICK_PRESETS.forEach((p, idx) => {
     const b = document.createElement('button');
     b.type = 'button';
+    b.dataset.presetIdx = String(idx);
     b.className = 'inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-indigo-50 hover:border-indigo-300 dark:hover:bg-indigo-950 dark:hover:border-indigo-700';
     b.textContent = p.label;
-    b.addEventListener('click', () => addCard(p));
     pbar.appendChild(b);
   });
-
-  document.getElementById('add-blank').addEventListener('click', () => addCard());
-
-  // Re-serialize all custom panels at submit so the latest knob values win.
-  document.querySelector('form').addEventListener('submit', () => {
-    stack.querySelectorAll('.lg-card').forEach(card => {
-      if (card.querySelector('.lg-style').value === 'custom') {
-        serialize(card.querySelector('.lg-custom-panel'),
-                  card.querySelector('.lg-custom'));
-      }
-    });
+  pbar.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-preset-idx]');
+    if (!btn) return;
+    e.preventDefault();
+    const p = QUICK_PRESETS[parseInt(btn.dataset.presetIdx, 10)];
+    if (!p) { console.warn('[universe builder] no preset at idx', btn.dataset.presetIdx); return; }
+    try { addCard(p); }
+    catch (err) { showFatalError(err); }
   });
 
+  document.getElementById('add-blank').addEventListener('click', () => {
+    try { addCard(); } catch (err) { showFatalError(err); }
+  });
+
+  // Re-serialize all custom panels at submit so the latest knob values win.
+  const formEl = document.querySelector('form[action$="/universe/new"]') || document.querySelector('form');
+  if (formEl) {
+    formEl.addEventListener('submit', () => {
+      stack.querySelectorAll('.lg-card').forEach(card => {
+        if (card.querySelector('.lg-style').value === 'custom') {
+          serialize(card.querySelector('.lg-custom-panel'),
+                    card.querySelector('.lg-custom'));
+        }
+      });
+    });
+  }
+
   // Seed with two starter leagues so the page isn't empty on first load.
-  addCard(QUICK_PRESETS[0]);
-  addCard(QUICK_PRESETS[1]);
+  // Each in its own try/catch so a single failing seed doesn't prevent
+  // the other from rendering — and doesn't crash the whole IIFE.
+  try { addCard(QUICK_PRESETS[0]); } catch (err) { console.error('[seed 0]', err); }
+  try { addCard(QUICK_PRESETS[1]); } catch (err) { console.error('[seed 1]', err); }
+  } catch (err) { showFatalError(err); }
 })();
 </script>
 
