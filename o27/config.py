@@ -178,6 +178,51 @@ FATIGUE_FOUL: float     = -0.06   # fatigue-dominance: -0.04 → -0.06
 # Base probabilities for weak / medium / hard contact.
 # Shifted by matchup:  shift = (batter.skill - pitcher.pitcher_skill) * CONTACT_MATCHUP_SHIFT
 
+# --- Physics-first resolver (resolve_batted_ball) -------------------------
+# LA band cut points + per-band hit rates. The resolver maps the (EV, LA, spray)
+# the batter produced to a base hit_type; these knobs are tuned so the league
+# per-BIP mix reproduces the pre-inversion calibration (R/G ~24.2; single ~29%,
+# double ~19%, GO ~14%, FO ~13%, LO ~8.5%, HR ~6%, ...). All EV in mph, LA/spray
+# in degrees, distances in feet.
+# Resolver-specific texture mix (decoupled from BATTED_BALL_WEIGHTS, which the
+# runner-erasing OUT_SHIFT lever uses). O27 is a doubles-heavy environment, so
+# the LA distribution is liner-dominant — these weights reflect that.
+#                   (dribbler, grounder, liner, flyball)
+RES_TEXTURE_WEIGHTS = {
+    "weak":   (0.22, 0.34, 0.34, 0.10),
+    "medium": (0.05, 0.22, 0.53, 0.20),
+    "hard":   (0.0,  0.06, 0.53, 0.41),
+}
+RES_POPUP_LA: float        = 50.0   # above this LA → automatic fly out
+RES_FLY_LA: float          = 26.0   # fly-ball band floor
+RES_LINER_LA: float        = 10.0   # liner band floor (below → grounder)
+# Fly band: distance vs fence decides HR; shortfalls drop for XBH or are caught.
+RES_FLY_HIT_FLOOR: float   = 210.0  # drives shorter than this are always caught
+RES_FLY_DROP_SCALE: float  = 0.92   # how readily sub-HR fly balls fall for XBH
+RES_FLY_TRIPLE_P: float    = 0.13   # deep-alley double → triple chance
+RES_HR_MARGIN: float       = 13.0   # ft of carry past the fence required for a HR
+# Liner band: highest BABIP.
+RES_LINER_EV_MID: float    = 90.0
+RES_LINER_EV_SPAN: float   = 25.0
+RES_LINER_HIT_BASE: float  = 0.76
+RES_LINER_HIT_EVSCALE: float = 0.18
+RES_LINER_XBH_EV: float    = 83.0
+RES_LINER_XBH_SCALE: float = 1.28
+RES_LINER_TRIPLE_EV: float = 95.0
+RES_LINER_TRIPLE_P: float  = 0.38
+# Grounder band.
+RES_GB_EV_MID: float       = 90.0
+RES_GB_EV_SPAN: float      = 30.0
+RES_GB_HIT_BASE: float     = 0.44
+RES_GB_HIT_EVSCALE: float  = 0.40
+RES_GB_INFIELD_EV: float   = 72.0   # weak grounders that sneak through → infield single
+RES_GB_FC_P: float         = 0.15   # grounder out → fielder's choice share
+# Re-homed run-environment levers (were table redistributions): per-half form
+# lifts EV (hot half → more carry → XBH/HR at the same hit count), RISP trims it
+# (the XBH-suppression decoupler). Both in mph; 0.0 = identity.
+RES_FORM_EV_SCALE: float   = 18.0
+RES_RISP_EV_TRIM: float    = 3.0
+
 CONTACT_WEAK_BASE: float     = 0.18   # offense pass: 0.38 → 0.18; far fewer weak singles
 CONTACT_MEDIUM_BASE: float   = 0.50   # offense pass: 0.40 → 0.50
 CONTACT_HARD_BASE: float     = 0.32   # offense pass: 0.22 → 0.32; more XBH / HR potential
