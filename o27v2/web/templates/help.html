@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Help &amp; Quick Start{% endblock %}
+{% block content %}
+
+<div class="mb-3">
+  <h2 class="mb-1">ℹ️ Welcome to O27</h2>
+  <div class="text-secondary small">
+    A 60-second orientation, then a map of the menus. New here? You're in the right place.
+  </div>
+</div>
+
+{# Jump nav #}
+<div class="panel panel-body mb-3">
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="#what">What this is</a>
+    <a class="btn btn-sm btn-outline-secondary" href="#sport">The sport in 90s</a>
+    <a class="btn btn-sm btn-outline-secondary" href="#reading">Reading the stats</a>
+    <a class="btn btn-sm btn-outline-secondary" href="#tour">Where to click</a>
+    <a class="btn btn-sm btn-outline-secondary" href="#tune">Make it your own</a>
+    <a class="btn btn-sm btn-outline-secondary" href="#deeper">Go deeper</a>
+  </div>
+</div>
+
+<div class="row g-3">
+<div class="col-lg-8">
+
+<div class="panel panel-body mb-3" id="what">
+  <h4 class="mt-0">What this is</h4>
+  <p class="mb-2"><strong>O27 is a fictional sport — and a full simulation of it.</strong>
+  It's baseball with one structural change: each side bats until it records
+  <strong>27 outs</strong>. No innings. Everything else falls out of that move.</p>
+  <p class="mb-2">A few expectations so you read it right:</p>
+  <ul class="mb-0">
+    <li><strong>It's not a game you play.</strong> There's no manager mode. You
+      <em>simulate</em> seasons and <em>read</em> what happens.</li>
+    <li><strong>It's a data-exploration tool.</strong> Every page exists to surface
+      stats, standings, and box scores for a human — or an LLM — to interpret.</li>
+    <li><strong>Numbers run hot on purpose.</strong> ~30+ runs a game, batting
+      averages that can top 1.000. That's the sport, not a bug — see below.</li>
+  </ul>
+</div>
+
+<div class="panel panel-body mb-3" id="sport">
+  <h4 class="mt-0">The sport in 90 seconds</h4>
+  <ol class="mb-0">
+    <li><strong>27 outs, no innings.</strong> One long arc per side instead of nine
+      resets. A starter keeps going until he's pulled, and his fatigue builds the
+      whole way.</li>
+    <li><strong>Second-chance ABs (the “stay”).</strong> On contact, a batter can
+      <em>run</em> (normal baseball) or <em>stay</em> at the plate — runners advance,
+      he keeps hitting, and the contact costs a strike. This is how runs are driven
+      in, and why a hitter can record multiple hits in one at-bat.</li>
+    <li><strong>Jokers.</strong> Three tactical pinch-batters a manager can drop into
+      any lineup spot, once per joker per time through the order.</li>
+    <li><strong>The Walk-Back.</strong> A home run sends the hitter to <em>third
+      base</em> as a live bonus runner until he's driven in or put out.</li>
+    <li><strong>Declared Seconds.</strong> A manager can end his regulation half early
+      and <em>bank</em> the unused outs for a second trip through the lineup later.</li>
+    <li><strong>Variance is the design.</strong> There is no “correct” run total to
+      tune toward. If a number looks high, that's usually the sport.</li>
+  </ol>
+</div>
+
+<div class="panel panel-body mb-3" id="reading">
+  <h4 class="mt-0">Reading a box score &amp; a stat line</h4>
+  <p class="mb-2">Pitching is measured in <strong>outs</strong>, not innings — there
+  aren't any. The unfamiliar columns are deliberate:</p>
+  <div class="panel mb-2">
+    <table class="table dense-table mb-0">
+      <thead><tr><th style="width:7rem">Stat</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr><td><strong>PAVG</strong></td><td>hits per <em>plate appearance</em>, 0–1 — reads like old batting average</td></tr>
+        <tr><td><strong>BAVG</strong></td><td>hits per <em>at-bat</em> — can exceed 1.000 because of multi-hit (stay) ABs</td></tr>
+        <tr><td><strong>Δ</strong></td><td>BAVG − PAVG — extra production squeezed out of stays</td></tr>
+        <tr><td><strong>RAD</strong></td><td>graded runner-advancement value (to 3rd &gt; to 2nd)</td></tr>
+        <tr><td><strong>OUT / OS%</strong></td><td>a pitcher's outs recorded / share of the team's 27</td></tr>
+        <tr><td><strong>wERA / xRA</strong></td><td>arc-weighted &amp; expected runs allowed (ERA is context here, not the headline)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="mb-0">Confused by a column anywhere in the app? The
+  <a href="{{ url_for('glossary') }}">Glossary</a> defines every abbreviation.</p>
+</div>
+
+<div class="panel panel-body mb-3" id="tour">
+  <h4 class="mt-0">Where to click</h4>
+  <p class="mb-2 text-secondary small">The top menu groups everything. Here's what
+  each group is for — links open the real pages.</p>
+
+  <p class="mb-1"><strong>Games</strong> — your home base.
+  <a href="{{ url_for('index') }}">Scores</a> ·
+  <a href="{{ url_for('gazette.view') }}">📰 Gazette</a> (a voiced, news-style
+  writeup of a day's games) ·
+  <a href="{{ url_for('standings') }}">Standings</a> ·
+  <a href="{{ url_for('schedule') }}">Schedule</a> ·
+  <a href="{{ url_for('playoffs_view') }}">Playoffs</a>.
+  Click any game for its box score, play-by-play, and a Markdown export built for
+  pasting into an LLM.</p>
+
+  <p class="mb-1"><strong>Players</strong> — the people.
+  <a href="{{ url_for('players') }}">Players</a> ·
+  <a href="{{ url_for('teams') }}">Teams</a> (rosters &amp; the pitching crew) ·
+  <a href="{{ url_for('compare') }}">Compare</a> ·
+  <a href="{{ url_for('free_agents') }}">Free Agents</a>.</p>
+
+  <p class="mb-1"><strong>Stats</strong> — the deep end.
+  <a href="{{ url_for('leaders') }}">Leaders</a> ·
+  <a href="{{ url_for('stats_browse') }}">Stat Browser</a> (Fangraphs-style almanac
+  with downloadable bundles) ·
+  <a href="{{ url_for('analytics') }}">Analytics</a> ·
+  <a href="{{ url_for('distributions') }}">Distributions</a> ·
+  <a href="{{ url_for('glossary') }}">Glossary</a>.</p>
+
+  <p class="mb-1"><strong>League</strong> — everything around the games.
+  <a href="{{ url_for('transactions') }}">Transactions</a> ·
+  <a href="{{ url_for('auction_view') }}">Auction</a> ·
+  <a href="{{ url_for('economy_view') }}">Economy</a> ·
+  <a href="{{ url_for('financials_view') }}">Financials</a> ·
+  <a href="{{ url_for('youth_view') }}">Youth</a> &amp;
+  <a href="{{ url_for('college_view') }}">College</a> (the talent pipeline) ·
+  <a href="{{ url_for('hall_of_fame') }}">Hall of Fame</a>.</p>
+
+  <p class="mb-0"><strong>Manage</strong> — the control room.
+  <a href="{{ url_for('saves_index') }}">Saves</a> (multiple leagues coexist) ·
+  <a href="{{ url_for('engine_settings') }}">Engine Settings</a> (reshape the sport).
+  The <strong>Sim</strong> button up top advances the calendar
+  (Today / Week / Month / Season).</p>
+</div>
+
+<div class="panel panel-body mb-3" id="tune">
+  <h4 class="mt-0">Make it your own</h4>
+  <p class="mb-0"><a href="{{ url_for('engine_settings') }}">Engine Settings</a> lets
+  you change the constants the engine reads live — contact, fatigue, parks, weather —
+  and the change takes effect on the next sim. Don't know the knobs? Paste the
+  <a href="https://github.com/quarterback/hybrid-baseball/blob/main/docs/tuning-guide-for-llms.md"
+     target="_blank" rel="noopener">LLM tuning guide</a> into any capable model with a
+  plain-English wish (“a deadball pitcher's duel”, “a home-run circus”) and it hands
+  back a tuning blob you drop straight into the dashboard.</p>
+</div>
+
+</div>
+<div class="col-lg-4">
+
+<div class="panel panel-body mb-3" id="deeper">
+  <h4 class="mt-0">Go deeper</h4>
+  <ul class="mb-0 small">
+    <li><a href="https://github.com/quarterback/hybrid-baseball/blob/main/docs/user-guide.md"
+        target="_blank" rel="noopener">Full user guide</a> — the long version of this page.</li>
+    <li><a href="https://github.com/quarterback/hybrid-baseball/blob/main/README.md#the-rules"
+        target="_blank" rel="noopener">The complete rules</a>.</li>
+    <li><a href="https://github.com/quarterback/hybrid-baseball/blob/main/docs/stats-reference.md"
+        target="_blank" rel="noopener">Every stat, with formulas</a>.</li>
+    <li><a href="https://github.com/quarterback/hybrid-baseball/blob/main/docs/project-trajectory.md"
+        target="_blank" rel="noopener">How the project got here</a> — the arc &amp; changelog.</li>
+    <li><a href="https://github.com/quarterback/hybrid-baseball/blob/main/docs/blog-o27-vs-five-inning-baseball.md"
+        target="_blank" rel="noopener">Why not just play five innings?</a></li>
+  </ul>
+</div>
+
+<div class="panel panel-body mb-3">
+  <h4 class="mt-0">First time? Try this</h4>
+  <ol class="mb-0 small">
+    <li>Open <a href="{{ url_for('index') }}">Scores</a> and click a final.</li>
+    <li>Read the box score — note pitching is in <em>outs</em>.</li>
+    <li>Hit <a href="{{ url_for('standings') }}">Standings</a>, then a
+      <a href="{{ url_for('leaders') }}">Leaders</a> board.</li>
+    <li>Open the <a href="{{ url_for('glossary') }}">Glossary</a> for anything odd.</li>
+    <li>Skim the <a href="{{ url_for('gazette.view') }}">Gazette</a> for the story.</li>
+  </ol>
+</div>
+
+</div>
+</div>
+
+{% endblock %}

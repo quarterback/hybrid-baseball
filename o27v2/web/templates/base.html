@@ -1209,6 +1209,9 @@
     {# Sim widget — always visible (outside the collapse) so the
        "Sim Today" button is one tap away even on phones #}
     <div class="sim-widget order-1 order-xl-3 ms-auto">
+      <a class="theme-toggle{% if request.endpoint == 'help_page' %} active{% endif %}"
+         href="{{ url_for('help_page') }}" style="text-decoration:none"
+         title="Help &amp; quick start — new here? Start here" aria-label="Help and quick-start guide">ℹ️</a>
       <button type="button" class="theme-toggle" id="theme-toggle"
               title="Toggle light / dark theme" aria-label="Toggle light / dark theme">🌙</button>
       <span class="sim-date" id="sim-date-badge"
