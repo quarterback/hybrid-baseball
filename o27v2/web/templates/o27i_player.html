@@ -73,6 +73,45 @@
   </div>
 </div>
 
+{% macro stat_tile(label, value, hint='') %}
+  <div title="{{ hint }}">
+    <div class="text-secondary small text-uppercase">{{ label }}</div>
+    <div class="fs-5 fw-bold" style="font-variant-numeric:tabular-nums">{{ value }}</div>
+  </div>
+{% endmacro %}
+
+{% if has_advanced %}
+<div class="card mb-3" style="max-width:760px">
+  <div class="card-header py-2"><span class="fw-semibold">Advanced</span>
+    <span class="text-secondary small">· win value, fielding, second chances</span></div>
+  <div class="card-body d-flex flex-wrap gap-4 align-items-center">
+    {% if advanced.bat %}
+      {{ stat_tile('WPA', '%+.2f'|format(advanced.bat.wpa), 'Win Probability Added (offense)') }}
+      {{ stat_tile('Leverage', advanced.bat.li, 'Average leverage index faced (1.0 = neutral)') }}
+    {% endif %}
+    {% if advanced.pit %}
+      {{ stat_tile('WPA (pit)', '%+.2f'|format(advanced.pit.wpa), 'Win Probability Added (run prevention)') }}
+      {{ stat_tile('Leverage', advanced.pit.li, 'Average leverage index pitched in') }}
+    {% endif %}
+    {% if advanced.field %}
+      {{ stat_tile('OAA', '%+.1f'|format(advanced.field.oaa), 'Outs Above Average (heuristic zone)') }}
+      {{ stat_tile('Field Runs', '%+.1f'|format(advanced.field.frv), 'Fielding Run Value') }}
+    {% endif %}
+    {% if advanced.bsr %}
+      {{ stat_tile('BsR', '%+.1f'|format(advanced.bsr.bsr), 'Baserunning run value') }}
+      {{ stat_tile('XBT%', advanced.bsr.xbt_pct ~ '%', 'Extra bases taken when the chance arose') }}
+    {% endif %}
+    {% if advanced.twoc %}
+      {{ stat_tile('2C Runs', '%+.1f'|format(advanced.twoc.rv_total), 'Total run value created on Second-Chance ABs') }}
+      {{ stat_tile('R / 2C', '%+.3f'|format(advanced.twoc.rv_vs_lg), 'Run value per Second-Chance vs league average') }}
+    {% endif %}
+    <div class="text-secondary small" style="max-width:200px">
+      WP &amp; fielding zones are empirical/heuristic — read as directional.
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% if not qualified %}
   <div class="alert alert-secondary">
     Not enough batted balls to rank — needs at least {{ min_bip }} balls in play

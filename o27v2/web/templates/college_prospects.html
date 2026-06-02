@@ -45,7 +45,8 @@
       {% set hue = (240 - (r.ps_score * 2.4))|round|int %}
       <tr>
         <td class="text-secondary">{{ loop.index }}</td>
-        <td><span class="ps-bubble" style="background:hsl({{ hue }},65%,48%)">{{ r.ps_score }}</span></td>
+        <td><a href="{{ url_for('college_prospect_player', player_id=r.id) }}"
+               class="ps-bubble text-decoration-none" style="background:hsl({{ hue }},65%,48%)">{{ r.ps_score }}</a></td>
         <td><a href="{{ url_for('college_player_view', player_id=r.id) }}">{{ r.name }}</a></td>
         <td class="text-secondary">{{ r.position }}</td>
         <td class="text-secondary">{{ r.college_year }}</td>

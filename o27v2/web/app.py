@@ -6214,11 +6214,31 @@ def player_o27i(player_id: int):
     sliders = _build_sliders(me_bat, _O27I_BATTER_METRICS)
     pitcher_sliders = _build_sliders(me_pit, _O27I_PITCHER_METRICS)
 
+    # Advanced single-player card (WPA / leverage, fielding OAA, 2C RV,
+    # baserunning). The builders compute league context regardless of the min
+    # threshold, so min=1 just guarantees this player appears.
+    from o27v2.analytics import (
+        build_win_probability, build_fielding_value,
+        build_second_chance_value, build_baserunning_value,
+    )
+    _wp = build_win_probability(min_pa=1, team_ids=team_ids)
+    _find = lambda xs: next((r for r in xs if r["player_id"] == player_id), None)
+    adv = {
+        "bat": _find(_wp["batters"]),
+        "pit": _find(_wp["pitchers"]),
+        "field": _find(build_fielding_value(min_chances=1, team_ids=team_ids)["leaders"]),
+        "twoc": _find(build_second_chance_value(min_2c=1, team_ids=team_ids)["leaders"]),
+        "bsr": _find(build_baserunning_value(min_op=1, team_ids=team_ids)["leaders"]),
+    }
+    has_advanced = any(adv.values())
+
     return _serve(
         "o27i_player.html",
         player=player,
         sliders=sliders,
         pitcher_sliders=pitcher_sliders,
+        advanced=adv,
+        has_advanced=has_advanced,
         qualified=(me_bat is not None or me_pit is not None),
         bip=(me_bat or {}).get("bip"),
         pitcher_bip=(me_pit or {}).get("bip"),
@@ -6331,6 +6351,37 @@ def college_prospects():
         ptype=ptype,
         season=season,
         n_total=len(rows),
+    )
+
+
+@app.route("/college/prospects/<int:player_id>")
+def college_prospect_player(player_id: int):
+    """Per-prospect percentile sliders + Prospect Score (the O27i slider UI for
+    the college tier)."""
+    p = db.fetchone(
+        """SELECT cp.*, prog.season AS season, prog.name AS program_name,
+                  prog.short_name AS program_abbrev
+           FROM college_players cp JOIN college_programs prog ON prog.id = cp.program_id
+           WHERE cp.id = ?""", (player_id,))
+    if not p:
+        abort(404)
+    is_pitcher = bool(p["is_pitcher"])
+    rows = _prospect_rows(p["season"], is_pitcher)
+    me = next((r for r in rows if r["id"] == player_id), None)
+    if not me:
+        abort(404)
+    metrics = _PROSPECT_PIT_METRICS if is_pitcher else _PROSPECT_BAT_METRICS
+    sliders = []
+    for key, label, _rev in metrics:
+        val = me.get(key); pct = me.get(f"{key}_pctile")
+        if val is None or pct is None:
+            continue
+        sliders.append({"label": label, "display": val, "pctile": pct})
+    rank = next((i + 1 for i, r in enumerate(rows) if r["id"] == player_id), None)
+    return _serve(
+        "college_prospect_player.html",
+        player=me, sliders=sliders, rank=rank, n_total=len(rows),
+        is_pitcher=is_pitcher,
     )
 
 
