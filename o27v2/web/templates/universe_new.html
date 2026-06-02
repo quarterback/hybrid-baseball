@@ -34,6 +34,18 @@
   #uni-builder input[type=range] { accent-color: #6366f1; }
   /* Range input baseline so sliders sit centered without Bootstrap padding. */
   #uni-builder input[type=range] { padding: 0; }
+
+  /* ---- Phone layout (< Tailwind `sm`, 640px) ----
+     The league-config grid is 2-up by default. At phone width that squeezes
+     the region / park / power selects until their option text truncates
+     ("Americas Pr…", "(varied — all…"). Keep the two short numeric fields
+     (Teams, Divisions) paired on the first row, but let every field from the
+     third on — Style, Home region, Park geometry, Power Play — take the full
+     row so its label and selected option stay readable. */
+  @media (max-width: 639px) {
+    #uni-builder .lg-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #uni-builder .lg-body > label:nth-child(n+3) { grid-column: 1 / -1; }
+  }
 </style>
 
 <div id="uni-builder" class="max-w-7xl mx-auto">

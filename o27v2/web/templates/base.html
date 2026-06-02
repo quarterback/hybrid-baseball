@@ -1001,43 +1001,17 @@
       .dense-table thead th { font-size: .65rem; padding: 4px 5px; }
     }
 
-    /* Universe builder — the league config table overflows on a phone
-       (forced 720px floor + many columns). Below 768px, opt it out of the
-       min-width floor and stack each league into a labelled card so every
-       field is reachable without horizontal scrolling. */
-    @media (max-width: 768px) {
-      #league-table { min-width: 0 !important; }
-      #league-table thead { display: none; }
-      #league-table tbody, #league-table tr, #league-table td { display: block; width: 100%; }
-      #league-table tr.lg-main {
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        background: var(--bg-card);
-        padding: 8px 10px;
-        margin-bottom: 4px;
-      }
-      #league-table tr.lg-main td { border: 0 !important; padding: 4px 0; }
-      #league-table td[data-label]::before {
-        content: attr(data-label);
-        display: block;
-        font-size: .68rem;
-        text-transform: uppercase;
-        letter-spacing: .04em;
-        font-weight: 600;
-        color: var(--text-dim);
-        margin-bottom: 2px;
-      }
-      #league-table td.num { text-align: left; }
-      #league-table td input,
-      #league-table td select { width: 100% !important; }
-      #league-table td.lg-actions-cell { text-align: right; }
-      #league-table tr.lg-custom-panel {
-        border: 1px solid var(--border);
-        border-top: 0;
-        border-radius: 0 0 var(--radius) var(--radius);
-        margin: -4px 0 12px;
-      }
-      #league-table tr.lg-custom-panel td { border: 0 !important; }
+    /* (The universe builder's phone layout now lives with that page's own
+       Tailwind markup in universe_new.html — it was rewritten from a
+       <table id="league-table"> into a card stack, so the old table-stacking
+       overrides that used to sit here were dead and have been removed.) */
+
+    /* Spray-chart panels on the game page carry an inline min-width:340px so
+       the two charts read well side-by-side on desktop. On the narrowest
+       phones that floor is a hair wider than the viewport, clipping a few
+       pixels; drop it so each chart simply fills the column. */
+    @media (max-width: 575px) {
+      .dense[style*="min-width:340px"] { min-width: 0 !important; }
     }
 
     /* League pulse — tighter cell spacing on small screens */
