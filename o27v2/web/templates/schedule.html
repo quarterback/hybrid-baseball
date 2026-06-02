@@ -1,34 +1,44 @@
 {% extends "base.html" %}
 {% block title %}Schedule{% endblock %}
 {% block content %}
+
+{# Filter values, carried through every calendar / day link (omitted when at
+   their default so the URL stays clean). #}
+{% set lg = selected_league if selected_league != 'all' else none %}
+{% set tm = selected_team.id if selected_team else none %}
+{% set st = status if status != 'all' else none %}
+{% set show_league_col = all_leagues and all_leagues|length > 1 %}
+
 <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
   <h2 class="fw-bold mb-0">Schedule</h2>
-  <div class="d-flex gap-3 small">
-    {% if sim.current_date %}<span class="text-secondary">Current:</span><span class="fw-bold" style="color:#58a6ff">{{ sim.current_date }}</span>{% endif %}
-    {% if sim.all_star_date %}<span class="text-secondary">All-Star:</span><span class="fw-bold" style="color:#f0883e">{{ sim.all_star_date }}</span>{% endif %}
-    {% if sim.last_date %}<span class="text-secondary">Season ends:</span><span class="fw-bold text-secondary">{{ sim.last_date }}</span>{% endif %}
+  <div class="d-flex flex-wrap gap-3 small">
+    {% if sim.current_date %}<span><span class="text-secondary">Current:</span> <span class="fw-bold" style="color:var(--accent)">{{ sim.current_date }}</span></span>{% endif %}
+    {% if sim.all_star_date %}<span><span class="text-secondary">All-Star:</span> <span class="fw-bold" style="color:var(--warn)">{{ sim.all_star_date }}</span></span>{% endif %}
+    {% if sim.last_date %}<span><span class="text-secondary">Season ends:</span> <span class="fw-bold text-secondary">{{ sim.last_date }}</span></span>{% endif %}
   </div>
 </div>
 
 <form class="filter-bar d-flex flex-wrap gap-2 align-items-end" method="get">
+  {# Preserve the selected day when a filter changes. #}
+  {% if view_date %}<input type="hidden" name="date" value="{{ view_date }}">{% endif %}
   {% if all_leagues and all_leagues|length > 1 %}
   <div>
     <label class="form-label small text-secondary mb-1">League</label>
     <select name="league" class="form-select form-select-sm" onchange="this.form.submit()">
       <option value="all" {% if selected_league == 'all' %}selected{% endif %}>All Leagues</option>
-      {% for lg in all_leagues %}
-      <option value="{{ lg }}" {% if selected_league == lg %}selected{% endif %}>{{ lg }}</option>
+      {% for lgn in all_leagues %}
+      <option value="{{ lgn }}" {% if selected_league == lgn %}selected{% endif %}>{{ lgn }}</option>
       {% endfor %}
     </select>
   </div>
   {% endif %}
   <div>
     <label class="form-label small text-secondary mb-1">Team</label>
-    <select name="team" class="form-select form-select-sm">
+    <select name="team" class="form-select form-select-sm" onchange="this.form.submit()">
       <option value="">All Teams</option>
       {% if all_leagues and all_leagues|length > 1 and selected_league == 'all' %}
-        {% for lg, lg_teams in teams|groupby('league') %}
-        <optgroup label="{{ lg or 'Unaffiliated' }}">
+        {% for lgn, lg_teams in teams|groupby('league') %}
+        <optgroup label="{{ lgn or 'Unaffiliated' }}">
           {% for t in lg_teams %}
           <option value="{{ t.id }}" {% if selected_team and selected_team.id == t.id %}selected{% endif %}>{{ t.abbrev }} — {{ t.name }}</option>
           {% endfor %}
@@ -43,7 +53,7 @@
   </div>
   <div>
     <label class="form-label small text-secondary mb-1">Status</label>
-    <select name="status" class="form-select form-select-sm">
+    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
       <option value="all" {% if status == 'all' %}selected{% endif %}>All Games</option>
       <option value="played" {% if status == 'played' %}selected{% endif %}>Played</option>
       <option value="unplayed" {% if status == 'unplayed' %}selected{% endif %}>Upcoming</option>
@@ -52,48 +62,185 @@
   <div><button type="submit" class="btn btn-secondary btn-sm">Filter</button></div>
 </form>
 
-<div class="dense">
-  {% set show_league_col = all_leagues and all_leagues|length > 1 %}
-  {% if games %}
-  <table class="table table-sm dense-table mb-0 sortable">
-    <thead><tr>
-      <th>Date</th>
-      {% if show_league_col %}<th>League</th>{% endif %}
-      <th>Away</th><th data-nosort></th><th>Home</th><th class="num">Score</th><th>First pitch</th><th data-nosort>Status</th>
-    </tr></thead>
-    <tbody>
-    {% for g in games %}
-    <tr>
-      <td class="text-secondary small">{{ g.game_date }}</td>
-      {% if show_league_col %}<td class="text-secondary small" data-sort-value="{{ g.home_league }}">{{ g.home_league }}</td>{% endif %}
-      <td>
-        <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}" class="team-abbrev">{{ g.away_abbrev }}</a>
-        <span class="text-secondary small ms-1">{{ g.away_name }}</span>
-        {% if g.winner_id == g.away_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
-      </td>
-      <td class="text-secondary">@</td>
-      <td>
-        <a href="{{ url_for('team_detail', team_id=g.home_team_id) }}" class="team-abbrev">{{ g.home_abbrev }}</a>
-        <span class="text-secondary small ms-1">{{ g.home_name }}</span>
-        {% if g.winner_id == g.home_team_id %}<span class="winner-badge ms-1">W</span>{% endif %}
-      </td>
-      <td class="num fw-bold">
-        {% if g.played %}{{ g.away_score }}–{{ g.home_score }}{% else %}<span class="text-secondary">—</span>{% endif %}
-        {% if g.super_inning %}<span class="si-badge ms-1">SI</span>{% endif %}
-      </td>
-      <td class="text-secondary small">{{ g | first_pitch }}</td>
-      <td>
-        {% if g.played %}<a href="{{ url_for('game_detail', game_id=g.id) }}" class="small">Box Score</a>
-        {% else %}<button class="btn btn-primary btn-sm py-0 sim-one-btn" data-game-id="{{ g.id }}">Sim</button>{% endif %}
-      </td>
-    </tr>
+<div class="sched-layout">
+  {# ---------- Month calendar ---------- #}
+  <section class="sched-cal panel">
+    <div class="cal-head">
+      <a class="cal-nav" title="Previous month"
+         href="{{ url_for('schedule', month=prev_month, date=view_date, league=lg, team=tm, status=st) }}">‹</a>
+      <div class="cal-title">{{ month_label }}</div>
+      <a class="cal-nav" title="Next month"
+         href="{{ url_for('schedule', month=next_month, date=view_date, league=lg, team=tm, status=st) }}">›</a>
+    </div>
+    <div class="cal-grid cal-dow-row">
+      {% for d in ['Su','Mo','Tu','We','Th','Fr','Sa'] %}<div class="cal-dow">{{ d }}</div>{% endfor %}
+    </div>
+    {% for week in cal_weeks %}
+    <div class="cal-grid">
+      {% for c in week %}
+        {% if c.count > 0 %}
+        <a class="cal-cell has-games{% if c.is_selected %} selected{% endif %}{% if c.is_current %} current{% endif %}{% if not c.in_month %} dim{% endif %}"
+           href="{{ url_for('schedule', date=c.date, league=lg, team=tm, status=st) }}"
+           title="{{ c.count }} game{{ '' if c.count == 1 else 's' }}">
+          <span class="cal-num">{{ c.day }}</span>
+          <span class="cal-dot">{{ c.count }}</span>
+        </a>
+        {% else %}
+        <div class="cal-cell{% if c.is_current %} current{% endif %}{% if not c.in_month %} dim{% endif %}">
+          <span class="cal-num">{{ c.day }}</span>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
     {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="p-4 text-center text-secondary">No games match the current filter.</div>
-  {% endif %}
+    <div class="cal-legend">
+      <span><span class="lg-swatch current"></span>Sim clock</span>
+      <span><span class="lg-swatch selected"></span>Viewing</span>
+    </div>
+  </section>
+
+  {# ---------- Selected day ---------- #}
+  <section class="sched-day">
+    {% if view_date %}
+    <div class="day-head">
+      <a class="day-step {% if not prev_day %}disabled{% endif %}"
+         {% if prev_day %}href="{{ url_for('schedule', date=prev_day, league=lg, team=tm, status=st) }}"{% endif %}
+         title="Previous game day">‹</a>
+      <div class="day-title">
+        <div class="day-label">{{ view_date_label or view_date }}</div>
+        <div class="day-sub text-secondary small">{{ games|length }} game{{ '' if games|length == 1 else 's' }}</div>
+      </div>
+      <a class="day-step {% if not next_day %}disabled{% endif %}"
+         {% if next_day %}href="{{ url_for('schedule', date=next_day, league=lg, team=tm, status=st) }}"{% endif %}
+         title="Next game day">›</a>
+    </div>
+    {% endif %}
+
+    {% if games %}
+    <div class="game-cards">
+      {% for g in games %}
+      {% set pp_both = g.pp_home and g.pp_away %}
+      <div class="game-card{% if not g.played %} unplayed{% endif %}">
+        <div class="gc-meta">
+          {% if show_league_col %}<span class="gc-league">{{ g.home_league }}</span>{% endif %}
+          <span class="gc-time text-secondary">{{ g | first_pitch }}</span>
+          <span class="gc-badges">
+            {% if g.super_inning %}<span class="si-badge">SI</span>{% endif %}
+            {% if pp_both %}<span class="pp-badge pp-both" title="Power play deployed by both teams">PP ×2</span>
+            {% elif g.pp_away %}<span class="pp-badge" title="Power play deployed by {{ g.away_abbrev }} (away)">PP</span>
+            {% elif g.pp_home %}<span class="pp-badge" title="Power play deployed by {{ g.home_abbrev }} (home)">PP</span>{% endif %}
+          </span>
+        </div>
+
+        <div class="gc-side{% if g.played and g.winner_id == g.away_team_id %} win{% endif %}">
+          <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}" class="team-abbrev">{{ g.away_abbrev }}</a>
+          <span class="gc-name text-secondary">{{ g.away_name }}</span>
+          {% if g.pp_away %}<span class="pp-tick" title="{{ g.away_abbrev }} deployed power play">PP</span>{% endif %}
+          <span class="gc-score">{% if g.played %}{{ g.away_score }}{% else %}<span class="text-secondary">–</span>{% endif %}</span>
+        </div>
+        <div class="gc-side{% if g.played and g.winner_id == g.home_team_id %} win{% endif %}">
+          <a href="{{ url_for('team_detail', team_id=g.home_team_id) }}" class="team-abbrev">{{ g.home_abbrev }}</a>
+          <span class="gc-name text-secondary">{{ g.home_name }}</span>
+          {% if g.pp_home %}<span class="pp-tick" title="{{ g.home_abbrev }} deployed power play">PP</span>{% endif %}
+          <span class="gc-score">{% if g.played %}{{ g.home_score }}{% else %}<span class="text-secondary">–</span>{% endif %}</span>
+        </div>
+
+        <div class="gc-foot">
+          {% if g.played %}
+            <a href="{{ url_for('game_detail', game_id=g.id) }}" class="gc-link">Box score →</a>
+          {% else %}
+            <button class="btn btn-primary btn-sm py-0 sim-one-btn" data-game-id="{{ g.id }}">Sim game</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="panel panel-body text-center text-secondary py-4">
+      {% if view_date %}No games on this day{% if selected_league != 'all' or selected_team or status != 'all' %} for the current filter{% endif %}.
+      Pick another day on the calendar.{% else %}No games scheduled yet.{% endif %}
+    </div>
+    {% endif %}
+  </section>
 </div>
+
+<style>
+  .sched-layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 768px) { .sched-layout { grid-template-columns: 1fr; gap: 12px; } }
+
+  /* ---- Calendar ---- */
+  .sched-cal { padding: 10px 12px 12px; position: sticky; top: 8px; }
+  @media (max-width: 768px) { .sched-cal { position: static; } }
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .cal-title { font-family: "Oswald", sans-serif; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: .98rem; }
+  .cal-nav {
+    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: var(--radius); color: var(--text);
+    font-size: 1.1rem; line-height: 1; text-decoration: none;
+  }
+  .cal-nav:hover { background: var(--bg-alt); border-color: var(--border-strong); text-decoration: none; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal-dow-row { margin-bottom: 3px; }
+  .cal-dow { text-align: center; font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 2px 0; }
+  .cal-cell {
+    position: relative; min-height: 38px; border: 1px solid transparent; border-radius: var(--radius);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    color: var(--text-dim); text-decoration: none; font-variant-numeric: tabular-nums;
+  }
+  .cal-cell .cal-num { font-size: .78rem; line-height: 1; }
+  .cal-cell.dim .cal-num { color: var(--text-muted); opacity: .5; }
+  .cal-cell.has-games { background: var(--bg-alt); border-color: var(--border); color: var(--text); cursor: pointer; }
+  .cal-cell.has-games:hover { border-color: var(--border-strong); background: var(--bg-warm); text-decoration: none; }
+  .cal-cell .cal-dot {
+    font-size: .58rem; font-weight: 700; line-height: 1; min-width: 15px; text-align: center;
+    padding: 1px 3px; border-radius: 99px; background: var(--accent); color: #fff;
+  }
+  .cal-cell.current { border-color: var(--accent); }
+  .cal-cell.current .cal-num { color: var(--accent); font-weight: 700; }
+  .cal-cell.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .cal-cell.selected .cal-num { color: #fff; font-weight: 700; }
+  .cal-cell.selected .cal-dot { background: #fff; color: var(--accent); }
+  .cal-legend { display: flex; gap: 14px; margin-top: 10px; font-size: .66rem; color: var(--text-dim); }
+  .cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .lg-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .lg-swatch.current { border: 1.5px solid var(--accent); }
+  .lg-swatch.selected { background: var(--accent); }
+
+  /* ---- Day header ---- */
+  .day-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .day-title { flex: 1; min-width: 0; }
+  .day-label { font-family: "Oswald", sans-serif; font-weight: 600; font-size: 1.1rem; line-height: 1.1; }
+  .day-step {
+    width: 34px; height: 34px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 1.2rem; text-decoration: none;
+  }
+  .day-step:hover { background: var(--bg-alt); border-color: var(--border-strong); text-decoration: none; }
+  .day-step.disabled { opacity: .3; pointer-events: none; }
+
+  /* ---- Game cards ---- */
+  .game-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .game-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card); padding: 8px 12px 10px;
+  }
+  .game-card.unplayed { border-style: dashed; }
+  .gc-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: .72rem; }
+  .gc-league { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
+  .gc-time { margin-left: 0; }
+  .gc-badges { margin-left: auto; display: inline-flex; gap: 4px; }
+  .gc-side { display: flex; align-items: baseline; gap: 7px; padding: 3px 0; }
+  .gc-side .team-abbrev { font-size: .95rem; min-width: 2.6em; }
+  .gc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; }
+  .gc-side.win .gc-name, .gc-side.win .gc-score { color: var(--text); font-weight: 700; }
+  .gc-side.win .gc-score { color: var(--good); }
+  .gc-score { font-family: "Oswald", "SF Mono", monospace; font-weight: 700; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+  .pp-tick {
+    font-size: .56rem; font-weight: 700; letter-spacing: .03em; color: var(--fill-info);
+    border: 1px solid var(--fill-info); border-radius: 2px; padding: 0 3px; line-height: 1.3;
+  }
+  .gc-foot { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-soft); display: flex; align-items: center; }
+  .gc-link { font-size: .8rem; font-weight: 600; }
+</style>
 {% endblock %}
 {% block scripts %}
 <script>
