@@ -53,18 +53,34 @@ college page. Top hitter scored 98.4 (OPS 1.013, 97th-pct power); top pitcher
   percentile sliders applied to the college tier, with a Prospect Score badge
   and league rank. The PS bubble on the board links to it.
 
-## Honest limitations (flagged in-page and here)
+## Persistence upgrade (follow-up commit) — exact OAA + WP
 
-- **WP is approximate** — pooled across both halves (no persisted bat-first
-  flag), so read leverage/WPA as directional, not exact.
-- **Fielding zone attribution is heuristic** — no batted-ball coordinates, so
-  the responsible position comes from LA band + spray side, mapped to the
-  team's positional regular (ignores in-game subs/multi-position).
+Persisted the data that previously forced approximations (**new games only**;
+legacy rows fall back automatically):
+
+- **`game_pa_log.fielder_id`** — the engine's PO-credited fielder on outs,
+  threaded from the outcome dict in `render.py` (no RNG consumed, so seed
+  determinism holds — verified by the 90-green engine suite). Fielding OAA now
+  attributes outs **exactly** (PO-consistent) and only falls back to the
+  trajectory-zone heuristic for balls that fell in. On a 200-game seed, ~41% of
+  chances are exactly attributed; the page shows the live `exact_pct`.
+- **Bat-first half ordering** — no new column needed: `games.home_bats_first`
+  was already persisted. WPA/Leverage now key the empirical win table on
+  *(second-half?, score_diff, outs, bases)*, respecting O27's two sequential
+  27-out halves instead of pooling them.
+
+The migration is the usual additive `ALTER TABLE … ADD COLUMN` (mirrors the
+EV/LA columns); existing DBs upgrade in place with NULL fielder_id and use the
+heuristic until re-simmed.
+
+## Remaining limitations
+
+- **Fielding on balls that fell in is still heuristic** — no batted-ball
+  coordinates, so a hit's responsible position comes from LA band + spray side
+  → the team's positional regular. (The engine attributes a fielder only on
+  outs; adding hit attribution would consume RNG and break determinism.)
 - **Pitch-arsenal run value is contact-only** (pa_log logs BIP, not whiffs).
 - **Expected stats** denominator is AB; xwOBAcon is per-contact by design.
-
-These are all data-availability limits, not bugs; each is a clean upgrade path
-if we ever persist fielder_id / bat-first / pitch-level events.
 
 ## Validation
 
@@ -80,7 +96,10 @@ if we ever persist fielder_id / bat-first / pitch-level events.
 
 ## Follow-ups
 
-- If we ever persist `fielder_id` + a bat-first flag, OAA and WP become exact.
+- Exact OAA on *hits* would need batted-ball coordinates (or a deterministic,
+  RNG-free fielder attribution computed in the renderer post-outcome).
 - The advanced builders re-scan pa_log per player-page load (consistent with
   the existing percentile scans, but a shared per-request cache would help if
   the page gets hot).
+- Optional `manage.py` backfill that replays played games from their stored
+  seeds to populate `fielder_id` on existing rows (we chose new-games-only).

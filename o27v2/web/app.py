@@ -6421,7 +6421,7 @@ def o27i_advanced():
         tto=top([l for l in tto["leaders"] if l["penalty"] is not None]),
         tto_league=tto["league"],
         twoc=top(twoc["leaders"]), league_2c=twoc["league_rv_per_2c"],
-        fielding=top(field["leaders"]),
+        fielding=top(field["leaders"]), fielding_exact_pct=field["exact_pct"],
         leagues=leagues, selected_league=selected_league,
     )
 

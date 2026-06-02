@@ -1665,6 +1665,9 @@ class Renderer:
                 "quality": quality,
                 "hit_type": hit_type,
                 "pitch_type": event.get("pitch_type"),
+                # Engine-credited fielder on outs/errors (None for hits); read
+                # off the outcome dict — no RNG consumed, so determinism holds.
+                "fielder_id": outcome.get("fielder_id"),
                 "exit_velocity": event.get("exit_velocity"),
                 "launch_angle":  event.get("launch_angle"),
                 "spray_angle":   event.get("spray_angle"),

@@ -429,7 +429,11 @@ CREATE TABLE IF NOT EXISTS game_pa_log (
     -- events (K / BB / HBP) and on legacy rows.
     exit_velocity     REAL    DEFAULT NULL,   -- mph
     launch_angle      REAL    DEFAULT NULL,   -- degrees, − = grounder
-    spray_angle       REAL    DEFAULT NULL    -- degrees, − = pull / + = oppo
+    spray_angle       REAL    DEFAULT NULL,   -- degrees, − = pull / + = oppo
+    -- Engine-credited fielder (player_id) on outs/errors; NULL for hits, non-
+    -- BIP events, and legacy rows. Powers exact (PO-consistent) Fielding OAA;
+    -- hits still fall back to trajectory-zone attribution in the analytics.
+    fielder_id        INTEGER DEFAULT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pa_log_game ON game_pa_log(game_id);
 CREATE INDEX IF NOT EXISTS idx_pa_log_batter ON game_pa_log(batter_id);
@@ -1590,6 +1594,12 @@ def init_db() -> None:
                 conn.commit()
             except Exception:
                 pass
+        # Per-event fielder attribution (engine-credited fielder on outs).
+        try:
+            conn.execute("ALTER TABLE game_pa_log ADD COLUMN fielder_id INTEGER DEFAULT NULL")
+            conn.commit()
+        except Exception:
+            pass
         for col in ("singles_allowed", "doubles_allowed", "triples_allowed"):
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")

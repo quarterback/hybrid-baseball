@@ -52,7 +52,7 @@
 
   {{ board("Expected Stats", "xBA / xSLG / xwOBAcon (EV·LA bins)", expected,
            [('xba','xBA'),('xslg','xSLG'),('xwobacon','xwOBAcon')]) }}
-  {{ board("Fielding Run Value", "Outs Above Average → runs", fielding,
+  {{ board("Fielding Run Value", fielding_exact_pct ~ "% exact fielder attribution", fielding,
            [('oaa','OAA'),('frv','FRV'),('chances','Ch')]) }}
 
   {{ board("Pitch Arsenal", "run value /100 BIP (＋ = prevention)", arsenal,
@@ -82,9 +82,11 @@
 </div>
 
 <div class="text-secondary small mt-3" style="max-width:820px">
-  WP and fielding-zone attribution are empirical/heuristic (no batted-ball
-  coordinates) — read as directional. Pitch-arsenal run value covers balls in
-  play (contact quality), not whiffs.
+  Win probability is split by batting half (using the persisted bat-first flag),
+  so it respects O27's two-sequential-halves structure. Fielding OAA uses the
+  engine's exact fielder on outs ({{ fielding_exact_pct }}% of chances) and
+  trajectory-zone attribution for balls that fell in. Pitch-arsenal run value
+  covers balls in play (contact quality), not whiffs.
 </div>
 
 {% endblock %}

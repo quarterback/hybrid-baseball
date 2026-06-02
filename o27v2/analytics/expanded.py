@@ -355,13 +355,15 @@ def _zone_from_trajectory(la, spray):
 
 def build_fielding_value(min_chances: int = 25, team_ids=None) -> dict:
     """Outs Above Average + Fielding Run Value. Catch probability per ball is
-    the league out-rate for its (EV, LA) bin; each ball is attributed to the
-    fielding team's regular at the trajectory-implied position. OAA = Σ(out −
-    expected_out) over a fielder's zone; FRV = OAA × run/out."""
+    the league out-rate for its (EV, LA) bin. Attribution is exact on outs (the
+    engine-credited fielder_id, PO-consistent) and falls back to trajectory-zone
+    → positional regular for balls that fell in. OAA = Σ(out − expected_out);
+    FRV = OAA × run/out. `exact_pct` reports the share of chances exactly
+    attributed."""
     # League out-rate per (EV, LA) bin.
     binr_out = defaultdict(int); binr_n = defaultdict(int)
     rows = db.fetchall(
-        """SELECT team_id, game_id, hit_type, exit_velocity, launch_angle, spray_angle
+        """SELECT team_id, game_id, hit_type, exit_velocity, launch_angle, spray_angle, fielder_id
            FROM game_pa_log WHERE phase = 0 AND exit_velocity IS NOT NULL""" + _team_in(team_ids))
     for r in rows:
         key = (_ev_bin(r["exit_velocity"]), _la_bin(r["launch_angle"]))
@@ -390,21 +392,28 @@ def build_fielding_value(min_chances: int = 25, team_ids=None) -> dict:
             regular[key] = (a["player_id"], a["g"])
 
     oaa = defaultdict(float); chances = defaultdict(int)
+    n_exact = 0; n_heur = 0
     for r in rows:
-        zone = _zone_from_trajectory(r["launch_angle"], r["spray_angle"])
-        if not zone:
-            continue
-        teams = games.get(r["game_id"])
-        if not teams:
-            continue
-        home, away = teams
-        field_team = home if r["team_id"] == away else away
-        reg = regular.get((field_team, zone))
-        if not reg:
-            continue
-        fielder = reg[0]
+        is_out = r["hit_type"] in _OUT_TYPES
+        # Exact attribution: on an out the engine credits a real fielder
+        # (PO-consistent). Fall back to trajectory-zone → positional regular for
+        # hits and for outs with no persisted fielder (legacy rows / bunts).
+        fielder = None
+        if is_out and r["fielder_id"] is not None:
+            fielder = r["fielder_id"]; n_exact += 1
+        else:
+            zone = _zone_from_trajectory(r["launch_angle"], r["spray_angle"])
+            teams = games.get(r["game_id"])
+            if not zone or not teams:
+                continue
+            home, away = teams
+            field_team = home if r["team_id"] == away else away
+            reg = regular.get((field_team, zone))
+            if not reg:
+                continue
+            fielder = reg[0]; n_heur += 1
         exp = out_rate.get((_ev_bin(r["exit_velocity"]), _la_bin(r["launch_angle"])), 0.0)
-        actual = 1.0 if r["hit_type"] in _OUT_TYPES else 0.0
+        actual = 1.0 if is_out else 0.0
         oaa[fielder] += (actual - exp)
         chances[fielder] += 1
 
@@ -422,26 +431,37 @@ def build_fielding_value(min_chances: int = 25, team_ids=None) -> dict:
             "frv": round(v * _RUN_PER_OUT, 1),
         })
     leaders.sort(key=lambda x: -x["oaa"])
-    return {"leaders": leaders}
+    tot = n_exact + n_heur
+    return {"leaders": leaders,
+            "exact_pct": round(100 * n_exact / tot, 1) if tot else 0.0}
 
 
 # ---------------------------------------------------------------------------
 # 7. Win Probability Added + Leverage Index
 # ---------------------------------------------------------------------------
 
+def _second_half(row) -> int:
+    """Is the event's batting team the SECOND to bat? Uses the persisted
+    home_bats_first flag (the first-batting team = home iff home_bats_first)."""
+    hbf = row["home_bats_first"] if row["home_bats_first"] is not None else 0
+    first_team = row["home_team_id"] if hbf else row["away_team_id"]
+    return 0 if row["team_id"] == first_team else 1
+
+
 def _wp_table(team_ids=None) -> dict:
-    """Empirical P(batting team wins | score_diff, outs_bucket, bases). Pooled
-    across both halves — approximate, but captures score/outs/base leverage."""
+    """Empirical P(batting team wins | half-order, score_diff, outs, bases).
+    Split by which team bats first/second (persisted home_bats_first), so the
+    huge structural asymmetry of O27's two sequential halves is captured."""
     rows = db.fetchall(
         """SELECT l.team_id, l.outs_before, l.bases_before, l.score_diff_before,
-                  g.winner_id
+                  g.winner_id, g.home_bats_first, g.home_team_id, g.away_team_id
            FROM game_pa_log l JOIN games g ON g.id = l.game_id
            WHERE l.phase = 0 AND g.played = 1 AND g.winner_id IS NOT NULL"""
         + _team_in(team_ids, "l.team_id"))
     win = defaultdict(int); n = defaultdict(int)
     for r in rows:
         sd = max(-10, min(10, r["score_diff_before"] if r["score_diff_before"] is not None else 0))
-        key = (sd, _outs_bucket(r["outs_before"]), r["bases_before"])
+        key = (_second_half(r), sd, _outs_bucket(r["outs_before"]), r["bases_before"])
         n[key] += 1
         if r["winner_id"] == r["team_id"]:
             win[key] += 1
@@ -450,28 +470,33 @@ def _wp_table(team_ids=None) -> dict:
 
 def build_win_probability(min_pa: int = 50, team_ids=None) -> dict:
     """WPA (sum of win-probability swings) and average Leverage Index per
-    batter and pitcher. WP table is empirical from this league's games."""
+    batter and pitcher. The WP table is empirical from this league's games and
+    split by batting half (persisted home_bats_first), so it respects O27's two
+    sequential 27-out halves rather than pooling them."""
     wp = _wp_table(team_ids)
 
-    def lookup(sd, outs, bases):
+    def lookup(half, sd, outs, bases):
         if sd is None or outs is None or bases is None:
             return None
-        return wp.get((max(-10, min(10, sd)), _outs_bucket(outs), bases))
+        return wp.get((half, max(-10, min(10, sd)), _outs_bucket(outs), bases))
 
     rows = db.fetchall(
-        """SELECT batter_id, pitcher_id,
-                  outs_before, bases_before, score_diff_before,
-                  outs_after, bases_after, score_diff_after
-           FROM game_pa_log WHERE phase = 0""" + _team_in(team_ids))
+        """SELECT l.batter_id, l.pitcher_id, l.team_id,
+                  l.outs_before, l.bases_before, l.score_diff_before,
+                  l.outs_after, l.bases_after, l.score_diff_after,
+                  g.home_bats_first, g.home_team_id, g.away_team_id
+           FROM game_pa_log l JOIN games g ON g.id = l.game_id
+           WHERE l.phase = 0""" + _team_in(team_ids, "l.team_id"))
     swings = []
     bat = defaultdict(lambda: {"wpa": 0.0, "li": 0.0, "n": 0})
     pit = defaultdict(lambda: {"wpa": 0.0, "li": 0.0, "n": 0})
     for r in rows:
-        wp0 = lookup(r["score_diff_before"], r["outs_before"], r["bases_before"])
+        half = _second_half(r)   # constant within a batting half
+        wp0 = lookup(half, r["score_diff_before"], r["outs_before"], r["bases_before"])
         if r["outs_after"] is not None and r["outs_after"] >= 27:
             wp1 = wp0   # half boundary — no in-half swing measured
         else:
-            wp1 = lookup(r["score_diff_after"], r["outs_after"], r["bases_after"])
+            wp1 = lookup(half, r["score_diff_after"], r["outs_after"], r["bases_after"])
         if wp0 is None or wp1 is None:
             continue
         d = wp1 - wp0
