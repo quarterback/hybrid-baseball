@@ -2,8 +2,8 @@
 {% block title %}Schedule{% endblock %}
 {% block content %}
 
-{# Filter values, carried through every calendar / day link (omitted when at
-   their default so the URL stays clean). #}
+{# Filter values, carried through every strip / day link (omitted at their
+   default so the URL stays clean). #}
 {% set lg = selected_league if selected_league != 'all' else none %}
 {% set tm = selected_team.id if selected_team else none %}
 {% set st = status if status != 'all' else none %}
@@ -12,14 +12,12 @@
 <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
   <h2 class="fw-bold mb-0">Schedule</h2>
   <div class="d-flex flex-wrap gap-3 small">
-    {% if sim.current_date %}<span><span class="text-secondary">Current:</span> <span class="fw-bold" style="color:var(--accent)">{{ sim.current_date }}</span></span>{% endif %}
     {% if sim.all_star_date %}<span><span class="text-secondary">All-Star:</span> <span class="fw-bold" style="color:var(--warn)">{{ sim.all_star_date }}</span></span>{% endif %}
     {% if sim.last_date %}<span><span class="text-secondary">Season ends:</span> <span class="fw-bold text-secondary">{{ sim.last_date }}</span></span>{% endif %}
   </div>
 </div>
 
 <form class="filter-bar d-flex flex-wrap gap-2 align-items-end" method="get">
-  {# Preserve the selected day when a filter changes. #}
   {% if view_date %}<input type="hidden" name="date" value="{{ view_date }}">{% endif %}
   {% if all_leagues and all_leagues|length > 1 %}
   <div>
@@ -59,166 +57,149 @@
       <option value="unplayed" {% if status == 'unplayed' %}selected{% endif %}>Upcoming</option>
     </select>
   </div>
-  <div><button type="submit" class="btn btn-secondary btn-sm">Filter</button></div>
 </form>
 
-<div class="sched-layout">
-  {# ---------- Month calendar ---------- #}
-  <section class="sched-cal panel">
-    <div class="cal-head">
-      <a class="cal-nav" title="Previous month"
-         href="{{ url_for('schedule', month=prev_month, date=view_date, league=lg, team=tm, status=st) }}">‹</a>
-      <div class="cal-title">{{ month_label }}</div>
-      <a class="cal-nav" title="Next month"
-         href="{{ url_for('schedule', month=next_month, date=view_date, league=lg, team=tm, status=st) }}">›</a>
-    </div>
-    <div class="cal-grid cal-dow-row">
-      {% for d in ['Su','Mo','Tu','We','Th','Fr','Sa'] %}<div class="cal-dow">{{ d }}</div>{% endfor %}
-    </div>
-    {% for week in cal_weeks %}
-    <div class="cal-grid">
-      {% for c in week %}
-        {% if c.count > 0 %}
-        <a class="cal-cell has-games{% if c.is_selected %} selected{% endif %}{% if c.is_current %} current{% endif %}{% if not c.in_month %} dim{% endif %}"
-           href="{{ url_for('schedule', date=c.date, league=lg, team=tm, status=st) }}"
-           title="{{ c.count }} game{{ '' if c.count == 1 else 's' }}">
-          <span class="cal-num">{{ c.day }}</span>
-          <span class="cal-dot">{{ c.count }}</span>
-        </a>
-        {% else %}
-        <div class="cal-cell{% if c.is_current %} current{% endif %}{% if not c.in_month %} dim{% endif %}">
-          <span class="cal-num">{{ c.day }}</span>
-        </div>
-        {% endif %}
-      {% endfor %}
-    </div>
+{# ---------- Date navigator: ‹ 7-day strip › + jump-to-date + Today ---------- #}
+<div class="date-nav">
+  <a class="dn-arrow {% if not prev_week %}disabled{% endif %}"
+     {% if prev_week %}href="{{ url_for('schedule', date=prev_week, league=lg, team=tm, status=st) }}"{% endif %}
+     title="Previous week">‹</a>
+
+  <div class="day-strip" id="day-strip">
+    {% for c in strip %}
+    <a class="day-pill{% if c.is_selected %} selected{% endif %}{% if c.is_current %} current{% endif %}{% if c.count == 0 %} empty{% endif %}"
+       href="{{ url_for('schedule', date=c.date, league=lg, team=tm, status=st) }}"
+       {% if c.is_selected %}aria-current="date"{% endif %}>
+      <span class="dp-dow">{{ c.dow }}</span>
+      <span class="dp-md">{{ c.md }}</span>
+      <span class="dp-count">{% if c.count %}{{ c.count }} game{{ '' if c.count == 1 else 's' }}{% else %}—{% endif %}</span>
+    </a>
     {% endfor %}
-    <div class="cal-legend">
-      <span><span class="lg-swatch current"></span>Sim clock</span>
-      <span><span class="lg-swatch selected"></span>Viewing</span>
-    </div>
-  </section>
+  </div>
 
-  {# ---------- Selected day ---------- #}
-  <section class="sched-day">
-    {% if view_date %}
-    <div class="day-head">
-      <a class="day-step {% if not prev_day %}disabled{% endif %}"
-         {% if prev_day %}href="{{ url_for('schedule', date=prev_day, league=lg, team=tm, status=st) }}"{% endif %}
-         title="Previous game day">‹</a>
-      <div class="day-title">
-        <div class="day-label">{{ view_date_label or view_date }}</div>
-        <div class="day-sub text-secondary small">{{ games|length }} game{{ '' if games|length == 1 else 's' }}</div>
-      </div>
-      <a class="day-step {% if not next_day %}disabled{% endif %}"
-         {% if next_day %}href="{{ url_for('schedule', date=next_day, league=lg, team=tm, status=st) }}"{% endif %}
-         title="Next game day">›</a>
-    </div>
+  <a class="dn-arrow {% if not next_week %}disabled{% endif %}"
+     {% if next_week %}href="{{ url_for('schedule', date=next_week, league=lg, team=tm, status=st) }}"{% endif %}
+     title="Next week">›</a>
+
+  <div class="dn-jump">
+    <input type="date" id="dn-date" class="form-control form-control-sm"
+           value="{{ view_date or '' }}"
+           {% if date_lo %}min="{{ date_lo }}"{% endif %} {% if date_hi %}max="{{ date_hi }}"{% endif %}
+           title="Jump to a date">
+    {% if current_date %}
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('schedule', date=current_date, league=lg, team=tm, status=st) }}"
+       title="Jump to the sim clock ({{ current_date }})">Today</a>
     {% endif %}
-
-    {% if games %}
-    <div class="game-cards">
-      {% for g in games %}
-      {% set pp_both = g.pp_home and g.pp_away %}
-      <div class="game-card{% if not g.played %} unplayed{% endif %}">
-        <div class="gc-meta">
-          {% if show_league_col %}<span class="gc-league">{{ g.home_league }}</span>{% endif %}
-          <span class="gc-time text-secondary">{{ g | first_pitch }}</span>
-          <span class="gc-badges">
-            {% if g.super_inning %}<span class="si-badge">SI</span>{% endif %}
-            {% if pp_both %}<span class="pp-badge pp-both" title="Power play deployed by both teams">PP ×2</span>
-            {% elif g.pp_away %}<span class="pp-badge" title="Power play deployed by {{ g.away_abbrev }} (away)">PP</span>
-            {% elif g.pp_home %}<span class="pp-badge" title="Power play deployed by {{ g.home_abbrev }} (home)">PP</span>{% endif %}
-          </span>
-        </div>
-
-        <div class="gc-side{% if g.played and g.winner_id == g.away_team_id %} win{% endif %}">
-          <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}" class="team-abbrev">{{ g.away_abbrev }}</a>
-          <span class="gc-name text-secondary">{{ g.away_name }}</span>
-          {% if g.pp_away %}<span class="pp-tick" title="{{ g.away_abbrev }} deployed power play">PP</span>{% endif %}
-          <span class="gc-score">{% if g.played %}{{ g.away_score }}{% else %}<span class="text-secondary">–</span>{% endif %}</span>
-        </div>
-        <div class="gc-side{% if g.played and g.winner_id == g.home_team_id %} win{% endif %}">
-          <a href="{{ url_for('team_detail', team_id=g.home_team_id) }}" class="team-abbrev">{{ g.home_abbrev }}</a>
-          <span class="gc-name text-secondary">{{ g.home_name }}</span>
-          {% if g.pp_home %}<span class="pp-tick" title="{{ g.home_abbrev }} deployed power play">PP</span>{% endif %}
-          <span class="gc-score">{% if g.played %}{{ g.home_score }}{% else %}<span class="text-secondary">–</span>{% endif %}</span>
-        </div>
-
-        <div class="gc-foot">
-          {% if g.played %}
-            <a href="{{ url_for('game_detail', game_id=g.id) }}" class="gc-link">Box score →</a>
-          {% else %}
-            <button class="btn btn-primary btn-sm py-0 sim-one-btn" data-game-id="{{ g.id }}">Sim game</button>
-          {% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="panel panel-body text-center text-secondary py-4">
-      {% if view_date %}No games on this day{% if selected_league != 'all' or selected_team or status != 'all' %} for the current filter{% endif %}.
-      Pick another day on the calendar.{% else %}No games scheduled yet.{% endif %}
-    </div>
-    {% endif %}
-  </section>
+  </div>
 </div>
 
+{# ---------- Selected day ---------- #}
+{% if view_date %}
+<div class="day-banner">
+  <span class="day-banner-label">{{ view_date_label or view_date }}</span>
+  <span class="day-banner-count text-secondary">{{ games|length }} game{{ '' if games|length == 1 else 's' }}</span>
+</div>
+{% endif %}
+
+{% if games %}
+<div class="game-cards">
+  {% for g in games %}
+  {% set pp_both = g.pp_home and g.pp_away %}
+  <div class="game-card{% if not g.played %} unplayed{% endif %}">
+    <div class="gc-meta">
+      {% if show_league_col %}<span class="gc-league">{{ g.home_league }}</span>{% endif %}
+      <span class="gc-time text-secondary">{{ g | first_pitch }}</span>
+      <span class="gc-badges">
+        {% if g.super_inning %}<span class="si-badge">SI</span>{% endif %}
+        {% if pp_both %}<span class="pp-badge pp-both" title="Power play deployed by both teams">PP ×2</span>
+        {% elif g.pp_away %}<span class="pp-badge" title="Power play deployed by {{ g.away_abbrev }} (away)">PP</span>
+        {% elif g.pp_home %}<span class="pp-badge" title="Power play deployed by {{ g.home_abbrev }} (home)">PP</span>{% endif %}
+      </span>
+    </div>
+
+    <div class="gc-side{% if g.played and g.winner_id == g.away_team_id %} win{% endif %}">
+      <a href="{{ url_for('team_detail', team_id=g.away_team_id) }}" class="team-abbrev">{{ g.away_abbrev }}</a>
+      <span class="gc-name text-secondary">{{ g.away_name }}</span>
+      {% if g.pp_away %}<span class="pp-tick" title="{{ g.away_abbrev }} deployed power play">PP</span>{% endif %}
+      <span class="gc-score">{% if g.played %}{{ g.away_score }}{% else %}<span class="text-secondary">–</span>{% endif %}</span>
+    </div>
+    <div class="gc-side{% if g.played and g.winner_id == g.home_team_id %} win{% endif %}">
+      <a href="{{ url_for('team_detail', team_id=g.home_team_id) }}" class="team-abbrev">{{ g.home_abbrev }}</a>
+      <span class="gc-name text-secondary">{{ g.home_name }}</span>
+      {% if g.pp_home %}<span class="pp-tick" title="{{ g.home_abbrev }} deployed power play">PP</span>{% endif %}
+      <span class="gc-score">{% if g.played %}{{ g.home_score }}{% else %}<span class="text-secondary">–</span>{% endif %}</span>
+    </div>
+
+    <div class="gc-foot">
+      <span class="gc-venue text-secondary">{{ g.home_park_name or g.home_name }}{% if g.home_city %} · {{ g.home_city }}{% endif %}</span>
+      {% if g.played %}
+        <a href="{{ url_for('game_detail', game_id=g.id) }}" class="gc-link">Box score →</a>
+      {% else %}
+        <button class="btn btn-primary btn-sm py-0 sim-one-btn" data-game-id="{{ g.id }}">Sim game</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="panel panel-body text-center text-secondary py-4">
+  {% if view_date %}No games on this day{% if selected_league != 'all' or selected_team or status != 'all' %} for the current filter{% endif %}.
+  Use the strip or the date picker to find a day with games.{% else %}No games scheduled yet.{% endif %}
+</div>
+{% endif %}
+
 <style>
-  .sched-layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
-  @media (max-width: 768px) { .sched-layout { grid-template-columns: 1fr; gap: 12px; } }
-
-  /* ---- Calendar ---- */
-  .sched-cal { padding: 10px 12px 12px; position: sticky; top: 8px; }
-  @media (max-width: 768px) { .sched-cal { position: static; } }
-  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .cal-title { font-family: "Oswald", sans-serif; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: .98rem; }
-  .cal-nav {
-    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  /* ---- Date navigator (ESPN/NHL-style day strip) ---- */
+  .date-nav { display: flex; align-items: stretch; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .dn-arrow {
+    flex: 0 0 auto; width: 34px; display: inline-flex; align-items: center; justify-content: center;
     border: 1px solid var(--border); border-radius: var(--radius); color: var(--text);
-    font-size: 1.1rem; line-height: 1; text-decoration: none;
+    font-size: 1.3rem; line-height: 1; text-decoration: none;
   }
-  .cal-nav:hover { background: var(--bg-alt); border-color: var(--border-strong); text-decoration: none; }
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-  .cal-dow-row { margin-bottom: 3px; }
-  .cal-dow { text-align: center; font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 2px 0; }
-  .cal-cell {
-    position: relative; min-height: 38px; border: 1px solid transparent; border-radius: var(--radius);
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-    color: var(--text-dim); text-decoration: none; font-variant-numeric: tabular-nums;
-  }
-  .cal-cell .cal-num { font-size: .78rem; line-height: 1; }
-  .cal-cell.dim .cal-num { color: var(--text-muted); opacity: .5; }
-  .cal-cell.has-games { background: var(--bg-alt); border-color: var(--border); color: var(--text); cursor: pointer; }
-  .cal-cell.has-games:hover { border-color: var(--border-strong); background: var(--bg-warm); text-decoration: none; }
-  .cal-cell .cal-dot {
-    font-size: .58rem; font-weight: 700; line-height: 1; min-width: 15px; text-align: center;
-    padding: 1px 3px; border-radius: 99px; background: var(--accent); color: #fff;
-  }
-  .cal-cell.current { border-color: var(--accent); }
-  .cal-cell.current .cal-num { color: var(--accent); font-weight: 700; }
-  .cal-cell.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .cal-cell.selected .cal-num { color: #fff; font-weight: 700; }
-  .cal-cell.selected .cal-dot { background: #fff; color: var(--accent); }
-  .cal-legend { display: flex; gap: 14px; margin-top: 10px; font-size: .66rem; color: var(--text-dim); }
-  .cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
-  .lg-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-  .lg-swatch.current { border: 1.5px solid var(--accent); }
-  .lg-swatch.selected { background: var(--accent); }
+  .dn-arrow:hover { background: var(--bg-alt); border-color: var(--border-strong); text-decoration: none; }
+  .dn-arrow.disabled { opacity: .3; pointer-events: none; }
 
-  /* ---- Day header ---- */
-  .day-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  .day-title { flex: 1; min-width: 0; }
-  .day-label { font-family: "Oswald", sans-serif; font-weight: 600; font-size: 1.1rem; line-height: 1.1; }
-  .day-step {
-    width: 34px; height: 34px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
-    border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-size: 1.2rem; text-decoration: none;
+  .day-strip {
+    flex: 1 1 auto; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+    scroll-snap-type: x proximity;
   }
-  .day-step:hover { background: var(--bg-alt); border-color: var(--border-strong); text-decoration: none; }
-  .day-step.disabled { opacity: .3; pointer-events: none; }
+  .day-strip::-webkit-scrollbar { height: 5px; }
+  .day-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+  .day-pill {
+    scroll-snap-align: center; min-width: 78px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 6px 4px 7px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg-card); text-decoration: none; color: var(--text);
+  }
+  .day-pill:hover { border-color: var(--border-strong); background: var(--bg-alt); text-decoration: none; }
+  .day-pill .dp-dow { font-size: .62rem; font-weight: 700; letter-spacing: .06em; color: var(--text-muted); }
+  .day-pill .dp-md { font-family: "Oswald", sans-serif; font-weight: 600; font-size: 1.05rem; line-height: 1; font-variant-numeric: tabular-nums; }
+  .day-pill .dp-count { font-size: .6rem; color: var(--text-dim); }
+  .day-pill.empty .dp-count { color: var(--text-muted); }
+  .day-pill.empty .dp-md { opacity: .6; }
+  .day-pill.current { border-color: var(--accent); }
+  .day-pill.current .dp-dow { color: var(--accent); }
+  .day-pill.selected { background: var(--accent); border-color: var(--accent); }
+  .day-pill.selected .dp-dow, .day-pill.selected .dp-md, .day-pill.selected .dp-count { color: #fff; }
+
+  .dn-jump { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+  .dn-jump .form-control { width: auto; }
+  @media (max-width: 575px) {
+    .date-nav { gap: 6px; }
+    .day-pill { min-width: 64px; }
+    .dn-jump { flex: 1 1 100%; }
+    .dn-jump .form-control { flex: 1 1 auto; width: auto; }
+  }
+
+  /* ---- Day banner ---- */
+  .day-banner { display: flex; align-items: baseline; gap: 10px; padding: 6px 2px 8px; border-bottom: 2px solid var(--border-strong); margin-bottom: 12px; }
+  .day-banner-label { font-family: "Oswald", sans-serif; font-weight: 600; font-size: 1.25rem; text-transform: uppercase; letter-spacing: .01em; }
+  .day-banner-count { font-size: .82rem; margin-left: auto; }
 
   /* ---- Game cards ---- */
-  .game-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .game-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
   .game-card {
     background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-card);
     box-shadow: var(--shadow-card); padding: 8px 12px 10px;
@@ -226,24 +207,41 @@
   .game-card.unplayed { border-style: dashed; }
   .gc-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: .72rem; }
   .gc-league { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
-  .gc-time { margin-left: 0; }
   .gc-badges { margin-left: auto; display: inline-flex; gap: 4px; }
   .gc-side { display: flex; align-items: baseline; gap: 7px; padding: 3px 0; }
   .gc-side .team-abbrev { font-size: .95rem; min-width: 2.6em; }
   .gc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; }
-  .gc-side.win .gc-name, .gc-side.win .gc-score { color: var(--text); font-weight: 700; }
+  .gc-side.win .gc-name { color: var(--text); font-weight: 700; }
   .gc-side.win .gc-score { color: var(--good); }
   .gc-score { font-family: "Oswald", "SF Mono", monospace; font-weight: 700; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
   .pp-tick {
     font-size: .56rem; font-weight: 700; letter-spacing: .03em; color: var(--fill-info);
     border: 1px solid var(--fill-info); border-radius: 2px; padding: 0 3px; line-height: 1.3;
   }
-  .gc-foot { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-soft); display: flex; align-items: center; }
-  .gc-link { font-size: .8rem; font-weight: 600; }
+  .gc-foot { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-soft); display: flex; align-items: center; gap: 8px; }
+  .gc-venue { font-size: .72rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gc-link { font-size: .8rem; font-weight: 600; white-space: nowrap; }
+  .gc-foot .sim-one-btn { margin-left: auto; }
 </style>
 {% endblock %}
 {% block scripts %}
 <script>
+// Jump-to-date picker → reload at the chosen day, preserving filters.
+(function () {
+  const d = document.getElementById('dn-date');
+  if (d) d.addEventListener('change', function () {
+    if (!this.value) return;
+    const u = new URL(window.location.href);
+    u.searchParams.set('date', this.value);
+    window.location.href = u.toString();
+  });
+  // Keep the selected day centered in the strip on load (mobile scroll).
+  const sel = document.querySelector('.day-pill.selected');
+  if (sel && sel.scrollIntoView) {
+    sel.scrollIntoView({inline: 'center', block: 'nearest'});
+  }
+})();
+
 document.querySelectorAll('.sim-one-btn').forEach(btn => {
   btn.addEventListener('click', async function() {
     const gid = this.dataset.gameId;

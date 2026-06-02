@@ -17,7 +17,6 @@ Routes:
   POST /api/sim           Simulate the next N games (JSON response)
 """
 from __future__ import annotations
-import calendar as _calendar
 import math
 import os
 import sys
@@ -2979,6 +2978,7 @@ def schedule():
         games = [dict(g) for g in db.fetchall(
             f"""SELECT g.*,
                        ht.name AS home_name, ht.abbrev AS home_abbrev, ht.league AS home_league,
+                       ht.park_name AS home_park_name, ht.city AS home_city,
                        at.name AS away_name, at.abbrev AS away_abbrev, at.league AS away_league,
                        wt.abbrev AS winner_abbrev
                 {JOIN} LEFT JOIN teams wt ON g.winner_id = wt.id{w}
@@ -2996,61 +2996,31 @@ def schedule():
             g["pp_home"] = (g["id"], g["home_team_id"]) in dep
             g["pp_away"] = (g["id"], g["away_team_id"]) in dep
 
-    # Calendar month: ?month=YYYY-MM, else the selected day's month, else the
-    # current sim date's month, else the last scheduled month.
-    month_arg = request.args.get("month")
-    cal_anchor = None
-    if month_arg and len(month_arg) == 7 and _valid_iso(month_arg + "-01"):
-        cal_anchor = month_arg + "-01"
-    else:
-        cal_anchor = view_date or current_date or date_hi
-    if cal_anchor:
-        cal_year, cal_month = int(cal_anchor[:4]), int(cal_anchor[5:7])
-    else:
-        _today = _dt.date.today()
-        cal_year, cal_month = _today.year, _today.month
-
-    last_dom = _calendar.monthrange(cal_year, cal_month)[1]
-    m_lo = f"{cal_year:04d}-{cal_month:02d}-01"
-    m_hi = f"{cal_year:04d}-{cal_month:02d}-{last_dom:02d}"
-    w, p = _where("g.game_date BETWEEN ? AND ?", (m_lo, m_hi))
-    day_counts = {r["d"]: r["n"] for r in db.fetchall(
-        f"SELECT g.game_date AS d, COUNT(*) AS n {JOIN}{w} GROUP BY g.game_date", p)}
-
-    # Sunday-first month grid (spillover days from adjacent months included so
-    # the grid is always full weeks).
-    grid = _calendar.Calendar(firstweekday=6)
-    cal_weeks = []
-    for week in grid.monthdatescalendar(cal_year, cal_month):
-        cells = []
-        for d in week:
-            iso = d.isoformat()
-            cells.append({
-                "date": iso,
-                "day": d.day,
-                "in_month": d.month == cal_month,
-                "count": day_counts.get(iso, 0),
-                "is_current": iso == current_date,
-                "is_selected": iso == view_date,
-            })
-        cal_weeks.append(cells)
-
-    first_of_month = _dt.date(cal_year, cal_month, 1)
-    prev_dt = first_of_month - _dt.timedelta(days=1)
-    next_dt = _dt.date(cal_year, cal_month, last_dom) + _dt.timedelta(days=1)
-    prev_month = f"{prev_dt.year:04d}-{prev_dt.month:02d}"
-    next_month = f"{next_dt.year:04d}-{next_dt.month:02d}"
-    month_label = first_of_month.strftime("%B %Y")
-
-    # Prev / next day that actually has games (within filters) — quick stepper.
-    prev_day = next_day = None
+    # Day strip (ESPN/NHL model): a rolling 7-day window centered on the
+    # selected day — view_date-3 … view_date+3, each cell carrying its game
+    # count. The ‹ › arrows step the window a week at a time; a date picker
+    # and a "Today" jump (the sim clock) cover longer leaps.
+    strip = []
+    prev_week = next_week = None
     if view_date:
-        w, p = _where("g.game_date < ?", (view_date,))
-        r = db.fetchone(f"SELECT MAX(g.game_date) AS d {JOIN}{w}", p)
-        prev_day = r["d"] if r and r["d"] else None
-        w, p = _where("g.game_date > ?", (view_date,))
-        r = db.fetchone(f"SELECT MIN(g.game_date) AS d {JOIN}{w}", p)
-        next_day = r["d"] if r and r["d"] else None
+        vd = _dt.date.fromisoformat(view_date)
+        strip_dates = [vd + _dt.timedelta(days=off) for off in range(-3, 4)]
+        s_lo, s_hi = strip_dates[0].isoformat(), strip_dates[-1].isoformat()
+        w, p = _where("g.game_date BETWEEN ? AND ?", (s_lo, s_hi))
+        strip_counts = {r["d"]: r["n"] for r in db.fetchall(
+            f"SELECT g.game_date AS d, COUNT(*) AS n {JOIN}{w} GROUP BY g.game_date", p)}
+        for d in strip_dates:
+            iso = d.isoformat()
+            strip.append({
+                "date": iso,
+                "dow": d.strftime("%a").upper(),
+                "md": d.strftime("%-m/%-d"),
+                "count": strip_counts.get(iso, 0),
+                "is_selected": iso == view_date,
+                "is_current": iso == current_date,
+            })
+        prev_week = (vd - _dt.timedelta(days=7)).isoformat()
+        next_week = (vd + _dt.timedelta(days=7)).isoformat()
 
     view_date_label = (
         _dt.date.fromisoformat(view_date).strftime("%A, %B %-d, %Y")
@@ -3080,12 +3050,11 @@ def schedule():
                   view_date=view_date,
                   view_date_label=view_date_label,
                   current_date=current_date,
-                  prev_day=prev_day,
-                  next_day=next_day,
-                  cal_weeks=cal_weeks,
-                  month_label=month_label,
-                  prev_month=prev_month,
-                  next_month=next_month)
+                  strip=strip,
+                  prev_week=prev_week,
+                  next_week=next_week,
+                  date_lo=date_lo,
+                  date_hi=date_hi)
 
 
 @app.route("/game/<int:game_id>")

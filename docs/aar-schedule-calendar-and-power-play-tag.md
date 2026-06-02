@@ -42,16 +42,24 @@ isolates "this team used power play"). So per game we derive `pp_home` /
   a per-game power-play tag (`pp_home`/`pp_away` from `game_power_play_stats`
   where `pp_deploys > 0`).
 
-**Template — `schedule.html` (rewritten):**
-- Two-column layout: a sticky month **calendar** (game-count dot per day,
-  selected day in accent, the sim clock outlined) beside the selected day's
-  games as **cards**. Collapses to one column ≤768px; cards are
-  `minmax(260px,1fr)` so they go single-column on a phone.
-- Each card: league chip · first pitch · `SI` / `PP` badges, an away row and a
-  home row (abbrev, name, score; winner bold/green), a per-side `PP` tick
-  showing *which* team deployed, and a Box-score link or Sim button.
-- Power-play tag: a `PP` badge in the card meta (with a tooltip naming the
-  deploying side), upgraded to `PP ×2` when both teams deployed.
+**Template — `schedule.html` (rewritten, v2 after reference review):**
+- The first cut used a month-grid calendar. The user supplied ESPN / NBA /
+  NHL / MLB / FOX schedule screenshots — *none* use a month grid; they all use
+  a **horizontal day strip + ‹ › steppers + a date jump**. Pivoted to match:
+  a centered rolling **7-day strip** (view_date−3 … +3, the ESPN model), each
+  pill showing weekday · M/D · game count, the selected day in accent and the
+  sim clock outlined. The `‹ ›` arrows step the window a week; a native
+  `<input type=date>` (bounded to the season) jumps anywhere, and a **Today**
+  button snaps to the sim clock. The strip auto-scrolls the selected pill to
+  center on load and is horizontally swipeable on a phone.
+- Below the strip: a day banner ("Friday, April 3, 2026" · N games) then the
+  day's games as **cards** (`minmax(280px,1fr)`, single-column on a phone).
+- Each card: league chip · first pitch · `SI`/`PP` badges; away and home rows
+  (abbrev, name, score; winner bold/green); a per-side `PP` tick; a footer with
+  the **venue** (park · city, the ESPN/FOX touch) and a Box-score link or Sim
+  button.
+- Power-play tag: a `PP` badge in the card meta (tooltip naming the deploying
+  side), upgraded to `PP ×2` when both teams deployed.
 
 **`base.html`:** added a reusable `.pp-badge` (and `.pp-badge.pp-both`) next
 to `.si-badge`.
@@ -59,16 +67,17 @@ to `.si-badge`.
 ## Validation
 
 Installed Flask in the sandbox, seeded a 30-team / 2430-game DB
-(`manage.py initdb` + `sim 12`), and exercised the live server:
-- `/schedule` → 200; defaults to the first game day (15 games), calendar shows
-  30 active days, cards render with scores.
+(`manage.py initdb` + `sim 30`), and exercised the live server against the
+redesigned strip:
+- `/schedule` → 200; defaults to the sim clock's day, the 7-day strip renders
+  centered on it (weekday · M/D · game count), venue lines populate.
 - Inserted synthetic `game_power_play_stats` rows (one home-only game, one
   both-team game) → verified `PP` badge with the correct team tooltip,
-  `PP ×2` for the both-team game, and per-side `PP` ticks.
-- Month nav (`?month=2026-05` / `2026-03`), league filter, `status=unplayed`,
-  a team filter, an empty future day, and a malformed `?date=not-a-date` all
-  return 200 with no traceback; the empty day shows the "No games on this day"
-  state.
+  `PP ×2` for the both-team game, and per-side `PP` ticks on the right day.
+- `?date=` (mid-month, far-future empty day, malformed `bogus`), the league
+  filter, and `status=unplayed` all return 200 with no traceback; the empty
+  day shows the "No games on this day" state. Prev/next-week arrows, the date
+  picker, and the Today button render with the season-bounded min/max.
 
 ## Not done / follow-ups
 
