@@ -56,6 +56,9 @@ app.register_blueprint(almanac_bp)
 from o27.gazette.blueprint import gazette_bp
 app.register_blueprint(gazette_bp)
 
+from o27v2.web.fantasy import capspace_bp
+app.register_blueprint(capspace_bp)
+
 
 # Presentation filters live in o27v2.web.formatters (pure value formatters,
 # no app dependency). Import and register them on the Jinja environment.
