@@ -1237,7 +1237,7 @@
       {% set ep = request.endpoint %}
       {% set g_games   = ['index', 'gazette.view', 'standings', 'schedule', 'playoffs_view'] %}
       {% set g_players = ['players', 'player_detail', 'teams', 'team_detail', 'compare', 'free_agents'] %}
-      {% set g_stats   = ['leaders', 'streaks_and_records', 'stats_browse', 'analytics', 'distributions', 'o27i_home', 'o27i_leaders', 'player_o27i', 'o27i_advanced', 'glossary'] %}
+      {% set g_stats   = ['leaders', 'streaks_and_records', 'team_stats', 'stats_browse', 'analytics', 'distributions', 'o27i_home', 'o27i_leaders', 'player_o27i', 'o27i_advanced', 'glossary'] %}
       {% set g_league  = ['league', 'transactions', 'auction_view', 'auction_live', 'youth_view', 'youth_team_view', 'youth_tournament_view', 'pro_worldcup_view', 'pro_worldcup_team_view', 'college_view', 'college_program_view', 'college_player_view', 'college_postseason_view', 'college_leaders_view', 'college_game_view', 'college_draft_view', 'college_import_view', 'college_prospects', 'economy_view', 'financials_view'] %}
       {% set g_history = ['seasons_index', 'season_detail', 'season_archive', 'hall_of_fame', 'hof_candidates', 'hof_settings'] %}
       {% set g_manage  = ['engine_settings', 'benchmarks', 'saves_index', 'new_league_get', 'new_league_post', 'universe_new_get', 'universe_new_post'] %}
@@ -1269,6 +1269,7 @@
           <ul class="dropdown-menu">
             <li><a class="dropdown-item {% if ep == 'leaders' %}active{% endif %}" href="{{ url_for('leaders') }}">Leaders</a></li>
             <li><a class="dropdown-item {% if ep == 'streaks_and_records' %}active{% endif %}" href="{{ url_for('streaks_and_records') }}">Streaks &amp; Records</a></li>
+            <li><a class="dropdown-item {% if ep == 'team_stats' %}active{% endif %}" href="{{ url_for('team_stats') }}">Team Stats</a></li>
             <li><a class="dropdown-item {% if ep == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stat Browser</a></li>
             <li><a class="dropdown-item {% if ep == 'analytics' %}active{% endif %}" href="{{ url_for('analytics') }}">Analytics</a></li>
             <li><a class="dropdown-item {% if ep == 'distributions' %}active{% endif %}" href="{{ url_for('distributions') }}">Distributions</a></li>

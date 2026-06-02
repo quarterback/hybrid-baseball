@@ -129,3 +129,54 @@ eyeball.
   record would want a small persistence change first.
 - **Walkback-run / walkback-RBI** tracking (raised mid-session) is a separate
   stat-definition question, not part of this page — captured for its own pass.
+
+---
+
+## Follow-on in the same session: Team Stats page + Walk-Back runs
+
+After the records page, the user asked for (a) team-level Walk-Back runs and
+(b) aggregating team stats "for the categories like players." Audit findings:
+
+- **RISP** is an engine probability mechanic only (`_resolve_risp_pressure`),
+  with **no surfaced stat**, and can't be computed exactly from `game_pa_log`
+  (BIP-only — no K rows, no walk/HBP RBI). Decision: build RISP as **exact box
+  columns** on `game_batter_stats` next (mirrors how 2C/`stay_*` was done),
+  rather than an approximate pa_log derivation.
+- **2C effectiveness** is already fully tracked + surfaced for *players*
+  (2C, 2C-H, 2C-Conv%, 2C-RBI, 2C-RBI%, Δ2C, RAD on `/leaders` + glossary);
+  the only gap was team-level.
+- **Team stats:** the almanac computes per-team totals on static pages, but
+  the **live app had no team leaderboard** — `/team/<id>` is player-by-player.
+
+**Shipped:** `/teams/stats` (Stats ▸ Team Stats) — team batting & pitching
+tables (one row per club), reusing the player aggregators
+(`_aggregate_batter_rows` / `_aggregate_pitcher_rows`) on team-grouped rows so
+team rate stats and the league-relative "+" stats are computed identically to
+players. Adds team 2C-Conv% / 2C-RBI%, RAD, and **Walk-Back runs** (scored,
+re-attributed from opponents' `wb_runs`; allowed, the team's own).
+
+Key correctness notes:
+- Team **batting** sums all phases; team **pitching** uses `_PSTATS_DEDUP_SQL`
+  (collapses multi-phase appearances) — each matches its player-side
+  convention, so a small leaguewide runs-scored vs runs-allowed gap is
+  expected (super-inning lines the dedup drops), not a new bug.
+- **Walk-Back runs** scored and allowed are both sourced from the same
+  all-phase `team_walkback_runs()` so the two sides reconcile exactly
+  (verified 139 = 139 over a 60-game sample), rather than mixing the deduped
+  pitching total.
+
+**Validated end-to-end this time:** installed flask, seeded a real 30-team DB
+(`manage.py initdb` + `sim 60`), and hit `/streaks-and-records` and
+`/teams/stats` (HTML + JSON) via the Flask test client — all 200, numbers
+sane (caught and fixed a real bug: the records-page card macros were called
+without their value `key`, which only surfaces at render time). Rate-stat
+leaderboards (career AVG/OPS, etc.) are empty at 60 games because the 50-PA /
+45-out floors aren't met yet — expected; they fill in once a real season is
+simmed.
+
+## Still open
+
+- **RISP exact box columns** — the agreed next build: add
+  `risp_pa/risp_ab/risp_h/risp_rbi` to `game_batter_stats`, stamp in the engine
+  at PA resolution, migrate, then surface RISP AVG/RBI/conversion on the player
+  leaders + team stats + glossary. Needs a resim/fresh sim to populate.

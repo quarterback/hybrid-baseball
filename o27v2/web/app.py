@@ -5251,6 +5251,128 @@ def streaks_and_records():
     )
 
 
+@app.route("/teams/stats")
+def team_stats():
+    """Team-level stat aggregation — the same batting/pitching categories the
+    player leaders page carries, but summed per club so team performance is
+    comparable across the league.
+
+    Reuses the player aggregators (`_aggregate_batter_rows` /
+    `_aggregate_pitcher_rows`) on team-grouped rows, so team rate stats
+    (PAVG/OPS/wERA/…) and the league-relative "+" stats are computed exactly
+    as they are for players. Adds team 2C effectiveness (2C-Conv% / 2C-RBI%),
+    RAD, and Walk-Back runs (scored from the opponent's wb_runs, allowed from
+    the team's own). League-scoped like /leaders.
+    """
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    lg_where = "WHERE t.league = ? " if selected_league else ""
+    lg_param = (selected_league,) if selected_league else ()
+
+    if selected_league:
+        games_played = db.fetchone(
+            "SELECT COUNT(*) as n FROM games g JOIN teams t "
+            "ON g.home_team_id = t.id WHERE g.played = 1 AND t.league = ?",
+            (selected_league,),
+        )["n"]
+    else:
+        games_played = db.fetchone(
+            "SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
+
+    baselines = _league_baselines(selected_league)
+
+    team_bat = db.fetchall(
+        f"""SELECT t.id as team_id, t.abbrev as team_abbrev, t.name as team_name,
+                   COUNT(DISTINCT bs.game_id) as g,
+                   SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                   SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                   SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                   SUM(bs.bb) as bb, SUM(bs.k) as k,
+                   COALESCE(SUM(bs.hbp),0) as hbp,
+                   COALESCE(SUM(bs.sb),0)  as sb,
+                   COALESCE(SUM(bs.cs),0)  as cs,
+                   COALESCE(SUM(bs.stays),0)     as stays,
+                   COALESCE(SUM(bs.stay_hits),0) as stay_hits,
+                   COALESCE(SUM(bs.stay_rbi),0)  as stay_rbi,
+                   COALESCE(SUM(bs.rad_1b),0) + COALESCE(SUM(bs.rad_2b),0)
+                     + COALESCE(SUM(bs.rad_3b),0) as rad
+              FROM game_batter_stats bs
+              JOIN teams t ON bs.team_id = t.id
+              {lg_where}
+             GROUP BY t.id""",
+        lg_param,
+    )
+    _aggregate_batter_rows(team_bat, baselines=baselines)
+    for tr in team_bat:
+        st = tr.get("stays") or 0
+        rbi = tr.get("rbi") or 0
+        tr["c2_conv"]    = (tr["stay_hits"] / st) if st else None
+        tr["c2_rbi_pct"] = (tr["stay_rbi"] / rbi) if rbi else None
+
+    team_pit = db.fetchall(
+        f"""SELECT t.id as team_id, t.abbrev as team_abbrev, t.name as team_name,
+                   COUNT(DISTINCT ps.game_id) as g,
+                   SUM(ps.batters_faced) as bf, SUM(ps.outs_recorded) as outs,
+                   SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
+                   SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
+                   SUM(ps.hr_allowed) as hr_allowed
+              FROM {_PSTATS_DEDUP_SQL} ps
+              JOIN teams t ON ps.team_id = t.id
+              {lg_where}
+             GROUP BY t.id""",
+        lg_param,
+    )
+    _aggregate_pitcher_rows(team_pit, wl=None, baselines=baselines)
+
+    # Team W/L from the games table (a team's record, not a pitcher decision).
+    wl = {
+        int(r["team_id"]): r
+        for r in db.fetchall(
+            """SELECT t.id as team_id,
+                      SUM(CASE WHEN g.winner_id = t.id THEN 1 ELSE 0 END) as w,
+                      SUM(CASE WHEN g.winner_id IS NOT NULL
+                                AND g.winner_id != t.id THEN 1 ELSE 0 END) as l
+                 FROM teams t
+                 JOIN games g ON (g.home_team_id = t.id OR g.away_team_id = t.id)
+                              AND g.played = 1
+                GROUP BY t.id""",
+        )
+    }
+    for pr in team_pit:
+        rec = wl.get(pr["team_id"], {})
+        pr["w"] = rec.get("w") or 0
+        pr["l"] = rec.get("l") or 0
+        outs = pr.get("outs") or 0
+        ip = outs / 3.0
+        pr["ip_display"] = f"{int(outs) // 3}.{int(outs) % 3}"
+        pr["whip"] = (((pr.get("bb") or 0) + (pr.get("h") or 0)) / ip) if ip else None
+        pr["k9"]   = ((pr.get("k") or 0) * 9.0 / ip) if ip else None
+
+    # Walk-Back runs (scored = re-attributed from opponents' wb_runs; allowed =
+    # the team's own). Both come from the same all-phase aggregation so the two
+    # sides reconcile (unlike the deduped pitching totals, which drop
+    # super-inning lines).
+    from o27v2.analytics.records import team_walkback_runs
+    wbr = {r["team_id"]: r for r in team_walkback_runs(
+        team_ids=_league_team_ids(selected_league))}
+    for tr in team_bat:
+        tr["wb_scored"] = (wbr.get(tr["team_id"], {}) or {}).get("scored", 0)
+    for pr in team_pit:
+        pr["wb_allowed"] = (wbr.get(pr["team_id"], {}) or {}).get("allowed", 0)
+
+    team_bat.sort(key=lambda r: (-(r.get("ops") or 0),))
+    team_pit.sort(key=lambda r: (r.get("werra") if r.get("werra") is not None else 1e9,))
+
+    return _serve(
+        "team_stats.html",
+        games_played=games_played,
+        leagues=leagues,
+        selected_league=selected_league,
+        team_bat=team_bat,
+        team_pit=team_pit,
+    )
+
+
 def _player_handedness_split_batter(player_id: int, throws: str) -> dict | None:
     """Batter contact-event split vs pitchers of the given handedness.
 

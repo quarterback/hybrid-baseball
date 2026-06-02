@@ -236,14 +236,14 @@
 {% if games_played %}
 <h4>Single-Game Records · This Season</h4>
 <div class="row g-3 mb-2">
-  {{ sg_card('Most HR, Game', sg_bat.hr) }}
-  {{ sg_card('Most RBI, Game', sg_bat.rbi) }}
-  {{ sg_card('Most Hits, Game', sg_bat.h) }}
+  {{ sg_card('Most HR, Game', sg_bat.hr, 'hr') }}
+  {{ sg_card('Most RBI, Game', sg_bat.rbi, 'rbi') }}
+  {{ sg_card('Most Hits, Game', sg_bat.h, 'h') }}
 </div>
 <div class="row g-3 mb-3">
-  {{ sg_card('Most Total Bases, Game', sg_bat.tb) }}
-  {{ sg_card('Most Strikeouts, Game (P)', sg_pit.k) }}
-  {{ sg_card('Longest Outing (IP)', sg_pit.outs, ipkey=true) }}
+  {{ sg_card('Most Total Bases, Game', sg_bat.tb, 'tb') }}
+  {{ sg_card('Most Strikeouts, Game (P)', sg_pit.k, 'k') }}
+  {{ sg_card('Longest Outing (IP)', sg_pit.outs, 'outs', ipkey=true) }}
 </div>
 {% endif %}
 
@@ -254,52 +254,52 @@
   Live-season pitcher wins are credited once the season is archived.
 </div>
 <div class="row g-3 mb-2">
-  {{ career_card('HR', career_bat.hr) }}
-  {{ career_card('Hits', career_bat.h) }}
-  {{ career_card('RBI', career_bat.rbi) }}
-  {{ career_card('Runs', career_bat.r) }}
+  {{ career_card('HR', career_bat.hr, 'hr') }}
+  {{ career_card('Hits', career_bat.h, 'h') }}
+  {{ career_card('RBI', career_bat.rbi, 'rbi') }}
+  {{ career_card('Runs', career_bat.r, 'r') }}
 </div>
 <div class="row g-3 mb-2">
-  {{ career_card('Walks', career_bat.bb) }}
-  {{ career_card('Stolen Bases', career_bat.sb) }}
-  {{ career_card('Doubles', career_bat.d2) }}
-  {{ career_card('Triples', career_bat.d3) }}
+  {{ career_card('Walks', career_bat.bb, 'bb') }}
+  {{ career_card('Stolen Bases', career_bat.sb, 'sb') }}
+  {{ career_card('Doubles', career_bat.d2, 'd2') }}
+  {{ career_card('Triples', career_bat.d3, 'd3') }}
 </div>
 <div class="row g-3 mb-2">
-  {{ career_card('AVG', career_bat.avg, '%.3f') }}
-  {{ career_card('OBP', career_bat.obp, '%.3f') }}
-  {{ career_card('SLG', career_bat.slg, '%.3f') }}
-  {{ career_card('OPS', career_bat.ops, '%.3f') }}
+  {{ career_card('AVG', career_bat.avg, 'avg', '%.3f') }}
+  {{ career_card('OBP', career_bat.obp, 'obp', '%.3f') }}
+  {{ career_card('SLG', career_bat.slg, 'slg', '%.3f') }}
+  {{ career_card('OPS', career_bat.ops, 'ops', '%.3f') }}
 </div>
 <div class="row g-3 mb-3">
-  {{ career_card('Strikeouts (P)', career_pit.p_k) }}
-  {{ career_card('Innings (IP)', career_pit.outs, ipkey=true) }}
-  {{ career_card('Wins', career_pit.w) }}
-  {{ career_card('ERA', career_pit.era, '%.2f') }}
+  {{ career_card('Strikeouts (P)', career_pit.p_k, 'p_k') }}
+  {{ career_card('Innings (IP)', career_pit.outs, 'outs', ipkey=true) }}
+  {{ career_card('Wins', career_pit.w, 'w') }}
+  {{ career_card('ERA', career_pit.era, 'era', '%.2f') }}
 </div>
 <div class="row g-3 mb-3">
-  {{ career_card('WHIP', career_pit.whip, '%.2f') }}
-  {{ career_card('K / 9', career_pit.k9, '%.1f') }}
+  {{ career_card('WHIP', career_pit.whip, 'whip', '%.2f') }}
+  {{ career_card('K / 9', career_pit.k9, 'k9', '%.1f') }}
 </div>
 
 {# ----- all-time: single season ------------------------------------------ #}
 <h4>All-Time · Best Single Seasons</h4>
 <div class="row g-3 mb-2">
-  {{ season_card('HR, Season', season_bat.hr) }}
-  {{ season_card('RBI, Season', season_bat.rbi) }}
-  {{ season_card('Hits, Season', season_bat.h) }}
-  {{ season_card('OPS, Season', season_bat.ops, '%.3f') }}
+  {{ season_card('HR, Season', season_bat.hr, 'hr') }}
+  {{ season_card('RBI, Season', season_bat.rbi, 'rbi') }}
+  {{ season_card('Hits, Season', season_bat.h, 'h') }}
+  {{ season_card('OPS, Season', season_bat.ops, 'ops', '%.3f') }}
 </div>
 <div class="row g-3 mb-2">
-  {{ season_card('AVG, Season', season_bat.avg, '%.3f') }}
-  {{ season_card('SB, Season', season_bat.sb) }}
-  {{ season_card('Strikeouts, Season (P)', season_pit.p_k) }}
-  {{ season_card('Wins, Season', season_pit.w) }}
+  {{ season_card('AVG, Season', season_bat.avg, 'avg', '%.3f') }}
+  {{ season_card('SB, Season', season_bat.sb, 'sb') }}
+  {{ season_card('Strikeouts, Season (P)', season_pit.p_k, 'p_k') }}
+  {{ season_card('Wins, Season', season_pit.w, 'w') }}
 </div>
 <div class="row g-3 mb-4">
-  {{ season_card('ERA, Season', season_pit.era, '%.2f') }}
-  {{ season_card('WHIP, Season', season_pit.whip, '%.2f') }}
-  {{ season_card('K/9, Season', season_pit.k9, '%.1f') }}
+  {{ season_card('ERA, Season', season_pit.era, 'era', '%.2f') }}
+  {{ season_card('WHIP, Season', season_pit.whip, 'whip', '%.2f') }}
+  {{ season_card('K/9, Season', season_pit.k9, 'k9', '%.1f') }}
 </div>
 
 {% endblock %}
