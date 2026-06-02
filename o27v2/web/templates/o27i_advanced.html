@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}O27 Index — Advanced{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">O27 Index — Advanced</h2>
+    <div class="text-secondary small">
+      Expanded metrics derived from tracking + state data · top 10 each ·
+      <a href="{{ url_for('o27i_home') }}">O27 Index home</a>
+    </div>
+  </div>
+  <a class="btn btn-sm btn-outline-secondary"
+     href="{{ url_for('o27i_advanced', format='json') }}">JSON</a>
+</div>
+
+{% macro board(title, note, rows, cols) %}
+<div class="col-12 col-lg-6">
+  <div class="card h-100">
+    <div class="card-header py-2"><span class="fw-semibold">{{ title }}</span>
+      <span class="text-secondary small">· {{ note }}</span></div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead><tr>
+          <th>Player</th>
+          {% for c in cols %}<th class="text-end">{{ c[1] }}</th>{% endfor %}
+        </tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td><a href="{{ url_for('player_o27i', player_id=r.player_id) }}">{{ r.player_name }}</a>
+                <span class="text-secondary small">{{ r.team_abbrev }}</span></td>
+            {% for c in cols %}
+              <td class="text-end" style="font-variant-numeric:tabular-nums">{{ r[c[0]] }}</td>
+            {% endfor %}
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="text-secondary small">Not enough data yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="row g-3">
+  {{ board("Win Probability Added — Hitters", "WPA · avg leverage (LI)", wpa_bat,
+           [('wpa','WPA'),('li','LI'),('pa','PA')]) }}
+  {{ board("Win Probability Added — Pitchers", "run prevention WPA", wpa_pit,
+           [('wpa','WPA'),('li','LI'),('pa','BF')]) }}
+
+  {{ board("Expected Stats", "xBA / xSLG / xwOBAcon (EV·LA bins)", expected,
+           [('xba','xBA'),('xslg','xSLG'),('xwobacon','xwOBAcon')]) }}
+  {{ board("Fielding Run Value", "Outs Above Average → runs", fielding,
+           [('oaa','OAA'),('frv','FRV'),('chances','Ch')]) }}
+
+  {{ board("Pitch Arsenal", "run value /100 BIP (＋ = prevention)", arsenal,
+           [('pitch_type','Pitch'),('rv100','RV/100'),('avg_ev','EV'),('hit_pct','Hit%')]) }}
+  {{ board("Baserunning", "league XBT% " ~ league_xbt ~ "%", bsr,
+           [('xbt_pct','XBT%'),('sb','SB'),('cs','CS'),('bsr','BsR')]) }}
+
+  {{ board("Second-Chance Run Value", "league avg " ~ league_2c ~ " R/2C", twoc,
+           [('n_2c','2C'),('conv_pct','Conv%'),('rv_per_2c','R/2C'),('rv_total','Total')]) }}
+  {{ board("Through-the-Order K% Penalty", "1st→3rd decline", tto,
+           [('k_tto1','1st'),('k_tto3','3rd'),('penalty','Δ')]) }}
+</div>
+
+<div class="card mt-3" style="max-width:520px">
+  <div class="card-body">
+    <div class="text-secondary small text-uppercase mb-1">League TTO K% curve</div>
+    <div class="d-flex gap-4">
+      <div>1st: <b>{{ tto_league.k_tto1 }}%</b></div>
+      <div>2nd: <b>{{ tto_league.k_tto2 }}%</b></div>
+      <div>3rd: <b>{{ tto_league.k_tto3 }}%</b></div>
+    </div>
+    <div class="text-secondary small mt-1">
+      O27's single 27-out half shows little through-the-order penalty —
+      starters don't fade the way a 9-inning workload makes them.
+    </div>
+  </div>
+</div>
+
+<div class="text-secondary small mt-3" style="max-width:820px">
+  WP and fielding-zone attribution are empirical/heuristic (no batted-ball
+  coordinates) — read as directional. Pitch-arsenal run value covers balls in
+  play (contact quality), not whiffs.
+</div>
+
+{% endblock %}

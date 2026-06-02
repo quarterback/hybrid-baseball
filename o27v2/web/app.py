@@ -6233,6 +6233,47 @@ def player_o27i(player_id: int):
     )
 
 
+@app.route("/o27i/advanced")
+def o27i_advanced():
+    """Expanded-metric leaderboards: expected stats, WPA/leverage, pitch
+    arsenal, baserunning, TTO, Second-Chance run value, fielding OAA."""
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    team_ids        = _league_team_ids(selected_league)
+    _team_csv       = ",".join(str(i) for i in team_ids) if team_ids else ""
+    _gp_where       = f" AND home_team_id IN ({_team_csv})" if _team_csv else ""
+    games_played = db.fetchone(
+        f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
+    gp = games_played
+
+    from o27v2.analytics import (
+        build_expected_stats, build_pitch_arsenal, build_baserunning_value,
+        build_tto_penalty, build_second_chance_value, build_fielding_value,
+        build_win_probability,
+    )
+    expected = build_expected_stats(min_bip=max(15, gp // 30), team_ids=team_ids)
+    wp       = build_win_probability(min_pa=max(20, gp // 20), team_ids=team_ids)
+    arsenal  = build_pitch_arsenal(min_bip=max(12, gp // 40), team_ids=team_ids)
+    bsr      = build_baserunning_value(min_op=max(8, gp // 50), team_ids=team_ids)
+    tto      = build_tto_penalty(min_bf=max(40, gp // 15), team_ids=team_ids)
+    twoc     = build_second_chance_value(min_2c=max(6, gp // 60), team_ids=team_ids)
+    field    = build_fielding_value(min_chances=max(20, gp // 25), team_ids=team_ids)
+
+    top = lambda xs, n=10: xs[:n]
+    return _serve(
+        "o27i_advanced.html",
+        expected=top(expected["leaders"]),
+        wpa_bat=top(wp["batters"]), wpa_pit=top(wp["pitchers"]),
+        arsenal=top(arsenal["rows"]),
+        bsr=top(bsr["leaders"]), league_xbt=bsr["league_xbt_pct"],
+        tto=top([l for l in tto["leaders"] if l["penalty"] is not None]),
+        tto_league=tto["league"],
+        twoc=top(twoc["leaders"]), league_2c=twoc["league_rv_per_2c"],
+        fielding=top(field["leaders"]),
+        leagues=leagues, selected_league=selected_league,
+    )
+
+
 @app.route("/o27i")
 def o27i_home():
     """O27 Index landing — a player search bar plus EV/contact leader snapshots."""
