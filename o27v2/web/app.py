@@ -5995,7 +5995,7 @@ _SAVANT_BATTER_METRICS = [
     ("sweetspot", "Sweet-Spot %",   "pct",  False),
     ("bb_pct",    "Walk %",         "pct",  False),
     ("k_pct",     "Strikeout %",    "pct",  True),
-    ("stay_pct",  "Stay %",         "pct",  False),
+    ("stay_pct",  "Second-Chance %", "pct",  False),
 ]
 
 # O27-calibrated batted-ball cuts (NOT MLB's 95-mph anchor — see the Savant
