@@ -6233,6 +6233,107 @@ def player_o27i(player_id: int):
     )
 
 
+# Prospect Index (college / junior players) — the ProspectSavant analog.
+# Hitters and pitchers are ranked on tools + potential + production, with a
+# composite Prospect Score that rewards youth (a freshman with the same grades
+# is the better prospect).
+_PROSPECT_BAT_METRICS = [
+    ("contact", "Contact", False), ("power", "Power", False),
+    ("eye", "Eye", False), ("speed", "Speed", False),
+    ("defense", "Defense", False), ("arm", "Arm", False),
+    ("potential_power", "Power Ceiling", False),
+    ("potential_contact", "Hit Ceiling", False),
+    ("ops", "OPS", False),
+]
+_PROSPECT_PIT_METRICS = [
+    ("pitcher_skill", "Stuff", False), ("command", "Command", False),
+    ("movement", "Movement", False), ("stamina", "Stamina", False),
+    ("potential_pitcher_skill", "Stuff Ceiling", False),
+    ("potential_command", "Command Ceiling", False),
+    ("k_pct", "K%", False),
+]
+# Tools whose percentiles feed the composite Prospect Score.
+_PS_BAT_KEYS = ["potential_power", "potential_contact", "contact", "power", "eye", "ops"]
+_PS_PIT_KEYS = ["potential_pitcher_skill", "potential_command", "pitcher_skill", "command", "k_pct"]
+
+
+def _latest_college_season() -> int | None:
+    row = db.fetchone("SELECT MAX(season) AS s FROM college_programs")
+    return row["s"] if row else None
+
+
+def _prospect_rows(season: int, is_pitcher: bool) -> list[dict]:
+    metrics = _PROSPECT_PIT_METRICS if is_pitcher else _PROSPECT_BAT_METRICS
+    ps_keys = _PS_PIT_KEYS if is_pitcher else _PS_BAT_KEYS
+    players = db.fetchall(
+        """SELECT cp.*, prog.name AS program_name, prog.short_name AS program_abbrev
+           FROM college_players cp JOIN college_programs prog ON prog.id = cp.program_id
+           WHERE cp.is_active = 1 AND cp.is_pitcher = ? AND prog.season = ?""",
+        (1 if is_pitcher else 0, season))
+    if not players:
+        return []
+    ids = ",".join(str(p["id"]) for p in players)
+    if is_pitcher:
+        prod = {r["player_id"]: r for r in db.fetchall(
+            f"""SELECT player_id, COALESCE(SUM(bf),0) AS bf, COALESCE(SUM(k),0) AS k
+                FROM college_pitcher_stats WHERE player_id IN ({ids}) GROUP BY player_id""")}
+    else:
+        prod = {r["player_id"]: r for r in db.fetchall(
+            f"""SELECT player_id, COALESCE(SUM(pa),0) AS pa, COALESCE(SUM(ab),0) AS ab,
+                       COALESCE(SUM(h),0) AS h, COALESCE(SUM(doubles),0) AS d2,
+                       COALESCE(SUM(triples),0) AS d3, COALESCE(SUM(hr),0) AS hr,
+                       COALESCE(SUM(bb),0) AS bb
+                FROM college_batter_stats WHERE player_id IN ({ids}) GROUP BY player_id""")}
+    rows = []
+    for p in players:
+        r = dict(p)
+        pr = prod.get(p["id"], {})
+        if is_pitcher:
+            bf = pr.get("bf", 0) or 0
+            r["k_pct"] = round(100 * (pr.get("k", 0) or 0) / bf, 1) if bf else None
+        else:
+            pa = pr.get("pa", 0) or 0; ab = pr.get("ab", 0) or 0
+            if ab:
+                singles = (pr["h"] - pr["d2"] - pr["d3"] - pr["hr"])
+                tb = singles + 2 * pr["d2"] + 3 * pr["d3"] + 4 * pr["hr"]
+                obp = (pr["h"] + pr["bb"]) / pa if pa else 0
+                slg = tb / ab
+                r["ops"] = round(obp + slg, 3)
+            else:
+                r["ops"] = None
+        rows.append(r)
+    for key, _label, rev in metrics:
+        _percentile_ranks(rows, key, reverse=rev)
+    # Composite Prospect Score: mean of the key-tool percentiles + a youth bump
+    # (a younger class year with equal grades is the better prospect).
+    for r in rows:
+        pcts = [r.get(f"{k}_pctile") for k in ps_keys if r.get(f"{k}_pctile") is not None]
+        base = sum(pcts) / len(pcts) if pcts else 0.0
+        youth = max(0, 4 - (r.get("college_year") or 4)) * 2.5  # +0..7.5
+        r["ps_score"] = round(min(100.0, base + youth), 1)
+    rows.sort(key=lambda r: -r["ps_score"])
+    return rows
+
+
+@app.route("/college/prospects")
+def college_prospects():
+    """Prospect Index — tools + potential + production percentile board for the
+    college tier (the ProspectSavant analog)."""
+    season = request.args.get("season", type=int) or _latest_college_season()
+    ptype = (request.args.get("type") or "bat").lower()
+    is_pitcher = ptype == "pit"
+    rows = _prospect_rows(season, is_pitcher) if season else []
+    metrics = _PROSPECT_PIT_METRICS if is_pitcher else _PROSPECT_BAT_METRICS
+    return _serve(
+        "college_prospects.html",
+        rows=rows[:100],
+        metrics=metrics,
+        ptype=ptype,
+        season=season,
+        n_total=len(rows),
+    )
+
+
 @app.route("/o27i/advanced")
 def o27i_advanced():
     """Expanded-metric leaderboards: expected stats, WPA/leverage, pitch
