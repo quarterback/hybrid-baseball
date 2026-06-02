@@ -22,6 +22,13 @@ class BatterStats:
     k: int = 0
     hbp: int = 0
     sh: int = 0            # Sacrifice bunts (successful — advances a runner, not an AB)
+    # Expanded bunting (multi-type). bunt_att counts every bunt PA; bunt_hits
+    # are bunt singles (a subset of hits); sqz / sqz_rbi track squeeze plays
+    # and the runs they drove home from third.
+    bunt_att: int = 0
+    bunt_hits: int = 0
+    sqz: int = 0
+    sqz_rbi: int = 0
     sty: int = 0           # Stays (internal only — not displayed in UI)
     outs_recorded: int = 0  # OR — times this batter was retired
     stay_rbi: int = 0

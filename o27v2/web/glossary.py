@@ -94,6 +94,22 @@ GLOSSARY_SECTIONS: list[dict] = [
         ],
     },
     {
+        "title": "Batting · Small Ball (Bunting)",
+        "blurb": "Bunting production across four play types — sacrifice, bunt-for-hit/drag, and the suicide & safety squeeze. Calls are driven by a player's bunt rating (bat control, distinct from foot speed) and the manager's run-game tendency.",
+        "entries": [
+            {"key": "sh", "abbr": "SH", "name": "Sacrifice Hits",
+             "desc": "Successful sacrifice bunts — a plate appearance (not an at-bat) that traded an out to advance a runner. Includes a scoring squeeze."},
+            {"key": "bunt_hits", "abbr": "Bunt H", "name": "Bunt Hits",
+             "desc": "Bunt singles — drag bunts, sacrifices beaten out, or a squeeze legged out. A subset of total hits."},
+            {"key": "bunt_att", "abbr": "Bunts", "name": "Bunt Attempts",
+             "desc": "Total bunt plate appearances across all four types."},
+            {"key": "sqz", "abbr": "Sqz", "name": "Squeeze Plays",
+             "desc": "Squeeze attempts with a runner on third (suicide or safety)."},
+            {"key": "sqz_rbi", "abbr": "Sqz RBI", "name": "Squeeze RBI",
+             "desc": "Runs driven home from third base on a squeeze bunt."},
+        ],
+    },
+    {
         "title": "Batting · Clutch (RISP)",
         "blurb": "Performance with runners in scoring position — a runner on 2B and/or 3B at the plate appearance's start. The recorded-outcome companion to the engine's RISP-pressure model: how well a bat actually cashes runners in. PA-denominated, like the headline rates (per-AB RISP rates are unreliable in O27 because a single AB can credit multiple hits via stays).",
         "entries": [

@@ -460,6 +460,11 @@ class Renderer:
                 t.ibb          += r.ibb
                 t.k            += r.k
                 t.hbp          += r.hbp
+                t.sh           += r.sh
+                t.bunt_att     += r.bunt_att
+                t.bunt_hits    += r.bunt_hits
+                t.sqz          += r.sqz
+                t.sqz_rbi      += r.sqz_rbi
                 t.sty          += r.sty
                 t.stay_rbi     += r.stay_rbi
                 t.stay_hits    += r.stay_hits
@@ -1617,19 +1622,34 @@ class Renderer:
             # reconciliation tail below (engine bumped state.outs), and any
             # runs are credited by the tail's _credit_runs — same as every
             # other PA event. We only record the batting line here.
+            # Expanded bunting (sac / drag / suicide / safety squeeze). The
+            # outcome token is self-describing across types — see
+            # manager._roll_* and pa.py's sac_bunt resolver.
             outcome = event.get("outcome", "sacrifice")
             s.pa += 1
-            if outcome == "hit":
+            s.bunt_att += 1
+            if outcome in ("hit", "squeeze_score_hit"):
+                # Bunt single (incl. a squeeze that also beat it out).
                 s.ab += 1
                 s.hits += 1
+                s.bunt_hits += 1
                 s.rbi += runs_scored
                 _check_multi_hit(terminal_hit=True)
-            elif outcome == "fail":
-                s.ab += 1
-                _check_multi_hit()
-            else:  # sacrifice
+            elif outcome in ("sacrifice", "squeeze_score"):
+                # Successful sac / squeeze — a PA, not an AB; SH + RBI.
                 s.sh += 1
                 s.rbi += runs_scored
+            else:
+                # fail / lead_out / out_productive / squeeze_miss / squeeze_hold
+                # — the batter is charged an AB; the out (his, or a runner's on
+                # a forced play) is reconciled to engine outs by the tail below.
+                s.ab += 1
+                _check_multi_hit()
+            # Squeeze accounting (subset; runs_scored is the squeeze run).
+            if outcome in ("squeeze_score", "squeeze_score_hit",
+                           "squeeze_miss", "squeeze_hold"):
+                s.sqz += 1
+                s.sqz_rbi += runs_scored
 
         elif etype == "ball_in_play":
             choice = disp.get("choice", "run")
@@ -2077,6 +2097,7 @@ class Renderer:
         prev_get = (lambda f: getattr(prev_s, f)) if prev_s else (lambda f: 0)
         for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
+                  "sh", "bunt_att", "bunt_hits", "sqz", "sqz_rbi",
                   "stay_rbi", "stay_hits", "multi_hit_abs",
                   "sb", "cs", "fo", "roe",
                   "po", "a", "e",

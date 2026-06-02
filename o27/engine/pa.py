@@ -653,58 +653,78 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
         return log
 
     if etype == "sac_bunt":
-        # Manager-called sacrifice bunt. Three resolved outcomes — see
-        # manager.should_bunt for the rolling logic. We synthesize the
-        # base-state changes here without going through the full contact
-        # pipeline (no fielder credit, no error roll — the bunt itself
-        # is the play).
+        # Manager-called bunt (sacrifice / drag / suicide / safety squeeze).
+        # The outcome was rolled by manager.should_bunt; here we synthesize the
+        # base-state changes directly (no contact pipeline, no fielder credit).
+        # Each outcome reduces to: a new base array, runs that crossed, and how
+        # many outs were recorded. `wild_pitch_advance` advances every runner
+        # one base (a runner on 3B scores) — the common "runners move up" leg.
         outcome = event.get("outcome", "sacrifice")
         batter = state.current_batter
-        batter_id = batter.player_id
-        log.append(f"  Sacrifice bunt called by manager.")
-        if outcome == "hit":
-            # Bunt for hit — advance every runner one base; batter safe at 1B.
-            new_bases = [None, None, None]
-            runs = 0
-            for idx in (2, 1, 0):
-                pid = state.bases[idx]
-                if pid is None:
-                    continue
-                np = idx + 1
-                if np >= 3:
-                    runs += 1
-                else:
-                    new_bases[np] = pid
-            new_bases[0] = batter_id
+        bid = batter.player_id
+        b = list(state.bases)
+        on1 = b[0] is not None
+        single_runner = on1 and b[1] is None and b[2] is None
+        runs = 0
+        n_outs = 0
+
+        if outcome in ("hit", "squeeze_score_hit"):
+            # Bunt single (drag, sac beaten out, or a squeeze also legged out).
+            new_bases, runs = wild_pitch_advance(b)
+            new_bases[0] = bid                      # batter takes the vacated 1B
             state.bases = new_bases
-            if runs:
-                log += _score_run(state, runs)
-            log.append(f"  Bunt single — {batter.name} reaches 1B.")
-            # Batter recorded as a hit; the existing _resolve_contact path
-            # logs h/ab — but this synthetic event needs to advance the
-            # at-bat-cycle state itself.
-            state.batting_team.advance_lineup()
-            state.count.reset()
-            state.total_pa_this_half += 1
-        elif outcome == "fail":
-            # Failed bunt — batter out, no advancement (popup or lead-runner
-            # force; we model as runner stays). 10% of bunt calls.
-            log.append(f"  Bunt fails — {batter.name} out, runners hold.")
-            log += _record_out(state, batter_id)
-            state.batting_team.advance_lineup()
-            state.count.reset()
-            state.total_pa_this_half += 1
-        else:
-            # Canonical sacrifice — batter out at 1B, runners advance one.
-            new_bases, runs = wild_pitch_advance(state.bases)
+            label = "Squeeze bunt — run scores, batter aboard" \
+                if outcome == "squeeze_score_hit" else "Bunt single"
+        elif outcome in ("sacrifice", "squeeze_score"):
+            # Successful sac / squeeze: runners advance (3B scores), batter out.
+            new_bases, runs = wild_pitch_advance(b)
             state.bases = new_bases
-            if runs:
-                log += _score_run(state, runs)
-            log.append(f"  Sacrifice — {batter.name} out, runners advance.")
-            log += _record_out(state, batter_id)
-            state.batting_team.advance_lineup()
-            state.count.reset()
-            state.total_pa_this_half += 1
+            n_outs = 1
+            label = "Squeeze! Run scores" if outcome == "squeeze_score" \
+                else "Sacrifice — runners advance"
+        elif outcome == "out_productive":
+            # Drag bunt fielded: batter out at 1B, runners still move up.
+            new_bases, runs = wild_pitch_advance(b)
+            state.bases = new_bases
+            n_outs = 1
+            label = "Bunt out — batter retired, runners advance"
+        elif outcome == "lead_out":
+            # Fielder's choice on a single runner: lead runner forced out,
+            # batter safe at 1B, no advancement. Only valid with one runner on
+            # 1B; otherwise degrade to a hold (handled by the else clause).
+            if single_runner:
+                state.bases = [bid, None, None]
+                n_outs = 1
+                label = "Fielder's choice — lead runner out, batter safe"
+            else:
+                n_outs = 1
+                label = "Bunt forced — batter out, runners hold"
+        elif outcome == "squeeze_miss":
+            # Suicide squeeze missed: the runner from 3B is hung out at home.
+            # Batter ends up at 1B (the out is the runner's).
+            new_bases = list(b)
+            new_bases[2] = None
+            if new_bases[0] is None:
+                new_bases[0] = bid
+            state.bases = new_bases
+            n_outs = 1
+            label = "Squeeze missed! Runner out at home"
+        elif outcome == "squeeze_hold":
+            # Safety squeeze not good enough: runner holds at 3B, batter out.
+            n_outs = 1
+            label = "Safety squeeze fails — batter out, runner holds"
+        else:  # "fail" and any unknown token → popup, batter out, runners hold
+            n_outs = 1
+            label = "Bunt popped up — batter out, runners hold"
+
+        log.append(f"  {label} ({batter.name}).")
+        if runs:
+            log += _score_run(state, runs)
+        for _ in range(n_outs):
+            log += _record_out(state, bid)
+        state.batting_team.advance_lineup()
+        state.count.reset()
+        state.total_pa_this_half += 1
         return log
 
     raise ValueError(f"Unknown event type: {etype!r}")

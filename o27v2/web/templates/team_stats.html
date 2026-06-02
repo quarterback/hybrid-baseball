@@ -50,6 +50,9 @@
       <th class="num" title="2C conversion: hits per 2C">2C-Conv</th>
       <th class="num" title="Share of team RBI driven on 2C events">2C-RBI%</th>
       <th class="num" title="Runners Advanced — graded runner bases gained">RAD</th>
+      <th class="num" title="Sacrifice bunts">SH</th>
+      <th class="num" title="Bunt singles (subset of hits)">Bunt H</th>
+      <th class="num" title="Squeeze RBI — runs driven home from third on a squeeze">Sqz</th>
       <th class="num" title="Batting average with runners in scoring position (H/PA)">RISP-AVG</th>
       <th class="num" title="OPS with runners in scoring position">RISP-OPS</th>
       <th class="num" title="RBI driven in with runners in scoring position">RISP-RBI</th>
@@ -78,6 +81,9 @@
         <td class="num">{{ pct(t.c2_conv) }}</td>
         <td class="num">{{ pct(t.c2_rbi_pct) }}</td>
         <td class="num">{{ num(t.rad) }}</td>
+        <td class="num">{{ num(t.sh) }}</td>
+        <td class="num">{{ num(t.bunt_hits) }}</td>
+        <td class="num">{{ num(t.sqz_rbi) }}</td>
         <td class="num">{{ num(t.risp_pavg, '%.3f') }}</td>
         <td class="num fw-bold">{{ num(t.risp_ops, '%.3f') }}</td>
         <td class="num">{{ num(t.risp_rbi) }}</td>

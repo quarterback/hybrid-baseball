@@ -166,6 +166,19 @@
   {{ card('RISP-Conv', 'risp_conv', '%.2f', true, batting, tooltip='RBI per plate appearance with RISP — the runner cash-in rate.') }}
 </div>
 
+<h4>Batting · Small Ball</h4>
+<div class="text-secondary small mb-2" style="padding:0 0.25rem">
+  Bunting production. SH = successful sacrifices; Bunt H = bunt singles
+  (drag / beaten-out, a subset of hits); Squeeze RBI = runs driven home from
+  third on a squeeze.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('SH',       'sh',        '%d', true, batting, tooltip='Sacrifice bunts — a PA, not an AB, that advanced a runner.') }}
+  {{ card('Bunt H',   'bunt_hits', '%d', true, batting, tooltip='Bunt singles (drag / sac beaten out / squeeze legged out). A subset of total hits.') }}
+  {{ card('Bunts',    'bunt_att',  '%d', true, batting, tooltip='Total bunt plate appearances (all types).') }}
+  {{ card('Sqz RBI',  'sqz_rbi',   '%d', true, batting, tooltip='RBI driven home from third base on a squeeze play.') }}
+</div>
+
 <h4>Batting · MLB-Equivalent Rates (XO Crossover)</h4>
 <div class="text-secondary small mb-2" style="padding:0 0.25rem">
   O27 rate stats z-anchored to MLB league mean and spread, so the numbers

@@ -213,8 +213,53 @@ simmed DBs — confirmed identical on a pre-RISP DB. O27 sac bunts make PA excee
 AB+BB+HBP and `sh` isn't a persisted `game_batter_stats` column, so the
 identity can't close. Untouched by this work; flagged for a separate pass.
 
+## Follow-on: Bunting overhaul — shipped
+
+Replaced the thin single-`sac_bunt` system (one speed-driven outcome roll, no
+defense, `sh` silently dropped, nothing in the UI) with a full four-type
+small-ball system.
+
+- **New `bunt` player attribute** (bat control, distinct from foot speed).
+  Schema column on `players`; existing rosters seeded `0.6·contact + 0.4·speed`
+  via migration; `generate_players` derives it for new players;
+  `_db_team_to_engine` threads it onto the engine `Player`.
+- **Four bunt types** (`o27/engine/manager.should_bunt`, rewritten): **sacrifice**
+  (1B/2B force), **drag / bunt-for-hit** (fast + low power, great vs the
+  infield shift), and the **suicide** & **safety squeeze** (runner on 3B).
+  Type is chosen by base state, gated by outs / score margin / `mgr_run_game` /
+  `mgr_leverage_aware` / batter power, and executed against bunt skill, speed,
+  and a new **pitcher difficulty** factor (stuff + command).
+- **Richer outcomes** (`o27/engine/pa.py`): clean sac, bunt single, **lead
+  runner forced out** (poor bunters, single-runner FC), popup, productive out,
+  squeeze run-scores (± beaten out), **suicide miss → runner hung out at
+  home**, and safety-squeeze hold. Each reduces to (new bases, runs, outs) via
+  `wild_pitch_advance` + `_record_out`.
+- **Stats** (`o27/stats/batter.py`, render credit, `_stat_delta`, team-line
+  agg, `sim.py` extract + both INSERTs, `db.py` schema + migration): **`sh` is
+  finally persisted**, plus `bunt_att`, `bunt_hits`, `sqz`, `sqz_rbi`. Surfaced
+  as a "Small Ball" card cluster on `/leaders`, columns on `/teams/stats`, and a
+  glossary section. New config block in `o27/config.py` for every rate.
+- **Invariant 6 fixed for real:** with `sh` persisted, the PA identity is now
+  `PA == AB + BB + HBP + SH`; the invariant test was updated to match and
+  **now passes** (it failed on every fresh sim before this work).
+
+**Validation:** simmed fresh 150-game DBs; all four bunt types fire, the `bunt`
+attribute varies 21–80, the bunt mix is sane (~1.5 bunts/game after dialing
+`SQUEEZE_BASE_PROB` down so squeezes stay special), **all 11 stat invariants
+pass** (was 10/11), engine + bunt unit suites pass (101 + new
+`o27/tests/test_bunting.py`), and `/leaders` `/teams/stats` `/glossary` render
+200. Needs a resim to populate (box-stat addition).
+
+Minor known gaps: secondary roster paths (youth/college call-ups, injury
+replacements) insert `bunt` at the column default (50) rather than deriving it;
+OR attribution on the two runner-out outcomes (`lead_out`, `squeeze_miss`) lands
+on the batter via the renderer's out-reconciliation tail (team out totals and
+scores are correct — only per-batter OR is slightly off on those rare plays).
+
 ## Still open
 
-- That invariant-6 / `sh` persistence gap (pre-existing).
-- RISP on the **player card** and **stats browser** sortable table (the
-  capture + aggregation already feed them; only column/section wiring remains).
+- RISP + bunting on the **player card** and **stats browser** sortable table
+  (capture + aggregation already feed them; only column wiring remains).
+- Box-score line for bunting (SH/bunt-hit shown in leaders/team, not yet in the
+  per-game box).
+- Deriving `bunt` in the youth/college/injury insert paths.

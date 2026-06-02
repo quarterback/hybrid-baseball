@@ -469,21 +469,25 @@ def test_invariant_6_pa_identity(played_game_ids):
     extra, params = _game_filter_clause("bs")
     rows = db.fetchall(
         f"""SELECT bs.game_id, bs.team_id, bs.player_id, bs.phase,
-                   bs.pa, bs.ab, bs.bb, bs.hbp
+                   bs.pa, bs.ab, bs.bb, bs.hbp, bs.sh
               FROM game_batter_stats bs
               JOIN games g ON g.id = bs.game_id
              WHERE g.played = 1{extra}""",
         params,
     )
+    # PA == AB + BB + HBP + SH. A successful sacrifice bunt (sh) is a plate
+    # appearance but not an at-bat, so it's the fourth term of the identity now
+    # that sh is persisted (it used to be silently dropped).
     bad = [
         r for r in rows
-        if (r["pa"] or 0) != ((r["ab"] or 0) + (r["bb"] or 0) + (r["hbp"] or 0))
+        if (r["pa"] or 0) != ((r["ab"] or 0) + (r["bb"] or 0)
+                              + (r["hbp"] or 0) + (r["sh"] or 0))
     ]
     assert not bad, (
-        f"PA != AB+BB+HBP on {len(bad)} batter rows; first 5: "
+        f"PA != AB+BB+HBP+SH on {len(bad)} batter rows; first 5: "
         + "; ".join(
             f"game={r['game_id']} pid={r['player_id']} phase={r['phase']} "
-            f"PA={r['pa']} AB={r['ab']} BB={r['bb']} HBP={r['hbp']}"
+            f"PA={r['pa']} AB={r['ab']} BB={r['bb']} HBP={r['hbp']} SH={r['sh']}"
             for r in bad[:5]
         )
     )
