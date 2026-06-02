@@ -6083,6 +6083,7 @@ def _savant_batter_rows(team_ids, min_bip: int) -> list[dict]:
 # Pitcher metrics: "elite" means suppressing contact, so most are reverse=True
 # (lower is better → higher percentile → red marker). K% is the exception.
 _SAVANT_PITCHER_METRICS = [
+    ("xwoba_against",  "xwOBA Against",  "0.3f", True),
     ("avg_ev_against", "Avg EV Against", "ev",  True),
     ("hardhit",        "Hard-Hit %",     "pct", True),
     ("barrel",         "Barrel %",       "pct", True),
@@ -6120,6 +6121,8 @@ def _savant_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
             WHERE phase = 0{team_in}
             GROUP BY player_id""")
     rate_by = {r["player_id"]: r for r in rate}
+    from o27v2.analytics import build_xwoba_against_table
+    xwa = build_xwoba_against_table(min_bf=1, team_ids=team_ids)
 
     rows = []
     for e in ev:
@@ -6131,6 +6134,8 @@ def _savant_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
         rows.append({
             "player_id":      pid,
             "bip":            e["bip"],
+            "xwoba_against":  (xwa.get(pid) or {}).get("xwoba_against"),
+            "woba_against":   (xwa.get(pid) or {}).get("woba_against"),
             "avg_ev_against": round(e["avg_ev_against"], 1) if e["avg_ev_against"] is not None else None,
             "hardhit":        round(100 * e["hardhit"], 1),
             "barrel":         round(100 * e["barrel"], 1),
@@ -6220,6 +6225,8 @@ def player_savant(player_id: int):
         min_bip=min_bip,
         woba=(me_bat or {}).get("woba"),
         xwoba=(me_bat or {}).get("xwoba"),
+        woba_against=(me_pit or {}).get("woba_against"),
+        xwoba_against=(me_pit or {}).get("xwoba_against"),
         n_qualified=len(bat_rows),
         n_qualified_pitchers=len(pit_rows),
         leagues=leagues, selected_league=selected_league,
@@ -6254,7 +6261,7 @@ def savant_home():
         {"title": "xwOBA",          "rows": _top(bat_rows, "xwoba", False)},
         {"title": "Avg Exit Velo",  "rows": _top(bat_rows, "avg_ev", False)},
         {"title": "Barrel %",       "rows": _top(bat_rows, "barrel", False)},
-        {"title": "Lowest EV Against", "rows": _top(pit_rows, "avg_ev_against", True)},
+        {"title": "Lowest xwOBA Against", "rows": _top(pit_rows, "xwoba_against", True)},
         {"title": "Strikeout % (P)", "rows": _top(pit_rows, "k_pct", False)},
     ]
 

@@ -16,7 +16,7 @@ from o27v2.analytics.run_expectancy import (
     build_re_by_outs_remaining,
     bases_label,
 )
-from o27v2.analytics.expected_woba import build_xwoba_table, build_xwoba_ev_table
+from o27v2.analytics.expected_woba import build_xwoba_table, build_xwoba_ev_table, build_xwoba_against_table
 from o27v2.analytics.pythag import refit_pythag_exponent
 from o27v2.analytics.base_runs import build_base_runs_table
 
@@ -26,6 +26,7 @@ __all__ = [
     "bases_label",
     "build_xwoba_table",
     "build_xwoba_ev_table",
+    "build_xwoba_against_table",
     "refit_pythag_exponent",
     "build_base_runs_table",
 ]

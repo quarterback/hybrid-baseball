@@ -117,6 +117,90 @@ def _ev_la_bin_sql() -> tuple[str, str]:
     return ev, la
 
 
+def _ev_la_bin_xwoba(weights: dict, team_ids=None) -> dict:
+    """League-average wOBA-per-BIP for each (ev_bin, la_bin). Shared by the
+    batter and pitcher EV/LA xwOBA tables so both use the identical surface."""
+    ev_sql, la_sql = _ev_la_bin_sql()
+    rows = db.fetchall(
+        f"""
+        SELECT {ev_sql} AS ev_bin, {la_sql} AS la_bin,
+               hit_type, was_stay, stay_credited, COUNT(*) AS n
+        FROM game_pa_log
+        WHERE phase = 0 AND exit_velocity IS NOT NULL"""
+        + _team_in(team_ids, "team_id")
+        + """
+        GROUP BY ev_bin, la_bin, hit_type, was_stay, stay_credited
+        """
+    )
+    bsum: dict[tuple, float] = defaultdict(float)
+    bcnt: dict[tuple, int] = defaultdict(int)
+    for r in rows:
+        key = (r["ev_bin"], r["la_bin"])
+        bsum[key] += _bip_woba_points(weights, r["hit_type"], r["was_stay"], r["stay_credited"]) * r["n"]
+        bcnt[key] += r["n"]
+    return {k: (bsum[k] / bcnt[k]) if bcnt[k] else 0.0 for k in bcnt}
+
+
+def build_xwoba_against_table(min_bf: int = 1, team_ids=None) -> dict:
+    """Per-pitcher xwOBA-against: the league-average (EV, LA)-bin value of every
+    ball a pitcher allowed, plus walks/HBP allowed, over batters faced. The
+    pitcher-side mirror of build_xwoba_ev_table. Returns rows keyed by
+    `player_id` with `woba_against`, `xwoba_against`, `xwoba_diff`
+    (woba_against − xwoba_against; negative = suppressed more than expected)."""
+    weights = _woba_weights(team_ids)
+    bin_xwoba = _ev_la_bin_xwoba(weights, team_ids)
+    ev_sql, la_sql = _ev_la_bin_sql()
+
+    pid_in = ""
+    if team_ids:
+        pid_in = (" AND pitcher_id IN (SELECT id FROM players WHERE team_id IN (%s))"
+                  % ",".join(str(int(t)) for t in team_ids))
+    rows = db.fetchall(
+        f"""
+        SELECT {ev_sql} AS ev_bin, {la_sql} AS la_bin,
+               pitcher_id AS player_id, hit_type, was_stay, stay_credited, COUNT(*) AS n
+        FROM game_pa_log
+        WHERE phase = 0 AND exit_velocity IS NOT NULL{pid_in}
+        GROUP BY ev_bin, la_bin, pitcher_id, hit_type, was_stay, stay_credited
+        """
+    )
+    actual_pts: dict[int, float] = defaultdict(float)
+    expected_pts: dict[int, float] = defaultdict(float)
+    for r in rows:
+        pid = r["player_id"]
+        key = (r["ev_bin"], r["la_bin"])
+        actual_pts[pid] += _bip_woba_points(weights, r["hit_type"], r["was_stay"], r["stay_credited"]) * r["n"]
+        expected_pts[pid] += bin_xwoba.get(key, 0.0) * r["n"]
+
+    team_in = ""
+    if team_ids:
+        team_in = " AND team_id IN (%s)" % ",".join(str(int(t)) for t in team_ids)
+    pit = db.fetchall(
+        f"""SELECT player_id, SUM(batters_faced) AS bf, SUM(bb) AS bb,
+                   COALESCE(SUM(hbp_allowed), 0) AS hbp
+            FROM game_pitcher_stats
+            WHERE phase = 0{team_in}
+            GROUP BY player_id""")
+
+    out = {}
+    for r in pit:
+        pid = r["player_id"]
+        bf = r["bf"] or 0
+        if bf <= 0:
+            continue
+        bb = r["bb"] or 0
+        hbp = r["hbp"] or 0
+        actual = actual_pts.get(pid, 0.0) + weights["BB"] * bb + weights["HBP"] * hbp
+        expect = expected_pts.get(pid, 0.0) + weights["BB"] * bb + weights["HBP"] * hbp
+        if bf >= min_bf:
+            out[pid] = {
+                "woba_against":  round(actual / bf, 3),
+                "xwoba_against": round(expect / bf, 3),
+                "xwoba_diff":    round((actual - expect) / bf, 3),
+            }
+    return out
+
+
 def build_xwoba_ev_table(min_pa: int = 162, team_ids=None) -> dict:
     """Per-batter xwOBA where the expected value of each ball in play is the
     league-average wOBA for its (EV, LA) bin — the physics-native version of

@@ -45,10 +45,20 @@ shift.
   leader cards populated; search box + nav link verified on every page.
 - Engine suite unaffected (90 green); these are web/analytics-only changes.
 
+## Pitcher xwOBA-against (added after Phase 4)
+
+`build_xwoba_against_table` — the pitcher mirror of `build_xwoba_ev_table`,
+sharing the same `_ev_la_bin_xwoba` surface. Per pitcher it sums each allowed
+ball's (EV, LA)-bin value + walks/HBP allowed over batters faced. Added as the
+lead bar on the Pitching panel (lower = elite, reversed), with a wOBA/xwOBA-
+against luck card (negative gap = suppressed better than the contact deserved)
+and a "Lowest xwOBA Against" card on the `/savant` home. Validated: 72 qualified
+pitchers span .276–.858; a sample arm read actual .484 vs expected .687
+(out-suppressing his contact). 90 engine tests still green.
+
 ## Follow-ups
 
 - **Deferred (owner):** season spray charts + EV/LA bin grid on the player page.
-- Pitcher xwOBA-against (the pitcher panel is EV/contact + rate stats today).
 - The nav search is the `/savant` home datalist; a truly global (every-page)
   search box was intentionally not added to avoid embedding the player list on
   every page.
