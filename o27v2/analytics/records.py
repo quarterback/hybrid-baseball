@@ -382,3 +382,61 @@ def single_season_pitching_records(top_n: int = 10) -> dict[str, list[dict]]:
     out["whip"] = sorted(qual, key=lambda ln: (ln.get("whip") or 1e9,))[:top_n]
     out["k9"]   = sorted(qual, key=lambda ln: (-(ln.get("k9") or 0.0),))[:top_n]
     return out
+
+
+# ---------------------------------------------------------------------------
+# Team Walk-Back runs (current season)
+#
+# Derived entirely from the persisted pitcher-side `wb_runs`: a pitcher's
+# wb_runs are the Walk-Back runs his team *allowed*, which means the *opposing*
+# team *scored* them. So team Walk-Back offense needs no new tracking — it's a
+# re-attribution of an existing column. This is the team-level cut (how many
+# runs a club manufactured off the post-HR rule), which sidesteps the
+# individual-attribution noise of crediting the on-deck driver.
+# ---------------------------------------------------------------------------
+
+def team_walkback_runs(team_ids=None) -> list[dict]:
+    """Per-team Walk-Back runs scored (and allowed) this season.
+
+    `team_ids` scopes the board to one league. Sums all phases — a Walk-Back
+    run counts whenever it crosses the plate. Returns teams with any WBR
+    activity, sorted by runs scored.
+    """
+    rows = db.fetchall(
+        """SELECT ps.team_id AS pitch_team, COALESCE(ps.wb_runs,0) AS w,
+                  g.home_team_id, g.away_team_id
+           FROM game_pitcher_stats ps
+           JOIN games g ON ps.game_id = g.id
+           WHERE g.played = 1 AND COALESCE(ps.wb_runs,0) > 0"""
+    )
+    scored: dict[int, int] = defaultdict(int)
+    allowed: dict[int, int] = defaultdict(int)
+    for r in rows:
+        pt = int(r["pitch_team"])
+        w = int(r["w"] or 0)
+        opp = (int(r["away_team_id"]) if pt == int(r["home_team_id"])
+               else int(r["home_team_id"]))
+        scored[opp] += w
+        allowed[pt] += w
+
+    teams = {
+        int(t["id"]): t
+        for t in db.fetchall("SELECT id, name, abbrev, league FROM teams")
+    }
+    allow_set = {int(t) for t in team_ids} if team_ids else None
+    out: list[dict] = []
+    for tid, t in teams.items():
+        if allow_set is not None and tid not in allow_set:
+            continue
+        s, a = scored.get(tid, 0), allowed.get(tid, 0)
+        if s == 0 and a == 0:
+            continue
+        out.append({
+            "team_id":     tid,
+            "team_abbrev": t["abbrev"],
+            "team_name":   t["name"],
+            "scored":      s,
+            "allowed":     a,
+        })
+    out.sort(key=lambda d: (-d["scored"], -d["allowed"], d["team_abbrev"]))
+    return out

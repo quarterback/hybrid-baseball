@@ -66,19 +66,21 @@ def synth_db():
         bat(gid, 11, pa=4, ab=3, h=0 if i == 2 else 1, d2=0, d3=0, hr=0,
             rbi=0, r=0, bb=1, k=0)
 
-    def pit(gid, pid, *, outs, k, h, bb, er, runs, starter):
+    def pit(gid, pid, *, outs, k, h, bb, er, runs, starter, wb_runs=0):
         ex("""INSERT INTO game_pitcher_stats(game_id,team_id,player_id,phase,
               outs_recorded,k,hits_allowed,bb,er,runs_allowed,is_starter,
-              batters_faced) VALUES (?,2,?,0,?,?,?,?,?,?,?,?)""",
-           (gid, pid, outs, k, h, bb, er, runs, starter, outs + h + bb))
+              batters_faced,wb_runs) VALUES (?,2,?,0,?,?,?,?,?,?,?,?,?)""",
+           (gid, pid, outs, k, h, bb, er, runs, starter, outs + h + bb, wb_runs))
 
     # Ace: starts g1-5, K = 11,12,10,8,13 -> double-digit streak g1-3 (3).
-    # Runs: scoreless g1,g2 (14 IP), run g3, scoreless g4,g5.
+    # Runs: scoreless g1,g2 (14 IP), run g3, scoreless g4,g5. He allows 3
+    # walk-back runs total (team 2 pitcher) -> team 1 SCORED those 3.
     ace_k = [11, 12, 10, 8, 13]
     ace_runs = [0, 0, 2, 0, 0]
+    ace_wb = [0, 0, 2, 1, 0]
     for i in range(5):
         pit(i + 1, 20, outs=21, k=ace_k[i], h=4, bb=1,
-            er=ace_runs[i], runs=ace_runs[i], starter=1)
+            er=ace_runs[i], runs=ace_runs[i], starter=1, wb_runs=ace_wb[i])
     # Rex: relief, scoreless g1-3 (3 IP), run g4.
     for i, runs in enumerate([0, 0, 0, 1]):
         pit(i + 1, 21, outs=3, k=2, h=0, bb=0, er=runs, runs=runs, starter=0)
@@ -190,3 +192,12 @@ def test_single_season_best_flags_live_season(synth_db):
     assert hr[0]["hr"] == 40 and not hr[0].get("is_current")
     live = next(r for r in hr if r.get("is_current"))
     assert live["hr"] == 7
+
+
+def test_team_walkback_runs_attributes_to_opponent(synth_db):
+    from o27v2.analytics.records import team_walkback_runs
+    rows = {r["team_abbrev"]: r for r in team_walkback_runs(team_ids=[1, 2])}
+    # Team 2's pitcher (Ace) allowed 3 walk-back runs -> team 1 (HOM) scored
+    # them; team 2 (AWY) is charged with allowing them.
+    assert rows["HOM"]["scored"] == 3 and rows["HOM"]["allowed"] == 0
+    assert rows["AWY"]["allowed"] == 3 and rows["AWY"]["scored"] == 0
