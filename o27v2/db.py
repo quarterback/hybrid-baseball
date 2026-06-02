@@ -48,6 +48,13 @@ def get_conn() -> sqlite3.Connection:
     # under WAL (only a power/OS crash can lose the last txn, acceptable for
     # a game sim).
     conn.execute("PRAGMA synchronous = NORMAL")
+    # busy_timeout makes a connection WAIT (up to N ms) for a lock instead of
+    # throwing `database is locked` the instant another connection holds the
+    # writer. Without it (the sqlite3 default is 0) any concurrent write —
+    # the almanac-warm thread spawned at league creation, a running sim, a
+    # second browser tab — surfaces as an immediate 500 that "fixes itself"
+    # on refresh once the lock clears. 10s comfortably covers a seed/commit.
+    conn.execute("PRAGMA busy_timeout = 10000")
     return conn
 
 
