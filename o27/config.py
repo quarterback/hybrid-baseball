@@ -178,6 +178,51 @@ FATIGUE_FOUL: float     = -0.06   # fatigue-dominance: -0.04 → -0.06
 # Base probabilities for weak / medium / hard contact.
 # Shifted by matchup:  shift = (batter.skill - pitcher.pitcher_skill) * CONTACT_MATCHUP_SHIFT
 
+# --- Physics-first resolver (resolve_batted_ball) -------------------------
+# LA band cut points + per-band hit rates. The resolver maps the (EV, LA, spray)
+# the batter produced to a base hit_type; these knobs are tuned so the league
+# per-BIP mix reproduces the pre-inversion calibration (R/G ~24.2; single ~29%,
+# double ~19%, GO ~14%, FO ~13%, LO ~8.5%, HR ~6%, ...). All EV in mph, LA/spray
+# in degrees, distances in feet.
+# Resolver-specific texture mix (decoupled from BATTED_BALL_WEIGHTS, which the
+# runner-erasing OUT_SHIFT lever uses). O27 is a doubles-heavy environment, so
+# the LA distribution is liner-dominant — these weights reflect that.
+#                   (dribbler, grounder, liner, flyball)
+RES_TEXTURE_WEIGHTS = {
+    "weak":   (0.22, 0.34, 0.34, 0.10),
+    "medium": (0.05, 0.22, 0.53, 0.20),
+    "hard":   (0.0,  0.06, 0.53, 0.41),
+}
+RES_POPUP_LA: float        = 50.0   # above this LA → automatic fly out
+RES_FLY_LA: float          = 26.0   # fly-ball band floor
+RES_LINER_LA: float        = 10.0   # liner band floor (below → grounder)
+# Fly band: distance vs fence decides HR; shortfalls drop for XBH or are caught.
+RES_FLY_HIT_FLOOR: float   = 210.0  # drives shorter than this are always caught
+RES_FLY_DROP_SCALE: float  = 0.92   # how readily sub-HR fly balls fall for XBH
+RES_FLY_TRIPLE_P: float    = 0.13   # deep-alley double → triple chance
+RES_HR_MARGIN: float       = 13.0   # ft of carry past the fence required for a HR
+# Liner band: highest BABIP.
+RES_LINER_EV_MID: float    = 90.0
+RES_LINER_EV_SPAN: float   = 25.0
+RES_LINER_HIT_BASE: float  = 0.76
+RES_LINER_HIT_EVSCALE: float = 0.18
+RES_LINER_XBH_EV: float    = 83.0
+RES_LINER_XBH_SCALE: float = 1.28
+RES_LINER_TRIPLE_EV: float = 95.0
+RES_LINER_TRIPLE_P: float  = 0.38
+# Grounder band.
+RES_GB_EV_MID: float       = 90.0
+RES_GB_EV_SPAN: float      = 30.0
+RES_GB_HIT_BASE: float     = 0.44
+RES_GB_HIT_EVSCALE: float  = 0.40
+RES_GB_INFIELD_EV: float   = 72.0   # weak grounders that sneak through → infield single
+RES_GB_FC_P: float         = 0.15   # grounder out → fielder's choice share
+# Re-homed run-environment levers (were table redistributions): per-half form
+# lifts EV (hot half → more carry → XBH/HR at the same hit count), RISP trims it
+# (the XBH-suppression decoupler). Both in mph; 0.0 = identity.
+RES_FORM_EV_SCALE: float   = 18.0
+RES_RISP_EV_TRIM: float    = 3.0
+
 CONTACT_WEAK_BASE: float     = 0.18   # offense pass: 0.38 → 0.18; far fewer weak singles
 CONTACT_MEDIUM_BASE: float   = 0.50   # offense pass: 0.40 → 0.50
 CONTACT_HARD_BASE: float     = 0.32   # offense pass: 0.22 → 0.32; more XBH / HR potential
@@ -297,6 +342,15 @@ ADVANCE_1B_ON_1B_OUT: float      = 0.11
 # 2 so the full range hits the configured limits.
 SPEED_ADVANCE_MOD: float         = 0.12
 ARM_ADVANCE_MOD: float           = 0.11
+
+# Infield-hit leg-out: on a borderline grounder, batter foot speed vs the
+# fielding infield's arm decides whether the throw to first beats the runner.
+# Folded into the weak/medium hit-vs-out flex as an additive bonus on GROUND
+# balls only (fly/line plays are unaffected — you don't leg out a fly). Scale
+# is the deviation (speed - infield_arm), so a burner vs a weak-armed infield
+# legs out more infield singles; a plodder vs rocket arms is rung up. Mean-
+# neutral across the league (symmetric in speed and arm). Identity at 0.0.
+INFIELD_HIT_SPEED_SCALE: float   = 0.20
 
 # Extra-base probability: chance += max(0, (speed - 0.5) * RUNNER_EXTRA_SPEED_SCALE)
 
@@ -1448,6 +1502,38 @@ PARK_HR_MIN:    float = 0.85
 PARK_HR_MAX:    float = 1.20
 PARK_HITS_MIN:  float = 0.93
 PARK_HITS_MAX:  float = 1.08
+
+# --- Exit-velocity BABIP texture (park_effects, physics → outcome) ---------
+# Beyond fence geometry, the (EV, LA) sample reaches in to re-decide a small
+# slice of *marginal* balls in play, so contact quality — not just the
+# categorical roll — drives whether a borderline ball falls. The four rules
+# are deliberately paired so league offense stays ~flat: two turn an out into
+# a hit (scorched grounder through the hole; soft fly that dies for a bloop),
+# two turn a hit into an out (scorched liner snared; soft roller fielded
+# routinely). Net effect is BABIP *variance* tied to EV, not a run-environment
+# shift. EV cuts are read off the live league distribution (p~92 median,
+# ~108 = top decile, ~76 = bottom decile), NOT MLB's 95-mph anchor.
+# Set any probability to 0.0 to disable that rule. Identity is preserved when
+# park_dims is None (the whole hook no-ops), so legacy DBs are unaffected.
+EV_SCORCHED:        float = 108.0   # mph — "hit it on the screws"
+EV_SOFT:            float = 78.0    # mph — "dying quail / weak roller"
+EV_SCORCH_THRU_P:   float = 0.35    # scorched grounder → seeing-eye single
+EV_ATEM_P:          float = 0.18    # scorched liner → lineout (at-'em ball)
+EV_BLOOP_P:         float = 0.28    # soft fly/liner → bloop single
+EV_ROLLER_P:        float = 0.25    # soft grounder hit → routine ground out
+
+# Tier-1 extensions (rules 10-14). Real batted-ball mechanics, still gated on
+# (EV, LA, spray) only. The two hit-count movers are paired: the lazy-fly
+# can-of-corn (hit→out) offsets the legged-out tapper (out→hit). The three
+# slug movers (frozen rope, down-the-line, wall-ball carom) change only the
+# extra-base mix, not hits/BIP. EV cuts come off the live league spread.
+EV_TAPPER_MAX:      float = 62.0    # mph — dribbler the batter can leg out
+EV_FROZEN:          float = 102.0   # mph — line-drive one-hopper to the wall
+EV_LAZYFLY_P:       float = 0.45    # lazy fly (LA 36-48, EV≤88) → caught fly out
+EV_TAPPER_P:        float = 0.40    # dribbler ground_out → infield single
+EV_FROZENROPE_P:    float = 0.18    # frozen-rope single → double
+EV_DOWNLINE_P:      float = 0.30    # single down the line (|spray|≥40) → double
+EV_WALLBALL_P:      float = 0.30    # double off a tall, deep wall → carom triple
 
 # --- Attribute blend weights ----------------------------------------------
 # When folding the new multi-D ratings into the existing probability code,

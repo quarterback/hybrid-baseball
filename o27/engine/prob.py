@@ -26,6 +26,10 @@ from . import manager as mgr
 from . import weather as wx
 from o27 import config as cfg
 from o27.engine import power_play
+from o27.engine.batted_ball import (
+    generate_batted_ball as _generate_bb,
+    resolve_batted_ball as _resolve_bb,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1254,6 +1258,23 @@ def _avg_outfielder_arm(state: GameState) -> float:
     return sum(arms) / len(arms)
 
 
+def _avg_infield_arm(state: GameState) -> float:
+    """Average `arm` rating across the fielding team's infield (1B/2B/3B/SS).
+
+    The throw-to-first on a grounder is an infield-arm play, so this is the
+    counterweight to batter foot speed on leg-out infield hits. Falls back to
+    0.5 (neutral) when positions aren't stamped, matching _avg_outfielder_arm.
+    """
+    arms = []
+    for p in getattr(state.fielding_team, "lineup", None) or []:
+        gp = (getattr(p, "game_position", "") or getattr(p, "position", "") or "")
+        if any(tag in gp for tag in ("1B", "2B", "3B", "SS")):
+            arms.append(float(getattr(p, "arm", 0.5) or 0.5))
+    if not arms:
+        return 0.5
+    return sum(arms) / len(arms)
+
+
 def _resolve_table(
     rng: random.Random,
     table: list[tuple[str, float]],
@@ -1854,98 +1875,53 @@ def resolve_contact(
     batter: Player,
     state: GameState,
     launch_angle_bias: float = 0.0,
+    pitch_hard_contact_shift: float = 0.0,
 ) -> dict:
     """
     Resolve a ball-in-play event into a full fielding outcome dict.
 
     Returns an outcome dict compatible with apply_event / advance_runners.
 
-    Phase 10.2 power model:
-      - batter.power redistributes weight along power-axis edges INSIDE
-        each contact-quality table (sum-preserving). High power moves
-        weight from singles → doubles, doubles → triples, line_outs → HRs
-        on hard contact; from singles → doubles and ground_outs → fly_outs
-        on medium contact; from singles → fly_outs (infield pops) on weak
-        contact when power is *low*. Low power reverses the flow.
-      - Total table weight is invariant under this redistribution, so
-        league-wide event totals stay stable while per-player profiles
-        diverge with their power rating.
-    Park factors are applied separately as multipliers (parks really do
-    create / destroy events, so they're multiplicative by design).
+    Physics-first model (the inversion):
+      - The batted ball (EV, LA, spray) is generated from TALENT — contact
+        quality, batter.power, batted-ball texture, pitch metadata,
+        handedness — with no knowledge of the outcome (generate_batted_ball).
+      - The base hit_type is then DERIVED from that trajectory vs the park
+        fence geometry (resolve_batted_ball). The categorical WEAK/MEDIUM/
+        HARD_CONTACT tables are gone.
+      - Run-environment levers that used to be sum-preserving table
+        redistributions are re-homed: power + pitch feed the EV/LA generator;
+        per-half form and RISP suppression enter as EV shifts (a hot half
+        carries the ball farther → more XBH/HR at the same hit count, RISP
+        trims the carry); park HR/hits + fence geometry enter the resolver.
+      - The (EV, LA, spray) that drove the outcome are returned so the caller
+        persists the SAME values — physics and result never disagree.
+    The defense layer below (range shift, gems, shifts, errors, GIDP, fielder
+    attribution) is unchanged: it operates on the physics-derived hit_type.
     """
-    table = _CONTACT_TABLES.get(quality, cfg.WEAK_CONTACT)
-
-    # Power-axis redistribution driven purely by the rating. The legacy
-    # archetype `hr_weight_bonus` boost was removed — its HR inflation
-    # double-counted what the modern `power` rating already models.
-    # Joker decay shrinks the deviation as the joker accumulates ABs
-    # this game, so a tired joker stops driving extra power outcomes.
-    power_dev = (batter.power - 0.5) * 2.0 * _resolve_joker_decay(state, batter)
-
-    if quality == "hard":
-        table = _redistribute(table, _hard_edges(), power_dev)
-    elif quality == "medium":
-        table = _redistribute(table, _medium_edges(), power_dev)
-    elif quality == "weak":
-        table = _redistribute(table, _weak_edges(), power_dev)
-
-    # Per-half offensive form → its OWN strong, sum-preserving single↔XBH↔HR
-    # redistribution. This is the primary H~R decoupler. The per-batter power
-    # edges above are deliberately gentle; the form needs a much wider swing to
-    # move a half's run total off its hit count, so it gets dedicated big-scale
-    # edges. A hot half turns singles into doubles and homers (runs spike, hit
-    # COUNT unchanged — a single and a homer are both one hit); a cold half
-    # leaves nothing but singles that pile up and strand. Total table weight is
-    # invariant, so this shifts slugging, not how many balls fall in.
-    seq_power_dev = (_batting_seq_form(rng, state) - 1.0) * getattr(
-        cfg, "SEQ_FORM_POWER_SCALE", 0.0
-    )
-    if seq_power_dev:
-        if quality == "hard":
-            table = _redistribute(table, _seq_hard_edges(), seq_power_dev)
-        elif quality == "medium":
-            table = _redistribute(table, _seq_medium_edges(), seq_power_dev)
-
-    # RISP hit-type suppression: with a runner in scoring position, the hits
-    # that fall in are mostly singles — pull HR/triple/double weight back into
-    # singles (sum-preserving, so hit count is untouched, only slugging). The
-    # big bases-clearing swing becomes the exception with runners on, so runners
-    # advance station-to-station and pile up rather than scoring in bunches.
-    if _is_risp(state):
-        risp_edges = _risp_xbh_edges(quality)
-        if risp_edges:
-            # Clutch form scales the suppression: a hot half lifts it (XBH allowed
-            # — the lineup clears the bases), a cold half pushes past full (every
-            # RISP hit a single). Neutral/disabled → dev 1.0 (flat suppression).
-            form_dev = _risp_clutch_form(rng, state) - 1.0
-            xbh_dev = max(0.0, 1.0 - form_dev * getattr(cfg, "RISP_CLUTCH_XBH_RELIEF", 0.0))
-            if xbh_dev > 0.0:
-                table = _redistribute(table, risp_edges, xbh_dev)
-
-    # Pitch launch-angle bias: roll ground_out↔fly_out weight by the pitch's
-    # launch_angle_bias (sum-preserving). Negative bias (sinker, peeled_drop,
-    # drop_knuck) drives grounders; positive (riseball, rise_knuck) drives
-    # fly balls / popups. This is what makes the grounder/popup split a REAL
-    # outcome difference between pitches, not just weak-contact flavor.
-    # Identity at bias = 0.0.
-    if launch_angle_bias:
-        table = _redistribute(
-            table,
-            [("ground_out", "fly_out", cfg.LAUNCH_REDIST_GO2FO)],
-            float(launch_angle_bias),
-        )
-
-    # Park factors (multiplicative) applied AFTER redistribution.
     park_hr   = getattr(state.home, "park_hr", 1.0) if state.home else 1.0
     park_hits = getattr(state.home, "park_hits", 1.0) if state.home else 1.0
-
-    # Weather HR multiplier stacks onto park_hr (multiplicative).
     weather = getattr(state, "weather", None)
     park_hr = park_hr * wx.hr_multiplier(weather)
+    park_dims = getattr(state, "park_dimensions", None)
 
-    table = _apply_park(table, quality, park_hr, park_hits)
+    # Re-homed run-environment levers → EV shift (mph).
+    ev_shift = (_batting_seq_form(rng, state) - 1.0) * cfg.RES_FORM_EV_SCALE
+    if _is_risp(state):
+        ev_shift -= cfg.RES_RISP_EV_TRIM
 
-    hit_type, batter_safe, caught_fly, _ = _pick_from_table(rng, table)
+    exit_velocity, launch_angle, spray_angle, texture = _generate_bb(
+        rng, quality,
+        batter_power=float(getattr(batter, "power", 0.5) or 0.5),
+        pitch_hard_contact_shift=pitch_hard_contact_shift,
+        batter_bats=str(getattr(batter, "bats", "") or ""),
+        pitch_launch_bias=launch_angle_bias,
+        ev_shift=ev_shift,
+    )
+    hit_type, batter_safe, caught_fly = _resolve_bb(
+        rng, exit_velocity, launch_angle, spray_angle,
+        park_dims=park_dims, park_hr=park_hr, park_hits=park_hits,
+    )
 
     # ---- Defense layer ----------------------------------------------------
     # The fielding team's `defense_rating` modulates whether borderline
@@ -2120,9 +2096,10 @@ def resolve_contact(
     # Roll batted-ball texture for hits — a grounder single advances runners
     # worse than a liner single (the "wasted hits" mechanism). Only meaningful
     # for actual hits; outs/errors get no texture.
-    batted_ball = ""
-    if hit_type in ("single", "double", "triple", "hr"):
-        batted_ball = _roll_batted_ball(rng, quality, hit_type, batter)
+    # The batted-ball texture now comes straight from the physics generator —
+    # it's the same {dribbler, grounder, liner, flyball} taxonomy, sampled
+    # consistently with the trajectory that produced this hit_type.
+    batted_ball = texture if hit_type in ("single", "double", "triple", "hr") else ""
     runner_adv, br_out_idxs = runner_advances_for_hit(
         rng, advance_type, state.bases, state, batted_ball=batted_ball)
 
@@ -2176,6 +2153,11 @@ def resolve_contact(
         "gem_effect": gem_effect,
         "nickel_play": nickel_id is not None,
         "fielder_pos": power_play.NICKEL_POS if nickel_id is not None else None,
+        # The trajectory that DROVE this outcome — persisted as-is so physics
+        # and result never disagree (the caller no longer re-samples).
+        "exit_velocity": exit_velocity,
+        "launch_angle": launch_angle,
+        "spray_angle": spray_angle,
     }
 
 
@@ -2863,13 +2845,14 @@ class ProbabilisticProvider:
         # peeled_drop, drop_knuck) and popup pitches (riseball, rise_knuck)
         # produce genuinely different batted-ball profiles.
         _pitch_lab = 0.0
+        _pitch_hcs = 0.0
         if sel_pitch:
-            _pitch_lab = float(
-                (cfg.PITCH_CATALOG.get(sel_pitch, {}) or {}).get("launch_angle_bias", 0.0)
-                or 0.0
-            )
+            _pmeta = cfg.PITCH_CATALOG.get(sel_pitch, {}) or {}
+            _pitch_lab = float(_pmeta.get("launch_angle_bias", 0.0) or 0.0)
+            _pitch_hcs = float(_pmeta.get("hard_contact_shift", 0.0) or 0.0)
         outcome_dict = resolve_contact(rng, quality, batter, state,
-                                       launch_angle_bias=_pitch_lab)
+                                       launch_angle_bias=_pitch_lab,
+                                       pitch_hard_contact_shift=_pitch_hcs)
 
         # "error" manifestation — if the contact resolved as a routine
         # out, the defender bobbles it under pressure and the batter
@@ -2925,19 +2908,31 @@ class ProbabilisticProvider:
             # mostly already-hit outcomes so the swing is narrower.
             hit_bonus = (0.15 if quality == "weak" else 0.10) * talent_run
             ht = outcome_dict.get("hit_type", "")
+            # Foot speed vs the fielding infield's arm decides the throw to
+            # first on a borderline grounder. It applies ONLY to infield
+            # grounder plays (ground_out ↔ infield_single) — you don't leg out
+            # a fly ball, so fly_out / line_out / extra-base hits are untouched.
+            # EV/LA aren't sampled until later in this flow, so we gate on the
+            # unambiguous categorical grounder hit_types. A burner vs a weak
+            # infield arm legs more out; a plodder vs rocket arms is rung up.
+            leg_out_dev = (batter.speed - _avg_infield_arm(state)) * cfg.INFIELD_HIT_SPEED_SCALE
             is_safety   = ht in ("single", "infield_single", "double", "triple")
             is_clean_out = (ht in ("ground_out", "fly_out", "line_out")
                             and not outcome_dict.get("batter_safe", True)
                             and not outcome_dict.get("caught_fly"))
-            if is_safety and hit_bonus < 0:
-                # Marginal talent can lose a borderline hit.
-                if rng.random() < min(0.6, abs(hit_bonus)):
+            # Speed protects an infield single; a strong infield arm erases it.
+            down_bonus = hit_bonus - (leg_out_dev if ht == "infield_single" else 0.0)
+            if is_safety and down_bonus < 0:
+                # Marginal talent (or a gunned-down slow runner) loses the hit.
+                if rng.random() < min(0.6, abs(down_bonus)):
                     outcome_dict["hit_type"] = "ground_out"
                     outcome_dict["batter_safe"] = False
                     outcome_dict["runner_advances"] = [0, 0, 0]
-            elif is_clean_out and hit_bonus > 0:
-                # Star talent can flip a borderline out into an infield_single.
-                if rng.random() < min(0.6, hit_bonus):
+            elif is_clean_out:
+                # Star talent — or pure foot speed on a grounder — flips a
+                # borderline out into an infield_single.
+                up_bonus = hit_bonus + (leg_out_dev if ht == "ground_out" else 0.0)
+                if up_bonus > 0 and rng.random() < min(0.6, up_bonus):
                     new_type = "infield_single" if quality == "weak" else "single"
                     outcome_dict["hit_type"] = new_type
                     outcome_dict["batter_safe"] = True
@@ -2954,27 +2949,13 @@ class ProbabilisticProvider:
         # Done BEFORE the Stay decision so the runner sees the final
         # hit_type (a fly_out → HR upgrade doesn't leave a runner who
         # decided to stay on a caught fly).
-        from o27.engine.batted_ball import sample_batted_ball as _sample_bb
-        from o27.engine.park_effects import apply_park_effects as _apply_park
-        _pitch_hcs = 0.0
-        if sel_pitch:
-            _pmeta = cfg.PITCH_CATALOG.get(sel_pitch, {}) or {}
-            _pitch_hcs = float(_pmeta.get("hard_contact_shift", 0.0) or 0.0)
-        ev_v, la_v, spray_v = _sample_bb(
-            rng,
-            quality=quality,
-            hit_type=outcome_dict.get("hit_type", "") or "",
-            batter_power=float(getattr(batter, "power", 0.5) or 0.5),
-            pitch_hard_contact_shift=_pitch_hcs,
-            batter_bats=str(getattr(batter, "bats", "") or ""),
-            pitch_launch_bias=_pitch_lab,
-        )
-        _apply_park(
-            rng,
-            outcome_dict,
-            ev=ev_v, la=la_v, spray=spray_v,
-            park_dims=getattr(state, "park_dimensions", None),
-        )
+        # Physics-first: the (EV, LA, spray) were generated inside
+        # resolve_contact and ALREADY drove the hit_type (incl. park fence
+        # geometry). Read them back here for the ITPHR contest, the descriptive
+        # name, and persistence — no re-sampling, so physics and result agree.
+        ev_v = outcome_dict["exit_velocity"]
+        la_v = outcome_dict["launch_angle"]
+        spray_v = outcome_dict["spray_angle"]
 
         # Inside-the-park HR contest. A clean deep triple in a deep/irregular
         # park may become an ITPHR (scores + arms the Walk-Back), an out at

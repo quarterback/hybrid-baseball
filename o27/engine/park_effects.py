@@ -36,6 +36,8 @@ import math
 import random
 from typing import Optional
 
+from o27 import config as cfg
+
 
 # --- Geometry helpers ----------------------------------------------------
 
@@ -136,6 +138,37 @@ def apply_park_effects(
       5. **Picket-fence robberies**: cricket-ground low-wall parks
          (wall_h ≤ 7) let outfielders vault — a borderline HR in a
          deep oval has a small chance of being robbed for a fly_out.
+
+    Park-independent EV texture (rules 6-9, reached only when no geometry
+    rule above fired). These let exit velocity re-decide a thin slice of
+    *marginal* balls in play. They are paired so league offense stays ~flat:
+
+      6. **Seeing-eye single**: a scorched grounder (EV ≥ EV_SCORCHED, low
+         LA) handcuffs the infield and sneaks through — ground_out → single.
+      7. **At-'em ball**: a scorched line drive (EV ≥ EV_SCORCHED, line arc)
+         is hit right at a fielder — single/double → caught line_out.
+      8. **Bloop single**: a softly-struck fly/liner (EV ≤ EV_SOFT) dies in
+         front of the outfielders — fly_out/line_out → single.
+      9. **Routine roller**: a weak grounder (EV ≤ EV_SOFT, low LA) that the
+         categorical roll called a hit is an easy play — single → ground_out.
+
+    Rules 6+8 (out→hit) are balanced against 7+9 (hit→out): the net is BABIP
+    variance driven by contact quality, not a shift in run scoring.
+
+    Tier-1 extensions (rules 10-14):
+
+      10. **Can-of-corn**: a lazy fly (LA 36-48, EV ≤ 88) the categorical
+          roll called a hit is run down — single/double → caught fly_out.
+      11. **Legged-out tapper**: a dribbler (EV ≤ EV_TAPPER_MAX, low LA) the
+          batter beats out — ground_out → infield_single. Offsets rule 10.
+      12. **Frozen rope**: a line-drive one-hopper (EV ≥ EV_FROZEN, LA 12-26)
+          one-hops the wall — single → double.
+      13. **Down the line**: a single skipped into the corner (|spray| ≥ 40)
+          rolls for a double — single → double.
+      14. **Wall-ball carom**: a deep drive (EV ≥ EV_FROZEN) into a tall, deep
+          alley caroms wild — double → triple.
+
+    Rules 12-14 change only the extra-base mix, not hits/BIP.
     """
     if not park_dims:
         return
@@ -223,5 +256,100 @@ def apply_park_effects(
     if hit_type == "double" and fence >= 380.0 and dist >= 320.0 and abs_spray >= 15.0:
         if rng.random() < 0.22:
             outcome_dict["hit_type"] = "triple"
+            outcome_dict["runner_advances"] = [4, 4, 3]
+            return
+
+    # ── EV texture (rules 6-9) ──────────────────────────────────────────
+    # Park-independent: exit velocity re-decides a thin slice of marginal
+    # BIP. Reached only because no geometry rule above fired, so these stay
+    # mutually exclusive with the park mutations. A caught conversion mirrors
+    # rule 3's shape; a fallen-hit conversion mirrors the gapper double's.
+    grounder = la < 10.0
+
+    # ── 6. Seeing-eye single: scorched grounder sneaks through ──────────
+    if hit_type == "ground_out" and ev >= cfg.EV_SCORCHED and grounder:
+        if rng.random() < cfg.EV_SCORCH_THRU_P:
+            outcome_dict["hit_type"] = "single"
+            outcome_dict["batter_safe"] = True
+            outcome_dict["caught_fly"] = False
+            outcome_dict["runner_out_idx"] = None
+            outcome_dict["runner_advances"] = [1, 2, 2]
+            return
+
+    # ── 7. At-'em ball: scorched liner snared ───────────────────────────
+    if hit_type in ("single", "double") and line_arc and ev >= cfg.EV_SCORCHED:
+        if rng.random() < cfg.EV_ATEM_P:
+            outcome_dict["hit_type"] = "line_out"
+            outcome_dict["batter_safe"] = False
+            outcome_dict["caught_fly"] = True
+            outcome_dict["runner_out_idx"] = None
+            outcome_dict["runner_advances"] = [0, 0, 0]
+            return
+
+    # ── 8. Bloop single: softly-struck fly/liner dies in front ──────────
+    if hit_type in ("fly_out", "line_out") and ev <= cfg.EV_SOFT and 12.0 <= la <= 40.0:
+        if rng.random() < cfg.EV_BLOOP_P:
+            outcome_dict["hit_type"] = "single"
+            outcome_dict["batter_safe"] = True
+            outcome_dict["caught_fly"] = False
+            outcome_dict["runner_out_idx"] = None
+            outcome_dict["runner_advances"] = [1, 2, 2]
+            return
+
+    # ── 9. Routine roller: weak grounder hit is an easy play ────────────
+    if hit_type in ("single", "infield_single") and ev <= cfg.EV_SOFT and grounder:
+        if rng.random() < cfg.EV_ROLLER_P:
+            outcome_dict["hit_type"] = "ground_out"
+            outcome_dict["batter_safe"] = False
+            outcome_dict["caught_fly"] = False
+            outcome_dict["runner_out_idx"] = None
+            outcome_dict["runner_advances"] = [0, 0, 0]
+            return
+
+    # ── 10. Can-of-corn: lazy fly the engine called a hit is run down ───
+    if hit_type in ("single", "double") and 36.0 <= la <= 48.0 and ev <= 88.0:
+        if rng.random() < cfg.EV_LAZYFLY_P:
+            outcome_dict["hit_type"] = "fly_out"
+            outcome_dict["batter_safe"] = False
+            outcome_dict["caught_fly"] = True
+            outcome_dict["runner_out_idx"] = None
+            outcome_dict["runner_advances"] = [0, 0, 0]
+            return
+
+    # ── 11. Legged-out tapper: dribbler the batter beats out ────────────
+    if hit_type == "ground_out" and ev <= cfg.EV_TAPPER_MAX and grounder:
+        if rng.random() < cfg.EV_TAPPER_P:
+            outcome_dict["hit_type"] = "infield_single"
+            outcome_dict["batter_safe"] = True
+            outcome_dict["caught_fly"] = False
+            outcome_dict["runner_out_idx"] = None
+            outcome_dict["runner_advances"] = [1, 1, 1]
+            return
+
+    # ── 12. Frozen rope: line-drive one-hopper to the wall ──────────────
+    if hit_type == "single" and ev >= cfg.EV_FROZEN and 12.0 <= la <= 26.0:
+        if rng.random() < cfg.EV_FROZENROPE_P:
+            outcome_dict["hit_type"] = "double"
+            outcome_dict["batter_safe"] = True
+            outcome_dict["caught_fly"] = False
+            outcome_dict["runner_advances"] = [3, 3, 2]
+            return
+
+    # ── 13. Down the line: single skipped into the corner ───────────────
+    if hit_type == "single" and abs_spray >= 40.0 and 8.0 <= la <= 30.0:
+        if rng.random() < cfg.EV_DOWNLINE_P:
+            outcome_dict["hit_type"] = "double"
+            outcome_dict["batter_safe"] = True
+            outcome_dict["caught_fly"] = False
+            outcome_dict["runner_advances"] = [3, 3, 2]
+            return
+
+    # ── 14. Wall-ball carom: deep drive off a tall, deep alley ──────────
+    if (hit_type == "double" and ev >= cfg.EV_FROZEN and 18.0 <= la <= 35.0
+            and wall_h >= 22.0 and 12.0 <= abs_spray <= 35.0 and fence >= 400.0):
+        if rng.random() < cfg.EV_WALLBALL_P:
+            outcome_dict["hit_type"] = "triple"
+            outcome_dict["batter_safe"] = True
+            outcome_dict["caught_fly"] = False
             outcome_dict["runner_advances"] = [4, 4, 3]
             return

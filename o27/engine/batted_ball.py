@@ -147,6 +147,193 @@ def sample_batted_ball(
 
 
 # ---------------------------------------------------------------------------
+# Talent-keyed generation (physics-first resolution)
+# ---------------------------------------------------------------------------
+# Unlike sample_batted_ball (which centres LA on the already-decided hit_type),
+# this samples (EV, LA, spray) purely from TALENT — contact quality, power, the
+# batted-ball texture, pitch metadata, handedness — with NO knowledge of the
+# outcome. It is the generator half of the physics-first engine: the resolver
+# (resolve_batted_ball) then derives hit_type from these. The re-homed levers
+# (per-half form, RISP suppression) enter as EV shifts so they shape the
+# fly-ball carry that decides XBH/HR, exactly as the old table redistributions
+# shaped the single↔double↔hr weights.
+
+# LA centre (mu, sigma) per batted-ball texture. Negative = on the ground;
+# ~14 = line drive; ~35 = fly ball. Tuned so the texture mix from
+# cfg.BATTED_BALL_WEIGHTS reproduces the league grounder/liner/fly split.
+_LA_BY_TEXTURE: dict[str, tuple[float, float]] = {
+    "dribbler": (-8.0, 8.0),
+    "grounder": (-2.0, 9.0),
+    "liner":    (15.0, 7.0),
+    "flyball":  (34.0, 9.0),
+}
+
+_TEXTURES = ("dribbler", "grounder", "liner", "flyball")
+
+
+def _roll_texture(rng: random.Random, quality: str, batter_power: float) -> str:
+    """Sample a batted-ball texture from contact quality + power.
+
+    Mirrors the categorical `_roll_batted_ball` weighting: the base weights come
+    from cfg.BATTED_BALL_WEIGHTS[quality]; power tilts weight up the
+    grounder→liner→flyball axis (sluggers loft, contact hitters keep it down).
+    """
+    import o27.config as _cfg
+    table = getattr(_cfg, "RES_TEXTURE_WEIGHTS", None) or _cfg.BATTED_BALL_WEIGHTS
+    weights = list(table.get(quality, table["medium"]))
+    tilt = (float(batter_power) - 0.5) * 2.0 * float(getattr(_cfg, "BATTED_BALL_POWER_TILT", 0.30))
+    if tilt:
+        # Move weight from the two ground textures up to liner/flyball (or the
+        # reverse for low power). Sum-preserving.
+        move = min(weights[0] + weights[1], abs(tilt)) * (1.0 if tilt > 0 else -1.0)
+        if move > 0:
+            take0 = weights[0] * (move / max(1e-9, weights[0] + weights[1]))
+            take1 = weights[1] * (move / max(1e-9, weights[0] + weights[1]))
+            weights[0] -= take0; weights[1] -= take1
+            weights[2] += take0 * 0.5 + take1 * 0.5
+            weights[3] += take0 * 0.5 + take1 * 0.5
+        elif move < 0:
+            give = min(weights[2] + weights[3], -move)
+            t2 = weights[2] * (give / max(1e-9, weights[2] + weights[3]))
+            t3 = weights[3] * (give / max(1e-9, weights[2] + weights[3]))
+            weights[2] -= t2; weights[3] -= t3
+            weights[0] += (t2 + t3) * 0.5
+            weights[1] += (t2 + t3) * 0.5
+    total = sum(weights) or 1.0
+    r = rng.random() * total
+    acc = 0.0
+    for name, w in zip(_TEXTURES, weights):
+        acc += w
+        if r < acc:
+            return name
+    return "liner"
+
+
+def generate_batted_ball(
+    rng: random.Random,
+    quality: str,
+    batter_power: float,
+    pitch_hard_contact_shift: float = 0.0,
+    batter_bats: str = "",
+    pitch_launch_bias: float = 0.0,
+    ev_shift: float = 0.0,
+) -> tuple[float, float, float, str]:
+    """Sample (exit_velocity, launch_angle, spray_angle, texture) from talent.
+
+    `ev_shift` carries the re-homed run-environment levers (per-half form lifts
+    it, RISP suppression trims it) in mph. The texture is returned so the
+    resolver and the outcome_dict["batted_ball"] field stay consistent with the
+    physics that were actually sampled.
+    """
+    if rng is None:
+        rng = random.Random()
+
+    texture = _roll_texture(rng, quality, batter_power)
+
+    # Exit velocity — quality centre + power (±10 mph) + pitch + re-homed levers.
+    mu, sigma, lo, hi = _EV_BY_QUALITY.get(quality, _EV_BY_QUALITY["medium"])
+    mu += (float(batter_power) - 0.5) * 10.0
+    mu += float(pitch_hard_contact_shift) * 30.0
+    mu += float(ev_shift)
+    ev = _clamp(rng.gauss(mu, sigma), lo, hi)
+
+    # Launch angle — texture centre + power loft + pitch launch bias.
+    la_mu, la_sigma = _LA_BY_TEXTURE.get(texture, (12.0, 10.0))
+    la_mu += (float(batter_power) - 0.5) * 4.0
+    la_mu += float(pitch_launch_bias) * 8.0
+    la = _clamp(rng.gauss(la_mu, la_sigma), -45.0, 60.0)
+
+    # Spray — handedness pull skew.
+    pull_mu = _PULL_SKEW.get(batter_bats, 0.0)
+    spray = _clamp(rng.gauss(pull_mu, 16.0), -44.0, 44.0)
+
+    return round(ev, 1), round(la, 1), round(spray, 1), texture
+
+
+# ---------------------------------------------------------------------------
+# Physics → outcome resolver (physics-first resolution)
+# ---------------------------------------------------------------------------
+# Given the (EV, LA, spray) a batter actually produced, decide the BASE hit_type
+# — the categorical result the rest of the engine consumes. This replaces the
+# WEAK/MEDIUM/HARD_CONTACT table draw. It returns only the base outcome
+# (ground_out / single / infield_single / double / triple / hr / fly_out /
+# line_out / fielders_choice); the unchanged defense layer in resolve_contact
+# then layers errors, double plays, gems, shifts and fielder attribution on top.
+#
+# Bands by launch angle: grounder (<10), liner (10-26, highest BABIP), fly
+# (26-50, distance vs the park fence decides HR), popup (>50, ~automatic out).
+# All cut points and rates are cfg-tunable so the league mix can be calibrated.
+
+
+def resolve_batted_ball(
+    rng: random.Random,
+    ev: float,
+    la: float,
+    spray: float,
+    park_dims=None,
+    park_hr: float = 1.0,
+    park_hits: float = 1.0,
+) -> tuple[str, bool, bool]:
+    """Return (hit_type, batter_safe, caught_fly) from the trajectory."""
+    import o27.config as _cfg
+    from o27.engine.park_effects import _proxy_distance, _fence_at_angle
+
+    hi = lambda v: max(0.0, min(0.97, v))
+
+    # ---- Popup: near-automatic out -------------------------------------
+    if la > _cfg.RES_POPUP_LA:
+        return "fly_out", False, True
+
+    # ---- Fly ball: distance vs fence decides HR ------------------------
+    if la >= _cfg.RES_FLY_LA:
+        dist = _proxy_distance(ev, la)
+        fence = _fence_at_angle(spray, park_dims) if park_dims else 380.0
+        wall_h = float((park_dims or {}).get("wall_h", 10) or 10)
+        margin = max(0.0, (wall_h - 12.0) * 0.55)
+        hr_bar = (fence + margin) / max(0.5, park_hr)
+        if dist >= hr_bar + _cfg.RES_HR_MARGIN:
+            return "hr", True, False
+        # Fell short — fraction land for extra bases (gap / off the wall),
+        # the rest are caught. Deeper drives are likelier to drop.
+        reach = (dist - _cfg.RES_FLY_HIT_FLOOR) / max(1.0, hr_bar - _cfg.RES_FLY_HIT_FLOOR)
+        p_drop = hi(reach * _cfg.RES_FLY_DROP_SCALE * park_hits)
+        if rng.random() < p_drop:
+            # Off-the-wall / gap: double, occasionally a triple into a deep alley.
+            if dist >= hr_bar - 12.0 and abs(spray) >= 12.0 and rng.random() < _cfg.RES_FLY_TRIPLE_P:
+                return "triple", True, False
+            return "double", True, False
+        return "fly_out", False, True
+
+    # ---- Liner: highest BABIP -----------------------------------------
+    if la >= _cfg.RES_LINER_LA:
+        ev_dev = (ev - _cfg.RES_LINER_EV_MID) / _cfg.RES_LINER_EV_SPAN
+        p_hit = hi(_cfg.RES_LINER_HIT_BASE + ev_dev * _cfg.RES_LINER_HIT_EVSCALE) * park_hits
+        if rng.random() < p_hit:
+            # Distribute among single/double/triple by EV.
+            p_xbh = hi((ev - _cfg.RES_LINER_XBH_EV) / _cfg.RES_LINER_EV_SPAN * _cfg.RES_LINER_XBH_SCALE)
+            if rng.random() < p_xbh:
+                if abs(spray) >= 18.0 and ev >= _cfg.RES_LINER_TRIPLE_EV and rng.random() < _cfg.RES_LINER_TRIPLE_P:
+                    return "triple", True, False
+                return "double", True, False
+            return "single", True, False
+        return "line_out", False, False
+
+    # ---- Grounder ------------------------------------------------------
+    ev_dev = (ev - _cfg.RES_GB_EV_MID) / _cfg.RES_GB_EV_SPAN
+    p_hit = hi(_cfg.RES_GB_HIT_BASE + ev_dev * _cfg.RES_GB_HIT_EVSCALE) * park_hits
+    if rng.random() < p_hit:
+        # Weakly-struck grounders that sneak through are infield singles.
+        if ev <= _cfg.RES_GB_INFIELD_EV:
+            return "infield_single", True, False
+        return "single", True, False
+    # An out on the ground — a fraction become fielder's choice (force at the
+    # lead base); the defense layer turns some of these into double plays.
+    if rng.random() < _cfg.RES_GB_FC_P:
+        return "fielders_choice", True, False
+    return "ground_out", False, False
+
+
+# ---------------------------------------------------------------------------
 # Descriptive batted-ball taxonomy
 # ---------------------------------------------------------------------------
 # Turn the (EV, LA, spray) the engine already samples into a rich, human name

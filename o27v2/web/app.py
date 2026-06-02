@@ -5987,6 +5987,352 @@ def _league_distribution(rows: list[dict], key: str) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Baseball-Savant-style percentile player page
+# ---------------------------------------------------------------------------
+# Each metric: (key, label, fmt, reverse). reverse=True → lower is better, so
+# the percentile is flipped (e.g. K%). With physics-first resolution EV now
+# DRIVES outcomes, so these contact-quality metrics — and the xwOBA−wOBA gap —
+# are real signal rather than an echo of the categorical roll.
+_SAVANT_BATTER_METRICS = [
+    ("xwoba",     "xwOBA",          "0.3f", False),
+    ("avg_ev",    "Avg Exit Velo",  "ev",   False),
+    ("max_ev",    "Max Exit Velo",  "ev",   False),
+    ("hardhit",   "Hard-Hit %",     "pct",  False),
+    ("barrel",    "Barrel %",       "pct",  False),
+    ("sweetspot", "Sweet-Spot %",   "pct",  False),
+    ("bb_pct",    "Walk %",         "pct",  False),
+    ("k_pct",     "Strikeout %",    "pct",  True),
+    ("stay_pct",  "Stay %",         "pct",  False),
+]
+
+# O27-calibrated batted-ball cuts (NOT MLB's 95-mph anchor — see the Savant
+# feasibility AAR). Read off the live league EV/LA distribution.
+_SAVANT_HARDHIT_EV = 100.0
+_SAVANT_BARREL_EV  = 104.0
+_SAVANT_BARREL_LA  = (10.0, 35.0)
+_SAVANT_SWEET_LA   = (8.0, 32.0)
+
+
+def _savant_batter_rows(team_ids, min_bip: int) -> list[dict]:
+    """Per-batter Statcast-style metric rows for the whole (scoped) league,
+    each stamped with `<key>_pctile` (0..100, 100 = best) so an individual's
+    bars are league-relative."""
+    team_in = ""
+    if team_ids:
+        team_in = " AND team_id IN (%s)" % ",".join(str(int(t)) for t in team_ids)
+    ev = db.fetchall(
+        f"""SELECT batter_id AS player_id, COUNT(*) AS bip,
+                   AVG(exit_velocity) AS avg_ev, MAX(exit_velocity) AS max_ev,
+                   AVG(CASE WHEN exit_velocity >= {_SAVANT_HARDHIT_EV} THEN 1.0 ELSE 0.0 END) AS hardhit,
+                   AVG(CASE WHEN exit_velocity >= {_SAVANT_BARREL_EV}
+                             AND launch_angle BETWEEN {_SAVANT_BARREL_LA[0]} AND {_SAVANT_BARREL_LA[1]}
+                            THEN 1.0 ELSE 0.0 END) AS barrel,
+                   AVG(CASE WHEN launch_angle BETWEEN {_SAVANT_SWEET_LA[0]} AND {_SAVANT_SWEET_LA[1]}
+                            THEN 1.0 ELSE 0.0 END) AS sweetspot
+            FROM game_pa_log
+            WHERE phase = 0 AND exit_velocity IS NOT NULL{team_in}
+            GROUP BY batter_id""")
+    rate_team_in = team_in.replace("team_id", "b.team_id")
+    rate = db.fetchall(
+        f"""SELECT b.player_id, SUM(b.pa) AS pa, SUM(b.k) AS k, SUM(b.bb) AS bb,
+                   SUM(b.stays) AS stays
+            FROM game_batter_stats b
+            WHERE b.phase = 0{rate_team_in}
+            GROUP BY b.player_id""")
+    rate_by = {r["player_id"]: r for r in rate}
+    # Physics-native xwOBA: expected value per (EV, LA) bin. Meaningful now that
+    # the trajectory drives the outcome (vs the weak/med/hard quality version).
+    from o27v2.analytics import build_xwoba_ev_table
+    xt = build_xwoba_ev_table(min_pa=1, team_ids=team_ids)
+    xwoba_by = {r["player_id"]: r for r in xt["leaders"]}
+
+    rows = []
+    for e in ev:
+        if (e["bip"] or 0) < min_bip:
+            continue
+        pid = e["player_id"]
+        rt = rate_by.get(pid, {})
+        pa = rt.get("pa") or 0
+        xw = xwoba_by.get(pid, {})
+        rows.append({
+            "player_id": pid,
+            "bip":       e["bip"],
+            "avg_ev":    round(e["avg_ev"], 1) if e["avg_ev"] is not None else None,
+            "max_ev":    round(e["max_ev"], 1) if e["max_ev"] is not None else None,
+            "hardhit":   round(100 * e["hardhit"], 1),
+            "barrel":    round(100 * e["barrel"], 1),
+            "sweetspot": round(100 * e["sweetspot"], 1),
+            "bb_pct":    round(100 * (rt.get("bb") or 0) / pa, 1) if pa else None,
+            "k_pct":     round(100 * (rt.get("k") or 0) / pa, 1) if pa else None,
+            "stay_pct":  round(100 * (rt.get("stays") or 0) / pa, 1) if pa else None,
+            "woba":      xw.get("woba"),
+            "xwoba":     xw.get("xwoba"),
+        })
+    # Attach current name / team for display (leaderboards, panels).
+    if rows:
+        ids = ",".join(str(r["player_id"]) for r in rows)
+        names = {
+            n["id"]: n for n in db.fetchall(
+                f"""SELECT p.id, p.name, t.abbrev AS team_abbrev
+                    FROM players p LEFT JOIN teams t ON t.id = p.team_id
+                    WHERE p.id IN ({ids})""")
+        }
+        for r in rows:
+            meta = names.get(r["player_id"], {})
+            r["player_name"] = meta.get("name", f"#{r['player_id']}")
+            r["team_abbrev"] = meta.get("team_abbrev") or ""
+
+    for key, _label, _fmt, rev in _SAVANT_BATTER_METRICS:
+        _percentile_ranks(rows, key, reverse=rev)
+    return rows
+
+
+# Pitcher metrics: "elite" means suppressing contact, so most are reverse=True
+# (lower is better → higher percentile → red marker). K% is the exception.
+_SAVANT_PITCHER_METRICS = [
+    ("xwoba_against",  "xwOBA Against",  "0.3f", True),
+    ("avg_ev_against", "Avg EV Against", "ev",  True),
+    ("hardhit",        "Hard-Hit %",     "pct", True),
+    ("barrel",         "Barrel %",       "pct", True),
+    ("k_pct",          "Strikeout %",    "pct", False),
+    ("bb_pct",         "Walk %",         "pct", True),
+    ("hr_pct",         "HR %",           "pct", True),
+]
+
+
+def _savant_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
+    """Per-pitcher Statcast-style rows (contact allowed + rate stats),
+    percentile-ranked league-wide. Reverse metrics already flip so the
+    percentile reads 'elite = high'."""
+    pid_in = ""
+    if team_ids:
+        pid_in = (" AND pitcher_id IN (SELECT id FROM players WHERE team_id IN (%s))"
+                  % ",".join(str(int(t)) for t in team_ids))
+    ev = db.fetchall(
+        f"""SELECT pitcher_id AS player_id, COUNT(*) AS bip,
+                   AVG(exit_velocity) AS avg_ev_against,
+                   AVG(CASE WHEN exit_velocity >= {_SAVANT_HARDHIT_EV} THEN 1.0 ELSE 0.0 END) AS hardhit,
+                   AVG(CASE WHEN exit_velocity >= {_SAVANT_BARREL_EV}
+                             AND launch_angle BETWEEN {_SAVANT_BARREL_LA[0]} AND {_SAVANT_BARREL_LA[1]}
+                            THEN 1.0 ELSE 0.0 END) AS barrel
+            FROM game_pa_log
+            WHERE phase = 0 AND exit_velocity IS NOT NULL{pid_in}
+            GROUP BY pitcher_id""")
+    team_in = ""
+    if team_ids:
+        team_in = " AND team_id IN (%s)" % ",".join(str(int(t)) for t in team_ids)
+    rate = db.fetchall(
+        f"""SELECT player_id, SUM(batters_faced) AS bf, SUM(k) AS k,
+                   SUM(bb) AS bb, SUM(hr_allowed) AS hr
+            FROM game_pitcher_stats
+            WHERE phase = 0{team_in}
+            GROUP BY player_id""")
+    rate_by = {r["player_id"]: r for r in rate}
+    from o27v2.analytics import build_xwoba_against_table
+    xwa = build_xwoba_against_table(min_bf=1, team_ids=team_ids)
+
+    rows = []
+    for e in ev:
+        if (e["bip"] or 0) < min_bip:
+            continue
+        pid = e["player_id"]
+        rt = rate_by.get(pid, {})
+        bf = rt.get("bf") or 0
+        rows.append({
+            "player_id":      pid,
+            "bip":            e["bip"],
+            "xwoba_against":  (xwa.get(pid) or {}).get("xwoba_against"),
+            "woba_against":   (xwa.get(pid) or {}).get("woba_against"),
+            "avg_ev_against": round(e["avg_ev_against"], 1) if e["avg_ev_against"] is not None else None,
+            "hardhit":        round(100 * e["hardhit"], 1),
+            "barrel":         round(100 * e["barrel"], 1),
+            "k_pct":          round(100 * (rt.get("k") or 0) / bf, 1) if bf else None,
+            "bb_pct":         round(100 * (rt.get("bb") or 0) / bf, 1) if bf else None,
+            "hr_pct":         round(100 * (rt.get("hr") or 0) / bf, 1) if bf else None,
+        })
+    if rows:
+        ids = ",".join(str(r["player_id"]) for r in rows)
+        names = {n["id"]: n for n in db.fetchall(
+            f"""SELECT p.id, p.name, t.abbrev AS team_abbrev
+                FROM players p LEFT JOIN teams t ON t.id = p.team_id
+                WHERE p.id IN ({ids})""")}
+        for r in rows:
+            meta = names.get(r["player_id"], {})
+            r["player_name"] = meta.get("name", f"#{r['player_id']}")
+            r["team_abbrev"] = meta.get("team_abbrev") or ""
+    for key, _label, _fmt, rev in _SAVANT_PITCHER_METRICS:
+        _percentile_ranks(rows, key, reverse=rev)
+    return rows
+
+
+def _savant_format(value, fmt: str) -> str:
+    if value is None:
+        return "—"
+    if fmt == "ev":
+        return f"{value:.1f}"
+    if fmt == "pct":
+        return f"{value:.1f}%"
+    return format(value, fmt)
+
+
+@app.route("/player/<int:player_id>/savant")
+def player_savant(player_id: int):
+    """Baseball-Savant-style percentile page: red→blue slider bars showing
+    where the player ranks league-wide on each contact-quality metric."""
+    player = db.fetchone(
+        """SELECT p.*, t.abbrev AS team_abbrev, t.name AS team_name, t.id AS team_id
+           FROM players p JOIN teams t ON p.team_id = t.id WHERE p.id = ?""",
+        (player_id,),
+    )
+    if not player:
+        abort(404)
+
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    team_ids        = _league_team_ids(selected_league)
+    _team_csv       = ",".join(str(i) for i in team_ids) if team_ids else ""
+    _gp_where       = f" AND home_team_id IN ({_team_csv})" if _team_csv else ""
+    games_played = db.fetchone(
+        f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
+    min_bip = max(15, games_played // 30)
+
+    def _build_sliders(me, metrics):
+        out = []
+        if not me:
+            return out
+        for key, label, fmt, _rev in metrics:
+            val = me.get(key)
+            pct = me.get(f"{key}_pctile")
+            if val is None or pct is None:
+                continue
+            out.append({
+                "label":   label,
+                "display": _savant_format(val, fmt),
+                "pctile":  pct,
+                "rank":    me.get(f"{key}_rank"),
+            })
+        return out
+
+    bat_rows = _savant_batter_rows(team_ids, min_bip)
+    me_bat = next((r for r in bat_rows if r["player_id"] == player_id), None)
+    pit_rows = _savant_pitcher_rows(team_ids, min_bip)
+    me_pit = next((r for r in pit_rows if r["player_id"] == player_id), None)
+
+    sliders = _build_sliders(me_bat, _SAVANT_BATTER_METRICS)
+    pitcher_sliders = _build_sliders(me_pit, _SAVANT_PITCHER_METRICS)
+
+    return _serve(
+        "savant.html",
+        player=player,
+        sliders=sliders,
+        pitcher_sliders=pitcher_sliders,
+        qualified=(me_bat is not None or me_pit is not None),
+        bip=(me_bat or {}).get("bip"),
+        pitcher_bip=(me_pit or {}).get("bip"),
+        min_bip=min_bip,
+        woba=(me_bat or {}).get("woba"),
+        xwoba=(me_bat or {}).get("xwoba"),
+        woba_against=(me_pit or {}).get("woba_against"),
+        xwoba_against=(me_pit or {}).get("xwoba_against"),
+        n_qualified=len(bat_rows),
+        n_qualified_pitchers=len(pit_rows),
+        leagues=leagues, selected_league=selected_league,
+    )
+
+
+@app.route("/savant")
+def savant_home():
+    """Savant landing — a player search bar plus EV/contact leader snapshots."""
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    team_ids        = _league_team_ids(selected_league)
+    _team_csv       = ",".join(str(i) for i in team_ids) if team_ids else ""
+    _gp_where       = f" AND home_team_id IN ({_team_csv})" if _team_csv else ""
+    games_played = db.fetchone(
+        f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
+    min_bip = max(15, games_played // 30)
+
+    bat_rows = _savant_batter_rows(team_ids, min_bip)
+    pit_rows = _savant_pitcher_rows(team_ids, min_bip)
+
+    def _top(rows, key, reverse, n=5):
+        vals = [r for r in rows if r.get(key) is not None]
+        vals.sort(key=lambda r: r[key], reverse=not reverse)
+        return [{"player_id": r["player_id"], "player_name": r.get("player_name"),
+                 "team_abbrev": r.get("team_abbrev"),
+                 "display": _savant_format(r[key], dict((k, f) for k, _l, f, _r
+                            in (_SAVANT_BATTER_METRICS + _SAVANT_PITCHER_METRICS)).get(key, ""))}
+                for r in vals[:n]]
+
+    leaderboards = [
+        {"title": "xwOBA",          "rows": _top(bat_rows, "xwoba", False)},
+        {"title": "Avg Exit Velo",  "rows": _top(bat_rows, "avg_ev", False)},
+        {"title": "Barrel %",       "rows": _top(bat_rows, "barrel", False)},
+        {"title": "Lowest xwOBA Against", "rows": _top(pit_rows, "xwoba_against", True)},
+        {"title": "Strikeout % (P)", "rows": _top(pit_rows, "k_pct", False)},
+    ]
+
+    # Player list for the search datalist (scoped to the league when filtered).
+    p_where = f" WHERE p.team_id IN ({_team_csv})" if _team_csv else ""
+    players = db.fetchall(
+        f"""SELECT p.id, p.name, t.abbrev AS team_abbrev
+            FROM players p LEFT JOIN teams t ON t.id = p.team_id{p_where}
+            ORDER BY p.name""")
+
+    return _serve(
+        "savant_home.html",
+        leaderboards=leaderboards,
+        players=players,
+        n_qualified=len(bat_rows),
+        leagues=leagues, selected_league=selected_league,
+    )
+
+
+@app.route("/leaderboard/statcast")
+def statcast_leaderboard():
+    """Statcast-style batted-ball leaderboards (Barrel%, Hard-Hit%, EV, ...),
+    sortable by any tracked metric."""
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    team_ids        = _league_team_ids(selected_league)
+    _team_csv       = ",".join(str(i) for i in team_ids) if team_ids else ""
+    _gp_where       = f" AND home_team_id IN ({_team_csv})" if _team_csv else ""
+    games_played = db.fetchone(
+        f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
+    min_bip = max(15, games_played // 30)
+
+    rows = _savant_batter_rows(team_ids, min_bip)
+
+    # Columns = the same metric set as the slider page.
+    valid_keys = {k: rev for k, _l, _f, rev in _SAVANT_BATTER_METRICS}
+    sort_key = (request.args.get("sort") or "xwoba").lower()
+    if sort_key not in valid_keys:
+        sort_key = "xwoba"
+    reverse = valid_keys[sort_key]   # True → lower is better → ascending
+    ranked = [r for r in rows if r.get(sort_key) is not None]
+    ranked.sort(key=lambda r: r[sort_key], reverse=not reverse)
+
+    columns = [
+        {"key": k, "label": label, "fmt": fmt}
+        for k, label, fmt, _rev in _SAVANT_BATTER_METRICS
+    ]
+    # Pre-format display values so the template stays dumb.
+    for r in ranked:
+        r["_display"] = {k: _savant_format(r.get(k), fmt)
+                         for k, _l, fmt, _rev in _SAVANT_BATTER_METRICS}
+
+    return _serve(
+        "statcast_leaderboard.html",
+        rows=ranked,
+        columns=columns,
+        sort_key=sort_key,
+        min_bip=min_bip,
+        n_qualified=len(rows),
+        leagues=leagues, selected_league=selected_league,
+    )
+
+
 def _outliers(rows: list[dict], key: str, *, n: int = 3,
               reverse: bool = False, label_key: str = "team_abbrev") -> list[dict]:
     """Top-`n` and bottom-`n` rows on a metric, with z-scores. `reverse`

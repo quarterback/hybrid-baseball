@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}{{ player.name }} — Savant{% endblock %}
+{% block content %}
+
+<style>
+  .savant-sliders { max-width: 760px; }
+  .savant-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 88px;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 0;
+  }
+  .savant-label { font-size: .85rem; text-align: right; color: var(--bs-secondary-color, #9aa); }
+  .savant-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .savant-track {
+    position: relative;
+    height: 8px;
+    border-radius: 6px;
+    background: linear-gradient(90deg,
+      hsl(240,55%,55%) 0%, #c9ccd6 50%, hsl(0,70%,52%) 100%);
+    opacity: .35;
+  }
+  .savant-track-wrap { position: relative; }
+  .savant-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    color: #fff;
+    font-size: .72rem;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 2px rgba(0,0,0,.15);
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+
+{% macro slider_group(title, sliders, n_qual, note) %}
+  <h3 class="h5 mt-4 mb-1">{{ title }}</h3>
+  <div class="text-secondary small mb-2">vs {{ n_qual }} qualified · {{ note }}</div>
+  <div class="savant-sliders">
+    {% for s in sliders %}
+      {% set hue = (240 - (s.pctile * 2.4))|round|int %}
+      <div class="savant-row">
+        <div class="savant-label">{{ s.label }}</div>
+        <div class="savant-track-wrap">
+          <div class="savant-track"></div>
+          <div class="savant-marker"
+               style="left: {{ s.pctile }}%; background: hsl({{ hue }},65%,48%);"
+               title="{{ s.label }}: {{ s.pctile }}th percentile (rank {{ s.rank }} of {{ n_qual }})">
+            {{ s.pctile|round|int }}
+          </div>
+        </div>
+        <div class="savant-value">{{ s.display }}</div>
+      </div>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">{{ player.name }} <span class="text-secondary fs-5">Savant</span></h2>
+    <div class="text-secondary small">
+      <a href="{{ url_for('team_detail', team_id=player.team_id) }}">{{ player.team_name }}</a>
+      · percentile rankings vs the league
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('player_detail', player_id=player.id) }}">Player page</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('player_savant', player_id=player.id, format='json') }}">JSON</a>
+  </div>
+</div>
+
+{% if not qualified %}
+  <div class="alert alert-secondary">
+    Not enough batted balls to rank — needs at least {{ min_bip }} balls in play
+    (batted, or allowed as a pitcher) this season.
+  </div>
+{% endif %}
+
+{% if sliders %}
+  {% if xwoba is not none and woba is not none %}
+  <div class="card mb-2" style="max-width:760px">
+    <div class="card-body d-flex flex-wrap gap-4 align-items-center">
+      <div>
+        <div class="text-secondary small text-uppercase">wOBA</div>
+        <div class="fs-4 fw-bold">{{ '%.3f'|format(woba) }}</div>
+      </div>
+      <div>
+        <div class="text-secondary small text-uppercase">xwOBA</div>
+        <div class="fs-4 fw-bold">{{ '%.3f'|format(xwoba) }}</div>
+      </div>
+      <div>
+        <div class="text-secondary small text-uppercase">Luck (wOBA − xwOBA)</div>
+        {% set gap = (woba - xwoba) %}
+        <div class="fs-4 fw-bold {{ 'text-success' if gap > 0.005 else ('text-danger' if gap < -0.005 else '') }}">
+          {{ '%+.3f'|format(gap) }}
+        </div>
+      </div>
+      <div class="text-secondary small" style="max-width:240px">
+        Exit velocity drives the outcome now, so a positive gap = out-hit his
+        contact quality (lucky); negative = unlucky.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {{ slider_group("Hitting", sliders, n_qualified, bip ~ " batted balls") }}
+{% endif %}
+
+{% if pitcher_sliders %}
+  {% if xwoba_against is not none and woba_against is not none %}
+  <div class="card mt-4 mb-2" style="max-width:760px">
+    <div class="card-body d-flex flex-wrap gap-4 align-items-center">
+      <div>
+        <div class="text-secondary small text-uppercase">wOBA Against</div>
+        <div class="fs-4 fw-bold">{{ '%.3f'|format(woba_against) }}</div>
+      </div>
+      <div>
+        <div class="text-secondary small text-uppercase">xwOBA Against</div>
+        <div class="fs-4 fw-bold">{{ '%.3f'|format(xwoba_against) }}</div>
+      </div>
+      <div>
+        <div class="text-secondary small text-uppercase">Luck (wOBA − xwOBA)</div>
+        {% set pgap = (woba_against - xwoba_against) %}
+        {# For a pitcher, allowing LESS than expected is good → green when negative. #}
+        <div class="fs-4 fw-bold {{ 'text-success' if pgap < -0.005 else ('text-danger' if pgap > 0.005 else '') }}">
+          {{ '%+.3f'|format(pgap) }}
+        </div>
+      </div>
+      <div class="text-secondary small" style="max-width:240px">
+        Negative = suppressed contact better than his EV/LA profile predicts
+        (good for a pitcher); positive = got hit harder than the balls deserved.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {{ slider_group("Pitching", pitcher_sliders, n_qualified_pitchers, pitcher_bip ~ " balls allowed") }}
+{% endif %}
+
+{% if sliders or pitcher_sliders %}
+  <div class="text-secondary small mt-3" style="max-width:760px">
+    Red = elite, blue = poor. Hitting bars rank batted-ball quality; pitching
+    bars rank contact <em>suppressed</em> (so a low EV-against or Barrel% is
+    elite). Cuts are calibrated to O27's exit-velocity distribution, not MLB's.
+  </div>
+{% endif %}
+
+{% endblock %}
