@@ -57,6 +57,34 @@
 {%- endmacro %}
 
 {# ============================================================
+   First-run orientation banner. The app drops you straight onto the
+   Scores page with no context, so a newcomer (anyone the owner shares
+   the link with) gets a one-line "what this is" and a couple of places
+   to start. Dismissible and persisted in localStorage — the owner
+   clears it once and it stays gone; fresh visitors still see it.
+   ============================================================ #}
+<div id="intro-banner"
+     style="display:none; position:relative; border:1px solid var(--border-soft);
+            border-left:3px solid var(--accent); border-radius:3px;
+            background:var(--accent-soft); padding:.7rem 2.2rem .7rem .9rem;
+            margin-bottom:1rem; font-size:.86rem; line-height:1.45">
+  <button type="button" id="intro-close" aria-label="Dismiss orientation"
+          title="Dismiss"
+          style="position:absolute; top:.3rem; right:.45rem; background:transparent;
+                 border:0; color:var(--text-dim); font-size:1.2rem; line-height:1;
+                 cursor:pointer; padding:0 4px">&times;</button>
+  <div style="font-weight:700; font-size:.95rem; margin-bottom:.15rem">
+    New here? Welcome to O27.
+  </div>
+  <div>
+    A fictional baseball variant — one continuous <strong>27-out</strong> half per
+    side, no innings — and a season simulator you <em>read</em> rather than play.
+    Start with the <a href="{{ url_for('help_page') }}">60-second orientation</a>,
+    or just click any final below for a box score.
+  </div>
+</div>
+
+{# ============================================================
    Date strip — the current sim date is the headline. All-Star Break
    and Season-End dates live below it as small grey text; they're
    reference info, not the page's primary content.
@@ -328,6 +356,19 @@
 {% block scripts %}
 <script>
 (function () {
+  // First-run orientation banner: shown unless this visitor dismissed it.
+  const introBanner = document.getElementById('intro-banner');
+  const introClose  = document.getElementById('intro-close');
+  if (introBanner) {
+    let dismissed = false;
+    try { dismissed = localStorage.getItem('o27.introDismissed') === '1'; } catch (e) {}
+    if (!dismissed) introBanner.style.display = '';
+    if (introClose) introClose.addEventListener('click', () => {
+      introBanner.style.display = 'none';
+      try { localStorage.setItem('o27.introDismissed', '1'); } catch (e) {}
+    });
+  }
+
   const newSeasonBtn = document.getElementById('btn-new-season');
   const multiBtn     = document.getElementById('btn-multi-season');
   const nsPanel      = document.getElementById('ns-panel');
