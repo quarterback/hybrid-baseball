@@ -5177,6 +5177,80 @@ def leaders():
     )
 
 
+@app.route("/streaks-and-records")
+def streaks_and_records():
+    """Streaks & Records hub.
+
+    Three families:
+      * In-season streaks (consecutive-game HR / hits / on-base, pitcher
+        double-digit-K starts, scoreless-innings runs) and the season's
+        no-hitters / perfect games. League-scoped, like /leaders.
+      * Single-game records — the best individual games of the season.
+        League-scoped.
+      * All-time records — career totals and best single seasons, aggregated
+        across every archived season plus the live one. Universe-wide (a
+        player can change leagues between seasons), so NOT league-scoped.
+    """
+    from o27v2.analytics.streaks import (
+        longest_hit_streaks, home_run_streaks, on_base_streaks,
+        double_digit_k_streaks, scoreless_innings_streaks,
+        no_hitters_and_perfect_games,
+    )
+    from o27v2.analytics.records import (
+        single_game_batter_records, single_game_pitcher_records,
+        career_batting_records, career_pitching_records,
+        single_season_batting_records, single_season_pitching_records,
+    )
+
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    team_ids        = _league_team_ids(selected_league)
+
+    if selected_league:
+        games_played = db.fetchone(
+            "SELECT COUNT(*) as n FROM games g JOIN teams t "
+            "ON g.home_team_id = t.id WHERE g.played = 1 AND t.league = ?",
+            (selected_league,),
+        )["n"]
+    else:
+        games_played = db.fetchone(
+            "SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
+
+    # In-season streaks + single-game records (league-scoped).
+    streaks = {
+        "hr":        home_run_streaks(top_n=10, team_ids=team_ids),
+        "hits":      longest_hit_streaks(top_n=10, team_ids=team_ids),
+        "on_base":   on_base_streaks(top_n=10, team_ids=team_ids),
+        "k_starts":  double_digit_k_streaks(top_n=10, team_ids=team_ids),
+        "scoreless": scoreless_innings_streaks(top_n=10, team_ids=team_ids),
+    }
+    nohit = no_hitters_and_perfect_games(team_ids=team_ids)
+    sg_bat = single_game_batter_records(top_n=5, team_ids=team_ids)
+    sg_pit = single_game_pitcher_records(top_n=5, team_ids=team_ids)
+
+    # All-time records (universe-wide — no league scope).
+    career_bat = career_batting_records(top_n=10)
+    career_pit = career_pitching_records(top_n=10)
+    season_bat = single_season_batting_records(top_n=10)
+    season_pit = single_season_pitching_records(top_n=10)
+
+    return _serve(
+        "streaks_and_records.html",
+        games_played=games_played,
+        leagues=leagues,
+        selected_league=selected_league,
+        streaks=streaks,
+        no_hitters=nohit["no_hitters"],
+        perfect_games=nohit["perfect_games"],
+        sg_bat=sg_bat,
+        sg_pit=sg_pit,
+        career_bat=career_bat,
+        career_pit=career_pit,
+        season_bat=season_bat,
+        season_pit=season_pit,
+    )
+
+
 def _player_handedness_split_batter(player_id: int, throws: str) -> dict | None:
     """Batter contact-event split vs pitchers of the given handedness.
 

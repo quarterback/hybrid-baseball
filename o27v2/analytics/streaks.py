@@ -223,3 +223,229 @@ def no_hitters_and_perfect_games(team_ids=None) -> dict:
     no_hitters.sort(key=lambda x: (x["game_date"], x["game_id"]))
     perfect.sort(key=lambda x: (x["game_date"], x["game_id"]))
     return {"no_hitters": no_hitters, "perfect_games": perfect}
+
+
+# ---------------------------------------------------------------------------
+# Generic consecutive-game streak engine
+#
+# Every streak below is computed the same way the rest of the app computes
+# stats: from the per-game aggregate tables (`game_batter_stats` /
+# `game_pitcher_stats`), never from `game_pa_log` — its `hit_type` column is
+# NULL on non-BIP events (strikeouts, walks), so it can't reliably classify
+# K / out outcomes. Per-game aggregates are exact.
+# ---------------------------------------------------------------------------
+
+def _player_lookup() -> dict[int, dict]:
+    """player_id -> {name, team_id, abbrev}, one batched query."""
+    return {
+        int(r["id"]): r
+        for r in db.fetchall(
+            """SELECT p.id, p.name, t.id AS team_id, t.abbrev
+               FROM players p JOIN teams t ON p.team_id = t.id"""
+        )
+    }
+
+
+def _latest_game_date() -> str | None:
+    row = db.fetchone(
+        "SELECT MAX(g.game_date) AS dt FROM games g WHERE g.played = 1"
+    )
+    return (row or {}).get("dt") if row else None
+
+
+def _count_streaks(rows, *, extends, breaks, pname, latest_date,
+                   top_n, min_len=2) -> list[dict]:
+    """Longest run of consecutive games (date-ordered, per player) for which
+    `extends(game)` is true. `breaks(game)` ends a run; any game that neither
+    extends nor breaks is neutral (carries the streak without lengthening it,
+    e.g. a no-PA day). Returns up to `top_n` streaks of length >= `min_len`.
+    """
+    by_player: dict[int, list[dict]] = defaultdict(list)
+    for r in rows:
+        by_player[int(r["player_id"])].append(r)
+
+    out: list[dict] = []
+    for pid, games in by_player.items():
+        best_len = 0
+        best_start = best_end = None
+        cur_len = 0
+        cur_start = cur_end = None
+        for g in games:
+            if extends(g):
+                if cur_len == 0:
+                    cur_start = g
+                cur_len += 1
+                cur_end = g
+                if cur_len > best_len:
+                    best_len, best_start, best_end = cur_len, cur_start, cur_end
+            elif breaks(g):
+                cur_len = 0
+                cur_start = cur_end = None
+            # else: neutral — leave the run intact but don't extend it
+        active = (
+            cur_len > 0
+            and latest_date is not None
+            and cur_end is not None
+            and cur_end["game_date"] == latest_date
+            and cur_len == best_len
+        )
+        if best_len >= min_len:
+            info = pname.get(pid, {})
+            out.append({
+                "player_id":   pid,
+                "player_name": info.get("name", f"#{pid}"),
+                "team_id":     info.get("team_id"),
+                "team_abbrev": info.get("abbrev", ""),
+                "length":      best_len,
+                "start_date":  best_start["game_date"] if best_start else None,
+                "end_date":    best_end["game_date"] if best_end else None,
+                "active":      active,
+            })
+    out.sort(key=lambda s: (-s["length"], s["start_date"] or ""))
+    return out[:top_n]
+
+
+def home_run_streaks(top_n: int = 10, team_ids=None) -> list[dict]:
+    """Consecutive games (in date order) with at least one home run.
+
+    A game where the batter took a PA but didn't homer breaks the streak;
+    a no-PA day (pinch slot passed over) leaves it intact. `team_ids`
+    scopes to one league.
+    """
+    rows = db.fetchall(
+        f"""
+        SELECT bs.player_id, bs.hr, bs.pa, g.id AS game_id, g.game_date
+        FROM game_batter_stats bs
+        JOIN games g ON bs.game_id = g.id
+        WHERE g.played = 1 AND bs.phase = 0{_team_in(team_ids, "bs.team_id")}
+        ORDER BY bs.player_id, g.game_date, g.id
+        """
+    )
+    return _count_streaks(
+        rows,
+        extends=lambda g: (g["hr"] or 0) > 0,
+        breaks=lambda g: (g["pa"] or 0) > 0 and (g["hr"] or 0) == 0,
+        pname=_player_lookup(),
+        latest_date=_latest_game_date(),
+        top_n=top_n,
+    )
+
+
+def on_base_streaks(top_n: int = 10, team_ids=None) -> list[dict]:
+    """Consecutive games reaching base safely (hit, walk, or HBP).
+
+    Mirrors the real-world "on-base streak" record. A game with a PA but no
+    time on base breaks it; a no-PA day is neutral. `team_ids` scopes to one
+    league.
+    """
+    rows = db.fetchall(
+        f"""
+        SELECT bs.player_id, bs.pa,
+               (COALESCE(bs.hits,0) + COALESCE(bs.bb,0)
+                + COALESCE(bs.hbp,0)) AS reached,
+               g.id AS game_id, g.game_date
+        FROM game_batter_stats bs
+        JOIN games g ON bs.game_id = g.id
+        WHERE g.played = 1 AND bs.phase = 0{_team_in(team_ids, "bs.team_id")}
+        ORDER BY bs.player_id, g.game_date, g.id
+        """
+    )
+    return _count_streaks(
+        rows,
+        extends=lambda g: (g["reached"] or 0) > 0,
+        breaks=lambda g: (g["pa"] or 0) > 0 and (g["reached"] or 0) == 0,
+        pname=_player_lookup(),
+        latest_date=_latest_game_date(),
+        top_n=top_n,
+    )
+
+
+def double_digit_k_streaks(top_n: int = 10, team_ids=None,
+                           threshold: int = 10) -> list[dict]:
+    """Consecutive starts with `threshold`+ strikeouts (default 10).
+
+    Only starts count toward the streak; relief appearances are neutral so a
+    starter who pitches out of the pen between starts doesn't break the run.
+    A start under the threshold breaks it. `team_ids` scopes to one league.
+    """
+    rows = db.fetchall(
+        f"""
+        SELECT ps.player_id, ps.k, ps.is_starter,
+               g.id AS game_id, g.game_date
+        FROM game_pitcher_stats ps
+        JOIN games g ON ps.game_id = g.id
+        WHERE g.played = 1 AND ps.phase = 0{_team_in(team_ids, "ps.team_id")}
+        ORDER BY ps.player_id, g.game_date, g.id
+        """
+    )
+    return _count_streaks(
+        rows,
+        extends=lambda g: (g["is_starter"] or 0) == 1 and (g["k"] or 0) >= threshold,
+        breaks=lambda g: (g["is_starter"] or 0) == 1 and (g["k"] or 0) < threshold,
+        pname=_player_lookup(),
+        latest_date=_latest_game_date(),
+        top_n=top_n,
+    )
+
+
+def scoreless_innings_streaks(top_n: int = 10, team_ids=None,
+                              min_outs: int = 9) -> list[dict]:
+    """Longest run of innings across consecutive scoreless appearances.
+
+    Appearances are taken in date order per pitcher. A run extends through
+    every appearance that allows no runs (earned or unearned), accumulating
+    innings (outs / 3); the first appearance to allow a run ends it. Because
+    runs are charged at the appearance level (not per inning), an outing that
+    surrenders a run contributes 0 to the streak rather than its clean
+    fraction — a deliberate, slightly conservative simplification. Only runs
+    of >= `min_outs` (default one full inning... 9 outs = 3 IP) are returned.
+    `team_ids` scopes to one league.
+    """
+    rows = db.fetchall(
+        f"""
+        SELECT ps.player_id, ps.outs_recorded AS outs, ps.runs_allowed AS r,
+               g.id AS game_id, g.game_date
+        FROM game_pitcher_stats ps
+        JOIN games g ON ps.game_id = g.id
+        WHERE g.played = 1 AND ps.phase = 0 AND ps.outs_recorded > 0
+              {_team_in(team_ids, "ps.team_id")}
+        ORDER BY ps.player_id, g.game_date, g.id
+        """
+    )
+    pname = _player_lookup()
+    by_player: dict[int, list[dict]] = defaultdict(list)
+    for r in rows:
+        by_player[int(r["player_id"])].append(r)
+
+    out: list[dict] = []
+    for pid, apps in by_player.items():
+        best = 0
+        best_start = best_end = None
+        cur = 0
+        cur_start = cur_end = None
+        for a in apps:
+            if (a["r"] or 0) == 0:
+                if cur == 0:
+                    cur_start = a
+                cur += int(a["outs"] or 0)
+                cur_end = a
+                if cur > best:
+                    best, best_start, best_end = cur, cur_start, cur_end
+            else:
+                cur = 0
+                cur_start = cur_end = None
+        if best >= min_outs:
+            info = pname.get(pid, {})
+            out.append({
+                "player_id":   pid,
+                "player_name": info.get("name", f"#{pid}"),
+                "team_id":     info.get("team_id"),
+                "team_abbrev": info.get("abbrev", ""),
+                "outs":        best,
+                "ip":          round(best / 3.0, 1),
+                "ip_display":  f"{best // 3}.{best % 3}",
+                "start_date":  best_start["game_date"] if best_start else None,
+                "end_date":    best_end["game_date"] if best_end else None,
+            })
+    out.sort(key=lambda s: (-s["outs"], s["start_date"] or ""))
+    return out[:top_n]
