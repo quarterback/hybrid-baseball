@@ -6078,6 +6078,79 @@ def _savant_batter_rows(team_ids, min_bip: int) -> list[dict]:
     return rows
 
 
+# Pitcher metrics: "elite" means suppressing contact, so most are reverse=True
+# (lower is better → higher percentile → red marker). K% is the exception.
+_SAVANT_PITCHER_METRICS = [
+    ("avg_ev_against", "Avg EV Against", "ev",  True),
+    ("hardhit",        "Hard-Hit %",     "pct", True),
+    ("barrel",         "Barrel %",       "pct", True),
+    ("k_pct",          "Strikeout %",    "pct", False),
+    ("bb_pct",         "Walk %",         "pct", True),
+    ("hr_pct",         "HR %",           "pct", True),
+]
+
+
+def _savant_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
+    """Per-pitcher Statcast-style rows (contact allowed + rate stats),
+    percentile-ranked league-wide. Reverse metrics already flip so the
+    percentile reads 'elite = high'."""
+    pid_in = ""
+    if team_ids:
+        pid_in = (" AND pitcher_id IN (SELECT id FROM players WHERE team_id IN (%s))"
+                  % ",".join(str(int(t)) for t in team_ids))
+    ev = db.fetchall(
+        f"""SELECT pitcher_id AS player_id, COUNT(*) AS bip,
+                   AVG(exit_velocity) AS avg_ev_against,
+                   AVG(CASE WHEN exit_velocity >= {_SAVANT_HARDHIT_EV} THEN 1.0 ELSE 0.0 END) AS hardhit,
+                   AVG(CASE WHEN exit_velocity >= {_SAVANT_BARREL_EV}
+                             AND launch_angle BETWEEN {_SAVANT_BARREL_LA[0]} AND {_SAVANT_BARREL_LA[1]}
+                            THEN 1.0 ELSE 0.0 END) AS barrel
+            FROM game_pa_log
+            WHERE phase = 0 AND exit_velocity IS NOT NULL{pid_in}
+            GROUP BY pitcher_id""")
+    team_in = ""
+    if team_ids:
+        team_in = " AND team_id IN (%s)" % ",".join(str(int(t)) for t in team_ids)
+    rate = db.fetchall(
+        f"""SELECT player_id, SUM(batters_faced) AS bf, SUM(k) AS k,
+                   SUM(bb) AS bb, SUM(hr_allowed) AS hr
+            FROM game_pitcher_stats
+            WHERE phase = 0{team_in}
+            GROUP BY player_id""")
+    rate_by = {r["player_id"]: r for r in rate}
+
+    rows = []
+    for e in ev:
+        if (e["bip"] or 0) < min_bip:
+            continue
+        pid = e["player_id"]
+        rt = rate_by.get(pid, {})
+        bf = rt.get("bf") or 0
+        rows.append({
+            "player_id":      pid,
+            "bip":            e["bip"],
+            "avg_ev_against": round(e["avg_ev_against"], 1) if e["avg_ev_against"] is not None else None,
+            "hardhit":        round(100 * e["hardhit"], 1),
+            "barrel":         round(100 * e["barrel"], 1),
+            "k_pct":          round(100 * (rt.get("k") or 0) / bf, 1) if bf else None,
+            "bb_pct":         round(100 * (rt.get("bb") or 0) / bf, 1) if bf else None,
+            "hr_pct":         round(100 * (rt.get("hr") or 0) / bf, 1) if bf else None,
+        })
+    if rows:
+        ids = ",".join(str(r["player_id"]) for r in rows)
+        names = {n["id"]: n for n in db.fetchall(
+            f"""SELECT p.id, p.name, t.abbrev AS team_abbrev
+                FROM players p LEFT JOIN teams t ON t.id = p.team_id
+                WHERE p.id IN ({ids})""")}
+        for r in rows:
+            meta = names.get(r["player_id"], {})
+            r["player_name"] = meta.get("name", f"#{r['player_id']}")
+            r["team_abbrev"] = meta.get("team_abbrev") or ""
+    for key, _label, _fmt, rev in _SAVANT_PITCHER_METRICS:
+        _percentile_ranks(rows, key, reverse=rev)
+    return rows
+
+
 def _savant_format(value, fmt: str) -> str:
     if value is None:
         return "—"
@@ -6109,33 +6182,44 @@ def player_savant(player_id: int):
         f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
     min_bip = max(15, games_played // 30)
 
-    rows = _savant_batter_rows(team_ids, min_bip)
-    me = next((r for r in rows if r["player_id"] == player_id), None)
-
-    sliders = []
-    if me:
-        for key, label, fmt, _rev in _SAVANT_BATTER_METRICS:
+    def _build_sliders(me, metrics):
+        out = []
+        if not me:
+            return out
+        for key, label, fmt, _rev in metrics:
             val = me.get(key)
             pct = me.get(f"{key}_pctile")
             if val is None or pct is None:
                 continue
-            sliders.append({
+            out.append({
                 "label":   label,
                 "display": _savant_format(val, fmt),
                 "pctile":  pct,
                 "rank":    me.get(f"{key}_rank"),
             })
+        return out
+
+    bat_rows = _savant_batter_rows(team_ids, min_bip)
+    me_bat = next((r for r in bat_rows if r["player_id"] == player_id), None)
+    pit_rows = _savant_pitcher_rows(team_ids, min_bip)
+    me_pit = next((r for r in pit_rows if r["player_id"] == player_id), None)
+
+    sliders = _build_sliders(me_bat, _SAVANT_BATTER_METRICS)
+    pitcher_sliders = _build_sliders(me_pit, _SAVANT_PITCHER_METRICS)
 
     return _serve(
         "savant.html",
         player=player,
         sliders=sliders,
-        qualified=me is not None,
-        bip=(me or {}).get("bip"),
+        pitcher_sliders=pitcher_sliders,
+        qualified=(me_bat is not None or me_pit is not None),
+        bip=(me_bat or {}).get("bip"),
+        pitcher_bip=(me_pit or {}).get("bip"),
         min_bip=min_bip,
-        woba=(me or {}).get("woba"),
-        xwoba=(me or {}).get("xwoba"),
-        n_qualified=len(rows),
+        woba=(me_bat or {}).get("woba"),
+        xwoba=(me_bat or {}).get("xwoba"),
+        n_qualified=len(bat_rows),
+        n_qualified_pitchers=len(pit_rows),
         leagues=leagues, selected_league=selected_league,
     )
 
