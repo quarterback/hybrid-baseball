@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Statcast Leaderboard{% endblock %}
+{% block title %}O27 Index — Leaders{% endblock %}
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
   <div>
-    <h2 class="mb-1">Statcast Leaderboard</h2>
+    <h2 class="mb-1">O27 Index — Leaders</h2>
     <div class="text-secondary small">
       Batted-ball metrics · {{ n_qualified }} qualified batters
       (≥ {{ min_bip }} balls in play) · click a column to sort
     </div>
   </div>
   <a class="btn btn-sm btn-outline-secondary"
-     href="{{ url_for('statcast_leaderboard', sort=sort_key, format='json') }}">JSON</a>
+     href="{{ url_for('o27i_leaders', sort=sort_key, format='json') }}">JSON</a>
 </div>
 
 {% if not rows %}
@@ -28,7 +28,7 @@
         {% for c in columns %}
           <th class="text-end {{ 'fw-bold' if c.key == sort_key else '' }}">
             <a class="link-body-emphasis text-decoration-none"
-               href="{{ url_for('statcast_leaderboard', sort=c.key) }}">
+               href="{{ url_for('o27i_leaders', sort=c.key) }}">
               {{ c.label }}{% if c.key == sort_key %} ↓{% endif %}
             </a>
           </th>
@@ -39,7 +39,7 @@
       {% for r in rows %}
       <tr>
         <td class="text-secondary">{{ loop.index }}</td>
-        <td><a href="{{ url_for('player_savant', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
+        <td><a href="{{ url_for('player_o27i', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
         <td class="text-secondary">{{ r.team_abbrev }}</td>
         <td class="text-end text-secondary">{{ r.bip }}</td>
         {% for c in columns %}

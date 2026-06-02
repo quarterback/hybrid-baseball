@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}{{ player.name }} — Savant{% endblock %}
+{% block title %}{{ player.name }} — O27 Index{% endblock %}
 {% block content %}
 
 <style>
-  .savant-sliders { max-width: 760px; }
-  .savant-row {
+  .o27i-sliders { max-width: 760px; }
+  .o27i-row {
     display: grid;
     grid-template-columns: 160px 1fr 88px;
     align-items: center;
     gap: 12px;
     padding: 7px 0;
   }
-  .savant-label { font-size: .85rem; text-align: right; color: var(--bs-secondary-color, #9aa); }
-  .savant-value { font-variant-numeric: tabular-nums; font-weight: 600; }
-  .savant-track {
+  .o27i-label { font-size: .85rem; text-align: right; color: var(--bs-secondary-color, #9aa); }
+  .o27i-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .o27i-track {
     position: relative;
     height: 8px;
     border-radius: 6px;
@@ -21,8 +21,8 @@
       hsl(240,55%,55%) 0%, #c9ccd6 50%, hsl(0,70%,52%) 100%);
     opacity: .35;
   }
-  .savant-track-wrap { position: relative; }
-  .savant-marker {
+  .o27i-track-wrap { position: relative; }
+  .o27i-marker {
     position: absolute;
     top: 50%;
     transform: translate(-50%, -50%);
@@ -40,20 +40,20 @@
 {% macro slider_group(title, sliders, n_qual, note) %}
   <h3 class="h5 mt-4 mb-1">{{ title }}</h3>
   <div class="text-secondary small mb-2">vs {{ n_qual }} qualified · {{ note }}</div>
-  <div class="savant-sliders">
+  <div class="o27i-sliders">
     {% for s in sliders %}
       {% set hue = (240 - (s.pctile * 2.4))|round|int %}
-      <div class="savant-row">
-        <div class="savant-label">{{ s.label }}</div>
-        <div class="savant-track-wrap">
-          <div class="savant-track"></div>
-          <div class="savant-marker"
+      <div class="o27i-row">
+        <div class="o27i-label">{{ s.label }}</div>
+        <div class="o27i-track-wrap">
+          <div class="o27i-track"></div>
+          <div class="o27i-marker"
                style="left: {{ s.pctile }}%; background: hsl({{ hue }},65%,48%);"
                title="{{ s.label }}: {{ s.pctile }}th percentile (rank {{ s.rank }} of {{ n_qual }})">
             {{ s.pctile|round|int }}
           </div>
         </div>
-        <div class="savant-value">{{ s.display }}</div>
+        <div class="o27i-value">{{ s.display }}</div>
       </div>
     {% endfor %}
   </div>
@@ -61,7 +61,7 @@
 
 <div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
   <div>
-    <h2 class="mb-1">{{ player.name }} <span class="text-secondary fs-5">Savant</span></h2>
+    <h2 class="mb-1">{{ player.name }} <span class="text-secondary fs-5">O27 Index</span></h2>
     <div class="text-secondary small">
       <a href="{{ url_for('team_detail', team_id=player.team_id) }}">{{ player.team_name }}</a>
       · percentile rankings vs the league
@@ -69,7 +69,7 @@
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('player_detail', player_id=player.id) }}">Player page</a>
-    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('player_savant', player_id=player.id, format='json') }}">JSON</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('player_o27i', player_id=player.id, format='json') }}">JSON</a>
   </div>
 </div>
 

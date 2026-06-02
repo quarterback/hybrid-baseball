@@ -1,37 +1,37 @@
 {% extends "base.html" %}
-{% block title %}Savant{% endblock %}
+{% block title %}O27 Index{% endblock %}
 {% block content %}
 
 <div class="mb-4">
-  <h2 class="mb-1">O27 Savant</h2>
+  <h2 class="mb-1">O27 Index</h2>
   <div class="text-secondary small">
-    Statcast-style analytics · exit velocity drives the outcome, so this is real
+    Tracking-driven analytics · exit velocity drives the outcome, so this is real
     contact-quality signal · {{ n_qualified }} qualified batters
   </div>
 </div>
 
 {# ---- Search bar: jump to any player's percentile page ---- #}
 <div class="filter-bar mb-4" style="max-width:620px">
-  <label class="form-label" for="savant-search">
+  <label class="form-label" for="o27i-search">
     Find a player <span class="text-secondary" style="text-transform:none;letter-spacing:0;font-weight:400">— type a name, then Go</span>
   </label>
   <div class="d-flex gap-2">
-    <input id="savant-search" type="text" list="savant-search-list"
+    <input id="o27i-search" type="text" list="o27i-search-list"
            class="form-control" placeholder="e.g. Samson Goldie" autocomplete="off">
-    <button id="savant-go" class="btn btn-primary" type="button">Go</button>
+    <button id="o27i-go" class="btn btn-primary" type="button">Go</button>
   </div>
-  <datalist id="savant-search-list">
+  <datalist id="o27i-search-list">
     {% for p in players %}
       <option data-id="{{ p.id }}" value="{{ p.name }}{% if p.team_abbrev %} ({{ p.team_abbrev }}){% endif %}"></option>
     {% endfor %}
   </datalist>
-  <div id="savant-search-err" class="form-text text-danger" style="display:none">
+  <div id="o27i-search-err" class="form-text text-danger" style="display:none">
     No matching player — pick a name from the list.
   </div>
 </div>
 
 <a class="btn btn-sm btn-outline-secondary mb-4"
-   href="{{ url_for('statcast_leaderboard') }}">Full Statcast leaderboard →</a>
+   href="{{ url_for('o27i_leaders') }}">Full O27 Index leaderboard →</a>
 
 <div class="row g-3">
   {% for lb in leaderboards %}
@@ -43,7 +43,7 @@
         <li class="list-group-item d-flex justify-content-between align-items-center py-1">
           <span>
             <span class="text-secondary me-1">{{ loop.index }}.</span>
-            <a href="{{ url_for('player_savant', player_id=r.player_id) }}">{{ r.player_name }}</a>
+            <a href="{{ url_for('player_o27i', player_id=r.player_id) }}">{{ r.player_name }}</a>
             <span class="text-secondary small">{{ r.team_abbrev }}</span>
           </span>
           <span class="fw-semibold" style="font-variant-numeric:tabular-nums">{{ r.display }}</span>
@@ -59,9 +59,9 @@
 
 <script>
 (function () {
-  const input = document.getElementById('savant-search');
-  const list  = document.getElementById('savant-search-list');
-  const err   = document.getElementById('savant-search-err');
+  const input = document.getElementById('o27i-search');
+  const list  = document.getElementById('o27i-search-list');
+  const err   = document.getElementById('o27i-search-err');
   function go() {
     const v = (input.value || '').trim();
     let id = null;
@@ -75,10 +75,10 @@
         }
       }
     }
-    if (id) { window.location.href = '/player/' + id + '/savant'; }
+    if (id) { window.location.href = '/player/' + id + '/o27i'; }
     else { err.style.display = 'block'; }
   }
-  document.getElementById('savant-go').addEventListener('click', go);
+  document.getElementById('o27i-go').addEventListener('click', go);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 })();
 </script>

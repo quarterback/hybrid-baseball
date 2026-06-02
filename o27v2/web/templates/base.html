@@ -1241,7 +1241,7 @@
       {% set ep = request.endpoint %}
       {% set g_games   = ['index', 'gazette.view', 'standings', 'schedule', 'playoffs_view'] %}
       {% set g_players = ['players', 'player_detail', 'teams', 'team_detail', 'compare', 'free_agents'] %}
-      {% set g_stats   = ['leaders', 'stats_browse', 'analytics', 'distributions', 'savant_home', 'statcast_leaderboard', 'player_savant', 'glossary'] %}
+      {% set g_stats   = ['leaders', 'stats_browse', 'analytics', 'distributions', 'o27i_home', 'o27i_leaders', 'player_o27i', 'glossary'] %}
       {% set g_league  = ['league', 'transactions', 'auction_view', 'auction_live', 'youth_view', 'youth_team_view', 'youth_tournament_view', 'pro_worldcup_view', 'pro_worldcup_team_view', 'college_view', 'college_program_view', 'college_player_view', 'college_postseason_view', 'college_leaders_view', 'college_game_view', 'college_draft_view', 'college_import_view', 'economy_view', 'financials_view'] %}
       {% set g_history = ['seasons_index', 'season_detail', 'season_archive', 'hall_of_fame', 'hof_candidates', 'hof_settings'] %}
       {% set g_manage  = ['engine_settings', 'benchmarks', 'saves_index', 'new_league_get', 'new_league_post', 'universe_new_get', 'universe_new_post'] %}
@@ -1275,7 +1275,7 @@
             <li><a class="dropdown-item {% if ep == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stat Browser</a></li>
             <li><a class="dropdown-item {% if ep == 'analytics' %}active{% endif %}" href="{{ url_for('analytics') }}">Analytics</a></li>
             <li><a class="dropdown-item {% if ep == 'distributions' %}active{% endif %}" href="{{ url_for('distributions') }}">Distributions</a></li>
-            <li><a class="dropdown-item {% if ep in ('savant_home', 'statcast_leaderboard', 'player_savant') %}active{% endif %}" href="{{ url_for('savant_home') }}">Savant</a></li>
+            <li><a class="dropdown-item {% if ep in ('o27i_home', 'o27i_leaders', 'player_o27i') %}active{% endif %}" href="{{ url_for('o27i_home') }}">O27 Index</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item {% if ep == 'glossary' %}active{% endif %}" href="{{ url_for('glossary') }}">Glossary</a></li>
           </ul>
