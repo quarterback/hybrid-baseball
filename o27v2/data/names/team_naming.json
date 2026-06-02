@@ -1003,6 +1003,39 @@
           "Uelka"
         ],
         "locale": "russian"
+      },
+      "eurasia_mongolia": {
+        "cities_example": [
+          "Ulaanbaatar",
+          "Ulaanbaatar Centre",
+          "Songino",
+          "Erdenet",
+          "Darkhan",
+          "Choibalsan",
+          "Murun",
+          "Khovd",
+          "Olgii",
+          "Sukhbaatar",
+          "Arvaikheer",
+          "Sainshand",
+          "Bayankhongor",
+          "Mandalgovi",
+          "Tsetserleg",
+          "Baruun-Urt",
+          "Choir",
+          "Zuunmod",
+          "Bulgan",
+          "Ulaangom",
+          "Uliastai",
+          "Altai",
+          "Dalanzadgad",
+          "Bor-Undur",
+          "Sharyngol",
+          "Khankh",
+          "Tariat",
+          "Khalkhgol"
+        ],
+        "locale": "english"
       }
     },
     "city_tier_system": {

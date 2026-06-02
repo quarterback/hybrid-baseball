@@ -2807,6 +2807,23 @@
           ]
         }
       ]
+    },
+    "mongolia": {
+      "_doc": [
+        "Mongolia. Designated expansion market for Zaryan baseball — ",
+        "the Zaryanovia thread evangelises the sport across the steppe ",
+        "via the established Russian-Far-East to Ulaanbaatar trade ",
+        "corridor. Names use modern Latin transliteration (Batbayar, ",
+        "Bolormaa, Borjigin) so they read cleanly on a roster."
+      ],
+      "label": "Mongolia",
+      "country": "MN",
+      "first_keys": [
+        "mongolian"
+      ],
+      "surname_keys": [
+        "mongolian"
+      ]
     }
   },
   "presets": {
@@ -2888,7 +2905,8 @@
         "philippines": 0.02,
         "europe_western": 0.015,
         "europe_eastern": 0.02,
-        "zaryanovia": 0.04
+        "zaryanovia": 0.04,
+        "mongolia": 0.02
       }
     },
     "o27_year_10": {
@@ -2925,7 +2943,8 @@
         "philippines": 0.03,
         "europe_western": 0.005,
         "europe_eastern": 0.04,
-        "zaryanovia": 0.06
+        "zaryanovia": 0.06,
+        "mongolia": 0.04
       }
     },
     "global": {
@@ -2953,7 +2972,8 @@
         "pacific_islands": 0.03,
         "british_isles": 0.03,
         "malaysia": 0.02,
-        "zaryanovia": 0.03
+        "zaryanovia": 0.03,
+        "mongolia": 0.02
       }
     },
     "european": {
@@ -2976,7 +2996,8 @@
         "us": 0.07,
         "latin_america": 0.05,
         "malaysia": 0.05,
-        "zaryanovia": 0.12
+        "zaryanovia": 0.12,
+        "mongolia": 0.05
       }
     },
     "nordic": {
@@ -3033,7 +3054,8 @@
         "latin_america": 0.05,
         "southeast_asia": 0.05,
         "philippines": 0.05,
-        "zaryanovia": 0.08
+        "zaryanovia": 0.08,
+        "mongolia": 0.04
       }
     },
     "far_east": {
@@ -3044,6 +3066,17 @@
         "southeast_asia": 0.12,
         "philippines": 0.08,
         "malaysia": 0.05,
+        "us": 0.05,
+        "mongolia": 0.1
+      }
+    },
+    "zaryan_mongolia": {
+      "label": "Zaryan / Mongolian expansion (Zaryanovia + Mongolia + East Asia tail)",
+      "weights": {
+        "zaryanovia": 0.5,
+        "mongolia": 0.3,
+        "east_asia": 0.1,
+        "central_west_asia": 0.05,
         "us": 0.05
       }
     }
