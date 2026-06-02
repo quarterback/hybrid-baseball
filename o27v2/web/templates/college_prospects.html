@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Prospect Index{% endblock %}
+{% block content %}
+
+<style>
+  .ps-bubble { display:inline-flex; align-items:center; justify-content:center;
+    width:34px; height:22px; border-radius:5px; color:#fff; font-weight:700;
+    font-size:.75rem; font-variant-numeric:tabular-nums; }
+  .pct { font-variant-numeric:tabular-nums; color:var(--bs-secondary-color,#9aa); }
+</style>
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Prospect Index <span class="text-secondary fs-5">{{ season }}</span></h2>
+    <div class="text-secondary small">
+      College tools + potential + production · Prospect Score rewards youth ·
+      {{ n_total }} {{ 'pitchers' if ptype == 'pit' else 'hitters' }}
+    </div>
+  </div>
+  <div class="d-flex gap-2">
+    <div class="btn-group btn-group-sm">
+      <a class="btn btn-outline-secondary {{ 'active' if ptype != 'pit' }}"
+         href="{{ url_for('college_prospects', type='bat', season=season) }}">Hitters</a>
+      <a class="btn btn-outline-secondary {{ 'active' if ptype == 'pit' }}"
+         href="{{ url_for('college_prospects', type='pit', season=season) }}">Pitchers</a>
+    </div>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('college_prospects', type=ptype, season=season, format='json') }}">JSON</a>
+  </div>
+</div>
+
+{% if not rows %}
+  <div class="alert alert-secondary">No college prospects for this season — seed and sim the college tier first.</div>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-sm table-hover align-middle">
+    <thead>
+      <tr>
+        <th>#</th><th>PS</th><th>Player</th><th>Pos</th><th>Yr</th><th>Program</th>
+        {% for m in metrics %}<th class="text-end">{{ m[1] }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      {% set hue = (240 - (r.ps_score * 2.4))|round|int %}
+      <tr>
+        <td class="text-secondary">{{ loop.index }}</td>
+        <td><a href="{{ url_for('college_prospect_player', player_id=r.id) }}"
+               class="ps-bubble text-decoration-none" style="background:hsl({{ hue }},65%,48%)">{{ r.ps_score }}</a></td>
+        <td><a href="{{ url_for('college_player_view', player_id=r.id) }}">{{ r.name }}</a></td>
+        <td class="text-secondary">{{ r.position }}</td>
+        <td class="text-secondary">{{ r.college_year }}</td>
+        <td class="text-secondary small">{{ r.program_abbrev or r.program_name }}</td>
+        {% for m in metrics %}
+          <td class="text-end">
+            {{ r[m[0]] if r[m[0]] is not none else '—' }}
+            {% if r.get(m[0] ~ '_pctile') is not none %}
+              <span class="pct small">({{ r[m[0] ~ '_pctile']|round|int }})</span>
+            {% endif %}
+          </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="text-secondary small mt-2">
+  Each cell shows the grade/stat with its league percentile in parentheses.
+  Prospect Score = mean of key-tool percentiles + a youth bonus (younger class
+  year ranks higher at equal grades). Red = elite.
+</div>
+{% endif %}
+
+{% endblock %}

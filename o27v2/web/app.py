@@ -5988,13 +5988,13 @@ def _league_distribution(rows: list[dict], key: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Baseball-Savant-style percentile player page
+# O27 Index — percentile player pages
 # ---------------------------------------------------------------------------
 # Each metric: (key, label, fmt, reverse). reverse=True → lower is better, so
 # the percentile is flipped (e.g. K%). With physics-first resolution EV now
 # DRIVES outcomes, so these contact-quality metrics — and the xwOBA−wOBA gap —
 # are real signal rather than an echo of the categorical roll.
-_SAVANT_BATTER_METRICS = [
+_O27I_BATTER_METRICS = [
     ("xwoba",     "xwOBA",          "0.3f", False),
     ("avg_ev",    "Avg Exit Velo",  "ev",   False),
     ("max_ev",    "Max Exit Velo",  "ev",   False),
@@ -6003,19 +6003,19 @@ _SAVANT_BATTER_METRICS = [
     ("sweetspot", "Sweet-Spot %",   "pct",  False),
     ("bb_pct",    "Walk %",         "pct",  False),
     ("k_pct",     "Strikeout %",    "pct",  True),
-    ("stay_pct",  "Stay %",         "pct",  False),
+    ("stay_pct",  "Second-Chance %", "pct",  False),
 ]
 
-# O27-calibrated batted-ball cuts (NOT MLB's 95-mph anchor — see the Savant
+# O27-calibrated batted-ball cuts (NOT MLB's 95-mph anchor — see the O27 Index
 # feasibility AAR). Read off the live league EV/LA distribution.
-_SAVANT_HARDHIT_EV = 100.0
-_SAVANT_BARREL_EV  = 104.0
-_SAVANT_BARREL_LA  = (10.0, 35.0)
-_SAVANT_SWEET_LA   = (8.0, 32.0)
+_O27I_HARDHIT_EV = 100.0
+_O27I_BARREL_EV  = 104.0
+_O27I_BARREL_LA  = (10.0, 35.0)
+_O27I_SWEET_LA   = (8.0, 32.0)
 
 
-def _savant_batter_rows(team_ids, min_bip: int) -> list[dict]:
-    """Per-batter Statcast-style metric rows for the whole (scoped) league,
+def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
+    """Per-batter O27 Index metric rows for the whole (scoped) league,
     each stamped with `<key>_pctile` (0..100, 100 = best) so an individual's
     bars are league-relative."""
     team_in = ""
@@ -6024,11 +6024,11 @@ def _savant_batter_rows(team_ids, min_bip: int) -> list[dict]:
     ev = db.fetchall(
         f"""SELECT batter_id AS player_id, COUNT(*) AS bip,
                    AVG(exit_velocity) AS avg_ev, MAX(exit_velocity) AS max_ev,
-                   AVG(CASE WHEN exit_velocity >= {_SAVANT_HARDHIT_EV} THEN 1.0 ELSE 0.0 END) AS hardhit,
-                   AVG(CASE WHEN exit_velocity >= {_SAVANT_BARREL_EV}
-                             AND launch_angle BETWEEN {_SAVANT_BARREL_LA[0]} AND {_SAVANT_BARREL_LA[1]}
+                   AVG(CASE WHEN exit_velocity >= {_O27I_HARDHIT_EV} THEN 1.0 ELSE 0.0 END) AS hardhit,
+                   AVG(CASE WHEN exit_velocity >= {_O27I_BARREL_EV}
+                             AND launch_angle BETWEEN {_O27I_BARREL_LA[0]} AND {_O27I_BARREL_LA[1]}
                             THEN 1.0 ELSE 0.0 END) AS barrel,
-                   AVG(CASE WHEN launch_angle BETWEEN {_SAVANT_SWEET_LA[0]} AND {_SAVANT_SWEET_LA[1]}
+                   AVG(CASE WHEN launch_angle BETWEEN {_O27I_SWEET_LA[0]} AND {_O27I_SWEET_LA[1]}
                             THEN 1.0 ELSE 0.0 END) AS sweetspot
             FROM game_pa_log
             WHERE phase = 0 AND exit_velocity IS NOT NULL{team_in}
@@ -6083,14 +6083,14 @@ def _savant_batter_rows(team_ids, min_bip: int) -> list[dict]:
             r["player_name"] = meta.get("name", f"#{r['player_id']}")
             r["team_abbrev"] = meta.get("team_abbrev") or ""
 
-    for key, _label, _fmt, rev in _SAVANT_BATTER_METRICS:
+    for key, _label, _fmt, rev in _O27I_BATTER_METRICS:
         _percentile_ranks(rows, key, reverse=rev)
     return rows
 
 
 # Pitcher metrics: "elite" means suppressing contact, so most are reverse=True
 # (lower is better → higher percentile → red marker). K% is the exception.
-_SAVANT_PITCHER_METRICS = [
+_O27I_PITCHER_METRICS = [
     ("xwoba_against",  "xwOBA Against",  "0.3f", True),
     ("avg_ev_against", "Avg EV Against", "ev",  True),
     ("hardhit",        "Hard-Hit %",     "pct", True),
@@ -6101,8 +6101,8 @@ _SAVANT_PITCHER_METRICS = [
 ]
 
 
-def _savant_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
-    """Per-pitcher Statcast-style rows (contact allowed + rate stats),
+def _o27i_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
+    """Per-pitcher O27 Index rows (contact allowed + rate stats),
     percentile-ranked league-wide. Reverse metrics already flip so the
     percentile reads 'elite = high'."""
     pid_in = ""
@@ -6112,9 +6112,9 @@ def _savant_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
     ev = db.fetchall(
         f"""SELECT pitcher_id AS player_id, COUNT(*) AS bip,
                    AVG(exit_velocity) AS avg_ev_against,
-                   AVG(CASE WHEN exit_velocity >= {_SAVANT_HARDHIT_EV} THEN 1.0 ELSE 0.0 END) AS hardhit,
-                   AVG(CASE WHEN exit_velocity >= {_SAVANT_BARREL_EV}
-                             AND launch_angle BETWEEN {_SAVANT_BARREL_LA[0]} AND {_SAVANT_BARREL_LA[1]}
+                   AVG(CASE WHEN exit_velocity >= {_O27I_HARDHIT_EV} THEN 1.0 ELSE 0.0 END) AS hardhit,
+                   AVG(CASE WHEN exit_velocity >= {_O27I_BARREL_EV}
+                             AND launch_angle BETWEEN {_O27I_BARREL_LA[0]} AND {_O27I_BARREL_LA[1]}
                             THEN 1.0 ELSE 0.0 END) AS barrel
             FROM game_pa_log
             WHERE phase = 0 AND exit_velocity IS NOT NULL{pid_in}
@@ -6161,12 +6161,12 @@ def _savant_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
             meta = names.get(r["player_id"], {})
             r["player_name"] = meta.get("name", f"#{r['player_id']}")
             r["team_abbrev"] = meta.get("team_abbrev") or ""
-    for key, _label, _fmt, rev in _SAVANT_PITCHER_METRICS:
+    for key, _label, _fmt, rev in _O27I_PITCHER_METRICS:
         _percentile_ranks(rows, key, reverse=rev)
     return rows
 
 
-def _savant_format(value, fmt: str) -> str:
+def _o27i_format(value, fmt: str) -> str:
     if value is None:
         return "—"
     if fmt == "ev":
@@ -6176,9 +6176,9 @@ def _savant_format(value, fmt: str) -> str:
     return format(value, fmt)
 
 
-@app.route("/player/<int:player_id>/savant")
-def player_savant(player_id: int):
-    """Baseball-Savant-style percentile page: red→blue slider bars showing
+@app.route("/player/<int:player_id>/o27i")
+def player_o27i(player_id: int):
+    """O27 Index percentile page: red→blue slider bars showing
     where the player ranks league-wide on each contact-quality metric."""
     player = db.fetchone(
         """SELECT p.*, t.abbrev AS team_abbrev, t.name AS team_name, t.id AS team_id
@@ -6208,25 +6208,45 @@ def player_savant(player_id: int):
                 continue
             out.append({
                 "label":   label,
-                "display": _savant_format(val, fmt),
+                "display": _o27i_format(val, fmt),
                 "pctile":  pct,
                 "rank":    me.get(f"{key}_rank"),
             })
         return out
 
-    bat_rows = _savant_batter_rows(team_ids, min_bip)
+    bat_rows = _o27i_batter_rows(team_ids, min_bip)
     me_bat = next((r for r in bat_rows if r["player_id"] == player_id), None)
-    pit_rows = _savant_pitcher_rows(team_ids, min_bip)
+    pit_rows = _o27i_pitcher_rows(team_ids, min_bip)
     me_pit = next((r for r in pit_rows if r["player_id"] == player_id), None)
 
-    sliders = _build_sliders(me_bat, _SAVANT_BATTER_METRICS)
-    pitcher_sliders = _build_sliders(me_pit, _SAVANT_PITCHER_METRICS)
+    sliders = _build_sliders(me_bat, _O27I_BATTER_METRICS)
+    pitcher_sliders = _build_sliders(me_pit, _O27I_PITCHER_METRICS)
+
+    # Advanced single-player card (WPA / leverage, fielding OAA, 2C RV,
+    # baserunning). The builders compute league context regardless of the min
+    # threshold, so min=1 just guarantees this player appears.
+    from o27v2.analytics import (
+        build_win_probability, build_fielding_value,
+        build_second_chance_value, build_baserunning_value,
+    )
+    _wp = build_win_probability(min_pa=1, team_ids=team_ids)
+    _find = lambda xs: next((r for r in xs if r["player_id"] == player_id), None)
+    adv = {
+        "bat": _find(_wp["batters"]),
+        "pit": _find(_wp["pitchers"]),
+        "field": _find(build_fielding_value(min_chances=1, team_ids=team_ids)["leaders"]),
+        "twoc": _find(build_second_chance_value(min_2c=1, team_ids=team_ids)["leaders"]),
+        "bsr": _find(build_baserunning_value(min_op=1, team_ids=team_ids)["leaders"]),
+    }
+    has_advanced = any(adv.values())
 
     return _serve(
-        "savant.html",
+        "o27i_player.html",
         player=player,
         sliders=sliders,
         pitcher_sliders=pitcher_sliders,
+        advanced=adv,
+        has_advanced=has_advanced,
         qualified=(me_bat is not None or me_pit is not None),
         bip=(me_bat or {}).get("bip"),
         pitcher_bip=(me_pit or {}).get("bip"),
@@ -6241,9 +6261,182 @@ def player_savant(player_id: int):
     )
 
 
-@app.route("/savant")
-def savant_home():
-    """Savant landing — a player search bar plus EV/contact leader snapshots."""
+# Prospect Index (college / junior players) — the ProspectSavant analog.
+# Hitters and pitchers are ranked on tools + potential + production, with a
+# composite Prospect Score that rewards youth (a freshman with the same grades
+# is the better prospect).
+_PROSPECT_BAT_METRICS = [
+    ("contact", "Contact", False), ("power", "Power", False),
+    ("eye", "Eye", False), ("speed", "Speed", False),
+    ("defense", "Defense", False), ("arm", "Arm", False),
+    ("potential_power", "Power Ceiling", False),
+    ("potential_contact", "Hit Ceiling", False),
+    ("ops", "OPS", False),
+]
+_PROSPECT_PIT_METRICS = [
+    ("pitcher_skill", "Stuff", False), ("command", "Command", False),
+    ("movement", "Movement", False), ("stamina", "Stamina", False),
+    ("potential_pitcher_skill", "Stuff Ceiling", False),
+    ("potential_command", "Command Ceiling", False),
+    ("k_pct", "K%", False),
+]
+# Tools whose percentiles feed the composite Prospect Score.
+_PS_BAT_KEYS = ["potential_power", "potential_contact", "contact", "power", "eye", "ops"]
+_PS_PIT_KEYS = ["potential_pitcher_skill", "potential_command", "pitcher_skill", "command", "k_pct"]
+
+
+def _latest_college_season() -> int | None:
+    row = db.fetchone("SELECT MAX(season) AS s FROM college_programs")
+    return row["s"] if row else None
+
+
+def _prospect_rows(season: int, is_pitcher: bool) -> list[dict]:
+    metrics = _PROSPECT_PIT_METRICS if is_pitcher else _PROSPECT_BAT_METRICS
+    ps_keys = _PS_PIT_KEYS if is_pitcher else _PS_BAT_KEYS
+    players = db.fetchall(
+        """SELECT cp.*, prog.name AS program_name, prog.short_name AS program_abbrev
+           FROM college_players cp JOIN college_programs prog ON prog.id = cp.program_id
+           WHERE cp.is_active = 1 AND cp.is_pitcher = ? AND prog.season = ?""",
+        (1 if is_pitcher else 0, season))
+    if not players:
+        return []
+    ids = ",".join(str(p["id"]) for p in players)
+    if is_pitcher:
+        prod = {r["player_id"]: r for r in db.fetchall(
+            f"""SELECT player_id, COALESCE(SUM(bf),0) AS bf, COALESCE(SUM(k),0) AS k
+                FROM college_pitcher_stats WHERE player_id IN ({ids}) GROUP BY player_id""")}
+    else:
+        prod = {r["player_id"]: r for r in db.fetchall(
+            f"""SELECT player_id, COALESCE(SUM(pa),0) AS pa, COALESCE(SUM(ab),0) AS ab,
+                       COALESCE(SUM(h),0) AS h, COALESCE(SUM(doubles),0) AS d2,
+                       COALESCE(SUM(triples),0) AS d3, COALESCE(SUM(hr),0) AS hr,
+                       COALESCE(SUM(bb),0) AS bb
+                FROM college_batter_stats WHERE player_id IN ({ids}) GROUP BY player_id""")}
+    rows = []
+    for p in players:
+        r = dict(p)
+        pr = prod.get(p["id"], {})
+        if is_pitcher:
+            bf = pr.get("bf", 0) or 0
+            r["k_pct"] = round(100 * (pr.get("k", 0) or 0) / bf, 1) if bf else None
+        else:
+            pa = pr.get("pa", 0) or 0; ab = pr.get("ab", 0) or 0
+            if ab:
+                singles = (pr["h"] - pr["d2"] - pr["d3"] - pr["hr"])
+                tb = singles + 2 * pr["d2"] + 3 * pr["d3"] + 4 * pr["hr"]
+                obp = (pr["h"] + pr["bb"]) / pa if pa else 0
+                slg = tb / ab
+                r["ops"] = round(obp + slg, 3)
+            else:
+                r["ops"] = None
+        rows.append(r)
+    for key, _label, rev in metrics:
+        _percentile_ranks(rows, key, reverse=rev)
+    # Composite Prospect Score: mean of the key-tool percentiles + a youth bump
+    # (a younger class year with equal grades is the better prospect).
+    for r in rows:
+        pcts = [r.get(f"{k}_pctile") for k in ps_keys if r.get(f"{k}_pctile") is not None]
+        base = sum(pcts) / len(pcts) if pcts else 0.0
+        youth = max(0, 4 - (r.get("college_year") or 4)) * 2.5  # +0..7.5
+        r["ps_score"] = round(min(100.0, base + youth), 1)
+    rows.sort(key=lambda r: -r["ps_score"])
+    return rows
+
+
+@app.route("/college/prospects")
+def college_prospects():
+    """Prospect Index — tools + potential + production percentile board for the
+    college tier (the ProspectSavant analog)."""
+    season = request.args.get("season", type=int) or _latest_college_season()
+    ptype = (request.args.get("type") or "bat").lower()
+    is_pitcher = ptype == "pit"
+    rows = _prospect_rows(season, is_pitcher) if season else []
+    metrics = _PROSPECT_PIT_METRICS if is_pitcher else _PROSPECT_BAT_METRICS
+    return _serve(
+        "college_prospects.html",
+        rows=rows[:100],
+        metrics=metrics,
+        ptype=ptype,
+        season=season,
+        n_total=len(rows),
+    )
+
+
+@app.route("/college/prospects/<int:player_id>")
+def college_prospect_player(player_id: int):
+    """Per-prospect percentile sliders + Prospect Score (the O27i slider UI for
+    the college tier)."""
+    p = db.fetchone(
+        """SELECT cp.*, prog.season AS season, prog.name AS program_name,
+                  prog.short_name AS program_abbrev
+           FROM college_players cp JOIN college_programs prog ON prog.id = cp.program_id
+           WHERE cp.id = ?""", (player_id,))
+    if not p:
+        abort(404)
+    is_pitcher = bool(p["is_pitcher"])
+    rows = _prospect_rows(p["season"], is_pitcher)
+    me = next((r for r in rows if r["id"] == player_id), None)
+    if not me:
+        abort(404)
+    metrics = _PROSPECT_PIT_METRICS if is_pitcher else _PROSPECT_BAT_METRICS
+    sliders = []
+    for key, label, _rev in metrics:
+        val = me.get(key); pct = me.get(f"{key}_pctile")
+        if val is None or pct is None:
+            continue
+        sliders.append({"label": label, "display": val, "pctile": pct})
+    rank = next((i + 1 for i, r in enumerate(rows) if r["id"] == player_id), None)
+    return _serve(
+        "college_prospect_player.html",
+        player=me, sliders=sliders, rank=rank, n_total=len(rows),
+        is_pitcher=is_pitcher,
+    )
+
+
+@app.route("/o27i/advanced")
+def o27i_advanced():
+    """Expanded-metric leaderboards: expected stats, WPA/leverage, pitch
+    arsenal, baserunning, TTO, Second-Chance run value, fielding OAA."""
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    team_ids        = _league_team_ids(selected_league)
+    _team_csv       = ",".join(str(i) for i in team_ids) if team_ids else ""
+    _gp_where       = f" AND home_team_id IN ({_team_csv})" if _team_csv else ""
+    games_played = db.fetchone(
+        f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
+    gp = games_played
+
+    from o27v2.analytics import (
+        build_expected_stats, build_pitch_arsenal, build_baserunning_value,
+        build_tto_penalty, build_second_chance_value, build_fielding_value,
+        build_win_probability,
+    )
+    expected = build_expected_stats(min_bip=max(15, gp // 30), team_ids=team_ids)
+    wp       = build_win_probability(min_pa=max(20, gp // 20), team_ids=team_ids)
+    arsenal  = build_pitch_arsenal(min_bip=max(12, gp // 40), team_ids=team_ids)
+    bsr      = build_baserunning_value(min_op=max(8, gp // 50), team_ids=team_ids)
+    tto      = build_tto_penalty(min_bf=max(40, gp // 15), team_ids=team_ids)
+    twoc     = build_second_chance_value(min_2c=max(6, gp // 60), team_ids=team_ids)
+    field    = build_fielding_value(min_chances=max(20, gp // 25), team_ids=team_ids)
+
+    top = lambda xs, n=10: xs[:n]
+    return _serve(
+        "o27i_advanced.html",
+        expected=top(expected["leaders"]),
+        wpa_bat=top(wp["batters"]), wpa_pit=top(wp["pitchers"]),
+        arsenal=top(arsenal["rows"]),
+        bsr=top(bsr["leaders"]), league_xbt=bsr["league_xbt_pct"],
+        tto=top([l for l in tto["leaders"] if l["penalty"] is not None]),
+        tto_league=tto["league"],
+        twoc=top(twoc["leaders"]), league_2c=twoc["league_rv_per_2c"],
+        fielding=top(field["leaders"]), fielding_exact_pct=field["exact_pct"],
+        leagues=leagues, selected_league=selected_league,
+    )
+
+
+@app.route("/o27i")
+def o27i_home():
+    """O27 Index landing — a player search bar plus EV/contact leader snapshots."""
     leagues         = _independent_leagues()
     selected_league = _selected_league(leagues)
     team_ids        = _league_team_ids(selected_league)
@@ -6253,16 +6446,16 @@ def savant_home():
         f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
     min_bip = max(15, games_played // 30)
 
-    bat_rows = _savant_batter_rows(team_ids, min_bip)
-    pit_rows = _savant_pitcher_rows(team_ids, min_bip)
+    bat_rows = _o27i_batter_rows(team_ids, min_bip)
+    pit_rows = _o27i_pitcher_rows(team_ids, min_bip)
 
     def _top(rows, key, reverse, n=5):
         vals = [r for r in rows if r.get(key) is not None]
         vals.sort(key=lambda r: r[key], reverse=not reverse)
         return [{"player_id": r["player_id"], "player_name": r.get("player_name"),
                  "team_abbrev": r.get("team_abbrev"),
-                 "display": _savant_format(r[key], dict((k, f) for k, _l, f, _r
-                            in (_SAVANT_BATTER_METRICS + _SAVANT_PITCHER_METRICS)).get(key, ""))}
+                 "display": _o27i_format(r[key], dict((k, f) for k, _l, f, _r
+                            in (_O27I_BATTER_METRICS + _O27I_PITCHER_METRICS)).get(key, ""))}
                 for r in vals[:n]]
 
     leaderboards = [
@@ -6281,7 +6474,7 @@ def savant_home():
             ORDER BY p.name""")
 
     return _serve(
-        "savant_home.html",
+        "o27i_home.html",
         leaderboards=leaderboards,
         players=players,
         n_qualified=len(bat_rows),
@@ -6289,9 +6482,9 @@ def savant_home():
     )
 
 
-@app.route("/leaderboard/statcast")
-def statcast_leaderboard():
-    """Statcast-style batted-ball leaderboards (Barrel%, Hard-Hit%, EV, ...),
+@app.route("/o27i/leaders")
+def o27i_leaders():
+    """O27 Index batted-ball leaderboards (Barrel%, Hard-Hit%, EV, ...),
     sortable by any tracked metric."""
     leagues         = _independent_leagues()
     selected_league = _selected_league(leagues)
@@ -6302,10 +6495,10 @@ def statcast_leaderboard():
         f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
     min_bip = max(15, games_played // 30)
 
-    rows = _savant_batter_rows(team_ids, min_bip)
+    rows = _o27i_batter_rows(team_ids, min_bip)
 
     # Columns = the same metric set as the slider page.
-    valid_keys = {k: rev for k, _l, _f, rev in _SAVANT_BATTER_METRICS}
+    valid_keys = {k: rev for k, _l, _f, rev in _O27I_BATTER_METRICS}
     sort_key = (request.args.get("sort") or "xwoba").lower()
     if sort_key not in valid_keys:
         sort_key = "xwoba"
@@ -6315,15 +6508,15 @@ def statcast_leaderboard():
 
     columns = [
         {"key": k, "label": label, "fmt": fmt}
-        for k, label, fmt, _rev in _SAVANT_BATTER_METRICS
+        for k, label, fmt, _rev in _O27I_BATTER_METRICS
     ]
     # Pre-format display values so the template stays dumb.
     for r in ranked:
-        r["_display"] = {k: _savant_format(r.get(k), fmt)
-                         for k, _l, fmt, _rev in _SAVANT_BATTER_METRICS}
+        r["_display"] = {k: _o27i_format(r.get(k), fmt)
+                         for k, _l, fmt, _rev in _O27I_BATTER_METRICS}
 
     return _serve(
-        "statcast_leaderboard.html",
+        "o27i_leaders.html",
         rows=ranked,
         columns=columns,
         sort_key=sort_key,

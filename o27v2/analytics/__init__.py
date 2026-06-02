@@ -17,6 +17,11 @@ from o27v2.analytics.run_expectancy import (
     bases_label,
 )
 from o27v2.analytics.expected_woba import build_xwoba_table, build_xwoba_ev_table, build_xwoba_against_table
+from o27v2.analytics.expanded import (
+    build_expected_stats, build_pitch_arsenal, build_baserunning_value,
+    build_tto_penalty, build_second_chance_value, build_fielding_value,
+    build_win_probability,
+)
 from o27v2.analytics.pythag import refit_pythag_exponent
 from o27v2.analytics.base_runs import build_base_runs_table
 
@@ -27,6 +32,13 @@ __all__ = [
     "build_xwoba_table",
     "build_xwoba_ev_table",
     "build_xwoba_against_table",
+    "build_win_probability",
+    "build_fielding_value",
+    "build_second_chance_value",
+    "build_tto_penalty",
+    "build_baserunning_value",
+    "build_pitch_arsenal",
+    "build_expected_stats",
     "refit_pythag_exponent",
     "build_base_runs_table",
 ]
