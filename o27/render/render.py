@@ -473,6 +473,15 @@ class Renderer:
                 t.rad_1b       += r.rad_1b
                 t.rad_2b       += r.rad_2b
                 t.rad_3b       += r.rad_3b
+                t.risp_pa      += r.risp_pa
+                t.risp_ab      += r.risp_ab
+                t.risp_h       += r.risp_h
+                t.risp_2b      += r.risp_2b
+                t.risp_3b      += r.risp_3b
+                t.risp_hr      += r.risp_hr
+                t.risp_bb      += r.risp_bb
+                t.risp_hbp     += r.risp_hbp
+                t.risp_rbi     += r.risp_rbi
             return t
 
         # Build per-pitcher aggregates from spell_log (includes H/BB/K/HBP).
@@ -1498,6 +1507,19 @@ class Renderer:
         # pickoffs, runner thrown out on a ground out / stay, etc.).
         _or_before = s.outs_recorded
 
+        # RISP capture: a runner in scoring position (2B and/or 3B) at the
+        # start of this event. Snapshot the batting counters so any deltas
+        # this event accrues can be mirrored into the risp_* subset at the
+        # end (exact by construction, regardless of which outcome branch
+        # fires). The lone early `return` below (the CS branch) credits none
+        # of these counters, so missing the tail there loses nothing.
+        _risp_bases = ctx.get("bases_list") or [None, None, None]
+        _risp = (_risp_bases[1] is not None) or (_risp_bases[2] is not None)
+        _risp_snap = (
+            (s.pa, s.ab, s.hits, s.doubles, s.triples, s.hr, s.bb, s.hbp, s.rbi)
+            if _risp else None
+        )
+
         # O27 multi-hit AB: at-bats (not walks/HBP) with 2+ credited hits.
         # Credited hits = stay hits accumulated prior to this event (ab_hits_before)
         # PLUS the terminal running hit, if this event is a run-chosen safety hit.
@@ -1898,6 +1920,18 @@ class Renderer:
         if runs_scored > 0:
             self._credit_runs(ctx, state_after, runs_scored, etype, disp)
 
+        # RISP: mirror this event's batting deltas into the risp_* subset.
+        if _risp_snap is not None:
+            s.risp_pa  += s.pa      - _risp_snap[0]
+            s.risp_ab  += s.ab      - _risp_snap[1]
+            s.risp_h   += s.hits    - _risp_snap[2]
+            s.risp_2b  += s.doubles - _risp_snap[3]
+            s.risp_3b  += s.triples - _risp_snap[4]
+            s.risp_hr  += s.hr      - _risp_snap[5]
+            s.risp_bb  += s.bb      - _risp_snap[6]
+            s.risp_hbp += s.hbp     - _risp_snap[7]
+            s.risp_rbi += s.rbi     - _risp_snap[8]
+
     def _credit_runs(self, ctx: dict, state_after, runs_scored: int,
                      etype: str, disp: dict) -> None:
         """Credit the 'R' stat to the players who scored AND emit one
@@ -2051,7 +2085,9 @@ class Renderer:
                   "c2_op_3b", "c2_adv_3b",
                   "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
                   "adv_op_3b", "adv_adv_3b",
-                  "rad_1b", "rad_2b", "rad_3b"):
+                  "rad_1b", "rad_2b", "rad_3b",
+                  "risp_pa", "risp_ab", "risp_h", "risp_2b", "risp_3b",
+                  "risp_hr", "risp_bb", "risp_hbp", "risp_rbi"):
             setattr(d, f, getattr(end_s, f) - prev_get(f))
         return d
 

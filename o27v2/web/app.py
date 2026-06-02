@@ -1278,6 +1278,30 @@ def _aggregate_batter_rows(
         attempts = sb + cs
         b["sb_pct"] = (sb / attempts) if attempts else 0.0
 
+        # RISP slash line — only when the row carries the risp_* counters
+        # (the leaders / team-stats queries that SELECT them). PA-denominated
+        # to match PAVG/OBP/SLG above: per-AB RISP rates are unreliable in O27
+        # because stays can credit multiple hits inside one AB (risp_h can
+        # exceed risp_ab). RISP-Conv = RBI per RISP plate appearance — the
+        # "cashing runners in" rate that pairs with the engine's RISP-pressure
+        # model on the outcome side.
+        if "risp_pa" in b:
+            rpa  = b.get("risp_pa") or 0
+            rh   = b.get("risp_h") or 0
+            r2   = b.get("risp_2b") or 0
+            r3   = b.get("risp_3b") or 0
+            rhr  = b.get("risp_hr") or 0
+            rbb  = b.get("risp_bb") or 0
+            rhbp = b.get("risp_hbp") or 0
+            rrbi = b.get("risp_rbi") or 0
+            r_singles = rh - r2 - r3 - rhr
+            r_tb = r_singles + 2 * r2 + 3 * r3 + 4 * rhr
+            b["risp_pavg"] = (rh / rpa) if rpa else 0.0
+            b["risp_obp"]  = ((rh + rbb + rhbp) / rpa) if rpa else 0.0
+            b["risp_slg"]  = (r_tb / rpa) if rpa else 0.0
+            b["risp_ops"]  = b["risp_obp"] + b["risp_slg"]
+            b["risp_conv"] = (rrbi / rpa) if rpa else 0.0
+
         # --- O27-native sabermetrics ---
         # wOBA with linear weights empirically derived from the league's
         # RE matrix (see `o27v2.analytics.linear_weights`), normalized so
@@ -4853,6 +4877,15 @@ def leaders():
                   COALESCE(SUM(bs.rad_1b),0)      as rad_1b,
                   COALESCE(SUM(bs.rad_2b),0)      as rad_2b,
                   COALESCE(SUM(bs.rad_3b),0)      as rad_3b,
+                  COALESCE(SUM(bs.risp_pa),0)      as risp_pa,
+                  COALESCE(SUM(bs.risp_ab),0)      as risp_ab,
+                  COALESCE(SUM(bs.risp_h),0)       as risp_h,
+                  COALESCE(SUM(bs.risp_2b),0)      as risp_2b,
+                  COALESCE(SUM(bs.risp_3b),0)      as risp_3b,
+                  COALESCE(SUM(bs.risp_hr),0)      as risp_hr,
+                  COALESCE(SUM(bs.risp_bb),0)      as risp_bb,
+                  COALESCE(SUM(bs.risp_hbp),0)     as risp_hbp,
+                  COALESCE(SUM(bs.risp_rbi),0)     as risp_rbi,
                   COALESCE(SUM(bs.roe),0)          as roe,
                   COALESCE(SUM(bs.po),0)           as po,
                   COALESCE(SUM(bs.e),0)            as e
@@ -5294,6 +5327,15 @@ def team_stats():
                    COALESCE(SUM(bs.stays),0)     as stays,
                    COALESCE(SUM(bs.stay_hits),0) as stay_hits,
                    COALESCE(SUM(bs.stay_rbi),0)  as stay_rbi,
+                   COALESCE(SUM(bs.risp_pa),0)  as risp_pa,
+                   COALESCE(SUM(bs.risp_ab),0)  as risp_ab,
+                   COALESCE(SUM(bs.risp_h),0)   as risp_h,
+                   COALESCE(SUM(bs.risp_2b),0)  as risp_2b,
+                   COALESCE(SUM(bs.risp_3b),0)  as risp_3b,
+                   COALESCE(SUM(bs.risp_hr),0)  as risp_hr,
+                   COALESCE(SUM(bs.risp_bb),0)  as risp_bb,
+                   COALESCE(SUM(bs.risp_hbp),0) as risp_hbp,
+                   COALESCE(SUM(bs.risp_rbi),0) as risp_rbi,
                    COALESCE(SUM(bs.rad_1b),0) + COALESCE(SUM(bs.rad_2b),0)
                      + COALESCE(SUM(bs.rad_3b),0) as rad
               FROM game_batter_stats bs

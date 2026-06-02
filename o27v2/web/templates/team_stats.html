@@ -50,6 +50,10 @@
       <th class="num" title="2C conversion: hits per 2C">2C-Conv</th>
       <th class="num" title="Share of team RBI driven on 2C events">2C-RBI%</th>
       <th class="num" title="Runners Advanced — graded runner bases gained">RAD</th>
+      <th class="num" title="Batting average with runners in scoring position (H/PA)">RISP-AVG</th>
+      <th class="num" title="OPS with runners in scoring position">RISP-OPS</th>
+      <th class="num" title="RBI driven in with runners in scoring position">RISP-RBI</th>
+      <th class="num" title="RBI per plate appearance with RISP — the cash-in rate">RISP-Conv</th>
       <th class="num" title="Walk-Back runs scored (post-HR rule-placed runner driven in)">WBR</th>
     </tr></thead>
     <tbody>
@@ -74,6 +78,10 @@
         <td class="num">{{ pct(t.c2_conv) }}</td>
         <td class="num">{{ pct(t.c2_rbi_pct) }}</td>
         <td class="num">{{ num(t.rad) }}</td>
+        <td class="num">{{ num(t.risp_pavg, '%.3f') }}</td>
+        <td class="num fw-bold">{{ num(t.risp_ops, '%.3f') }}</td>
+        <td class="num">{{ num(t.risp_rbi) }}</td>
+        <td class="num">{{ num(t.risp_conv, '%.2f') }}</td>
         <td class="num">{{ num(t.wb_scored) }}</td>
       </tr>
       {% endfor %}

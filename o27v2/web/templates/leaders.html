@@ -152,6 +152,20 @@
   {{ card('RAD',  'rad_total',     '%d',   true, batting, tooltip='Runners Advanced — total bases gained by runners during this batter\'s PAs. Mirrors MLB Total Bases (which counts the batter\'s own bases) but applied to runner movement instead. Sum of bases gained from 1B/2B/3B starting positions.') }}
 </div>
 
+<h4>Batting · Clutch (RISP)</h4>
+<div class="text-secondary small mb-2" style="padding:0 0.25rem">
+  Performance with runners in scoring position (a runner on 2B and/or 3B at the
+  PA's start). PA-denominated like the headline rates. The recorded-outcome
+  companion to the engine's RISP-pressure model — how well a bat actually
+  cashes runners in. Qualified hitters only (min PA).
+</div>
+<div class="row g-3 mb-3">
+  {{ card('RISP-OPS',  'risp_ops',  '%.3f', true, batting, tooltip='OPS with runners in scoring position (PA-denominated).') }}
+  {{ card('RISP-AVG',  'risp_pavg', '%.3f', true, batting, tooltip='Batting average (H/PA) with runners in scoring position.') }}
+  {{ card('RISP-RBI',  'risp_rbi',  '%d',   true, batting, tooltip='RBI driven in with runners in scoring position.') }}
+  {{ card('RISP-Conv', 'risp_conv', '%.2f', true, batting, tooltip='RBI per plate appearance with RISP — the runner cash-in rate.') }}
+</div>
+
 <h4>Batting · MLB-Equivalent Rates (XO Crossover)</h4>
 <div class="text-secondary small mb-2" style="padding:0 0.25rem">
   O27 rate stats z-anchored to MLB league mean and spread, so the numbers

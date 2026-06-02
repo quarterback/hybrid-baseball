@@ -94,6 +94,24 @@ GLOSSARY_SECTIONS: list[dict] = [
         ],
     },
     {
+        "title": "Batting · Clutch (RISP)",
+        "blurb": "Performance with runners in scoring position — a runner on 2B and/or 3B at the plate appearance's start. The recorded-outcome companion to the engine's RISP-pressure model: how well a bat actually cashes runners in. PA-denominated, like the headline rates (per-AB RISP rates are unreliable in O27 because a single AB can credit multiple hits via stays).",
+        "entries": [
+            {"key": "risp_pavg", "abbr": "RISP-AVG", "name": "Batting Average with RISP",
+             "desc": "Hits per plate appearance with a runner in scoring position (H/PA)."},
+            {"key": "risp_obp", "abbr": "RISP-OBP", "name": "On-Base with RISP",
+             "desc": "(H + BB + HBP) / PA in RISP situations."},
+            {"key": "risp_slg", "abbr": "RISP-SLG", "name": "Slugging with RISP",
+             "desc": "Total bases per PA in RISP situations."},
+            {"key": "risp_ops", "abbr": "RISP-OPS", "name": "OPS with RISP",
+             "desc": "RISP-OBP + RISP-SLG — the headline clutch-hitting rate."},
+            {"key": "risp_rbi", "abbr": "RISP-RBI", "name": "RBI with RISP",
+             "desc": "RBI driven in while a runner was in scoring position. Typically the large majority of a hitter's RBI."},
+            {"key": "risp_conv", "abbr": "RISP-Conv", "name": "RISP Cash-In Rate",
+             "desc": "RBI per plate appearance with RISP — how often a RISP chance is converted into a run driven in."},
+        ],
+    },
+    {
         "title": "Fielding",
         "blurb": "PO/E credited per fielder via position-weighted attribution on each ball in play.",
         "entries": [

@@ -174,9 +174,47 @@ leaderboards (career AVG/OPS, etc.) are empty at 60 games because the 50-PA /
 45-out floors aren't met yet — expected; they fill in once a real season is
 simmed.
 
+## Follow-on: RISP (exact box columns) — shipped
+
+Built the agreed exact-RISP layer end to end. RISP = a runner on 2B and/or 3B
+at the PA's start.
+
+- **Stat object** (`o27/stats/batter.py`): added
+  `risp_pa/ab/h/2b/3b/hr/bb/hbp/rbi` to `BatterStats`.
+- **Engine credit** (`o27/render/render.py:_update_stats`): snapshot the nine
+  batting counters at the top, compute the RISP flag once from
+  `ctx["bases_list"]`, and at the end mirror the event's deltas into the
+  `risp_*` subset. Single-point and exact by construction — no need to touch
+  the ~10 scattered outcome branches, and the lone early `return` (the CS
+  branch) credits none of these counters so it loses nothing. Also threaded
+  through `_stat_delta` (per-phase deltas) and the team-line aggregation.
+- **Persistence** (`o27v2/sim.py`): extract + both `game_batter_stats` INSERT
+  sites; **schema + migration** (`o27v2/db.py`) mirroring the `stay_*`/`rad_*`
+  pattern (`ALTER TABLE … ADD COLUMN … DEFAULT 0`).
+- **Rates** (`_aggregate_batter_rows`): RISP slash line computed
+  **PA-denominated** (RISP-AVG = risp_h/risp_pa, RISP-OBP, RISP-SLG, RISP-OPS)
+  plus **RISP-Conv** = RBI per RISP PA. Crucial O27 nuance: per-AB RISP rates
+  are *unreliable* because a single AB can credit multiple hits via stays
+  (`risp_h` can exceed `risp_ab`) — so PA-denomination, matching PAVG, is the
+  right call. Available to both player and team rows since both run through the
+  shared aggregator.
+- **Display**: RISP cards on `/leaders` ("Batting · Clutch (RISP)"), RISP
+  columns on `/teams/stats`, and a glossary section (cards auto-link via
+  `has_glossary`).
+
+**Validation:** re-simmed a fresh 120-game DB; RISP captured correctly and
+invariant-clean — every `risp_X <= X`, RISP RBI ≈ 87% of all RBI (sensible:
+most RBI need a runner on 2B/3B), RISP-AVG > overall AVG (the RISP-pressure
+model lifting contact). All pages render 200 (HTML + JSON). Engine + render
+suites pass (102 tests); 10/11 stat invariants pass.
+
+**Pre-existing, not mine:** invariant 6 (`PA == AB+BB+HBP`) fails on freshly
+simmed DBs — confirmed identical on a pre-RISP DB. O27 sac bunts make PA exceed
+AB+BB+HBP and `sh` isn't a persisted `game_batter_stats` column, so the
+identity can't close. Untouched by this work; flagged for a separate pass.
+
 ## Still open
 
-- **RISP exact box columns** — the agreed next build: add
-  `risp_pa/risp_ab/risp_h/risp_rbi` to `game_batter_stats`, stamp in the engine
-  at PA resolution, migrate, then surface RISP AVG/RBI/conversion on the player
-  leaders + team stats + glossary. Needs a resim/fresh sim to populate.
+- That invariant-6 / `sh` persistence gap (pre-existing).
+- RISP on the **player card** and **stats browser** sortable table (the
+  capture + aggregation already feed them; only column/section wiring remains).

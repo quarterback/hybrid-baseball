@@ -361,6 +361,20 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     rad_1b      INTEGER DEFAULT 0,
     rad_2b      INTEGER DEFAULT 0,
     rad_3b      INTEGER DEFAULT 0,
+    -- RISP (runners in scoring position — runner on 2B and/or 3B at the PA's
+    -- start). Each is the subset of the matching counter accrued in a RISP
+    -- situation, so a full RISP slash line + RISP RBI is recoverable. The
+    -- recorded-outcome companion to the engine's RISP-pressure probability
+    -- model: "how good is this bat at cashing runners in?"
+    risp_pa     INTEGER DEFAULT 0,
+    risp_ab     INTEGER DEFAULT 0,
+    risp_h      INTEGER DEFAULT 0,
+    risp_2b     INTEGER DEFAULT 0,
+    risp_3b     INTEGER DEFAULT 0,
+    risp_hr     INTEGER DEFAULT 0,
+    risp_bb     INTEGER DEFAULT 0,
+    risp_hbp    INTEGER DEFAULT 0,
+    risp_rbi    INTEGER DEFAULT 0,
     -- Per-game fielding position. Distinct from `players.position` (the
     -- player's primary), this is the actual spot they played that day.
     -- Utility (UT) players land on a concrete slot at lineup build time;
@@ -1376,7 +1390,9 @@ def init_db() -> None:
                     "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b", "c2_op_3b", "c2_adv_3b",
                     "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
                     "adv_op_3b", "adv_adv_3b",
-                    "rad_1b", "rad_2b", "rad_3b"):
+                    "rad_1b", "rad_2b", "rad_3b",
+                    "risp_pa", "risp_ab", "risp_h", "risp_2b", "risp_3b",
+                    "risp_hr", "risp_bb", "risp_hbp", "risp_rbi"):
             try:
                 conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()
