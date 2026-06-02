@@ -2824,6 +2824,25 @@
       "surname_keys": [
         "mongolian"
       ]
+    },
+    "north_korea": {
+      "_doc": [
+        "DPRK. Second Zaryan-baseball expansion market — short border ",
+        "with Zaryanovia carries the sport across the river. Pool uses ",
+        "McCune-Reischauer-style romanization (Ri/Pak/Choe vs. South ",
+        "Korean Lee/Park/Choi) to visually distinguish from the existing ",
+        "south-flavored `korean` pool. Surnames bias hard toward Kim ",
+        "(~25% in real DPRK), reproduced by duplicate entries in the ",
+        "flat surname list."
+      ],
+      "label": "North Korea (DPRK)",
+      "country": "KP",
+      "first_keys": [
+        "korean_north"
+      ],
+      "surname_keys": [
+        "korean_north"
+      ]
     }
   },
   "presets": {
@@ -2906,7 +2925,8 @@
         "europe_western": 0.015,
         "europe_eastern": 0.02,
         "zaryanovia": 0.04,
-        "mongolia": 0.02
+        "mongolia": 0.02,
+        "north_korea": 0.015
       }
     },
     "o27_year_10": {
@@ -2944,7 +2964,8 @@
         "europe_western": 0.005,
         "europe_eastern": 0.04,
         "zaryanovia": 0.06,
-        "mongolia": 0.04
+        "mongolia": 0.04,
+        "north_korea": 0.035
       }
     },
     "global": {
@@ -2973,7 +2994,8 @@
         "british_isles": 0.03,
         "malaysia": 0.02,
         "zaryanovia": 0.03,
-        "mongolia": 0.02
+        "mongolia": 0.02,
+        "north_korea": 0.015
       }
     },
     "european": {
@@ -2997,7 +3019,8 @@
         "latin_america": 0.05,
         "malaysia": 0.05,
         "zaryanovia": 0.12,
-        "mongolia": 0.05
+        "mongolia": 0.05,
+        "north_korea": 0.04
       }
     },
     "nordic": {
@@ -3055,7 +3078,8 @@
         "southeast_asia": 0.05,
         "philippines": 0.05,
         "zaryanovia": 0.08,
-        "mongolia": 0.04
+        "mongolia": 0.04,
+        "north_korea": 0.03
       }
     },
     "far_east": {
@@ -3067,7 +3091,8 @@
         "philippines": 0.08,
         "malaysia": 0.05,
         "us": 0.05,
-        "mongolia": 0.1
+        "mongolia": 0.1,
+        "north_korea": 0.08
       }
     },
     "zaryan_mongolia": {
@@ -3077,7 +3102,19 @@
         "mongolia": 0.3,
         "east_asia": 0.1,
         "central_west_asia": 0.05,
-        "us": 0.05
+        "us": 0.05,
+        "north_korea": 0.1
+      }
+    },
+    "zaryan_expansion": {
+      "label": "Zaryan expansion frontier (Zaryanovia + Mongolia + DPRK)",
+      "weights": {
+        "zaryanovia": 0.45,
+        "mongolia": 0.22,
+        "north_korea": 0.18,
+        "east_asia": 0.08,
+        "central_west_asia": 0.04,
+        "us": 0.03
       }
     }
   }
