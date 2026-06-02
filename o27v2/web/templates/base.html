@@ -1313,6 +1313,12 @@
           </ul>
         </li>
 
+        {# CapSpace gets its own link — not a dropdown item — styled as a
+           glossy amber pill so it reads as its own product, not league chrome. #}
+        <li class="nav-item">
+          <a class="nav-link nav-capspace {% if request.path.startswith('/fantasy') %}active{% endif %}" href="/fantasy/">🚀 CapSpace</a>
+        </li>
+
       </ul>
       {% if nav_leagues %}
       {# Global league scope — sticks across pages via the league_pref cookie.
@@ -1333,6 +1339,62 @@
     </div>
   </div>
 </nav>
+
+{# ── CapSpace house banner ────────────────────────────────────────────────
+   An in-world "sponsored" promo for the /fantasy app. Glossy amber so it
+   reads as its own product (an ad) against the Swiss main app. Dismissible;
+   the choice persists in localStorage and never blocks the nav pill above. #}
+<style>
+  .topbar .nav-link.nav-capspace{
+    color:#fff !important; font-weight:800; letter-spacing:.01em;
+    background:linear-gradient(135deg,#ff9a3d,#ff6a2b);
+    border-radius:99px; padding:5px 14px !important;
+    box-shadow:0 2px 8px rgba(255,106,43,.35), inset 0 1px 0 rgba(255,255,255,.45);
+  }
+  .topbar .nav-link.nav-capspace:hover{ color:#fff !important; filter:brightness(1.06); }
+  .topbar .nav-link.nav-capspace::after{ display:none !important; }
+  .capspace-ad{ max-width:1500px; margin:14px auto 0; padding:0 16px; display:flex; }
+  .capspace-ad__link{
+    flex:1; display:flex; align-items:center; gap:14px; padding:11px 16px;
+    border-radius:14px; text-decoration:none; color:#2a1400; position:relative; overflow:hidden;
+    background:linear-gradient(135deg,#ffbe5c 0%,#ff8a2b 48%,#ff6a2b 100%);
+    box-shadow:0 6px 20px rgba(255,106,43,.26), inset 0 1px 0 rgba(255,255,255,.5);
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .capspace-ad__link::before{ content:""; position:absolute; left:0; right:0; top:0; height:50%;
+    background:linear-gradient(180deg,rgba(255,255,255,.42),rgba(255,255,255,0)); pointer-events:none; }
+  .capspace-ad__link:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(255,106,43,.34), inset 0 1px 0 rgba(255,255,255,.6); }
+  .capspace-ad__badge{ flex:0 0 auto; width:44px; height:44px; border-radius:50%; display:grid; place-items:center;
+    background:#fff; box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 2px 6px rgba(0,0,0,.16); position:relative; z-index:1; }
+  .capspace-ad__copy{ display:flex; flex-direction:column; gap:1px; min-width:0; z-index:1; }
+  .capspace-ad__kicker{ font-size:.64rem; font-weight:800; letter-spacing:.09em; text-transform:uppercase;
+    color:#7a2e00; display:flex; align-items:center; gap:6px; }
+  .capspace-ad__kicker b{ background:#2a1400; color:#ffd166; padding:1px 7px; border-radius:99px; font-size:.58rem; letter-spacing:.12em; }
+  .capspace-ad__head{ font-size:.95rem; font-weight:700; line-height:1.2; color:#2a1400;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .capspace-ad__cta{ margin-left:auto; flex:0 0 auto; z-index:1; background:#2a1400; color:#fff; font-weight:800;
+    font-size:.84rem; padding:9px 16px; border-radius:99px; white-space:nowrap; box-shadow:inset 0 1px 0 rgba(255,255,255,.18); }
+  .capspace-ad__x{ flex:0 0 auto; margin-left:8px; align-self:center; width:30px; height:30px; border-radius:50%;
+    border:none; background:rgba(0,0,0,.07); color:#7a2e00; font-size:1.15rem; line-height:1; cursor:pointer; }
+  .capspace-ad__x:hover{ background:rgba(0,0,0,.13); }
+  @media (max-width:720px){ .capspace-ad{ padding:0 10px; } .capspace-ad__head{ display:none; }
+    .capspace-ad__cta{ padding:8px 12px; font-size:.78rem; } }
+</style>
+<div class="capspace-ad" id="capspace-ad" role="complementary" aria-label="CapSpace Fantasy">
+  <a class="capspace-ad__link" href="/fantasy/">
+    <span class="capspace-ad__badge"><img src="/fantasy/_static/favicon.svg" alt="" width="34" height="34"></span>
+    <span class="capspace-ad__copy">
+      <span class="capspace-ad__kicker">Sponsored · CapSpace <b>BETA</b></span>
+      <span class="capspace-ad__head">Tonight's Daily Slate is live — draft a lineup, climb the board.</span>
+    </span>
+    <span class="capspace-ad__cta">Play CapSpace Fantasy →</span>
+  </a>
+  <button class="capspace-ad__x" type="button" aria-label="Dismiss" onclick="capspaceDismissAd()">×</button>
+</div>
+<script>
+  (function(){ try{ if(localStorage.getItem('capspace.adDismissed')==='1'){ var e=document.getElementById('capspace-ad'); if(e) e.remove(); } }catch(e){} })();
+  function capspaceDismissAd(){ try{ localStorage.setItem('capspace.adDismissed','1'); }catch(e){} var e=document.getElementById('capspace-ad'); if(e) e.remove(); }
+</script>
 
 <div class="container-fluid px-4 py-3" style="max-width:1500px;margin:0 auto">
   {% with messages = get_flashed_messages(with_categories=true) %}

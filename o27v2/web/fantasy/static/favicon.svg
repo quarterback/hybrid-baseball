@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ff9259"></stop>
+      <stop offset="52%" stop-color="#ff6a2b"></stop>
+      <stop offset="100%" stop-color="#e85614"></stop>
+    </linearGradient>
+    <radialGradient id="helmet" cx="36%" cy="28%" r="82%">
+      <stop offset="0%" stop-color="#ffffff"></stop>
+      <stop offset="68%" stop-color="#eef1f9"></stop>
+      <stop offset="100%" stop-color="#cdd5e8"></stop>
+    </radialGradient>
+    <linearGradient id="visor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#374466"></stop>
+      <stop offset="55%" stop-color="#1b2540"></stop>
+      <stop offset="100%" stop-color="#0c1322"></stop>
+    </linearGradient>
+    <radialGradient id="ant" cx="42%" cy="38%" r="65%">
+      <stop offset="0%" stop-color="#ffe7a6"></stop>
+      <stop offset="55%" stop-color="#ffb020"></stop>
+      <stop offset="100%" stop-color="#e8910c"></stop>
+    </radialGradient>
+  </defs>
+
+  
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bg)"></rect>
+  <rect x="5" y="4" width="54" height="26" rx="13" fill="#ffffff" opacity="0.30"></rect>
+
+  
+  <g transform="translate(8.5,9.5) scale(0.73)">
+    <line x1="32" y1="14" x2="32" y2="7" stroke="#c4cbde" stroke-width="2.4" stroke-linecap="round"></line>
+    <circle cx="32" cy="5.4" r="3.4" fill="url(#ant)"></circle>
+    <rect x="5" y="29" width="8" height="13" rx="3.6" fill="#e4e8f3" stroke="#c0c8db" stroke-width="1"></rect>
+    <rect x="51" y="29" width="8" height="13" rx="3.6" fill="#e4e8f3" stroke="#c0c8db" stroke-width="1"></rect>
+    <circle cx="32" cy="35" r="21.5" fill="url(#helmet)" stroke="#c0c8db" stroke-width="1"></circle>
+    <rect x="15.5" y="24" width="33" height="22.5" rx="11.25" fill="url(#visor)" stroke="#0a1120" stroke-width="1"></rect>
+    <ellipse cx="26" cy="30" rx="10" ry="5.2" fill="#ffffff" opacity="0.16" transform="rotate(-18 26 30)"></ellipse>
+    <circle cx="26.5" cy="35.6" r="3.1" fill="#c2e2ff"></circle>
+    <circle cx="37.5" cy="35.6" r="3.1" fill="#c2e2ff"></circle>
+    <circle cx="25.6" cy="34.6" r="1.1" fill="#ffffff"></circle>
+    <circle cx="36.6" cy="34.6" r="1.1" fill="#ffffff"></circle>
+    <path d="M27 41 Q32 44.6 37 41" fill="none" stroke="#c2e2ff" stroke-width="2" stroke-linecap="round"></path>
+    <ellipse cx="24.5" cy="20" rx="11" ry="5" fill="#ffffff" opacity="0.55"></ellipse>
+  </g>
+</svg>
