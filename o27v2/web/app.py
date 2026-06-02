@@ -6059,6 +6059,20 @@ def _savant_batter_rows(team_ids, min_bip: int) -> list[dict]:
             "woba":      xw.get("woba"),
             "xwoba":     xw.get("xwoba"),
         })
+    # Attach current name / team for display (leaderboards, panels).
+    if rows:
+        ids = ",".join(str(r["player_id"]) for r in rows)
+        names = {
+            n["id"]: n for n in db.fetchall(
+                f"""SELECT p.id, p.name, t.abbrev AS team_abbrev
+                    FROM players p LEFT JOIN teams t ON t.id = p.team_id
+                    WHERE p.id IN ({ids})""")
+        }
+        for r in rows:
+            meta = names.get(r["player_id"], {})
+            r["player_name"] = meta.get("name", f"#{r['player_id']}")
+            r["team_abbrev"] = meta.get("team_abbrev") or ""
+
     for key, _label, _fmt, rev in _SAVANT_BATTER_METRICS:
         _percentile_ranks(rows, key, reverse=rev)
     return rows
@@ -6121,6 +6135,50 @@ def player_savant(player_id: int):
         min_bip=min_bip,
         woba=(me or {}).get("woba"),
         xwoba=(me or {}).get("xwoba"),
+        n_qualified=len(rows),
+        leagues=leagues, selected_league=selected_league,
+    )
+
+
+@app.route("/leaderboard/statcast")
+def statcast_leaderboard():
+    """Statcast-style batted-ball leaderboards (Barrel%, Hard-Hit%, EV, ...),
+    sortable by any tracked metric."""
+    leagues         = _independent_leagues()
+    selected_league = _selected_league(leagues)
+    team_ids        = _league_team_ids(selected_league)
+    _team_csv       = ",".join(str(i) for i in team_ids) if team_ids else ""
+    _gp_where       = f" AND home_team_id IN ({_team_csv})" if _team_csv else ""
+    games_played = db.fetchone(
+        f"SELECT COUNT(*) AS n FROM games WHERE played = 1{_gp_where}")["n"] or 0
+    min_bip = max(15, games_played // 30)
+
+    rows = _savant_batter_rows(team_ids, min_bip)
+
+    # Columns = the same metric set as the slider page.
+    valid_keys = {k: rev for k, _l, _f, rev in _SAVANT_BATTER_METRICS}
+    sort_key = (request.args.get("sort") or "xwoba").lower()
+    if sort_key not in valid_keys:
+        sort_key = "xwoba"
+    reverse = valid_keys[sort_key]   # True → lower is better → ascending
+    ranked = [r for r in rows if r.get(sort_key) is not None]
+    ranked.sort(key=lambda r: r[sort_key], reverse=not reverse)
+
+    columns = [
+        {"key": k, "label": label, "fmt": fmt}
+        for k, label, fmt, _rev in _SAVANT_BATTER_METRICS
+    ]
+    # Pre-format display values so the template stays dumb.
+    for r in ranked:
+        r["_display"] = {k: _savant_format(r.get(k), fmt)
+                         for k, _l, fmt, _rev in _SAVANT_BATTER_METRICS}
+
+    return _serve(
+        "statcast_leaderboard.html",
+        rows=ranked,
+        columns=columns,
+        sort_key=sort_key,
+        min_bip=min_bip,
         n_qualified=len(rows),
         leagues=leagues, selected_league=selected_league,
     )

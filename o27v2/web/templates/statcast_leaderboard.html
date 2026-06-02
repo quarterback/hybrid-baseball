@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Statcast Leaderboard{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Statcast Leaderboard</h2>
+    <div class="text-secondary small">
+      Batted-ball metrics · {{ n_qualified }} qualified batters
+      (≥ {{ min_bip }} balls in play) · click a column to sort
+    </div>
+  </div>
+  <a class="btn btn-sm btn-outline-secondary"
+     href="{{ url_for('statcast_leaderboard', sort=sort_key, format='json') }}">JSON</a>
+</div>
+
+{% if not rows %}
+  <div class="alert alert-secondary">No qualified batters yet — sim some games.</div>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-sm table-hover align-middle">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Player</th>
+        <th>Team</th>
+        <th class="text-end">BIP</th>
+        {% for c in columns %}
+          <th class="text-end {{ 'fw-bold' if c.key == sort_key else '' }}">
+            <a class="link-body-emphasis text-decoration-none"
+               href="{{ url_for('statcast_leaderboard', sort=c.key) }}">
+              {{ c.label }}{% if c.key == sort_key %} ↓{% endif %}
+            </a>
+          </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="text-secondary">{{ loop.index }}</td>
+        <td><a href="{{ url_for('player_savant', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
+        <td class="text-secondary">{{ r.team_abbrev }}</td>
+        <td class="text-end text-secondary">{{ r.bip }}</td>
+        {% for c in columns %}
+          <td class="text-end {{ 'fw-bold' if c.key == sort_key else '' }}"
+              style="font-variant-numeric: tabular-nums">
+            {{ r._display[c.key] }}
+          </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="text-secondary small mt-2">
+  Hard-Hit / Barrel / Sweet-Spot cuts are calibrated to O27's exit-velocity
+  distribution. Click a player for their percentile page.
+</div>
+{% endif %}
+
+{% endblock %}
