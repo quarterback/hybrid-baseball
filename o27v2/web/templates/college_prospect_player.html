@@ -14,6 +14,12 @@
     width:26px; height:26px; border-radius:50%; color:#fff; font-size:.72rem; font-weight:700;
     display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 2px rgba(0,0,0,.15);
     font-variant-numeric:tabular-nums; }
+  /* Phones: shrink the fixed label/value columns so the slider track keeps
+     usable width on a ~340px row instead of being starved to a sliver. */
+  @media (max-width: 575px) {
+    .o27i-row { grid-template-columns: 92px 1fr 52px; gap: 8px; }
+    .o27i-label { font-size: .76rem; }
+  }
 </style>
 
 <div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">

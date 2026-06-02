@@ -35,6 +35,12 @@
     box-shadow: 0 0 0 2px rgba(0,0,0,.15);
     font-variant-numeric: tabular-nums;
   }
+  /* Phones: the 160px label + 88px value columns swallow a 340px-wide row and
+     starve the slider track. Shrink both so the track keeps usable width. */
+  @media (max-width: 575px) {
+    .o27i-row { grid-template-columns: 92px 1fr 52px; gap: 8px; }
+    .o27i-label { font-size: .76rem; }
+  }
 </style>
 
 {% macro slider_group(title, sliders, n_qual, note) %}

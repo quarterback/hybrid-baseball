@@ -7,7 +7,7 @@
       Scorecard — {{ game.away_name }} {{ game.away_score }},
       {{ game.home_name }} {{ game.home_score }}
     </h1>
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2">
       <a class="btn btn-sm btn-outline-secondary"
          href="{{ url_for('game_detail', game_id=game.id) }}">&larr; Box Score</a>
       <a class="btn btn-sm btn-outline-secondary"

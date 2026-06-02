@@ -1019,13 +1019,25 @@
       .panel-body .num.fw-bold[style*="font-size:1.4rem"] { font-size: 1.05rem !important; }
     }
 
-    /* Filter bars — let inputs go full-width on phones */
+    /* Filter bars — on phones, stack each control full-width so every select
+       is tappable and the inline desktop widths (style="width:200px" etc.)
+       never leave a cramped half-row or push the bar past the viewport. */
     @media (max-width: 575px) {
       .filter-bar { gap: 6px !important; padding: 6px 8px; }
-      .filter-bar > div, .filter-bar .form-control, .filter-bar .form-select { min-width: 0; }
+      .filter-bar > div { flex: 1 1 100%; min-width: 0; }
+      .filter-bar .form-control, .filter-bar .form-select { min-width: 0; }
       .filter-bar input[type=text], .filter-bar input[type=number], .filter-bar select {
         max-width: 100%;
+        width: 100% !important;   /* beat inline width:NNNpx so each filter fills its row */
       }
+    }
+
+    /* App-wide safety net: any select / input that pins an inline desktop
+       width still can't exceed the phone viewport. Caps the upper bound only
+       (small number spinners keep their natural size), so a stray fixed-width
+       control in a non-wrapping row can't blow the page out sideways. */
+    @media (max-width: 575px) {
+      .form-select, .form-control { max-width: 100% !important; }
     }
 
     /* Compare basket — smaller, lower on phones, doesn't cover content */
