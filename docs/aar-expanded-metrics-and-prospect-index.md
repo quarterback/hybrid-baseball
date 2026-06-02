@@ -43,6 +43,16 @@ ranks higher). Hitters and pitchers, sortable, linking to each prospect's
 college page. Top hitter scored 98.4 (OPS 1.013, 97th-pct power); top pitcher
 99.4 (28% K).
 
+**Per-player drill-downs (follow-up commit):**
+- **Advanced card on the O27i player page** (`/player/<id>/o27i`) — WPA +
+  leverage, fielding OAA/runs, BsR/XBT%, and Second-Chance run value for the
+  single player. Computed by calling the expanded builders with `min=1` (they
+  build league context regardless of threshold, so this just guarantees the
+  player appears). Hitters show offensive WPA, pitchers run-prevention WPA.
+- **Per-prospect slider page** (`/college/prospects/<id>`) — the O27i red→blue
+  percentile sliders applied to the college tier, with a Prospect Score badge
+  and league rank. The PS bubble on the board links to it.
+
 ## Honest limitations (flagged in-page and here)
 
 - **WP is approximate** — pooled across both halves (no persisted bat-first
@@ -63,11 +73,14 @@ if we ever persist fielder_id / bat-first / pitch-level events.
   league 0.43 R/2C; xBA leaders ~.61–.67 in O27's high-offense env).
 - `/o27i/advanced` renders all 7 sections; `/college/prospects` renders both
   hitter and pitcher boards (seeded a college season to test).
+- Advanced card renders on hitter and pitcher O27i pages (pitcher verified at
+  −2.02 WPA / 1.03 LI); per-prospect slider page renders for hitters and
+  pitchers and 404s on bad IDs.
 - Nav links added; engine suite still **90 green** (analytics/web-only).
 
 ## Follow-ups
 
-- Per-player advanced card on the O27i page (WPA/OAA/2C-RV) — left off to keep
-  the player page cheap (each builder scans pa_log).
-- A per-prospect percentile slider page (reusing the O27i slider UI).
 - If we ever persist `fielder_id` + a bat-first flag, OAA and WP become exact.
+- The advanced builders re-scan pa_log per player-page load (consistent with
+  the existing percentile scans, but a shared per-request cache would help if
+  the page gets hot).
