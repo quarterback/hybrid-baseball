@@ -452,4 +452,119 @@ function SluggersScreen({ onNav }) {
   );
 }
 
-Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen });
+/* ---------- PILOTS (pitching game) ---------- */
+function PilotsScreen({ onNav }) {
+  const [data, setData] = useState(null);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  function load() {
+    fetch('/fantasy/api/pilots').then(r => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null));
+  }
+  useEffect(load, []);
+
+  function act(path, p) {
+    if (busy) return;
+    setBusy(true);
+    fetch('/fantasy/api/pilots/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_id: p.id }) })
+      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) window.alert(j.error || 'Could not do that.'); load(); })
+      .catch(() => setBusy(false));
+  }
+
+  const d = data;
+  const ys = d && d.your_slate;
+  const picks = ys ? ys.picks : [];
+  const pool = d ? (d.pool || []) : [];
+  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const slotsLeft = d ? (d.max - (d.picked || 0)) : 0;
+
+  return (
+    <>
+      <TopBar title="Pilots" sub="Work the mound" back onBack={() => onNav('hub')} />
+      <div className="app__scroll">
+        <div className="page page--narrow">
+          {!d ? (
+            <div className="card card--pad center" style={{ padding: '48px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>Loading…</div></div>
+          ) : (
+            <>
+              <div className="hero" style={{ background: 'linear-gradient(135deg, var(--c-blue), var(--c-teal))' }}>
+                <div className="hero__in">
+                  <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Season pilot points</div>
+                  <div style={{ fontSize: '3.2rem', fontWeight: 900, lineHeight: 1 }}>{d.season}</div>
+                  <p style={{ marginTop: 6 }}>K <b>×3</b> · Out <b>×1</b> · ER <b>−2</b> · Quality Start <b>+6</b> · Quality Finish <b>+6</b>.</p>
+                </div>
+              </div>
+
+              <div className="section-head mt-24"><h2>Tonight's pilots</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
+              {picks.length > 0 && (
+                <div className="card mb-12" style={{ overflow: 'hidden' }}>
+                  {picks.map((p, i) => (
+                    <div key={i} className="prow">
+                      <div className="prow__id">
+                        <span className="contest__badge" style={{ background: 'var(--c-blue)' }}>{(p.team || '?').slice(0, 2)}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="prow__name">{p.name}</div>
+                          <div className="prow__sub"><span style={{ fontWeight: 700 }}>{p.team}</span> · {p.pts == null ? 'in progress' : `${p.pts} pts`}</div>
+                        </div>
+                      </div>
+                      {ys && ys.settled ? <div className="lb-pts" style={{ fontWeight: 800 }}>{p.pts}</div>
+                        : <button className="add-btn" disabled={busy} title="Drop" onClick={() => act('remove', p)} style={{ background: 'var(--down)' }}>−</button>}
+                    </div>
+                  ))}
+                  {ys && (ys.fieldAvg != null) && (
+                    <div className="lb-row" style={{ borderTop: '1px solid var(--line)' }}>
+                      <div className="lb-user dim" style={{ fontWeight: 600 }}>Your {ys.score} · field avg {ys.fieldAvg} · ceiling {ys.ceiling}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!d.slate_date ? (
+                <div className="card card--pad center" style={{ padding: '32px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>No upcoming slate. Sim forward to keep pitching.</div></div>
+              ) : slotsLeft > 0 ? (
+                <>
+                  <div className="muted mb-12" style={{ fontSize: '.85rem', fontWeight: 600 }}>{slotsLeft} slot{slotsLeft > 1 ? 's' : ''} left · sorted by projection</div>
+                  <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search pilots…" value={q} onChange={e => setQ(e.target.value)} /></div>
+                  <div className="card" style={{ overflow: 'hidden' }}>
+                    {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No pilots on the upcoming slate.</div>}
+                    {shown.map(p => (
+                      <div key={p.id} className="prow">
+                        <div className="prow__id">
+                          <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
+                          <div style={{ minWidth: 0 }}>
+                            <div className="prow__name">{p.name}</div>
+                            <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp} · <span title="projection">proj {p.proj}</span></div>
+                          </div>
+                        </div>
+                        <button className="add-btn" disabled={busy} title="Add pilot" onClick={() => act('pick', p)}>+</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="card card--pad center" style={{ padding: '20px' }}><div className="dim" style={{ fontWeight: 600 }}>Staff full — {d.max} pilots locked for tonight.</div></div>
+              )}
+
+              {d.history && d.history.length > 0 && (
+                <>
+                  <div className="section-head mt-24"><h2>Past slates</h2></div>
+                  <div className="card" style={{ overflow: 'hidden' }}>
+                    {d.history.map((h, i) => (
+                      <div key={i} className="lb-row">
+                        <div className="lb-rank">{(h.slate_date || '').slice(5)}</div>
+                        <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{h.score} pts</b> <span className="dim">vs field {h.fieldAvg != null ? h.fieldAvg : '—'}</span></div>
+                        <div className="lb-pts" style={{ color: (h.fieldAvg != null && h.score >= h.fieldAvg) ? 'var(--live)' : 'var(--ink-3)', fontWeight: 800 }}>{h.fieldAvg != null && h.score >= h.fieldAvg ? 'beat' : ''}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen });

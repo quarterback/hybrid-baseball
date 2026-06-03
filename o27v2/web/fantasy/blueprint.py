@@ -22,6 +22,7 @@ from . import data as slate_data
 from . import contests as dfs
 from . import streak as streakgame
 from . import sluggers as sluggergame
+from . import pitching as pilotgame
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LOG = logging.getLogger(__name__)
@@ -161,4 +162,36 @@ def api_sluggers_remove():
     if pid is None:
         return jsonify({"ok": False, "error": "No player chosen."}), 400
     res = sluggergame.remove(pid)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+# ---- Pilots (pitching game) ---------------------------------------------
+
+@capspace_bp.route("/api/pilots")
+def api_pilots():
+    try:
+        return jsonify(pilotgame.status())
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace pilots status failed")
+        return jsonify({"slate_date": None, "season": 0, "max": pilotgame.MAX_PICKS,
+                        "picked": 0, "your_slate": None, "pool": [], "history": []})
+
+
+@capspace_bp.route("/api/pilots/pick", methods=["POST"])
+def api_pilots_pick():
+    body = request.get_json(silent=True) or {}
+    pid = body.get("player_id")
+    if pid is None:
+        return jsonify({"ok": False, "error": "No player chosen."}), 400
+    res = pilotgame.pick(pid)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+@capspace_bp.route("/api/pilots/remove", methods=["POST"])
+def api_pilots_remove():
+    body = request.get_json(silent=True) or {}
+    pid = body.get("player_id")
+    if pid is None:
+        return jsonify({"ok": False, "error": "No player chosen."}), 400
+    res = pilotgame.remove(pid)
     return jsonify(res), (200 if res.get("ok") else 400)
