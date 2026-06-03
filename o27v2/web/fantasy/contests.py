@@ -51,12 +51,101 @@ def ensure_schema() -> None:
             contest_id  INTEGER NOT NULL REFERENCES dfs_contests(id),
             slate_date  TEXT NOT NULL,
             player_ids  TEXT NOT NULL,
-            created_at  TEXT NOT NULL
+            created_at  TEXT NOT NULL,
+            fee_paid    INTEGER NOT NULL DEFAULT 0,
+            settled     INTEGER NOT NULL DEFAULT 0,
+            payout      INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_dfs_entries_contest ON dfs_entries(contest_id);
+        CREATE TABLE IF NOT EXISTS cap_wallet (
+            id      INTEGER PRIMARY KEY CHECK (id = 1),
+            balance INTEGER NOT NULL
+        );
         """
     )
     conn.commit()
+    # Migrate older entry tables that predate the wallet economy.
+    for col in ("fee_paid", "settled", "payout"):
+        try:
+            conn.execute(f"ALTER TABLE dfs_entries ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Wallet — a real, per-save play-money balance (guilders). DFS entry fees are
+# debited here; contest winnings are credited once a contest's slate is final.
+# ---------------------------------------------------------------------------
+
+START_BALANCE = 50_00_000  # ƒ50 lakh (~$50,000) play-money, seeded per save
+
+
+def _balance_raw() -> int:
+    r = db.fetchone("SELECT balance FROM cap_wallet WHERE id = 1")
+    if r is None:
+        conn = db.get_conn()
+        conn.execute("INSERT OR IGNORE INTO cap_wallet (id, balance) VALUES (1, ?)", (START_BALANCE,))
+        conn.commit()
+        return START_BALANCE
+    return r["balance"]
+
+
+def _set_balance(v: int) -> None:
+    conn = db.get_conn()
+    conn.execute("INSERT INTO cap_wallet (id, balance) VALUES (1, ?) "
+                 "ON CONFLICT(id) DO UPDATE SET balance = excluded.balance", (max(0, int(v)),))
+    conn.commit()
+
+
+def wallet_balance() -> int:
+    """This save's play-money wallet, after crediting any newly-final winnings."""
+    ensure_schema()
+    _balance_raw()        # ensure initialized
+    _settle_entries()     # credit winnings from contests that just went final
+    return _balance_raw()
+
+
+def _entry_rank(pts: float, sample: list, field_total: int) -> int:
+    better = sum(1 for s in sample if s >= pts)
+    frac = better / max(1, len(sample))
+    return max(1, min(field_total, int(round(frac * field_total)) or 1))
+
+
+def _settle_entries() -> None:
+    """Credit each user entry its payout once its contest's slate is final."""
+    rows = db.fetchall("SELECT * FROM dfs_entries WHERE settled = 0")
+    if not rows:
+        return
+    conn = db.get_conn()
+    ctx_by_slate: dict = {}
+    contests: dict = {}
+    samples: dict = {}
+    credited = 0
+    for e in rows:
+        sd = e["slate_date"]
+        ctx = ctx_by_slate.get(sd)
+        if ctx is None:
+            ctx = ctx_by_slate[sd] = _LiveContext(sd)
+        if ctx.total == 0 or ctx.played < ctx.total:
+            continue  # contest not final yet
+        cid = e["contest_id"]
+        contest = contests.get(cid)
+        if contest is None:
+            contest = contests[cid] = db.fetchone("SELECT * FROM dfs_contests WHERE id = ?", (cid,))
+        if not contest:
+            continue
+        sample = samples.get(cid)
+        if sample is None:
+            sample = samples[cid] = _field_sample(contest, ctx)
+        pts = ctx.score_lineup(json.loads(e["player_ids"]))
+        field_total = int(contest["field_size"]) + 1
+        payout = _payout(contest, _entry_rank(pts, sample, field_total), field_total)
+        conn.execute("UPDATE dfs_entries SET settled = 1, payout = ? WHERE id = ?", (payout, e["id"]))
+        credited += payout
+    conn.commit()
+    if credited:
+        _set_balance(_balance_raw() + credited)
 
 
 # ---------------------------------------------------------------------------
@@ -326,15 +415,35 @@ def enter(contest_id: int, player_ids: list) -> dict:
         return {"ok": False, "error": "A picked player isn't on this slate."}
     if sum(c["salary"] for c in chosen) > CAP:
         return {"ok": False, "error": "Lineup is over the salary cap."}
+    fee = int(contest["fee"] or 0)
+    if fee > 0 and _balance_raw() < fee:
+        return {"ok": False, "error": "Not enough in your wallet for the entry fee."}
     conn = db.get_conn()
     cur = conn.execute(
-        "INSERT INTO dfs_entries (contest_id, slate_date, player_ids, created_at) "
-        "VALUES (?,?,?,?)",
+        "INSERT INTO dfs_entries (contest_id, slate_date, player_ids, created_at, fee_paid) "
+        "VALUES (?,?,?,?,?)",
         (contest_id, contest["slate_date"], json.dumps(ids),
-         _dt.datetime.utcnow().isoformat(timespec="seconds")),
+         _dt.datetime.utcnow().isoformat(timespec="seconds"), fee),
     )
     conn.commit()
-    return {"ok": True, "entry_id": cur.lastrowid, "contest_id": contest_id}
+    if fee > 0:
+        _set_balance(_balance_raw() - fee)
+    return {"ok": True, "entry_id": cur.lastrowid, "contest_id": contest_id,
+            "balance": _balance_raw()}
+
+
+def _field_sample(contest: dict, ctx: "_LiveContext") -> list:
+    """The deterministic synthetic field's sorted scores for a contest."""
+    rng = random.Random(contest["seed"])
+    scores = []
+    n_field = min(int(contest["field_size"]), 250)
+    for _ in range(n_field):
+        skill = rng.uniform(0.6, 3.0)  # spread of manager quality
+        lu = _legal_random_lineup(ctx.pool, rng, skill, CAP)
+        if lu:
+            scores.append(ctx.score_lineup(lu))
+    scores.sort(reverse=True)
+    return scores
 
 
 def contest_results(contest_id: int, board_size: int = 12) -> dict | None:
@@ -351,15 +460,7 @@ def contest_results(contest_id: int, board_size: int = 12) -> dict | None:
     played, total = ctx.played, ctx.total
 
     # --- the field (deterministic per contest) ---
-    rng = random.Random(contest["seed"])
-    field_scores = []
-    n_field = min(int(contest["field_size"]), 250)  # cap the synthetic set we score
-    for _ in range(n_field):
-        skill = rng.uniform(0.6, 3.0)  # spread of manager quality
-        lu = _legal_random_lineup(pool, rng, skill, CAP)
-        if lu:
-            field_scores.append(ctx.score_lineup(lu))
-    field_scores.sort(reverse=True)
+    field_scores = _field_sample(contest, ctx)
 
     # --- the user's entries ---
     user_entries = db.fetchall(
