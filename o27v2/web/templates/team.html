@@ -315,7 +315,7 @@
       <td class="text-secondary small">{{ g.game_date }}</td>
       <td>{% if is_home %}vs{% else %}@{% endif %} <a href="{{ url_for('team_detail', team_id=opp_id) }}" class="team-abbrev">{{ opp_abbrev }}</a></td>
       <td class="num fw-bold">{{ our_score }}–{{ their_score }}</td>
-      <td>{% if won %}<span class="strk-w">W</span>{% else %}<span class="strk-l">L</span>{% endif %}{% if g.super_inning %}<span class="si-badge ms-1">SI</span>{% endif %}</td>
+      <td>{% if won %}<span class="strk-w">W</span>{% else %}<span class="strk-l">L</span>{% endif %}{% if g.super_inning %}<span class="si-badge ms-1" title="Super innings — {{ g.super_inning }} extra round{{ '' if g.super_inning == 1 else 's' }}">SI{% if g.super_inning > 1 %}/{{ g.super_inning }}{% endif %}</span>{% endif %}</td>
       <td class="text-secondary small">{{ g | first_pitch }}</td>
       <td><a href="{{ url_for('game_detail', game_id=g.id) }}" class="small">Box</a></td>
     </tr>
