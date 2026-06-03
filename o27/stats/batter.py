@@ -22,11 +22,34 @@ class BatterStats:
     k: int = 0
     hbp: int = 0
     sh: int = 0            # Sacrifice bunts (successful — advances a runner, not an AB)
+    # Expanded bunting (multi-type). bunt_att counts every bunt PA; bunt_hits
+    # are bunt singles (a subset of hits); sqz / sqz_rbi track squeeze plays
+    # and the runs they drove home from third.
+    bunt_att: int = 0
+    bunt_hits: int = 0
+    sqz: int = 0
+    sqz_rbi: int = 0
     sty: int = 0           # Stays (internal only — not displayed in UI)
     outs_recorded: int = 0  # OR — times this batter was retired
     stay_rbi: int = 0
     stay_hits: int = 0      # Hits credited on a 2C event (subset of `hits`)
     multi_hit_abs: int = 0  # At-bats with 2+ credited hits
+
+    # RISP (runners in scoring position — a runner on 2B and/or 3B at the
+    # start of the PA). Each is the subset of the matching counter that was
+    # accrued in a RISP situation, so a full RISP slash line (AVG/OBP/SLG/OPS)
+    # plus RISP RBI can be computed downstream with the usual O27 formulas.
+    # Unlike the engine's RISP-pressure probability model, these are recorded
+    # outcomes — the "how good is this bat at cashing in RISP" stat.
+    risp_pa: int = 0
+    risp_ab: int = 0
+    risp_h: int = 0
+    risp_2b: int = 0
+    risp_3b: int = 0
+    risp_hr: int = 0
+    risp_bb: int = 0
+    risp_hbp: int = 0
+    risp_rbi: int = 0
 
     # 2C moved-runner stats (Apollo-style "did this 2C swing actually
     # move runners?"). Per-base opportunities and successes — a runner

@@ -138,6 +138,11 @@ class Player:
     contact:  float = 0.5   # batter: lower whiff rate, more fouls/in-play
     power:    float = 0.5   # batter: shifts contact toward hard, boosts HR weight
     eye:      float = 0.5   # batter: more balls taken, fewer called strikes
+    # batter: bunting technique / bat control. Drives whether the manager
+    # asks for a bunt and whether it's executed cleanly (good bunt down vs
+    # popup / lead runner thrown out). Distinct from raw foot speed, so a
+    # slow contact specialist can still be an elite bunter. 0.5 = neutral.
+    bunt:     float = 0.5
     command:  float = 0.5   # pitcher: lower P(ball)
     movement: float = 0.5   # pitcher: bias contact toward weak/ground_out
 

@@ -172,6 +172,10 @@ CREATE TABLE IF NOT EXISTS players (
     contact   INTEGER DEFAULT 50,
     power     INTEGER DEFAULT 50,
     eye       INTEGER DEFAULT 50,
+    -- Bunting technique / bat control (0-100). Distinct from foot speed, so a
+    -- slow contact hitter can still be an elite bunter. Drives the manager's
+    -- bunt calls and execution. Seeded ~0.6*contact + 0.4*speed by default.
+    bunt      INTEGER DEFAULT 50,
     command   INTEGER DEFAULT 50,
     movement  INTEGER DEFAULT 50,
     bats      TEXT DEFAULT 'R',
@@ -333,6 +337,14 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     cs         INTEGER DEFAULT 0,   -- caught stealing (subset of outs_recorded)
     fo         INTEGER DEFAULT 0,   -- foul-outs (3-foul rule; subset of outs_recorded)
     multi_hit_abs INTEGER DEFAULT 0,
+    -- Bunting (multi-type). sh = successful sacrifice bunts (PA, not AB);
+    -- bunt_att = every bunt PA; bunt_hits = bunt singles (subset of hits);
+    -- sqz / sqz_rbi = squeeze plays and the runs they drove in from third.
+    sh         INTEGER DEFAULT 0,
+    bunt_att   INTEGER DEFAULT 0,
+    bunt_hits  INTEGER DEFAULT 0,
+    sqz        INTEGER DEFAULT 0,
+    sqz_rbi    INTEGER DEFAULT 0,
     stay_rbi   INTEGER DEFAULT 0,
     stay_hits  INTEGER DEFAULT 0,   -- hits credited on a 2C event (subset of hits)
     -- 2C moved-runner stats (Apollo-style): per-base opportunities and
@@ -361,6 +373,20 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     rad_1b      INTEGER DEFAULT 0,
     rad_2b      INTEGER DEFAULT 0,
     rad_3b      INTEGER DEFAULT 0,
+    -- RISP (runners in scoring position — runner on 2B and/or 3B at the PA's
+    -- start). Each is the subset of the matching counter accrued in a RISP
+    -- situation, so a full RISP slash line + RISP RBI is recoverable. The
+    -- recorded-outcome companion to the engine's RISP-pressure probability
+    -- model: "how good is this bat at cashing runners in?"
+    risp_pa     INTEGER DEFAULT 0,
+    risp_ab     INTEGER DEFAULT 0,
+    risp_h      INTEGER DEFAULT 0,
+    risp_2b     INTEGER DEFAULT 0,
+    risp_3b     INTEGER DEFAULT 0,
+    risp_hr     INTEGER DEFAULT 0,
+    risp_bb     INTEGER DEFAULT 0,
+    risp_hbp    INTEGER DEFAULT 0,
+    risp_rbi    INTEGER DEFAULT 0,
     -- Per-game fielding position. Distinct from `players.position` (the
     -- player's primary), this is the actual spot they played that day.
     -- Utility (UT) players land on a concrete slot at lineup build time;
@@ -1278,6 +1304,22 @@ def init_db() -> None:
         except Exception:
             pass
 
+        # Bunt rating (bat control). New column → seed existing rosters from
+        # contact + speed so legacy players bunt sensibly. The UPDATE runs only
+        # when the ALTER just succeeded (a fresh add); on re-runs the ALTER
+        # raises and we skip, preserving any hand-set values.
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN bunt INTEGER DEFAULT 50")
+            conn.commit()
+            conn.execute(
+                "UPDATE players SET bunt = CAST(ROUND("
+                "0.6 * COALESCE(contact, 50) + 0.4 * COALESCE(speed, 50)"
+                ") AS INTEGER)"
+            )
+            conn.commit()
+        except Exception:
+            pass
+
         # Defensive-shift layer: per-batter spray rating + per-manager
         # shift-aggression tendency. Defaults of 0.5 keep legacy rosters
         # shift-immune (neutral spray = never shifted; neutral manager
@@ -1372,11 +1414,15 @@ def init_db() -> None:
 
         # Counting-stat columns persisted post-realism (Stage 1 of stats expansion).
         # Defaults of 0 leave pre-existing rows neutral; new games populate fully.
-        for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits",
+        for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs",
+                    "sh", "bunt_att", "bunt_hits", "sqz", "sqz_rbi",
+                    "stay_rbi", "stay_hits",
                     "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b", "c2_op_3b", "c2_adv_3b",
                     "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
                     "adv_op_3b", "adv_adv_3b",
-                    "rad_1b", "rad_2b", "rad_3b"):
+                    "rad_1b", "rad_2b", "rad_3b",
+                    "risp_pa", "risp_ab", "risp_h", "risp_2b", "risp_3b",
+                    "risp_hr", "risp_bb", "risp_hbp", "risp_rbi"):
             try:
                 conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()

@@ -1822,101 +1822,144 @@ def phase_transition_swap(state: GameState, swaps: list[dict]) -> list[str]:
     return log
 
 
+def _pitcher_bunt_difficulty(state: GameState) -> float:
+    """How hard the current pitcher makes a clean bunt: 0 (easy) .. ~0.5
+    (elite stuff + command). Feeds every bunt outcome roll."""
+    p = state.get_current_pitcher()
+    if p is None:
+        return 0.0
+    stuff   = float(getattr(p, "pitcher_skill", 0.5) or 0.5)
+    command = float(getattr(p, "command", 0.5) or 0.5)
+    return max(0.0, (0.5 * stuff + 0.5 * command) - 0.5)
+
+
+def _roll_bunt_safe(rng, speed: float, bunt: float) -> float:
+    """Shared beat-it-out / bunt-single probability from speed + bat control."""
+    return max(0.0, cfg.SAC_BUNT_HIT_BASE
+               + (speed - 0.5) * cfg.SAC_BUNT_HIT_SPEED_SCALE
+               + (bunt - 0.5) * 0.20)
+
+
+def _roll_sacrifice(rng, speed, bunt, pdiff, single_runner) -> dict:
+    hit_p  = _roll_bunt_safe(rng, speed, bunt)
+    lead_p = (max(0.0, cfg.SAC_LEAD_OUT_BASE - (bunt - 0.5) * cfg.BUNT_SKILL_EXEC_SCALE)
+              + pdiff * cfg.BUNT_PITCHER_DIFFICULTY_SCALE) if single_runner else 0.0
+    fail_p = max(0.0, cfg.SAC_BUNT_FAIL_RATE + pdiff * 0.10)
+    r = rng.random()
+    if r < hit_p:
+        out = "hit"
+    elif r < hit_p + lead_p:
+        out = "lead_out"
+    elif r < hit_p + lead_p + fail_p:
+        out = "fail"
+    else:
+        out = "sacrifice"
+    return {"type": "sac_bunt", "bunt_type": "sac", "outcome": out}
+
+
+def _roll_drag(rng, speed, bunt, pdiff) -> dict:
+    hit_p = max(0.0, cfg.DRAG_BUNT_HIT_BASE
+                + (speed - 0.5) * 0.40 + (bunt - 0.5) * 0.30
+                - pdiff * cfg.BUNT_PITCHER_DIFFICULTY_SCALE)
+    out = "hit" if rng.random() < hit_p else "out_productive"
+    return {"type": "sac_bunt", "bunt_type": "drag", "outcome": out}
+
+
+def _roll_squeeze(rng, speed, bunt, pdiff) -> dict:
+    suicide = rng.random() < cfg.SQUEEZE_SUICIDE_SHARE
+    btype = "suicide" if suicide else "safety"
+    if suicide:
+        miss_p = max(0.02, cfg.SUICIDE_MISS_BASE
+                     - (bunt - 0.5) * cfg.BUNT_SKILL_EXEC_SCALE
+                     + pdiff * cfg.BUNT_PITCHER_DIFFICULTY_SCALE)
+        if rng.random() < miss_p:
+            return {"type": "sac_bunt", "bunt_type": btype, "outcome": "squeeze_miss"}
+        out = ("squeeze_score_hit" if rng.random() < _roll_bunt_safe(rng, speed, bunt)
+               else "squeeze_score")
+        return {"type": "sac_bunt", "bunt_type": btype, "outcome": out}
+    # Safety squeeze — runner only goes on a bunt down well enough.
+    score_p = max(0.0, min(0.97, cfg.SAFETY_SQUEEZE_SCORE_BASE
+                  + (bunt - 0.5) * cfg.BUNT_SKILL_EXEC_SCALE
+                  - pdiff * cfg.BUNT_PITCHER_DIFFICULTY_SCALE))
+    if rng.random() < score_p:
+        out = ("squeeze_score_hit" if rng.random() < _roll_bunt_safe(rng, speed, bunt)
+               else "squeeze_score")
+    else:
+        out = "squeeze_hold"
+    return {"type": "sac_bunt", "bunt_type": btype, "outcome": out}
+
+
 def should_bunt(state: GameState, rng=None) -> Optional[dict]:
-    """Manager-driven sacrifice bunt decision.
+    """Manager-driven bunt decision across four types.
 
-    Returns a synthetic event dict {"type": "sac_bunt", "outcome": ...}
-    when the manager calls a bunt, otherwise None. The outcome is rolled
-    here (rather than during a normal at-bat) so the engine can apply it
-    directly without re-running the contact pipeline.
+    Returns a synthetic event dict
+    ``{"type": "sac_bunt", "bunt_type": ..., "outcome": ...}`` when the
+    manager calls a bunt, else None. The outcome is rolled here so the engine
+    applies it directly without re-running the contact pipeline. Type is
+    chosen by base state, then gated by outs / score / manager persona /
+    batter power, and executed against bunt skill, speed, and the pitcher's
+    difficulty:
 
-    Conditions for considering a bunt:
-      - regulation half (no super-innings)
-      - runner on 1B (or 1B + 2B); 2B-only is rare and skipped here
-      - early-to-middle of the half (outs < 18 — too few outs left
-        in the last third to spend one for a base)
-      - batter is not a power threat
-      - manager call rate scales with mgr_run_game and inversely with
-        mgr_leverage_aware (modern analytics skippers don't bunt)
+      * Squeeze (runner on 3B) — suicide or safety. Highest priority.
+      * Sacrifice (runner on 1B, optionally + 2B) — trade an out to advance.
+      * Bunt-for-hit / drag (fast, low-power bat; great vs the infield shift).
     """
+    if rng is None:
+        import random as _r
+        rng = _r.Random()
     batter = state.current_batter
+    if getattr(batter, "is_pitcher", False):
+        return None
     bases = state.bases
-
-    # Bunt-against-shift path. When the defense calls an infield shift
-    # against a fast batter, a push the other way is an easy hit —
-    # NO 1B runner required. Different conditions from the canonical
-    # sac-bunt path below.
-    if (getattr(state, "current_ab_shift_type", "none") == "infield"
-            and state.outs < 24
-            and not getattr(batter, "is_pitcher", False)):
-        speed = float(getattr(batter, "speed", 0.5) or 0.5)
-        if speed > 0.55 and rng is not None:
-            shift_bunt_p = cfg.BUNT_AGAINST_SHIFT_BASE_PROB * (speed - 0.5) * 2.0
-            shift_bunt_p = max(0.0, min(0.30, shift_bunt_p))
-            if rng.random() < shift_bunt_p:
-                # Cheap hit — batter pushes the bunt into the vacated side.
-                # Bypasses the standard fail/sacrifice rolls; the open
-                # infield is the whole point.
-                return {"type": "sac_bunt", "outcome": "hit"}
-
-    # Need at least a 1B runner (the canonical bunt setup).
-    if bases[0] is None:
-        return None
-    if state.outs >= 18:
-        return None
-
-    if batter.is_pitcher:
-        return None
+    on1, on2, on3 = bases[0] is not None, bases[1] is not None, bases[2] is not None
+    speed = float(getattr(batter, "speed", 0.5) or 0.5)
     power = float(getattr(batter, "power", 0.5) or 0.5)
-    if power > 0.55:
-        return None  # don't bunt with a power threat
+    bunt  = float(getattr(batter, "bunt", 0.5) or 0.5)
+    team  = state.batting_team
+    run_game = float(getattr(team, "mgr_run_game", 0.5))
+    leverage = float(getattr(team, "mgr_leverage_aware", 0.5))
+    pdiff = _pitcher_bunt_difficulty(state)
 
-    team = state.batting_team
-    run_game  = float(getattr(team, "mgr_run_game", 0.5))
-    leverage  = float(getattr(team, "mgr_leverage_aware", 0.5))
-
-    bunt_p = (
-        cfg.SAC_BUNT_BASE_PROB
-        * (run_game * cfg.SAC_BUNT_RUNGAME_SCALE / 0.5 if run_game > 0 else 0)
-        * (1.0 + (1.0 - leverage) * cfg.SAC_BUNT_LEVERAGE_DAMPER)
-    )
-    # Score-margin tilt: more likely down 1-2 in the last third of the
-    # batter's at-bat-cycle; less likely when leading by 4+.
     v = state.score.get("visitors", 0)
     h = state.score.get("home", 0)
     bat_score, fld_score = (v, h) if state.half in ("top", "super_top") else (h, v)
-    margin = fld_score - bat_score
-    if margin == 1 or margin == 2:
-        bunt_p *= 1.5
-    elif margin <= -3:
-        bunt_p *= 0.3
+    margin = fld_score - bat_score          # +ve = batting team trails
+    lev_mult = 1.0 + (1.0 - leverage) * cfg.SAC_BUNT_LEVERAGE_DAMPER
 
-    bunt_p = max(0.0, min(0.20, bunt_p))
-    if rng is None:
-        import random as _r
-        roll = _r.random()
-    else:
-        roll = rng.random()
-    if roll >= bunt_p:
-        return None
+    # --- Squeeze: runner on 3B, outs to spare, not a slugger ---------------
+    if on3 and state.outs < 24 and power <= 0.62:
+        sq_p = cfg.SQUEEZE_BASE_PROB * (run_game * 2.0) * lev_mult
+        if -1 <= margin <= 1:
+            sq_p *= 1.4                      # tied / one-run game, manufacture it
+        elif margin <= -3:
+            sq_p *= 0.4
+        if rng.random() < max(0.0, min(0.30, sq_p)):
+            return _roll_squeeze(rng, speed, bunt, pdiff)
 
-    # Roll the bunt outcome. Three buckets:
-    #   bunt-for-hit  — batter safe at 1B, runners advance 1
-    #   sacrifice     — batter out at 1B, runners advance 1 (the canonical play)
-    #   failed bunt   — popup or force at lead, no advance, batter out
-    speed = float(getattr(batter, "speed", 0.5) or 0.5)
-    hit_p = max(0.0, cfg.SAC_BUNT_HIT_BASE
-                + (speed - 0.5) * cfg.SAC_BUNT_HIT_SPEED_SCALE)
-    fail_p = cfg.SAC_BUNT_FAIL_RATE
-    r = (rng or __import__("random")).random()
-    if r < hit_p:
-        kind = "hit"
-    elif r < hit_p + fail_p:
-        kind = "fail"
-    else:
-        kind = "sacrifice"
+    # --- Sacrifice: force runner on 1B (maybe +2B), weak hitter -------------
+    if on1 and state.outs < 18 and power <= 0.55:
+        bunt_p = (cfg.SAC_BUNT_BASE_PROB
+                  * (run_game * cfg.SAC_BUNT_RUNGAME_SCALE / 0.5 if run_game > 0 else 0)
+                  * lev_mult)
+        if margin == 1 or margin == 2:
+            bunt_p *= 1.5
+        elif margin <= -3:
+            bunt_p *= 0.3
+        if rng.random() < max(0.0, min(0.20, bunt_p)):
+            return _roll_sacrifice(rng, speed, bunt, pdiff,
+                                   single_runner=(on1 and not on2 and not on3))
 
-    return {"type": "sac_bunt", "outcome": kind}
+    # --- Bunt-for-hit / drag: fast, low power, bases empty or just 1B -------
+    shift = getattr(state, "current_ab_shift_type", "none") == "infield"
+    if (speed > cfg.DRAG_BUNT_SPEED_GATE and power <= 0.50
+            and not on2 and not on3 and state.outs < 24):
+        drag_p = cfg.DRAG_BUNT_BASE_PROB * (speed - 0.5) * 2.0 * (1.0 + run_game)
+        if shift:
+            drag_p += cfg.BUNT_AGAINST_SHIFT_BASE_PROB * (speed - 0.5) * 2.0
+        if rng.random() < max(0.0, min(0.30, drag_p)):
+            return _roll_drag(rng, speed, bunt, pdiff)
+
+    return None
 
 
 # ===========================================================================

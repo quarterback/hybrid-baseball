@@ -460,6 +460,11 @@ class Renderer:
                 t.ibb          += r.ibb
                 t.k            += r.k
                 t.hbp          += r.hbp
+                t.sh           += r.sh
+                t.bunt_att     += r.bunt_att
+                t.bunt_hits    += r.bunt_hits
+                t.sqz          += r.sqz
+                t.sqz_rbi      += r.sqz_rbi
                 t.sty          += r.sty
                 t.stay_rbi     += r.stay_rbi
                 t.stay_hits    += r.stay_hits
@@ -473,6 +478,15 @@ class Renderer:
                 t.rad_1b       += r.rad_1b
                 t.rad_2b       += r.rad_2b
                 t.rad_3b       += r.rad_3b
+                t.risp_pa      += r.risp_pa
+                t.risp_ab      += r.risp_ab
+                t.risp_h       += r.risp_h
+                t.risp_2b      += r.risp_2b
+                t.risp_3b      += r.risp_3b
+                t.risp_hr      += r.risp_hr
+                t.risp_bb      += r.risp_bb
+                t.risp_hbp     += r.risp_hbp
+                t.risp_rbi     += r.risp_rbi
             return t
 
         # Build per-pitcher aggregates from spell_log (includes H/BB/K/HBP).
@@ -1498,6 +1512,19 @@ class Renderer:
         # pickoffs, runner thrown out on a ground out / stay, etc.).
         _or_before = s.outs_recorded
 
+        # RISP capture: a runner in scoring position (2B and/or 3B) at the
+        # start of this event. Snapshot the batting counters so any deltas
+        # this event accrues can be mirrored into the risp_* subset at the
+        # end (exact by construction, regardless of which outcome branch
+        # fires). The lone early `return` below (the CS branch) credits none
+        # of these counters, so missing the tail there loses nothing.
+        _risp_bases = ctx.get("bases_list") or [None, None, None]
+        _risp = (_risp_bases[1] is not None) or (_risp_bases[2] is not None)
+        _risp_snap = (
+            (s.pa, s.ab, s.hits, s.doubles, s.triples, s.hr, s.bb, s.hbp, s.rbi)
+            if _risp else None
+        )
+
         # O27 multi-hit AB: at-bats (not walks/HBP) with 2+ credited hits.
         # Credited hits = stay hits accumulated prior to this event (ab_hits_before)
         # PLUS the terminal running hit, if this event is a run-chosen safety hit.
@@ -1595,19 +1622,34 @@ class Renderer:
             # reconciliation tail below (engine bumped state.outs), and any
             # runs are credited by the tail's _credit_runs — same as every
             # other PA event. We only record the batting line here.
+            # Expanded bunting (sac / drag / suicide / safety squeeze). The
+            # outcome token is self-describing across types — see
+            # manager._roll_* and pa.py's sac_bunt resolver.
             outcome = event.get("outcome", "sacrifice")
             s.pa += 1
-            if outcome == "hit":
+            s.bunt_att += 1
+            if outcome in ("hit", "squeeze_score_hit"):
+                # Bunt single (incl. a squeeze that also beat it out).
                 s.ab += 1
                 s.hits += 1
+                s.bunt_hits += 1
                 s.rbi += runs_scored
                 _check_multi_hit(terminal_hit=True)
-            elif outcome == "fail":
-                s.ab += 1
-                _check_multi_hit()
-            else:  # sacrifice
+            elif outcome in ("sacrifice", "squeeze_score"):
+                # Successful sac / squeeze — a PA, not an AB; SH + RBI.
                 s.sh += 1
                 s.rbi += runs_scored
+            else:
+                # fail / lead_out / out_productive / squeeze_miss / squeeze_hold
+                # — the batter is charged an AB; the out (his, or a runner's on
+                # a forced play) is reconciled to engine outs by the tail below.
+                s.ab += 1
+                _check_multi_hit()
+            # Squeeze accounting (subset; runs_scored is the squeeze run).
+            if outcome in ("squeeze_score", "squeeze_score_hit",
+                           "squeeze_miss", "squeeze_hold"):
+                s.sqz += 1
+                s.sqz_rbi += runs_scored
 
         elif etype == "ball_in_play":
             choice = disp.get("choice", "run")
@@ -1898,6 +1940,18 @@ class Renderer:
         if runs_scored > 0:
             self._credit_runs(ctx, state_after, runs_scored, etype, disp)
 
+        # RISP: mirror this event's batting deltas into the risp_* subset.
+        if _risp_snap is not None:
+            s.risp_pa  += s.pa      - _risp_snap[0]
+            s.risp_ab  += s.ab      - _risp_snap[1]
+            s.risp_h   += s.hits    - _risp_snap[2]
+            s.risp_2b  += s.doubles - _risp_snap[3]
+            s.risp_3b  += s.triples - _risp_snap[4]
+            s.risp_hr  += s.hr      - _risp_snap[5]
+            s.risp_bb  += s.bb      - _risp_snap[6]
+            s.risp_hbp += s.hbp     - _risp_snap[7]
+            s.risp_rbi += s.rbi     - _risp_snap[8]
+
     def _credit_runs(self, ctx: dict, state_after, runs_scored: int,
                      etype: str, disp: dict) -> None:
         """Credit the 'R' stat to the players who scored AND emit one
@@ -2043,6 +2097,7 @@ class Renderer:
         prev_get = (lambda f: getattr(prev_s, f)) if prev_s else (lambda f: 0)
         for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
+                  "sh", "bunt_att", "bunt_hits", "sqz", "sqz_rbi",
                   "stay_rbi", "stay_hits", "multi_hit_abs",
                   "sb", "cs", "fo", "roe",
                   "po", "a", "e",
@@ -2051,7 +2106,9 @@ class Renderer:
                   "c2_op_3b", "c2_adv_3b",
                   "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
                   "adv_op_3b", "adv_adv_3b",
-                  "rad_1b", "rad_2b", "rad_3b"):
+                  "rad_1b", "rad_2b", "rad_3b",
+                  "risp_pa", "risp_ab", "risp_h", "risp_2b", "risp_3b",
+                  "risp_hr", "risp_bb", "risp_hbp", "risp_rbi"):
             setattr(d, f, getattr(end_s, f) - prev_get(f))
         return d
 

@@ -366,6 +366,60 @@
     </div>
   </div>
 
+  {# Clutch — performance with runners in scoring position (2B/3B at the PA's
+     start). PA-denominated like the headline rates. RISP-Conv = RBI per RISP
+     plate appearance, the runner cash-in rate. #}
+  <div class="dense mb-3">
+    <div class="panel-title">Clutch · RISP</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num" title="RISP plate appearances">RISP PA</th>
+        <th class="num" title="Batting average (H/PA) with runners in scoring position">RISP-AVG</th>
+        <th class="num" title="On-base percentage with RISP">RISP-OBP</th>
+        <th class="num" title="Slugging with RISP">RISP-SLG</th>
+        <th class="num" title="OPS with RISP">RISP-OPS</th>
+        <th class="num" title="RBI driven in with RISP">RISP-RBI</th>
+        <th class="num" title="RBI per RISP plate appearance — the cash-in rate">RISP-Conv</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num">{{ bt_totals.risp_pa or 0 }}</td>
+        <td class="num fw-bold">{{ '%.3f'|format(bt_totals.risp_pavg or 0) }}</td>
+        <td class="num">{{ '%.3f'|format(bt_totals.risp_obp or 0) }}</td>
+        <td class="num">{{ '%.3f'|format(bt_totals.risp_slg or 0) }}</td>
+        <td class="num fw-bold">{{ '%.3f'|format(bt_totals.risp_ops or 0) }}</td>
+        <td class="num">{{ bt_totals.risp_rbi or 0 }}</td>
+        <td class="num">{{ '%.2f'|format(bt_totals.risp_conv or 0) }}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
+  {# Small Ball — bunting production across all four play types. SH = successful
+     sacrifices; Bunt H = bunt singles (subset of hits); Sqz / Sqz RBI = squeeze
+     plays and the runs they drove in from third. #}
+  <div class="dense mb-3">
+    <div class="panel-title">Small Ball · Bunting</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num" title="Sacrifice bunts (a PA, not an AB)">SH</th>
+        <th class="num" title="Total bunt plate appearances (all types)">Bunts</th>
+        <th class="num" title="Bunt singles (drag / sac beaten out / squeeze legged out)">Bunt H</th>
+        <th class="num" title="Squeeze attempts (suicide or safety)">Sqz</th>
+        <th class="num" title="Runs driven home from third on a squeeze">Sqz RBI</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num fw-bold">{{ bt_totals.sh or 0 }}</td>
+        <td class="num">{{ bt_totals.bunt_att or 0 }}</td>
+        <td class="num">{{ bt_totals.bunt_hits or 0 }}</td>
+        <td class="num">{{ bt_totals.sqz or 0 }}</td>
+        <td class="num">{{ bt_totals.sqz_rbi or 0 }}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+
   {# Per-base runner advancement. Columns labelled by the runner's
      STARTING BASE (1B/2B/3B refers to where the runner was at PA start,
      not the hit type). RAD = Runners Advanced — graded total bases
