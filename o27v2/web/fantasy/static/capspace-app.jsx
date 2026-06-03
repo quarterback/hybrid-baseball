@@ -67,7 +67,7 @@ function App() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contest_id: cid, player_ids: ids }),
     }).then(r => r.json()).then(j => {
-      if (j && j.ok) { setLiveContestId(cid); nav('live'); }
+      if (j && j.ok) { if (j.balance != null) S.WALLET = j.balance; setLiveContestId(cid); nav('live'); }
       else { window.alert((j && j.error) || 'Could not enter this lineup.'); }
     }).catch(() => { setLiveContestId(cid); nav('live'); });
   }

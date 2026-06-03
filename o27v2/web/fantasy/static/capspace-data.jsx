@@ -61,7 +61,9 @@
     return _guilderShort(g);
   }
 
-  const WALLET = 3.42 * CRORE; // player's guilder balance
+  // Play-money wallet — the real per-save balance from the backend; the mock
+  // figure is only used when running the bundled demo (no save injected).
+  const WALLET = (DATA && DATA.WALLET != null) ? DATA.WALLET : 50 * LAKH;
 
   const TEAMS = (DATA && DATA.TEAMS) || {
     TID: { name: 'Tidewater Mariners',  color: 'var(--c-teal)' },

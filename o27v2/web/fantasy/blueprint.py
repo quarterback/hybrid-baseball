@@ -65,6 +65,10 @@ def _safe_slate() -> dict | None:
                 blob["CONTESTS"] = _contest_cards(blob["SLATE_DATE"])
             except Exception:
                 _LOG.exception("CapSpace contest build failed; using mock contests")
+            try:
+                blob["WALLET"] = dfs.wallet_balance()
+            except Exception:
+                _LOG.exception("CapSpace wallet read failed")
         return blob
     except Exception:  # pragma: no cover - defensive; never 500 the app
         _LOG.exception("CapSpace slate build failed; falling back to mock data")
@@ -112,6 +116,16 @@ def api_contest(contest_id: int):
 def api_entries():
     """The user's entries with live rank/points."""
     return jsonify(dfs.list_user_entries())
+
+
+@capspace_bp.route("/api/wallet")
+def api_wallet():
+    """The save's live play-money wallet balance (guilders)."""
+    try:
+        return jsonify({"balance": dfs.wallet_balance()})
+    except Exception:  # pragma: no cover
+        _LOG.exception("CapSpace wallet failed")
+        return jsonify({"balance": 0})
 
 
 @capspace_bp.route("/api/player/<int:player_id>")
