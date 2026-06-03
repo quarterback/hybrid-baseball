@@ -60,6 +60,14 @@ from o27v2.web.fantasy import capspace_bp
 app.register_blueprint(capspace_bp)
 
 
+# Canonical W/L attribution lives in box_score (pure, no app dependency) so
+# the box-score label and the season W-L record beside it can't disagree.
+from o27v2.web.box_score import (  # noqa: E402
+    credit_win as _credit_win, charge_loss as _charge_loss,
+    decide_pitchers as _decide_pitchers, SP_OUTS_THRESHOLD as _BOX_SP_OUTS,
+)
+
+
 # Presentation filters live in o27v2.web.formatters (pure value formatters,
 # no app dependency). Import and register them on the Jinja environment.
 from o27v2.web.formatters import (  # noqa: E402
@@ -579,7 +587,9 @@ _PSTATS_DEDUP_SQL = """(
 )"""
 
 
-_SP_OUTS_THRESHOLD = 12  # MLB-style: 5 IP minimum scaled to O27 = 12 outs
+# MLB-style 5-IP starter-win minimum, scaled to O27's 27-out half = 12 outs.
+# Single definition lives in box_score (the attribution helpers use it).
+_SP_OUTS_THRESHOLD = _BOX_SP_OUTS
 
 # Defensive position-value factors (approx. runs / 162 games range).
 # A player with elite defense at SS saves ~12 runs vs neutral over a full
@@ -958,17 +968,20 @@ def _pitcher_wl_map(through_game: dict | None = None) -> dict[int, dict[str, int
         where += " AND (g.game_date < ? OR (g.game_date = ? AND g.id <= ?))"
         params = (through_game["game_date"], through_game["game_date"],
                   through_game["id"])
+    # Aggregate per pitcher across phases so a starter who also threw a
+    # super-inning is judged on his whole line — and so the decision matches
+    # _game_decision_pids exactly (both group the same way).
     rows = db.fetchall(
         f"""SELECT ps.game_id, ps.team_id, ps.player_id,
-                  ps.outs_recorded AS outs,
-                  ps.runs_allowed  AS runs,
-                  ps.er            AS er,
-                  ps.rowid         AS rowid,
+                  SUM(ps.outs_recorded) AS outs,
+                  SUM(ps.er)            AS er,
+                  MIN(ps.rowid)         AS rowid,
                   g.winner_id
              FROM game_pitcher_stats ps
              JOIN games g ON g.id = ps.game_id
             {where}
-            ORDER BY ps.game_id, ps.team_id, ps.rowid""",
+            GROUP BY ps.game_id, ps.team_id, ps.player_id
+            ORDER BY ps.game_id, ps.team_id, MIN(ps.rowid)""",
         params,
     )
 
@@ -988,35 +1001,46 @@ def _pitcher_wl_map(through_game: dict | None = None) -> dict[int, dict[str, int
         if winner_id is None:
             continue   # tied / unfinished game (shouldn't happen post-SI)
 
-        is_winner = winner_id == team_id
-        if is_winner:
-            sp = pitchers[0]
-            credited = None
-            if (sp["outs"] or 0) >= _SP_OUTS_THRESHOLD:
-                credited = sp["player_id"]
-            else:
-                # Most effective reliever: max(outs - ER), tiebreak on outs.
-                relievers = pitchers[1:] or pitchers   # fall back to SP if solo
-                relievers = sorted(
-                    relievers,
-                    key=lambda p: ((p["outs"] or 0) - (p["er"] or 0),
-                                   p["outs"] or 0),
-                    reverse=True,
-                )
-                credited = relievers[0]["player_id"]
+        # Rows arrive in rowid (appearance) order, so the shared attribution
+        # helpers can use list order for the starter and tiebreaks.
+        if winner_id == team_id:
+            credited = _credit_win(pitchers)
             if credited is not None:
-                rec = out.setdefault(credited, {"w": 0, "l": 0})
-                rec["w"] += 1
+                out.setdefault(credited, {"w": 0, "l": 0})["w"] += 1
         else:
-            # L: pitcher with most ER. Tiebreak: earliest appearance.
-            losers = sorted(
-                pitchers,
-                key=lambda p: (-(p["er"] or 0), p["rowid"]),
-            )
-            charged = losers[0]["player_id"]
-            rec = out.setdefault(charged, {"w": 0, "l": 0})
-            rec["l"] += 1
+            charged = _charge_loss(pitchers)
+            if charged is not None:
+                out.setdefault(charged, {"w": 0, "l": 0})["l"] += 1
     return out
+
+
+def _game_decision_pids(game: dict) -> tuple[int | None, int | None]:
+    """(w_pid, l_pid) for one final, read from game_pitcher_stats with the
+    same canonical attribution as the season W-L map — so a box score's W/L
+    label is always the pitcher whose season record it prints, never a
+    'lost-but-still-4-0' mismatch. Aggregates phase rows per pitcher so a
+    starter who also threw a super-inning is judged on his whole line."""
+    winner_id = game.get("winner_id")
+    if winner_id is None:
+        return None, None
+    rows = db.fetchall(
+        """SELECT ps.team_id, ps.player_id,
+                  SUM(ps.outs_recorded) AS outs, SUM(ps.er) AS er,
+                  MIN(ps.rowid) AS rowid
+             FROM game_pitcher_stats ps
+            WHERE ps.game_id = ?
+            GROUP BY ps.team_id, ps.player_id
+            ORDER BY ps.team_id, MIN(ps.rowid)""",
+        (game["id"],),
+    )
+    by_team: dict[int, list[dict]] = {}
+    for r in rows:
+        by_team.setdefault(r["team_id"], []).append(r)
+    loser_id = (game["away_team_id"]
+                if winner_id == game["home_team_id"] else game["home_team_id"])
+    w_pid = _credit_win(by_team.get(winner_id, []))
+    l_pid = _charge_loss(by_team.get(loser_id, []))
+    return w_pid, l_pid
 
 
 # Counting stats that get a season-to-date parenthetical in the box-score
@@ -1075,13 +1099,13 @@ def _attach_decisions(games: list[dict]) -> None:
     ph = ",".join("?" * len(ids))
     rows = db.fetchall(
         f"""SELECT ps.game_id, ps.team_id, ps.player_id,
-                   ps.outs_recorded AS outs, ps.runs_allowed AS runs,
-                   ps.er AS er, ps.rowid AS rowid,
-                   p.name AS player_name
+                   SUM(ps.outs_recorded) AS outs, SUM(ps.er) AS er,
+                   MIN(ps.rowid) AS rowid, p.name AS player_name
               FROM game_pitcher_stats ps
               JOIN players p ON ps.player_id = p.id
              WHERE ps.game_id IN ({ph})
-             ORDER BY ps.game_id, ps.team_id, ps.rowid""",
+             GROUP BY ps.game_id, ps.team_id, ps.player_id
+             ORDER BY ps.game_id, ps.team_id, MIN(ps.rowid)""",
         tuple(ids),
     )
     by_team_game: dict[tuple[int, int], list[dict]] = {}
@@ -1100,27 +1124,10 @@ def _attach_decisions(games: list[dict]) -> None:
         if winner_id is None:
             continue
         loser_id = g["away_team_id"] if winner_id == g["home_team_id"] else g["home_team_id"]
-        win_pitchers = by_team_game.get((g["id"], winner_id), [])
-        lose_pitchers = by_team_game.get((g["id"], loser_id), [])
-        # W: SP if 12+ outs else most-effective reliever.
-        w_pid = None
-        if win_pitchers:
-            sp = win_pitchers[0]
-            if (sp["outs"] or 0) >= _SP_OUTS_THRESHOLD:
-                w_pid = sp["player_id"]
-            else:
-                relievers = win_pitchers[1:] or win_pitchers
-                relievers = sorted(
-                    relievers,
-                    key=lambda p: ((p["outs"] or 0) - (p["er"] or 0), p["outs"] or 0),
-                    reverse=True,
-                )
-                w_pid = relievers[0]["player_id"]
-        # L: pitcher with most ER.
-        l_pid = None
-        if lose_pitchers:
-            losers = sorted(lose_pitchers, key=lambda p: (-(p["er"] or 0), p["rowid"]))
-            l_pid = losers[0]["player_id"]
+        # Rows are in rowid (appearance) order; share the one attribution
+        # path so each label matches the season record looked up below.
+        w_pid = _credit_win(by_team_game.get((g["id"], winner_id), []))
+        l_pid = _charge_loss(by_team_game.get((g["id"], loser_id), []))
         if w_pid:
             wl = season_wl.get(w_pid, {"w": 0, "l": 0})
             g["w_pitcher"] = {"name": _last(name_by_id.get(w_pid, "")),
@@ -1153,6 +1160,50 @@ def _attach_hits(games: list[dict]) -> None:
         team_hits = by_game.get(g["id"], {})
         g["home_hits"] = team_hits.get(g["home_team_id"]) if g.get("played") else None
         g["away_hits"] = team_hits.get(g["away_team_id"]) if g.get("played") else None
+
+
+def _attach_team_records(games: list[dict], as_of_date: str | None) -> None:
+    """Attach `away_record` / `home_record` ('W-L') to each game so a card can
+    carry each club's standing, the way a real scoreboard does. A final shows
+    the record *through* its date (standings after the game); an unplayed game
+    shows the record the teams bring in (through the prior day). `as_of_date`
+    is the day the card list is anchored on — every game in the list shares it
+    on the scores/schedule pages, so one query covers both cutoffs."""
+    if not games or not as_of_date:
+        return
+    team_ids = sorted({g["home_team_id"] for g in games}
+                      | {g["away_team_id"] for g in games})
+    if not team_ids:
+        return
+    ph = ",".join("?" * len(team_ids))
+    rows = db.fetchall(
+        f"""SELECT t.id AS team_id,
+                   SUM(CASE WHEN g.winner_id = t.id THEN 1 ELSE 0 END) AS w_incl,
+                   SUM(CASE WHEN g.winner_id IS NOT NULL AND g.winner_id <> t.id
+                            THEN 1 ELSE 0 END) AS l_incl,
+                   SUM(CASE WHEN g.game_date < ? AND g.winner_id = t.id
+                            THEN 1 ELSE 0 END) AS w_pre,
+                   SUM(CASE WHEN g.game_date < ? AND g.winner_id IS NOT NULL
+                            AND g.winner_id <> t.id THEN 1 ELSE 0 END) AS l_pre
+              FROM teams t
+              JOIN games g ON (g.home_team_id = t.id OR g.away_team_id = t.id)
+             WHERE g.played = 1 AND g.game_date <= ? AND t.id IN ({ph})
+             GROUP BY t.id""",
+        (as_of_date, as_of_date, as_of_date, *team_ids),
+    )
+    incl: dict[int, tuple[int, int]] = {}
+    pre: dict[int, tuple[int, int]] = {}
+    for r in rows:
+        incl[r["team_id"]] = (r["w_incl"] or 0, r["l_incl"] or 0)
+        pre[r["team_id"]] = (r["w_pre"] or 0, r["l_pre"] or 0)
+
+    def _rec(tid: int, played) -> str:
+        w, l = (incl if played else pre).get(tid, (0, 0))
+        return f"{w}-{l}"
+
+    for g in games:
+        g["away_record"] = _rec(g["away_team_id"], g.get("played"))
+        g["home_record"] = _rec(g["home_team_id"], g.get("played"))
 
 
 def _qualifying_thresholds(games_played: int) -> tuple[int, int]:
@@ -2715,6 +2766,7 @@ def index():
         )
         _attach_hits(today_games)
         _attach_decisions(today_games)
+        _attach_team_records(today_games, today)
     # Prev / next days that have any scheduled games — for the date strip
     # arrows. We hop by date, not by single days, so a day with no games
     # doesn't render as a dead-end.
@@ -2755,6 +2807,7 @@ def index():
         )
         _attach_hits(yesterday_games)
         _attach_decisions(yesterday_games)
+        _attach_team_records(yesterday_games, yesterday)
 
     divs = _divisions()
 
@@ -3080,6 +3133,12 @@ def schedule():
                 g["away_sp"] = proj.get(g["away_team_id"])
                 g["home_sp"] = proj.get(g["home_team_id"])
                 g["sp_projected"] = True
+
+        # Finals carry the b-ref-style W/L decision with each pitcher's season
+        # record (the SP matchup is only shown pre-game now). Both sides also
+        # carry each club's standing for the card record line.
+        _attach_decisions(games)
+        _attach_team_records(games, view_date)
 
     # Day strip (ESPN/NHL model): a rolling 7-day window centered on the
     # selected day — view_date-3 … view_date+3, each cell carrying its game
@@ -3536,28 +3595,16 @@ def game_detail(game_id: int):
     from .box_score import render_box_score as _render_box_score
     game_for_box = dict(game)
     game_for_box["weather_label"] = weather_label
-    # Decisions map: pitcher_id → "W" / "L". Per-game decision, not season
-    # totals: the `w`/`l` fields decorated by _aggregate_pitcher_rows hold
-    # career W/L counts, so reading those tags nearly every pitcher.
-    # Heuristic: W = last pitcher on the winning side who recorded an out;
-    # L = pitcher on the losing side with the most runs allowed.
+    # Decisions map: pitcher_id → "W" / "L". Uses the same canonical
+    # attribution as the season W-L map (_season_wl above), so the labeled
+    # pitcher is exactly the one whose record includes this game — a loser
+    # never reads "(L, 4-0)".
     _decisions: dict[int, str] = {}
-    _winner_id = game.get("winner_id")
-    if _winner_id is not None:
-        if _winner_id == game.get("away_team_id"):
-            _win_rows, _lose_rows = away_pitching_consolidated, home_pitching_consolidated
-        elif _winner_id == game.get("home_team_id"):
-            _win_rows, _lose_rows = home_pitching_consolidated, away_pitching_consolidated
-        else:
-            _win_rows, _lose_rows = [], []
-        for r in reversed(_win_rows):
-            if (r.get("outs_recorded") or 0) > 0:
-                _decisions[r["player_id"]] = "W"
-                break
-        if _lose_rows:
-            _worst = max(_lose_rows, key=lambda r: (r.get("runs_allowed") or 0))
-            if (_worst.get("runs_allowed") or 0) > 0:
-                _decisions[_worst["player_id"]] = "L"
+    _w_pid, _l_pid = _game_decision_pids(game)
+    if _w_pid is not None:
+        _decisions[_w_pid] = "W"
+    if _l_pid is not None:
+        _decisions[_l_pid] = "L"
     # AP-newspaper convention: "HR-Trout (1), off Hernandez". Build a
     # {batter_player_id_str → [pitcher last names]} map from pa_log.
     hr_off_map: dict[str, list[str]] = {}
@@ -10250,10 +10297,11 @@ def youth_game_view(game_id: int):
     if winner_id is not None:
         win_pitchers  = away_pitching if winner_id == away_id else home_pitching
         lose_pitchers = home_pitching if winner_id == away_id else away_pitching
-        if win_pitchers:
-            decisions[win_pitchers[0]["player_id"]] = "W"
-        if lose_pitchers:
-            decisions[lose_pitchers[0]["player_id"]] = "L"
+        _w, _l = _decide_pitchers(win_pitchers, lose_pitchers)
+        if _w is not None:
+            decisions[_w] = "W"
+        if _l is not None:
+            decisions[_l] = "L"
     box_score_text = _render_box_score(
         game=g,
         phases=[0],
@@ -10352,10 +10400,11 @@ def pro_worldcup_game_view(game_id: int):
     if winner_id is not None:
         win_pitchers  = away_pitching if winner_id == away_id else home_pitching
         lose_pitchers = home_pitching if winner_id == away_id else away_pitching
-        if win_pitchers:
-            decisions[win_pitchers[0]["player_id"]] = "W"
-        if lose_pitchers:
-            decisions[lose_pitchers[0]["player_id"]] = "L"
+        _w, _l = _decide_pitchers(win_pitchers, lose_pitchers)
+        if _w is not None:
+            decisions[_w] = "W"
+        if _l is not None:
+            decisions[_l] = "L"
     box_score_text = _render_box_score(
         game=g,
         phases=[0],

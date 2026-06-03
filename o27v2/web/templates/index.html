@@ -19,6 +19,7 @@
               {% if g.played and g.winner_id == g.away_team_id %}font-weight:700{% endif %}">
       <span class="team-abbrev">{{ g.away_abbrev }}</span>
       <span class="text-secondary small ms-1">{{ g.away_name }}</span>
+      {% if g.away_record %}<span class="text-secondary" style="font-size:.7rem; margin-left:.2rem">{{ g.away_record }}</span>{% endif %}
     </a>
     <span class="num"
           style="{% if g.played and g.winner_id == g.away_team_id %}font-weight:700{% endif %}">
@@ -32,6 +33,7 @@
               {% if g.played and g.winner_id == g.home_team_id %}font-weight:700{% endif %}">
       <span class="team-abbrev">{{ g.home_abbrev }}</span>
       <span class="text-secondary small ms-1">{{ g.home_name }}</span>
+      {% if g.home_record %}<span class="text-secondary" style="font-size:.7rem; margin-left:.2rem">{{ g.home_record }}</span>{% endif %}
     </a>
     <span class="num"
           style="{% if g.played and g.winner_id == g.home_team_id %}font-weight:700{% endif %}">

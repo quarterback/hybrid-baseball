@@ -350,13 +350,10 @@ _PIT_HEADER = (
 def _pick_decisions(away_rows: list[dict], home_rows: list[dict],
                     winner_id: int | None,
                     away_team_id: int, home_team_id: int) -> tuple:
-    """Return (winner_pid, loser_pid). Heuristic-only — no data-model change.
-
-    W: last pitcher (by row order, which approximates appearance order) on
-       the winning side who actually recorded an out.
-    L: pitcher on the losing side with the most runs allowed. Ties broken
-       by appearance order (earliest wins → starter takes the L by default).
-    """
+    """Return (winner_pid, loser_pid) via the shared attribution in
+    box_score.decide_pitchers — the one place W/L is decided, so a printed
+    decision always agrees with the season record beside it (no stale
+    '(L, 4-0)')."""
     if winner_id is None:
         return None, None
     if winner_id == away_team_id:
@@ -366,18 +363,8 @@ def _pick_decisions(away_rows: list[dict], home_rows: list[dict],
     else:
         return None, None
 
-    win_pid = None
-    for r in reversed(win_rows):
-        if (r.get("outs_recorded") or 0) > 0:
-            win_pid = r.get("player_id")
-            break
-
-    lose_pid = None
-    if lose_rows:
-        worst = max(lose_rows, key=lambda r: (r.get("runs_allowed") or 0))
-        lose_pid = worst.get("player_id") if (worst.get("runs_allowed") or 0) > 0 else None
-
-    return win_pid, lose_pid
+    from .box_score import decide_pitchers
+    return decide_pitchers(win_rows, lose_rows)
 
 
 def _pitching_block(team_name: str, rows: list[dict],

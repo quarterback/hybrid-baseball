@@ -34,6 +34,71 @@ RULE_WIDTH = 78
 
 
 # --------------------------------------------------------------------------
+# Win / Loss attribution — the single source of truth
+# --------------------------------------------------------------------------
+# Awarding the starter a win takes a 5-IP minimum, scaled to O27's 27-out
+# half = 12 outs. Every caller (box-score label, season W-L map, game cards)
+# routes through these functions so a printed decision and the (W, x-y)
+# record beside it can never disagree.
+
+SP_OUTS_THRESHOLD = 12
+
+
+def _dec_outs(r: dict) -> int:
+    v = r.get("outs")
+    if v is None:
+        v = r.get("outs_recorded")
+    return int(v or 0)
+
+
+def _dec_er(r: dict) -> int:
+    v = r.get("er")
+    if v is None:
+        v = r.get("runs_allowed")
+    return int(v or 0)
+
+
+def credit_win(rows: Iterable[dict]) -> Optional[int]:
+    """player_id credited with the win on the winning team. `rows` are that
+    team's pitcher appearances in order (starter first). The starter keeps
+    the win with >= SP_OUTS_THRESHOLD outs; otherwise it goes to the most
+    effective reliever — max(outs - ER), tiebreak outs, then earliest."""
+    rows = list(rows)
+    if not rows:
+        return None
+    sp = rows[0]
+    if _dec_outs(sp) >= SP_OUTS_THRESHOLD:
+        return sp.get("player_id")
+    pool = rows[1:] or rows
+    best, best_key = None, None
+    for r in pool:
+        key = (_dec_outs(r) - _dec_er(r), _dec_outs(r))
+        if best is None or key > best_key:
+            best, best_key = r, key
+    return best.get("player_id") if best is not None else None
+
+
+def charge_loss(rows: Iterable[dict]) -> Optional[int]:
+    """player_id charged with the loss on the losing team: most earned runs,
+    tiebreak earliest appearance. Always picks a pitcher when rows exist so
+    the label matches the season L that accumulates beside it."""
+    best, best_er = None, None
+    for r in rows:
+        e = _dec_er(r)
+        if best is None or e > best_er:
+            best, best_er = r, e
+    return best.get("player_id") if best is not None else None
+
+
+def decide_pitchers(win_rows: Iterable[dict],
+                    lose_rows: Iterable[dict]) -> tuple[Optional[int], Optional[int]]:
+    """(win_pid, lose_pid) from the two teams' pitcher rows — the one place
+    W/L is decided, so a box score's label always agrees with the season
+    record printed beside it."""
+    return credit_win(win_rows), charge_loss(lose_rows)
+
+
+# --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
 
@@ -575,10 +640,13 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
         dec  = decisions.get(pid, "")
         if dec:
             rec = season_wl.get(pid)
-            if rec:
-                head = f"{last} ({dec}, {rec.get('w', 0)}-{rec.get('l', 0)})"
-            else:
-                head = f"{last} ({dec})"
+            suffix = (f" ({dec}, {rec.get('w', 0)}-{rec.get('l', 0)})"
+                      if rec else f" ({dec})")
+            # Keep the decision + record intact; truncate the *name* if the
+            # pair overruns the column. A long-named loser must still read
+            # "(L, 4-1)", never get the record chopped off.
+            name_room = max(1, NAME_POS_WIDTH - 1 - len(suffix))
+            head = last[:name_room] + suffix
         else:
             head = last
         if len(head) > NAME_POS_WIDTH - 1:
