@@ -61,8 +61,37 @@ you-vs-yourself layer.
   save's schedule is fully played. Mid-season the buy-in is a sunk cost you're
   chasing — the pressure is real, the cash-out is deferred. A mid-season
   cash-out-for-equity option could be added later.
-- **Not built this pass:** the framed "season bankroll challenge" (a target,
-  days-left, bust state with no reloads) — the user deferred it; the pieces
-  (one wallet, records, bust-capable balance) are now in place for it.
 - `pytest` absent in the sandbox; validated via the Flask `test_client` and
   direct module calls.
+
+## Follow-up pass — personas, lifetime status, soft landing
+
+A research subagent surveyed loyalty-tier gamification (Delta Million-Miler,
+Caesars Seven Stars, DraftKings Dynasty, AmEx Centurion, Duolingo/Robinhood,
+goal-gradient/endowed-progress psychology). Headline finding: the fun is a
+**monotonic lifetime counter that only goes up and grants permanent status** —
+Delta's two-track model (volatile MQDs vs. sacred lifetime miles). Built it:
+
+- **Personas (pick-your-player onboarding).** Realistic small starting
+  bankrolls replace the flat ƒ50-lakh seed: Broke college student ($500),
+  Responsible father of two ($2,500), Swears he doesn't have a problem
+  ($5,000), PE guy chasing the rush ($25,000). The wallet isn't seeded until
+  you choose; "New run" wipes all play state and re-picks.
+- **Lifetime-earnings status tiers.** `total_won` (monotonic) drives a
+  permanent tier across $5K/$10K/$25K/$50K/$100K/$250K/$500K/$1M — Buy-In →
+  Penny Pincher → Table Regular → Card Shark → High Roller → The Whale → Pit
+  Boss → Big Kahuna → The Legend (research's High-Roller naming set; top tier
+  left a little mysterious, AmEx-style). Tier never drops on a bust.
+- **Soft landing (the research's best steal).** Busting isn't game-over: "Back
+  from the felt" tops you to a tier-scaled floor ($250 base, +$250/tier)
+  **without** crediting lifetime, so status is untouched and the message says
+  so. Converts the worst moment into a retention beat.
+- **Hub status gauge:** tier name, lifetime won (the hero number), a progress
+  bar with "$X to next tier" (goal-gradient), plus the career tiles.
+
+Verified: onboarding gate, tier crossing, status persisting through a $0 bust,
+restart floor scaling with tier, and the "still got chips" rejection.
+
+Deferred (pieces now in place): the framed season challenge (target / days-left
+/ no-reload bust), tier *unlocks* beyond the soft-landing scale (cosmetic
+badges, higher buy-in brackets, the mysterious $1M reveal), and streaks.
