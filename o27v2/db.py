@@ -556,6 +556,11 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     -- (wb_faced - wb_runs) / wb_faced. See docs/stats-reference.md.
     wb_faced       INTEGER DEFAULT 0,
     wb_runs        INTEGER DEFAULT 0,
+    -- Inherited runners: how many were on base when this reliever entered
+    -- (ir_inherited) and how many scored against him (ir_scored). Powers
+    -- IR-Stop% = (ir_inherited - ir_scored) / ir_inherited.
+    ir_inherited   INTEGER DEFAULT 0,
+    ir_scored      INTEGER DEFAULT 0,
     -- xRA v3 — per-pitcher hit-type breakdown allowed. Lets each
     -- pitcher's xRA reflect their own batted-ball mix rather than the
     -- league average. Sums tabulated from the PA log post-game.
@@ -1672,7 +1677,7 @@ def init_db() -> None:
             pass
         # Walk-Back rule columns — added when the rule landed. Historical
         # rows get 0 (no Walk-Back PAs existed before the rule).
-        for col in ("wb_faced", "wb_runs"):
+        for col in ("wb_faced", "wb_runs", "ir_inherited", "ir_scored"):
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()

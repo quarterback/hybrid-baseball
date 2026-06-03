@@ -388,6 +388,8 @@ def pitching_change(
             bf_tto=list(state.pitcher_bf_tto_this_spell),
             wb_faced=state.pitcher_wb_faced_this_spell,
             wb_runs=state.pitcher_wb_runs_this_spell,
+            ir_inherited=state.pitcher_ir_inherited_this_spell,
+            ir_scored=state.pitcher_ir_scored_this_spell,
         )
         state.spell_log.append(spell)
         log.append(f"  PITCHING CHANGE: {old_pitcher.name} exits "
@@ -417,6 +419,13 @@ def pitching_change(
     state.pitcher_bf_tto_this_spell = [0, 0, 0]
     state.pitcher_wb_faced_this_spell = 0
     state.pitcher_wb_runs_this_spell = 0
+    # Inherited runners: whoever's on base at the change is charged to the new
+    # arm's inherited-runner ledger — stranding them is to his credit, and any
+    # who score count against his IR-Stop%. The starter inherits nobody (empty
+    # bases at game start).
+    state.inherited_runner_ids = {b for b in state.bases if b is not None}
+    state.pitcher_ir_inherited_this_spell = len(state.inherited_runner_ids)
+    state.pitcher_ir_scored_this_spell = 0
     state.pitcher_start_pa = state.total_pa_this_half
     log.append(f"  {new_pitcher.name} takes the mound.")
 
