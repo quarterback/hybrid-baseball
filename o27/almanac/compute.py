@@ -491,6 +491,9 @@ _BATTING_SUM_FIELDS = [
     "c2_op_3b", "c2_adv_3b",
     "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
     "adv_op_3b", "adv_adv_3b",
+    "risp_pa", "risp_ab", "risp_h", "risp_2b", "risp_3b", "risp_hr",
+    "risp_bb", "risp_hbp", "risp_rbi",
+    "sh", "bunt_att", "bunt_hits", "sqz", "sqz_rbi",
 ]
 
 
@@ -644,6 +647,26 @@ def _augment_batters(rows: list[dict], league: dict[str, float],
         r["adv_adv_total"] = adv_adv_total
         r["adv_conv_total"] = (adv_adv_total / adv_op_total) if adv_op_total else 0.0
 
+        # RISP slash line — PA-denominated, matching PAVG (stays let risp_h
+        # exceed risp_ab, so per-AB is unreliable). risp_conv = RBI per RISP PA.
+        rpa  = r.get("risp_pa") or 0
+        rh   = r.get("risp_h") or 0
+        r2   = r.get("risp_2b") or 0
+        r3   = r.get("risp_3b") or 0
+        rhr  = r.get("risp_hr") or 0
+        rbb  = r.get("risp_bb") or 0
+        rhbp = r.get("risp_hbp") or 0
+        rtb  = (rh - r2 - r3 - rhr) + 2 * r2 + 3 * r3 + 4 * rhr
+        r["risp_pavg"] = (rh / rpa) if rpa else 0.0
+        r["risp_obp"]  = ((rh + rbb + rhbp) / rpa) if rpa else 0.0
+        r["risp_slg"]  = (rtb / rpa) if rpa else 0.0
+        r["risp_ops"]  = r["risp_obp"] + r["risp_slg"]
+        r["risp_conv"] = ((r.get("risp_rbi") or 0) / rpa) if rpa else 0.0
+
+        # Bunting — bunt-hit rate per bunt attempt.
+        ba = r.get("bunt_att") or 0
+        r["bunt_avg"] = ((r.get("bunt_hits") or 0) / ba) if ba else 0.0
+
         # ROE / GIDP / GITP rates.
         r["roe_pct"]  = (roe  / pa) if pa else 0.0
         r["gidp_pct"] = (gidp / ab) if ab else 0.0
@@ -677,6 +700,8 @@ _PITCHING_SUM_FIELDS = [
     "bf_tto1", "bf_tto2", "bf_tto3",
     "singles_allowed", "doubles_allowed", "triples_allowed",
     "fastball_pct", "breaking_pct", "offspeed_pct",
+    "ir_inherited", "ir_scored",
+    "terminal_outs", "quality_finish", "lead_entries", "lead_held",
 ]
 
 
@@ -842,6 +867,17 @@ def _augment_pitchers(rows: list[dict], league: dict[str, float],
         r["late_k_pct"]  = ((k3 + fo3) / bf3) if bf3 else 0.0
         r["early_k_pct"] = ((k1 + fo1) / bf1) if bf1 else 0.0
         r["arc3_reach_pct"] = (1.0 if bf3 > 0 else 0.0)
+
+        # Relief / finisher value. IR-Stop% = inherited runners stranded;
+        # LR% = lead-entries held; late_er_per_bf = final-arc run prevention.
+        # terminal_outs / quality_finish pass through as season SUMs.
+        ir_inh = r.get("ir_inherited") or 0
+        ir_sc  = r.get("ir_scored") or 0
+        r["ir_stop_pct"] = ((ir_inh - ir_sc) / ir_inh) if ir_inh else None
+        le = r.get("lead_entries") or 0
+        lh = r.get("lead_held") or 0
+        r["lr_pct"] = (lh / le) if le else None
+        r["late_er_per_bf"] = ((r.get("er_arc3") or 0) / bf3) if bf3 else None
 
         # Times-through-the-order (FAMILIARITY axis — the engine TTO buckets).
         # K% (incl. foul-outs, matching the arc K% convention) by how many
