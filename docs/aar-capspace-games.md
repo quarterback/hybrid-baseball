@@ -63,6 +63,15 @@ per the determinism note in CLAUDE.md.
   line generation, bankroll deduction/validation, and win/loss/push grading
   (a controlled +150 winner credited 100u→250u payout).
 
+- **Best Ball** (`bestball.py`, `joker` format → `bestball` view). The
+  no-management format: draft **8 hitters + 4 pitchers** once, then each slate
+  your **best 5 hitters + 2 pitchers** who played auto-score on the rebalanced
+  DFS points, accumulating all season. Ranked against 48 synthetic best-ball
+  rosters. Endpoints `GET /api/bestball`, `GET /api/bestball/pool`,
+  `POST /api/bestball/draft`. Verified the best-lineup-per-slate accumulation,
+  draft validation, and field ranking (a studs roster ranks 1/49, 100th pct;
+  a weak roster 45/49).
+
 - **DFS scoring rebalance** (`data.py` `_W`, `_batter_fp`, `_pitcher_fp`; UI
   `SCORING`). Added **Stolen Base (+4)** and **HBP (+2)** (standard counting
   stats that were missing), added a **quality-start bonus** (+6, a starter
@@ -124,7 +133,21 @@ Exercised through the real app and direct module tests on the 60-game DB:
 - **Draft slot validation** rejects wrong hitter/pitcher counts; the Razz pool
   correctly lists the weakest hitters first.
 
-## Still queued
+## Status
 
-**Best Ball** — draft once, the best valid lineup auto-scores each slate; the
-category engine already supplies most of the roster/field machinery it needs.
+The CapSpace game shelf is now fully built out — **seven live games**, all
+counting-stats-first, all settling from persisted stats:
+
+| Game | Module | What it is |
+| --- | --- | --- |
+| Daily Slate (DFS) | `contests.py` + `data.py` | salary-cap lineups, rebalanced scoring |
+| Go Streaking | `streak.py` | hit-streak survivor |
+| Sluggers | `sluggers.py` | HR + walk-back runs |
+| Pilots | `pitching.py` | K/QS + finisher stats |
+| Category Leagues | `categories.py` | season Roto — 5×5, Razz, HR Derby, Pitchers-Only |
+| Sportsbook | `sportsbook.py` | moneyline + run totals |
+| Best Ball | `bestball.py` | draft once, best lineup auto-scores |
+
+Future polish (not blockers): a dedicated per-batter walk-back-run column for
+Sluggers; positional lineup slots in Best Ball; persisting Sportsbook lines so
+the displayed price always matches the snapshot at bet time.

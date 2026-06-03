@@ -25,6 +25,7 @@ from . import sluggers as sluggergame
 from . import pitching as pilotgame
 from . import categories as catgame
 from . import sportsbook as book
+from . import bestball as bbgame
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LOG = logging.getLogger(__name__)
@@ -246,4 +247,32 @@ def api_sportsbook():
 def api_sportsbook_bet():
     body = request.get_json(silent=True) or {}
     res = book.place(body.get("game_id"), body.get("market"), body.get("side"), body.get("stake"))
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+# ---- Best Ball ----------------------------------------------------------
+
+@capspace_bp.route("/api/bestball")
+def api_bestball():
+    try:
+        return jsonify(bbgame.state())
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace bestball state failed")
+        return jsonify({"slots": {"h": bbgame.DRAFT_H, "p": bbgame.DRAFT_P},
+                        "start": {"h": bbgame.START_H, "p": bbgame.START_P}, "roster": []})
+
+
+@capspace_bp.route("/api/bestball/pool")
+def api_bestball_pool():
+    try:
+        return jsonify(bbgame.pool())
+    except Exception:  # pragma: no cover
+        _LOG.exception("CapSpace bestball pool failed")
+        return jsonify({"hitters": [], "pitchers": []})
+
+
+@capspace_bp.route("/api/bestball/draft", methods=["POST"])
+def api_bestball_draft():
+    body = request.get_json(silent=True) or {}
+    res = bbgame.draft(body.get("player_ids") or [])
     return jsonify(res), (200 if res.get("ok") else 400)

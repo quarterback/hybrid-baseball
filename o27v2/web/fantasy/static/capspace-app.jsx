@@ -87,6 +87,7 @@ function App() {
       {view === 'pilots' && <PilotsScreen onNav={nav} />}
       {view === 'categories' && <CategoriesScreen onNav={nav} />}
       {view === 'sportsbook' && <SportsbookScreen onNav={nav} />}
+      {view === 'bestball' && <BestBallScreen onNav={nav} />}
 
       <PlayerDrawer player={drawer.player} open={drawer.open} onClose={() => setDrawer(d => ({ ...d, open: false }))}
         onAdd={view === 'builder' ? addPlayer : null} inLineup={inLineup} />

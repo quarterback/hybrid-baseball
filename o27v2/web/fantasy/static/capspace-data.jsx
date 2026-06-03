@@ -225,9 +225,10 @@
     { id: 'hothand', name: 'Hot Hand',         color: 'var(--c-pink)', icon: 'flame',
       desc: 'Ride the heat wave. Streak-weighted scoring rewards catching players mid-surge.',
       stat: ['Weekly', 'Momentum'] },
-    { id: 'joker',   name: 'Joker Draft',      color: 'var(--c-lime)', icon: 'spark',
-      desc: 'Draft an archetype portfolio — power, speed, contact — score on joker outcomes.',
-      stat: ['Side-game', 'Quick'] },
+    { id: 'joker',   name: 'Best Ball',        color: 'var(--c-lime)', icon: 'spark',
+      view: 'bestball', tag: 'new',
+      desc: 'Draft once — 8 hitters, 4 pitchers — then never touch it. Your best 5 hitters and 2 pitchers auto-score every slate, all season.',
+      stat: ['Draft once', '12-man'] },
   ];
 
   // ---- DFS contests for the slate (real when injected) -----------------

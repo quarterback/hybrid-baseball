@@ -852,4 +852,132 @@ function SportsbookScreen({ onNav }) {
   );
 }
 
-Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen, CategoriesScreen, SportsbookScreen });
+/* ---------- BEST BALL ---------- */
+function BestBallScreen({ onNav }) {
+  const [data, setData] = useState(null);
+  const [pool, setPool] = useState(null);
+  const [sel, setSel] = useState([]);
+  const [editing, setEditing] = useState(false);
+  const [side, setSide] = useState('h');
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  function loadPool() {
+    fetch('/fantasy/api/bestball/pool').then(r => r.ok ? r.json() : { hitters: [], pitchers: [] }).then(setPool).catch(() => setPool({ hitters: [], pitchers: [] }));
+  }
+  function load() {
+    fetch('/fantasy/api/bestball').then(r => r.ok ? r.json() : null).then(d => {
+      setData(d);
+      const complete = d && d.standings;
+      setEditing(!complete);
+      if (!complete) loadPool();
+    }).catch(() => setData(null));
+  }
+  useEffect(load, []);
+
+  const slots = data ? data.slots : { h: 0, p: 0 };
+  const nH = sel.filter(s => s.pos !== 'P').length;
+  const nP = sel.filter(s => s.pos === 'P').length;
+  const full = nH === slots.h && nP === slots.p;
+  const selIds = new Set(sel.map(s => s.id));
+  const list = pool ? (side === 'p' ? pool.pitchers : pool.hitters) : [];
+  const shown = q.trim() ? list.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : list;
+  const st = data && data.standings;
+
+  function add(item) {
+    if (selIds.has(item.id)) return;
+    const isP = item.pos === 'P';
+    if (isP && nP >= slots.p) return;
+    if (!isP && nH >= slots.h) return;
+    setSel([...sel, item]);
+  }
+  function lock() {
+    if (!full || busy) return;
+    setBusy(true);
+    fetch('/fantasy/api/bestball/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_ids: sel.map(s => s.id) }) })
+      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || 'Draft failed.'); return; } setEditing(false); load(); })
+      .catch(() => setBusy(false));
+  }
+  function reDraft() { setSel((data.roster || []).map(r => ({ ...r, pos: r.pos === 'P' ? 'P' : 'H' }))); loadPool(); setEditing(true); }
+
+  return (
+    <>
+      <TopBar title="Best Ball" sub="Draft once, never touch it" back onBack={() => onNav('hub')} />
+      <div className="app__scroll">
+        <div className="page page--narrow">
+          {!data ? (
+            <div className="card card--pad center" style={{ padding: '48px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>Loading…</div></div>
+          ) : st && !editing ? (
+            /* ---- standings ---- */
+            <>
+              <div className="hero" style={{ background: 'linear-gradient(135deg, var(--c-lime), var(--c-teal))' }}>
+                <div className="hero__in">
+                  <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Season points · rank</div>
+                  <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{st.score}</div>
+                  <p style={{ marginTop: 6 }}><b>#{st.rank}</b> of {st.field} · {st.pct}th pct · field avg {st.field_avg}, best {st.field_best}</p>
+                </div>
+              </div>
+              <p className="muted mt-12 mb-12" style={{ fontSize: '.84rem', lineHeight: 1.45 }}>Auto-lineup: {st.lineup}. No management — your draft is the whole game.</p>
+              <div className="section-head mt-12"><h2>Your roster</h2><button className="btn btn--ghost btn--sm" onClick={reDraft}>Re-draft</button></div>
+              <div className="card" style={{ overflow: 'hidden' }}>
+                {(data.roster || []).map(p => (
+                  <div key={p.id} className="prow">
+                    <div className="prow__id">
+                      <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
+                      <div style={{ minWidth: 0 }}><div className="prow__name">{p.name}</div><div className="prow__sub">{p.pos === 'P' ? 'Pitcher' : 'Hitter'} · {p.team}</div></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            /* ---- draft ---- */
+            <>
+              <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>Draft {slots.h} hitters and {slots.p} pitchers. Each slate your best {data.start ? data.start.h : 5} hitters and {data.start ? data.start.p : 2} pitchers auto-score — so draft for depth, not a daily lineup.</p>
+              <div className="card card--pad mb-12" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontWeight: 700, fontSize: '.9rem' }}>
+                  <span style={{ color: nH === slots.h ? 'var(--live)' : 'var(--ink-2)' }}>Hitters {nH}/{slots.h}</span>
+                  <span className="dim"> · </span>
+                  <span style={{ color: nP === slots.p ? 'var(--live)' : 'var(--ink-2)' }}>Pitchers {nP}/{slots.p}</span>
+                </div>
+                <button className="btn btn--brand btn--sm" disabled={!full || busy} onClick={lock}>Lock roster</button>
+              </div>
+              {sel.length > 0 && (
+                <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {sel.map(s => (
+                    <button key={s.id} className="chip" onClick={() => setSel(sel.filter(x => x.id !== s.id))} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 10px', fontSize: '.8rem', fontWeight: 700 }}>
+                      {s.name} <span className="dim">{s.pos === 'P' ? 'P' : 'H'}</span> ×
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="slate-tabs mb-12">
+                <Chip active={side === 'h'} onClick={() => setSide('h')}>Hitters</Chip>
+                <Chip active={side === 'p'} onClick={() => setSide('p')}>Pitchers</Chip>
+              </div>
+              <div className="search mb-12"><Icon name="search" size={17} /><input placeholder={'Search ' + (side === 'p' ? 'pitchers' : 'hitters') + '…'} value={q} onChange={e => setQ(e.target.value)} /></div>
+              <div className="card" style={{ overflow: 'hidden' }}>
+                {!pool && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>Loading pool…</div>}
+                {pool && shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No players found.</div>}
+                {shown.slice(0, 120).map(p => (
+                  <div key={p.id} className="prow">
+                    <div className="prow__id">
+                      <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="prow__name">{p.name}</div>
+                        <div className="prow__sub" style={{ fontSize: '.74rem' }}>{p.line}</div>
+                      </div>
+                    </div>
+                    <button className="add-btn" disabled={selIds.has(p.id)} title="Draft" onClick={() => add(p)}>{selIds.has(p.id) ? '✓' : '+'}</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen, CategoriesScreen, SportsbookScreen, BestBallScreen });
