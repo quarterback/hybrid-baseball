@@ -24,6 +24,15 @@ function App() {
     catch (e) { return 'usd'; }
   });
 
+  const [walletState, setWalletState] = useState(undefined); // undefined = loading
+  const [reonboard, setReonboard] = useState(false);
+  function loadWallet() {
+    fetch('/fantasy/api/wallet').then(r => (r.ok ? r.json() : null))
+      .then(wd => { setWalletState(wd || { started: true }); if (wd && wd.balance != null) S.WALLET = wd.balance; })
+      .catch(() => setWalletState({ started: true }));
+  }
+  useEffect(loadWallet, []);
+
   // make the chosen mode visible to the global money() formatter for this render
   S.mode = cur;
 
@@ -74,11 +83,26 @@ function App() {
   }
 
   const inLineup = drawer.player && Object.values(roster).some(x => x && x.id === drawer.player.id);
+  const needsOnboard = walletState && (walletState.started === false || reonboard);
+
+  if (walletState === undefined) {
+    return <CurrencyCtx.Provider value={{ mode: cur, setMode }}><div className="app" /></CurrencyCtx.Provider>;
+  }
+  if (needsOnboard) {
+    return (
+      <CurrencyCtx.Provider value={{ mode: cur, setMode }}>
+        <div className="app">
+          <OnboardingScreen personas={walletState.personas} reset={reonboard}
+            onDone={() => { setReonboard(false); loadWallet(); nav('hub'); }} />
+        </div>
+      </CurrencyCtx.Provider>
+    );
+  }
 
   return (
     <CurrencyCtx.Provider value={{ mode: cur, setMode }}>
     <AppShell view={view} onNav={nav} onEnter={() => contest ? nav('builder') : nav('lobby')}>
-      {view === 'hub' && <HubScreen onNav={nav} onOpenFormat={openFormat} />}
+      {view === 'hub' && <HubScreen onNav={nav} onOpenFormat={openFormat} onNewRun={() => setReonboard(true)} />}
       {view === 'lobby' && <LobbyScreen onNav={nav} onEnterContest={enterContest} />}
       {view === 'builder' && <BuilderScreen contest={contest} roster={roster} onAdd={addPlayer} onRemove={removeSlot} onOpenPlayer={openPlayer} onEnter={submitLineup} onNav={nav} />}
       {view === 'live' && <LiveScreen roster={roster} contestId={liveContestId} onNav={nav} onOpenPlayer={openPlayer} />}

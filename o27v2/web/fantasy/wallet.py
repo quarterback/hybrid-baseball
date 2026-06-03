@@ -1,21 +1,60 @@
-"""CapSpace — the shared play-money wallet and career records.
+"""CapSpace — the shared play-money wallet, personas, and lifetime status.
 
 One bankroll for the whole app. Every game debits its buy-in and credits its
-winnings here, so the same fictional money is always at risk. Career records
-persist per save so you're also playing against your own bests.
+winnings here. Two career layers sit on top:
 
-Guilders (ƒ) throughout — the canonical unit the rest of CapSpace uses.
+  * **Persona** — picked once per save (your starting bankroll + flavour). The
+    wallet isn't seeded until you choose one.
+  * **Lifetime earnings** — the monotonic sum of everything you've ever won.
+    It never goes down (even when the wallet busts), and it drives your
+    **status tier** through a ladder of money gates — the frequent-flier model
+    (status from lifetime miles, not your current balance).
+
+Guilders (ƒ) are the canonical unit; $1 = ƒ100. Persona/tier values below are
+written in dollars for readability and converted on the way in/out.
 """
 
 from __future__ import annotations
 
+import datetime as _dt
+
 from o27v2 import db
 
-START_BALANCE = 50_00_000  # ƒ50 lakh (~$50,000) seeded once per save
+_USD = 100  # guilders per dollar
 
-# Record keys tracked at the wallet layer (games add their own via bump()).
+# --- personas: pick your degenerate (starting bankroll in dollars) -----------
+PERSONAS = [
+    {"key": "college", "name": "Broke college student", "start": 500,
+     "blurb": "Ramen money. One bad beat from skipping the dining hall."},
+    {"key": "father", "name": "Responsible father of two", "start": 2500,
+     "blurb": "This is fun money. It stays fun money. The 529 is safe."},
+    {"key": "degen", "name": "Swears he doesn't have a problem", "start": 5000,
+     "blurb": "I can stop whenever I want. I just don't want to right now."},
+    {"key": "pe", "name": "PE guy chasing the rush", "start": 25000,
+     "blurb": "It's not gambling if you have an edge. Now EBITDA this."},
+]
+_PERSONA = {p["key"]: p for p in PERSONAS}
+
+# --- status tiers by LIFETIME earnings (dollar gates). Names are placeholders
+# refined from the loyalty-tier research; the gate ladder is the spine. -------
+# High-Roller naming set (from the loyalty-tier research). The top tier is left
+# a little mysterious (AmEx-Centurion style) — you find out when you get there.
+TIERS = [
+    {"min": 0,       "name": "Buy-In"},
+    {"min": 5000,    "name": "Penny Pincher"},
+    {"min": 10000,   "name": "Table Regular"},
+    {"min": 25000,   "name": "Card Shark"},
+    {"min": 50000,   "name": "High Roller"},
+    {"min": 100000,  "name": "The Whale"},
+    {"min": 250000,  "name": "Pit Boss"},
+    {"min": 500000,  "name": "Big Kahuna"},
+    {"min": 1000000, "name": "The Legend"},
+]
+
+RESTART_BASE = 250  # dollars; soft-landing floor when you bust (scales by tier)
+
 _REC_KEYS = ("peak_bankroll", "total_wagered", "total_won",
-             "biggest_win", "entries", "cashes")
+             "biggest_win", "entries", "cashes", "restarts")
 
 
 def ensure_schema() -> None:
@@ -29,6 +68,11 @@ def ensure_schema() -> None:
         CREATE TABLE IF NOT EXISTS cap_records (
             key   TEXT PRIMARY KEY,
             value INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS cap_profile (
+            id         INTEGER PRIMARY KEY CHECK (id = 1),
+            persona    TEXT,
+            created_at TEXT
         );
         """
     )
@@ -58,18 +102,39 @@ def rec_max(key: str, value: int) -> None:
         rec_set(key, int(value))
 
 
+# --- onboarding / persona ----------------------------------------------------
+
+def started() -> bool:
+    ensure_schema()
+    return db.fetchone("SELECT 1 FROM cap_wallet WHERE id = 1") is not None
+
+
+def persona() -> str | None:
+    ensure_schema()
+    r = db.fetchone("SELECT persona FROM cap_profile WHERE id = 1")
+    return r["persona"] if r else None
+
+
+def start(persona_key: str) -> dict:
+    """Seed the wallet from a chosen persona (once)."""
+    ensure_schema()
+    if started():
+        return {"ok": False, "error": "Already started."}
+    p = _PERSONA.get(persona_key) or PERSONAS[0]
+    _set(p["start"] * _USD)
+    conn = db.get_conn()
+    conn.execute("INSERT OR REPLACE INTO cap_profile (id, persona, created_at) VALUES (1, ?, ?)",
+                 (p["key"], _dt.datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit()
+    return {"ok": True, "balance": balance()}
+
+
 # --- balance -----------------------------------------------------------------
 
 def balance() -> int:
     ensure_schema()
     r = db.fetchone("SELECT balance FROM cap_wallet WHERE id = 1")
-    if r is None:
-        conn = db.get_conn()
-        conn.execute("INSERT OR IGNORE INTO cap_wallet (id, balance) VALUES (1, ?)", (START_BALANCE,))
-        conn.commit()
-        rec_max("peak_bankroll", START_BALANCE)
-        return START_BALANCE
-    return r["balance"]
+    return r["balance"] if r else 0
 
 
 def _set(v: int) -> None:
@@ -82,7 +147,7 @@ def _set(v: int) -> None:
 
 
 def debit(amount: int) -> bool:
-    """Take a buy-in. Returns False (and no-op) if the wallet is short."""
+    """Take a buy-in. Returns False (no-op) if the wallet can't cover it."""
     amount = int(amount)
     if amount <= 0:
         return True
@@ -96,7 +161,7 @@ def debit(amount: int) -> bool:
 
 
 def credit(amount: int, *, cash: bool = True) -> None:
-    """Pay winnings in. `cash=True` counts it as a cashed entry for records."""
+    """Pay winnings in. Bumps LIFETIME earnings (total_won), which never drops."""
     amount = int(amount)
     if amount <= 0:
         return
@@ -107,9 +172,48 @@ def credit(amount: int, *, cash: bool = True) -> None:
         bump("cashes", 1)
 
 
+# --- tiers --------------------------------------------------------------------
+
+def tier_for(lifetime_guilders: int) -> dict:
+    """Current tier + the gates around it, all in guilders for the UI."""
+    life_usd = lifetime_guilders / _USD
+    idx = 0
+    for i, t in enumerate(TIERS):
+        if life_usd >= t["min"]:
+            idx = i
+    cur = TIERS[idx]
+    nxt = TIERS[idx + 1] if idx + 1 < len(TIERS) else None
+    return {
+        "name": cur["name"], "idx": idx, "count": len(TIERS),
+        "floor": cur["min"] * _USD,
+        "nextName": nxt["name"] if nxt else None,
+        "nextGate": (nxt["min"] * _USD) if nxt else None,
+        "isMax": nxt is None,
+    }
+
+
+def restart() -> dict:
+    """Soft landing: when you've busted, take a tier-scaled top-up back to the
+    felt. It is NOT counted as winnings, so it never touches your lifetime
+    status — your tier is permanent. Higher tiers get a bigger floor."""
+    ensure_schema()
+    if not started():
+        return {"ok": False, "error": "Pick a player first."}
+    bal = balance()
+    if bal >= 5000:  # ƒ5,000 = $50 — you've still got chips
+        return {"ok": False, "error": "You've still got chips — no restart needed."}
+    t = tier_for(rec_get("total_won"))
+    floor = (RESTART_BASE + t["idx"] * RESTART_BASE) * _USD
+    _set(floor)            # _set never lowers peak; lifetime/status untouched
+    bump("restarts", 1)
+    return {"ok": True, "balance": floor}
+
+
 def records() -> dict:
     ensure_schema()
-    balance()  # ensure seeded so peak_bankroll exists
     out = {k: rec_get(k) for k in _REC_KEYS}
     out["net"] = out["total_won"] - out["total_wagered"]
+    out["lifetime"] = out["total_won"]          # guilders; the status driver
+    out["persona"] = persona()
+    out["tier"] = tier_for(out["lifetime"])
     return out

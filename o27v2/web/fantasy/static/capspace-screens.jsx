@@ -4,16 +4,25 @@
 const { useState, useEffect } = React;
 
 /* ---------- HUB / GAME LIBRARY ---------- */
-function HubScreen({ onNav, onOpenFormat }) {
+function HubScreen({ onNav, onOpenFormat, onNewRun }) {
   const S = window.SLATE;
   const games = (S.SLATE_GAMES || []).length;
   const contests = S.CONTESTS || [];
   const prizePool = contests.reduce((s, c) => s + (c.prize || 0), 0);
   const topPrize = contests.reduce((m, c) => Math.max(m, c.top || 0), 0);
   const [w, setW] = useState(null);
-  useEffect(() => { fetch('/fantasy/api/wallet').then(r => (r.ok ? r.json() : null)).then(setW).catch(() => {}); }, []);
+  const [busy, setBusy] = useState(false);
+  function loadW() { fetch('/fantasy/api/wallet').then(r => (r.ok ? r.json() : null)).then(d => { setW(d); if (d && d.balance != null) S.WALLET = d.balance; }).catch(() => {}); }
+  useEffect(loadW, []);
   const bal = w ? w.balance : S.WALLET;
   const rec = (w && w.records) || {};
+  const t = rec.tier;
+  const pct = (t && !t.isMax && t.nextGate > t.floor)
+    ? Math.max(3, Math.min(100, Math.round((rec.lifetime - t.floor) / (t.nextGate - t.floor) * 100))) : 100;
+  function restart() {
+    if (busy) return; setBusy(true);
+    fetch('/fantasy/api/wallet/restart', { method: 'POST' }).then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || ''); return; } if (j.balance != null) S.WALLET = j.balance; loadW(); }).catch(() => setBusy(false));
+  }
   return (
     <>
       <TopBar title="Good evening, Player!" sub={`${games} games on tonight's slate`} right={
@@ -43,9 +52,39 @@ function HubScreen({ onNav, onOpenFormat }) {
           </div>
 
           {/* career — you vs yourself */}
-          {w && (
+          {w && t && (
             <>
-              <div className="section-head mt-24"><h2>Your career</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>you vs yourself</span></div>
+              <div className="section-head mt-24"><h2>Your career</h2><button className="btn btn--ghost btn--sm" onClick={onNewRun}>New run</button></div>
+
+              {/* soft landing when busted */}
+              {bal < 5000 && (
+                <div className="card card--pad mb-12" style={{ borderLeft: '4px solid var(--c-amber)' }}>
+                  <div style={{ fontWeight: 800 }}>Back from the felt?</div>
+                  <div className="muted" style={{ fontSize: '.85rem', margin: '4px 0 10px', lineHeight: 1.4 }}>Tapped out — but your <b>{t.name}</b> status is permanent. Take a fresh stake and run it back.</div>
+                  <button className="btn btn--brand btn--sm" disabled={busy} onClick={restart}>Restart bankroll</button>
+                </div>
+              )}
+
+              {/* status gauge — lifetime drives the tier */}
+              <div className="card card--pad mb-12">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="lbl" style={{ textTransform: 'uppercase', fontSize: '.7rem', letterSpacing: '.06em', color: 'var(--ink-3)', fontWeight: 700 }}>Status</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>{t.name}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div className="lbl" style={{ textTransform: 'uppercase', fontSize: '.7rem', letterSpacing: '.06em', color: 'var(--ink-3)', fontWeight: 700 }}>Lifetime won</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--live)' }}>{S.money(rec.lifetime || 0)}</div>
+                  </div>
+                </div>
+                <div style={{ height: 9, background: 'var(--card-2)', borderRadius: 6, overflow: 'hidden', margin: '14px 0 7px' }}>
+                  <i style={{ display: 'block', height: '100%', width: pct + '%', background: 'linear-gradient(90deg, var(--c-teal), var(--c-violet))' }} />
+                </div>
+                <div className="muted" style={{ fontSize: '.82rem', fontWeight: 700 }}>
+                  {t.isMax ? 'Top tier — you are The Legend.' : `${S.money(Math.max(0, t.nextGate - (rec.lifetime || 0)))} to ${t.nextName}`}
+                </div>
+              </div>
+
               <div className="tiles">
                 <div className="tile"><div className="lbl">Net P&amp;L</div><div className="val" style={{ color: (rec.net || 0) >= 0 ? 'var(--live)' : 'var(--down)' }}>{(rec.net || 0) >= 0 ? '+' : '−'}{S.money(Math.abs(rec.net || 0))}</div><div className="sub">all-time</div></div>
                 <div className="tile"><div className="lbl">Peak</div><div className="val">{S.money(rec.peak_bankroll || 0)}</div><div className="sub">highest bankroll</div></div>
@@ -1018,4 +1057,41 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
   );
 }
 
-Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen, CategoriesScreen, SportsbookScreen, BestBallScreen });
+/* ---------- ONBOARDING — pick your player ---------- */
+function OnboardingScreen({ personas, reset, onDone }) {
+  const S = window.SLATE;
+  const [busy, setBusy] = useState(false);
+  function pick(key) {
+    if (busy) return;
+    setBusy(true);
+    fetch('/fantasy/api/onboard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ persona: key, reset: !!reset }) })
+      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || 'Could not start.'); return; } if (j.balance != null) S.WALLET = j.balance; onDone && onDone(); })
+      .catch(() => setBusy(false));
+  }
+  return (
+    <div className="app__scroll">
+      <div className="page page--narrow">
+        <div className="hero" style={{ background: 'linear-gradient(135deg, var(--c-violet), var(--c-coral))' }}>
+          <div className="hero__in">
+            <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>{reset ? 'New run' : 'Welcome to CapSpace'}</div>
+            <h1 className="mt-12">Pick your player.</h1>
+            <p>Your starting bankroll — and your whole personality. Lifetime winnings carry your status; it never resets, even when you bust. Choose your poison.</p>
+          </div>
+        </div>
+        <div className="fmt-grid mt-24">
+          {(personas || []).map(p => (
+            <a key={p.key} className="fmt" onClick={() => pick(p.key)} style={{ cursor: 'pointer' }}>
+              <span className="fmt__glow" style={{ background: 'var(--c-coral)' }} />
+              <div className="fmt__name">{p.name}</div>
+              <div className="fmt__desc">{p.blurb}</div>
+              <div className="fmt__foot"><span className="fmt__stat">Starting bankroll {S.money(p.start * 100)}</span></div>
+            </a>
+          ))}
+        </div>
+        {reset && <p className="center muted mt-16" style={{ fontWeight: 600, fontSize: '.82rem' }}>A new run wipes your current bankroll, bets, entries and records.</p>}
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen, CategoriesScreen, SportsbookScreen, BestBallScreen, OnboardingScreen });
