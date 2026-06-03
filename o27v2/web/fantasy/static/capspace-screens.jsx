@@ -60,8 +60,8 @@ function HubScreen({ onNav, onOpenFormat, onNewRun }) {
               {bal < 5000 && (
                 <div className="card card--pad mb-12" style={{ borderLeft: '4px solid var(--c-amber)' }}>
                   <div style={{ fontWeight: 800 }}>Back from the felt?</div>
-                  <div className="muted" style={{ fontSize: '.85rem', margin: '4px 0 10px', lineHeight: 1.4 }}>Tapped out — but your <b>{t.name}</b> status is permanent. Take a fresh stake and run it back.</div>
-                  <button className="btn btn--brand btn--sm" disabled={busy} onClick={restart}>Restart bankroll</button>
+                  <div className="muted" style={{ fontSize: '.85rem', margin: '4px 0 10px', lineHeight: 1.4 }}>Tapped out — but your <b>{t.name}</b> status is permanent. As a {t.name}, you restart with <b>{S.money(t.startBankroll)}</b>. Climb tiers to come back richer.</div>
+                  <button className="btn btn--brand btn--sm" disabled={busy} onClick={restart}>Restart with {S.money(t.startBankroll)}</button>
                 </div>
               )}
 
@@ -82,6 +82,9 @@ function HubScreen({ onNav, onOpenFormat, onNewRun }) {
                 </div>
                 <div className="muted" style={{ fontSize: '.82rem', fontWeight: 700 }}>
                   {t.isMax ? 'Top tier — you are The Legend.' : `${S.money(Math.max(0, t.nextGate - (rec.lifetime || 0)))} to ${t.nextName}`}
+                </div>
+                <div className="muted" style={{ fontSize: '.78rem', marginTop: 6 }}>
+                  Restart stake at {t.name}: <b>{S.money(t.startBankroll)}</b>{!t.isMax ? ` · ${t.nextName} unlocks ${S.money(t.nextStart)}` : ''}
                 </div>
               </div>
 

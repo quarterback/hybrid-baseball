@@ -51,7 +51,9 @@ TIERS = [
     {"min": 1000000, "name": "The Legend"},
 ]
 
-RESTART_BASE = 250  # dollars; soft-landing floor when you bust (scales by tier)
+# The level you've EARNED (via lifetime winnings) sets the bankroll you start /
+# restart with — climbing tiers unlocks a bigger stake. Indexed to TIERS.
+START_BY_TIER = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000]  # dollars
 
 _REC_KEYS = ("peak_bankroll", "total_wagered", "total_won",
              "biggest_win", "entries", "cashes", "restarts")
@@ -189,6 +191,8 @@ def tier_for(lifetime_guilders: int) -> dict:
         "nextName": nxt["name"] if nxt else None,
         "nextGate": (nxt["min"] * _USD) if nxt else None,
         "isMax": nxt is None,
+        "startBankroll": START_BY_TIER[idx] * _USD,
+        "nextStart": (START_BY_TIER[idx + 1] * _USD) if nxt else None,
     }
 
 
@@ -203,7 +207,7 @@ def restart() -> dict:
     if bal >= 5000:  # ƒ5,000 = $50 — you've still got chips
         return {"ok": False, "error": "You've still got chips — no restart needed."}
     t = tier_for(rec_get("total_won"))
-    floor = (RESTART_BASE + t["idx"] * RESTART_BASE) * _USD
+    floor = START_BY_TIER[t["idx"]] * _USD  # your earned level's starting stake
     _set(floor)            # _set never lowers peak; lifetime/status untouched
     bump("restarts", 1)
     return {"ok": True, "balance": floor}
