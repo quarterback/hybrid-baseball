@@ -780,6 +780,33 @@ SAC_BUNT_HIT_SPEED_SCALE: float    = 0.30   # +(speed - 0.5) * this
 SAC_BUNT_FAIL_RATE: float          = 0.10   # popups / runner forced at lead
 
 # ---------------------------------------------------------------------------
+# Expanded bunting (multi-type). Layered on top of the legacy SAC_* knobs
+# above (kept for the sacrifice outcome roll). A single `bunt` player rating
+# (bat control, 0..1, 0.5 neutral) governs execution across every type.
+#
+# Outcome model is shared: a per-PA "execution" score = bunt_skill, tilted by
+# the pitcher's difficulty (stuff/command) and the batter's speed for the
+# beat-it-out leg, decides between a clean bunt, a bunt single, and the
+# failure modes (popup, or the lead runner thrown out on a forced play).
+BUNT_SKILL_EXEC_SCALE: float       = 0.60   # how much bunt skill swings execution
+BUNT_PITCHER_DIFFICULTY_SCALE: float = 0.25 # elite stuff/command suppresses success
+# Sacrifice: chance the lead runner is thrown out (FC) instead of advancing,
+# scaling DOWN with bunt skill. Replaces part of the old flat "fail".
+SAC_LEAD_OUT_BASE: float           = 0.16   # poor bunters cost the lead runner
+SAC_BUNT_SKILL_SCALE: float        = 0.25   # +(bunt - 0.5) * this to clean-sac odds
+# Bunt-for-hit / drag: speed + skill beat-out attempt, no give-up intent.
+DRAG_BUNT_BASE_PROB: float         = 0.06   # base call rate (fast, weak-power bat)
+DRAG_BUNT_SPEED_GATE: float        = 0.55   # min speed to consider a drag
+DRAG_BUNT_HIT_BASE: float          = 0.30   # baseline safe rate (skill/speed add)
+# Squeeze (runner on 3B, < 2 outs). Suicide = runner breaks (run scores on any
+# bunt down, but a missed bunt hangs him out); safety = runner holds (scores
+# only on a good bunt, never thrown out).
+SQUEEZE_BASE_PROB: float           = 0.07   # base call rate in a squeeze spot (rare, high-leverage)
+SQUEEZE_SUICIDE_SHARE: float       = 0.45   # of squeezes, fraction that are suicide
+SUICIDE_MISS_BASE: float           = 0.20   # missed/popped bunt → runner out at home
+SAFETY_SQUEEZE_SCORE_BASE: float   = 0.60   # baseline run-scores rate on a safety
+
+# ---------------------------------------------------------------------------
 # Stolen base model
 # ---------------------------------------------------------------------------
 # Recalibrated for O27 reality (vs MLB defaults):

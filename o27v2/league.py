@@ -3206,7 +3206,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          pitcher_skill, stay_aggressiveness, contact_quality_threshold,
          archetype, pitcher_role, rotation_slot, hard_contact_delta, hr_weight_bonus,
          age, stamina, is_active,
-         contact, power, eye, command, movement, bats, throws,
+         contact, power, eye, bunt, command, movement, bats, throws,
          defense, arm,
          defense_infield, defense_outfield, defense_catcher, game_calling,
          baserunning, run_aggressiveness,
@@ -3215,7 +3215,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
          pull_pct, adaptability, leadership,
          roster_slot, role_hit, role_run, role_two_way, role_field_pos,
          hometown, birthday, secondary_country)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
     # Salary is computed at insert time so the persisted ledger is the
     # canonical source of truth for the rest of the app. Free agents
@@ -3236,6 +3236,8 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
                 p.get("stamina", p.get("pitcher_skill", 50)),
                 p.get("is_active", 1),
                 p.get("contact", 50), p.get("power", 50), p.get("eye", 50),
+                (p.get("bunt")
+                 or round(0.6 * p.get("contact", 50) + 0.4 * p.get("speed", 50))),
                 p.get("command", 50), p.get("movement", 50),
                 p.get("bats", "R"), p.get("throws", "R"),
                 p.get("defense", 50), p.get("arm", 50),

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Team Stats{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-end mb-3 flex-wrap gap-2">
+  <div>
+    <h2 class="mb-1">Team Stats</h2>
+    <div class="text-secondary small">
+      Team-level totals &amp; rates · the player categories, summed per club
+      {% if selected_league %}· {{ selected_league }}{% endif %}
+    </div>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    {% if leagues %}
+    <form method="get" class="mb-0">
+      <select name="league" class="form-select form-select-sm" onchange="this.form.submit()">
+        {% for lg in leagues %}
+        <option value="{{ lg }}" {% if lg == selected_league %}selected{% endif %}>{{ lg }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% endif %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('team_stats', format='json') }}">JSON</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('leaders') }}">Player leaders →</a>
+  </div>
+</div>
+
+{% macro num(v, fmt='%d') %}{% if v is not none %}{{ fmt|format(v) }}{% else %}—{% endif %}{% endmacro %}
+{% macro pct(v) %}{% if v is not none %}{{ '%.1f'|format(v * 100) }}%{% else %}—{% endif %}{% endmacro %}
+
+{% if games_played == 0 %}
+  <div class="panel panel-body text-center text-secondary mb-4">
+    No games played yet — team stats appear once the season is underway.
+  </div>
+{% else %}
+
+{# ---- Team batting --------------------------------------------------- #}
+<div class="panel mb-4">
+  <div class="panel-head"><span>Team Batting</span>
+    <span class="ms-auto sub">sorted by OPS · {{ team_bat|length }} teams</span></div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Team</th><th class="num">G</th><th class="num">R</th><th class="num">PA</th>
+      <th class="num">H</th><th class="num">HR</th><th class="num">RBI</th>
+      <th class="num">BB</th><th class="num">K</th><th class="num">SB</th>
+      <th class="num">PAVG</th><th class="num">OBP</th><th class="num">SLG</th>
+      <th class="num">OPS</th><th class="num">OPS+</th>
+      <th class="num" title="Second-chance (2C) at-bats">2C</th>
+      <th class="num" title="2C conversion: hits per 2C">2C-Conv</th>
+      <th class="num" title="Share of team RBI driven on 2C events">2C-RBI%</th>
+      <th class="num" title="Runners Advanced — graded runner bases gained">RAD</th>
+      <th class="num" title="Sacrifice bunts">SH</th>
+      <th class="num" title="Bunt singles (subset of hits)">Bunt H</th>
+      <th class="num" title="Squeeze RBI — runs driven home from third on a squeeze">Sqz</th>
+      <th class="num" title="Batting average with runners in scoring position (H/PA)">RISP-AVG</th>
+      <th class="num" title="OPS with runners in scoring position">RISP-OPS</th>
+      <th class="num" title="RBI driven in with runners in scoring position">RISP-RBI</th>
+      <th class="num" title="RBI per plate appearance with RISP — the cash-in rate">RISP-Conv</th>
+      <th class="num" title="Walk-Back runs scored (post-HR rule-placed runner driven in)">WBR</th>
+    </tr></thead>
+    <tbody>
+      {% for t in team_bat %}
+      <tr>
+        <td><a href="{{ url_for('team_detail', team_id=t.team_id) }}" class="team-abbrev">{{ t.team_abbrev }}</a></td>
+        <td class="num">{{ num(t.g) }}</td>
+        <td class="num">{{ num(t.r) }}</td>
+        <td class="num">{{ num(t.pa) }}</td>
+        <td class="num">{{ num(t.h) }}</td>
+        <td class="num fw-bold">{{ num(t.hr) }}</td>
+        <td class="num">{{ num(t.rbi) }}</td>
+        <td class="num">{{ num(t.bb) }}</td>
+        <td class="num">{{ num(t.k) }}</td>
+        <td class="num">{{ num(t.sb) }}</td>
+        <td class="num">{{ num(t.pavg, '%.3f') }}</td>
+        <td class="num">{{ num(t.obp, '%.3f') }}</td>
+        <td class="num">{{ num(t.slg, '%.3f') }}</td>
+        <td class="num fw-bold">{{ num(t.ops, '%.3f') }}</td>
+        <td class="num">{{ num(t.ops_plus) }}</td>
+        <td class="num">{{ num(t.stays) }}</td>
+        <td class="num">{{ pct(t.c2_conv) }}</td>
+        <td class="num">{{ pct(t.c2_rbi_pct) }}</td>
+        <td class="num">{{ num(t.rad) }}</td>
+        <td class="num">{{ num(t.sh) }}</td>
+        <td class="num">{{ num(t.bunt_hits) }}</td>
+        <td class="num">{{ num(t.sqz_rbi) }}</td>
+        <td class="num">{{ num(t.risp_pavg, '%.3f') }}</td>
+        <td class="num fw-bold">{{ num(t.risp_ops, '%.3f') }}</td>
+        <td class="num">{{ num(t.risp_rbi) }}</td>
+        <td class="num">{{ num(t.risp_conv, '%.2f') }}</td>
+        <td class="num">{{ num(t.wb_scored) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{# ---- Team pitching -------------------------------------------------- #}
+<div class="panel mb-4">
+  <div class="panel-head"><span>Team Pitching</span>
+    <span class="ms-auto sub">sorted by wERA · {{ team_pit|length }} teams</span></div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Team</th><th class="num">W</th><th class="num">L</th><th class="num">G</th>
+      <th class="num">IP</th><th class="num">R</th><th class="num">ER</th>
+      <th class="num" title="O27 win-probability-weighted ERA">wERA</th>
+      <th class="num">wERA+</th><th class="num">WHIP</th>
+      <th class="num">K</th><th class="num">BB</th><th class="num">HR</th>
+      <th class="num">K/9</th>
+      <th class="num" title="Walk-Back runs allowed (post-HR rule-placed runner scored)">WBR-A</th>
+    </tr></thead>
+    <tbody>
+      {% for t in team_pit %}
+      <tr>
+        <td><a href="{{ url_for('team_detail', team_id=t.team_id) }}" class="team-abbrev">{{ t.team_abbrev }}</a></td>
+        <td class="num">{{ num(t.w) }}</td>
+        <td class="num">{{ num(t.l) }}</td>
+        <td class="num">{{ num(t.g) }}</td>
+        <td class="num">{{ t.ip_display }}</td>
+        <td class="num">{{ num(t.r) }}</td>
+        <td class="num">{{ num(t.er) }}</td>
+        <td class="num fw-bold">{{ num(t.werra, '%.2f') }}</td>
+        <td class="num">{{ num(t.wera_plus) }}</td>
+        <td class="num">{{ num(t.whip, '%.2f') }}</td>
+        <td class="num">{{ num(t.k) }}</td>
+        <td class="num">{{ num(t.bb) }}</td>
+        <td class="num">{{ num(t.hr_allowed) }}</td>
+        <td class="num">{{ num(t.k9, '%.1f') }}</td>
+        <td class="num">{{ num(t.wb_allowed) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="text-secondary small mb-3">
+  Rates use the same O27 conventions as the player pages (PAVG = H/PA; OPS+/wERA+
+  are league-relative, 100 = average). 2C-Conv = hits per second-chance at-bat;
+  2C-RBI% = share of the club's RBI driven on 2C events; WBR = Walk-Back runs.
+</div>
+
+{% endif %}
+{% endblock %}
