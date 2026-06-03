@@ -26,6 +26,7 @@ from . import pitching as pilotgame
 from . import categories as catgame
 from . import sportsbook as book
 from . import bestball as bbgame
+from . import wallet
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LOG = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def _safe_slate() -> dict | None:
             except Exception:
                 _LOG.exception("CapSpace contest build failed; using mock contests")
             try:
-                blob["WALLET"] = dfs.wallet_balance()
+                blob["WALLET"] = _settle_all()
             except Exception:
                 _LOG.exception("CapSpace wallet read failed")
         return blob
@@ -118,14 +119,31 @@ def api_entries():
     return jsonify(dfs.list_user_entries())
 
 
+def _settle_all() -> int:
+    """Settle every game that pays into the wallet, then return the balance —
+    so one bankroll reflects DFS contests and Sportsbook bets alike."""
+    for fn in (dfs.settle_entries, book.settle_bets):
+        try:
+            fn()
+        except Exception:  # pragma: no cover
+            _LOG.exception("CapSpace settle failed: %s", getattr(fn, "__name__", fn))
+    return wallet.balance()
+
+
 @capspace_bp.route("/api/wallet")
 def api_wallet():
-    """The save's live play-money wallet balance (guilders)."""
+    """The save's live wallet balance + career records (one bankroll)."""
     try:
-        return jsonify({"balance": dfs.wallet_balance()})
+        bal = _settle_all()
+        rec = wallet.records()
+        try:
+            rec["best_streak"] = streakgame.status().get("best", 0)
+        except Exception:
+            rec["best_streak"] = 0
+        return jsonify({"balance": bal, "records": rec})
     except Exception:  # pragma: no cover
         _LOG.exception("CapSpace wallet failed")
-        return jsonify({"balance": 0})
+        return jsonify({"balance": 0, "records": {}})
 
 
 @capspace_bp.route("/api/player/<int:player_id>")

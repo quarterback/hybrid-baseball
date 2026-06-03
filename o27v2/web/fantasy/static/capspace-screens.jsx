@@ -10,6 +10,10 @@ function HubScreen({ onNav, onOpenFormat }) {
   const contests = S.CONTESTS || [];
   const prizePool = contests.reduce((s, c) => s + (c.prize || 0), 0);
   const topPrize = contests.reduce((m, c) => Math.max(m, c.top || 0), 0);
+  const [w, setW] = useState(null);
+  useEffect(() => { fetch('/fantasy/api/wallet').then(r => (r.ok ? r.json() : null)).then(setW).catch(() => {}); }, []);
+  const bal = w ? w.balance : S.WALLET;
+  const rec = (w && w.records) || {};
   return (
     <>
       <TopBar title="Good evening, Player!" sub={`${games} games on tonight's slate`} right={
@@ -35,8 +39,22 @@ function HubScreen({ onNav, onOpenFormat }) {
             <div className="tile"><div className="lbl">Tonight</div><div className="val">{games}</div><div className="sub">games on the slate</div></div>
             <div className="tile"><div className="lbl">Contests</div><div className="val">{contests.length}</div><div className="sub">open to enter</div></div>
             <div className="tile"><div className="lbl">Top prize</div><div className="val">{topPrize > 0 ? S.money(topPrize) : '—'}</div><div className="sub">across all contests</div></div>
-            <div className="tile"><div className="lbl">Bankroll</div><div className="val">{S.money(S.WALLET)}</div><div className="sub">play-money balance</div></div>
+            <div className="tile"><div className="lbl">Bankroll</div><div className="val">{S.money(bal)}</div><div className="sub">one wallet, every game</div></div>
           </div>
+
+          {/* career — you vs yourself */}
+          {w && (
+            <>
+              <div className="section-head mt-24"><h2>Your career</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>you vs yourself</span></div>
+              <div className="tiles">
+                <div className="tile"><div className="lbl">Net P&amp;L</div><div className="val" style={{ color: (rec.net || 0) >= 0 ? 'var(--live)' : 'var(--down)' }}>{(rec.net || 0) >= 0 ? '+' : '−'}{S.money(Math.abs(rec.net || 0))}</div><div className="sub">all-time</div></div>
+                <div className="tile"><div className="lbl">Peak</div><div className="val">{S.money(rec.peak_bankroll || 0)}</div><div className="sub">highest bankroll</div></div>
+                <div className="tile"><div className="lbl">Biggest win</div><div className="val">{S.money(rec.biggest_win || 0)}</div><div className="sub">single payout</div></div>
+                <div className="tile"><div className="lbl">Best streak</div><div className="val">{rec.best_streak || 0}</div><div className="sub">Go Streaking</div></div>
+                <div className="tile"><div className="lbl">Cashes</div><div className="val">{(rec.cashes || 0)}/{(rec.entries || 0)}</div><div className="sub">entries cashed</div></div>
+              </div>
+            </>
+          )}
 
           {/* the game library */}
           <div className="section-head mt-32">
@@ -729,9 +747,10 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
 
 /* ---------- SPORTSBOOK ---------- */
 function SportsbookScreen({ onNav }) {
+  const S = window.SLATE;
   const [data, setData] = useState(null);
   const [slip, setSlip] = useState(null);   // {game_id, market, side, odds, line, label}
-  const [stake, setStake] = useState(25);
+  const [stake, setStake] = useState(5000);
   const [busy, setBusy] = useState(false);
 
   function load() {
@@ -749,7 +768,7 @@ function SportsbookScreen({ onNav }) {
     if (!slip || busy) return;
     setBusy(true);
     fetch('/fantasy/api/sportsbook/bet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game_id: slip.game_id, market: slip.market, side: slip.side, stake }) })
-      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || 'Bet rejected.'); return; } setSlip(null); load(); })
+      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || 'Bet rejected.'); return; } if (j.bankroll != null) S.WALLET = j.bankroll; setSlip(null); load(); })
       .catch(() => setBusy(false));
   }
 
@@ -776,9 +795,9 @@ function SportsbookScreen({ onNav }) {
             <>
               <div className="hero" style={{ background: 'linear-gradient(135deg, var(--c-amber), var(--c-coral))' }}>
                 <div className="hero__in">
-                  <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Bankroll · units</div>
-                  <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{d.bankroll}</div>
-                  <p style={{ marginTop: 6 }}>{d.record.w}–{d.record.l}{d.record.p ? `–${d.record.p}` : ''} · net <b>{d.record.net > 0 ? '+' : ''}{d.record.net}</b>{d.at_risk ? ` · ${d.at_risk} at risk` : ''}</p>
+                  <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Wallet</div>
+                  <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{S.money(d.bankroll)}</div>
+                  <p style={{ marginTop: 6 }}>{d.record.w}–{d.record.l}{d.record.p ? `–${d.record.p}` : ''} · net <b>{d.record.net > 0 ? '+' : '−'}{S.money(Math.abs(d.record.net))}</b>{d.at_risk ? ` · ${S.money(d.at_risk)} at risk` : ''}</p>
                 </div>
               </div>
 
@@ -805,7 +824,7 @@ function SportsbookScreen({ onNav }) {
                     {d.open.map(b => (
                       <div key={b.id} className="lb-row">
                         <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{b.desc}</b> <span className="dim">{od(b.odds)} · {b.matchup}</span></div>
-                        <div className="lb-pts" style={{ fontWeight: 700 }}>{b.stake}u</div>
+                        <div className="lb-pts" style={{ fontWeight: 700 }}>{S.money(b.stake)}</div>
                       </div>
                     ))}
                   </div>
@@ -820,7 +839,7 @@ function SportsbookScreen({ onNav }) {
                       <div key={b.id} className="lb-row">
                         <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{b.desc}</b> <span className="dim">{b.matchup} {b.score ? `(${b.score})` : ''}</span></div>
                         <div className="lb-pts" style={{ color: statusColor(b.status), fontWeight: 800 }}>
-                          {b.status === 'won' ? `+${(b.payout - b.stake).toFixed(0)}` : b.status === 'lost' ? `−${b.stake}` : 'push'}
+                          {b.status === 'won' ? `+${S.money(b.payout - b.stake)}` : b.status === 'lost' ? `−${S.money(b.stake)}` : 'push'}
                         </div>
                       </div>
                     ))}
@@ -840,11 +859,11 @@ function SportsbookScreen({ onNav }) {
             <button className="btn btn--ghost btn--sm" onClick={() => setSlip(null)}>Cancel</button>
           </div>
           <div className="slate-tabs mb-12">
-            {[10, 25, 50, 100].map(v => <Chip key={v} active={stake === v} onClick={() => setStake(v)}>{v}u</Chip>)}
+            {[1000, 5000, 10000, 25000].map(v => <Chip key={v} active={stake === v} onClick={() => setStake(v)}>{S.money(v)}</Chip>)}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="dim" style={{ fontWeight: 600, fontSize: '.85rem' }}>Risk {stake}u → win {(stake * (dec(slip.odds) - 1)).toFixed(0)}u</div>
-            <button className="btn btn--brand" disabled={busy || stake > (d ? d.bankroll : 0)} onClick={place}>Place {stake}u</button>
+            <div className="dim" style={{ fontWeight: 600, fontSize: '.85rem' }}>Risk {S.money(stake)} → win {S.money(stake * (dec(slip.odds) - 1))}</div>
+            <button className="btn btn--brand" disabled={busy || stake > (d ? d.bankroll : 0)} onClick={place}>Place {S.money(stake)}</button>
           </div>
         </div>
       )}
