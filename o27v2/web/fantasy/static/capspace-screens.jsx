@@ -727,4 +727,129 @@ function CategoriesScreen({ onNav }) {
   );
 }
 
-Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen, CategoriesScreen });
+/* ---------- SPORTSBOOK ---------- */
+function SportsbookScreen({ onNav }) {
+  const [data, setData] = useState(null);
+  const [slip, setSlip] = useState(null);   // {game_id, market, side, odds, line, label}
+  const [stake, setStake] = useState(25);
+  const [busy, setBusy] = useState(false);
+
+  function load() {
+    fetch('/fantasy/api/sportsbook').then(r => r.ok ? r.json() : null).then(setData).catch(() => setData(null));
+  }
+  useEffect(load, []);
+
+  const od = n => (n > 0 ? '+' + n : '' + n);
+  const dec = o => (o > 0 ? 1 + o / 100 : 1 + 100 / Math.abs(o));
+
+  function pick(g, market, side, odds, line, label) {
+    setSlip({ game_id: g.game_id, market, side, odds, line, label });
+  }
+  function place() {
+    if (!slip || busy) return;
+    setBusy(true);
+    fetch('/fantasy/api/sportsbook/bet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game_id: slip.game_id, market: slip.market, side: slip.side, stake }) })
+      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || 'Bet rejected.'); return; } setSlip(null); load(); })
+      .catch(() => setBusy(false));
+  }
+
+  const d = data;
+  const sel = (g, market, side) => slip && slip.game_id === g.game_id && slip.market === market && slip.side === side;
+  const oddsBtn = (g, market, side, odds, line, label) => (
+    <button className={'odds-btn' + (sel(g, market, side) ? ' is-on' : '')}
+      onClick={() => pick(g, market, side, odds, line, label)}
+      style={{ flex: 1, padding: '8px 6px', borderRadius: 10, border: '1px solid var(--line-2)', fontWeight: 700, fontSize: '.78rem', lineHeight: 1.3, background: sel(g, market, side) ? 'var(--brand-soft)' : 'var(--card)', color: sel(g, market, side) ? 'var(--brand-ink)' : 'var(--ink)' }}>
+      <div style={{ fontSize: '.72rem', opacity: .7 }}>{label}</div>
+      <div>{od(odds)}</div>
+    </button>
+  );
+  const statusColor = s => s === 'won' ? 'var(--live)' : s === 'lost' ? 'var(--down)' : 'var(--ink-3)';
+
+  return (
+    <>
+      <TopBar title="Sportsbook" sub="Beat the house" back onBack={() => onNav('hub')} />
+      <div className="app__scroll">
+        <div className="page page--narrow">
+          {!d ? (
+            <div className="card card--pad center" style={{ padding: '48px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>Loading…</div></div>
+          ) : (
+            <>
+              <div className="hero" style={{ background: 'linear-gradient(135deg, var(--c-amber), var(--c-coral))' }}>
+                <div className="hero__in">
+                  <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Bankroll · units</div>
+                  <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{d.bankroll}</div>
+                  <p style={{ marginTop: 6 }}>{d.record.w}–{d.record.l}{d.record.p ? `–${d.record.p}` : ''} · net <b>{d.record.net > 0 ? '+' : ''}{d.record.net}</b>{d.at_risk ? ` · ${d.at_risk} at risk` : ''}</p>
+                </div>
+              </div>
+
+              <div className="section-head mt-24"><h2>Tonight's board</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
+              {d.games.length === 0 && <div className="card card--pad center" style={{ padding: '24px' }}><div className="dim" style={{ fontWeight: 600 }}>No games open for betting.</div></div>}
+              {d.games.map(g => (
+                <div key={g.game_id} className="card card--pad mb-12">
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>{g.away} <span className="dim">@</span> {g.home}</div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                    {oddsBtn(g, 'ml', 'away', g.ml_away, null, g.away + ' ML')}
+                    {oddsBtn(g, 'ml', 'home', g.ml_home, null, g.home + ' ML')}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {oddsBtn(g, 'total', 'over', g.over_odds, g.total, 'Over ' + g.total)}
+                    {oddsBtn(g, 'total', 'under', g.under_odds, g.total, 'Under ' + g.total)}
+                  </div>
+                </div>
+              ))}
+
+              {d.open.length > 0 && (
+                <>
+                  <div className="section-head mt-24"><h2>Open bets</h2></div>
+                  <div className="card" style={{ overflow: 'hidden' }}>
+                    {d.open.map(b => (
+                      <div key={b.id} className="lb-row">
+                        <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{b.desc}</b> <span className="dim">{od(b.odds)} · {b.matchup}</span></div>
+                        <div className="lb-pts" style={{ fontWeight: 700 }}>{b.stake}u</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {d.settled.length > 0 && (
+                <>
+                  <div className="section-head mt-24"><h2>Settled</h2></div>
+                  <div className="card" style={{ overflow: 'hidden' }}>
+                    {d.settled.map(b => (
+                      <div key={b.id} className="lb-row">
+                        <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{b.desc}</b> <span className="dim">{b.matchup} {b.score ? `(${b.score})` : ''}</span></div>
+                        <div className="lb-pts" style={{ color: statusColor(b.status), fontWeight: 800 }}>
+                          {b.status === 'won' ? `+${(b.payout - b.stake).toFixed(0)}` : b.status === 'lost' ? `−${b.stake}` : 'push'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* bet slip */}
+      {slip && (
+        <div className="betslip" style={{ position: 'sticky', bottom: 0, left: 0, right: 0, background: 'var(--card)', borderTop: '1px solid var(--line-2)', padding: '14px 18px', boxShadow: '0 -6px 18px rgba(0,0,0,.12)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontWeight: 800 }}>{slip.label} <span className="dim">{od(slip.odds)}</span></div>
+            <button className="btn btn--ghost btn--sm" onClick={() => setSlip(null)}>Cancel</button>
+          </div>
+          <div className="slate-tabs mb-12">
+            {[10, 25, 50, 100].map(v => <Chip key={v} active={stake === v} onClick={() => setStake(v)}>{v}u</Chip>)}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="dim" style={{ fontWeight: 600, fontSize: '.85rem' }}>Risk {stake}u → win {(stake * (dec(slip.odds) - 1)).toFixed(0)}u</div>
+            <button className="btn btn--brand" disabled={busy || stake > (d ? d.bankroll : 0)} onClick={place}>Place {stake}u</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen, CategoriesScreen, SportsbookScreen });

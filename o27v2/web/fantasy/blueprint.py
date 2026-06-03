@@ -24,6 +24,7 @@ from . import streak as streakgame
 from . import sluggers as sluggergame
 from . import pitching as pilotgame
 from . import categories as catgame
+from . import sportsbook as book
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LOG = logging.getLogger(__name__)
@@ -226,4 +227,23 @@ def api_categories_draft():
     fmt = body.get("format", "std5x5")
     ids = body.get("player_ids") or []
     res = catgame.draft(fmt, ids)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+# ---- Sportsbook ---------------------------------------------------------
+
+@capspace_bp.route("/api/sportsbook")
+def api_sportsbook():
+    try:
+        return jsonify(book.status())
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace sportsbook status failed")
+        return jsonify({"bankroll": 0, "slate_date": None, "games": [], "open": [],
+                        "settled": [], "at_risk": 0, "record": {"w": 0, "l": 0, "p": 0, "net": 0}})
+
+
+@capspace_bp.route("/api/sportsbook/bet", methods=["POST"])
+def api_sportsbook_bet():
+    body = request.get_json(silent=True) or {}
+    res = book.place(body.get("game_id"), body.get("market"), body.get("side"), body.get("stake"))
     return jsonify(res), (200 if res.get("ok") else 400)

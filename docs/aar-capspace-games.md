@@ -53,6 +53,16 @@ per the determinism note in CLAUDE.md.
   `GET /api/categories/pool`, `POST /api/categories/draft`. The draft pool
   surfaces worst-players-first in Razz so the bad bats you want are on top.
 
+- **Sportsbook** (`sportsbook.py`, `skipper` format → `sportsbook` view). A
+  solo play-money book. The house posts a **moneyline** and **run total** for
+  each slate game, priced from team form — regressed Pythagorean win% (log5 +
+  home edge, with a vig) and regressed runs-for/against for the total — never
+  from the game's predetermined seed, so the book can be beaten. Stake units
+  from a persistent bankroll; bets settle off the final score. Endpoints
+  `GET /api/sportsbook`, `POST /api/sportsbook/bet`. Verified the odds math,
+  line generation, bankroll deduction/validation, and win/loss/push grading
+  (a controlled +150 winner credited 100u→250u payout).
+
 - **DFS scoring rebalance** (`data.py` `_W`, `_batter_fp`, `_pitcher_fp`; UI
   `SCORING`). Added **Stolen Base (+4)** and **HBP (+2)** (standard counting
   stats that were missing), added a **quality-start bonus** (+6, a starter
@@ -116,4 +126,5 @@ Exercised through the real app and direct module tests on the 60-game DB:
 
 ## Still queued
 
-**Sportsbook** (moneyline / run totals on sim games) and **Best Ball**.
+**Best Ball** — draft once, the best valid lineup auto-scores each slate; the
+category engine already supplies most of the roster/field machinery it needs.
