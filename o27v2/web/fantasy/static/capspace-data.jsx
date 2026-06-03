@@ -249,12 +249,13 @@
     { rank: 10,user: 'anchorsaway',  pts: 151.9, win: 12*LAKH,   av: 'A' },
   ];
 
-  // the DFS scoring rule (batter), shown in UI as the "rule"
+  // the DFS scoring rule (batter), shown in UI as the "rule" \u2014 standard
+  // counting stats lead; O27 stays are small flavor bonuses (see data.py _W)
   const SCORING = [
     { k: 'Single', v: '+4' }, { k: 'Double', v: '+7' }, { k: 'Triple', v: '+10' },
-    { k: 'Home Run', v: '+13' }, { k: 'Walk', v: '+2' }, { k: 'RBI', v: '+2' },
-    { k: 'Run', v: '+1.5' }, { k: 'Stay', v: '+3' }, { k: 'Stay RBI', v: '+4' },
-    { k: 'RAD grade A+', v: '+5' }, { k: 'Strikeout', v: '\u22121.5' },
+    { k: 'Home Run', v: '+13' }, { k: 'RBI', v: '+2' }, { k: 'Run', v: '+1.5' },
+    { k: 'Walk / HBP', v: '+2' }, { k: 'Stolen Base', v: '+4' }, { k: 'Strikeout', v: '\u22121.5' },
+    { k: 'Stay (O27)', v: '+0.5' }, { k: 'Stay RBI (O27)', v: '+1' },
   ];
 
   window.SLATE = {

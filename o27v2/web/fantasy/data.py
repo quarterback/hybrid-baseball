@@ -48,13 +48,15 @@ _TEAM_COLORS = [
     "var(--c-green)", "var(--c-pink)", "var(--c-lime)", "var(--c-amber)",
 ]
 
-# DFS batter scoring weights (mirror of the bGSc coefficient vector, plus the
-# stay bonuses CapSpace shows in its scoring panel). Kept here so the proj /
-# game-log fantasy points match the rule rendered in the UI.
+# DFS batter scoring weights. Standard fantasy-baseball counting stats lead;
+# the O27-specific "stay" events are kept as small flavor bonuses, not the
+# headline (a typical multi-stay game adds ~1 pt, not ~9). When main lands
+# dedicated walk-back / advancement columns we can promote them here.
 _W = {
     "single": 4.0, "double": 7.0, "triple": 10.0, "hr": 13.0,
-    "bb": 2.0, "rbi": 2.0, "run": 1.5, "stay": 3.0, "stay_rbi": 4.0,
+    "bb": 2.0, "hbp": 2.0, "rbi": 2.0, "run": 1.5, "sb": 4.0,
     "k": -1.5,
+    "stay": 0.5, "stay_rbi": 1.0,   # O27 flavor — demoted
 }
 
 
@@ -86,8 +88,10 @@ def _batter_fp(s: dict) -> float:
         + _W["triple"] * d3
         + _W["hr"] * hr
         + _W["bb"] * (s.get("bb", 0) or 0)
+        + _W["hbp"] * (s.get("hbp", 0) or 0)
         + _W["rbi"] * (s.get("rbi", 0) or 0)
         + _W["run"] * (s.get("runs", 0) or 0)
+        + _W["sb"] * (s.get("sb", 0) or 0)
         + _W["stay"] * (s.get("stays", 0) or 0)
         + _W["stay_rbi"] * (s.get("stay_rbi", 0) or 0)
         + _W["k"] * (s.get("k", 0) or 0),
@@ -99,16 +103,22 @@ def _pitcher_fp(s: dict) -> float:
     """DFS fantasy points for one pilot (pitcher) game-stat row.
 
     No MLB-style win/save in O27; value is the continuous arc — outs
-    recorded plus strikeouts, docked for damage allowed.
+    recorded plus strikeouts, docked for damage allowed. A quality-start
+    bonus rewards a starter who goes deep (>=18 outs) with <=3 earned runs,
+    the standard-fantasy stand-in for the (nonexistent) pitcher win.
     """
-    return round(
-        1.0 * (s.get("outs_recorded", 0) or 0)
+    outs = s.get("outs_recorded", 0) or 0
+    er = s.get("er", 0) or 0
+    pts = (
+        1.0 * outs
         + 3.0 * (s.get("k", 0) or 0)
-        - 2.0 * (s.get("er", 0) or 0)
+        - 2.0 * er
         - 1.0 * (s.get("bb", 0) or 0)
-        - 3.0 * (s.get("hr_allowed", 0) or 0),
-        1,
+        - 3.0 * (s.get("hr_allowed", 0) or 0)
     )
+    if (s.get("is_starter") or 0) and outs >= 18 and er <= 3:
+        pts += 6.0  # quality start
+    return round(pts, 1)
 
 
 def _proj_from_ratings(row: dict, is_pitcher: bool) -> float:
