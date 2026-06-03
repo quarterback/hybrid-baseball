@@ -268,7 +268,10 @@ def _career_batting(lines: list[dict]) -> list[dict]:
     meta = _career_latest_meta(lines)
     agg: dict[int, dict] = {}
     fields = ("g", "pa", "ab", "r", "h", "doubles", "triples",
-              "hr", "rbi", "bb", "k", "sb", "hbp")
+              "hr", "rbi", "bb", "k", "sb", "hbp",
+              "risp_pa", "risp_ab", "risp_h", "risp_2b", "risp_3b",
+              "risp_hr", "risp_bb", "risp_hbp", "risp_rbi",
+              "sh", "bunt_att", "bunt_hits", "sqz", "sqz_rbi")
     for r in lines:
         pid = r["player_id"]
         a = agg.get(pid)
@@ -297,6 +300,16 @@ def _career_batting(lines: list[dict]) -> list[dict]:
             slg=(tb / ab) if ab else 0.0,
         )
         a["ops"] = a["obp"] + a["slg"]
+        # Career RISP slash — PA-denominated (matching the live app), summed
+        # from per-season component totals; risp_conv = RBI per RISP PA.
+        rpa = a["risp_pa"]
+        r_tb = ((a["risp_h"] - a["risp_2b"] - a["risp_3b"] - a["risp_hr"])
+                + 2 * a["risp_2b"] + 3 * a["risp_3b"] + 4 * a["risp_hr"])
+        a["risp_pavg"] = (a["risp_h"] / rpa) if rpa else 0.0
+        a["risp_obp"]  = ((a["risp_h"] + a["risp_bb"] + a["risp_hbp"]) / rpa) if rpa else 0.0
+        a["risp_slg"]  = (r_tb / rpa) if rpa else 0.0
+        a["risp_ops"]  = a["risp_obp"] + a["risp_slg"]
+        a["risp_conv"] = (a["risp_rbi"] / rpa) if rpa else 0.0
         out.append(a)
     return out
 
@@ -304,7 +317,9 @@ def _career_batting(lines: list[dict]) -> list[dict]:
 def _career_pitching(lines: list[dict]) -> list[dict]:
     meta = _career_latest_meta(lines)
     agg: dict[int, dict] = {}
-    fields = ("g", "gs", "w", "l", "outs", "h", "r", "er", "bb", "k", "hr")
+    fields = ("g", "gs", "w", "l", "outs", "h", "r", "er", "bb", "k", "hr",
+              "ir_inherited", "ir_scored", "terminal_outs", "quality_finish",
+              "lead_entries", "lead_held")
     for r in lines:
         pid = r["player_id"]
         a = agg.get(pid)
@@ -331,6 +346,10 @@ def _career_pitching(lines: list[dict]) -> list[dict]:
             whip=(((a["bb"] + a["h"]) / ip) if ip else 0.0),
             k9=((a["k"] * 27.0 / outs) if outs else 0.0),
         )
+        # Career relief/finisher rates (recomputed from component sums).
+        inh, le = a["ir_inherited"], a["lead_entries"]
+        a["ir_stop_pct"] = ((inh - a["ir_scored"]) / inh) if inh else None
+        a["lra"] = (10.0 * a["lead_held"] / le) if le else None
         out.append(a)
     return out
 
@@ -349,6 +368,11 @@ def _career_leaderboards(bat_lines: list[dict], pit_lines: list[dict],
         "avg": _career_rank(bat, "avg", min_field="pa", min_val=CAREER_MIN_PA),
         "obp": _career_rank(bat, "obp", min_field="pa", min_val=CAREER_MIN_PA),
         "ops": _career_rank(bat, "ops", min_field="pa", min_val=CAREER_MIN_PA),
+        "sh":        _career_rank(bat, "sh"),
+        "bunt_hits": _career_rank(bat, "bunt_hits"),
+        "sqz_rbi":   _career_rank(bat, "sqz_rbi"),
+        "risp_rbi":  _career_rank(bat, "risp_rbi"),
+        "risp_ops":  _career_rank(bat, "risp_ops", min_field="risp_pa", min_val=CAREER_MIN_PA),
     }
     pitching = {
         "w":    _career_rank(pit, "w"),
@@ -360,6 +384,9 @@ def _career_leaderboards(bat_lines: list[dict], pit_lines: list[dict],
         "whip": _career_rank(pit, "whip", reverse=False,
                              min_field="outs", min_val=CAREER_MIN_OUTS),
         "k9":   _career_rank(pit, "k9", min_field="outs", min_val=CAREER_MIN_OUTS),
+        "terminal_outs":  _career_rank(pit, "terminal_outs"),
+        "quality_finish": _career_rank(pit, "quality_finish"),
+        "lra":            _career_rank(pit, "lra", min_field="lead_entries", min_val=3),
     }
     return {
         "batting": batting,

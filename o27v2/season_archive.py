@@ -531,7 +531,21 @@ def _snapshot_player_lines(season_id: int) -> None:
                   SUM(bs.hits) AS h, SUM(bs.doubles) AS d2,
                   SUM(bs.triples) AS d3, SUM(bs.hr) AS hr,
                   SUM(bs.rbi) AS rbi, SUM(bs.bb) AS bb, SUM(bs.k) AS k,
-                  SUM(bs.sb) AS sb, SUM(bs.hbp) AS hbp
+                  SUM(bs.sb) AS sb, SUM(bs.hbp) AS hbp,
+                  COALESCE(SUM(bs.risp_pa),0) AS risp_pa,
+                  COALESCE(SUM(bs.risp_ab),0) AS risp_ab,
+                  COALESCE(SUM(bs.risp_h),0)  AS risp_h,
+                  COALESCE(SUM(bs.risp_2b),0) AS risp_2b,
+                  COALESCE(SUM(bs.risp_3b),0) AS risp_3b,
+                  COALESCE(SUM(bs.risp_hr),0) AS risp_hr,
+                  COALESCE(SUM(bs.risp_bb),0) AS risp_bb,
+                  COALESCE(SUM(bs.risp_hbp),0) AS risp_hbp,
+                  COALESCE(SUM(bs.risp_rbi),0) AS risp_rbi,
+                  COALESCE(SUM(bs.sh),0)        AS sh,
+                  COALESCE(SUM(bs.bunt_att),0)  AS bunt_att,
+                  COALESCE(SUM(bs.bunt_hits),0) AS bunt_hits,
+                  COALESCE(SUM(bs.sqz),0)       AS sqz,
+                  COALESCE(SUM(bs.sqz_rbi),0)   AS sqz_rbi
              FROM game_batter_stats bs
              JOIN players p ON bs.player_id = p.id
              LEFT JOIN teams t ON p.team_id = t.id
@@ -542,13 +556,21 @@ def _snapshot_player_lines(season_id: int) -> None:
         db.execute(
             """INSERT OR REPLACE INTO season_player_batting
                (season_id, player_id, player_name, team_abbrev, league,
-                g, pa, ab, r, h, doubles, triples, hr, rbi, bb, k, sb, hbp)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                g, pa, ab, r, h, doubles, triples, hr, rbi, bb, k, sb, hbp,
+                risp_pa, risp_ab, risp_h, risp_2b, risp_3b, risp_hr,
+                risp_bb, risp_hbp, risp_rbi,
+                sh, bunt_att, bunt_hits, sqz, sqz_rbi)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (season_id, r["player_id"], r["player_name"], r["team_abbrev"],
              r["league"], r["g"] or 0, r["pa"] or 0, r["ab"] or 0, r["r"] or 0,
              r["h"] or 0, r["d2"] or 0, r["d3"] or 0, r["hr"] or 0,
              r["rbi"] or 0, r["bb"] or 0, r["k"] or 0, r["sb"] or 0,
-             r["hbp"] or 0),
+             r["hbp"] or 0,
+             r["risp_pa"], r["risp_ab"], r["risp_h"], r["risp_2b"],
+             r["risp_3b"], r["risp_hr"], r["risp_bb"], r["risp_hbp"],
+             r["risp_rbi"], r["sh"], r["bunt_att"], r["bunt_hits"],
+             r["sqz"], r["sqz_rbi"]),
         )
 
     wl = _pitcher_wl_map()
@@ -560,7 +582,13 @@ def _snapshot_player_lines(season_id: int) -> None:
                    SUM(ps.outs_recorded) AS outs,
                    SUM(ps.hits_allowed) AS h, SUM(ps.runs_allowed) AS r,
                    SUM(ps.er) AS er, SUM(ps.bb) AS bb, SUM(ps.k) AS k,
-                   SUM(ps.hr_allowed) AS hr
+                   SUM(ps.hr_allowed) AS hr,
+                   COALESCE(SUM(ps.ir_inherited),0)  AS ir_inherited,
+                   COALESCE(SUM(ps.ir_scored),0)     AS ir_scored,
+                   COALESCE(SUM(ps.terminal_outs),0) AS terminal_outs,
+                   COALESCE(SUM(ps.quality_finish),0) AS quality_finish,
+                   COALESCE(SUM(ps.lead_entries),0)  AS lead_entries,
+                   COALESCE(SUM(ps.lead_held),0)     AS lead_held
               FROM {_PSTATS_DEDUP_SQL} ps
               JOIN players p ON ps.player_id = p.id
               LEFT JOIN teams t ON p.team_id = t.id
@@ -572,12 +600,17 @@ def _snapshot_player_lines(season_id: int) -> None:
         db.execute(
             """INSERT OR REPLACE INTO season_player_pitching
                (season_id, player_id, player_name, team_abbrev, league,
-                g, gs, w, l, outs, h, r, er, bb, k, hr)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                g, gs, w, l, outs, h, r, er, bb, k, hr,
+                ir_inherited, ir_scored, terminal_outs, quality_finish,
+                lead_entries, lead_held)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                       ?, ?, ?, ?, ?, ?)""",
             (season_id, r["player_id"], r["player_name"], r["team_abbrev"],
              r["league"], r["g"] or 0, r["gs"] or 0, rec["w"], rec["l"],
              r["outs"] or 0, r["h"] or 0, r["r"] or 0, r["er"] or 0,
-             r["bb"] or 0, r["k"] or 0, r["hr"] or 0),
+             r["bb"] or 0, r["k"] or 0, r["hr"] or 0,
+             r["ir_inherited"], r["ir_scored"], r["terminal_outs"],
+             r["quality_finish"], r["lead_entries"], r["lead_held"]),
         )
 
 

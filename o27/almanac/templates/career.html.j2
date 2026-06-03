@@ -78,6 +78,11 @@
     {{ bat_cat('AVG', career.batting.avg, 'avg', '%.3f') }}
     {{ bat_cat('OBP', career.batting.obp, 'obp', '%.3f') }}
     {{ bat_cat('OPS', career.batting.ops, 'ops', '%.3f') }}
+    {{ bat_cat('SH',        career.batting.sh,        'sh',        '%d') }}
+    {{ bat_cat('Bunt H',    career.batting.bunt_hits, 'bunt_hits', '%d') }}
+    {{ bat_cat('Squeeze RBI', career.batting.sqz_rbi, 'sqz_rbi',   '%d') }}
+    {{ bat_cat('RISP RBI',  career.batting.risp_rbi,  'risp_rbi',  '%d') }}
+    {{ bat_cat('RISP OPS',  career.batting.risp_ops,  'risp_ops',  '%.3f') }}
   </div>
   <div>
     <h3 class="page-subtitle" style="font-size:1.05rem;font-weight:600;">Pitching</h3>
@@ -88,6 +93,9 @@
     {{ pit_cat('ERA',  career.pitching.era,  'era',  '%.2f') }}
     {{ pit_cat('WHIP', career.pitching.whip, 'whip', '%.2f') }}
     {{ pit_cat('K/9',  career.pitching.k9,   'k9',   '%.2f') }}
+    {{ pit_cat('Terminal Outs',  career.pitching.terminal_outs,  'terminal_outs',  '%d') }}
+    {{ pit_cat('Quality Finish', career.pitching.quality_finish, 'quality_finish', '%d') }}
+    {{ pit_cat('LRA',            career.pitching.lra,            'lra',            '%.2f') }}
   </div>
 </div>
 {% endif %}
