@@ -347,6 +347,14 @@ class SpellRecord:
     # rally you walked into). The starter inherits nobody.
     ir_inherited: int = 0
     ir_scored:    int = 0
+    # Finisher context: the fielding-team lead (fielding − batting score) at the
+    # moment this pitcher entered (entry_lead) and the minimum that lead reached
+    # during the spell (min_lead). finished = he was on the mound at the end of
+    # his defensive half. Together these drive Terminal Outs / Quality Finish /
+    # Lead-Retention — the structure-agnostic "who seals games" stats.
+    entry_lead: int = 0
+    min_lead:   int = 0
+    finished:   int = 0
     # Arc-bucketed counters for wERA / xFIP / Decay. Indices 0/1/2 cover
     # outs 1-9 / 10-18 / 19-27 of the defending team's running 27-out half.
     # Super-innings outs roll into arc 3 (treat as continuation).
@@ -611,6 +619,12 @@ class GameState:
     # Inherited-runner per-spell counters (flushed to SpellRecord at spell end).
     pitcher_ir_inherited_this_spell: int = 0
     pitcher_ir_scored_this_spell:    int = 0
+    # Finisher tracking. entry/min lead are lazily initialized on the spell's
+    # first event (so entry = the lead when he took the mound); lead_init gates
+    # that. See pa.apply_event + game._close_spell / manager.pitching_change.
+    pitcher_entry_lead_this_spell: int = 0
+    pitcher_min_lead_this_spell:   int = 0
+    pitcher_lead_init_this_spell:  bool = False
     # Arc-bucketed per-spell counters (indices 0/1/2 → arc 1/2/3 of the
     # defending team's 27-out running half). Reset at spell start.
     pitcher_er_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])

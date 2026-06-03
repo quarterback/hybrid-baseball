@@ -391,9 +391,21 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     run-scoring play). See _reconcile_walk_back.
     """
     _ir_score_before = sum(state.score.values())
+    # Finisher lead tracking: lazily capture entry lead (fielding − batting)
+    # before this pitcher's first event, then track the running minimum.
+    _fld_id = state.fielding_team.team_id
+    _bat_id = state.batting_team.team_id
+    _lead_before = state.score.get(_fld_id, 0) - state.score.get(_bat_id, 0)
+    if not state.pitcher_lead_init_this_spell:
+        state.pitcher_entry_lead_this_spell = _lead_before
+        state.pitcher_min_lead_this_spell = _lead_before
+        state.pitcher_lead_init_this_spell = True
     log = _apply_event_inner(state, event)
     log += _reconcile_walk_back(state)
     _reconcile_inherited(state, sum(state.score.values()) - _ir_score_before)
+    _lead_after = state.score.get(_fld_id, 0) - state.score.get(_bat_id, 0)
+    if _lead_after < state.pitcher_min_lead_this_spell:
+        state.pitcher_min_lead_this_spell = _lead_after
     return log
 
 

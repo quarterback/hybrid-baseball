@@ -561,6 +561,14 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     -- IR-Stop% = (ir_inherited - ir_scored) / ir_inherited.
     ir_inherited   INTEGER DEFAULT 0,
     ir_scored      INTEGER DEFAULT 0,
+    -- Finisher stats. terminal_outs = outs recorded in a spell entered with a
+    -- lead that was never relinquished and finished the game. quality_finish =
+    -- count of 9+-out finishes never trailing. lead_entries / lead_held drive
+    -- Lead-Retention% (lead_held / lead_entries).
+    terminal_outs  INTEGER DEFAULT 0,
+    quality_finish INTEGER DEFAULT 0,
+    lead_entries   INTEGER DEFAULT 0,
+    lead_held      INTEGER DEFAULT 0,
     -- xRA v3 — per-pitcher hit-type breakdown allowed. Lets each
     -- pitcher's xRA reflect their own batted-ball mix rather than the
     -- league average. Sums tabulated from the PA log post-game.
@@ -1677,7 +1685,8 @@ def init_db() -> None:
             pass
         # Walk-Back rule columns — added when the rule landed. Historical
         # rows get 0 (no Walk-Back PAs existed before the rule).
-        for col in ("wb_faced", "wb_runs", "ir_inherited", "ir_scored"):
+        for col in ("wb_faced", "wb_runs", "ir_inherited", "ir_scored",
+                    "terminal_outs", "quality_finish", "lead_entries", "lead_held"):
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()

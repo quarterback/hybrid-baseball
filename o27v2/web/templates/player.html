@@ -643,6 +643,9 @@
         <th class="num" title="Average Leverage Index at the moment he entered a game — who gets the high-stakes calls. 1.0 = league norm.">gmLI</th>
         <th class="num" title="Earned runs per batter faced in the final arc (outs 19-27); lower = better finisher.">Late ER/BF</th>
         <th class="num" title="Arc-3 strikeout rate (outs 19-27, incl. foul-outs)">LateK%</th>
+        <th class="num" title="Terminal Outs — outs recorded entering with a lead, never relinquishing it, and finishing the game. Scales with the back-stage-finisher role.">TO</th>
+        <th class="num" title="Quality Finishes — games entered and sealed with 9+ final outs while never trailing.">QF</th>
+        <th class="num" title="Lead-Retention %: share of lead-entries he held (never let the lead be tied/lost on his watch).">LR%</th>
       </tr></thead>
       <tbody><tr>
         <td class="num mono">{{ pt_totals.ir_inherited or 0 }}</td>
@@ -651,6 +654,9 @@
         <td class="num mono">{% if pt_totals.gmli is not none %}{{ '%.2f'|format(pt_totals.gmli) }}{% else %}—{% endif %}</td>
         <td class="num mono">{% if pt_totals.late_er_per_bf is not none %}{{ '%.3f'|format(pt_totals.late_er_per_bf) }}{% else %}—{% endif %}</td>
         <td class="num mono">{% if pt_totals.late_k_known %}{{ '%.1f'|format(pt_totals.late_k_pct_pct) }}%{% else %}—{% endif %}</td>
+        <td class="num mono fw-bold">{{ pt_totals.terminal_outs or 0 }}</td>
+        <td class="num mono">{{ pt_totals.quality_finish or 0 }}</td>
+        <td class="num mono">{% if pt_totals.lr_pct is not none %}{{ '%.0f'|format(pt_totals.lr_pct * 100) }}%{% else %}—{% endif %}</td>
       </tr></tbody>
     </table>
     </div>

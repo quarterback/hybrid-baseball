@@ -562,7 +562,8 @@ _PSTATS_DEDUP_SQL = """(
            is_starter,
            singles_allowed, doubles_allowed, triples_allowed,
            fastball_pct, breaking_pct, offspeed_pct, primary_pitch,
-           wb_faced, wb_runs, ir_inherited, ir_scored
+           wb_faced, wb_runs, ir_inherited, ir_scored,
+           terminal_outs, quality_finish, lead_entries, lead_held
     FROM (
         SELECT *,
                ROW_NUMBER() OVER (
@@ -2406,6 +2407,13 @@ def _aggregate_pitcher_rows(
         # Share of inherited runners the reliever stranded. Higher = better.
         # None when he never entered with runners on (e.g. pure starters).
         p["ir_stop_pct"] = ((ir_inh - ir_sc) / ir_inh) if ir_inh else None
+
+        # --- Finisher counting + Lead-Retention% ---
+        # terminal_outs / quality_finish pass through as season SUMs; LR% is the
+        # share of lead-entries the pitcher held (didn't surrender on his watch).
+        le = p.get("lead_entries") or 0
+        lh = p.get("lead_held") or 0
+        p["lr_pct"] = (lh / le) if le else None
 
         # --- Workload ---
         p["aor"]    = (outs / g) if g else 0.0
@@ -4601,6 +4609,10 @@ def stats_browse():
                   SUM(ps.wb_runs)        as wb_runs,
                        COALESCE(SUM(ps.ir_inherited),0) as ir_inherited,
                        COALESCE(SUM(ps.ir_scored),0)    as ir_scored,
+                       COALESCE(SUM(ps.terminal_outs),0)  as terminal_outs,
+                       COALESCE(SUM(ps.quality_finish),0) as quality_finish,
+                       COALESCE(SUM(ps.lead_entries),0)   as lead_entries,
+                       COALESCE(SUM(ps.lead_held),0)      as lead_held,
                        COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
                        COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                        COALESCE(SUM(ps.unearned_runs),0) as uer,
@@ -4972,6 +4984,10 @@ def leaders():
                   SUM(ps.wb_runs)        as wb_runs,
                   COALESCE(SUM(ps.ir_inherited),0) as ir_inherited,
                   COALESCE(SUM(ps.ir_scored),0)    as ir_scored,
+                  COALESCE(SUM(ps.terminal_outs),0)  as terminal_outs,
+                  COALESCE(SUM(ps.quality_finish),0) as quality_finish,
+                  COALESCE(SUM(ps.lead_entries),0)   as lead_entries,
+                  COALESCE(SUM(ps.lead_held),0)      as lead_held,
                   COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
                   COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                   COALESCE(SUM(ps.unearned_runs),0) as uer,
@@ -5605,6 +5621,10 @@ def _player_pitching_split(player_id: int,
                   SUM(ps.wb_runs)    as wb_runs,
                    COALESCE(SUM(ps.ir_inherited),0) as ir_inherited,
                    COALESCE(SUM(ps.ir_scored),0)    as ir_scored,
+                   COALESCE(SUM(ps.terminal_outs),0)  as terminal_outs,
+                   COALESCE(SUM(ps.quality_finish),0) as quality_finish,
+                   COALESCE(SUM(ps.lead_entries),0)   as lead_entries,
+                   COALESCE(SUM(ps.lead_held),0)      as lead_held,
                    COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
                    COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                    COALESCE(SUM(ps.unearned_runs),0) as uer,

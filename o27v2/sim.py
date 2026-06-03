@@ -1073,6 +1073,26 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
         wb_runs  = sum(getattr(rec, "wb_runs",  0) for rec in spells)
         ir_inherited = sum(getattr(rec, "ir_inherited", 0) for rec in spells)
         ir_scored    = sum(getattr(rec, "ir_scored",    0) for rec in spells)
+        # Finisher stats, derived per spell from its entry/min lead + finished
+        # flag, then summed to the game row (season totals are SUMs). A spell
+        # "finished" means the pitcher was on the mound at the end of his
+        # defensive half. Terminal Outs = outs in a spell where he entered with
+        # a lead, never let it be tied/lost, and finished. Quality Finish =
+        # finished 9+ outs never trailing. Lead entries/held drive LR%.
+        terminal_outs = quality_finish = lead_entries = lead_held = 0
+        for rec in spells:
+            e_lead = getattr(rec, "entry_lead", 0)
+            m_lead = getattr(rec, "min_lead", 0)
+            fin    = getattr(rec, "finished", 0)
+            outs_r = getattr(rec, "outs_recorded", 0)
+            if e_lead > 0:
+                lead_entries += 1
+                if m_lead > 0:
+                    lead_held += 1
+                    if fin:
+                        terminal_outs += outs_r
+            if fin and outs_r >= 9 and m_lead >= 0:
+                quality_finish += 1
         rows.append({
             "team_id": team_id,
             "player_id": db_pid,
@@ -1109,6 +1129,10 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
             "wb_runs":  wb_runs,
             "ir_inherited": ir_inherited,
             "ir_scored":    ir_scored,
+            "terminal_outs":  terminal_outs,
+            "quality_finish": quality_finish,
+            "lead_entries":   lead_entries,
+            "lead_held":      lead_held,
         })
     return rows
 
@@ -2086,8 +2110,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                     is_starter,
                     singles_allowed, doubles_allowed, triples_allowed,
                     fastball_pct, breaking_pct, offspeed_pct, primary_pitch,
-                    wb_faced, wb_runs, ir_inherited, ir_scored)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    wb_faced, wb_runs, ir_inherited, ir_scored,
+                    terminal_outs, quality_finish, lead_entries, lead_held)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
                  r["runs_allowed"], r.get("er", r["runs_allowed"]),
@@ -2109,7 +2134,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                  r.get("fastball_pct", 0.0), r.get("breaking_pct", 0.0),
                  r.get("offspeed_pct", 0.0), r.get("primary_pitch", ""),
                  r.get("wb_faced", 0), r.get("wb_runs", 0),
-                 r.get("ir_inherited", 0), r.get("ir_scored", 0)),
+                 r.get("ir_inherited", 0), r.get("ir_scored", 0),
+                 r.get("terminal_outs", 0), r.get("quality_finish", 0),
+                 r.get("lead_entries", 0), r.get("lead_held", 0)),
             )
         for r in team_phase_outs:
             conn.execute(
@@ -2324,8 +2351,9 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
             fo_tto1, fo_tto2, fo_tto3,
             bf_tto1, bf_tto2, bf_tto3,
             is_starter,
-            wb_faced, wb_runs, ir_inherited, ir_scored)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            wb_faced, wb_runs, ir_inherited, ir_scored,
+            terminal_outs, quality_finish, lead_entries, lead_held)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["batters_faced"],
           r["outs_recorded"], r["hits_allowed"], r["runs_allowed"],
           r.get("er", r["runs_allowed"]),
@@ -2342,7 +2370,9 @@ def _insert_pitcher_stats(game_id: int, rows: list[dict]) -> None:
           r.get("bf_tto1", 0), r.get("bf_tto2", 0), r.get("bf_tto3", 0),
           r.get("is_starter", 0),
           r.get("wb_faced", 0), r.get("wb_runs", 0),
-          r.get("ir_inherited", 0), r.get("ir_scored", 0))
+          r.get("ir_inherited", 0), r.get("ir_scored", 0),
+          r.get("terminal_outs", 0), r.get("quality_finish", 0),
+          r.get("lead_entries", 0), r.get("lead_held", 0))
          for r in rows],
     )
 

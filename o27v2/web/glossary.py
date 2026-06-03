@@ -272,6 +272,12 @@ GLOSSARY_SECTIONS: list[dict] = [
              "desc": "Average Leverage Index at the moment he entered a game (first PA of each appearance). Shows who gets the high-stakes calls. 1.0 = league norm; >1 = disproportionately high-stakes entries."},
             {"key": "late_er_per_bf", "abbr": "Late ER/BF", "name": "Late-Arc Run Prevention",
              "desc": "Earned runs allowed per batter faced in the final arc (outs 19-27) — the heavy-leverage third where close games are decided. Lower = better finisher, regardless of how many outs he threw."},
+            {"key": "terminal_outs", "abbr": "TO", "name": "Terminal Outs",
+             "desc": "Outs recorded in a game he entered with a lead, never let be tied or lost, and finished. Scales with the role: a one-out closer gets ~3, a back-stage finisher-starter who seals the final third gets ~9+. The counting measure of who really closes games."},
+            {"key": "quality_finish", "abbr": "QF", "name": "Quality Finish",
+             "desc": "The inverse of a Quality Start: entered and sealed 9+ of the final outs while never trailing (lead or tie), regardless of save situation. Separates high-volume finishers from one-out specialists."},
+            {"key": "lr_pct", "abbr": "LR%", "name": "Lead-Retention %",
+             "desc": "Of the games he entered with a lead, the share he held without letting it be tied or lost on his watch. Read against outs-per-appearance it splits short-relief specialists from back-stage starters."},
         ],
     },
     {

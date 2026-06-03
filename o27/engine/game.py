@@ -444,6 +444,11 @@ def _close_current_spell(state: GameState) -> None:
         bf_tto=list(state.pitcher_bf_tto_this_spell),
         wb_faced=state.pitcher_wb_faced_this_spell,
         wb_runs=state.pitcher_wb_runs_this_spell,
+        ir_inherited=state.pitcher_ir_inherited_this_spell,
+        ir_scored=state.pitcher_ir_scored_this_spell,
+        entry_lead=state.pitcher_entry_lead_this_spell,
+        min_lead=state.pitcher_min_lead_this_spell,
+        finished=1,   # on the mound at the end of his defensive half
     )
     state.spell_log.append(spell)
     state.pitcher_spell_count = 0
@@ -469,6 +474,11 @@ def _close_current_spell(state: GameState) -> None:
     state.pitcher_bf_tto_this_spell = [0, 0, 0]
     state.pitcher_wb_faced_this_spell = 0
     state.pitcher_wb_runs_this_spell = 0
+    state.pitcher_ir_inherited_this_spell = 0
+    state.pitcher_ir_scored_this_spell = 0
+    state.pitcher_entry_lead_this_spell = 0
+    state.pitcher_min_lead_this_spell = 0
+    state.pitcher_lead_init_this_spell = False
 
 
 def _finalize_declaration(team: Team, state: GameState) -> None:
