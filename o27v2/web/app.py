@@ -4527,6 +4527,20 @@ def stats_browse():
                        COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                        COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                       COALESCE(SUM(bs.risp_pa),0)  as risp_pa,
+                       COALESCE(SUM(bs.risp_ab),0)  as risp_ab,
+                       COALESCE(SUM(bs.risp_h),0)   as risp_h,
+                       COALESCE(SUM(bs.risp_2b),0)  as risp_2b,
+                       COALESCE(SUM(bs.risp_3b),0)  as risp_3b,
+                       COALESCE(SUM(bs.risp_hr),0)  as risp_hr,
+                       COALESCE(SUM(bs.risp_bb),0)  as risp_bb,
+                       COALESCE(SUM(bs.risp_hbp),0) as risp_hbp,
+                       COALESCE(SUM(bs.risp_rbi),0) as risp_rbi,
+                       COALESCE(SUM(bs.sh),0)        as sh,
+                       COALESCE(SUM(bs.bunt_att),0)  as bunt_att,
+                       COALESCE(SUM(bs.bunt_hits),0) as bunt_hits,
+                       COALESCE(SUM(bs.sqz),0)       as sqz,
+                       COALESCE(SUM(bs.sqz_rbi),0)   as sqz_rbi,
                        COALESCE(SUM(bs.roe),0)          as roe
                 FROM game_batter_stats bs
                 JOIN players p ON bs.player_id = p.id
@@ -5787,7 +5801,21 @@ def player_detail(player_id: int):
                   COALESCE(SUM(adv_adv_3b),0)  as adv_adv_3b,
                   COALESCE(SUM(rad_1b),0)      as rad_1b,
                   COALESCE(SUM(rad_2b),0)      as rad_2b,
-                  COALESCE(SUM(rad_3b),0)      as rad_3b
+                  COALESCE(SUM(rad_3b),0)      as rad_3b,
+                  COALESCE(SUM(risp_pa),0)  as risp_pa,
+                  COALESCE(SUM(risp_ab),0)  as risp_ab,
+                  COALESCE(SUM(risp_h),0)   as risp_h,
+                  COALESCE(SUM(risp_2b),0)  as risp_2b,
+                  COALESCE(SUM(risp_3b),0)  as risp_3b,
+                  COALESCE(SUM(risp_hr),0)  as risp_hr,
+                  COALESCE(SUM(risp_bb),0)  as risp_bb,
+                  COALESCE(SUM(risp_hbp),0) as risp_hbp,
+                  COALESCE(SUM(risp_rbi),0) as risp_rbi,
+                  COALESCE(SUM(sh),0)        as sh,
+                  COALESCE(SUM(bunt_att),0)  as bunt_att,
+                  COALESCE(SUM(bunt_hits),0) as bunt_hits,
+                  COALESCE(SUM(sqz),0)       as sqz,
+                  COALESCE(SUM(sqz_rbi),0)   as sqz_rbi
            FROM game_batter_stats WHERE player_id = ?""",
         (player_id,),
     )
@@ -6380,6 +6408,8 @@ _O27I_BATTER_METRICS = [
     ("bb_pct",    "Walk %",         "pct",  False),
     ("k_pct",     "Strikeout %",    "pct",  True),
     ("stay_pct",  "Second-Chance %", "pct",  False),
+    ("risp_ops",  "RISP-OPS",       "0.3f", False),
+    ("risp_conv", "RISP Cash-In",   "0.3f", False),
 ]
 
 # O27-calibrated batted-ball cuts (NOT MLB's 95-mph anchor — see the O27 Index
@@ -6388,6 +6418,19 @@ _O27I_HARDHIT_EV = 100.0
 _O27I_BARREL_EV  = 104.0
 _O27I_BARREL_LA  = (10.0, 35.0)
 _O27I_SWEET_LA   = (8.0, 32.0)
+
+
+def _risp_ops_from(rt: dict) -> float | None:
+    """PA-denominated RISP-OPS from a row carrying the risp_* component sums
+    (the O27 PA-denomination convention, since stays let risp_h exceed risp_ab)."""
+    rpa = rt.get("risp_pa") or 0
+    if not rpa:
+        return None
+    rh, r2, r3 = (rt.get("risp_h") or 0), (rt.get("risp_2b") or 0), (rt.get("risp_3b") or 0)
+    rhr, rbb, rhbp = (rt.get("risp_hr") or 0), (rt.get("risp_bb") or 0), (rt.get("risp_hbp") or 0)
+    singles = rh - r2 - r3 - rhr
+    tb = singles + 2 * r2 + 3 * r3 + 4 * rhr
+    return round((rh + rbb + rhbp) / rpa + tb / rpa, 3)
 
 
 def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
@@ -6412,7 +6455,15 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
     rate_team_in = team_in.replace("team_id", "b.team_id")
     rate = db.fetchall(
         f"""SELECT b.player_id, SUM(b.pa) AS pa, SUM(b.k) AS k, SUM(b.bb) AS bb,
-                   SUM(b.stays) AS stays
+                   SUM(b.stays) AS stays,
+                   COALESCE(SUM(b.risp_pa),0)  AS risp_pa,
+                   COALESCE(SUM(b.risp_h),0)   AS risp_h,
+                   COALESCE(SUM(b.risp_2b),0)  AS risp_2b,
+                   COALESCE(SUM(b.risp_3b),0)  AS risp_3b,
+                   COALESCE(SUM(b.risp_hr),0)  AS risp_hr,
+                   COALESCE(SUM(b.risp_bb),0)  AS risp_bb,
+                   COALESCE(SUM(b.risp_hbp),0) AS risp_hbp,
+                   COALESCE(SUM(b.risp_rbi),0) AS risp_rbi
             FROM game_batter_stats b
             WHERE b.phase = 0{rate_team_in}
             GROUP BY b.player_id""")
@@ -6442,6 +6493,9 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
             "bb_pct":    round(100 * (rt.get("bb") or 0) / pa, 1) if pa else None,
             "k_pct":     round(100 * (rt.get("k") or 0) / pa, 1) if pa else None,
             "stay_pct":  round(100 * (rt.get("stays") or 0) / pa, 1) if pa else None,
+            "risp_ops":  _risp_ops_from(rt),
+            "risp_conv": (round((rt.get("risp_rbi") or 0) / rt["risp_pa"], 3)
+                          if (rt.get("risp_pa") or 0) else None),
             "woba":      xw.get("woba"),
             "xwoba":     xw.get("xwoba"),
         })
@@ -7388,6 +7442,15 @@ def distributions():
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.risp_pa),0)  as risp_pa,
+                  COALESCE(SUM(bs.risp_ab),0)  as risp_ab,
+                  COALESCE(SUM(bs.risp_h),0)   as risp_h,
+                  COALESCE(SUM(bs.risp_2b),0)  as risp_2b,
+                  COALESCE(SUM(bs.risp_3b),0)  as risp_3b,
+                  COALESCE(SUM(bs.risp_hr),0)  as risp_hr,
+                  COALESCE(SUM(bs.risp_bb),0)  as risp_bb,
+                  COALESCE(SUM(bs.risp_hbp),0) as risp_hbp,
+                  COALESCE(SUM(bs.risp_rbi),0) as risp_rbi,
                   COALESCE(SUM(bs.roe),0) as roe
            FROM game_batter_stats bs
            JOIN players p ON bs.player_id = p.id
@@ -7467,6 +7530,9 @@ def distributions():
         ("stay_rbi_pct",  "2C-RBI%",  "%.1f%%", True),
         ("stay_conv_pct", "2C-Conv%", "%.1f%%", True),
         ("mhab_pct",      "MhAB%",    "%.1f%%", True),
+        ("risp_pavg",     "RISP-AVG", "%.3f", False),
+        ("risp_ops",      "RISP-OPS", "%.3f", False),
+        ("risp_conv",     "RISP-Conv","%.2f", False),
         ("war",           "WAR",      "%.2f", False),
     ]
     pit_specs = [

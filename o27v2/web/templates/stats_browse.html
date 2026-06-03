@@ -207,6 +207,13 @@
       <th class="num" title="RBI per 2C event">2C-RBI/2C</th>
       <th class="num" title="Foul-out rate">FO%</th>
       <th class="num" title="Multi-hit AB rate">MhAB%</th>
+      <th class="num" title="Batting average (H/PA) with runners in scoring position">RISP-AVG</th>
+      <th class="num" title="OPS with runners in scoring position">RISP-OPS</th>
+      <th class="num" title="RBI driven in with RISP">RISP-RBI</th>
+      <th class="num" title="RBI per RISP plate appearance — cash-in rate">RISP-Conv</th>
+      <th class="num" title="Sacrifice bunts">SH</th>
+      <th class="num" title="Bunt singles (subset of hits)">Bunt H</th>
+      <th class="num" title="Squeeze RBI — runs driven home from third">Sqz RBI</th>
       <th class="num">DRS</th><th class="num">dWAR</th><th class="num fw-bold">WAR</th>
     </tr></thead>
     <tbody>
@@ -252,6 +259,13 @@
       <td class="num" data-sort-value="{{ '%.3f'|format(b.stay_rbi_per_stay) }}">{{ '%.2f'|format(b.stay_rbi_per_stay) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.fo_pct) }}">{{ '%.1f'|format(b.fo_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.mhab_pct) }}">{{ '%.1f'|format(b.mhab_pct * 100) }}%</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.risp_pavg or 0) }}">{{ '%.3f'|format(b.risp_pavg or 0) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.risp_ops or 0) }}">{{ '%.3f'|format(b.risp_ops or 0) }}</td>
+      <td class="num">{{ b.risp_rbi or 0 }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.risp_conv or 0) }}">{{ '%.2f'|format(b.risp_conv or 0) }}</td>
+      <td class="num">{{ b.sh or 0 }}</td>
+      <td class="num">{{ b.bunt_hits or 0 }}</td>
+      <td class="num">{{ b.sqz_rbi or 0 }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(b.drs) }}">{{ '%+.1f'|format(b.drs) }}</td>
       <td class="num" data-sort-value="{{ '%.3f'|format(b.dwar) }}">{{ '%+.2f'|format(b.dwar) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(b.war) }}">{{ '%.2f'|format(b.war) }}</td>
@@ -320,6 +334,8 @@
       <th class="num">ISO</th><th class="num">BABIP</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th><th class="num">BB/K</th>
       <th class="num" title="Second-Chance ABs per 100 PA — O27 rate">2C/100</th><th class="num">FO%</th><th class="num">MhAB%</th><th class="num">SB%</th>
+      <th class="num" title="RISP batting average (H/PA)">RISP-AVG</th><th class="num" title="On-base with RISP">RISP-OBP</th><th class="num" title="Slugging with RISP">RISP-SLG</th><th class="num" title="OPS with RISP">RISP-OPS</th><th class="num" title="RBI per RISP PA — cash-in rate">RISP-Conv</th>
+      <th class="num" title="Sacrifice bunts">SH</th><th class="num" title="Bunt singles">Bunt H</th><th class="num" title="Squeeze RBI">Sqz RBI</th>
       <th class="num">Def</th><th class="num">DRS</th><th class="num">dWAR</th>
       <th class="num">oVORP</th><th class="num">oWAR</th><th class="num">WAR</th>
     </tr></thead>
@@ -374,6 +390,14 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(b.fo_pct) }}">{{ '%.1f'|format(b.fo_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.mhab_pct) }}">{{ '%.1f'|format(b.mhab_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.sb_pct) }}">{% if (b.sb + b.cs) > 0 %}{{ '%.1f'|format(b.sb_pct * 100) }}%{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.risp_pavg or 0) }}">{{ '%.3f'|format(b.risp_pavg or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.risp_obp or 0) }}">{{ '%.3f'|format(b.risp_obp or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.risp_slg or 0) }}">{{ '%.3f'|format(b.risp_slg or 0) }}</td>
+      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(b.risp_ops or 0) }}">{{ '%.3f'|format(b.risp_ops or 0) }}</td>
+      <td class="num" data-sort-value="{{ '%.4f'|format(b.risp_conv or 0) }}">{{ '%.2f'|format(b.risp_conv or 0) }}</td>
+      <td class="num">{{ b.sh or 0 }}</td>
+      <td class="num">{{ b.bunt_hits or 0 }}</td>
+      <td class="num">{{ b.sqz_rbi or 0 }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.pos_def) }}">{{ '%.3f'|format(b.pos_def) }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(b.drs) }}">{{ '%+.1f'|format(b.drs) }}</td>
       <td class="num" data-sort-value="{{ '%.3f'|format(b.dwar) }}">{{ '%+.2f'|format(b.dwar) }}</td>
