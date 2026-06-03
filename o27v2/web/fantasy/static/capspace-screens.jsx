@@ -567,4 +567,164 @@ function PilotsScreen({ onNav }) {
   );
 }
 
-Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen });
+/* ---------- CATEGORY LEAGUES (Roto engine) ---------- */
+function CategoriesScreen({ onNav }) {
+  const [fmt, setFmt] = useState('std5x5');
+  const [data, setData] = useState(null);
+  const [pool, setPool] = useState(null);
+  const [sel, setSel] = useState([]);
+  const [editing, setEditing] = useState(false);
+  const [side, setSide] = useState('h');
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  function loadPool(f) {
+    fetch('/fantasy/api/categories/pool?format=' + f).then(r => r.ok ? r.json() : { hitters: [], pitchers: [] }).then(setPool).catch(() => setPool({ hitters: [], pitchers: [] }));
+  }
+  function loadState(f) {
+    fetch('/fantasy/api/categories?format=' + f).then(r => r.ok ? r.json() : null).then(d => {
+      setData(d);
+      const complete = d && d.standings;
+      setEditing(!complete);
+      if (!complete) loadPool(f);
+    }).catch(() => setData(null));
+  }
+  useEffect(() => { setSel([]); setQ(''); loadState(fmt); }, [fmt]);
+
+  const slots = data ? data.slots : { h: 0, p: 0 };
+  const nH = sel.filter(s => s.pos !== 'P').length;
+  const nP = sel.filter(s => s.pos === 'P').length;
+  const full = nH === slots.h && nP === slots.p;
+  const selIds = new Set(sel.map(s => s.id));
+  const curFmt = (data && data.formats || []).find(f => f.key === fmt) || {};
+
+  function add(item) {
+    if (selIds.has(item.id)) return;
+    const isP = item.pos === 'P';
+    if (isP && nP >= slots.p) return;
+    if (!isP && nH >= slots.h) return;
+    setSel([...sel, item]);
+  }
+  function lock() {
+    if (!full || busy) return;
+    setBusy(true);
+    fetch('/fantasy/api/categories/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format: fmt, player_ids: sel.map(s => s.id) }) })
+      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || 'Draft failed.'); return; } setEditing(false); loadState(fmt); })
+      .catch(() => setBusy(false));
+  }
+  function reDraft() { setSel((data.roster || []).map(r => ({ ...r, pos: r.pos === 'P' ? 'P' : 'H' }))); loadPool(fmt); setEditing(true); }
+
+  const st = data && data.standings;
+  const onlyOneSide = slots.h === 0 || slots.p === 0;
+  const showSide = onlyOneSide ? (slots.p === 0 ? 'h' : 'p') : side;
+  const list = pool ? (showSide === 'p' ? pool.pitchers : pool.hitters) : [];
+  const shown = q.trim() ? list.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : list;
+  const rankColor = (r, field) => r === 1 ? 'var(--live)' : r <= Math.ceil(field / 3) ? 'var(--c-teal)' : r >= field - Math.ceil(field / 3) ? 'var(--down)' : 'var(--ink-2)';
+
+  return (
+    <>
+      <TopBar title="Category Leagues" sub="Season-long Roto" back onBack={() => onNav('hub')} />
+      <div className="app__scroll">
+        <div className="page page--narrow">
+          {/* format tabs */}
+          <div className="slate-tabs mb-12" style={{ overflowX: 'auto', flexWrap: 'nowrap' }}>
+            {(data && data.formats || []).map(f => (
+              <Chip key={f.key} active={f.key === fmt} onClick={() => setFmt(f.key)}>{f.name}</Chip>
+            ))}
+          </div>
+          {!data ? (
+            <div className="card card--pad center" style={{ padding: '48px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>Loading…</div></div>
+          ) : (
+            <>
+              <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>{curFmt.blurb}</p>
+
+              {st && !editing ? (
+                /* ---- standings ---- */
+                <>
+                  <div className="hero" style={{ background: st.dq ? 'linear-gradient(135deg,var(--down),var(--c-amber))' : 'linear-gradient(135deg, var(--c-teal), var(--c-blue))' }}>
+                    <div className="hero__in">
+                      <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Roto points · rank</div>
+                      <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{st.roto} <span style={{ fontSize: '1.3rem', opacity: .8 }}>/ {st.max_points}</span></div>
+                      <p style={{ marginTop: 6 }}><b>#{st.rank}</b> of {st.field}{st.dq ? ' · DQ — below the AB/out floor, roster players who play!' : ''}</p>
+                    </div>
+                  </div>
+                  <div className="section-head mt-24"><h2>Categories</h2><span className="muted" style={{ fontSize: '.8rem', fontWeight: 600 }}>value · rank · pts</span></div>
+                  <div className="card" style={{ overflow: 'hidden' }}>
+                    {st.categories.map(c => (
+                      <div key={c.key} className="lb-row">
+                        <div className="lb-rank" style={{ fontWeight: 800 }}>{c.label}</div>
+                        <div className="lb-user"><b style={{ fontSize: '.95rem' }}>{c.value}</b></div>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                          <span className="pill" style={{ background: rankColor(c.rank, st.field), color: '#fff', fontWeight: 800, padding: '2px 8px', borderRadius: 8, fontSize: '.78rem' }}>#{c.rank}</span>
+                          <span className="lb-pts" style={{ fontWeight: 800, minWidth: 34, textAlign: 'right' }}>{c.points}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="section-head mt-24"><h2>Your roster</h2><button className="btn btn--ghost btn--sm" onClick={reDraft}>Re-draft</button></div>
+                  <div className="card" style={{ overflow: 'hidden' }}>
+                    {(data.roster || []).map(p => (
+                      <div key={p.id} className="prow">
+                        <div className="prow__id">
+                          <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
+                          <div style={{ minWidth: 0 }}><div className="prow__name">{p.name}</div><div className="prow__sub">{p.pos === 'P' ? 'Pitcher' : 'Hitter'} · {p.team}</div></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                /* ---- draft ---- */
+                <>
+                  <div className="card card--pad mb-12" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: '.9rem' }}>
+                      {slots.h > 0 && <span style={{ color: nH === slots.h ? 'var(--live)' : 'var(--ink-2)' }}>Hitters {nH}/{slots.h}</span>}
+                      {slots.h > 0 && slots.p > 0 && <span className="dim"> · </span>}
+                      {slots.p > 0 && <span style={{ color: nP === slots.p ? 'var(--live)' : 'var(--ink-2)' }}>Pitchers {nP}/{slots.p}</span>}
+                    </div>
+                    <button className="btn btn--brand btn--sm" disabled={!full || busy} onClick={lock}>Lock roster</button>
+                  </div>
+                  {sel.length > 0 && (
+                    <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {sel.map(s => (
+                        <button key={s.id} className="chip" onClick={() => setSel(sel.filter(x => x.id !== s.id))} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 10px', fontSize: '.8rem', fontWeight: 700 }}>
+                          {s.name} <span className="dim">{s.pos === 'P' ? 'P' : 'H'}</span> ×
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {!onlyOneSide && (
+                    <div className="slate-tabs mb-12">
+                      <Chip active={showSide === 'h'} onClick={() => setSide('h')}>Hitters</Chip>
+                      <Chip active={showSide === 'p'} onClick={() => setSide('p')}>Pitchers</Chip>
+                    </div>
+                  )}
+                  <div className="search mb-12"><Icon name="search" size={17} /><input placeholder={'Search ' + (showSide === 'p' ? 'pitchers' : 'hitters') + '…'} value={q} onChange={e => setQ(e.target.value)} /></div>
+                  {curFmt.invert && <div className="muted mb-12" style={{ fontSize: '.8rem', fontWeight: 600, color: 'var(--c-amber)' }}>Anti-league: worst production wins — but you must clear the playing-time floor.</div>}
+                  <div className="card" style={{ overflow: 'hidden' }}>
+                    {!pool && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>Loading pool…</div>}
+                    {pool && shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No players found.</div>}
+                    {shown.slice(0, 120).map(p => (
+                      <div key={p.id} className="prow">
+                        <div className="prow__id">
+                          <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="prow__name">{p.name}</div>
+                            <div className="prow__sub" style={{ fontSize: '.74rem' }}>{p.line}</div>
+                          </div>
+                        </div>
+                        <button className="add-btn" disabled={selIds.has(p.id)} title="Draft" onClick={() => add(p)}>{selIds.has(p.id) ? '✓' : '+'}</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen, CategoriesScreen });

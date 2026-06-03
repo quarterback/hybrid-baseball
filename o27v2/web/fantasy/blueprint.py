@@ -23,6 +23,7 @@ from . import contests as dfs
 from . import streak as streakgame
 from . import sluggers as sluggergame
 from . import pitching as pilotgame
+from . import categories as catgame
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LOG = logging.getLogger(__name__)
@@ -194,4 +195,35 @@ def api_pilots_remove():
     if pid is None:
         return jsonify({"ok": False, "error": "No player chosen."}), 400
     res = pilotgame.remove(pid)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+# ---- Category leagues (Roto engine) -------------------------------------
+
+@capspace_bp.route("/api/categories")
+def api_categories():
+    fmt = request.args.get("format", "std5x5")
+    try:
+        return jsonify(catgame.state(fmt))
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace categories state failed")
+        return jsonify({"formats": [], "format": fmt, "slots": {"h": 0, "p": 0}, "roster": []})
+
+
+@capspace_bp.route("/api/categories/pool")
+def api_categories_pool():
+    fmt = request.args.get("format", "std5x5")
+    try:
+        return jsonify(catgame.pool(fmt))
+    except Exception:  # pragma: no cover
+        _LOG.exception("CapSpace categories pool failed")
+        return jsonify({"hitters": [], "pitchers": []})
+
+
+@capspace_bp.route("/api/categories/draft", methods=["POST"])
+def api_categories_draft():
+    body = request.get_json(silent=True) or {}
+    fmt = body.get("format", "std5x5")
+    ids = body.get("player_ids") or []
+    res = catgame.draft(fmt, ids)
     return jsonify(res), (200 if res.get("ok") else 400)

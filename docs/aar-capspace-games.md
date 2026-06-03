@@ -36,6 +36,23 @@ per the determinism note in CLAUDE.md.
   Terminal Out (×0.5). Same per-slate structure as Sluggers. Endpoints
   `GET /api/pilots`, `POST /api/pilots/{pick,remove}`.
 
+- **Category leagues** (`categories.py`, `stay` format → `categories` view).
+  A season-long **Roto engine** — one engine, four formats as config:
+  - **Standard 5×5** — R/HR/RBI/SB/**OBP** + **K/QS/ERA/WHIP/QF** (OBP over
+    AVG, QS over wins, and **Quality Finish** standing in for the nonexistent
+    save).
+  - **Razz (anti-league)** — every category direction inverts (worst real
+    production wins) with **AB/out floors** so you must roster players who
+    actually play, not bench dust.
+  - **HR Derby** — single category (HR). **Pitchers Only** — the five pitching
+    categories.
+
+  You draft a roster; season aggregates (summed from persisted stats) feed each
+  category; you're ranked Roto-style against a **computed field** of 48
+  synthetic rosters spanning a skill spread. Endpoints `GET /api/categories`,
+  `GET /api/categories/pool`, `POST /api/categories/draft`. The draft pool
+  surfaces worst-players-first in Razz so the bad bats you want are on top.
+
 - **DFS scoring rebalance** (`data.py` `_W`, `_batter_fp`, `_pitcher_fp`; UI
   `SCORING`). Added **Stolen Base (+4)** and **HBP (+2)** (standard counting
   stats that were missing), added a **quality-start bonus** (+6, a starter
@@ -84,7 +101,19 @@ All three games were exercised end-to-end through the real Flask
 - `pytest` is absent in the sandbox; validation was via `test_client` and
   direct module calls, not the suite.
 
+## Categories engine — validation
+
+Exercised through the real app and direct module tests on the 60-game DB:
+
+- **Roto / all four formats** scored without error; drafting the top-skill
+  roster in std5×5 → roto 480.5, rank 1/49, with per-category rank + points.
+- **Razz inversion** proven: drafting the *best* players finished **49/49**
+  (every category ranked worst). Drafting **bad-but-playing** players won
+  **1/49**, and **bench-dust** (below the AB/out floor) was **DQ'd to last** —
+  exactly the "worst players who actually play" design.
+- **Draft slot validation** rejects wrong hitter/pitcher counts; the Razz pool
+  correctly lists the weakest hitters first.
+
 ## Still queued
 
-Standard **categories engine** (5×5 + OBP/QS, unlocking anti-league/Razz,
-HR-only, pitchers-only), **Sportsbook**, and **Best Ball**.
+**Sportsbook** (moneyline / run totals on sim games) and **Best Ball**.
