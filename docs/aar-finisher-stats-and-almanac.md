@@ -100,3 +100,34 @@ Fresh 150-game sim:
 - LR% credits holding the lead **on his watch** (didn't surrender it before
   handing off), not strictly "to the 27th out" — the cleaner skill read and it
   doesn't require finishing.
+
+## Follow-on: cross-season (career) archive wiring
+
+The almanac's career leaderboards aggregate the durable per-season snapshot
+tables (`season_player_batting` / `season_player_pitching`), which didn't carry
+the new stats — so career (multi-season) views couldn't show them. Extended end
+to end:
+
+- **Schema + migration** (`db.py`): RISP component columns + bunting
+  (`sh, bunt_att, bunt_hits, sqz, sqz_rbi`) on `season_player_batting`; relief/
+  finisher columns (`ir_inherited, ir_scored, terminal_outs, quality_finish,
+  lead_entries, lead_held`) on `season_player_pitching`. Existing archives
+  backfill to 0.
+- **Rollover snapshot** (`season_archive._snapshot_player_lines`): SUMs the new
+  columns from the live game tables into the snapshot rows.
+- **Almanac career compute** (`_career_batting`/`_career_pitching`): folds the
+  component sums across seasons and recomputes career rates — RISP slash
+  (PA-denominated) + `risp_conv`, and `lra` (0–10) — then ranks new boards.
+- **Career template**: SH / Bunt H / Squeeze RBI / RISP RBI / RISP OPS (batting)
+  and Terminal Outs / Quality Finish / LRA (pitching). A career IR-Stop% board
+  was skipped — the rank macro formats `r[key]` directly and can't append `%`;
+  the counting boards + LRA are the meaningful career reads.
+
+Verified by simming a season, running the snapshot, and rendering the career
+page: columns persist with real values and all eight new boards render. 172
+tests + 11 invariants pass.
+
+**Remaining parallel surface:** `player_career_lines` (feeds the Hall of Fame
+and the Streaks & Records cross-season records via `records.py`) still lacks
+these columns — a separate extension if those records should also carry RISP /
+bunting / relief.

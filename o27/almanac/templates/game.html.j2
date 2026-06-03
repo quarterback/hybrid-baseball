@@ -32,7 +32,7 @@
         <th data-type="text">Pos</th>
         <th>PA</th><th>AB</th><th>R</th><th>H</th>
         <th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
-        <th>BB</th><th>K</th><th>2C</th>
+        <th>BB</th><th>K</th><th>2C</th><th>SH</th>
       </tr></thead>
       <tbody>
         {% for r in away_batting %}
@@ -50,6 +50,7 @@
           <td>{{ r.bb or 0 }}</td>
           <td>{{ r.k or 0 }}</td>
           <td>{{ r.stays or 0 }}</td>
+          <td>{{ r.sh or 0 }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -64,7 +65,7 @@
       <thead><tr>
         <th class="sticky-col" data-type="text">Pitcher</th>
         <th>BF</th><th>OUT</th>
-        <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>HR</th>
+        <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>HR</th><th>IR</th>
       </tr></thead>
       <tbody>
         {% for r in away_pitching %}
@@ -78,6 +79,7 @@
           <td>{{ r.bb or 0 }}</td>
           <td>{{ r.k or 0 }}</td>
           <td>{{ r.hr_allowed or 0 }}</td>
+          <td>{% if r.ir_inherited %}{{ r.ir_inherited }}-{{ r.ir_scored or 0 }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -94,7 +96,7 @@
         <th data-type="text">Pos</th>
         <th>PA</th><th>AB</th><th>R</th><th>H</th>
         <th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
-        <th>BB</th><th>K</th><th>2C</th>
+        <th>BB</th><th>K</th><th>2C</th><th>SH</th>
       </tr></thead>
       <tbody>
         {% for r in home_batting %}
@@ -112,6 +114,7 @@
           <td>{{ r.bb or 0 }}</td>
           <td>{{ r.k or 0 }}</td>
           <td>{{ r.stays or 0 }}</td>
+          <td>{{ r.sh or 0 }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -126,7 +129,7 @@
       <thead><tr>
         <th class="sticky-col" data-type="text">Pitcher</th>
         <th>BF</th><th>OUT</th>
-        <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>HR</th>
+        <th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>HR</th><th>IR</th>
       </tr></thead>
       <tbody>
         {% for r in home_pitching %}
@@ -140,12 +143,29 @@
           <td>{{ r.bb or 0 }}</td>
           <td>{{ r.k or 0 }}</td>
           <td>{{ r.hr_allowed or 0 }}</td>
+          <td>{% if r.ir_inherited %}{{ r.ir_inherited }}-{{ r.ir_scored or 0 }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
+
+{% set _sqz = (away_batting + home_batting) | selectattr('sqz') | list %}
+{% set _wb  = (away_pitching + home_pitching) | selectattr('wb_runs') | list %}
+{% if _sqz or _wb %}
+<section>
+  <div class="section-bar"><h2>Notes</h2></div>
+  <div class="box-notes" style="padding:0.4rem 0.6rem">
+    {% if _sqz %}
+    <div>Squeeze: {% for r in _sqz %}{{ r.name }}{% if (r.sqz_rbi or 0) %} ({{ r.sqz_rbi }} RBI){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}.</div>
+    {% endif %}
+    {% if _wb %}
+    <div>Walk-Back runs: {% for r in _wb %}off {{ r.name }} {{ r.wb_runs }}{% if not loop.last %}, {% endif %}{% endfor %}.</div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
 
 {% if scoring_events %}
 <section>

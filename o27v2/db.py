@@ -785,6 +785,22 @@ CREATE TABLE IF NOT EXISTS season_player_batting (
     k           INTEGER DEFAULT 0,
     sb          INTEGER DEFAULT 0,
     hbp         INTEGER DEFAULT 0,
+    -- RISP component sums + bunting (so career rates/totals aggregate across
+    -- seasons; rates are recomputed on read, never averaged).
+    risp_pa     INTEGER DEFAULT 0,
+    risp_ab     INTEGER DEFAULT 0,
+    risp_h      INTEGER DEFAULT 0,
+    risp_2b     INTEGER DEFAULT 0,
+    risp_3b     INTEGER DEFAULT 0,
+    risp_hr     INTEGER DEFAULT 0,
+    risp_bb     INTEGER DEFAULT 0,
+    risp_hbp    INTEGER DEFAULT 0,
+    risp_rbi    INTEGER DEFAULT 0,
+    sh          INTEGER DEFAULT 0,
+    bunt_att    INTEGER DEFAULT 0,
+    bunt_hits   INTEGER DEFAULT 0,
+    sqz         INTEGER DEFAULT 0,
+    sqz_rbi     INTEGER DEFAULT 0,
     PRIMARY KEY (season_id, player_id)
 );
 
@@ -805,6 +821,14 @@ CREATE TABLE IF NOT EXISTS season_player_pitching (
     bb          INTEGER DEFAULT 0,
     k           INTEGER DEFAULT 0,
     hr          INTEGER DEFAULT 0,
+    -- Relief / finisher component sums (career IR-Stop% / LRA recomputed on
+    -- read; terminal_outs / quality_finish are career counting totals).
+    ir_inherited   INTEGER DEFAULT 0,
+    ir_scored      INTEGER DEFAULT 0,
+    terminal_outs  INTEGER DEFAULT 0,
+    quality_finish INTEGER DEFAULT 0,
+    lead_entries   INTEGER DEFAULT 0,
+    lead_held      INTEGER DEFAULT 0,
     PRIMARY KEY (season_id, player_id)
 );
 
@@ -1692,6 +1716,24 @@ def init_db() -> None:
                     "terminal_outs", "quality_finish", "lead_entries", "lead_held"):
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+        # Cross-season snapshot tables — RISP / bunting / relief-finisher
+        # component columns so career (multi-season) leaderboards can aggregate
+        # them. Existing archives backfill to 0 (no data before this).
+        for col in ("risp_pa", "risp_ab", "risp_h", "risp_2b", "risp_3b",
+                    "risp_hr", "risp_bb", "risp_hbp", "risp_rbi",
+                    "sh", "bunt_att", "bunt_hits", "sqz", "sqz_rbi"):
+            try:
+                conn.execute(f"ALTER TABLE season_player_batting ADD COLUMN {col} INTEGER DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+        for col in ("ir_inherited", "ir_scored", "terminal_outs",
+                    "quality_finish", "lead_entries", "lead_held"):
+            try:
+                conn.execute(f"ALTER TABLE season_player_pitching ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()
             except Exception:
                 pass

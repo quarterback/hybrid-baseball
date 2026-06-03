@@ -383,7 +383,7 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
     out = [team_name.upper()]
 
     # Column header — name+pos area is blank, stats right-aligned.
-    cols = ["AB", "R", "H", "2B", "3B", "HR", "RBI", "BB", "K", "2C"]
+    cols = ["AB", "R", "H", "2B", "3B", "HR", "RBI", "BB", "K", "2C", "SH"]
     header = " " * NAME_POS_WIDTH + "".join(_rj(c) for c in cols) + f"{'H/AB':>{STAT_W + 3}}"
     out.append(header)
 
@@ -403,6 +403,7 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
         bb  = r.get("bb", 0) or 0
         k   = r.get("k",  0) or 0
         c2  = r.get("stays", 0) or 0   # internal "sty" maps to 2C count
+        sh  = r.get("sh", 0) or 0      # sacrifice bunts
 
         # Position label depends on entry type:
         #   PH  → "ph"
@@ -429,7 +430,7 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
             prefix
             + _rj(ab) + _rj(runs) + _rj(h)
             + _rj(d2) + _rj(d3) + _rj(hr)
-            + _rj(rbi) + _rj(bb) + _rj(k) + _rj(c2)
+            + _rj(rbi) + _rj(bb) + _rj(k) + _rj(c2) + _rj(sh)
             + _rate(h, ab)
         )
         out.append(line)
@@ -437,7 +438,7 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
         totals["ab"]  += ab;  totals["r"]  += runs; totals["h"] += h
         totals["2b"]  += d2;  totals["3b"] += d3;   totals["hr"] += hr
         totals["rbi"] += rbi; totals["bb"] += bb;   totals["k"] += k
-        totals["2c"]  += c2
+        totals["2c"]  += c2;  totals["sh"] += sh
 
     # Totals row — left-justify "Totals" inside the name area, then numbers.
     label = "Totals".ljust(NAME_POS_WIDTH)
@@ -446,7 +447,7 @@ def render_batting_table(team_name: str, rows: Iterable[dict]) -> str:
         + _rj(totals["ab"]) + _rj(totals["r"])  + _rj(totals["h"])
         + _rj(totals["2b"]) + _rj(totals["3b"]) + _rj(totals["hr"])
         + _rj(totals["rbi"]) + _rj(totals["bb"]) + _rj(totals["k"])
-        + _rj(totals["2c"])
+        + _rj(totals["2c"]) + _rj(totals["sh"])
         + _rate(totals["h"], totals["ab"])
     )
     out.append(tline)
@@ -536,6 +537,20 @@ def render_batting_annotations(
         if items:
             lines.append(f"  {label}: {', '.join(items)}.")
 
+    # Squeeze plays — list batters who laid one down, with the RBI in parens
+    # when the squeeze drove a run home.
+    sqz_items: list[str] = []
+    for r in rows:
+        n = r.get("sqz", 0) or 0
+        if n <= 0:
+            continue
+        last = _last_name(r.get("player_name") or "")
+        rbi = r.get("sqz_rbi", 0) or 0
+        label = f"{last} {n}" if n > 1 else last
+        sqz_items.append(f"{label} ({rbi} RBI)" if rbi else label)
+    if sqz_items:
+        lines.append(f"  Squeeze: {', '.join(sqz_items)}.")
+
     return "\n".join(lines)
 
 
@@ -550,7 +565,7 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
     decisions = decisions or {}
     season_wl = season_wl or {}
     out = [f"{team_name.upper()} PITCHING"]
-    cols = ["BF", "OUT", "OS%", "H", "R", "ER", "BB", "K", "HR", "P"]
+    cols = ["BF", "OUT", "OS%", "H", "R", "ER", "BB", "K", "HR", "P", "IR"]
     header = " " * NAME_POS_WIDTH + "".join(f"{c:>{PIT_STAT_W}}" for c in cols)
     out.append(header)
 
@@ -586,9 +601,30 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
             + f"{(r.get('k') or 0):>{PIT_STAT_W}}"
             + f"{(r.get('hr_allowed') or 0):>{PIT_STAT_W}}"
             + f"{(r.get('pitches') or 0):>{PIT_STAT_W}}"
+            + f"{_ir_display(r):>{PIT_STAT_W}}"
         )
         out.append(line)
     return "\n".join(out)
+
+
+def _ir_display(r: dict) -> str:
+    """Inherited / inherited-scored, box-score style: '3-1'. '-' when the
+    pitcher inherited no runners (a starter, or a reliever who entered clean)."""
+    inh = r.get("ir_inherited", 0) or 0
+    if not inh:
+        return "-"
+    return f"{inh}-{r.get('ir_scored', 0) or 0}"
+
+
+def _walkback_note(away_pitching, home_pitching) -> str:
+    """Footnote naming Walk-Back runs allowed (the post-HR rule-placed runner
+    driven home), AP style: 'Walk-Back runs: off Alvarez 2, off Rex 1.'"""
+    items: list[str] = []
+    for r in list(away_pitching) + list(home_pitching):
+        n = r.get("wb_runs", 0) or 0
+        if n > 0:
+            items.append(f"off {_last_name(r.get('player_name') or '')} {n}")
+    return ("  Walk-Back runs: " + ", ".join(items) + ".") if items else ""
 
 
 def render_game_notes(game: dict) -> str:
@@ -731,6 +767,9 @@ def render_box_score(
     pp = _powerplays_note(away_batting, home_batting, game)
     if pp:
         notes = (notes + "\n" + pp) if notes else pp
+    wb = _walkback_note(away_pitching, home_pitching)
+    if wb:
+        notes = (notes + "\n" + wb) if notes else wb
 
     sections = [
         rule,
