@@ -83,6 +83,7 @@ function App() {
       {view === 'live' && <LiveScreen roster={roster} contestId={liveContestId} onNav={nav} onOpenPlayer={openPlayer} />}
       {view === 'entries' && <EntriesScreen onNav={nav} onOpenContest={(cid)=>{ setLiveContestId(cid); nav('live'); }} />}
       {view === 'streak' && <StreakScreen onNav={nav} />}
+      {view === 'sluggers' && <SluggersScreen onNav={nav} />}
 
       <PlayerDrawer player={drawer.player} open={drawer.open} onClose={() => setDrawer(d => ({ ...d, open: false }))}
         onAdd={view === 'builder' ? addPlayer : null} inLineup={inLineup} />
