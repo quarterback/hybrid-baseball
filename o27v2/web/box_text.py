@@ -191,6 +191,7 @@ def _line_score(game: dict, phases: list[int],
 _BAT_HEADER = (
     "AB".rjust(3) + "R".rjust(3) + "H".rjust(3)
     + "HR".rjust(4) + "RBI".rjust(4) + "BB".rjust(3) + "K".rjust(3)
+    + "SH".rjust(3)
     + "H/AB".rjust(6)
 )
 
@@ -199,7 +200,7 @@ def _batting_block(team_name: str, rows: list[dict]) -> list[str]:
     head = (team_name or "").upper()[:_PRE_NUM].ljust(_PRE_NUM) + _BAT_HEADER
     out = [head]
 
-    tot = {f: 0 for f in ("ab", "r", "h", "hr", "rbi", "bb", "k")}
+    tot = {f: 0 for f in ("ab", "r", "h", "hr", "rbi", "bb", "k", "sh")}
 
     for r in rows:
         ab  = r.get("ab", 0) or 0
@@ -209,9 +210,10 @@ def _batting_block(team_name: str, rows: list[dict]) -> list[str]:
         rbi = r.get("rbi", 0) or 0
         bb  = r.get("bb", 0) or 0
         k   = r.get("k", 0) or 0
+        sh  = r.get("sh", 0) or 0
         line = (
             _name_pos(r.get("player_name", ""), r.get("position", ""))
-            + f"{ab:3d}{ru:3d}{h:3d}{hr:4d}{rbi:4d}{bb:3d}{k:3d}"
+            + f"{ab:3d}{ru:3d}{h:3d}{hr:4d}{rbi:4d}{bb:3d}{k:3d}{sh:3d}"
             + _avg(h, ab).rjust(6)
         )
         out.append(line)
@@ -222,11 +224,12 @@ def _batting_block(team_name: str, rows: list[dict]) -> list[str]:
         tot["rbi"] += rbi
         tot["bb"]  += bb
         tot["k"]   += k
+        tot["sh"]  += sh
 
     totals = (
         _name_no_pos("TOTALS")
         + f"{tot['ab']:3d}{tot['r']:3d}{tot['h']:3d}"
-        + f"{tot['hr']:4d}{tot['rbi']:4d}{tot['bb']:3d}{tot['k']:3d}"
+        + f"{tot['hr']:4d}{tot['rbi']:4d}{tot['bb']:3d}{tot['k']:3d}{tot['sh']:3d}"
         + _avg(tot["h"], tot["ab"]).rjust(6)
     )
     out.append(totals)
@@ -305,6 +308,18 @@ def _batting_annotations(
         items = _xbh_items(game_field, season_field)
         if items:
             parts.append(f"{label}: " + ", ".join(items) + ".")
+    # Squeeze plays, with the RBI in parens when it drove a run home.
+    sqz_items: list[str] = []
+    for r in rows:
+        n = r.get("sqz") or 0
+        if n <= 0:
+            continue
+        name = _short_name(r.get("player_name", "?"))
+        rbi = r.get("sqz_rbi") or 0
+        label = f"{name} {n}" if n > 1 else name
+        sqz_items.append(f"{label} ({rbi} RBI)" if rbi else label)
+    if sqz_items:
+        parts.append("Squeeze: " + ", ".join(sqz_items) + ".")
     if parts:
         out.append("  " + " ".join(parts))
     return out
@@ -328,7 +343,7 @@ def _batting_annotations(
 _PIT_HEADER = (
     "BF".rjust(4) + "P".rjust(4) + "OS%".rjust(5) + "OUT".rjust(4)
     + "H".rjust(3) + "R".rjust(3) + "ER".rjust(3) + "BB".rjust(3)
-    + "K".rjust(3) + "HR".rjust(3) + "GSc".rjust(4)
+    + "K".rjust(3) + "HR".rjust(3) + "GSc".rjust(4) + "IR".rjust(5)
 )
 
 
@@ -404,11 +419,13 @@ def _pitching_block(team_name: str, rows: list[dict],
         hr  = r.get("hr_allowed", 0) or 0
         gsc = int(round(r.get("gsc_avg") or 0))
         os  = _pct(out_rec, denom_outs)
+        _inh = r.get("ir_inherited", 0) or 0
+        ir = f"{_inh}-{r.get('ir_scored', 0) or 0}" if _inh else "-"
 
         line = (
             _name_no_pos(nm)
             + f"{bf:4d}{pi:4d}{os:>5}{out_rec:4d}"
-            + f"{h:3d}{ru:3d}{er:3d}{bb:3d}{k:3d}{hr:3d}{gsc:4d}"
+            + f"{h:3d}{ru:3d}{er:3d}{bb:3d}{k:3d}{hr:3d}{gsc:4d}{ir:>5}"
         )
         out.append(line)
     return out
@@ -428,12 +445,17 @@ def _pitching_annotations(away_rows: list[dict], home_rows: list[dict]) -> list[
 
     fo_items = _items(away_rows, "fo_induced") + _items(home_rows, "fo_induced")
     hbp_items = _items(away_rows, "hbp_allowed") + _items(home_rows, "hbp_allowed")
+    # Walk-Back runs allowed (the post-HR rule-placed runner driven home).
+    wb_items = _items(away_rows, "wb_runs") + _items(home_rows, "wb_runs")
 
     parts = []
     if fo_items:
         parts.append(f"FO: {_join_names(fo_items)}")
     if hbp_items:
         parts.append(f"HBP: {_join_names(hbp_items)}")
+    if wb_items:
+        parts.append("Walk-Back: "
+                     + ", ".join(f"off {nm} {n}" for nm, n in wb_items) + ".")
     if parts:
         out.append("  " + " ".join(parts))
     return out
