@@ -5,7 +5,7 @@
 const { useState, useEffect, useRef } = React;
 
 /* shared currency context (mode + setter), put on window for cross-file use */
-const CurrencyCtx = React.createContext({ mode: 'guilder', setMode: () => {} });
+const CurrencyCtx = React.createContext({ mode: 'usd', setMode: () => {} });
 window.CurrencyCtx = CurrencyCtx;
 
 /* ---- icon set (simple stroke icons) ---------------------------------- */

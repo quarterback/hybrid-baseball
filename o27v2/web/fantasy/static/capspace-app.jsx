@@ -18,8 +18,9 @@ function App() {
   const [teaser, setTeaser] = useState(null);
   const [liveContestId, setLiveContestId] = useState(null);
   const [cur, setCur] = useState(() => {
-    // USD is CapSpace's default — only the engine's stored preference overrides it.
-    try { const v = localStorage.getItem('o27.currencyDisplay'); return VALID_MODES.includes(v) ? v : 'usd'; }
+    // CapSpace defaults to USD and keeps its OWN currency preference, so it
+    // never inherits the engine's canonical-guilder default.
+    try { const v = localStorage.getItem('o27.capspace.currency'); return VALID_MODES.includes(v) ? v : 'usd'; }
     catch (e) { return 'usd'; }
   });
 
@@ -29,12 +30,12 @@ function App() {
   function setMode(m) {
     S.mode = m;
     setCur(m);
-    try { localStorage.setItem('o27.currencyDisplay', m); } catch (e) {}
+    try { localStorage.setItem('o27.capspace.currency', m); } catch (e) {}
   }
-  // sync if the main O27 app (or another tab) changes the preference
+  // sync if another CapSpace tab changes the preference
   useEffect(() => {
     const onStorage = e => {
-      if (e.key === 'o27.currencyDisplay' && VALID_MODES.includes(e.newValue)) { S.mode = e.newValue; setCur(e.newValue); }
+      if (e.key === 'o27.capspace.currency' && VALID_MODES.includes(e.newValue)) { S.mode = e.newValue; setCur(e.newValue); }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
