@@ -255,6 +255,7 @@ def _reconcile_walk_back(state: GameState) -> list[str]:
                        "(no run booked this spell).")
             continue
         state.pitcher_wb_runs_this_spell += 1
+        state.walk_back_scored_ids.append(rid)  # credit this hitter a walkback run
         # Move one run earned -> unearned. Skip when the spell is already
         # all-unearned (an error this spell, or a passed-ball run): the run
         # is in unearned but NOT in er_arc, so there's nothing to demote and
@@ -391,6 +392,7 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     run-scoring play). See _reconcile_walk_back.
     """
     _ir_score_before = sum(state.score.values())
+    state.walk_back_scored_ids = []  # per-event; populated by _reconcile_walk_back
     # Finisher lead tracking: lazily capture entry lead (fielding − batting)
     # before this pitcher's first event, then track the running minimum.
     _fld_id = state.fielding_team.team_id

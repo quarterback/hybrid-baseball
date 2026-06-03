@@ -9,11 +9,12 @@ home is the bonus. A running season total lets you watch the bombers pile up.
 Scoring per hitter on a slate (clean counting stats, settled from persisted
 `game_batter_stats`):
 
-    HR x4  +  RBI x2  +  Run x1
+    HR x4  +  Walk-Back run x4  +  RBI x1
 
-When main lands a dedicated walk-back-run column we can split Runs into the
-explicit walk-back component; today's `runs` already includes the walk-back
-score a homer sets up, so the intent holds.
+`walkback_runs` is the engine's per-hitter count of runs a player scored as a
+Walk-Back bonus runner — his homer set him back on base and he was driven in
+again. It is the exact "homers that keep paying" stat, the per-hitter mirror
+of the pitcher's wb_runs.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from o27v2 import db
 from . import data as slate_data
 
 MAX_PICKS = 3
-_W_HR, _W_RBI, _W_RUN = 4.0, 2.0, 1.0
+_W_HR, _W_WBR, _W_RBI = 4.0, 4.0, 1.0
 
 
 def ensure_schema() -> None:
@@ -75,13 +76,13 @@ def _player_game(slate_date: str, dbid: int):
 
 def _score(game_id: int, dbid: int) -> float:
     s = db.fetchone(
-        "SELECT hr, rbi, runs FROM game_batter_stats "
+        "SELECT hr, rbi, walkback_runs FROM game_batter_stats "
         "WHERE game_id = ? AND player_id = ? AND phase = 0",
         (game_id, dbid),
     )
     if not s:
         return 0.0
-    return _W_HR * (s["hr"] or 0) + _W_RBI * (s["rbi"] or 0) + _W_RUN * (s["runs"] or 0)
+    return _W_HR * (s["hr"] or 0) + _W_WBR * (s["walkback_runs"] or 0) + _W_RBI * (s["rbi"] or 0)
 
 
 def _player_label(dbid: int) -> dict:
@@ -105,11 +106,11 @@ def _benchmark(slate_date: str):
         return None, None
     ph = ",".join("?" for _ in games)
     rows = db.fetchall(
-        f"SELECT hr, rbi, runs FROM game_batter_stats WHERE game_id IN ({ph}) AND phase = 0",
+        f"SELECT hr, rbi, walkback_runs FROM game_batter_stats WHERE game_id IN ({ph}) AND phase = 0",
         tuple(games),
     )
     scores = sorted(
-        (_W_HR * (r["hr"] or 0) + _W_RBI * (r["rbi"] or 0) + _W_RUN * (r["runs"] or 0)
+        (_W_HR * (r["hr"] or 0) + _W_WBR * (r["walkback_runs"] or 0) + _W_RBI * (r["rbi"] or 0)
          for r in rows), reverse=True)
     if not scores:
         return 0.0, 0.0

@@ -40,6 +40,12 @@ def ensure_schema() -> None:
             created_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS sb_meta (key TEXT PRIMARY KEY, value REAL);
+        CREATE TABLE IF NOT EXISTS sb_lines (
+            game_id    INTEGER PRIMARY KEY,
+            ml_home    INTEGER, ml_away INTEGER,
+            total      REAL, over_odds INTEGER, under_odds INTEGER,
+            created_at TEXT
+        );
         """
     )
     conn.commit()
@@ -129,6 +135,29 @@ def _line_for(home_s, away_s, lg) -> dict:
     }
 
 
+def _line(game_id: int, home_id: int, away_id: int, stats: dict, lg: float) -> dict:
+    """The line for a game — persisted on first sight so the price a bettor
+    sees on the board is exactly the price their bet settles at (it never
+    drifts as other games on the slate go final)."""
+    row = db.fetchone(
+        "SELECT ml_home, ml_away, total, over_odds, under_odds FROM sb_lines WHERE game_id = ?",
+        (game_id,))
+    if row:
+        return dict(row)
+    line = _line_for(stats.get(home_id, {"r": 0, "ra": 0, "gp": 0}),
+                     stats.get(away_id, {"r": 0, "ra": 0, "gp": 0}), lg)
+    conn = db.get_conn()
+    conn.execute(
+        "INSERT OR IGNORE INTO sb_lines "
+        "(game_id, ml_home, ml_away, total, over_odds, under_odds, created_at) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (game_id, line["ml_home"], line["ml_away"], line["total"],
+         line["over_odds"], line["under_odds"],
+         _dt.datetime.utcnow().isoformat(timespec="seconds")))
+    conn.commit()
+    return line
+
+
 # --- lines / slate -----------------------------------------------------------
 
 def _slate_games(slate_date: str) -> list[dict]:
@@ -141,9 +170,7 @@ def _slate_games(slate_date: str) -> list[dict]:
         "JOIN teams ht ON g.home_team_id = ht.id JOIN teams at ON g.away_team_id = at.id "
         "WHERE g.game_date = ? AND g.played = 0 ORDER BY g.id", (slate_date,)
     ):
-        hs = stats.get(g["home_team_id"], {"r": 0, "ra": 0, "gp": 0})
-        as_ = stats.get(g["away_team_id"], {"r": 0, "ra": 0, "gp": 0})
-        line = _line_for(hs, as_, lg)
+        line = _line(g["id"], g["home_team_id"], g["away_team_id"], stats, lg)
         out.append({"game_id": g["id"], "home": g["htm"], "away": g["atm"],
                     "homeName": g["hname"], "awayName": g["aname"], **line})
     return out
@@ -259,8 +286,7 @@ def place(game_id, market: str, side: str, stake) -> dict:
     stats = _team_stats()
     lg = _league_rpg(stats)
     gg = db.fetchone("SELECT home_team_id, away_team_id FROM games WHERE id = ?", (int(game_id),))
-    line = _line_for(stats.get(gg["home_team_id"], {"r": 0, "ra": 0, "gp": 0}),
-                     stats.get(gg["away_team_id"], {"r": 0, "ra": 0, "gp": 0}), lg)
+    line = _line(int(game_id), gg["home_team_id"], gg["away_team_id"], stats, lg)
     if market == "ml":
         odds = line["ml_home"] if side == "home" else line["ml_away"]
         lval = None

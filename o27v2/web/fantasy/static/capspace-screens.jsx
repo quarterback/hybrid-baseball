@@ -373,7 +373,7 @@ function SluggersScreen({ onNav }) {
                 <div className="hero__in">
                   <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Season slugger points</div>
                   <div style={{ fontSize: '3.2rem', fontWeight: 900, lineHeight: 1 }}>{d.season}</div>
-                  <p style={{ marginTop: 6 }}>HR <b>×4</b> · RBI <b>×2</b> · Run <b>×1</b> — the homer plus getting them home.</p>
+                  <p style={{ marginTop: 6 }}>HR <b>×4</b> · Walk-Back run <b>×4</b> · RBI <b>×1</b> — the homer plus the runs it brings home.</p>
                 </div>
               </div>
 
@@ -688,7 +688,7 @@ function CategoriesScreen({ onNav }) {
                     <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {sel.map(s => (
                         <button key={s.id} className="chip" onClick={() => setSel(sel.filter(x => x.id !== s.id))} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 10px', fontSize: '.8rem', fontWeight: 700 }}>
-                          {s.name} <span className="dim">{s.pos === 'P' ? 'P' : 'H'}</span> ×
+                          {s.name} <span className="dim">{s.pos}</span> ×
                         </button>
                       ))}
                     </div>
@@ -710,7 +710,7 @@ function CategoriesScreen({ onNav }) {
                           <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
                           <div style={{ minWidth: 0 }}>
                             <div className="prow__name">{p.name}</div>
-                            <div className="prow__sub" style={{ fontSize: '.74rem' }}>{p.line}</div>
+                            <div className="prow__sub" style={{ fontSize: '.74rem' }}><b>{p.pos}</b> · {p.line}</div>
                           </div>
                         </div>
                         <button className="add-btn" disabled={selIds.has(p.id)} title="Draft" onClick={() => add(p)}>{selIds.has(p.id) ? '✓' : '+'}</button>
@@ -879,6 +879,11 @@ function BestBallScreen({ onNav }) {
   const nH = sel.filter(s => s.pos !== 'P').length;
   const nP = sel.filter(s => s.pos === 'P').length;
   const full = nH === slots.h && nP === slots.p;
+  const req = (data && data.require) || {};
+  const haveByPos = {};
+  sel.forEach(s => { if (s.pos !== 'P') haveByPos[s.pos] = (haveByPos[s.pos] || 0) + 1; });
+  const posOk = Object.entries(req).every(([p, n]) => (haveByPos[p] || 0) >= n);
+  const canLock = full && posOk;
   const selIds = new Set(sel.map(s => s.id));
   const list = pool ? (side === 'p' ? pool.pitchers : pool.hitters) : [];
   const shown = q.trim() ? list.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : list;
@@ -933,20 +938,26 @@ function BestBallScreen({ onNav }) {
           ) : (
             /* ---- draft ---- */
             <>
-              <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>Draft {slots.h} hitters and {slots.p} pitchers. Each slate your best {data.start ? data.start.h : 5} hitters and {data.start ? data.start.p : 2} pitchers auto-score — so draft for depth, not a daily lineup.</p>
+              <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>Draft {slots.h} hitters and {slots.p} pitchers covering every slot. Each slate your best in-position lineup — C, 1B, 2B, 3B, SS, OF, OF + best 2 pitchers — auto-scores, so draft depth at a spot and the hot bat there starts itself.</p>
               <div className="card card--pad mb-12" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontWeight: 700, fontSize: '.9rem' }}>
                   <span style={{ color: nH === slots.h ? 'var(--live)' : 'var(--ink-2)' }}>Hitters {nH}/{slots.h}</span>
                   <span className="dim"> · </span>
                   <span style={{ color: nP === slots.p ? 'var(--live)' : 'var(--ink-2)' }}>Pitchers {nP}/{slots.p}</span>
                 </div>
-                <button className="btn btn--brand btn--sm" disabled={!full || busy} onClick={lock}>Lock roster</button>
+                <button className="btn btn--brand btn--sm" disabled={!canLock || busy} onClick={lock}>Lock roster</button>
+              </div>
+              <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {Object.entries(req).map(([p, n]) => {
+                  const ok = (haveByPos[p] || 0) >= n;
+                  return <span key={p} style={{ fontSize: '.76rem', fontWeight: 800, padding: '3px 9px', borderRadius: 12, background: ok ? 'var(--brand-soft)' : 'var(--card-2)', color: ok ? 'var(--brand-ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}>{ok ? '✓ ' : ''}{p}{n > 1 ? ` ×${n}` : ''}</span>;
+                })}
               </div>
               {sel.length > 0 && (
                 <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {sel.map(s => (
                     <button key={s.id} className="chip" onClick={() => setSel(sel.filter(x => x.id !== s.id))} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 10px', fontSize: '.8rem', fontWeight: 700 }}>
-                      {s.name} <span className="dim">{s.pos === 'P' ? 'P' : 'H'}</span> ×
+                      {s.name} <span className="dim">{s.pos}</span> ×
                     </button>
                   ))}
                 </div>
@@ -965,7 +976,7 @@ function BestBallScreen({ onNav }) {
                       <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
                       <div style={{ minWidth: 0 }}>
                         <div className="prow__name">{p.name}</div>
-                        <div className="prow__sub" style={{ fontSize: '.74rem' }}>{p.line}</div>
+                        <div className="prow__sub" style={{ fontSize: '.74rem' }}><b>{p.pos}</b> · {p.line}</div>
                       </div>
                     </div>
                     <button className="add-btn" disabled={selIds.has(p.id)} title="Draft" onClick={() => add(p)}>{selIds.has(p.id) ? '✓' : '+'}</button>

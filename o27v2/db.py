@@ -347,6 +347,9 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     sqz_rbi    INTEGER DEFAULT 0,
     stay_rbi   INTEGER DEFAULT 0,
     stay_hits  INTEGER DEFAULT 0,   -- hits credited on a 2C event (subset of hits)
+    walkback_runs INTEGER DEFAULT 0,  -- runs scored as a Walk-Back bonus runner
+                                      -- (HR hitter driven in again); subset of runs
+                                      -- and the per-hitter mirror of pitcher wb_runs
     -- 2C moved-runner stats (Apollo-style): per-base opportunities and
     -- successes. A successful "move" = post-stay base position is higher
     -- than pre-stay (or runner scored cleanly). Runner thrown out trying
@@ -1435,7 +1438,7 @@ def init_db() -> None:
                     "adv_op_3b", "adv_adv_3b",
                     "rad_1b", "rad_2b", "rad_3b",
                     "risp_pa", "risp_ab", "risp_h", "risp_2b", "risp_3b",
-                    "risp_hr", "risp_bb", "risp_hbp", "risp_rbi"):
+                    "risp_hr", "risp_bb", "risp_hbp", "risp_rbi", "walkback_runs"):
             try:
                 conn.execute(f"ALTER TABLE game_batter_stats ADD COLUMN {col} INTEGER DEFAULT 0")
                 conn.commit()

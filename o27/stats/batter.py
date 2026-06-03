@@ -34,6 +34,10 @@ class BatterStats:
     stay_rbi: int = 0
     stay_hits: int = 0      # Hits credited on a 2C event (subset of `hits`)
     multi_hit_abs: int = 0  # At-bats with 2+ credited hits
+    walkback_runs: int = 0  # Runs scored as a Walk-Back bonus runner (this
+                            # hitter's homer set him back on base and he was
+                            # driven in again). Per-hitter mirror of the
+                            # pitcher's wb_runs; subset of `runs`.
 
     # RISP (runners in scoring position — a runner on 2B and/or 3B at the
     # start of the PA). Each is the subset of the matching counter that was

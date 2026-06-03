@@ -148,6 +148,32 @@ counting-stats-first, all settling from persisted stats:
 | Sportsbook | `sportsbook.py` | moneyline + run totals |
 | Best Ball | `bestball.py` | draft once, best lineup auto-scores |
 
-Future polish (not blockers): a dedicated per-batter walk-back-run column for
-Sluggers; positional lineup slots in Best Ball; persisting Sportsbook lines so
-the displayed price always matches the snapshot at bet time.
+## Polish round (all three closed)
+
+1. **Per-hitter walk-back-run column (engine change).** Added `walkback_runs`
+   to `BatterStats` / `game_batter_stats`, the per-hitter mirror of the
+   pitcher's `wb_runs`. The engine records each Walk-Back bonus runner who
+   scores (`state.walk_back_scored_ids`, populated in `_reconcile_walk_back`,
+   reset per `apply_event`); the renderer credits it on the authoritative
+   run-attribution path and threads it through the per-phase stat delta; `sim.py`
+   persists it. **Sluggers now scores `HR×4 + Walk-Back run×4 + RBI×1`** off the
+   exact stat. Validated by the invariant **Σ batter.walkback_runs == Σ pitcher.wb_runs**
+   (per game and league-wide, zero mismatches) and the subset rule
+   `walkback_runs ≤ runs`.
+   Touches the shared core: `o27/engine/state.py`, `o27/engine/pa.py`,
+   `o27/stats/batter.py`, `o27/render/render.py`, `o27v2/db.py`, `o27v2/sim.py`.
+
+2. **Positional Best Ball.** Roster is now 9 hitters + 4 pitchers that must
+   cover the diamond (C/1B/2B/3B/SS + 2 OF + 2 flex); each slate the best
+   in-position lineup (C·1B·2B·3B·SS·OF·OF + best 2 pitchers) auto-fills, so
+   drafting depth at a position lets the hot bat there start itself. Draft
+   validates position coverage; the UI shows live requirement chips.
+
+3. **Persisted Sportsbook lines.** A line is snapshotted to `sb_lines` the
+   first time a game appears on the board, so the displayed price never drifts
+   as other slate games settle, and a bet's odds always equal the posted line.
+
+The walk-back AAR-worthy note: O27 has no innings, so the Walk-Back run (a
+homer's bonus runner driven in again) is genuinely O27-native — but it's still
+a *run*, a normal counting stat, which is why it fits the counting-stats-first
+spine rather than fighting it.

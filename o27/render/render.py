@@ -2018,10 +2018,16 @@ class Renderer:
         before_bt = int(ctx.get("score", {}).get(bt, 0) or 0)
         other = "home" if bt == "visitors" else "visitors"
         other_score = int(state_after.score.get(other, 0) or 0)
+        # Walk-Back bonus runners who scored on this event (engine-tagged), so
+        # the run we credit below can also tick the hitter's walkback_runs.
+        wb_scored = list(getattr(state_after, "walk_back_scored_ids", []) or [])
         for i, (from_base, pid) in enumerate(runs):
             target = pid if pid in self._batter_stats else batter_pid
             if target in self._batter_stats:
                 self._batter_stats[target].runs += 1
+                if pid in wb_scored:
+                    self._batter_stats[target].walkback_runs += 1
+                    wb_scored.remove(pid)  # consume one credit per scored run
             bt_score = before_bt + i + 1
             self._scoring_log.append({
                 "seq":              len(self._scoring_log),
@@ -2098,7 +2104,7 @@ class Renderer:
         for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
                   "sh", "bunt_att", "bunt_hits", "sqz", "sqz_rbi",
-                  "stay_rbi", "stay_hits", "multi_hit_abs",
+                  "stay_rbi", "stay_hits", "walkback_runs", "multi_hit_abs",
                   "sb", "cs", "fo", "roe",
                   "po", "a", "e",
                   "gidp", "gitp",
