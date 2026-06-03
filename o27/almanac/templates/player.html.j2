@@ -398,7 +398,7 @@
       <thead><tr>
         <th>IR</th><th>IR-Sc</th><th>IR-Stop%</th>
         <th>Late ER/BF</th>
-        <th>TO</th><th>QF</th><th>LE</th><th>LR%</th>
+        <th>TO</th><th>QF</th><th>LE</th><th>LRA</th>
       </tr></thead>
       <tbody><tr>
         <td>{{ season.ir_inherited }}</td>
@@ -408,7 +408,7 @@
         <td>{{ season.terminal_outs }}</td>
         <td>{{ season.quality_finish }}</td>
         <td>{{ season.lead_entries }}</td>
-        <td>{% if season.lr_pct is not none %}{{ '%.0f'|format(season.lr_pct * 100) }}%{% else %}—{% endif %}</td>
+        <td>{% if season.lr_pct is not none %}{{ '%.2f'|format(season.lr_pct * 10) }}{% else %}—{% endif %}</td>
       </tr></tbody>
     </table>
   </div>

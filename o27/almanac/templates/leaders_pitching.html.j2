@@ -129,7 +129,7 @@
       <th>IR</th><th data-heat="hi">IR-Stop%</th>
       <th data-heat="lo">Late ER/BF</th>
       <th data-heat="hi">TO</th><th data-heat="hi">QF</th>
-      <th>LE</th><th data-heat="hi">LR%</th>
+      <th>LE</th><th data-heat="hi">LRA</th>
     </tr></thead>
     <tbody>
       {% for r in views.pitching_season if (r.ir_inherited or r.terminal_outs or r.lead_entries) and (not current_league or r.league == current_league) %}
@@ -142,7 +142,7 @@
         <td>{{ r.terminal_outs }}</td>
         <td>{{ r.quality_finish }}</td>
         <td>{{ r.lead_entries }}</td>
-        <td data-val="{{ r.lr_pct if r.lr_pct is not none else -1 }}">{% if r.lr_pct is not none %}{{ '%.0f'|format(r.lr_pct * 100) }}%{% else %}—{% endif %}</td>
+        <td data-val="{{ r.lr_pct if r.lr_pct is not none else -1 }}">{% if r.lr_pct is not none %}{{ '%.2f'|format(r.lr_pct * 10) }}{% else %}—{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

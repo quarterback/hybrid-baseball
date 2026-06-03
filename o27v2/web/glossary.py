@@ -276,8 +276,8 @@ GLOSSARY_SECTIONS: list[dict] = [
              "desc": "Outs recorded in a game he entered with a lead, never let be tied or lost, and finished. Scales with the role: a one-out closer gets ~3, a back-stage finisher-starter who seals the final third gets ~9+. The counting measure of who really closes games."},
             {"key": "quality_finish", "abbr": "QF", "name": "Quality Finish",
              "desc": "The inverse of a Quality Start: entered and sealed 9+ of the final outs while never trailing (lead or tie), regardless of save situation. Separates high-volume finishers from one-out specialists."},
-            {"key": "lr_pct", "abbr": "LR%", "name": "Lead-Retention %",
-             "desc": "Of the games he entered with a lead, the share he held without letting it be tied or lost on his watch. Read against outs-per-appearance it splits short-relief specialists from back-stage starters."},
+            {"key": "lr_pct", "abbr": "LRA", "name": "Lead-Retention Average",
+             "desc": "Of the games he entered with a lead, the share he held without letting it be tied or lost on his watch, on a 0–10 scale (a perfect 10.00 = never blew a lead; 8.50 = held 85% of them). Read against outs-per-appearance it splits short-relief specialists from back-stage starters."},
         ],
     },
     {

@@ -3981,7 +3981,15 @@ def player_detail_export(player_id: int):
                    COALESCE(SUM(triples_allowed),0) as triples_allowed,
                    COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
                    COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
-                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct,
+                   COALESCE(SUM(wb_faced),0)   as wb_faced,
+                   COALESCE(SUM(wb_runs),0)    as wb_runs,
+                   COALESCE(SUM(ir_inherited),0)  as ir_inherited,
+                   COALESCE(SUM(ir_scored),0)     as ir_scored,
+                   COALESCE(SUM(terminal_outs),0) as terminal_outs,
+                   COALESCE(SUM(quality_finish),0) as quality_finish,
+                   COALESCE(SUM(lead_entries),0)  as lead_entries,
+                   COALESCE(SUM(lead_held),0)     as lead_held
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     baselines = _league_baselines()
@@ -5712,7 +5720,15 @@ def _fetch_player_overview(player_id: int,
                    COALESCE(SUM(triples_allowed),0) as triples_allowed,
                    COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
                    COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
-                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct,
+                   COALESCE(SUM(wb_faced),0)   as wb_faced,
+                   COALESCE(SUM(wb_runs),0)    as wb_runs,
+                   COALESCE(SUM(ir_inherited),0)  as ir_inherited,
+                   COALESCE(SUM(ir_scored),0)     as ir_scored,
+                   COALESCE(SUM(terminal_outs),0) as terminal_outs,
+                   COALESCE(SUM(quality_finish),0) as quality_finish,
+                   COALESCE(SUM(lead_entries),0)  as lead_entries,
+                   COALESCE(SUM(lead_held),0)     as lead_held
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     bt_totals = None
@@ -5893,7 +5909,15 @@ def player_detail(player_id: int):
                    COALESCE(SUM(triples_allowed),0) as triples_allowed,
                    COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
                    COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
-                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct,
+                   COALESCE(SUM(wb_faced),0)   as wb_faced,
+                   COALESCE(SUM(wb_runs),0)    as wb_runs,
+                   COALESCE(SUM(ir_inherited),0)  as ir_inherited,
+                   COALESCE(SUM(ir_scored),0)     as ir_scored,
+                   COALESCE(SUM(terminal_outs),0) as terminal_outs,
+                   COALESCE(SUM(quality_finish),0) as quality_finish,
+                   COALESCE(SUM(lead_entries),0)  as lead_entries,
+                   COALESCE(SUM(lead_held),0)     as lead_held
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
         (player_id,),
     )
