@@ -114,6 +114,18 @@ def api_entries():
     return jsonify(dfs.list_user_entries())
 
 
+@capspace_bp.route("/api/player/<int:player_id>")
+def api_player(player_id):
+    """Full player-card payload — stats, ratings, logs — used by the drawer
+    from every game screen."""
+    try:
+        card = slate_data.player_card(player_id)
+    except Exception:  # pragma: no cover
+        _LOG.exception("CapSpace player_card failed")
+        card = None
+    return (jsonify(card), 200) if card else (jsonify({}), 404)
+
+
 # ---- Go Streaking (hit-streak survivor) ---------------------------------
 
 @capspace_bp.route("/api/streak")

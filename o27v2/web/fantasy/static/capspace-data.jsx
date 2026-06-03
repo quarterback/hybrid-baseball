@@ -161,9 +161,10 @@
 
   const PLAYERS = RAW.map(p => {
     const isPitcher = p.isPitcher !== undefined ? p.isPitcher : p.pos === 'PILOT';
-    // Use the real game log/form when injected; otherwise synthesize one.
+    // Real game log/form from the save when present; otherwise empty (no
+    // fabricated history — the drawer fetches authoritative detail by id).
     const hasReal = Array.isArray(p.log) && p.log.length && Array.isArray(p.form) && p.form.length;
-    const built = hasReal ? { log: p.log, form: p.form } : buildLog({ ...p, isPitcher });
+    const built = hasReal ? { log: p.log, form: p.form } : { log: [], form: [] };
     const team = TEAMS[p.team] || { color: 'var(--c-coral)', name: p.team };
     return {
       ...p,
