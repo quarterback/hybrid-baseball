@@ -1366,28 +1366,31 @@
   .capspace-ad__link:hover{ transform:translateY(-1px); box-shadow:0 10px 26px rgba(255,106,43,.34), inset 0 1px 0 rgba(255,255,255,.6); }
   .capspace-ad__badge{ flex:0 0 auto; width:44px; height:44px; border-radius:50%; display:grid; place-items:center;
     background:#fff; box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 2px 6px rgba(0,0,0,.16); position:relative; z-index:1; }
-  .capspace-ad__copy{ display:flex; flex-direction:column; gap:1px; min-width:0; z-index:1; }
+  .capspace-ad__copy{ display:flex; flex-direction:column; gap:1px; min-width:0; overflow:hidden; z-index:1; }
   .capspace-ad__kicker{ font-size:.64rem; font-weight:800; letter-spacing:.09em; text-transform:uppercase;
-    color:#7a2e00; display:flex; align-items:center; gap:6px; }
+    color:#7a2e00; display:flex; align-items:center; gap:6px; min-width:0; white-space:nowrap; overflow:hidden; }
   .capspace-ad__kicker b{ background:#2a1400; color:#ffd166; padding:1px 7px; border-radius:99px; font-size:.58rem; letter-spacing:.12em; }
   .capspace-ad__head{ font-size:.95rem; font-weight:700; line-height:1.2; color:#2a1400;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .capspace-ad__cta{ margin-left:auto; flex:0 0 auto; z-index:1; background:#2a1400; color:#fff; font-weight:800;
     font-size:.84rem; padding:9px 16px; border-radius:99px; white-space:nowrap; box-shadow:inset 0 1px 0 rgba(255,255,255,.18); }
+  .capspace-ad__cta .cs-short{ display:none; }
   .capspace-ad__x{ flex:0 0 auto; margin-left:8px; align-self:center; width:30px; height:30px; border-radius:50%;
     border:none; background:rgba(0,0,0,.07); color:#7a2e00; font-size:1.15rem; line-height:1; cursor:pointer; }
   .capspace-ad__x:hover{ background:rgba(0,0,0,.13); }
   @media (max-width:720px){ .capspace-ad{ padding:0 10px; } .capspace-ad__head{ display:none; }
-    .capspace-ad__cta{ padding:8px 12px; font-size:.78rem; } }
+    .capspace-ad__kicker .cs-sp{ display:none; }
+    .capspace-ad__cta .cs-full{ display:none; } .capspace-ad__cta .cs-short{ display:inline; }
+    .capspace-ad__cta{ padding:8px 14px; font-size:.8rem; } }
 </style>
 <div class="capspace-ad" id="capspace-ad" role="complementary" aria-label="CapSpace Fantasy">
   <a class="capspace-ad__link" href="/fantasy/">
     <span class="capspace-ad__badge"><img src="/fantasy/_static/favicon.svg" alt="" width="34" height="34"></span>
     <span class="capspace-ad__copy">
-      <span class="capspace-ad__kicker">Sponsored · CapSpace <b>BETA</b></span>
+      <span class="capspace-ad__kicker"><span class="cs-sp">Sponsored · </span>CapSpace <b>BETA</b></span>
       <span class="capspace-ad__head">Tonight's Daily Slate is live — draft a lineup, climb the board.</span>
     </span>
-    <span class="capspace-ad__cta">Play CapSpace Fantasy →</span>
+    <span class="capspace-ad__cta"><span class="cs-full">Play CapSpace Fantasy →</span><span class="cs-short">Play →</span></span>
   </a>
   <button class="capspace-ad__x" type="button" aria-label="Dismiss" onclick="capspaceDismissAd()">×</button>
 </div>
