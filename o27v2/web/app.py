@@ -2662,7 +2662,7 @@ def webmanifest():
     manifest = {
         "name": "Super Innings — An O27 Baseball Simulator",
         "short_name": "Super Innings",
-        "description": "Super Innings is an O27 baseball simulator — a computer simulation of the 27-out baseball variant. Browse simulated seasons, stats, standings, and box scores.",
+        "description": "Super Innings is an O27 Baseball simulator — a computer simulation of the 27-out baseball variant. Browse simulated seasons, stats, standings, and box scores.",
         "start_url": "/",
         "scope": "/",
         "display": "standalone",
