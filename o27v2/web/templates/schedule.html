@@ -110,7 +110,7 @@
       {% if show_league_col %}<span class="gc-league">{{ g.home_league }}</span>{% endif %}
       <span class="gc-time text-secondary">{{ g | first_pitch }}</span>
       <span class="gc-badges">
-        {% if g.super_inning %}<span class="si-badge" title="Went to super innings — {{ g.super_inning }} extra round{{ '' if g.super_inning == 1 else 's' }} (counts any Seconds round too)">SI/{{ g.super_inning }}</span>{% endif %}
+        {% if g.super_inning %}<span class="si-badge" title="Went to super innings — {{ g.super_inning }} extra round{{ '' if g.super_inning == 1 else 's' }} (counts any Seconds round too)">SI{% if g.super_inning > 1 %}/{{ g.super_inning }}{% endif %}</span>{% endif %}
       </span>
     </div>
 
