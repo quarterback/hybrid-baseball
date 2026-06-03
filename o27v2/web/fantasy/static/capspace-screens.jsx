@@ -6,9 +6,13 @@ const { useState, useEffect } = React;
 /* ---------- HUB / GAME LIBRARY ---------- */
 function HubScreen({ onNav, onOpenFormat }) {
   const S = window.SLATE;
+  const games = (S.SLATE_GAMES || []).length;
+  const contests = S.CONTESTS || [];
+  const prizePool = contests.reduce((s, c) => s + (c.prize || 0), 0);
+  const topPrize = contests.reduce((m, c) => Math.max(m, c.top || 0), 0);
   return (
     <>
-      <TopBar title="Good evening, Player!" sub="4 games on tonight's slate" right={
+      <TopBar title="Good evening, Player!" sub={`${games} games on tonight's slate`} right={
         <button className="btn btn--ghost btn--sm hide-mobile" style={{ padding: '9px 12px' }}><Icon name="bell" size={18} /></button>
       } />
       <div className="app__scroll">
@@ -16,11 +20,11 @@ function HubScreen({ onNav, onOpenFormat }) {
           {/* hero */}
           <div className="hero">
             <div className="hero__in">
-              <Tag kind="live"><span className="pulse" /> Slate locks 6:05</Tag>
+              <Tag kind="live"><span className="pulse" /> Tonight's slate is live</Tag>
               <h1 className="mt-12">Tonight's Daily Slate is live.</h1>
-              <p>Build a lineup under the {S.money(S.CAP)} cap across four games. {S.money(50*S.CRORE)} in prizes on the board.</p>
+              <p>Build a lineup under the {S.money(S.CAP)} cap across {games} games.{prizePool > 0 ? ` ${S.money(prizePool)} in prizes on the board.` : ''}</p>
               <div className="row wrap">
-                <Btn variant="brand" size="lg" onClick={() => onNav('lobby')}>Enter the Crore Room <Icon name="chev" size={18} /></Btn>
+                <Btn variant="brand" size="lg" onClick={() => onNav('lobby')}>Play the slate <Icon name="chev" size={18} /></Btn>
                 <Btn variant="ghost" size="lg" onClick={() => onNav('lobby')}>Browse contests</Btn>
               </div>
             </div>
@@ -28,10 +32,10 @@ function HubScreen({ onNav, onOpenFormat }) {
 
           {/* quick tiles */}
           <div className="tiles mt-24">
-            <div className="tile"><div className="lbl">Balance</div><div className="val">{S.money(S.WALLET)}</div><div className="sub">Guilder wallet</div></div>
-            <div className="tile"><div className="lbl">Live entries</div><div className="val">3</div><div className="sub" style={{ color: 'var(--live)' }}>+{S.money(42*S.LAKH)} winning</div></div>
-            <div className="tile"><div className="lbl">Tonight</div><div className="val">4</div><div className="sub">games · 6:05 first lock</div></div>
-            <div className="tile"><div className="lbl">Win streak</div><div className="val">5</div><div className="sub">Beat the Voyage</div></div>
+            <div className="tile"><div className="lbl">Tonight</div><div className="val">{games}</div><div className="sub">games on the slate</div></div>
+            <div className="tile"><div className="lbl">Contests</div><div className="val">{contests.length}</div><div className="sub">open to enter</div></div>
+            <div className="tile"><div className="lbl">Top prize</div><div className="val">{topPrize > 0 ? S.money(topPrize) : '—'}</div><div className="sub">across all contests</div></div>
+            <div className="tile"><div className="lbl">Bankroll</div><div className="val">{S.money(S.WALLET)}</div><div className="sub">play-money balance</div></div>
           </div>
 
           {/* the game library */}
