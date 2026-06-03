@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}Super Innings{% endblock %} — Super Innings</title>
-  <meta name="description" content="Super Innings is a computer baseball simulation game — watch simulated seasons play out with full stats, standings, leaders, and box scores.">
+  <meta name="description" content="Super Innings is an O27 baseball simulator — a computer simulation of the 27-out baseball variant, with full seasons, stats, standings, leaders, and box scores.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Super Innings">
-  <meta property="og:title" content="Super Innings — computer baseball simulation">
-  <meta property="og:description" content="Super Innings is a computer baseball simulation game — watch simulated seasons play out with full stats, standings, leaders, and box scores.">
+  <meta property="og:title" content="Super Innings — An O27 Baseball Simulator">
+  <meta property="og:description" content="Super Innings is an O27 baseball simulator — a computer simulation of the 27-out baseball variant, with full seasons, stats, standings, leaders, and box scores.">
 
   {# Apply the saved (or system-preferred) theme before first paint to
      avoid a flash of the wrong palette. #}
@@ -1185,7 +1185,7 @@
 
 <nav class="topbar navbar navbar-expand-xl">
   <div class="container-fluid p-0" style="max-width:1500px">
-    <a class="navbar-brand" href="{{ url_for('index') }}">O27</a>
+    <a class="navbar-brand" href="{{ url_for('index') }}">Super Innings<span class="d-none d-lg-inline text-secondary fw-normal" style="font-size:.7rem;margin-left:.4rem">An O27 Baseball Simulator</span></a>
     {% if sim.save_name %}
     <a href="{{ url_for('saves_index') }}" class="nav-link py-0 px-2"
        style="font-size:.8rem;align-self:center" title="Active league — click to switch">{{ sim.save_name }}</a>
