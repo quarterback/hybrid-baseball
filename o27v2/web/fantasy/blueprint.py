@@ -122,7 +122,7 @@ def api_entries():
 def _settle_all() -> int:
     """Settle every game that pays into the wallet, then return the balance —
     so one bankroll reflects DFS contests and Sportsbook bets alike."""
-    for fn in (dfs.settle_entries, book.settle_bets):
+    for fn in (dfs.settle_entries, book.settle_bets, sluggergame.settle, pilotgame.settle):
         try:
             fn()
         except Exception:  # pragma: no cover

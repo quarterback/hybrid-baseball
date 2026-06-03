@@ -24,9 +24,40 @@ import statistics
 
 from o27v2 import db
 from . import data as slate_data
+from . import buyins
 
 MAX_PICKS = 3
+BUY_IN = 1000  # ƒ1,000 per slate; beat the field to cash
 _W_HR, _W_WBR, _W_RBI = 4.0, 4.0, 1.0
+
+
+def _slate_final(slate_date: str) -> bool:
+    r = db.fetchone("SELECT COUNT(*) total, COALESCE(SUM(played),0) played "
+                    "FROM games WHERE game_date = ?", (slate_date,))
+    return bool(r and r["total"] and r["played"] == r["total"])
+
+
+def _slate_payout(fee: int, score: float, field_avg: float, ceiling: float) -> int:
+    if ceiling and score >= 0.9 * ceiling:
+        return fee * 5
+    if field_avg and score >= field_avg:
+        return fee * 2
+    if field_avg and score >= 0.6 * field_avg:
+        return fee
+    return 0
+
+
+def settle() -> None:
+    """Cash out finished slates: payout vs the field, into the wallet."""
+    for b in buyins.unsettled("sluggers"):
+        sd = b["ekey"]
+        if not _slate_final(sd):
+            continue
+        ids = [r["player_id"] for r in db.fetchall(
+            "SELECT player_id FROM slugger_picks WHERE slate_date = ?", (sd,))]
+        ent = _slate_entry(sd, ids)
+        fa, ceil = _benchmark(sd)
+        buyins.settle_one("sluggers", sd, _slate_payout(b["fee"], ent["score"], fa or 0, ceil or 0))
 
 
 def ensure_schema() -> None:
@@ -141,6 +172,7 @@ def _slate_entry(slate_date: str, dbids: list[int]) -> dict:
 
 def status() -> dict:
     ensure_schema()
+    settle()
     picks = db.fetchall("SELECT * FROM slugger_picks ORDER BY slate_date")
     by_slate: dict[str, list[int]] = {}
     for p in picks:
@@ -152,6 +184,7 @@ def status() -> dict:
     history = []
     for sd in sorted(by_slate, reverse=True):
         entry = _slate_entry(sd, by_slate[sd])
+        entry["payout"] = buyins.payout_for("sluggers", sd)
         if entry["settled"]:
             season += entry["score"]
         if sd == slate:
@@ -176,6 +209,7 @@ def status() -> dict:
         "slate_date": slate, "season": round(season, 1), "max": MAX_PICKS,
         "picked": len(picked_ids), "your_slate": your_slate,
         "pool": pool, "history": history[:12],
+        "buyIn": BUY_IN, "entered": bool(slate and buyins.entry("sluggers", slate)),
     }
 
 
@@ -196,6 +230,9 @@ def pick(player_id) -> dict:
     n = db.fetchone("SELECT COUNT(*) c FROM slugger_picks WHERE slate_date = ?", (slate,))["c"]
     if n >= MAX_PICKS:
         return {"ok": False, "error": f"You already have {MAX_PICKS} sluggers tonight."}
+    bi = buyins.enter("sluggers", slate, BUY_IN)  # charged once per slate
+    if not bi.get("ok"):
+        return bi
     conn = db.get_conn()
     conn.execute(
         "INSERT INTO slugger_picks (slate_date, player_id, created_at) VALUES (?,?,?)",

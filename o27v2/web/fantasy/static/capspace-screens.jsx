@@ -353,6 +353,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
 
 /* ---------- SLUGGERS (Walk-Back home-run game) ---------- */
 function SluggersScreen({ onNav, onOpenPlayer }) {
+  const S = window.SLATE;
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
@@ -392,6 +393,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
                   <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Season slugger points</div>
                   <div style={{ fontSize: '3.2rem', fontWeight: 900, lineHeight: 1 }}>{d.season}</div>
                   <p style={{ marginTop: 6 }}>HR <b>×4</b> · Walk-Back run <b>×4</b> · RBI <b>×1</b> — the homer plus the runs it brings home.</p>
+                  {d.buyIn ? <p style={{ marginTop: 4, fontSize: '.84rem', opacity: .9 }}>Buy-in {S.money(d.buyIn)}/slate · beat the field to cash{d.entered ? ' · entered ✓' : ''}</p> : null}
                 </div>
               </div>
 
@@ -456,7 +458,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
                       <div key={i} className="lb-row">
                         <div className="lb-rank">{(h.slate_date || '').slice(5)}</div>
                         <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{h.score} pts</b> <span className="dim">vs field {h.fieldAvg != null ? h.fieldAvg : '—'}</span></div>
-                        <div className="lb-pts" style={{ color: (h.fieldAvg != null && h.score >= h.fieldAvg) ? 'var(--live)' : 'var(--ink-3)', fontWeight: 800 }}>{h.fieldAvg != null && h.score >= h.fieldAvg ? 'beat' : ''}</div>
+                        <div className="lb-pts" style={{ color: ((h.payout || 0) - (d.buyIn || 0)) > 0 ? 'var(--live)' : ((h.payout || 0) - (d.buyIn || 0)) < 0 ? 'var(--down)' : 'var(--ink-3)', fontWeight: 800 }}>{((h.payout || 0) - (d.buyIn || 0)) > 0 ? `+${S.money((h.payout || 0) - (d.buyIn || 0))}` : ((h.payout || 0) - (d.buyIn || 0)) < 0 ? `−${S.money((d.buyIn || 0) - (h.payout || 0))}` : 'push'}</div>
                       </div>
                     ))}
                   </div>
@@ -472,6 +474,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
 
 /* ---------- PILOTS (pitching game) ---------- */
 function PilotsScreen({ onNav, onOpenPlayer }) {
+  const S = window.SLATE;
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
@@ -510,6 +513,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
                   <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Season pilot points</div>
                   <div style={{ fontSize: '3.2rem', fontWeight: 900, lineHeight: 1 }}>{d.season}</div>
                   <p style={{ marginTop: 6 }}>K <b>×3</b> · Out <b>×1</b> · ER <b>−2</b> · Quality Start <b>+6</b> · Quality Finish <b>+6</b>.</p>
+                  {d.buyIn ? <p style={{ marginTop: 4, fontSize: '.84rem', opacity: .9 }}>Buy-in {S.money(d.buyIn)}/slate · beat the field to cash{d.entered ? ' · entered ✓' : ''}</p> : null}
                 </div>
               </div>
 
@@ -571,7 +575,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
                       <div key={i} className="lb-row">
                         <div className="lb-rank">{(h.slate_date || '').slice(5)}</div>
                         <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{h.score} pts</b> <span className="dim">vs field {h.fieldAvg != null ? h.fieldAvg : '—'}</span></div>
-                        <div className="lb-pts" style={{ color: (h.fieldAvg != null && h.score >= h.fieldAvg) ? 'var(--live)' : 'var(--ink-3)', fontWeight: 800 }}>{h.fieldAvg != null && h.score >= h.fieldAvg ? 'beat' : ''}</div>
+                        <div className="lb-pts" style={{ color: ((h.payout || 0) - (d.buyIn || 0)) > 0 ? 'var(--live)' : ((h.payout || 0) - (d.buyIn || 0)) < 0 ? 'var(--down)' : 'var(--ink-3)', fontWeight: 800 }}>{((h.payout || 0) - (d.buyIn || 0)) > 0 ? `+${S.money((h.payout || 0) - (d.buyIn || 0))}` : ((h.payout || 0) - (d.buyIn || 0)) < 0 ? `−${S.money((d.buyIn || 0) - (h.payout || 0))}` : 'push'}</div>
                       </div>
                     ))}
                   </div>
