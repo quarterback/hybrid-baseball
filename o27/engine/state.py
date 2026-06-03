@@ -662,6 +662,12 @@ class GameState:
     # scores. Holds player_ids of the Walk-Back runners currently on base.
     walk_back_runner_ids: set = field(default_factory=set)
 
+    # Player_ids of Walk-Back bonus runners who SCORED on the event just
+    # applied — reset at the top of every apply_event and populated by
+    # _reconcile_walk_back. The renderer reads this to credit each batter's
+    # `walkback_runs` (the per-hitter mirror of the pitcher's wb_runs).
+    walk_back_scored_ids: list = field(default_factory=list)
+
     # Player_ids of the runners the CURRENT pitcher inherited at his pitching
     # change. Shrinks as each resolves (scores / out / strand); _reconcile_inherited
     # tallies how many scored into pitcher_ir_scored_this_spell.

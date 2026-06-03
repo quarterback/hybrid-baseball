@@ -202,18 +202,22 @@
     { id: 'dfs',     name: 'Daily Slate',      color: 'var(--c-coral)', icon: 'diamond',
       tag: 'live', desc: 'Salary-cap lineups on tonight\u2019s games. Build, lock, climb the board.',
       stat: ['4 games', '$1K cap'], live: true },
-    { id: 'stay',    name: '2C League',        color: 'var(--c-teal)', icon: 'rings',
-      tag: 'new', desc: 'Draft the second-chance artists. Scores only stays, stay-RBI & RAD grades.',
-      stat: ['Season-long', '12 spots'] },
-    { id: 'walkback',name: 'Walk-Back',        color: 'var(--c-violet)', icon: 'bolt',
-      desc: 'Homers that keep paying. Score the HR plus every Walk-Back run it sets up.',
-      stat: ['Weekly', 'Power only'] },
-    { id: 'pilot',   name: 'Pilot Room',       color: 'var(--c-blue)', icon: 'anchor',
-      desc: 'The finisher game. Score only arc-3 work — Ks, stops and damage in outs 19\u201327.',
-      stat: ['Daily', 'Pilots only'] },
-    { id: 'skipper', name: 'Skipper',          color: 'var(--c-amber)', icon: 'flag',
-      desc: 'Draft managers, not players. Score declared-seconds, shifts and joker efficiency.',
-      stat: ['Weekly', '8 skippers'] },
+    { id: 'stay',    name: 'Category Leagues', color: 'var(--c-teal)', icon: 'rings',
+      view: 'categories', tag: 'new',
+      desc: 'Season-long Roto. Draft a roster and climb the standard categories — R, HR, RBI, SB, OBP, K, QS, ERA, WHIP — plus the Razz anti-league, HR Derby and Pitchers-Only.',
+      stat: ['Season-long', '4 formats'] },
+    { id: 'walkback',name: 'Sluggers',         color: 'var(--c-violet)', icon: 'bolt',
+      view: 'sluggers', tag: 'new',
+      desc: 'A home-run counting game. Pick up to three sluggers a slate and bank their homers — plus the walk-back runs they bring home.',
+      stat: ['Per slate', '3 sluggers'] },
+    { id: 'pilot',   name: 'Pilots',           color: 'var(--c-blue)', icon: 'anchor',
+      view: 'pilots', tag: 'new',
+      desc: 'The pitching game. Pick up to three pilots a slate — strikeouts and quality starts, plus O27 finisher work: terminal outs and quality finishes.',
+      stat: ['Per slate', '3 pilots'] },
+    { id: 'book',    name: 'Sportsbook',        color: 'var(--c-amber)', icon: 'flag',
+      view: 'sportsbook', tag: 'new',
+      desc: 'Bet the slate against the house. Moneyline and run totals on tonight’s games, priced off team form — play-money bankroll.',
+      stat: ['Per slate', 'ML + O/U'] },
     { id: 'voyage',  name: 'Go Streaking',  color: 'var(--c-green)', icon: 'wave',
       view: 'streak', tag: 'new',
       desc: 'Pick one hitter a day who gets a hit. String together the longest streak you can — one hitless day and you start over.',
@@ -221,9 +225,10 @@
     { id: 'hothand', name: 'Hot Hand',         color: 'var(--c-pink)', icon: 'flame',
       desc: 'Ride the heat wave. Streak-weighted scoring rewards catching players mid-surge.',
       stat: ['Weekly', 'Momentum'] },
-    { id: 'joker',   name: 'Joker Draft',      color: 'var(--c-lime)', icon: 'spark',
-      desc: 'Draft an archetype portfolio — power, speed, contact — score on joker outcomes.',
-      stat: ['Side-game', 'Quick'] },
+    { id: 'joker',   name: 'Best Ball',        color: 'var(--c-lime)', icon: 'spark',
+      view: 'bestball', tag: 'new',
+      desc: 'Draft once — 8 hitters, 4 pitchers — then never touch it. Your best 5 hitters and 2 pitchers auto-score every slate, all season.',
+      stat: ['Draft once', '12-man'] },
   ];
 
   // ---- DFS contests for the slate (real when injected) -----------------
@@ -249,12 +254,13 @@
     { rank: 10,user: 'anchorsaway',  pts: 151.9, win: 12*LAKH,   av: 'A' },
   ];
 
-  // the DFS scoring rule (batter), shown in UI as the "rule"
+  // the DFS scoring rule (batter), shown in UI as the "rule" \u2014 standard
+  // counting stats lead; O27 stays are small flavor bonuses (see data.py _W)
   const SCORING = [
     { k: 'Single', v: '+4' }, { k: 'Double', v: '+7' }, { k: 'Triple', v: '+10' },
-    { k: 'Home Run', v: '+13' }, { k: 'Walk', v: '+2' }, { k: 'RBI', v: '+2' },
-    { k: 'Run', v: '+1.5' }, { k: 'Stay', v: '+3' }, { k: 'Stay RBI', v: '+4' },
-    { k: 'RAD grade A+', v: '+5' }, { k: 'Strikeout', v: '\u22121.5' },
+    { k: 'Home Run', v: '+13' }, { k: 'RBI', v: '+2' }, { k: 'Run', v: '+1.5' },
+    { k: 'Walk / HBP', v: '+2' }, { k: 'Stolen Base', v: '+4' }, { k: 'Strikeout', v: '\u22121.5' },
+    { k: 'Stay (O27)', v: '+0.5' }, { k: 'Stay RBI (O27)', v: '+1' },
   ];
 
   window.SLATE = {

@@ -21,6 +21,11 @@ from o27v2 import currency
 from . import data as slate_data
 from . import contests as dfs
 from . import streak as streakgame
+from . import sluggers as sluggergame
+from . import pitching as pilotgame
+from . import categories as catgame
+from . import sportsbook as book
+from . import bestball as bbgame
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LOG = logging.getLogger(__name__)
@@ -128,4 +133,146 @@ def api_streak_pick():
     if pid is None:
         return jsonify({"ok": False, "error": "No player chosen."}), 400
     res = streakgame.make_pick(pid)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+# ---- Sluggers (Walk-Back home-run game) ---------------------------------
+
+@capspace_bp.route("/api/sluggers")
+def api_sluggers():
+    try:
+        return jsonify(sluggergame.status())
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace sluggers status failed")
+        return jsonify({"slate_date": None, "season": 0, "max": sluggergame.MAX_PICKS,
+                        "picked": 0, "your_slate": None, "pool": [], "history": []})
+
+
+@capspace_bp.route("/api/sluggers/pick", methods=["POST"])
+def api_sluggers_pick():
+    body = request.get_json(silent=True) or {}
+    pid = body.get("player_id")
+    if pid is None:
+        return jsonify({"ok": False, "error": "No player chosen."}), 400
+    res = sluggergame.pick(pid)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+@capspace_bp.route("/api/sluggers/remove", methods=["POST"])
+def api_sluggers_remove():
+    body = request.get_json(silent=True) or {}
+    pid = body.get("player_id")
+    if pid is None:
+        return jsonify({"ok": False, "error": "No player chosen."}), 400
+    res = sluggergame.remove(pid)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+# ---- Pilots (pitching game) ---------------------------------------------
+
+@capspace_bp.route("/api/pilots")
+def api_pilots():
+    try:
+        return jsonify(pilotgame.status())
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace pilots status failed")
+        return jsonify({"slate_date": None, "season": 0, "max": pilotgame.MAX_PICKS,
+                        "picked": 0, "your_slate": None, "pool": [], "history": []})
+
+
+@capspace_bp.route("/api/pilots/pick", methods=["POST"])
+def api_pilots_pick():
+    body = request.get_json(silent=True) or {}
+    pid = body.get("player_id")
+    if pid is None:
+        return jsonify({"ok": False, "error": "No player chosen."}), 400
+    res = pilotgame.pick(pid)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+@capspace_bp.route("/api/pilots/remove", methods=["POST"])
+def api_pilots_remove():
+    body = request.get_json(silent=True) or {}
+    pid = body.get("player_id")
+    if pid is None:
+        return jsonify({"ok": False, "error": "No player chosen."}), 400
+    res = pilotgame.remove(pid)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+# ---- Category leagues (Roto engine) -------------------------------------
+
+@capspace_bp.route("/api/categories")
+def api_categories():
+    fmt = request.args.get("format", "std5x5")
+    try:
+        return jsonify(catgame.state(fmt))
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace categories state failed")
+        return jsonify({"formats": [], "format": fmt, "slots": {"h": 0, "p": 0}, "roster": []})
+
+
+@capspace_bp.route("/api/categories/pool")
+def api_categories_pool():
+    fmt = request.args.get("format", "std5x5")
+    try:
+        return jsonify(catgame.pool(fmt))
+    except Exception:  # pragma: no cover
+        _LOG.exception("CapSpace categories pool failed")
+        return jsonify({"hitters": [], "pitchers": []})
+
+
+@capspace_bp.route("/api/categories/draft", methods=["POST"])
+def api_categories_draft():
+    body = request.get_json(silent=True) or {}
+    fmt = body.get("format", "std5x5")
+    ids = body.get("player_ids") or []
+    res = catgame.draft(fmt, ids)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+# ---- Sportsbook ---------------------------------------------------------
+
+@capspace_bp.route("/api/sportsbook")
+def api_sportsbook():
+    try:
+        return jsonify(book.status())
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace sportsbook status failed")
+        return jsonify({"bankroll": 0, "slate_date": None, "games": [], "open": [],
+                        "settled": [], "at_risk": 0, "record": {"w": 0, "l": 0, "p": 0, "net": 0}})
+
+
+@capspace_bp.route("/api/sportsbook/bet", methods=["POST"])
+def api_sportsbook_bet():
+    body = request.get_json(silent=True) or {}
+    res = book.place(body.get("game_id"), body.get("market"), body.get("side"), body.get("stake"))
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+# ---- Best Ball ----------------------------------------------------------
+
+@capspace_bp.route("/api/bestball")
+def api_bestball():
+    try:
+        return jsonify(bbgame.state())
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace bestball state failed")
+        return jsonify({"slots": {"h": bbgame.DRAFT_H, "p": bbgame.DRAFT_P},
+                        "start": {"h": bbgame.START_H, "p": bbgame.START_P}, "roster": []})
+
+
+@capspace_bp.route("/api/bestball/pool")
+def api_bestball_pool():
+    try:
+        return jsonify(bbgame.pool())
+    except Exception:  # pragma: no cover
+        _LOG.exception("CapSpace bestball pool failed")
+        return jsonify({"hitters": [], "pitchers": []})
+
+
+@capspace_bp.route("/api/bestball/draft", methods=["POST"])
+def api_bestball_draft():
+    body = request.get_json(silent=True) or {}
+    res = bbgame.draft(body.get("player_ids") or [])
     return jsonify(res), (200 if res.get("ok") else 400)
