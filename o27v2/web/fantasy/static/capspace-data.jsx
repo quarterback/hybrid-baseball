@@ -214,9 +214,10 @@
     { id: 'skipper', name: 'Skipper',          color: 'var(--c-amber)', icon: 'flag',
       desc: 'Draft managers, not players. Score declared-seconds, shifts and joker efficiency.',
       stat: ['Weekly', '8 skippers'] },
-    { id: 'voyage',  name: 'Beat the Voyage',  color: 'var(--c-green)', icon: 'wave',
-      desc: 'One pick a day. Clear a multi-hit AB or drive a stay run — or your streak sinks.',
-      stat: ['Survivor', 'Streak: 0'] },
+    { id: 'voyage',  name: 'Go Streaking',  color: 'var(--c-green)', icon: 'wave',
+      view: 'streak', tag: 'new',
+      desc: 'Pick one hitter a day who gets a hit. String together the longest streak you can — one hitless day and you start over.',
+      stat: ['Survivor', 'One hit a day'] },
     { id: 'hothand', name: 'Hot Hand',         color: 'var(--c-pink)', icon: 'flame',
       desc: 'Ride the heat wave. Streak-weighted scoring rewards catching players mid-surge.',
       stat: ['Weekly', 'Momentum'] },
@@ -227,7 +228,7 @@
 
   // ---- DFS contests for the slate (real when injected) -----------------
   const CONTESTS = (DATA && DATA.CONTESTS) || [
-    { id: 'c1', name: 'The Crore Room',     color: 'var(--c-coral)',  badge: 'Cr', fee: 5*LAKH, prize: 50*CRORE, entries: 14820, cap: 20000, top: 12*CRORE,  kind: 'GPP' },
+    { id: 'c1', name: 'The Big Slate',      color: 'var(--c-coral)',  badge: 'BS', fee: 5*LAKH, prize: 50*CRORE, entries: 14820, cap: 20000, top: 12*CRORE,  kind: 'GPP' },
     { id: 'c2', name: 'Tidewater Nightcap', color: 'var(--c-teal)',   badge: 'TN', fee: 1*LAKH, prize: 5*CRORE,  entries: 4210,  cap: 6000,  top: 1.2*CRORE, kind: 'GPP' },
     { id: 'c3', name: 'Double-Up Dockside', color: 'var(--c-blue)',   badge: '2x', fee: 2*LAKH, prize: 3.6*CRORE,entries: 1880,  cap: 2000,  top: 4*LAKH,   kind: 'Double Up' },
     { id: 'c4', name: 'Single Stay Showdown',color: 'var(--c-violet)',badge: 'SS', fee: 50000,  prize: 80*LAKH,  entries: 980,   cap: 1500,  top: 8*LAKH,   kind: 'Head-to-Head' },

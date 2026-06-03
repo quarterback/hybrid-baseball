@@ -6,9 +6,13 @@ const { useState, useEffect } = React;
 /* ---------- HUB / GAME LIBRARY ---------- */
 function HubScreen({ onNav, onOpenFormat }) {
   const S = window.SLATE;
+  const games = (S.SLATE_GAMES || []).length;
+  const contests = S.CONTESTS || [];
+  const prizePool = contests.reduce((s, c) => s + (c.prize || 0), 0);
+  const topPrize = contests.reduce((m, c) => Math.max(m, c.top || 0), 0);
   return (
     <>
-      <TopBar title="Good evening, Player!" sub="4 games on tonight's slate" right={
+      <TopBar title="Good evening, Player!" sub={`${games} games on tonight's slate`} right={
         <button className="btn btn--ghost btn--sm hide-mobile" style={{ padding: '9px 12px' }}><Icon name="bell" size={18} /></button>
       } />
       <div className="app__scroll">
@@ -16,11 +20,11 @@ function HubScreen({ onNav, onOpenFormat }) {
           {/* hero */}
           <div className="hero">
             <div className="hero__in">
-              <Tag kind="live"><span className="pulse" /> Slate locks 6:05</Tag>
+              <Tag kind="live"><span className="pulse" /> Tonight's slate is live</Tag>
               <h1 className="mt-12">Tonight's Daily Slate is live.</h1>
-              <p>Build a lineup under the {S.money(S.CAP)} cap across four games. {S.money(50*S.CRORE)} in prizes on the board.</p>
+              <p>Build a lineup under the {S.money(S.CAP)} cap across {games} games.{prizePool > 0 ? ` ${S.money(prizePool)} in prizes on the board.` : ''}</p>
               <div className="row wrap">
-                <Btn variant="brand" size="lg" onClick={() => onNav('lobby')}>Enter the Crore Room <Icon name="chev" size={18} /></Btn>
+                <Btn variant="brand" size="lg" onClick={() => onNav('lobby')}>Play the slate <Icon name="chev" size={18} /></Btn>
                 <Btn variant="ghost" size="lg" onClick={() => onNav('lobby')}>Browse contests</Btn>
               </div>
             </div>
@@ -28,10 +32,10 @@ function HubScreen({ onNav, onOpenFormat }) {
 
           {/* quick tiles */}
           <div className="tiles mt-24">
-            <div className="tile"><div className="lbl">Balance</div><div className="val">{S.money(S.WALLET)}</div><div className="sub">Guilder wallet</div></div>
-            <div className="tile"><div className="lbl">Live entries</div><div className="val">3</div><div className="sub" style={{ color: 'var(--live)' }}>+{S.money(42*S.LAKH)} winning</div></div>
-            <div className="tile"><div className="lbl">Tonight</div><div className="val">4</div><div className="sub">games · 6:05 first lock</div></div>
-            <div className="tile"><div className="lbl">Win streak</div><div className="val">5</div><div className="sub">Beat the Voyage</div></div>
+            <div className="tile"><div className="lbl">Tonight</div><div className="val">{games}</div><div className="sub">games on the slate</div></div>
+            <div className="tile"><div className="lbl">Contests</div><div className="val">{contests.length}</div><div className="sub">open to enter</div></div>
+            <div className="tile"><div className="lbl">Top prize</div><div className="val">{topPrize > 0 ? S.money(topPrize) : '—'}</div><div className="sub">across all contests</div></div>
+            <div className="tile"><div className="lbl">Bankroll</div><div className="val">{S.money(S.WALLET)}</div><div className="sub">play-money balance</div></div>
           </div>
 
           {/* the game library */}
@@ -41,7 +45,7 @@ function HubScreen({ onNav, onOpenFormat }) {
           </div>
           <div className="fmt-grid">
             {S.FORMATS.map(f => (
-              <a key={f.id} className={'fmt' + (f.live ? '' : ' fmt--soon')} onClick={() => onOpenFormat(f)}>
+              <a key={f.id} className={'fmt' + ((f.live || f.view) ? '' : ' fmt--soon')} onClick={() => f.view ? onNav(f.view) : onOpenFormat(f)}>
                 <span className="fmt__glow" style={{ background: f.color }} />
                 <span className="fmt__icon" style={{ background: f.color }}><Icon name={f.icon} size={24} /></span>
                 {f.tag && <span style={{ position: 'absolute', top: 16, right: 16 }}><Tag kind={f.tag === 'live' ? 'live' : 'new'}>{f.tag === 'live' ? <><span className="pulse" /> Live</> : 'New'}</Tag></span>}
@@ -225,4 +229,108 @@ function FormatTeaser({ fmt, onClose, onNav }) {
   );
 }
 
-Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser });
+/* ---------- GO STREAKING (hit-streak survivor) ---------- */
+function StreakScreen({ onNav }) {
+  const S = window.SLATE;
+  const [data, setData] = useState(null);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  function load() {
+    fetch('/fantasy/api/streak').then(r => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null));
+  }
+  useEffect(load, []);
+
+  function pick(p) {
+    if (busy) return;
+    setBusy(true);
+    fetch('/fantasy/api/streak/pick', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player_id: p.id }) })
+      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) window.alert(j.error || 'Could not make that pick.'); load(); })
+      .catch(() => setBusy(false));
+  }
+
+  const d = data;
+  const pool = d ? (d.pool || []) : [];
+  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const resColor = r => r === 'hit' ? 'var(--live)' : r === 'miss' ? 'var(--down)' : 'var(--ink-3)';
+  const resLabel = r => r === 'hit' ? 'Hit' : r === 'miss' ? 'Miss' : r === 'pending' ? 'Live' : '—';
+
+  return (
+    <>
+      <TopBar title="Go Streaking" sub="Pick a hit, build a streak" back onBack={() => onNav('hub')} />
+      <div className="app__scroll">
+        <div className="page page--narrow">
+          {!d ? (
+            <div className="card card--pad center" style={{ padding: '48px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>Loading…</div></div>
+          ) : (
+            <>
+              {/* streak hero */}
+              <div className="hero" style={{ background: 'linear-gradient(135deg, var(--c-green), var(--c-teal))' }}>
+                <div className="hero__in">
+                  <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Current streak</div>
+                  <div style={{ fontSize: '3.4rem', fontWeight: 900, lineHeight: 1 }}>{d.current}</div>
+                  <p style={{ marginTop: 6 }}>Best run: <b>{d.best}</b>. One hit keeps it alive — a hitless day starts you over.</p>
+                </div>
+              </div>
+
+              {/* tonight's pick */}
+              <div className="section-head mt-24"><h2>Tonight's pick</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
+              {!d.slate_date ? (
+                <div className="card card--pad center" style={{ padding: '32px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>No upcoming slate to pick. Sim forward to keep streaking.</div></div>
+              ) : d.today_pick ? (
+                <div className="contest">
+                  <span className="contest__badge" style={{ background: 'var(--c-green)' }}>{(d.today_pick.team || '?').slice(0, 2)}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="contest__name">{d.today_pick.name}</div>
+                    <div className="contest__meta"><span>{d.today_pick.team}</span><span>your pick — needs a hit</span></div>
+                  </div>
+                  <div className="contest__prize">
+                    <div className="amt" style={{ color: resColor(d.today_pick.result) }}>{resLabel(d.today_pick.result)}</div>
+                    <div className="lbl">{d.today_pick.result === 'pending' ? 'in progress' : 'result'}</div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search hitters…" value={q} onChange={e => setQ(e.target.value)} /></div>
+                  <div className="card" style={{ overflow: 'hidden' }}>
+                    {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
+                    {shown.map(p => (
+                      <div key={p.id} className="prow">
+                        <div className="prow__id">
+                          <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
+                          <div style={{ minWidth: 0 }}>
+                            <div className="prow__name">{p.name}</div>
+                            <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp}</div>
+                          </div>
+                        </div>
+                        <button className="add-btn" disabled={busy} title="Pick this hitter" onClick={() => pick(p)}>+</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* history */}
+              {d.history && d.history.length > 0 && (
+                <>
+                  <div className="section-head mt-24"><h2>Recent picks</h2></div>
+                  <div className="card" style={{ overflow: 'hidden' }}>
+                    {d.history.map((h, i) => (
+                      <div key={i} className="lb-row">
+                        <div className="lb-rank">{(h.slate_date || '').slice(5)}</div>
+                        <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{h.player}</b> <span className="dim">{h.team}</span></div>
+                        <div className="lb-pts" style={{ color: resColor(h.result), fontWeight: 800 }}>{resLabel(h.result)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen });

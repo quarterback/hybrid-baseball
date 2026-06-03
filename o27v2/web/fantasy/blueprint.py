@@ -20,6 +20,7 @@ from flask import Blueprint, jsonify, render_template, request
 from o27v2 import currency
 from . import data as slate_data
 from . import contests as dfs
+from . import streak as streakgame
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LOG = logging.getLogger(__name__)
@@ -106,3 +107,25 @@ def api_contest(contest_id: int):
 def api_entries():
     """The user's entries with live rank/points."""
     return jsonify(dfs.list_user_entries())
+
+
+# ---- Go Streaking (hit-streak survivor) ---------------------------------
+
+@capspace_bp.route("/api/streak")
+def api_streak():
+    try:
+        return jsonify(streakgame.status())
+    except Exception:  # pragma: no cover - never 500 the app
+        _LOG.exception("CapSpace streak status failed")
+        return jsonify({"current": 0, "best": 0, "slate_date": None,
+                        "today_pick": None, "pool": [], "history": []})
+
+
+@capspace_bp.route("/api/streak/pick", methods=["POST"])
+def api_streak_pick():
+    body = request.get_json(silent=True) or {}
+    pid = body.get("player_id")
+    if pid is None:
+        return jsonify({"ok": False, "error": "No player chosen."}), 400
+    res = streakgame.make_pick(pid)
+    return jsonify(res), (200 if res.get("ok") else 400)
