@@ -64,7 +64,8 @@ app.register_blueprint(capspace_bp)
 # the box-score label and the season W-L record beside it can't disagree.
 from o27v2.web.box_score import (  # noqa: E402
     credit_win as _credit_win, charge_loss as _charge_loss,
-    decide_pitchers as _decide_pitchers, SP_OUTS_THRESHOLD as _BOX_SP_OUTS,
+    decide_pitchers as _decide_pitchers, pick_finisher as _pick_finisher,
+    SP_OUTS_THRESHOLD as _BOX_SP_OUTS,
 )
 
 
@@ -1043,6 +1044,37 @@ def _game_decision_pids(game: dict) -> tuple[int | None, int | None]:
     return w_pid, l_pid
 
 
+def _game_finisher(game: dict) -> tuple[int | None, int]:
+    """(finisher_pid, season_terminal_outs_through_this_game) for one final.
+    O27's save line: the winning team's pitcher who recorded terminal outs
+    (entered with a lead, never lost it, finished the game). The number is
+    his terminal-outs total through this game — a counting résumé that grows
+    like a W-L record, e.g. 'F: Brockman (33)'. A finisher can also be the
+    winning pitcher, so this is independent of the W/L decision."""
+    winner_id = game.get("winner_id")
+    if winner_id is None:
+        return None, 0
+    win_rows = db.fetchall(
+        """SELECT ps.player_id, SUM(ps.terminal_outs) AS terminal_outs
+             FROM game_pitcher_stats ps
+            WHERE ps.game_id = ? AND ps.team_id = ?
+            GROUP BY ps.player_id""",
+        (game["id"], winner_id),
+    )
+    f_pid = _pick_finisher(win_rows)
+    if f_pid is None:
+        return None, 0
+    row = db.fetchone(
+        """SELECT SUM(ps.terminal_outs) AS to_sum
+             FROM game_pitcher_stats ps
+             JOIN games g ON g.id = ps.game_id
+            WHERE ps.player_id = ? AND g.played = 1
+              AND (g.game_date < ? OR (g.game_date = ? AND g.id <= ?))""",
+        (f_pid, game["game_date"], game["game_date"], game["id"]),
+    )
+    return f_pid, int((row and row["to_sum"]) or 0)
+
+
 # Counting stats that get a season-to-date parenthetical in the box-score
 # annotation lines (2B / 3B / HR / SB / CS / E / HBP / GIDP / GITP). The
 # annotation field name in the renderer matches the DB column except the
@@ -1086,10 +1118,11 @@ def _inject_season_xbh(rows: list[dict], xbh_map: dict[int, dict]) -> None:
 
 
 def _attach_decisions(games: list[dict]) -> None:
-    """For finals only, attach `w_pitcher` and `l_pitcher` dicts to each
-    game with the format {'name', 'w', 'l'} — last name and the pitcher's
-    season W-L through this game. Powers the b-ref-style game-card line
-    'W: Bello (2-4)' under the score."""
+    """For finals only, attach `w_pitcher`, `l_pitcher`, and `f_pitcher` dicts
+    to each game. W/L carry {'name', 'w', 'l'} — the pitcher's season W-L —
+    and power the b-ref-style card line 'W: Bello (2-4)'. The finisher (O27's
+    save-equivalent) carries {'name', 'to'} — his season terminal-outs total,
+    'F: Brockman (33)' — and may be the winning pitcher too."""
     if not games:
         return
     finals = [g for g in games if g.get("played")]
@@ -1100,6 +1133,7 @@ def _attach_decisions(games: list[dict]) -> None:
     rows = db.fetchall(
         f"""SELECT ps.game_id, ps.team_id, ps.player_id,
                    SUM(ps.outs_recorded) AS outs, SUM(ps.er) AS er,
+                   SUM(ps.terminal_outs) AS terminal_outs,
                    MIN(ps.rowid) AS rowid, p.name AS player_name
               FROM game_pitcher_stats ps
               JOIN players p ON ps.player_id = p.id
@@ -1115,6 +1149,7 @@ def _attach_decisions(games: list[dict]) -> None:
         name_by_id[r["player_id"]] = r["player_name"]
 
     season_wl = _pitcher_wl_map()
+    to_map = _terminal_outs_map()
 
     def _last(name: str) -> str:
         return (name or "").rsplit(" ", 1)[-1]
@@ -1136,6 +1171,22 @@ def _attach_decisions(games: list[dict]) -> None:
             wl = season_wl.get(l_pid, {"w": 0, "l": 0})
             g["l_pitcher"] = {"name": _last(name_by_id.get(l_pid, "")),
                               "w": wl["w"], "l": wl["l"]}
+        # Finisher: the winning team's terminal-outs leader (save-equivalent),
+        # shown with his season terminal-outs total. Independent of W.
+        f_pid = _pick_finisher(by_team_game.get((g["id"], winner_id), []))
+        if f_pid:
+            g["f_pitcher"] = {"name": _last(name_by_id.get(f_pid, "")),
+                              "to": to_map.get(f_pid, 0)}
+
+
+def _terminal_outs_map() -> dict[int, int]:
+    """player_id → season terminal-outs total (across all played games). The
+    finisher's counting résumé, shown on cards like a record: 'F: Brockman
+    (33)'."""
+    rows = db.fetchall(
+        "SELECT player_id, SUM(terminal_outs) AS to_sum "
+        "FROM game_pitcher_stats GROUP BY player_id")
+    return {r["player_id"]: int(r["to_sum"] or 0) for r in rows}
 
 
 def _attach_hits(games: list[dict]) -> None:
@@ -3605,6 +3656,9 @@ def game_detail(game_id: int):
         _decisions[_w_pid] = "W"
     if _l_pid is not None:
         _decisions[_l_pid] = "L"
+    # Finisher (O27's save line): winning-team pitcher who recorded terminal
+    # outs, shown with his terminal-outs total through this game — "(F, 33)".
+    _f_pid, _f_to = _game_finisher(game)
     # AP-newspaper convention: "HR-Trout (1), off Hernandez". Build a
     # {batter_player_id_str → [pitcher last names]} map from pa_log.
     hr_off_map: dict[str, list[str]] = {}
@@ -3647,6 +3701,8 @@ def game_detail(game_id: int):
         decisions=_decisions,
         hr_off_pitchers=hr_off_map,
         season_wl=_season_wl,
+        finisher_pid=_f_pid,
+        finisher_to=_f_to,
     )
 
     # Pesäpallo-style scoring events log — one row per run that crossed
@@ -3975,6 +4031,7 @@ def game_detail_export(game_id: int):
             continue
         hr_off_map_md.setdefault(str(row["batter_id"]), []).append(last)
 
+    _f_pid_md, _f_to_md = _game_finisher(game)
     return _md_response(text_export.export_box_score(
         dict(game),
         away_p_c, home_p_c,
@@ -3983,6 +4040,8 @@ def game_detail_export(game_id: int):
         phases,
         hr_off_pitchers=hr_off_map_md,
         season_wl=season_wl,
+        finisher_pid=_f_pid_md,
+        finisher_to=_f_to_md,
     ))
 
 

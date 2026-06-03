@@ -130,10 +130,11 @@
     </div>
 
     {% if g.played %}
-      {% if g.w_pitcher or g.l_pitcher %}
+      {% if g.w_pitcher or g.l_pitcher or g.f_pitcher %}
       <div class="gc-dec">
         {% if g.w_pitcher %}<span class="gc-dec-item"><span class="gc-dec-ico gc-dec-w">W</span><span class="gc-sp-name">{{ g.w_pitcher.name }}</span><span class="gc-dec-rec">({{ g.w_pitcher.w }}-{{ g.w_pitcher.l }})</span></span>{% endif %}
         {% if g.l_pitcher %}<span class="gc-dec-item"><span class="gc-dec-ico gc-dec-l">L</span><span class="gc-sp-name">{{ g.l_pitcher.name }}</span><span class="gc-dec-rec">({{ g.l_pitcher.w }}-{{ g.l_pitcher.l }})</span></span>{% endif %}
+        {% if g.f_pitcher %}<span class="gc-dec-item" title="Finisher — terminal outs (entered with a lead, never lost it, finished the game)"><span class="gc-dec-ico gc-dec-f">F</span><span class="gc-sp-name">{{ g.f_pitcher.name }}</span><span class="gc-dec-rec">({{ g.f_pitcher.to }})</span></span>{% endif %}
       </div>
       {% endif %}
     {% elif g.away_sp or g.home_sp %}
@@ -249,6 +250,7 @@
   .gc-dec-ico { font-size: .58rem; font-weight: 700; letter-spacing: .04em; border-radius: 2px; padding: 0 4px; color: #fff; }
   .gc-dec-w { background: var(--good, #1a7f37); }
   .gc-dec-l { background: var(--bad, #b35900); }
+  .gc-dec-f { background: var(--accent, #1f6feb); }
   .gc-dec-rec { color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .gc-foot { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-soft); display: flex; align-items: center; gap: 8px; }
   .gc-venue { font-size: .72rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

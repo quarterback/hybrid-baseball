@@ -51,6 +51,9 @@
       {% if g.l_pitcher %}
       <div>L: {{ g.l_pitcher.name }} ({{ g.l_pitcher.w }}-{{ g.l_pitcher.l }})</div>
       {% endif %}
+      {% if g.f_pitcher %}
+      <div title="Finisher — terminal outs (entered with a lead, never lost it, finished the game)">F: {{ g.f_pitcher.name }} ({{ g.f_pitcher.to }})</div>
+      {% endif %}
     {% else %}
       Scheduled
     {% endif %}

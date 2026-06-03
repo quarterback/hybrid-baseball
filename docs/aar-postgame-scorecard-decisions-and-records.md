@@ -123,13 +123,45 @@ truncates the **name** instead, so the decision/record never gets chopped.
 
 ---
 
+## Follow-up: the finisher ("F") line — O27's save
+
+O27 doesn't have saves; it has **finisher stats**, and the counting one that
+means "who closed the game" is **Terminal Outs (TO)** — outs in a spell where
+the pitcher entered with a lead, never let it be tied or lost, and finished the
+game (`game_pitcher_stats.terminal_outs`). The owner asked for the save slot on
+the scorecard to show the finisher with his terminal-outs total, like a record:
+`F: Brockman (33)` — and noted that **a finisher can also be the winning
+pitcher** (wins follow lead-out-share, not innings, so a back-stage starter can
+win *and* finish).
+
+- New `box_score.pick_finisher(win_rows)` — the winning team's terminal-outs
+  leader (at most one per game). Independent of `credit_win`, so a pitcher can
+  carry both `(W, 5-3) (F, 33)`.
+- `render_pitching_table` / `box_text._pitching_block` now compose multiple
+  tags, so the box score and the markdown export both read e.g.
+  `Manue (W, 1-0) (F, 7)`.
+- New `app._game_finisher(game)` (finisher + TO **through this game**, for box
+  scores) and `_terminal_outs_map()` (full-season TO, for cards). `f_pitcher`
+  is attached in `_attach_decisions`; cards render an `F:` line below W/L.
+- On a seeded 120-final season: **77** games have a finisher, **21** of them a
+  pitcher who also won — the overlap the owner called out.
+
+Saves-by-the-old-rule remain absent on purpose; the finisher line is the
+intended replacement.
+
+> **Open question raised back to the owner:** the owner described wins as going
+> to "the person who had the lead for the longest out-share." The engine's
+> current win attribution is *SP if ≥12 outs, else most-effective reliever* —
+> not an out-share-of-lead computation. Changing that needs per-pitcher
+> "outs-while-leading" data the schema doesn't expose yet, so it's flagged, not
+> silently rewritten.
+
 ## What I did *not* change
 
-- **Saves are still not computed** — they need lead-state tracking the schema
-  doesn't capture (unchanged from prior decisions).
-- The *heuristics themselves* (12-out SP win, most-ER loss) are unchanged in
-  spirit — the win was making every surface agree on one of them, not inventing
-  a new rule.
+- The W/L *heuristics themselves* (12-out SP win, most-ER loss) are unchanged in
+  spirit — the win here was making every surface agree on one of them, not
+  inventing a new rule. (See the open question above re: a possible future
+  out-share-based win rule.)
 - Team records on a card are "as of the card's anchor date." On the
   dashboard/schedule every game in a list shares that date, so the figure is
   exact; it is not a per-game historical replay for arbitrary mixed-date lists.
