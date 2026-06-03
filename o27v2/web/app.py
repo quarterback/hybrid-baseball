@@ -3323,7 +3323,7 @@ def game_detail(game_id: int):
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples",
                 "hr", "rbi", "bb", "k", "stays", "outs_recorded",
                 "hbp", "sb", "cs", "fo", "multi_hit_abs", "stay_rbi",
-                "stay_hits", "gidp", "gitp", "roe", "po", "e")
+                "stay_hits", "gidp", "gitp", "roe", "po", "e", "sh")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs",
@@ -3332,6 +3332,7 @@ def game_detail(game_id: int):
                 "k_arc1",  "k_arc2",  "k_arc3",
                 "fo_arc1", "fo_arc2", "fo_arc3",
                 "bf_arc1", "bf_arc2", "bf_arc3",
+                "ir_inherited", "ir_scored",
                 "is_starter")
 
     def _dedup_by_player_phase(rows: list, num_fields: tuple) -> list:
@@ -3836,7 +3837,7 @@ def game_detail_export(game_id: int):
     _BAT_NUM = ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                 "rbi", "bb", "k", "stays", "outs_recorded", "hbp", "sb",
                 "cs", "fo", "multi_hit_abs", "stay_rbi", "stay_hits",
-                "roe", "po", "e", "gidp", "gitp")
+                "roe", "po", "e", "gidp", "gitp", "sh")
     _PIT_NUM = ("batters_faced", "outs_recorded", "hits_allowed",
                 "runs_allowed", "er", "bb", "k", "hr_allowed", "pitches",
                 "hbp_allowed", "unearned_runs", "sb_allowed", "cs_caught",
@@ -3844,7 +3845,8 @@ def game_detail_export(game_id: int):
                 "er_arc1", "er_arc2", "er_arc3",
                 "k_arc1",  "k_arc2",  "k_arc3",
                 "fo_arc1", "fo_arc2", "fo_arc3",
-                "bf_arc1", "bf_arc2", "bf_arc3", "is_starter")
+                "bf_arc1", "bf_arc2", "bf_arc3",
+                "ir_inherited", "ir_scored", "is_starter")
 
     def _consolidate(rows, num_fields):
         merged: dict[int, dict] = {}
