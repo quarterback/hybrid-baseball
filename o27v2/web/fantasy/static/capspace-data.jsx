@@ -161,9 +161,10 @@
 
   const PLAYERS = RAW.map(p => {
     const isPitcher = p.isPitcher !== undefined ? p.isPitcher : p.pos === 'PILOT';
-    // Use the real game log/form when injected; otherwise synthesize one.
+    // Real game log/form from the save when present; otherwise empty (no
+    // fabricated history — the drawer fetches authoritative detail by id).
     const hasReal = Array.isArray(p.log) && p.log.length && Array.isArray(p.form) && p.form.length;
-    const built = hasReal ? { log: p.log, form: p.form } : buildLog({ ...p, isPitcher });
+    const built = hasReal ? { log: p.log, form: p.form } : { log: [], form: [] };
     const team = TEAMS[p.team] || { color: 'var(--c-coral)', name: p.team };
     return {
       ...p,
@@ -240,20 +241,6 @@
     { id: 'c5', name: 'Rookie Reef (Free)',  color: 'var(--c-green)', badge: 'F',  fee: 0,       prize: 25*LAKH,  entries: 6400,  cap: 10000, top: 50000,    kind: 'Freeroll' },
   ];
 
-  // ---- live leaderboard (for the live screen) --------------------------
-  const LEADERBOARD = [
-    { rank: 1, user: 'saltwind',     pts: 188.4, win: 12*CRORE,  av: 'S' },
-    { rank: 2, user: 'crore_dreams', pts: 181.0, win: 6*CRORE,   av: 'C' },
-    { rank: 3, user: 'pilotlight',   pts: 176.6, win: 3*CRORE,   av: 'P' },
-    { rank: 4, user: 'the_stay_king',pts: 172.2, win: 1.4*CRORE, av: 'T' },
-    { rank: 5, user: 'reefwrecker',  pts: 169.8, win: 90*LAKH,   av: 'R' },
-    { rank: 6, user: 'YOU',          pts: 164.5, win: 42*LAKH,   av: 'Y', me: true },
-    { rank: 7, user: 'fathom_phil',  pts: 161.0, win: 30*LAKH,   av: 'F' },
-    { rank: 8, user: 'mistralmax',   pts: 158.7, win: 24*LAKH,   av: 'M' },
-    { rank: 9, user: 'galleon_gus',  pts: 155.2, win: 18*LAKH,   av: 'G' },
-    { rank: 10,user: 'anchorsaway',  pts: 151.9, win: 12*LAKH,   av: 'A' },
-  ];
-
   // the DFS scoring rule (batter), shown in UI as the "rule" \u2014 standard
   // counting stats lead; O27 stays are small flavor bonuses (see data.py _W)
   const SCORING = [
@@ -263,8 +250,19 @@
     { k: 'Stay (O27)', v: '+0.5' }, { k: 'Stay RBI (O27)', v: '+1' },
   ];
 
+  // Real slate date from the active save (null when running bundled mock).
+  const SLATE_DATE = (DATA && DATA.SLATE_DATE) || null;
+  const SIM_DAY = (() => {
+    if (!SLATE_DATE) return null;
+    const parts = String(SLATE_DATE).split('-');
+    if (parts.length !== 3) return SLATE_DATE;
+    const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][(+parts[1]) - 1];
+    return mon ? `${mon} ${+parts[2]}` : SLATE_DATE;
+  })();
+
   window.SLATE = {
     LAKH, CRORE, CAP, WALLET, money, RATES, CURRENCIES, ZORA_SYMBOL, mode: 'usd',
-    TEAMS, SLATE_GAMES, PLAYERS, SLOTS, FORMATS, CONTESTS, LEADERBOARD, SCORING,
+    TEAMS, SLATE_GAMES, PLAYERS, SLOTS, FORMATS, CONTESTS, SCORING,
+    SLATE_DATE, SIM_DAY,
   };
 })();

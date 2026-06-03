@@ -277,61 +277,103 @@ function LiveScreen({ roster, contestId, onNav }) {
 /* ---------- PLAYER DRAWER ---------- */
 function PlayerDrawer({ player, open, onClose, onAdd, inLineup }) {
   const S = window.SLATE;
+  const [d, setD] = useState(null);
+  const [showRatings, setShowRatings] = useState(false);
+  const seedId = player && player.id;
+  useEffect(() => {
+    if (!open || !seedId) return;
+    setD(null); setShowRatings(false);
+    fetch('/fantasy/api/player/' + String(seedId).replace(/^p/, ''))
+      .then(r => (r.ok ? r.json() : null)).then(setD).catch(() => setD(null));
+  }, [open, seedId]);
+
   if (!player) return null;
-  const p = player;
-  const ratingDefs = p.isPitcher
+  const seed = player;
+  const isPitcher = d ? d.isPitcher : seed.isPitcher;
+  const hasStats = !!(d && d.stats && d.stats.length);
+  const viewRatings = showRatings || (d && !hasStats);
+  const ratings = (d && d.r) || seed.r || {};
+  const showDfs = seed.salary != null;
+  const proj = Number(d ? d.proj : (seed.proj || 0));
+  const heroColor = seed.teamColor || (S.TEAMS && S.TEAMS[seed.team] && S.TEAMS[seed.team].color) || 'var(--brand)';
+  const ratingDefs = isPitcher
     ? [['command', 'Command'], ['stuff', 'Stuff'], ['decay', 'Decay resist'], ['control', 'Control'], ['late', 'Late-arc']]
     : [['contact', 'Contact'], ['power', 'Power'], ['eye', 'Eye'], ['stay', 'Stay'], ['speed', 'Speed'], ['field', 'Field']];
+
   return (
     <div className={'scrim' + (open ? ' scrim--open' : '')} onClick={onClose}>
       <div className="drawer" onClick={e => e.stopPropagation()}>
-        <div className="drawer__hero" style={{ background: p.teamColor }}>
+        <div className="drawer__hero" style={{ background: heroColor }}>
           <button className="drawer__close" onClick={onClose}><Icon name="x" size={18} /></button>
           <div className="row" style={{ gap: 6 }}>
-            <Tag kind="ink" style={{ background: 'rgba(0,0,0,.2)', color: '#fff' }}>{p.pos}</Tag>
+            <Tag kind="ink" style={{ background: 'rgba(0,0,0,.2)', color: '#fff' }}>{(d && d.pos) || seed.pos}</Tag>
           </div>
-          <div className="drawer__name mt-8">{p.name}</div>
-          <div className="drawer__meta">{p.teamName} · {p.opp}</div>
+          <div className="drawer__name mt-8">{(d && d.name) || seed.name}</div>
+          <div className="drawer__meta">{(d && d.teamName) || seed.teamName || seed.team || ''}{seed.opp ? ' · ' + seed.opp : ''}</div>
         </div>
         <div className="drawer__body">
-          <div className="tiles" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-            <div className="tile" style={{ padding: '11px 12px' }}><div className="lbl">Proj</div><div className="val" style={{ fontSize: '1.3rem', color: 'var(--brand)' }}>{p.proj.toFixed(1)}</div></div>
-            <div className="tile" style={{ padding: '11px 12px' }}><div className="lbl">Salary</div><div className="val" style={{ fontSize: '1.3rem' }}>{S.money(p.salary)}</div></div>
-            <div className="tile" style={{ padding: '11px 12px' }}><div className="lbl">Value</div><div className="val" style={{ fontSize: '1.3rem', color: 'var(--live)' }}>{p.value.toFixed(1)}</div></div>
-            <div className="tile" style={{ padding: '11px 12px' }}><div className="lbl">Own</div><div className="val" style={{ fontSize: '1.3rem' }}>{p.own}%</div></div>
+          <div className="tiles" style={{ gridTemplateColumns: 'repeat(' + (showDfs ? 4 : 1) + ',1fr)' }}>
+            <div className="tile" style={{ padding: '11px 12px' }}><div className="lbl">Proj</div><div className="val" style={{ fontSize: '1.3rem', color: 'var(--brand)' }}>{proj.toFixed(1)}</div></div>
+            {showDfs && <>
+              <div className="tile" style={{ padding: '11px 12px' }}><div className="lbl">Salary</div><div className="val" style={{ fontSize: '1.3rem' }}>{S.money(seed.salary)}</div></div>
+              <div className="tile" style={{ padding: '11px 12px' }}><div className="lbl">Value</div><div className="val" style={{ fontSize: '1.3rem', color: 'var(--live)' }}>{(seed.value || 0).toFixed(1)}</div></div>
+              <div className="tile" style={{ padding: '11px 12px' }}><div className="lbl">Own</div><div className="val" style={{ fontSize: '1.3rem' }}>{seed.own}%</div></div>
+            </>}
           </div>
 
-          <div className="eyebrow mt-24 mb-12">Ratings · 20–80 scale</div>
-          <div className="rating-grid">
-            {ratingDefs.map(([k, lbl]) => (
-              <div key={k} className="rating">
-                <div className="rating__lbl">{lbl}</div>
-                <div className="rating__row"><span className="rating__val" style={{ color: ratingColor(p.r[k]) }}>{p.r[k]}</span></div>
-                <div className="rating__bar"><i style={{ width: ((p.r[k] - 20) / 60) * 100 + '%', background: ratingColor(p.r[k]) }} /></div>
+          {!d ? (
+            <div className="center muted" style={{ padding: '28px', fontWeight: 600 }}>Loading…</div>
+          ) : (
+            <>
+              <div className="eyebrow mt-24 mb-12" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{viewRatings ? 'Ratings · 20–80 scale' : 'Season'}</span>
+                {hasStats && <button className="btn btn--ghost btn--sm" onClick={() => setShowRatings(s => !s)}>{viewRatings ? 'Show stats' : 'Show ratings'}</button>}
               </div>
-            ))}
-          </div>
+              {viewRatings ? (
+                <div className="rating-grid">
+                  {ratingDefs.map(([k, lbl]) => (
+                    <div key={k} className="rating">
+                      <div className="rating__lbl">{lbl}</div>
+                      <div className="rating__row"><span className="rating__val" style={{ color: ratingColor(ratings[k]) }}>{ratings[k]}</span></div>
+                      <div className="rating__bar"><i style={{ width: ((ratings[k] - 20) / 60) * 100 + '%', background: ratingColor(ratings[k]) }} /></div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="tiles" style={{ gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
+                  {d.stats.map(s => (
+                    <div key={s.k} className="tile" style={{ padding: '9px 8px' }}><div className="lbl">{s.k}</div><div className="val" style={{ fontSize: '1.05rem' }}>{s.v}</div></div>
+                  ))}
+                </div>
+              )}
+              {!hasStats && <div className="muted mt-12" style={{ fontSize: '.82rem', lineHeight: 1.4 }}>No games played yet — talent ratings shown for context. Sim some days to build a real stat line.</div>}
 
-          <div className="eyebrow mt-24 mb-12">Last 5 games</div>
-          <div className="card" style={{ overflow: 'hidden' }}>
-            <table className="glog">
-              <thead><tr><th>Game</th><th style={{ textAlign: 'left' }}>Line</th><th>FP</th></tr></thead>
-              <tbody>
-                {p.log.map((g, i) => (
-                  <tr key={i}>
-                    <td>{g.date} <span className="dim">vs {g.opp}</span></td>
-                    <td style={{ textAlign: 'left', fontSize: '.76rem' }} className="muted">{g.line}</td>
-                    <td className="fp">{g.fp.toFixed(1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              <div className="eyebrow mt-24 mb-12">Last 5 games</div>
+              {d.log && d.log.length ? (
+                <div className="card" style={{ overflow: 'hidden' }}>
+                  <table className="glog">
+                    <thead><tr><th>Game</th><th style={{ textAlign: 'left' }}>Line</th><th>FP</th></tr></thead>
+                    <tbody>
+                      {d.log.map((g, i) => (
+                        <tr key={i}>
+                          <td>{g.date} <span className="dim">vs {g.opp}</span></td>
+                          <td style={{ textAlign: 'left', fontSize: '.76rem' }} className="muted">{g.line}</td>
+                          <td className="fp">{g.fp.toFixed(1)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="card card--pad center muted" style={{ fontWeight: 600 }}>No games played yet.</div>}
 
-          {onAdd && (
-            <Btn variant={inLineup ? 'ghost' : 'brand'} block className="mt-16" onClick={() => { onAdd(p); onClose(); }}>
-              {inLineup ? 'In your lineup ✓' : <>Add to lineup · {S.money(p.salary)}</>}
-            </Btn>
+              <a className="btn btn--ghost btn--block mt-16" href={d.almanac} target="_blank" rel="noopener" style={{ textDecoration: 'none' }}>View full profile in the almanac →</a>
+
+              {onAdd && showDfs && (
+                <Btn variant={inLineup ? 'ghost' : 'brand'} block className="mt-12" onClick={() => { onAdd(seed); onClose(); }}>
+                  {inLineup ? 'In your lineup ✓' : <>Add to lineup · {S.money(seed.salary)}</>}
+                </Btn>
+              )}
+            </>
           )}
         </div>
       </div>

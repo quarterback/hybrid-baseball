@@ -86,7 +86,7 @@ function LobbyScreen({ onNav, onEnterContest }) {
 
           {/* games strip */}
           <div className="card card--pad mb-16">
-            <div className="eyebrow mb-12">Tonight's games · Sim day Jun 16</div>
+            <div className="eyebrow mb-12">Tonight's games{S.SIM_DAY ? ` · ${S.SIM_DAY}` : ''}</div>
             <div className="row wrap" style={{ gap: 10 }}>
               {S.SLATE_GAMES.map((g, i) => (
                 <div key={i} className="row" style={{ gap: 8, padding: '8px 14px', background: 'var(--paper-2)', borderRadius: 'var(--r)' }}>
@@ -230,7 +230,7 @@ function FormatTeaser({ fmt, onClose, onNav }) {
 }
 
 /* ---------- GO STREAKING (hit-streak survivor) ---------- */
-function StreakScreen({ onNav }) {
+function StreakScreen({ onNav, onOpenPlayer }) {
   const S = window.SLATE;
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
@@ -296,7 +296,7 @@ function StreakScreen({ onNav }) {
                     {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
                     {shown.map(p => (
                       <div key={p.id} className="prow">
-                        <div className="prow__id">
+                        <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
                           <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
                           <div style={{ minWidth: 0 }}>
                             <div className="prow__name">{p.name}</div>
@@ -334,7 +334,7 @@ function StreakScreen({ onNav }) {
 }
 
 /* ---------- SLUGGERS (Walk-Back home-run game) ---------- */
-function SluggersScreen({ onNav }) {
+function SluggersScreen({ onNav, onOpenPlayer }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
@@ -383,7 +383,7 @@ function SluggersScreen({ onNav }) {
                 <div className="card mb-12" style={{ overflow: 'hidden' }}>
                   {picks.map((p, i) => (
                     <div key={i} className="prow">
-                      <div className="prow__id">
+                      <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
                         <span className="contest__badge" style={{ background: 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
                         <div style={{ minWidth: 0 }}>
                           <div className="prow__name">{p.name}</div>
@@ -413,7 +413,7 @@ function SluggersScreen({ onNav }) {
                     {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
                     {shown.map(p => (
                       <div key={p.id} className="prow">
-                        <div className="prow__id">
+                        <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
                           <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
                           <div style={{ minWidth: 0 }}>
                             <div className="prow__name">{p.name}</div>
@@ -453,7 +453,7 @@ function SluggersScreen({ onNav }) {
 }
 
 /* ---------- PILOTS (pitching game) ---------- */
-function PilotsScreen({ onNav }) {
+function PilotsScreen({ onNav, onOpenPlayer }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
@@ -500,7 +500,7 @@ function PilotsScreen({ onNav }) {
                 <div className="card mb-12" style={{ overflow: 'hidden' }}>
                   {picks.map((p, i) => (
                     <div key={i} className="prow">
-                      <div className="prow__id">
+                      <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
                         <span className="contest__badge" style={{ background: 'var(--c-blue)' }}>{(p.team || '?').slice(0, 2)}</span>
                         <div style={{ minWidth: 0 }}>
                           <div className="prow__name">{p.name}</div>
@@ -529,7 +529,7 @@ function PilotsScreen({ onNav }) {
                     {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No pilots on the upcoming slate.</div>}
                     {shown.map(p => (
                       <div key={p.id} className="prow">
-                        <div className="prow__id">
+                        <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
                           <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
                           <div style={{ minWidth: 0 }}>
                             <div className="prow__name">{p.name}</div>
@@ -568,7 +568,7 @@ function PilotsScreen({ onNav }) {
 }
 
 /* ---------- CATEGORY LEAGUES (Roto engine) ---------- */
-function CategoriesScreen({ onNav }) {
+function CategoriesScreen({ onNav, onOpenPlayer }) {
   const [fmt, setFmt] = useState('std5x5');
   const [data, setData] = useState(null);
   const [pool, setPool] = useState(null);
@@ -665,7 +665,7 @@ function CategoriesScreen({ onNav }) {
                   <div className="card" style={{ overflow: 'hidden' }}>
                     {(data.roster || []).map(p => (
                       <div key={p.id} className="prow">
-                        <div className="prow__id">
+                        <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
                           <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
                           <div style={{ minWidth: 0 }}><div className="prow__name">{p.name}</div><div className="prow__sub">{p.pos === 'P' ? 'Pitcher' : 'Hitter'} · {p.team}</div></div>
                         </div>
@@ -706,7 +706,7 @@ function CategoriesScreen({ onNav }) {
                     {pool && shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No players found.</div>}
                     {shown.slice(0, 120).map(p => (
                       <div key={p.id} className="prow">
-                        <div className="prow__id">
+                        <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
                           <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
                           <div style={{ minWidth: 0 }}>
                             <div className="prow__name">{p.name}</div>
@@ -853,7 +853,7 @@ function SportsbookScreen({ onNav }) {
 }
 
 /* ---------- BEST BALL ---------- */
-function BestBallScreen({ onNav }) {
+function BestBallScreen({ onNav, onOpenPlayer }) {
   const [data, setData] = useState(null);
   const [pool, setPool] = useState(null);
   const [sel, setSel] = useState([]);
@@ -927,7 +927,7 @@ function BestBallScreen({ onNav }) {
               <div className="card" style={{ overflow: 'hidden' }}>
                 {(data.roster || []).map(p => (
                   <div key={p.id} className="prow">
-                    <div className="prow__id">
+                    <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
                       <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
                       <div style={{ minWidth: 0 }}><div className="prow__name">{p.name}</div><div className="prow__sub">{p.pos === 'P' ? 'Pitcher' : 'Hitter'} · {p.team}</div></div>
                     </div>
@@ -972,7 +972,7 @@ function BestBallScreen({ onNav }) {
                 {pool && shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No players found.</div>}
                 {shown.slice(0, 120).map(p => (
                   <div key={p.id} className="prow">
-                    <div className="prow__id">
+                    <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
                       <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
                       <div style={{ minWidth: 0 }}>
                         <div className="prow__name">{p.name}</div>

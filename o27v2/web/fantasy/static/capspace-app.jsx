@@ -82,12 +82,12 @@ function App() {
       {view === 'builder' && <BuilderScreen contest={contest} roster={roster} onAdd={addPlayer} onRemove={removeSlot} onOpenPlayer={openPlayer} onEnter={submitLineup} onNav={nav} />}
       {view === 'live' && <LiveScreen roster={roster} contestId={liveContestId} onNav={nav} onOpenPlayer={openPlayer} />}
       {view === 'entries' && <EntriesScreen onNav={nav} onOpenContest={(cid)=>{ setLiveContestId(cid); nav('live'); }} />}
-      {view === 'streak' && <StreakScreen onNav={nav} />}
-      {view === 'sluggers' && <SluggersScreen onNav={nav} />}
-      {view === 'pilots' && <PilotsScreen onNav={nav} />}
-      {view === 'categories' && <CategoriesScreen onNav={nav} />}
+      {view === 'streak' && <StreakScreen onNav={nav} onOpenPlayer={openPlayer} />}
+      {view === 'sluggers' && <SluggersScreen onNav={nav} onOpenPlayer={openPlayer} />}
+      {view === 'pilots' && <PilotsScreen onNav={nav} onOpenPlayer={openPlayer} />}
+      {view === 'categories' && <CategoriesScreen onNav={nav} onOpenPlayer={openPlayer} />}
       {view === 'sportsbook' && <SportsbookScreen onNav={nav} />}
-      {view === 'bestball' && <BestBallScreen onNav={nav} />}
+      {view === 'bestball' && <BestBallScreen onNav={nav} onOpenPlayer={openPlayer} />}
 
       <PlayerDrawer player={drawer.player} open={drawer.open} onClose={() => setDrawer(d => ({ ...d, open: false }))}
         onAdd={view === 'builder' ? addPlayer : null} inLineup={inLineup} />

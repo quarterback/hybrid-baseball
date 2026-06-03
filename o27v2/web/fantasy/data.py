@@ -316,26 +316,7 @@ def build_slate_data() -> dict | None:
         else:
             proj = _proj_from_ratings(r, is_pitcher)
 
-        if is_pitcher:
-            ratings = {
-                "command": _clamp_rating(r.get("command")),
-                "stuff": _clamp_rating(r.get("movement")),
-                "decay": _clamp_rating(r.get("stamina")),
-                "control": _clamp_rating(r.get("pitcher_skill")),
-                "late": _clamp_rating(
-                    0.6 * (r.get("stamina", 50) or 50)
-                    + 0.4 * (r.get("command", 50) or 50)
-                ),
-            }
-        else:
-            ratings = {
-                "contact": _clamp_rating(r.get("contact")),
-                "power": _clamp_rating(r.get("power")),
-                "eye": _clamp_rating(r.get("eye")),
-                "stay": _clamp_rating(20 + (r.get("stay_aggressiveness", 0.4) or 0.4) * 75),
-                "speed": _clamp_rating(r.get("speed")),
-                "field": _clamp_rating(r.get("defense")),
-            }
+        ratings = _ratings_for(r, is_pitcher)
 
         players.append({
             "id": f"p{r['id']}",
@@ -444,3 +425,84 @@ def _build_logs(player_ids: list[int]) -> dict:
     for bucket in out.values():
         bucket["form"] = [e["fp"] for e in reversed(bucket["log"])]
     return out
+
+
+def _ratings_for(r: dict, is_pitcher: bool) -> dict:
+    """20-80 scouting ratings mapped from a player's raw attributes."""
+    if is_pitcher:
+        return {
+            "command": _clamp_rating(r.get("command")),
+            "stuff": _clamp_rating(r.get("movement")),
+            "decay": _clamp_rating(r.get("stamina")),
+            "control": _clamp_rating(r.get("pitcher_skill")),
+            "late": _clamp_rating(0.6 * (r.get("stamina", 50) or 50)
+                                  + 0.4 * (r.get("command", 50) or 50)),
+        }
+    return {
+        "contact": _clamp_rating(r.get("contact")),
+        "power": _clamp_rating(r.get("power")),
+        "eye": _clamp_rating(r.get("eye")),
+        "stay": _clamp_rating(20 + (r.get("stay_aggressiveness", 0.4) or 0.4) * 75),
+        "speed": _clamp_rating(r.get("speed")),
+        "field": _clamp_rating(r.get("defense")),
+    }
+
+
+def _season_statline(dbid: int, is_pitcher: bool) -> list[dict]:
+    """Real season stat line ([{k, v}, ...]) from persisted stats, or [] when
+    the player has no game history yet (pre-season)."""
+    if is_pitcher:
+        r = db.fetchone(
+            "SELECT COUNT(*) g, COALESCE(SUM(outs_recorded),0) outs, COALESCE(SUM(k),0) k, "
+            "COALESCE(SUM(er),0) er, COALESCE(SUM(bb),0) bb, COALESCE(SUM(hits_allowed),0) ha, "
+            "COALESCE(SUM(CASE WHEN is_starter=1 AND outs_recorded>=18 AND er<=3 THEN 1 ELSE 0 END),0) qs "
+            "FROM game_pitcher_stats WHERE player_id=? AND phase=0", (dbid,))
+        if not r or not r["g"] or not r["outs"]:
+            return []
+        outs = r["outs"]
+        return [
+            {"k": "G", "v": r["g"]}, {"k": "IP", "v": round(outs / 3, 1)},
+            {"k": "ERA", "v": f"{27.0 * r['er'] / outs:.2f}"},
+            {"k": "WHIP", "v": f"{3.0 * (r['bb'] + r['ha']) / outs:.2f}"},
+            {"k": "K", "v": r["k"]}, {"k": "QS", "v": r["qs"]},
+        ]
+    r = db.fetchone(
+        "SELECT COUNT(*) g, COALESCE(SUM(ab),0) ab, COALESCE(SUM(hits),0) h, "
+        "COALESCE(SUM(doubles),0) d2, COALESCE(SUM(triples),0) d3, COALESCE(SUM(hr),0) hr, "
+        "COALESCE(SUM(rbi),0) rbi, COALESCE(SUM(runs),0) ru, COALESCE(SUM(sb),0) sb, "
+        "COALESCE(SUM(bb),0) bb, COALESCE(SUM(hbp),0) hbp FROM game_batter_stats "
+        "WHERE player_id=? AND phase=0", (dbid,))
+    if not r or not r["g"] or not r["ab"]:
+        return []
+    ab = r["ab"]
+    obp = (r["h"] + r["bb"] + r["hbp"]) / max(1, ab + r["bb"] + r["hbp"])
+    return [
+        {"k": "G", "v": r["g"]}, {"k": "AVG", "v": f"{r['h'] / ab:.3f}"},
+        {"k": "OBP", "v": f"{obp:.3f}"},
+        {"k": "SLG", "v": f"{(r['h'] + r['d2'] + 2 * r['d3'] + 3 * r['hr']) / ab:.3f}"},
+        {"k": "HR", "v": r["hr"]}, {"k": "RBI", "v": r["rbi"]},
+        {"k": "R", "v": r["ru"]}, {"k": "SB", "v": r["sb"]},
+    ]
+
+
+def player_card(dbid: int) -> dict | None:
+    """Full player-card payload for the fantasy drawer: real season stats,
+    recent logs, 20-80 ratings (talent context), and a link to the almanac."""
+    row = db.fetchone(
+        "SELECT p.*, t.abbrev AS team, t.name AS team_name FROM players p "
+        "JOIN teams t ON p.team_id = t.id WHERE p.id = ?", (dbid,))
+    if not row:
+        return None
+    is_pitcher = bool(row.get("is_pitcher"))
+    logs = _build_logs([dbid]).get(dbid, {"log": [], "form": []})
+    proj = (round(sum(logs["form"]) / len(logs["form"]), 1)
+            if logs["form"] else _proj_from_ratings(row, is_pitcher))
+    return {
+        "id": f"p{dbid}", "name": row["name"], "team": row["team"],
+        "teamName": row["team_name"], "pos": _map_position(row),
+        "isPitcher": is_pitcher, "proj": proj,
+        "r": _ratings_for(row, is_pitcher),
+        "stats": _season_statline(dbid, is_pitcher),
+        "log": logs["log"], "form": logs["form"],
+        "almanac": f"/player/{dbid}",
+    }
