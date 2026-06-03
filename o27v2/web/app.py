@@ -2660,9 +2660,9 @@ _APP_ICON_SVG = (
 def webmanifest():
     import json as _json
     manifest = {
-        "name": "O27 Baseball",
-        "short_name": "O27",
-        "description": "Browse simulated O27 baseball seasons — stats, standings, box scores.",
+        "name": "Super Innings",
+        "short_name": "Super Innings",
+        "description": "Super Innings — a computer baseball simulation game. Browse simulated seasons, stats, standings, and box scores.",
         "start_url": "/",
         "scope": "/",
         "display": "standalone",
