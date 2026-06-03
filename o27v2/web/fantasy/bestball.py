@@ -154,6 +154,39 @@ def get_roster() -> list[int]:
     return [r["player_id"] for r in db.fetchall("SELECT player_id FROM bb_roster")]
 
 
+def _active_dir() -> dict:
+    """Every draftable player from the active save's rosters — works even with
+    zero game history (pre-season), with a rating-based projection."""
+    out = {}
+    for r in db.fetchall(
+        "SELECT p.*, COALESCE(t.abbrev, 'FA') AS team FROM players p "
+        "LEFT JOIN teams t ON p.team_id = t.id "
+        "WHERE p.is_active = 1 AND p.is_joker = 0"
+    ):
+        is_p = bool(r["is_pitcher"])
+        out[r["id"]] = {
+            "name": r["name"], "team": r["team"], "is_pitcher": is_p,
+            "pos": "P" if is_p else _bucket(r["position"]),
+            "proj": slate_data._proj_from_ratings(r, is_p),
+        }
+    return out
+
+
+def _season_bat() -> dict:
+    return {r["player_id"]: r for r in db.fetchall(
+        "SELECT player_id, SUM(ab) ab, SUM(hits) h, SUM(doubles) d2, SUM(triples) d3, "
+        "SUM(hr) hr, SUM(rbi) rbi, SUM(runs) r, SUM(sb) sb, SUM(bb) bb, SUM(hbp) hbp "
+        "FROM game_batter_stats WHERE phase = 0 GROUP BY player_id")}
+
+
+def _season_pit() -> dict:
+    return {r["player_id"]: r for r in db.fetchall(
+        "SELECT player_id, SUM(outs_recorded) outs, SUM(k) k, SUM(er) er, SUM(bb) bb, "
+        "SUM(hits_allowed) ha, "
+        "SUM(CASE WHEN is_starter = 1 AND outs_recorded >= 18 AND er <= 3 THEN 1 ELSE 0 END) qs "
+        "FROM game_pitcher_stats WHERE phase = 0 GROUP BY player_id")}
+
+
 def _pos_counts(ctx, ids):
     c = {}
     for i in ids:
@@ -187,30 +220,54 @@ def standings(roster_ids: list[int]) -> dict:
 
 
 def pool() -> dict:
-    ctx = _Ctx()
-    n = max(1, len(ctx.dates))
-    hitters = [{
-        "id": f"p{i}", "name": ctx.meta[i]["name"], "team": ctx.meta[i]["team"],
-        "pos": ctx.pos.get(i, "OF"),
-        "line": f"{round(ctx.htotal[i], 1)} fp · {round(ctx.htotal[i] / n, 1)}/slate",
-    } for i in sorted(ctx.hitters, key=lambda x: ctx.htotal[x], reverse=True)[:300]]
-    pitchers = [{
-        "id": f"p{i}", "name": ctx.meta[i]["name"], "team": ctx.meta[i]["team"], "pos": "P",
-        "line": f"{round(ctx.ptotal[i], 1)} fp · {round(ctx.ptotal[i] / n, 1)}/slate",
-    } for i in sorted(ctx.pitchers, key=lambda x: ctx.ptotal[x], reverse=True)[:250]]
-    return {"hitters": hitters, "pitchers": pitchers}
+    """Draftable hitters / pitchers from the active roster. Real season stat
+    lines once games are played; a rating-based projection pre-season."""
+    d = _active_dir()
+    bat, pit = _season_bat(), _season_pit()
+    hitters, pitchers = [], []
+    for pid, m in d.items():
+        if m["is_pitcher"]:
+            t = pit.get(pid)
+            if t and (t["outs"] or 0) > 0:
+                era = 27.0 * t["er"] / t["outs"]
+                line = f"{t['k']} K · {t['qs']} QS · {era:.2f} ERA"
+                srt = (t["k"] or 0) + 8 * (t["qs"] or 0) + 0.3 * t["outs"]
+            else:
+                line = f"proj {m['proj']} · preseason"
+                srt = m["proj"]
+            pitchers.append({"id": f"p{pid}", "name": m["name"], "team": m["team"],
+                             "pos": "P", "line": line, "_s": srt})
+        else:
+            t = bat.get(pid)
+            if t and (t["ab"] or 0) > 0:
+                obp = (t["h"] + t["bb"] + t["hbp"]) / max(1, t["ab"] + t["bb"] + t["hbp"])
+                line = f"{t['hr']} HR · {t['rbi']} RBI · {obp:.3f} OBP"
+                srt = (t["h"] + t["d2"] + 2 * t["d3"] + 3 * t["hr"] + t["bb"]
+                       + t["r"] + t["rbi"] + t["sb"])
+            else:
+                line = f"proj {m['proj']} · preseason"
+                srt = m["proj"]
+            hitters.append({"id": f"p{pid}", "name": m["name"], "team": m["team"],
+                            "pos": m["pos"], "line": line, "_s": srt})
+    hitters.sort(key=lambda x: x["_s"], reverse=True)
+    pitchers.sort(key=lambda x: x["_s"], reverse=True)
+    for x in hitters + pitchers:
+        x.pop("_s", None)
+    return {"hitters": hitters[:300], "pitchers": pitchers[:250]}
 
 
 def draft(player_ids: list) -> dict:
     ensure_schema()
     ids = [_db_id(p) for p in player_ids]
-    ctx = _Ctx()
-    nh = sum(1 for i in ids if not ctx.meta.get(i, {}).get("is_pitcher"))
-    np_ = sum(1 for i in ids if ctx.meta.get(i, {}).get("is_pitcher"))
-    if nh != DRAFT_H or np_ != DRAFT_P:
+    d = _active_dir()
+    hitters = [i for i in ids if i in d and not d[i]["is_pitcher"]]
+    pitchers = [i for i in ids if i in d and d[i]["is_pitcher"]]
+    if len(hitters) != DRAFT_H or len(pitchers) != DRAFT_P:
         return {"ok": False, "error": f"Need {DRAFT_H} hitters and {DRAFT_P} pitchers "
-                                      f"(have {nh}H / {np_}P)."}
-    counts = _pos_counts(ctx, ids)
+                                      f"(have {len(hitters)}H / {len(pitchers)}P)."}
+    counts = {}
+    for i in hitters:
+        counts[d[i]["pos"]] = counts.get(d[i]["pos"], 0) + 1
     missing = [f"{need}× {pos}" if need > 1 else pos
                for pos, need in DRAFT_REQ.items() if counts.get(pos, 0) < need]
     if missing:

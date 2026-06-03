@@ -27,6 +27,7 @@ from __future__ import annotations
 import random
 
 from o27v2 import db
+from . import data as slate_data
 
 FIELD_SIZE = 48
 
@@ -327,35 +328,77 @@ def get_roster(format_key: str) -> list[int]:
         "SELECT player_id FROM cat_rosters WHERE format_key = ?", (format_key,))]
 
 
+def _active_dir() -> dict:
+    """Every draftable player from the active save — works with zero game
+    history (a rating-based projection stands in pre-season)."""
+    out = {}
+    for r in db.fetchall(
+        "SELECT p.*, COALESCE(t.abbrev, 'FA') AS team FROM players p "
+        "LEFT JOIN teams t ON p.team_id = t.id "
+        "WHERE p.is_active = 1 AND p.is_joker = 0"
+    ):
+        is_p = bool(r["is_pitcher"])
+        out[r["id"]] = {
+            "name": r["name"], "team": r["team"], "is_pitcher": is_p,
+            "pos": "P" if is_p else ((r["position"] or "")[:2].upper() or "H"),
+            "proj": slate_data._proj_from_ratings(r, is_p),
+        }
+    return out
+
+
+def _season_bat() -> dict:
+    return {r["player_id"]: r for r in db.fetchall(
+        "SELECT player_id, SUM(ab) ab, SUM(hits) h, SUM(doubles) d2, SUM(triples) d3, "
+        "SUM(hr) hr, SUM(rbi) rbi, SUM(runs) r, SUM(sb) sb, SUM(bb) bb, SUM(hbp) hbp "
+        "FROM game_batter_stats WHERE phase = 0 GROUP BY player_id")}
+
+
+def _season_pit() -> dict:
+    return {r["player_id"]: r for r in db.fetchall(
+        "SELECT player_id, SUM(outs_recorded) outs, SUM(k) k, SUM(er) er, SUM(bb) bb, "
+        "SUM(hits_allowed) ha, SUM(quality_finish) qf, "
+        "SUM(CASE WHEN is_starter = 1 AND outs_recorded >= 18 AND er <= 3 THEN 1 ELSE 0 END) qs "
+        "FROM game_pitcher_stats WHERE phase = 0 GROUP BY player_id")}
+
+
 def pool(format_key: str) -> dict:
-    """Draftable hitters / pitchers for a format, with season lines. Sorted by
-    skill (worst-first for an inverted format like Razz, so the bad players you
-    actually want are at the top), capped for payload size."""
+    """Draftable hitters / pitchers for a format, from the active roster. Real
+    season lines once games are played; a rating projection pre-season. Sorted
+    worst-first for an inverted format (Razz), so the bad players you want lead."""
     fmt = _FMT_BY_KEY.get(format_key, FORMATS[0])
-    ctx = _Ctx()
+    d = _active_dir()
+    bat, pit = _season_bat(), _season_pit()
     rev = not fmt["invert"]  # normal: best first; razz: worst first
-    cap = 250
-    hitters = []
-    if fmt["h"] > 0:
-        for i in sorted(ctx.hitters, key=lambda x: ctx.hskill.get(x, 0), reverse=rev)[:cap]:
-            m = ctx.meta.get(i, {})
-            b = ctx.bat[i]
-            hitters.append({
-                "id": f"p{i}", "name": m.get("name", "?"), "team": m.get("team", ""),
-                "pos": m.get("pos", "H"),
-                "line": f"{b['hr']} HR · {b['r']} R · {b['rbi']} RBI · {b['sb']} SB · {_obp(b):.3f} OBP",
-            })
-    pitchers = []
-    if fmt["p"] > 0:
-        for i in sorted(ctx.pitchers, key=lambda x: ctx.pskill.get(x, 0), reverse=rev)[:cap]:
-            m = ctx.meta.get(i, {})
-            p = ctx.pit[i]
-            pitchers.append({
-                "id": f"p{i}", "name": m.get("name", "?"), "team": m.get("team", ""),
-                "pos": "P",
-                "line": f"{p['k']} K · {p['qs']} QS · {_era(p):.2f} ERA · {_whip(p):.2f} WHIP · {p['qf']} QF",
-            })
-    return {"hitters": hitters, "pitchers": pitchers}
+    hitters, pitchers = [], []
+    for pid, m in d.items():
+        if not m["is_pitcher"] and fmt["h"] > 0:
+            t = bat.get(pid)
+            if t and (t["ab"] or 0) > 0:
+                obp = (t["h"] + t["bb"] + t["hbp"]) / max(1, t["ab"] + t["bb"] + t["hbp"])
+                line = f"{t['hr']} HR · {t['r']} R · {t['rbi']} RBI · {t['sb']} SB · {obp:.3f} OBP"
+                srt = (t["h"] + t["d2"] + 2 * t["d3"] + 3 * t["hr"] + t["bb"] + t["r"] + t["rbi"] + t["sb"])
+            else:
+                line = f"proj {m['proj']} · preseason"
+                srt = m["proj"]
+            hitters.append({"id": f"p{pid}", "name": m["name"], "team": m["team"],
+                            "pos": m["pos"], "line": line, "_s": srt})
+        elif m["is_pitcher"] and fmt["p"] > 0:
+            t = pit.get(pid)
+            if t and (t["outs"] or 0) > 0:
+                era = 27.0 * t["er"] / t["outs"]
+                whip = 3.0 * (t["bb"] + t["ha"]) / t["outs"]
+                line = f"{t['k']} K · {t['qs']} QS · {era:.2f} ERA · {whip:.2f} WHIP · {t['qf']} QF"
+                srt = (t["k"] or 0) + 8 * (t["qs"] or 0) + 0.3 * t["outs"]
+            else:
+                line = f"proj {m['proj']} · preseason"
+                srt = m["proj"]
+            pitchers.append({"id": f"p{pid}", "name": m["name"], "team": m["team"],
+                             "pos": "P", "line": line, "_s": srt})
+    hitters.sort(key=lambda x: x["_s"], reverse=rev)
+    pitchers.sort(key=lambda x: x["_s"], reverse=rev)
+    for x in hitters + pitchers:
+        x.pop("_s", None)
+    return {"hitters": hitters[:250], "pitchers": pitchers[:250]}
 
 
 def draft(format_key: str, player_ids: list) -> dict:
@@ -364,9 +407,9 @@ def draft(format_key: str, player_ids: list) -> dict:
     if not fmt:
         return {"ok": False, "error": "Unknown format."}
     ids = [_db_id(p) for p in player_ids]
-    ctx = _Ctx()
-    nh = sum(1 for i in ids if not ctx.meta.get(i, {}).get("is_pitcher"))
-    np_ = sum(1 for i in ids if ctx.meta.get(i, {}).get("is_pitcher"))
+    d = _active_dir()
+    nh = sum(1 for i in ids if i in d and not d[i]["is_pitcher"])
+    np_ = sum(1 for i in ids if i in d and d[i]["is_pitcher"])
     if nh != fmt["h"] or np_ != fmt["p"]:
         return {"ok": False, "error": f"Need exactly {fmt['h']} hitters and {fmt['p']} pitchers "
                                       f"(have {nh}H / {np_}P)."}

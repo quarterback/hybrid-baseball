@@ -266,7 +266,7 @@ function TopBar({ title, sub, back, onBack, right }) {
       </div>
       {right}
       <CurrencySelector />
-      <span className="simclock hide-mobile"><span className="dot" /> Sim day <span className="num">Jun 16</span></span>
+      {(window.SLATE && window.SLATE.SIM_DAY) && <span className="simclock hide-mobile"><span className="dot" /> Sim day <span className="num">{window.SLATE.SIM_DAY}</span></span>}
       <span className="avatar">Y</span>
     </header>
   );

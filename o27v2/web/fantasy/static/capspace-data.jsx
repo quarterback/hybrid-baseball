@@ -263,8 +263,19 @@
     { k: 'Stay (O27)', v: '+0.5' }, { k: 'Stay RBI (O27)', v: '+1' },
   ];
 
+  // Real slate date from the active save (null when running bundled mock).
+  const SLATE_DATE = (DATA && DATA.SLATE_DATE) || null;
+  const SIM_DAY = (() => {
+    if (!SLATE_DATE) return null;
+    const parts = String(SLATE_DATE).split('-');
+    if (parts.length !== 3) return SLATE_DATE;
+    const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][(+parts[1]) - 1];
+    return mon ? `${mon} ${+parts[2]}` : SLATE_DATE;
+  })();
+
   window.SLATE = {
     LAKH, CRORE, CAP, WALLET, money, RATES, CURRENCIES, ZORA_SYMBOL, mode: 'usd',
     TEAMS, SLATE_GAMES, PLAYERS, SLOTS, FORMATS, CONTESTS, LEADERBOARD, SCORING,
+    SLATE_DATE, SIM_DAY,
   };
 })();

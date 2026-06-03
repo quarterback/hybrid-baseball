@@ -86,7 +86,7 @@ function LobbyScreen({ onNav, onEnterContest }) {
 
           {/* games strip */}
           <div className="card card--pad mb-16">
-            <div className="eyebrow mb-12">Tonight's games · Sim day Jun 16</div>
+            <div className="eyebrow mb-12">Tonight's games{S.SIM_DAY ? ` · ${S.SIM_DAY}` : ''}</div>
             <div className="row wrap" style={{ gap: 10 }}>
               {S.SLATE_GAMES.map((g, i) => (
                 <div key={i} className="row" style={{ gap: 8, padding: '8px 14px', background: 'var(--paper-2)', borderRadius: 'var(--r)' }}>
