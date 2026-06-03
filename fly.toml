@@ -35,6 +35,10 @@ primary_region = "iad"
     timeout = "5s"
 
 [[vm]]
-  size = "shared-cpu-1x"
-  # 256mb was tight — o27 keeps recent games + rosters in memory and OOMs trigger restarts.
-  memory = "512mb"
+  # Bumped from shared-cpu-1x/512mb to chase UI lag: shared-cpu-1x is a single
+  # burstable vCPU that gets throttled under sustained work, and 512mb was tight
+  # (o27 keeps recent games + rosters in memory; 256mb previously OOM'd). 2 vCPUs
+  # + 1gb gives CPU headroom and room for the in-memory caches. Reversible — drop
+  # back down or try performance-1x (dedicated CPU) if this isn't enough.
+  size = "shared-cpu-2x"
+  memory = "1024mb"
