@@ -100,6 +100,18 @@ starter is *more* true to life, not less. Implemented:
 This is honest about the model: the projection moves as intervening games
 shift the rest picture, exactly like a real probable.
 
+## Follow-up: trim PP badge, count super innings
+
+- Dropped the redundant meta-row `PP` / `PP ×2` badge — the per-side `PP`
+  ticks next to each team already say who deployed, which is all the user
+  wanted. Removed the now-unused `.pp-badge` style from `base.html`.
+- Now that super innings run like conventional extra innings (a game can take
+  several), the `SI` badge shows the count: `SI/2`, `SI/3`, … The number is the
+  stored `games.super_inning` (= engine `super_inning_number`), which seeds
+  from the Seconds round count when a game goes to both — so a Seconds-then-
+  supers game reads e.g. `SI/3`, matching the user's mental model. Updated both
+  the schedule cards and the team page's recent-games list.
+
 ## Not done / follow-ups
 
 - The `PP` tag is on the schedule (the dedicated game-browsing surface). The

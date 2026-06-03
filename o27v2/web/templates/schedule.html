@@ -105,16 +105,12 @@
 {% if games %}
 <div class="game-cards">
   {% for g in games %}
-  {% set pp_both = g.pp_home and g.pp_away %}
   <div class="game-card{% if not g.played %} unplayed{% endif %}">
     <div class="gc-meta">
       {% if show_league_col %}<span class="gc-league">{{ g.home_league }}</span>{% endif %}
       <span class="gc-time text-secondary">{{ g | first_pitch }}</span>
       <span class="gc-badges">
-        {% if g.super_inning %}<span class="si-badge">SI</span>{% endif %}
-        {% if pp_both %}<span class="pp-badge pp-both" title="Power play deployed by both teams">PP ×2</span>
-        {% elif g.pp_away %}<span class="pp-badge" title="Power play deployed by {{ g.away_abbrev }} (away)">PP</span>
-        {% elif g.pp_home %}<span class="pp-badge" title="Power play deployed by {{ g.home_abbrev }} (home)">PP</span>{% endif %}
+        {% if g.super_inning %}<span class="si-badge" title="Went to super innings — {{ g.super_inning }} extra round{{ '' if g.super_inning == 1 else 's' }} (counts any Seconds round too)">SI/{{ g.super_inning }}</span>{% endif %}
       </span>
     </div>
 
