@@ -37,18 +37,18 @@ _PERSONA = {p["key"]: p for p in PERSONAS}
 
 # --- status tiers by LIFETIME earnings (dollar gates). Names are placeholders
 # refined from the loyalty-tier research; the gate ladder is the spine. -------
-# High-Roller naming set (from the loyalty-tier research). The top tier is left
-# a little mysterious (AmEx-Centurion style) — you find out when you get there.
+# Sports-betting status ladder: the climb from a square the books love to fade,
+# up to a sharp the books won't take. Top tier kept a touch mysterious.
 TIERS = [
-    {"min": 0,       "name": "Buy-In"},
-    {"min": 5000,    "name": "Penny Pincher"},
-    {"min": 10000,   "name": "Table Regular"},
-    {"min": 25000,   "name": "Card Shark"},
-    {"min": 50000,   "name": "High Roller"},
-    {"min": 100000,  "name": "The Whale"},
-    {"min": 250000,  "name": "Pit Boss"},
-    {"min": 500000,  "name": "Big Kahuna"},
-    {"min": 1000000, "name": "The Legend"},
+    {"min": 0,       "name": "Square"},
+    {"min": 5000,    "name": "Weekend Warrior"},
+    {"min": 10000,   "name": "Parlay Degen"},
+    {"min": 25000,   "name": "Cover Merchant"},
+    {"min": 50000,   "name": "Wiseguy"},
+    {"min": 100000,  "name": "Sharp"},
+    {"min": 250000,  "name": "Line Mover"},
+    {"min": 500000,  "name": "Syndicate"},
+    {"min": 1000000, "name": "Untouchable"},
 ]
 
 # The level you've EARNED (via lifetime winnings) sets the bankroll you start /
