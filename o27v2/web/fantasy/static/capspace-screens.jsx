@@ -591,6 +591,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
 
 /* ---------- CATEGORY LEAGUES (Roto engine) ---------- */
 function CategoriesScreen({ onNav, onOpenPlayer }) {
+  const S = window.SLATE;
   const [fmt, setFmt] = useState('std5x5');
   const [data, setData] = useState(null);
   const [pool, setPool] = useState(null);
@@ -659,6 +660,7 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
           ) : (
             <>
               <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>{curFmt.blurb}</p>
+              {data.buyIn ? <p className="muted mb-12" style={{ fontSize: '.82rem', fontWeight: 600 }}>Season buy-in {S.money(data.buyIn)} · pays at season's end by final rank{data.entered ? ' · entered ✓' : ''}{data.payout > 0 ? ` · won ${S.money(data.payout)}` : ''}</p> : null}
 
               {st && !editing ? (
                 /* ---- standings ---- */
@@ -877,6 +879,7 @@ function SportsbookScreen({ onNav }) {
 
 /* ---------- BEST BALL ---------- */
 function BestBallScreen({ onNav, onOpenPlayer }) {
+  const S = window.SLATE;
   const [data, setData] = useState(null);
   const [pool, setPool] = useState(null);
   const [sel, setSel] = useState([]);
@@ -962,6 +965,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
             /* ---- draft ---- */
             <>
               <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>Draft {slots.h} hitters and {slots.p} pitchers covering every slot. Each slate your best in-position lineup — C, 1B, 2B, 3B, SS, OF, OF + best 2 pitchers — auto-scores, so draft depth at a spot and the hot bat there starts itself.</p>
+              {data.buyIn ? <p className="muted mb-12" style={{ fontSize: '.82rem', fontWeight: 600 }}>Season buy-in {S.money(data.buyIn)} · pays at season's end by final rank{data.entered ? ' · entered ✓' : ''}</p> : null}
               <div className="card card--pad mb-12" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontWeight: 700, fontSize: '.9rem' }}>
                   <span style={{ color: nH === slots.h ? 'var(--live)' : 'var(--ink-2)' }}>Hitters {nH}/{slots.h}</span>

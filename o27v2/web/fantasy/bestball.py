@@ -19,6 +19,9 @@ import random
 
 from o27v2 import db
 from . import data as slate_data
+from . import buyins
+
+SEASON_BUYIN = 5000  # ƒ5,000; pays at season's end by final rank
 
 # Hitter lineup slots auto-filled each slate (position, count).
 LINEUP_H = (("C", 1), ("1B", 1), ("2B", 1), ("3B", 1), ("SS", 1), ("OF", 2))
@@ -272,11 +275,27 @@ def draft(player_ids: list) -> dict:
                for pos, need in DRAFT_REQ.items() if counts.get(pos, 0) < need]
     if missing:
         return {"ok": False, "error": "Roster must cover every slot — short at: " + ", ".join(missing) + "."}
+    bi = buyins.enter("bestball", "season", SEASON_BUYIN)  # once per save
+    if not bi.get("ok"):
+        return bi
     conn = db.get_conn()
     conn.execute("DELETE FROM bb_roster")
     conn.executemany("INSERT OR IGNORE INTO bb_roster (player_id) VALUES (?)", [(i,) for i in ids])
     conn.commit()
     return {"ok": True}
+
+
+def settle() -> None:
+    """At season's end, cash out the best-ball roster by its final standing."""
+    if slate_data._slate_date() is not None:
+        return
+    for b in buyins.unsettled("bestball"):
+        roster = get_roster()
+        if len(roster) != DRAFT_H + DRAFT_P:
+            buyins.settle_one("bestball", b["ekey"], 0)
+            continue
+        st = standings(roster)
+        buyins.settle_one("bestball", b["ekey"], buyins.rank_payout(b["fee"], st["rank"], st["field"]))
 
 
 def state() -> dict:
@@ -300,6 +319,9 @@ def state() -> dict:
         "require": dict(DRAFT_REQ),
         "lineup": [list(s) for s in LINEUP_H] + [["P", START_P]],
         "roster": roster,
+        "buyIn": SEASON_BUYIN,
+        "entered": bool(buyins.entry("bestball", "season")),
+        "payout": buyins.payout_for("bestball", "season"),
     }
     if len(roster_ids) == DRAFT_H + DRAFT_P:
         out["standings"] = standings(roster_ids)

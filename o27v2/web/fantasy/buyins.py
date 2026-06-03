@@ -77,3 +77,17 @@ def unsettled(game: str) -> list:
 def payout_for(game: str, ekey: str) -> int:
     e = entry(game, ekey)
     return int(e["payout"]) if (e and e["settled"]) else 0
+
+
+def rank_payout(fee: int, rank: int, field: int) -> int:
+    """Placement payout for a season league: win it for 10x, top-10% for 3x,
+    top half for your money back, else nothing."""
+    if not field or not rank:
+        return 0
+    if rank <= 1:
+        return fee * 10
+    if rank <= max(2, round(field * 0.10)):
+        return fee * 3
+    if rank <= round(field * 0.5):
+        return fee
+    return 0
