@@ -263,6 +263,24 @@ GLOSSARY_SECTIONS: list[dict] = [
         ],
     },
     {
+        "title": "Pitching · Relief & Finisher",
+        "blurb": "O27 has no innings and no save rule, so relief value is measured structure-agnostically: leverage at entry, cleanup of inherited runners, and run prevention in the heavy final arc — letting any usage pattern (a one-out specialist, a deep ladder, or a back-stage 'finisher-starter') be compared on the same footing.",
+        "entries": [
+            {"key": "ir_stop_pct", "abbr": "IR-Stop%", "name": "Inherited-Runners Stranded %",
+             "desc": "Of the runners on base when this pitcher entered, the share he stranded: (IR − IR-scored) / IR. Higher = better. The one relief skill no rule structure can obsolete."},
+            {"key": "gmli", "abbr": "gmLI", "name": "Entered Leverage",
+             "desc": "Average Leverage Index at the moment he entered a game (first PA of each appearance). Shows who gets the high-stakes calls. 1.0 = league norm; >1 = disproportionately high-stakes entries."},
+            {"key": "late_er_per_bf", "abbr": "Late ER/BF", "name": "Late-Arc Run Prevention",
+             "desc": "Earned runs allowed per batter faced in the final arc (outs 19-27) — the heavy-leverage third where close games are decided. Lower = better finisher, regardless of how many outs he threw."},
+            {"key": "terminal_outs", "abbr": "TO", "name": "Terminal Outs",
+             "desc": "Outs recorded in a game he entered with a lead, never let be tied or lost, and finished. Scales with the role: a one-out closer gets ~3, a back-stage finisher-starter who seals the final third gets ~9+. The counting measure of who really closes games."},
+            {"key": "quality_finish", "abbr": "QF", "name": "Quality Finish",
+             "desc": "The inverse of a Quality Start: entered and sealed 9+ of the final outs while never trailing (lead or tie), regardless of save situation. Separates high-volume finishers from one-out specialists."},
+            {"key": "lr_pct", "abbr": "LRA", "name": "Lead-Retention Average",
+             "desc": "Of the games he entered with a lead, the share he held without letting it be tied or lost on his watch, on a 0–10 scale (a perfect 10.00 = never blew a lead; 8.50 = held 85% of them). Read against outs-per-appearance it splits short-relief specialists from back-stage starters."},
+        ],
+    },
+    {
         "title": "Pitching · MLB-Readable Rates",
         "blurb": ("Familiar MLB-shaped rate stats. On the leaderboard these honor the "
                   "XO Crossover toggle; the MLB-Equivalent section always shows the "

@@ -252,6 +252,7 @@ def build_player_wpa(team_ids=None) -> dict:
             _clip_score_diff(r["score_diff_before"]),
         )
         events.append({
+            "id":         r["id"],
             "batter_id":  r["batter_id"],
             "pitcher_id": r["pitcher_id"],
             "wpa":        wpa,
@@ -284,6 +285,12 @@ def build_player_wpa(team_ids=None) -> dict:
     by_pitcher: dict[int, dict] = defaultdict(lambda: {"wpa": 0.0, "li_sum": 0.0, "n_pa": 0})
 
     # Stamp per-PA leverage onto each event.
+    # Entry leverage (gmLI): the leverage at the moment a pitcher ENTERS — the
+    # first (lowest-id = earliest) PA he faced in each game. Averaged per
+    # pitcher it shows who gets the high-stakes calls, independent of how many
+    # outs they then throw. (game_pa_log is ball-in-play-only, so "entry" is
+    # the first BIP he faced — a close approximation of true entry.)
+    entry_first: dict[tuple, tuple] = {}   # (game_id, pitcher_id) -> (min_id, li)
     enriched: list[dict] = []
     for ev in events:
         li = state_li.get(ev["state_key"], 1.0)
@@ -297,6 +304,10 @@ def build_player_wpa(team_ids=None) -> dict:
             # Pitcher WPA is the negation of the batter's gain.
             p["wpa"]    -= wpa
             p["li_sum"] += li
+            _ekey = (ev["game_id"], ev["pitcher_id"])
+            _cur = entry_first.get(_ekey)
+            if _cur is None or ev["id"] < _cur[0]:
+                entry_first[_ekey] = (ev["id"], li)
             p["n_pa"]   += 1
         enriched.append({
             "game_id":    ev["game_id"],
@@ -317,6 +328,18 @@ def build_player_wpa(team_ids=None) -> dict:
             }
         return out
 
+    # Per-pitcher entry leverage (gmLI), averaged over each game's entry PA.
+    entry_li: dict[int, dict] = defaultdict(lambda: {"sum": 0.0, "n": 0})
+    for (_g, _pid), (_id, _li) in entry_first.items():
+        entry_li[_pid]["sum"] += _li
+        entry_li[_pid]["n"]   += 1
+
+    pit_final = _finalize(by_pitcher)
+    for pid, agg in pit_final.items():
+        e = entry_li.get(pid)
+        agg["gmli"]      = round(e["sum"] / e["n"], 3) if (e and e["n"]) else None
+        agg["n_entries"] = e["n"] if e else 0
+
     # Top events for narrative surfaces — biggest |WPA| swings.
     enriched.sort(key=lambda e: abs(e["wpa"]), reverse=True)
     top_pa = enriched[:25]
@@ -325,7 +348,7 @@ def build_player_wpa(team_ids=None) -> dict:
         "wp_table_size": len(wp_table["wp"]),
         "n_games":       wp_table["n_games"],
         "by_batter":     _finalize(by_batter),
-        "by_pitcher":    _finalize(by_pitcher),
+        "by_pitcher":    pit_final,
         "top_pa":        top_pa,
         "li_norm":       round(li_norm, 4),
     }

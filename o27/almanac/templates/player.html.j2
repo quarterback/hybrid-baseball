@@ -171,6 +171,45 @@
   </div>
 </section>
 
+<section>
+  <div class="section-bar"><h2>Clutch · RISP</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th>RISP-PA</th><th>AVG</th><th>OBP</th><th>SLG</th><th>OPS</th><th>RBI</th><th>Conv</th>
+      </tr></thead>
+      <tbody><tr>
+        <td>{{ season.risp_pa }}</td>
+        <td>{{ '%.3f'|format(season.risp_pavg) }}</td>
+        <td>{{ '%.3f'|format(season.risp_obp) }}</td>
+        <td>{{ '%.3f'|format(season.risp_slg) }}</td>
+        <td>{{ '%.3f'|format(season.risp_ops) }}</td>
+        <td>{{ season.risp_rbi }}</td>
+        <td>{{ '%.2f'|format(season.risp_conv) }}</td>
+      </tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="section-bar"><h2>Small Ball · Bunting</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th>SH</th><th>Bunts</th><th>Bunt-H</th><th>Bunt-AVG</th><th>Sqz</th><th>Sqz-RBI</th>
+      </tr></thead>
+      <tbody><tr>
+        <td>{{ season.sh }}</td>
+        <td>{{ season.bunt_att }}</td>
+        <td>{{ season.bunt_hits }}</td>
+        <td>{{ '%.3f'|format(season.bunt_avg) }}</td>
+        <td>{{ season.sqz }}</td>
+        <td>{{ season.sqz_rbi }}</td>
+      </tr></tbody>
+    </table>
+  </div>
+</section>
+
 {% if fielding %}
 <section>
   <div class="section-bar"><h2>Fielding</h2></div>
@@ -345,6 +384,31 @@
         <td>{{ '%.0f'|format(season.breaking_pct * 100) }}%</td>
         <td>{{ '%.0f'|format(season.offspeed_pct * 100) }}%</td>
         <td class="t-left">{{ season.primary_pitch or '—' }}</td>
+      </tr></tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if season.batters_faced %}
+<section>
+  <div class="section-bar"><h2>Relief &amp; Finisher</h2></div>
+  <div class="tablewrap short">
+    <table class="stat-table">
+      <thead><tr>
+        <th>IR</th><th>IR-Sc</th><th>IR-Stop%</th>
+        <th>Late ER/BF</th>
+        <th>TO</th><th>QF</th><th>LE</th><th>LRA</th>
+      </tr></thead>
+      <tbody><tr>
+        <td>{{ season.ir_inherited }}</td>
+        <td>{{ season.ir_scored }}</td>
+        <td>{% if season.ir_stop_pct is not none %}{{ '%.0f'|format(season.ir_stop_pct * 100) }}%{% else %}—{% endif %}</td>
+        <td>{% if season.late_er_per_bf is not none %}{{ '%.3f'|format(season.late_er_per_bf) }}{% else %}—{% endif %}</td>
+        <td>{{ season.terminal_outs }}</td>
+        <td>{{ season.quality_finish }}</td>
+        <td>{{ season.lead_entries }}</td>
+        <td>{% if season.lr_pct is not none %}{{ '%.2f'|format(season.lr_pct * 10) }}{% else %}—{% endif %}</td>
       </tr></tbody>
     </table>
   </div>

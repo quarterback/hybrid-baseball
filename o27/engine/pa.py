@@ -390,9 +390,47 @@ def apply_event(state: GameState, event: dict) -> list[str]:
     who scored on it (a live 3B bonus runner who left the bases on a
     run-scoring play). See _reconcile_walk_back.
     """
+    _ir_score_before = sum(state.score.values())
+    # Finisher lead tracking: lazily capture entry lead (fielding − batting)
+    # before this pitcher's first event, then track the running minimum.
+    _fld_id = state.fielding_team.team_id
+    _bat_id = state.batting_team.team_id
+    _lead_before = state.score.get(_fld_id, 0) - state.score.get(_bat_id, 0)
+    if not state.pitcher_lead_init_this_spell:
+        state.pitcher_entry_lead_this_spell = _lead_before
+        state.pitcher_min_lead_this_spell = _lead_before
+        state.pitcher_lead_init_this_spell = True
     log = _apply_event_inner(state, event)
     log += _reconcile_walk_back(state)
+    _reconcile_inherited(state, sum(state.score.values()) - _ir_score_before)
+    _lead_after = state.score.get(_fld_id, 0) - state.score.get(_bat_id, 0)
+    if _lead_after < state.pitcher_min_lead_this_spell:
+        state.pitcher_min_lead_this_spell = _lead_after
     return log
+
+
+def _reconcile_inherited(state: GameState, runs_this_event: int) -> None:
+    """Settle inherited runners who left the bases on the event just applied.
+
+    Tracks the runners a relief pitcher inherited at his pitching change. Any
+    tracked runner no longer on base has resolved (scored or was retired); the
+    number that *scored* is capped by the runs actually booked this event
+    (lead runners are likeliest to have crossed). Mirrors `_reconcile_walk_back`'s
+    pragmatism — exact per-runner score/out identity isn't centralized in the
+    engine, so a rare event that both scores a non-inherited run and retires an
+    inherited runner can mis-credit by one; bounded and uncommon.
+    """
+    if not state.inherited_runner_ids:
+        return
+    on_base = {b for b in state.bases if b is not None}
+    departed = [pid for pid in list(state.inherited_runner_ids)
+                if pid not in on_base]
+    if not departed:
+        return
+    scored = min(len(departed), max(0, runs_this_event))
+    state.pitcher_ir_scored_this_spell += scored
+    for pid in departed:
+        state.inherited_runner_ids.discard(pid)
 
 
 def _apply_event_inner(state: GameState, event: dict) -> list[str]:
