@@ -35,6 +35,10 @@ class PitcherStats:
     # Walk-Back Stop% = (wb_faced - wb_runs) / wb_faced.
     wb_faced: int = 0
     wb_runs:  int = 0
+    # Inherited runners (runners on base at this reliever's entry) and how many
+    # scored against him. IR-Stop% = (ir_inherited - ir_scored) / ir_inherited.
+    ir_inherited: int = 0
+    ir_scored:    int = 0
 
     @classmethod
     def from_spell_log(cls, spell_log: list, pitcher_id: str, name: str) -> "PitcherStats":
@@ -54,6 +58,8 @@ class PitcherStats:
                 s.pitches_thrown += getattr(rec, "pitches_thrown", 0)
                 s.wb_faced       += getattr(rec, "wb_faced", 0)
                 s.wb_runs        += getattr(rec, "wb_runs", 0)
+                s.ir_inherited   += getattr(rec, "ir_inherited", 0)
+                s.ir_scored      += getattr(rec, "ir_scored", 0)
                 s.spell_count    += 1
                 if rec.batters_faced > s.max_spell:
                     s.max_spell = rec.batters_faced

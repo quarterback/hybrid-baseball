@@ -341,6 +341,20 @@ class SpellRecord:
     # (the Walk-Back run is always unearned).
     wb_faced: int = 0
     wb_runs:  int = 0
+    # Inherited runners: how many were on base when this reliever entered
+    # (ir_inherited) and how many of them scored against him (ir_scored).
+    # Powers IR-Stop% — a structure-agnostic relief skill (cleaning up a
+    # rally you walked into). The starter inherits nobody.
+    ir_inherited: int = 0
+    ir_scored:    int = 0
+    # Finisher context: the fielding-team lead (fielding − batting score) at the
+    # moment this pitcher entered (entry_lead) and the minimum that lead reached
+    # during the spell (min_lead). finished = he was on the mound at the end of
+    # his defensive half. Together these drive Terminal Outs / Quality Finish /
+    # Lead-Retention — the structure-agnostic "who seals games" stats.
+    entry_lead: int = 0
+    min_lead:   int = 0
+    finished:   int = 0
     # Arc-bucketed counters for wERA / xFIP / Decay. Indices 0/1/2 cover
     # outs 1-9 / 10-18 / 19-27 of the defending team's running 27-out half.
     # Super-innings outs roll into arc 3 (treat as continuation).
@@ -602,6 +616,15 @@ class GameState:
     # SpellRecord at spell end (manager.pick_new_pitcher / game._close_spell).
     pitcher_wb_faced_this_spell: int = 0
     pitcher_wb_runs_this_spell:  int = 0
+    # Inherited-runner per-spell counters (flushed to SpellRecord at spell end).
+    pitcher_ir_inherited_this_spell: int = 0
+    pitcher_ir_scored_this_spell:    int = 0
+    # Finisher tracking. entry/min lead are lazily initialized on the spell's
+    # first event (so entry = the lead when he took the mound); lead_init gates
+    # that. See pa.apply_event + game._close_spell / manager.pitching_change.
+    pitcher_entry_lead_this_spell: int = 0
+    pitcher_min_lead_this_spell:   int = 0
+    pitcher_lead_init_this_spell:  bool = False
     # Arc-bucketed per-spell counters (indices 0/1/2 → arc 1/2/3 of the
     # defending team's 27-out running half). Reset at spell start.
     pitcher_er_arc_this_spell: list = field(default_factory=lambda: [0, 0, 0])
@@ -638,6 +661,11 @@ class GameState:
     # his fate resolves (score / out / strand) and wb_runs ticks when he
     # scores. Holds player_ids of the Walk-Back runners currently on base.
     walk_back_runner_ids: set = field(default_factory=set)
+
+    # Player_ids of the runners the CURRENT pitcher inherited at his pitching
+    # change. Shrinks as each resolves (scores / out / strand); _reconcile_inherited
+    # tallies how many scored into pitcher_ir_scored_this_spell.
+    inherited_runner_ids: set = field(default_factory=set)
 
     # --- Multi-hit tracking (within one at-bat) ---
     current_at_bat_hits: int = 0

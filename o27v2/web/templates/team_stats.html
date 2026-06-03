@@ -136,10 +136,42 @@
   </div>
 </div>
 
+{# ---- Pitching usage shape ------------------------------------------- #}
+<div class="panel mb-4">
+  <div class="panel-head"><span>Pitching Usage Shape</span>
+    <span class="ms-auto sub">how each club divides its 27 outs</span></div>
+  <div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead><tr>
+      <th>Team</th>
+      <th class="num" title="Distinct arms that recorded an out">Arms</th>
+      <th class="num" title="Average outs recorded per pitching appearance">Outs/App</th>
+      <th class="num" title="Share of team outs thrown by the single most-used arm">Top Arm%</th>
+      <th class="num" title="Share of team outs thrown by the top two arms — high = ace-heavy / two-ace split">Top 2%</th>
+      <th class="num" title="Share of team outs thrown by game-starters">Starter%</th>
+    </tr></thead>
+    <tbody>
+      {% for t in pitch_shape %}
+      <tr>
+        <td><a href="{{ url_for('team_detail', team_id=t.team_id) }}" class="team-abbrev">{{ t.team_abbrev }}</a></td>
+        <td class="num">{{ t.arms }}</td>
+        <td class="num">{{ '%.1f'|format(t.outs_per_app) }}</td>
+        <td class="num">{{ '%.0f'|format(t.top1_share * 100) }}%</td>
+        <td class="num fw-bold">{{ '%.0f'|format(t.top2_share * 100) }}%</td>
+        <td class="num">{{ '%.0f'|format(t.starter_share * 100) }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
 <div class="text-secondary small mb-3">
   Rates use the same O27 conventions as the player pages (PAVG = H/PA; OPS+/wERA+
   are league-relative, 100 = average). 2C-Conv = hits per second-chance at-bat;
   2C-RBI% = share of the club's RBI driven on 2C events; WBR = Walk-Back runs.
+  Usage shape reveals how clubs split the continuous 27-out half — a high Top 2%
+  is a two-ace front/back split; a low one with high Arms is a deep ladder.
 </div>
 
 {% endif %}

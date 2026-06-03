@@ -440,3 +440,70 @@ def team_walkback_runs(team_ids=None) -> list[dict]:
         })
     out.sort(key=lambda d: (-d["scored"], -d["allowed"], d["team_abbrev"]))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Team pitching-usage shape
+#
+# O27's continuous 27-out half doesn't force the MLB starter→middle→closer
+# ladder, so how a club divides its 27 outs is an emergent strategic choice.
+# This surfaces the shape per team so the patterns (a two-ace front/back split
+# vs a deep bullpen ladder vs a workhorse-and-mop-up) are visible empirically.
+# All from the deduped per-appearance pitcher rows — no new tracking.
+# ---------------------------------------------------------------------------
+
+def team_pitching_shape(team_ids=None) -> list[dict]:
+    """Per-team pitching-usage shape for the season.
+
+    Returns, per team: arms used, total outs, average outs per appearance,
+    the share of outs thrown by the single most-used arm and by the top two
+    arms (a concentration / "ace-heavy" read), and the starter-vs-relief
+    out split. `team_ids` scopes to one league.
+    """
+    from o27v2.web.app import _PSTATS_DEDUP_SQL  # deduped appearance rows
+    rows = db.fetchall(
+        f"""SELECT ps.team_id, ps.player_id,
+                   SUM(ps.outs_recorded) AS outs,
+                   COUNT(*) AS apps,
+                   MAX(ps.is_starter) AS started
+            FROM {_PSTATS_DEDUP_SQL} ps
+            JOIN games g ON ps.game_id = g.id
+            WHERE g.played = 1
+            GROUP BY ps.team_id, ps.player_id"""
+    )
+    teams = {
+        int(t["id"]): t
+        for t in db.fetchall("SELECT id, name, abbrev FROM teams")
+    }
+    allow = {int(t) for t in team_ids} if team_ids else None
+    by_team: dict[int, list[dict]] = defaultdict(list)
+    for r in rows:
+        tid = int(r["team_id"])
+        if allow is not None and tid not in allow:
+            continue
+        by_team[tid].append(r)
+
+    out: list[dict] = []
+    for tid, arms in by_team.items():
+        total_outs = sum(int(a["outs"] or 0) for a in arms)
+        if total_outs <= 0:
+            continue
+        total_apps = sum(int(a["apps"] or 0) for a in arms)
+        starter_outs = sum(int(a["outs"] or 0) for a in arms if a["started"])
+        outs_sorted = sorted((int(a["outs"] or 0) for a in arms), reverse=True)
+        top1 = outs_sorted[0] if outs_sorted else 0
+        top2 = sum(outs_sorted[:2])
+        t = teams.get(tid, {})
+        out.append({
+            "team_id":       tid,
+            "team_abbrev":   t.get("abbrev", ""),
+            "team_name":     t.get("name", ""),
+            "arms":          len(arms),
+            "outs":          total_outs,
+            "outs_per_app":  total_outs / total_apps if total_apps else 0.0,
+            "top1_share":    top1 / total_outs,
+            "top2_share":    top2 / total_outs,
+            "starter_share": starter_outs / total_outs,
+        })
+    out.sort(key=lambda d: (-d["top2_share"], d["team_abbrev"]))
+    return out

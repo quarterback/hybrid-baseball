@@ -565,7 +565,8 @@ _PSTATS_DEDUP_SQL = """(
            is_starter,
            singles_allowed, doubles_allowed, triples_allowed,
            fastball_pct, breaking_pct, offspeed_pct, primary_pitch,
-           wb_faced, wb_runs
+           wb_faced, wb_runs, ir_inherited, ir_scored,
+           terminal_outs, quality_finish, lead_entries, lead_held
     FROM (
         SELECT *,
                ROW_NUMBER() OVER (
@@ -2396,6 +2397,27 @@ def _aggregate_pitcher_rows(
         # numbers (no transform). Avoids the 0.305 vs 30.5% display quirk.
         p["late_k_pct_pct"] = p["late_k_pct"] * 100.0
 
+        # --- Finisher / late-arc run prevention ---
+        # Earned runs per batter faced in the final arc (outs 19-27), the
+        # heavy-leverage third. Lower = better. bf_arc3 is the honest
+        # denominator — only batters-faced is bucketed by arc, not outs.
+        er3 = p.get("er_arc3") or 0
+        p["late_er_per_bf"] = (er3 / bf3) if bf3 > 0 else None
+
+        # --- Inherited runners (IR-Stop%) ---
+        ir_inh = p.get("ir_inherited") or 0
+        ir_sc  = p.get("ir_scored") or 0
+        # Share of inherited runners the reliever stranded. Higher = better.
+        # None when he never entered with runners on (e.g. pure starters).
+        p["ir_stop_pct"] = ((ir_inh - ir_sc) / ir_inh) if ir_inh else None
+
+        # --- Finisher counting + Lead-Retention% ---
+        # terminal_outs / quality_finish pass through as season SUMs; LR% is the
+        # share of lead-entries the pitcher held (didn't surrender on his watch).
+        le = p.get("lead_entries") or 0
+        lh = p.get("lead_held") or 0
+        p["lr_pct"] = (lh / le) if le else None
+
         # --- Workload ---
         p["aor"]    = (outs / g) if g else 0.0
         p["os_pct"] = (p["aor"] / 27.0) if g else 0.0  # avg per appearance
@@ -3962,7 +3984,15 @@ def player_detail_export(player_id: int):
                    COALESCE(SUM(triples_allowed),0) as triples_allowed,
                    COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
                    COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
-                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct,
+                   COALESCE(SUM(wb_faced),0)   as wb_faced,
+                   COALESCE(SUM(wb_runs),0)    as wb_runs,
+                   COALESCE(SUM(ir_inherited),0)  as ir_inherited,
+                   COALESCE(SUM(ir_scored),0)     as ir_scored,
+                   COALESCE(SUM(terminal_outs),0) as terminal_outs,
+                   COALESCE(SUM(quality_finish),0) as quality_finish,
+                   COALESCE(SUM(lead_entries),0)  as lead_entries,
+                   COALESCE(SUM(lead_held),0)     as lead_held
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     baselines = _league_baselines()
@@ -4588,6 +4618,12 @@ def stats_browse():
                        SUM(ps.hr_allowed)     as hr_allowed,
                   SUM(ps.wb_faced)       as wb_faced,
                   SUM(ps.wb_runs)        as wb_runs,
+                       COALESCE(SUM(ps.ir_inherited),0) as ir_inherited,
+                       COALESCE(SUM(ps.ir_scored),0)    as ir_scored,
+                       COALESCE(SUM(ps.terminal_outs),0)  as terminal_outs,
+                       COALESCE(SUM(ps.quality_finish),0) as quality_finish,
+                       COALESCE(SUM(ps.lead_entries),0)   as lead_entries,
+                       COALESCE(SUM(ps.lead_held),0)      as lead_held,
                        COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
                        COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                        COALESCE(SUM(ps.unearned_runs),0) as uer,
@@ -4957,6 +4993,12 @@ def leaders():
                   SUM(ps.hr_allowed)     as hr_allowed,
                   SUM(ps.wb_faced)       as wb_faced,
                   SUM(ps.wb_runs)        as wb_runs,
+                  COALESCE(SUM(ps.ir_inherited),0) as ir_inherited,
+                  COALESCE(SUM(ps.ir_scored),0)    as ir_scored,
+                  COALESCE(SUM(ps.terminal_outs),0)  as terminal_outs,
+                  COALESCE(SUM(ps.quality_finish),0) as quality_finish,
+                  COALESCE(SUM(ps.lead_entries),0)   as lead_entries,
+                  COALESCE(SUM(ps.lead_held),0)      as lead_held,
                   COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
                   COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                   COALESCE(SUM(ps.unearned_runs),0) as uer,
@@ -5077,6 +5119,7 @@ def leaders():
         w = wpa_data["by_pitcher"].get(pid) if pid is not None else None
         p["wpa"]    = w["wpa"]    if w else None
         p["li_avg"] = w["li_avg"] if w else None
+        p["gmli"]   = w.get("gmli") if w else None
     # Top-WPA narrative rows: stamp player + game labels so the
     # template doesn't need a second lookup pass.
     pname_map = {
@@ -5431,6 +5474,9 @@ def team_stats():
     team_bat.sort(key=lambda r: (-(r.get("ops") or 0),))
     team_pit.sort(key=lambda r: (r.get("werra") if r.get("werra") is not None else 1e9,))
 
+    from o27v2.analytics.records import team_pitching_shape
+    pitch_shape = team_pitching_shape(team_ids=_league_team_ids(selected_league))
+
     return _serve(
         "team_stats.html",
         games_played=games_played,
@@ -5438,6 +5484,7 @@ def team_stats():
         selected_league=selected_league,
         team_bat=team_bat,
         team_pit=team_pit,
+        pitch_shape=pitch_shape,
     )
 
 
@@ -5583,6 +5630,12 @@ def _player_pitching_split(player_id: int,
                    SUM(ps.hr_allowed) as hr_allowed,
                   SUM(ps.wb_faced)   as wb_faced,
                   SUM(ps.wb_runs)    as wb_runs,
+                   COALESCE(SUM(ps.ir_inherited),0) as ir_inherited,
+                   COALESCE(SUM(ps.ir_scored),0)    as ir_scored,
+                   COALESCE(SUM(ps.terminal_outs),0)  as terminal_outs,
+                   COALESCE(SUM(ps.quality_finish),0) as quality_finish,
+                   COALESCE(SUM(ps.lead_entries),0)   as lead_entries,
+                   COALESCE(SUM(ps.lead_held),0)      as lead_held,
                    COALESCE(SUM(ps.hbp_allowed),0)   as hbp_allowed,
                    COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
                    COALESCE(SUM(ps.unearned_runs),0) as uer,
@@ -5670,7 +5723,15 @@ def _fetch_player_overview(player_id: int,
                    COALESCE(SUM(triples_allowed),0) as triples_allowed,
                    COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
                    COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
-                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct,
+                   COALESCE(SUM(wb_faced),0)   as wb_faced,
+                   COALESCE(SUM(wb_runs),0)    as wb_runs,
+                   COALESCE(SUM(ir_inherited),0)  as ir_inherited,
+                   COALESCE(SUM(ir_scored),0)     as ir_scored,
+                   COALESCE(SUM(terminal_outs),0) as terminal_outs,
+                   COALESCE(SUM(quality_finish),0) as quality_finish,
+                   COALESCE(SUM(lead_entries),0)  as lead_entries,
+                   COALESCE(SUM(lead_held),0)     as lead_held
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     bt_totals = None
@@ -5851,7 +5912,15 @@ def player_detail(player_id: int):
                    COALESCE(SUM(triples_allowed),0) as triples_allowed,
                    COALESCE(AVG(NULLIF(fastball_pct,0)),0) as fastball_pct,
                    COALESCE(AVG(NULLIF(breaking_pct,0)),0) as breaking_pct,
-                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct
+                   COALESCE(AVG(NULLIF(offspeed_pct,0)),0) as offspeed_pct,
+                   COALESCE(SUM(wb_faced),0)   as wb_faced,
+                   COALESCE(SUM(wb_runs),0)    as wb_runs,
+                   COALESCE(SUM(ir_inherited),0)  as ir_inherited,
+                   COALESCE(SUM(ir_scored),0)     as ir_scored,
+                   COALESCE(SUM(terminal_outs),0) as terminal_outs,
+                   COALESCE(SUM(quality_finish),0) as quality_finish,
+                   COALESCE(SUM(lead_entries),0)  as lead_entries,
+                   COALESCE(SUM(lead_held),0)     as lead_held
             FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
         (player_id,),
     )
@@ -6006,6 +6075,8 @@ def player_detail(player_id: int):
         bt_totals["li_avg"] = wb["li_avg"] if wb else None
     if pt_totals is not None:
         wp = wpa_data["by_pitcher"].get(player_id)
+        if wp:
+            pt_totals["gmli"] = wp.get("gmli")
         pt_totals["wpa"]    = wp["wpa"]    if wp else None
         pt_totals["li_avg"] = wp["li_avg"] if wp else None
 
