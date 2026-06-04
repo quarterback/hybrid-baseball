@@ -37,18 +37,17 @@ _PERSONA = {p["key"]: p for p in PERSONAS}
 
 # --- status tiers by LIFETIME earnings (dollar gates). Names are placeholders
 # refined from the loyalty-tier research; the gate ladder is the spine. -------
-# Sports-betting status ladder: the climb from a square the books love to fade,
-# up to a sharp the books won't take. Top tier kept a touch mysterious.
+# Sports-career status ladder — the climb every fan knows, rookie to immortal.
 TIERS = [
-    {"min": 0,       "name": "Square"},
-    {"min": 5000,    "name": "Weekend Warrior"},
-    {"min": 10000,   "name": "Parlay Degen"},
-    {"min": 25000,   "name": "Cover Merchant"},
-    {"min": 50000,   "name": "Wiseguy"},
-    {"min": 100000,  "name": "Sharp"},
-    {"min": 250000,  "name": "Line Mover"},
-    {"min": 500000,  "name": "Syndicate"},
-    {"min": 1000000, "name": "Untouchable"},
+    {"min": 0,       "name": "Rookie"},
+    {"min": 5000,    "name": "Role Player"},
+    {"min": 10000,   "name": "Starter"},
+    {"min": 25000,   "name": "Veteran"},
+    {"min": 50000,   "name": "All-Star"},
+    {"min": 100000,  "name": "All-Pro"},
+    {"min": 250000,  "name": "MVP"},
+    {"min": 500000,  "name": "Champion"},
+    {"min": 1000000, "name": "Hall of Famer"},
 ]
 
 # The level you've EARNED (via lifetime winnings) sets the bankroll you start /

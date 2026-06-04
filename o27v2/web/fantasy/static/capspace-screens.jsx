@@ -81,7 +81,7 @@ function HubScreen({ onNav, onOpenFormat, onNewRun }) {
                   <i style={{ display: 'block', height: '100%', width: pct + '%', background: 'linear-gradient(90deg, var(--c-teal), var(--c-violet))' }} />
                 </div>
                 <div className="muted" style={{ fontSize: '.82rem', fontWeight: 700 }}>
-                  {t.isMax ? `Top tier — you're ${t.name}. The books won't take your action.` : `${S.money(Math.max(0, t.nextGate - (rec.lifetime || 0)))} to ${t.nextName}`}
+                  {t.isMax ? `Top tier — you're a ${t.name}. First-ballot.` : `${S.money(Math.max(0, t.nextGate - (rec.lifetime || 0)))} to ${t.nextName}`}
                 </div>
                 <div className="muted" style={{ fontSize: '.78rem', marginTop: 6 }}>
                   Restart stake at {t.name}: <b>{S.money(t.startBankroll)}</b>{!t.isMax ? ` · ${t.nextName} unlocks ${S.money(t.nextStart)}` : ''}
