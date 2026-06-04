@@ -19,6 +19,7 @@ import datetime as _dt
 
 from o27v2 import db, currency
 from . import data as slate_data
+from . import wallet
 
 _USD = currency.GUILDER_PER_USD  # 100 — money is stored as guilders
 
@@ -57,10 +58,6 @@ def ensure_schema() -> None:
             payout      INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_dfs_entries_contest ON dfs_entries(contest_id);
-        CREATE TABLE IF NOT EXISTS cap_wallet (
-            id      INTEGER PRIMARY KEY CHECK (id = 1),
-            balance INTEGER NOT NULL
-        );
         """
     )
     conn.commit()
@@ -74,36 +71,14 @@ def ensure_schema() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Wallet — a real, per-save play-money balance (guilders). DFS entry fees are
-# debited here; contest winnings are credited once a contest's slate is final.
+# DFS economy — buy-ins and payouts settle through the shared wallet.
 # ---------------------------------------------------------------------------
 
-START_BALANCE = 50_00_000  # ƒ50 lakh (~$50,000) play-money, seeded per save
-
-
-def _balance_raw() -> int:
-    r = db.fetchone("SELECT balance FROM cap_wallet WHERE id = 1")
-    if r is None:
-        conn = db.get_conn()
-        conn.execute("INSERT OR IGNORE INTO cap_wallet (id, balance) VALUES (1, ?)", (START_BALANCE,))
-        conn.commit()
-        return START_BALANCE
-    return r["balance"]
-
-
-def _set_balance(v: int) -> None:
-    conn = db.get_conn()
-    conn.execute("INSERT INTO cap_wallet (id, balance) VALUES (1, ?) "
-                 "ON CONFLICT(id) DO UPDATE SET balance = excluded.balance", (max(0, int(v)),))
-    conn.commit()
-
-
 def wallet_balance() -> int:
-    """This save's play-money wallet, after crediting any newly-final winnings."""
+    """The save's wallet, after crediting any newly-final DFS winnings."""
     ensure_schema()
-    _balance_raw()        # ensure initialized
-    _settle_entries()     # credit winnings from contests that just went final
-    return _balance_raw()
+    settle_entries()
+    return wallet.balance()
 
 
 def _entry_rank(pts: float, sample: list, field_total: int) -> int:
@@ -112,8 +87,9 @@ def _entry_rank(pts: float, sample: list, field_total: int) -> int:
     return max(1, min(field_total, int(round(frac * field_total)) or 1))
 
 
-def _settle_entries() -> None:
+def settle_entries() -> None:
     """Credit each user entry its payout once its contest's slate is final."""
+    ensure_schema()
     rows = db.fetchall("SELECT * FROM dfs_entries WHERE settled = 0")
     if not rows:
         return
@@ -121,7 +97,6 @@ def _settle_entries() -> None:
     ctx_by_slate: dict = {}
     contests: dict = {}
     samples: dict = {}
-    credited = 0
     for e in rows:
         sd = e["slate_date"]
         ctx = ctx_by_slate.get(sd)
@@ -142,10 +117,9 @@ def _settle_entries() -> None:
         field_total = int(contest["field_size"]) + 1
         payout = _payout(contest, _entry_rank(pts, sample, field_total), field_total)
         conn.execute("UPDATE dfs_entries SET settled = 1, payout = ? WHERE id = ?", (payout, e["id"]))
-        credited += payout
+        if payout > 0:
+            wallet.credit(payout)
     conn.commit()
-    if credited:
-        _set_balance(_balance_raw() + credited)
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +390,7 @@ def enter(contest_id: int, player_ids: list) -> dict:
     if sum(c["salary"] for c in chosen) > CAP:
         return {"ok": False, "error": "Lineup is over the salary cap."}
     fee = int(contest["fee"] or 0)
-    if fee > 0 and _balance_raw() < fee:
+    if fee > 0 and not wallet.debit(fee):
         return {"ok": False, "error": "Not enough in your wallet for the entry fee."}
     conn = db.get_conn()
     cur = conn.execute(
@@ -426,10 +400,8 @@ def enter(contest_id: int, player_ids: list) -> dict:
          _dt.datetime.utcnow().isoformat(timespec="seconds"), fee),
     )
     conn.commit()
-    if fee > 0:
-        _set_balance(_balance_raw() - fee)
     return {"ok": True, "entry_id": cur.lastrowid, "contest_id": contest_id,
-            "balance": _balance_raw()}
+            "balance": wallet.balance()}
 
 
 def _field_sample(contest: dict, ctx: "_LiveContext") -> list:

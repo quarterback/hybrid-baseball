@@ -18,10 +18,20 @@ function App() {
   const [teaser, setTeaser] = useState(null);
   const [liveContestId, setLiveContestId] = useState(null);
   const [cur, setCur] = useState(() => {
-    // USD is CapSpace's default — only the engine's stored preference overrides it.
-    try { const v = localStorage.getItem('o27.currencyDisplay'); return VALID_MODES.includes(v) ? v : 'usd'; }
+    // CapSpace defaults to USD and keeps its OWN currency preference, so it
+    // never inherits the engine's canonical-guilder default.
+    try { const v = localStorage.getItem('o27.capspace.currency'); return VALID_MODES.includes(v) ? v : 'usd'; }
     catch (e) { return 'usd'; }
   });
+
+  const [walletState, setWalletState] = useState(undefined); // undefined = loading
+  const [reonboard, setReonboard] = useState(false);
+  function loadWallet() {
+    fetch('/fantasy/api/wallet').then(r => (r.ok ? r.json() : null))
+      .then(wd => { setWalletState(wd || { started: true }); if (wd && wd.balance != null) S.WALLET = wd.balance; })
+      .catch(() => setWalletState({ started: true }));
+  }
+  useEffect(loadWallet, []);
 
   // make the chosen mode visible to the global money() formatter for this render
   S.mode = cur;
@@ -29,12 +39,12 @@ function App() {
   function setMode(m) {
     S.mode = m;
     setCur(m);
-    try { localStorage.setItem('o27.currencyDisplay', m); } catch (e) {}
+    try { localStorage.setItem('o27.capspace.currency', m); } catch (e) {}
   }
-  // sync if the main O27 app (or another tab) changes the preference
+  // sync if another CapSpace tab changes the preference
   useEffect(() => {
     const onStorage = e => {
-      if (e.key === 'o27.currencyDisplay' && VALID_MODES.includes(e.newValue)) { S.mode = e.newValue; setCur(e.newValue); }
+      if (e.key === 'o27.capspace.currency' && VALID_MODES.includes(e.newValue)) { S.mode = e.newValue; setCur(e.newValue); }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -73,11 +83,26 @@ function App() {
   }
 
   const inLineup = drawer.player && Object.values(roster).some(x => x && x.id === drawer.player.id);
+  const needsOnboard = walletState && (walletState.started === false || reonboard);
+
+  if (walletState === undefined) {
+    return <CurrencyCtx.Provider value={{ mode: cur, setMode }}><div className="app" /></CurrencyCtx.Provider>;
+  }
+  if (needsOnboard) {
+    return (
+      <CurrencyCtx.Provider value={{ mode: cur, setMode }}>
+        <div className="app">
+          <OnboardingScreen personas={walletState.personas} reset={reonboard}
+            onDone={() => { setReonboard(false); loadWallet(); nav('hub'); }} />
+        </div>
+      </CurrencyCtx.Provider>
+    );
+  }
 
   return (
     <CurrencyCtx.Provider value={{ mode: cur, setMode }}>
     <AppShell view={view} onNav={nav} onEnter={() => contest ? nav('builder') : nav('lobby')}>
-      {view === 'hub' && <HubScreen onNav={nav} onOpenFormat={openFormat} />}
+      {view === 'hub' && <HubScreen onNav={nav} onOpenFormat={openFormat} onNewRun={() => setReonboard(true)} />}
       {view === 'lobby' && <LobbyScreen onNav={nav} onEnterContest={enterContest} />}
       {view === 'builder' && <BuilderScreen contest={contest} roster={roster} onAdd={addPlayer} onRemove={removeSlot} onOpenPlayer={openPlayer} onEnter={submitLineup} onNav={nav} />}
       {view === 'live' && <LiveScreen roster={roster} contestId={liveContestId} onNav={nav} onOpenPlayer={openPlayer} />}

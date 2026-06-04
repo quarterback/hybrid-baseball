@@ -14,8 +14,8 @@ import datetime as _dt
 
 from o27v2 import db
 from . import data as slate_data
+from . import wallet
 
-START_BANKROLL = 1000.0
 PYTHAG_EXP = 1.83
 PRIOR_G = 8          # regress team rates toward league avg by this many games
 VIG = 0.045          # moneyline hold
@@ -39,7 +39,6 @@ def ensure_schema() -> None:
             payout     REAL DEFAULT 0,
             created_at TEXT NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS sb_meta (key TEXT PRIMARY KEY, value REAL);
         CREATE TABLE IF NOT EXISTS sb_lines (
             game_id    INTEGER PRIMARY KEY,
             ml_home    INTEGER, ml_away INTEGER,
@@ -48,26 +47,6 @@ def ensure_schema() -> None:
         );
         """
     )
-    conn.commit()
-
-
-# --- bankroll ----------------------------------------------------------------
-
-def _bankroll() -> float:
-    r = db.fetchone("SELECT value FROM sb_meta WHERE key = 'bankroll'")
-    if r is None:
-        conn = db.get_conn()
-        conn.execute("INSERT INTO sb_meta (key, value) VALUES ('bankroll', ?)", (START_BANKROLL,))
-        conn.commit()
-        return START_BANKROLL
-    return r["value"]
-
-
-def _set_bankroll(v: float) -> None:
-    conn = db.get_conn()
-    conn.execute(
-        "INSERT INTO sb_meta (key, value) VALUES ('bankroll', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (v,))
     conn.commit()
 
 
@@ -196,24 +175,23 @@ def _grade(bet: dict, game: dict) -> tuple[str, float]:
     return ("won", round(bet["stake"] * dec, 2)) if won else ("lost", 0.0)
 
 
-def _settle() -> None:
+def settle_bets() -> None:
+    """Grade open bets whose games are final, paying winnings into the wallet."""
+    ensure_schema()
     open_bets = db.fetchall("SELECT * FROM sb_bets WHERE status = 'open'")
     if not open_bets:
         return
     conn = db.get_conn()
-    bankroll = _bankroll()
-    changed = False
     for b in open_bets:
         g = db.fetchone("SELECT played, home_score, away_score FROM games WHERE id = ?", (b["game_id"],))
         if not g or not g["played"]:
             continue
-        status, payout = _grade(dict(b), dict(g))
-        conn.execute("UPDATE sb_bets SET status = ?, payout = ? WHERE id = ?", (status, payout, b["id"]))
-        bankroll += payout
-        changed = True
+        st, payout = _grade(dict(b), dict(g))
+        conn.execute("UPDATE sb_bets SET status = ?, payout = ? WHERE id = ?", (st, round(payout), b["id"]))
+        if payout > 0:
+            # a push returns the stake (not a "cash"); a win is a cash
+            wallet.credit(round(payout), cash=(st == "won"))
     conn.commit()
-    if changed:
-        _set_bankroll(bankroll)
 
 
 # --- public API --------------------------------------------------------------
@@ -239,7 +217,7 @@ def _bet_view(b: dict) -> dict:
 
 def status() -> dict:
     ensure_schema()
-    _settle()
+    settle_bets()
     slate = slate_data._slate_date()
     games = _slate_games(slate) if slate else []
     open_bets = [_bet_view(dict(b)) for b in db.fetchall(
@@ -252,7 +230,7 @@ def status() -> dict:
         "COALESCE(SUM(payout),0) - COALESCE(SUM(CASE WHEN status!='open' THEN stake END),0) AS net "
         "FROM sb_bets WHERE status != 'open'")
     return {
-        "bankroll": round(_bankroll(), 2),
+        "bankroll": round(wallet.balance()),
         "slate_date": slate,
         "games": games,
         "open": open_bets,
@@ -265,18 +243,17 @@ def status() -> dict:
 
 def place(game_id, market: str, side: str, stake) -> dict:
     ensure_schema()
-    _settle()
+    settle_bets()
     try:
-        stake = round(float(stake), 2)
+        stake = int(round(float(stake)))
     except (TypeError, ValueError):
         return {"ok": False, "error": "Invalid stake."}
     if stake <= 0:
         return {"ok": False, "error": "Stake must be positive."}
     if market not in ("ml", "total") or side not in ("home", "away", "over", "under"):
         return {"ok": False, "error": "Unknown market."}
-    bankroll = _bankroll()
-    if stake > bankroll:
-        return {"ok": False, "error": "Stake exceeds your bankroll."}
+    if stake > wallet.balance():
+        return {"ok": False, "error": "Stake exceeds your wallet."}
     g = db.fetchone("SELECT id, game_date, played FROM games WHERE id = ?", (int(game_id),))
     if not g:
         return {"ok": False, "error": "No such game."}
@@ -298,6 +275,8 @@ def place(game_id, market: str, side: str, stake) -> dict:
         odds = TOTAL_ODDS
         lval = line["total"]
 
+    if not wallet.debit(stake):
+        return {"ok": False, "error": "Stake exceeds your wallet."}
     conn = db.get_conn()
     conn.execute(
         "INSERT INTO sb_bets (game_id, market, side, line, odds, stake, status, created_at) "
@@ -305,5 +284,4 @@ def place(game_id, market: str, side: str, stake) -> dict:
         (int(game_id), market, side, lval, int(odds), stake,
          _dt.datetime.utcnow().isoformat(timespec="seconds")))
     conn.commit()
-    _set_bankroll(bankroll - stake)
-    return {"ok": True, "bankroll": round(bankroll - stake, 2)}
+    return {"ok": True, "bankroll": round(wallet.balance())}

@@ -4,12 +4,25 @@
 const { useState, useEffect } = React;
 
 /* ---------- HUB / GAME LIBRARY ---------- */
-function HubScreen({ onNav, onOpenFormat }) {
+function HubScreen({ onNav, onOpenFormat, onNewRun }) {
   const S = window.SLATE;
   const games = (S.SLATE_GAMES || []).length;
   const contests = S.CONTESTS || [];
   const prizePool = contests.reduce((s, c) => s + (c.prize || 0), 0);
   const topPrize = contests.reduce((m, c) => Math.max(m, c.top || 0), 0);
+  const [w, setW] = useState(null);
+  const [busy, setBusy] = useState(false);
+  function loadW() { fetch('/fantasy/api/wallet').then(r => (r.ok ? r.json() : null)).then(d => { setW(d); if (d && d.balance != null) S.WALLET = d.balance; }).catch(() => {}); }
+  useEffect(loadW, []);
+  const bal = w ? w.balance : S.WALLET;
+  const rec = (w && w.records) || {};
+  const t = rec.tier;
+  const pct = (t && !t.isMax && t.nextGate > t.floor)
+    ? Math.max(3, Math.min(100, Math.round((rec.lifetime - t.floor) / (t.nextGate - t.floor) * 100))) : 100;
+  function restart() {
+    if (busy) return; setBusy(true);
+    fetch('/fantasy/api/wallet/restart', { method: 'POST' }).then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || ''); return; } if (j.balance != null) S.WALLET = j.balance; loadW(); }).catch(() => setBusy(false));
+  }
   return (
     <>
       <TopBar title="Good evening, Player!" sub={`${games} games on tonight's slate`} right={
@@ -35,8 +48,55 @@ function HubScreen({ onNav, onOpenFormat }) {
             <div className="tile"><div className="lbl">Tonight</div><div className="val">{games}</div><div className="sub">games on the slate</div></div>
             <div className="tile"><div className="lbl">Contests</div><div className="val">{contests.length}</div><div className="sub">open to enter</div></div>
             <div className="tile"><div className="lbl">Top prize</div><div className="val">{topPrize > 0 ? S.money(topPrize) : '—'}</div><div className="sub">across all contests</div></div>
-            <div className="tile"><div className="lbl">Bankroll</div><div className="val">{S.money(S.WALLET)}</div><div className="sub">play-money balance</div></div>
+            <div className="tile"><div className="lbl">Bankroll</div><div className="val">{S.money(bal)}</div><div className="sub">one wallet, every game</div></div>
           </div>
+
+          {/* career — you vs yourself */}
+          {w && t && (
+            <>
+              <div className="section-head mt-24"><h2>Your career</h2><button className="btn btn--ghost btn--sm" onClick={onNewRun}>New run</button></div>
+
+              {/* soft landing when busted */}
+              {bal < 5000 && (
+                <div className="card card--pad mb-12" style={{ borderLeft: '4px solid var(--c-amber)' }}>
+                  <div style={{ fontWeight: 800 }}>Back from the felt?</div>
+                  <div className="muted" style={{ fontSize: '.85rem', margin: '4px 0 10px', lineHeight: 1.4 }}>Tapped out — but your <b>{t.name}</b> status is permanent. As a {t.name}, you restart with <b>{S.money(t.startBankroll)}</b>. Climb tiers to come back richer.</div>
+                  <button className="btn btn--brand btn--sm" disabled={busy} onClick={restart}>Restart with {S.money(t.startBankroll)}</button>
+                </div>
+              )}
+
+              {/* status gauge — lifetime drives the tier */}
+              <div className="card card--pad mb-12">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="lbl" style={{ textTransform: 'uppercase', fontSize: '.7rem', letterSpacing: '.06em', color: 'var(--ink-3)', fontWeight: 700 }}>Status</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>{t.name}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div className="lbl" style={{ textTransform: 'uppercase', fontSize: '.7rem', letterSpacing: '.06em', color: 'var(--ink-3)', fontWeight: 700 }}>Lifetime won</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--live)' }}>{S.money(rec.lifetime || 0)}</div>
+                  </div>
+                </div>
+                <div style={{ height: 9, background: 'var(--card-2)', borderRadius: 6, overflow: 'hidden', margin: '14px 0 7px' }}>
+                  <i style={{ display: 'block', height: '100%', width: pct + '%', background: 'linear-gradient(90deg, var(--c-teal), var(--c-violet))' }} />
+                </div>
+                <div className="muted" style={{ fontSize: '.82rem', fontWeight: 700 }}>
+                  {t.isMax ? `Top tier — you're a ${t.name}. First-ballot.` : `${S.money(Math.max(0, t.nextGate - (rec.lifetime || 0)))} to ${t.nextName}`}
+                </div>
+                <div className="muted" style={{ fontSize: '.78rem', marginTop: 6 }}>
+                  Restart stake at {t.name}: <b>{S.money(t.startBankroll)}</b>{!t.isMax ? ` · ${t.nextName} unlocks ${S.money(t.nextStart)}` : ''}
+                </div>
+              </div>
+
+              <div className="tiles">
+                <div className="tile"><div className="lbl">Net P&amp;L</div><div className="val" style={{ color: (rec.net || 0) >= 0 ? 'var(--live)' : 'var(--down)' }}>{(rec.net || 0) >= 0 ? '+' : '−'}{S.money(Math.abs(rec.net || 0))}</div><div className="sub">all-time</div></div>
+                <div className="tile"><div className="lbl">Peak</div><div className="val">{S.money(rec.peak_bankroll || 0)}</div><div className="sub">highest bankroll</div></div>
+                <div className="tile"><div className="lbl">Biggest win</div><div className="val">{S.money(rec.biggest_win || 0)}</div><div className="sub">single payout</div></div>
+                <div className="tile"><div className="lbl">Best streak</div><div className="val">{rec.best_streak || 0}</div><div className="sub">Go Streaking</div></div>
+                <div className="tile"><div className="lbl">Cashes</div><div className="val">{(rec.cashes || 0)}/{(rec.entries || 0)}</div><div className="sub">entries cashed</div></div>
+              </div>
+            </>
+          )}
 
           {/* the game library */}
           <div className="section-head mt-32">
@@ -335,6 +395,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
 
 /* ---------- SLUGGERS (Walk-Back home-run game) ---------- */
 function SluggersScreen({ onNav, onOpenPlayer }) {
+  const S = window.SLATE;
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
@@ -374,6 +435,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
                   <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Season slugger points</div>
                   <div style={{ fontSize: '3.2rem', fontWeight: 900, lineHeight: 1 }}>{d.season}</div>
                   <p style={{ marginTop: 6 }}>HR <b>×4</b> · Walk-Back run <b>×4</b> · RBI <b>×1</b> — the homer plus the runs it brings home.</p>
+                  {d.buyIn ? <p style={{ marginTop: 4, fontSize: '.84rem', opacity: .9 }}>Buy-in {S.money(d.buyIn)}/slate · beat the field to cash{d.entered ? ' · entered ✓' : ''}</p> : null}
                 </div>
               </div>
 
@@ -438,7 +500,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
                       <div key={i} className="lb-row">
                         <div className="lb-rank">{(h.slate_date || '').slice(5)}</div>
                         <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{h.score} pts</b> <span className="dim">vs field {h.fieldAvg != null ? h.fieldAvg : '—'}</span></div>
-                        <div className="lb-pts" style={{ color: (h.fieldAvg != null && h.score >= h.fieldAvg) ? 'var(--live)' : 'var(--ink-3)', fontWeight: 800 }}>{h.fieldAvg != null && h.score >= h.fieldAvg ? 'beat' : ''}</div>
+                        <div className="lb-pts" style={{ color: ((h.payout || 0) - (d.buyIn || 0)) > 0 ? 'var(--live)' : ((h.payout || 0) - (d.buyIn || 0)) < 0 ? 'var(--down)' : 'var(--ink-3)', fontWeight: 800 }}>{((h.payout || 0) - (d.buyIn || 0)) > 0 ? `+${S.money((h.payout || 0) - (d.buyIn || 0))}` : ((h.payout || 0) - (d.buyIn || 0)) < 0 ? `−${S.money((d.buyIn || 0) - (h.payout || 0))}` : 'push'}</div>
                       </div>
                     ))}
                   </div>
@@ -454,6 +516,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
 
 /* ---------- PILOTS (pitching game) ---------- */
 function PilotsScreen({ onNav, onOpenPlayer }) {
+  const S = window.SLATE;
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
@@ -492,6 +555,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
                   <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Season pilot points</div>
                   <div style={{ fontSize: '3.2rem', fontWeight: 900, lineHeight: 1 }}>{d.season}</div>
                   <p style={{ marginTop: 6 }}>K <b>×3</b> · Out <b>×1</b> · ER <b>−2</b> · Quality Start <b>+6</b> · Quality Finish <b>+6</b>.</p>
+                  {d.buyIn ? <p style={{ marginTop: 4, fontSize: '.84rem', opacity: .9 }}>Buy-in {S.money(d.buyIn)}/slate · beat the field to cash{d.entered ? ' · entered ✓' : ''}</p> : null}
                 </div>
               </div>
 
@@ -553,7 +617,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
                       <div key={i} className="lb-row">
                         <div className="lb-rank">{(h.slate_date || '').slice(5)}</div>
                         <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{h.score} pts</b> <span className="dim">vs field {h.fieldAvg != null ? h.fieldAvg : '—'}</span></div>
-                        <div className="lb-pts" style={{ color: (h.fieldAvg != null && h.score >= h.fieldAvg) ? 'var(--live)' : 'var(--ink-3)', fontWeight: 800 }}>{h.fieldAvg != null && h.score >= h.fieldAvg ? 'beat' : ''}</div>
+                        <div className="lb-pts" style={{ color: ((h.payout || 0) - (d.buyIn || 0)) > 0 ? 'var(--live)' : ((h.payout || 0) - (d.buyIn || 0)) < 0 ? 'var(--down)' : 'var(--ink-3)', fontWeight: 800 }}>{((h.payout || 0) - (d.buyIn || 0)) > 0 ? `+${S.money((h.payout || 0) - (d.buyIn || 0))}` : ((h.payout || 0) - (d.buyIn || 0)) < 0 ? `−${S.money((d.buyIn || 0) - (h.payout || 0))}` : 'push'}</div>
                       </div>
                     ))}
                   </div>
@@ -569,6 +633,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
 
 /* ---------- CATEGORY LEAGUES (Roto engine) ---------- */
 function CategoriesScreen({ onNav, onOpenPlayer }) {
+  const S = window.SLATE;
   const [fmt, setFmt] = useState('std5x5');
   const [data, setData] = useState(null);
   const [pool, setPool] = useState(null);
@@ -637,6 +702,7 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
           ) : (
             <>
               <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>{curFmt.blurb}</p>
+              {data.buyIn ? <p className="muted mb-12" style={{ fontSize: '.82rem', fontWeight: 600 }}>Season buy-in {S.money(data.buyIn)} · pays at season's end by final rank{data.entered ? ' · entered ✓' : ''}{data.payout > 0 ? ` · won ${S.money(data.payout)}` : ''}</p> : null}
 
               {st && !editing ? (
                 /* ---- standings ---- */
@@ -729,9 +795,10 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
 
 /* ---------- SPORTSBOOK ---------- */
 function SportsbookScreen({ onNav }) {
+  const S = window.SLATE;
   const [data, setData] = useState(null);
   const [slip, setSlip] = useState(null);   // {game_id, market, side, odds, line, label}
-  const [stake, setStake] = useState(25);
+  const [stake, setStake] = useState(5000);
   const [busy, setBusy] = useState(false);
 
   function load() {
@@ -749,7 +816,7 @@ function SportsbookScreen({ onNav }) {
     if (!slip || busy) return;
     setBusy(true);
     fetch('/fantasy/api/sportsbook/bet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game_id: slip.game_id, market: slip.market, side: slip.side, stake }) })
-      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || 'Bet rejected.'); return; } setSlip(null); load(); })
+      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || 'Bet rejected.'); return; } if (j.bankroll != null) S.WALLET = j.bankroll; setSlip(null); load(); })
       .catch(() => setBusy(false));
   }
 
@@ -776,9 +843,9 @@ function SportsbookScreen({ onNav }) {
             <>
               <div className="hero" style={{ background: 'linear-gradient(135deg, var(--c-amber), var(--c-coral))' }}>
                 <div className="hero__in">
-                  <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Bankroll · units</div>
-                  <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{d.bankroll}</div>
-                  <p style={{ marginTop: 6 }}>{d.record.w}–{d.record.l}{d.record.p ? `–${d.record.p}` : ''} · net <b>{d.record.net > 0 ? '+' : ''}{d.record.net}</b>{d.at_risk ? ` · ${d.at_risk} at risk` : ''}</p>
+                  <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Wallet</div>
+                  <div style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{S.money(d.bankroll)}</div>
+                  <p style={{ marginTop: 6 }}>{d.record.w}–{d.record.l}{d.record.p ? `–${d.record.p}` : ''} · net <b>{d.record.net > 0 ? '+' : '−'}{S.money(Math.abs(d.record.net))}</b>{d.at_risk ? ` · ${S.money(d.at_risk)} at risk` : ''}</p>
                 </div>
               </div>
 
@@ -805,7 +872,7 @@ function SportsbookScreen({ onNav }) {
                     {d.open.map(b => (
                       <div key={b.id} className="lb-row">
                         <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{b.desc}</b> <span className="dim">{od(b.odds)} · {b.matchup}</span></div>
-                        <div className="lb-pts" style={{ fontWeight: 700 }}>{b.stake}u</div>
+                        <div className="lb-pts" style={{ fontWeight: 700 }}>{S.money(b.stake)}</div>
                       </div>
                     ))}
                   </div>
@@ -820,7 +887,7 @@ function SportsbookScreen({ onNav }) {
                       <div key={b.id} className="lb-row">
                         <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{b.desc}</b> <span className="dim">{b.matchup} {b.score ? `(${b.score})` : ''}</span></div>
                         <div className="lb-pts" style={{ color: statusColor(b.status), fontWeight: 800 }}>
-                          {b.status === 'won' ? `+${(b.payout - b.stake).toFixed(0)}` : b.status === 'lost' ? `−${b.stake}` : 'push'}
+                          {b.status === 'won' ? `+${S.money(b.payout - b.stake)}` : b.status === 'lost' ? `−${S.money(b.stake)}` : 'push'}
                         </div>
                       </div>
                     ))}
@@ -840,11 +907,11 @@ function SportsbookScreen({ onNav }) {
             <button className="btn btn--ghost btn--sm" onClick={() => setSlip(null)}>Cancel</button>
           </div>
           <div className="slate-tabs mb-12">
-            {[10, 25, 50, 100].map(v => <Chip key={v} active={stake === v} onClick={() => setStake(v)}>{v}u</Chip>)}
+            {[1000, 5000, 10000, 25000].map(v => <Chip key={v} active={stake === v} onClick={() => setStake(v)}>{S.money(v)}</Chip>)}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div className="dim" style={{ fontWeight: 600, fontSize: '.85rem' }}>Risk {stake}u → win {(stake * (dec(slip.odds) - 1)).toFixed(0)}u</div>
-            <button className="btn btn--brand" disabled={busy || stake > (d ? d.bankroll : 0)} onClick={place}>Place {stake}u</button>
+            <div className="dim" style={{ fontWeight: 600, fontSize: '.85rem' }}>Risk {S.money(stake)} → win {S.money(stake * (dec(slip.odds) - 1))}</div>
+            <button className="btn btn--brand" disabled={busy || stake > (d ? d.bankroll : 0)} onClick={place}>Place {S.money(stake)}</button>
           </div>
         </div>
       )}
@@ -854,6 +921,7 @@ function SportsbookScreen({ onNav }) {
 
 /* ---------- BEST BALL ---------- */
 function BestBallScreen({ onNav, onOpenPlayer }) {
+  const S = window.SLATE;
   const [data, setData] = useState(null);
   const [pool, setPool] = useState(null);
   const [sel, setSel] = useState([]);
@@ -939,6 +1007,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
             /* ---- draft ---- */
             <>
               <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>Draft {slots.h} hitters and {slots.p} pitchers covering every slot. Each slate your best in-position lineup — C, 1B, 2B, 3B, SS, OF, OF + best 2 pitchers — auto-scores, so draft depth at a spot and the hot bat there starts itself.</p>
+              {data.buyIn ? <p className="muted mb-12" style={{ fontSize: '.82rem', fontWeight: 600 }}>Season buy-in {S.money(data.buyIn)} · pays at season's end by final rank{data.entered ? ' · entered ✓' : ''}</p> : null}
               <div className="card card--pad mb-12" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontWeight: 700, fontSize: '.9rem' }}>
                   <span style={{ color: nH === slots.h ? 'var(--live)' : 'var(--ink-2)' }}>Hitters {nH}/{slots.h}</span>
@@ -991,4 +1060,41 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
   );
 }
 
-Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen, CategoriesScreen, SportsbookScreen, BestBallScreen });
+/* ---------- ONBOARDING — pick your player ---------- */
+function OnboardingScreen({ personas, reset, onDone }) {
+  const S = window.SLATE;
+  const [busy, setBusy] = useState(false);
+  function pick(key) {
+    if (busy) return;
+    setBusy(true);
+    fetch('/fantasy/api/onboard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ persona: key, reset: !!reset }) })
+      .then(r => r.json()).then(j => { setBusy(false); if (!j.ok) { window.alert(j.error || 'Could not start.'); return; } if (j.balance != null) S.WALLET = j.balance; onDone && onDone(); })
+      .catch(() => setBusy(false));
+  }
+  return (
+    <div className="app__scroll">
+      <div className="page page--narrow">
+        <div className="hero" style={{ background: 'linear-gradient(135deg, var(--c-violet), var(--c-coral))' }}>
+          <div className="hero__in">
+            <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>{reset ? 'New run' : 'Welcome to CapSpace'}</div>
+            <h1 className="mt-12">Pick your player.</h1>
+            <p>Your starting bankroll — and your whole personality. Lifetime winnings carry your status; it never resets, even when you bust. Choose your poison.</p>
+          </div>
+        </div>
+        <div className="fmt-grid mt-24">
+          {(personas || []).map(p => (
+            <a key={p.key} className="fmt" onClick={() => pick(p.key)} style={{ cursor: 'pointer' }}>
+              <span className="fmt__glow" style={{ background: 'var(--c-coral)' }} />
+              <div className="fmt__name">{p.name}</div>
+              <div className="fmt__desc">{p.blurb}</div>
+              <div className="fmt__foot"><span className="fmt__stat">Starting bankroll {S.money(p.start * 100)}</span></div>
+            </a>
+          ))}
+        </div>
+        {reset && <p className="center muted mt-16" style={{ fontWeight: 600, fontSize: '.82rem' }}>A new run wipes your current bankroll, bets, entries and records.</p>}
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { HubScreen, LobbyScreen, EntriesScreen, FormatTeaser, StreakScreen, SluggersScreen, PilotsScreen, CategoriesScreen, SportsbookScreen, BestBallScreen, OnboardingScreen });

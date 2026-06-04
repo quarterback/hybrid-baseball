@@ -17,7 +17,7 @@ import os
 
 from flask import Blueprint, jsonify, render_template, request
 
-from o27v2 import currency
+from o27v2 import currency, db
 from . import data as slate_data
 from . import contests as dfs
 from . import streak as streakgame
@@ -26,6 +26,7 @@ from . import pitching as pilotgame
 from . import categories as catgame
 from . import sportsbook as book
 from . import bestball as bbgame
+from . import wallet
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _LOG = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def _safe_slate() -> dict | None:
             except Exception:
                 _LOG.exception("CapSpace contest build failed; using mock contests")
             try:
-                blob["WALLET"] = dfs.wallet_balance()
+                blob["WALLET"] = _settle_all()
             except Exception:
                 _LOG.exception("CapSpace wallet read failed")
         return blob
@@ -118,14 +119,61 @@ def api_entries():
     return jsonify(dfs.list_user_entries())
 
 
+def _settle_all() -> int:
+    """Settle every game that pays into the wallet, then return the balance —
+    so one bankroll reflects DFS contests and Sportsbook bets alike."""
+    for fn in (dfs.settle_entries, book.settle_bets, sluggergame.settle,
+               pilotgame.settle, catgame.settle, bbgame.settle):
+        try:
+            fn()
+        except Exception:  # pragma: no cover
+            _LOG.exception("CapSpace settle failed: %s", getattr(fn, "__name__", fn))
+    return wallet.balance()
+
+
 @capspace_bp.route("/api/wallet")
 def api_wallet():
-    """The save's live play-money wallet balance (guilders)."""
+    """The save's live wallet balance + career records + onboarding state."""
     try:
-        return jsonify({"balance": dfs.wallet_balance()})
+        bal = _settle_all()
+        rec = wallet.records()
+        try:
+            rec["best_streak"] = streakgame.status().get("best", 0)
+        except Exception:
+            rec["best_streak"] = 0
+        return jsonify({"balance": bal, "records": rec,
+                        "started": wallet.started(), "personas": wallet.PERSONAS})
     except Exception:  # pragma: no cover
         _LOG.exception("CapSpace wallet failed")
-        return jsonify({"balance": 0})
+        return jsonify({"balance": 0, "records": {}, "started": True, "personas": wallet.PERSONAS})
+
+
+def _reset_run() -> None:
+    """Wipe all CapSpace play state for a fresh run (keeps the league/save)."""
+    conn = db.get_conn()
+    for t in ("cap_wallet", "cap_records", "cap_profile", "sb_bets", "sb_lines",
+              "dfs_entries", "cs_buyins", "slugger_picks", "pilot_picks",
+              "cat_rosters", "bb_roster", "streak_picks"):
+        try:
+            conn.execute(f"DELETE FROM {t}")
+        except Exception:
+            pass
+    conn.commit()
+
+
+@capspace_bp.route("/api/onboard", methods=["POST"])
+def api_onboard():
+    body = request.get_json(silent=True) or {}
+    if body.get("reset"):
+        _reset_run()
+    res = wallet.start(body.get("persona"))
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+@capspace_bp.route("/api/wallet/restart", methods=["POST"])
+def api_wallet_restart():
+    res = wallet.restart()
+    return jsonify(res), (200 if res.get("ok") else 400)
 
 
 @capspace_bp.route("/api/player/<int:player_id>")

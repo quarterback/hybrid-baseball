@@ -28,8 +28,8 @@
   const ZORA_SYMBOL = _R.zoraSymbol || '₳';
 
   const CURRENCIES = [
+    { mode: 'usd',     symbol: '$', name: 'US Dollar',   code: 'USD', sub: 'Default · ƒ100 = $1' },
     { mode: 'guilder', symbol: 'ƒ', name: 'Guilder',     code: 'GLD', sub: 'Canonical · lakh / crore' },
-    { mode: 'usd',     symbol: '$', name: 'US Dollar',   code: 'USD', sub: 'ƒ100 = $1' },
     { mode: 'eur',     symbol: '€', name: 'Euro',        code: 'EUR', sub: '€1 ≈ ƒ108' },
     { mode: 'zora',    symbol: '₳', name: 'Zaryan Zora', code: 'ZRZ', sub: '1 ₳ ≈ $13.50 · strong' },
   ];

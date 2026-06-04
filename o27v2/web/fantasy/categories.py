@@ -28,8 +28,26 @@ import random
 
 from o27v2 import db
 from . import data as slate_data
+from . import buyins
 
 FIELD_SIZE = 48
+SEASON_BUYIN = 5000  # ƒ5,000 per league; pays at season's end by final rank
+
+
+def settle() -> None:
+    """At season's end (no games left to play), cash out each drafted league
+    by its final standing."""
+    if slate_data._slate_date() is not None:
+        return
+    for b in buyins.unsettled("categories"):
+        fk = b["ekey"]
+        fmt = _FMT_BY_KEY.get(fk)
+        roster = get_roster(fk)
+        if not fmt or len(roster) != fmt["h"] + fmt["p"]:
+            buyins.settle_one("categories", fk, 0)
+            continue
+        st = standings(fk, roster)
+        buyins.settle_one("categories", fk, buyins.rank_payout(b["fee"], st["rank"], st["field"]))
 
 
 # --- category library --------------------------------------------------------
@@ -413,6 +431,9 @@ def draft(format_key: str, player_ids: list) -> dict:
     if nh != fmt["h"] or np_ != fmt["p"]:
         return {"ok": False, "error": f"Need exactly {fmt['h']} hitters and {fmt['p']} pitchers "
                                       f"(have {nh}H / {np_}P)."}
+    bi = buyins.enter("categories", format_key, SEASON_BUYIN)  # once per league
+    if not bi.get("ok"):
+        return bi
     conn = db.get_conn()
     conn.execute("DELETE FROM cat_rosters WHERE format_key = ?", (format_key,))
     conn.executemany("INSERT OR IGNORE INTO cat_rosters (format_key, player_id) VALUES (?,?)",
@@ -443,6 +464,9 @@ def state(format_key: str) -> dict:
                     for f in FORMATS],
         "format": fmt["key"], "slots": {"h": fmt["h"], "p": fmt["p"]},
         "roster": roster,
+        "buyIn": SEASON_BUYIN,
+        "entered": bool(buyins.entry("categories", fmt["key"])),
+        "payout": buyins.payout_for("categories", fmt["key"]),
     }
     if len(roster_ids) == fmt["h"] + fmt["p"] and roster_ids:
         out["standings"] = standings(fmt["key"], roster_ids)
