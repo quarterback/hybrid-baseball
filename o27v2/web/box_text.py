@@ -350,13 +350,10 @@ _PIT_HEADER = (
 def _pick_decisions(away_rows: list[dict], home_rows: list[dict],
                     winner_id: int | None,
                     away_team_id: int, home_team_id: int) -> tuple:
-    """Return (winner_pid, loser_pid). Heuristic-only — no data-model change.
-
-    W: last pitcher (by row order, which approximates appearance order) on
-       the winning side who actually recorded an out.
-    L: pitcher on the losing side with the most runs allowed. Ties broken
-       by appearance order (earliest wins → starter takes the L by default).
-    """
+    """Return (winner_pid, loser_pid) via the shared attribution in
+    box_score.decide_pitchers — the one place W/L is decided, so a printed
+    decision always agrees with the season record beside it (no stale
+    '(L, 4-0)')."""
     if winner_id is None:
         return None, None
     if winner_id == away_team_id:
@@ -366,24 +363,16 @@ def _pick_decisions(away_rows: list[dict], home_rows: list[dict],
     else:
         return None, None
 
-    win_pid = None
-    for r in reversed(win_rows):
-        if (r.get("outs_recorded") or 0) > 0:
-            win_pid = r.get("player_id")
-            break
-
-    lose_pid = None
-    if lose_rows:
-        worst = max(lose_rows, key=lambda r: (r.get("runs_allowed") or 0))
-        lose_pid = worst.get("player_id") if (worst.get("runs_allowed") or 0) > 0 else None
-
-    return win_pid, lose_pid
+    from .box_score import decide_pitchers
+    return decide_pitchers(win_rows, lose_rows)
 
 
 def _pitching_block(team_name: str, rows: list[dict],
                     win_pid: int | None, lose_pid: int | None,
                     denom_outs: int,
-                    season_wl: dict | None = None) -> list[str]:
+                    season_wl: dict | None = None,
+                    finisher_pid: int | None = None,
+                    finisher_to: int = 0) -> list[str]:
     head = (
         ((team_name or "").upper() + " PITCHING")[:_PRE_NUM].ljust(_PRE_NUM)
         + _PIT_HEADER
@@ -392,21 +381,24 @@ def _pitching_block(team_name: str, rows: list[dict],
     season_wl = season_wl or {}
 
     def _decorate(nm: str, pid, mark: str) -> str:
-        # "S. Morii (W, 5-3)" — the record is the pitcher's season W-L
-        # through this game, real-newspaper style. Falls back to a bare
-        # "(W)" when no season record is supplied (e.g. tournament boxes).
-        rec = season_wl.get(pid)
-        if rec:
-            return f"{nm} ({mark}, {rec.get('w', 0)}-{rec.get('l', 0)})"
-        return f"{nm} ({mark})"
+        # "S. Morii (W, 5-3)" — the W/L record is the pitcher's season W-L,
+        # real-newspaper style; the finisher tag carries terminal outs,
+        # "(F, 33)". A finisher who also won reads "(W, 5-3) (F, 33)".
+        tags = []
+        if mark:
+            rec = season_wl.get(pid)
+            tags.append(f"{mark}, {rec.get('w', 0)}-{rec.get('l', 0)}"
+                        if rec else mark)
+        if finisher_pid is not None and pid == finisher_pid:
+            tags.append(f"F, {finisher_to}")
+        return nm + "".join(f" ({t})" for t in tags) if tags else nm
 
     for r in rows:
         nm = _short_name(r.get("player_name", ""))
         pid = r.get("player_id")
-        if pid == win_pid:
-            nm = _decorate(nm, pid, "W")
-        elif pid == lose_pid:
-            nm = _decorate(nm, pid, "L")
+        mark = "W" if pid == win_pid else ("L" if pid == lose_pid else "")
+        if mark or (finisher_pid is not None and pid == finisher_pid):
+            nm = _decorate(nm, pid, mark)
 
         bf  = r.get("batters_faced", 0) or 0
         pi  = r.get("pitches", 0) or 0
@@ -478,6 +470,8 @@ def render_box_score(
     weather,  # o27.engine.weather.Weather
     hr_off_pitchers: dict | None = None,
     season_wl: dict | None = None,
+    finisher_pid: int | None = None,
+    finisher_to: int = 0,
 ) -> str:
     rule = "=" * _RULE_WIDTH
 
@@ -509,12 +503,12 @@ def render_box_score(
     lines.append("")
     lines.extend(_pitching_block(
         game.get("away_name", ""), away_pitching, win_pid, lose_pid, pitch_denom,
-        season_wl,
+        season_wl, finisher_pid, finisher_to,
     ))
     lines.append("")
     lines.extend(_pitching_block(
         game.get("home_name", ""), home_pitching, win_pid, lose_pid, pitch_denom,
-        season_wl,
+        season_wl, finisher_pid, finisher_to,
     ))
     pa = _pitching_annotations(away_pitching, home_pitching)
     if pa:

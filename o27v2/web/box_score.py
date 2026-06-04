@@ -34,6 +34,85 @@ RULE_WIDTH = 78
 
 
 # --------------------------------------------------------------------------
+# Win / Loss attribution — the single source of truth
+# --------------------------------------------------------------------------
+# Awarding the starter a win takes a 5-IP minimum, scaled to O27's 27-out
+# half = 12 outs. Every caller (box-score label, season W-L map, game cards)
+# routes through these functions so a printed decision and the (W, x-y)
+# record beside it can never disagree.
+
+SP_OUTS_THRESHOLD = 12
+
+
+def _dec_outs(r: dict) -> int:
+    v = r.get("outs")
+    if v is None:
+        v = r.get("outs_recorded")
+    return int(v or 0)
+
+
+def _dec_er(r: dict) -> int:
+    v = r.get("er")
+    if v is None:
+        v = r.get("runs_allowed")
+    return int(v or 0)
+
+
+def credit_win(rows: Iterable[dict]) -> Optional[int]:
+    """player_id credited with the win on the winning team. `rows` are that
+    team's pitcher appearances in order (starter first). The starter keeps
+    the win with >= SP_OUTS_THRESHOLD outs; otherwise it goes to the most
+    effective reliever — max(outs - ER), tiebreak outs, then earliest."""
+    rows = list(rows)
+    if not rows:
+        return None
+    sp = rows[0]
+    if _dec_outs(sp) >= SP_OUTS_THRESHOLD:
+        return sp.get("player_id")
+    pool = rows[1:] or rows
+    best, best_key = None, None
+    for r in pool:
+        key = (_dec_outs(r) - _dec_er(r), _dec_outs(r))
+        if best is None or key > best_key:
+            best, best_key = r, key
+    return best.get("player_id") if best is not None else None
+
+
+def charge_loss(rows: Iterable[dict]) -> Optional[int]:
+    """player_id charged with the loss on the losing team: most earned runs,
+    tiebreak earliest appearance. Always picks a pitcher when rows exist so
+    the label matches the season L that accumulates beside it."""
+    best, best_er = None, None
+    for r in rows:
+        e = _dec_er(r)
+        if best is None or e > best_er:
+            best, best_er = r, e
+    return best.get("player_id") if best is not None else None
+
+
+def decide_pitchers(win_rows: Iterable[dict],
+                    lose_rows: Iterable[dict]) -> tuple[Optional[int], Optional[int]]:
+    """(win_pid, lose_pid) from the two teams' pitcher rows — the one place
+    W/L is decided, so a box score's label always agrees with the season
+    record printed beside it."""
+    return credit_win(win_rows), charge_loss(lose_rows)
+
+
+def pick_finisher(win_rows: Iterable[dict]) -> Optional[int]:
+    """player_id of the winning team's finisher — the pitcher who recorded
+    terminal outs (entered with a lead, never let it be tied or lost, and
+    finished the game). O27's save-equivalent; at most one per game. A
+    finisher can also be the winning pitcher, so this is independent of
+    credit_win. Reads `terminal_outs` (or `to_game`) off the rows."""
+    best, best_to = None, 0
+    for r in win_rows:
+        to = int(r.get("terminal_outs") or r.get("to_game") or 0)
+        if to > best_to:
+            best, best_to = r, to
+    return best.get("player_id") if best is not None else None
+
+
+# --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
 
@@ -556,11 +635,15 @@ def render_batting_annotations(
 
 def render_pitching_table(team_name: str, rows: Iterable[dict],
                           decisions: Optional[dict[int, str]] = None,
-                          season_wl: Optional[dict] = None) -> str:
+                          season_wl: Optional[dict] = None,
+                          finisher_pid: Optional[int] = None,
+                          finisher_to: int = 0) -> str:
     """Per-team pitching block: TEAM PITCHING, header row, pitcher rows
-    with W/L/S inline by name. When `season_wl` is supplied the decision
+    with W/L/F inline by name. When `season_wl` is supplied the decision
     carries the pitcher's season W-L through this game — '(W, 5-3)' —
-    real-newspaper style."""
+    real-newspaper style. The finisher (O27's save-equivalent) carries his
+    terminal-outs total — '(F, 33)' — and can be the winning pitcher too,
+    so a back-stage starter reads 'Smith (W, 5-3) (F, 33)'."""
     rows = list(rows)
     decisions = decisions or {}
     season_wl = season_wl or {}
@@ -573,12 +656,20 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
         last = _last_name(r.get("player_name") or "")
         pid  = r.get("player_id")
         dec  = decisions.get(pid, "")
+        tags: list[str] = []
         if dec:
             rec = season_wl.get(pid)
-            if rec:
-                head = f"{last} ({dec}, {rec.get('w', 0)}-{rec.get('l', 0)})"
-            else:
-                head = f"{last} ({dec})"
+            tags.append(f"{dec}, {rec.get('w', 0)}-{rec.get('l', 0)}"
+                        if rec else dec)
+        if finisher_pid is not None and pid == finisher_pid:
+            tags.append(f"F, {finisher_to}")
+        if tags:
+            suffix = " " + " ".join(f"({t})" for t in tags)
+            # Keep the decision/finisher record intact; truncate the *name* if
+            # the pair overruns the column. A long-named loser must still read
+            # "(L, 4-1)", never get the record chopped off.
+            name_room = max(1, NAME_POS_WIDTH - 1 - len(suffix))
+            head = last[:name_room] + suffix
         else:
             head = last
         if len(head) > NAME_POS_WIDTH - 1:
@@ -759,6 +850,8 @@ def render_box_score(
     decisions: Optional[dict[int, str]] = None,
     hr_off_pitchers: Optional[dict] = None,
     season_wl: Optional[dict] = None,
+    finisher_pid: Optional[int] = None,
+    finisher_to: int = 0,
 ) -> str:
     rule = "=" * RULE_WIDTH
 
@@ -786,9 +879,11 @@ def render_box_score(
         render_batting_annotations(home_batting, hr_off_pitchers),
         _sub_footnotes_for(home_batting),
         "",
-        render_pitching_table(game.get("away_name", "Away"), away_pitching, decisions, season_wl),
+        render_pitching_table(game.get("away_name", "Away"), away_pitching,
+                              decisions, season_wl, finisher_pid, finisher_to),
         "",
-        render_pitching_table(game.get("home_name", "Home"), home_pitching, decisions, season_wl),
+        render_pitching_table(game.get("home_name", "Home"), home_pitching,
+                              decisions, season_wl, finisher_pid, finisher_to),
         "",
         notes,
         rule,
