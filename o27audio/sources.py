@@ -147,3 +147,118 @@ def _pitching_lines(game_id: int, limit: int = 4) -> list[dict[str, Any]]:
         (game_id, limit),
     )
     return rows
+
+
+# ---------------------------------------------------------------------------
+# League roundup ("sports radio") — Stage 2
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RoundupData:
+    """Material for a league roundup show covering one game-day."""
+
+    date: str
+    season: int
+    slate: list[dict[str, Any]] = field(default_factory=list)
+    standings: list[dict[str, Any]] = field(default_factory=list)
+    hr_leaders: list[dict[str, Any]] = field(default_factory=list)
+    rbi_leaders: list[dict[str, Any]] = field(default_factory=list)
+    k_leaders: list[dict[str, Any]] = field(default_factory=list)
+    transactions: list[dict[str, Any]] = field(default_factory=list)
+
+
+def latest_played_date() -> str | None:
+    row = db.fetchone("SELECT MAX(game_date) AS d FROM games WHERE played = 1")
+    return row["d"] if row and row["d"] else None
+
+
+def load_roundup(date: str | None = None) -> RoundupData:
+    """Assemble a roundup for ``date`` (defaults to the latest played date)."""
+    date = date or latest_played_date()
+    if not date:
+        raise ValueError("no played games yet — nothing to round up")
+
+    season_row = db.fetchone(
+        "SELECT season FROM games WHERE played = 1 AND game_date = ? "
+        "ORDER BY id DESC LIMIT 1",
+        (date,),
+    )
+    season = season_row["season"] if season_row else 1
+
+    slate = db.fetchall(
+        "SELECT g.id, g.home_score, g.away_score, g.super_inning, "
+        "       at.name AS away, at.abbrev AS away_abbrev, at.city AS away_city, "
+        "       ht.name AS home, ht.abbrev AS home_abbrev, ht.city AS home_city, "
+        "       wt.name AS winner "
+        "FROM games g "
+        "JOIN teams at ON at.id = g.away_team_id "
+        "JOIN teams ht ON ht.id = g.home_team_id "
+        "LEFT JOIN teams wt ON wt.id = g.winner_id "
+        "WHERE g.played = 1 AND g.game_date = ? ORDER BY g.id",
+        (date,),
+    )
+
+    standings = db.fetchall(
+        "SELECT name, abbrev, city, division, league, wins, losses "
+        "FROM teams ORDER BY league, division, wins DESC, losses ASC",
+    )
+
+    hr_leaders = _season_bat_leaders(season, "SUM(s.hr)", "hr")
+    rbi_leaders = _season_bat_leaders(season, "SUM(s.rbi)", "rbi")
+    k_leaders = db.fetchall(
+        "SELECT p.name AS name, t.abbrev AS team, SUM(s.k) AS k "
+        "FROM game_pitcher_stats s "
+        "JOIN games g ON g.id = s.game_id "
+        "JOIN players p ON p.id = s.player_id "
+        "JOIN teams t ON t.id = s.team_id "
+        "WHERE g.season = ? GROUP BY s.player_id "
+        "ORDER BY SUM(s.k) DESC LIMIT 5",
+        (season,),
+    )
+
+    transactions = db.fetchall(
+        "SELECT tr.game_date, tr.event_type, tr.detail, "
+        "       t.abbrev AS team, p.name AS player "
+        "FROM transactions tr "
+        "LEFT JOIN teams t ON t.id = tr.team_id "
+        "LEFT JOIN players p ON p.id = tr.player_id "
+        "ORDER BY tr.id DESC LIMIT 12",
+    )
+
+    return RoundupData(
+        date=date, season=season, slate=slate, standings=standings,
+        hr_leaders=hr_leaders, rbi_leaders=rbi_leaders, k_leaders=k_leaders,
+        transactions=transactions,
+    )
+
+
+def _season_bat_leaders(season: int, order_expr: str, key: str,
+                        limit: int = 5) -> list[dict[str, Any]]:
+    return db.fetchall(
+        f"SELECT p.name AS name, t.abbrev AS team, "
+        f"       SUM(s.hr) AS hr, SUM(s.rbi) AS rbi, SUM(s.hits) AS h, "
+        f"       SUM(s.runs) AS r, {order_expr} AS sort_val "
+        f"FROM game_batter_stats s "
+        f"JOIN games g ON g.id = s.game_id "
+        f"JOIN players p ON p.id = s.player_id "
+        f"JOIN teams t ON t.id = s.team_id "
+        f"WHERE g.season = ? GROUP BY s.player_id "
+        f"ORDER BY {order_expr} DESC LIMIT ?",
+        (season, limit),
+    )
+
+
+def pick_game_of_the_day(date: str | None = None) -> int | None:
+    """The most broadcast-worthy game on ``date`` — Super-Innings first, then
+    most total runs, then closest. Used by the auto-generate worker."""
+    date = date or latest_played_date()
+    if not date:
+        return None
+    row = db.fetchone(
+        "SELECT id FROM games WHERE played = 1 AND game_date = ? "
+        "ORDER BY super_inning DESC, (home_score + away_score) DESC, "
+        "         ABS(home_score - away_score) ASC LIMIT 1",
+        (date,),
+    )
+    return row["id"] if row else None
+

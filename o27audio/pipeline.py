@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import config, manifest, render, script as script_mod, tts
-from .sources import GameData, load_game
+from .sources import GameData, RoundupData, load_game, load_roundup
 
 
 def current_save_key() -> str:
@@ -103,3 +103,57 @@ def generate_game_audio(game_id: int, **kwargs) -> dict[str, Any]:
     save_key = kwargs.pop("save_key", None) or current_save_key()
     game = gather(game_id)
     return produce(game, save_key=save_key, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Roundup ("sports radio") — Stage 2
+# ---------------------------------------------------------------------------
+
+def gather_roundup(date: str | None = None) -> RoundupData:
+    return load_roundup(date)
+
+
+def produce_roundup(
+    roundup: RoundupData,
+    *,
+    save_key: str,
+    stub_script: bool = False,
+    stub_tts: bool = False,
+    model: str | None = None,
+    gap_ms: int | None = None,
+) -> dict[str, Any]:
+    """Run script → TTS → stitch → manifest for a roundup show."""
+    ref = f"{save_key}:{roundup.date}"
+    used_model = "stub" if stub_script else (model or config.SCRIPT_MODEL)
+    manifest.begin("roundup", ref, league=save_key, model=used_model)
+    try:
+        usage = None
+        if stub_script:
+            turns = script_mod.stub_roundup_script(roundup)
+        else:
+            turns, usage = script_mod.generate_roundup_script(roundup, model)
+        if not turns:
+            raise RuntimeError("no roundup turns produced")
+
+        segments, char_count = tts.synth_turns(turns, stub=stub_tts)
+        wav_bytes = render.concat_wavs(segments, gap_ms)
+        duration = render.wav_duration_secs(wav_bytes)
+        paths = render.write_clip(wav_bytes, save_key, f"roundup_{roundup.date}")
+
+        est_cost = estimate_cost(char_count, usage)
+        result = {
+            "ref": ref, "wav_path": paths["wav"], "mp3_path": paths["mp3"],
+            "duration_s": round(duration, 1), "n_turns": len(turns),
+            "char_count": char_count, "est_cost_usd": est_cost,
+            "model": used_model, "usage": usage,
+        }
+        manifest.record(
+            "roundup", ref, league=save_key, wav_path=paths["wav"],
+            mp3_path=paths["mp3"], duration_s=result["duration_s"],
+            n_turns=len(turns), char_count=char_count, est_cost_usd=est_cost,
+            model=used_model, status="ok", script=turns,
+        )
+        return result
+    except Exception as e:  # noqa: BLE001
+        manifest.fail("roundup", ref, f"{type(e).__name__}: {e}")
+        raise

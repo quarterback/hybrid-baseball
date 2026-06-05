@@ -428,6 +428,16 @@ def cmd_runserver(config_id: str = "30teams"):
     else:
         print(f"Existing league found ({existing['n']} teams) — skipping seed.")
 
+    # o27audio auto-generate worker — narrates new game-days automatically.
+    # Enabled by default in cheap "roundup" mode; O27AUDIO_AUTOGEN=off disables,
+    # =full also narrates the day's top game. Only runs when actually serving.
+    try:
+        from o27audio.worker import start as _start_audio_autogen
+        if _start_audio_autogen():
+            print("  Audio:      o27audio auto-generate worker started")
+    except Exception as _e:  # never let audio break the server boot
+        print(f"  Audio:      auto-generate worker not started ({_e})")
+
     port = int(os.environ.get("PORT", 5001))
     print(f"Starting O27v2 web app on port {port}…")
     print(f"  Dashboard:  http://localhost:{port}/")

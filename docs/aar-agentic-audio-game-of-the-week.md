@@ -2,10 +2,16 @@
 
 **Date completed:** 2026-06-05
 **Branch:** `claude/agentic-audio-sports-app-2o2jM` (PR #212)
-**Status:** **Stage 1 shipped** — a working, in-app two-host audio broadcast of
-any played O27 game. Built as a separate `o27audio/` service wired into the live
-web app. Live API calls (Claude + OpenAI TTS) are first exercised on deploy;
-everything around them is verified offline.
+**Status:** **Stages 1 + 2 shipped, plus an auto-generate worker.** In-app
+two-host broadcasts of (1) a single game ("🎧 Listen") and (2) a daily league
+roundup ("📻 Radio"), with a background worker that auto-narrates new game-days.
+Built as a separate `o27audio/` service wired into the live web app. Live API
+calls (Claude + OpenAI TTS) are first exercised on deploy; everything around them
+is verified offline.
+
+> **Update (same session):** the "what I did NOT do" items below — the roundup
+> show and the auto-generate worker — were subsequently built. See the
+> *Stage 2 + worker* section near the end.
 
 ---
 
@@ -170,6 +176,38 @@ here — a known sandbox limitation). So validation was offline:
 - Did **not** add an automated test under `tests/` — validation was manual
   (offline harness). A small test that exercises `pipeline.produce(..., stub=True)`
   would be a cheap follow-up.
+
+## Stage 2 + worker (built after the initial report)
+
+**Roundup show (`/audio/roundup`, "📻 Radio" in the nav).** Same script→TTS→
+stitch path, different inputs: the day's slate, division leaders (`teams`
+wins/losses), season HR/RBI/K leaders (aggregated from `game_*_stats` joined to
+`games` for the current season), and the `transactions` wire. New manifest kind
+`roundup`, keyed `save_key:date`. The blueprint was refactored to generic
+`_launch`/`_status_payload`/`_serve_audio` helpers + one shared player template,
+so game and roundup share a single mechanism.
+
+**Auto-generate worker (`o27audio/worker.py`).** A daemon thread started by
+`runserver` that watches the active save and, once a sim batch settles
+(debounced: the latest game-day must be stable across one poll interval),
+auto-generates the roundup for that day — and, in `full` mode, the day's single
+most broadcast-worthy game (`pick_game_of_the_day`: Super-Innings → most runs →
+closest). **Cost guards:** mode via `O27AUDIO_AUTOGEN` (`roundup` default /
+`full` / `off`); one roundup per *new* date (never regenerated); a failed render
+advances the watermark so a missing key can't hot-loop. Default `roundup` mode is
+~$0.20–$0.60 per in-game day; `full` adds one game (~$0.50–$1).
+
+**Validation (offline).** Roundup dry-run assembles a correct digest (slate,
+division leaders, leaders, transactions). Full stub run produced a valid 24s
+roundup WAV. The worker's `_tick` was driven directly: tick 1 observes/debounces,
+tick 2 generates (roundup + day's top game in `full`), tick 3 no-ops — verified
+twice cleanly. The refactored blueprint was re-tested through the Flask shim for
+**both** game and roundup: generate → ok → audio served → player renders.
+
+**Still not done:** the two live API calls remain unexercised here (no sandbox
+network); the worker has no admin UI/kill-switch beyond the env var; and there's
+still no automated `tests/` coverage (a `pipeline.produce*(..., stub=True)` test
+is the obvious cheap follow-up).
 
 ## Recommended next steps
 

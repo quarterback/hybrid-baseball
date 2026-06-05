@@ -1,81 +1,70 @@
 """Flask blueprint — the in-app, phone-friendly audio UI.
 
-A "🎧 Listen" button on the game page links here. The page generates the
-broadcast on demand (Claude + OpenAI TTS run on a background thread so the
-request never blocks) and shows an ``<audio>`` player when it's ready.
+Two surfaces, one mechanism:
+  - Game of the Week: "🎧 Listen" on a game page → ``/audio/game/<id>``.
+  - League roundup:    "📻 Radio" in the nav      → ``/audio/roundup``.
 
-Registered in o27v2/web/app.py alongside the gazette/almanac blueprints.
-Kept self-contained: its own routes, its own template string, its own sidecar
+Both generate on a background thread (the request never blocks), expose a
+status the page polls, and serve the finished clip with range support so phones
+can scrub. Self-contained: own routes, own player template, own sidecar
 manifest — nothing here touches the sim or the core schema.
 """
 from __future__ import annotations
 
 import os
 import threading
+from typing import Callable
 
 from flask import (
     Blueprint, abort, jsonify, render_template_string, request, send_file,
 )
 
-from . import config, manifest, pipeline
+from . import config, manifest, pipeline, sources
 
 audio_bp = Blueprint("audio", __name__, url_prefix="/audio")
 
-# In-flight guard so a double-tap doesn't launch two renders for one game.
+# In-flight guard so a double-tap doesn't launch two renders for one ref.
 _inflight: set[str] = set()
 _lock = threading.Lock()
 
 
-def _ref(game_id: int) -> tuple[str, str]:
-    save_key = pipeline.current_save_key()
-    return save_key, f"{save_key}:{game_id}"
+def _save_key() -> str:
+    return pipeline.current_save_key()
 
 
-def _worker(game, save_key: str, stub: bool) -> None:
-    ref = f"{save_key}:{game.game_id}"
-    try:
-        pipeline.produce(game, save_key=save_key, stub_script=stub, stub_tts=stub)
-    except Exception:
-        # produce() already recorded the failure in the manifest.
-        pass
-    finally:
-        with _lock:
-            _inflight.discard(ref)
+def _stub_requested() -> bool:
+    return request.args.get("stub") in ("1", "true", "yes")
 
 
-@audio_bp.post("/game/<int:game_id>/generate")
-def generate(game_id: int):
-    """Kick off (or no-op if already done/running) a render. Returns JSON."""
-    save_key, ref = _ref(game_id)
-    existing = manifest.get("game", ref)
+def _launch(kind: str, ref: str, league: str, produce: Callable[[bool], None]):
+    """Shared generate path. ``produce(stub)`` runs the slow pipeline (it does
+    its own manifest begin/record/fail)."""
+    existing = manifest.get(kind, ref)
     if existing and existing["status"] == "ok":
         return jsonify({"status": "ok"})
-
-    # Gather synchronously (fast SELECTs) so we validate the game and pin the
-    # data before the active save can change under us.
-    try:
-        game = pipeline.gather(game_id)
-    except ValueError as e:
-        return jsonify({"status": "error", "error": str(e)}), 404
-
-    stub = request.args.get("stub") in ("1", "true", "yes")
+    stub = _stub_requested()
     with _lock:
         if ref in _inflight:
             return jsonify({"status": "generating"})
         _inflight.add(ref)
-    manifest.begin("game", ref, league=save_key,
+    manifest.begin(kind, ref, league=league,
                    model="stub" if stub else config.SCRIPT_MODEL)
-    threading.Thread(
-        target=_worker, args=(game, save_key, stub),
-        name=f"audio-{ref}", daemon=True,
-    ).start()
+
+    def _bg():
+        try:
+            produce(stub)
+        except Exception:
+            pass  # produce() already recorded the failure
+        finally:
+            with _lock:
+                _inflight.discard(ref)
+
+    threading.Thread(target=_bg, name=f"audio-{ref}", daemon=True).start()
     return jsonify({"status": "generating"})
 
 
-@audio_bp.get("/game/<int:game_id>/status")
-def status(game_id: int):
-    _, ref = _ref(game_id)
-    row = manifest.get("game", ref)
+def _status_payload(kind: str, ref: str, audio_url: str):
+    row = manifest.get(kind, ref)
     if not row:
         return jsonify({"status": "none"})
     return jsonify({
@@ -85,21 +74,17 @@ def status(game_id: int):
         "n_turns": row.get("n_turns"),
         "est_cost_usd": row.get("est_cost_usd"),
         "model": row.get("model"),
-        "audio_url": (f"/audio/game/{game_id}/audio"
-                      if row["status"] == "ok" else None),
+        "audio_url": audio_url if row["status"] == "ok" else None,
     })
 
 
-@audio_bp.get("/game/<int:game_id>/audio")
-def audio(game_id: int):
-    _, ref = _ref(game_id)
-    row = manifest.get("game", ref)
+def _serve_audio(kind: str, ref: str):
+    row = manifest.get(kind, ref)
     if not row or row["status"] != "ok":
         abort(404)
     path = row.get("mp3_path") or row.get("wav_path")
     if not path or not os.path.exists(path):
         abort(404)
-    # Defence in depth: only serve from inside our output dir.
     if not os.path.abspath(path).startswith(os.path.abspath(config.OUT_DIR)):
         abort(403)
     mimetype = "audio/mpeg" if path.endswith(".mp3") else "audio/wav"
@@ -107,23 +92,120 @@ def audio(game_id: int):
                      download_name=os.path.basename(path))
 
 
-@audio_bp.get("/game/<int:game_id>")
-def player(game_id: int):
-    """Self-contained mobile player page."""
+# --- Game of the Week ------------------------------------------------------
+
+def _game_ref(game_id: int) -> tuple[str, str]:
+    sk = _save_key()
+    return sk, f"{sk}:{game_id}"
+
+
+@audio_bp.post("/game/<int:game_id>/generate")
+def game_generate(game_id: int):
+    sk, ref = _game_ref(game_id)
     try:
         game = pipeline.gather(game_id)
-        title = (f"{game.away['city']} {game.away['name']} {game.away_score} "
-                 f"@ {game.home['city']} {game.home['name']} {game.home_score}")
-        subtitle = game.game_date
+    except ValueError as e:
+        return jsonify({"status": "error", "error": str(e)}), 404
+    return _launch("game", ref, sk,
+                   lambda stub: pipeline.produce(
+                       game, save_key=sk, stub_script=stub, stub_tts=stub))
+
+
+@audio_bp.get("/game/<int:game_id>/status")
+def game_status(game_id: int):
+    _, ref = _game_ref(game_id)
+    return _status_payload("game", ref, f"/audio/game/{game_id}/audio")
+
+
+@audio_bp.get("/game/<int:game_id>/audio")
+def game_audio(game_id: int):
+    _, ref = _game_ref(game_id)
+    return _serve_audio("game", ref)
+
+
+@audio_bp.get("/game/<int:game_id>")
+def player(game_id: int):
+    try:
+        g = pipeline.gather(game_id)
+        title = (f"{g.away['city']} {g.away['name']} {g.away_score} "
+                 f"@ {g.home['city']} {g.home['name']} {g.home_score}")
+        subtitle = f"O27 Game of the Week · {g.game_date}"
     except ValueError as e:
         title, subtitle = "Game not available", str(e)
-    _, ref = _ref(game_id)
+    _, ref = _game_ref(game_id)
     row = manifest.get("game", ref)
-    initial = row["status"] if row else "none"
     return render_template_string(
-        _PLAYER_HTML, game_id=game_id, title=title, subtitle=subtitle,
-        initial=initial,
+        _PLAYER_HTML, title=title, subtitle=subtitle,
+        generate_url=f"/audio/game/{game_id}/generate",
+        status_url=f"/audio/game/{game_id}/status",
+        back_url=f"/game/{game_id}", back_label="Back to box score",
+        initial=row["status"] if row else "none",
+        cta="Generate broadcast",
     )
+
+
+# --- League roundup --------------------------------------------------------
+
+def _roundup_ref(date: str) -> tuple[str, str]:
+    sk = _save_key()
+    return sk, f"{sk}:{date}"
+
+
+def _resolve_date() -> str | None:
+    return request.args.get("date") or sources.latest_played_date()
+
+
+@audio_bp.post("/roundup/generate")
+def roundup_generate():
+    date = _resolve_date()
+    if not date:
+        return jsonify({"status": "error", "error": "no played games yet"}), 404
+    sk, ref = _roundup_ref(date)
+    try:
+        rd = pipeline.gather_roundup(date)
+    except ValueError as e:
+        return jsonify({"status": "error", "error": str(e)}), 404
+    return _launch("roundup", ref, sk,
+                   lambda stub: pipeline.produce_roundup(
+                       rd, save_key=sk, stub_script=stub, stub_tts=stub))
+
+
+@audio_bp.get("/roundup/status")
+def roundup_status():
+    date = _resolve_date()
+    if not date:
+        return jsonify({"status": "none"})
+    _, ref = _roundup_ref(date)
+    return _status_payload("roundup", ref, f"/audio/roundup/audio?date={date}")
+
+
+@audio_bp.get("/roundup/audio")
+def roundup_audio():
+    date = _resolve_date()
+    if not date:
+        abort(404)
+    _, ref = _roundup_ref(date)
+    return _serve_audio("roundup", ref)
+
+
+@audio_bp.get("/roundup")
+def roundup_player():
+    date = _resolve_date()
+    if not date:
+        return render_template_string(
+            _PLAYER_HTML, title="No games yet",
+            subtitle="Sim some games, then come back for the roundup.",
+            generate_url="", status_url="", back_url="/",
+            back_label="Back to scores", initial="none", cta="Generate roundup")
+    _, ref = _roundup_ref(date)
+    row = manifest.get("roundup", ref)
+    return render_template_string(
+        _PLAYER_HTML, title=f"League Roundup — {date}",
+        subtitle="O27 around the league",
+        generate_url=f"/audio/roundup/generate?date={date}",
+        status_url=f"/audio/roundup/status?date={date}",
+        back_url="/", back_label="Back to scores",
+        initial=row["status"] if row else "none", cta="Generate roundup")
 
 
 _PLAYER_HTML = """<!doctype html>
@@ -148,15 +230,16 @@ _PLAYER_HTML = """<!doctype html>
 </style></head>
 <body>
   <h1>🎧 {{ title }}</h1>
-  <div class="sub">O27 Game of the Week · {{ subtitle }}</div>
+  <div class="sub">{{ subtitle }}</div>
 
-  <button id="gen">Generate broadcast</button>
+  {% if generate_url %}<button id="gen">{{ cta }}</button>{% endif %}
   <div id="player"></div>
   <div class="msg" id="msg"></div>
-  <a class="back" href="/game/{{ game_id }}">&larr; Back to box score</a>
+  <a class="back" href="{{ back_url }}">&larr; {{ back_label }}</a>
 
 <script>
-const GID = {{ game_id }};
+const GEN = {{ generate_url | tojson }};
+const STAT = {{ status_url | tojson }};
 const btn = document.getElementById('gen');
 const msg = document.getElementById('msg');
 const player = document.getElementById('player');
@@ -164,36 +247,36 @@ const player = document.getElementById('player');
 function showPlayer(url) {
   player.innerHTML =
     '<audio controls autoplay preload="auto" src="' + url + '"></audio>';
-  btn.style.display = 'none';
+  if (btn) btn.style.display = 'none';
   msg.textContent = '';
 }
-function showError(t) { msg.className = 'msg err'; msg.textContent = t || 'Something went wrong.'; btn.disabled = false; btn.textContent = 'Try again'; }
-
+function showError(t) {
+  msg.className = 'msg err'; msg.textContent = t || 'Something went wrong.';
+  if (btn) { btn.disabled = false; btn.textContent = 'Try again'; }
+}
 async function poll() {
-  const r = await fetch('/audio/game/' + GID + '/status');
-  const d = await r.json();
+  const r = await fetch(STAT); const d = await r.json();
   if (d.status === 'ok') { showPlayer(d.audio_url); return; }
   if (d.status === 'error') { showError(d.error); return; }
   if (d.status === 'generating') {
     msg.className = 'msg';
-    msg.textContent = 'Calling the game… this takes a minute.';
+    msg.textContent = 'On the air… this takes a minute.';
     setTimeout(poll, 2500); return;
   }
-  // 'none' — nothing yet
 }
-
-btn.addEventListener('click', async () => {
+if (btn) btn.addEventListener('click', async () => {
   btn.disabled = true; btn.textContent = 'Working…';
   msg.className = 'msg'; msg.textContent = 'Warming up the booth…';
-  const r = await fetch('/audio/game/' + GID + '/generate', {method: 'POST'});
-  const d = await r.json();
+  const r = await fetch(GEN, {method: 'POST'}); const d = await r.json();
   if (d.status === 'error') { showError(d.error); return; }
   poll();
 });
 
-// If a clip already exists (or is mid-render), reflect that on load.
 const INITIAL = {{ initial | tojson }};
-if (INITIAL === 'ok') { poll(); }
-else if (INITIAL === 'generating') { btn.disabled = true; btn.textContent = 'Working…'; poll(); }
+if (STAT && INITIAL === 'ok') { poll(); }
+else if (STAT && INITIAL === 'generating') {
+  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  poll();
+}
 </script>
 </body></html>"""
