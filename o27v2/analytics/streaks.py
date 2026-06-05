@@ -388,17 +388,19 @@ def double_digit_k_streaks(top_n: int = 10, team_ids=None,
     )
 
 
-def scoreless_innings_streaks(top_n: int = 10, team_ids=None,
-                              min_outs: int = 9) -> list[dict]:
-    """Longest run of innings across consecutive scoreless appearances.
+def scoreless_outs_streaks(top_n: int = 10, team_ids=None,
+                           min_outs: int = 9) -> list[dict]:
+    """Longest run of OUTS across consecutive scoreless appearances.
 
-    Appearances are taken in date order per pitcher. A run extends through
-    every appearance that allows no runs (earned or unearned), accumulating
-    innings (outs / 3); the first appearance to allow a run ends it. Because
-    runs are charged at the appearance level (not per inning), an outing that
-    surrenders a run contributes 0 to the streak rather than its clean
-    fraction — a deliberate, slightly conservative simplification. Only runs
-    of >= `min_outs` (default one full inning... 9 outs = 3 IP) are returned.
+    O27 has no innings — one continuous 27-out half — so this is the native
+    "longest stretch without allowing a run," measured in outs (the
+    Hershiser-style scoreless streak, de-innings'd). Appearances are taken in
+    date order per pitcher; a run extends through every appearance that allows
+    no runs (earned or unearned), accumulating outs, and the first appearance
+    to surrender a run ends it. Because runs are charged at the appearance
+    level, an outing that allows a run contributes 0 rather than its clean
+    fraction — a deliberate, slightly conservative simplification. Only runs of
+    >= `min_outs` outs (default 9 = a third of a half) are returned.
     `team_ids` scopes to one league.
     """
     rows = db.fetchall(
@@ -442,8 +444,6 @@ def scoreless_innings_streaks(top_n: int = 10, team_ids=None,
                 "team_id":     info.get("team_id"),
                 "team_abbrev": info.get("abbrev", ""),
                 "outs":        best,
-                "ip":          round(best / 3.0, 1),
-                "ip_display":  f"{best // 3}.{best % 3}",
                 "start_date":  best_start["game_date"] if best_start else None,
                 "end_date":    best_end["game_date"] if best_end else None,
             })

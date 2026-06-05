@@ -57,7 +57,7 @@
 </div>
 {% endmacro %}
 
-{# Scoreless-innings streak (value shown as IP). #}
+{# Scoreless-outs streak (O27's innings-free run-prevention streak). #}
 {% macro scoreless_card(title, rows, col='col-lg-4 col-md-6') %}
 <div class="{{ col }}">
   <div class="panel">
@@ -66,7 +66,7 @@
     <table class="table dense-table mb-0">
       <thead><tr>
         <th style="width:22px"></th><th>Player</th><th></th>
-        <th class="num">IP</th><th class="text-secondary">Span</th>
+        <th class="num" title="Consecutive outs recorded without allowing a run">Outs</th><th class="text-secondary">Span</th>
       </tr></thead>
       <tbody>
         {% for r in rows %}
@@ -74,7 +74,7 @@
           <td class="text-secondary num">{{ loop.index }}</td>
           <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
           <td class="team-abbrev">{{ r.team_abbrev }}</td>
-          <td class="num fw-bold">{{ r.ip_display }}</td>
+          <td class="num fw-bold">{{ r.outs }}</td>
           <td class="text-secondary small">{{ r.start_date }} → {{ r.end_date }}</td>
         </tr>
         {% endfor %}
@@ -174,15 +174,15 @@
 </div>
 <div class="row g-3 mb-3">
   {{ consec_card('Double-Digit K Starts', streaks.k_starts, 'GS') }}
-  {{ scoreless_card('Scoreless-Innings Streak', streaks.scoreless) }}
+  {{ scoreless_card('Scoreless-Outs Streak', streaks.scoreless) }}
   <div class="col-lg-4 col-md-6">
     <div class="panel">
       <div class="panel-head"><span>About these streaks</span></div>
       <div class="panel-body text-secondary small">
         Streaks read from per-game box lines (regulation only). A no-PA day
-        carries a streak without extending it. Scoreless runs accumulate
-        innings across consecutive run-free appearances; the outing that
-        allows a run ends the run.
+        carries a streak without extending it. The scoreless streak counts
+        consecutive OUTS recorded without allowing a run across appearances
+        (O27 has no innings); the outing that allows a run ends it.
       </div>
     </div>
   </div>
