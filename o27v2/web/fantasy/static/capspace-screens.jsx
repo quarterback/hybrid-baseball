@@ -296,6 +296,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
+  const [posFilter, setPosFilter] = useState(null);
 
   function load() {
     fetch('/fantasy/api/streak').then(r => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null));
@@ -312,7 +313,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
 
   const d = data;
   const pool = d ? (d.pool || []) : [];
-  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || p.pos === posFilter));
   const resColor = r => r === 'hit' ? 'var(--live)' : r === 'miss' ? 'var(--down)' : 'var(--ink-3)';
   const resLabel = r => r === 'hit' ? 'Hit' : r === 'miss' ? 'Miss' : r === 'pending' ? 'Live' : '—';
 
@@ -353,6 +354,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
                 </div>
               ) : (
                 <>
+                  <PosFilter value={posFilter} onChange={setPosFilter} />
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search hitters…" value={q} onChange={e => setQ(e.target.value)} /></div>
                   <div className="card" style={{ overflow: 'hidden' }}>
                     {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
@@ -401,6 +403,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
+  const [posFilter, setPosFilter] = useState(null);
 
   function load() {
     fetch('/fantasy/api/sluggers').then(r => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null));
@@ -419,7 +422,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
   const ys = d && d.your_slate;
   const picks = ys ? ys.picks : [];
   const pool = d ? (d.pool || []) : [];
-  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || p.pos === posFilter));
   const slotsLeft = d ? (d.max - (d.picked || 0)) : 0;
 
   return (
@@ -473,6 +476,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
               ) : slotsLeft > 0 ? (
                 <>
                   <div className="muted mb-12" style={{ fontSize: '.85rem', fontWeight: 600 }}>{slotsLeft} slot{slotsLeft > 1 ? 's' : ''} left · sorted by power</div>
+                  <PosFilter value={posFilter} onChange={setPosFilter} />
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search hitters…" value={q} onChange={e => setQ(e.target.value)} /></div>
                   <div className="card" style={{ overflow: 'hidden' }}>
                     {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
@@ -523,6 +527,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
+  const [posFilter, setPosFilter] = useState(null);
 
   function load() {
     fetch('/fantasy/api/pilots').then(r => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null));
@@ -541,7 +546,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
   const ys = d && d.your_slate;
   const picks = ys ? ys.picks : [];
   const pool = d ? (d.pool || []) : [];
-  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || p.pos === posFilter));
   const slotsLeft = d ? (d.max - (d.picked || 0)) : 0;
 
   return (
@@ -644,6 +649,7 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
   const [sel, setSel] = useState([]);
   const [editing, setEditing] = useState(false);
   const [side, setSide] = useState('h');
+  const [posFilter, setPosFilter] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -687,7 +693,9 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
   const onlyOneSide = slots.h === 0 || slots.p === 0;
   const showSide = onlyOneSide ? (slots.p === 0 ? 'h' : 'p') : side;
   const list = pool ? (showSide === 'p' ? pool.pitchers : pool.hitters) : [];
-  const shown = q.trim() ? list.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : list;
+  const shown = list.filter(p =>
+    (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) &&
+    (showSide === 'p' || !posFilter || p.pos === posFilter));
   const rankColor = (r, field) => r === 1 ? 'var(--live)' : r <= Math.ceil(field / 3) ? 'var(--c-teal)' : r >= field - Math.ceil(field / 3) ? 'var(--down)' : 'var(--ink-2)';
 
   return (
@@ -768,6 +776,16 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
                     <div className="slate-tabs mb-12">
                       <Chip active={showSide === 'h'} onClick={() => setSide('h')}>Hitters</Chip>
                       <Chip active={showSide === 'p'} onClick={() => setSide('p')}>Pitchers</Chip>
+                    </div>
+                  )}
+                  {showSide === 'h' && (
+                    <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                      <span className="dim" style={{ fontSize: '.74rem', fontWeight: 700 }}>Filter:</span>
+                      {['C', '1B', '2B', '3B', 'SS', 'OF'].map(p => {
+                        const on = posFilter === p;
+                        return <button key={p} onClick={() => setPosFilter(on ? null : p)} style={{ fontSize: '.76rem', fontWeight: 800, padding: '4px 10px', borderRadius: 12, cursor: 'pointer', background: on ? 'var(--ink)' : 'var(--card-2)', color: on ? '#fff' : 'var(--ink-3)', border: '1px solid var(--line)' }}>{p}</button>;
+                      })}
+                      {posFilter && <button onClick={() => setPosFilter(null)} style={{ fontSize: '.74rem', fontWeight: 700, padding: '4px 8px', borderRadius: 12, cursor: 'pointer', background: 'none', border: 0, color: 'var(--brand)' }}>Clear</button>}
                     </div>
                   )}
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder={'Search ' + (showSide === 'p' ? 'pitchers' : 'hitters') + '…'} value={q} onChange={e => setQ(e.target.value)} /></div>
@@ -907,7 +925,7 @@ function SportsbookScreen({ onNav }) {
 
       {/* bet slip */}
       {slip && (
-        <div className="betslip" style={{ position: 'sticky', bottom: 0, left: 0, right: 0, background: 'var(--card)', borderTop: '1px solid var(--line-2)', padding: '14px 18px', boxShadow: '0 -6px 18px rgba(0,0,0,.12)' }}>
+        <div className="betslip" style={{ position: 'fixed', bottom: 'calc(68px + env(safe-area-inset-bottom))', left: 0, right: 0, zIndex: 60, background: 'var(--card)', borderTop: '1px solid var(--line-2)', padding: '14px 18px', boxShadow: '0 -8px 24px rgba(0,0,0,.18)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <div style={{ fontWeight: 800 }}>{slip.label} <span className="dim">{od(slip.odds)}</span></div>
             <button className="btn btn--ghost btn--sm" onClick={() => setSlip(null)}>Cancel</button>

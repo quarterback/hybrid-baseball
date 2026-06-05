@@ -246,10 +246,13 @@ def _calibrate_salaries(players: list[dict]) -> None:
             p["salary"] = int(usd * _GUILDER_PER_USD)     # store as guilders
 
 
-def build_slate_data() -> dict | None:
-    """Build the real CapSpace data blob, or None if the save has no games
-    (the front-end then falls back to its bundled mock data)."""
-    slate_date = _slate_date()
+def build_slate_data(slate_date: str | None = None) -> dict | None:
+    """Build the real CapSpace data blob for a slate (defaults to the current
+    next-unplayed slate), or None if the save has no games (the front-end then
+    falls back to its bundled mock data). Passing an explicit date lets a
+    contest re-derive its own slate's pool even after the slate has advanced."""
+    if slate_date is None:
+        slate_date = _slate_date()
     if not slate_date:
         return None
 

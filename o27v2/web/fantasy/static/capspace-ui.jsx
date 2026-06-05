@@ -297,4 +297,19 @@ function HowTo({ k }) {
   );
 }
 
-Object.assign(window, { Icon, Btn, Tag, Chip, PlayerMark, Spark, AppShell, TopBar, CurrencySelector, CurrencyCtx, SpaceMascot, BetaSeal, HowTo });
+/* ---------- POSITION FILTER — tappable position chips ---------- */
+function PosFilter({ value, onChange, positions }) {
+  const ps = positions || ['C', '1B', '2B', '3B', 'SS', 'OF'];
+  return (
+    <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+      <span className="dim" style={{ fontSize: '.74rem', fontWeight: 700 }}>Filter:</span>
+      {ps.map(p => {
+        const on = value === p;
+        return <button key={p} onClick={() => onChange(on ? null : p)} style={{ fontSize: '.76rem', fontWeight: 800, padding: '4px 10px', borderRadius: 12, cursor: 'pointer', background: on ? 'var(--ink)' : 'var(--card-2)', color: on ? '#fff' : 'var(--ink-3)', border: '1px solid var(--line)' }}>{p}</button>;
+      })}
+      {value && <button onClick={() => onChange(null)} style={{ fontSize: '.74rem', fontWeight: 700, padding: '4px 8px', borderRadius: 12, cursor: 'pointer', background: 'none', border: 0, color: 'var(--brand)' }}>Clear</button>}
+    </div>
+  );
+}
+
+Object.assign(window, { Icon, Btn, Tag, Chip, PlayerMark, Spark, AppShell, TopBar, CurrencySelector, CurrencyCtx, SpaceMascot, BetaSeal, HowTo, PosFilter });
