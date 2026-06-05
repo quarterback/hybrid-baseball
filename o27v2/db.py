@@ -1027,6 +1027,24 @@ CREATE TABLE IF NOT EXISTS team_hof_inductees (
     inducted_at            TEXT,
     UNIQUE(team_id, player_id)
 );
+
+-- ── Performance indexes ───────────────────────────────────────────────────
+-- The per-game stat tables and the games table are read constantly (Scores,
+-- Standings, Leaders, team & player pages) and grow without bound as seasons
+-- accumulate. Without these, those reads are full table scans that get slower
+-- every season. CREATE INDEX IF NOT EXISTS runs idempotently inside init_db's
+-- executescript(SCHEMA), so existing live DBs pick them up on next boot.
+CREATE INDEX IF NOT EXISTS idx_bstats_player ON game_batter_stats(player_id);
+CREATE INDEX IF NOT EXISTS idx_bstats_game   ON game_batter_stats(game_id);
+CREATE INDEX IF NOT EXISTS idx_bstats_team   ON game_batter_stats(team_id);
+CREATE INDEX IF NOT EXISTS idx_pstats_player ON game_pitcher_stats(player_id);
+CREATE INDEX IF NOT EXISTS idx_pstats_game   ON game_pitcher_stats(game_id);
+CREATE INDEX IF NOT EXISTS idx_pstats_team   ON game_pitcher_stats(team_id);
+CREATE INDEX IF NOT EXISTS idx_games_date      ON games(game_date);
+CREATE INDEX IF NOT EXISTS idx_games_played    ON games(played, game_date);
+CREATE INDEX IF NOT EXISTS idx_games_home_date ON games(home_team_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_games_away_date ON games(away_team_id, game_date);
+CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id);
 """
 
 

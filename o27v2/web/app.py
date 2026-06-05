@@ -935,7 +935,40 @@ def _stamp_per_game_decay(rows: list[dict], drift: float = 0.0) -> None:
         r["g_total"]         = meta["g_total"]
 
 
+def _req_cache(key: str, producer):
+    """Memoize producer() for the lifetime of one request via flask.g.
+
+    Several card/leaderboard helpers each recompute the same full-table
+    aggregations (pitcher W/L, terminal outs, league baselines) while rendering
+    a single page. Caching them per-request collapses those repeats to one
+    scan. Outside an app context (CLI, background sim threads) it just computes,
+    so every caller stays safe."""
+    try:
+        from flask import g, has_app_context
+        if has_app_context():
+            cache = getattr(g, "_o27_req_cache", None)
+            if cache is None:
+                cache = {}
+                g._o27_req_cache = cache
+            if key not in cache:
+                cache[key] = producer()
+            return cache[key]
+    except Exception:
+        pass
+    return producer()
+
+
 def _pitcher_wl_map(through_game: dict | None = None) -> dict[int, dict[str, int]]:
+    """Season W/L per pitcher. The full-season variant (through_game=None) is
+    recomputed by several card helpers while rendering one page, so it's
+    request-cached; the per-box-score `through_game` variant varies per call
+    and is computed fresh."""
+    if through_game is None:
+        return _req_cache("pitcher_wl_full", _pitcher_wl_map_compute)
+    return _pitcher_wl_map_compute(through_game)
+
+
+def _pitcher_wl_map_compute(through_game: dict | None = None) -> dict[int, dict[str, int]]:
     """Award W/L per MLB-style rules adapted to the O27 27-out-per-side
     structure.
 
@@ -1182,7 +1215,11 @@ def _attach_decisions(games: list[dict]) -> None:
 def _terminal_outs_map() -> dict[int, int]:
     """player_id → season terminal-outs total (across all played games). The
     finisher's counting résumé, shown on cards like a record: 'F: Brockman
-    (33)'."""
+    (33)'. Request-cached — every final on a page asks for this same map."""
+    return _req_cache("terminal_outs", _terminal_outs_map_compute)
+
+
+def _terminal_outs_map_compute() -> dict[int, int]:
     rows = db.fetchall(
         "SELECT player_id, SUM(terminal_outs) AS to_sum "
         "FROM game_pitcher_stats GROUP BY player_id")
@@ -1850,6 +1887,15 @@ def _pitcher_fop(
 
 
 def _league_baselines(league: str | None = None) -> dict[str, float]:
+    """Request-cached wrapper around _league_baselines_compute (keyed by the
+    league/tier filter). The Scores and Leaders pages relativize many rows
+    against the same baseline, so this collapses the repeated full-table
+    aggregations to one per league scope per request."""
+    return _req_cache(f"baselines:{league or ''}",
+                      lambda: _league_baselines_compute(league))
+
+
+def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
     """Compute league baselines for OPS+/ERA+/wOBA+/WAR/VORP relativization.
 
     Refit every render cycle so the baselines track wherever the live league
@@ -2943,16 +2989,24 @@ def standings():
 
     extras: dict[int, dict] = {}
     teams = db.fetchall("SELECT id FROM teams")
+    # Fetch every played game once and bucket by team, instead of running one
+    # query per team (the old N+1: 1 + 30 queries for a 30-team league). Rows
+    # arrive in (game_date, id) order, so each team's bucket is already
+    # chronologically ordered for the streak / last-5 / last-10 math below.
+    all_played = db.fetchall(
+        """SELECT g.id, g.game_date, g.home_team_id, g.away_team_id,
+                  g.home_score, g.away_score, g.winner_id
+           FROM games g
+           WHERE g.played = 1
+           ORDER BY g.game_date, g.id"""
+    )
+    games_by_team: dict[int, list[dict]] = {}
+    for _g in all_played:
+        games_by_team.setdefault(_g["home_team_id"], []).append(_g)
+        games_by_team.setdefault(_g["away_team_id"], []).append(_g)
     for t in teams:
         tid = t["id"]
-        played = db.fetchall(
-            """SELECT g.id, g.game_date, g.home_team_id, g.away_team_id,
-                      g.home_score, g.away_score, g.winner_id
-               FROM games g
-               WHERE g.played = 1 AND (g.home_team_id = ? OR g.away_team_id = ?)
-               ORDER BY g.game_date, g.id""",
-            (tid, tid),
-        )
+        played = games_by_team.get(tid, [])
         rs = ra = w10 = l10 = 0
         for g in played:
             if g["home_team_id"] == tid:
