@@ -1996,11 +1996,17 @@
 
     const ths = Array.from(table.tHead.rows[0].cells);
     let count = 0;
+    let foundText = false;
     for (let i = 0; i < ths.length && i < 3; i++) {
       count = i + 1;
-      if (!ths[i].classList.contains('num')) break;  // include the text col, then stop
+      if (!ths[i].classList.contains('num')) { foundText = true; break; }  // include the text col, then stop
     }
-    if (!count) return;
+    // Only pin when there's a real non-numeric identity column (player/team
+    // name, possibly behind a rank number) to keep on screen. A table whose
+    // leading columns are ALL numeric is a pure stat strip (e.g. Advanced
+    // Batting); freezing its first stat columns would stick them over the
+    // scrolling columns and overlap — visible as garbled text on a tinted row.
+    if (!count || !foundText) return;
 
     const lefts = [];
     let acc = 0;
