@@ -327,6 +327,15 @@ function StreakScreen({ onNav, onOpenPlayer }) {
                 </div>
               </div>
 
+              {/* recent picks — up top, collapsed to the last 5 (expand for more) */}
+              <RecentList title="Recent picks" items={d.history || []} renderRow={(h, i) => (
+                <div key={i} className="recent__row">
+                  <span className="recent__date">{shortDate(h.slate_date)}</span>
+                  <div className="recent__who"><b>{h.player}</b> <span className="dim">{h.team}</span></div>
+                  <span style={{ color: resColor(h.result), fontWeight: 800 }}>{resLabel(h.result)}</span>
+                </div>
+              )} />
+
               {/* tonight's pick */}
               <HowTo k="streak" />
               <div className="section-head mt-24"><h2>Tonight's pick</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
@@ -360,22 +369,6 @@ function StreakScreen({ onNav, onOpenPlayer }) {
                           </div>
                         </div>
                         <button className="add-btn" disabled={busy} title="Pick this hitter" onClick={() => pick(p)}>+</button>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {/* history */}
-              {d.history && d.history.length > 0 && (
-                <>
-                  <div className="section-head mt-24"><h2>Recent picks</h2></div>
-                  <div className="card" style={{ overflow: 'hidden' }}>
-                    {d.history.map((h, i) => (
-                      <div key={i} className="lb-row">
-                        <div className="lb-rank">{(h.slate_date || '').slice(5)}</div>
-                        <div className="lb-user"><b style={{ fontSize: '.9rem' }}>{h.player}</b> <span className="dim">{h.team}</span></div>
-                        <div className="lb-pts" style={{ color: resColor(h.result), fontWeight: 800 }}>{resLabel(h.result)}</div>
                       </div>
                     ))}
                   </div>

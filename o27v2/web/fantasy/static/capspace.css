@@ -476,6 +476,22 @@ img { display: block; max-width: 100%; }
 .live-bars > i { flex: 1; height: 5px; border-radius: 999px; background: rgba(255,255,255,.18); }
 .live-bars > i.done { background: var(--amber); }
 
+/* recent / history rows — collapsible list (date never wraps) */
+.recent__row {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+}
+.recent__row:last-child { border-bottom: 0; }
+.recent__date { font-family: var(--f-num); font-weight: 700; color: var(--ink-3); font-size: .82rem; white-space: nowrap; min-width: 48px; }
+.recent__who { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.recent__who b { font-size: .9rem; }
+.recent__more {
+  display: flex; width: 100%; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px; background: var(--card-2); border: 0; border-top: 1px solid var(--line);
+  cursor: pointer; font: inherit; font-weight: 800; font-size: .85rem; color: var(--brand-ink);
+}
+.recent__more:hover { background: var(--paper-2); }
+
 .lb-row {
   display: grid; grid-template-columns: 42px 1fr auto auto; gap: 12px; align-items: center;
   padding: 12px 16px; border-bottom: 1px solid var(--line);
