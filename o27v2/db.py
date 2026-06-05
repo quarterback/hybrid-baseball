@@ -1040,6 +1040,12 @@ CREATE INDEX IF NOT EXISTS idx_bstats_team   ON game_batter_stats(team_id);
 CREATE INDEX IF NOT EXISTS idx_pstats_player ON game_pitcher_stats(player_id);
 CREATE INDEX IF NOT EXISTS idx_pstats_game   ON game_pitcher_stats(game_id);
 CREATE INDEX IF NOT EXISTS idx_pstats_team   ON game_pitcher_stats(team_id);
+-- Composite to support _PSTATS_DEDUP_SQL's ROW_NUMBER() OVER
+-- (PARTITION BY game_id, player_id ORDER BY outs_recorded DESC). That dedup is
+-- the hottest pitching query (Leaders, Scores, baselines all wrap it); this
+-- lets SQLite read in partition order instead of scanning + sorting the whole
+-- table. The single biggest lever for the 25s Leaders page.
+CREATE INDEX IF NOT EXISTS idx_pstats_dedup ON game_pitcher_stats(game_id, player_id, outs_recorded DESC);
 CREATE INDEX IF NOT EXISTS idx_games_date      ON games(game_date);
 CREATE INDEX IF NOT EXISTS idx_games_played    ON games(played, game_date);
 CREATE INDEX IF NOT EXISTS idx_games_home_date ON games(home_team_id, game_date);
