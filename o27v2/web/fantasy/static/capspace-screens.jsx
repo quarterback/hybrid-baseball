@@ -12,6 +12,8 @@ function HubScreen({ onNav, onOpenFormat, onNewRun }) {
   const topPrize = contests.reduce((m, c) => Math.max(m, c.top || 0), 0);
   const [w, setW] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [showHero, setShowHero] = useState(() => { try { return localStorage.getItem('o27.capspace.hero') !== '0'; } catch (e) { return true; } });
+  function dismissHero() { setShowHero(false); try { localStorage.setItem('o27.capspace.hero', '0'); } catch (e) {} }
   function loadW() { fetch('/fantasy/api/wallet').then(r => (r.ok ? r.json() : null)).then(d => { setW(d); if (d && d.balance != null) S.WALLET = d.balance; }).catch(() => {}); }
   useEffect(loadW, []);
   const bal = w ? w.balance : S.WALLET;
@@ -30,18 +32,26 @@ function HubScreen({ onNav, onOpenFormat, onNewRun }) {
       } />
       <div className="app__scroll">
         <div className="page">
-          {/* hero */}
-          <div className="hero">
-            <div className="hero__in">
-              <Tag kind="live"><span className="pulse" /> Tonight's slate is live</Tag>
-              <h1 className="mt-12">Tonight's Daily Slate is live.</h1>
-              <p>Build a lineup under the {S.money(S.CAP)} cap across {games} games.{prizePool > 0 ? ` ${S.money(prizePool)} in prizes on the board.` : ''}</p>
-              <div className="row wrap">
-                <Btn variant="brand" size="lg" onClick={() => onNav('lobby')}>Play the slate <Icon name="chev" size={18} /></Btn>
-                <Btn variant="ghost" size="lg" onClick={() => onNav('lobby')}>Browse contests</Btn>
+          {/* hero — dismissible so it doesn't crowd the page */}
+          {showHero ? (
+            <div className="hero">
+              <button className="hero__close" onClick={dismissHero} aria-label="Dismiss"><Icon name="x" size={18} /></button>
+              <div className="hero__in">
+                <Tag kind="live"><span className="pulse" /> Tonight's slate is live</Tag>
+                <h1 className="mt-12">Tonight's Daily Slate is live.</h1>
+                <p>Build a lineup under the {S.money(S.CAP)} cap across {games} games.{prizePool > 0 ? ` ${S.money(prizePool)} in prizes on the board.` : ''}</p>
+                <div className="row wrap">
+                  <Btn variant="brand" size="lg" onClick={() => onNav('lobby')}>Play the slate <Icon name="chev" size={18} /></Btn>
+                  <Btn variant="ghost" size="lg" onClick={() => onNav('lobby')}>Browse contests</Btn>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="row wrap" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <Btn variant="brand" size="lg" onClick={() => onNav('lobby')}>Play tonight's slate <Icon name="chev" size={18} /></Btn>
+              <button className="btn btn--ghost btn--sm" onClick={() => setShowHero(true)}>Show intro</button>
+            </div>
+          )}
 
           {/* quick tiles */}
           <div className="tiles mt-24">

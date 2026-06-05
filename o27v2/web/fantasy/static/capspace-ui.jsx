@@ -265,6 +265,7 @@ function TopBar({ title, sub, back, onBack, right }) {
         {sub && <div className="topbar__sub">{sub}</div>}
       </div>
       {right}
+      {window.SLATE && <span className="topbar__bal" title="Your bankroll"><span className="topbar__bal-lbl">Balance</span><span className="num">{window.SLATE.money(window.SLATE.WALLET)}</span></span>}
       <CurrencySelector />
       {(window.SLATE && window.SLATE.SIM_DAY) && <span className="simclock hide-mobile"><span className="dot" /> Sim day <span className="num">{window.SLATE.SIM_DAY}</span></span>}
       <span className="avatar">Y</span>
