@@ -1,0 +1,5 @@
+# o27audio — runtime deps for the live pipeline (not needed for --stub-* offline runs).
+anthropic>=0.40.0   # script generation (Claude)
+openai>=1.40.0      # text-to-speech (gpt-4o-mini-tts)
+# Stitching uses the Python stdlib `wave` module — no ffmpeg/pydub required.
+# If ffmpeg is on PATH, an MP3 is emitted alongside the WAV as a convenience.
