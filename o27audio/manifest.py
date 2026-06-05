@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS audio_clips (
     char_count   INTEGER,
     est_cost_usd REAL,
     model        TEXT,
-    status       TEXT NOT NULL,          -- 'ok' | 'error'
+    status       TEXT NOT NULL,          -- 'generating' | 'ok' | 'error'
+    error        TEXT,
     script_json  TEXT,
     created_at   INTEGER NOT NULL,
     UNIQUE(kind, ref_id)
@@ -77,6 +78,31 @@ def record(
             (kind, ref_id, league, wav_path, mp3_path, duration_s, n_turns,
              char_count, est_cost_usd, model, status,
              json.dumps(script) if script is not None else None, int(time.time())),
+        )
+
+
+def begin(kind: str, ref_id: str, *, league: str | None, model: str) -> None:
+    """Mark a clip as in-progress so the UI can poll for it. Clears any prior
+    error/paths for this ref so a retry starts clean."""
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO audio_clips (kind, ref_id, league, model, status, "
+            "n_turns, char_count, est_cost_usd, created_at) "
+            "VALUES (?,?,?,?, 'generating', 0, 0, 0, ?) "
+            "ON CONFLICT(kind, ref_id) DO UPDATE SET "
+            "status='generating', error=NULL, wav_path=NULL, mp3_path=NULL, "
+            "league=excluded.league, model=excluded.model, "
+            "created_at=excluded.created_at",
+            (kind, ref_id, league, model, int(time.time())),
+        )
+
+
+def fail(kind: str, ref_id: str, message: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "UPDATE audio_clips SET status='error', error=? "
+            "WHERE kind=? AND ref_id=?",
+            (message[:500], kind, ref_id),
         )
 
 

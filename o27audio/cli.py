@@ -10,29 +10,12 @@ OpenAI key is read from the Fly secret `OpenAI`; Anthropic from ANTHROPIC_API_KE
 from __future__ import annotations
 
 import argparse
-import sys
 
-from . import config, manifest, render, script as script_mod, tts
-from .sources import load_game
-
-
-def _estimate_cost(char_count: int, usage: dict | None) -> float:
-    tts_usd = char_count * config.TTS_COST_PER_M_CHARS / 1_000_000
-    llm_usd = 0.0
-    if usage:
-        inp = usage.get("input_tokens", 0)
-        out = usage.get("output_tokens", 0)
-        cached = usage.get("cache_read_input_tokens", 0)
-        llm_usd = (
-            (inp - cached) * config.LLM_INPUT_COST_PER_M / 1_000_000
-            + cached * config.LLM_INPUT_COST_PER_M * 0.1 / 1_000_000
-            + out * config.LLM_OUTPUT_COST_PER_M / 1_000_000
-        )
-    return round(tts_usd + llm_usd, 4)
+from . import config, pipeline, script as script_mod
 
 
 def cmd_narrate_game(args: argparse.Namespace) -> int:
-    game = load_game(args.game_id)
+    game = pipeline.gather(args.game_id)
     label = (
         f"{game.away['name']} {game.away_score} @ "
         f"{game.home['name']} {game.home_score}"
@@ -50,46 +33,25 @@ def cmd_narrate_game(args: argparse.Namespace) -> int:
         print(user_text[:1200])
         return 0
 
-    # Stage 2 — script
-    usage = None
-    if args.stub_script:
-        turns = script_mod.stub_script(game)
-        model = "stub"
-        print(f"[script] stub: {len(turns)} turns")
-    else:
-        turns, usage = script_mod.generate_script(game, args.model, args.max_pbp_chars)
-        model = args.model or config.SCRIPT_MODEL
-        print(f"[script] {model}: {len(turns)} turns, "
-              f"in={usage['input_tokens']} out={usage['output_tokens']} tokens")
-    if not turns:
-        print("No turns produced — aborting.", file=sys.stderr)
-        return 1
-
-    # Stage 3 — voice
-    segments, char_count = tts.synth_turns(turns, stub=args.stub_tts)
-    print(f"[tts] {'stub tones' if args.stub_tts else config.TTS_MODEL}: "
-          f"{len(segments)} segments, {char_count} chars")
-
-    # Stage 4 — stitch & publish
-    wav_bytes = render.concat_wavs(segments, args.gap_ms)
-    duration = render.wav_duration_secs(wav_bytes)
-    paths = render.write_clip(wav_bytes, game.home["league"], f"game_{game.game_id}")
-
-    est_cost = _estimate_cost(char_count, usage)
-    manifest.record(
-        "game", str(game.game_id),
-        league=game.home["league"], wav_path=paths["wav"], mp3_path=paths["mp3"],
-        duration_s=round(duration, 1), n_turns=len(turns), char_count=char_count,
-        est_cost_usd=est_cost, model=model, status="ok", script=turns,
+    r = pipeline.produce(
+        game,
+        save_key=pipeline.current_save_key(),
+        stub_script=args.stub_script,
+        stub_tts=args.stub_tts,
+        model=args.model,
+        max_pbp_chars=args.max_pbp_chars,
+        gap_ms=args.gap_ms,
     )
-
-    print(f"\n✓ wrote {paths['wav']}")
-    if paths["mp3"]:
-        print(f"✓ wrote {paths['mp3']}")
-    print(f"  duration ≈ {duration:.1f}s ({duration/60:.1f} min), "
-          f"{len(turns)} turns, {char_count} chars")
+    print(f"[script] {r['model']}: {r['n_turns']} turns")
+    print(f"[tts] {'stub tones' if args.stub_tts else config.TTS_MODEL}: "
+          f"{r['char_count']} chars")
+    print(f"\n✓ wrote {r['wav_path']}")
+    if r["mp3_path"]:
+        print(f"✓ wrote {r['mp3_path']}")
+    print(f"  duration ≈ {r['duration_s']:.1f}s ({r['duration_s']/60:.1f} min), "
+          f"{r['n_turns']} turns, {r['char_count']} chars")
     cost_note = "approx" if not args.stub_tts else "would-be (stub)"
-    print(f"  estimated cost: ${est_cost:.4f} ({cost_note})")
+    print(f"  estimated cost: ${r['est_cost_usd']:.4f} ({cost_note})")
     return 0
 
 

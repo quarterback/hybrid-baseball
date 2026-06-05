@@ -1,3 +1,4 @@
 flask>=3.0
 jinja2
 anthropic>=0.40
+openai>=1.40   # o27audio text-to-speech

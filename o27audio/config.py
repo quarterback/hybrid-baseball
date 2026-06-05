@@ -60,7 +60,25 @@ LLM_OUTPUT_COST_PER_M = float(os.environ.get("O27AUDIO_LLM_OUT_COST_PER_M", "25.
 
 # --- Output ---------------------------------------------------------------
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__))
-OUT_DIR = os.environ.get("O27AUDIO_OUT_DIR", os.path.join(_PKG_DIR, "out"))
+
+
+def _default_out_dir() -> str:
+    """Where clips + the manifest live.
+
+    Precedence: O27AUDIO_OUT_DIR, else — on Fly — alongside the saves volume
+    (``<dir of O27V2_SAVES_DIR>/audio`` → ``/data/audio``) so clips survive
+    restarts/redeploys, else the package-local ``o27audio/out``.
+    """
+    explicit = os.environ.get("O27AUDIO_OUT_DIR")
+    if explicit:
+        return explicit
+    saves_dir = os.environ.get("O27V2_SAVES_DIR")
+    if saves_dir:
+        return os.path.join(os.path.dirname(os.path.abspath(saves_dir)), "audio")
+    return os.path.join(_PKG_DIR, "out")
+
+
+OUT_DIR = _default_out_dir()
 
 # Audio format produced by OpenAI TTS / our stub (must match for stitching).
 WAV_SAMPLE_RATE = 24000

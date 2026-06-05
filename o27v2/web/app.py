@@ -60,6 +60,12 @@ app.register_blueprint(gazette_bp)
 from o27v2.web.fantasy import capspace_bp
 app.register_blueprint(capspace_bp)
 
+# o27audio — separate audio companion service (Game of the Week narration).
+# Self-contained blueprint; lazy-imports the LLM/TTS SDKs only when a render
+# actually runs, so this import is safe even if those deps are absent.
+from o27audio.blueprint import audio_bp
+app.register_blueprint(audio_bp)
+
 
 # Canonical W/L attribution lives in box_score (pure, no app dependency) so
 # the box-score label and the season W-L record beside it can't disagree.
