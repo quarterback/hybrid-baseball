@@ -346,6 +346,14 @@ def get_roster(format_key: str) -> list[int]:
         "SELECT player_id FROM cat_rosters WHERE format_key = ?", (format_key,))]
 
 
+_POS = {"C": "C", "1B": "1B", "2B": "2B", "3B": "3B", "SS": "SS",
+        "LF": "OF", "CF": "OF", "RF": "OF", "OF": "OF", "DH": "OF", "NF": "OF"}
+
+
+def _bucket(raw: str) -> str:
+    return _POS.get((raw or "").upper(), "OF")
+
+
 def _active_dir() -> dict:
     """Every draftable player from the active save — works with zero game
     history (a rating-based projection stands in pre-season)."""
@@ -358,7 +366,7 @@ def _active_dir() -> dict:
         is_p = bool(r["is_pitcher"])
         out[r["id"]] = {
             "name": r["name"], "team": r["team"], "is_pitcher": is_p,
-            "pos": "P" if is_p else ((r["position"] or "")[:2].upper() or "H"),
+            "pos": "P" if is_p else _bucket(r["position"]),
             "proj": slate_data._proj_from_ratings(r, is_p),
         }
     return out

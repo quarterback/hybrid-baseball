@@ -139,6 +139,7 @@ function LobbyScreen({ onNav, onEnterContest }) {
       } />
       <div className="app__scroll">
         <div className="page">
+          <HowTo k="dfs" />
           {/* slate selector */}
           <div className="slate-tabs">
             {slates.map(s => <Chip key={s.id} active={slate === s.id} onClick={() => setSlate(s.id)}>{s.label}</Chip>)}
@@ -188,60 +189,52 @@ function LobbyScreen({ onNav, onEnterContest }) {
   );
 }
 
-/* ---------- MY ENTRIES (real data) ---------- */
-function EntriesScreen({ onNav, onOpenContest }) {
+/* ---------- MY ACTION — unified feed across every game ---------- */
+function EntriesScreen({ onNav }) {
   const S = window.SLATE;
   const [tab, setTab] = useState('live');
-  const [entries, setEntries] = useState(null);
+  const [data, setData] = useState(null);
+  useEffect(() => { fetch('/fantasy/api/activity').then(r => (r.ok ? r.json() : { items: [] })).then(setData).catch(() => setData({ items: [] })); }, []);
 
-  useEffect(() => {
-    fetch('/fantasy/api/entries').then(r => (r.ok ? r.json() : [])).then(setEntries).catch(() => setEntries([]));
-  }, []);
-
-  const all = entries || [];
-  const bucket = e => (e.games_total > 0 && e.games_done >= e.games_total) ? 'past'
-    : (e.games_done > 0 ? 'live' : 'upcoming');
-  const live = all.filter(e => bucket(e) === 'live');
-  const upcoming = all.filter(e => bucket(e) === 'upcoming');
-  const past = all.filter(e => bucket(e) === 'past');
-  const rows = tab === 'past' ? past : tab === 'upcoming' ? upcoming : live;
-  const prog = e => (e.games_total ? e.games_done / e.games_total : 0);
+  const items = (data && data.items) || [];
+  const isLive = s => s === 'live' || s === 'open';
+  const live = items.filter(it => isLive(it.status));
+  const settled = items.filter(it => !isLive(it.status));
+  const rows = tab === 'settled' ? settled : live;
+  const GAME_COLOR = { 'Daily Slate': 'var(--c-coral)', 'Sportsbook': 'var(--c-amber)', 'Sluggers': 'var(--c-violet)', 'Pilots': 'var(--c-blue)', 'Category League': 'var(--c-teal)', 'Best Ball': 'var(--c-lime)' };
+  const statusColor = s => s === 'won' ? 'var(--live)' : s === 'lost' ? 'var(--down)' : s === 'push' ? 'var(--ink-3)' : 'var(--c-teal)';
+  const result = it => it.status === 'won' ? `+${S.money(Math.max(0, it.payout - it.stake))}`
+    : it.status === 'lost' ? (it.stake ? `−${S.money(it.stake)}` : 'Lost')
+    : it.status === 'push' ? 'push' : 'Live';
 
   return (
     <>
-      <TopBar title="My Entries" sub="Track your lineups" back onBack={() => onNav('hub')} />
+      <TopBar title="My Action" sub="Every game, one feed" back onBack={() => onNav('hub')} />
       <div className="app__scroll">
         <div className="page page--narrow">
           <div className="slate-tabs">
             <Chip active={tab === 'live'} onClick={() => setTab('live')}>Live · {live.length}</Chip>
-            <Chip active={tab === 'upcoming'} onClick={() => setTab('upcoming')}>Upcoming · {upcoming.length}</Chip>
-            <Chip active={tab === 'past'} onClick={() => setTab('past')}>Past · {past.length}</Chip>
+            <Chip active={tab === 'settled'} onClick={() => setTab('settled')}>Settled · {settled.length}</Chip>
           </div>
-          {entries === null ? (
-            <div className="card card--pad center" style={{ padding: '48px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>Loading your entries…</div></div>
+          {data === null ? (
+            <div className="card card--pad center" style={{ padding: '48px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>Loading…</div></div>
           ) : rows.length === 0 ? (
             <div className="card card--pad center" style={{ padding: '48px 20px' }}>
-              <div className="dim" style={{ fontWeight: 600 }}>No {tab} entries.</div>
-              <Btn variant="soft" className="mt-16" onClick={() => onNav('lobby')}>Find a contest</Btn>
+              <div className="dim" style={{ fontWeight: 600 }}>No {tab} action yet.</div>
+              <Btn variant="soft" className="mt-16" onClick={() => onNav('hub')}>Pick a game</Btn>
             </div>
           ) : (
-            <div className="col" style={{ gap: 12 }}>
-              {rows.map((e, i) => (
-                <div key={i} className="contest" onClick={() => onOpenContest && onOpenContest(e.contest_id)} style={{ cursor: 'pointer' }}>
-                  <span className="contest__badge" style={{ background: e.color }}>{e.badge}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="contest__name">{e.contest}</div>
-                    <div className="contest__meta">
-                      {e.rank != null && <span>Rank <b className="num">{e.rank.toLocaleString('en-IN')}</b>/{(e.of || 0).toLocaleString('en-IN')}</span>}
-                      <span><b className="num">{e.pts.toFixed(1)}</b> pts</span>
-                      <span style={{ color: e.live ? 'var(--live)' : 'var(--ink-3)', fontWeight: 700 }}>{e.live ? 'Live' : 'Final'}</span>
+            <div className="card" style={{ overflow: 'hidden' }}>
+              {rows.map((it, i) => (
+                <div key={i} className="prow">
+                  <div className="prow__id">
+                    <span className="contest__badge" style={{ background: GAME_COLOR[it.game] || 'var(--ink)' }}>{(it.game || '?').slice(0, 2).toUpperCase()}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="prow__name">{it.title}</div>
+                      <div className="prow__sub">{it.game} · {it.sub}{it.stake ? ` · ${S.money(it.stake)}` : ''}</div>
                     </div>
-                    <div className="fill"><i style={{ width: (prog(e) * 100) + '%' }} /></div>
                   </div>
-                  <div className="contest__prize">
-                    <div className="amt num">{e.games_done}/{e.games_total}</div>
-                    <div className="lbl">games</div>
-                  </div>
+                  <div className="lb-pts" style={{ color: statusColor(it.status), fontWeight: 800 }}>{result(it)}</div>
                 </div>
               ))}
             </div>
@@ -295,6 +288,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
+  const [posFilter, setPosFilter] = useState(null);
 
   function load() {
     fetch('/fantasy/api/streak').then(r => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null));
@@ -311,7 +305,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
 
   const d = data;
   const pool = d ? (d.pool || []) : [];
-  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || p.pos === posFilter));
   const resColor = r => r === 'hit' ? 'var(--live)' : r === 'miss' ? 'var(--down)' : 'var(--ink-3)';
   const resLabel = r => r === 'hit' ? 'Hit' : r === 'miss' ? 'Miss' : r === 'pending' ? 'Live' : '—';
 
@@ -334,6 +328,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
               </div>
 
               {/* tonight's pick */}
+              <HowTo k="streak" />
               <div className="section-head mt-24"><h2>Tonight's pick</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
               {!d.slate_date ? (
                 <div className="card card--pad center" style={{ padding: '32px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>No upcoming slate to pick. Sim forward to keep streaking.</div></div>
@@ -351,6 +346,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
                 </div>
               ) : (
                 <>
+                  <PosFilter value={posFilter} onChange={setPosFilter} />
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search hitters…" value={q} onChange={e => setQ(e.target.value)} /></div>
                   <div className="card" style={{ overflow: 'hidden' }}>
                     {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
@@ -399,6 +395,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
+  const [posFilter, setPosFilter] = useState(null);
 
   function load() {
     fetch('/fantasy/api/sluggers').then(r => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null));
@@ -417,7 +414,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
   const ys = d && d.your_slate;
   const picks = ys ? ys.picks : [];
   const pool = d ? (d.pool || []) : [];
-  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || p.pos === posFilter));
   const slotsLeft = d ? (d.max - (d.picked || 0)) : 0;
 
   return (
@@ -440,6 +437,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
               </div>
 
               {/* tonight's sluggers */}
+              <HowTo k="sluggers" />
               <div className="section-head mt-24"><h2>Tonight's sluggers</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
               {picks.length > 0 && (
                 <div className="card mb-12" style={{ overflow: 'hidden' }}>
@@ -470,6 +468,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
               ) : slotsLeft > 0 ? (
                 <>
                   <div className="muted mb-12" style={{ fontSize: '.85rem', fontWeight: 600 }}>{slotsLeft} slot{slotsLeft > 1 ? 's' : ''} left · sorted by power</div>
+                  <PosFilter value={posFilter} onChange={setPosFilter} />
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search hitters…" value={q} onChange={e => setQ(e.target.value)} /></div>
                   <div className="card" style={{ overflow: 'hidden' }}>
                     {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
@@ -520,6 +519,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
+  const [posFilter, setPosFilter] = useState(null);
 
   function load() {
     fetch('/fantasy/api/pilots').then(r => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null));
@@ -538,7 +538,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
   const ys = d && d.your_slate;
   const picks = ys ? ys.picks : [];
   const pool = d ? (d.pool || []) : [];
-  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || p.pos === posFilter));
   const slotsLeft = d ? (d.max - (d.picked || 0)) : 0;
 
   return (
@@ -559,6 +559,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
                 </div>
               </div>
 
+              <HowTo k="pilots" />
               <div className="section-head mt-24"><h2>Tonight's pilots</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
               {picks.length > 0 && (
                 <div className="card mb-12" style={{ overflow: 'hidden' }}>
@@ -640,6 +641,7 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
   const [sel, setSel] = useState([]);
   const [editing, setEditing] = useState(false);
   const [side, setSide] = useState('h');
+  const [posFilter, setPosFilter] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -683,7 +685,9 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
   const onlyOneSide = slots.h === 0 || slots.p === 0;
   const showSide = onlyOneSide ? (slots.p === 0 ? 'h' : 'p') : side;
   const list = pool ? (showSide === 'p' ? pool.pitchers : pool.hitters) : [];
-  const shown = q.trim() ? list.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : list;
+  const shown = list.filter(p =>
+    (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) &&
+    (showSide === 'p' || !posFilter || p.pos === posFilter));
   const rankColor = (r, field) => r === 1 ? 'var(--live)' : r <= Math.ceil(field / 3) ? 'var(--c-teal)' : r >= field - Math.ceil(field / 3) ? 'var(--down)' : 'var(--ink-2)';
 
   return (
@@ -702,6 +706,7 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
           ) : (
             <>
               <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>{curFmt.blurb}</p>
+              <HowTo k="categories" />
               {data.buyIn ? <p className="muted mb-12" style={{ fontSize: '.82rem', fontWeight: 600 }}>Season buy-in {S.money(data.buyIn)} · pays at season's end by final rank{data.entered ? ' · entered ✓' : ''}{data.payout > 0 ? ` · won ${S.money(data.payout)}` : ''}</p> : null}
 
               {st && !editing ? (
@@ -763,6 +768,16 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
                     <div className="slate-tabs mb-12">
                       <Chip active={showSide === 'h'} onClick={() => setSide('h')}>Hitters</Chip>
                       <Chip active={showSide === 'p'} onClick={() => setSide('p')}>Pitchers</Chip>
+                    </div>
+                  )}
+                  {showSide === 'h' && (
+                    <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                      <span className="dim" style={{ fontSize: '.74rem', fontWeight: 700 }}>Filter:</span>
+                      {['C', '1B', '2B', '3B', 'SS', 'OF'].map(p => {
+                        const on = posFilter === p;
+                        return <button key={p} onClick={() => setPosFilter(on ? null : p)} style={{ fontSize: '.76rem', fontWeight: 800, padding: '4px 10px', borderRadius: 12, cursor: 'pointer', background: on ? 'var(--ink)' : 'var(--card-2)', color: on ? '#fff' : 'var(--ink-3)', border: '1px solid var(--line)' }}>{p}</button>;
+                      })}
+                      {posFilter && <button onClick={() => setPosFilter(null)} style={{ fontSize: '.74rem', fontWeight: 700, padding: '4px 8px', borderRadius: 12, cursor: 'pointer', background: 'none', border: 0, color: 'var(--brand)' }}>Clear</button>}
                     </div>
                   )}
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder={'Search ' + (showSide === 'p' ? 'pitchers' : 'hitters') + '…'} value={q} onChange={e => setQ(e.target.value)} /></div>
@@ -849,6 +864,7 @@ function SportsbookScreen({ onNav }) {
                 </div>
               </div>
 
+              <HowTo k="sportsbook" />
               <div className="section-head mt-24"><h2>Tonight's board</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
               {d.games.length === 0 && <div className="card card--pad center" style={{ padding: '24px' }}><div className="dim" style={{ fontWeight: 600 }}>No games open for betting.</div></div>}
               {d.games.map(g => (
@@ -901,7 +917,7 @@ function SportsbookScreen({ onNav }) {
 
       {/* bet slip */}
       {slip && (
-        <div className="betslip" style={{ position: 'sticky', bottom: 0, left: 0, right: 0, background: 'var(--card)', borderTop: '1px solid var(--line-2)', padding: '14px 18px', boxShadow: '0 -6px 18px rgba(0,0,0,.12)' }}>
+        <div className="betslip" style={{ position: 'fixed', bottom: 'calc(68px + env(safe-area-inset-bottom))', left: 0, right: 0, zIndex: 60, background: 'var(--card)', borderTop: '1px solid var(--line-2)', padding: '14px 18px', boxShadow: '0 -8px 24px rgba(0,0,0,.18)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <div style={{ fontWeight: 800 }}>{slip.label} <span className="dim">{od(slip.odds)}</span></div>
             <button className="btn btn--ghost btn--sm" onClick={() => setSlip(null)}>Cancel</button>
@@ -927,6 +943,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
   const [sel, setSel] = useState([]);
   const [editing, setEditing] = useState(false);
   const [side, setSide] = useState('h');
+  const [posFilter, setPosFilter] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -954,7 +971,9 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
   const canLock = full && posOk;
   const selIds = new Set(sel.map(s => s.id));
   const list = pool ? (side === 'p' ? pool.pitchers : pool.hitters) : [];
-  const shown = q.trim() ? list.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : list;
+  const shown = list.filter(p =>
+    (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) &&
+    (side === 'p' || !posFilter || p.pos === posFilter));
   const st = data && data.standings;
 
   function add(item) {
@@ -991,6 +1010,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
                 </div>
               </div>
               <p className="muted mt-12 mb-12" style={{ fontSize: '.84rem', lineHeight: 1.45 }}>Auto-lineup: {st.lineup}. No management — your draft is the whole game.</p>
+              <HowTo k="bestball" />
               <div className="section-head mt-12"><h2>Your roster</h2><button className="btn btn--ghost btn--sm" onClick={reDraft}>Re-draft</button></div>
               <div className="card" style={{ overflow: 'hidden' }}>
                 {(data.roster || []).map(p => (
@@ -1006,6 +1026,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
           ) : (
             /* ---- draft ---- */
             <>
+              <HowTo k="bestball" />
               <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>Draft {slots.h} hitters and {slots.p} pitchers covering every slot. Each slate your best in-position lineup — C, 1B, 2B, 3B, SS, OF, OF + best 2 pitchers — auto-scores, so draft depth at a spot and the hot bat there starts itself.</p>
               {data.buyIn ? <p className="muted mb-12" style={{ fontSize: '.82rem', fontWeight: 600 }}>Season buy-in {S.money(data.buyIn)} · pays at season's end by final rank{data.entered ? ' · entered ✓' : ''}</p> : null}
               <div className="card card--pad mb-12" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1016,11 +1037,15 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
                 </div>
                 <button className="btn btn--brand btn--sm" disabled={!canLock || busy} onClick={lock}>Lock roster</button>
               </div>
-              <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                <span className="dim" style={{ fontSize: '.74rem', fontWeight: 700 }}>Filter:</span>
                 {Object.entries(req).map(([p, n]) => {
                   const ok = (haveByPos[p] || 0) >= n;
-                  return <span key={p} style={{ fontSize: '.76rem', fontWeight: 800, padding: '3px 9px', borderRadius: 12, background: ok ? 'var(--brand-soft)' : 'var(--card-2)', color: ok ? 'var(--brand-ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}>{ok ? '✓ ' : ''}{p}{n > 1 ? ` ×${n}` : ''}</span>;
+                  const on = posFilter === p && side === 'h';
+                  return <button key={p} onClick={() => { setSide('h'); setPosFilter(on ? null : p); }}
+                    style={{ fontSize: '.76rem', fontWeight: 800, padding: '4px 10px', borderRadius: 12, cursor: 'pointer', background: on ? 'var(--ink)' : ok ? 'var(--brand-soft)' : 'var(--card-2)', color: on ? '#fff' : ok ? 'var(--brand-ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}>{ok ? '✓ ' : ''}{p}{n > 1 ? ` ×${n}` : ''}</button>;
                 })}
+                {posFilter && side === 'h' && <button onClick={() => setPosFilter(null)} style={{ fontSize: '.74rem', fontWeight: 700, padding: '4px 8px', borderRadius: 12, cursor: 'pointer', background: 'none', border: 0, color: 'var(--brand)' }}>Clear</button>}
               </div>
               {sel.length > 0 && (
                 <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

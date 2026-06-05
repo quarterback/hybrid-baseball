@@ -246,10 +246,13 @@ def _calibrate_salaries(players: list[dict]) -> None:
             p["salary"] = int(usd * _GUILDER_PER_USD)     # store as guilders
 
 
-def build_slate_data() -> dict | None:
-    """Build the real CapSpace data blob, or None if the save has no games
-    (the front-end then falls back to its bundled mock data)."""
-    slate_date = _slate_date()
+def build_slate_data(slate_date: str | None = None) -> dict | None:
+    """Build the real CapSpace data blob for a slate (defaults to the current
+    next-unplayed slate), or None if the save has no games (the front-end then
+    falls back to its bundled mock data). Passing an explicit date lets a
+    contest re-derive its own slate's pool even after the slate has advanced."""
+    if slate_date is None:
+        slate_date = _slate_date()
     if not slate_date:
         return None
 
@@ -361,6 +364,10 @@ def _build_logs(player_ids: list[int]) -> dict:
         return {}
     ph = ",".join("?" for _ in player_ids)
     out: dict = {pid: {"log": [], "form": []} for pid in player_ids}
+    # Pitchers who also bat must show their PITCHING log, not their batting
+    # line — so skip their batter rows below.
+    pitcher_ids = {r["id"] for r in db.fetchall(
+        f"SELECT id FROM players WHERE id IN ({ph}) AND is_pitcher = 1", tuple(player_ids))}
 
     bat = db.fetchall(
         f"""SELECT bs.*, g.game_date,
@@ -398,6 +405,8 @@ def _build_logs(player_ids: list[int]) -> dict:
 
     for s in bat:
         pid = s["player_id"]
+        if pid in pitcher_ids:
+            continue  # pitchers show their pitching log, not their bat line
         bucket = out.get(pid)
         if bucket is None or len(bucket["log"]) >= 5:
             continue
@@ -410,6 +419,8 @@ def _build_logs(player_ids: list[int]) -> dict:
         })
     for s in pit:
         pid = s["player_id"]
+        if pid not in pitcher_ids:
+            continue  # position players who mopped up keep their batting log
         bucket = out.get(pid)
         if bucket is None or len(bucket["log"]) >= 5:
             continue
