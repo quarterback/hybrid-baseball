@@ -76,9 +76,24 @@ def _score_to_base_value(score: float) -> int:
     return _BANDS[-1][1]
 
 
+def market_value(player: dict, *, league_name: str | None = None) -> int:
+    """Live market valuation in guilders, derived purely from current
+    skill / age / role / archetype via the trade_value band map. Unlike
+    `estimate_player_value`, this *ignores* any persisted salary, so it
+    reflects what a player is worth *now* — which drifts away from his
+    contract as he ages, develops, or slumps. Use it to surface the
+    surplus/deficit between what a player is worth and what he's paid."""
+    score = trade_value(dict(player))
+    base = _score_to_base_value(score)
+    cap = cap_for_league(league_name)
+    return int(round(base * cap / DEFAULT_TIER_CAP))
+
+
 def estimate_player_value(player: dict, *, league_name: str | None = None) -> int:
     """Return a guilder amount. Prefers a persisted `salary` field when
-    non-zero; otherwise derives from trade_value via the band map."""
+    non-zero; otherwise derives from trade_value via the band map. This is
+    the canonical wage ledger used when seeding salaries and summing
+    payrolls — for a live "worth now" figure, use `market_value`."""
     persisted = player.get("salary")
     try:
         persisted_int = int(persisted or 0)
@@ -87,10 +102,7 @@ def estimate_player_value(player: dict, *, league_name: str | None = None) -> in
     if persisted_int > 0:
         return persisted_int
 
-    score = trade_value(dict(player))
-    base = _score_to_base_value(score)
-    cap = cap_for_league(league_name)
-    return int(round(base * cap / DEFAULT_TIER_CAP))
+    return market_value(player, league_name=league_name)
 
 
 def estimate_team_payroll(team_id: int) -> int:

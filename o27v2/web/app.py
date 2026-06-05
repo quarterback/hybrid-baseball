@@ -6287,9 +6287,25 @@ def player_detail(player_id: int):
         "SELECT league FROM teams WHERE id = ?", (player["team_id"],),
     )
     league_name = team_row["league"] if team_row else None
-    player_est_value = valuation.estimate_player_value(
+    # Live market value (what the player is worth *now*), deliberately
+    # ignoring the persisted salary so it can diverge from the contract.
+    player_est_value = valuation.market_value(
         dict(player), league_name=league_name,
     )
+    # Surplus/deficit vs the persisted salary: positive ⇒ worth more than
+    # he's paid (a bargain), negative ⇒ overpaid relative to market.
+    try:
+        _player_salary = int(player["salary"] or 0)
+    except (TypeError, ValueError, KeyError, IndexError):
+        _player_salary = 0
+    player_value_pct = None
+    player_value_surplus_label = None  # plain-text guilders for the tooltip
+    if _player_salary > 0:
+        surplus = player_est_value - _player_salary
+        player_value_pct = round(surplus / _player_salary * 100)
+        player_value_surplus_label = currency.format_money(
+            abs(surplus), "guilder",
+        )
 
     handedness_splits: dict = {}
     if bt_totals:
@@ -6391,6 +6407,8 @@ def player_detail(player_id: int):
         handedness_splits=handedness_splits,
         baselines=baselines,
         player_est_value=player_est_value,
+        player_value_pct=player_value_pct,
+        player_value_surplus_label=player_value_surplus_label,
         nickel_games=nickel_games,
         transfer_leagues=list(transfer_leagues.values()),
         current_league=cur_team.get("league") or "",

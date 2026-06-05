@@ -91,13 +91,26 @@
     {% if player.hometown %}<span class="text-secondary small">Born <strong class="text-dark">{{ player.hometown }}</strong>{% if player.country %}, {{ player.country }}{% endif %}</span>{% endif %}
     <span class="text-secondary small">Bats <strong class="text-dark">{{ player.bats or '—' }}</strong> · Throws <strong class="text-dark">{{ player.throws or '—' }}</strong></span>
     {% if player.salary %}
-    <span class="text-secondary small" title="Persisted salary (the wage ledger). Toggle the pill to view in USD or EUR.">
+    <span class="text-secondary small" title="What this player is paid — the persisted contract on the wage ledger. Toggle the pill to view in USD or EUR.">
       Salary <strong style="color:var(--text)">{{ player.salary | money }}</strong>
     </span>
     {% endif %}
     {% if player_est_value is defined %}
-    <span class="text-secondary small" title="Estimated contract value, derived from skill, age, role, and archetype. Toggle the pill to view in USD or EUR.">
+    <span class="text-secondary small" title="What this player is worth right now — a live market value from current skill, age, role, and archetype, independent of his contract. Toggle the pill to view in USD or EUR.">
       Est. value {{ player_est_value | money }}
+      {% if player_value_pct is not none and player_value_pct != 0 %}
+        {% if player_value_pct > 0 %}
+        <span class="badge" style="background:rgba(26,138,60,.14);color:var(--good);font-weight:700"
+              title="Worth more than his salary — a bargain for the team. Est. value exceeds the contract by {{ player_value_surplus_label }}.">
+          +{{ player_value_pct }}% vs salary
+        </span>
+        {% else %}
+        <span class="badge" style="background:rgba(229,37,31,.12);color:var(--bad);font-weight:700"
+              title="Paid more than his market value — an overpay. The contract exceeds Est. value by {{ player_value_surplus_label }}.">
+          {{ player_value_pct }}% vs salary
+        </span>
+        {% endif %}
+      {% endif %}
     </span>
     {% endif %}
     {% if current_league %}
