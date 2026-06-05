@@ -85,8 +85,8 @@
 </div>
 {% endmacro %}
 
-{# Single-game record card: value + opponent + date. `ipkey` shows IP from outs. #}
-{% macro sg_card(title, rows, key, fmt='%d', ipkey=false, col='col-lg-4 col-md-6') %}
+{# Single-game record card: value + opponent + date. #}
+{% macro sg_card(title, rows, key, fmt='%d', col='col-lg-4 col-md-6') %}
 <div class="{{ col }}">
   <div class="panel">
     <div class="panel-head"><span>{{ title }}</span><span class="ms-auto sub">Top 5</span></div>
@@ -98,7 +98,7 @@
           <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
           <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
           <td class="team-abbrev">{{ r.team_abbrev }}</td>
-          <td class="num fw-bold">{% if ipkey %}{{ r.ip_display }}{% else %}{{ fmt|format(r[key]) }}{% endif %}</td>
+          <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
           <td class="text-secondary small">vs {{ r.opp_abbrev }} · {{ r.game_date }}</td>
         </tr>
         {% endfor %}
@@ -109,8 +109,8 @@
 </div>
 {% endmacro %}
 
-{# Career all-time card: value + seasons span. `ipkey` renders IP from outs. #}
-{% macro career_card(title, rows, key, fmt='%d', ipkey=false, col='col-lg-3 col-md-6') %}
+{# Career all-time card: value + seasons span. #}
+{% macro career_card(title, rows, key, fmt='%d', col='col-lg-3 col-md-6') %}
 <div class="{{ col }}">
   <div class="panel">
     <div class="panel-head"><span>{{ title }}</span><span class="ms-auto sub">Top 10</span></div>
@@ -122,7 +122,7 @@
           <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
           <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
           <td class="team-abbrev">{{ r.team_abbrev }}</td>
-          <td class="num fw-bold">{% if ipkey %}{{ r.ip_display }}{% else %}{{ fmt|format(r[key]) }}{% endif %}</td>
+          <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
           <td class="text-secondary small">{{ r.seasons }}{{ ' szn' if r.seasons == 1 else ' szns' }}</td>
         </tr>
         {% endfor %}
@@ -243,7 +243,7 @@
 <div class="row g-3 mb-3">
   {{ sg_card('Most Total Bases, Game', sg_bat.tb, 'tb') }}
   {{ sg_card('Most Strikeouts, Game (P)', sg_pit.k, 'k') }}
-  {{ sg_card('Longest Outing (IP)', sg_pit.outs, 'outs', ipkey=true) }}
+  {{ sg_card('Longest Outing (Outs)', sg_pit.outs, 'outs') }}
 </div>
 {% endif %}
 
@@ -273,7 +273,7 @@
 </div>
 <div class="row g-3 mb-3">
   {{ career_card('Strikeouts (P)', career_pit.p_k, 'p_k') }}
-  {{ career_card('Innings (IP)', career_pit.outs, 'outs', ipkey=true) }}
+  {{ career_card('Outs Pitched', career_pit.outs, 'outs') }}
   {{ career_card('Wins', career_pit.w, 'w') }}
   {{ career_card('ERA', career_pit.era, 'era', '%.2f') }}
 </div>
