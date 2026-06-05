@@ -933,6 +933,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
   const [sel, setSel] = useState([]);
   const [editing, setEditing] = useState(false);
   const [side, setSide] = useState('h');
+  const [posFilter, setPosFilter] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -960,7 +961,9 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
   const canLock = full && posOk;
   const selIds = new Set(sel.map(s => s.id));
   const list = pool ? (side === 'p' ? pool.pitchers : pool.hitters) : [];
-  const shown = q.trim() ? list.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : list;
+  const shown = list.filter(p =>
+    (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) &&
+    (side === 'p' || !posFilter || p.pos === posFilter));
   const st = data && data.standings;
 
   function add(item) {
@@ -1024,11 +1027,15 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
                 </div>
                 <button className="btn btn--brand btn--sm" disabled={!canLock || busy} onClick={lock}>Lock roster</button>
               </div>
-              <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                <span className="dim" style={{ fontSize: '.74rem', fontWeight: 700 }}>Filter:</span>
                 {Object.entries(req).map(([p, n]) => {
                   const ok = (haveByPos[p] || 0) >= n;
-                  return <span key={p} style={{ fontSize: '.76rem', fontWeight: 800, padding: '3px 9px', borderRadius: 12, background: ok ? 'var(--brand-soft)' : 'var(--card-2)', color: ok ? 'var(--brand-ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}>{ok ? '✓ ' : ''}{p}{n > 1 ? ` ×${n}` : ''}</span>;
+                  const on = posFilter === p && side === 'h';
+                  return <button key={p} onClick={() => { setSide('h'); setPosFilter(on ? null : p); }}
+                    style={{ fontSize: '.76rem', fontWeight: 800, padding: '4px 10px', borderRadius: 12, cursor: 'pointer', background: on ? 'var(--ink)' : ok ? 'var(--brand-soft)' : 'var(--card-2)', color: on ? '#fff' : ok ? 'var(--brand-ink)' : 'var(--ink-3)', border: '1px solid var(--line)' }}>{ok ? '✓ ' : ''}{p}{n > 1 ? ` ×${n}` : ''}</button>;
                 })}
+                {posFilter && side === 'h' && <button onClick={() => setPosFilter(null)} style={{ fontSize: '.74rem', fontWeight: 700, padding: '4px 8px', borderRadius: 12, cursor: 'pointer', background: 'none', border: 0, color: 'var(--brand)' }}>Clear</button>}
               </div>
               {sel.length > 0 && (
                 <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
