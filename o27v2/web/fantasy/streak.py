@@ -14,6 +14,12 @@ import datetime as _dt
 
 from o27v2 import db
 from . import data as slate_data
+from . import wallet
+
+# Milestone pots (streak length -> guilders). Free game, pure upside: a hot
+# streak pays out, with a jackpot at 50. Each gate pays once, on the pick that
+# reaches it; rebuild the streak and a fresh run can earn it again.
+GATES = {20: 1000 * 100, 30: 5000 * 100, 50: 50000 * 100}
 
 
 def ensure_schema() -> None:
@@ -24,11 +30,46 @@ def ensure_schema() -> None:
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             slate_date TEXT NOT NULL UNIQUE,
             player_id  INTEGER NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            gate_paid  INTEGER NOT NULL DEFAULT 0
         );
         """
     )
     conn.commit()
+    try:
+        conn.execute("ALTER TABLE streak_picks ADD COLUMN gate_paid INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass
+
+
+def settle() -> None:
+    """Walk the settled picks and pay any streak-length pot the moment a pick
+    reaches it (idempotent: each pick pays its gate once)."""
+    ensure_schema()
+    picks = db.fetchall("SELECT * FROM streak_picks ORDER BY slate_date")
+    streak = 0
+    to_pay = []  # (pick_id, gate_len, amount)
+    for p in picks:
+        res = _settle(p["slate_date"], p["player_id"])
+        if res == "hit":
+            streak += 1
+            amt = GATES.get(streak)
+            if amt and not p["gate_paid"]:
+                to_pay.append((p["id"], streak, amt))
+        elif res == "miss":
+            streak = 0
+        # 'pending' / 'void' don't change the running streak
+    if not to_pay:
+        return
+    # Mark the gates paid and commit FIRST (release the write lock), then credit
+    # the wallet — wallet.credit() opens its own connection.
+    conn = db.get_conn()
+    for pid, gate, _amt in to_pay:
+        conn.execute("UPDATE streak_picks SET gate_paid = ? WHERE id = ?", (gate, pid))
+    conn.commit()
+    for _pid, _gate, amt in to_pay:
+        wallet.credit(amt)
 
 
 def _db_id(pid) -> int:
@@ -84,8 +125,10 @@ def status() -> dict:
     """Full streak state: current / best run, today's pick or the eligible
     pool to pick from, and recent history."""
     ensure_schema()
+    settle()  # pay any newly-reached milestone pots
     picks = db.fetchall("SELECT * FROM streak_picks ORDER BY slate_date")
 
+    claimed = {p["gate_paid"] for p in picks if p["gate_paid"]}
     cur = best = 0
     history = []
     for p in picks:
@@ -121,10 +164,14 @@ def status() -> dict:
                     "teamColor": p.get("teamColor", ""), "init": p.get("init", ""),
                 })
 
+    gates = [{"len": n, "amount": GATES[n], "claimed": n in claimed,
+              "reached": cur >= n} for n in sorted(GATES)]
+    next_gate = next((g for g in gates if cur < g["len"]), None)
     return {
         "current": cur, "best": best,
         "slate_date": slate, "today_pick": today_pick,
         "pool": pool, "history": history[:20],
+        "gates": gates, "nextGate": next_gate,
     }
 
 
