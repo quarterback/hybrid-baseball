@@ -17,6 +17,7 @@ Routes:
   POST /api/sim           Simulate the next N games (JSON response)
 """
 from __future__ import annotations
+import functools
 import math
 import os
 import sys
@@ -340,6 +341,79 @@ def _serve(template: str, **context):
             payload["_dropped"] = dropped
         return jsonify(payload)
     return render_template(template, **context)
+
+
+# ---------------------------------------------------------------------------
+# Whole-page HTML cache
+#
+# The heavy read-only pages (Scores, Leaders, a box score's season context)
+# recompute hundreds of queries + per-player math on every load — ~2.4s of CPU
+# even on a fast box, which throttles out to tens of seconds on a shared Fly
+# vCPU. But the underlying data only changes when the owner SIMS (or trades).
+# So we cache the rendered HTML per (active save, path, query, league scope)
+# and gate it on a cheap "data fingerprint": unchanged fingerprint => serve the
+# cached HTML; the moment a game is played (or a trade/roster move lands) the
+# fingerprint changes and the next load recomputes exactly once. No manual
+# invalidation, no stale-after-sim risk, no re-sim (so the determinism caveat
+# in CLAUDE.md doesn't apply — we cache the render, we don't re-run the engine).
+# In-memory + single process: it's fine to lose on restart (rebuilds on demand).
+# ---------------------------------------------------------------------------
+_HTML_CACHE: dict = {}
+_HTML_CACHE_MAX = 96  # entries; bounded so a long-lived process can't balloon
+
+
+def _active_save_key() -> str:
+    """Identity of the active save's DB file — part of the cache key so two
+    leagues never serve each other's cached HTML."""
+    try:
+        from o27v2 import saves
+        return saves.active_db_path() or "default"
+    except Exception:
+        return "default"
+
+
+def _data_fingerprint() -> tuple:
+    """A cheap snapshot that changes whenever anything a stat page renders could
+    change: games played (sims), transactions (trades), and the player roster
+    (signings/cuts/new players). One indexed round-trip, sub-millisecond."""
+    row = db.fetchone(
+        "SELECT (SELECT COUNT(*) FROM games WHERE played=1)            AS gc, "
+        "       (SELECT COALESCE(MAX(id),0) FROM games WHERE played=1) AS gm, "
+        "       (SELECT COUNT(*) FROM transactions)                    AS tx, "
+        "       (SELECT COUNT(*) FROM players)                         AS pc, "
+        "       (SELECT COALESCE(MAX(id),0) FROM players)              AS pm"
+    )
+    return (row["gc"], row["gm"], row["tx"], row["pc"], row["pm"]) if row else ()
+
+
+def _html_cache(view):
+    """Decorator: cache a GET view's rendered HTML body, keyed by save + path +
+    query + league scope and invalidated by the data fingerprint. Only plain
+    200 HTML strings are cached; redirects / JSON / Response objects pass
+    straight through. after_request hooks (cookie persistence etc.) still run,
+    since we cache the body string, not the final Response."""
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if request.method != "GET":
+            return view(*args, **kwargs)
+        league = (request.args.get("league")
+                  or request.cookies.get("league_pref") or "")
+        key = (_active_save_key(), request.path,
+               request.query_string, league)
+        try:
+            fp = _data_fingerprint()
+        except Exception:
+            return view(*args, **kwargs)
+        hit = _HTML_CACHE.get(key)
+        if hit is not None and hit[0] == fp:
+            return hit[1]
+        resp = view(*args, **kwargs)
+        if isinstance(resp, str):  # rendered HTML only (skip redirects/JSON)
+            if len(_HTML_CACHE) >= _HTML_CACHE_MAX:
+                _HTML_CACHE.clear()
+            _HTML_CACHE[key] = (fp, resp)
+        return resp
+    return wrapper
 
 
 # ---------------------------------------------------------------------------
@@ -2839,6 +2913,7 @@ def app_icon():
 
 
 @app.route("/")
+@_html_cache
 def index():
     team_count = db.fetchone("SELECT COUNT(*) as n FROM teams")
     if not team_count or team_count["n"] == 0:
@@ -3307,6 +3382,7 @@ def schedule():
 
 
 @app.route("/game/<int:game_id>")
+@_html_cache
 def game_detail(game_id: int):
     game = db.fetchone(
         """SELECT g.*,
@@ -5032,6 +5108,7 @@ def help_page():
 
 
 @app.route("/leaders")
+@_html_cache
 def leaders():
     # In a multi-league independent universe each league is its own
     # statistical environment, so leaderboards + rate baselines are scoped
