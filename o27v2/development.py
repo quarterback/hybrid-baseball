@@ -370,15 +370,24 @@ def _catcher_season_usage(team_id: int) -> dict:
     return usage
 
 
-def develop_players_for_team(team_id: int, org_strength: int,
+def develop_players_for_team(team_id: int, org_strength: Optional[int],
                              rng: _random.Random,
                              style_dev: Optional[dict[str, float]] = None) -> int:
     """Run the dev pass for every player on a team. Returns the count
     of players updated.
 
+    `org_strength` drives the μ_org development bonus. Pass `None` (the
+    normal path) to derive it live from the team's current roster via
+    `league.compute_org_strength` — the same roster+bench grade shown on
+    the team page — so what you see is what grows the prospects. An
+    explicit int is honoured as an override (used by tests).
+
     `style_dev` (optional) is the league's development-trajectory bias,
     applied to every player on the team so league culture shapes careers."""
     rows = db.fetchall("SELECT * FROM players WHERE team_id = ?", (team_id,))
+    if org_strength is None:
+        from o27v2.league import compute_org_strength
+        org_strength = compute_org_strength(rows)
     # Catcher usage map — drives usage-based catcher erosion below. Catching is
     # a wear position; the more a backstop actually caught this season, the more
     # his skills erode. Use REAL in-season usage (games started at C / team
@@ -484,11 +493,17 @@ def run_offseason(season: int, rng_seed: Optional[int] = None) -> dict:
         sp = t.get("style_profile") or ""
         if sp not in _bias_cache:
             _bias_cache[sp] = _style_dev_bias(sp)
+        # org_strength=None → develop_players_for_team derives the live
+        # roster+bench grade itself, the same figure the team page shows.
         n = develop_players_for_team(
-            t["id"], t["org_strength"] or 50, rng, style_dev=_bias_cache[sp])
+            t["id"], None, rng, style_dev=_bias_cache[sp])
         team_summary[t["abbrev"]] = n
 
     fa_count = develop_free_agents(rng)
+    # The persisted teams.org_strength column no longer drives development
+    # (that now reads the live roster grade). It survives as a front-office
+    # knob — auction bidding discipline, FA/trade behaviour — so we keep
+    # rolling it forward on win% for those AI consumers.
     org_moves = update_org_strengths(rng)
 
     from o27v2.front_office import drift_fo_strategies

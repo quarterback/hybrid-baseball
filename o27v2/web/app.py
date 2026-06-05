@@ -8055,6 +8055,12 @@ def team_detail(team_id: int):
         (team_id, team_id),
     )
     team_payroll = valuation.estimate_team_payroll(team_id)
+    # Org strength shown here is a *live* roster+bench talent grade,
+    # recomputed from the current roster on every load — so trades and
+    # call-ups move it immediately. (The persisted teams.org_strength
+    # column is a separate front-office/auction knob and is not shown.)
+    from o27v2.league import compute_org_strength
+    org_strength_live = compute_org_strength(roster)
     # Staff wERA mean + variance — cascade-fragility read. Computed once
     # league-wide; we pull this team's row out for display.
     staff_disp = _staff_wera_dispersion(_league_baselines()).get(int(team_id), {})
@@ -8065,6 +8071,7 @@ def team_detail(team_id: int):
                            recent=recent,
                            win_pct=_win_pct,
                            team_payroll=team_payroll,
+                           org_strength=org_strength_live,
                            staff_wera=staff_disp)
 
 
