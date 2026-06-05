@@ -57,7 +57,7 @@
 </div>
 {% endmacro %}
 
-{# Scoreless-innings streak (value shown as IP). #}
+{# Scoreless-outs streak (O27's innings-free run-prevention streak). #}
 {% macro scoreless_card(title, rows, col='col-lg-4 col-md-6') %}
 <div class="{{ col }}">
   <div class="panel">
@@ -66,7 +66,7 @@
     <table class="table dense-table mb-0">
       <thead><tr>
         <th style="width:22px"></th><th>Player</th><th></th>
-        <th class="num">IP</th><th class="text-secondary">Span</th>
+        <th class="num" title="Consecutive outs recorded without allowing a run">Outs</th><th class="text-secondary">Span</th>
       </tr></thead>
       <tbody>
         {% for r in rows %}
@@ -74,7 +74,7 @@
           <td class="text-secondary num">{{ loop.index }}</td>
           <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
           <td class="team-abbrev">{{ r.team_abbrev }}</td>
-          <td class="num fw-bold">{{ r.ip_display }}</td>
+          <td class="num fw-bold">{{ r.outs }}</td>
           <td class="text-secondary small">{{ r.start_date }} → {{ r.end_date }}</td>
         </tr>
         {% endfor %}
@@ -85,8 +85,8 @@
 </div>
 {% endmacro %}
 
-{# Single-game record card: value + opponent + date. `ipkey` shows IP from outs. #}
-{% macro sg_card(title, rows, key, fmt='%d', ipkey=false, col='col-lg-4 col-md-6') %}
+{# Single-game record card: value + opponent + date. #}
+{% macro sg_card(title, rows, key, fmt='%d', col='col-lg-4 col-md-6') %}
 <div class="{{ col }}">
   <div class="panel">
     <div class="panel-head"><span>{{ title }}</span><span class="ms-auto sub">Top 5</span></div>
@@ -98,7 +98,7 @@
           <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
           <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
           <td class="team-abbrev">{{ r.team_abbrev }}</td>
-          <td class="num fw-bold">{% if ipkey %}{{ r.ip_display }}{% else %}{{ fmt|format(r[key]) }}{% endif %}</td>
+          <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
           <td class="text-secondary small">vs {{ r.opp_abbrev }} · {{ r.game_date }}</td>
         </tr>
         {% endfor %}
@@ -109,8 +109,8 @@
 </div>
 {% endmacro %}
 
-{# Career all-time card: value + seasons span. `ipkey` renders IP from outs. #}
-{% macro career_card(title, rows, key, fmt='%d', ipkey=false, col='col-lg-3 col-md-6') %}
+{# Career all-time card: value + seasons span. #}
+{% macro career_card(title, rows, key, fmt='%d', col='col-lg-3 col-md-6') %}
 <div class="{{ col }}">
   <div class="panel">
     <div class="panel-head"><span>{{ title }}</span><span class="ms-auto sub">Top 10</span></div>
@@ -122,7 +122,7 @@
           <td class="text-secondary num" style="width:22px">{{ loop.index }}</td>
           <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}">{{ r.player_name }}</a></td>
           <td class="team-abbrev">{{ r.team_abbrev }}</td>
-          <td class="num fw-bold">{% if ipkey %}{{ r.ip_display }}{% else %}{{ fmt|format(r[key]) }}{% endif %}</td>
+          <td class="num fw-bold">{{ fmt|format(r[key]) }}</td>
           <td class="text-secondary small">{{ r.seasons }}{{ ' szn' if r.seasons == 1 else ' szns' }}</td>
         </tr>
         {% endfor %}
@@ -174,15 +174,15 @@
 </div>
 <div class="row g-3 mb-3">
   {{ consec_card('Double-Digit K Starts', streaks.k_starts, 'GS') }}
-  {{ scoreless_card('Scoreless-Innings Streak', streaks.scoreless) }}
+  {{ scoreless_card('Scoreless-Outs Streak', streaks.scoreless) }}
   <div class="col-lg-4 col-md-6">
     <div class="panel">
       <div class="panel-head"><span>About these streaks</span></div>
       <div class="panel-body text-secondary small">
         Streaks read from per-game box lines (regulation only). A no-PA day
-        carries a streak without extending it. Scoreless runs accumulate
-        innings across consecutive run-free appearances; the outing that
-        allows a run ends the run.
+        carries a streak without extending it. The scoreless streak counts
+        consecutive OUTS recorded without allowing a run across appearances
+        (O27 has no innings); the outing that allows a run ends it.
       </div>
     </div>
   </div>
@@ -243,7 +243,7 @@
 <div class="row g-3 mb-3">
   {{ sg_card('Most Total Bases, Game', sg_bat.tb, 'tb') }}
   {{ sg_card('Most Strikeouts, Game (P)', sg_pit.k, 'k') }}
-  {{ sg_card('Longest Outing (IP)', sg_pit.outs, 'outs', ipkey=true) }}
+  {{ sg_card('Longest Outing (Outs)', sg_pit.outs, 'outs') }}
 </div>
 {% endif %}
 
@@ -273,7 +273,7 @@
 </div>
 <div class="row g-3 mb-3">
   {{ career_card('Strikeouts (P)', career_pit.p_k, 'p_k') }}
-  {{ career_card('Innings (IP)', career_pit.outs, 'outs', ipkey=true) }}
+  {{ career_card('Outs Pitched', career_pit.outs, 'outs') }}
   {{ career_card('Wins', career_pit.w, 'w') }}
   {{ career_card('ERA', career_pit.era, 'era', '%.2f') }}
 </div>

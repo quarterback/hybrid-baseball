@@ -5520,7 +5520,7 @@ def streaks_and_records():
 
     Three families:
       * In-season streaks (consecutive-game HR / hits / on-base, pitcher
-        double-digit-K starts, scoreless-innings runs) and the season's
+        double-digit-K starts, scoreless-outs runs) and the season's
         no-hitters / perfect games. League-scoped, like /leaders.
       * Single-game records — the best individual games of the season.
         League-scoped.
@@ -5530,7 +5530,7 @@ def streaks_and_records():
     """
     from o27v2.analytics.streaks import (
         longest_hit_streaks, home_run_streaks, on_base_streaks,
-        double_digit_k_streaks, scoreless_innings_streaks,
+        double_digit_k_streaks, scoreless_outs_streaks,
         no_hitters_and_perfect_games,
     )
     from o27v2.analytics.records import (
@@ -5559,7 +5559,7 @@ def streaks_and_records():
         "hits":      longest_hit_streaks(top_n=10, team_ids=team_ids),
         "on_base":   on_base_streaks(top_n=10, team_ids=team_ids),
         "k_starts":  double_digit_k_streaks(top_n=10, team_ids=team_ids),
-        "scoreless": scoreless_innings_streaks(top_n=10, team_ids=team_ids),
+        "scoreless": scoreless_outs_streaks(top_n=10, team_ids=team_ids),
     }
     nohit = no_hitters_and_perfect_games(team_ids=team_ids)
     sg_bat = single_game_batter_records(top_n=5, team_ids=team_ids)
