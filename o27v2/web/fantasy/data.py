@@ -318,6 +318,7 @@ def build_slate_data(slate_date: str | None = None) -> dict | None:
 
     pids = [r["id"] for r in rows]
     logs = _build_logs(pids)
+    bat_lines, pit_lines = _season_lines(pids)
 
     players: list[dict] = []
     for r in rows:
@@ -343,6 +344,7 @@ def build_slate_data(slate_date: str | None = None) -> dict | None:
             "r": ratings,
             "log": pl["log"],
             "form": pl["form"],
+            "statline": (pit_lines.get(r["id"]) if is_pitcher else bat_lines.get(r["id"])) or "",
         })
 
     # Trim the league-wide field to a realistic per-position DFS pool, then
@@ -365,6 +367,40 @@ def build_slate_data(slate_date: str | None = None) -> dict | None:
         "PLAYERS": players,
         "SLATE_DATE": slate_date,
     }
+
+
+def _season_lines(player_ids: list[int]) -> tuple[dict, dict]:
+    """Compact season stat lines for the DFS pool, batched. Returns
+    (batter_lines, pitcher_lines) keyed by player_id — the at-a-glance stats a
+    DFS player actually reads (no ratings)."""
+    if not player_ids:
+        return {}, {}
+    ph = ",".join("?" for _ in player_ids)
+    bat, pit = {}, {}
+    for r in db.fetchall(
+        f"SELECT player_id, SUM(ab) ab, SUM(hits) h, SUM(hr) hr, SUM(rbi) rbi, "
+        f"SUM(runs) ru, SUM(sb) sb, SUM(bb) bb, SUM(hbp) hbp, SUM(doubles) d2, SUM(triples) d3 "
+        f"FROM game_batter_stats WHERE phase = 0 AND player_id IN ({ph}) GROUP BY player_id",
+        tuple(player_ids)):
+        ab = r["ab"] or 0
+        if ab <= 0:
+            continue
+        obp = (r["h"] + r["bb"] + r["hbp"]) / max(1, ab + r["bb"] + r["hbp"])
+        bat[r["player_id"]] = (f"{r['h'] / ab:.3f} AVG · {obp:.3f} OBP · "
+                               f"{r['hr']} HR · {r['rbi']} RBI · {r['sb']} SB")
+    for r in db.fetchall(
+        f"SELECT player_id, SUM(outs_recorded) outs, SUM(k) k, SUM(er) er, SUM(bb) bb, "
+        f"SUM(hits_allowed) ha, "
+        f"SUM(CASE WHEN is_starter=1 AND outs_recorded>=18 AND er<=3 THEN 1 ELSE 0 END) qs "
+        f"FROM game_pitcher_stats WHERE phase = 0 AND player_id IN ({ph}) GROUP BY player_id",
+        tuple(player_ids)):
+        outs = r["outs"] or 0
+        if outs <= 0:
+            continue
+        era = 27.0 * r["er"] / outs
+        whip = 3.0 * (r["bb"] + r["ha"]) / outs
+        pit[r["player_id"]] = (f"{era:.2f} ERA · {whip:.2f} WHIP · {r['k']} K · {r['qs']} QS")
+    return bat, pit
 
 
 def _build_logs(player_ids: list[int]) -> dict:
