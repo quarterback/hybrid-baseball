@@ -395,13 +395,14 @@ def _build_logs(player_ids: list[int]) -> dict:
     )
 
     def _short_date(d: str) -> str:
-        # "2026-06-16" -> "J16"-ish compact tag; fall back to the raw tail.
+        # "2026-06-16" -> "Jun 16" (readable; single-letter months are ambiguous).
         try:
             mm, dd = d.split("-")[1:]
-            month = "JFMAMJJASOND"[int(mm) - 1]
-            return f"{month}{int(dd)}"
+            mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][int(mm) - 1]
+            return f"{mon} {int(dd)}"
         except Exception:
-            return d[-3:]
+            return d
 
     for s in bat:
         pid = s["player_id"]
