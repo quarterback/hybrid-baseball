@@ -331,7 +331,11 @@
     }
 
     /* ---- Tables ---- */
-    .table { color: var(--text); --bs-table-bg: transparent; margin: 0; }
+    /* --bs-table-color drives Bootstrap's per-cell text colour; pin it to the
+       theme token so body cells follow light/dark. Without this they fall back
+       to Bootstrap's default near-black --bs-body-color, which is invisible on
+       the dark canvas (headers set their own colour, so only the body dimmed). */
+    .table { color: var(--text); --bs-table-color: var(--text); --bs-table-bg: transparent; margin: 0; }
     .table thead th {
       background: var(--bg-card);
       color: var(--text);

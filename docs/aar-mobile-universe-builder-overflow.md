@@ -120,6 +120,18 @@ the first three cells (`foundText` guard). All-numeric stat strips now freeze
 nothing; roster / leaders / standings tables (which lead with a name, or a
 rank number then a name) are unchanged.
 
+## Follow-up: dark-mode table body text nearly invisible
+
+In dark mode the body cells of non-striped stat tables (player-page Standard /
+Advanced Batting, RISP, etc.) rendered near-black — barely visible on the dark
+canvas — while the headers stayed bright. Cause: `.table thead th` sets its own
+`color: var(--text)`, but body cells take Bootstrap's `--bs-table-color`, which
+base.html never overrode, so it fell back to Bootstrap's default
+`--bs-body-color` (~#212529). Fine on a white page (light mode looked OK),
+invisible on the dark one. Fix: set `--bs-table-color: var(--text)` on `.table`
+so every body cell follows the theme token — one line, fixes all Bootstrap
+tables app-wide in dark mode.
+
 ## Not done / honest caveats
 
 - Not verified on a real device — would benefit from a phone pass once the
