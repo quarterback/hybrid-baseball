@@ -323,7 +323,17 @@ function StreakScreen({ onNav, onOpenPlayer }) {
                 <div className="hero__in">
                   <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Current streak</div>
                   <div style={{ fontSize: '3.4rem', fontWeight: 900, lineHeight: 1 }}>{d.current}</div>
-                  <p style={{ marginTop: 6 }}>Best run: <b>{d.best}</b>. One hit keeps it alive — a hitless day starts you over.</p>
+                  <p style={{ marginTop: 6 }}>Best run: <b>{d.best}</b>. One hit keeps it alive — a hitless day starts you over.{d.nextGate ? ` ${d.nextGate.len - d.current} more to ${S.money(d.nextGate.amount)}.` : ''}</p>
+                  {d.gates && d.gates.length > 0 && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                      {d.gates.map(g => (
+                        <div key={g.len} style={{ flex: 1, minWidth: 92, background: g.reached ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.13)', borderRadius: 12, padding: '8px 10px', border: g.claimed ? '1px solid rgba(255,255,255,.7)' : '1px solid transparent' }}>
+                          <div style={{ fontSize: '.72rem', fontWeight: 800, opacity: .85 }}>{g.len} hits{g.len === 50 ? ' · JACKPOT' : ''}</div>
+                          <div style={{ fontSize: '1.05rem', fontWeight: 900 }}>{S.money(g.amount)}{g.claimed ? ' ✓' : ''}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 

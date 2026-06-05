@@ -141,16 +141,26 @@ def _proj_from_ratings(row: dict, is_pitcher: bool) -> float:
 
 
 def _hitter_line(s: dict) -> str:
-    """Compact box line for the player drawer — O27-flavoured."""
+    """Compact real-baseball box line for the player drawer: H-AB, then the
+    stuff that actually matters — HR, RBI, R, SB, BB."""
     h = s.get("hits", 0) or 0
     ab = s.get("ab", 0) or 0
-    hr = s.get("hr", 0) or 0
-    stays = s.get("stays", 0) or 0
     parts = [f"{h}-{ab}"]
+    hr = s.get("hr", 0) or 0
     if hr:
-        parts.append(f"{hr}HR")
-    if stays:
-        parts.append(f"{stays} stay")
+        parts.append(f"{hr} HR")
+    rbi = s.get("rbi", 0) or 0
+    if rbi:
+        parts.append(f"{rbi} RBI")
+    runs = s.get("runs", 0) or 0
+    if runs:
+        parts.append(f"{runs} R")
+    sb = s.get("sb", 0) or 0
+    if sb:
+        parts.append(f"{sb} SB")
+    bb = s.get("bb", 0) or 0
+    if bb:
+        parts.append(f"{bb} BB")
     return " · ".join(parts)
 
 
@@ -395,13 +405,14 @@ def _build_logs(player_ids: list[int]) -> dict:
     )
 
     def _short_date(d: str) -> str:
-        # "2026-06-16" -> "J16"-ish compact tag; fall back to the raw tail.
+        # "2026-06-16" -> "Jun 16" (readable; single-letter months are ambiguous).
         try:
             mm, dd = d.split("-")[1:]
-            month = "JFMAMJJASOND"[int(mm) - 1]
-            return f"{month}{int(dd)}"
+            mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][int(mm) - 1]
+            return f"{mon} {int(dd)}"
         except Exception:
-            return d[-3:]
+            return d
 
     for s in bat:
         pid = s["player_id"]
