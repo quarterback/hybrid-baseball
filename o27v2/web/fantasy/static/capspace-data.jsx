@@ -262,9 +262,51 @@
     return mon ? `${mon} ${+parts[2]}` : SLATE_DATE;
   })();
 
+  // ---- "How it works" copy per game mode ------------------------------
+  const HOWTO = {
+    dfs: { tagline: 'Salary-cap daily fantasy.', steps: [
+      'Fill 8 lineup slots — PILOT, C, 1B, 2B, 3B, SS and two OF — staying under the salary cap.',
+      'Enter a contest; the entry fee comes out of your wallet (freerolls cost nothing).',
+      'Your lineup scores standard fantasy points as tonight’s games go final.',
+      'Beat the field to cash — winnings land in your wallet when the slate finishes.',
+    ] },
+    streak: { tagline: 'Beat-the-streak survivor — no buy-in.', steps: [
+      'Each slate, pick one hitter you think gets a hit.',
+      'A hit (1+) extends your streak; a hitless night resets it to zero.',
+      'Chase your longest-ever streak. That’s the whole game.',
+    ] },
+    sluggers: { tagline: 'A home-run game with an O27 twist.', steps: [
+      'Pay the buy-in and pick up to 3 sluggers for the slate.',
+      'Score HR ×4 + Walk-Back run ×4 + RBI ×1 — the bomb plus the runs it brings home.',
+      'Beat the field to cash: 5× a near-best night, 2× beating the field average, money back above 60%.',
+    ] },
+    pilots: { tagline: 'The pitching game.', steps: [
+      'Pay the buy-in and pick up to 3 pilots (pitchers) for the slate.',
+      'Score K ×3 + Out ×1 − ER ×2, plus Quality Start +6 and Quality Finish +6.',
+      'Beat the field to cash (5× / 2× / money-back, like Sluggers).',
+    ] },
+    categories: { tagline: 'Season-long category (Roto) leagues.', steps: [
+      'Pick a format — 5×5, Razz (worst real stats win), HR Derby, or Pitchers-Only.',
+      'Draft a roster; the season buy-in comes out of your wallet. Tap a player to scout them.',
+      'Your players’ season stats stack up across the categories, ranked vs a field of rosters.',
+      'Pays at season’s end by final rank: 10× to win it, 3× top-10%, money back in the top half.',
+    ] },
+    bestball: { tagline: 'Draft once, never manage.', steps: [
+      'Draft 8 hitters + 4 pitchers covering every spot (C/1B/2B/3B/SS, 2 OF, 2 flex, 4 P).',
+      'Each slate your best in-position lineup auto-scores — no lineups to set, ever.',
+      'Draft depth at a position so the hot bat there starts itself.',
+      'Pays at season’s end by your final rank.',
+    ] },
+    sportsbook: { tagline: 'Bet the slate against the house.', steps: [
+      'Pick a game and tap a price — moneyline (who wins) or the run total (over/under).',
+      'Set your stake; it comes out of your wallet.',
+      'Bets settle off the final score — win, lose, or push (stake back).',
+    ] },
+  };
+
   window.SLATE = {
     LAKH, CRORE, CAP, WALLET, money, RATES, CURRENCIES, ZORA_SYMBOL, mode: 'usd',
     TEAMS, SLATE_GAMES, PLAYERS, SLOTS, FORMATS, CONTESTS, SCORING,
-    SLATE_DATE, SIM_DAY,
+    SLATE_DATE, SIM_DAY, HOWTO,
   };
 })();

@@ -272,4 +272,29 @@ function TopBar({ title, sub, back, onBack, right }) {
   );
 }
 
-Object.assign(window, { Icon, Btn, Tag, Chip, PlayerMark, Spark, AppShell, TopBar, CurrencySelector, CurrencyCtx, SpaceMascot, BetaSeal });
+/* ---------- HOW IT WORKS — collapsible per-mode instructions ---------- */
+function HowTo({ k }) {
+  const d = ((window.SLATE && window.SLATE.HOWTO) || {})[k];
+  const sk = 'o27.capspace.howto.' + k;
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(sk) !== '0'; } catch (e) { return true; } });
+  if (!d) return null;
+  function toggle() { const n = !open; setOpen(n); try { localStorage.setItem(sk, n ? '1' : '0'); } catch (e) {} }
+  return (
+    <div className="card mb-12" style={{ overflow: 'hidden' }}>
+      <button onClick={toggle} style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 0, padding: '12px 14px', cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800 }}><Icon name="info" size={16} /> How it works</span>
+        <Icon name="chev" size={16} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s', opacity: .55 }} />
+      </button>
+      {open && (
+        <div style={{ padding: '0 14px 14px' }}>
+          {d.tagline && <p className="muted" style={{ margin: '0 0 8px', fontWeight: 700, fontSize: '.85rem' }}>{d.tagline}</p>}
+          <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
+            {d.steps.map((s, i) => <li key={i} style={{ fontSize: '.85rem', lineHeight: 1.45 }}>{s}</li>)}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { Icon, Btn, Tag, Chip, PlayerMark, Spark, AppShell, TopBar, CurrencySelector, CurrencyCtx, SpaceMascot, BetaSeal, HowTo });

@@ -139,6 +139,7 @@ function LobbyScreen({ onNav, onEnterContest }) {
       } />
       <div className="app__scroll">
         <div className="page">
+          <HowTo k="dfs" />
           {/* slate selector */}
           <div className="slate-tabs">
             {slates.map(s => <Chip key={s.id} active={slate === s.id} onClick={() => setSlate(s.id)}>{s.label}</Chip>)}
@@ -334,6 +335,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
               </div>
 
               {/* tonight's pick */}
+              <HowTo k="streak" />
               <div className="section-head mt-24"><h2>Tonight's pick</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
               {!d.slate_date ? (
                 <div className="card card--pad center" style={{ padding: '32px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>No upcoming slate to pick. Sim forward to keep streaking.</div></div>
@@ -440,6 +442,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
               </div>
 
               {/* tonight's sluggers */}
+              <HowTo k="sluggers" />
               <div className="section-head mt-24"><h2>Tonight's sluggers</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
               {picks.length > 0 && (
                 <div className="card mb-12" style={{ overflow: 'hidden' }}>
@@ -559,6 +562,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
                 </div>
               </div>
 
+              <HowTo k="pilots" />
               <div className="section-head mt-24"><h2>Tonight's pilots</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
               {picks.length > 0 && (
                 <div className="card mb-12" style={{ overflow: 'hidden' }}>
@@ -702,6 +706,7 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
           ) : (
             <>
               <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>{curFmt.blurb}</p>
+              <HowTo k="categories" />
               {data.buyIn ? <p className="muted mb-12" style={{ fontSize: '.82rem', fontWeight: 600 }}>Season buy-in {S.money(data.buyIn)} · pays at season's end by final rank{data.entered ? ' · entered ✓' : ''}{data.payout > 0 ? ` · won ${S.money(data.payout)}` : ''}</p> : null}
 
               {st && !editing ? (
@@ -849,6 +854,7 @@ function SportsbookScreen({ onNav }) {
                 </div>
               </div>
 
+              <HowTo k="sportsbook" />
               <div className="section-head mt-24"><h2>Tonight's board</h2><span className="muted" style={{ fontSize: '.85rem', fontWeight: 600 }}>{d.slate_date || '—'}</span></div>
               {d.games.length === 0 && <div className="card card--pad center" style={{ padding: '24px' }}><div className="dim" style={{ fontWeight: 600 }}>No games open for betting.</div></div>}
               {d.games.map(g => (
@@ -991,6 +997,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
                 </div>
               </div>
               <p className="muted mt-12 mb-12" style={{ fontSize: '.84rem', lineHeight: 1.45 }}>Auto-lineup: {st.lineup}. No management — your draft is the whole game.</p>
+              <HowTo k="bestball" />
               <div className="section-head mt-12"><h2>Your roster</h2><button className="btn btn--ghost btn--sm" onClick={reDraft}>Re-draft</button></div>
               <div className="card" style={{ overflow: 'hidden' }}>
                 {(data.roster || []).map(p => (
@@ -1006,6 +1013,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
           ) : (
             /* ---- draft ---- */
             <>
+              <HowTo k="bestball" />
               <p className="muted mb-12" style={{ fontSize: '.86rem', lineHeight: 1.45 }}>Draft {slots.h} hitters and {slots.p} pitchers covering every slot. Each slate your best in-position lineup — C, 1B, 2B, 3B, SS, OF, OF + best 2 pitchers — auto-scores, so draft depth at a spot and the hot bat there starts itself.</p>
               {data.buyIn ? <p className="muted mb-12" style={{ fontSize: '.82rem', fontWeight: 600 }}>Season buy-in {S.money(data.buyIn)} · pays at season's end by final rank{data.entered ? ' · entered ✓' : ''}</p> : null}
               <div className="card card--pad mb-12" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
