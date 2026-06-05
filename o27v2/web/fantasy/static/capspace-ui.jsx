@@ -313,4 +313,34 @@ function PosFilter({ value, onChange, positions }) {
   );
 }
 
-Object.assign(window, { Icon, Btn, Tag, Chip, PlayerMark, Spark, AppShell, TopBar, CurrencySelector, CurrencyCtx, SpaceMascot, BetaSeal, HowTo, PosFilter });
+/* ---------- RECENT LIST — collapsible history (shows N, expands rest) ---------- */
+function shortDate(s) {
+  if (!s) return '—';
+  const parts = String(s).split('-');
+  if (parts.length < 3) return s;
+  const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][(+parts[1]) - 1];
+  return mo ? mo + ' ' + (+parts[2]) : s;
+}
+
+function RecentList({ title, meta, items, limit = 5, renderRow }) {
+  const [open, setOpen] = useState(false);
+  if (!items || !items.length) return null;
+  const shown = open ? items : items.slice(0, limit);
+  const extra = items.length - limit;
+  return (
+    <>
+      <div className="section-head mt-24"><h2>{title}</h2>{meta}</div>
+      <div className="card" style={{ overflow: 'hidden' }}>
+        {shown.map(renderRow)}
+        {extra > 0 && (
+          <button className="recent__more" onClick={() => setOpen(o => !o)}>
+            {open ? 'Show less' : 'Show ' + extra + ' more'}
+            <Icon name="chev" size={15} style={{ transform: open ? 'rotate(-90deg)' : 'rotate(90deg)', transition: 'transform .15s' }} />
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+Object.assign(window, { Icon, Btn, Tag, Chip, PlayerMark, Spark, AppShell, TopBar, CurrencySelector, CurrencyCtx, SpaceMascot, BetaSeal, HowTo, PosFilter, RecentList, shortDate });
