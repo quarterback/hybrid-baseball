@@ -2868,15 +2868,40 @@ def apply_archetype_roster_tilt(roster: list[dict], manager_archetype: str) -> i
     return promoted
 
 
-def _team_org_strength_from_roster(players: list[dict]) -> int:
-    """Recompute a team's org_strength as the mean composite rating of
-    its active roster, clamped to the 20-95 grade range. The persisted
-    org_strength is now a *reflection* of actual talent (so the team
-    page sort still works), not a hidden multiplier biasing rolls."""
+# Weight the non-active bench gets when grading a team's live org
+# strength. Starters dominate; a deep, talented bench nudges the grade
+# up while a thin or weak one drags it down — so the figure rewards
+# organizational depth, not just the front-line nine.
+_ORG_BENCH_WEIGHT = 0.20
+
+
+def compute_org_strength(players: list[dict]) -> int:
+    """Live organizational-talent grade (20-95): the mean composite
+    rating (`_player_overall`) of the active roster, blended with a
+    lighter-weighted contribution from non-active bench depth.
+
+    Recomputed on demand from the *current* roster, so trades and
+    call-ups move it immediately. This is the figure shown on the team
+    page and fed to player development. It is deliberately distinct from
+    the persisted `teams.org_strength` column, which is seeded before
+    rosters exist and stays a front-office knob (auction bidding
+    discipline, FA/trade behaviour)."""
     actives = [p for p in players if p.get("is_active")]
-    if not actives:
+    bench   = [p for p in players if not p.get("is_active")]
+    if not actives and not bench:
         return 50
-    return max(20, min(95, round(sum(_player_overall(p) for p in actives) / len(actives))))
+
+    def _mean(rows: list[dict]) -> float:
+        return sum(_player_overall(p) for p in rows) / len(rows)
+
+    if not bench:
+        grade = _mean(actives)
+    elif not actives:
+        grade = _mean(bench)
+    else:
+        grade = ((1 - _ORG_BENCH_WEIGHT) * _mean(actives)
+                 + _ORG_BENCH_WEIGHT * _mean(bench))
+    return max(20, min(95, round(grade)))
 
 
 def seed_league(rng_seed: int = 42, config_id: str = "30teams",
