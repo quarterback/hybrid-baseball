@@ -1185,6 +1185,9 @@
 </head>
 <body>
 
+{# DOS / SimCity-style boot preloader — plays once per session, skippable. #}
+{% include "_preloader.html" %}
+
 <nav class="topbar navbar navbar-expand-xl">
   <div class="container-fluid p-0" style="max-width:1500px">
     <a class="navbar-brand" href="{{ url_for('index') }}">Super Innings</a>

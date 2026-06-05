@@ -1,0 +1,307 @@
+{# ============================================================
+   DOS / SimCity-style boot preloader
+   ------------------------------------------------------------
+   A retro CRT "POST + load" sequence that plays once per browser
+   session before the app is revealed. Phosphor-green monospace,
+   scanlines, a memory count-up, module load lines, and a block
+   progress bar — flavoured for the O27 / Super Innings sim.
+
+   Self-contained: all CSS + JS live here. Included near the top
+   of <body> in base.html. Behaviour:
+     • Shows once per session (sessionStorage key 'o27.booted').
+     • Skippable — click or any key dismisses immediately.
+     • Honours prefers-reduced-motion (dismisses instantly).
+     • Pre-paint inline check hides it for already-booted sessions
+       so there's no flash on subsequent navigations.
+   ============================================================ #}
+<div id="o27-boot" role="presentation" aria-hidden="true">
+  <div class="o27-boot-crt">
+    <pre id="o27-boot-screen" class="o27-boot-screen"></pre>
+    <div class="o27-boot-skip">click or press any key to skip</div>
+  </div>
+</div>
+{# If JS is disabled the animation can never run or dismiss, so hide the
+   overlay outright and let the app show through. #}
+<noscript><style>#o27-boot{display:none !important}</style></noscript>
+
+<script>
+  /* Pre-paint gate: if this session already booted, kill the overlay
+     before it can flash. Mirrors the theme pre-paint script above. */
+  (function () {
+    try {
+      if (sessionStorage.getItem('o27.booted') === '1') {
+        var el = document.getElementById('o27-boot');
+        if (el) el.parentNode.removeChild(el);
+      }
+    } catch (e) {}
+  })();
+</script>
+
+<style>
+  #o27-boot {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: #05060a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    /* never let the boot screen inherit the app's light/dark theme */
+    color: #41ff8a;
+    font-family: "SF Mono", "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
+  }
+  #o27-boot.o27-boot--done {
+    opacity: 0;
+    transition: opacity .45s ease;
+    pointer-events: none;
+  }
+  .o27-boot-crt {
+    position: relative;
+    width: min(820px, 92vw);
+    max-height: 92vh;
+    padding: 26px 30px;
+    background:
+      radial-gradient(120% 120% at 50% 40%, rgba(20,40,28,.55) 0%, rgba(5,6,10,.95) 80%);
+    border: 1px solid rgba(65,255,138,.18);
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,.6),
+      0 0 60px rgba(65,255,138,.07) inset,
+      0 10px 60px rgba(0,0,0,.7);
+    overflow: hidden;
+  }
+  /* scanline + flicker overlay */
+  .o27-boot-crt::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.22) 3px,
+      rgba(0,0,0,0) 4px);
+    z-index: 2;
+  }
+  .o27-boot-crt::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: rgba(65,255,138,.012);
+    animation: o27-flicker 4.5s steps(60) infinite;
+    z-index: 2;
+  }
+  @keyframes o27-flicker {
+    0%, 97%, 100% { opacity: .25; }
+    98% { opacity: .55; }
+    99% { opacity: .12; }
+  }
+  .o27-boot-screen {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #41ff8a;
+    text-shadow: 0 0 6px rgba(65,255,138,.45);
+    max-height: 80vh;
+    overflow: hidden;
+  }
+  .o27-boot-screen .dim   { color: #2aa861; text-shadow: 0 0 5px rgba(42,168,97,.35); }
+  .o27-boot-screen .amber { color: #ffcf6b; text-shadow: 0 0 6px rgba(255,207,107,.45); }
+  .o27-boot-screen .ok    { color: #41ff8a; }
+  .o27-boot-screen .head  { color: #eaffea; text-shadow: 0 0 8px rgba(180,255,200,.5); }
+  .o27-boot-cursor {
+    display: inline-block;
+    width: .62em;
+    height: 1.05em;
+    margin-left: 1px;
+    vertical-align: -2px;
+    background: #41ff8a;
+    box-shadow: 0 0 8px rgba(65,255,138,.6);
+    animation: o27-blink 1s steps(2) infinite;
+  }
+  @keyframes o27-blink { 50% { opacity: 0; } }
+  .o27-boot-skip {
+    position: absolute;
+    right: 14px;
+    bottom: 10px;
+    z-index: 3;
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: rgba(65,255,138,.45);
+  }
+  @media (max-width: 575px) {
+    .o27-boot-crt { padding: 18px 16px; }
+    .o27-boot-screen { font-size: 11.5px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .o27-boot-crt::after { animation: none; }
+    .o27-boot-cursor { animation: none; }
+  }
+</style>
+
+<script>
+(function () {
+  var boot = document.getElementById('o27-boot');
+  if (!boot) return;  /* already removed by the pre-paint gate */
+
+  var screen = document.getElementById('o27-boot-screen');
+  var done = false;
+
+  function finish() {
+    if (done) return;
+    done = true;
+    try { sessionStorage.setItem('o27.booted', '1'); } catch (e) {}
+    boot.classList.add('o27-boot--done');
+    window.removeEventListener('keydown', onSkip, true);
+    boot.removeEventListener('click', onSkip);
+    setTimeout(function () {
+      if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+    }, 500);
+  }
+  function onSkip() { finish(); }
+
+  /* Reduced motion: respect the user's wish and don't run the show. */
+  var reduce = window.matchMedia &&
+               window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { finish(); return; }
+
+  window.addEventListener('keydown', onSkip, true);
+  boot.addEventListener('click', onSkip);
+
+  /* Hard safety cap: whatever happens, never leave the overlay blocking
+     the app for more than a few seconds past the scripted runtime. */
+  setTimeout(finish, 12000);
+
+  /* ---- The boot script. Each step appends to the screen. ----
+     A step is { html, after } where `after` is the ms pause before
+     the next step. Two special step kinds drive the animations:
+     the memory count-up and the roster progress bar. */
+  var EOL = '\n';
+  var totalMem = 65536;   /* KB — a nod to the 640K/64M DOS era */
+
+  function span(cls, txt) { return '<span class="' + cls + '">' + txt + '</span>'; }
+
+  /* pad a label out to a fixed column with dot leaders, DOS-style */
+  function leader(label, width) {
+    var dots = width - label.length;
+    if (dots < 1) dots = 1;
+    return label + ' ' + new Array(dots).join('.');
+  }
+
+  var steps = [
+    { t: 120,  html: span('head', 'SUPER INNINGS &mdash; O27 SIMULATION SYSTEM') + EOL },
+    { t: 90,   html: span('dim', '(C) 2026 Parachute Commons.  All bases reserved.') + EOL + EOL },
+    { t: 260,  html: 'BIOS v2.7 ' + span('dim', 'sidearm/submarine arch') + ' ... ' + span('ok', 'OK') + EOL },
+    { t: 220,  html: 'Detecting baseball variant ......... ' + span('amber', 'O27') + EOL },
+    { kind: 'mem' },
+    { t: 200,  html: 'Initializing sim kernel ........... [ ' + span('ok', 'OK') + ' ]' + EOL + EOL },
+    { t: 160,  html: span('dim', 'Loading engine modules:') + EOL },
+    { t: 110,  html: '  ' + leader('plate_appearance.sys', 26) + ' ' + span('ok', 'OK') + EOL },
+    { t: 95,   html: '  ' + leader('baserunning.sys', 26) + ' ' + span('ok', 'OK') + EOL },
+    { t: 95,   html: '  ' + leader('stay_mechanic.drv', 26) + ' ' + span('ok', 'OK') + EOL },
+    { t: 95,   html: '  ' + leader('joker_cooldown.drv', 26) + ' ' + span('ok', 'OK') + EOL },
+    { t: 95,   html: '  ' + leader('park_geometry.dat', 26) + ' ' + span('ok', 'OK') + EOL },
+    { t: 95,   html: '  ' + leader('weather.dat', 26) + ' ' + span('ok', 'OK') + EOL },
+    { t: 110,  html: '  ' + leader('nautical_crew.sys', 26) + ' ' + span('ok', 'OK') + EOL + EOL },
+    { kind: 'bar', label: 'Seeding rosters' },
+    { t: 220,  html: 'Calibrating run environment ....... ' + span('amber', '5.1 R/G') + EOL },
+    { t: 220,  html: 'Mounting league database .......... ' + span('amber', 'o27v2.db') + EOL + EOL },
+    { t: 320,  html: span('dim', '27 outs per side. No innings. Play ball.') + EOL + EOL },
+    { t: 240,  html: span('head', 'READY.') + EOL },
+  ];
+
+  /* a persistent cursor element appended after every paint */
+  function repaintCursor() {
+    var old = screen.querySelector('.o27-boot-cursor');
+    if (old) old.parentNode.removeChild(old);
+    var cur = document.createElement('span');
+    cur.className = 'o27-boot-cursor';
+    screen.appendChild(cur);
+  }
+  function append(html) {
+    var cur = screen.querySelector('.o27-boot-cursor');
+    if (cur) cur.parentNode.removeChild(cur);
+    screen.insertAdjacentHTML('beforeend', html);
+    repaintCursor();
+  }
+
+  function runMem(next) {
+    /* "Memory test: 0000000 KB" ticking up to totalMem, then OK */
+    var line = document.createElement('span');
+    var cur = screen.querySelector('.o27-boot-cursor');
+    if (cur) cur.parentNode.removeChild(cur);
+    screen.appendChild(line);
+    repaintCursor();
+    var val = 0;
+    var inc = Math.max(2048, Math.floor(totalMem / 24));
+    function pad(n) { n = '' + n; while (n.length < 7) n = '0' + n; return n; }
+    var iv = setInterval(function () {
+      val += inc;
+      if (val >= totalMem) { val = totalMem; }
+      line.innerHTML = 'Memory test: ' + span('amber', pad(val) + ' KB');
+      if (val >= totalMem) {
+        clearInterval(iv);
+        line.innerHTML = 'Memory test: ' + span('amber', pad(totalMem) + ' KB') +
+                         ' ... ' + span('ok', 'OK') + EOL;
+        repaintCursor();
+        setTimeout(next, 160);
+      }
+    }, 28);
+  }
+
+  function runBar(label, next) {
+    /* block progress bar: [##########----] NN% */
+    var slots = 22;
+    var line = document.createElement('span');
+    var cur = screen.querySelector('.o27-boot-cursor');
+    if (cur) cur.parentNode.removeChild(cur);
+    screen.appendChild(line);
+    repaintCursor();
+    var pct = 0;
+    function draw() {
+      var filled = Math.round(slots * pct / 100);
+      var bar = new Array(filled + 1).join('#') +
+                new Array(slots - filled + 1).join('-');
+      var pctStr = (pct < 10 ? '  ' : pct < 100 ? ' ' : '') + pct + '%';
+      line.innerHTML = label + ' [' + span('ok', bar) + '] ' + span('amber', pctStr);
+    }
+    draw();
+    var iv = setInterval(function () {
+      pct += Math.floor(Math.random() * 9) + 6;
+      if (pct >= 100) pct = 100;
+      draw();
+      if (pct >= 100) {
+        clearInterval(iv);
+        line.innerHTML = label + ' [' + span('ok', new Array(slots + 1).join('#')) +
+                         '] ' + span('ok', 'DONE') + EOL + EOL;
+        repaintCursor();
+        setTimeout(next, 220);
+      }
+    }, 90);
+  }
+
+  function step(i) {
+    if (done) return;
+    if (i >= steps.length) {
+      /* hold on READY for a beat, then reveal the app */
+      setTimeout(finish, 850);
+      return;
+    }
+    var s = steps[i];
+    if (s.kind === 'mem')  { runMem(function () { step(i + 1); });  return; }
+    if (s.kind === 'bar')  { runBar(s.label, function () { step(i + 1); }); return; }
+    append(s.html);
+    setTimeout(function () { step(i + 1); }, s.t);
+  }
+
+  repaintCursor();
+  setTimeout(function () { step(0); }, 220);
+})();
+</script>
