@@ -397,3 +397,75 @@ footer.site {
   left: 0;
   z-index: 6;
 }
+
+/* ------------------------------------------------------------------ Responsive
+ *
+ * The desktop layout packs the brand, ten nav links, a search box and a
+ * theme toggle into one non-wrapping flex row. On a phone that row is far
+ * wider than the viewport, which widens <body> itself and drags the whole
+ * page sideways (the symptom: nav and tables scroll off both edges). Below
+ * the breakpoint we let the header wrap onto a few rows and turn the nav
+ * into its own horizontally-scrollable strip, so the page width stays
+ * pinned to the viewport and only the wide data tables (already wrapped in
+ * .tablewrap { overflow:auto }) scroll on their own. */
+@media (max-width: 760px) {
+  html, body { font-size: 14px; }
+
+  header.site { border-bottom-width: 1px; }
+  .site-bar {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 8px 12px;
+  }
+  /* Brand takes the first row on its own; nav drops to the last row. */
+  .brand { flex: 0 0 100%; font-size: 15px; }
+  .brand .sub { display: inline-block; }
+  .spacer { display: none; }
+
+  /* Search + toggle share row two. */
+  .search-box { flex: 1 1 auto; width: auto; min-width: 0; }
+  .theme-toggle { flex: 0 0 auto; }
+
+  /* Nav becomes a self-contained scroll strip so it never widens the page. */
+  nav.top {
+    order: 1;
+    flex: 0 0 100%;
+    gap: 18px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  nav.top::-webkit-scrollbar { display: none; }
+  nav.top a { flex: 0 0 auto; white-space: nowrap; }
+
+  main { padding: 10px 12px 56px; }
+  .page-title { font-size: 19px; }
+  .page-subtitle { margin-bottom: 10px; }
+
+  /* Data tables keep their own scroll; give them more vertical room. */
+  .tablewrap { max-height: 72vh; }
+
+  /* Section header with tabs can wrap rather than squeeze. */
+  .section-bar { flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+  .tabs { flex-wrap: wrap; }
+
+  /* Three-column header blocks stack vertically. */
+  .player-header, .team-header {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    align-items: start;
+  }
+  .player-header h1, .team-header h1 { font-size: 19px; }
+
+  /* Box-score headline wraps instead of forcing a wide row. */
+  .boxscore-headline { gap: 14px 24px; flex-wrap: wrap; padding: 12px 14px; }
+  .boxscore-side .score { font-size: 22px; }
+}
+
+@media (max-width: 420px) {
+  /* On the narrowest phones, drop the search box from the header so the
+   * brand/toggle row stays clean; in-page filter boxes still cover search. */
+  .site-bar > .search-box { display: none; }
+  .cards { grid-template-columns: 1fr 1fr; }
+}
