@@ -100,6 +100,34 @@ def _default_out_dir() -> str:
 
 OUT_DIR = _default_out_dir()
 
+# --- House style / lexicon ------------------------------------------------
+# A user-editable document injected into every script prompt. The persistent
+# copy (editable in-app at /audio/style, lives on the volume so it survives
+# restarts) wins; otherwise the bundled default ships the baseline voice.
+STYLE_FILE = os.path.join(OUT_DIR, "style.md")
+DEFAULT_STYLE_FILE = os.path.join(_PKG_DIR, "style_default.md")
+
+
+def load_style() -> str:
+    """The active house-style text: the user's saved copy if present, else the
+    bundled default. Returns '' only if both are missing."""
+    for path in (STYLE_FILE, DEFAULT_STYLE_FILE):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read().strip()
+            if text:
+                return text
+        except OSError:
+            continue
+    return ""
+
+
+def save_style(text: str) -> None:
+    os.makedirs(OUT_DIR, exist_ok=True)
+    with open(STYLE_FILE, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
 # Audio format produced by OpenAI TTS / our stub (must match for stitching).
 WAV_SAMPLE_RATE = 24000
 WAV_CHANNELS = 1

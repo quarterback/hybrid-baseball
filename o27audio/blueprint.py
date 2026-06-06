@@ -208,6 +208,49 @@ def roundup_player():
         initial=row["status"] if row else "none", cta="Generate roundup")
 
 
+# --- House style / lexicon editor -----------------------------------------
+
+@audio_bp.route("/style", methods=["GET", "POST"])
+def style_editor():
+    saved = False
+    if request.method == "POST":
+        config.save_style(request.form.get("style", ""))
+        saved = True
+    return render_template_string(
+        _STYLE_HTML, text=config.load_style(), saved=saved)
+
+
+_STYLE_HTML = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Broadcast style</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0;
+         padding: 1.25rem; max-width: 720px; }
+  h1 { font-size: 1.15rem; margin: 0 0 .25rem; }
+  p.sub { color: #888; font-size: .9rem; margin: 0 0 1rem; }
+  textarea { width: 100%; min-height: 60vh; font: .9rem/1.4 ui-monospace, monospace;
+             padding: .7rem; border-radius: .5rem; border: 1px solid #999;
+             box-sizing: border-box; }
+  button { font-size: 1.05rem; padding: .7rem 1.2rem; border: 0; border-radius: .6rem;
+           background: #1d6f42; color: #fff; margin-top: .8rem; cursor: pointer; }
+  .ok { color: #1d6f42; font-weight: 600; }
+  a.back { display: inline-block; margin-top: 1rem; color: #1d6f42; }
+</style></head>
+<body>
+  <h1>🎙️ Broadcast style &amp; lexicon</h1>
+  <p class="sub">This text is fed to the announcers on every recap. Changes take effect
+    on the next render. {% if saved %}<span class="ok">Saved ✓</span>{% endif %}</p>
+  <form method="post">
+    <textarea name="style" spellcheck="false">{{ text }}</textarea><br>
+    <button type="submit">Save</button>
+  </form>
+  <a class="back" href="/audio/roundup">&larr; Back to Radio</a>
+</body></html>"""
+
+
 _PLAYER_HTML = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -236,6 +279,7 @@ _PLAYER_HTML = """<!doctype html>
   <div id="player"></div>
   <div class="msg" id="msg"></div>
   <a class="back" href="{{ back_url }}">&larr; {{ back_label }}</a>
+  <a class="back" href="/audio/style" style="margin-left:1rem">🎙️ Edit style</a>
 
 <script>
 const GEN = {{ generate_url | tojson }};
