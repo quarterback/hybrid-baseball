@@ -537,14 +537,19 @@ def test_invariant_7b_pitcher_row_uniqueness(played_game_ids):
 
 
 # ---------------------------------------------------------------------------
-# Invariant 8: FIP sanity (league FIP within 0.05 of league ERA)
+# Invariant 8: xRA anchored to the realized run environment
 # ---------------------------------------------------------------------------
 
 def test_invariant_8_fip_anchored_to_era(played_game_ids):
-    """league wERA within 0.05 of league raw ER per 27 outs, AND league
-    xRA within 0.05 of league wERA. Replaces the legacy FIP-vs-ERA
-    invariant; the wERA / xRA constants are refit per call so a
-    drift in either should trip this immediately.
+    """league xRA (outs-weighted) within 0.05 of league RA per 27 outs.
+
+    wERA RETIRED (its arc-weighting baked in a false "late runs cost more"
+    theory that has nothing to stand on in a single continuous 27-out half).
+    xRA — expected runs allowed from the actual events — is the run-prevention
+    headline now. This invariant is the spirit-preserved replacement for the
+    old wERA-vs-ER/27 check: the EXPECTED stat must center on the REALIZED run
+    environment (league RA/27, all runs), so a miscalibrated `xra_norm` trips
+    it immediately. (`werra` is kept as an alias of `xra`; we guard that too.)
 
     Plus an independent ER ≤ R sanity check: per (game, team), the
     sum of pitcher earned-runs cannot exceed the team's actual runs
@@ -558,6 +563,9 @@ def test_invariant_8_fip_anchored_to_era(played_game_ids):
                    SUM(ps.outs_recorded) AS outs,
                    SUM(ps.batters_faced) AS bf,
                    SUM(ps.hits_allowed)  AS h,
+                   COALESCE(SUM(ps.singles_allowed),0) AS singles_allowed,
+                   COALESCE(SUM(ps.doubles_allowed),0) AS doubles_allowed,
+                   COALESCE(SUM(ps.triples_allowed),0) AS triples_allowed,
                    SUM(ps.runs_allowed)  AS r,
                    SUM(ps.er)            AS er,
                    SUM(ps.bb)            AS bb,
@@ -593,25 +601,26 @@ def test_invariant_8_fip_anchored_to_era(played_game_ids):
     _aggregate_pitcher_rows(rows)
 
     total_outs = sum(r["outs"] or 0 for r in rows)
-    total_er   = sum(r["er"]   or 0 for r in rows)
+    total_ra   = sum(r["r"]    or 0 for r in rows)
     if total_outs == 0:
         pytest.skip("no pitcher outs recorded")
-    league_raw_era = (total_er * 27.0) / total_outs
-    league_werra_weighted = (
-        sum((r.get("werra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
-    )
+    league_ra27 = (total_ra * 27.0) / total_outs
     league_xra_weighted = (
         sum((r.get("xra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
     )
-    assert abs(league_werra_weighted - league_raw_era) < 0.05, (
-        f"outs-weighted league wERA {league_werra_weighted:.4f} not within "
-        f"0.05 of league raw ER/27 {league_raw_era:.4f}; the production "
-        f"`_league_werra_consts` / `_aggregate_pitcher_rows` no longer agree"
+    assert abs(league_xra_weighted - league_ra27) < 0.05, (
+        f"outs-weighted league xRA {league_xra_weighted:.4f} not within 0.05 of "
+        f"league RA/27 {league_ra27:.4f}; the xRA constant (`xra_norm`) is no "
+        f"longer anchored to the realized run environment"
     )
-    assert abs(league_xra_weighted - league_werra_weighted) < 0.05, (
-        f"outs-weighted league xRA {league_xra_weighted:.4f} not within "
-        f"0.05 of league wERA {league_werra_weighted:.4f}; the xRA constant "
-        f"(`xra_norm`) is no longer anchored to wERA"
+    # wERA retired → its key aliases xRA; guard the alias so nothing resurrects
+    # a divergent arc-weighted value.
+    league_werra_weighted = (
+        sum((r.get("werra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
+    )
+    assert abs(league_werra_weighted - league_xra_weighted) < 1e-6, (
+        f"werra ({league_werra_weighted:.4f}) must alias xra "
+        f"({league_xra_weighted:.4f}) since wERA retired"
     )
 
     # ---- (b) ER <= R per (game, team) ----------------------------------
