@@ -40,7 +40,7 @@ function BuilderScreen({ contest, roster, onAdd, onRemove, onOpenPlayer, onEnter
 
   const positions = ['ALL', 'PILOT', 'C', '1B', '2B', '3B', 'SS', 'OF'];
   let pool = S.PLAYERS.filter(p => !chosenIds.includes(p.id));
-  if (posF !== 'ALL') pool = pool.filter(p => p.pos === posF);
+  if (posF !== 'ALL') pool = pool.filter(p => ((p.posEligible && p.posEligible.length) ? p.posEligible : [p.pos]).includes(posF));
   if (q.trim()) pool = pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase()));
   if (affordOnly) pool = pool.filter(canAfford);
   pool = [...pool].sort((a, b) => sort === 'salary' ? b.salary - a.salary : sort === 'value' ? b.value - a.value : b.proj - a.proj);
@@ -119,29 +119,30 @@ function BuilderScreen({ contest, roster, onAdd, onRemove, onOpenPlayer, onEnter
                 <div className="colh">SALARY</div>
                 <div className="colh" style={{ width: 34 }}></div>
               </div>
-              {pool.map(p => {
-                const afford = canAfford(p);
-                return (
-                  <div key={p.id} className={'prow prow--build' + (afford ? '' : ' prow--off')}>
-                    <div className="prow__id" onClick={() => onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
-                      <PlayerMark p={p} />
-                      <div style={{ minWidth: 0 }}>
-                        <div className="prow__name">{p.name}</div>
-                        <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp}</div>
-                        {p.statline
-                          ? <div className="prow__stat">{p.statline}</div>
-                          : <div className="prow__stat prow__stat--none">No games yet · {p.own}% rostered</div>}
+              <PagedList items={pool} perPage={30} resetKey={q + '|' + posF + '|' + affordOnly + '|' + sort}
+                empty={<div className="center muted" style={{ padding: 30, fontWeight: 600 }}>{affordOnly ? 'Nothing left in budget — remove a pricey pick or turn off “In budget.”' : 'No players match.'}</div>}
+                renderRow={p => {
+                  const afford = canAfford(p);
+                  return (
+                    <div key={p.id} className={'prow prow--build' + (afford ? '' : ' prow--off')}>
+                      <div className="prow__id" onClick={() => onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
+                        <PlayerMark p={p} />
+                        <div style={{ minWidth: 0 }}>
+                          <div className="prow__name">{p.name}</div>
+                          <div className="prow__sub"><span className="poscap">{posLabel(p)}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp}</div>
+                          {p.statline
+                            ? <div className="prow__stat">{p.statline}</div>
+                            : <div className="prow__stat prow__stat--none">No games yet · {p.own}% rostered</div>}
+                        </div>
                       </div>
+                      <div className="cell-num"><div className="big" style={{ color: 'var(--brand)' }}>{p.proj.toFixed(1)}</div><Spark form={p.form} /></div>
+                      <div className="cell-num"><div className="big">{S.money(p.salary)}</div><div className="sm">{p.value ? p.value.toFixed(1) + ' pt/$' : ''}</div></div>
+                      <button className="add-btn" disabled={!afford} title={afford ? 'Add to lineup' : 'Not enough cap left'} onClick={() => onAdd(p)}>
+                        {afford ? '+' : <Icon name="lock" size={15} />}
+                      </button>
                     </div>
-                    <div className="cell-num"><div className="big" style={{ color: 'var(--brand)' }}>{p.proj.toFixed(1)}</div><Spark form={p.form} /></div>
-                    <div className="cell-num"><div className="big">{S.money(p.salary)}</div><div className="sm">{p.value ? p.value.toFixed(1) + ' pt/$' : ''}</div></div>
-                    <button className="add-btn" disabled={!afford} title={afford ? 'Add to lineup' : 'Not enough cap left'} onClick={() => onAdd(p)}>
-                      {afford ? '+' : <Icon name="lock" size={15} />}
-                    </button>
-                  </div>
-                );
-              })}
-              {pool.length === 0 && <div className="center muted" style={{ padding: 30, fontWeight: 600 }}>{affordOnly ? 'Nothing left in budget — remove a pricey pick or turn off “In budget.”' : 'No players match.'}</div>}
+                  );
+                }} />
             </div>
           </div>
         </div>
@@ -229,7 +230,7 @@ function LiveScreen({ roster, contestId, onNav }) {
               <span style={{ color: winning > 0 ? 'var(--live)' : 'rgba(255,255,255,.7)', fontWeight: 700, fontSize: '.85rem', whiteSpace: 'nowrap' }}>
                 {topPct != null ? 'Top ' + topPct.toFixed(0) + '%' : '—'}{winning > 0 ? ' · winning ' + S.money(winning) : ''}
               </span>
-              <span style={{ color: 'rgba(255,255,255,.6)', fontWeight: 600, fontSize: '.8rem', whiteSpace: 'nowrap' }}>Par {data.par.toFixed(1)} · cash {data.cash_line.toFixed(1)}</span>
+              <span style={{ color: 'rgba(255,255,255,.6)', fontWeight: 600, fontSize: '.8rem', whiteSpace: 'nowrap' }}>Par {data.par.toFixed(1)} · win line {data.cash_line.toFixed(1)}</span>
             </div>
             <div className="live-bars">
               {Array.from({ length: gamesTotal }).map((_, i) => <i key={i} className={i < gamesDone ? 'done' : ''} />)}

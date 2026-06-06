@@ -265,9 +265,15 @@ function TopBar({ title, sub, back, onBack, right }) {
         {sub && <div className="topbar__sub">{sub}</div>}
       </div>
       {right}
+      {(window.SLATE && window.SLATE.SIM_DAY) && (
+        <span className="simclock" title="Current sim date — tonight's live slate">
+          <span className="dot" />
+          <span className="simclock__lbl hide-mobile">Slate&nbsp;</span>
+          <span className="num">{window.SLATE.SIM_DAY}</span>
+        </span>
+      )}
       {window.SLATE && <span className="topbar__bal" title="Your bankroll"><span className="topbar__bal-lbl">Balance</span><span className="num">{window.SLATE.money(window.SLATE.WALLET)}</span></span>}
       <CurrencySelector />
-      {(window.SLATE && window.SLATE.SIM_DAY) && <span className="simclock hide-mobile"><span className="dot" /> Sim day <span className="num">{window.SLATE.SIM_DAY}</span></span>}
       <span className="avatar">Y</span>
     </header>
   );
@@ -343,4 +349,33 @@ function RecentList({ title, meta, items, limit = 5, renderRow }) {
   );
 }
 
-Object.assign(window, { Icon, Btn, Tag, Chip, PlayerMark, Spark, AppShell, TopBar, CurrencySelector, CurrencyCtx, SpaceMascot, BetaSeal, HowTo, PosFilter, RecentList, shortDate });
+/* ---------- PAGED LIST — paginate long pools (no endless scroll) ---------- */
+function PagedList({ items, perPage = 25, resetKey, renderRow, empty }) {
+  const [page, setPage] = useState(0);
+  useEffect(() => { setPage(0); }, [resetKey]);
+  if (!items || items.length === 0) return empty || null;
+  const pages = Math.max(1, Math.ceil(items.length / perPage));
+  const p = Math.min(page, pages - 1);
+  const slice = items.slice(p * perPage, p * perPage + perPage);
+  return (
+    <>
+      {slice.map(renderRow)}
+      {pages > 1 && (
+        <div className="pager">
+          <button className="pager__btn" disabled={p <= 0} onClick={() => setPage(p - 1)} aria-label="Previous page"><Icon name="back" size={16} /> Prev</button>
+          <span className="pager__info">Page <b>{p + 1}</b> / {pages} · {items.length} players</span>
+          <button className="pager__btn" disabled={p >= pages - 1} onClick={() => setPage(p + 1)} aria-label="Next page">Next <Icon name="chev" size={16} /></button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* eligible-position label, e.g. "SS/2B" or "1B/OF+2" for super-utility */
+function posLabel(p) {
+  const e = (p.posEligible && p.posEligible.length) ? p.posEligible : [p.pos];
+  if (e.length <= 2) return e.join('/');
+  return e.slice(0, 2).join('/') + '+' + (e.length - 2);
+}
+
+Object.assign(window, { Icon, Btn, Tag, Chip, PlayerMark, Spark, AppShell, TopBar, CurrencySelector, CurrencyCtx, SpaceMascot, BetaSeal, HowTo, PosFilter, RecentList, shortDate, PagedList, posLabel });

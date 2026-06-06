@@ -103,7 +103,7 @@ function HubScreen({ onNav, onOpenFormat, onNewRun }) {
                 <div className="tile"><div className="lbl">Peak</div><div className="val">{S.money(rec.peak_bankroll || 0)}</div><div className="sub">highest bankroll</div></div>
                 <div className="tile"><div className="lbl">Biggest win</div><div className="val">{S.money(rec.biggest_win || 0)}</div><div className="sub">single payout</div></div>
                 <div className="tile"><div className="lbl">Best streak</div><div className="val">{rec.best_streak || 0}</div><div className="sub">Go Streaking</div></div>
-                <div className="tile"><div className="lbl">Cashes</div><div className="val">{(rec.cashes || 0)}/{(rec.entries || 0)}</div><div className="sub">entries cashed</div></div>
+                <div className="tile"><div className="lbl">Paid finishes</div><div className="val">{(rec.cashes || 0)}/{(rec.entries || 0)}</div><div className="sub">entries that won money</div></div>
               </div>
             </>
           )}
@@ -315,7 +315,7 @@ function StreakScreen({ onNav, onOpenPlayer }) {
 
   const d = data;
   const pool = d ? (d.pool || []) : [];
-  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || p.pos === posFilter));
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || ((p.posEligible && p.posEligible.length) ? p.posEligible : [p.pos]).includes(posFilter)));
   const resColor = r => r === 'hit' ? 'var(--live)' : r === 'miss' ? 'var(--down)' : 'var(--ink-3)';
   const resLabel = r => r === 'hit' ? 'Hit' : r === 'miss' ? 'Miss' : r === 'pending' ? 'Live' : '—';
 
@@ -378,19 +378,19 @@ function StreakScreen({ onNav, onOpenPlayer }) {
                   <PosFilter value={posFilter} onChange={setPosFilter} />
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search hitters…" value={q} onChange={e => setQ(e.target.value)} /></div>
                   <div className="card" style={{ overflow: 'hidden' }}>
-                    {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
-                    {shown.map(p => (
-                      <div key={p.id} className="prow">
-                        <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
-                          <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
-                          <div style={{ minWidth: 0 }}>
-                            <div className="prow__name">{p.name}</div>
-                            <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp}</div>
+                    <PagedList items={shown} resetKey={q + '|' + posFilter} empty={<div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
+                      renderRow={p => (
+                        <div key={p.id} className="prow">
+                          <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
+                            <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
+                            <div style={{ minWidth: 0 }}>
+                              <div className="prow__name">{p.name}</div>
+                              <div className="prow__sub"><span className="poscap">{posLabel(p)}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp}</div>
+                            </div>
                           </div>
+                          <button className="add-btn" disabled={busy} title="Pick this hitter" onClick={() => pick(p)}>+</button>
                         </div>
-                        <button className="add-btn" disabled={busy} title="Pick this hitter" onClick={() => pick(p)}>+</button>
-                      </div>
-                    ))}
+                      )} />
                   </div>
                 </>
               )}
@@ -427,7 +427,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
   const ys = d && d.your_slate;
   const picks = ys ? ys.picks : [];
   const pool = d ? (d.pool || []) : [];
-  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || p.pos === posFilter));
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || ((p.posEligible && p.posEligible.length) ? p.posEligible : [p.pos]).includes(posFilter)));
   const slotsLeft = d ? (d.max - (d.picked || 0)) : 0;
 
   return (
@@ -445,7 +445,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
                   <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Season slugger points</div>
                   <div style={{ fontSize: '3.2rem', fontWeight: 900, lineHeight: 1 }}>{d.season}</div>
                   <p style={{ marginTop: 6 }}>HR <b>×4</b> · Walk-Back run <b>×4</b> · RBI <b>×1</b> — the homer plus the runs it brings home.</p>
-                  {d.buyIn ? <p style={{ marginTop: 4, fontSize: '.84rem', opacity: .9 }}>Buy-in {S.money(d.buyIn)}/slate · beat the field to cash{d.entered ? ' · entered ✓' : ''}</p> : null}
+                  {d.buyIn ? <p style={{ marginTop: 4, fontSize: '.84rem', opacity: .9 }}>Buy-in {S.money(d.buyIn)}/slate · beat the field to win{d.entered ? ' · entered ✓' : ''}</p> : null}
                 </div>
               </div>
 
@@ -484,19 +484,19 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
                   <PosFilter value={posFilter} onChange={setPosFilter} />
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search hitters…" value={q} onChange={e => setQ(e.target.value)} /></div>
                   <div className="card" style={{ overflow: 'hidden' }}>
-                    {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
-                    {shown.map(p => (
-                      <div key={p.id} className="prow">
-                        <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
-                          <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
-                          <div style={{ minWidth: 0 }}>
-                            <div className="prow__name">{p.name}</div>
-                            <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp} · <span title="power">PWR {p.power}</span></div>
+                    <PagedList items={shown} resetKey={q + '|' + posFilter} empty={<div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
+                      renderRow={p => (
+                        <div key={p.id} className="prow">
+                          <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
+                            <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
+                            <div style={{ minWidth: 0 }}>
+                              <div className="prow__name">{p.name}</div>
+                              <div className="prow__sub"><span className="poscap">{posLabel(p)}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp} · <span title="power">PWR {p.power}</span></div>
+                            </div>
                           </div>
+                          <button className="add-btn" disabled={busy} title="Add slugger" onClick={() => act('pick', p)}>+</button>
                         </div>
-                        <button className="add-btn" disabled={busy} title="Add slugger" onClick={() => act('pick', p)}>+</button>
-                      </div>
-                    ))}
+                      )} />
                   </div>
                 </>
               ) : (
@@ -551,7 +551,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
   const ys = d && d.your_slate;
   const picks = ys ? ys.picks : [];
   const pool = d ? (d.pool || []) : [];
-  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || p.pos === posFilter));
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || ((p.posEligible && p.posEligible.length) ? p.posEligible : [p.pos]).includes(posFilter)));
   const slotsLeft = d ? (d.max - (d.picked || 0)) : 0;
 
   return (
@@ -568,7 +568,7 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
                   <div className="eyebrow" style={{ color: 'rgba(255,255,255,.75)' }}>Season pilot points</div>
                   <div style={{ fontSize: '3.2rem', fontWeight: 900, lineHeight: 1 }}>{d.season}</div>
                   <p style={{ marginTop: 6 }}>K <b>×3</b> · Out <b>×1</b> · ER <b>−2</b> · Quality Start <b>+6</b> · Quality Finish <b>+6</b>.</p>
-                  {d.buyIn ? <p style={{ marginTop: 4, fontSize: '.84rem', opacity: .9 }}>Buy-in {S.money(d.buyIn)}/slate · beat the field to cash{d.entered ? ' · entered ✓' : ''}</p> : null}
+                  {d.buyIn ? <p style={{ marginTop: 4, fontSize: '.84rem', opacity: .9 }}>Buy-in {S.money(d.buyIn)}/slate · beat the field to win{d.entered ? ' · entered ✓' : ''}</p> : null}
                 </div>
               </div>
 
@@ -604,19 +604,19 @@ function PilotsScreen({ onNav, onOpenPlayer }) {
                   <div className="muted mb-12" style={{ fontSize: '.85rem', fontWeight: 600 }}>{slotsLeft} slot{slotsLeft > 1 ? 's' : ''} left · sorted by projection</div>
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search pilots…" value={q} onChange={e => setQ(e.target.value)} /></div>
                   <div className="card" style={{ overflow: 'hidden' }}>
-                    {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No pilots on the upcoming slate.</div>}
-                    {shown.map(p => (
-                      <div key={p.id} className="prow">
-                        <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
-                          <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
-                          <div style={{ minWidth: 0 }}>
-                            <div className="prow__name">{p.name}</div>
-                            <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp} · <span title="projection">proj {p.proj}</span></div>
+                    <PagedList items={shown} resetKey={q + '|' + posFilter} empty={<div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No pilots on the upcoming slate.</div>}
+                      renderRow={p => (
+                        <div key={p.id} className="prow">
+                          <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
+                            <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
+                            <div style={{ minWidth: 0 }}>
+                              <div className="prow__name">{p.name}</div>
+                              <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp} · <span title="projection">proj {p.proj}</span></div>
+                            </div>
                           </div>
+                          <button className="add-btn" disabled={busy} title="Add pilot" onClick={() => act('pick', p)}>+</button>
                         </div>
-                        <button className="add-btn" disabled={busy} title="Add pilot" onClick={() => act('pick', p)}>+</button>
-                      </div>
-                    ))}
+                      )} />
                   </div>
                 </>
               ) : (
@@ -700,7 +700,7 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
   const list = pool ? (showSide === 'p' ? pool.pitchers : pool.hitters) : [];
   const shown = list.filter(p =>
     (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) &&
-    (showSide === 'p' || !posFilter || p.pos === posFilter));
+    (showSide === 'p' || !posFilter || ((p.posEligible && p.posEligible.length) ? p.posEligible : [p.pos]).includes(posFilter)));
   const rankColor = (r, field) => r === 1 ? 'var(--live)' : r <= Math.ceil(field / 3) ? 'var(--c-teal)' : r >= field - Math.ceil(field / 3) ? 'var(--down)' : 'var(--ink-2)';
 
   return (
@@ -797,19 +797,19 @@ function CategoriesScreen({ onNav, onOpenPlayer }) {
                   {curFmt.invert && <div className="muted mb-12" style={{ fontSize: '.8rem', fontWeight: 600, color: 'var(--c-amber)' }}>Anti-league: worst production wins — but you must clear the playing-time floor.</div>}
                   <div className="card" style={{ overflow: 'hidden' }}>
                     {!pool && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>Loading pool…</div>}
-                    {pool && shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No players found.</div>}
-                    {shown.slice(0, 120).map(p => (
-                      <div key={p.id} className="prow">
-                        <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
-                          <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
-                          <div style={{ minWidth: 0 }}>
-                            <div className="prow__name">{p.name}</div>
-                            <div className="prow__sub" style={{ fontSize: '.74rem' }}><b>{p.pos}</b> · {p.line}</div>
+                    {pool && <PagedList items={shown} resetKey={q + '|' + posFilter + '|' + showSide} empty={<div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No players found.</div>}
+                      renderRow={p => (
+                        <div key={p.id} className="prow">
+                          <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
+                            <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
+                            <div style={{ minWidth: 0 }}>
+                              <div className="prow__name">{p.name}</div>
+                              <div className="prow__sub" style={{ fontSize: '.74rem' }}><b>{p.pos}</b> · {p.line}</div>
+                            </div>
                           </div>
+                          <button className="add-btn" disabled={selIds.has(p.id)} title="Draft" onClick={() => add(p)}>{selIds.has(p.id) ? '✓' : '+'}</button>
                         </div>
-                        <button className="add-btn" disabled={selIds.has(p.id)} title="Draft" onClick={() => add(p)}>{selIds.has(p.id) ? '✓' : '+'}</button>
-                      </div>
-                    ))}
+                      )} />}
                   </div>
                 </>
               )}
@@ -986,7 +986,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
   const list = pool ? (side === 'p' ? pool.pitchers : pool.hitters) : [];
   const shown = list.filter(p =>
     (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) &&
-    (side === 'p' || !posFilter || p.pos === posFilter));
+    (side === 'p' || !posFilter || ((p.posEligible && p.posEligible.length) ? p.posEligible : [p.pos]).includes(posFilter)));
   const st = data && data.standings;
 
   function add(item) {
@@ -1076,19 +1076,19 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
               <div className="search mb-12"><Icon name="search" size={17} /><input placeholder={'Search ' + (side === 'p' ? 'pitchers' : 'hitters') + '…'} value={q} onChange={e => setQ(e.target.value)} /></div>
               <div className="card" style={{ overflow: 'hidden' }}>
                 {!pool && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>Loading pool…</div>}
-                {pool && shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No players found.</div>}
-                {shown.slice(0, 120).map(p => (
-                  <div key={p.id} className="prow">
-                    <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
-                      <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
-                      <div style={{ minWidth: 0 }}>
-                        <div className="prow__name">{p.name}</div>
-                        <div className="prow__sub" style={{ fontSize: '.74rem' }}><b>{p.pos}</b> · {p.line}</div>
+                {pool && <PagedList items={shown} resetKey={q + '|' + posFilter + '|' + side} empty={<div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No players found.</div>}
+                  renderRow={p => (
+                    <div key={p.id} className="prow">
+                      <div className="prow__id" onClick={() => onOpenPlayer && onOpenPlayer(p)} style={{ cursor: 'pointer' }}>
+                        <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="prow__name">{p.name}</div>
+                          <div className="prow__sub" style={{ fontSize: '.74rem' }}><b>{p.pos}</b> · {p.line}</div>
+                        </div>
                       </div>
+                      <button className="add-btn" disabled={selIds.has(p.id)} title="Draft" onClick={() => add(p)}>{selIds.has(p.id) ? '✓' : '+'}</button>
                     </div>
-                    <button className="add-btn" disabled={selIds.has(p.id)} title="Draft" onClick={() => add(p)}>{selIds.has(p.id) ? '✓' : '+'}</button>
-                  </div>
-                ))}
+                  )} />}
               </div>
             </>
           )}

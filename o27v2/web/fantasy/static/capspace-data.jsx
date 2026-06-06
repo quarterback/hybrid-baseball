@@ -268,7 +268,7 @@
       'Fill 8 lineup slots — PILOT, C, 1B, 2B, 3B, SS and two OF — staying under the salary cap.',
       'Enter a contest; the entry fee comes out of your wallet (freerolls cost nothing).',
       'Your lineup scores standard fantasy points as tonight’s games go final.',
-      'Beat the field to cash — winnings land in your wallet when the slate finishes.',
+      'Beat the field to win — winnings land in your wallet when the slate finishes.',
     ] },
     streak: { tagline: 'Beat-the-streak survivor — no buy-in.', steps: [
       'Each slate, pick one hitter you think gets a hit.',
@@ -278,12 +278,12 @@
     sluggers: { tagline: 'A home-run game with an O27 twist.', steps: [
       'Pay the buy-in and pick up to 3 sluggers for the slate.',
       'Score HR ×4 + Walk-Back run ×4 + RBI ×1 — the bomb plus the runs it brings home.',
-      'Beat the field to cash: 5× a near-best night, 2× beating the field average, money back above 60%.',
+      'Beat the field to win: 5× a near-best night, 2× beating the field average, money back above 60%.',
     ] },
     pilots: { tagline: 'The pitching game.', steps: [
       'Pay the buy-in and pick up to 3 pilots (pitchers) for the slate.',
       'Score K ×3 + Out ×1 − ER ×2, plus Quality Start +6 and Quality Finish +6.',
-      'Beat the field to cash (5× / 2× / money-back, like Sluggers).',
+      'Beat the field to win (5× / 2× / money-back, like Sluggers).',
     ] },
     categories: { tagline: 'Season-long category (Roto) leagues.', steps: [
       'Pick a format — 5×5, Razz (worst real stats win), HR Derby, or Pitchers-Only.',
