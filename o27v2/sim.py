@@ -256,6 +256,70 @@ def _valley_order(by_talent_desc: list) -> list:
     return result
 
 
+def _bat_hand(p) -> str:
+    """Batting handedness ('L'/'R'/'S'/'') for platoon-alternation scoring."""
+    return getattr(p, "bats", "") or ""
+
+
+def _same_handed_adjacencies(order: list) -> int:
+    """Count adjacent same-handed pairs (the platoon penalty). Switch hitters
+    and unknown-handedness bats never clash. Reverse-invariant — a sequence and
+    its reverse have the same adjacency multiset — so optimizing it forward
+    optimizes it in both directions."""
+    pen = 0
+    for a, b in zip(order, order[1:]):
+        ha, hb = _bat_hand(a), _bat_hand(b)
+        if ha and hb and ha != "S" and hb != "S" and ha == hb:
+            pen += 1
+    return pen
+
+
+def _directional_disparity(order: list) -> float:
+    """Front-loaded PA-weighted talent gap between the order and its reverse.
+    Low = reads equally well in both directions (the valley's whole job)."""
+    n = len(order)
+    fwd = sum((n - i) * _bat_score(p) for i, p in enumerate(order))
+    rev = sum((n - i) * _bat_score(p) for i, p in enumerate(reversed(order)))
+    return abs(fwd - rev)
+
+
+def _handed_valley_order(by_talent_desc: list) -> list:
+    """Valley order (strong ends, weak middle) with handedness alternation as a
+    TIEBREAKER — never at the cost of the valley.
+
+    The talent valley seats near-equal-talent bats in mirror-position tiers
+    (ends hold the two best, next pair the next two, ... pitcher alone in the
+    middle). The only reordering that provably preserves the valley is swapping
+    the two members WITHIN a tier (which end each sits on). We enumerate those
+    per-tier orientations, keep only the ones whose directional disparity stays
+    under the hard cap (CRICKET_FLIP_DISPARITY_MAX_RATIO of the standard order's
+    disparity), then pick the fewest same-handed adjacencies, breaking ties by
+    tightest disparity. The middle bat (the pitcher) never moves.
+    """
+    from o27 import config as _ecfg
+    base = _valley_order(by_talent_desc)
+    n = len(base)
+    pairs = [(i, n - 1 - i) for i in range(n // 2)]   # mirror tiers; middle excluded
+    standard = sorted(by_talent_desc, key=_bat_score, reverse=True)
+    cap = getattr(_ecfg, "CRICKET_FLIP_DISPARITY_MAX_RATIO", 0.25) \
+        * _directional_disparity(standard)
+
+    best_order = base
+    best_key = None
+    for mask in range(1 << len(pairs)):
+        order = list(base)
+        for k, (i, j) in enumerate(pairs):
+            if mask & (1 << k):
+                order[i], order[j] = order[j], order[i]
+        disparity = _directional_disparity(order)
+        if disparity > cap:               # hard constraint: keep the valley tight
+            continue
+        key = (_same_handed_adjacencies(order), disparity)
+        if best_key is None or key < best_key:
+            best_key, best_order = key, order
+    return best_order
+
+
 def _ordered_lineup(
     starting_fielders: list,
     todays_sp: list,
@@ -289,7 +353,7 @@ def _ordered_lineup(
         full = non_pitchers + ([sp] if sp is not None else [])
         full.sort(key=_bat_score, reverse=True)
         if len(full) >= 3:
-            return _valley_order(full)
+            return _handed_valley_order(full)
         return full
 
     if sp is None:

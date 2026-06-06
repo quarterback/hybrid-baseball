@@ -123,8 +123,15 @@ A flip-minded skipper (`mgr_flip_aggression ≥ cfg.CRICKET_FLIP_LINEUP_AGG_MIN`
 default 0.60) whose league runs the rule builds a **"valley" order** — strongest
 bats at the ends, weakest (the pitcher) in the middle — so a flip leads the next
 cycle with quality instead of the tail. Everyone else builds the standard
-best-to-worst order with the pitcher 9th. Implemented in
-`o27v2/sim.py` (`_valley_order`, `_ordered_lineup(..., flip_minded=…)`), gated in
+best-to-worst order with the pitcher 9th.
+
+**Handedness is a tiebreaker within the valley, never against it.** Directional
+balance is the hard constraint; platoon alternation is optimized only by swapping
+the two near-equal-talent bats *within* each mirror tier (so the valley structure
+is preserved), discarding any arrangement whose forward-vs-reverse disparity
+exceeds `cfg.CRICKET_FLIP_DISPARITY_MAX_RATIO` (0.25) of the standard order's, then
+minimizing same-handed adjacencies. Implemented in `o27v2/sim.py` (`_valley_order`,
+`_handed_valley_order`, `_ordered_lineup(..., flip_minded=…)`), gated in
 `_db_team_to_engine`. See `docs/aar-cricket-batting-order-flip-aware-lineups.md`.
 
 ---
@@ -151,8 +158,6 @@ best-to-worst order with the pitcher 9th. Implemented in
 ## 6. Not changed / possible follow-ups
 - **No new stats.** The flip only reorders PAs the stat machinery already records;
   a "flips per game" telemetry line could be added if it proves interesting.
-- **Matchup-aware valley.** The valley order balances talent only; a future
-  refinement could make both directions handedness/platoon-aware.
 
 ## 7. AAR trail
 - `docs/aar-cricket-batting-order.md` — the optional-rule scaffold + first flip.

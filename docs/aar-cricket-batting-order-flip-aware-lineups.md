@@ -68,20 +68,60 @@ row: rule on for the team (per-league flag OR the global default) AND
 
 ---
 
+## Handedness as a tiebreaker — within the valley, never against it
+
+The valley is talent-balanced; a good order is also **platoon-balanced** (don't
+stack same-handed bats, so the opposing crew can't bring an arm in to face a run
+of them). Handedness alternation is naturally reverse-invariant — a sequence and
+its reverse share the same adjacency multiset — so optimizing it forward optimizes
+it in both directions. The risk the user flagged: chasing handedness can quietly
+reopen the directional **talent** disparity the valley exists to close, leaving an
+order that's handedness-perfect forward but lopsided reversed.
+
+So directional balance is the **hard constraint** and platoon the **tiebreaker**,
+and the optimization can only move bats in a way that *cannot* break the valley:
+
+- The talent valley seats near-equal-talent bats in mirror-position **tiers** (ends
+  hold the two best, the next pair the next two, … the pitcher alone in the middle).
+  The only structure-preserving reordering is swapping the two members **within a
+  tier** — i.e. which end of that tier each sits on. The pitcher (unique middle)
+  never moves.
+- `_handed_valley_order` enumerates those per-tier orientations (2^4 = 16 for a
+  nine-man order — trivially cheap, once per team per game), **discards any whose
+  directional disparity exceeds `CRICKET_FLIP_DISPARITY_MAX_RATIO` (0.25) of the
+  standard order's** (the hard constraint), then picks the fewest same-handed
+  adjacencies, breaking ties by tightest disparity.
+
+Because every candidate keeps the same talent multiset per tier, the
+strong-ends/weak-middle structure is identical across all 16 by construction; the
+disparity cap is belt-and-suspenders for the residual within-tier shuffle. In
+practice the handed valley both cuts clumping and *tightens* directional balance
+(see verification).
+
+---
+
 ## Validation
 
-- `pytest o27/tests/test_cricket_order.py` — added 3 tests (now 19 total): the
-  valley puts the best at an end and the worst in the middle while preserving the
-  nine; the valley's forward-vs-reverse weighted-talent disparity is < 25% of the
-  standard order's (it "reads well in both directions"); and `_ordered_lineup`
-  flip-minded buries the pitcher mid while standard keeps him 9th.
-- `pytest o27/tests` — full engine suite **125 passed**.
-- `o27v2.sim` imports cleanly (no flask dependency) and the helpers byte-compile.
+- `pytest o27/tests/test_cricket_order.py` — 22 tests. Talent valley: best at an
+  end, worst in the middle, nine preserved; forward-vs-reverse talent disparity
+  < 25% of the standard order's. Flip-minded `_ordered_lineup` buries the pitcher
+  mid while standard keeps him 9th. **Handedness:** the handed valley reduces
+  same-handed adjacencies vs the talent-only valley; its disparity stays under the
+  25% cap *after* platoon weighting (the user's bar); and the per-tier talent
+  multisets are identical to the talent valley's (the structure is provably
+  untouched).
+- Representative nine (handedness alternating by talent rank): same-handed
+  adjacencies **7 → 1**, and directional disparity **1.60 → 0.32** (cap 2.40) — so
+  platoon weighting *improved* directional balance here rather than eroding it.
+- `pytest o27/tests` — full engine suite **128 passed**. `o27v2.sim` imports
+  cleanly (no flask dependency); helpers byte-compile.
 
 ---
 
 ## Not changed / possible follow-ups
-- The valley is a fixed arrangement; a future refinement could vary it by handedness
-  or platoon to make both directions matchup-aware, not just talent-balanced.
+- Handedness optimization is limited to within-tier orientation (by design — that
+  is what cannot break the valley). A team whose handedness is strongly correlated
+  with talent (e.g. all righties at the top) can't be de-clumped without breaking
+  the valley, so it correctly isn't — directional balance wins, as specified.
 - No stat/telemetry surfacing of which teams built a valley — derivable from the
   manager archetype if it proves worth showing.

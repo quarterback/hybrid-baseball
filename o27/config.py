@@ -1126,6 +1126,13 @@ CRICKET_JOKER_FLIP_DAMP: float  = 0.60   # max fractional cut to joker-insert pr
 # bar, the order is built normally (best-to-worst, pitcher 9th).
 CRICKET_FLIP_LINEUP_AGG_MIN: float = 0.60
 
+# Flip-aware lineups optimize handedness alternation as a TIEBREAKER, but only
+# within arrangements that keep the valley's directional balance. This is the
+# hard cap: a candidate is rejected if its forward-vs-reverse talent disparity
+# exceeds this fraction of the standard (best-to-worst) order's disparity. So
+# platoon weighting can never reopen the directional gap the valley closes.
+CRICKET_FLIP_DISPARITY_MAX_RATIO: float = 0.25
+
 # ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------

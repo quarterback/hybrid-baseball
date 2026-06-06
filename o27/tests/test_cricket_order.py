@@ -218,17 +218,21 @@ def test_end_to_end_flip_lovers_flip_more_than_joker_lovers(monkeypatch):
 # Flip-aware lineup construction (the manager "builds for the flip")
 # ---------------------------------------------------------------------------
 
-from o27v2.sim import _valley_order, _ordered_lineup, _bat_score  # noqa: E402
+from o27v2.sim import (  # noqa: E402
+    _valley_order, _handed_valley_order, _ordered_lineup, _bat_score,
+    _same_handed_adjacencies, _directional_disparity,
+)
 
 
 class _LP:
     """Lineup player stand-in: _bat_score reads skill/power/contact/eye."""
-    def __init__(self, name, score, skill=None):
+    def __init__(self, name, score, skill=None, bats=""):
         self.name = name
         self.skill = score if skill is None else skill
         self.power = score
         self.contact = score
         self.eye = score
+        self.bats = bats
 
 
 def _weighted_quality(order):
@@ -260,10 +264,54 @@ def test_valley_reads_well_in_both_directions():
 
 
 def test_ordered_lineup_flip_minded_buries_pitcher_in_middle():
-    fielders = [_LP(f"f{i}", 0.7 - 0.04 * i) for i in range(8)]
-    sp = _LP("SP", 0.10)             # weak-hitting pitcher
+    # 5 R bats + 3 L bats + an L pitcher, so handedness optimization is live.
+    hands = ["R", "L", "R", "L", "R", "L", "R", "R"]
+    fielders = [_LP(f"f{i}", 0.7 - 0.04 * i, bats=hands[i]) for i in range(8)]
+    sp = _LP("SP", 0.10, bats="L")    # weak-hitting pitcher
     flip = _ordered_lineup(fielders, [sp], flip_minded=True)
     standard = _ordered_lineup(fielders, [sp], flip_minded=False)
     assert standard[-1].name == "SP"               # standard: pitcher hits 9th
     assert flip[len(flip) // 2].name == "SP"        # flip-minded: pitcher mid
     assert flip[0].name != "SP" and flip[-1].name != "SP"
+
+
+# --- handedness as a tiebreaker WITHIN the valley (directional balance hard) ---
+
+def _ranked_handed(hands_by_rank):
+    """Build a talent-desc lineup (best first) with the given handedness per
+    talent rank. Scores are strictly descending so tiers are unambiguous."""
+    return [_LP(f"r{i}", 0.9 - 0.08 * i, bats=h) for i, h in enumerate(hands_by_rank)]
+
+
+def test_handed_valley_reduces_platoon_clumping():
+    # Handedness alternates by talent rank, so each mirror tier holds one L and
+    # one R — exactly the case where tier orientation can alternate the seated
+    # order. The talent-only valley clumps (all R on one side); the handed
+    # valley should break it up without leaving the valley structure.
+    bats = _ranked_handed(["R", "L", "R", "L", "R", "L", "R", "L", "R"])
+    talent = _valley_order(list(bats))
+    handed = _handed_valley_order(list(bats))
+    assert _same_handed_adjacencies(handed) < _same_handed_adjacencies(talent)
+
+
+def test_handed_valley_keeps_directional_balance_under_cap():
+    # The user's bar: disparity must stay under 25% of the standard order's
+    # AFTER platoon weighting, not just for the talent-only valley.
+    bats = _ranked_handed(["R", "R", "R", "R", "R", "L", "L", "L", "L"])
+    standard = sorted(bats, key=_bat_score, reverse=True)
+    handed = _handed_valley_order(list(bats))
+    assert _directional_disparity(handed) <= 0.25 * _directional_disparity(standard)
+
+
+def test_handed_valley_preserves_valley_tiers():
+    # Platoon weighting may only swap WITHIN a mirror tier — the set of talent
+    # scores at each {i, n-1-i} position pair must be identical to the talent
+    # valley's, proving the strong-ends/weak-middle structure is untouched.
+    bats = _ranked_handed(["R", "L", "R", "R", "L", "R", "L", "L", "R"])
+    talent = _valley_order(list(bats))
+    handed = _handed_valley_order(list(bats))
+    n = len(bats)
+    for i in range(n // 2 + 1):
+        tier_talent = sorted([_bat_score(talent[i]), _bat_score(talent[n - 1 - i])])
+        tier_handed = sorted([_bat_score(handed[i]), _bat_score(handed[n - 1 - i])])
+        assert tier_talent == pytest.approx(tier_handed)
