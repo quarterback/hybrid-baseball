@@ -20,6 +20,7 @@ import datetime as _dt
 from o27v2 import db, currency
 from . import data as slate_data
 from . import wallet
+from ._schema_once import once
 
 _USD = currency.GUILDER_PER_USD  # 100 — money is stored as guilders
 
@@ -28,6 +29,7 @@ _USD = currency.GUILDER_PER_USD  # 100 — money is stored as guilders
 # Schema (lazy CREATE; mirrors the ALTER/IF-NOT-EXISTS pattern used elsewhere)
 # ---------------------------------------------------------------------------
 
+@once
 def ensure_schema() -> None:
     conn = db.get_conn()
     conn.executescript(

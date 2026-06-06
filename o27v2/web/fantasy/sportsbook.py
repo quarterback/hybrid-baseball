@@ -14,6 +14,7 @@ import datetime as _dt
 
 from o27v2 import db
 from . import data as slate_data
+from ._schema_once import once
 from . import wallet
 
 PYTHAG_EXP = 1.83
@@ -23,6 +24,7 @@ TOTAL_ODDS = -110    # standard juice on the over/under
 _LG_FALLBACK = 11.0  # league runs/team/game before any games are played
 
 
+@once
 def ensure_schema() -> None:
     conn = db.get_conn()
     conn.executescript(

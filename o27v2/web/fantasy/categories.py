@@ -28,6 +28,7 @@ import random
 
 from o27v2 import db
 from . import data as slate_data
+from ._schema_once import once
 from . import buyins
 
 FIELD_SIZE = 48
@@ -106,6 +107,7 @@ FORMATS = [
 _FMT_BY_KEY = {f["key"]: f for f in FORMATS}
 
 
+@once
 def ensure_schema() -> None:
     conn = db.get_conn()
     conn.executescript(

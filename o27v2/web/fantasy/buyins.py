@@ -12,8 +12,10 @@ import datetime as _dt
 
 from o27v2 import db
 from . import wallet
+from ._schema_once import once
 
 
+@once
 def ensure_schema() -> None:
     conn = db.get_conn()
     conn.executescript(
