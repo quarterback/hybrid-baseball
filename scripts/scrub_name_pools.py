@@ -201,6 +201,103 @@ CHINESE_SURNAMES = {
     "Hoi", "Lok", "Fai", "Him", "Kwan",
 }
 
+# ---------------------------------------------------------------------------
+# Korean & Chinese FIRST-name pools — the same scrape dumped *surnames* into
+# the given-name slot (Kim/Cho/Choi as "first" names; Wang/Chen/Zhang too),
+# plus provinces (Fujian, Guangdong) and foreign players (Michael, Aleksandar).
+# A blocklist alone leaves a thin/odd pool, so these buckets are rebuilt:
+#   * Korean — given names are reliably hyphenated, so we keep existing
+#     hyphenated tokens and add a canonical curated set; single-token
+#     surnames/junk drop out.
+#   * Chinese — single-syllable surnames and given names overlap heavily, so
+#     we strip every surname/place/foreign token and re-seed from a canonical
+#     given-name list (which re-introduces the syllables that are legit given
+#     names, e.g. Wei/Tao/Hao).
+# ---------------------------------------------------------------------------
+
+# Foreign / western / corporate / place tokens seen in the CJK first slots.
+CJK_FIRST_JUNK = {
+    "Jürgen", "Paulo", "Ricardo", "Aleksandar", "Everton", "Goran", "Jørn",
+    "Marcello", "Matt", "Michael", "Minnesota", "Nico", "Oliver", "Scott",
+    "Sean", "Stefan", "Vas", "Yannis", "Shinichi", "Lisa", "Casey", "Helen",
+    "Las", "Back", "Samsung", "United", "New", "Chicago", "Cheongju", "Uiduk",
+}
+
+# Chinese provinces / regions that scraped into the given-name slot.
+CHINESE_PLACES = {
+    "Fujian", "Guangdong", "Liaoning", "Xinjiang", "Zhejiang", "Heilongjiang",
+    "Henan", "Jiangsu", "Shandong", "Shanxi", "Bayi",
+}
+
+# A handful of legit single-token Korean given names (no hyphen).
+KOREAN_FIRST_KEEP = {"Bora", "Bitna", "Saem", "Areum", "Haneul", "Nari"}
+
+KOREAN_MALE_GIVEN = {
+    "Min-jun", "Seo-jun", "Do-yun", "Si-woo", "Ji-ho", "Ha-jun", "Ye-jun",
+    "Yu-jun", "Geon-woo", "Woo-jin", "Hyun-woo", "Jun-seo", "Min-jae",
+    "Dong-hyun", "Sung-min", "Jin-woo", "Tae-hyun", "Hyun-jin", "Hyun-soo",
+    "Joon-ho", "Jong-ho", "Sang-hyun", "Seung-min", "Seung-hwan", "Kwang-hyun",
+    "Byung-ho", "Chan-ho", "Dae-ho", "Yong-soo", "Kang-min", "Min-ho",
+    "Min-soo", "Tae-young", "Joon-young", "Jun-seok", "Jin-soo", "Ji-hwan",
+    "Ji-min", "Yoo-jin", "Young-min", "Sung-woo", "Jae-won", "Dong-won",
+    "Sang-woo", "Seok-jin", "Nam-joon", "Ho-seok", "Sung-ho", "Jae-hyun",
+    "Do-hyun", "Eun-woo", "Tae-woo", "Won-jun", "Kyung-ho", "Jin-hyuk",
+}
+
+KOREAN_FEMALE_GIVEN = {
+    "Seo-yeon", "Seo-young", "Ji-woo", "Ha-eun", "Ha-na", "Soo-jin", "Soo-min",
+    "Min-ji", "Min-seo", "Ji-eun", "Ji-min", "Ji-yeon", "Hye-jin", "Hye-rin",
+    "Hyun-ah", "Hyun-jung", "Da-eun", "Da-hyun", "Eun-ji", "Eun-jung", "Bo-ra",
+    "Yu-ri", "Yoon-ah", "Yeon-woo", "Jin-ah", "Joo-eun", "Mi-na", "Sun-hee",
+    "Sung-hee", "Na-yeon", "Ye-jin", "Su-bin", "Chae-won", "Ga-eun", "Yu-jin",
+    "Seo-hyun", "Hae-won", "So-yeon", "Soo-ah", "Hyo-jin", "Mi-young",
+    "Eun-young", "Jung-eun", "Da-som", "Ha-rin", "Ye-won",
+}
+
+CHINESE_MALE_GIVEN = {
+    "Wei", "Jun", "Hao", "Lei", "Bin", "Bo", "Tao", "Peng", "Gang", "Jian",
+    "Jie", "Ming", "Yong", "Hui", "Qiang", "Sheng", "Kai", "Chao", "Xiang",
+    "Hua", "Hong", "Zhi", "Hai", "Xin", "Yun", "Jing", "Qing", "Wen", "Rui",
+    "Xuan", "Yi", "Yu", "Liang", "Feng", "Guang", "Dawei", "Jianhua",
+    "Weidong", "Zhihao", "Haoran", "Zihao", "Yuxuan", "Junjie", "Minghao",
+    "Tianyu", "Zixuan", "Haoyu", "Yichen", "Jiahao", "Zhiyuan", "Wenbo",
+    "Yifan", "Shengjie", "Guoqiang", "Jianguo", "Yuhang", "Chenyu", "Donghai",
+    "Xiaoming", "Zhiqiang", "Yuhan",
+}
+
+CHINESE_FEMALE_GIVEN = {
+    "Mei", "Jing", "Hua", "Fang", "Yan", "Lan", "Xin", "Ying", "Ling", "Min",
+    "Na", "Ting", "Juan", "Hong", "Qing", "Xia", "Dan", "Yu", "Xue", "Shan",
+    "Hui", "Rou", "Bing", "Ai", "Yun", "Wen", "Jiao", "Nan", "Qian", "Li",
+    "Chunhua", "Dandan", "Xiaohong", "Xiaoli", "Yanyan", "Lijuan", "Xiumei",
+    "Yuhan", "Xinyi", "Yaqi", "Mengyao", "Jiaqi", "Siyu", "Yuxin", "Ruoxi",
+    "Jiayi", "Xinyu", "Yiran", "Zihan", "Yuting", "Mengqi", "Shuhua",
+    "Xiaoyan", "Lili",
+}
+
+
+def _rebuild_korean_first(values, curated, report_slot):
+    """Keep hyphenated given names + a small keep-list, add curated; drop the
+    rest (surnames, foreign, junk). Reports removed = original - final."""
+    final = sorted(
+        {v for v in values if "-" in v or v in KOREAN_FIRST_KEEP} | curated
+    )
+    removed = sorted(set(values) - set(final))
+    if removed:
+        report_slot[:] = removed
+    return final
+
+
+def _rebuild_chinese_first(values, curated, report_slot):
+    """Strip every surname/place/foreign token, re-seed from the curated
+    given-name list. Reports removed = original - final."""
+    drop = CHINESE_SURNAMES | CHINESE_PLACES | CJK_FIRST_JUNK
+    final = sorted({v for v in values if v not in drop} | curated)
+    removed = sorted(set(values) - set(final))
+    if removed:
+        report_slot[:] = removed
+    return final
+
 
 def scrub(dry_run: bool = False) -> dict:
     male = _load("male_first.json")
@@ -228,11 +325,29 @@ def scrub(dry_run: bool = False) -> dict:
         return out
 
     # First names: mascots + explicit foreign-city junk only.
+    # Korean & Chinese first-name buckets are rebuilt separately (below).
     first_block = mascots | FIRST_NAME_CITY_JUNK
     for pool_name, pool in (("male_first", male), ("female_first", female)):
         for key, values in pool.items():
-            if isinstance(values, list):
-                pool[key] = clean_bucket(pool_name, key, values, first_block)
+            if key in ("korean", "chinese") or not isinstance(values, list):
+                continue
+            pool[key] = clean_bucket(pool_name, key, values, first_block)
+
+    # Korean / Chinese first names — rebuild from curated given-name pools.
+    cjk_first = {
+        ("male_first", "korean"):   (male, KOREAN_MALE_GIVEN, _rebuild_korean_first),
+        ("female_first", "korean"): (female, KOREAN_FEMALE_GIVEN, _rebuild_korean_first),
+        ("male_first", "chinese"):  (male, CHINESE_MALE_GIVEN, _rebuild_chinese_first),
+        ("female_first", "chinese"): (female, CHINESE_FEMALE_GIVEN, _rebuild_chinese_first),
+    }
+    for (pool_name, key), (pool, curated, rebuild) in cjk_first.items():
+        values = pool.get(key)
+        if not isinstance(values, list):
+            continue
+        slot: list[str] = []
+        pool[key] = rebuild(values, curated, slot)
+        if slot:
+            report[pool_name][key] = slot
 
     # Surnames: mascots + city sweep; CJK buckets get canonical allowlist.
     for key, values in surnames.items():

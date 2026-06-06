@@ -100,6 +100,26 @@ avoid nuking real names:
 Chinese 52 — both realistic (Korea genuinely has a small surname set). Sample
 output post-scrub: `Yong-soo Choi`, `Woo-jin Kim`, `Sun Gao`, `Hideki Kato`.
 
+### Follow-up: Korean & Chinese *first-name* pools
+
+The first pass only fixed the surname buckets; the same scrape had also dumped
+*surnames* into the Korean/Chinese **given-name** slots (`Kim`/`Cho`/`Choi` and
+`Wang`/`Chen`/`Zhang` as "first" names), plus Chinese provinces (`Fujian`,
+`Guangdong`) and foreign players (`Michael`, `Aleksandar`). Those buckets are
+now rebuilt:
+
+- **Korean** — given names are reliably hyphenated, so the rebuild keeps
+  existing hyphenated tokens (+ a small keep-list like `Bora`) and adds a
+  curated canonical given-name set; single-token surnames/junk fall out.
+- **Chinese** — single-syllable surnames and given names overlap too much for a
+  blocklist, so every surname/place/foreign token is stripped and the pool is
+  re-seeded from a curated given-name list (which legitimately re-introduces
+  syllables like `Wei`/`Tao`/`Hao`).
+
+Another 213 tokens removed. Post-fix samples: `Min-jun Ahn`, `Yong-soo Seo`,
+`Jin-ah Song` (KR); `Tianyu Zhou`, `Jiahao Feng`, `Li Feng` (CN). The rebuild is
+a fixpoint, so the idempotency guard still holds.
+
 **Guard:** `tests/test_name_pool_clean.py` re-runs the scrubber in dry-run mode
 and asserts zero residual removals, so a future re-seed that reintroduces junk
 fails loudly. The existing `tests/test_name_regions.py` invariants (every bucket
@@ -115,8 +135,4 @@ were re-checked manually and still pass.
   (pagination nav, showing-range, ellipsis, filter-carrying links all correct),
   and direct exercise of the name pipeline (`make_name_picker` /
   `make_country_pinned_picker`).
-- **Residual, not fixed:** the Korean/Chinese *first-name* pools still contain a
-  few surname-like tokens used as given names (e.g. `Song`, `Yoo` surfacing in
-  the first slot). It's a much smaller cosmetic issue than the scraped junk and
-  would need per-token first-vs-surname reclassification — left for a follow-up.
 - Did not touch the engine, schema, or any non-web behaviour.
