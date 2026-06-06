@@ -957,7 +957,13 @@ STAY_REWARD_3B: float            = 1.00   # value of advancing the 3B runner (sc
 STAY_REWARD_2B: float            = 0.55   # value of advancing the 2B runner
 STAY_REWARD_1B: float            = 0.25   # value of advancing the 1B runner
 STAY_OUT_COST: float             = 0.80   # run-cost of making the out
-STAY_RUN_BASELINE: float         = 0.35   # EV of just running (taking the base)
+# Value of RUNNING — i.e. the hit you'd be forgoing by staying. A second chance
+# is a bet that the NEXT contact beats this one, so you don't waste a good hit:
+# a clean (medium) single is worth more on the bases than a weak one, which
+# raises the bar to stay on it. Staying only pays when the RISP upside clearly
+# beats the forgone hit (high risk → must pay off).
+STAY_RUN_BASELINE_WEAK: float    = 0.30   # forgoing a weak single — low bar
+STAY_RUN_BASELINE_MEDIUM: float  = 0.60   # forgoing a clean single — high bar
 STAY_EDGE_TO_PROB: float         = 0.90   # EV-edge → stay-probability slope
 STAY_MAX_PROB: float             = 0.85   # saturation cap
 

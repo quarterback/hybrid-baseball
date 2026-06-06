@@ -2229,9 +2229,10 @@ def should_stay_prob(
         reward += cfg.STAY_REWARD_1B
 
     # EV(stay) ≈ reward·P(success) − out_cost·P(out).
-    # EV(run)  ≈ value of taking the base now (a single-ish on weak/medium).
+    # EV(run)  ≈ value of the hit you'd forgo by staying — higher for cleaner
+    # contact, so you don't waste a good hit chasing a better one.
     ev_stay = reward * (1.0 - out_risk) - cfg.STAY_OUT_COST * out_risk
-    ev_run  = cfg.STAY_RUN_BASELINE
+    ev_run  = cfg.STAY_RUN_BASELINE_MEDIUM if quality == "medium" else cfg.STAY_RUN_BASELINE_WEAK
     edge = ev_stay - ev_run
     if edge <= 0:
         return False
