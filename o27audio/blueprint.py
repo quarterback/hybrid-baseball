@@ -129,7 +129,7 @@ def player(game_id: int):
         g = pipeline.gather(game_id)
         title = (f"{g.away['city']} {g.away['name']} {g.away_score} "
                  f"@ {g.home['city']} {g.home['name']} {g.home_score}")
-        subtitle = f"O27 Game of the Week · {g.game_date}"
+        subtitle = f"O27 Game Recap · {g.game_date}"
     except ValueError as e:
         title, subtitle = "Game not available", str(e)
     _, ref = _game_ref(game_id)

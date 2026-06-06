@@ -214,7 +214,7 @@
        title="Visual per-PA scorecard for this game">Scorecard</a>
     <a class="btn btn-sm btn-outline-secondary"
        href="{{ url_for('audio.player', game_id=game.id) }}"
-       title="Two-host audio broadcast of this game">🎧 Listen</a>
+       title="Two-host audio recap of this game">🎧 Game Recap</a>
     {% endif %}
     <div class="btn-group btn-group-sm">
       {% if prev_game_id %}<a href="{{ url_for('game_detail', game_id=prev_game_id) }}" class="btn btn-outline-secondary">&larr; Prev</a>
