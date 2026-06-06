@@ -33,13 +33,14 @@ USE THIS VOCABULARY CORRECTLY:
 the "27-out half", the "27-out arc", an "out window", or "out N of 27" — \
 never call the half an "inning", and never use "top/bottom" except to note \
 which side batted second.
-- Second-chance at-bat (2C): on contact a batter chooses to run or to STAY \
-at the plate; if he stays, the runners advance, the contact counts as a \
-strike, and he keeps hitting in the same at-bat. Always name the mechanic \
-"second-chance at-bat" (or "2C") — never "the stay" or "the stay mechanic". \
-"Stays"/"stayed" is fine as the verb. The second-chance at-bat is O27's main \
-RBI engine, and because one at-bat can yield several hits this way, a line \
-like "7 H in 6 AB" is real, not a typo.
+- Second-chance at-bat (2C): on contact a batter may STAY at the plate \
+instead of running — the runners advance and he keeps hitting in the same \
+at-bat. This is ordinary, routine O27 play, NOT a novelty: do not marvel at \
+it, explain it, or make it a talking point. If you must refer to it at all, \
+name it "second-chance at-bat" — never "the stay" or "the stay mechanic" \
+("stays"/"stayed" is fine as a plain verb). Because one at-bat can yield \
+several hits this way, a line like "7 H in 6 AB" is real, not a typo — just \
+report the numbers without comment.
 - Foul-out: three fouls in an at-bat retires the batter.
 - Walk-Back: a home run returns the hitter to third base as a live, \
 persistent bonus runner until he scores, is put out, or the half ends.
@@ -118,14 +119,13 @@ _BUILTIN: list[Voice] = [
     Voice(
         id="stathead",
         name="The Stathead",
-        blurb="Sabermetric columnist — leans on win-probability swings and 2C.",
+        blurb="Sabermetric columnist — leans on win-probability swings and leverage.",
         persona=(
             "Write like an analytics columnist who lives in the numbers. "
             "Anchor the story in the win-probability swings (cite the "
-            "`win_prob_swing_pct` figures), leverage, and Second-Chance "
-            "conversion. You find a 7-hit, 6-AB line genuinely thrilling and "
-            "say so. Skeptical of narrative, loyal to what actually moved the "
-            "needle — but still readable, not a spreadsheet."
+            "`win_prob_swing_pct` figures) and leverage — what actually moved "
+            "the needle. Skeptical of narrative, loyal to the math, but still "
+            "readable, not a spreadsheet."
         ),
     ),
     Voice(

@@ -183,7 +183,7 @@ def _standouts(game_id: int, away_id: int, home_id: int) -> dict:
         rows = db.fetchall(
             """SELECT p.name AS name,
                       SUM(bs.hits) AS h, SUM(bs.ab) AS ab, SUM(bs.hr) AS hr,
-                      SUM(bs.rbi) AS rbi, SUM(bs.runs) AS r, SUM(bs.stays) AS stays
+                      SUM(bs.rbi) AS rbi, SUM(bs.runs) AS r
                FROM game_batter_stats bs JOIN players p ON bs.player_id = p.id
                WHERE bs.game_id = ? AND bs.team_id = ?
                GROUP BY bs.player_id""",
@@ -201,8 +201,6 @@ def _standouts(game_id: int, away_id: int, home_id: int) -> dict:
             parts.append(f"{best['hr']} HR")
         if best["rbi"]:
             parts.append(f"{best['rbi']} RBI")
-        if best["stays"]:
-            parts.append(f"{best['stays']} 2C")
         return {"name": _last_name(best["name"]),
                 "line": ", ".join(parts), "ab": best["ab"] or 0}
 
