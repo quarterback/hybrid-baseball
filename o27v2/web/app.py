@@ -1542,16 +1542,13 @@ def _aggregate_batter_rows(
         # since each PA represents one opportunity; stays inside an AB
         # are separate PAs.
         ww = _linear_weights()["woba_weights"]
-        # `stay_hits` is a subset of `hits`; keep it out of the 1B
-        # bucket so the wOBA contribution reflects true singles vs.
-        # the (lower-RV) stay-credited events separately.
-        stay_h_for_woba = b.get("stay_hits") or 0
-        true_singles = h - d2 - d3 - hr - stay_h_for_woba
-        stay_w = ww.get("STAY", ww["1B"])
+        # Since the 2C rework, a credited 2C hit is a REAL hit of its type and
+        # already lives in d2/d3/h, so singles are just h − d2 − d3 − hr — no
+        # stay split, and 2C hits are weighted by their real type.
+        true_singles = h - d2 - d3 - hr
         woba_num = (
             ww["BB"] * bb + ww["HBP"] * hbp + ww["1B"] * true_singles +
-            ww["2B"] * d2 + ww["3B"]  * d3  + ww["HR"] * hr +
-            stay_w   * stay_h_for_woba
+            ww["2B"] * d2 + ww["3B"]  * d3  + ww["HR"] * hr
         )
         b["woba"] = (woba_num / pa) if pa else 0.0
 
@@ -2127,19 +2124,15 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
         # weights the per-player aggregator uses (derive_linear_weights), so this
         # baseline equals the PA-weighted mean of player wOBAs and wRC+ centers at
         # 100. Previously it hardcoded MLB weights (0.72/0.95/1.30/...), which ran
-        # ~5% high and pulled wRC+ down to ~91. Mirrors the player stay-hit split
-        # (stays are credited at the lower STAY weight, not the 1B weight).
+        # ~5% high and pulled wRC+ down to ~91. Since the 2C rework, 2C hits are
+        # real hits of their type already in d2/d3/h, so no stay split.
         # PA-denominated (NOT AB+BB+HBP) — O27 semantic.
         _ww = _linear_weights().get("woba_weights") or {}
         if _ww:
-            stay_h = bat.get("stay_hits", 0) or 0
-            true_singles = singles - stay_h
-            stay_w = _ww.get("STAY", _ww.get("1B", 0.95))
             woba_num = (
                 _ww.get("BB", 0.72) * bb + _ww.get("HBP", 0.74) * hbp +
-                _ww.get("1B", 0.95) * true_singles + _ww.get("2B", 1.30) * d2 +
-                _ww.get("3B", 1.70) * d3 + _ww.get("HR", 2.05) * hr +
-                stay_w * stay_h
+                _ww.get("1B", 0.95) * singles + _ww.get("2B", 1.30) * d2 +
+                _ww.get("3B", 1.70) * d3 + _ww.get("HR", 2.05) * hr
             )
         else:
             # No fitted weights (empty DB) — fall back to MLB linear weights.
