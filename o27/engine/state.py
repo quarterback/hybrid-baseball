@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from o27 import config as _cfg
+from o27.engine import cricket_order as _cricket_order
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +474,13 @@ class Team:
     pp_xbh_held:        int = 0   # XBH the nickel cut down to singles
     pp_hits_converted:  int = 0   # outfield singles the nickel turned into outs
 
+    # Cricket Batting Order (optional rule) — per-game opt-in stamped by
+    # sim.py from the per-league flag. None = not opted in (fall back to the
+    # global cfg.CRICKET_BATTING_ORDER_ENABLED default). When on, advance_lineup
+    # flips 1-9 -> 9-1 at the end of any trip through the order in which no
+    # joker was deployed. See o27/engine/cricket_order.py.
+    cricket_order_enabled: Optional[bool] = None
+
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-PA based on
     # leverage. Cooldown is per-turnover: each joker may be deployed at
@@ -509,16 +517,26 @@ class Team:
             raise ValueError(f"Team {self.name} has no active lineup.")
         return self.lineup[self.lineup_position % len(self.lineup)]
 
-    def advance_lineup(self) -> None:
+    def advance_lineup(self) -> Optional[str]:
         """Advance the lineup position (wraps around).
 
         Super-innings continue the regular batting order from wherever it
         left off — they are normal innings, not a separate selected lineup.
+
+        Returns a play-by-play log line when the optional Cricket Batting
+        Order rule flips the order at a cycle boundary, else None.
         """
         n = len(self.lineup)
         new_pos = (self.lineup_position + 1) % n
+        flip_msg: Optional[str] = None
         if new_pos == 0 and n > 0:
             # Lineup wrapped to top of order — start of a new cycle.
+            # Cricket Batting Order (optional rule): if this trip through the
+            # order was joker-free, flip 1-9 -> 9-1 for the next cycle. Checked
+            # BEFORE jokers_used_this_cycle is cleared, since that set is the
+            # record of whether a joker was deployed during the trip. No-op
+            # (returns None) when the rule is off.
+            flip_msg = _cricket_order.maybe_invert_on_cycle(self)
             self.lineup_cycle_number += 1
             # Per-cycle joker cooldown resets here. A joker may be deployed
             # at most once per time through the order; once every base
@@ -527,6 +545,7 @@ class Team:
             # again. See manager.can_insert_joker / should_insert_joker.
             self.jokers_used_this_cycle = set()
         self.lineup_position = new_pos
+        return flip_msg
 
     def reset_half(self) -> None:
         """Reset intra-half tracking at the start of a new half.
@@ -691,6 +710,11 @@ class GameState:
     # When None, the engine falls back to cfg.POWER_PLAY_ENABLED (the league
     # toggle). Tests set it explicitly to force the rule on/off per game.
     power_play_enabled: Optional[bool] = None
+    # Cricket Batting Order (optional rule) — transient play-by-play notice.
+    # Set by _end_at_bat when advance_lineup flips the order at a cycle
+    # boundary; the Renderer reads it on the same event, emits the line, and
+    # clears it (the raw-log path appends it directly). None most of the time.
+    cricket_flip_msg: Optional[str] = None
     # Active nickel window. `open_out` is state.outs at the moment of
     # deployment (the window covers the next POWER_PLAY_WINDOW_OUTS outs);
     # cleared at every half start in run_half so it never carries over.

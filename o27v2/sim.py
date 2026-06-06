@@ -1830,6 +1830,15 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
     # home row is authoritative.
     if bool((home_row.get("power_play_enabled") if home_row else 0) or 0):
         state.power_play_enabled = True
+    # Cricket Batting Order (optional rule) — same per-league opt-in shape as
+    # Power Play. When this league opted in, force the per-game override ON for
+    # BOTH teams (advance_lineup reads team.cricket_order_enabled, and both
+    # sides bat). When it did NOT, leave the override unset (None) so the rule
+    # falls back to the global Engine Settings toggle. Both teams share a
+    # league, so the home row is authoritative.
+    if bool((home_row.get("cricket_order_enabled") if home_row else 0) or 0):
+        home_team.cricket_order_enabled = True
+        visitors_team.cricket_order_enabled = True
     # Stamp the per-game weather context (drawn at schedule time). prob.py
     # reads this; everything else passes it through.
     from o27.engine.weather import Weather

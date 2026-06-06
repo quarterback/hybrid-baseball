@@ -284,6 +284,14 @@ class Renderer:
         self._last_half     = str(getattr(state_after, "half", "top") or "top")
         self._last_outs     = int(getattr(state_after, "outs", 0) or 0)
 
+        # Cricket Batting Order (optional rule): if the order flipped at the
+        # cycle boundary this event closed, surface it once, then clear it so
+        # the next event doesn't repeat it.
+        _flip = getattr(state_after, "cricket_flip_msg", None)
+        if _flip:
+            lines.append(_flip)
+            state_after.cricket_flip_msg = None
+
         return lines
 
     def render_half_header(self, state) -> str:

@@ -349,7 +349,10 @@ def _end_at_bat(state: GameState) -> list[str]:
     if state.batter_override is not None:
         state.batter_override = None
     else:
-        state.batting_team.advance_lineup()
+        _flip = state.batting_team.advance_lineup()
+        if _flip:
+            log.append(_flip)            # no-renderer path
+            state.cricket_flip_msg = _flip   # renderer path (emitted + cleared there)
     state.pitcher_spell_count += 1
     state.total_pa_this_half += 1
     # BF arc anchored to the OUTS the AB started in (not the outs the
@@ -762,7 +765,10 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
             log += _score_run(state, runs)
         for _ in range(n_outs):
             log += _record_out(state, bid)
-        state.batting_team.advance_lineup()
+        _flip = state.batting_team.advance_lineup()
+        if _flip:
+            log.append(_flip)            # no-renderer path
+            state.cricket_flip_msg = _flip   # renderer path (emitted + cleared there)
         state.count.reset()
         state.total_pa_this_half += 1
         return log

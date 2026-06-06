@@ -1083,6 +1083,24 @@ POWER_PLAY_DEPLOY_BASE_FORCED: float = 0.90  # ≤ window outs remain (use-or-lo
 POWER_PLAY_CLOSE_GAME_MULT: float   = 1.4    # tight game raises deploy urgency
 
 # ---------------------------------------------------------------------------
+# Cricket Batting Order (optional league rule)
+# ---------------------------------------------------------------------------
+# An opt-in, per-league rule. When enabled, the batting order FLIPS at the end
+# of each trip through the order — the 1-9 order becomes 9-1 for the next cycle,
+# so the tail rotates to the top — BUT only on a trip in which the manager
+# deployed no joker. Using a joker locks the order for that cycle (no flip), so
+# the rule trades a tactical joker insertion against keeping a favorable
+# top-of-order. The flip persists across phases (regulation / Declared Seconds /
+# super-innings) exactly as the order does today.
+#
+# CRICKET_BATTING_ORDER_ENABLED is a plain bool, so o27v2.engine_config
+# auto-exposes it as a dashboard toggle that saves per environment — that IS the
+# global per-league default (off by default, so identical talent can be A/B-
+# tested on vs. off, and the per-league checkbox composes via "league opt-in OR
+# global default"). See o27/engine/cricket_order.py for the gate + flip logic.
+CRICKET_BATTING_ORDER_ENABLED: bool = False   # league opt-in; off = zero change
+
+# ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------
 # Each pitch samples uniformly in [rating - pitch_variance, rating + pitch_variance]
