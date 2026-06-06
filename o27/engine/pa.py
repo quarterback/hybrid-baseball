@@ -871,8 +871,10 @@ def _resolve_contact(
         log.append("  [Stay unavailable — no runners. Treating as run.]")
         return _resolve_contact(state, log, "run", outcome)
 
-    # Check: does the stay result in the batter being retired?
-    batter_out_on_stay = stay_mod.stay_results_in_out(state, caught_fly=caught_fly)
+    # Check: does the stay result in the batter being retired? Now that the 2C
+    # resolves through the real hitting engine, ANY out in the field (caught fly,
+    # ground/fly/line out) retires the batter — the at-bat ends.
+    batter_out_on_stay = stay_mod.stay_results_in_out(state, outcome)
 
     if batter_out_on_stay:
         # Batter is out; runners still advance per fielding play.
@@ -941,22 +943,14 @@ def _resolve_contact(
         log.append(f"  Hit credited to {batter.name} (stay). "
                    f"Total this AB: {state.current_at_bat_hits}.")
 
-    # Strike-burn is skill-conditional: a 2C that successfully advanced
-    # runners (the talent gate in prob.py passed) costs nothing on the
-    # count — the batter earned it. A 2C where no runner moved (gate
-    # failed) burns a strike, ending the AB at 3. Pitchers still pay
-    # via pitch count (ball_in_play always increments pitches), so a
-    # chain of earned 2Cs runs the pitcher's count up.
-    if runner_successfully_advanced:
-        log.append(f"  Stay successful — count unchanged. Count: {state.count}.")
-    else:
-        log += _stay_credit_strike(state)
-        if state.count.strikes >= 3:
-            log.append(f"  At-bat ends — {batter.name} used all 3 strikes "
-                       f"(failed-stay sequence; no batter-out).")
-            log += _end_at_bat(state)
-    # Note: when AB doesn't end, do NOT call _end_at_bat — the at-bat is
-    # still in progress with the new (carried-forward) count.
+    # Every 2C burns a strike — that's the max-3-batted-balls cap. Stay is only
+    # offered at strikes < 2 (stay_available), so this leaves the batter at 1 or
+    # 2 strikes and the at-bat CONTINUES; the next batted ball at 2 strikes can't
+    # be stayed on and forces a run-or-out decision. Pitchers also pay via pitch
+    # count (ball_in_play always increments pitches).
+    log += _stay_credit_strike(state)
+    log.append(f"  Stay — runners advance, batter stays. Count: {state.count}.")
+    # AB continues — do NOT call _end_at_bat.
     return log
 
 

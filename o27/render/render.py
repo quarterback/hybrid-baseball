@@ -1246,13 +1246,11 @@ class Renderer:
             d["new_bases"] = state_after.bases_summary()
 
             if choice == "stay":
-                # The engine's stay rule (see o27/engine/stay.py) treats a
-                # caught fly as the ONLY thing that retires the batter on a
-                # stay — a 2-strike stay still credits a hit and burns the
-                # final strike but does NOT make a batter-out. Mirror that
-                # here so the renderer doesn't over-charge batter OR for
-                # 2-strike stays that the engine never recorded as outs.
-                stay_out = bool(caught_fly)
+                # The engine's stay rule (o27/engine/stay.py): the 2C resolves
+                # through the real hitting engine, so ANY out in the field —
+                # caught fly OR a ground/fly/line out (batter not safe) — retires
+                # the batter on a stay. A clean hit lets him stay. Mirror that.
+                stay_out = bool(caught_fly) or not batter_safe
                 d["stay_batter_out"] = stay_out
                 d["stay_valid"] = not stay_out
                 if not stay_out:
@@ -1738,8 +1736,14 @@ class Renderer:
                     # as a separate plate appearance each.
                     s.sty += 1
                     if disp.get("stay_hit_credited"):
+                        # Credit the REAL hit type — a 2C is no longer capped at
+                        # a single. (HR can't reach a stay: it forces a run.)
                         s.hits += 1
                         s.stay_hits += 1
+                        if hit_type == "double":
+                            s.doubles += 1
+                        elif hit_type == "triple":
+                            s.triples += 1
                     # stay_rbi: credit RBI for runs that score on a valid stay.
                     if runs_scored > 0:
                         s.stay_rbi += runs_scored
