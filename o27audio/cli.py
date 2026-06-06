@@ -10,6 +10,7 @@ OpenAI key is read from the Fly secret `OpenAI`; Anthropic from ANTHROPIC_API_KE
 from __future__ import annotations
 
 import argparse
+import sys
 
 from . import config, pipeline, script as script_mod
 
@@ -55,6 +56,27 @@ def cmd_narrate_game(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_roundup(args: argparse.Namespace) -> int:
+    rd = pipeline.gather_roundup(args.date)
+    print(f"Roundup for {rd.date}: {len(rd.slate)} games, "
+          f"{len(rd.hr_leaders)} HR leaders")
+    if args.dry_run:
+        system, user_text = script_mod.build_roundup_messages(rd)
+        print(f"\n[dry-run] system: {len(system)} chars, payload: {len(user_text)} chars\n")
+        print(user_text[:1400])
+        return 0
+    r = pipeline.produce_roundup(
+        rd, save_key=pipeline.current_save_key(),
+        stub_script=args.stub_script, stub_tts=args.stub_tts, model=args.model,
+    )
+    print(f"[script] {r['model']}: {r['n_turns']} turns")
+    print(f"\n✓ wrote {r['wav_path']}")
+    if r["mp3_path"]:
+        print(f"✓ wrote {r['mp3_path']}")
+    print(f"  duration ≈ {r['duration_s']:.1f}s, est cost ${r['est_cost_usd']:.4f}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="o27audio", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -72,6 +94,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true",
                    help="Show the assembled prompt and exit (no API calls)")
     p.set_defaults(func=cmd_narrate_game)
+
+    pr = sub.add_parser("roundup", help="Render a league roundup show")
+    pr.add_argument("--date", default=None, help="Game-day (default: latest played)")
+    pr.add_argument("--model", default=None)
+    pr.add_argument("--stub-script", action="store_true")
+    pr.add_argument("--stub-tts", action="store_true")
+    pr.add_argument("--dry-run", action="store_true")
+    pr.set_defaults(func=cmd_roundup)
 
     args = parser.parse_args(argv)
     try:

@@ -1242,7 +1242,7 @@
       {#- Grouped navigation. Each top menu is active when the current
           endpoint (or path, for the Almanac) belongs to it. -#}
       {% set ep = request.endpoint %}
-      {% set g_games   = ['index', 'gazette.view', 'standings', 'schedule', 'playoffs_view'] %}
+      {% set g_games   = ['index', 'gazette.view', 'audio.roundup_player', 'standings', 'schedule', 'playoffs_view'] %}
       {% set g_players = ['players', 'player_detail', 'teams', 'team_detail', 'compare', 'free_agents'] %}
       {% set g_stats   = ['leaders', 'streaks_and_records', 'team_stats', 'stats_browse', 'analytics', 'distributions', 'o27i_home', 'o27i_leaders', 'player_o27i', 'o27i_advanced', 'glossary'] %}
       {% set g_league  = ['league', 'transactions', 'auction_view', 'auction_live', 'youth_view', 'youth_team_view', 'youth_tournament_view', 'pro_worldcup_view', 'pro_worldcup_team_view', 'college_view', 'college_program_view', 'college_player_view', 'college_postseason_view', 'college_leaders_view', 'college_game_view', 'college_draft_view', 'college_import_view', 'college_prospects', 'economy_view', 'financials_view'] %}
@@ -1255,6 +1255,7 @@
           <ul class="dropdown-menu">
             <li><a class="dropdown-item {% if ep == 'index' %}active{% endif %}" href="{{ url_for('index') }}">Scores</a></li>
             <li><a class="dropdown-item {% if ep == 'gazette.view' %}active{% endif %}" href="{{ url_for('gazette.view') }}">📰 Gazette</a></li>
+            <li><a class="dropdown-item {% if ep == 'audio.roundup_player' %}active{% endif %}" href="{{ url_for('audio.roundup_player') }}">📻 Radio</a></li>
             <li><a class="dropdown-item {% if ep == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a></li>
             <li><a class="dropdown-item {% if ep == 'schedule' %}active{% endif %}" href="{{ url_for('schedule') }}">Schedule</a></li>
             <li><a class="dropdown-item {% if ep == 'playoffs_view' %}active{% endif %}" href="{{ url_for('playoffs_view') }}">Playoffs</a></li>

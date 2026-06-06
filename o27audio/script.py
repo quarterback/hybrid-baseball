@@ -12,7 +12,7 @@ import json
 from typing import Any
 
 from . import config
-from .sources import GameData
+from .sources import GameData, RoundupData
 
 Turn = dict[str, str]
 
@@ -163,6 +163,148 @@ def generate_script(
         "cache_read_input_tokens": getattr(msg.usage, "cache_read_input_tokens", 0) or 0,
     }
     return turns, usage
+
+
+# ---------------------------------------------------------------------------
+# League roundup ("sports radio") — Stage 2
+# ---------------------------------------------------------------------------
+
+_ROUNDUP_SYSTEM = """You are the hosts of an O27 league radio roundup — a daily \
+"around the league" show. O27 is a baseball variant (one continuous 27-out half \
+per side, with quirks like the Second Chance, the Walk-Back bonus runner, and \
+Super-Innings); treat all of that as normal.
+
+Two hosts, same roles as a booth:
+  - "pbp"  = the lead host: drives the rundown, hits the headline scores.
+  - "color" = the analyst: standings context, leaders, hot takes, a little humor.
+
+Make a tight, energetic show from the data provided:
+  - Cold open with the day's headline (biggest result / wildest score).
+  - Run the slate: every game, a sentence or two — score, who won, anything wild
+    (a Super-Innings thriller, a blowout, a slugfest). Name teams.
+  - Standings check: who's leading each league/division, notable races.
+  - League leaders: home runs, RBI, strikeouts — name names.
+  - Transactions wire: call out the notable trades / injuries / moves.
+  - Close by teasing the next slate.
+  - AUDIO only: no stage directions, no asterisks. Natural back-and-forth,
+    short turns (1-3 sentences each). Aim ~24-40 turns."""
+
+
+def _roundup_header(r: RoundupData) -> str:
+    lines = [f"O27 LEAGUE ROUNDUP — season {r.season}, game-day {r.date}", ""]
+    lines.append(f"TODAY'S SLATE ({len(r.slate)} games):")
+    for g in r.slate:
+        si = "  (Super-Innings!)" if g["super_inning"] else ""
+        lines.append(
+            f"  {g['away']} {g['away_score']} @ {g['home']} {g['home_score']}"
+            f"  — {g['winner'] or 'tie'} win{si}"
+        )
+
+    # Division leaders only, to keep the digest tight.
+    lines.append("\nSTANDINGS (division leaders):")
+    seen: set[tuple[str, str]] = set()
+    for t in r.standings:
+        key = (t["league"], t["division"])
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(
+            f"  {t['division']}: {t['city']} {t['name']} "
+            f"({t['wins']}-{t['losses']})"
+        )
+
+    if r.hr_leaders:
+        lines.append("\nHOME RUN LEADERS:")
+        for x in r.hr_leaders:
+            lines.append(f"  {x['name']} ({x['team']}): {x['hr']} HR")
+    if r.rbi_leaders:
+        lines.append("\nRBI LEADERS:")
+        for x in r.rbi_leaders:
+            lines.append(f"  {x['name']} ({x['team']}): {x['rbi']} RBI")
+    if r.k_leaders:
+        lines.append("\nSTRIKEOUT LEADERS (pitchers):")
+        for x in r.k_leaders:
+            lines.append(f"  {x['name']} ({x['team']}): {x['k']} K")
+    if r.transactions:
+        lines.append("\nTRANSACTIONS WIRE (most recent):")
+        for tx in r.transactions:
+            who = f" — {tx['player']}" if tx.get("player") else ""
+            team = f" [{tx['team']}]" if tx.get("team") else ""
+            lines.append(f"  {tx['game_date']} {tx['event_type']}{team}{who}: {tx['detail']}")
+    return "\n".join(lines)
+
+
+def build_roundup_messages(r: RoundupData) -> tuple[str, str]:
+    return _ROUNDUP_SYSTEM, _roundup_header(r)
+
+
+def generate_roundup_script(
+    r: RoundupData, model: str | None = None,
+) -> tuple[list[Turn], dict[str, Any]]:
+    """Call Claude for a roundup show. Raises if no key/SDK."""
+    key = config.anthropic_key()
+    if not key:
+        raise RuntimeError(
+            "No Anthropic key (set ANTHROPIC_API_KEY). "
+            "Use stub mode to test the pipeline offline."
+        )
+    try:
+        import anthropic
+    except ImportError as e:
+        raise RuntimeError(
+            "anthropic SDK not installed — run "
+            "`pip install -r o27audio/requirements.txt`."
+        ) from e
+
+    model = model or config.SCRIPT_MODEL
+    system, user_text = build_roundup_messages(r)
+    client = anthropic.Anthropic(api_key=key)
+    with client.messages.stream(
+        model=model,
+        max_tokens=12000,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "medium", "format": {"type": "json_schema", "schema": _SCHEMA}},
+        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": user_text}],
+    ) as stream:
+        msg = stream.get_final_message()
+
+    raw = next((b.text for b in msg.content if b.type == "text"), "")
+    data = json.loads(raw)
+    turns = [
+        {"speaker": t["speaker"], "text": t["text"].strip()}
+        for t in data.get("turns", [])
+        if t.get("text", "").strip()
+    ]
+    usage = {
+        "input_tokens": getattr(msg.usage, "input_tokens", 0),
+        "output_tokens": getattr(msg.usage, "output_tokens", 0),
+        "cache_read_input_tokens": getattr(msg.usage, "cache_read_input_tokens", 0) or 0,
+    }
+    return turns, usage
+
+
+def stub_roundup_script(r: RoundupData) -> list[Turn]:
+    """Deterministic roundup from the data alone — no API."""
+    turns: list[Turn] = [
+        {"speaker": "pbp", "text": (
+            f"Welcome to the O27 League Roundup for game-day {r.date}! "
+            f"We've got {len(r.slate)} games to get to.")},
+        {"speaker": "color", "text": "Plenty to chew on. Let's run the slate."},
+    ]
+    for g in r.slate[:10]:
+        si = " — and it went to Super-Innings!" if g["super_inning"] else ""
+        turns.append({"speaker": "pbp", "text": (
+            f"{g['away']} {g['away_score']}, {g['home']} {g['home_score']}. "
+            f"{g['winner'] or 'A tie'} on top{si}.")})
+    if r.hr_leaders:
+        top = r.hr_leaders[0]
+        turns.append({"speaker": "color", "text": (
+            f"Around the league, {top['name']} still leads in home runs with "
+            f"{top['hr']}. That bat is carrying {top['team']}.")})
+    turns.append({"speaker": "pbp", "text": (
+        "That's your roundup. We'll see you for the next slate. So long!")})
+    return turns
 
 
 def stub_script(game: GameData) -> list[Turn]:
