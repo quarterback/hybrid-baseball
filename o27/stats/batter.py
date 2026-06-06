@@ -33,6 +33,9 @@ class BatterStats:
     outs_recorded: int = 0  # OR — times this batter was retired
     stay_rbi: int = 0
     stay_hits: int = 0      # Hits credited on a 2C event (subset of `hits`)
+    c2_strand_out: int = 0  # AB ended in a batter-out AFTER ≥1 credited 2C this
+                            # AB — the batter advanced runners then made an out,
+                            # valued in wOBA like a runner being put out.
     multi_hit_abs: int = 0  # At-bats with 2+ credited hits
     walkback_runs: int = 0  # Runs scored as a Walk-Back bonus runner (this
                             # hitter's homer set him back on base and he was

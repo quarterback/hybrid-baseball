@@ -128,13 +128,20 @@ two different stories about the same event.
   2C events are now **excluded from the run-value fit** (`_classify_bip` → None) —
   the 1B/2B/3B weights are clean normal-hit values and 2C hits are credited at
   them. wRC+ centers at exactly 100.
-- **2C cost side — TODO.** The other half of the directive: an out that ends a 2C
-  AB (a strikeout / out on a later segment, after the batter advanced runners) is
-  *"the same as a runner being put out"* — a negative, not a free hit. Today it's
-  a plain out (0 in PA-denominated wOBA), so a 2C AB that ends in an out is
-  over-credited (it keeps the hit credit, ignores the out). Fix needs a stat for
-  2C-AB-ending outs plus a runner-out run value subtracted in the wOBA numerator.
-  Scoped next.
+- **2C cost side — DONE.** An out that ends a 2C AB (the batter advanced runners
+  then struck out / made an out on a later segment) is now valued like a runner
+  being put out. New stat `c2_strand_out` (BatterStats + game_batter_stats,
+  incremented in render's batter-out paths when `ab_hits_before > 0`); the wOBA
+  numerator subtracts `ww["1B"] × c2_strand_out` in both the per-player
+  aggregator and the league baseline, cancelling the advancement credit so a
+  2C-AB-that-ends-in-an-out nets ~neutral instead of a free hit. ~0.6/game; wRC+
+  stays centered at 100. The penalty value (one single-weight) is tunable.
+
+  *Learning:* the stat read 0 at first because the per-phase delta helper
+  `render._stat_delta` carries an **explicit field list** — any new
+  BatterStats counter must be added there or it's silently zeroed before
+  `o27v2/sim.py` persists it. (Same trap applies to the migration list in
+  `o27v2/db.py` and both INSERT column/placeholder lists.)
 - **Defense-read** was retained but decoupled from the old advance gate; its
   balance should be re-checked.
 - **2C skill delta — DONE.** The delta is clear at the decision level (it was

@@ -1550,6 +1550,11 @@ def _aggregate_batter_rows(
             ww["BB"] * bb + ww["HBP"] * hbp + ww["1B"] * true_singles +
             ww["2B"] * d2 + ww["3B"]  * d3  + ww["HR"] * hr
         )
+        # A 2C AB that ended in a batter-out: the batter advanced runners (those
+        # 2C hits are credited above) but then made an out — valued like a runner
+        # being put out (owner directive), which cancels the advancement credit
+        # so the net AB is ~neutral instead of a free hit.
+        woba_num -= ww["1B"] * (b.get("c2_strand_out") or 0)
         b["woba"] = (woba_num / pa) if pa else 0.0
 
         # Stay% — share of PAs in which the batter chose to stay (dance
@@ -2056,6 +2061,7 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
                    COALESCE(SUM(bb),0)   AS bb,
                    COALESCE(SUM(hbp),0)  AS hbp,
                    COALESCE(SUM(stay_hits),0) AS stay_hits,
+                   COALESCE(SUM(c2_strand_out),0) AS c2_strand_out,
                    COALESCE(SUM(runs),0) AS r
              FROM game_batter_stats{bat_where}""",
         bat_params,
@@ -2134,6 +2140,8 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
                 _ww.get("1B", 0.95) * singles + _ww.get("2B", 1.30) * d2 +
                 _ww.get("3B", 1.70) * d3 + _ww.get("HR", 2.05) * hr
             )
+            # Runner-out penalty for 2C ABs that ended in an out (see aggregator).
+            woba_num -= _ww.get("1B", 0.95) * (bat.get("c2_strand_out", 0) or 0)
         else:
             # No fitted weights (empty DB) — fall back to MLB linear weights.
             woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
@@ -2345,7 +2353,8 @@ def _compute_xo_league_baselines(
                    SUM(bb)         AS bb,
                    SUM(k)          AS k,
                    SUM(hbp)        AS hbp,
-                   COALESCE(SUM(stay_hits),0) AS stay_hits
+                   COALESCE(SUM(stay_hits),0) AS stay_hits,
+                   COALESCE(SUM(c2_strand_out),0) AS c2_strand_out
               FROM game_batter_stats{bat_where}
              GROUP BY player_id
             HAVING SUM(pa) >= 50""",
@@ -4286,7 +4295,8 @@ def player_detail_export(player_id: int):
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
                   COALESCE(SUM(stay_rbi),0)     as stay_rbi,
-                  COALESCE(SUM(stay_hits),0)    as stay_hits
+                  COALESCE(SUM(stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(c2_strand_out),0)    as c2_strand_out
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
@@ -4417,6 +4427,7 @@ def leaders_export():
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(bs.roe),0) as roe,
                   COALESCE(SUM(bs.po),0)  as po,
                   COALESCE(SUM(bs.e),0)   as e
@@ -4888,6 +4899,7 @@ def stats_browse():
                        COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                        COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                        COALESCE(SUM(bs.risp_pa),0)  as risp_pa,
                        COALESCE(SUM(bs.risp_ab),0)  as risp_ab,
                        COALESCE(SUM(bs.risp_h),0)   as risp_h,
@@ -5250,6 +5262,7 @@ def leaders():
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(bs.adv_op_1b),0)   as adv_op_1b,
                   COALESCE(SUM(bs.adv_adv_1b),0)  as adv_adv_1b,
                   COALESCE(SUM(bs.adv_op_2b),0)   as adv_op_2b,
@@ -5720,6 +5733,7 @@ def team_stats():
                    COALESCE(SUM(bs.cs),0)  as cs,
                    COALESCE(SUM(bs.stays),0)     as stays,
                    COALESCE(SUM(bs.stay_hits),0) as stay_hits,
+                   COALESCE(SUM(bs.c2_strand_out),0) as c2_strand_out,
                    COALESCE(SUM(bs.stay_rbi),0)  as stay_rbi,
                    COALESCE(SUM(bs.sh),0)        as sh,
                    COALESCE(SUM(bs.bunt_hits),0) as bunt_hits,
@@ -5924,6 +5938,7 @@ def _player_batting_split(player_id: int, team_id: int,
                    COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                    COALESCE(SUM(bs.stay_rbi),0) as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                    COALESCE(SUM(bs.roe),0) as roe
             FROM game_batter_stats bs
             JOIN games g ON bs.game_id = g.id
@@ -6025,7 +6040,8 @@ def _fetch_player_overview(player_id: int,
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
                   COALESCE(SUM(stay_rbi),0)     as stay_rbi,
-                  COALESCE(SUM(stay_hits),0)    as stay_hits
+                  COALESCE(SUM(stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(c2_strand_out),0)    as c2_strand_out
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
@@ -6186,6 +6202,7 @@ def player_detail(player_id: int):
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
                   COALESCE(SUM(stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(adv_op_1b),0)   as adv_op_1b,
                   COALESCE(SUM(adv_adv_1b),0)  as adv_adv_1b,
                   COALESCE(SUM(adv_op_2b),0)   as adv_op_2b,
@@ -6606,6 +6623,7 @@ def _team_batting_rows(baselines: dict) -> list[dict]:
                   COALESCE(SUM(bs.multi_hit_abs),0) AS mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     AS stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(bs.roe),0) AS roe,
                   COALESCE(SUM(bs.po),0) AS po,
                   COALESCE(SUM(bs.e),0)  AS e
@@ -7863,6 +7881,7 @@ def distributions():
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(bs.risp_pa),0)  as risp_pa,
                   COALESCE(SUM(bs.risp_ab),0)  as risp_ab,
                   COALESCE(SUM(bs.risp_h),0)   as risp_h,
