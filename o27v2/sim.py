@@ -570,6 +570,9 @@ def _db_team_to_engine(
         if pick is not None:
             todays_sp = [pick]
 
+    # Sort by composite hitting talent so the 8 starters are genuinely the
+    # best available bats, not whoever was inserted into the DB first.
+    fielders.sort(key=_bat_score, reverse=True)
     # Cap fielders at the canonical 8 starting positions; remaining ones
     # are bench depth that lives in the roster but does not bat. Cap DHs
     # at 3 batting slots so the lineup stays at 12 (8 fielders + SP + 3 DH)
@@ -653,9 +656,9 @@ def _db_team_to_engine(
             age = int((db_row or {}).get("age") or 27)
             pos = (db_row or {}).get("position") or ""
 
-            # Base rate is heavily damped by manager bench_usage so an
-            # old-school skipper effectively never rests anyone.
-            rest_p = 0.06 * (0.20 + 1.40 * bench_usage)
+            # Base rate doubled (0.06 → 0.12) so bench players see meaningful
+            # rotation (~1 planned rest per game at default bench_usage).
+            rest_p = 0.12 * (0.20 + 1.40 * bench_usage)
             if age >= 30:
                 rest_p += (age - 30) * 0.005
             if pos == "C":
@@ -664,15 +667,20 @@ def _db_team_to_engine(
                     rest_p += 0.10
             if consecutive >= 5:
                 rest_p += min(0.15, (consecutive - 4) * 0.04)
-            rest_p = max(0.0, min(0.40, rest_p))
+            # 8+ consecutive starts → near-mandatory day off so no starter
+            # crowds out every bench player indefinitely.
+            if consecutive >= 8:
+                rest_p = max(rest_p, 0.90)
+            rest_p = max(0.0, min(1.0, rest_p))
 
             rest_rolls.append((sf, rest_p))
 
-        # Roll, cap at 2 rests per game (resort by highest rest_p first
-        # so the most-deserving rests get applied if more than 2 fire).
+        # Roll — cap rises to 3 when the bench is deep enough (4+ players)
+        # so extra depth actually reaches the field.
+        _rest_cap = 3 if len(bench_fielders) >= 4 else 2
         will_rest: list = []
         for sf, p in sorted(rest_rolls, key=lambda x: -x[1]):
-            if len(will_rest) >= min(2, len(bench_fielders)):
+            if len(will_rest) >= min(_rest_cap, len(bench_fielders)):
                 break
             if rest_rng.random() < p:
                 will_rest.append(sf)
@@ -690,6 +698,39 @@ def _db_team_to_engine(
                     break
                 idx = starting_fielders.index(rested)
                 starting_fielders[idx] = bench_sorted[i]
+
+    # Bench-starvation guard: if a bench fielder has no starts at all in
+    # the lookback window (absent from position_workload) and a current
+    # starter has 5+ consecutive starts, force one rotation so every
+    # active player accumulates at least some game stats over a season.
+    if position_workload is not None and fielders:
+        starting_set = {p.player_id for p in starting_fielders}
+        live_bench = [p for p in fielders if p.player_id not in starting_set]
+        starved = [
+            p for p in live_bench
+            if engine_to_db_id.get(p.player_id) not in position_workload
+        ]
+        if starved:
+            long_starters = sorted(
+                starting_fielders,
+                key=lambda _p: -position_workload.get(
+                    engine_to_db_id.get(_p.player_id), {}
+                ).get("consecutive_starts", 0),
+            )
+            for rested_sf in long_starters:
+                consecutive_sf = position_workload.get(
+                    engine_to_db_id.get(rested_sf.player_id), {}
+                ).get("consecutive_starts", 0)
+                if consecutive_sf < 5:
+                    break  # remaining starters all recently rested
+                best_starved = max(starved, key=_bat_score)
+                # Tolerance: 12 bat_score pts — don't bench a clear star
+                # for a replacement-level starved player.
+                if _bat_score(best_starved) < _bat_score(rested_sf) - 12:
+                    continue
+                idx = starting_fielders.index(rested_sf)
+                starting_fielders[idx] = best_starved
+                break
 
     # Stamp per-game fielding positions BEFORE building the lineup.
     # The 3 jokers (drafted explicitly via roster_slot="joker") are
