@@ -24,6 +24,7 @@ import statistics
 
 from o27v2 import db
 from . import data as slate_data
+from ._schema_once import once
 from . import buyins
 
 MAX_PICKS = 3
@@ -60,6 +61,7 @@ def settle() -> None:
         buyins.settle_one("sluggers", sd, _slate_payout(b["fee"], ent["score"], fa or 0, ceil or 0))
 
 
+@once
 def ensure_schema() -> None:
     conn = db.get_conn()
     conn.executescript(

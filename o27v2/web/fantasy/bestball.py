@@ -19,6 +19,7 @@ import random
 
 from o27v2 import db
 from . import data as slate_data
+from ._schema_once import once
 from . import buyins
 
 SEASON_BUYIN = 5000  # ƒ5,000; pays at season's end by final rank
@@ -95,6 +96,7 @@ def _missing_slots(hitter_eligs) -> list[str]:
     return [slots[si] for si in range(len(slots)) if si not in slot_match]
 
 
+@once
 def ensure_schema() -> None:
     conn = db.get_conn()
     conn.executescript("CREATE TABLE IF NOT EXISTS bb_roster (player_id INTEGER PRIMARY KEY);")

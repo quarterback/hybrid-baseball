@@ -14,6 +14,7 @@ import datetime as _dt
 
 from o27v2 import db
 from . import data as slate_data
+from ._schema_once import once
 from . import wallet
 
 # Milestone pots (streak length -> guilders). Free game, pure upside: a hot
@@ -22,6 +23,7 @@ from . import wallet
 GATES = {20: 1000 * 100, 30: 5000 * 100, 50: 50000 * 100}
 
 
+@once
 def ensure_schema() -> None:
     conn = db.get_conn()
     conn.executescript(

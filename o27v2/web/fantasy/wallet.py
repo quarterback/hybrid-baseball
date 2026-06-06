@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime as _dt
 
 from o27v2 import db
+from ._schema_once import once
 
 _USD = 100  # guilders per dollar
 
@@ -58,6 +59,7 @@ _REC_KEYS = ("peak_bankroll", "total_wagered", "total_won",
              "biggest_win", "entries", "cashes", "restarts")
 
 
+@once
 def ensure_schema() -> None:
     conn = db.get_conn()
     conn.executescript(

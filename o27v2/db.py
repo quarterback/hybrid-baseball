@@ -7,7 +7,33 @@ Functions return plain dicts / lists so callers never deal with cursors.
 from __future__ import annotations
 import os
 import sqlite3
+import time
 from typing import Any
+
+
+def _is_locked_error(exc: Exception) -> bool:
+    return isinstance(exc, sqlite3.OperationalError) and "locked" in str(exc).lower()
+
+
+def _retry_on_locked(fn, attempts: int = 6, base_delay: float = 0.05):
+    """Run a write callable, retrying on a transient ``database is locked``.
+
+    busy_timeout (set in get_conn) already makes a connection WAIT for the WAL
+    writer lock, but it does NOT cover the read→write upgrade case (a txn that
+    SELECTs then writes is denied immediately to avoid deadlock). A short
+    bounded retry with backoff turns those momentary collisions — a page-load
+    write racing a running sim — into a brief wait instead of a 500 / failed
+    game. Re-raises anything that is not a lock error, or the last lock error
+    once attempts are exhausted."""
+    delay = base_delay
+    for i in range(attempts):
+        try:
+            return fn()
+        except sqlite3.OperationalError as exc:
+            if not _is_locked_error(exc) or i == attempts - 1:
+                raise
+            time.sleep(delay)
+            delay *= 2
 
 _DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "o27v2.db")
 _ENV_DB_PATH = os.environ.get("O27V2_DB_PATH")
@@ -1986,13 +2012,17 @@ def fetchone(sql: str, params: tuple = ()) -> dict | None:
 
 def execute(sql: str, params: tuple = ()) -> int:
     """Execute a DML statement; returns lastrowid."""
-    with get_conn() as conn:
-        cur = conn.execute(sql, params)
-        conn.commit()
-        return cur.lastrowid
+    def _run() -> int:
+        with get_conn() as conn:
+            cur = conn.execute(sql, params)
+            conn.commit()
+            return cur.lastrowid
+    return _retry_on_locked(_run)
 
 
 def executemany(sql: str, param_list: list[tuple]) -> None:
-    with get_conn() as conn:
-        conn.executemany(sql, param_list)
-        conn.commit()
+    def _run() -> None:
+        with get_conn() as conn:
+            conn.executemany(sql, param_list)
+            conn.commit()
+    _retry_on_locked(_run)
