@@ -13,13 +13,26 @@ from __future__ import annotations
 import os
 
 # --- API keys -------------------------------------------------------------
+def _first_env(*names: str) -> str | None:
+    for n in names:
+        v = os.environ.get(n)
+        if v:
+            return v
+    return None
+
+
 def openai_key() -> str | None:
     """The OpenAI key. This project stores the Fly secret as ``OpenAI``."""
-    return os.environ.get("OpenAI") or os.environ.get("OPENAI_API_KEY")
+    return _first_env("OpenAI", "OPENAI_API_KEY", "OPENAI", "openai")
 
 
 def anthropic_key() -> str | None:
-    return os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC")
+    """The Anthropic key. Accepts the conventional names plus the project's
+    capitalized style (e.g. ``Anthropic``, mirroring the ``OpenAI`` secret)."""
+    return _first_env(
+        "ANTHROPIC_API_KEY", "ANTHROPIC", "Anthropic", "anthropic",
+        "ANTHROPIC_KEY", "CLAUDE_API_KEY", "Claude",
+    )
 
 
 # --- Models ---------------------------------------------------------------
