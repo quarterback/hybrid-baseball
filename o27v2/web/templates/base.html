@@ -41,6 +41,8 @@
         href="{{ url_for('static', filename='vendor/fonts.css') }}">
   <link rel="stylesheet"
         href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
+  <link rel="stylesheet"
+        href="{{ url_for('static', filename='vendor/bootstrap-icons.css') }}">
   <style>
     /* ============================================================
        O27 League — design system  ·  "Twilight Diamond"
@@ -393,11 +395,12 @@
     .sortable thead th:hover { color: var(--link); }
     .sortable thead th .sort-arrow { color: var(--accent); margin-left: 3px; font-size: .7rem; }
 
-    /* Overall-rating chip: diamonds for current, baby bottles for
-       projected upside (prospects only, age <= 26). */
-    .ovr-chip { display: inline-flex; align-items: center; gap: 2px; line-height: 1; }
-    .ovr-diamond { color: var(--gold); font-size: 1.05em; }
-    .ovr-bottle { font-size: .95em; opacity: .85; }
+    /* Overall-rating chip: Bootstrap Icons stars — filled for current
+       tier, outline for projected upside (prospects only, age <= 26).
+       Replaces the old Unicode diamonds + baby-bottle emoji. */
+    .ovr-chip { display: inline-flex; align-items: center; gap: 1px; line-height: 1; }
+    .ovr-star { color: var(--gold); font-size: .95em; line-height: 1; }
+    .ovr-star-upside { color: var(--gold); opacity: .42; font-size: .95em; line-height: 1; }
 
     /* compact dense table aliases */
     .dense-table { margin: 0; }
