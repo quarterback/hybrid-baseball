@@ -212,3 +212,58 @@ def test_end_to_end_flip_lovers_flip_more_than_joker_lovers(monkeypatch):
     lovers = sum(_run(True, 0.95, s)[1] for s in range(8))
     refusers = sum(_run(True, 0.05, s)[1] for s in range(8))
     assert lovers > refusers
+
+
+# ---------------------------------------------------------------------------
+# Flip-aware lineup construction (the manager "builds for the flip")
+# ---------------------------------------------------------------------------
+
+from o27v2.sim import _valley_order, _ordered_lineup, _bat_score  # noqa: E402
+
+
+class _LP:
+    """Lineup player stand-in: _bat_score reads skill/power/contact/eye."""
+    def __init__(self, name, score, skill=None):
+        self.name = name
+        self.skill = score if skill is None else skill
+        self.power = score
+        self.contact = score
+        self.eye = score
+
+
+def _weighted_quality(order):
+    """Front-loaded PA-weighted talent (leadoff worth most). Lower disparity
+    between forward and reverse = 'reads well in both directions'."""
+    n = len(order)
+    return sum((n - i) * _bat_score(p) for i, p in enumerate(order))
+
+
+def test_valley_puts_best_at_ends_worst_in_middle():
+    bats = [_LP(f"b{i}", 0.9 - 0.08 * i) for i in range(9)]  # b0 best .. b8 worst
+    v = _valley_order(list(bats))
+    assert v[0].name == "b0"          # best leads off
+    assert v[4].name == "b8"          # worst (would-be pitcher) in the middle
+    assert {p.name for p in v} == {p.name for p in bats}  # same nine
+
+
+def test_valley_reads_well_in_both_directions():
+    # Standard descending order vs valley: compare forward-vs-reverse disparity.
+    bats = [_LP(f"b{i}", 0.9 - 0.08 * i) for i in range(9)]
+    standard = sorted(bats, key=_bat_score, reverse=True)
+    valley = _valley_order(list(standard))
+
+    def disparity(order):
+        return abs(_weighted_quality(order) - _weighted_quality(list(reversed(order))))
+
+    # The valley's forward/reverse gap is far smaller than the standard order's.
+    assert disparity(valley) < disparity(standard) * 0.25
+
+
+def test_ordered_lineup_flip_minded_buries_pitcher_in_middle():
+    fielders = [_LP(f"f{i}", 0.7 - 0.04 * i) for i in range(8)]
+    sp = _LP("SP", 0.10)             # weak-hitting pitcher
+    flip = _ordered_lineup(fielders, [sp], flip_minded=True)
+    standard = _ordered_lineup(fielders, [sp], flip_minded=False)
+    assert standard[-1].name == "SP"               # standard: pitcher hits 9th
+    assert flip[len(flip) // 2].name == "SP"        # flip-minded: pitcher mid
+    assert flip[0].name != "SP" and flip[-1].name != "SP"

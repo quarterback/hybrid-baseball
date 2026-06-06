@@ -1119,6 +1119,13 @@ CRICKET_FLIP_MAX_PROB: float    = 0.97   # ceiling so it's never a certainty
 # already forfeited, further jokers that cycle are undamped.
 CRICKET_JOKER_FLIP_DAMP: float  = 0.60   # max fractional cut to joker-insert prob
 
+# Flip-aware lineup construction. A flip-minded skipper (mgr_flip_aggression at
+# or above this bar) whose league runs the rule builds his order to read well in
+# BOTH directions — strongest bats at the ends, weakest (the pitcher) buried in
+# the MIDDLE — so a flip doesn't hand the next cycle a tail-led order. Below the
+# bar, the order is built normally (best-to-worst, pitcher 9th).
+CRICKET_FLIP_LINEUP_AGG_MIN: float = 0.60
+
 # ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------

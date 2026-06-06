@@ -230,9 +230,36 @@ def _bat_score(p) -> float:
     )
 
 
+def _valley_order(by_talent_desc: list) -> list:
+    """Arrange a talent-sorted (best-first) list into a "valley": strongest bats
+    at the ends, weakest in the middle.
+
+    This is the flip-minded order — it reads well in BOTH directions, so when the
+    Cricket Batting Order rule flips it (1-9 -> 9-1) the next cycle is still
+    led by quality instead of by the tail. The standard order (best-to-worst,
+    pitcher 9th) reverses into a pitcher-led mess; the valley does not, because
+    the pitcher (lowest bat score) lands in the middle, untouched by the flip.
+
+    Placement alternates outer-in: best -> leadoff, 2nd -> last, 3rd -> 2nd,
+    4th -> 8th, ... so consecutive talent ranks sit at mirrored positions.
+    """
+    n = len(by_talent_desc)
+    result: list = [None] * n
+    left, right = 0, n - 1
+    for i, player in enumerate(by_talent_desc):
+        if i % 2 == 0:
+            result[left] = player
+            left += 1
+        else:
+            result[right] = player
+            right -= 1
+    return result
+
+
 def _ordered_lineup(
     starting_fielders: list,
     todays_sp: list,
+    flip_minded: bool = False,
 ) -> list:
     """Order the 9-batter base lineup by hitting talent.
 
@@ -244,11 +271,27 @@ def _ordered_lineup(
     Pitchers almost always hit 9th. Exception: a pitcher whose
     hitting `skill` clears 0.50 (top ~5-10% of arms in a fresh
     seed) slots in by talent like everyone else.
+
+    `flip_minded` (set for a high-flip-aggression manager in a Cricket
+    Batting Order league) instead builds a "valley" order — strong ends,
+    weak middle — so the order reads well after a flip. The pitcher lands
+    in the middle rather than at the tail. See _valley_order.
     """
     non_pitchers = list(starting_fielders)
     non_pitchers.sort(key=_bat_score, reverse=True)
 
     sp = todays_sp[0] if todays_sp else None
+
+    if flip_minded:
+        # Build a valley over ALL nine by talent (the SP included), so the
+        # weakest bat — usually the pitcher — sits in the middle, off the ends
+        # the flip swaps. No special "SP bats 9th" handling here on purpose.
+        full = non_pitchers + ([sp] if sp is not None else [])
+        full.sort(key=_bat_score, reverse=True)
+        if len(full) >= 3:
+            return _valley_order(full)
+        return full
+
     if sp is None:
         return non_pitchers
 
@@ -753,7 +796,19 @@ def _db_team_to_engine(
     # Build the 9-batter base lineup: 8 fielders + SP. Jokers stay in
     # jokers_available for batter_override insertions — they're NOT
     # part of the batting order itself.
-    lineup = _ordered_lineup(starting_fielders, todays_sp)
+    #
+    # Flip-aware construction: when the Cricket Batting Order rule is on for this
+    # team (per-league flag or the global default) AND the skipper is flip-minded
+    # (mgr_flip_aggression at/over the bar), build a "valley" order that reads
+    # well in both directions instead of the standard best-to-worst order. This
+    # is the manager "building his lineup with the flip in mind."
+    from o27 import config as _ecfg
+    _rule_on = (bool(team_row.get("cricket_order_enabled"))
+                or bool(getattr(_ecfg, "CRICKET_BATTING_ORDER_ENABLED", False)))
+    _flip_agg = float(team_row.get("mgr_flip_aggression") or 0.5)
+    _flip_minded = _rule_on and _flip_agg >= getattr(
+        _ecfg, "CRICKET_FLIP_LINEUP_AGG_MIN", 0.60)
+    lineup = _ordered_lineup(starting_fielders, todays_sp, flip_minded=_flip_minded)
 
     # Reorder the roster so today's SP is the first pitcher. The engine's
     # `_set_fielding_pitcher` picks the first is_pitcher in roster order,

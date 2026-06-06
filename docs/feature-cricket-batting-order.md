@@ -115,8 +115,17 @@ on**. Identical shape to Power Play. `sim.py` stamps the override on *both* team
 | UI | `new_league.html`, `universe_new.html`, `league_edit.html` (+ `app.py`) | checkbox / selects to opt a league in |
 
 **Off = zero behaviour change.** With the rule off, `advance_lineup` never arms a
-flip, `joker_flip_damp` returns 1.0, and no event is ever produced — the engine is
-byte-for-byte unchanged.
+flip, `joker_flip_damp` returns 1.0, no event is ever produced, and lineups are
+built normally — the engine is byte-for-byte unchanged.
+
+### Flip-aware lineup construction
+A flip-minded skipper (`mgr_flip_aggression ≥ cfg.CRICKET_FLIP_LINEUP_AGG_MIN`,
+default 0.60) whose league runs the rule builds a **"valley" order** — strongest
+bats at the ends, weakest (the pitcher) in the middle — so a flip leads the next
+cycle with quality instead of the tail. Everyone else builds the standard
+best-to-worst order with the pitcher 9th. Implemented in
+`o27v2/sim.py` (`_valley_order`, `_ordered_lineup(..., flip_minded=…)`), gated in
+`_db_team_to_engine`. See `docs/aar-cricket-batting-order-flip-aware-lineups.md`.
 
 ---
 
@@ -140,9 +149,13 @@ byte-for-byte unchanged.
   and `mgr_flip_aggression`; INSERT column/placeholder/value counts align (31/31/31).
 
 ## 6. Not changed / possible follow-ups
-- **Flip-aware lineup construction.** A flip-minded manager "builds his order with
-  the flip in mind" — e.g. an order that reads well in both directions. That lives
-  in `o27v2/sim.py:_ordered_lineup` and is a natural next step; today the order is
-  built the same way regardless of `mgr_flip_aggression`.
 - **No new stats.** The flip only reorders PAs the stat machinery already records;
   a "flips per game" telemetry line could be added if it proves interesting.
+- **Matchup-aware valley.** The valley order balances talent only; a future
+  refinement could make both directions handedness/platoon-aware.
+
+## 7. AAR trail
+- `docs/aar-cricket-batting-order.md` — the optional-rule scaffold + first flip.
+- `docs/aar-cricket-batting-order-manager-decision.md` — earned, use-or-lose,
+  manager-decided, regulation-only; the `mgr_flip_aggression` persona.
+- `docs/aar-cricket-batting-order-flip-aware-lineups.md` — the "valley" lineup.
