@@ -103,6 +103,7 @@ MOTIVATIONS = (
     "win_now_overpay",
     "gm_noise",
     "star_demand",
+    "playing_time_buried",
 )
 
 # Per-phase per-team initiation probability. ~55% of the season's trade
@@ -119,59 +120,64 @@ BASE_INITIATE_PROB: dict[str, float] = {
 # Designed so each strategy has a distinct "voice".
 STRATEGY_MULT: dict[str, dict[str, float]] = {
     "win_now": {
-        "win_now_overpay":   2.5,
-        "deadline_buyer":    1.6,
-        "injury_backfill":   1.4,
-        "block_breaking":    0.6,
-        "rebuild_fire_sale": 0.0,
-        "deadline_seller":   0.2,
-        "salary_dump":       0.3,
-        "gm_noise":          1.0,
-        "star_demand":       0.6,
+        "win_now_overpay":      2.5,
+        "deadline_buyer":       1.6,
+        "injury_backfill":      1.4,
+        "block_breaking":       0.6,
+        "rebuild_fire_sale":    0.0,
+        "deadline_seller":      0.2,
+        "salary_dump":          0.3,
+        "gm_noise":             1.0,
+        "star_demand":          0.6,
+        "playing_time_buried":  0.5,  # hoard depth — only move if truly stuck
     },
     "contend": {
-        "deadline_buyer":    1.8,
-        "injury_backfill":   1.3,
-        "block_breaking":    1.0,
-        "win_now_overpay":   0.8,
-        "rebuild_fire_sale": 0.0,
-        "deadline_seller":   0.2,
-        "salary_dump":       0.6,
-        "gm_noise":          1.0,
-        "star_demand":       0.6,
+        "deadline_buyer":       1.8,
+        "injury_backfill":      1.3,
+        "block_breaking":       1.0,
+        "win_now_overpay":      0.8,
+        "rebuild_fire_sale":    0.0,
+        "deadline_seller":      0.2,
+        "salary_dump":          0.6,
+        "gm_noise":             1.0,
+        "star_demand":          0.6,
+        "playing_time_buried":  0.8,
     },
     "balanced": {
-        "block_breaking":    1.2,
-        "injury_backfill":   1.0,
-        "deadline_buyer":    0.9,
-        "deadline_seller":   0.9,
-        "salary_dump":       1.0,
-        "rebuild_fire_sale": 0.3,
-        "win_now_overpay":   0.5,
-        "gm_noise":          1.0,
-        "star_demand":       1.0,
+        "block_breaking":       1.2,
+        "injury_backfill":      1.0,
+        "deadline_buyer":       0.9,
+        "deadline_seller":      0.9,
+        "salary_dump":          1.0,
+        "rebuild_fire_sale":    0.3,
+        "win_now_overpay":      0.5,
+        "gm_noise":             1.0,
+        "star_demand":          1.0,
+        "playing_time_buried":  1.2,
     },
     "develop": {
-        "block_breaking":    1.5,
-        "deadline_seller":   1.2,
-        "salary_dump":       1.1,
-        "rebuild_fire_sale": 0.5,
-        "win_now_overpay":   0.2,
-        "deadline_buyer":    0.3,
-        "injury_backfill":   0.7,
-        "gm_noise":          1.0,
-        "star_demand":       1.2,
+        "block_breaking":       1.5,
+        "deadline_seller":      1.2,
+        "salary_dump":          1.1,
+        "rebuild_fire_sale":    0.5,
+        "win_now_overpay":      0.2,
+        "deadline_buyer":       0.3,
+        "injury_backfill":      0.7,
+        "gm_noise":             1.0,
+        "star_demand":          1.2,
+        "playing_time_buried":  1.6,  # actively find homes for buried prospects
     },
     "rebuild": {
-        "rebuild_fire_sale": 2.5,
-        "deadline_seller":   1.8,
-        "salary_dump":       1.6,
-        "block_breaking":    1.0,
-        "deadline_buyer":    0.0,
-        "win_now_overpay":   0.0,
-        "injury_backfill":   0.4,
-        "gm_noise":          1.0,
-        "star_demand":       1.4,
+        "rebuild_fire_sale":    2.5,
+        "deadline_seller":      1.8,
+        "salary_dump":          1.6,
+        "block_breaking":       1.0,
+        "deadline_buyer":       0.0,
+        "win_now_overpay":      0.0,
+        "injury_backfill":      0.4,
+        "gm_noise":             1.0,
+        "star_demand":          1.4,
+        "playing_time_buried":  1.1,
     },
 }
 
@@ -310,6 +316,58 @@ def _healthy_reserves_at_position(team_id: int, position: str, game_date: str) -
 # ---------------------------------------------------------------------------
 # Motivation scoring
 # ---------------------------------------------------------------------------
+
+def _score_playing_time_buried(
+    team: dict, roster: list[dict], game_date: str
+) -> tuple[float, dict]:
+    """Active position player getting near-zero playing time after a meaningful
+    sample of team games. The team has excess depth at that position and should
+    move the buried player somewhere they can contribute."""
+    team_games_row = db.fetchone(
+        "SELECT COUNT(*) AS n FROM games "
+        "WHERE played = 1 AND (home_team_id = ? OR away_team_id = ?)",
+        (team["id"], team["id"]),
+    )
+    team_games = (team_games_row["n"] if team_games_row else 0)
+    if team_games < 25:
+        return 0.0, {}
+
+    pa_rows = db.fetchall(
+        """SELECT bs.player_id, COUNT(DISTINCT bs.game_id) AS games_started
+             FROM game_batter_stats bs
+             JOIN games g ON g.id = bs.game_id
+            WHERE bs.team_id = ? AND g.played = 1
+              AND bs.pa > 0 AND bs.phase = 0
+           GROUP BY bs.player_id""",
+        (team["id"],),
+    )
+    pa_by_player = {r["player_id"]: r["games_started"] for r in pa_rows}
+
+    pos_players = [
+        p for p in roster
+        if not p.get("is_pitcher") and not p.get("is_joker")
+    ]
+
+    best_score = 0.0
+    best_ctx: dict = {}
+    for p in pos_players:
+        gs = pa_by_player.get(p["id"], 0)
+        share = gs / team_games
+        if share >= 0.20:
+            continue  # getting enough playing time
+        tv = trade_value(p)
+        if tv < 0.30:
+            continue  # replacement-level — not worth a trade
+        score = (1.0 - share) * tv * 0.8
+        if score > best_score:
+            best_score = score
+            best_ctx = {
+                "buried_player_id": p["id"],
+                "position": p.get("position", ""),
+            }
+
+    return min(1.0, best_score), best_ctx
+
 
 def _score_block_breaking(team: dict, roster: list[dict], game_date: str) -> tuple[float, dict]:
     """High-value reserve sitting behind a same-position active starter."""
@@ -515,6 +573,21 @@ def _candidate_partners(
         ranked = sorted(others, key=lambda t: t["win_pct"], reverse=True)
         return ranked[:3]
 
+    if motivation == "playing_time_buried":
+        pos = ctx.get("position", "")
+        if not pos:
+            return others
+        # Prefer teams with no one at this position (or a weak starter there)
+        # since they have the clearest opening for the buried player.
+        needy, rest = [], []
+        for t in others:
+            starters = _healthy_active_at_position(t["id"], pos, game_date)
+            if not starters:
+                needy.append(t)
+            else:
+                rest.append(t)
+        return needy + rest
+
     return []
 
 
@@ -620,6 +693,14 @@ def _build_offer(
             return [], []
         mid = len(partner_pool) // 2
         recv = partner_pool[mid: mid + 2]
+        return send, recv
+
+    if motivation == "playing_time_buried":
+        buried_id = ctx.get("buried_player_id")
+        send = [p for p in init_pool if p["id"] == buried_id][:1]
+        if not send:
+            return [], []
+        recv = _pick_by_value(partner_pool, trade_value(send[0]), rng, tolerance=0.25)
         return send, recv
 
     return [], []
@@ -880,15 +961,16 @@ def _run_team_iteration(
     scored: list[tuple[float, str, dict]] = []
 
     raw: dict[str, tuple[float, dict]] = {
-        "block_breaking":    _score_block_breaking(team, roster, game_date),
-        "injury_backfill":   _score_injury_backfill(team, roster, game_date),
-        "deadline_buyer":    _score_deadline_buyer(team, phase),
-        "deadline_seller":   _score_deadline_seller(team, phase),
-        "salary_dump":       _score_salary_dump(team, payrolls, median_pay),
-        "rebuild_fire_sale": _score_rebuild_fire_sale(team, roster),
-        "win_now_overpay":   _score_win_now_overpay(team),
-        "gm_noise":          _score_gm_noise(team),
-        "star_demand":       _score_star_demand(team, roster, games_played),
+        "block_breaking":      _score_block_breaking(team, roster, game_date),
+        "injury_backfill":     _score_injury_backfill(team, roster, game_date),
+        "deadline_buyer":      _score_deadline_buyer(team, phase),
+        "deadline_seller":     _score_deadline_seller(team, phase),
+        "salary_dump":         _score_salary_dump(team, payrolls, median_pay),
+        "rebuild_fire_sale":   _score_rebuild_fire_sale(team, roster),
+        "win_now_overpay":     _score_win_now_overpay(team),
+        "gm_noise":            _score_gm_noise(team),
+        "star_demand":         _score_star_demand(team, roster, games_played),
+        "playing_time_buried": _score_playing_time_buried(team, roster, game_date),
     }
 
     for motivation in MOTIVATIONS:
