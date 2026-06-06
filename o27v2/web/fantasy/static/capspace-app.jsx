@@ -89,7 +89,19 @@ function App() {
   const needsOnboard = walletState && (walletState.started === false || reonboard);
 
   if (walletState === undefined) {
-    return <CurrencyCtx.Provider value={{ mode: cur, setMode }}><div className="app" /></CurrencyCtx.Provider>;
+    // Wallet still loading — render a visible splash, not an empty <div>, so a
+    // slow /api/wallet round-trip reads as "loading" rather than a blank page.
+    // Inline styles keep this independent of capspace.css.
+    return (
+      <CurrencyCtx.Provider value={{ mode: cur, setMode }}>
+        <div className="app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+          <div style={{ textAlign: 'center', opacity: 0.65 }}>
+            <div style={{ fontSize: '22px', fontWeight: 800, letterSpacing: '0.02em' }}>CapSpace</div>
+            <div style={{ fontSize: '14px', marginTop: '6px' }}>Loading tonight’s slate…</div>
+          </div>
+        </div>
+      </CurrencyCtx.Provider>
+    );
   }
   if (needsOnboard) {
     return (

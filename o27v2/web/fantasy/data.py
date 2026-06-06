@@ -271,16 +271,59 @@ def _calibrate_salaries(players: list[dict]) -> None:
             p["salary"] = int(usd * _GUILDER_PER_USD)     # store as guilders
 
 
+# In-process cache for the slate blob. Building it scans the whole season's
+# per-game stat tables for the ~175-player pool (see _build_logs / _season_lines)
+# and it is rebuilt many times per request: _safe_slate calls it once, then
+# _settle_all fans out into the per-game settle paths (contests._LiveContext,
+# sluggers/pitching _benchmark/_slate_entry, streak) which each call it again.
+# That repetition is what made /fantasy/api/{wallet,slate,activity} take
+# 15-26 s — and the front-end shows a blank shell until /api/wallet returns.
+# The blob only changes when a game is played, so cache it per slate_date and
+# invalidate on the played-game count (cheap, indexed COUNT). Trades between
+# sims can leave the pool marginally stale until the next game settles — an
+# acceptable trade for turning a 15 s page into a sub-second one.
+_SLATE_CACHE: dict[str, tuple[int, dict]] = {}
+
+
+def _slate_cache_version() -> int:
+    row = db.fetchone("SELECT COUNT(*) AS n FROM games WHERE played = 1")
+    return int(row["n"]) if row and row.get("n") is not None else 0
+
+
+def invalidate_slate_cache() -> None:
+    """Drop the memoized slate blobs (e.g. after a reseed in the same process)."""
+    _SLATE_CACHE.clear()
+
+
 def build_slate_data(slate_date: str | None = None) -> dict | None:
     """Build the real CapSpace data blob for a slate (defaults to the current
     next-unplayed slate), or None if the save has no games (the front-end then
     falls back to its bundled mock data). Passing an explicit date lets a
-    contest re-derive its own slate's pool even after the slate has advanced."""
+    contest re-derive its own slate's pool even after the slate has advanced.
+
+    Memoized per slate_date and invalidated by the played-game count, so the
+    many calls within a single request (settle fan-out + the slate itself)
+    rebuild the expensive stat scan at most once per simmed game. A shallow
+    copy is returned so callers can stamp CONTESTS / WALLET without polluting
+    the cache."""
     if slate_date is None:
         slate_date = _slate_date()
     if not slate_date:
         return None
 
+    version = _slate_cache_version()
+    cached = _SLATE_CACHE.get(slate_date)
+    if cached and cached[0] == version:
+        return dict(cached[1])
+
+    blob = _build_slate_data_uncached(slate_date)
+    if blob is not None:
+        _SLATE_CACHE[slate_date] = (version, blob)
+        return dict(blob)
+    return None
+
+
+def _build_slate_data_uncached(slate_date: str) -> dict | None:
     games = db.fetchall(
         """SELECT g.id, g.game_date, g.start_minute,
                   ht.abbrev AS home, ht.name AS home_name, g.home_team_id,
@@ -431,28 +474,41 @@ def _build_logs(player_ids: list[int]) -> dict:
     pitcher_ids = {r["id"] for r in db.fetchall(
         f"SELECT id FROM players WHERE id IN ({ph}) AND is_pitcher = 1", tuple(player_ids))}
 
+    # Only the latest 5 played games per player are kept, but the pool spans
+    # the whole league — selecting every season row just to slice 5 in Python
+    # was the dominant cost of a slate build. A windowed ROW_NUMBER caps each
+    # player to 5 rows in SQL (cutting a ~14k-row scan to ~875), leaving the
+    # Python assembly below unchanged.
     bat = db.fetchall(
-        f"""SELECT bs.*, g.game_date,
-                   CASE WHEN g.home_team_id = bs.team_id THEN at.abbrev
-                        ELSE ht.abbrev END AS opp
-            FROM game_batter_stats bs
-            JOIN games g ON bs.game_id = g.id
-            JOIN teams ht ON g.home_team_id = ht.id
-            JOIN teams at ON g.away_team_id = at.id
-            WHERE bs.player_id IN ({ph}) AND g.played = 1 AND bs.phase = 0
-            ORDER BY g.game_date DESC, g.id DESC""",
+        f"""SELECT * FROM (
+                SELECT bs.*, g.game_date,
+                       CASE WHEN g.home_team_id = bs.team_id THEN at.abbrev
+                            ELSE ht.abbrev END AS opp,
+                       ROW_NUMBER() OVER (PARTITION BY bs.player_id
+                                          ORDER BY g.game_date DESC, g.id DESC) AS rn
+                FROM game_batter_stats bs
+                JOIN games g ON bs.game_id = g.id
+                JOIN teams ht ON g.home_team_id = ht.id
+                JOIN teams at ON g.away_team_id = at.id
+                WHERE bs.player_id IN ({ph}) AND g.played = 1 AND bs.phase = 0
+            ) WHERE rn <= 5
+            ORDER BY game_date DESC, rn""",
         tuple(player_ids),
     )
     pit = db.fetchall(
-        f"""SELECT ps.*, g.game_date,
-                   CASE WHEN g.home_team_id = ps.team_id THEN at.abbrev
-                        ELSE ht.abbrev END AS opp
-            FROM game_pitcher_stats ps
-            JOIN games g ON ps.game_id = g.id
-            JOIN teams ht ON g.home_team_id = ht.id
-            JOIN teams at ON g.away_team_id = at.id
-            WHERE ps.player_id IN ({ph}) AND g.played = 1 AND ps.phase = 0
-            ORDER BY g.game_date DESC, g.id DESC""",
+        f"""SELECT * FROM (
+                SELECT ps.*, g.game_date,
+                       CASE WHEN g.home_team_id = ps.team_id THEN at.abbrev
+                            ELSE ht.abbrev END AS opp,
+                       ROW_NUMBER() OVER (PARTITION BY ps.player_id
+                                          ORDER BY g.game_date DESC, g.id DESC) AS rn
+                FROM game_pitcher_stats ps
+                JOIN games g ON ps.game_id = g.id
+                JOIN teams ht ON g.home_team_id = ht.id
+                JOIN teams at ON g.away_team_id = at.id
+                WHERE ps.player_id IN ({ph}) AND g.played = 1 AND ps.phase = 0
+            ) WHERE rn <= 5
+            ORDER BY game_date DESC, rn""",
         tuple(player_ids),
     )
 
