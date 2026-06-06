@@ -1668,10 +1668,17 @@ def _aggregate_batter_rows(
             b["def_runs_source"] = "scout"      # rating-derived projection
         b["dwar"] = b["def_runs"] / rpw if rpw else 0.0
 
-        # bWAR — total batter value = batting WAR + defensive WAR.
+        # Baserunning runs → WAR. O27-native BSR (RE-derived run values), the
+        # SAME figure build_baserunning_value() shows on the surface. Un-regressed
+        # (it's already a centered, small run value); low-sample runners net ~0.
+        bsr_runs = (baselines.get("bsr_runs") or {}).get(pid, 0.0) if pid is not None else 0.0
+        b["bsr_runs"] = bsr_runs
+        b["bwar_base"] = bsr_runs / rpw if rpw else 0.0
+
+        # bWAR — total batter value = batting + defense + baserunning WAR.
         bwar_off = b["vorp"] / rpw if rpw else 0.0
         b["war_off"] = bwar_off
-        b["war"] = bwar_off + b["dwar"]
+        b["war"] = bwar_off + b["dwar"] + b["bwar_base"]
 
         # --- Per-fielder counting stats ---
         # PO/E come straight off the row; chances and fielding% derive from
@@ -2261,6 +2268,19 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
     except Exception:
         out["fielding_runs"]    = {}
         out["fielding_chances"] = {}
+
+    # --- Baserunning input to WAR: O27-native BSR, per player ------------------
+    # Same build_baserunning_value() the fielding/Savant surface displays. BSR is
+    # already a centered, small run value (its run constants are RE-derived from
+    # O27's own run environment, so the noisy extra-base term self-zeroes); it
+    # flows into WAR un-regressed, matching how real WAR treats BsR. min_op=1 so
+    # every baserunner is present (low-opportunity players net ~0 anyway).
+    from o27v2.analytics.expanded import build_baserunning_value as _bbv
+    try:
+        _bsr = _bbv(min_op=1, team_ids=_fld_team_ids)["leaders"]
+        out["bsr_runs"] = {b["player_id"]: b["bsr"] for b in _bsr}
+    except Exception:
+        out["bsr_runs"] = {}
 
     return out
 

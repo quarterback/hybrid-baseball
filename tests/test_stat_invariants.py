@@ -737,22 +737,24 @@ def test_invariant_10_tto_buckets_reconcile(played_game_ids):
 
 
 # ---------------------------------------------------------------------------
-# Invariant 11: WAR's fielding component == the displayed Field Runs
+# Invariant 11: WAR's surfaced components == the metrics displayed elsewhere
 # ---------------------------------------------------------------------------
 
-def test_invariant_11_war_fielding_matches_displayed_field_runs(played_game_ids):
-    """The defensive runs inside a player's WAR must equal the Field Run Value
-    shown on the fielding/Savant surface for that same player, within tolerance.
+def test_invariant_11_war_components_match_displayed_metrics(played_game_ids):
+    """Every defensive/baserunning component inside a player's WAR must equal the
+    metric shown on the fielding/Savant surface for that same player, within
+    tolerance — and WAR must equal the sum of its surfaced parts.
 
     This is the invariant whose absence let the WAR/OAA divergence ship: the
     season-card WAR read a rating-derived scout DRS while the Savant page showed
-    event-based OAA/Field Runs, and nothing checked that the two agreed. With
-    WAR now anchored to the same regressed Field Run Value the surface displays
-    (for qualified fielders), `def_runs` must equal that displayed `frv` and the
-    source must be the event metric — not the scout fallback.
+    event-based OAA/Field Runs, and nothing checked that the two agreed. WAR is
+    now anchored to the same regressed Field Run Value the surface displays (for
+    qualified fielders) and the same O27-native BSR, so:
 
-    Also checks the component identity WAR == war_off + dwar, so WAR can never
-    silently drift from the sum of its surfaced parts.
+      * `def_runs` == displayed Field Runs (source must be the event metric, not
+        the scout fallback) for qualified fielders, and
+      * `bsr_runs` == displayed BSR, and
+      * WAR == war_off + dwar + bwar_base.
 
     Skips cleanly if flask (and thus o27v2.web.app) is unavailable, matching the
     rest of the suite's environmental tolerance.
@@ -762,12 +764,15 @@ def test_invariant_11_war_fielding_matches_displayed_field_runs(played_game_ids)
             _aggregate_batter_rows, _league_baselines_compute,
             _WAR_FIELDING_MIN_CHANCES,
         )
-        from o27v2.analytics.expanded import build_fielding_value
+        from o27v2.analytics.expanded import (
+            build_fielding_value, build_baserunning_value,
+        )
     except Exception as exc:  # pragma: no cover - env-dependent
         pytest.skip(f"web/app or analytics unavailable: {exc}")
 
     baselines = _league_baselines_compute()
     field = {f["player_id"]: f for f in build_fielding_value(min_chances=1)["leaders"]}
+    baserun = {b["player_id"]: b for b in build_baserunning_value(min_op=1)["leaders"]}
 
     # Qualified fielders only — below the gate WAR uses the scout projection by
     # design, so the surface (event) and WAR (scout) are *expected* to differ.
@@ -793,18 +798,32 @@ def test_invariant_11_war_fielding_matches_displayed_field_runs(played_game_ids)
     _aggregate_batter_rows(rows, baselines=baselines)
 
     mismatches = []
+    bsr_bad = []
     sum_bad = []
     for r in rows:
         disp = field[r["player_id"]]["frv"]
         if abs(r["def_runs"] - disp) > 0.1 or r["def_runs_source"] != "field":
             mismatches.append((r["player_id"], r["def_runs"], disp, r["def_runs_source"]))
-        if abs(r["war"] - (r["war_off"] + r["dwar"])) > 1e-6:
-            sum_bad.append((r["player_id"], r["war"], r["war_off"], r["dwar"]))
+        # Baserunning: WAR's bsr_runs must equal the displayed BSR for the same
+        # player (displayed only when the player cleared build_baserunning_value's
+        # opportunity gate; the per-player value is identical regardless of gate).
+        if r["player_id"] in baserun:
+            disp_bsr = baserun[r["player_id"]]["bsr"]
+            if abs(r.get("bsr_runs", 0.0) - disp_bsr) > 0.1:
+                bsr_bad.append((r["player_id"], r.get("bsr_runs"), disp_bsr))
+        # Component identity: WAR == batting + defense + baserunning.
+        if abs(r["war"] - (r["war_off"] + r["dwar"] + r["bwar_base"])) > 1e-6:
+            sum_bad.append((r["player_id"], r["war"], r["war_off"], r["dwar"], r["bwar_base"]))
 
     assert not mismatches, (
         f"WAR def_runs != displayed Field Runs for {len(mismatches)} qualified "
         f"fielders; first 5 (pid, def_runs, displayed_frv, source): {mismatches[:5]}"
     )
+    assert not bsr_bad, (
+        f"WAR bsr_runs != displayed BSR for {len(bsr_bad)} players; "
+        f"first 5 (pid, war_bsr, displayed_bsr): {bsr_bad[:5]}"
+    )
     assert not sum_bad, (
-        f"WAR != war_off + dwar for {len(sum_bad)} rows; first 5: {sum_bad[:5]}"
+        f"WAR != war_off + dwar + bwar_base for {len(sum_bad)} rows; "
+        f"first 5 (pid, war, off, dwar, bwar_base): {sum_bad[:5]}"
     )
