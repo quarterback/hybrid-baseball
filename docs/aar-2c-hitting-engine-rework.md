@@ -123,10 +123,18 @@ two different stories about the same event.
 - **Balance is first-pass and tunable.** `STAY_REWARD_*`, `STAY_OUT_RISK_*`,
   `STAY_RUN_BASELINE_*` are single-knob levers for 2C frequency, the RISP focus,
   the skill delta, and XBH rate.
-- **2C-single wOBA nuance:** a 2C single advances runners but the batter doesn't
-  reach base, so its true RE is below a normal single's. It's currently averaged
-  into the 1B bucket (2C ≈ 4% of hits, so the drag is small). A dedicated 2C run
-  value is a future refinement if the delta matters.
+- **2C wOBA credit — DONE (owner directive).** A 2C advancement is credited like
+  the hit a runner-side batter would produce (the runner outcome is the same), so
+  2C events are now **excluded from the run-value fit** (`_classify_bip` → None) —
+  the 1B/2B/3B weights are clean normal-hit values and 2C hits are credited at
+  them. wRC+ centers at exactly 100.
+- **2C cost side — TODO.** The other half of the directive: an out that ends a 2C
+  AB (a strikeout / out on a later segment, after the batter advanced runners) is
+  *"the same as a runner being put out"* — a negative, not a free hit. Today it's
+  a plain out (0 in PA-denominated wOBA), so a 2C AB that ends in an out is
+  over-credited (it keeps the hit credit, ignores the out). Fix needs a stat for
+  2C-AB-ending outs plus a runner-out run value subtracted in the wOBA numerator.
+  Scoped next.
 - **Defense-read** was retained but decoupled from the old advance gate; its
   balance should be re-checked.
 - **2C skill delta is modest (+0.19) and under-powered.** The owner wants a

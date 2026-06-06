@@ -70,20 +70,22 @@ _WALK_TRANSITION = {
 
 def _classify_bip(hit_type: str | None,
                   was_stay: int, stay_credited: int) -> str | None:
-    """Map a BIP-event row to one of {1B, 2B, 3B, HR, out}.
+    """Map a BIP-event row to one of {1B, 2B, 3B, HR, out}, or None to skip.
 
-    Since the 2C-through-the-hitting-engine rework, a credited 2C is a REAL
-    hit of its resolved type (single/double/triple) — it advances runners by
-    that type and is credited as that type in the box score. So it is bucketed
-    by its hit_type, NOT a separate STAY bucket. A non-crediting valid stay
-    (no runner moved) is an out-ish non-event. The empirical RE the fit sees
-    for a 2C single (runners advance, batter stays) is lower than a normal
-    single's, which is correct — it averages into the 1B run value.
+    2C events are EXCLUDED from the run-value fit (return None). Owner directive:
+    a 2C advancement is credited in wOBA exactly like the hit a runner-side
+    batter would have produced — the runner outcome is the same. A 2C single's
+    own empirical RE is lower (runners advance but the batter stays at the
+    plate), so letting 2C events into the fit would wrongly drag the 1B/2B/3B
+    run values below their true single/double values. 2C hits are still counted
+    in the standard h/d2/d3 buckets and are credited at these clean normal-hit
+    weights by the application. (The cost side — an out that ends a 2C AB being
+    valued like a runner put out — is handled separately, not in this fit.)
 
     Returns None if the row is uninterpretable (legacy NULL hit_type).
     """
-    if was_stay and not stay_credited:
-        return "out"
+    if was_stay:
+        return None
     if hit_type in ("hr", "home_run"):
         return "HR"
     if hit_type == "triple":

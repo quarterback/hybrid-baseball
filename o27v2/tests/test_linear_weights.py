@@ -27,15 +27,15 @@ def fresh_db(tmp_path):
         _db._DB_PATH = original
 
 
-def test_classify_bip_buckets_2c_by_hit_type():
+def test_classify_bip_excludes_2c_from_fit():
     from o27v2.analytics.linear_weights import _classify_bip
-    # Since the 2C-through-the-hitting-engine rework, a credited 2C is a REAL
-    # hit of its resolved type — bucketed by hit_type, NOT a separate STAY bucket.
-    assert _classify_bip("single", 1, 1) == "1B"
-    assert _classify_bip("double", 1, 1) == "2B"
-    assert _classify_bip("triple", 1, 1) == "3B"
-    # A valid stay that credited no hit (no runner moved) is an out-ish non-event.
-    assert _classify_bip(None,     1, 0) == "out"
+    # 2C events are EXCLUDED from the run-value fit (None): a 2C advancement is
+    # credited like the hit a runner-side batter would produce, so its own lower
+    # RE must not drag the 1B/2B/3B weights. Any was_stay row is skipped.
+    assert _classify_bip("single", 1, 1) is None
+    assert _classify_bip("double", 1, 1) is None
+    assert _classify_bip("triple", 1, 1) is None
+    assert _classify_bip(None,     1, 0) is None
     # Real (non-stay) hits bucket by type as before.
     assert _classify_bip("single",          0, 0) == "1B"
     assert _classify_bip("infield_single",  0, 0) == "1B"
