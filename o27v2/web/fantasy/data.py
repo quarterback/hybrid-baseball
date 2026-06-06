@@ -75,6 +75,21 @@ def _map_position(row: dict) -> str:
     return _POS_MAP.get((row.get("position") or "").upper(), "OF")
 
 
+def _eligible_positions(row: dict) -> list[str]:
+    """Every CapSpace slot a player qualifies for. Real players cover multiple
+    spots; the engine tracks this in `role_field_pos` (a comma list of field
+    positions). Primary position first, then the extra eligibilities, mapped to
+    CapSpace slots (LF/CF/RF/DH/NF all collapse to OF) and de-duped."""
+    if row.get("is_pitcher"):
+        return ["PILOT"]
+    out = [_map_position(row)]
+    for tok in (row.get("role_field_pos") or "").split(","):
+        slot = _POS_MAP.get(tok.strip().upper())
+        if slot and slot not in out:
+            out.append(slot)
+    return out
+
+
 def _batter_fp(s: dict) -> float:
     """DFS fantasy points for one batter game-stat row."""
     h = s.get("hits", 0) or 0
@@ -337,6 +352,7 @@ def build_slate_data(slate_date: str | None = None) -> dict | None:
             "name": r["name"],
             "team": r["team_abbrev"],
             "pos": _map_position(r),
+            "posEligible": _eligible_positions(r),
             "isPitcher": is_pitcher,
             "salary": 0,  # assigned by _calibrate_salaries (dollar tier)
             "proj": proj,

@@ -195,7 +195,23 @@ img { display: block; max-width: 100%; }
   font-weight: 700; font-size: .82rem;
 }
 .simclock .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 4px var(--live-soft); }
-.simclock .num { color: var(--ink-2); }
+.simclock .num { color: var(--ink); }
+.simclock__lbl { font-size: .6rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 800; }
+
+/* pager — paginate long pools instead of endless scroll */
+.pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 14px; background: var(--card-2); border-top: 1px solid var(--line);
+}
+.pager__btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 7px 12px; border-radius: var(--r-pill); background: var(--card);
+  border: 1px solid var(--line-2); font-weight: 800; font-size: .82rem; color: var(--ink);
+}
+.pager__btn:hover:not(:disabled) { background: var(--brand-soft); color: var(--brand-ink); }
+.pager__btn:disabled { opacity: .4; cursor: default; }
+.pager__info { font-size: .78rem; font-weight: 700; color: var(--ink-3); white-space: nowrap; }
+.pager__info b { color: var(--ink); }
 
 /* ---- currency selector (global) ---- */
 .cursel { position: relative; }
@@ -655,6 +671,9 @@ img { display: block; max-width: 100%; }
   .prow--build { grid-template-columns: 1fr auto auto auto; gap: 9px; }
   .topbar__bal-lbl { display: none; }
   .topbar__bal { padding: 6px 11px; font-size: .85rem; }
+  /* keep the sim date visible on phones, just compact */
+  .simclock { padding: 6px 11px; font-size: .8rem; gap: 6px; }
+  .topbar { gap: 8px; padding: 12px 14px; }
   .contest { grid-template-columns: auto 1fr; }
   .contest__prize { grid-column: 2; text-align: left; display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
   .show-mobile { display: revert !important; }
