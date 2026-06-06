@@ -469,7 +469,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
                 <div className="card card--pad center" style={{ padding: '32px 20px' }}><div className="dim" style={{ fontWeight: 600 }}>No upcoming slate. Sim forward to keep slugging.</div></div>
               ) : slotsLeft > 0 ? (
                 <>
-                  <div className="muted mb-12" style={{ fontSize: '.85rem', fontWeight: 600 }}>{slotsLeft} slot{slotsLeft > 1 ? 's' : ''} left · sorted by power</div>
+                  <div className="muted mb-12" style={{ fontSize: '.85rem', fontWeight: 600 }}>{slotsLeft} slot{slotsLeft > 1 ? 's' : ''} left · sorted by season HR</div>
                   <div className="search mb-12"><Icon name="search" size={17} /><input placeholder="Search hitters…" value={q} onChange={e => setQ(e.target.value)} /></div>
                   <div className="card" style={{ overflow: 'hidden' }}>
                     {shown.length === 0 && <div className="center muted" style={{ padding: 24, fontWeight: 600 }}>No hitters on the upcoming slate.</div>}
@@ -479,7 +479,7 @@ function SluggersScreen({ onNav, onOpenPlayer }) {
                           <PlayerMark p={{ init: p.init, teamColor: p.teamColor }} />
                           <div style={{ minWidth: 0 }}>
                             <div className="prow__name">{p.name}</div>
-                            <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp} · <span title="power">PWR {p.power}</span></div>
+                            <div className="prow__sub"><span className="poscap">{p.pos}</span> · <span style={{ color: p.teamColor, fontWeight: 700 }}>{p.team}</span> {p.opp} · <span title="season home runs">{p.hr} HR</span></div>
                           </div>
                         </div>
                         <button className="add-btn" disabled={busy} title="Add slugger" onClick={() => act('pick', p)}>+</button>

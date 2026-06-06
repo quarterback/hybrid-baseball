@@ -116,6 +116,22 @@ def _score(game_id: int, dbid: int) -> float:
     return _W_HR * (s["hr"] or 0) + _W_WBR * (s["walkback_runs"] or 0) + _W_RBI * (s["rbi"] or 0)
 
 
+def _season_hr_map(dbids: list[int]) -> dict[int, int]:
+    """Current-season HR total per player, from persisted batter stats.
+    The DB holds one season's games, so a plain SUM over phase-0 rows is the
+    season-to-date HR count (tonight's slate games aren't played yet, so they
+    contribute nothing)."""
+    if not dbids:
+        return {}
+    ph = ",".join("?" for _ in dbids)
+    rows = db.fetchall(
+        f"SELECT player_id, COALESCE(SUM(hr), 0) hr FROM game_batter_stats "
+        f"WHERE player_id IN ({ph}) AND phase = 0 GROUP BY player_id",
+        tuple(dbids),
+    )
+    return {r["player_id"]: r["hr"] for r in rows}
+
+
 def _player_label(dbid: int) -> dict:
     row = db.fetchone(
         "SELECT p.id, p.name, t.abbrev AS team FROM players p "
@@ -195,15 +211,19 @@ def status() -> dict:
     picked_ids = set(by_slate.get(slate, [])) if slate else set()
     pool = []
     if slate and len(picked_ids) < MAX_PICKS:
-        for p in _hitters_for(slate):
-            if _db_id(p["id"]) in picked_ids:
-                continue
+        cands = [p for p in _hitters_for(slate) if _db_id(p["id"]) not in picked_ids]
+        hr_map = _season_hr_map([_db_id(p["id"]) for p in cands])
+        for p in cands:
             pool.append({
                 "id": p["id"], "name": p["name"], "team": p["team"],
                 "pos": p["pos"], "opp": p.get("opp", ""),
                 "teamColor": p.get("teamColor", ""), "init": p.get("init", ""),
+                "hr": hr_map.get(_db_id(p["id"]), 0),
                 "power": (p.get("r", {}) or {}).get("power", 0),
             })
+        # Lead with the season's HR leaders; power breaks ties so the order
+        # still reads sensibly early in the year when totals are bunched at 0.
+        pool.sort(key=lambda e: (e["hr"], e["power"]), reverse=True)
 
     return {
         "slate_date": slate, "season": round(season, 1), "max": MAX_PICKS,
