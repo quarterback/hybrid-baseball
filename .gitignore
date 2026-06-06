@@ -55,3 +55,6 @@ __pycache__/
 
 # Standalone almanac builds (live almanac is served by Flask at /almanac)
 site/
+
+# CapSpace JSX build toolchain (see tools/build_capspace.sh)
+tools/.jsxbuild/
