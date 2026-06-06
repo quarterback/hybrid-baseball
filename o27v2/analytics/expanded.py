@@ -88,7 +88,8 @@ def _event_rows(team_ids=None) -> list[dict]:
     rows = db.fetchall(
         """SELECT batter_id, pitcher_id, pitch_type, hit_type, was_stay, stay_credited,
                   outs_before, bases_before, outs_after, bases_after, runs_scored,
-                  exit_velocity, launch_angle, spray_angle, team_id, game_id
+                  exit_velocity, launch_angle, spray_angle, team_id, game_id,
+                  ab_seq, swing_idx
            FROM game_pa_log WHERE phase = 0""" + _team_in(team_ids))
     out = []
     for r in rows:
@@ -379,16 +380,45 @@ def build_tto_penalty(min_bf: int = 60, team_ids=None) -> dict:
 # ---------------------------------------------------------------------------
 
 def build_second_chance_value(min_2c: int = 10, team_ids=None) -> dict:
-    """Run value of Second-Chance ABs. Each 2C event's RE24 run value is
-    aggregated per batter; the league mean is the break-even bar (a batter
-    above it is making +EV second-chance decisions)."""
-    ev = [r for r in _event_rows(team_ids) if r["was_stay"]]
-    per = defaultdict(lambda: {"n": 0, "rv": 0.0, "credited": 0})
+    """Net run value of Second-Chance ABs. Each stay's RE24 advancement value is
+    aggregated per batter, AND — when a 2C at-bat ends in a batter-out (the
+    hitter advanced runners via a stay, then struck out or made an out on a
+    later segment) — that terminal out's (negative) RE24 value is charged back
+    to the 2C decision, "the same as a runner being put out." So 2C Runs measures
+    whether a hitter's stays net positive AFTER the out risk, not just the
+    upside. The league mean is the break-even bar.
+
+    (This is the RE24-native companion to the wOBA strand penalty in the batter
+    aggregator — both now count the downside of a stay that ends in an out, so
+    the Savant 2C surface and wOBA agree on what a good 2C hitter is.)"""
+    HIT_TYPES = frozenset(("single", "infield_single", "double", "triple", "hr", "home_run"))
+    rows = _event_rows(team_ids)
+    by_ab = defaultdict(list)
+    for r in rows:
+        by_ab[(r["game_id"], r["team_id"], r["ab_seq"])].append(r)
+
+    per = defaultdict(lambda: {"n": 0, "rv": 0.0, "credited": 0, "strand_outs": 0})
     tot_rv = 0.0; tot_n = 0
-    for r in ev:
-        p = per[r["batter_id"]]
-        p["n"] += 1; p["rv"] += r["rv"]; p["credited"] += (r["stay_credited"] or 0)
-        tot_rv += r["rv"]; tot_n += 1
+    for evs in by_ab.values():
+        stay_evs = [e for e in evs if e["was_stay"]]
+        if not stay_evs:
+            continue
+        bid = stay_evs[0]["batter_id"]
+        p = per[bid]
+        # Upside: each stay's advancement RE24 value.
+        for e in stay_evs:
+            p["n"] += 1; p["rv"] += e["rv"]; p["credited"] += (e["stay_credited"] or 0)
+            tot_rv += e["rv"]; tot_n += 1
+        # Downside: a 2C AB that ends in a batter-out charges that out's RE24
+        # cost to the 2C decision. Terminal = last segment; batter-out = the
+        # batter wasn't credited a hit and an out was recorded on it (covers
+        # ground/fly/line outs AND strikeouts).
+        terminal = max(evs, key=lambda x: x["swing_idx"])
+        if (not terminal["was_stay"]
+                and terminal["hit_type"] not in HIT_TYPES
+                and (terminal["outs_after"] or 0) > (terminal["outs_before"] or 0)):
+            p["rv"] += terminal["rv"]; p["strand_outs"] += 1
+            tot_rv += terminal["rv"]
     lg_per = (tot_rv / tot_n) if tot_n else 0.0
     names = _names(list(per.keys()))
     leaders = []
@@ -400,6 +430,7 @@ def build_second_chance_value(min_2c: int = 10, team_ids=None) -> dict:
             "player_name": (names.get(pid) or {}).get("name", f"#{pid}"),
             "team_abbrev": (names.get(pid) or {}).get("team_abbrev", ""),
             "n_2c": d["n"],
+            "strand_outs": d["strand_outs"],
             "conv_pct": round(100 * d["credited"] / d["n"], 1),
             "rv_per_2c": round(d["rv"] / d["n"], 3),
             "rv_total": round(d["rv"], 1),
