@@ -10,6 +10,7 @@ import io
 import math
 import struct
 import wave
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import config
 
@@ -57,7 +58,9 @@ def _synth_stub(text: str, speaker: str) -> bytes:
 
 
 def synth_turns(turns: list[Turn], stub: bool = False) -> tuple[list[bytes], int]:
-    """Synthesise every turn. Returns ``(wav_segments, total_chars)``."""
+    """Synthesise every turn. Returns ``(wav_segments, total_chars)`` with
+    segments in turn order. Real TTS calls run concurrently (they're
+    independent) — the main render-speed lever."""
     total_chars = sum(len(t["text"]) for t in turns)
     if stub:
         return [_synth_stub(t["text"], t["speaker"]) for t in turns], total_chars
@@ -77,5 +80,20 @@ def synth_turns(turns: list[Turn], stub: bool = False) -> tuple[list[bytes], int
             "(or use --stub-tts for an offline test)."
         ) from e
     client = OpenAI(api_key=key)
-    segments = [_synth_openai(t["text"], t["speaker"], client) for t in turns]
-    return segments, total_chars
+
+    workers = min(config.TTS_CONCURRENCY, len(turns)) or 1
+    if workers == 1:
+        segments = [_synth_openai(t["text"], t["speaker"], client) for t in turns]
+        return segments, total_chars
+
+    # Parallel: submit all turns, place each result at its index so the stitched
+    # order matches the script. The OpenAI client is thread-safe.
+    slots: list[bytes | None] = [None] * len(turns)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_synth_openai, t["text"], t["speaker"], client): i
+            for i, t in enumerate(turns)
+        }
+        for fut in as_completed(futures):
+            slots[futures[fut]] = fut.result()  # raises on first failure
+    return [s for s in slots if s is not None], total_chars

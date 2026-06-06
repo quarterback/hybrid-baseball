@@ -49,6 +49,13 @@ TTS_MODEL = os.environ.get("O27AUDIO_TTS_MODEL", "gpt-4o-mini-tts")
 VOICE_PBP = os.environ.get("O27AUDIO_VOICE_PBP", "onyx")
 VOICE_COLOR = os.environ.get("O27AUDIO_VOICE_COLOR", "nova")
 
+# How many TTS turns to synthesise concurrently. Turns are independent, so this
+# is the main render-speed lever; keep it modest to stay under OpenAI rate limits.
+try:
+    TTS_CONCURRENCY = max(1, int(os.environ.get("O27AUDIO_TTS_CONCURRENCY", "8")))
+except ValueError:
+    TTS_CONCURRENCY = 8
+
 # Tone steering passed to gpt-4o-mini-tts per speaker.
 VOICE_INSTRUCTIONS = {
     "pbp": (
