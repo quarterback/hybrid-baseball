@@ -27,11 +27,27 @@ Verified on a fresh 396-game sim DB. BSR decomposes into two parts:
 
 | Component | sd (MLB consts) | corr(speed) | Why |
 | --- | ---: | ---: | --- |
-| Extra bases taken (XBT) | 3.43 runs | +0.05 | dominant, but pure **noise** — runner advancement is set by hit type, not runner speed (`advance_runners` "Phase 2: will add" TODO, never built) |
+| Extra bases taken (XBT) | 3.43 runs | +0.05 | dominant, but near-zero signal once MLB-overvalued — see correction below |
 | Steals (SB/CS) | 1.11 runs | −0.18 | **perverse** — league steal success is 51.9%, below MLB's 68% break-even, so running loses runs; speed gates attempts, so fast runners lose more |
 
-So the *bigger* half of BSR was noise inflated by MLB's `+0.25`/base, and the
-smaller half was anti-speed.
+So the *bigger* half of BSR was inflated by MLB's `+0.25`/base, and the smaller
+half was anti-speed.
+
+> **Correction (2026-06-06, follow-up audit).** An earlier draft of this AAR
+> claimed the XBT signal was ~0 because "runner advancement is set by hit type,
+> not runner speed — a Phase-2 TODO never built." **That is wrong.** Runner
+> advancement *is* speed-aware: `prob.py:runner_advances_for_hit()` (the live
+> producer, called from the contact-resolution path) resolves every runner's
+> advance count through `_resolve_table()` with a per-runner `speed_dev` and
+> `_runner_advance()`'s extra-base/TOOTBLAN model. The misleading claim came from
+> reading the `advance_runners` *consumer* docstring in `baserunning.py` (since
+> corrected) without tracing upstream. The XBT term's weak aggregate
+> speed-correlation is real but is **dilution**, not absence of the feature:
+> discretionary extra-bases are a small slice of total advancement (forced/
+> contextual moves dominate), and — per the native run values below — an extra
+> base is worth ~0 in O27 anyway, so XBT contributes ~0 to BSR regardless. The
+> native re-derivation's conclusion (XBT term self-zeroes; BSR becomes
+> steals-driven with positive speed signal) is unaffected by this correction.
 
 ## The O27-native run values
 
@@ -95,10 +111,12 @@ number flowing into WAR.
   success rate"), but the right immediate fix was the metric, not the sim. The
   sub-break-even running game is a real O27 property the native metric now
   reports honestly rather than papers over.
-- **Speed-based runner advancement is still a Phase-2 engine gap.** Because O27
-  values an extra base at ~0, that gap no longer pollutes BSR — but if
-  advancement is ever made speed-aware, the XBT term will start carrying signal
-  and its native run value should be re-checked (it may rise above ~0).
+- **Speed-based runner advancement already exists** (see correction above) — it
+  is *not* a gap. Its aggregate effect is modest because discretionary
+  extra-bases are diluted by forced advances and, in O27, an extra base is worth
+  ~0 runs. If that effect is ever strengthened (tuning `SPEED_ADVANCE_MOD` /
+  `RUNNER_EXTRA_SPEED_SCALE`), the native extra-base run value should be
+  re-checked — but it will likely stay near 0 for the run-environment reason.
 - **Run values are derived per render** from live data (like the linear weights).
   They will drift with the run environment; that's intended. `_BSR_MLB_FALLBACK`
   covers empty/no-data DBs.

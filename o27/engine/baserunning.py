@@ -1,11 +1,16 @@
 """
 Runner advancement logic for O27.
 
-Phase 1: deterministic helpers. Given a base state and an outcome dict from
-fielding.py, advance runners and return (new_bases, runs_scored, log_lines).
+This module is the deterministic CONSUMER: given a base state and an outcome
+dict, it advances runners by the integer `outcome["runner_advances"]` counts and
+returns (new_bases, runs_scored, log_lines). It does not itself look at speed.
 
-Phase 2: will add probabilistic runner advancement (runner speed vs. arm
-strength) for multi-base advances and close plays.
+The speed-aware PRODUCER lives upstream in prob.py: `runner_advances_for_hit()`
+computes those per-runner advance counts probabilistically from each runner's
+speed/baserunning vs. the fielders' arms (`_resolve_table` with a speed_dev,
+`_runner_advance`'s extra-base + TOOTBLAN model; cfg.SPEED_ADVANCE_MOD /
+RUNNER_EXTRA_SPEED_SCALE / TOOTBLAN_*). So multi-base advances ARE speed-driven
+by the time they reach this function — the old "Phase 2: will add" note was stale.
 
 Base indexing throughout: bases[0]=1B, bases[1]=2B, bases[2]=3B.
 """

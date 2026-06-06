@@ -445,6 +445,10 @@ def derive_linear_weights(team_ids=None) -> dict:
         "league_re_start": round(league_re_start, 3),
         "league_obp":      round(league_obp, 4),
         "league_woba":     round(league_woba, 4),
+        # wOBA scale: the OBP-scale factor (league_obp / raw-wRAA-per-PA) the
+        # weights are multiplied by. Dividing (wOBA - lgwOBA) by it recovers
+        # runs, so it IS the wOBAScale for wRC+/VORP — O27-native, not MLB's 1.20.
+        "woba_scale":      round(scale, 4),
         "rv":              {k: round(v, 4) for k, v in rv.items()},
         "woba_weights":    woba_weights,
         "gsc_coeffs":      gsc,
