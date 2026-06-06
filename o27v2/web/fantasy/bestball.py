@@ -34,9 +34,65 @@ FIELD_SIZE = 48
 _POS = {"C": "C", "1B": "1B", "2B": "2B", "3B": "3B", "SS": "SS",
         "LF": "OF", "CF": "OF", "RF": "OF", "OF": "OF", "DH": "OF", "NF": "OF"}
 
+_HIT_ORDER = tuple(s for s, _ in LINEUP_H)        # ("C","1B","2B","3B","SS","OF")
+_HIT_CAPS = dict(LINEUP_H)
+
 
 def _bucket(raw: str) -> str:
     return _POS.get((raw or "").upper(), "OF")
+
+
+def _elig_set(row: dict) -> frozenset:
+    """A hitter's eligible CapSpace slots (primary + role_field_pos), bucketed."""
+    return frozenset(slate_data._eligible_positions(row))
+
+
+def _assign_max(players, caps_order=_HIT_ORDER, caps=_HIT_CAPS) -> float:
+    """Maximum total weight assigning players to position slots they're eligible
+    for (each player one slot, each slot up to its capacity). `players` is a list
+    of (weight, eligible_frozenset). Exact DP over the tiny remaining-capacity
+    state space (≤ 96 states for the standard 7-slot hitter lineup).
+
+    With weights all = 1 this returns the size of the maximum matching, so it
+    doubles as the roster-coverage feasibility check."""
+    idx = {s: i for i, s in enumerate(caps_order)}
+    states = {tuple(caps[s] for s in caps_order): 0.0}
+    for w, elig in players:
+        nxt = dict(states)  # the "skip this player" branch
+        for st, val in states.items():
+            for s in elig:
+                i = idx.get(s)
+                if i is not None and st[i] > 0:
+                    lst = list(st); lst[i] -= 1
+                    ns = tuple(lst)
+                    nv = val + w
+                    if nv > nxt.get(ns, -1.0):
+                        nxt[ns] = nv
+        states = nxt
+    return max(states.values())
+
+
+def _missing_slots(hitter_eligs) -> list[str]:
+    """Which required slots a set of hitters can't cover, honouring multi-position
+    eligibility (max bipartite matching, Kuhn's algorithm). Empty list == every
+    slot is coverable."""
+    slots = [s for s, n in LINEUP_H for _ in range(n)]
+    slot_match: dict[int, int] = {}
+    player_slot: dict[int, int] = {}
+
+    def aug(si, seen):
+        for pi, elig in enumerate(hitter_eligs):
+            if slots[si] in elig and pi not in seen:
+                seen.add(pi)
+                if pi not in player_slot or aug(player_slot[pi], seen):
+                    player_slot[pi] = si
+                    slot_match[si] = pi
+                    return True
+        return False
+
+    for si in range(len(slots)):
+        aug(si, set())
+    return [slots[si] for si in range(len(slots)) if si not in slot_match]
 
 
 def ensure_schema() -> None:
@@ -56,14 +112,17 @@ class _Ctx:
     def __init__(self):
         self.meta = {}
         self.pos = {}
+        self.elig = {}
         for r in db.fetchall(
-            "SELECT p.id, p.name, p.is_pitcher, p.position, COALESCE(t.abbrev, 'FA') AS team "
+            "SELECT p.id, p.name, p.is_pitcher, p.position, p.role_field_pos, "
+            "COALESCE(t.abbrev, 'FA') AS team "
             "FROM players p LEFT JOIN teams t ON p.team_id = t.id"
         ):
             self.meta[r["id"]] = {"name": r["name"], "team": r["team"],
                                   "is_pitcher": bool(r["is_pitcher"])}
             if not r["is_pitcher"]:
                 self.pos[r["id"]] = _bucket(r["position"])
+                self.elig[r["id"]] = _elig_set(r)
 
         self.bat_by_date: dict[str, dict[int, float]] = {}
         for r in db.fetchall(
@@ -92,9 +151,12 @@ class _Ctx:
         self.htotal, self.ptotal = hsum, psum
         self.hskill = self._norm({i: hsum[i] for i in self.hitters})
         self.pskill = self._norm({i: psum[i] for i in self.pitchers})
+        # List each hitter under *every* slot they qualify for, so synthetic
+        # field rosters can use a multi-position player to cover any of them.
         self.by_pos: dict[str, list[int]] = {}
         for i in self.hitters:
-            self.by_pos.setdefault(self.pos.get(i, "OF"), []).append(i)
+            for s in (self.elig.get(i) or {self.pos.get(i, "OF")}):
+                self.by_pos.setdefault(s, []).append(i)
 
     @staticmethod
     def _norm(d):
@@ -110,13 +172,11 @@ class _Ctx:
         for d in self.dates:
             bd = self.bat_by_date.get(d, {})
             pd = self.pit_by_date.get(d, {})
-            by_pos: dict[str, list[float]] = {}
-            for pid in h_ids:
-                if pid in bd:
-                    by_pos.setdefault(self.pos.get(pid, "OF"), []).append(bd[pid])
-            slate = 0.0
-            for posname, count in LINEUP_H:
-                slate += sum(sorted(by_pos.get(posname, []), reverse=True)[:count])
+            # Best in-position hitter lineup that slate, letting multi-position
+            # players cover whichever slot helps the total most.
+            played = [(bd[pid], self.elig.get(pid) or frozenset((self.pos.get(pid, "OF"),)))
+                      for pid in h_ids if pid in bd]
+            slate = _assign_max(played) if played else 0.0
             slate += sum(sorted((pd[p] for p in p_ids if p in pd), reverse=True)[:START_P])
             total += slate
         return round(total, 1)
@@ -167,9 +227,11 @@ def _active_dir() -> dict:
         "WHERE p.is_active = 1 AND p.is_joker = 0"
     ):
         is_p = bool(r["is_pitcher"])
+        elig = ["P"] if is_p else slate_data._eligible_positions(r)
         out[r["id"]] = {
             "name": r["name"], "team": r["team"], "is_pitcher": is_p,
             "pos": "P" if is_p else _bucket(r["position"]),
+            "posEligible": elig,
             "proj": slate_data._proj_from_ratings(r, is_p),
         }
     return out
@@ -198,8 +260,18 @@ def _pos_counts(ctx, ids):
     return c
 
 
+# standings is a pure function of (roster, games-played-so-far); the per-slate
+# optimal-lineup math is the same until a new slate is simmed. Cache on (roster,
+# #dates) so repeated screen loads don't recompute the whole season.
+_STANDINGS_CACHE: dict = {}
+
+
 def standings(roster_ids: list[int]) -> dict:
     ctx = _Ctx()
+    key = (tuple(sorted(roster_ids)), len(ctx.dates))
+    cached = _STANDINGS_CACHE.get(key)
+    if cached is not None:
+        return cached
     h_ids = [i for i in roster_ids if not ctx.meta.get(i, {}).get("is_pitcher")]
     p_ids = [i for i in roster_ids if ctx.meta.get(i, {}).get("is_pitcher")]
     you = ctx.score(h_ids, p_ids)
@@ -213,13 +285,15 @@ def standings(roster_ids: list[int]) -> dict:
     beat = sum(1 for f in field if you >= f)
     rank = sum(1 for f in field if f > you) + 1
     lineup = "C · 1B · 2B · 3B · SS · OF · OF + best 2 pitchers"
-    return {
+    result = {
         "score": you, "rank": rank, "field": len(field) + 1,
         "field_avg": round(sum(field) / len(field), 1) if field else 0.0,
         "field_best": round(max(field), 1) if field else 0.0,
         "pct": round(100 * beat / len(field)) if field else 0,
         "lineup": f"{lineup} each slate · {len(ctx.dates)} slates",
     }
+    _STANDINGS_CACHE[key] = result
+    return result
 
 
 def pool() -> dict:
@@ -251,7 +325,8 @@ def pool() -> dict:
                 line = f"proj {m['proj']} · preseason"
                 srt = m["proj"]
             hitters.append({"id": f"p{pid}", "name": m["name"], "team": m["team"],
-                            "pos": m["pos"], "line": line, "_s": srt})
+                            "pos": m["pos"], "posEligible": m.get("posEligible"),
+                            "line": line, "_s": srt})
     hitters.sort(key=lambda x: x["_s"], reverse=True)
     pitchers.sort(key=lambda x: x["_s"], reverse=True)
     for x in hitters + pitchers:
@@ -268,13 +343,15 @@ def draft(player_ids: list) -> dict:
     if len(hitters) != DRAFT_H or len(pitchers) != DRAFT_P:
         return {"ok": False, "error": f"Need {DRAFT_H} hitters and {DRAFT_P} pitchers "
                                       f"(have {len(hitters)}H / {len(pitchers)}P)."}
-    counts = {}
-    for i in hitters:
-        counts[d[i]["pos"]] = counts.get(d[i]["pos"], 0) + 1
-    missing = [f"{need}× {pos}" if need > 1 else pos
-               for pos, need in DRAFT_REQ.items() if counts.get(pos, 0) < need]
-    if missing:
-        return {"ok": False, "error": "Roster must cover every slot — short at: " + ", ".join(missing) + "."}
+    # Coverage honours multi-position eligibility: the roster is valid as long as
+    # its hitters can be *assigned* to every required slot, not that each names a
+    # distinct primary position.
+    gaps = _missing_slots([frozenset(d[i].get("posEligible") or [d[i]["pos"]]) for i in hitters])
+    if gaps:
+        from collections import Counter
+        cc = Counter(gaps)
+        txt = ", ".join(f"{n}× {pos}" if n > 1 else pos for pos, n in cc.items())
+        return {"ok": False, "error": "Roster must cover every slot — short at: " + txt + "."}
     bi = buyins.enter("bestball", "season", SEASON_BUYIN)  # once per save
     if not bi.get("ok"):
         return bi
@@ -304,11 +381,13 @@ def state() -> dict:
     meta = {}
     if roster_ids:
         for r in db.fetchall(
-            "SELECT p.id, p.name, p.is_pitcher, p.position, t.abbrev team FROM players p "
-            "JOIN teams t ON p.team_id = t.id WHERE p.id IN (%s)"
+            "SELECT p.id, p.name, p.is_pitcher, p.position, p.role_field_pos, t.abbrev team "
+            "FROM players p JOIN teams t ON p.team_id = t.id WHERE p.id IN (%s)"
             % ",".join("?" for _ in roster_ids), tuple(roster_ids)):
+            is_p = bool(r["is_pitcher"])
             meta[r["id"]] = {"name": r["name"], "team": r["team"],
-                             "pos": "P" if r["is_pitcher"] else _bucket(r["position"])}
+                             "pos": "P" if is_p else _bucket(r["position"]),
+                             "posEligible": ["P"] if is_p else slate_data._eligible_positions(r)}
     roster = [{"id": f"p{i}", **meta.get(i, {"name": "?", "team": "", "pos": ""})}
               for i in roster_ids]
     # sort roster by a stable position order for display

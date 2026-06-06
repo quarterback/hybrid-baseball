@@ -948,6 +948,31 @@ function SportsbookScreen({ onNav }) {
   );
 }
 
+/* Best-ball coverage: max bipartite matching of drafted hitters to required
+   slots, honouring multi-position eligibility. Returns filled count per slot. */
+function bbCoverage(hitters, req) {
+  const slots = [];
+  Object.entries(req).forEach(([p, n]) => { for (let k = 0; k < n; k++) slots.push(p); });
+  const eligOf = h => (h.posEligible && h.posEligible.length) ? h.posEligible : [h.pos];
+  const playerSlot = {};   // player index -> slot index
+  const slotMatch = {};    // slot index -> player index
+  function aug(si, seen) {
+    for (let pi = 0; pi < hitters.length; pi++) {
+      if (!seen.has(pi) && eligOf(hitters[pi]).includes(slots[si])) {
+        seen.add(pi);
+        if (playerSlot[pi] === undefined || aug(playerSlot[pi], seen)) {
+          playerSlot[pi] = si; slotMatch[si] = pi; return true;
+        }
+      }
+    }
+    return false;
+  }
+  for (let si = 0; si < slots.length; si++) aug(si, new Set());
+  const covered = {};
+  slots.forEach((p, si) => { if (slotMatch[si] !== undefined) covered[p] = (covered[p] || 0) + 1; });
+  return covered;
+}
+
 /* ---------- BEST BALL ---------- */
 function BestBallScreen({ onNav, onOpenPlayer }) {
   const S = window.SLATE;
@@ -978,8 +1003,8 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
   const nP = sel.filter(s => s.pos === 'P').length;
   const full = nH === slots.h && nP === slots.p;
   const req = (data && data.require) || {};
-  const haveByPos = {};
-  sel.forEach(s => { if (s.pos !== 'P') haveByPos[s.pos] = (haveByPos[s.pos] || 0) + 1; });
+  // multi-position coverage: can the drafted hitters be *assigned* to every slot?
+  const haveByPos = bbCoverage(sel.filter(s => s.pos !== 'P'), req);
   const posOk = Object.entries(req).every(([p, n]) => (haveByPos[p] || 0) >= n);
   const canLock = full && posOk;
   const selIds = new Set(sel.map(s => s.id));
@@ -1064,7 +1089,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
                 <div className="chips mb-12" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {sel.map(s => (
                     <button key={s.id} className="chip" onClick={() => setSel(sel.filter(x => x.id !== s.id))} style={{ background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 14, padding: '4px 10px', fontSize: '.8rem', fontWeight: 700 }}>
-                      {s.name} <span className="dim">{s.pos}</span> ×
+                      {s.name} <span className="dim">{s.pos === 'P' ? 'P' : posLabel(s)}</span> ×
                     </button>
                   ))}
                 </div>
@@ -1083,7 +1108,7 @@ function BestBallScreen({ onNav, onOpenPlayer }) {
                         <span className="contest__badge" style={{ background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)' }}>{(p.team || '?').slice(0, 2)}</span>
                         <div style={{ minWidth: 0 }}>
                           <div className="prow__name">{p.name}</div>
-                          <div className="prow__sub" style={{ fontSize: '.74rem' }}><b>{p.pos}</b> · {p.line}</div>
+                          <div className="prow__sub" style={{ fontSize: '.74rem' }}><b>{p.pos === 'P' ? 'P' : posLabel(p)}</b> · {p.line}</div>
                         </div>
                       </div>
                       <button className="add-btn" disabled={selIds.has(p.id)} title="Draft" onClick={() => add(p)}>{selIds.has(p.id) ? '✓' : '+'}</button>
