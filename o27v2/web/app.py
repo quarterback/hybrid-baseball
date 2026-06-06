@@ -2058,6 +2058,7 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
                    COALESCE(SUM(hr),0)   AS hr,
                    COALESCE(SUM(bb),0)   AS bb,
                    COALESCE(SUM(hbp),0)  AS hbp,
+                   COALESCE(SUM(stay_hits),0) AS stay_hits,
                    COALESCE(SUM(runs),0) AS r
              FROM game_batter_stats{bat_where}""",
         bat_params,
@@ -2122,11 +2123,28 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
         out["obp"] = (h + bb + hbp) / pa
         out["slg"] = tb / pa
         out["ops"] = out["obp"] + out["slg"]
-        # wOBA stays PA-denominated as in MLB; weights tuned for O27 in the
-        # batter aggregator and mirrored here so league mean tracks.
-        woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
-        woba_den = pa   # NOT (AB + BB + HBP) — full PA-denominator in O27.
-        out["woba"] = (woba_num / woba_den) if woba_den else 0.0
+        # League wOBA — the wRC+ centering point. Uses the SAME O27-native
+        # weights the per-player aggregator uses (derive_linear_weights), so this
+        # baseline equals the PA-weighted mean of player wOBAs and wRC+ centers at
+        # 100. Previously it hardcoded MLB weights (0.72/0.95/1.30/...), which ran
+        # ~5% high and pulled wRC+ down to ~91. Mirrors the player stay-hit split
+        # (stays are credited at the lower STAY weight, not the 1B weight).
+        # PA-denominated (NOT AB+BB+HBP) — O27 semantic.
+        _ww = _linear_weights().get("woba_weights") or {}
+        if _ww:
+            stay_h = bat.get("stay_hits", 0) or 0
+            true_singles = singles - stay_h
+            stay_w = _ww.get("STAY", _ww.get("1B", 0.95))
+            woba_num = (
+                _ww.get("BB", 0.72) * bb + _ww.get("HBP", 0.74) * hbp +
+                _ww.get("1B", 0.95) * true_singles + _ww.get("2B", 1.30) * d2 +
+                _ww.get("3B", 1.70) * d3 + _ww.get("HR", 2.05) * hr +
+                stay_w * stay_h
+            )
+        else:
+            # No fitted weights (empty DB) — fall back to MLB linear weights.
+            woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
+        out["woba"] = (woba_num / pa) if pa else 0.0
         # Replacement hitter sits ~85% of league wOBA — same convention
         # FanGraphs uses, and it's an easy mental anchor for users.
         out["replacement_woba"] = out["woba"] * 0.85
