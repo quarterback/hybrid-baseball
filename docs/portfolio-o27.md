@@ -13,7 +13,7 @@ to its consequences: a deterministic engine, a statistics suite rebuilt from fir
 principles, an economy, a youth pipeline, and a season-browsing interface for
 reading what the rules produce. Then a spectator layer on top — fantasy, a
 sportsbook, and AI radio broadcasts, all read-only consumers of the sim's truth.
-~90,000 lines of hand-rolled, dependency-light Python; designed and built solo,
+Hand-rolled and dependency-light — no NumPy, no pandas; designed and built solo,
 with every meaningful change logged as a written decision record.
 
 ‹Live → superinnin.gs› · ‹Source›
@@ -263,10 +263,21 @@ around the features.
 
 ## By the numbers
 
-~90,000 lines of Python · 100+ engineering AARs · 240+ commits of focused
-iteration · 50+ server-rendered views · 16 league configurations (8–56 teams) · a
-17-pitch catalog · six fantasy/betting game modes · AI audio broadcasts · full
-162-game seasons, seed-reproducible end to end.
+The ones that describe the thing, not the typing:
+
+- **Full 162-game seasons, seed-reproducible end to end** — every stat row traces
+  back to a simulated plate appearance.
+- **16 league configurations** (8–56 teams), with promotion/relegation tiers.
+- A **17-pitch catalog** and a **9-tier talent ladder** every attribute rolls
+  against independently.
+- **~33 runs per game, standard deviation north of 9** — an *emergent* run
+  environment, not a tuned target.
+- **Six fantasy/betting game modes** and AI audio broadcasts, none of which ever
+  re-simulate.
+- **100+ After-Action Reports** and a **9-assertion invariant suite** that has to
+  pass before any release.
+- A whole-page result cache that took the leaders page **~1100× faster**
+  (2548 ms → 2.3 ms) — the bottleneck was recompute, not the database.
 
 ---
 
