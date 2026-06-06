@@ -132,6 +132,71 @@
   </div>
 </div>
 
+{# === 📻 Daily recap card — one-tap league roundup audio (o27audio) ======== #}
+<div id="recap-card"
+     style="display:none; border:1px solid var(--border-soft, #ddd);
+            border-left:4px solid #1d6f42; border-radius:4px;
+            padding:.6rem .8rem; margin-bottom:1rem;
+            background:var(--panel-bg, transparent)">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <strong style="font-size:.95rem">📻 Today's League Recap</strong>
+    <span id="recap-msg" class="text-secondary" style="font-size:.8rem"></span>
+    <span class="ms-auto d-flex gap-2 align-items-center">
+      <button id="recap-gen" type="button" class="btn btn-sm btn-success"
+              style="display:none; background:#1d6f42; border:0">Generate</button>
+      <a href="{{ url_for('audio.roundup_player') }}"
+         class="btn btn-sm btn-outline-secondary">Open 📻</a>
+    </span>
+  </div>
+  <div id="recap-player" style="margin-top:.5rem"></div>
+</div>
+<script>
+(function () {
+  const card = document.getElementById('recap-card');
+  const msg = document.getElementById('recap-msg');
+  const gen = document.getElementById('recap-gen');
+  const player = document.getElementById('recap-player');
+  let polling = false;
+
+  function show() { card.style.display = 'block'; }
+  function play(url, dur) {
+    gen.style.display = 'none';
+    msg.textContent = dur ? '· ' + Math.round(dur/60*10)/10 + ' min' : '';
+    player.innerHTML = '<audio controls preload="none" style="width:100%" src="' + url + '"></audio>';
+    show();
+  }
+  async function check() {
+    let d;
+    try { d = await (await fetch('/audio/roundup/status')).json(); }
+    catch (e) { return; }
+    if (d.status === 'ok') { play(d.audio_url, d.duration_s); return; }
+    if (d.status === 'generating') {
+      show(); gen.style.display = 'none';
+      msg.textContent = '· on the air… auto-generating';
+      if (!polling) { polling = true; setTimeout(() => { polling = false; check(); }, 3000); }
+      return;
+    }
+    if (d.status === 'error') {
+      show(); gen.style.display = 'inline-block'; gen.textContent = 'Retry';
+      msg.textContent = '· last run failed'; return;
+    }
+    // 'none' — offer to generate (only meaningful once games are played)
+    show(); gen.style.display = 'inline-block'; gen.textContent = 'Generate';
+    msg.textContent = '· not made yet';
+  }
+  gen.addEventListener('click', async () => {
+    gen.disabled = true; gen.textContent = 'Working…';
+    msg.textContent = '· warming up the booth';
+    try {
+      const r = await (await fetch('/audio/roundup/generate', {method:'POST'})).json();
+      if (r.status === 'error') { msg.textContent = '· ' + (r.error || 'error'); gen.disabled = false; gen.textContent = 'Retry'; return; }
+    } catch (e) {}
+    gen.disabled = false; check();
+  });
+  check();
+})();
+</script>
+
 <div id="ns-panel" class="action-card" style="display:none">
   <div class="head">
     <span>Start a New Season</span>
