@@ -120,6 +120,25 @@ Another 213 tokens removed. Post-fix samples: `Min-jun Ahn`, `Yong-soo Seo`,
 `Jin-ah Song` (KR); `Tianyu Zhou`, `Jiahao Feng`, `Li Feng` (CN). The rebuild is
 a fixpoint, so the idempotency guard still holds.
 
+### Follow-up: bolster the KR/CN sets
+
+The scrape-derived buckets were thin (whatever the roster snapshot happened to
+contain), so all six CJK pools were enriched. Surnames now seed the **full
+canonical list** rather than intersecting with the scrape, and the given-name
+sets roughly doubled:
+
+| pool | before | after |
+| --- | --- | --- |
+| KR surnames | 29 | 71 |
+| CN surnames | 52 | 95 |
+| KR first (m / f) | 57 / 46 | 96 / 81 |
+| CN first (m / f) | 72 / 69 | 112 / 104 |
+
+The Chinese surname bucket is now consistent Mandarin pinyin — the Cantonese
+romanisations the scrape dragged in (`Chan`, `Wong`, `Ng`, `Tse`…) were dropped,
+since the `chinese` bucket represents the mainland and HK/overseas spellings
+belong to their own pools.
+
 **Guard:** `tests/test_name_pool_clean.py` re-runs the scrubber in dry-run mode
 and asserts zero residual removals, so a future re-seed that reintroduces junk
 fails loudly. The existing `tests/test_name_regions.py` invariants (every bucket

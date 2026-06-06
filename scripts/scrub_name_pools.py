@@ -164,41 +164,37 @@ def _surname_cities() -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# Canonical CJK surname allowlists — the Korean & Chinese surname buckets are
-# rebuilt by intersection (keep only tokens that are real surnames).
+# Canonical CJK surname pools — the Korean & Chinese surname buckets are
+# rebuilt FROM these sets (the full list is seeded, not just the intersection
+# with whatever the scrape happened to contain), so the buckets carry the real
+# spread of surnames rather than a thin scraped subset. One dominant
+# romanisation per surname to avoid odd "Lee vs Yi" doubling.
 # ---------------------------------------------------------------------------
 KOREAN_SURNAMES = {
-    "Kim", "Lee", "Yi", "Park", "Pak", "Choi", "Choe", "Jung", "Jeong",
-    "Chung", "Kang", "Cho", "Jo", "Yoon", "Yun", "Jang", "Chang", "Lim",
-    "Im", "Han", "Oh", "Seo", "Suh", "Shin", "Sin", "Kwon", "Gwon",
-    "Hwang", "Ahn", "An", "Song", "Yoo", "Yu", "Hong", "Jeon", "Jun",
-    "Ko", "Go", "Moon", "Mun", "Yang", "Bae", "Pae", "Baek", "Paek",
-    "Heo", "Hur", "Huh", "Nam", "Sim", "Shim", "Noh", "Roh", "Ha", "Jin",
-    "Ryu", "Yoo", "Min", "Chu", "Joo", "Ju", "Na", "Ra", "Do", "Sun",
-    "Won", "Ban", "Ban", "Gil", "Kil", "Wang", "Pyo", "Ki", "Gi", "Chae",
-    "Cha", "Ku", "Koo", "Gu", "Byun", "Byeon", "Eom", "Um", "Ok", "Tak",
-    "Seol", "Sol", "Kwak", "Gwak", "Yeom", "Yom", "Bang", "Pang", "Yeo",
-    "Yang", "Geum", "Seok", "Sung", "Seong",
+    "Kim", "Lee", "Park", "Choi", "Jung", "Jeong", "Kang", "Cho", "Yoon",
+    "Jang", "Lim", "Han", "Oh", "Seo", "Shin", "Kwon", "Hwang", "Ahn",
+    "Song", "Yoo", "Hong", "Jeon", "Ko", "Moon", "Yang", "Bae", "Baek",
+    "Heo", "Nam", "Noh", "Ha", "Joo", "Koo", "Shim", "Min", "Chae", "Cha",
+    "Byun", "Eom", "Won", "Ok", "Sun", "Tak", "Seol", "Kwak", "Yeom",
+    "Bang", "Yeo", "Wang", "Pyo", "Ki", "Geum", "Do", "Ryu", "Na", "Ban",
+    "Gil", "Jin", "Sung", "Chu", "Ma", "Gong", "Hyun", "Sunwoo", "Ryang",
+    "Pi", "Gu", "Ju", "Yook", "Jegal", "Seon",
 }
 
+# Mandarin-pinyin surnames for the mainland `chinese` bucket (the Cantonese
+# romanisations that the scrape dragged in belong to HK/overseas pools, not
+# this one). Roughly the Hundred-Family-Surnames head plus the common tail.
 CHINESE_SURNAMES = {
-    "Wang", "Li", "Zhang", "Liu", "Chen", "Yang", "Zhao", "Huang", "Zhou",
-    "Wu", "Xu", "Sun", "Hu", "Zhu", "Gao", "Lin", "He", "Guo", "Ma", "Luo",
-    "Liang", "Song", "Zheng", "Xie", "Han", "Tang", "Feng", "Yu", "Dong",
-    "Xiao", "Cheng", "Cao", "Yuan", "Deng", "Xu", "Fu", "Shen", "Zeng",
-    "Peng", "Lyu", "Su", "Lu", "Jiang", "Cai", "Jia", "Ding", "Wei", "Xue",
-    "Ye", "Yan", "Pan", "Du", "Dai", "Xia", "Zhong", "Wang", "Tian", "Ren",
-    "Jiang", "Fan", "Fang", "Shi", "Yao", "Tan", "Liao", "Zou", "Xiong",
-    "Jin", "Lu", "Hao", "Kong", "Bai", "Cui", "Kang", "Mao", "Qiu", "Qin",
-    "Jiang", "Shi", "Gu", "Hou", "Shao", "Meng", "Long", "Wan", "Duan",
-    "Lei", "Qian", "Tang", "Yin", "Li", "Yi", "Chang", "Wu", "Qiao", "He",
-    "Lai", "Gong", "Wen", "Pang", "Fan", "Lan", "Ke", "Qi", "Pu", "Qu",
-    "Ru", "Tao", "Zhi",
-    # common Cantonese / overseas romanisations
-    "Chan", "Chen", "Cheung", "Chow", "Chu", "Fong", "Ho", "Hui", "Kwan",
-    "Kwok", "Lam", "Lau", "Leung", "Lo", "Ma", "Mak", "Ng", "Tse", "Tsui",
-    "Wong", "Wu", "Yeung", "Yip", "Yuen", "Tsun", "Wai", "Wing", "Hin",
-    "Hoi", "Lok", "Fai", "Him", "Kwan",
+    "Wang", "Li", "Zhang", "Liu", "Chen", "Yang", "Huang", "Zhao", "Wu",
+    "Zhou", "Xu", "Sun", "Ma", "Zhu", "Hu", "Guo", "He", "Gao", "Lin",
+    "Luo", "Zheng", "Liang", "Xie", "Song", "Tang", "Han", "Feng", "Deng",
+    "Cao", "Peng", "Zeng", "Xiao", "Tian", "Dong", "Pan", "Yuan", "Cai",
+    "Jiang", "Yu", "Du", "Ye", "Cheng", "Su", "Wei", "Lyu", "Ding", "Ren",
+    "Shen", "Yao", "Lu", "Jin", "Fu", "Zhong", "Cui", "Tan", "Liao", "Fan",
+    "Shi", "Jia", "Xia", "Fang", "Zou", "Xiong", "Bai", "Meng", "Qin",
+    "Yan", "Xue", "Hou", "Lei", "Long", "Duan", "Kong", "Mao", "Shao",
+    "Wan", "Qian", "Qiu", "Wen", "Niu", "Pang", "Yin", "Gu", "Kang", "Qi",
+    "Tao", "Hao", "Lai", "Qiao", "Chang", "Ke", "Pu", "Zhi", "Lan", "Xiang",
 }
 
 # ---------------------------------------------------------------------------
@@ -242,6 +238,14 @@ KOREAN_MALE_GIVEN = {
     "Ji-min", "Yoo-jin", "Young-min", "Sung-woo", "Jae-won", "Dong-won",
     "Sang-woo", "Seok-jin", "Nam-joon", "Ho-seok", "Sung-ho", "Jae-hyun",
     "Do-hyun", "Eun-woo", "Tae-woo", "Won-jun", "Kyung-ho", "Jin-hyuk",
+    # bolster
+    "Joon-woo", "Seung-ho", "Hyun-ki", "Sang-min", "Jae-ho", "Young-ho",
+    "Dong-min", "Min-gyu", "Seong-min", "Jun-ho", "Jae-yong", "Ki-tae",
+    "Sung-jin", "Woo-sung", "Hyung-jun", "Jin-young", "Tae-jun", "Seung-woo",
+    "Ji-sung", "Chang-min", "Dong-gun", "Hyun-bin", "Kwang-soo", "Sang-ho",
+    "Yong-jin", "Jae-suk", "Byung-hoon", "Seok-woo", "Min-seok", "Tae-yang",
+    "Hyeon-woo", "Jae-min", "Seung-gi", "Woo-hyun", "Kyung-min", "Dae-sung",
+    "Jong-su", "Han-gyul", "Yoon-ho", "Sang-yeop",
 }
 
 KOREAN_FEMALE_GIVEN = {
@@ -252,6 +256,13 @@ KOREAN_FEMALE_GIVEN = {
     "Sung-hee", "Na-yeon", "Ye-jin", "Su-bin", "Chae-won", "Ga-eun", "Yu-jin",
     "Seo-hyun", "Hae-won", "So-yeon", "Soo-ah", "Hyo-jin", "Mi-young",
     "Eun-young", "Jung-eun", "Da-som", "Ha-rin", "Ye-won",
+    # bolster
+    "Seo-ah", "Ha-yoon", "Ye-eun", "Yu-na", "Ji-a", "Chae-yeong", "Da-yeon",
+    "Ye-rin", "Na-eun", "Seo-jin", "Yeon-seo", "So-eun", "Min-young",
+    "Hye-won", "Su-jin", "Eun-bi", "Ga-yeon", "Hae-rin", "Ji-hye", "Hyo-rin",
+    "Bo-mi", "Eun-chae", "Da-bin", "Ji-su", "Yeon-ji", "Sae-rom", "A-ra",
+    "Eun-seo", "Yu-jeong", "Da-hye", "Soo-young", "Hye-soo", "Mi-rae",
+    "Na-rae", "Ye-na",
 }
 
 CHINESE_MALE_GIVEN = {
@@ -263,6 +274,13 @@ CHINESE_MALE_GIVEN = {
     "Tianyu", "Zixuan", "Haoyu", "Yichen", "Jiahao", "Zhiyuan", "Wenbo",
     "Yifan", "Shengjie", "Guoqiang", "Jianguo", "Yuhang", "Chenyu", "Donghai",
     "Xiaoming", "Zhiqiang", "Yuhan",
+    # bolster
+    "Hanyu", "Zihang", "Yibo", "Ziyang", "Haowen", "Junhao", "Kaiwen",
+    "Boyang", "Jiawei", "Zhihang", "Yuchen", "Hongyu", "Mingyu", "Shihan",
+    "Zhibin", "Yujie", "Wenhao", "Xiaolong", "Guoliang", "Zhigang", "Jinhai",
+    "Yongan", "Shaoqing", "Dehua", "Liwei", "Yanjun", "Zhanpeng", "Chenxi",
+    "Hongbo", "Jiaming", "Zhihua", "Guodong", "Xiaobo", "Yongqiang",
+    "Jianfeng", "Weiguo", "Chengen", "Ruihan", "Zhengyu", "Haoyang",
 }
 
 CHINESE_FEMALE_GIVEN = {
@@ -273,6 +291,12 @@ CHINESE_FEMALE_GIVEN = {
     "Yuhan", "Xinyi", "Yaqi", "Mengyao", "Jiaqi", "Siyu", "Yuxin", "Ruoxi",
     "Jiayi", "Xinyu", "Yiran", "Zihan", "Yuting", "Mengqi", "Shuhua",
     "Xiaoyan", "Lili",
+    # bolster
+    "Mengjia", "Xinran", "Yuewen", "Shujuan", "Lihua", "Xiulan", "Guiying",
+    "Yumei", "Cuihua", "Fenfen", "Jingjing", "Lingling", "Nana", "Tingting",
+    "Wenwen", "Xiaomei", "Xiaolan", "Huifang", "Yanan", "Sijia", "Yuqi",
+    "Wanru", "Jiani", "Xiaoyu", "Yunxi", "Hanwen", "Shiyu", "Qianqian",
+    "Xiaoxiao", "Yueyue", "Ruohan", "Zhiqing", "Meiling", "Xiuli", "Yaru",
 }
 
 
@@ -354,15 +378,15 @@ def scrub(dry_run: bool = False) -> dict:
         if not isinstance(values, list):
             continue
         if key == "korean":
-            removed = sorted({v for v in values if v not in KOREAN_SURNAMES})
+            removed = sorted(set(values) - KOREAN_SURNAMES)
             if removed:
                 report["surnames"][key] = removed
-            surnames[key] = sorted(KOREAN_SURNAMES & set(values))
+            surnames[key] = sorted(KOREAN_SURNAMES)
         elif key == "chinese":
-            removed = sorted({v for v in values if v not in CHINESE_SURNAMES})
+            removed = sorted(set(values) - CHINESE_SURNAMES)
             if removed:
                 report["surnames"][key] = removed
-            surnames[key] = sorted(CHINESE_SURNAMES & set(values))
+            surnames[key] = sorted(CHINESE_SURNAMES)
         else:
             surnames[key] = clean_bucket("surnames", key, values, surname_city_junk)
 
