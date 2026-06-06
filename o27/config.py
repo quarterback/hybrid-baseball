@@ -1100,6 +1100,25 @@ POWER_PLAY_CLOSE_GAME_MULT: float   = 1.4    # tight game raises deploy urgency
 # global default"). See o27/engine/cricket_order.py for the gate + flip logic.
 CRICKET_BATTING_ORDER_ENABLED: bool = False   # league opt-in; off = zero change
 
+# Manager flip decision (manager.should_use_flip). An earned flip is use-or-lose
+# at the top of the new cycle; whether the skipper spends it is persona-driven
+# (mgr_flip_aggression, 0.5 neutral) and situational (score + out-arc). The
+# probability is BASE × persona_mult × situational, capped at MAX.
+CRICKET_FLIP_BASE_PROB: float   = 0.55   # neutral-persona spend rate when earned
+CRICKET_FLIP_AGG_SCALE: float   = 1.4    # persona span: mult = (1-S/2)..(1+S/2)·… (see code)
+CRICKET_FLIP_TRAIL_SCALE: float = 0.30   # trailing (need offense) raises spend desire
+CRICKET_FLIP_ARC_SCALE: float   = 0.25   # later in the 27-out arc raises spend desire
+CRICKET_FLIP_MAX_PROB: float    = 0.97   # ceiling so it's never a certainty
+
+# Joker opportunity cost. While the rule is on, in regulation, and the current
+# trip is still joker-free, deploying a joker forfeits the chance to EARN this
+# cycle's flip. Flip-minded skippers (high mgr_flip_aggression) therefore damp
+# their joker insertion rate by up to this fraction; joker-happy skippers
+# (low flip aggression) are barely affected, so they keep spending jokers and
+# rarely flip. The first joker of a cycle pays this cost; once the flip is
+# already forfeited, further jokers that cycle are undamped.
+CRICKET_JOKER_FLIP_DAMP: float  = 0.60   # max fractional cut to joker-insert prob
+
 # ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------

@@ -69,7 +69,7 @@ _NON_PA_EVENTS = frozenset(
      "stolen_base_attempt", "pickoff_attempt", "balk",
      "wild_pitch", "passed_ball",
      "defensive_sub", "tactical_def_swap", "pinch_runner",
-     "joker_to_field", "phase_transition_swap"}
+     "joker_to_field", "phase_transition_swap", "cricket_flip"}
 )
 
 # Maps internal hit_type strings → human-readable prose for the transcript.
@@ -205,6 +205,14 @@ class Renderer:
         etype = event["type"]
         lines: list[str] = []
 
+        # Cricket Batting Order (optional rule): a flip carries its own
+        # precomputed line and no stats/template work — emit it and return.
+        # The reversal itself happens in apply_event, so the next PA's context
+        # is captured against the flipped order.
+        if etype == "cricket_flip":
+            msg = event.get("msg") or ""
+            return [msg] if msg else []
+
         # Detect new plate appearance (batter change), ignoring manager /
         # between-pitch events that fire without changing the batter.
         is_pa_event = etype not in _NON_PA_EVENTS
@@ -283,14 +291,6 @@ class Renderer:
         self._last_score_h  = int(state_after.score.get("home", 0) or 0)
         self._last_half     = str(getattr(state_after, "half", "top") or "top")
         self._last_outs     = int(getattr(state_after, "outs", 0) or 0)
-
-        # Cricket Batting Order (optional rule): if the order flipped at the
-        # cycle boundary this event closed, surface it once, then clear it so
-        # the next event doesn't repeat it.
-        _flip = getattr(state_after, "cricket_flip_msg", None)
-        if _flip:
-            lines.append(_flip)
-            state_after.cricket_flip_msg = None
 
         return lines
 

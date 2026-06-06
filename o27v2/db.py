@@ -111,6 +111,11 @@ CREATE TABLE IF NOT EXISTS teams (
     -- mgr_bat_first_pref is the home-team bat-first/bat-second bias.
     mgr_declare_aggression   REAL  DEFAULT 0.5,
     mgr_bat_first_pref       REAL  DEFAULT 0.5,
+    -- mgr_flip_aggression — Cricket Batting Order (optional rule) persona:
+    -- how readily the skipper spends an earned joker-free flip, and inversely
+    -- how reluctant he is to burn a joker that would forfeit it. Read by
+    -- manager.should_use_flip / should_insert_joker.
+    mgr_flip_aggression      REAL  DEFAULT 0.5,
     org_strength             INTEGER DEFAULT 50,
     -- Front-office persona (see o27v2/front_office.py). Drives trade
     -- motivations and acceptance thresholds; drifts year over year.
@@ -1319,7 +1324,8 @@ def init_db() -> None:
                     "mgr_leverage_aware", "mgr_joker_aggression",
                     "mgr_pinch_hit_aggression", "mgr_platoon_aggression",
                     "mgr_run_game", "mgr_bench_usage",
-                    "mgr_declare_aggression", "mgr_bat_first_pref"):
+                    "mgr_declare_aggression", "mgr_bat_first_pref",
+                    "mgr_flip_aggression"):
             try:
                 conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL DEFAULT 0.5")
                 conn.commit()

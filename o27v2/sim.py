@@ -803,6 +803,10 @@ def _db_team_to_engine(
     team.mgr_ibb_aggression       = float(team_row.get("mgr_ibb_aggression") or 0.5)
     team.mgr_declare_aggression   = float(team_row.get("mgr_declare_aggression") or 0.5)
     team.mgr_bat_first_pref       = float(team_row.get("mgr_bat_first_pref") or 0.5)
+    # Cricket Batting Order persona — how readily this skipper spends an earned
+    # flip / how reluctant he is to burn a flip-forfeiting joker. Legacy rows
+    # seeded before this axis fall back to neutral 0.5.
+    team.mgr_flip_aggression      = float(team_row.get("mgr_flip_aggression") or 0.5)
     # Stamp the catcher's arm rating on the Team for SB-success scaling.
     pos_by_id = {str(r["id"]): str(r.get("position") or "") for r in players}
     catcher_arm = 0.5

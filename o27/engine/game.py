@@ -308,6 +308,10 @@ def run_half(
     # team has flipped, so the stale joker (now an opponent player) bats and
     # his out is misattributed to the wrong team. Clear it at every half start.
     state.batter_override = None
+    # Cricket Batting Order: an earned-but-unspent flip is use-or-lose with the
+    # top of the next cycle. If a half ends before the manager spends it, it is
+    # lost — clear it so it never leaks into the team's next batting half.
+    state.batting_team.pending_flip = False
     # Power Play windows never carry across halves — a fresh decision is made
     # each half (and a Declared Seconds frame gets its own window).
     from o27.engine import power_play

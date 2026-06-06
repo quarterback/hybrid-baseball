@@ -1,122 +1,148 @@
-# Feature Report — Cricket Batting Order (the joker-free flip)
+# Feature Report — Cricket Batting Order (the earned, use-or-lose flip)
 
 **Status:** complete, on branch `claude/o27-cricket-batting-order-k6hhp`.
-**Scope of this report:** the optional Cricket Batting Order rule — what it does, the
-controls that toggle it, and how it is plumbed. Complements the build-log AAR
-(`docs/aar-cricket-batting-order.md`).
+**Scope of this report:** the optional Cricket Batting Order rule — what it does,
+the manager decision that drives it, the persona axis behind it, and how it is
+plumbed. Complements the build-log AAR (`docs/aar-cricket-batting-order.md`).
 
 ---
 
 ## 1. What it is
 
-**Cricket Batting Order** is an optional, per-league rule. While it is on, a side's
-batting order **flips at the end of each trip through the lineup** — the 1-9 order
-becomes 9-1 for the next cycle, so the tail (the pitcher hitting 9th, the weaker bats at
-the bottom) rotates up to the top and the openers drop to the bottom.
+**Cricket Batting Order** is an optional, **per-league**, **regulation-only** rule.
+While it is on, a side can **flip its batting order 1-9 → 9-1** at the top of a new
+trip through the lineup — the tail (the pitcher hitting 9th, the weaker bats)
+rotates up to lead off and the openers drop to the bottom. It is not automatic;
+it is an **earned, use-or-lose manager decision**:
 
-The flip is **gated on the manager not having deployed a joker during that trip.**
-Deploying a joker locks the order for that cycle — no flip. So the rule turns the joker
-into a genuine tactical fork:
+- **EARN** — completing a trip through the order *without deploying a joker* earns
+  one flip opportunity. It does not bank or aggregate; you hold at most one.
+- **USE** — at the top of the new cycle the batting manager decides whether to
+  spend it. The opportunity is consumed whether he uses it or loses it; it never
+  carries to a later cycle or a later half.
 
-> A joker insertion buys a high-leverage pinch-hitter **now** but forfeits the order
-> churn this cycle. A manager who holds his jokers lets the order keep flipping; one who
-> burns a joker every cycle keeps the order he started with.
+Because deploying a joker forfeits the chance to *earn* a flip, the two levers
+trade off, and that trade is the whole point:
 
-The name nods to cricket, where the batting order is not a fixed carousel. O27's overall
-structure is already the cricket adaptation (one continuous 27-out half); this rule
-brings a little of that order-churn flavour into the lineup itself.
+> A joker buys a high-leverage pinch-hitter **now**; a held joker keeps the
+> **flip** alive for the top of the next cycle. A flip-minded skipper hoards his
+> jokers and lives on the churn; a joker-happy skipper rarely earns a flip; a
+> situational one weighs joker-now vs. flip-next by the **score** and **where in
+> the 27-out arc** he is.
+
+**Regulation only.** The use decision declines (and the pending flip is discarded)
+in super-innings and Declared Seconds frames.
 
 ### Why "the flip" and not a full cricket dismissal model
-This is deliberately the *smallest* cricket-order change: it **reorders** the existing
-cycle, it does not change who bats or how outs are recorded. We considered (and did not
-build) a true cricket "out = retired, next man in, all-out ends the innings" model — that
-conflicts head-on with O27's defining 27-out half (a ~9-12 batter side would be all-out
-long before 27 outs). The flip keeps every other rule — outs, stays, jokers, walk-back,
-Declared Seconds — exactly as-is. See the AAR for the design conversation.
-
-### In-game effect
-- At every cycle boundary (lineup wraps to the top), if no joker was deployed during the
-  trip just completed, `Team.lineup` is reversed in place. The next cycle bats 9-1.
-- Two consecutive joker-free cycles flip and then flip back — the order oscillates.
-- The flip persists across phases (regulation / Declared Seconds / super-innings) exactly
-  as `lineup_position` does today; the rule just churns the order the engine already
-  carries forward.
-- **Play-by-play:** each flip prints one line, e.g.
-  `Cricket order flips (joker-free trip) — Castillo now leads off.`
+This reorders the existing cycle; it does not change who bats or how outs are
+recorded. A true cricket "out = retired, next man in, all-out ends the innings"
+model conflicts with O27's defining 27-out half (a ~9-12 batter side would be
+all-out long before 27 outs). The flip keeps every other rule — outs, stays,
+jokers, walk-back, Declared Seconds — exactly as-is.
 
 ---
 
-## 2. How to turn it on — three controls that compose
+## 2. The manager decision
+
+### Persona axis — `mgr_flip_aggression` (0.5 neutral)
+A new manager-persona dimension, **derived** from the existing archetype axes
+rather than separately authored: flip preference runs *inversely* to
+`joker_aggression` (deploying jokers is what forfeits flips), with a small
+leverage-awareness nudge toward the situational middle. So the league self-sorts
+into the three groups the rule is meant to produce:
+
+| Group | Example archetypes | flip_aggression |
+|---|---|---|
+| **Flip-minded** (hold jokers, live on the churn) | dead-ball, set-and-forget, iron manager, old-school | ~0.63–0.73 |
+| **Situational** (trade joker-now vs flip-next) | balanced, small-ball, modern, players' manager | ~0.45–0.56 |
+| **Joker-happy** (rarely earn or spend a flip) | mad scientist, gambler, fiery, platoon | ~0.24–0.35 |
+
+Re-rolled per seed with the archetype's noise band, so two skippers of the same
+type still diverge. Stored on `teams.mgr_flip_aggression` and stamped onto the
+engine Team like every other persona.
+
+### Spending an earned flip — `manager.should_use_flip`
+Probability = `CRICKET_FLIP_BASE_PROB × persona_mult × situational`, capped at
+`CRICKET_FLIP_MAX_PROB`:
+- **persona_mult** centred on 1.0 at neutral, spanning `1 ± AGG_SCALE/2` across the
+  persona range;
+- **situational** rises when **trailing** (need offense → churn the order) and
+  **later in the out-arc** (less arc left for the order to come good on its own).
+
+### The joker opportunity cost — `manager.joker_flip_damp`
+While the rule is on, in regulation, and the current trip is still joker-free,
+joker-insertion probability is damped by up to `CRICKET_JOKER_FLIP_DAMP ×
+mgr_flip_aggression`. Flip-minded skippers therefore hold jokers (and keep
+earning flips); joker-happy ones barely flinch. The damp folds into the existing
+leverage roll, so a genuinely high-leverage spot can still clear the lowered bar —
+that is the situational "weigh joker-now vs flip-next" behaviour. Once a joker is
+spent this cycle the flip is already gone, so further jokers that cycle are
+undamped.
+
+All tunables live in `o27/config.py` under the Cricket Batting Order section.
+
+---
+
+## 3. How to turn it on — controls that compose
 
 | Control | Where | Scope | Storage |
 |---|---|---|---|
-| **Global default** | Engine Settings → "Optional rules" → Cricket Batting Order | every league in the save | `sim_meta` (`engine_config`) → `cfg.CRICKET_BATTING_ORDER_ENABLED` |
+| **Global default** | Engine Settings → "Optional rules" → Cricket Batting Order | every league in the save | `engine_config` → `cfg.CRICKET_BATTING_ORDER_ENABLED` |
 | **Per-league (single)** | New-league builder → "Optional rules" checkbox | the league being created | `teams.cricket_order_enabled` |
 | **Per-league (universe)** | Peer-league universe builder → per-league "Cricket Order" Off/On select | each league independently | `teams.cricket_order_enabled` |
 | **Per-league (existing)** | `/league/edit` → per-league "CO Off / CO On" select | flip an existing league without rebuilding | `teams.cricket_order_enabled` |
 
-**Composition rule (in `o27/engine/cricket_order.py:cricket_order_on`):** a game reads its
-per-team override first, then falls back to the global default. `sim.py` sets the
-override to `True` on **both** teams only when the league opted in (both sides bat, and
-`advance_lineup` reads `team.cricket_order_enabled`); when the league did **not** opt in
-it leaves the override unset (`None`) so the global toggle still applies. Net effect:
-
-> Cricket Batting Order is on for a game if **the league opted in OR the global default is on.**
-
-This is the exact same shape as Power Play's `power_play_on`, so the two optional rules
-behave identically with respect to global vs. per-league control and can be enabled
-independently.
-
-### Why a `<select>`, not a checkbox, in the universe builder / league editor
-Both read repeating per-league fields as parallel `getlist()` arrays aligned by index. An
-unchecked checkbox doesn't submit, which would misalign each league's flag from its name.
-An Off/On `<select>` always submits exactly one value per row, preserving the alignment —
-identical to the Power Play treatment.
+**Composition (`cricket_order.cricket_order_on`):** per-team override first, else
+the global default — i.e. **on if the league opted in OR the global default is
+on**. Identical shape to Power Play. `sim.py` stamps the override on *both* teams
+(both sides bat) when the league opted in.
 
 ---
 
-## 3. End-to-end plumbing
+## 4. End-to-end plumbing
 
 | Layer | File | What |
 |---|---|---|
-| Rule gate + flip | `o27/engine/cricket_order.py` | `cricket_order_on(team)` (override-or-config); `maybe_invert_on_cycle(team)` (reverse the lineup on a joker-free wrap, return a PBP line) |
-| Cycle hook | `o27/engine/state.py` | `Team.cricket_order_enabled` field; `Team.advance_lineup()` calls `maybe_invert_on_cycle` at the wrap, BEFORE clearing `jokers_used_this_cycle`, and returns the optional flip line |
-| PA wiring | `o27/engine/pa.py` | both `advance_lineup()` call sites append the flip line to the raw log (no-renderer path) and stash it on `state.cricket_flip_msg` (renderer path) |
-| Renderer | `o27/render/render.py` | `render_event` emits `state.cricket_flip_msg` once and clears it |
-| Global default | `o27/config.py` | `CRICKET_BATTING_ORDER_ENABLED: bool = False` |
-| Dashboard toggle | `o27v2/engine_config.py` | auto-exposed under "Optional rules" |
-| Storage | `o27v2/db.py` | `teams.cricket_order_enabled` column (CREATE TABLE + idempotent ALTER migration) |
-| Per-game read | `o27v2/sim.py` | sets `home_team`/`visitors_team.cricket_order_enabled = True` from the league flag (home row authoritative) |
-| New-league UI | `o27v2/web/templates/new_league.html` + `app.py` | checkbox → `UPDATE teams SET cricket_order_enabled = 1` |
-| Universe UI | `o27v2/web/templates/universe_new.html` + `app.py` | per-league `lg_cricket_order` select → `UPDATE … WHERE league = ?` |
-| Edit UI | `o27v2/web/templates/league_edit.html` + `app.py` | per-league `league_co` select → toggle on existing league |
+| Rule gate + flip mechanics | `o27/engine/cricket_order.py` | `cricket_order_on`, `can_flip`, `flip_line` (describe, no mutation), `apply_flip` (reverse in place) |
+| Earn the flip | `o27/engine/state.py` | `Team.advance_lineup` arms `Team.pending_flip` on a joker-free wrap (rule on); `Team.mgr_flip_aggression` field |
+| Lose the flip at a half | `o27/engine/game.py` | `run_half` clears the batting team's `pending_flip` at half start (use-or-lose, no leak) |
+| Decide the flip | `o27/engine/prob.py` | `ProbabilisticProvider._maybe_cricket_flip` consumes the pending flip, gates rule/regulation, calls `should_use_flip`, returns a `cricket_flip` event |
+| Manager logic | `o27/engine/manager.py` | `should_use_flip`, `joker_flip_damp` (applied in `should_insert_joker`), `_in_regulation` |
+| Apply + render | `o27/engine/pa.py`, `o27/render/render.py` | `apply_event` handles `cricket_flip` (reverse + line) before the next PA's context is captured; `render_event` emits the precomputed line |
+| Persona seed | `o27v2/managers.py` | `_flip_aggression` derives the axis; `roll_manager` adds it to the row |
+| Storage | `o27v2/db.py` | `teams.cricket_order_enabled` + `teams.mgr_flip_aggression` columns (+ idempotent migrations) |
+| Persist + stamp | `o27v2/league.py`, `o27v2/sim.py` | INSERT writes `mgr_flip_aggression`; sim stamps both persona and the per-league rule flag |
+| UI | `new_league.html`, `universe_new.html`, `league_edit.html` (+ `app.py`) | checkbox / selects to opt a league in |
 
-**Off = zero behaviour change.** With the rule off (the default), `cricket_order_on`
-short-circuits before touching the lineup, so `advance_lineup` is byte-for-byte
-unchanged, the renderer emits nothing, and no migration or sim path does anything.
+**Off = zero behaviour change.** With the rule off, `advance_lineup` never arms a
+flip, `joker_flip_damp` returns 1.0, and no event is ever produced — the engine is
+byte-for-byte unchanged.
 
 ---
 
-## 4. Verification
+## 5. Verification
 
-- `pytest o27/tests/test_cricket_order.py` — 9 tests: off-by-default inertness; per-team
-  off overriding global on; joker-free flip (and the PBP line naming the new leadoff);
-  flip-back over two clean cycles; joker locking the order; joker locking only its own
-  cycle; global-default driving when no override; short-lineup no-crash.
-- `pytest o27/tests` — full engine suite, **114 passed** (the `advance_lineup` return-type
-  change and `pa.py`/`render.py` edits regress nothing).
-- Full random games via `ProbabilisticProvider` with the rule on: flips fire (8 per
-  game with two joker-less demo sides) and the **pitcher who hit 9th leads off** the next
-  cycle, confirming the 1-9 → 9-1 reversal; with the rule off, zero flip lines.
-- DB: fresh `init_db` creates `teams.cricket_order_enabled` (default 0); re-`init_db` is
-  idempotent; the ALTER migration adds the column to a legacy `teams` table missing it.
-- All changed Python files byte-compile; all three edited Jinja templates parse.
+- `pytest o27/tests/test_cricket_order.py` — 16 tests: pending-flip arming (and not
+  on a joker trip / rule off / per-team opt-out); flip helpers; `should_use_flip`
+  monotonic in persona and rising when trailing / late; `joker_flip_damp` scaling,
+  rule-off / super-inning / joker-already-used inertness; end-to-end flips for
+  flip-lovers, none with the rule off, and flip-lovers flipping more than
+  joker-lovers.
+- `pytest o27/tests` — full engine suite, **122 passed**.
+- Provider checks: a regulation half spends an earned flip (event returned,
+  pending cleared); a super-inning declines and still clears the pending flip
+  (use-or-lose, regulation-only). Live game: the flip line names the new leadoff
+  and that hitter bats next (timing correct vs. context capture); both render and
+  no-render paths surface it.
+- Persona spread confirmed: joker-happy archetypes land ~0.24–0.35, joker-sparing
+  ones ~0.63–0.73.
+- DB: fresh schema and a legacy `teams` table both end with `cricket_order_enabled`
+  and `mgr_flip_aggression`; INSERT column/placeholder/value counts align (31/31/31).
 
-## 5. Not changed / possible follow-ups
-- **No new stats.** Unlike Power Play, the flip produces no stat family — it only reorders
-  PAs the existing stat machinery already records. A "flips per game" telemetry line could
-  be added later if it proves interesting.
-- **No manager AI awareness.** The joker-deployment AI does not currently weigh "deploying
-  this joker forfeits my flip." The rule is mechanically correct, but the AI does not yet
-  treat the lock as a cost. A natural follow-up is to fold the flip's value into
-  `manager.should_insert_joker` when the rule is on.
+## 6. Not changed / possible follow-ups
+- **Flip-aware lineup construction.** A flip-minded manager "builds his order with
+  the flip in mind" — e.g. an order that reads well in both directions. That lives
+  in `o27v2/sim.py:_ordered_lineup` and is a natural next step; today the order is
+  built the same way regardless of `mgr_flip_aggression`.
+- **No new stats.** The flip only reorders PAs the stat machinery already records;
+  a "flips per game" telemetry line could be added if it proves interesting.

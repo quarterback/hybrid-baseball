@@ -2,34 +2,36 @@
 Cricket Batting Order — optional league rule.
 
 A cricket nod to O27's batting order. In cricket the order is not a fixed
-carousel; here we approximate that churn by *flipping* the lineup at the end of
-each trip through the order — the 1-9 order becomes 9-1 for the next cycle, so
-the tail rotates up to the top and the openers drop to the bottom.
+carousel; here we approximate that churn by *flipping* the lineup — the 1-9
+order becomes 9-1 for the next cycle, so the tail rotates up to the top and the
+openers drop to the bottom.
 
-The flip is gated on the manager NOT having deployed a joker during the trip
-just completed. Deploying a joker "locks" the order for that cycle (no flip).
-That makes the rule a genuine tactical lever: a joker insertion buys you a
-high-leverage pinch-hitter NOW but forfeits the order churn this cycle, while a
-manager who holds his jokers lets the order keep flipping. A side that never
-uses a joker sees its order invert every single trip; one that burns a joker
-every cycle keeps the order it started with.
+The flip is an **earned, use-or-lose decision**, not an automatic event:
 
-When enabled (per-league opt-in stamped on the Team by sim.py, or the global
-cfg.CRICKET_BATTING_ORDER_ENABLED default surfaced on the Engine Settings
-dashboard) the flip fires at every cycle boundary, in regulation, Declared
-Seconds, and super-innings alike — the order persists across phases exactly as
-it does today, the rule just churns it.
+  * EARN  — completing a trip through the order WITHOUT deploying a joker earns
+            one flip opportunity (Team.pending_flip, set in advance_lineup).
+            It does not bank or aggregate; you get at most one pending flip.
+  * USE   — at the top of the new cycle the batting manager decides whether to
+            spend it (manager.should_use_flip, driven by his flip-aggression
+            persona and the game situation — score and where in the out-arc he
+            is). The decision is made once and the opportunity is consumed
+            whether he uses it or loses it.
 
-With the rule off (the default) advance_lineup is byte-for-byte unchanged: the
-gate short-circuits before touching the lineup.
+Because deploying a joker forfeits the chance to EARN a flip, the two levers
+trade off: a flip-minded manager holds his jokers (and builds an order that
+reads well in both directions); a joker-happy manager rarely earns a flip; a
+situational manager weighs joker-now vs. flip-next by the score and the arc.
+
+The flip is **regulation-only** — the use decision declines in super-innings and
+Declared Seconds frames (gated in the provider).
+
+With the rule off (the default) advance_lineup never arms pending_flip, so the
+engine is byte-for-byte unchanged.
 
 This module imports only `config` — never `state` — so it can be imported from
-state.py without a circular dependency. It operates on the Team via duck typing
-(getattr), so it has no hard dependency on the Team dataclass shape.
+state.py without a circular dependency. It operates on the Team via duck typing.
 """
 from __future__ import annotations
-
-from typing import Optional
 
 from o27 import config as cfg
 
@@ -49,25 +51,26 @@ def cricket_order_on(team) -> bool:
     return bool(getattr(cfg, "CRICKET_BATTING_ORDER_ENABLED", False))
 
 
-def maybe_invert_on_cycle(team) -> Optional[str]:
-    """Flip the batting order at a cycle boundary, if the rule fires.
-
-    Call this from Team.advance_lineup at the moment the lineup wraps to the
-    top of the order, BEFORE jokers_used_this_cycle is reset — that set is the
-    record of whether a joker was deployed during the trip just completed.
-
-    Returns a play-by-play log line when the order was inverted (so callers can
-    surface it), or None when nothing changed (rule off, a joker locked the
-    order, or there is no lineup to flip).
-    """
-    if not cricket_order_on(team):
-        return None
-    # A joker deployed during this trip locks the order — no flip this cycle.
-    if getattr(team, "jokers_used_this_cycle", None):
-        return None
+def can_flip(team) -> bool:
+    """A flip is physically possible only with a 2+ batter lineup."""
     lineup = getattr(team, "lineup", None)
-    if not lineup or len(lineup) < 2:
-        return None
-    lineup.reverse()
-    new_leadoff = getattr(lineup[0], "name", "?")
+    return bool(lineup) and len(lineup) >= 2
+
+
+def flip_line(team) -> str:
+    """Play-by-play line describing the flip that WOULD happen, without
+    mutating. After the reversal the current last batter leads off, so name
+    him here (computed pre-reversal so the provider can stamp it on the event).
+    """
+    if not can_flip(team):
+        return ""
+    new_leadoff = getattr(team.lineup[-1], "name", "?")
     return f"  Cricket order flips (joker-free trip) — {new_leadoff} now leads off."
+
+
+def apply_flip(team) -> None:
+    """Reverse the batting order in place (1-9 -> 9-1). Called from apply_event
+    when a cricket_flip event is processed, so the reversal lands before the
+    next plate appearance's context is captured."""
+    if can_flip(team):
+        team.lineup.reverse()

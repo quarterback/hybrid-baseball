@@ -291,6 +291,23 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, v))
 
 
+def _flip_aggression(arch: "Archetype") -> float:
+    """Derive a Cricket Batting Order flip-aggression baseline from existing
+    archetype axes (no separate seed value needed).
+
+    The defining tension of the optional rule is that deploying a joker
+    forfeits the cycle's flip, so flip preference runs INVERSELY to joker
+    aggression: a joker-happy skipper (mad scientist, gambler) rarely earns or
+    spends a flip, while a joker-sparing one (dead-ball, set-and-forget) lives
+    on it and builds his order around it. Leverage-awareness nudges toward the
+    situational middle — analytic skippers treat the flip as one more EV lever
+    to spend by score and out-arc rather than as dogma.
+    """
+    base = 0.85 - 0.70 * arch.joker_aggression
+    base += 0.15 * (arch.leverage_aware - 0.5)
+    return _clamp(base)
+
+
 def roll_manager(rng: random.Random) -> dict:
     """Roll a manager: pick an archetype uniformly, then add per-axis noise
     sized by that archetype's `noise` band.
@@ -301,6 +318,7 @@ def roll_manager(rng: random.Random) -> dict:
     arch = ARCHETYPES[arch_key]
     n = arch.noise
     return {
+        "mgr_flip_aggression":    _clamp(_flip_aggression(arch)      + rng.uniform(-n, n)),
         "manager_archetype":      arch.key,
         "mgr_quick_hook":         _clamp(arch.quick_hook           + rng.uniform(-n, n)),
         "mgr_bullpen_aggression": _clamp(arch.bullpen_aggression   + rng.uniform(-n, n)),

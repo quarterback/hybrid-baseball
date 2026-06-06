@@ -476,10 +476,19 @@ class Team:
 
     # Cricket Batting Order (optional rule) — per-game opt-in stamped by
     # sim.py from the per-league flag. None = not opted in (fall back to the
-    # global cfg.CRICKET_BATTING_ORDER_ENABLED default). When on, advance_lineup
-    # flips 1-9 -> 9-1 at the end of any trip through the order in which no
-    # joker was deployed. See o27/engine/cricket_order.py.
+    # global cfg.CRICKET_BATTING_ORDER_ENABLED default). See
+    # o27/engine/cricket_order.py.
     cricket_order_enabled: Optional[bool] = None
+    # Manager flip-aggression persona (0.5 neutral) — how readily this skipper
+    # SPENDS an earned cricket flip, and (inversely) how reluctant he is to
+    # burn a joker that would forfeit the flip. Stamped by sim.py from the
+    # teams row; read by manager.should_use_flip / should_insert_joker.
+    mgr_flip_aggression: float = 0.5
+    # Earned-but-unspent cricket flip. Armed by advance_lineup at a joker-free
+    # cycle boundary (only when the rule is on); consumed — used or lost — by
+    # the manager decision at the top of the new cycle. Never banks: at most
+    # one is pending at a time, and reset_half clears it.
+    pending_flip: bool = False
 
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-PA based on
@@ -517,26 +526,23 @@ class Team:
             raise ValueError(f"Team {self.name} has no active lineup.")
         return self.lineup[self.lineup_position % len(self.lineup)]
 
-    def advance_lineup(self) -> Optional[str]:
+    def advance_lineup(self) -> None:
         """Advance the lineup position (wraps around).
 
         Super-innings continue the regular batting order from wherever it
         left off — they are normal innings, not a separate selected lineup.
-
-        Returns a play-by-play log line when the optional Cricket Batting
-        Order rule flips the order at a cycle boundary, else None.
         """
         n = len(self.lineup)
         new_pos = (self.lineup_position + 1) % n
-        flip_msg: Optional[str] = None
         if new_pos == 0 and n > 0:
             # Lineup wrapped to top of order — start of a new cycle.
-            # Cricket Batting Order (optional rule): if this trip through the
-            # order was joker-free, flip 1-9 -> 9-1 for the next cycle. Checked
-            # BEFORE jokers_used_this_cycle is cleared, since that set is the
-            # record of whether a joker was deployed during the trip. No-op
-            # (returns None) when the rule is off.
-            flip_msg = _cricket_order.maybe_invert_on_cycle(self)
+            # Cricket Batting Order (optional rule): arm a flip opportunity if
+            # this trip was joker-free (checked BEFORE clearing the cooldown
+            # set, which is the record of whether a joker was deployed). The
+            # manager decides at the top of the new cycle whether to spend it
+            # (prob.py / manager.should_use_flip). Inert when the rule is off.
+            if not self.jokers_used_this_cycle and _cricket_order.cricket_order_on(self):
+                self.pending_flip = True
             self.lineup_cycle_number += 1
             # Per-cycle joker cooldown resets here. A joker may be deployed
             # at most once per time through the order; once every base
@@ -545,7 +551,6 @@ class Team:
             # again. See manager.can_insert_joker / should_insert_joker.
             self.jokers_used_this_cycle = set()
         self.lineup_position = new_pos
-        return flip_msg
 
     def reset_half(self) -> None:
         """Reset intra-half tracking at the start of a new half.
@@ -710,11 +715,6 @@ class GameState:
     # When None, the engine falls back to cfg.POWER_PLAY_ENABLED (the league
     # toggle). Tests set it explicitly to force the rule on/off per game.
     power_play_enabled: Optional[bool] = None
-    # Cricket Batting Order (optional rule) — transient play-by-play notice.
-    # Set by _end_at_bat when advance_lineup flips the order at a cycle
-    # boundary; the Renderer reads it on the same event, emits the line, and
-    # clears it (the raw-log path appends it directly). None most of the time.
-    cricket_flip_msg: Optional[str] = None
     # Active nickel window. `open_out` is state.outs at the moment of
     # deployment (the window covers the next POWER_PLAY_WINDOW_OUTS outs);
     # cleared at every half start in run_half so it never carries over.

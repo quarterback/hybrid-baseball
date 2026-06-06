@@ -349,10 +349,7 @@ def _end_at_bat(state: GameState) -> list[str]:
     if state.batter_override is not None:
         state.batter_override = None
     else:
-        _flip = state.batting_team.advance_lineup()
-        if _flip:
-            log.append(_flip)            # no-renderer path
-            state.cricket_flip_msg = _flip   # renderer path (emitted + cleared there)
+        state.batting_team.advance_lineup()
     state.pitcher_spell_count += 1
     state.total_pa_this_half += 1
     # BF arc anchored to the OUTS the AB started in (not the outs the
@@ -622,6 +619,18 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
     # Manager events
     # ------------------------------------------------------------------
 
+    if etype == "cricket_flip":
+        # Cricket Batting Order (optional rule): the batting manager spends an
+        # earned, joker-free flip. Reverse the order now — BEFORE the next PA's
+        # context is captured — so the new leadoff bats this turn. The line is
+        # precomputed on the event (it names the post-reversal leadoff).
+        from o27.engine import cricket_order as _co
+        _co.apply_flip(state.batting_team)
+        msg = event.get("msg") or ""
+        if msg:
+            log.append(msg)
+        return log
+
     if etype == "joker_insertion":
         joker = event["joker"]
         log += mgr.insert_joker(state, joker)
@@ -765,10 +774,7 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
             log += _score_run(state, runs)
         for _ in range(n_outs):
             log += _record_out(state, bid)
-        _flip = state.batting_team.advance_lineup()
-        if _flip:
-            log.append(_flip)            # no-renderer path
-            state.cricket_flip_msg = _flip   # renderer path (emitted + cleared there)
+        state.batting_team.advance_lineup()
         state.count.reset()
         state.total_pa_this_half += 1
         return log
