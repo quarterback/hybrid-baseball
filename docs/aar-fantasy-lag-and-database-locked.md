@@ -65,10 +65,55 @@ how transient lock collisions are handled.
   be loaded once post-deploy to confirm the felt loads quickly and a concurrent
   sim no longer reports `database is locked`.
 
+## Round 2 — the page was *blank*, not just slow
+
+After the schema-guard fix deployed, `/fantasy` still showed a **blank page**
+on multiple devices (and InPrivate, so not a cache). Diagnosis from the live
+deploy:
+
+* The HTML, all JS bundles (byte-identical to the committed artifacts), MIME
+  types, and the injected `__CAPSPACE_DATA__` blob were all correct, and the
+  bundle rendered fine in a jsdom harness against the real data.
+* The tell: `capspace-app.jsx` renders an **empty `<div className="app" />`**
+  while `walletState === undefined`, i.e. until `fetch('/fantasy/api/wallet')`
+  resolves. Timing the live endpoints showed why the page sat blank:
+  `/api/wallet` **14.9 s**, `/api/slate` **18 s**, `/api/activity` **26 s**.
+* All three funnel through `_settle_all()`, and the real cost is
+  `build_slate_data()` — which scans the whole season's `game_*_stats` for the
+  ~175-player pool. It is rebuilt **many times per request**: once for the
+  slate itself, then again inside every settle path
+  (`contests._LiveContext → _pool_for`, `sluggers`/`pitching`
+  `_benchmark`/`_slate_entry`, `streak`). The schema-guard fix removed the DDL
+  write storm but not this read blow-up.
+
+### Round-2 fix
+1. **Memoize `build_slate_data()` per `slate_date`** (`data.py`), invalidated by
+   the played-game count (a cheap indexed `COUNT`, which bumps on every simmed
+   game). Returns a shallow copy so callers can stamp `CONTESTS`/`WALLET`
+   without polluting the cache. The many per-request rebuilds collapse to one.
+2. **Windowed `_build_logs()`** — a `ROW_NUMBER() OVER (PARTITION BY player_id
+   ORDER BY game_date DESC)` caps each player to the latest 5 rows in SQL,
+   cutting a ~14k-row season scan to ~875. Python assembly is unchanged.
+3. **Non-blank loading state** — `capspace-app.jsx`'s loading branch now renders
+   a "CapSpace · Loading tonight's slate…" splash instead of an empty div, so a
+   slow round-trip reads as loading, never as a broken page. Bundle rebuilt via
+   `tools/build_capspace.sh` (only `capspace-app.js` changed).
+
+### Round-2 validation
+- Slate cache: 20 calls → 1 build; bumping the played count forces a rebuild;
+  returned blobs are mutation-isolated.
+- Windowed `_build_logs`: returns exactly the latest 5 games per player, most
+  recent first, form sparkline oldest→newest.
+- Rebuilt bundle: `node --check` passes; jsdom render shows the splash while the
+  wallet fetch is pending and the full app (sidebar + 15 KB) once it resolves.
+- Net effect: the per-request `build_slate_data` work drops from N rebuilds of a
+  full-season scan to a single windowed build, so `/api/{wallet,slate,activity}`
+  should return in ~1 s instead of 15-26 s, and the page paints a splash
+  immediately. (Endpoint timings to be re-measured on the live deploy.)
+
 ## Follow-ups (not done here)
-- `build_slate_data._build_logs()` still pulls every season `game_*_stats` row
-  for the ~250-player pool to keep only the last 5 per player; a windowed query
-  would trim the remaining read cost. Left alone to keep this change tight.
+- `_settle_all()` still runs on every read endpoint (wallet/slate/activity);
+  longer term it belongs on a post-sim hook, not the request path.
 - The fantasy modules still open a connection in `ensure_schema()` without
   closing it; now bounded to once per module, but a `with get_conn()` would be
   tidier.
