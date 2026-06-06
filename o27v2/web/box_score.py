@@ -98,16 +98,31 @@ def decide_pitchers(win_rows: Iterable[dict],
     return credit_win(win_rows), charge_loss(lose_rows)
 
 
-def pick_finisher(win_rows: Iterable[dict]) -> Optional[int]:
-    """player_id of the winning team's finisher — the pitcher who recorded
-    terminal outs (entered with a lead, never let it be tied or lost, and
-    finished the game). O27's save-equivalent; at most one per game. A
-    finisher can also be the winning pitcher, so this is independent of
-    credit_win. Reads `terminal_outs` (or `to_game`) off the rows."""
+FINISH_MIN_OUTS = 4
+
+
+def pick_finisher(win_rows: Iterable[dict],
+                  win_pid: Optional[int] = None,
+                  min_outs: int = FINISH_MIN_OUTS) -> Optional[int]:
+    """player_id of the winning team's finisher — O27's save-equivalent, at
+    most one per game. A finish is a RELIEVER credit: the pitcher who finished
+    the game with >= `min_outs` terminal outs (entered with a lead, never let
+    it be tied/lost, finished) and who is NEITHER the starter NOR the winning
+    pitcher. So a game is never a complete game / win AND a finish — those are
+    their own credits.
+
+    Excludes any row flagged `is_starter` and the `win_pid` (the decision-
+    taking starter or majority-relief pitcher). Reads `terminal_outs` (or
+    `to_game`) off the rows. Returns None when no reliever qualifies (a
+    complete game, or the closer also took the win/decision)."""
     best, best_to = None, 0
     for r in win_rows:
+        if r.get("is_starter"):
+            continue
+        if win_pid is not None and r.get("player_id") == win_pid:
+            continue
         to = int(r.get("terminal_outs") or r.get("to_game") or 0)
-        if to > best_to:
+        if to >= min_outs and to > best_to:
             best, best_to = r, to
     return best.get("player_id") if best is not None else None
 

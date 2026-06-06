@@ -1173,14 +1173,22 @@ def _game_finisher(game: dict) -> tuple[int | None, int]:
     winner_id = game.get("winner_id")
     if winner_id is None:
         return None, 0
-    win_rows = db.fetchall(
-        """SELECT ps.player_id, SUM(ps.terminal_outs) AS terminal_outs
+    win_rows = [dict(r) for r in db.fetchall(
+        """SELECT ps.player_id,
+                  MAX(ps.is_starter)    AS is_starter,
+                  SUM(ps.terminal_outs) AS terminal_outs,
+                  SUM(ps.outs_recorded) AS outs_recorded,
+                  SUM(ps.er)            AS er,
+                  MIN(ps.rowid)         AS rowid
              FROM game_pitcher_stats ps
             WHERE ps.game_id = ? AND ps.team_id = ?
-            GROUP BY ps.player_id""",
+            GROUP BY ps.player_id
+            ORDER BY MIN(ps.rowid)""",
         (game["id"], winner_id),
-    )
-    f_pid = _pick_finisher(win_rows)
+    )]
+    # Exclude the decision-taker (the finish is never also the win/CG).
+    win_pid = _credit_win(win_rows)
+    f_pid = _pick_finisher(win_rows, win_pid=win_pid)
     if f_pid is None:
         return None, 0
     row = db.fetchone(
@@ -1253,6 +1261,7 @@ def _attach_decisions(games: list[dict]) -> None:
         f"""SELECT ps.game_id, ps.team_id, ps.player_id,
                    SUM(ps.outs_recorded) AS outs, SUM(ps.er) AS er,
                    SUM(ps.terminal_outs) AS terminal_outs,
+                   MAX(ps.is_starter) AS is_starter,
                    MIN(ps.rowid) AS rowid, p.name AS player_name
               FROM game_pitcher_stats ps
               JOIN players p ON ps.player_id = p.id
@@ -1292,7 +1301,7 @@ def _attach_decisions(games: list[dict]) -> None:
                               "w": wl["w"], "l": wl["l"]}
         # Finisher: the winning team's terminal-outs leader (save-equivalent),
         # shown with his season terminal-outs total. Independent of W.
-        f_pid = _pick_finisher(by_team_game.get((g["id"], winner_id), []))
+        f_pid = _pick_finisher(by_team_game.get((g["id"], winner_id), []), win_pid=w_pid)
         if f_pid:
             g["f_pitcher"] = {"name": _last(name_by_id.get(f_pid, "")),
                               "to": to_map.get(f_pid, 0)}

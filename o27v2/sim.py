@@ -1091,9 +1091,15 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
                 lead_entries += 1
                 if m_lead > 0:
                     lead_held += 1
-                    if fin:
+                    # Terminal Outs feed the finisher (F:) credit, which is a
+                    # RELIEVER stat. A starter finishing his own start (incl. a
+                    # complete game) is NOT a finish — so a game can't be a
+                    # complete game AND a finish. Exclude the starter.
+                    if fin and not is_starter:
                         terminal_outs += outs_r
-            if fin and outs_r >= 9 and m_lead >= 0:
+            # Quality Finish is likewise a reliever finish (9+ outs, never
+            # trailed); a starter's complete-game gem isn't a "finish".
+            if fin and outs_r >= 9 and m_lead >= 0 and not is_starter:
                 quality_finish += 1
         rows.append({
             "team_id": team_id,
