@@ -734,3 +734,77 @@ def test_invariant_10_tto_buckets_reconcile(played_game_ids):
             for r in k_bad[:5]
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Invariant 11: WAR's fielding component == the displayed Field Runs
+# ---------------------------------------------------------------------------
+
+def test_invariant_11_war_fielding_matches_displayed_field_runs(played_game_ids):
+    """The defensive runs inside a player's WAR must equal the Field Run Value
+    shown on the fielding/Savant surface for that same player, within tolerance.
+
+    This is the invariant whose absence let the WAR/OAA divergence ship: the
+    season-card WAR read a rating-derived scout DRS while the Savant page showed
+    event-based OAA/Field Runs, and nothing checked that the two agreed. With
+    WAR now anchored to the same regressed Field Run Value the surface displays
+    (for qualified fielders), `def_runs` must equal that displayed `frv` and the
+    source must be the event metric — not the scout fallback.
+
+    Also checks the component identity WAR == war_off + dwar, so WAR can never
+    silently drift from the sum of its surfaced parts.
+
+    Skips cleanly if flask (and thus o27v2.web.app) is unavailable, matching the
+    rest of the suite's environmental tolerance.
+    """
+    try:
+        from o27v2.web.app import (
+            _aggregate_batter_rows, _league_baselines_compute,
+            _WAR_FIELDING_MIN_CHANCES,
+        )
+        from o27v2.analytics.expanded import build_fielding_value
+    except Exception as exc:  # pragma: no cover - env-dependent
+        pytest.skip(f"web/app or analytics unavailable: {exc}")
+
+    baselines = _league_baselines_compute()
+    field = {f["player_id"]: f for f in build_fielding_value(min_chances=1)["leaders"]}
+
+    # Qualified fielders only — below the gate WAR uses the scout projection by
+    # design, so the surface (event) and WAR (scout) are *expected* to differ.
+    qualified = [pid for pid, f in field.items()
+                 if f["chances"] >= _WAR_FIELDING_MIN_CHANCES]
+    if not qualified:
+        pytest.skip("no qualified fielders in scope")
+
+    rows = db.fetchall(
+        """SELECT bs.player_id, p.position, p.team_id,
+                  p.defense, p.defense_outfield, p.defense_infield, p.defense_catcher,
+                  COUNT(DISTINCT bs.game_id) AS g,
+                  SUM(bs.pa) AS pa, SUM(bs.ab) AS ab, SUM(bs.hits) AS hits,
+                  SUM(bs.doubles) AS doubles, SUM(bs.triples) AS triples, SUM(bs.hr) AS hr,
+                  SUM(bs.bb) AS bb, SUM(bs.hbp) AS hbp, SUM(bs.k) AS k,
+                  SUM(bs.runs) AS runs, SUM(bs.rbi) AS rbi, SUM(bs.sb) AS sb, SUM(bs.sh) AS sh
+             FROM game_batter_stats bs JOIN players p ON p.id = bs.player_id
+            WHERE bs.phase = 0 AND bs.player_id IN (%s)
+            GROUP BY bs.player_id""" % ",".join("?" * len(qualified)),
+        tuple(qualified),
+    )
+    rows = [dict(r) for r in rows]
+    _aggregate_batter_rows(rows, baselines=baselines)
+
+    mismatches = []
+    sum_bad = []
+    for r in rows:
+        disp = field[r["player_id"]]["frv"]
+        if abs(r["def_runs"] - disp) > 0.1 or r["def_runs_source"] != "field":
+            mismatches.append((r["player_id"], r["def_runs"], disp, r["def_runs_source"]))
+        if abs(r["war"] - (r["war_off"] + r["dwar"])) > 1e-6:
+            sum_bad.append((r["player_id"], r["war"], r["war_off"], r["dwar"]))
+
+    assert not mismatches, (
+        f"WAR def_runs != displayed Field Runs for {len(mismatches)} qualified "
+        f"fielders; first 5 (pid, def_runs, displayed_frv, source): {mismatches[:5]}"
+    )
+    assert not sum_bad, (
+        f"WAR != war_off + dwar for {len(sum_bad)} rows; first 5: {sum_bad[:5]}"
+    )

@@ -689,6 +689,12 @@ _POSITION_DRS_RANGE: dict[str, float] = {
     "P":   2.0,    # pitchers field comebackers / cover bases — small effect
 }
 
+# Minimum fielding chances before WAR anchors its defensive term to event-based
+# Field Run Value. Below this, OAA hasn't stabilised and WAR falls back to the
+# scout-grade DRS projection (rating-derived). Matches the qualifying threshold
+# the fielding leaderboards use.
+_WAR_FIELDING_MIN_CHANCES = 25
+
 
 _INFIELD_POS_SET  = frozenset(("1B", "2B", "3B", "SS"))
 _OUTFIELD_POS_SET = frozenset(("LF", "CF", "RF"))
@@ -1631,17 +1637,37 @@ def _aggregate_batter_rows(
         b["vorp"] = ((b["woba"] - repl_woba) * pa / woba_scale) if (pa and league_woba) else 0.0
 
         # --- Defensive value ---
-        # DRS = (player_position_defense - 0.5) × 2 × games_played / 162
-        #       × position_drs_range. Scales linearly with games played.
-        # dWAR = DRS / runs_per_win.
         rpw = baselines.get("runs_per_win") or 10.0
         pos = str(b.get("position") or "")
         games = b.get("g") or 0
+
+        # Scout-grade DRS — a RATING-derived defensive projection. Retained as
+        # its own column (`drs` / `pos_def`); it can't see range (same blind spot
+        # as FldPct), so it feeds WAR only for fielders without a reliable event
+        # sample. DRS = (pos_def − 0.5) × 2 × (G/162) × position_drs_range.
         pos_def = _position_defense_for_row(b)
         b["pos_def"] = pos_def
         drs_range = _POSITION_DRS_RANGE.get(pos, 4.0)
         b["drs"] = (pos_def - 0.5) * 2.0 * (games / 162.0) * drs_range if games else 0.0
-        b["dwar"] = b["drs"] / rpw if rpw else 0.0
+
+        # WAR's defensive input: event-based, regressed Field Run Value — the
+        # SAME number build_fielding_value() shows on the fielding/Savant surface
+        # (reconciled by the stat-invariant suite). Established fielders use it;
+        # small-sample fielders fall back to the scout DRS projection. `def_runs`
+        # is the defensive runs that actually flow into WAR; `def_runs_source`
+        # records which estimate was used.
+        pid = b.get("player_id")
+        fld_runs_map = baselines.get("fielding_runs") or {}
+        fld_ch_map   = baselines.get("fielding_chances") or {}
+        if pid is not None and pid in fld_runs_map \
+                and fld_ch_map.get(pid, 0) >= _WAR_FIELDING_MIN_CHANCES:
+            b["def_runs"] = fld_runs_map[pid]
+            b["def_runs_source"] = "field"      # event-based OAA → regressed FRV
+        else:
+            b["def_runs"] = b["drs"]
+            b["def_runs_source"] = "scout"      # rating-derived projection
+        b["dwar"] = b["def_runs"] / rpw if rpw else 0.0
+
         # bWAR — total batter value = batting WAR + defensive WAR.
         bwar_off = b["vorp"] / rpw if rpw else 0.0
         b["war_off"] = bwar_off
@@ -2214,6 +2240,27 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
     # and to_xo() falls through to native value.
     # ------------------------------------------------------------------
     out.update(_compute_xo_league_baselines(bat_where, bat_params, pit_where, pit_params))
+
+    # --- Defensive input to WAR: regressed Field Run Value, per player ---------
+    # The SAME build_fielding_value() the fielding/Savant surfaces display, so
+    # WAR's defensive component and the displayed Field Runs can never diverge
+    # (enforced by tests/test_stat_invariants.py). min_chances=1 so every fielder
+    # with data is present; the WAR block applies its own qualification gate and
+    # falls back to scout-grade DRS for small-sample fielders. Local import keeps
+    # the analytics package out of app.py's module-load cycle.
+    from o27v2.analytics.expanded import build_fielding_value as _bfv
+    if league is None:
+        _fld_team_ids = None
+    else:
+        _fld_team_ids = [r["id"] for r in
+                         db.fetchall("SELECT id FROM teams WHERE league = ?", (league,))]
+    try:
+        _fld = _bfv(min_chances=1, team_ids=_fld_team_ids)["leaders"]
+        out["fielding_runs"]    = {f["player_id"]: f["frv"] for f in _fld}
+        out["fielding_chances"] = {f["player_id"]: f["chances"] for f in _fld}
+    except Exception:
+        out["fielding_runs"]    = {}
+        out["fielding_chances"] = {}
 
     return out
 

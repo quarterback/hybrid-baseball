@@ -28,6 +28,11 @@ _OUT_TYPES = {"ground_out", "fly_out", "line_out", "fielders_choice",
               "double_play", "triple_play", "itp_out"}
 _HIT_TYPES = {"single", "infield_single", "double", "triple", "hr", "home_run"}
 _RUN_PER_OUT = 0.78   # O27 RE-derived value of an out (≈ avg RE swing)
+# Reliability-regression constant for Field Run Value. reliability =
+# chances/(chances+K); higher K = heavier shrink toward league-average defense.
+# K=400 lands a full-season qualified fielder at ~0.2–0.46 weight, damping the
+# raw ±1.8-win OAA noise to a believable ±0.5-win fielding contribution. Tunable.
+_FIELDING_REGRESSION_K = 400
 
 
 def _team_in(team_ids, col="team_id") -> str:
@@ -354,23 +359,30 @@ def _zone_from_trajectory(la, spray):
 
 
 def build_fielding_value(min_chances: int = 25, team_ids=None) -> dict:
-    """Outs Above Average + Fielding Run Value. Catch probability per ball is
-    the league out-rate for its (EV, LA) bin. Attribution is exact on outs (the
-    engine-credited fielder_id, PO-consistent) and falls back to trajectory-zone
-    → positional regular for balls that fell in. OAA = Σ(out − expected_out);
-    FRV = OAA × run/out. `exact_pct` reports the share of chances exactly
-    attributed."""
-    # League out-rate per (EV, LA) bin.
-    binr_out = defaultdict(int); binr_n = defaultdict(int)
+    """Outs Above Average + Fielding Run Value.
+
+    Catch probability per ball is the league out-rate for its
+    **(zone, EV, LA)** bin — the share of comparable-difficulty balls *in that
+    fielder's zone* that became outs. Conditioning the expectation on the zone
+    (not just EV/LA) is what keeps the metric position-neutral: an outfielder is
+    measured against other outfielders' catch rate on that ball, not against an
+    EV/LA pool whose out-rate is inflated by easy infield outs. Without it the
+    metric was systematically punishing OF regulars (who absorb every extra-base
+    hit in their zone) and rewarding IF — a calibration bug, not real defense.
+
+    Attribution is exact on outs (the engine-credited fielder_id, PO-consistent)
+    and falls back to trajectory-zone → positional regular for balls that fell in.
+    Home runs are excluded entirely — a ball over the fence is not a fielding
+    chance. OAA = Σ(out − expected_out); FRV = OAA × run/out. `exact_pct` reports
+    the share of chances exactly attributed."""
     rows = db.fetchall(
         """SELECT team_id, game_id, hit_type, exit_velocity, launch_angle, spray_angle, fielder_id
            FROM game_pa_log WHERE phase = 0 AND exit_velocity IS NOT NULL""" + _team_in(team_ids))
-    for r in rows:
-        key = (_ev_bin(r["exit_velocity"]), _la_bin(r["launch_angle"]))
-        binr_n[key] += 1
-        if r["hit_type"] in _OUT_TYPES:
-            binr_out[key] += 1
-    out_rate = {k: binr_out[k] / binr_n[k] for k in binr_n}
+
+    # Canonical position per player — used to give an out's credited fielder the
+    # same zone vocabulary the trajectory heuristic uses for hits.
+    ppos = {p["id"]: (p["position"] or "").strip()
+            for p in db.fetchall("SELECT id, position FROM players")}
 
     # Game → fielding team for each batting team.
     games = {g["id"]: (g["home_team_id"], g["away_team_id"])
@@ -391,46 +403,84 @@ def build_fielding_value(min_chances: int = 25, team_ids=None) -> dict:
         if key not in regular or a["g"] > regular[key][1]:
             regular[key] = (a["player_id"], a["g"])
 
-    oaa = defaultdict(float); chances = defaultdict(int)
+    def _attribute(r, is_out):
+        """(zone, fielder_id) for one ball, or (None, None) if unattributable.
+        Outs use the engine-credited fielder (and that fielder's canonical
+        position as the zone); hits/unattributed-outs fall back to the
+        trajectory zone → fielding team's regular at that position."""
+        if is_out and r["fielder_id"] is not None:
+            return ppos.get(r["fielder_id"]) or None, r["fielder_id"]
+        zone = _zone_from_trajectory(r["launch_angle"], r["spray_angle"])
+        teams = games.get(r["game_id"])
+        if not zone or not teams:
+            return None, None
+        home, away = teams
+        field_team = home if r["team_id"] == away else away
+        reg = regular.get((field_team, zone))
+        if not reg:
+            return None, None
+        return zone, reg[0]
+
+    # Pass 1 — league out-rate per (zone, EV, LA) bin, plus an (EV, LA) fallback
+    # for sparse zone bins. Each ball is parsed once and cached for pass 2.
+    zbin_out = defaultdict(int); zbin_n = defaultdict(int)
+    gbin_out = defaultdict(int); gbin_n = defaultdict(int)
+    parsed = []          # (fielder_id, zone, ev_bin, la_bin, is_out, exact)
     n_exact = 0; n_heur = 0
     for r in rows:
+        if r["hit_type"] in ("hr", "home_run"):
+            continue     # not a fielding chance — left the park
         is_out = r["hit_type"] in _OUT_TYPES
-        # Exact attribution: on an out the engine credits a real fielder
-        # (PO-consistent). Fall back to trajectory-zone → positional regular for
-        # hits and for outs with no persisted fielder (legacy rows / bunts).
-        fielder = None
-        if is_out and r["fielder_id"] is not None:
-            fielder = r["fielder_id"]; n_exact += 1
-        else:
-            zone = _zone_from_trajectory(r["launch_angle"], r["spray_angle"])
-            teams = games.get(r["game_id"])
-            if not zone or not teams:
-                continue
-            home, away = teams
-            field_team = home if r["team_id"] == away else away
-            reg = regular.get((field_team, zone))
-            if not reg:
-                continue
-            fielder = reg[0]; n_heur += 1
-        exp = out_rate.get((_ev_bin(r["exit_velocity"]), _la_bin(r["launch_angle"])), 0.0)
-        actual = 1.0 if is_out else 0.0
-        oaa[fielder] += (actual - exp)
+        zone, fielder = _attribute(r, is_out)
+        if fielder is None or zone is None:
+            continue
+        exact = is_out and r["fielder_id"] is not None
+        if exact: n_exact += 1
+        else:     n_heur += 1
+        ev = _ev_bin(r["exit_velocity"]); la = _la_bin(r["launch_angle"])
+        zbin_n[(zone, ev, la)] += 1; gbin_n[(ev, la)] += 1
+        if is_out:
+            zbin_out[(zone, ev, la)] += 1; gbin_out[(ev, la)] += 1
+        parsed.append((fielder, zone, ev, la, is_out))
+    zrate = {k: zbin_out[k] / zbin_n[k] for k in zbin_n}
+    grate = {k: gbin_out[k] / gbin_n[k] for k in gbin_n}
+
+    # Pass 2 — OAA against the zone-conditional expectation.
+    oaa = defaultdict(float); chances = defaultdict(int)
+    for fielder, zone, ev, la, is_out in parsed:
+        exp = zrate.get((zone, ev, la))
+        if exp is None:
+            exp = grate.get((ev, la), 0.0)
+        oaa[fielder] += (1.0 if is_out else 0.0) - exp
         chances[fielder] += 1
 
     names = _names(list(oaa.keys()))
     leaders = []
     for pid, v in oaa.items():
-        if chances[pid] < min_chances:
+        n = chances[pid]
+        if n < min_chances:
             continue
+        # Reliability regression. O27 resolves contact mostly from EV/LA physics
+        # with only a team-level range shift + sparse individual gems, so raw
+        # single-season OAA is dominated by batted-ball variance, not fielder
+        # skill (measured corr to defense rating ≈ 0.1). Field Run Value — the
+        # run figure that flows into WAR — is therefore the OAA shrunk toward the
+        # league-average (0) by reliability = chances/(chances+K). This is the
+        # standard defensive-metric damping; without it WAR would inherit ±2 wins
+        # of fielding noise. `oaa` is kept raw (the observed count); `frv` is the
+        # regressed, WAR-bound run value, so both surfaces and WAR agree on it.
+        reliability = n / (n + _FIELDING_REGRESSION_K)
+        frv = v * _RUN_PER_OUT * reliability
         leaders.append({
             "player_id": pid,
             "player_name": (names.get(pid) or {}).get("name", f"#{pid}"),
             "team_abbrev": (names.get(pid) or {}).get("team_abbrev", ""),
-            "chances": chances[pid],
+            "chances": n,
             "oaa": round(v, 1),
-            "frv": round(v * _RUN_PER_OUT, 1),
+            "reliability": round(reliability, 3),
+            "frv": round(frv, 1),
         })
-    leaders.sort(key=lambda x: -x["oaa"])
+    leaders.sort(key=lambda x: -x["frv"])
     tot = n_exact + n_heur
     return {"leaders": leaders,
             "exact_pct": round(100 * n_exact / tot, 1) if tot else 0.0}

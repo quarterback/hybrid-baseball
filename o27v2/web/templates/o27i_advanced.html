@@ -85,8 +85,11 @@
   Win probability is split by batting half (using the persisted bat-first flag),
   so it respects O27's two-sequential-halves structure. Fielding OAA uses the
   engine's exact fielder on outs ({{ fielding_exact_pct }}% of chances) and
-  trajectory-zone attribution for balls that fell in. Pitch-arsenal run value
-  covers balls in play (contact quality), not whiffs.
+  trajectory-zone attribution for balls that fell in; the expected out-rate is
+  conditioned on the fielder's zone, so the metric is position-neutral and home
+  runs are excluded. FRV regresses OAA toward league-average by sample
+  reliability and is the defensive run value that feeds WAR. Pitch-arsenal run
+  value covers balls in play (contact quality), not whiffs.
 </div>
 
 {% endblock %}
