@@ -89,7 +89,7 @@
 <div class="panel mb-3">
   <div class="panel-head"><span>Header</span></div>
   <div class="table-responsive">
-  <table class="table dense-table mb-0">
+  <table class="table dense-table dense-table--fit mb-0">
     <thead><tr>
       <th>Field</th>
       {% for o in players %}
@@ -167,7 +167,7 @@
     <span class="ms-auto sub">— = no PA on file</span>
   </div>
   <div class="table-responsive">
-  <table class="table dense-table mb-0">
+  <table class="table dense-table dense-table--fit mb-0">
     <thead><tr>
       <th>Stat</th>
       {% for o in players %}<th class="num">{{ o.player.name.split(' ')[-1] }}</th>{% endfor %}
@@ -227,7 +227,7 @@
     <span class="ms-auto sub">— = no outs on file</span>
   </div>
   <div class="table-responsive">
-  <table class="table dense-table mb-0">
+  <table class="table dense-table dense-table--fit mb-0">
     <thead><tr>
       <th>Stat</th>
       {% for o in players %}<th class="num">{{ o.player.name.split(' ')[-1] }}</th>{% endfor %}
@@ -286,7 +286,7 @@
 <div class="panel mb-3">
   <div class="panel-head"><span>Fielding</span></div>
   <div class="table-responsive">
-  <table class="table dense-table mb-0">
+  <table class="table dense-table dense-table--fit mb-0">
     <thead><tr>
       <th>Stat</th>
       {% for o in players %}<th class="num">{{ o.player.name.split(' ')[-1] }}</th>{% endfor %}
@@ -321,7 +321,7 @@
     <span class="ms-auto sub">50 = league average · 80 = top of the league</span>
   </div>
   <div class="table-responsive">
-  <table class="table dense-table mb-0">
+  <table class="table dense-table dense-table--fit mb-0">
     <thead><tr>
       <th>Rating</th>
       {% for o in players %}<th class="num">{{ o.player.name.split(' ')[-1] }}</th>{% endfor %}
