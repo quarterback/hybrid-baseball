@@ -22,10 +22,12 @@ The `.jsx` files are now the source of truth; the served `.js` files are
 committed build artifacts. The page loads plain JS with **no Babel and no
 runtime transpile**, against **production**, self-hosted React.
 
-- Added `tools/build_capspace.sh` — installs a pinned Babel toolchain into
-  `tools/.jsxbuild/` (gitignored) and transpiles each `capspace-*.jsx` →
-  `.js` with `@babel/preset-react` in **classic** runtime (emits
-  `React.createElement`, since React is a UMD global, not an ES import).
+- Added `tools/build_capspace.sh` — transpiles each `capspace-*.jsx` → `.js`
+  using the workspace's own Babel (`@babel/cli` + `@babel/preset-react` are
+  repo-root devDependencies; install with `pnpm install`). Classic runtime,
+  so it emits `React.createElement` (React is a UMD global, not an ES import).
+  The Babel config is written to the repo root at run time so the preset
+  resolves against the workspace's pnpm-symlinked `node_modules`.
 - Committed the 5 generated artifacts: `capspace-{data,ui,screens,builder,app}.js`.
 - Self-hosted production React + ReactDOM UMD into
   `static/vendor/react*.production.min.js`.

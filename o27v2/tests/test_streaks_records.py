@@ -132,12 +132,12 @@ def test_double_digit_k_streak_counts_only_starts(synth_db):
     assert rows[0]["length"] == 3           # 11,12,10 K; the 8-K start breaks
 
 
-def test_scoreless_streak_accumulates_innings(synth_db):
-    from o27v2.analytics.streaks import scoreless_innings_streaks
-    rows = scoreless_innings_streaks(team_ids=[1, 2])
+def test_scoreless_streak_accumulates_outs(synth_db):
+    from o27v2.analytics.streaks import scoreless_outs_streaks
+    rows = scoreless_outs_streaks(team_ids=[1, 2])
     ace = next(r for r in rows if r["player_name"] == "Ace Alvarez")
-    assert ace["outs"] == 42                # two clean 7-IP starts = 14 IP
-    assert ace["ip_display"] == "14.0"
+    assert ace["outs"] == 42                # two clean 21-out starts, no runs
+    assert "ip_display" not in ace          # innings framing removed
 
 
 def test_streaks_respect_league_scope(synth_db):

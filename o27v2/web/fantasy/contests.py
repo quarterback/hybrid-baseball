@@ -362,8 +362,10 @@ CAP = 1_00_000  # ƒ — $1,000 (mirrors capspace-data.jsx)
 
 
 def _pool_for(slate_date: str) -> dict:
-    """The slate's player pool keyed by db id, with a 'dbid' field added."""
-    blob = slate_data.build_slate_data()
+    """The slate's player pool keyed by db id, with a 'dbid' field added.
+    Builds that exact slate's pool (not just the current one) so a contest
+    still validates after the live slate advances."""
+    blob = slate_data.build_slate_data(slate_date)
     pool: dict[int, dict] = {}
     if not blob or blob.get("SLATE_DATE") != slate_date:
         return pool

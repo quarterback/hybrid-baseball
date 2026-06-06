@@ -119,11 +119,56 @@ def api_entries():
     return jsonify(dfs.list_user_entries())
 
 
+_ACTIVITY_LABEL = {"sluggers": "Sluggers", "pilots": "Pilots",
+                   "categories": "Category League", "bestball": "Best Ball"}
+
+
+@capspace_bp.route("/api/activity")
+def api_activity():
+    """Everything the user has live or settled across ALL games — DFS lineups,
+    Sportsbook bets, and every game's buy-ins — in one feed."""
+    items = []
+    try:
+        _settle_all()
+    except Exception:  # pragma: no cover
+        pass
+    try:
+        for r in db.fetchall(
+            "SELECT e.fee_paid fp, e.settled s, e.payout po, e.slate_date sd, c.name cn "
+            "FROM dfs_entries e JOIN dfs_contests c ON e.contest_id = c.id ORDER BY e.id DESC"):
+            st = "won" if (r["s"] and r["po"] > 0) else ("lost" if r["s"] else "live")
+            items.append({"game": "Daily Slate", "title": r["cn"], "sub": r["sd"],
+                          "stake": r["fp"] or 0, "status": st, "payout": r["po"] or 0})
+    except Exception:
+        _LOG.exception("activity dfs")
+    try:
+        sb = book.status()
+        for b in sb.get("open", []):
+            items.append({"game": "Sportsbook", "title": b["desc"], "sub": b["matchup"],
+                          "stake": b["stake"], "status": "open", "payout": 0})
+        for b in sb.get("settled", []):
+            items.append({"game": "Sportsbook", "title": b["desc"],
+                          "sub": b["matchup"] + (f" ({b['score']})" if b.get("score") else ""),
+                          "stake": b["stake"], "status": b["status"], "payout": b["payout"]})
+    except Exception:
+        _LOG.exception("activity sportsbook")
+    try:
+        for r in db.fetchall("SELECT game, ekey, fee, settled, payout FROM cs_buyins ORDER BY rowid DESC"):
+            lbl = _ACTIVITY_LABEL.get(r["game"], r["game"])
+            st = "won" if (r["settled"] and r["payout"] > 0) else ("lost" if r["settled"] else "live")
+            ek = str(r["ekey"])
+            items.append({"game": lbl, "title": ek if "-" in ek else ek.upper(),
+                          "sub": "buy-in", "stake": r["fee"], "status": st, "payout": r["payout"] or 0})
+    except Exception:
+        _LOG.exception("activity buyins")
+    return jsonify({"items": items})
+
+
 def _settle_all() -> int:
     """Settle every game that pays into the wallet, then return the balance —
     so one bankroll reflects DFS contests and Sportsbook bets alike."""
     for fn in (dfs.settle_entries, book.settle_bets, sluggergame.settle,
-               pilotgame.settle, catgame.settle, bbgame.settle):
+               pilotgame.settle, catgame.settle, bbgame.settle, streakgame.settle):
         try:
             fn()
         except Exception:  # pragma: no cover

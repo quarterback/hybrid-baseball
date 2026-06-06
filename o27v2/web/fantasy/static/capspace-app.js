@@ -74,7 +74,10 @@ function App() {
     setRoster(prev => {
       // already in lineup?
       if (Object.values(prev).some(x => x && x.id === p.id)) return prev;
-      const slot = S.SLOTS.find(s => prev[s.key] === null && s.accepts.includes(p.pos));
+      // a player can fill any open slot they're eligible for (multi-position);
+      // SLOTS are ordered so dedicated spots fill before the flex.
+      const elig = p.posEligible && p.posEligible.length ? p.posEligible : [p.pos];
+      const slot = S.SLOTS.find(s => prev[s.key] === null && s.accepts.some(a => elig.includes(a)));
       if (!slot) return prev;
       return {
         ...prev,

@@ -19,6 +19,19 @@ function HubScreen({
   const topPrize = contests.reduce((m, c) => Math.max(m, c.top || 0), 0);
   const [w, setW] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [showHero, setShowHero] = useState(() => {
+    try {
+      return localStorage.getItem('o27.capspace.hero') !== '0';
+    } catch (e) {
+      return true;
+    }
+  });
+  function dismissHero() {
+    setShowHero(false);
+    try {
+      localStorage.setItem('o27.capspace.hero', '0');
+    } catch (e) {}
+  }
   function loadW() {
     fetch('/fantasy/api/wallet').then(r => r.ok ? r.json() : null).then(d => {
       setW(d);
@@ -61,9 +74,16 @@ function HubScreen({
     className: "app__scroll"
   }, /*#__PURE__*/React.createElement("div", {
     className: "page"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, showHero ? /*#__PURE__*/React.createElement("div", {
     className: "hero"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "hero__close",
+    onClick: dismissHero,
+    "aria-label": "Dismiss"
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "x",
+    size: 18
+  })), /*#__PURE__*/React.createElement("div", {
     className: "hero__in"
   }, /*#__PURE__*/React.createElement(Tag, {
     kind: "live"
@@ -84,7 +104,24 @@ function HubScreen({
     variant: "ghost",
     size: "lg",
     onClick: () => onNav('lobby')
-  }, "Browse contests")))), /*#__PURE__*/React.createElement("div", {
+  }, "Browse contests")))) : /*#__PURE__*/React.createElement("div", {
+    className: "row wrap",
+    style: {
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "brand",
+    size: "lg",
+    onClick: () => onNav('lobby')
+  }, "Play tonight's slate ", /*#__PURE__*/React.createElement(Icon, {
+    name: "chev",
+    size: 18
+  })), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn--ghost btn--sm",
+    onClick: () => setShowHero(true)
+  }, "Show intro")), /*#__PURE__*/React.createElement("div", {
     className: "tiles mt-24"
   }, /*#__PURE__*/React.createElement("div", {
     className: "tile"
@@ -257,11 +294,11 @@ function HubScreen({
     className: "tile"
   }, /*#__PURE__*/React.createElement("div", {
     className: "lbl"
-  }, "Cashes"), /*#__PURE__*/React.createElement("div", {
+  }, "Paid finishes"), /*#__PURE__*/React.createElement("div", {
     className: "val"
   }, rec.cashes || 0, "/", rec.entries || 0), /*#__PURE__*/React.createElement("div", {
     className: "sub"
-  }, "entries cashed")))), /*#__PURE__*/React.createElement("div", {
+  }, "entries that won money")))), /*#__PURE__*/React.createElement("div", {
     className: "section-head mt-32"
   }, /*#__PURE__*/React.createElement("h2", null, "Game library"), /*#__PURE__*/React.createElement("span", {
     className: "muted",
@@ -348,7 +385,9 @@ function LobbyScreen({
     className: "app__scroll"
   }, /*#__PURE__*/React.createElement("div", {
     className: "page"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(HowTo, {
+    k: "dfs"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "slate-tabs"
   }, slates.map(s => /*#__PURE__*/React.createElement(Chip, {
     key: s.id,
@@ -449,27 +488,38 @@ function LobbyScreen({
   }, "Enter"))))))));
 }
 
-/* ---------- MY ENTRIES (real data) ---------- */
+/* ---------- MY ACTION — unified feed across every game ---------- */
 function EntriesScreen({
-  onNav,
-  onOpenContest
+  onNav
 }) {
   const S = window.SLATE;
   const [tab, setTab] = useState('live');
-  const [entries, setEntries] = useState(null);
+  const [data, setData] = useState(null);
   useEffect(() => {
-    fetch('/fantasy/api/entries').then(r => r.ok ? r.json() : []).then(setEntries).catch(() => setEntries([]));
+    fetch('/fantasy/api/activity').then(r => r.ok ? r.json() : {
+      items: []
+    }).then(setData).catch(() => setData({
+      items: []
+    }));
   }, []);
-  const all = entries || [];
-  const bucket = e => e.games_total > 0 && e.games_done >= e.games_total ? 'past' : e.games_done > 0 ? 'live' : 'upcoming';
-  const live = all.filter(e => bucket(e) === 'live');
-  const upcoming = all.filter(e => bucket(e) === 'upcoming');
-  const past = all.filter(e => bucket(e) === 'past');
-  const rows = tab === 'past' ? past : tab === 'upcoming' ? upcoming : live;
-  const prog = e => e.games_total ? e.games_done / e.games_total : 0;
+  const items = data && data.items || [];
+  const isLive = s => s === 'live' || s === 'open';
+  const live = items.filter(it => isLive(it.status));
+  const settled = items.filter(it => !isLive(it.status));
+  const rows = tab === 'settled' ? settled : live;
+  const GAME_COLOR = {
+    'Daily Slate': 'var(--c-coral)',
+    'Sportsbook': 'var(--c-amber)',
+    'Sluggers': 'var(--c-violet)',
+    'Pilots': 'var(--c-blue)',
+    'Category League': 'var(--c-teal)',
+    'Best Ball': 'var(--c-lime)'
+  };
+  const statusColor = s => s === 'won' ? 'var(--live)' : s === 'lost' ? 'var(--down)' : s === 'push' ? 'var(--ink-3)' : 'var(--c-teal)';
+  const result = it => it.status === 'won' ? `+${S.money(Math.max(0, it.payout - it.stake))}` : it.status === 'lost' ? it.stake ? `−${S.money(it.stake)}` : 'Lost' : it.status === 'push' ? 'push' : 'Live';
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TopBar, {
-    title: "My Entries",
-    sub: "Track your lineups",
+    title: "My Action",
+    sub: "Every game, one feed",
     back: true,
     onBack: () => onNav('hub')
   }), /*#__PURE__*/React.createElement("div", {
@@ -482,12 +532,9 @@ function EntriesScreen({
     active: tab === 'live',
     onClick: () => setTab('live')
   }, "Live \xB7 ", live.length), /*#__PURE__*/React.createElement(Chip, {
-    active: tab === 'upcoming',
-    onClick: () => setTab('upcoming')
-  }, "Upcoming \xB7 ", upcoming.length), /*#__PURE__*/React.createElement(Chip, {
-    active: tab === 'past',
-    onClick: () => setTab('past')
-  }, "Past \xB7 ", past.length)), entries === null ? /*#__PURE__*/React.createElement("div", {
+    active: tab === 'settled',
+    onClick: () => setTab('settled')
+  }, "Settled \xB7 ", settled.length)), data === null ? /*#__PURE__*/React.createElement("div", {
     className: "card card--pad center",
     style: {
       padding: '48px 20px'
@@ -497,7 +544,7 @@ function EntriesScreen({
     style: {
       fontWeight: 600
     }
-  }, "Loading your entries\u2026")) : rows.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "Loading\u2026")) : rows.length === 0 ? /*#__PURE__*/React.createElement("div", {
     className: "card card--pad center",
     style: {
       padding: '48px 20px'
@@ -507,57 +554,40 @@ function EntriesScreen({
     style: {
       fontWeight: 600
     }
-  }, "No ", tab, " entries."), /*#__PURE__*/React.createElement(Btn, {
+  }, "No ", tab, " action yet."), /*#__PURE__*/React.createElement(Btn, {
     variant: "soft",
     className: "mt-16",
-    onClick: () => onNav('lobby')
-  }, "Find a contest")) : /*#__PURE__*/React.createElement("div", {
-    className: "col",
+    onClick: () => onNav('hub')
+  }, "Pick a game")) : /*#__PURE__*/React.createElement("div", {
+    className: "card",
     style: {
-      gap: 12
+      overflow: 'hidden'
     }
-  }, rows.map((e, i) => /*#__PURE__*/React.createElement("div", {
+  }, rows.map((it, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
-    className: "contest",
-    onClick: () => onOpenContest && onOpenContest(e.contest_id),
-    style: {
-      cursor: 'pointer'
-    }
+    className: "prow"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "prow__id"
   }, /*#__PURE__*/React.createElement("span", {
     className: "contest__badge",
     style: {
-      background: e.color
+      background: GAME_COLOR[it.game] || 'var(--ink)'
     }
-  }, e.badge), /*#__PURE__*/React.createElement("div", {
+  }, (it.game || '?').slice(0, 2).toUpperCase()), /*#__PURE__*/React.createElement("div", {
     style: {
       minWidth: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
-    className: "contest__name"
-  }, e.contest), /*#__PURE__*/React.createElement("div", {
-    className: "contest__meta"
-  }, e.rank != null && /*#__PURE__*/React.createElement("span", null, "Rank ", /*#__PURE__*/React.createElement("b", {
-    className: "num"
-  }, e.rank.toLocaleString('en-IN')), "/", (e.of || 0).toLocaleString('en-IN')), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", {
-    className: "num"
-  }, e.pts.toFixed(1)), " pts"), /*#__PURE__*/React.createElement("span", {
+    className: "prow__name"
+  }, it.title), /*#__PURE__*/React.createElement("div", {
+    className: "prow__sub"
+  }, it.game, " \xB7 ", it.sub, it.stake ? ` · ${S.money(it.stake)}` : ''))), /*#__PURE__*/React.createElement("div", {
+    className: "lb-pts",
     style: {
-      color: e.live ? 'var(--live)' : 'var(--ink-3)',
-      fontWeight: 700
+      color: statusColor(it.status),
+      fontWeight: 800
     }
-  }, e.live ? 'Live' : 'Final')), /*#__PURE__*/React.createElement("div", {
-    className: "fill"
-  }, /*#__PURE__*/React.createElement("i", {
-    style: {
-      width: prog(e) * 100 + '%'
-    }
-  }))), /*#__PURE__*/React.createElement("div", {
-    className: "contest__prize"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "amt num"
-  }, e.games_done, "/", e.games_total), /*#__PURE__*/React.createElement("div", {
-    className: "lbl"
-  }, "games"))))))));
+  }, result(it))))))));
 }
 
 /* ---------- COMING-SOON teaser for non-DFS formats ---------- */
@@ -651,6 +681,7 @@ function StreakScreen({
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
+  const [posFilter, setPosFilter] = useState(null);
   function load() {
     fetch('/fantasy/api/streak').then(r => r.ok ? r.json() : null).then(setData).catch(() => setData(null));
   }
@@ -674,7 +705,7 @@ function StreakScreen({
   }
   const d = data;
   const pool = d ? d.pool || [] : [];
-  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || (p.posEligible && p.posEligible.length ? p.posEligible : [p.pos]).includes(posFilter)));
   const resColor = r => r === 'hit' ? 'var(--live)' : r === 'miss' ? 'var(--down)' : 'var(--ink-3)';
   const resLabel = r => r === 'hit' ? 'Hit' : r === 'miss' ? 'Miss' : r === 'pending' ? 'Live' : '—';
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TopBar, {
@@ -718,7 +749,55 @@ function StreakScreen({
     style: {
       marginTop: 6
     }
-  }, "Best run: ", /*#__PURE__*/React.createElement("b", null, d.best), ". One hit keeps it alive \u2014 a hitless day starts you over."))), /*#__PURE__*/React.createElement("div", {
+  }, "Best run: ", /*#__PURE__*/React.createElement("b", null, d.best), ". One hit keeps it alive \u2014 a hitless day starts you over.", d.nextGate ? ` ${d.nextGate.len - d.current} more to ${S.money(d.nextGate.amount)}.` : ''), d.gates && d.gates.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      marginTop: 12,
+      flexWrap: 'wrap'
+    }
+  }, d.gates.map(g => /*#__PURE__*/React.createElement("div", {
+    key: g.len,
+    style: {
+      flex: 1,
+      minWidth: 92,
+      background: g.reached ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.13)',
+      borderRadius: 12,
+      padding: '8px 10px',
+      border: g.claimed ? '1px solid rgba(255,255,255,.7)' : '1px solid transparent'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '.72rem',
+      fontWeight: 800,
+      opacity: .85
+    }
+  }, g.len, " hits", g.len === 50 ? ' · JACKPOT' : ''), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '1.05rem',
+      fontWeight: 900
+    }
+  }, S.money(g.amount), g.claimed ? ' ✓' : '')))))), /*#__PURE__*/React.createElement(RecentList, {
+    title: "Recent picks",
+    items: d.history || [],
+    renderRow: (h, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      className: "recent__row"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "recent__date"
+    }, shortDate(h.slate_date)), /*#__PURE__*/React.createElement("div", {
+      className: "recent__who"
+    }, /*#__PURE__*/React.createElement("b", null, h.player), " ", /*#__PURE__*/React.createElement("span", {
+      className: "dim"
+    }, h.team)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: resColor(h.result),
+        fontWeight: 800
+      }
+    }, resLabel(h.result)))
+  }), /*#__PURE__*/React.createElement(HowTo, {
+    k: "streak"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "section-head mt-24"
   }, /*#__PURE__*/React.createElement("h2", null, "Tonight's pick"), /*#__PURE__*/React.createElement("span", {
     className: "muted",
@@ -760,7 +839,10 @@ function StreakScreen({
     }
   }, resLabel(d.today_pick.result)), /*#__PURE__*/React.createElement("div", {
     className: "lbl"
-  }, d.today_pick.result === 'pending' ? 'in progress' : 'result'))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }, d.today_pick.result === 'pending' ? 'in progress' : 'result'))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(PosFilter, {
+    value: posFilter,
+    onChange: setPosFilter
+  }), /*#__PURE__*/React.createElement("div", {
     className: "search mb-12"
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "search",
@@ -774,73 +856,52 @@ function StreakScreen({
     style: {
       overflow: 'hidden'
     }
-  }, shown.length === 0 && /*#__PURE__*/React.createElement("div", {
-    className: "center muted",
-    style: {
-      padding: 24,
-      fontWeight: 600
-    }
-  }, "No hitters on the upcoming slate."), shown.map(p => /*#__PURE__*/React.createElement("div", {
-    key: p.id,
-    className: "prow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__id",
-    onClick: () => onOpenPlayer && onOpenPlayer(p),
-    style: {
-      cursor: 'pointer'
-    }
-  }, /*#__PURE__*/React.createElement(PlayerMark, {
-    p: {
-      init: p.init,
-      teamColor: p.teamColor
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__name"
-  }, p.name), /*#__PURE__*/React.createElement("div", {
-    className: "prow__sub"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "poscap"
-  }, p.pos), " \xB7 ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: p.teamColor,
-      fontWeight: 700
-    }
-  }, p.team), " ", p.opp))), /*#__PURE__*/React.createElement("button", {
-    className: "add-btn",
-    disabled: busy,
-    title: "Pick this hitter",
-    onClick: () => pick(p)
-  }, "+"))))), d.history && d.history.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-    className: "section-head mt-24"
-  }, /*#__PURE__*/React.createElement("h2", null, "Recent picks")), /*#__PURE__*/React.createElement("div", {
-    className: "card",
-    style: {
-      overflow: 'hidden'
-    }
-  }, d.history.map((h, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    className: "lb-row"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "lb-rank"
-  }, (h.slate_date || '').slice(5)), /*#__PURE__*/React.createElement("div", {
-    className: "lb-user"
-  }, /*#__PURE__*/React.createElement("b", {
-    style: {
-      fontSize: '.9rem'
-    }
-  }, h.player), " ", /*#__PURE__*/React.createElement("span", {
-    className: "dim"
-  }, h.team)), /*#__PURE__*/React.createElement("div", {
-    className: "lb-pts",
-    style: {
-      color: resColor(h.result),
-      fontWeight: 800
-    }
-  }, resLabel(h.result))))))))));
+  }, /*#__PURE__*/React.createElement(PagedList, {
+    items: shown,
+    resetKey: q + '|' + posFilter,
+    empty: /*#__PURE__*/React.createElement("div", {
+      className: "center muted",
+      style: {
+        padding: 24,
+        fontWeight: 600
+      }
+    }, "No hitters on the upcoming slate."),
+    renderRow: p => /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      className: "prow"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__id",
+      onClick: () => onOpenPlayer && onOpenPlayer(p),
+      style: {
+        cursor: 'pointer'
+      }
+    }, /*#__PURE__*/React.createElement(PlayerMark, {
+      p: {
+        init: p.init,
+        teamColor: p.teamColor
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__name"
+    }, p.name), /*#__PURE__*/React.createElement("div", {
+      className: "prow__sub"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "poscap"
+    }, posLabel(p)), " \xB7 ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: p.teamColor,
+        fontWeight: 700
+      }
+    }, p.team), " ", p.opp))), /*#__PURE__*/React.createElement("button", {
+      className: "add-btn",
+      disabled: busy,
+      title: "Pick this hitter",
+      onClick: () => pick(p)
+    }, "+"))
+  })))))));
 }
 
 /* ---------- SLUGGERS (Walk-Back home-run game) ---------- */
@@ -852,6 +913,7 @@ function SluggersScreen({
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
+  const [posFilter, setPosFilter] = useState(null);
   function load() {
     fetch('/fantasy/api/sluggers').then(r => r.ok ? r.json() : null).then(setData).catch(() => setData(null));
   }
@@ -877,7 +939,7 @@ function SluggersScreen({
   const ys = d && d.your_slate;
   const picks = ys ? ys.picks : [];
   const pool = d ? d.pool || [] : [];
-  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || (p.posEligible && p.posEligible.length ? p.posEligible : [p.pos]).includes(posFilter)));
   const slotsLeft = d ? d.max - (d.picked || 0) : 0;
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TopBar, {
     title: "Sluggers",
@@ -926,7 +988,9 @@ function SluggersScreen({
       fontSize: '.84rem',
       opacity: .9
     }
-  }, "Buy-in ", S.money(d.buyIn), "/slate \xB7 beat the field to cash", d.entered ? ' · entered ✓' : '') : null)), /*#__PURE__*/React.createElement("div", {
+  }, "Buy-in ", S.money(d.buyIn), "/slate \xB7 beat the field to win", d.entered ? ' · entered ✓' : '') : null)), /*#__PURE__*/React.createElement(HowTo, {
+    k: "sluggers"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "section-head mt-24"
   }, /*#__PURE__*/React.createElement("h2", null, "Tonight's sluggers"), /*#__PURE__*/React.createElement("span", {
     className: "muted",
@@ -1004,7 +1068,10 @@ function SluggersScreen({
       fontSize: '.85rem',
       fontWeight: 600
     }
-  }, slotsLeft, " slot", slotsLeft > 1 ? 's' : '', " left \xB7 sorted by season HR"), /*#__PURE__*/React.createElement("div", {
+  }, slotsLeft, " slot", slotsLeft > 1 ? 's' : '', " left \xB7 sorted by season HR"), /*#__PURE__*/React.createElement(PosFilter, {
+    value: posFilter,
+    onChange: setPosFilter
+  }), /*#__PURE__*/React.createElement("div", {
     className: "search mb-12"
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "search",
@@ -1018,49 +1085,54 @@ function SluggersScreen({
     style: {
       overflow: 'hidden'
     }
-  }, shown.length === 0 && /*#__PURE__*/React.createElement("div", {
-    className: "center muted",
-    style: {
-      padding: 24,
-      fontWeight: 600
-    }
-  }, "No hitters on the upcoming slate."), shown.map(p => /*#__PURE__*/React.createElement("div", {
-    key: p.id,
-    className: "prow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__id",
-    onClick: () => onOpenPlayer && onOpenPlayer(p),
-    style: {
-      cursor: 'pointer'
-    }
-  }, /*#__PURE__*/React.createElement(PlayerMark, {
-    p: {
-      init: p.init,
-      teamColor: p.teamColor
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__name"
-  }, p.name), /*#__PURE__*/React.createElement("div", {
-    className: "prow__sub"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "poscap"
-  }, p.pos), " \xB7 ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: p.teamColor,
-      fontWeight: 700
-    }
-  }, p.team), " ", p.opp, " \xB7 ", /*#__PURE__*/React.createElement("span", {
-    title: "season home runs"
-  }, p.hr, " HR")))), /*#__PURE__*/React.createElement("button", {
-    className: "add-btn",
-    disabled: busy,
-    title: "Add slugger",
-    onClick: () => act('pick', p)
-  }, "+"))))) : /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(PagedList, {
+    items: shown,
+    resetKey: q + '|' + posFilter,
+    empty: /*#__PURE__*/React.createElement("div", {
+      className: "center muted",
+      style: {
+        padding: 24,
+        fontWeight: 600
+      }
+    }, "No hitters on the upcoming slate."),
+    renderRow: p => /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      className: "prow"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__id",
+      onClick: () => onOpenPlayer && onOpenPlayer(p),
+      style: {
+        cursor: 'pointer'
+      }
+    }, /*#__PURE__*/React.createElement(PlayerMark, {
+      p: {
+        init: p.init,
+        teamColor: p.teamColor
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__name"
+    }, p.name), /*#__PURE__*/React.createElement("div", {
+      className: "prow__sub"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "poscap"
+    }, posLabel(p)), " \xB7 ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: p.teamColor,
+        fontWeight: 700
+      }
+    }, p.team), " ", p.opp, " \xB7 ", /*#__PURE__*/React.createElement("span", {
+      title: "season home runs"
+    }, p.hr, " HR")))), /*#__PURE__*/React.createElement("button", {
+      className: "add-btn",
+      disabled: busy,
+      title: "Add slugger",
+      onClick: () => act('pick', p)
+    }, "+"))
+  }))) : /*#__PURE__*/React.createElement("div", {
     className: "card card--pad center",
     style: {
       padding: '20px'
@@ -1108,6 +1180,7 @@ function PilotsScreen({
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
+  const [posFilter, setPosFilter] = useState(null);
   function load() {
     fetch('/fantasy/api/pilots').then(r => r.ok ? r.json() : null).then(setData).catch(() => setData(null));
   }
@@ -1133,7 +1206,7 @@ function PilotsScreen({
   const ys = d && d.your_slate;
   const picks = ys ? ys.picks : [];
   const pool = d ? d.pool || [] : [];
-  const shown = q.trim() ? pool.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : pool;
+  const shown = pool.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (!posFilter || (p.posEligible && p.posEligible.length ? p.posEligible : [p.pos]).includes(posFilter)));
   const slotsLeft = d ? d.max - (d.picked || 0) : 0;
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TopBar, {
     title: "Pilots",
@@ -1182,7 +1255,9 @@ function PilotsScreen({
       fontSize: '.84rem',
       opacity: .9
     }
-  }, "Buy-in ", S.money(d.buyIn), "/slate \xB7 beat the field to cash", d.entered ? ' · entered ✓' : '') : null)), /*#__PURE__*/React.createElement("div", {
+  }, "Buy-in ", S.money(d.buyIn), "/slate \xB7 beat the field to win", d.entered ? ' · entered ✓' : '') : null)), /*#__PURE__*/React.createElement(HowTo, {
+    k: "pilots"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "section-head mt-24"
   }, /*#__PURE__*/React.createElement("h2", null, "Tonight's pilots"), /*#__PURE__*/React.createElement("span", {
     className: "muted",
@@ -1274,49 +1349,54 @@ function PilotsScreen({
     style: {
       overflow: 'hidden'
     }
-  }, shown.length === 0 && /*#__PURE__*/React.createElement("div", {
-    className: "center muted",
-    style: {
-      padding: 24,
-      fontWeight: 600
-    }
-  }, "No pilots on the upcoming slate."), shown.map(p => /*#__PURE__*/React.createElement("div", {
-    key: p.id,
-    className: "prow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__id",
-    onClick: () => onOpenPlayer && onOpenPlayer(p),
-    style: {
-      cursor: 'pointer'
-    }
-  }, /*#__PURE__*/React.createElement(PlayerMark, {
-    p: {
-      init: p.init,
-      teamColor: p.teamColor
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__name"
-  }, p.name), /*#__PURE__*/React.createElement("div", {
-    className: "prow__sub"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "poscap"
-  }, p.pos), " \xB7 ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: p.teamColor,
-      fontWeight: 700
-    }
-  }, p.team), " ", p.opp, " \xB7 ", /*#__PURE__*/React.createElement("span", {
-    title: "projection"
-  }, "proj ", p.proj)))), /*#__PURE__*/React.createElement("button", {
-    className: "add-btn",
-    disabled: busy,
-    title: "Add pilot",
-    onClick: () => act('pick', p)
-  }, "+"))))) : /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(PagedList, {
+    items: shown,
+    resetKey: q + '|' + posFilter,
+    empty: /*#__PURE__*/React.createElement("div", {
+      className: "center muted",
+      style: {
+        padding: 24,
+        fontWeight: 600
+      }
+    }, "No pilots on the upcoming slate."),
+    renderRow: p => /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      className: "prow"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__id",
+      onClick: () => onOpenPlayer && onOpenPlayer(p),
+      style: {
+        cursor: 'pointer'
+      }
+    }, /*#__PURE__*/React.createElement(PlayerMark, {
+      p: {
+        init: p.init,
+        teamColor: p.teamColor
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__name"
+    }, p.name), /*#__PURE__*/React.createElement("div", {
+      className: "prow__sub"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "poscap"
+    }, p.pos), " \xB7 ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: p.teamColor,
+        fontWeight: 700
+      }
+    }, p.team), " ", p.opp, " \xB7 ", /*#__PURE__*/React.createElement("span", {
+      title: "projection"
+    }, "proj ", p.proj)))), /*#__PURE__*/React.createElement("button", {
+      className: "add-btn",
+      disabled: busy,
+      title: "Add pilot",
+      onClick: () => act('pick', p)
+    }, "+"))
+  }))) : /*#__PURE__*/React.createElement("div", {
     className: "card card--pad center",
     style: {
       padding: '20px'
@@ -1367,6 +1447,7 @@ function CategoriesScreen({
   const [sel, setSel] = useState([]);
   const [editing, setEditing] = useState(false);
   const [side, setSide] = useState('h');
+  const [posFilter, setPosFilter] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   function loadPool(f) {
@@ -1441,7 +1522,7 @@ function CategoriesScreen({
   const onlyOneSide = slots.h === 0 || slots.p === 0;
   const showSide = onlyOneSide ? slots.p === 0 ? 'h' : 'p' : side;
   const list = pool ? showSide === 'p' ? pool.pitchers : pool.hitters : [];
-  const shown = q.trim() ? list.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : list;
+  const shown = list.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (showSide === 'p' || !posFilter || (p.posEligible && p.posEligible.length ? p.posEligible : [p.pos]).includes(posFilter)));
   const rankColor = (r, field) => r === 1 ? 'var(--live)' : r <= Math.ceil(field / 3) ? 'var(--c-teal)' : r >= field - Math.ceil(field / 3) ? 'var(--down)' : 'var(--ink-2)';
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TopBar, {
     title: "Category Leagues",
@@ -1478,7 +1559,9 @@ function CategoriesScreen({
       fontSize: '.86rem',
       lineHeight: 1.45
     }
-  }, curFmt.blurb), data.buyIn ? /*#__PURE__*/React.createElement("p", {
+  }, curFmt.blurb), /*#__PURE__*/React.createElement(HowTo, {
+    k: "categories"
+  }), data.buyIn ? /*#__PURE__*/React.createElement("p", {
     className: "muted mb-12",
     style: {
       fontSize: '.82rem',
@@ -1654,7 +1737,49 @@ function CategoriesScreen({
   }, "Hitters"), /*#__PURE__*/React.createElement(Chip, {
     active: showSide === 'p',
     onClick: () => setSide('p')
-  }, "Pitchers")), /*#__PURE__*/React.createElement("div", {
+  }, "Pitchers")), showSide === 'h' && /*#__PURE__*/React.createElement("div", {
+    className: "chips mb-12",
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 6,
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "dim",
+    style: {
+      fontSize: '.74rem',
+      fontWeight: 700
+    }
+  }, "Filter:"), ['C', '1B', '2B', '3B', 'SS', 'OF'].map(p => {
+    const on = posFilter === p;
+    return /*#__PURE__*/React.createElement("button", {
+      key: p,
+      onClick: () => setPosFilter(on ? null : p),
+      style: {
+        fontSize: '.76rem',
+        fontWeight: 800,
+        padding: '4px 10px',
+        borderRadius: 12,
+        cursor: 'pointer',
+        background: on ? 'var(--ink)' : 'var(--card-2)',
+        color: on ? '#fff' : 'var(--ink-3)',
+        border: '1px solid var(--line)'
+      }
+    }, p);
+  }), posFilter && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setPosFilter(null),
+    style: {
+      fontSize: '.74rem',
+      fontWeight: 700,
+      padding: '4px 8px',
+      borderRadius: 12,
+      cursor: 'pointer',
+      background: 'none',
+      border: 0,
+      color: 'var(--brand)'
+    }
+  }, "Clear")), /*#__PURE__*/React.createElement("div", {
     className: "search mb-12"
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "search",
@@ -1681,43 +1806,48 @@ function CategoriesScreen({
       padding: 24,
       fontWeight: 600
     }
-  }, "Loading pool\u2026"), pool && shown.length === 0 && /*#__PURE__*/React.createElement("div", {
-    className: "center muted",
-    style: {
-      padding: 24,
-      fontWeight: 600
-    }
-  }, "No players found."), shown.slice(0, 120).map(p => /*#__PURE__*/React.createElement("div", {
-    key: p.id,
-    className: "prow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__id",
-    onClick: () => onOpenPlayer && onOpenPlayer(p),
-    style: {
-      cursor: 'pointer'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "contest__badge",
-    style: {
-      background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)'
-    }
-  }, (p.team || '?').slice(0, 2)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__name"
-  }, p.name), /*#__PURE__*/React.createElement("div", {
-    className: "prow__sub",
-    style: {
-      fontSize: '.74rem'
-    }
-  }, /*#__PURE__*/React.createElement("b", null, p.pos), " \xB7 ", p.line))), /*#__PURE__*/React.createElement("button", {
-    className: "add-btn",
-    disabled: selIds.has(p.id),
-    title: "Draft",
-    onClick: () => add(p)
-  }, selIds.has(p.id) ? '✓' : '+')))))))));
+  }, "Loading pool\u2026"), pool && /*#__PURE__*/React.createElement(PagedList, {
+    items: shown,
+    resetKey: q + '|' + posFilter + '|' + showSide,
+    empty: /*#__PURE__*/React.createElement("div", {
+      className: "center muted",
+      style: {
+        padding: 24,
+        fontWeight: 600
+      }
+    }, "No players found."),
+    renderRow: p => /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      className: "prow"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__id",
+      onClick: () => onOpenPlayer && onOpenPlayer(p),
+      style: {
+        cursor: 'pointer'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "contest__badge",
+      style: {
+        background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)'
+      }
+    }, (p.team || '?').slice(0, 2)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__name"
+    }, p.name), /*#__PURE__*/React.createElement("div", {
+      className: "prow__sub",
+      style: {
+        fontSize: '.74rem'
+      }
+    }, /*#__PURE__*/React.createElement("b", null, p.pos), " \xB7 ", p.line))), /*#__PURE__*/React.createElement("button", {
+      className: "add-btn",
+      disabled: selIds.has(p.id),
+      title: "Draft",
+      onClick: () => add(p)
+    }, selIds.has(p.id) ? '✓' : '+'))
+  })))))));
 }
 
 /* ---------- SPORTSBOOK ---------- */
@@ -1834,7 +1964,9 @@ function SportsbookScreen({
     style: {
       marginTop: 6
     }
-  }, d.record.w, "\u2013", d.record.l, d.record.p ? `–${d.record.p}` : '', " \xB7 net ", /*#__PURE__*/React.createElement("b", null, d.record.net > 0 ? '+' : '−', S.money(Math.abs(d.record.net))), d.at_risk ? ` · ${S.money(d.at_risk)} at risk` : ''))), /*#__PURE__*/React.createElement("div", {
+  }, d.record.w, "\u2013", d.record.l, d.record.p ? `–${d.record.p}` : '', " \xB7 net ", /*#__PURE__*/React.createElement("b", null, d.record.net > 0 ? '+' : '−', S.money(Math.abs(d.record.net))), d.at_risk ? ` · ${S.money(d.at_risk)} at risk` : ''))), /*#__PURE__*/React.createElement(HowTo, {
+    k: "sportsbook"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "section-head mt-24"
   }, /*#__PURE__*/React.createElement("h2", null, "Tonight's board"), /*#__PURE__*/React.createElement("span", {
     className: "muted",
@@ -1923,14 +2055,15 @@ function SportsbookScreen({
   }, b.status === 'won' ? `+${S.money(b.payout - b.stake)}` : b.status === 'lost' ? `−${S.money(b.stake)}` : 'push')))))))), slip && /*#__PURE__*/React.createElement("div", {
     className: "betslip",
     style: {
-      position: 'sticky',
-      bottom: 0,
+      position: 'fixed',
+      bottom: 'calc(68px + env(safe-area-inset-bottom))',
       left: 0,
       right: 0,
+      zIndex: 60,
       background: 'var(--card)',
       borderTop: '1px solid var(--line-2)',
       padding: '14px 18px',
-      boxShadow: '0 -6px 18px rgba(0,0,0,.12)'
+      boxShadow: '0 -8px 24px rgba(0,0,0,.18)'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1973,6 +2106,37 @@ function SportsbookScreen({
   }, "Place ", S.money(stake)))));
 }
 
+/* Best-ball coverage: max bipartite matching of drafted hitters to required
+   slots, honouring multi-position eligibility. Returns filled count per slot. */
+function bbCoverage(hitters, req) {
+  const slots = [];
+  Object.entries(req).forEach(([p, n]) => {
+    for (let k = 0; k < n; k++) slots.push(p);
+  });
+  const eligOf = h => h.posEligible && h.posEligible.length ? h.posEligible : [h.pos];
+  const playerSlot = {}; // player index -> slot index
+  const slotMatch = {}; // slot index -> player index
+  function aug(si, seen) {
+    for (let pi = 0; pi < hitters.length; pi++) {
+      if (!seen.has(pi) && eligOf(hitters[pi]).includes(slots[si])) {
+        seen.add(pi);
+        if (playerSlot[pi] === undefined || aug(playerSlot[pi], seen)) {
+          playerSlot[pi] = si;
+          slotMatch[si] = pi;
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  for (let si = 0; si < slots.length; si++) aug(si, new Set());
+  const covered = {};
+  slots.forEach((p, si) => {
+    if (slotMatch[si] !== undefined) covered[p] = (covered[p] || 0) + 1;
+  });
+  return covered;
+}
+
 /* ---------- BEST BALL ---------- */
 function BestBallScreen({
   onNav,
@@ -1984,6 +2148,7 @@ function BestBallScreen({
   const [sel, setSel] = useState([]);
   const [editing, setEditing] = useState(false);
   const [side, setSide] = useState('h');
+  const [posFilter, setPosFilter] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   function loadPool() {
@@ -2012,15 +2177,13 @@ function BestBallScreen({
   const nP = sel.filter(s => s.pos === 'P').length;
   const full = nH === slots.h && nP === slots.p;
   const req = data && data.require || {};
-  const haveByPos = {};
-  sel.forEach(s => {
-    if (s.pos !== 'P') haveByPos[s.pos] = (haveByPos[s.pos] || 0) + 1;
-  });
+  // multi-position coverage: can the drafted hitters be *assigned* to every slot?
+  const haveByPos = bbCoverage(sel.filter(s => s.pos !== 'P'), req);
   const posOk = Object.entries(req).every(([p, n]) => (haveByPos[p] || 0) >= n);
   const canLock = full && posOk;
   const selIds = new Set(sel.map(s => s.id));
   const list = pool ? side === 'p' ? pool.pitchers : pool.hitters : [];
-  const shown = q.trim() ? list.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : list;
+  const shown = list.filter(p => (!q.trim() || p.name.toLowerCase().includes(q.toLowerCase())) && (side === 'p' || !posFilter || (p.posEligible && p.posEligible.length ? p.posEligible : [p.pos]).includes(posFilter)));
   const st = data && data.standings;
   function add(item) {
     if (selIds.has(item.id)) return;
@@ -2108,7 +2271,9 @@ function BestBallScreen({
       fontSize: '.84rem',
       lineHeight: 1.45
     }
-  }, "Auto-lineup: ", st.lineup, ". No management \u2014 your draft is the whole game."), /*#__PURE__*/React.createElement("div", {
+  }, "Auto-lineup: ", st.lineup, ". No management \u2014 your draft is the whole game."), /*#__PURE__*/React.createElement(HowTo, {
+    k: "bestball"
+  }), /*#__PURE__*/React.createElement("div", {
     className: "section-head mt-12"
   }, /*#__PURE__*/React.createElement("h2", null, "Your roster"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn--ghost btn--sm",
@@ -2143,7 +2308,9 @@ function BestBallScreen({
   }, p.pos === 'P' ? 'Pitcher' : 'Hitter', " \xB7 ", p.team))))))) :
   /*#__PURE__*/
   /* ---- draft ---- */
-  React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+  React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(HowTo, {
+    k: "bestball"
+  }), /*#__PURE__*/React.createElement("p", {
     className: "muted mb-12",
     style: {
       fontSize: '.86rem',
@@ -2186,23 +2353,48 @@ function BestBallScreen({
     style: {
       display: 'flex',
       flexWrap: 'wrap',
-      gap: 6
+      gap: 6,
+      alignItems: 'center'
     }
-  }, Object.entries(req).map(([p, n]) => {
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "dim",
+    style: {
+      fontSize: '.74rem',
+      fontWeight: 700
+    }
+  }, "Filter:"), Object.entries(req).map(([p, n]) => {
     const ok = (haveByPos[p] || 0) >= n;
-    return /*#__PURE__*/React.createElement("span", {
+    const on = posFilter === p && side === 'h';
+    return /*#__PURE__*/React.createElement("button", {
       key: p,
+      onClick: () => {
+        setSide('h');
+        setPosFilter(on ? null : p);
+      },
       style: {
         fontSize: '.76rem',
         fontWeight: 800,
-        padding: '3px 9px',
+        padding: '4px 10px',
         borderRadius: 12,
-        background: ok ? 'var(--brand-soft)' : 'var(--card-2)',
-        color: ok ? 'var(--brand-ink)' : 'var(--ink-3)',
+        cursor: 'pointer',
+        background: on ? 'var(--ink)' : ok ? 'var(--brand-soft)' : 'var(--card-2)',
+        color: on ? '#fff' : ok ? 'var(--brand-ink)' : 'var(--ink-3)',
         border: '1px solid var(--line)'
       }
     }, ok ? '✓ ' : '', p, n > 1 ? ` ×${n}` : '');
-  })), sel.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }), posFilter && side === 'h' && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setPosFilter(null),
+    style: {
+      fontSize: '.74rem',
+      fontWeight: 700,
+      padding: '4px 8px',
+      borderRadius: 12,
+      cursor: 'pointer',
+      background: 'none',
+      border: 0,
+      color: 'var(--brand)'
+    }
+  }, "Clear")), sel.length > 0 && /*#__PURE__*/React.createElement("div", {
     className: "chips mb-12",
     style: {
       display: 'flex',
@@ -2223,7 +2415,7 @@ function BestBallScreen({
     }
   }, s.name, " ", /*#__PURE__*/React.createElement("span", {
     className: "dim"
-  }, s.pos), " \xD7"))), /*#__PURE__*/React.createElement("div", {
+  }, s.pos === 'P' ? 'P' : posLabel(s)), " \xD7"))), /*#__PURE__*/React.createElement("div", {
     className: "slate-tabs mb-12"
   }, /*#__PURE__*/React.createElement(Chip, {
     active: side === 'h',
@@ -2251,43 +2443,48 @@ function BestBallScreen({
       padding: 24,
       fontWeight: 600
     }
-  }, "Loading pool\u2026"), pool && shown.length === 0 && /*#__PURE__*/React.createElement("div", {
-    className: "center muted",
-    style: {
-      padding: 24,
-      fontWeight: 600
-    }
-  }, "No players found."), shown.slice(0, 120).map(p => /*#__PURE__*/React.createElement("div", {
-    key: p.id,
-    className: "prow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__id",
-    onClick: () => onOpenPlayer && onOpenPlayer(p),
-    style: {
-      cursor: 'pointer'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "contest__badge",
-    style: {
-      background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)'
-    }
-  }, (p.team || '?').slice(0, 2)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "prow__name"
-  }, p.name), /*#__PURE__*/React.createElement("div", {
-    className: "prow__sub",
-    style: {
-      fontSize: '.74rem'
-    }
-  }, /*#__PURE__*/React.createElement("b", null, p.pos), " \xB7 ", p.line))), /*#__PURE__*/React.createElement("button", {
-    className: "add-btn",
-    disabled: selIds.has(p.id),
-    title: "Draft",
-    onClick: () => add(p)
-  }, selIds.has(p.id) ? '✓' : '+'))))))));
+  }, "Loading pool\u2026"), pool && /*#__PURE__*/React.createElement(PagedList, {
+    items: shown,
+    resetKey: q + '|' + posFilter + '|' + side,
+    empty: /*#__PURE__*/React.createElement("div", {
+      className: "center muted",
+      style: {
+        padding: 24,
+        fontWeight: 600
+      }
+    }, "No players found."),
+    renderRow: p => /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      className: "prow"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__id",
+      onClick: () => onOpenPlayer && onOpenPlayer(p),
+      style: {
+        cursor: 'pointer'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "contest__badge",
+      style: {
+        background: p.pos === 'P' ? 'var(--c-blue)' : 'var(--c-violet)'
+      }
+    }, (p.team || '?').slice(0, 2)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "prow__name"
+    }, p.name), /*#__PURE__*/React.createElement("div", {
+      className: "prow__sub",
+      style: {
+        fontSize: '.74rem'
+      }
+    }, /*#__PURE__*/React.createElement("b", null, p.pos === 'P' ? 'P' : posLabel(p)), " \xB7 ", p.line))), /*#__PURE__*/React.createElement("button", {
+      className: "add-btn",
+      disabled: selIds.has(p.id),
+      title: "Draft",
+      onClick: () => add(p)
+    }, selIds.has(p.id) ? '✓' : '+'))
+  }))))));
 }
 
 /* ---------- ONBOARDING — pick your player ---------- */

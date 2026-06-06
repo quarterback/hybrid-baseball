@@ -75,6 +75,21 @@ def _map_position(row: dict) -> str:
     return _POS_MAP.get((row.get("position") or "").upper(), "OF")
 
 
+def _eligible_positions(row: dict) -> list[str]:
+    """Every CapSpace slot a player qualifies for. Real players cover multiple
+    spots; the engine tracks this in `role_field_pos` (a comma list of field
+    positions). Primary position first, then the extra eligibilities, mapped to
+    CapSpace slots (LF/CF/RF/DH/NF all collapse to OF) and de-duped."""
+    if row.get("is_pitcher"):
+        return ["PILOT"]
+    out = [_map_position(row)]
+    for tok in (row.get("role_field_pos") or "").split(","):
+        slot = _POS_MAP.get(tok.strip().upper())
+        if slot and slot not in out:
+            out.append(slot)
+    return out
+
+
 def _batter_fp(s: dict) -> float:
     """DFS fantasy points for one batter game-stat row."""
     h = s.get("hits", 0) or 0
@@ -141,16 +156,26 @@ def _proj_from_ratings(row: dict, is_pitcher: bool) -> float:
 
 
 def _hitter_line(s: dict) -> str:
-    """Compact box line for the player drawer — O27-flavoured."""
+    """Compact real-baseball box line for the player drawer: H-AB, then the
+    stuff that actually matters — HR, RBI, R, SB, BB."""
     h = s.get("hits", 0) or 0
     ab = s.get("ab", 0) or 0
-    hr = s.get("hr", 0) or 0
-    stays = s.get("stays", 0) or 0
     parts = [f"{h}-{ab}"]
+    hr = s.get("hr", 0) or 0
     if hr:
-        parts.append(f"{hr}HR")
-    if stays:
-        parts.append(f"{stays} stay")
+        parts.append(f"{hr} HR")
+    rbi = s.get("rbi", 0) or 0
+    if rbi:
+        parts.append(f"{rbi} RBI")
+    runs = s.get("runs", 0) or 0
+    if runs:
+        parts.append(f"{runs} R")
+    sb = s.get("sb", 0) or 0
+    if sb:
+        parts.append(f"{sb} SB")
+    bb = s.get("bb", 0) or 0
+    if bb:
+        parts.append(f"{bb} BB")
     return " · ".join(parts)
 
 
@@ -246,10 +271,13 @@ def _calibrate_salaries(players: list[dict]) -> None:
             p["salary"] = int(usd * _GUILDER_PER_USD)     # store as guilders
 
 
-def build_slate_data() -> dict | None:
-    """Build the real CapSpace data blob, or None if the save has no games
-    (the front-end then falls back to its bundled mock data)."""
-    slate_date = _slate_date()
+def build_slate_data(slate_date: str | None = None) -> dict | None:
+    """Build the real CapSpace data blob for a slate (defaults to the current
+    next-unplayed slate), or None if the save has no games (the front-end then
+    falls back to its bundled mock data). Passing an explicit date lets a
+    contest re-derive its own slate's pool even after the slate has advanced."""
+    if slate_date is None:
+        slate_date = _slate_date()
     if not slate_date:
         return None
 
@@ -305,6 +333,7 @@ def build_slate_data() -> dict | None:
 
     pids = [r["id"] for r in rows]
     logs = _build_logs(pids)
+    bat_lines, pit_lines = _season_lines(pids)
 
     players: list[dict] = []
     for r in rows:
@@ -323,6 +352,7 @@ def build_slate_data() -> dict | None:
             "name": r["name"],
             "team": r["team_abbrev"],
             "pos": _map_position(r),
+            "posEligible": _eligible_positions(r),
             "isPitcher": is_pitcher,
             "salary": 0,  # assigned by _calibrate_salaries (dollar tier)
             "proj": proj,
@@ -330,6 +360,7 @@ def build_slate_data() -> dict | None:
             "r": ratings,
             "log": pl["log"],
             "form": pl["form"],
+            "statline": (pit_lines.get(r["id"]) if is_pitcher else bat_lines.get(r["id"])) or "",
         })
 
     # Trim the league-wide field to a realistic per-position DFS pool, then
@@ -354,6 +385,40 @@ def build_slate_data() -> dict | None:
     }
 
 
+def _season_lines(player_ids: list[int]) -> tuple[dict, dict]:
+    """Compact season stat lines for the DFS pool, batched. Returns
+    (batter_lines, pitcher_lines) keyed by player_id — the at-a-glance stats a
+    DFS player actually reads (no ratings)."""
+    if not player_ids:
+        return {}, {}
+    ph = ",".join("?" for _ in player_ids)
+    bat, pit = {}, {}
+    for r in db.fetchall(
+        f"SELECT player_id, SUM(ab) ab, SUM(hits) h, SUM(hr) hr, SUM(rbi) rbi, "
+        f"SUM(runs) ru, SUM(sb) sb, SUM(bb) bb, SUM(hbp) hbp, SUM(doubles) d2, SUM(triples) d3 "
+        f"FROM game_batter_stats WHERE phase = 0 AND player_id IN ({ph}) GROUP BY player_id",
+        tuple(player_ids)):
+        ab = r["ab"] or 0
+        if ab <= 0:
+            continue
+        obp = (r["h"] + r["bb"] + r["hbp"]) / max(1, ab + r["bb"] + r["hbp"])
+        bat[r["player_id"]] = (f"{r['h'] / ab:.3f} AVG · {obp:.3f} OBP · "
+                               f"{r['hr']} HR · {r['rbi']} RBI · {r['sb']} SB")
+    for r in db.fetchall(
+        f"SELECT player_id, SUM(outs_recorded) outs, SUM(k) k, SUM(er) er, SUM(bb) bb, "
+        f"SUM(hits_allowed) ha, "
+        f"SUM(CASE WHEN is_starter=1 AND outs_recorded>=18 AND er<=3 THEN 1 ELSE 0 END) qs "
+        f"FROM game_pitcher_stats WHERE phase = 0 AND player_id IN ({ph}) GROUP BY player_id",
+        tuple(player_ids)):
+        outs = r["outs"] or 0
+        if outs <= 0:
+            continue
+        era = 27.0 * r["er"] / outs
+        whip = 3.0 * (r["bb"] + r["ha"]) / outs
+        pit[r["player_id"]] = (f"{era:.2f} ERA · {whip:.2f} WHIP · {r['k']} K · {r['qs']} QS")
+    return bat, pit
+
+
 def _build_logs(player_ids: list[int]) -> dict:
     """Last-5 game logs + form sparkline per player, from the persisted
     per-game stat tables. Two batch queries, assembled in Python."""
@@ -361,6 +426,10 @@ def _build_logs(player_ids: list[int]) -> dict:
         return {}
     ph = ",".join("?" for _ in player_ids)
     out: dict = {pid: {"log": [], "form": []} for pid in player_ids}
+    # Pitchers who also bat must show their PITCHING log, not their batting
+    # line — so skip their batter rows below.
+    pitcher_ids = {r["id"] for r in db.fetchall(
+        f"SELECT id FROM players WHERE id IN ({ph}) AND is_pitcher = 1", tuple(player_ids))}
 
     bat = db.fetchall(
         f"""SELECT bs.*, g.game_date,
@@ -388,16 +457,19 @@ def _build_logs(player_ids: list[int]) -> dict:
     )
 
     def _short_date(d: str) -> str:
-        # "2026-06-16" -> "J16"-ish compact tag; fall back to the raw tail.
+        # "2026-06-16" -> "Jun 16" (readable; single-letter months are ambiguous).
         try:
             mm, dd = d.split("-")[1:]
-            month = "JFMAMJJASOND"[int(mm) - 1]
-            return f"{month}{int(dd)}"
+            mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][int(mm) - 1]
+            return f"{mon} {int(dd)}"
         except Exception:
-            return d[-3:]
+            return d
 
     for s in bat:
         pid = s["player_id"]
+        if pid in pitcher_ids:
+            continue  # pitchers show their pitching log, not their bat line
         bucket = out.get(pid)
         if bucket is None or len(bucket["log"]) >= 5:
             continue
@@ -410,6 +482,8 @@ def _build_logs(player_ids: list[int]) -> dict:
         })
     for s in pit:
         pid = s["player_id"]
+        if pid not in pitcher_ids:
+            continue  # position players who mopped up keep their batting log
         bucket = out.get(pid)
         if bucket is None or len(bucket["log"]) >= 5:
             continue

@@ -17,6 +17,7 @@ Routes:
   POST /api/sim           Simulate the next N games (JSON response)
 """
 from __future__ import annotations
+import functools
 import math
 import os
 import sys
@@ -58,6 +59,12 @@ app.register_blueprint(gazette_bp)
 
 from o27v2.web.fantasy import capspace_bp
 app.register_blueprint(capspace_bp)
+
+# o27audio — separate audio companion service (Game of the Week narration).
+# Self-contained blueprint; lazy-imports the LLM/TTS SDKs only when a render
+# actually runs, so this import is safe even if those deps are absent.
+from o27audio.blueprint import audio_bp
+app.register_blueprint(audio_bp)
 
 
 # Canonical W/L attribution lives in box_score (pure, no app dependency) so
@@ -340,6 +347,79 @@ def _serve(template: str, **context):
             payload["_dropped"] = dropped
         return jsonify(payload)
     return render_template(template, **context)
+
+
+# ---------------------------------------------------------------------------
+# Whole-page HTML cache
+#
+# The heavy read-only pages (Scores, Leaders, a box score's season context)
+# recompute hundreds of queries + per-player math on every load — ~2.4s of CPU
+# even on a fast box, which throttles out to tens of seconds on a shared Fly
+# vCPU. But the underlying data only changes when the owner SIMS (or trades).
+# So we cache the rendered HTML per (active save, path, query, league scope)
+# and gate it on a cheap "data fingerprint": unchanged fingerprint => serve the
+# cached HTML; the moment a game is played (or a trade/roster move lands) the
+# fingerprint changes and the next load recomputes exactly once. No manual
+# invalidation, no stale-after-sim risk, no re-sim (so the determinism caveat
+# in CLAUDE.md doesn't apply — we cache the render, we don't re-run the engine).
+# In-memory + single process: it's fine to lose on restart (rebuilds on demand).
+# ---------------------------------------------------------------------------
+_HTML_CACHE: dict = {}
+_HTML_CACHE_MAX = 96  # entries; bounded so a long-lived process can't balloon
+
+
+def _active_save_key() -> str:
+    """Identity of the active save's DB file — part of the cache key so two
+    leagues never serve each other's cached HTML."""
+    try:
+        from o27v2 import saves
+        return saves.active_db_path() or "default"
+    except Exception:
+        return "default"
+
+
+def _data_fingerprint() -> tuple:
+    """A cheap snapshot that changes whenever anything a stat page renders could
+    change: games played (sims), transactions (trades), and the player roster
+    (signings/cuts/new players). One indexed round-trip, sub-millisecond."""
+    row = db.fetchone(
+        "SELECT (SELECT COUNT(*) FROM games WHERE played=1)            AS gc, "
+        "       (SELECT COALESCE(MAX(id),0) FROM games WHERE played=1) AS gm, "
+        "       (SELECT COUNT(*) FROM transactions)                    AS tx, "
+        "       (SELECT COUNT(*) FROM players)                         AS pc, "
+        "       (SELECT COALESCE(MAX(id),0) FROM players)              AS pm"
+    )
+    return (row["gc"], row["gm"], row["tx"], row["pc"], row["pm"]) if row else ()
+
+
+def _html_cache(view):
+    """Decorator: cache a GET view's rendered HTML body, keyed by save + path +
+    query + league scope and invalidated by the data fingerprint. Only plain
+    200 HTML strings are cached; redirects / JSON / Response objects pass
+    straight through. after_request hooks (cookie persistence etc.) still run,
+    since we cache the body string, not the final Response."""
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if request.method != "GET":
+            return view(*args, **kwargs)
+        league = (request.args.get("league")
+                  or request.cookies.get("league_pref") or "")
+        key = (_active_save_key(), request.path,
+               request.query_string, league)
+        try:
+            fp = _data_fingerprint()
+        except Exception:
+            return view(*args, **kwargs)
+        hit = _HTML_CACHE.get(key)
+        if hit is not None and hit[0] == fp:
+            return hit[1]
+        resp = view(*args, **kwargs)
+        if isinstance(resp, str):  # rendered HTML only (skip redirects/JSON)
+            if len(_HTML_CACHE) >= _HTML_CACHE_MAX:
+                _HTML_CACHE.clear()
+            _HTML_CACHE[key] = (fp, resp)
+        return resp
+    return wrapper
 
 
 # ---------------------------------------------------------------------------
@@ -935,7 +1015,40 @@ def _stamp_per_game_decay(rows: list[dict], drift: float = 0.0) -> None:
         r["g_total"]         = meta["g_total"]
 
 
+def _req_cache(key: str, producer):
+    """Memoize producer() for the lifetime of one request via flask.g.
+
+    Several card/leaderboard helpers each recompute the same full-table
+    aggregations (pitcher W/L, terminal outs, league baselines) while rendering
+    a single page. Caching them per-request collapses those repeats to one
+    scan. Outside an app context (CLI, background sim threads) it just computes,
+    so every caller stays safe."""
+    try:
+        from flask import g, has_app_context
+        if has_app_context():
+            cache = getattr(g, "_o27_req_cache", None)
+            if cache is None:
+                cache = {}
+                g._o27_req_cache = cache
+            if key not in cache:
+                cache[key] = producer()
+            return cache[key]
+    except Exception:
+        pass
+    return producer()
+
+
 def _pitcher_wl_map(through_game: dict | None = None) -> dict[int, dict[str, int]]:
+    """Season W/L per pitcher. The full-season variant (through_game=None) is
+    recomputed by several card helpers while rendering one page, so it's
+    request-cached; the per-box-score `through_game` variant varies per call
+    and is computed fresh."""
+    if through_game is None:
+        return _req_cache("pitcher_wl_full", _pitcher_wl_map_compute)
+    return _pitcher_wl_map_compute(through_game)
+
+
+def _pitcher_wl_map_compute(through_game: dict | None = None) -> dict[int, dict[str, int]]:
     """Award W/L per MLB-style rules adapted to the O27 27-out-per-side
     structure.
 
@@ -1182,7 +1295,11 @@ def _attach_decisions(games: list[dict]) -> None:
 def _terminal_outs_map() -> dict[int, int]:
     """player_id → season terminal-outs total (across all played games). The
     finisher's counting résumé, shown on cards like a record: 'F: Brockman
-    (33)'."""
+    (33)'. Request-cached — every final on a page asks for this same map."""
+    return _req_cache("terminal_outs", _terminal_outs_map_compute)
+
+
+def _terminal_outs_map_compute() -> dict[int, int]:
     rows = db.fetchall(
         "SELECT player_id, SUM(terminal_outs) AS to_sum "
         "FROM game_pitcher_stats GROUP BY player_id")
@@ -1850,6 +1967,15 @@ def _pitcher_fop(
 
 
 def _league_baselines(league: str | None = None) -> dict[str, float]:
+    """Request-cached wrapper around _league_baselines_compute (keyed by the
+    league/tier filter). The Scores and Leaders pages relativize many rows
+    against the same baseline, so this collapses the repeated full-table
+    aggregations to one per league scope per request."""
+    return _req_cache(f"baselines:{league or ''}",
+                      lambda: _league_baselines_compute(league))
+
+
+def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
     """Compute league baselines for OPS+/ERA+/wOBA+/WAR/VORP relativization.
 
     Refit every render cycle so the baselines track wherever the live league
@@ -2793,6 +2919,7 @@ def app_icon():
 
 
 @app.route("/")
+@_html_cache
 def index():
     team_count = db.fetchone("SELECT COUNT(*) as n FROM teams")
     if not team_count or team_count["n"] == 0:
@@ -2943,16 +3070,24 @@ def standings():
 
     extras: dict[int, dict] = {}
     teams = db.fetchall("SELECT id FROM teams")
+    # Fetch every played game once and bucket by team, instead of running one
+    # query per team (the old N+1: 1 + 30 queries for a 30-team league). Rows
+    # arrive in (game_date, id) order, so each team's bucket is already
+    # chronologically ordered for the streak / last-5 / last-10 math below.
+    all_played = db.fetchall(
+        """SELECT g.id, g.game_date, g.home_team_id, g.away_team_id,
+                  g.home_score, g.away_score, g.winner_id
+           FROM games g
+           WHERE g.played = 1
+           ORDER BY g.game_date, g.id"""
+    )
+    games_by_team: dict[int, list[dict]] = {}
+    for _g in all_played:
+        games_by_team.setdefault(_g["home_team_id"], []).append(_g)
+        games_by_team.setdefault(_g["away_team_id"], []).append(_g)
     for t in teams:
         tid = t["id"]
-        played = db.fetchall(
-            """SELECT g.id, g.game_date, g.home_team_id, g.away_team_id,
-                      g.home_score, g.away_score, g.winner_id
-               FROM games g
-               WHERE g.played = 1 AND (g.home_team_id = ? OR g.away_team_id = ?)
-               ORDER BY g.game_date, g.id""",
-            (tid, tid),
-        )
+        played = games_by_team.get(tid, [])
         rs = ra = w10 = l10 = 0
         for g in played:
             if g["home_team_id"] == tid:
@@ -3253,6 +3388,7 @@ def schedule():
 
 
 @app.route("/game/<int:game_id>")
+@_html_cache
 def game_detail(game_id: int):
     game = db.fetchone(
         """SELECT g.*,
@@ -4978,6 +5114,7 @@ def help_page():
 
 
 @app.route("/leaders")
+@_html_cache
 def leaders():
     # In a multi-league independent universe each league is its own
     # statistical environment, so leaderboards + rate baselines are scoped
@@ -5389,7 +5526,7 @@ def streaks_and_records():
 
     Three families:
       * In-season streaks (consecutive-game HR / hits / on-base, pitcher
-        double-digit-K starts, scoreless-innings runs) and the season's
+        double-digit-K starts, scoreless-outs runs) and the season's
         no-hitters / perfect games. League-scoped, like /leaders.
       * Single-game records — the best individual games of the season.
         League-scoped.
@@ -5399,7 +5536,7 @@ def streaks_and_records():
     """
     from o27v2.analytics.streaks import (
         longest_hit_streaks, home_run_streaks, on_base_streaks,
-        double_digit_k_streaks, scoreless_innings_streaks,
+        double_digit_k_streaks, scoreless_outs_streaks,
         no_hitters_and_perfect_games,
     )
     from o27v2.analytics.records import (
@@ -5428,7 +5565,7 @@ def streaks_and_records():
         "hits":      longest_hit_streaks(top_n=10, team_ids=team_ids),
         "on_base":   on_base_streaks(top_n=10, team_ids=team_ids),
         "k_starts":  double_digit_k_streaks(top_n=10, team_ids=team_ids),
-        "scoreless": scoreless_innings_streaks(top_n=10, team_ids=team_ids),
+        "scoreless": scoreless_outs_streaks(top_n=10, team_ids=team_ids),
     }
     nohit = no_hitters_and_perfect_games(team_ids=team_ids)
     sg_bat = single_game_batter_records(top_n=5, team_ids=team_ids)
@@ -6156,9 +6293,25 @@ def player_detail(player_id: int):
         "SELECT league FROM teams WHERE id = ?", (player["team_id"],),
     )
     league_name = team_row["league"] if team_row else None
-    player_est_value = valuation.estimate_player_value(
+    # Live market value (what the player is worth *now*), deliberately
+    # ignoring the persisted salary so it can diverge from the contract.
+    player_est_value = valuation.market_value(
         dict(player), league_name=league_name,
     )
+    # Surplus/deficit vs the persisted salary: positive ⇒ worth more than
+    # he's paid (a bargain), negative ⇒ overpaid relative to market.
+    try:
+        _player_salary = int(player["salary"] or 0)
+    except (TypeError, ValueError, KeyError, IndexError):
+        _player_salary = 0
+    player_value_pct = None
+    player_value_surplus_label = None  # plain-text guilders for the tooltip
+    if _player_salary > 0:
+        surplus = player_est_value - _player_salary
+        player_value_pct = round(surplus / _player_salary * 100)
+        player_value_surplus_label = currency.format_money(
+            abs(surplus), "guilder",
+        )
 
     handedness_splits: dict = {}
     if bt_totals:
@@ -6260,6 +6413,8 @@ def player_detail(player_id: int):
         handedness_splits=handedness_splits,
         baselines=baselines,
         player_est_value=player_est_value,
+        player_value_pct=player_value_pct,
+        player_value_surplus_label=player_value_surplus_label,
         nickel_games=nickel_games,
         transfer_leagues=list(transfer_leagues.values()),
         current_league=cur_team.get("league") or "",
@@ -7906,6 +8061,12 @@ def team_detail(team_id: int):
         (team_id, team_id),
     )
     team_payroll = valuation.estimate_team_payroll(team_id)
+    # Org strength shown here is a *live* roster+bench talent grade,
+    # recomputed from the current roster on every load — so trades and
+    # call-ups move it immediately. (The persisted teams.org_strength
+    # column is a separate front-office/auction knob and is not shown.)
+    from o27v2.league import compute_org_strength
+    org_strength_live = compute_org_strength(roster)
     # Staff wERA mean + variance — cascade-fragility read. Computed once
     # league-wide; we pull this team's row out for display.
     staff_disp = _staff_wera_dispersion(_league_baselines()).get(int(team_id), {})
@@ -7916,6 +8077,7 @@ def team_detail(team_id: int):
                            recent=recent,
                            win_pct=_win_pct,
                            team_payroll=team_payroll,
+                           org_strength=org_strength_live,
                            staff_wera=staff_disp)
 
 

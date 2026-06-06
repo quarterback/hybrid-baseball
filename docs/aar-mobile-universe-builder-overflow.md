@@ -103,6 +103,35 @@ All new rules are gated at ≤575/639px, and the per-page `flex-wrap`
 additions are no-ops on desktop (the rows already fit one line there), so
 desktop layout is unchanged.
 
+## Follow-up: frozen-column overlap on all-numeric stat tables
+
+The horizontal-scroll wrapper's `freezeLabelCols` pins the leading identity
+column(s) of a wide table so the player/team name stays visible while the
+numbers scroll under it. It froze "through the first non-numeric column,
+capped at 3" — but on a table whose leading columns are *all* numeric (the
+player page's Advanced/Standard Batting stat strips, first col `BAVG`), it
+never found a text column and pinned the first 3 *stat* columns instead.
+Those sticky cells then stuck over the scrolling columns and overlapped —
+only visible on a tinted/highlighted row (a normal row's opaque sticky
+background hid it), which is exactly how the user spotted it.
+
+Fix: only pin when a real non-numeric identity column actually exists among
+the first three cells (`foundText` guard). All-numeric stat strips now freeze
+nothing; roster / leaders / standings tables (which lead with a name, or a
+rank number then a name) are unchanged.
+
+## Follow-up: dark-mode table body text nearly invisible
+
+In dark mode the body cells of non-striped stat tables (player-page Standard /
+Advanced Batting, RISP, etc.) rendered near-black — barely visible on the dark
+canvas — while the headers stayed bright. Cause: `.table thead th` sets its own
+`color: var(--text)`, but body cells take Bootstrap's `--bs-table-color`, which
+base.html never overrode, so it fell back to Bootstrap's default
+`--bs-body-color` (~#212529). Fine on a white page (light mode looked OK),
+invisible on the dark one. Fix: set `--bs-table-color: var(--text)` on `.table`
+so every body cell follows the theme token — one line, fixes all Bootstrap
+tables app-wide in dark mode.
+
 ## Not done / honest caveats
 
 - Not verified on a real device — would benefit from a phone pass once the

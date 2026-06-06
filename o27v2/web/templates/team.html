@@ -23,12 +23,12 @@
 </nav>
 
 {# ---- Hero header ---- #}
-{% set org_label = ('Elite+' if team.org_strength and team.org_strength >= 81
-  else 'Elite' if team.org_strength and team.org_strength >= 75
-  else 'Excellent' if team.org_strength and team.org_strength >= 65
-  else 'Good' if team.org_strength and team.org_strength >= 55
-  else 'Average' if team.org_strength and team.org_strength >= 45
-  else 'Replacement' if team.org_strength and team.org_strength >= 30
+{% set org_label = ('Elite+' if org_strength and org_strength >= 81
+  else 'Elite' if org_strength and org_strength >= 75
+  else 'Excellent' if org_strength and org_strength >= 65
+  else 'Good' if org_strength and org_strength >= 55
+  else 'Average' if org_strength and org_strength >= 45
+  else 'Replacement' if org_strength and org_strength >= 30
   else 'Sub-Repl') %}
 <div class="hero">
   <span class="hero-mark">{{ team.abbrev }}</span>
@@ -60,11 +60,11 @@
     <span class="st-value" style="font-size:1.15rem;white-space:normal">{{ team_payroll | money }}</span>
   </div>
   {% endif %}
-  {% if team.org_strength %}
+  {% if org_strength %}
   <div class="stat-tile"
-       title="Org strength — team-level talent grade (20-95). 50 = league average; 80+ = elite organization.">
+       title="Org strength — live roster talent grade (20-95), the average rating of the active roster blended with bench depth. Recomputed from the current roster, so trades and call-ups move it right away. 50 = league average; 75+ = elite. Also drives how fast this org develops its players.">
     <span class="st-label">Org Strength</span>
-    <span class="st-value">{{ team.org_strength }}</span>
+    <span class="st-value">{{ org_strength }}</span>
     <span class="st-sub">{{ org_label }}</span>
   </div>
   {% endif %}

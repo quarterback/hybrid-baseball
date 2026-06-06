@@ -561,15 +561,247 @@ function TopBar({
     className: "topbar__title"
   }, title), sub && /*#__PURE__*/React.createElement("div", {
     className: "topbar__sub"
-  }, sub)), right, /*#__PURE__*/React.createElement(CurrencySelector, null), window.SLATE && window.SLATE.SIM_DAY && /*#__PURE__*/React.createElement("span", {
-    className: "simclock hide-mobile"
+  }, sub)), right, window.SLATE && window.SLATE.SIM_DAY && /*#__PURE__*/React.createElement("span", {
+    className: "simclock",
+    title: "Current sim date \u2014 tonight's live slate"
   }, /*#__PURE__*/React.createElement("span", {
     className: "dot"
-  }), " Sim day ", /*#__PURE__*/React.createElement("span", {
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "simclock__lbl hide-mobile"
+  }, "Slate\xA0"), /*#__PURE__*/React.createElement("span", {
     className: "num"
-  }, window.SLATE.SIM_DAY)), /*#__PURE__*/React.createElement("span", {
+  }, window.SLATE.SIM_DAY)), window.SLATE && /*#__PURE__*/React.createElement("span", {
+    className: "topbar__bal",
+    title: "Your bankroll"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "topbar__bal-lbl"
+  }, "Balance"), /*#__PURE__*/React.createElement("span", {
+    className: "num"
+  }, window.SLATE.money(window.SLATE.WALLET))), /*#__PURE__*/React.createElement(CurrencySelector, null), /*#__PURE__*/React.createElement("span", {
     className: "avatar"
   }, "Y"));
+}
+
+/* ---------- HOW IT WORKS — collapsible per-mode instructions ---------- */
+function HowTo({
+  k
+}) {
+  const d = (window.SLATE && window.SLATE.HOWTO || {})[k];
+  const sk = 'o27.capspace.howto.' + k;
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(sk) !== '0';
+    } catch (e) {
+      return true;
+    }
+  });
+  if (!d) return null;
+  function toggle() {
+    const n = !open;
+    setOpen(n);
+    try {
+      localStorage.setItem(sk, n ? '1' : '0');
+    } catch (e) {}
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card mb-12",
+    style: {
+      overflow: 'hidden'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: toggle,
+    style: {
+      display: 'flex',
+      width: '100%',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      background: 'none',
+      border: 0,
+      padding: '12px 14px',
+      cursor: 'pointer',
+      font: 'inherit',
+      color: 'inherit'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      fontWeight: 800
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "info",
+    size: 16
+  }), " How it works"), /*#__PURE__*/React.createElement(Icon, {
+    name: "chev",
+    size: 16,
+    style: {
+      transform: open ? 'rotate(90deg)' : 'none',
+      transition: 'transform .15s',
+      opacity: .55
+    }
+  })), open && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '0 14px 14px'
+    }
+  }, d.tagline && /*#__PURE__*/React.createElement("p", {
+    className: "muted",
+    style: {
+      margin: '0 0 8px',
+      fontWeight: 700,
+      fontSize: '.85rem'
+    }
+  }, d.tagline), /*#__PURE__*/React.createElement("ol", {
+    style: {
+      margin: 0,
+      paddingLeft: 18,
+      display: 'grid',
+      gap: 6
+    }
+  }, d.steps.map((s, i) => /*#__PURE__*/React.createElement("li", {
+    key: i,
+    style: {
+      fontSize: '.85rem',
+      lineHeight: 1.45
+    }
+  }, s)))));
+}
+
+/* ---------- POSITION FILTER — tappable position chips ---------- */
+function PosFilter({
+  value,
+  onChange,
+  positions
+}) {
+  const ps = positions || ['C', '1B', '2B', '3B', 'SS', 'OF'];
+  return /*#__PURE__*/React.createElement("div", {
+    className: "chips mb-12",
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 6,
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "dim",
+    style: {
+      fontSize: '.74rem',
+      fontWeight: 700
+    }
+  }, "Filter:"), ps.map(p => {
+    const on = value === p;
+    return /*#__PURE__*/React.createElement("button", {
+      key: p,
+      onClick: () => onChange(on ? null : p),
+      style: {
+        fontSize: '.76rem',
+        fontWeight: 800,
+        padding: '4px 10px',
+        borderRadius: 12,
+        cursor: 'pointer',
+        background: on ? 'var(--ink)' : 'var(--card-2)',
+        color: on ? '#fff' : 'var(--ink-3)',
+        border: '1px solid var(--line)'
+      }
+    }, p);
+  }), value && /*#__PURE__*/React.createElement("button", {
+    onClick: () => onChange(null),
+    style: {
+      fontSize: '.74rem',
+      fontWeight: 700,
+      padding: '4px 8px',
+      borderRadius: 12,
+      cursor: 'pointer',
+      background: 'none',
+      border: 0,
+      color: 'var(--brand)'
+    }
+  }, "Clear"));
+}
+
+/* ---------- RECENT LIST — collapsible history (shows N, expands rest) ---------- */
+function shortDate(s) {
+  if (!s) return '—';
+  const parts = String(s).split('-');
+  if (parts.length < 3) return s;
+  const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+parts[1] - 1];
+  return mo ? mo + ' ' + +parts[2] : s;
+}
+function RecentList({
+  title,
+  meta,
+  items,
+  limit = 5,
+  renderRow
+}) {
+  const [open, setOpen] = useState(false);
+  if (!items || !items.length) return null;
+  const shown = open ? items : items.slice(0, limit);
+  const extra = items.length - limit;
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "section-head mt-24"
+  }, /*#__PURE__*/React.createElement("h2", null, title), meta), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      overflow: 'hidden'
+    }
+  }, shown.map(renderRow), extra > 0 && /*#__PURE__*/React.createElement("button", {
+    className: "recent__more",
+    onClick: () => setOpen(o => !o)
+  }, open ? 'Show less' : 'Show ' + extra + ' more', /*#__PURE__*/React.createElement(Icon, {
+    name: "chev",
+    size: 15,
+    style: {
+      transform: open ? 'rotate(-90deg)' : 'rotate(90deg)',
+      transition: 'transform .15s'
+    }
+  }))));
+}
+
+/* ---------- PAGED LIST — paginate long pools (no endless scroll) ---------- */
+function PagedList({
+  items,
+  perPage = 25,
+  resetKey,
+  renderRow,
+  empty
+}) {
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    setPage(0);
+  }, [resetKey]);
+  if (!items || items.length === 0) return empty || null;
+  const pages = Math.max(1, Math.ceil(items.length / perPage));
+  const p = Math.min(page, pages - 1);
+  const slice = items.slice(p * perPage, p * perPage + perPage);
+  return /*#__PURE__*/React.createElement(React.Fragment, null, slice.map(renderRow), pages > 1 && /*#__PURE__*/React.createElement("div", {
+    className: "pager"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "pager__btn",
+    disabled: p <= 0,
+    onClick: () => setPage(p - 1),
+    "aria-label": "Previous page"
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "back",
+    size: 16
+  }), " Prev"), /*#__PURE__*/React.createElement("span", {
+    className: "pager__info"
+  }, "Page ", /*#__PURE__*/React.createElement("b", null, p + 1), " / ", pages, " \xB7 ", items.length, " players"), /*#__PURE__*/React.createElement("button", {
+    className: "pager__btn",
+    disabled: p >= pages - 1,
+    onClick: () => setPage(p + 1),
+    "aria-label": "Next page"
+  }, "Next ", /*#__PURE__*/React.createElement(Icon, {
+    name: "chev",
+    size: 16
+  }))));
+}
+
+/* eligible-position label, e.g. "SS/2B" or "1B/OF+2" for super-utility */
+function posLabel(p) {
+  const e = p.posEligible && p.posEligible.length ? p.posEligible : [p.pos];
+  if (e.length <= 2) return e.join('/');
+  return e.slice(0, 2).join('/') + '+' + (e.length - 2);
 }
 Object.assign(window, {
   Icon,
@@ -583,5 +815,11 @@ Object.assign(window, {
   CurrencySelector,
   CurrencyCtx,
   SpaceMascot,
-  BetaSeal
+  BetaSeal,
+  HowTo,
+  PosFilter,
+  RecentList,
+  shortDate,
+  PagedList,
+  posLabel
 });

@@ -184,6 +184,52 @@ This [user guide](user-guide.md) and the expansion of this trajectory doc are pa
 of the same turn: the build was far enough along that the bottleneck stopped being
 features and started being onboarding.
 
+### Phase 6 — The spectator economy and the rebrand (June 2 → June 6)
+
+The early-June burst — roughly a hundred commits across three days — is the turn
+where the project stopped being only an instrument and grew the apparatus that
+makes a real sport a *sport*: an audience around it. The premise was renamed in the
+process — the product is now **Super Innings — An O27 Baseball Simulator**
+(`superinnin.gs`) — and the engine's user-facing language was scrubbed to match the
+variant, with "innings" purged from pitching (scoreless streaks and longest outings
+measured in **outs**), the second-chance/"stay" jargon pulled out of batting lines,
+and a save-equivalent **Finisher (F)** stat added to scorecards.
+
+The two big new layers are both, deliberately, *read-only consumers of the sim's
+persisted truth* — neither ever re-simulates. [**CapSpace**](aar-capspace-games.md)
+is a fantasy-and-betting metagame (~7,300 lines under `o27v2/web/fantasy/`): six
+modes — a Walk-Back home-run game, a Finisher-based pitching game, daily-fantasy
+slates, streak picks, 5×5 roto categories, draft-once best ball — plus an actual
+[sportsbook](aar-capspace-realism.md) with moneylines and run totals, all staked
+against a [real per-save wallet and bankroll economy](aar-capspace-bankroll.md)
+with a Rookie→Hall-of-Famer career ladder. The lineup math is exact, not greedy:
+best ball solves the optimal lineup by dynamic programming and validates draft
+coverage with bipartite matching, because a fictional player has no name
+recognition, so [recent form and real stats](aar-capspace-dfs-builder-overhaul.md)
+are the only thing a DFS player can read. [**o27audio**](aar-agentic-audio-game-of-the-week.md)
+is the broadcast booth: a standalone service where Claude scripts a two-host
+play-by-play/color call from the persisted pitch-by-pitch log, a TTS model voices
+the two announcers, and stdlib audio stitching renders a clip you press "Listen"
+to hear on your phone — a per-game show in Stage 1, a league roundup and an
+auto-generating worker in Stage 2.
+
+The same window paid the unglamorous tax that earns the fun claims. A
+[whole-page HTML result cache](aar-perf-html-result-cache.md), keyed on a cheap
+data fingerprint and invalidated only on sim/trade, took the leaders page from
+~2,548 ms to 2.3 ms (~1100×) — the lag was never the database (SQL ran in
+milliseconds) but per-load recompute ballooning under contention — alongside
+[hot-table indexes and request-scoped caching](aar-perf-indexes-and-request-caching.md),
+self-hosted fonts and Bootstrap, and a dedicated Fly CPU. Two divergent algorithms
+for pitcher W/L attribution that disagreed on 30 of 120 finals were
+[collapsed into one canonical path](aar-capspace-games.md) (0 mismatches). The
+[org-strength grade stopped being a random seed](aar-org-strength-live-roster-proxy.md)
+and is now recomputed live from the active roster, and
+[estimated value was split from salary](aar-player-value-vs-salary.md) so contract
+bargains and overpays finally show. And because the owner plays mostly on a phone,
+a [mobile-responsiveness pass](aar-mobile-universe-builder-overflow.md) audited ~50
+templates and [finally gave the almanac media queries](aar-almanac-mobile-responsive.md)
+it had never had.
+
 ---
 
 ## Changelog
@@ -192,6 +238,50 @@ Grouped by phase, newest first. Each entry links to its AAR. Dates for the late-
 and June entries are the "date completed" recorded in the AAR; the earlier
 foundational work was built across the Replit era and mid-May and written up in
 the May 20 documentation wave.
+
+### Phase 6 — Spectator economy & rebrand (June 2 → June 6)
+
+**2026-06-06**
+- **Almanac made mobile-responsive** — header wraps instead of forcing horizontal
+  scroll (PR #217). [AAR](aar-almanac-mobile-responsive.md)
+- **Gazette** — second-chance (2C) totals dropped from standout batting lines
+  (PR #219).
+
+**2026-06-05**
+- **o27audio** — agentic two-host AI broadcasts. Stage 1 in-app "Game of the Week"
+  (PR #212); Stage 2 league roundup show + auto-generate worker (PR #214);
+  parallelized TTS and a one-tap Daily Recap dashboard card (PRs #215, #216).
+  [AAR](aar-agentic-audio-game-of-the-week.md)
+- **CapSpace** — fantasy/betting metagame over persisted sim data: real per-save
+  [wallet economy](aar-capspace-bankroll.md) (PR #197),
+  [sports-career tiers](aar-capspace-bankroll.md) (PR #199),
+  [DFS builder overhaul](aar-capspace-dfs-builder-overhaul.md) (PR #210),
+  [Best Ball multi-slot coverage](aar-capspace-bestball-multipos.md) (PR #218),
+  Go Streaking milestone pots (PRs #209, #213), and a
+  [play-test fix pass](aar-capspace-playtest-fixes.md) (PR #208).
+  [Games overview](aar-capspace-games.md) · [Sportsbook/realism](aar-capspace-realism.md)
+- **Performance overhaul** — [whole-page HTML result cache](aar-perf-html-result-cache.md)
+  (leaders ~2548 ms → 2.3 ms, ~1100×; PR #202),
+  [hot-table indexes + request caching](aar-perf-indexes-and-request-caching.md),
+  pitcher-stats composite index (PR #201), self-hosted fonts + Bootstrap (PR #200),
+  dedicated Fly CPU (PRs #195, #202).
+- **Pitcher decision attribution unified** — two divergent W/L algorithms collapsed
+  into one canonical path (30/120 mismatches → 0; PR #198).
+- **Org strength → live roster grade** — recomputed from the active roster + bench
+  instead of a random seed (PR #207). [AAR](aar-org-strength-live-roster-proxy.md)
+- **Est. value split from salary** — live market value with a surplus/deficit badge
+  (PR #204). [AAR](aar-player-value-vs-salary.md)
+- **Mobile-responsiveness pass** — ~50-template overflow audit, frozen-column and
+  dark-mode-contrast fixes (PRs #205, #206).
+  [AAR](aar-mobile-universe-builder-overflow.md)
+
+**2026-06-03 → 06-05 (language & flavor)**
+- **Rebrand to "Super Innings — An O27 Baseball Simulator"** (`superinnin.gs`).
+- **"Innings" purged from pitching** — scoreless streaks and Longest Outing shown
+  in outs, not IP (PR #211).
+- **Finisher (F) stat** added to scorecards (O27's save-equivalent); Walk-Back-run
+  stat wired into box scores and the career almanac.
+- **DOS/SimCity-style boot preloader** (PR #203).
 
 ### Turn of the month — depth & onboarding
 
