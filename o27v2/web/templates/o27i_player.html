@@ -100,8 +100,8 @@
       {{ stat_tile('Leverage', advanced.pit.li, 'Average leverage index pitched in') }}
     {% endif %}
     {% if advanced.field %}
-      {{ stat_tile('OAA', '%+.1f'|format(advanced.field.oaa), 'Outs Above Average (heuristic zone)') }}
-      {{ stat_tile('Field Runs', '%+.1f'|format(advanced.field.frv), 'Fielding Run Value') }}
+      {{ stat_tile('OAA', '%+.1f'|format(advanced.field.oaa), 'Outs Above Average — raw observed count, position-neutral (expected out-rate is conditioned on the fielder\'s zone)') }}
+      {{ stat_tile('Field Runs', '%+.1f'|format(advanced.field.frv), 'Fielding Run Value — OAA shrunk toward league-average by reliability (' ~ advanced.field.reliability ~ ') and valued in runs. This is the defensive figure that feeds WAR.') }}
     {% endif %}
     {% if advanced.bsr %}
       {{ stat_tile('BsR', '%+.1f'|format(advanced.bsr.bsr), 'Baserunning run value') }}
