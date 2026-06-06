@@ -137,11 +137,13 @@ two different stories about the same event.
   Scoped next.
 - **Defense-read** was retained but decoupled from the old advance gate; its
   balance should be re-checked.
-- **2C skill delta is modest (+0.19) and under-powered.** The owner wants a
-  *clear* poor/avg/successful/elite delta correlating with hitting, with jokers
-  leveraging it most. Levers: raise 2C frequency (lower `STAY_RUN_BASELINE_*` /
-  `STAY_REWARD_*`), widen the skill term (`STAY_OUT_RISK_SKILL_SCALE`), and give
-  jokers a dedicated lean. Worth a dedicated tuning pass with more sim data.
+- **2C skill delta — DONE.** The delta is clear at the decision level (it was
+  only *unmeasurable* per-player due to roster churn + 2C rarity, not absent).
+  Probing `should_stay_prob` directly: stay-rate climbs **poor 16% → avg 33% →
+  good 44% → elite 55%** (medium contact, RISP), sharper on weak contact (poor
+  0.3% → elite 39%) — exactly "correlates with hitting, clear poor→elite delta."
+  And **jokers leverage it most** (`STAY_JOKER_MULT`): poor 23% → elite 81%, with
+  the skill gradient preserved. Run env stays healthy (11.95 R/half), 2C 1.23/game.
 - **wERA outs-weighted invariant is borderline:** on a 200-game new-engine sim,
   league wERA 10.47 vs raw ERA 10.53 — diff **0.062** vs the 0.05 tolerance. The
   league anchoring is close; the fixed wERA arc weights (0.85/1.00/1.20) are

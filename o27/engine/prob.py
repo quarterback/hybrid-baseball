@@ -2239,6 +2239,9 @@ def should_stay_prob(
     # Convert the EV edge into a stay probability (some noise so identical
     # situations aren't deterministic). Saturates for large edges.
     stay_p = max(0.0, min(cfg.STAY_MAX_PROB, edge * cfg.STAY_EDGE_TO_PROB))
+    # Jokers are the designated offensive weapons — they leverage 2C the most.
+    if getattr(state, "batter_override", None) is batter:
+        stay_p = min(cfg.STAY_MAX_PROB, stay_p * cfg.STAY_JOKER_MULT)
     return rng.random() < stay_p
 
 

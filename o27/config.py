@@ -966,6 +966,7 @@ STAY_RUN_BASELINE_WEAK: float    = 0.30   # forgoing a weak single — low bar
 STAY_RUN_BASELINE_MEDIUM: float  = 0.60   # forgoing a clean single — high bar
 STAY_EDGE_TO_PROB: float         = 0.90   # EV-edge → stay-probability slope
 STAY_MAX_PROB: float             = 0.85   # saturation cap
+STAY_JOKER_MULT: float           = 1.50   # jokers leverage 2C the most
 
 # (Legacy frequency multipliers — retained for any callers/tests; no longer
 # used by the EV-driven should_stay_prob.)
