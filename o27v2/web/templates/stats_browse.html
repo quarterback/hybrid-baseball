@@ -430,7 +430,7 @@
   <div class="table-responsive">
 
   {% if view == 'standard' %}
-  {# Locked 10-col Standard view: G, GS, W, L, OUT, K, BB, wERA, xRA, K-BB%.
+  {# Locked 10-col Standard view: G, GS, W, L, OUT, K, BB, xRA, xRA, K-BB%.
      Identity | record | counting | rate (rate group bolded). #}
   <table class="table dense-table sortable mb-0">
     <thead><tr>
@@ -439,8 +439,8 @@
       <th class="num">W</th><th class="num col-group-end">L</th>
       <th class="num">Outs</th>
       <th class="num">K</th><th class="num col-group-end">BB</th>
-      <th class="num fw-bold" title="Weighted ERA — arc-weighted runs allowed">wERA</th>
-      <th class="num fw-bold" title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA">xRA</th>
+      <th class="num fw-bold" title="expected Runs Allowed (xRA) — arc-weighted runs allowed">xRA</th>
+      <th class="num fw-bold" title="Expected Runs Allowed — non-negative linear weights, anchored to league RA/27">xRA</th>
       <th class="num fw-bold" title="(K - BB) / BF — quick-read dominance signal">K-BB%</th>
     </tr></thead>
     <tbody>
@@ -477,7 +477,7 @@
       <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
       <th class="num">BB</th><th class="num">K</th><th class="num">HR</th><th class="num">FO</th>
       <th class="num">P</th>
-      <th class="num">wERA</th><th class="num" title="Park-adjusted league-relative wERA (100 = league avg at this park, higher = better)">wERA+</th>
+      <th class="num">xRA</th><th class="num" title="Park-adjusted league-relative xRA (100 = league avg at this park, higher = better)">xRA+</th>
       <th class="num">xRA</th><th class="num">Decay</th>
       <th class="num" title="Arc-3 K% (incl foul-outs) — useful for short-relief specialists who never see arc-1 sample, so Decay is undefined for them">LateK%</th>
       <th class="num" title="Inherited-runner stop rate: (IR − IR-scored) / IR. Cleanup skill on runners inherited at entry; higher = better.">IR-Stop%</th>
@@ -604,7 +604,7 @@
       <th class="num">Ka1</th><th class="num">Ka2</th><th class="num">Ka3</th>
       <th class="num">FOa1</th><th class="num">FOa2</th><th class="num">FOa3</th>
       <th class="num">BFa1</th><th class="num">BFa2</th><th class="num">BFa3</th>
-      <th class="num">wERA</th><th class="num" title="Park-adjusted league-relative wERA (100 = league avg at this park, higher = better)">wERA+</th>
+      <th class="num">xRA</th><th class="num" title="Park-adjusted league-relative xRA (100 = league avg at this park, higher = better)">xRA+</th>
       <th class="num">xRA</th><th class="num">Decay</th>
       <th class="num" title="Per-appearance Decay — mean of (arc-1 K% − arc-3 K%) per game where both arcs had sample. Equal-weights games instead of weighting by BFs. Selection bias still applies (only games that reached arc-3 count).">Decay/G</th>
       <th class="num" title="Arc-3 reach rate — fraction of appearances that reached arc-3 (bf_arc3 > 0). The actual survivor-bias indicator: a low Decay number from a 30%-reach pitcher is computed only from his good days.">A3%</th>
@@ -701,7 +701,7 @@
   Three view modes: <strong>Standard</strong> shows the most-useful columns,
   <strong>Advanced</strong> adds rate stats and league-relative indices, and
   <strong>All</strong> exposes every persisted counter — including the raw
-  arc-bucketed ER/K/FO/BF buckets that feed wERA &amp; Decay. Use the position
+  arc-bucketed ER/K/FO/BF buckets that feed xRA &amp; Decay. Use the position
   dropdown to filter to a specific slot. Click any header to sort.
 </p>
 {% endblock %}

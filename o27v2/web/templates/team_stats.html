@@ -99,14 +99,14 @@
 {# ---- Team pitching -------------------------------------------------- #}
 <div class="panel mb-4">
   <div class="panel-head"><span>Team Pitching</span>
-    <span class="ms-auto sub">sorted by wERA · {{ team_pit|length }} teams</span></div>
+    <span class="ms-auto sub">sorted by xRA · {{ team_pit|length }} teams</span></div>
   <div class="table-responsive">
   <table class="table dense-table mb-0">
     <thead><tr>
       <th>Team</th><th class="num">W</th><th class="num">L</th><th class="num">G</th>
       <th class="num">IP</th><th class="num">R</th><th class="num">ER</th>
-      <th class="num" title="O27 win-probability-weighted ERA">wERA</th>
-      <th class="num">wERA+</th><th class="num">WHIP</th>
+      <th class="num" title="O27 win-probability-weighted ERA">xRA</th>
+      <th class="num">xRA+</th><th class="num">WHIP</th>
       <th class="num">K</th><th class="num">BB</th><th class="num">HR</th>
       <th class="num">K/9</th>
       <th class="num" title="Walk-Back runs allowed (post-HR rule-placed runner scored)">WBR-A</th>
@@ -167,7 +167,7 @@
 </div>
 
 <div class="text-secondary small mb-3">
-  Rates use the same O27 conventions as the player pages (PAVG = H/PA; OPS+/wERA+
+  Rates use the same O27 conventions as the player pages (PAVG = H/PA; OPS+/xRA+
   are league-relative, 100 = average). 2C-Conv = hits per second-chance at-bat;
   2C-RBI% = share of the club's RBI driven on 2C events; WBR = Walk-Back runs.
   Usage shape reveals how clubs split the continuous 27-out half — a high Top 2%

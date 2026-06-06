@@ -78,7 +78,7 @@ def test_leaders_page_renders(tiny_db_app):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert "wRC+" in body
-    assert "wERA+" in body
+    assert "xRA+" in body
     assert "GSc Index" in body or "GSc Idx" in body
     assert "WPA" in body
     assert "Hit Streak" in body or "Streak" in body
@@ -88,7 +88,7 @@ def test_player_page_renders_for_pitcher(tiny_db_app):
     r = tiny_db_app.get("/player/2")  # P. Cher
     assert r.status_code == 200, r.get_data(as_text=True)[:500]
     body = r.get_data(as_text=True)
-    assert "wERA+" in body
+    assert "xRA+" in body
     assert "GSc Idx" in body
 
 
@@ -104,7 +104,7 @@ def test_team_page_renders(tiny_db_app):
     assert r.status_code == 200, r.get_data(as_text=True)[:500]
     body = r.get_data(as_text=True)
     assert "wRC+" in body
-    assert "wERA+" in body
+    assert "xRA+" in body
 
 
 def test_stats_browse_renders(tiny_db_app):
@@ -145,7 +145,7 @@ def test_compare_page_renders(tiny_db_app):
     assert r.status_code == 200, r.get_data(as_text=True)[:500]
     body = r.get_data(as_text=True)
     assert "wRC+" in body
-    assert "wERA+" in body
+    assert "xRA+" in body
 
 
 def test_season_archive_schema_has_new_columns(tiny_db_app):

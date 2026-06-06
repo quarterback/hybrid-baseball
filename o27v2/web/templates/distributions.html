@@ -81,7 +81,7 @@
     {{ team_dist_row('OPS',       team_dists['OPS'],      '%.3f') }}
     {{ team_dist_row('OPS+',      team_dists['OPS+'],     '%.0f') }}
     {{ team_dist_row('PAVG',      team_dists['PAVG'],     '%.3f') }}
-    {{ team_dist_row('wERA',      team_dists['wERA'],     '%.2f') }}
+    {{ team_dist_row('xRA',      team_dists['xRA'],     '%.2f') }}
     {{ team_dist_row('xRA',       team_dists['xRA'],      '%.2f') }}
     {{ team_dist_row('GSc avg',   team_dists['GSc avg'],  '%.1f') }}
     </tbody>
@@ -128,7 +128,7 @@
   {% endmacro %}
   {{ outlier_panel('Run diff',     team_outliers['Run diff'],    '%+d') }}
   {{ outlier_panel('OPS',          team_outliers['OPS'],         '%.3f') }}
-  {{ outlier_panel('wERA (lower=better)', team_outliers['wERA'], '%.2f', invert=True) }}
+  {{ outlier_panel('xRA (lower=better)', team_outliers['xRA'], '%.2f', invert=True) }}
   {{ outlier_panel('xRA (lower=better)',  team_outliers['xRA'],  '%.2f', invert=True) }}
   {{ outlier_panel('Pythag luck', team_outliers['Pythag luck'],  '%+.1f') }}
 </div>
@@ -143,7 +143,7 @@
     Outlier z-scores use that same population σ. A z above 1.5 is notable;
     above 2.0 the team is genuinely tail-end on that metric.
     <br><br>
-    For the lower-is-better metrics (wERA, xRA), the outlier panel sorts
+    For the lower-is-better metrics (xRA, xRA), the outlier panel sorts
     ascending so the strongest run-prevention staffs sit in the top three.
     <br><br>
     Team aggregates roll up every per-player game row into a single
@@ -281,7 +281,7 @@
     <br><br>
     The Decay distribution is restricted to pitchers with cross-arc sample (faced batters in both arc-1 and arc-3), so the n on that panel is lower than the rest of the pitching panels. Pitchers without enough sample to compute Decay aren't binned.
     <br><br>
-    <strong>xRA</strong> is the non-negative linear-weights expected runs allowed (HR=1.4, single≈0.45, BB/HBP=0.32, K/out=0), multiplicatively anchored so league xRA matches league wERA. <strong>K-BB%</strong> is plain <code>(K - BB) / BF</code>.
+    <strong>xRA</strong> is the non-negative linear-weights expected runs allowed (HR=1.4, single≈0.45, BB/HBP=0.32, K/out=0), multiplicatively anchored so league xRA matches league xRA. <strong>K-BB%</strong> is plain <code>(K - BB) / BF</code>.
   </div>
 </details>
 

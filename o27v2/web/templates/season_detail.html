@@ -71,7 +71,7 @@
   ('RBI',         stars.rbi,  stars.rbi.rbi if stars.rbi else None,  '%d'),
   ('OPS',         stars.ops,  stars.ops.ops if stars.ops else None,  '%.3f'),
   ('Wins',        stars.wins, stars.wins.w if stars.wins else None,  '%d'),
-  ('wERA',        stars.era,  stars.era.era if stars.era else None,  '%.2f'),
+  ('xRA',        stars.era,  stars.era.era if stars.era else None,  '%.2f'),
   ('Strikeouts',  stars.k,    stars.k.k    if stars.k    else None,  '%d'),
 ] %}
 {% if stars and (stars.avg or stars.hr or stars.wins) %}
@@ -214,13 +214,13 @@
   <div class="col-lg-6">
     <h5 class="text-secondary text-uppercase small">Pitching Leaders</h5>
     {# Storage note: season_pitching_leaders reuses its `era` column to
-       hold wERA values for go-forward archives, and `fip` for xRA.
+       hold xRA values for go-forward archives, and `fip` for xRA.
        Old archived seasons keep their original ERA/FIP semantics. The
        outs-based DIPS boards below read the dedicated fip_dips / kbb /
        whip_v / k9 columns and stay correct in fast-sim archives. #}
     {{ pit_table('W',     pitching.get('w',     []), 'w',     '%d') }}
-    {{ pit_table('wERA',  pitching.get('werra', pitching.get('era', [])), 'era', '%.2f') }}
-    {{ pit_table('wERA+', pitching.get('wera_plus', []), 'wera_plus', '%d') }}
+    {{ pit_table('xRA',  pitching.get('werra', pitching.get('era', [])), 'era', '%.2f') }}
+    {{ pit_table('xRA+', pitching.get('wera_plus', []), 'wera_plus', '%d') }}
     {{ pit_table('xRA',  pitching.get('xra',  pitching.get('fip', [])), 'fip', '%.2f') }}
     {{ pit_table('FIP',   pitching.get('fip',   []), 'fip_dips', '%.2f') }}
     {{ pit_table('K/BB',  pitching.get('kbb',   []), 'kbb',  '%.2f') }}

@@ -70,7 +70,7 @@
   {% endif %}
   {% if staff_wera and staff_wera.staff_wera_mean is not none %}
   <div class="stat-tile" title="Staff weighted ERA (mean) and its outs-weighted spread (σ).">
-    <span class="st-label">Staff wERA</span>
+    <span class="st-label">Staff xRA</span>
     <span class="st-value">{{ '%.2f'|format(staff_wera.staff_wera_mean) }}</span>
     <span class="st-sub">σ {{ '%.2f'|format(staff_wera.staff_wera_std) }} · {{ staff_wera.n_pitchers }} arms</span>
   </div>
@@ -234,10 +234,10 @@
       {% if staff_wera and staff_wera.staff_wera_mean is not none %}
       <div class="d-flex flex-wrap gap-3 mb-2 pb-2" style="border-bottom:1px solid var(--border-soft); font-size:0.85rem">
         <div>
-          <span class="text-secondary">Staff wERA:</span>
+          <span class="text-secondary">Staff xRA:</span>
           <span class="num fw-bold">{{ '%.2f'|format(staff_wera.staff_wera_mean) }}</span>
         </div>
-        <div title="Outs-weighted stdev of per-pitcher wERA. Higher = more cascade-prone — the 21-18 blowouts come from one pitcher melting down. Lower = more stable, fewer floor-collapse losses.">
+        <div title="Outs-weighted stdev of per-pitcher xRA. Higher = more cascade-prone — the 21-18 blowouts come from one pitcher melting down. Lower = more stable, fewer floor-collapse losses.">
           <span class="text-secondary">σ:</span>
           <span class="num fw-bold">{{ '%.2f'|format(staff_wera.staff_wera_std) }}</span>
           <span class="text-secondary small">
@@ -254,10 +254,10 @@
           <th title="Throws">T</th>
           <th class="num">Age</th>
           <th class="num">G</th><th class="num">GS</th><th class="num">W</th><th class="num">L</th>
-          <th class="num" title="Weighted ERA">wERA</th>
-          <th class="num" title="Park-adjusted league-relative wERA (100 = league avg at this park, higher = better)">wERA+</th>
+          <th class="num" title="expected Runs Allowed (xRA)">xRA</th>
+          <th class="num" title="Park-adjusted league-relative xRA (100 = league avg at this park, higher = better)">xRA+</th>
           <th class="num" title="Z-score Game Score (100 / 15 scale)">GSc Idx</th>
-          <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA">xRA</th>
+          <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league RA/27">xRA</th>
           <th class="num">ER</th><th class="num">OUT</th><th class="num">K</th>
           <th class="num" title="(K + foul-outs) / BF">K%</th>
           <th class="num" title="Walk-Back Stop% — strand rate for the post-HR rule-placed runner on 3B (Manfred-runner analog). Higher = better.">WB%</th>
