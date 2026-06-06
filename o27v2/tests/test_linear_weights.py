@@ -27,14 +27,16 @@ def fresh_db(tmp_path):
         _db._DB_PATH = original
 
 
-def test_classify_bip_separates_stay_from_single():
+def test_classify_bip_buckets_2c_by_hit_type():
     from o27v2.analytics.linear_weights import _classify_bip
-    # Stay-credited is now its own bucket — NOT '1B'.
-    assert _classify_bip(None,     1, 1) == "STAY"
-    assert _classify_bip("single", 1, 1) == "STAY"   # was_stay wins
-    # Stay without credit remains an out (no advance).
+    # Since the 2C-through-the-hitting-engine rework, a credited 2C is a REAL
+    # hit of its resolved type — bucketed by hit_type, NOT a separate STAY bucket.
+    assert _classify_bip("single", 1, 1) == "1B"
+    assert _classify_bip("double", 1, 1) == "2B"
+    assert _classify_bip("triple", 1, 1) == "3B"
+    # A valid stay that credited no hit (no runner moved) is an out-ish non-event.
     assert _classify_bip(None,     1, 0) == "out"
-    # Real singles still bucket to 1B.
+    # Real (non-stay) hits bucket by type as before.
     assert _classify_bip("single",          0, 0) == "1B"
     assert _classify_bip("infield_single",  0, 0) == "1B"
     assert _classify_bip("double",          0, 0) == "2B"
@@ -44,17 +46,17 @@ def test_classify_bip_separates_stay_from_single():
     assert _classify_bip("ground_out",      0, 0) == "out"
 
 
-def test_empty_db_returns_zero_stay_weight(fresh_db):
-    """On a fresh DB with no plays, every event RV defaults to 0
-    (including STAY) — caller is safe to dereference STAY anywhere
-    1B / 2B / 3B / HR are dereferenced."""
+def test_no_stay_bucket_after_2c_rework(fresh_db):
+    """The STAY bucket is gone — 2C hits are bucketed by their real type. On a
+    fresh DB every real event RV still defaults to 0 and is safe to dereference."""
     from o27v2.analytics.linear_weights import derive_linear_weights
     r = derive_linear_weights()
-    for k in ("1B", "2B", "3B", "HR", "STAY"):
+    for k in ("1B", "2B", "3B", "HR"):
         assert k in r["rv"], f"missing rv[{k}] on empty DB"
         assert r["rv"][k] == 0.0
-    for k in ("1B", "2B", "3B", "HR", "BB", "HBP", "STAY"):
+    for k in ("1B", "2B", "3B", "HR", "BB", "HBP"):
         assert k in r["woba_weights"]
+    assert "STAY" not in r["woba_weights"]
 
 
 def _seed_minimal_re_environment(db_path: str) -> None:
@@ -167,34 +169,18 @@ def _make_run_scoring_half() -> list[dict]:
     return events
 
 
-def test_stay_separated_from_1b_in_rv(fresh_db):
-    """Hand-craft a mini PA log where true singles advance / score
-    runners and STAY events do not. The empirical RV(1B) should land
-    strictly above RV(STAY) — exactly the inversion the dashboard
-    explanation used to chalk up to 'contamination'."""
+def test_no_stay_bucket_in_rv_or_weights(fresh_db):
+    """Since the 2C-through-the-hitting-engine rework there is NO separate STAY
+    bucket: a credited 2C is a real hit of its type and lands in 1B/2B/3B. The
+    rv map and woba_weights must not carry a STAY key, and the standard hit
+    ordering (RV(1B) ≥ RV(BB)) must still hold."""
     from o27v2.analytics.linear_weights import derive_linear_weights
     _seed_minimal_re_environment(fresh_db)
     _seed_pa_events(fresh_db, _make_run_scoring_half())
 
     r = derive_linear_weights()
-    rv = r["rv"]
-    assert rv["1B"] > rv["STAY"], (
-        f"RV(1B) {rv['1B']:.3f} should exceed RV(STAY) {rv['STAY']:.3f} — "
-        f"stay-credit contamination has crept back in"
-    )
-
-
-def test_woba_weights_include_stay_separately(fresh_db):
-    """woba_weights must expose a STAY entry distinct from 1B so
-    consumers can credit stay-events with their own (lower) wOBA points
-    instead of falsely lumping them into the single bucket."""
-    from o27v2.analytics.linear_weights import derive_linear_weights
-    _seed_minimal_re_environment(fresh_db)
-    _seed_pa_events(fresh_db, _make_run_scoring_half())
-
-    r = derive_linear_weights()
-    ww = r["woba_weights"]
-    assert "STAY" in ww and "1B" in ww
-    assert ww["1B"] > ww["STAY"], (
-        f"wOBA[1B] {ww['1B']:.3f} should exceed wOBA[STAY] {ww['STAY']:.3f}"
+    assert "STAY" not in r["woba_weights"]
+    assert "STAY" not in r["rv"]
+    assert r["rv"]["1B"] >= r["rv"]["BB"], (
+        f"RV(1B) {r['rv']['1B']:.3f} should be ≥ RV(BB) {r['rv']['BB']:.3f}"
     )
