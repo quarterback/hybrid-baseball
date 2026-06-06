@@ -439,7 +439,6 @@
       <th class="num">W</th><th class="num col-group-end">L</th>
       <th class="num">Outs</th>
       <th class="num">K</th><th class="num col-group-end">BB</th>
-      <th class="num fw-bold" title="expected Runs Allowed (xRA) — arc-weighted runs allowed">xRA</th>
       <th class="num fw-bold" title="Expected Runs Allowed — non-negative linear weights, anchored to league RA/27">xRA</th>
       <th class="num fw-bold" title="(K - BB) / BF — quick-read dominance signal">K-BB%</th>
     </tr></thead>
@@ -455,7 +454,6 @@
       <td class="num">{{ p.outs or 0 }}</td>
       <td class="num fw-bold">{{ p.k or 0 }}</td>
       <td class="num col-group-end">{{ p.bb or 0 }}</td>
-      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.k_minus_bb_pct or 0) }}">{{ '%.1f'|format((p.k_minus_bb_pct or 0) * 100) }}%</td>
     </tr>
@@ -477,7 +475,7 @@
       <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
       <th class="num">BB</th><th class="num">K</th><th class="num">HR</th><th class="num">FO</th>
       <th class="num">P</th>
-      <th class="num">xRA</th><th class="num" title="Park-adjusted league-relative xRA (100 = league avg at this park, higher = better)">xRA+</th>
+      <th class="num" title="Park-adjusted league-relative xRA (100 = league avg at this park, higher = better)">xRA+</th>
       <th class="num">xRA</th><th class="num">Decay</th>
       <th class="num" title="Arc-3 K% (incl foul-outs) — useful for short-relief specialists who never see arc-1 sample, so Decay is undefined for them">LateK%</th>
       <th class="num" title="Inherited-runner stop rate: (IR − IR-scored) / IR. Cleanup skill on runners inherited at entry; higher = better.">IR-Stop%</th>
@@ -519,7 +517,6 @@
       <td class="num">{{ p.hr_allowed or 0 }}</td>
       <td class="num">{{ p.fo_induced or 0 }}</td>
       <td class="num">{{ p.pitches or 0 }}</td>
-      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.1f'|format(p.wera_plus or 100) }}">{{ (p.wera_plus or 100)|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.decay) }}">{% if p.decay_known %}{{ '%+.1f'|format(p.decay) }}{% else %}—{% endif %}</td>
@@ -604,7 +601,7 @@
       <th class="num">Ka1</th><th class="num">Ka2</th><th class="num">Ka3</th>
       <th class="num">FOa1</th><th class="num">FOa2</th><th class="num">FOa3</th>
       <th class="num">BFa1</th><th class="num">BFa2</th><th class="num">BFa3</th>
-      <th class="num">xRA</th><th class="num" title="Park-adjusted league-relative xRA (100 = league avg at this park, higher = better)">xRA+</th>
+      <th class="num" title="Park-adjusted league-relative xRA (100 = league avg at this park, higher = better)">xRA+</th>
       <th class="num">xRA</th><th class="num">Decay</th>
       <th class="num" title="Per-appearance Decay — mean of (arc-1 K% − arc-3 K%) per game where both arcs had sample. Equal-weights games instead of weighting by BFs. Selection bias still applies (only games that reached arc-3 count).">Decay/G</th>
       <th class="num" title="Arc-3 reach rate — fraction of appearances that reached arc-3 (bf_arc3 > 0). The actual survivor-bias indicator: a low Decay number from a 30%-reach pitcher is computed only from his good days.">A3%</th>
@@ -657,7 +654,6 @@
       <td class="num">{{ p.bf_arc1 or 0 }}</td>
       <td class="num">{{ p.bf_arc2 or 0 }}</td>
       <td class="num">{{ p.bf_arc3 or 0 }}</td>
-      <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.1f'|format(p.wera_plus or 100) }}">{{ (p.wera_plus or 100)|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>
       <td class="num" data-sort-value="{{ '%.2f'|format(p.decay) }}">{% if p.decay_known %}{{ '%+.1f'|format(p.decay) }}{% else %}—{% endif %}</td>

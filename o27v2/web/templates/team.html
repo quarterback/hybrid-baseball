@@ -254,7 +254,6 @@
           <th title="Throws">T</th>
           <th class="num">Age</th>
           <th class="num">G</th><th class="num">GS</th><th class="num">W</th><th class="num">L</th>
-          <th class="num" title="expected Runs Allowed (xRA)">xRA</th>
           <th class="num" title="Park-adjusted league-relative xRA (100 = league avg at this park, higher = better)">xRA+</th>
           <th class="num" title="Z-score Game Score (100 / 15 scale)">GSc Idx</th>
           <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league RA/27">xRA</th>
@@ -275,7 +274,6 @@
           <td class="num">{{ p.gs or 0 }}</td>
           <td class="num">{{ p.w or 0 }}</td>
           <td class="num">{{ p.l or 0 }}</td>
-          <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(p.werra or 0) }}">{{ '%.2f'|format(p.werra or 0) }}</td>
           <td class="num fw-bold" data-sort-value="{{ '%.1f'|format(p.wera_plus or 100) }}">{{ (p.wera_plus or 100)|round|int }}</td>
           <td class="num" data-sort-value="{{ '%.1f'|format(p.gsc_index or 100) }}">{{ (p.gsc_index or 100)|round|int }}</td>
           <td class="num" data-sort-value="{{ '%.3f'|format(p.xra or 0) }}">{{ '%.2f'|format(p.xra or 0) }}</td>

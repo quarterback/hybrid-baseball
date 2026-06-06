@@ -233,7 +233,6 @@
     {% if pt_totals %}
     {% if bt_totals %}<div style="border-left:1px solid var(--border-soft)"></div>{% endif %}
     <div><div class="score-label">W-L</div><div class="num fw-bold" style="font-size:1.35rem">{{ pt_totals.w or 0 }}-{{ pt_totals.l or 0 }}</div></div>
-    <div title="expected Runs Allowed (xRA)"><div class="score-label">xRA</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.werra) }}</div></div>
     <div title="Park-adjusted league-relative xRA — 100 = league avg AT THIS PARK; higher = better. PF {{ '%.3f'|format(pt_totals.park_factor or 1.0) }}.">
       <div class="score-label">xRA+</div>
       <div class="num fw-bold" style="font-size:1.35rem">{{ (pt_totals.wera_plus or 100)|round|int }}</div>
@@ -544,12 +543,10 @@
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
-        <th class="num" title="expected Runs Allowed (xRA) — expected runs allowed from the actual events (RE-style linear weights). Lower better.">xRA</th>
-        <th class="num" title="Expected Runs Allowed — non-negative linear weights, multiplicatively anchored to league RA/27. Lower better.">xRA</th>
+        <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league RA/27. Lower better.">xRA</th>
         <th class="num" title="Drift-corrected late-arc fade (points). 0 = matches league norm; positive = fades worse than lineup-cycle drift; negative = holds up better than league.">Decay</th>
       </tr></thead>
       <tbody><tr>
-        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.werra) }}</td>
         <td class="num fw-bold">{{ '%.2f'|format(pt_totals.xra) }}</td>
         <td class="num">{% if pt_totals.decay_known %}{{ '%+.1f'|format(pt_totals.decay) }}{% else %}—{% endif %}</td>
       </tr></tbody>
@@ -944,7 +941,6 @@
         {{ prow('BB',   'bb') }}
         {{ prow('HR',   'hr_allowed') }}
         {{ prow('FO',   'fo_induced') }}
-        {{ prow('xRA', 'werra', '%.2f', 'fw-bold') }}
         {{ prow('xRA', 'xra',  '%.2f') }}
         <tr>
           <td class="text-secondary">Decay</td>
