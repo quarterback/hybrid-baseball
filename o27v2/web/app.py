@@ -1617,13 +1617,18 @@ def _aggregate_batter_rows(
         #          / (lg_R/PA × PF) × 100
         # where PF is the player's effective park factor (half home / half
         # road approximation). 100 = league average AT THAT PARK; >100 =
-        # better than the league after stripping park bias. The wOBA_scale
-        # is the same 1.20 used elsewhere (FanGraphs convention).
+        # better than the league after stripping park bias. The wOBA scale is
+        # O27-native: the OBP-scale factor derive_linear_weights() already fits
+        # (league_obp / raw-wRAA-per-PA). It is ~0.86 in O27, NOT MLB's 1.20 —
+        # O27's run environment (league wOBA ~0.49) is nothing like MLB's ~0.32,
+        # so dividing by 1.20 mis-converted wOBA points to runs. Same value
+        # feeds VORP below so wRC+ and bVORP share one scale.
+        woba_scale = _linear_weights().get("woba_scale") or 1.20
         tid_b = b.get("team_id")
         pf_b  = (park_map.get(int(tid_b)) if tid_b is not None and park_map else None) or 1.0
         lg_rpa = scoped.get("runs_per_pa") or baselines.get("runs_per_pa") or 0.0
         if lg_rpa > 0 and pf_b > 0:
-            wrc_per_pa = (b["woba"] - league_woba) / 1.20 + lg_rpa
+            wrc_per_pa = (b["woba"] - league_woba) / woba_scale + lg_rpa
             b["wrc_plus"] = (wrc_per_pa / (lg_rpa * pf_b)) * 100.0
         else:
             b["wrc_plus"] = 100.0
@@ -1631,9 +1636,10 @@ def _aggregate_batter_rows(
 
         # bVORP — value over replacement, in runs.
         # (wOBA - replacement_wOBA) × PA / wOBA_scale ≈ runs above replacement.
-        # Uses a simplified wOBA scale of 1.20 (FanGraphs convention).
+        # wOBA_scale is the O27-native factor bound above (≈0.86), not MLB's 1.20.
+        # Runs-per-win (rpw, applied downstream) is empirically validated against
+        # actual team W-L vs run differential; replacement stays at 0.85×league.
         repl_woba = baselines.get("replacement_woba") or 0
-        woba_scale = 1.20
         b["vorp"] = ((b["woba"] - repl_woba) * pa / woba_scale) if (pa and league_woba) else 0.0
 
         # --- Defensive value ---

@@ -2,9 +2,11 @@
 
 **Date:** 2026-06-06
 **Branch:** `claude/war-oaa-reconciliation-koalas-7t0pG`
-**Scope:** read-only audit of the analytics/stats layer for imported MLB
-constants, plus two doc/comment corrections. One code change:
-`o27v2/analytics/linear_weights.py` now exposes the native `woba_scale`.
+**Scope:** audit of the analytics/stats layer for imported MLB constants, two
+doc/comment corrections, and — on the owner's call — a coordinated wOBAScale
+recalibration (MLB 1.20 → O27-native 0.86) in wRC+/VORP, with runs-per-win
+empirically validated and replacement level kept. Spans two commits (audit +
+corrections first, then the wOBAScale switch).
 **Context:** follow-up to the BSR native-ification
 (`docs/aar-bsr-o27-native-and-into-war.md`). The brief was "do the native stat
 audit and fix speed-based runner advancement."
@@ -23,11 +25,12 @@ Two headline results, both of which narrow the work rather than expand it:
 
 2. **The rest of the stat suite is already overwhelmingly O27-native.** The
    remaining MLB constants are either *by design* (Crossover/XO) or *calibration
-   choices that aren't demonstrably wrong* (wOBA scale, FIP coefficients,
-   positional DRS ranges). **None** clears the bar that BSR did — BSR was
-   *perverse* (penalised the players it should reward); these are not. So this
-   audit recommends **no blind fixes**, and documents each with a measured
-   tradeoff so the owner can choose.
+   choices that aren't demonstrably wrong* (FIP coefficients, positional DRS
+   ranges). **None** is *perverse* the way BSR was. The one with real leverage —
+   the **wOBA scale** — was, on the owner's call, switched to the O27-native
+   value (0.86) as a **coordinated recalibration** (§3b); runs-per-win was
+   empirically validated as already-correct and replacement level was kept. The
+   rest are documented with measured tradeoffs, not blind-fixed.
 
 A process note up front: during the audit I briefly mis-concluded that wRC+/WAR
 were badly broken (wRC+ centering at −10). That was a **bug in my throwaway test
@@ -104,27 +107,45 @@ within the O27 distribution onto an MLB-readable mean±sd (`xo = MLB_mean + z_O2
 the intended target scale (there's even a "LOCKED DECISION" comment). Replacing
 them would defeat the metric. **No change.**
 
-### 3b. wOBA scale `1.20` — **genuine, but not a clear win**
-`app.py:1626, 1636` hardcode wOBAScale = 1.20 (FanGraphs convention) for wRC+ and
-VORP. The O27-native value *is* well-defined — it's the OBP-scale factor
-`league_obp / raw-wRAA-per-PA` that `derive_linear_weights` already computes — and
-on the recon DB it's **0.8589**, not 1.20 (O27's league wOBA is 0.489 vs MLB's
-~0.32; different run environment). I exposed it as `derive_linear_weights()
-["woba_scale"]` for future use.
+### 3b. wOBA scale `1.20` → native **0.86** — **SWITCHED (coordinated recalibration)**
+`app.py` hardcoded wOBAScale = 1.20 (FanGraphs convention) for wRC+ and VORP. The
+O27-native value is the OBP-scale factor `league_obp / raw-wRAA-per-PA` that
+`derive_linear_weights` already fits; on the recon DB it's **0.8589**, not 1.20
+(O27's league wOBA is 0.489 vs MLB's ~0.32 — a different run environment, where
+dividing by 1.20 mis-converts wOBA points to runs). Now exposed as
+`derive_linear_weights()["woba_scale"]` and used in both wRC+ and VORP.
 
-**Why I did not switch it:** wOBAScale also feeds VORP → WAR. Switching 1.20→0.86
-multiplies all VORP by ~1.40, inflating every WAR ~40%. The current calibration
-already produces a **well-centered wRC+ (98)** and a sane WAR ladder (top ~6.2),
-so this isn't a correctness fix — it's a WAR-magnitude recalibration that would
-also want coordinated review of runs-per-win and replacement level. That's an
-owner decision, not a silent change. The native value is now exposed so the
-change is a one-liner if/when wanted.
+The owner chose to go native **with coordinated re-checks of runs-per-win and
+replacement level** (the worry being that 1.20→0.86 multiplies VORP ~1.40× and so
+inflates WAR). The coordination came back cleaner than expected:
 
-### 3c. League-baseline wOBA weights (`app.py:2121`, MLB) — **immaterial**
-The league-baseline wOBA uses MLB weights while players use native weights. In
-practice the two league means are 0.5136 vs 0.5054 (~1.6% apart), which is why
-wRC+ still centers at ~98. Not worth the risk of nudging a currently-good
-centering. Could be unified later for tidiness, low priority.
+- **Runs-per-win is already correct.** Fitting RPW empirically from actual team
+  W–L vs run differential (run_diff / wins-above-.500, through origin) gives
+  **19.89**, essentially identical to the derived **20.05**. No change.
+- **The "inflation" is actually a correction.** By the proper WAR reconciliation
+  (Σ net position WAR ≈ league wins-above-replacement ≈ **94**), the old 1.20
+  netted only **49** — it was *under*-crediting hitters. Native nets **72**,
+  *closer* to target. So native is more correct, not over-hot.
+- **High top-end is structurally plausible.** Team wins span **17–52 of 66
+  games** — O27 has far larger talent gaps than MLB, so a stacked team carries
+  ~32 WAR of talent and an ~8.7-WAR star on it is believable.
+- **Replacement stays at 0.85×league.** Net (72) lands slightly under the fuzzy
+  ~94 target; lowering replacement to close the gap would only push tops higher,
+  so 0.85 is the conservative keep.
+
+**Net effect:** wRC+ centering is unchanged (the scale only affects *spread*,
+not the center — regulars 98→97); WAR widens (top 6.2→8.7) toward better
+reconciliation. wRC+/VORP now share one O27-native scale.
+
+### 3c. League-baseline wOBA weights (`app.py:2121`, MLB) — **follow-up**
+The league-baseline wOBA (the wRC+ centering point) still uses MLB weights
+(0.5136) while players use native weights (PA-weighted ~0.505, ≈ league OBP
+0.489). That ~5% gap is why wRC+ now centers at ~91 full-pop / 97 for regulars
+instead of exactly 100. Fixing it (baseline wOBA via native weights, i.e. ≡
+league OBP by construction) would re-center wRC+ — but it also lowers
+`replacement_woba = 0.85×league_woba`, which *further* raises WAR (compounding
+with 3b). Left as a separate, measured decision rather than bundled into this
+recalibration. Low urgency: regulars already read a sane ~97.
 
 ### 3d. FIP/DIPS coefficients `13 / 3 / −2` (`app.py:1931-1933, 1964-1966`)
 Standard Tango weights. Because the FIP **constant** is refit so league FIP =
@@ -149,12 +170,13 @@ Lower priority; listed for completeness.
 - `docs/aar-bsr-o27-native-and-into-war.md` — added a correction box and fixed
   the follow-up that called speed-based advancement an unbuilt gap.
 - `o27v2/analytics/linear_weights.py` — `derive_linear_weights()` now returns
-  `woba_scale` (the native OBP-scale factor). No behavior change; it's
-  infrastructure for any future wOBAScale recalibration (3b) and lets the value
-  be inspected.
+  `woba_scale` (the native OBP-scale factor, ≈0.86).
+- `o27v2/web/app.py` — wRC+ and bVORP now use the native `woba_scale` instead of
+  the hardcoded MLB 1.20 (§3b). This is the one metric-output change: WAR widens
+  toward better reconciliation (top 6.2→8.7), wRC+ centering unchanged.
 
-No metric outputs change in this commit; the wOBA-scale recalibration is
-deliberately *not* applied.
+The wOBAScale switch lands in a follow-up commit (the audit + corrections came
+first); rpw and replacement were re-checked and left as-is (§3b).
 
 ## Validation
 
