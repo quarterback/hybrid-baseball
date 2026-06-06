@@ -7,6 +7,7 @@
     <h2 class="mb-1">Free Agents</h2>
     <div class="text-secondary small">
       {{ total }} player{{ '' if total == 1 else 's' }} unclaimed
+      {% if total %}· showing {{ showing_from }}–{{ showing_to }}{% endif %}
       {% if last_sweep %}· last match-day sweep <strong>{{ last_sweep }}</strong>{% endif %}
     </div>
   </div>
@@ -31,26 +32,12 @@
   weakest at their position has a way onto a roster.
 </p>
 
-{# Per-position counts #}
-<div class="row g-2 mb-3">
-  {% for pos, n in by_pos %}
-  <div class="col-auto">
-    <a class="panel panel-body d-block text-decoration-none"
-       style="padding:8px 12px; min-width:64px; text-align:center"
-       href="{{ url_for('free_agents', pos=pos, kind=kind, sort=sort) }}">
-      <div class="num fw-bold" style="font-size:1.2rem">{{ n }}</div>
-      <div class="score-label">{{ pos }}</div>
-    </a>
-  </div>
-  {% endfor %}
-</div>
-
 <form method="get" class="filter-bar mb-3">
   <div>
     <label class="form-label" for="f-pos">Position</label>
     <select id="f-pos" name="pos" class="form-select form-select-sm" style="width:140px">
       <option value="">All Positions</option>
-      {% for pos, _n in by_pos %}
+      {% for pos in positions %}
       <option value="{{ pos }}" {% if selected_pos == pos %}selected{% endif %}>{{ pos }}</option>
       {% endfor %}
     </select>
@@ -119,6 +106,37 @@
     </tbody>
   </table>
 </div>
+
+{% if page_count > 1 %}
+<nav class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3"
+     aria-label="Free-agent pages">
+  <div class="text-secondary small">
+    Page {{ page }} of {{ page_count }} · {{ total }} total
+  </div>
+  <ul class="pagination pagination-sm mb-0">
+    <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+      <a class="page-link"
+         href="{{ url_for('free_agents', pos=selected_pos, kind=kind, sort=sort, page=page-1) }}"
+         aria-label="Previous"><i class="bi bi-chevron-left"></i></a>
+    </li>
+    {% for p in range(1, page_count + 1) %}
+      {% if p == 1 or p == page_count or (p >= page - 2 and p <= page + 2) %}
+      <li class="page-item {% if p == page %}active{% endif %}">
+        <a class="page-link"
+           href="{{ url_for('free_agents', pos=selected_pos, kind=kind, sort=sort, page=p) }}">{{ p }}</a>
+      </li>
+      {% elif p == page - 3 or p == page + 3 %}
+      <li class="page-item disabled"><span class="page-link">…</span></li>
+      {% endif %}
+    {% endfor %}
+    <li class="page-item {% if page >= page_count %}disabled{% endif %}">
+      <a class="page-link"
+         href="{{ url_for('free_agents', pos=selected_pos, kind=kind, sort=sort, page=page+1) }}"
+         aria-label="Next"><i class="bi bi-chevron-right"></i></a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
 {% else %}
 <div class="panel panel-body text-secondary">
   No free agents match the current filter.

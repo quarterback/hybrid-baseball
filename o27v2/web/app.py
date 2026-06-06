@@ -883,10 +883,10 @@ def _project_peak_overall(p) -> int:
 
 
 def _overall_chip(p) -> "Markup":
-    """Render the player's overall as 1-6 diamonds (current) plus baby
-    bottles for any projected upside above current. Number is exposed
-    via the title attribute so power users still see the underlying
-    rating on hover."""
+    """Render the player's overall as 1-6 filled stars (current tier) plus
+    outline stars for any projected upside above current. Uses Bootstrap
+    Icons (bi-star-fill / bi-star). The number is exposed via the title
+    attribute so power users still see the underlying rating on hover."""
     from markupsafe import Markup, escape
     overall = _player_overall_display(p)
     current_d = _overall_to_diamonds(overall)
@@ -894,17 +894,17 @@ def _overall_chip(p) -> "Markup":
     if age <= 26:
         peak = _project_peak_overall(p)
         peak_d = _overall_to_diamonds(peak)
-        bottles = max(0, peak_d - current_d)
+        upside = max(0, peak_d - current_d)
     else:
         peak = overall
-        bottles = 0
+        upside = 0
     title = f"Overall: {overall}"
-    if bottles > 0:
+    if upside > 0:
         title += f" · projected peak: {peak}"
-    diamonds = '<span class="ovr-diamond">◆</span>' * current_d
-    bottles_html = '<span class="ovr-bottle">\U0001F37C</span>' * bottles
+    filled = '<i class="bi bi-star-fill ovr-star"></i>' * current_d
+    upside_html = '<i class="bi bi-star ovr-star-upside"></i>' * upside
     return Markup(
-        f'<span class="ovr-chip" title="{escape(title)}">{diamonds}{bottles_html}</span>'
+        f'<span class="ovr-chip" title="{escape(title)}">{filled}{upside_html}</span>'
     )
 
 
@@ -8922,6 +8922,12 @@ def free_agents():
     kind       = (request.args.get("kind") or "all").strip().lower()  # all|hitters|pitchers
     sort       = (request.args.get("sort") or "ovr").strip().lower()
 
+    PER_PAGE = 50
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+
     where = ["team_id IS NULL"]
     params: list = []
     if pos_filter:
@@ -8946,18 +8952,29 @@ def free_agents():
     else:  # default: best-overall first
         rows.sort(key=lambda r: -r["overall"])
 
-    # Group by position for the per-bucket counts
-    by_pos: dict[str, int] = {}
-    for r in db.fetchall("SELECT position FROM players WHERE team_id IS NULL"):
-        by_pos[r["position"]] = by_pos.get(r["position"], 0) + 1
+    # Distinct positions present in the pool — feeds the filter dropdown.
+    positions = sorted({r["position"] for r in db.fetchall(
+        "SELECT DISTINCT position FROM players WHERE team_id IS NULL")})
+
+    # Paginate the (already filtered + sorted) result set.
+    total_matched = len(rows)
+    page_count = max(1, (total_matched + PER_PAGE - 1) // PER_PAGE)
+    page = min(page, page_count)
+    start = (page - 1) * PER_PAGE
+    page_rows = rows[start:start + PER_PAGE]
 
     return _serve("free_agents.html",
-                  free_agents=rows,
-                  total=len(rows),
-                  by_pos=sorted(by_pos.items(), key=lambda kv: -kv[1]),
+                  free_agents=page_rows,
+                  total=total_matched,
+                  positions=positions,
                   selected_pos=pos_filter,
                   kind=kind,
                   sort=sort,
+                  page=page,
+                  page_count=page_count,
+                  per_page=PER_PAGE,
+                  showing_from=(start + 1 if page_rows else 0),
+                  showing_to=start + len(page_rows),
                   last_sweep=_last_sweep_date())
 
 

@@ -446,12 +446,10 @@
           "weight": 0.15,
           "country": "TW",
           "first_keys": [
-            "chinese_taiwanese",
-            "chinese"
+            "chinese_taiwanese"
           ],
           "surname_keys": [
-            "chinese_taiwanese",
-            "chinese"
+            "chinese_taiwanese"
           ]
         },
         {
