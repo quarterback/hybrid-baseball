@@ -300,6 +300,92 @@ CHINESE_FEMALE_GIVEN = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Japan — the `japanese` pools are large and mostly real, but the same scrape
+# left European/J-league club names, sponsor companies, and foreign-player
+# given names behind. Cleaned by blocklist (not allowlist — Japanese surnames
+# are too numerous to enumerate) and topped up with common missing surnames.
+# ---------------------------------------------------------------------------
+JAPANESE_SURNAME_JUNK = {
+    # European football clubs / places
+    "Alkmaar", "Alsace", "Betis", "Bremen", "Bochum", "Düsseldorf", "Eibar",
+    "Leganés", "Liège", "Mönchengladbach", "Saint-Gilloise", "Sociedad",
+    "Wolfsburg",
+    # J-/B-league club nicknames & sponsor words
+    "Antelopes", "B-Corsairs", "Brex", "Diamonds", "Dolphins", "Frontale",
+    "Grampus", "Grizzlies", "Jets", "Koalas", "Ladies", "Lakes", "Lamas",
+    "Legends", "Rabbits", "S-Pulse", "Suns", "Thunders", "V-Magic", "Warriors",
+    "Wave", "Wizards", "Iris",
+    # foreign (non-Japanese) surnames scraped from rosters
+    "Daniel", "Fazekas", "Friend", "Gaines", "Hawkinson", "Hovasse",
+    "Malhotra", "Mawuli", "McLachlan", "Okoye", "Sade", "Santillan",
+    "Schafer", "Smith", "Trotter", "Zaccheroni",
+}
+
+# Common Japanese surnames absent from the scrape — genuine bolster.
+JAPANESE_SURNAME_ADD = {
+    "Yamashita", "Goto", "Aoki", "Nishimura", "Ono", "Tamura", "Wada", "Kudo",
+    "Miyamoto", "Maruyama", "Imai", "Fujimoto", "Takeda", "Murata", "Ueno",
+    "Hirano", "Kojima", "Iwasaki", "Sakurai", "Matsuo", "Kikuchi", "Adachi",
+    "Sugimoto", "Hattori", "Komatsu", "Mizuno", "Nishida", "Ishihara",
+    "Hirata", "Nakata", "Ohashi", "Fukushima", "Ogura", "Sugiura", "Kuroda",
+    "Hamada", "Ishibashi", "Hosokawa", "Nakanishi", "Yamauchi",
+}
+
+# Foreign given names / club / sponsor / place tokens in the Japanese first
+# slots. (Short legit names like Go/Gen/Jun/Kei/Sho/Yu/Rio/Reo/Rui/Mao/Maya
+# are NOT listed — they're real Japanese given names.)
+JAPANESE_FIRST_JUNK = {
+    # clubs / sponsors / places
+    "Albirex", "Alvark", "Borussia", "Cercle", "Eintracht", "Fortuna",
+    "Inter", "Júbilo", "Real", "Royale", "SeaHorses", "Sporting", "Standard",
+    "Vegalta", "Urawa", "Utsunomiya", "Shimizu", "Shiga", "Shinshu",
+    "Memphis", "Texas", "Washington", "United", "Chanson", "Denso", "Fujitsu",
+    "Mitsubishi", "Toyota",
+    # foreign given names
+    "Alberto", "Avi", "Ben", "Corey", "Geoffrey", "James", "Jay", "Josh",
+    "Julio", "Marcus", "Nick", "Thomas", "Tom", "Zion", "Anastasia", "Evelyn",
+    "Lily", "Monica", "Stephanie", "Futoshi", "Sun",
+}
+
+# Modest given-name bolster for parity with the KR/CN work.
+JAPANESE_MALE_GIVEN_ADD = {
+    "Sora", "Yamato", "Asahi", "Haru", "Yuma", "Ren", "Sosuke", "Itsuki",
+    "Kaito", "Riku", "Yusei", "Kanata", "Minato", "Hinata", "Towa", "Aoto",
+    "Rikuto", "Souta", "Yuto", "Ryusei",
+}
+JAPANESE_FEMALE_GIVEN_ADD = {
+    "Yua", "Hina", "Mei", "Tsumugi", "Akari", "Sara", "Yuna", "Riko", "Mio",
+    "Ichika", "Koharu", "Tsubaki", "Sakura", "Hinata", "Kaede", "Rin", "Yuzuki",
+    "Honoka", "Mao", "Saki",
+}
+
+# ---------------------------------------------------------------------------
+# Taiwan — the `chinese_taiwanese` bucket is clean Wade-Giles but thin, so it
+# is bolstered (union) rather than rebuilt. Keeps the Wade-Giles convention
+# (Hsieh/Tsai/Chang surnames, hyphenated given names) distinct from the
+# mainland pinyin `chinese` pool.
+# ---------------------------------------------------------------------------
+TAIWAN_SURNAME_ADD = {
+    "Wang", "Lee", "Chou", "Yeh", "Kao", "Chien", "Chuang", "Tang", "Weng",
+    "Chao", "Tu", "Shih", "Ko", "Chiang", "Hsiung", "Fang", "Ho", "Tai",
+    "Shen", "Wei", "Chan", "Hsia", "Chung", "Hsu", "Tsai", "Hung", "Chu",
+    "Tseng", "Lai", "Chiu",
+}
+TAIWAN_MALE_GIVEN_ADD = {
+    "Chih-wei", "Chun-hsiang", "Cheng-wei", "Chia-hsien", "Hung-wen",
+    "Kuan-ting", "Ming-che", "Po-wei", "Sheng-an", "Tsung-han", "Wei-lun",
+    "Yi-chieh", "Yu-cheng", "Chien-hao", "Hsiao-tung", "Jui-chi", "Kai-wei",
+    "Tzu-chiang", "Wen-pin", "Yung-chi",
+}
+TAIWAN_FEMALE_GIVEN_ADD = {
+    "Chia-ling", "Hsin-ru", "Pei-yu", "Shu-hua", "Tzu-ching", "Wan-ju",
+    "Yi-chun", "Ya-ting", "Hui-chen", "Mei-chen", "Pei-ru", "Shu-ting",
+    "Tzu-han", "Wan-ting", "Ya-hsuan", "Yu-chen", "Ching-wen", "Hsiao-yu",
+    "Li-hua", "Shih-yu",
+}
+
+
 def _rebuild_korean_first(values, curated, report_slot):
     """Keep hyphenated given names + a small keep-list, add curated; drop the
     rest (surnames, foreign, junk). Reports removed = original - final."""
@@ -351,9 +437,10 @@ def scrub(dry_run: bool = False) -> dict:
     # First names: mascots + explicit foreign-city junk only.
     # Korean & Chinese first-name buckets are rebuilt separately (below).
     first_block = mascots | FIRST_NAME_CITY_JUNK
+    handled_first = ("korean", "chinese", "japanese", "chinese_taiwanese")
     for pool_name, pool in (("male_first", male), ("female_first", female)):
         for key, values in pool.items():
-            if key in ("korean", "chinese") or not isinstance(values, list):
+            if key in handled_first or not isinstance(values, list):
                 continue
             pool[key] = clean_bucket(pool_name, key, values, first_block)
 
@@ -373,6 +460,25 @@ def scrub(dry_run: bool = False) -> dict:
         if slot:
             report[pool_name][key] = slot
 
+    def bolster(pool_name, key, pool, drop, add):
+        """Remove `drop`, union `add`; report removed = original - final."""
+        values = pool.get(key)
+        if not isinstance(values, list):
+            return
+        final = sorted((set(values) - drop) | add)
+        removed = sorted(set(values) - set(final))
+        if removed:
+            report[pool_name][key] = removed
+        pool[key] = final
+
+    # Japanese first names — clean foreign/club junk, bolster given names.
+    jp_first_drop = first_block | JAPANESE_FIRST_JUNK
+    bolster("male_first", "japanese", male, jp_first_drop, JAPANESE_MALE_GIVEN_ADD)
+    bolster("female_first", "japanese", female, jp_first_drop, JAPANESE_FEMALE_GIVEN_ADD)
+    # Taiwanese first names — Wade-Giles bolster (clean any stray mascot/city).
+    bolster("male_first", "chinese_taiwanese", male, first_block, TAIWAN_MALE_GIVEN_ADD)
+    bolster("female_first", "chinese_taiwanese", female, first_block, TAIWAN_FEMALE_GIVEN_ADD)
+
     # Surnames: mascots + city sweep; CJK buckets get canonical allowlist.
     for key, values in surnames.items():
         if not isinstance(values, list):
@@ -387,6 +493,21 @@ def scrub(dry_run: bool = False) -> dict:
             if removed:
                 report["surnames"][key] = removed
             surnames[key] = sorted(CHINESE_SURNAMES)
+        elif key == "japanese":
+            final = sorted(
+                (set(values) - surname_city_junk - JAPANESE_SURNAME_JUNK)
+                | JAPANESE_SURNAME_ADD
+            )
+            removed = sorted(set(values) - set(final))
+            if removed:
+                report["surnames"][key] = removed
+            surnames[key] = final
+        elif key == "chinese_taiwanese":
+            final = sorted((set(values) - surname_city_junk) | TAIWAN_SURNAME_ADD)
+            removed = sorted(set(values) - set(final))
+            if removed:
+                report["surnames"][key] = removed
+            surnames[key] = final
         else:
             surnames[key] = clean_bucket("surnames", key, values, surname_city_junk)
 

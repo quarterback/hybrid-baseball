@@ -139,6 +139,33 @@ romanisations the scrape dragged in (`Chan`, `Wong`, `Ng`, `Tse`…) were droppe
 since the `chinese` bucket represents the mainland and HK/overseas spellings
 belong to their own pools.
 
+### Follow-up: Japan & Taiwan
+
+Same treatment extended east. The two buckets had opposite problems:
+
+- **Japan (`japanese`)** — large but still contaminated. The scrape left
+  European/J-/B-league club names (`Albirex`, `Frontale`, `Bremen`,
+  `Wolfsburg`, `Antelopes`), sponsor companies (`Toyota`, `Denso`, `Fujitsu`,
+  `Mitsubishi`), and foreign-player given names (`Geoffrey`, `Marcus`,
+  `Anastasia`). Cleaned by **blocklist** (Japanese surnames are too numerous to
+  allowlist) — 105 junk tokens removed — and topped up with ~40 common missing
+  surnames (`Yamashita`, `Goto`, `Aoki`…) plus a modern given-name bolster.
+- **Taiwan (`chinese_taiwanese`)** — clean Wade-Giles but thin (25/22/20). It
+  was **bolstered** (not rebuilt) so the Wade-Giles convention stays intact:
+  surnames → ~49, given names → ~42 / 40. The `east_asia` region also had TW
+  drawing from *both* `chinese_taiwanese` and the mainland-pinyin `chinese`
+  pool, which produced mixed names like `Weidong Su`; now that the Taiwanese
+  pool stands on its own, the TW subregion in `regions.json` draws from
+  `chinese_taiwanese` only, so Taiwanese players get authentic Wade-Giles
+  names (`Chun-hsiang Tu`, `Mei-chen Yeh`).
+
+Post-fix samples: `Towa Yokobori`, `Haruka Kunieda` (JP); `Chien-ming Ho`,
+`Hui-min Chou` (TW). All `test_name_regions` invariants and the idempotency
+guard pass.
+
+(The legacy `taiwanese` bucket is unreferenced by any region — it was left
+untouched.)
+
 **Guard:** `tests/test_name_pool_clean.py` re-runs the scrubber in dry-run mode
 and asserts zero residual removals, so a future re-seed that reintroduces junk
 fails loudly. The existing `tests/test_name_regions.py` invariants (every bucket
