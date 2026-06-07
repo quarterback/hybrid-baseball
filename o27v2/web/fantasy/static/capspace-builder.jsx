@@ -1,7 +1,10 @@
 /* ============================================================
    SLATE — screens part 2: Lineup Builder, Live scoring, Player drawer
    ============================================================ */
-const { useState, useEffect } = React;
+// `var`, not `const`: classic <script>s share one global scope and several
+// bundles alias these hooks. `const` throws "already been declared" on the 2nd
+// script and blanks /fantasy. Do NOT change back to `const`. (See capspace-ui.jsx.)
+var { useState, useEffect } = React;
 
 /* color for a 20-80 rating */
 function ratingColor(v) {

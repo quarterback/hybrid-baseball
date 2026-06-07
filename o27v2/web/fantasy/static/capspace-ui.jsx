@@ -2,10 +2,15 @@
    SLATE — UI primitives + responsive app shell
    Exposes components on window for the screen + root files.
    ============================================================ */
-const { useState, useEffect, useRef } = React;
+// `var`, not `const`: every CapSpace bundle is a classic <script> sharing ONE
+// global lexical scope, and several alias these same names at top level.
+// `const`/`let` throw "Identifier 'useState' has already been declared" on the
+// 2nd script, which aborted screens/builder/app and left /fantasy blank. `var`
+// is redeclarable across scripts. Do NOT change these back to `const`.
+var { useState, useEffect, useRef } = React;
 
 /* shared currency context (mode + setter), put on window for cross-file use */
-const CurrencyCtx = React.createContext({ mode: 'usd', setMode: () => {} });
+var CurrencyCtx = React.createContext({ mode: 'usd', setMode: () => {} });
 window.CurrencyCtx = CurrencyCtx;
 
 /* ---- icon set (simple stroke icons) ---------------------------------- */
