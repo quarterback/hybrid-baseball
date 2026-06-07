@@ -162,7 +162,7 @@ def build_expected_stats(min_bip: int = 20, team_ids=None) -> dict:
 
     # AB / K for true xBA / xSLG (denominator = AB, so strikeouts drag down).
     ab = {r["player_id"]: r for r in db.fetchall(
-        "SELECT player_id, COALESCE(SUM(ab),0) AS ab FROM game_batter_stats "
+        "SELECT player_id, COALESCE(SUM(ab),0) AS ab FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) "
         "WHERE phase = 0" + _team_in(team_ids, "team_id") + " GROUP BY player_id")}
     names = _names(list(per.keys()))
     leaders = []
@@ -309,7 +309,7 @@ def build_baserunning_value(min_op: int = 10, team_ids=None) -> dict:
                   COALESCE(SUM(adv_op_1b),0)+COALESCE(SUM(adv_op_2b),0)+COALESCE(SUM(adv_op_3b),0) AS op,
                   COALESCE(SUM(adv_adv_1b),0)+COALESCE(SUM(adv_adv_2b),0)+COALESCE(SUM(adv_adv_3b),0) AS adv,
                   COALESCE(SUM(sb),0) AS sb, COALESCE(SUM(cs),0) AS cs
-           FROM game_batter_stats WHERE phase = 0""" + _team_in(team_ids, "team_id") +
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) WHERE phase = 0""" + _team_in(team_ids, "team_id") +
         " GROUP BY player_id")
     valid = [r for r in rows if (r["op"] or 0) >= min_op]
     lg_xbt = (sum(r["adv"] for r in valid) / sum(r["op"] for r in valid)) if valid and sum(r["op"] for r in valid) else 0.0
@@ -343,7 +343,7 @@ def build_tto_penalty(min_bf: int = 60, team_ids=None) -> dict:
         """SELECT player_id,
                   COALESCE(SUM(bf_tto1),0) AS bf1, COALESCE(SUM(bf_tto2),0) AS bf2, COALESCE(SUM(bf_tto3),0) AS bf3,
                   COALESCE(SUM(k_tto1),0)  AS k1,  COALESCE(SUM(k_tto2),0)  AS k2,  COALESCE(SUM(k_tto3),0)  AS k3
-           FROM game_pitcher_stats WHERE phase = 0""" + _team_in(team_ids, "team_id") +
+           FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) WHERE phase = 0""" + _team_in(team_ids, "team_id") +
         " GROUP BY player_id")
     lg = {f"bf{i}": 0 for i in (1, 2, 3)} | {f"k{i}": 0 for i in (1, 2, 3)}
     valid = []
@@ -494,7 +494,7 @@ def build_fielding_value(min_chances: int = 25, team_ids=None) -> dict:
     # Per (fielding_team, position) regular = most-used player at that position.
     appers = db.fetchall(
         """SELECT b.team_id, b.player_id, p.position, COUNT(*) AS g
-           FROM game_batter_stats b JOIN players p ON p.id = b.player_id
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) b JOIN players p ON p.id = b.player_id
            WHERE b.phase = 0""" + _team_in(team_ids, "b.team_id") +
         " GROUP BY b.team_id, b.player_id")
     regular = {}   # (team_id, pos) -> (player_id, games)

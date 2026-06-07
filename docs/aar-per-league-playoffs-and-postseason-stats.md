@@ -30,7 +30,10 @@ Design decisions confirmed with the user up front:
   lengths (persisted, not config-file-only).
 - **Default ladder 3 / 5 / 7 / 7** (Wild Card / Division / League Championship /
   World Series), each selectable from {3, 5, 7, 9}.
-- **Playoff stats get their own tab; regular-season views are left as-is.**
+- **Playoff stats are tracked separately and never double-counted.**
+  Regular-season / career / leaderboard numbers exclude playoff games;
+  postseason gets its own tab and page. (Same data model — a game is a game,
+  `is_playoff` is just a flag — not a separate class of game.)
 
 ---
 
@@ -113,16 +116,39 @@ champion has been crowned.
 - **Projected field per league** before initiation; champion / league-champions
   banners after.
 
-### 5. Postseason stats — its own tab + page
+### 5. Postseason stats — separate, never double-counted
 
-- **Player card (`player.html`):** a new **Postseason** tab (only when the
-  player has playoff appearances) showing playoff-only batting & pitching lines
-  plus playoff game logs. Computed via the existing split-aggregation helpers
-  with an `is_playoff = 1` filter, so the rate stats match the rest of the card.
-  The regular-season totals above are **untouched** (per the user's choice).
+Same data model — a game is a game; `is_playoff` is just a flag, denormalized
+from `games` onto `game_batter_stats` / `game_pitcher_stats` (CREATE + ALTER +
+backfill in `db.py`; stamped at insert in `sim.py`). The flag is the only thing
+that distinguishes the two populations.
+
+- **Regular season excludes the postseason.** Every season / career /
+  leaderboard / league-environment aggregation now filters `is_playoff = 0`, so
+  playoff games are no longer folded into regular-season totals. This was a
+  broad but mechanical pass: ~51 query sites in `o27v2/web/app.py` plus the
+  career snapshots in `season_archive.py`, the league-environment +
+  records + streaks aggregations in `o27v2/analytics/`, and the almanac loader
+  in `o27/almanac/loader.py`. Two shared helpers carry the scope: the pitcher
+  dedup subquery gained a `_REG_PSTATS_DEDUP_SQL` variant, and bare batter /
+  pitcher aggregations wrap the table in a `WHERE is_playoff = 0` subquery.
+  **Per-game box scores are deliberately left unfiltered** — a playoff game's
+  box score must still show its own lines.
+- **Player card (`player.html`):** a **Postseason** tab (only when the player
+  has playoff appearances) with playoff-only batting & pitching lines + game
+  logs, via the split helpers with an `is_playoff = 1` filter.
 - **`/postseason/stats`:** a dedicated postseason leaderboard page (Batting /
-  Pitching tabs), reusing `_aggregate_batter_rows` / `_aggregate_pitcher_rows`
-  over `is_playoff = 1` games. Linked from the bracket page.
+  Pitching), reusing `_aggregate_batter_rows` / `_aggregate_pitcher_rows` over
+  `is_playoff = 1` games. Linked from the bracket page.
+
+### 6. Stat invariants scoped to the regular season
+
+With the league run-environment and pitcher W-L now regular-season-only, two
+league-aggregate invariants had to match: invariant 5 (Σ pitcher wins ==
+decided games) and invariant 8 (league xRA anchored to league RA/27) now count
+`is_playoff = 0` games. Per-row / per-game invariants (uniqueness, pitcher↔
+batter cross-check, PA identity, …) stay all-games — they verify engine
+correctness for every game, playoff included.
 
 ---
 
@@ -150,27 +176,24 @@ champion has been crowned.
 
 ## What was deliberately left alone
 
-- **Regular-season stat aggregation is unchanged.** Per the user's explicit
-  choice, the existing player-card / leaders / stats queries still span every
-  game the player played, so playoff games are still included in those
-  regular-season totals. The postseason numbers are now *also* available
-  separately. Flipping regular-season views to exclude playoff games (a one-line
-  `AND is_playoff = 0` per query, or a denormalized flag on the stat rows) is a
-  clean follow-up if that contamination becomes a concern.
-- **Season-archive leader snapshots** likewise still fold playoff games into the
-  archived season lines — same rationale, same easy follow-up.
+- **In-season roster modeling** (`development.py`, `trades.py`, `injuries.py`,
+  `rotation.py`, `bench.py`) still reads the raw stat tables unfiltered. These
+  run during the regular season (no playoff rows exist yet) or as offseason
+  modeling inputs — not as displayed statistical totals — so they don't
+  double-count what a user reads. Scoping them to the regular season is a tidy
+  follow-up, not part of the "don't double-count the stats" fix.
 
 ---
 
 ## Honest limits / follow-ups
 
-1. **Reg-season / archive contamination** (above) — intentional, but worth a
-   future toggle.
-2. **3+ co-equal leagues with the bracket enabled** crown independent champions
+1. **3+ co-equal leagues with the bracket enabled** crown independent champions
    with no overall champion (`champion()` returns None; `league_champions()`
    lists them). In practice every bracket-enabled preset is a 1- or 2-league
    national config, so this path is defensive rather than exercised.
-3. **Postseason leaderboard thresholds** are minimal (≥1 PA / ≥1 out) because
+2. **Postseason leaderboard thresholds** are minimal (≥1 PA / ≥1 out) because
    postseason samples are tiny by nature; there's no qualified-rate gating.
-4. The pre-existing `test_managers.py` shape failure should be reconciled
-   separately (the test or the roll has drifted around `mgr_flip_aggression`).
+3. Two pre-existing, unrelated test failures remain (`test_managers.py` shape
+   drift around `mgr_flip_aggression`; the chronically-flaky RNG-based
+   `test_trades.py::test_gm_noise_can_be_lopsided`). Neither touches playoff
+   code, and both seed leagues with no playoff games.

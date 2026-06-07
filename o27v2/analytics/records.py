@@ -60,7 +60,7 @@ def _single_game_batter_rows(team_ids) -> list[dict]:
                COALESCE(bs.runs,0)    AS r,
                COALESCE(bs.bb,0)      AS bb,
                COALESCE(bs.sb,0)      AS sb
-        FROM game_batter_stats bs
+        FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
         JOIN games   g  ON bs.game_id = g.id
         JOIN players p  ON bs.player_id = p.id
         JOIN teams   t  ON bs.team_id = t.id
@@ -119,7 +119,7 @@ def single_game_pitcher_records(top_n: int = 5, team_ids=None) -> dict[str, list
                COALESCE(ps.hits_allowed,0)  AS h,
                COALESCE(ps.bb,0)            AS bb,
                COALESCE(ps.er,0)            AS er
-        FROM game_pitcher_stats ps
+        FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
         JOIN games   g  ON ps.game_id = g.id
         JOIN players p  ON ps.player_id = p.id
         JOIN teams   t  ON ps.team_id = t.id
@@ -202,7 +202,7 @@ def _live_batting_lines() -> list[dict]:
                   SUM(bs.doubles) AS d2, SUM(bs.triples) AS d3, SUM(bs.hr) AS hr,
                   SUM(bs.runs) AS r, SUM(bs.rbi) AS rbi, SUM(bs.bb) AS bb,
                   SUM(bs.k) AS k, COALESCE(SUM(bs.sb),0) AS sb
-             FROM game_batter_stats bs
+             FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
              JOIN players p ON bs.player_id = p.id
              JOIN teams   t ON bs.team_id = t.id
             WHERE bs.phase = 0
@@ -218,7 +218,7 @@ def _live_pitching_lines() -> list[dict]:
                   COUNT(ps.game_id) AS p_g,
                   SUM(ps.outs_recorded) AS outs, SUM(ps.er) AS er,
                   SUM(ps.k) AS p_k, SUM(ps.bb) AS p_bb, SUM(ps.hits_allowed) AS p_h
-             FROM game_pitcher_stats ps
+             FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
              JOIN players p ON ps.player_id = p.id
              JOIN teams   t ON ps.team_id = t.id
             WHERE ps.phase = 0
@@ -405,7 +405,7 @@ def team_walkback_runs(team_ids=None) -> list[dict]:
     rows = db.fetchall(
         """SELECT ps.team_id AS pitch_team, COALESCE(ps.wb_runs,0) AS w,
                   g.home_team_id, g.away_team_id
-           FROM game_pitcher_stats ps
+           FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
            JOIN games g ON ps.game_id = g.id
            WHERE g.played = 1 AND COALESCE(ps.wb_runs,0) > 0"""
     )

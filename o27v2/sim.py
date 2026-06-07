@@ -2139,7 +2139,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
         for r in away_bstats + home_bstats:
             conn.execute(
                 """INSERT INTO game_batter_stats
-                   (game_id, team_id, player_id, phase, pa, ab, runs, hits,
+                   (game_id, team_id, player_id, phase, is_playoff, pa, ab, runs, hits,
                     doubles, triples, hr, rbi, bb, k, stays, outs_recorded,
                     hbp, sb, cs, fo, multi_hit_abs,
                     sh, bunt_att, bunt_hits, sqz, sqz_rbi,
@@ -2152,8 +2152,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                     game_position, entry_type, replaced_player_id, entered_inning,
                     gidp, gitp,
                     roe, po, a, e)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
+                 1 if game.get("is_playoff") else 0,
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
                  r["stays"], r.get("outs_recorded", 0),
@@ -2279,7 +2280,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
         for r in away_pstats + home_pstats:
             conn.execute(
                 """INSERT INTO game_pitcher_stats
-                   (game_id, team_id, player_id, phase, batters_faced,
+                   (game_id, team_id, player_id, phase, is_playoff, batters_faced,
                     outs_recorded, hits_allowed, runs_allowed, er, bb, k,
                     hr_allowed, pitches, hbp_allowed, unearned_runs,
                     sb_allowed, cs_caught, fo_induced,
@@ -2295,8 +2296,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                     fastball_pct, breaking_pct, offspeed_pct, primary_pitch,
                     wb_faced, wb_runs, ir_inherited, ir_scored,
                     terminal_outs, quality_finish, lead_entries, lead_held)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
+                 1 if game.get("is_playoff") else 0,
                  r["batters_faced"], r["outs_recorded"], r["hits_allowed"],
                  r["runs_allowed"], r.get("er", r["runs_allowed"]),
                  r["bb"], r["k"],

@@ -440,10 +440,13 @@ def test_invariant_5_w_bound(played_game_ids):
 
     # Independent global cross-check: total wins distributed across all
     # pitchers must equal the number of decided games.
+    # Regular season only: pitcher W-L (and teams.wins) track the regular
+    # season; playoff decisions live on playoff_series, not on pitcher lines,
+    # so the cross-check is against regular-season decided games.
     total_w = sum(rec.get("w", 0) for rec in wl.values())
     decided = db.fetchone(
         "SELECT COUNT(*) AS n FROM games WHERE played = 1 "
-        "AND winner_id IS NOT NULL"
+        "AND winner_id IS NOT NULL AND COALESCE(is_playoff, 0) = 0"
     )["n"]
     assert total_w == decided, (
         f"Σ W ({total_w}) != decided games ({decided}); "
@@ -590,12 +593,14 @@ def test_invariant_8_fip_anchored_to_era(played_game_ids):
                    COUNT(*) AS g
               FROM {_PSTATS_DEDUP_SQL} ps
               JOIN games gm ON gm.id = ps.game_id
-             WHERE gm.played = 1{extra_a}
+             WHERE gm.played = 1 AND COALESCE(gm.is_playoff, 0) = 0{extra_a}
              GROUP BY ps.player_id""",
         params_a,
     )
     if not rows:
         pytest.skip("no pitcher rows in the target DB scope")
+    # Regular season only: the run environment that `xra_norm` anchors to is
+    # the regular season; postseason stats are a separate population.
 
     rows = [dict(r) for r in rows]
     _aggregate_pitcher_rows(rows)

@@ -178,7 +178,7 @@ def build_xwoba_against_table(min_bf: int = 1, team_ids=None) -> dict:
     pit = db.fetchall(
         f"""SELECT player_id, SUM(batters_faced) AS bf, SUM(bb) AS bb,
                    COALESCE(SUM(hbp_allowed), 0) AS hbp
-            FROM game_pitcher_stats
+            FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0)
             WHERE phase = 0{team_in}
             GROUP BY player_id""")
 
@@ -244,7 +244,7 @@ def build_xwoba_ev_table(min_pa: int = 162, team_ids=None) -> dict:
         """
         SELECT b.player_id, p.name AS player_name, t.abbrev AS team_abbrev,
                SUM(b.pa) AS pa, SUM(b.bb) AS bb, SUM(b.hbp) AS hbp
-        FROM game_batter_stats b
+        FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) b
         JOIN players p ON p.id = b.player_id
         LEFT JOIN teams t ON t.id = b.team_id
         WHERE b.phase = 0"""
@@ -347,7 +347,7 @@ def build_xwoba_table(min_pa: int = 162, team_ids=None) -> dict:
         """
         SELECT b.player_id, p.name AS player_name, t.abbrev AS team_abbrev,
                SUM(b.pa) AS pa, SUM(b.bb) AS bb, SUM(b.hbp) AS hbp
-        FROM game_batter_stats b
+        FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) b
         JOIN players p ON p.id = b.player_id
         LEFT JOIN teams t ON t.id = b.team_id
         WHERE b.phase = 0"""

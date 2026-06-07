@@ -126,10 +126,10 @@ def _load_sqlite(path: str) -> dict[str, Any]:
             "SELECT * FROM games WHERE played = 1 ORDER BY id"
         )]
         batting  = [dict(r) for r in conn.execute(
-            "SELECT * FROM game_batter_stats"
+            "SELECT * FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0)"
         )]
         pitching = [dict(r) for r in conn.execute(
-            "SELECT * FROM game_pitcher_stats"
+            "SELECT * FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0)"
         )]
         seasons = _try_query(conn, "SELECT * FROM seasons ORDER BY season_number")
         awards  = _try_query(conn, "SELECT * FROM season_awards ORDER BY season, category")

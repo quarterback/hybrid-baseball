@@ -35,7 +35,7 @@ def longest_hit_streaks(top_n: int = 10, team_ids=None) -> list[dict]:
         f"""
         SELECT bs.player_id, bs.hits, bs.ab, bs.pa, g.id AS game_id,
                g.game_date
-        FROM game_batter_stats bs
+        FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
         JOIN games g ON bs.game_id = g.id
         WHERE g.played = 1 AND bs.phase = 0{_team_in(team_ids, "bs.team_id")}
         ORDER BY bs.player_id, g.game_date, g.id
@@ -133,7 +133,7 @@ def no_hitters_and_perfect_games(team_ids=None) -> dict:
                SUM(ps.hbp_allowed)   AS hbp,
                SUM(ps.unearned_runs) AS uer,
                SUM(ps.k)             AS k
-        FROM game_pitcher_stats ps
+        FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
         WHERE ps.phase = 0{_team_in(team_ids, "ps.team_id")}
         GROUP BY ps.game_id, ps.player_id
         HAVING SUM(ps.outs_recorded) >= 27
@@ -315,7 +315,7 @@ def home_run_streaks(top_n: int = 10, team_ids=None) -> list[dict]:
     rows = db.fetchall(
         f"""
         SELECT bs.player_id, bs.hr, bs.pa, g.id AS game_id, g.game_date
-        FROM game_batter_stats bs
+        FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
         JOIN games g ON bs.game_id = g.id
         WHERE g.played = 1 AND bs.phase = 0{_team_in(team_ids, "bs.team_id")}
         ORDER BY bs.player_id, g.game_date, g.id
@@ -344,7 +344,7 @@ def on_base_streaks(top_n: int = 10, team_ids=None) -> list[dict]:
                (COALESCE(bs.hits,0) + COALESCE(bs.bb,0)
                 + COALESCE(bs.hbp,0)) AS reached,
                g.id AS game_id, g.game_date
-        FROM game_batter_stats bs
+        FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
         JOIN games g ON bs.game_id = g.id
         WHERE g.played = 1 AND bs.phase = 0{_team_in(team_ids, "bs.team_id")}
         ORDER BY bs.player_id, g.game_date, g.id
@@ -372,7 +372,7 @@ def double_digit_k_streaks(top_n: int = 10, team_ids=None,
         f"""
         SELECT ps.player_id, ps.k, ps.is_starter,
                g.id AS game_id, g.game_date
-        FROM game_pitcher_stats ps
+        FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
         JOIN games g ON ps.game_id = g.id
         WHERE g.played = 1 AND ps.phase = 0{_team_in(team_ids, "ps.team_id")}
         ORDER BY ps.player_id, g.game_date, g.id
@@ -407,7 +407,7 @@ def scoreless_outs_streaks(top_n: int = 10, team_ids=None,
         f"""
         SELECT ps.player_id, ps.outs_recorded AS outs, ps.runs_allowed AS r,
                g.id AS game_id, g.game_date
-        FROM game_pitcher_stats ps
+        FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
         JOIN games g ON ps.game_id = g.id
         WHERE g.played = 1 AND ps.phase = 0 AND ps.outs_recorded > 0
               {_team_in(team_ids, "ps.team_id")}

@@ -382,6 +382,10 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     team_id    INTEGER NOT NULL REFERENCES teams(id),
     player_id  INTEGER NOT NULL REFERENCES players(id),
     phase      INTEGER NOT NULL DEFAULT 0,
+    -- Denormalized from games.is_playoff so the many season/career/leaderboard
+    -- aggregations (which don't join games) can keep regular-season totals
+    -- separate from postseason without double-counting. 0 = regular season.
+    is_playoff INTEGER NOT NULL DEFAULT 0,
     pa         INTEGER DEFAULT 0,
     ab         INTEGER DEFAULT 0,
     runs       INTEGER DEFAULT 0,
@@ -575,6 +579,8 @@ CREATE TABLE IF NOT EXISTS game_pitcher_stats (
     team_id        INTEGER NOT NULL REFERENCES teams(id),
     player_id      INTEGER NOT NULL REFERENCES players(id),
     phase          INTEGER NOT NULL DEFAULT 0,
+    -- Denormalized from games.is_playoff (see game_batter_stats). 0 = reg season.
+    is_playoff     INTEGER NOT NULL DEFAULT 0,
     batters_faced  INTEGER DEFAULT 0,
     outs_recorded  INTEGER DEFAULT 0,
     hits_allowed   INTEGER DEFAULT 0,
@@ -1236,6 +1242,29 @@ def init_db() -> None:
             try:
                 conn.execute(
                     f"ALTER TABLE playoff_series ADD COLUMN {col} {sql_type} DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Denormalized is_playoff on the per-game stat tables so regular-season
+        # aggregations (which mostly don't join games) keep postseason out of
+        # the totals. Add the column, then backfill it from games for any rows
+        # written before the column existed. Idempotent: the UPDATE only touches
+        # rows whose flag disagrees with their game.
+        for tbl in ("game_batter_stats", "game_pitcher_stats"):
+            try:
+                conn.execute(
+                    f"ALTER TABLE {tbl} ADD COLUMN is_playoff INTEGER NOT NULL DEFAULT 0")
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    f"""UPDATE {tbl}
+                        SET is_playoff = COALESCE(
+                            (SELECT g.is_playoff FROM games g WHERE g.id = {tbl}.game_id), 0)
+                        WHERE is_playoff IS NOT COALESCE(
+                            (SELECT g.is_playoff FROM games g WHERE g.id = {tbl}.game_id), 0)""")
                 conn.commit()
             except Exception:
                 pass
