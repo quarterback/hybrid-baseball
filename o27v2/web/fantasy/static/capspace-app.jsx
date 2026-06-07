@@ -3,9 +3,15 @@
    Loaded last; reads window.SLATE (real data injected by the
    blueprint into window.__CAPSPACE_DATA__, else bundled mock).
    ============================================================ */
-const { useState, useEffect } = React;
+// `var`, not `const`: every CapSpace bundle is a classic <script> sharing ONE
+// global lexical scope, and several alias the same React hooks / share
+// CurrencyCtx at top level. `const`/`let` throw "Identifier 'useState' has
+// already been declared" on the 2nd script, which aborted screens/builder/app
+// and left /fantasy blank. `var` is redeclarable across scripts, so the
+// aliases coexist harmlessly. Do NOT change these back to `const`.
+var { useState, useEffect } = React;
 const S = window.SLATE;
-const CurrencyCtx = window.CurrencyCtx;
+var CurrencyCtx = window.CurrencyCtx;
 const VALID_MODES = ['guilder', 'usd', 'eur', 'zora'];
 
 const EMPTY_ROSTER = Object.fromEntries(S.SLOTS.map(s => [s.key, null]));
