@@ -140,41 +140,12 @@ function App() {
   }
   const inLineup = drawer.player && Object.values(roster).some(x => x && x.id === drawer.player.id);
   const needsOnboard = walletState && (walletState.started === false || reonboard);
-  if (walletState === undefined) {
-    // Wallet still loading — render a visible splash, not an empty <div>, so a
-    // slow /api/wallet round-trip reads as "loading" rather than a blank page.
-    // Inline styles keep this independent of capspace.css.
-    return /*#__PURE__*/React.createElement(CurrencyCtx.Provider, {
-      value: {
-        mode: cur,
-        setMode
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "app",
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh'
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        textAlign: 'center',
-        opacity: 0.65
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: '22px',
-        fontWeight: 800,
-        letterSpacing: '0.02em'
-      }
-    }, "CapSpace"), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: '14px',
-        marginTop: '6px'
-      }
-    }, "Loading tonight\u2019s slate\u2026"))));
-  }
+
+  // The wallet NEVER blocks the page. The balance is injected synchronously
+  // (window.__CAPSPACE_DATA__.WALLET → S.WALLET), so the app renders the moment
+  // the document loads; loadWallet() only refreshes it and decides onboarding in
+  // the background. (Previously a `walletState === undefined` gate blanked the
+  // whole app until a slow /api/wallet round-trip returned.)
   if (needsOnboard) {
     return /*#__PURE__*/React.createElement(CurrencyCtx.Provider, {
       value: {
