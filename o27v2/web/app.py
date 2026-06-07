@@ -1173,14 +1173,22 @@ def _game_finisher(game: dict) -> tuple[int | None, int]:
     winner_id = game.get("winner_id")
     if winner_id is None:
         return None, 0
-    win_rows = db.fetchall(
-        """SELECT ps.player_id, SUM(ps.terminal_outs) AS terminal_outs
+    win_rows = [dict(r) for r in db.fetchall(
+        """SELECT ps.player_id,
+                  MAX(ps.is_starter)    AS is_starter,
+                  SUM(ps.terminal_outs) AS terminal_outs,
+                  SUM(ps.outs_recorded) AS outs_recorded,
+                  SUM(ps.er)            AS er,
+                  MIN(ps.rowid)         AS rowid
              FROM game_pitcher_stats ps
             WHERE ps.game_id = ? AND ps.team_id = ?
-            GROUP BY ps.player_id""",
+            GROUP BY ps.player_id
+            ORDER BY MIN(ps.rowid)""",
         (game["id"], winner_id),
-    )
-    f_pid = _pick_finisher(win_rows)
+    )]
+    # Exclude the decision-taker (the finish is never also the win/CG).
+    win_pid = _credit_win(win_rows)
+    f_pid = _pick_finisher(win_rows, win_pid=win_pid)
     if f_pid is None:
         return None, 0
     row = db.fetchone(
@@ -1253,6 +1261,7 @@ def _attach_decisions(games: list[dict]) -> None:
         f"""SELECT ps.game_id, ps.team_id, ps.player_id,
                    SUM(ps.outs_recorded) AS outs, SUM(ps.er) AS er,
                    SUM(ps.terminal_outs) AS terminal_outs,
+                   MAX(ps.is_starter) AS is_starter,
                    MIN(ps.rowid) AS rowid, p.name AS player_name
               FROM game_pitcher_stats ps
               JOIN players p ON ps.player_id = p.id
@@ -1292,7 +1301,7 @@ def _attach_decisions(games: list[dict]) -> None:
                               "w": wl["w"], "l": wl["l"]}
         # Finisher: the winning team's terminal-outs leader (save-equivalent),
         # shown with his season terminal-outs total. Independent of W.
-        f_pid = _pick_finisher(by_team_game.get((g["id"], winner_id), []))
+        f_pid = _pick_finisher(by_team_game.get((g["id"], winner_id), []), win_pid=w_pid)
         if f_pid:
             g["f_pitcher"] = {"name": _last(name_by_id.get(f_pid, "")),
                               "to": to_map.get(f_pid, 0)}
@@ -1542,17 +1551,19 @@ def _aggregate_batter_rows(
         # since each PA represents one opportunity; stays inside an AB
         # are separate PAs.
         ww = _linear_weights()["woba_weights"]
-        # `stay_hits` is a subset of `hits`; keep it out of the 1B
-        # bucket so the wOBA contribution reflects true singles vs.
-        # the (lower-RV) stay-credited events separately.
-        stay_h_for_woba = b.get("stay_hits") or 0
-        true_singles = h - d2 - d3 - hr - stay_h_for_woba
-        stay_w = ww.get("STAY", ww["1B"])
+        # Since the 2C rework, a credited 2C hit is a REAL hit of its type and
+        # already lives in d2/d3/h, so singles are just h − d2 − d3 − hr — no
+        # stay split, and 2C hits are weighted by their real type.
+        true_singles = h - d2 - d3 - hr
         woba_num = (
             ww["BB"] * bb + ww["HBP"] * hbp + ww["1B"] * true_singles +
-            ww["2B"] * d2 + ww["3B"]  * d3  + ww["HR"] * hr +
-            stay_w   * stay_h_for_woba
+            ww["2B"] * d2 + ww["3B"]  * d3  + ww["HR"] * hr
         )
+        # A 2C AB that ended in a batter-out: the batter advanced runners (those
+        # 2C hits are credited above) but then made an out — valued like a runner
+        # being put out (owner directive), which cancels the advancement credit
+        # so the net AB is ~neutral instead of a free hit.
+        woba_num -= ww["1B"] * (b.get("c2_strand_out") or 0)
         b["woba"] = (woba_num / pa) if pa else 0.0
 
         # Stay% — share of PAs in which the batter chose to stay (dance
@@ -1617,13 +1628,18 @@ def _aggregate_batter_rows(
         #          / (lg_R/PA × PF) × 100
         # where PF is the player's effective park factor (half home / half
         # road approximation). 100 = league average AT THAT PARK; >100 =
-        # better than the league after stripping park bias. The wOBA_scale
-        # is the same 1.20 used elsewhere (FanGraphs convention).
+        # better than the league after stripping park bias. The wOBA scale is
+        # O27-native: the OBP-scale factor derive_linear_weights() already fits
+        # (league_obp / raw-wRAA-per-PA). It is ~0.86 in O27, NOT MLB's 1.20 —
+        # O27's run environment (league wOBA ~0.49) is nothing like MLB's ~0.32,
+        # so dividing by 1.20 mis-converted wOBA points to runs. Same value
+        # feeds VORP below so wRC+ and bVORP share one scale.
+        woba_scale = _linear_weights().get("woba_scale") or 1.20
         tid_b = b.get("team_id")
         pf_b  = (park_map.get(int(tid_b)) if tid_b is not None and park_map else None) or 1.0
         lg_rpa = scoped.get("runs_per_pa") or baselines.get("runs_per_pa") or 0.0
         if lg_rpa > 0 and pf_b > 0:
-            wrc_per_pa = (b["woba"] - league_woba) / 1.20 + lg_rpa
+            wrc_per_pa = (b["woba"] - league_woba) / woba_scale + lg_rpa
             b["wrc_plus"] = (wrc_per_pa / (lg_rpa * pf_b)) * 100.0
         else:
             b["wrc_plus"] = 100.0
@@ -1631,9 +1647,10 @@ def _aggregate_batter_rows(
 
         # bVORP — value over replacement, in runs.
         # (wOBA - replacement_wOBA) × PA / wOBA_scale ≈ runs above replacement.
-        # Uses a simplified wOBA scale of 1.20 (FanGraphs convention).
+        # wOBA_scale is the O27-native factor bound above (≈0.86), not MLB's 1.20.
+        # Runs-per-win (rpw, applied downstream) is empirically validated against
+        # actual team W-L vs run differential; replacement stays at 0.85×league.
         repl_woba = baselines.get("replacement_woba") or 0
-        woba_scale = 1.20
         b["vorp"] = ((b["woba"] - repl_woba) * pa / woba_scale) if (pa and league_woba) else 0.0
 
         # --- Defensive value ---
@@ -1668,10 +1685,17 @@ def _aggregate_batter_rows(
             b["def_runs_source"] = "scout"      # rating-derived projection
         b["dwar"] = b["def_runs"] / rpw if rpw else 0.0
 
-        # bWAR — total batter value = batting WAR + defensive WAR.
+        # Baserunning runs → WAR. O27-native BSR (RE-derived run values), the
+        # SAME figure build_baserunning_value() shows on the surface. Un-regressed
+        # (it's already a centered, small run value); low-sample runners net ~0.
+        bsr_runs = (baselines.get("bsr_runs") or {}).get(pid, 0.0) if pid is not None else 0.0
+        b["bsr_runs"] = bsr_runs
+        b["bwar_base"] = bsr_runs / rpw if rpw else 0.0
+
+        # bWAR — total batter value = batting + defense + baserunning WAR.
         bwar_off = b["vorp"] / rpw if rpw else 0.0
         b["war_off"] = bwar_off
-        b["war"] = bwar_off + b["dwar"]
+        b["war"] = bwar_off + b["dwar"] + b["bwar_base"]
 
         # --- Per-fielder counting stats ---
         # PO/E come straight off the row; chances and fielding% derive from
@@ -1786,6 +1810,26 @@ _XRA_W_HIT   = _XRA_W_1B   # back-compat alias if anything else imports it
 _XRA_W_BB    = 0.32
 _XRA_W_HBP   = 0.32
 
+
+def _xra_run_values(hr, h, singles, doubles, triples, bb, hbp, per_non_hr_weight):
+    """Per-event xRA run-value sum for a pitcher (before ×27/outs and xra_norm).
+
+    Uses the ACTUAL allowed hit-type breakdown when it's present and consistent
+    with the hit total, else the league blended non-HR weight. Shared by the
+    league `xra_norm` fit (_league_werra_consts) and the per-pitcher xRA
+    (_aggregate_pitcher_rows) so the two agree exactly — this is what keeps
+    outs-weighted league xRA anchored to league RA/27 (invariant 8)."""
+    non_hr_hits = max(0, (h or 0) - (hr or 0))
+    bd = (singles or 0) + (doubles or 0) + (triples or 0)
+    if bd > 0 and bd <= non_hr_hits + 2:
+        hit_rv = (_XRA_W_1B * (singles or 0)
+                  + _XRA_W_2B * (doubles or 0)
+                  + _XRA_W_3B * (triples or 0))
+    else:
+        hit_rv = per_non_hr_weight * non_hr_hits
+    return (_XRA_W_HR * (hr or 0) + hit_rv
+            + _XRA_W_BB * (bb or 0) + _XRA_W_HBP * (hbp or 0))
+
 # wERA small-sample regularizer. The raw `weighted_er × 27 / outs` rate
 # blows up for short outings — a closer who gives up one arc-3 ER in 3
 # outs extrapolates to a ~10 wERA. We shrink each pitcher's weighted-ER
@@ -1825,19 +1869,20 @@ def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
     Falls back to neutral constants on an empty DB.
     """
     row = db.fetchone(
-        f"""SELECT COALESCE(SUM(hr_allowed),0)    AS hr,
-                   COALESCE(SUM(hits_allowed),0)  AS h,
-                   COALESCE(SUM(bb),0)            AS bb,
-                   COALESCE(SUM(hbp_allowed),0)   AS hbp,
-                   COALESCE(SUM(k),0)             AS k,
-                   COALESCE(SUM(fo_induced),0)    AS fo,
-                   COALESCE(SUM(er),0)            AS er,
-                   COALESCE(SUM(outs_recorded),0) AS outs,
-                   COALESCE(SUM(er_arc1),0)       AS era1,
-                   COALESCE(SUM(er_arc2),0)       AS era2,
-                   COALESCE(SUM(er_arc3),0)       AS era3,
-                   COUNT(*)                       AS g
-            FROM {_PSTATS_DEDUP_SQL} ps"""
+        f"""SELECT COALESCE(SUM(hr_allowed),0)        AS hr,
+                   COALESCE(SUM(hits_allowed),0)      AS h,
+                   COALESCE(SUM(singles_allowed),0)   AS s,
+                   COALESCE(SUM(doubles_allowed),0)   AS d2,
+                   COALESCE(SUM(triples_allowed),0)   AS t3,
+                   COALESCE(SUM(bb),0)                AS bb,
+                   COALESCE(SUM(hbp_allowed),0)       AS hbp,
+                   COALESCE(SUM(k),0)                 AS k,
+                   COALESCE(SUM(fo_induced),0)        AS fo,
+                   COALESCE(SUM(runs_allowed),0)      AS ra,
+                   COALESCE(SUM(outs_recorded),0)     AS outs,
+                   COUNT(*)                           AS g
+            FROM {_PSTATS_DEDUP_SQL} ps
+            JOIN games gm ON gm.id = ps.game_id WHERE gm.played = 1"""
     ) or {}
     outs = row.get("outs") or 0
     g    = row.get("g")    or 0
@@ -1846,17 +1891,9 @@ def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
     _DEFAULT_SHARES = (0.85, 0.12, 0.03)
     if not outs:
         return (1.0, 1.0, 5.0, *_DEFAULT_SHARES)
-    league_era = (row["er"] * 27.0) / outs
-    league_w_raw = (
-        (0.85 * row["era1"] + 1.00 * row["era2"] + 1.20 * row["era3"])
-        * 27.0
-        / outs
-    )
-    c_w = (league_era / league_w_raw) if league_w_raw > 0 else 1.0
-    league_werra = league_w_raw * c_w  # by construction == league_era
 
-    # League hit-type shares within non-HR hits. Sourced from the batter
-    # side because pitcher stats don't persist hits-allowed by type.
+    # League hit-type shares within non-HR hits (batter side) — the per-pitcher
+    # xRA fallback weight when a pitcher has no allowed-hit-type breakdown.
     bat_row = db.fetchone(
         """SELECT COALESCE(SUM(hits),0)    AS h,
                   COALESCE(SUM(doubles),0) AS d2,
@@ -1866,32 +1903,43 @@ def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
     ) or {}
     bat_non_hr = max(0, (bat_row.get("h") or 0) - (bat_row.get("hr") or 0))
     if bat_non_hr > 0:
-        d2 = bat_row.get("d2") or 0
-        d3 = bat_row.get("d3") or 0
-        share_2b = d2 / bat_non_hr
-        share_3b = d3 / bat_non_hr
+        share_2b = (bat_row.get("d2") or 0) / bat_non_hr
+        share_3b = (bat_row.get("d3") or 0) / bat_non_hr
         share_1b = max(0.0, 1.0 - share_2b - share_3b)
     else:
         share_1b, share_2b, share_3b = _DEFAULT_SHARES
 
-    # League raw xRA — apportion non-HR hits across 1B/2B/3B using the
-    # league shares and the v2 per-type weights. The xra_norm anchor
-    # below absorbs whatever absolute level this produces so league xRA
-    # still equals league wERA.
-    non_hr_hits = max(0, row["h"] - row["hr"])
     per_non_hr_weight = (
         _XRA_W_1B * share_1b + _XRA_W_2B * share_2b + _XRA_W_3B * share_3b
     )
-    raw_xra_total = (
-        _XRA_W_HR  * row["hr"]
-      + per_non_hr_weight * non_hr_hits
-      + _XRA_W_BB  * row["bb"]
-      + _XRA_W_HBP * row["hbp"]
-    )
-    league_raw_xra = (raw_xra_total * 27.0 / outs) if outs else 0.0
-    xra_norm = (league_werra / league_raw_xra) if league_raw_xra > 0 else 1.0
+    # wERA RETIRED: anchor xRA to the realized run environment — league RA per
+    # 27 outs (ALL runs allowed; xRA estimates total runs allowed), no more
+    # arc-weighted ER / C_w. Fit xra_norm by summing each pitcher's xRA
+    # run-values through the SAME _xra_run_values branch the per-pitcher metric
+    # uses, so outs-weighted league xRA reconciles to league RA/27 exactly
+    # (no all-actual-vs-blended drift):
+    #   Σ(xra_p·outs_p) = xra_norm·27·Σ(run_values_p)  ==  RA·27
+    #   ⇒ xra_norm = total_RA / Σ(run_values_p).
+    rv_sum = 0.0
+    for pr in (db.fetchall(
+            f"""SELECT COALESCE(SUM(outs_recorded),0)   AS outs,
+                       COALESCE(SUM(hr_allowed),0)      AS hr,
+                       COALESCE(SUM(hits_allowed),0)    AS h,
+                       COALESCE(SUM(singles_allowed),0) AS s,
+                       COALESCE(SUM(doubles_allowed),0) AS d,
+                       COALESCE(SUM(triples_allowed),0) AS t,
+                       COALESCE(SUM(bb),0)              AS bb,
+                       COALESCE(SUM(hbp_allowed),0)     AS hbp
+                FROM {_PSTATS_DEDUP_SQL} ps
+                JOIN games gm ON gm.id = ps.game_id WHERE gm.played = 1
+                GROUP BY ps.player_id""") or []):
+        if not (pr["outs"] or 0):
+            continue
+        rv_sum += _xra_run_values(pr["hr"], pr["h"], pr["s"], pr["d"], pr["t"],
+                                  pr["bb"], pr["hbp"], per_non_hr_weight)
+    xra_norm = ((row["ra"] or 0) / rv_sum) if rv_sum > 0 else 1.0
     league_outs_per_g = (outs / g) if g else 5.0
-    return c_w, xra_norm, league_outs_per_g, share_1b, share_2b, share_3b
+    return 1.0, xra_norm, league_outs_per_g, share_1b, share_2b, share_3b
 
 
 def _league_fip_constant() -> float:
@@ -2045,6 +2093,8 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
                    COALESCE(SUM(hr),0)   AS hr,
                    COALESCE(SUM(bb),0)   AS bb,
                    COALESCE(SUM(hbp),0)  AS hbp,
+                   COALESCE(SUM(stay_hits),0) AS stay_hits,
+                   COALESCE(SUM(c2_strand_out),0) AS c2_strand_out,
                    COALESCE(SUM(runs),0) AS r
              FROM game_batter_stats{bat_where}""",
         bat_params,
@@ -2109,11 +2159,26 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
         out["obp"] = (h + bb + hbp) / pa
         out["slg"] = tb / pa
         out["ops"] = out["obp"] + out["slg"]
-        # wOBA stays PA-denominated as in MLB; weights tuned for O27 in the
-        # batter aggregator and mirrored here so league mean tracks.
-        woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
-        woba_den = pa   # NOT (AB + BB + HBP) — full PA-denominator in O27.
-        out["woba"] = (woba_num / woba_den) if woba_den else 0.0
+        # League wOBA — the wRC+ centering point. Uses the SAME O27-native
+        # weights the per-player aggregator uses (derive_linear_weights), so this
+        # baseline equals the PA-weighted mean of player wOBAs and wRC+ centers at
+        # 100. Previously it hardcoded MLB weights (0.72/0.95/1.30/...), which ran
+        # ~5% high and pulled wRC+ down to ~91. Since the 2C rework, 2C hits are
+        # real hits of their type already in d2/d3/h, so no stay split.
+        # PA-denominated (NOT AB+BB+HBP) — O27 semantic.
+        _ww = _linear_weights().get("woba_weights") or {}
+        if _ww:
+            woba_num = (
+                _ww.get("BB", 0.72) * bb + _ww.get("HBP", 0.74) * hbp +
+                _ww.get("1B", 0.95) * singles + _ww.get("2B", 1.30) * d2 +
+                _ww.get("3B", 1.70) * d3 + _ww.get("HR", 2.05) * hr
+            )
+            # Runner-out penalty for 2C ABs that ended in an out (see aggregator).
+            woba_num -= _ww.get("1B", 0.95) * (bat.get("c2_strand_out", 0) or 0)
+        else:
+            # No fitted weights (empty DB) — fall back to MLB linear weights.
+            woba_num = 0.72 * bb + 0.74 * hbp + 0.95 * singles + 1.30 * d2 + 1.70 * d3 + 2.05 * hr
+        out["woba"] = (woba_num / pa) if pa else 0.0
         # Replacement hitter sits ~85% of league wOBA — same convention
         # FanGraphs uses, and it's an easy mental anchor for users.
         out["replacement_woba"] = out["woba"] * 0.85
@@ -2131,14 +2196,13 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
         out["replacement_era"] = out["era"] * 1.20
         out["total_outs"] = float(pit_outs)
 
-        # league_werra is anchored to league_era by construction (see
-        # _league_werra_consts()); we surface it as its own baseline so
-        # the aggregator can read it without re-fitting.
-        out["league_werra"] = out["era"]
-
-        # league_xra is anchored to league_werra by xra_norm construction
-        # (see _league_werra_consts()).
-        out["league_xra"] = out["league_werra"]
+        # xRA (the run-prevention headline since wERA retired) is anchored to
+        # the realized run environment — league RA per 27 outs (all runs) — by
+        # xra_norm in _league_werra_consts(). Surface it as a baseline so the
+        # aggregator reads it without re-fitting. league_werra is kept as a
+        # legacy alias (= league_xra) for any plumbing still referencing it.
+        out["league_xra"]   = out["ra27"]
+        out["league_werra"] = out["league_xra"]
 
         # League arc-1 vs arc-3 K% (incl foul-outs) — used as the zero-point
         # for drift-corrected Decay. In O27 the 27-out single inning cycles
@@ -2262,6 +2326,19 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
         out["fielding_runs"]    = {}
         out["fielding_chances"] = {}
 
+    # --- Baserunning input to WAR: O27-native BSR, per player ------------------
+    # Same build_baserunning_value() the fielding/Savant surface displays. BSR is
+    # already a centered, small run value (its run constants are RE-derived from
+    # O27's own run environment, so the noisy extra-base term self-zeroes); it
+    # flows into WAR un-regressed, matching how real WAR treats BsR. min_op=1 so
+    # every baserunner is present (low-opportunity players net ~0 anyway).
+    from o27v2.analytics.expanded import build_baserunning_value as _bbv
+    try:
+        _bsr = _bbv(min_op=1, team_ids=_fld_team_ids)["leaders"]
+        out["bsr_runs"] = {b["player_id"]: b["bsr"] for b in _bsr}
+    except Exception:
+        out["bsr_runs"] = {}
+
     return out
 
 
@@ -2308,7 +2385,8 @@ def _compute_xo_league_baselines(
                    SUM(bb)         AS bb,
                    SUM(k)          AS k,
                    SUM(hbp)        AS hbp,
-                   COALESCE(SUM(stay_hits),0) AS stay_hits
+                   COALESCE(SUM(stay_hits),0) AS stay_hits,
+                   COALESCE(SUM(c2_strand_out),0) AS c2_strand_out
               FROM game_batter_stats{bat_where}
              GROUP BY player_id
             HAVING SUM(pa) >= 50""",
@@ -2577,59 +2655,28 @@ def _aggregate_pitcher_rows(
                          p.get("bf_arc3") or 0)
         gs = p.get("gs") or p.get("starts") or 0
 
-        # --- Result-tier: wERA / xRA / Decay ---
-        # wERA = arc-weighted ER on the per-27 ERA scale (C_w anchors the
-        # league mean to league ER/27), but the raw 27/outs rate explodes
-        # for short outings. Shrink the weighted-ER rate toward the league
-        # mean with a one-arc (9-out) prior of league-average ball: a
-        # league-rate pitcher returns exactly league wERA at any out-count
-        # (so wERA+ = 100 holds), while a 3-out blow-up regresses hard
-        # instead of extrapolating to ~10. prior == 0 (no baseline)
-        # falls back to the legacy un-shrunk rate.
-        weighted_er = 0.85 * er1 + 1.00 * er2 + 1.20 * er3
+        # --- Result-tier: xRA / Decay ---
+        # wERA RETIRED (2026-06): its arc-weighting premise — that later-arc ER
+        # is "harder" (×1.20) than early-arc (×0.85) — isn't a realistic model of
+        # run prevention. xRA (RE24-based expected runs allowed, below) replaces
+        # it as the headline run-prevention metric. The `werra` key is kept as an
+        # internal alias (= xra) so the plumbing/leaderboards/templates that read
+        # it keep working; nothing computes the old arc-weighted value anymore.
+        # xRA — expected runs allowed from the actual events, on the RA/27
+        # scale (xra_norm anchors league xRA to league RA/27). Uses the actual
+        # allowed hit-type breakdown when present (sinker- vs four-seam-heavy
+        # arms differ), else the league blended weight — via the shared
+        # _xra_run_values helper, identical to the league xra_norm fit.
         if outs:
-            adj_weighted_er = weighted_er * c_w
-            if league_wera_prior > 0:
-                league_er_per_out = league_wera_prior / 27.0
-                p["werra"] = (
-                    (adj_weighted_er + league_er_per_out * _WERA_PRIOR_OUTS)
-                    * 27.0 / (outs + _WERA_PRIOR_OUTS)
-                )
-            else:
-                p["werra"] = adj_weighted_er * 27.0 / outs
-        else:
-            p["werra"] = 0.0
-        # xRA v3 — when per-pitcher hit-type shares are available
-        # (singles_allowed / doubles_allowed / triples_allowed sums on
-        # game_pitcher_stats), use them directly so sinker-heavy arms
-        # and four-seam-heavy arms produce different xRA values for the
-        # same Stuff. Pre-v3 rows (sums all zero) fall back to the
-        # league-share blended weight from v2.
-        if outs:
-            non_hr_hits = max(0, h - hr)
-            s_allowed = p.get("singles_allowed") or 0
-            d_allowed = p.get("doubles_allowed") or 0
-            t_allowed = p.get("triples_allowed") or 0
-            per_pitcher_hit_sum = s_allowed + d_allowed + t_allowed
-            if per_pitcher_hit_sum > 0 and per_pitcher_hit_sum <= non_hr_hits + 2:
-                # Trust per-pitcher counts (allow tiny rounding tolerance
-                # against the legacy non_hr_hits sum).
-                hit_run_value = (
-                    _XRA_W_1B * s_allowed
-                  + _XRA_W_2B * d_allowed
-                  + _XRA_W_3B * t_allowed
-                )
-            else:
-                hit_run_value = per_non_hr_weight * non_hr_hits
-            raw_xra = (
-                _XRA_W_HR  * hr
-              + hit_run_value
-              + _XRA_W_BB  * bb
-              + _XRA_W_HBP * hbp_a
-            ) * 27.0 / outs
-            p["xra"] = raw_xra * xra_norm
+            run_values = _xra_run_values(
+                hr, h, p.get("singles_allowed"), p.get("doubles_allowed"),
+                p.get("triples_allowed"), bb, hbp_a, per_non_hr_weight,
+            )
+            p["xra"] = (run_values * 27.0 / outs) * xra_norm
         else:
             p["xra"] = 0.0
+        # wERA retired → its key now aliases xRA (the RE24-based metric).
+        p["werra"] = p["xra"]
         # Decay: drift-corrected K%_arc1 - K%_arc3 (× 100). K% counts
         # foul-outs as Ks. The drift correction subtracts the league's
         # structural arc-1→arc-3 lift (lineup-cycling weakens hitters
@@ -2774,13 +2821,12 @@ def _aggregate_pitcher_rows(
         else:
             p["gsc_index"] = 100.0
 
-        # wERA+ — park-adjusted league-relative wERA on the ERA+ scale
-        # (100 = league avg, >100 = better than league at this park).
-        # Convention: a hitter's park has PF > 1, so we credit pitchers
-        # in those parks by multiplying league_wERA by PF in the
-        # numerator (a pitcher in Coors gets a boost). Sentinel 100 for
-        # no-sample edge cases keeps templates render-safe.
-        league_werra_b = scoped_p.get("league_werra") or scoped_p.get("era") or 0.0
+        # xRA+ — park-adjusted league-relative xRA on the ERA+ scale (100 =
+        # league avg, >100 = better). (`wera_plus`/`league_werra` keys retained
+        # as aliases since wERA retired; both now carry the xRA value.) A
+        # hitter's park has PF > 1, so pitchers there get credited by
+        # multiplying league xRA by PF in the numerator.
+        league_werra_b = scoped_p.get("league_werra") or scoped_p.get("ra27") or scoped_p.get("era") or 0.0
         tid = p.get("team_id")
         pf  = (park_map.get(int(tid)) if tid is not None and park_map else None) or 1.0
         if p["werra"] > 0 and league_werra_b > 0:
@@ -2789,10 +2835,10 @@ def _aggregate_pitcher_rows(
             p["wera_plus"] = 100.0
         p["park_factor"] = pf
 
-        # --- VORP / WAR rebased to wERA ---
-        # Replacement wERA = league_werra × 1.2 (carries the existing
-        # 120% replacement-anchor convention).
-        league_werra_baseline = baselines.get("league_werra") or baselines.get("era") or 0.0
+        # --- VORP / WAR rebased to xRA ---
+        # Replacement xRA = league xRA × 1.2 (120% replacement-anchor
+        # convention). pWAR VORP = (replacement_xRA − my_xRA) × outs/27.
+        league_werra_baseline = baselines.get("league_werra") or baselines.get("ra27") or baselines.get("era") or 0.0
         repl_werra = league_werra_baseline * 1.20
         if outs and repl_werra:
             p["vorp"] = (repl_werra - p["werra"]) * (outs / 27.0)
@@ -4249,7 +4295,8 @@ def player_detail_export(player_id: int):
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
                   COALESCE(SUM(stay_rbi),0)     as stay_rbi,
-                  COALESCE(SUM(stay_hits),0)    as stay_hits
+                  COALESCE(SUM(stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(c2_strand_out),0)    as c2_strand_out
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
@@ -4380,6 +4427,7 @@ def leaders_export():
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(bs.roe),0) as roe,
                   COALESCE(SUM(bs.po),0)  as po,
                   COALESCE(SUM(bs.e),0)   as e
@@ -4851,6 +4899,7 @@ def stats_browse():
                        COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                        COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                        COALESCE(SUM(bs.risp_pa),0)  as risp_pa,
                        COALESCE(SUM(bs.risp_ab),0)  as risp_ab,
                        COALESCE(SUM(bs.risp_h),0)   as risp_h,
@@ -5213,6 +5262,7 @@ def leaders():
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(bs.adv_op_1b),0)   as adv_op_1b,
                   COALESCE(SUM(bs.adv_adv_1b),0)  as adv_adv_1b,
                   COALESCE(SUM(bs.adv_op_2b),0)   as adv_op_2b,
@@ -5683,6 +5733,7 @@ def team_stats():
                    COALESCE(SUM(bs.cs),0)  as cs,
                    COALESCE(SUM(bs.stays),0)     as stays,
                    COALESCE(SUM(bs.stay_hits),0) as stay_hits,
+                   COALESCE(SUM(bs.c2_strand_out),0) as c2_strand_out,
                    COALESCE(SUM(bs.stay_rbi),0)  as stay_rbi,
                    COALESCE(SUM(bs.sh),0)        as sh,
                    COALESCE(SUM(bs.bunt_hits),0) as bunt_hits,
@@ -5887,6 +5938,7 @@ def _player_batting_split(player_id: int, team_id: int,
                    COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                    COALESCE(SUM(bs.stay_rbi),0) as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                    COALESCE(SUM(bs.roe),0) as roe
             FROM game_batter_stats bs
             JOIN games g ON bs.game_id = g.id
@@ -5988,7 +6040,8 @@ def _fetch_player_overview(player_id: int,
                   COALESCE(SUM(fo),0)  as fo,
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
                   COALESCE(SUM(stay_rbi),0)     as stay_rbi,
-                  COALESCE(SUM(stay_hits),0)    as stay_hits
+                  COALESCE(SUM(stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(c2_strand_out),0)    as c2_strand_out
            FROM game_batter_stats WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
@@ -6153,6 +6206,7 @@ def player_detail(player_id: int):
                   COALESCE(SUM(multi_hit_abs),0) as mhab,
                   COALESCE(SUM(stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(adv_op_1b),0)   as adv_op_1b,
                   COALESCE(SUM(adv_adv_1b),0)  as adv_adv_1b,
                   COALESCE(SUM(adv_op_2b),0)   as adv_op_2b,
@@ -6573,6 +6627,7 @@ def _team_batting_rows(baselines: dict) -> list[dict]:
                   COALESCE(SUM(bs.multi_hit_abs),0) AS mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     AS stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(bs.roe),0) AS roe,
                   COALESCE(SUM(bs.po),0) AS po,
                   COALESCE(SUM(bs.e),0)  AS e
@@ -7846,6 +7901,7 @@ def distributions():
                   COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
                   COALESCE(SUM(bs.stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(bs.stay_hits),0)    as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0)    as c2_strand_out,
                   COALESCE(SUM(bs.risp_pa),0)  as risp_pa,
                   COALESCE(SUM(bs.risp_ab),0)  as risp_ab,
                   COALESCE(SUM(bs.risp_h),0)   as risp_h,

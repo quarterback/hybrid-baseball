@@ -884,6 +884,7 @@ def _extract_batter_stats(renderer: Renderer, team_id: int, players: list[dict],
                 "sqz_rbi": getattr(bstat, "sqz_rbi", 0),
                 "stay_rbi": getattr(bstat, "stay_rbi", 0),
                 "stay_hits": getattr(bstat, "stay_hits", 0),
+                "c2_strand_out": getattr(bstat, "c2_strand_out", 0),
                 "walkback_runs": getattr(bstat, "walkback_runs", 0),
                 "c2_op_1b":  getattr(bstat, "c2_op_1b", 0),
                 "c2_adv_1b": getattr(bstat, "c2_adv_1b", 0),
@@ -1131,9 +1132,15 @@ def _extract_pitcher_stats(state: GameState, team_id: int, players: list[dict]) 
                 lead_entries += 1
                 if m_lead > 0:
                     lead_held += 1
-                    if fin:
+                    # Terminal Outs feed the finisher (F:) credit, which is a
+                    # RELIEVER stat. A starter finishing his own start (incl. a
+                    # complete game) is NOT a finish — so a game can't be a
+                    # complete game AND a finish. Exclude the starter.
+                    if fin and not is_starter:
                         terminal_outs += outs_r
-            if fin and outs_r >= 9 and m_lead >= 0:
+            # Quality Finish is likewise a reliever finish (9+ outs, never
+            # trailed); a starter's complete-game gem isn't a "finish".
+            if fin and outs_r >= 9 and m_lead >= 0 and not is_starter:
                 quality_finish += 1
         rows.append({
             "team_id": team_id,
@@ -2004,7 +2011,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                     doubles, triples, hr, rbi, bb, k, stays, outs_recorded,
                     hbp, sb, cs, fo, multi_hit_abs,
                     sh, bunt_att, bunt_hits, sqz, sqz_rbi,
-                    stay_rbi, stay_hits, walkback_runs,
+                    stay_rbi, stay_hits, c2_strand_out, walkback_runs,
                     c2_op_1b, c2_adv_1b, c2_op_2b, c2_adv_2b, c2_op_3b, c2_adv_3b,
                     adv_op_1b, adv_adv_1b, adv_op_2b, adv_adv_2b, adv_op_3b, adv_adv_3b,
                     rad_1b, rad_2b, rad_3b,
@@ -2013,7 +2020,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                     game_position, entry_type, replaced_player_id, entered_inning,
                     gidp, gitp,
                     roe, po, a, e)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (game_id, r["team_id"], r["player_id"], r["phase"],
                  r["pa"], r["ab"], r["runs"], r["hits"], r["doubles"],
                  r["triples"], r["hr"], r["rbi"], r["bb"], r["k"],
@@ -2023,6 +2030,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                  r.get("sh", 0), r.get("bunt_att", 0), r.get("bunt_hits", 0),
                  r.get("sqz", 0), r.get("sqz_rbi", 0),
                  r.get("stay_rbi", 0), r.get("stay_hits", 0),
+                 r.get("c2_strand_out", 0),
                  r.get("walkback_runs", 0),
                  r.get("c2_op_1b", 0), r.get("c2_adv_1b", 0),
                  r.get("c2_op_2b", 0), r.get("c2_adv_2b", 0),
@@ -2346,14 +2354,14 @@ def _insert_batter_stats(game_id: int, rows: list[dict]) -> None:
             hr, rbi, bb, k, stays, outs_recorded,
             hbp, sb, cs, fo, multi_hit_abs,
             sh, bunt_att, bunt_hits, sqz, sqz_rbi,
-            stay_rbi, stay_hits,
+            stay_rbi, stay_hits, c2_strand_out,
             c2_op_1b, c2_adv_1b, c2_op_2b, c2_adv_2b, c2_op_3b, c2_adv_3b,
             adv_op_1b, adv_adv_1b, adv_op_2b, adv_adv_2b, adv_op_3b, adv_adv_3b,
             rad_1b, rad_2b, rad_3b,
             risp_pa, risp_ab, risp_h, risp_2b, risp_3b, risp_hr,
             risp_bb, risp_hbp, risp_rbi,
             roe, po, e)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [(game_id, r["team_id"], r["player_id"], r["pa"], r["ab"], r["runs"],
           r["hits"], r["doubles"], r["triples"], r["hr"], r["rbi"],
           r["bb"], r["k"], r["stays"], r.get("outs_recorded", 0),
@@ -2362,6 +2370,7 @@ def _insert_batter_stats(game_id: int, rows: list[dict]) -> None:
           r.get("sh", 0), r.get("bunt_att", 0), r.get("bunt_hits", 0),
           r.get("sqz", 0), r.get("sqz_rbi", 0),
           r.get("stay_rbi", 0), r.get("stay_hits", 0),
+          r.get("c2_strand_out", 0),
           r.get("c2_op_1b", 0), r.get("c2_adv_1b", 0),
           r.get("c2_op_2b", 0), r.get("c2_adv_2b", 0),
           r.get("c2_op_3b", 0), r.get("c2_adv_3b", 0),

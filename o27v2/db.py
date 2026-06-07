@@ -399,6 +399,8 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     sqz_rbi    INTEGER DEFAULT 0,
     stay_rbi   INTEGER DEFAULT 0,
     stay_hits  INTEGER DEFAULT 0,   -- hits credited on a 2C event (subset of hits)
+    c2_strand_out INTEGER DEFAULT 0, -- AB ended in a batter-out after >=1 credited
+                                     -- 2C this AB (advanced runners then made an out)
     walkback_runs INTEGER DEFAULT 0,  -- runs scored as a Walk-Back bonus runner
                                       -- (HR hitter driven in again); subset of runs
                                       -- and the per-hitter mirror of pitcher wb_runs
@@ -1532,7 +1534,7 @@ def init_db() -> None:
         # Defaults of 0 leave pre-existing rows neutral; new games populate fully.
         for col in ("hbp", "sb", "cs", "fo", "multi_hit_abs",
                     "sh", "bunt_att", "bunt_hits", "sqz", "sqz_rbi",
-                    "stay_rbi", "stay_hits",
+                    "stay_rbi", "stay_hits", "c2_strand_out",
                     "c2_op_1b", "c2_adv_1b", "c2_op_2b", "c2_adv_2b", "c2_op_3b", "c2_adv_3b",
                     "adv_op_1b", "adv_adv_1b", "adv_op_2b", "adv_adv_2b",
                     "adv_op_3b", "adv_adv_3b",

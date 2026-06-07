@@ -88,7 +88,8 @@ def _event_rows(team_ids=None) -> list[dict]:
     rows = db.fetchall(
         """SELECT batter_id, pitcher_id, pitch_type, hit_type, was_stay, stay_credited,
                   outs_before, bases_before, outs_after, bases_after, runs_scored,
-                  exit_velocity, launch_angle, spray_angle, team_id, game_id
+                  exit_velocity, launch_angle, spray_angle, team_id, game_id,
+                  ab_seq, swing_idx
            FROM game_pa_log WHERE phase = 0""" + _team_in(team_ids))
     out = []
     for r in rows:
@@ -229,9 +230,80 @@ def build_pitch_arsenal(min_bip: int = 15, team_ids=None) -> dict:
 # 3. Baserunning value — XBT% + a simple run value
 # ---------------------------------------------------------------------------
 
+# MLB linear-weight fallbacks for (run_per_extra_base, run_per_sb, run_per_cs).
+# Used only when there's no league data to fit O27-native values from.
+_BSR_MLB_FALLBACK = (0.25, 0.20, -0.42)
+
+
+def _baserunning_run_values(team_ids=None) -> tuple[float, float, float]:
+    """O27-native (run_per_extra_base, run_per_sb, run_per_cs), derived from the
+    league's OWN run-expectancy surface instead of imported MLB linear weights.
+
+    O27 already fits wOBA weights, the FIP constant and _RUN_PER_OUT from live
+    data; baserunning was the lone metric still hardcoding MLB constants
+    (0.25 / 0.20 / -0.42). Those mis-state O27 badly: in a 27-out, ~27 R/G half a
+    runner usually scores regardless of whether he's on 2B or 3B, so an extra
+    base barely moves run expectancy — run_per_extra_base lands near 0, which
+    correctly *zeroes the noisy extra-base-taken term* rather than inflating it
+    250x with MLB's +0.25. (Extra-base advancement isn't speed-modelled in the
+    engine yet — a Phase-2 gap — so valuing it at ~0 also stops that noise from
+    polluting the metric.) Each value is a frequency-weighted average of the
+    actual RE delta for that event over every base/out state the league reached.
+
+    Falls back to `_BSR_MLB_FALLBACK` if no games are in scope.
+    """
+    rows = db.fetchall(
+        "SELECT game_id, team_id, ab_seq, swing_idx, outs_before, bases_before, runs_scored "
+        "FROM game_pa_log WHERE phase = 0" + _team_in(team_ids) +
+        " ORDER BY game_id, team_id, ab_seq, swing_idx")
+    if not rows:
+        return _BSR_MLB_FALLBACK
+    # Fine (per-exact-out) RE surface via a backwards tail-sum per half. Unlike
+    # _re_lookup this is NOT bucketed — SB/CS deltas need single-out resolution.
+    halves: dict = defaultdict(list)
+    for r in rows:
+        halves[(r["game_id"], r["team_id"])].append(r)
+    rsum: dict = defaultdict(float); rcnt: dict = defaultdict(int)
+    for evs in halves.values():
+        future = 0
+        for r in reversed(evs):
+            k = (r["bases_before"], r["outs_before"])
+            rsum[k] += future; rcnt[k] += 1
+            future += (r["runs_scored"] or 0)
+    RE = {k: rsum[k] / rcnt[k] for k in rcnt}
+
+    def _re(mask, outs):
+        return 0.0 if outs >= 27 else RE.get((mask, outs), 0.0)
+
+    # Bases are a 3-bit mask: bit0 = 1B, bit1 = 2B, bit2 = 3B.
+    sb_n = sb_d = cs_n = cs_d = xb_n = xb_d = 0.0
+    for (mask, outs), n in rcnt.items():
+        if outs >= 27:
+            continue
+        # Stolen base 1B→2B (1B occupied, 2B open), same out count.
+        if (mask & 1) and not (mask & 2):
+            sb_n += n * (_re((mask & ~1) | 2, outs) - _re(mask, outs)); sb_d += n
+        # Caught stealing from 1B — runner erased AND an out added.
+        if mask & 1:
+            cs_n += n * (_re(mask & ~1, outs + 1) - _re(mask, outs)); cs_d += n
+        # One extra base of advancement (1B→2B or 2B→3B with the next bag open).
+        for b in (0, 1):
+            if (mask & (1 << b)) and not (mask & (1 << (b + 1))):
+                xb_n += n * (_re((mask & ~(1 << b)) | (1 << (b + 1)), outs) - _re(mask, outs))
+                xb_d += n
+    xb = xb_n / xb_d if xb_d else _BSR_MLB_FALLBACK[0]
+    sb = sb_n / sb_d if sb_d else _BSR_MLB_FALLBACK[1]
+    cs = cs_n / cs_d if cs_d else _BSR_MLB_FALLBACK[2]
+    return (xb, sb, cs)
+
+
 def build_baserunning_value(min_op: int = 10, team_ids=None) -> dict:
     """Extra-Bases-Taken% (advances / opportunities, from the runner-advance
-    tracking) and a baserunning run value combining XBT, steals and outs."""
+    tracking) and an O27-native baserunning run value combining XBT, steals and
+    caught-stealings. Run values come from the league's own run-expectancy
+    surface (`_baserunning_run_values`), not MLB linear weights — which makes the
+    extra-base term ~0 (correctly, for O27) and the steal terms positive-signal."""
+    run_xb, run_sb, run_cs = _baserunning_run_values(team_ids)
     rows = db.fetchall(
         """SELECT player_id,
                   COALESCE(SUM(adv_op_1b),0)+COALESCE(SUM(adv_op_2b),0)+COALESCE(SUM(adv_op_3b),0) AS op,
@@ -246,8 +318,9 @@ def build_baserunning_value(min_op: int = 10, team_ids=None) -> dict:
     for r in valid:
         op = r["op"] or 0; adv = r["adv"] or 0
         xbt = adv / op if op else 0.0
-        # Run value: extra bases above league rate (~0.25 run/base) + steals.
-        bsr = (adv - lg_xbt * op) * 0.25 + (r["sb"] or 0) * 0.20 - (r["cs"] or 0) * 0.42
+        # Run value, O27-native: extra bases above league rate × run_xb (≈0 in
+        # O27 — see _baserunning_run_values) + steals × run_sb + caught × run_cs.
+        bsr = (adv - lg_xbt * op) * run_xb + (r["sb"] or 0) * run_sb + (r["cs"] or 0) * run_cs
         leaders.append({
             "player_id": r["player_id"],
             "player_name": (names.get(r["player_id"]) or {}).get("name", f"#{r['player_id']}"),
@@ -307,16 +380,45 @@ def build_tto_penalty(min_bf: int = 60, team_ids=None) -> dict:
 # ---------------------------------------------------------------------------
 
 def build_second_chance_value(min_2c: int = 10, team_ids=None) -> dict:
-    """Run value of Second-Chance ABs. Each 2C event's RE24 run value is
-    aggregated per batter; the league mean is the break-even bar (a batter
-    above it is making +EV second-chance decisions)."""
-    ev = [r for r in _event_rows(team_ids) if r["was_stay"]]
-    per = defaultdict(lambda: {"n": 0, "rv": 0.0, "credited": 0})
+    """Net run value of Second-Chance ABs. Each stay's RE24 advancement value is
+    aggregated per batter, AND — when a 2C at-bat ends in a batter-out (the
+    hitter advanced runners via a stay, then struck out or made an out on a
+    later segment) — that terminal out's (negative) RE24 value is charged back
+    to the 2C decision, "the same as a runner being put out." So 2C Runs measures
+    whether a hitter's stays net positive AFTER the out risk, not just the
+    upside. The league mean is the break-even bar.
+
+    (This is the RE24-native companion to the wOBA strand penalty in the batter
+    aggregator — both now count the downside of a stay that ends in an out, so
+    the Savant 2C surface and wOBA agree on what a good 2C hitter is.)"""
+    HIT_TYPES = frozenset(("single", "infield_single", "double", "triple", "hr", "home_run"))
+    rows = _event_rows(team_ids)
+    by_ab = defaultdict(list)
+    for r in rows:
+        by_ab[(r["game_id"], r["team_id"], r["ab_seq"])].append(r)
+
+    per = defaultdict(lambda: {"n": 0, "rv": 0.0, "credited": 0, "strand_outs": 0})
     tot_rv = 0.0; tot_n = 0
-    for r in ev:
-        p = per[r["batter_id"]]
-        p["n"] += 1; p["rv"] += r["rv"]; p["credited"] += (r["stay_credited"] or 0)
-        tot_rv += r["rv"]; tot_n += 1
+    for evs in by_ab.values():
+        stay_evs = [e for e in evs if e["was_stay"]]
+        if not stay_evs:
+            continue
+        bid = stay_evs[0]["batter_id"]
+        p = per[bid]
+        # Upside: each stay's advancement RE24 value.
+        for e in stay_evs:
+            p["n"] += 1; p["rv"] += e["rv"]; p["credited"] += (e["stay_credited"] or 0)
+            tot_rv += e["rv"]; tot_n += 1
+        # Downside: a 2C AB that ends in a batter-out charges that out's RE24
+        # cost to the 2C decision. Terminal = last segment; batter-out = the
+        # batter wasn't credited a hit and an out was recorded on it (covers
+        # ground/fly/line outs AND strikeouts).
+        terminal = max(evs, key=lambda x: x["swing_idx"])
+        if (not terminal["was_stay"]
+                and terminal["hit_type"] not in HIT_TYPES
+                and (terminal["outs_after"] or 0) > (terminal["outs_before"] or 0)):
+            p["rv"] += terminal["rv"]; p["strand_outs"] += 1
+            tot_rv += terminal["rv"]
     lg_per = (tot_rv / tot_n) if tot_n else 0.0
     names = _names(list(per.keys()))
     leaders = []
@@ -328,6 +430,7 @@ def build_second_chance_value(min_2c: int = 10, team_ids=None) -> dict:
             "player_name": (names.get(pid) or {}).get("name", f"#{pid}"),
             "team_abbrev": (names.get(pid) or {}).get("team_abbrev", ""),
             "n_2c": d["n"],
+            "strand_outs": d["strand_outs"],
             "conv_pct": round(100 * d["credited"] / d["n"], 1),
             "rv_per_2c": round(d["rv"] / d["n"], 3),
             "rv_total": round(d["rv"], 1),

@@ -537,14 +537,19 @@ def test_invariant_7b_pitcher_row_uniqueness(played_game_ids):
 
 
 # ---------------------------------------------------------------------------
-# Invariant 8: FIP sanity (league FIP within 0.05 of league ERA)
+# Invariant 8: xRA anchored to the realized run environment
 # ---------------------------------------------------------------------------
 
 def test_invariant_8_fip_anchored_to_era(played_game_ids):
-    """league wERA within 0.05 of league raw ER per 27 outs, AND league
-    xRA within 0.05 of league wERA. Replaces the legacy FIP-vs-ERA
-    invariant; the wERA / xRA constants are refit per call so a
-    drift in either should trip this immediately.
+    """league xRA (outs-weighted) within 0.05 of league RA per 27 outs.
+
+    wERA RETIRED (its arc-weighting baked in a false "late runs cost more"
+    theory that has nothing to stand on in a single continuous 27-out half).
+    xRA — expected runs allowed from the actual events — is the run-prevention
+    headline now. This invariant is the spirit-preserved replacement for the
+    old wERA-vs-ER/27 check: the EXPECTED stat must center on the REALIZED run
+    environment (league RA/27, all runs), so a miscalibrated `xra_norm` trips
+    it immediately. (`werra` is kept as an alias of `xra`; we guard that too.)
 
     Plus an independent ER ≤ R sanity check: per (game, team), the
     sum of pitcher earned-runs cannot exceed the team's actual runs
@@ -558,6 +563,9 @@ def test_invariant_8_fip_anchored_to_era(played_game_ids):
                    SUM(ps.outs_recorded) AS outs,
                    SUM(ps.batters_faced) AS bf,
                    SUM(ps.hits_allowed)  AS h,
+                   COALESCE(SUM(ps.singles_allowed),0) AS singles_allowed,
+                   COALESCE(SUM(ps.doubles_allowed),0) AS doubles_allowed,
+                   COALESCE(SUM(ps.triples_allowed),0) AS triples_allowed,
                    SUM(ps.runs_allowed)  AS r,
                    SUM(ps.er)            AS er,
                    SUM(ps.bb)            AS bb,
@@ -593,25 +601,26 @@ def test_invariant_8_fip_anchored_to_era(played_game_ids):
     _aggregate_pitcher_rows(rows)
 
     total_outs = sum(r["outs"] or 0 for r in rows)
-    total_er   = sum(r["er"]   or 0 for r in rows)
+    total_ra   = sum(r["r"]    or 0 for r in rows)
     if total_outs == 0:
         pytest.skip("no pitcher outs recorded")
-    league_raw_era = (total_er * 27.0) / total_outs
-    league_werra_weighted = (
-        sum((r.get("werra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
-    )
+    league_ra27 = (total_ra * 27.0) / total_outs
     league_xra_weighted = (
         sum((r.get("xra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
     )
-    assert abs(league_werra_weighted - league_raw_era) < 0.05, (
-        f"outs-weighted league wERA {league_werra_weighted:.4f} not within "
-        f"0.05 of league raw ER/27 {league_raw_era:.4f}; the production "
-        f"`_league_werra_consts` / `_aggregate_pitcher_rows` no longer agree"
+    assert abs(league_xra_weighted - league_ra27) < 0.05, (
+        f"outs-weighted league xRA {league_xra_weighted:.4f} not within 0.05 of "
+        f"league RA/27 {league_ra27:.4f}; the xRA constant (`xra_norm`) is no "
+        f"longer anchored to the realized run environment"
     )
-    assert abs(league_xra_weighted - league_werra_weighted) < 0.05, (
-        f"outs-weighted league xRA {league_xra_weighted:.4f} not within "
-        f"0.05 of league wERA {league_werra_weighted:.4f}; the xRA constant "
-        f"(`xra_norm`) is no longer anchored to wERA"
+    # wERA retired → its key aliases xRA; guard the alias so nothing resurrects
+    # a divergent arc-weighted value.
+    league_werra_weighted = (
+        sum((r.get("werra") or 0.0) * (r["outs"] or 0) for r in rows) / total_outs
+    )
+    assert abs(league_werra_weighted - league_xra_weighted) < 1e-6, (
+        f"werra ({league_werra_weighted:.4f}) must alias xra "
+        f"({league_xra_weighted:.4f}) since wERA retired"
     )
 
     # ---- (b) ER <= R per (game, team) ----------------------------------
@@ -737,22 +746,24 @@ def test_invariant_10_tto_buckets_reconcile(played_game_ids):
 
 
 # ---------------------------------------------------------------------------
-# Invariant 11: WAR's fielding component == the displayed Field Runs
+# Invariant 11: WAR's surfaced components == the metrics displayed elsewhere
 # ---------------------------------------------------------------------------
 
-def test_invariant_11_war_fielding_matches_displayed_field_runs(played_game_ids):
-    """The defensive runs inside a player's WAR must equal the Field Run Value
-    shown on the fielding/Savant surface for that same player, within tolerance.
+def test_invariant_11_war_components_match_displayed_metrics(played_game_ids):
+    """Every defensive/baserunning component inside a player's WAR must equal the
+    metric shown on the fielding/Savant surface for that same player, within
+    tolerance — and WAR must equal the sum of its surfaced parts.
 
     This is the invariant whose absence let the WAR/OAA divergence ship: the
     season-card WAR read a rating-derived scout DRS while the Savant page showed
-    event-based OAA/Field Runs, and nothing checked that the two agreed. With
-    WAR now anchored to the same regressed Field Run Value the surface displays
-    (for qualified fielders), `def_runs` must equal that displayed `frv` and the
-    source must be the event metric — not the scout fallback.
+    event-based OAA/Field Runs, and nothing checked that the two agreed. WAR is
+    now anchored to the same regressed Field Run Value the surface displays (for
+    qualified fielders) and the same O27-native BSR, so:
 
-    Also checks the component identity WAR == war_off + dwar, so WAR can never
-    silently drift from the sum of its surfaced parts.
+      * `def_runs` == displayed Field Runs (source must be the event metric, not
+        the scout fallback) for qualified fielders, and
+      * `bsr_runs` == displayed BSR, and
+      * WAR == war_off + dwar + bwar_base.
 
     Skips cleanly if flask (and thus o27v2.web.app) is unavailable, matching the
     rest of the suite's environmental tolerance.
@@ -762,12 +773,15 @@ def test_invariant_11_war_fielding_matches_displayed_field_runs(played_game_ids)
             _aggregate_batter_rows, _league_baselines_compute,
             _WAR_FIELDING_MIN_CHANCES,
         )
-        from o27v2.analytics.expanded import build_fielding_value
+        from o27v2.analytics.expanded import (
+            build_fielding_value, build_baserunning_value,
+        )
     except Exception as exc:  # pragma: no cover - env-dependent
         pytest.skip(f"web/app or analytics unavailable: {exc}")
 
     baselines = _league_baselines_compute()
     field = {f["player_id"]: f for f in build_fielding_value(min_chances=1)["leaders"]}
+    baserun = {b["player_id"]: b for b in build_baserunning_value(min_op=1)["leaders"]}
 
     # Qualified fielders only — below the gate WAR uses the scout projection by
     # design, so the surface (event) and WAR (scout) are *expected* to differ.
@@ -793,18 +807,32 @@ def test_invariant_11_war_fielding_matches_displayed_field_runs(played_game_ids)
     _aggregate_batter_rows(rows, baselines=baselines)
 
     mismatches = []
+    bsr_bad = []
     sum_bad = []
     for r in rows:
         disp = field[r["player_id"]]["frv"]
         if abs(r["def_runs"] - disp) > 0.1 or r["def_runs_source"] != "field":
             mismatches.append((r["player_id"], r["def_runs"], disp, r["def_runs_source"]))
-        if abs(r["war"] - (r["war_off"] + r["dwar"])) > 1e-6:
-            sum_bad.append((r["player_id"], r["war"], r["war_off"], r["dwar"]))
+        # Baserunning: WAR's bsr_runs must equal the displayed BSR for the same
+        # player (displayed only when the player cleared build_baserunning_value's
+        # opportunity gate; the per-player value is identical regardless of gate).
+        if r["player_id"] in baserun:
+            disp_bsr = baserun[r["player_id"]]["bsr"]
+            if abs(r.get("bsr_runs", 0.0) - disp_bsr) > 0.1:
+                bsr_bad.append((r["player_id"], r.get("bsr_runs"), disp_bsr))
+        # Component identity: WAR == batting + defense + baserunning.
+        if abs(r["war"] - (r["war_off"] + r["dwar"] + r["bwar_base"])) > 1e-6:
+            sum_bad.append((r["player_id"], r["war"], r["war_off"], r["dwar"], r["bwar_base"]))
 
     assert not mismatches, (
         f"WAR def_runs != displayed Field Runs for {len(mismatches)} qualified "
         f"fielders; first 5 (pid, def_runs, displayed_frv, source): {mismatches[:5]}"
     )
+    assert not bsr_bad, (
+        f"WAR bsr_runs != displayed BSR for {len(bsr_bad)} players; "
+        f"first 5 (pid, war_bsr, displayed_bsr): {bsr_bad[:5]}"
+    )
     assert not sum_bad, (
-        f"WAR != war_off + dwar for {len(sum_bad)} rows; first 5: {sum_bad[:5]}"
+        f"WAR != war_off + dwar + bwar_base for {len(sum_bad)} rows; "
+        f"first 5 (pid, war, off, dwar, bwar_base): {sum_bad[:5]}"
     )

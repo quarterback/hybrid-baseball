@@ -4,15 +4,21 @@ Stay-vs-run decision logic for O27.
 This module enforces all §2.5–§2.6 constraints and houses the stay-vs-run
 heuristic (Phase 1: rule-based; Phase 2: probabilistic with tunable params).
 
-Key rules from the PRD:
-- Stay is only available when at least one runner is on base.
-- Two-strike contact + stay → batter is OUT (runners advance per fielding play).
-- Caught fly ball + stay → batter is OUT (standard fly out; runners may tag).
-- Home runs: stay does not apply — batter must run.
-- Triples: run recommended (reaching 3B is too valuable to forfeit).
-- Bunt + stay: allowed; recorded as a hit.
-- Stay with runner thrown out: that runner is out; at-bat continues with fresh count.
-- Multiple stays per at-bat: allowed; no cap.
+Key rules (2C-through-the-hitting-engine rework — see
+docs/design-2c-hitting-engine-rework.md):
+- Stay is only available when at least one runner is on base AND the batter has
+  a strike to spare (strikes < 2). Each stay burns a strike, so an AB allows at
+  most 3 batted balls: stay on balls 1 and 2, the 3rd (at 2 strikes) forces a
+  run-or-out decision.
+- The 2C resolves through the real hitting engine. If the resolved contact is an
+  OUT in the field (caught fly / ground / fly / line out) the batter is OUT and
+  the AB ends — you can't keep hitting after making an out.
+- If it's a HIT, the batter STAYS; runners advance by the REAL hit type (single
+  →1 base, double→2, triple→3); the batter is credited the real type.
+- Home runs: stay does not apply — batter must run (Walk-Back to 3B).
+- The stay-vs-run decision is EV-driven (advance/score runners vs. out risk;
+  never waste the last out on a non-scoring stay). See prob.should_stay_prob.
+- Stay with runner thrown out: that runner is out; at-bat continues.
 - No force at 1B on a stay play; no double play through first.
 """
 
@@ -28,25 +34,26 @@ def stay_available(state: GameState) -> bool:
     """
     Return True if the stay option is mechanically available in this situation.
     Does NOT check whether the batter would choose stay — just eligibility.
+
+    Available only with a runner on base AND a strike to spare. Each stay burns
+    a strike, so at 2 strikes the next batted ball can't be stayed on (it forces
+    run-or-out) — this is the max-3-batted-balls cap.
     """
-    return state.runners_on_base
+    return state.runners_on_base and state.count.strikes < 2
 
 
-def stay_results_in_out(state: GameState, caught_fly: bool = False) -> bool:
+def stay_results_in_out(state: GameState, outcome: dict) -> bool:
     """
-    Return True if choosing stay on this contact would result in the batter
-    being retired (i.e., the stay produces an out on the batter).
+    Return True if choosing to stay on this contact retires the batter.
 
-    Per the corrected stay rule:
-      - A stay credits a hit AND uses one strike from the 3-strike budget.
-      - The count carries forward; the AB ends when strikes reach 3, but
-        ending on the strike count is NOT a batter-out — the hit is still
-        credited, the batter just goes back to the dugout. No team out.
-      - The ONLY thing that makes a stay produce a batter-out is a caught
-        fly: the ball was caught in the air, the batter was out on contact,
-        the stay decision is moot.
+    The 2C now resolves through the real hitting engine, so the rule is the
+    natural one: if the ball was an OUT in the field — caught fly, ground out,
+    fly out, line out (i.e. the batter was not safe) — staying can't rescue it;
+    the batter is out and the at-bat ends. A clean hit lets the batter stay.
     """
-    return caught_fly
+    if outcome.get("caught_fly"):
+        return True
+    return not outcome.get("batter_safe", True)
 
 
 # ---------------------------------------------------------------------------
@@ -75,17 +82,19 @@ def should_stay(
     """
     if not state.runners_on_base:
         return False
-    if is_hr:
+    # Cap: need a strike to spare (each stay burns one; max 3 batted balls).
+    if state.count.strikes >= 2:
         return False
-    if is_triple:
+    if is_hr:                       # HR — take the bases (Walk-Back)
         return False
-    if contact_quality == CONTACT_QUALITY_HARD:
+    if is_triple:                   # triple — reaching 3B beats staying
         return False
-    if state.outs == 2:
+    if caught_fly:                  # caught — batter is out, stay is moot
         return False
-    if state.count.strikes == 2:
+    if contact_quality == CONTACT_QUALITY_HARD:   # likely XBH — take the base
         return False
-    if caught_fly:
+    # Don't burn the last out on a stay that can't score a run (no runner on 3B).
+    if state.outs == 2 and state.bases[2] is None:
         return False
     if contact_quality in (CONTACT_QUALITY_WEAK, CONTACT_QUALITY_MEDIUM):
         return True

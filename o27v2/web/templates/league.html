@@ -51,7 +51,7 @@
       {{ pulse_cell('League HR%', '%.1f%%' % (pulse.league_hr_pct * 100)) }}
       {{ pulse_cell('League 2C/G', '%.2f' % (pulse.league_stay_pct * pulse.league_pa_per_game * 2), 'Second-Chance ABs per game (both teams)') }}
       {{ pulse_cell('League FO%', '%.1f%%' % (pulse.league_fo_pct * 100), '3-foul-out cap') }}
-      {{ pulse_cell('League wERA', '%.2f' % (pulse.league_werra or 0), 'arc-weighted; anchor for GSc+') }}
+      {{ pulse_cell('League xRA', '%.2f' % (pulse.league_werra or 0), 'anchor for GSc+') }}
       {{ pulse_cell('League GSc', '%.1f' % (pulse.league_gsc_avg or 0), 'avg per-appearance Game Score') }}
       {{ pulse_cell('Win % spread', '%.3f' % parity.win_pct_spread, 'best - worst record gap') }}
       {{ pulse_cell('Win % σ', '%.3f' % parity.win_pct_std, 'parity proxy — lower = tighter') }}
@@ -80,10 +80,9 @@
       <th class="num">OPS</th>
       <th class="num">OPS+</th>
       <th class="num">PAVG</th>
-      <th class="num" title="Team batting WAR (single-aggregate; not sum-of-players)">bWAR</th>
-      <th class="num col-group-end" title="Weighted ERA — arc-weighted runs allowed">wERA</th>
-      <th class="num" title="Staff wERA σ — outs-weighted stdev of per-pitcher wERA. Higher = more cascade-prone (the 21-18 blowouts come from one pitcher melting down); lower = more stable.">wERA σ</th>
-      <th class="num" title="Expected runs allowed — non-negative linear-weights formula, anchored to league wERA">xRA</th>
+      <th class="num col-group-end" title="Team batting WAR (single-aggregate; not sum-of-players)">bWAR</th>
+      <th class="num" title="Staff xRA σ — outs-weighted stdev of per-pitcher xRA. Higher = more cascade-prone (the 21-18 blowouts come from one pitcher melting down); lower = more stable.">xRA σ</th>
+      <th class="num" title="Expected runs allowed — non-negative linear-weights formula, anchored to league RA/27">xRA</th>
       <th class="num" title="(K + foul-outs) / BF for the staff">stK%</th>
       <th class="num" title="Avg per-appearance Game Score across all team pitchers">GSc</th>
       <th class="num" title="Team pitching WAR (single-aggregate; not sum-of-players)">pWAR</th>
@@ -105,8 +104,7 @@
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(t.ops) }}">{{ '%.3f'|format(t.ops) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.0f'|format(t.ops_plus) }}">{{ t.ops_plus|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(t.pavg) }}">{{ '%.3f'|format(t.pavg) }}</td>
-      <td class="num fw-bold" data-sort-value="{{ '%.3f'|format(t.war_bat) }}">{{ '%.1f'|format(t.war_bat) }}</td>
-      <td class="num fw-bold col-group-end" data-sort-value="{{ '%.4f'|format(t.werra) }}">{{ '%.2f'|format(t.werra) }}</td>
+      <td class="num fw-bold col-group-end" data-sort-value="{{ '%.3f'|format(t.war_bat) }}">{{ '%.1f'|format(t.war_bat) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(t.staff_wera_std or 0) }}" title="{{ t.staff_n_pitchers or 0 }} pitchers; min={{ '%.2f'|format(t.staff_wera_min or 0) }}, max={{ '%.2f'|format(t.staff_wera_max or 0) }}">{{ '%.2f'|format(t.staff_wera_std or 0) }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.4f'|format(t.xra) }}">{{ '%.2f'|format(t.xra) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(t.k_pct_pit) }}">{{ '%.1f'|format(t.k_pct_pit * 100) }}%</td>
@@ -138,7 +136,7 @@
     (Pythag W minus actual W) still flags teams winning more or fewer games than their
     run differential implies.
     <br><br>
-    <strong>Team OPS+ / OPS / wERA / xRA</strong> are computed by aggregating every
+    <strong>Team OPS+ / OPS / xRA</strong> are computed by aggregating every
     per-player game row into a single team-level row and running it through the same
     sabermetric pipeline a player gets. This is "team-quality on the WAR scale," not
     "sum of individual player WARs" — the team-WAR figure won't match a roster-WAR sum.

@@ -944,9 +944,32 @@ PLAYER_DEFAULT_PITCHER_SKILL: float            = 0.50
 PLAYER_DEFAULT_STAY_AGGRESSIVENESS: float      = 0.40   # 0.0–1.0 tendency to choose stay
 PLAYER_DEFAULT_CONTACT_QUALITY_THRESHOLD: float = 0.45  # P(stay | medium contact) gate
 
-# RISP-aware 2C frequency. 2C is "bring-them-home" mechanic — favor it
-# when runners are in scoring position (2B/3B), discount it when only
-# 1B is occupied (less leverage to convert a hit credit into a run).
+# --- EV-driven 2C decision (should_stay_prob) ------------------------------
+# The 2C now resolves through the real hitting engine and an out on a stay
+# retires the batter, so the decision is pure expected-value: stay only when
+# advancing/scoring runners beats the out risk. These constants tune that math
+# (see docs/design-2c-hitting-engine-rework.md). Tuned to keep the run
+# environment near O27's ~10 R/half baseline.
+STAY_OUT_RISK_WEAK: float        = 0.45   # P(out) staying on weak contact
+STAY_OUT_RISK_MEDIUM: float      = 0.25   # P(out) staying on medium contact
+STAY_OUT_RISK_SKILL_SCALE: float = 0.40   # contact+eye−command lowers out risk
+STAY_REWARD_3B: float            = 1.00   # value of advancing the 3B runner (scores)
+STAY_REWARD_2B: float            = 0.55   # value of advancing the 2B runner
+STAY_REWARD_1B: float            = 0.25   # value of advancing the 1B runner
+STAY_OUT_COST: float             = 0.80   # run-cost of making the out
+# Value of RUNNING — i.e. the hit you'd be forgoing by staying. A second chance
+# is a bet that the NEXT contact beats this one, so you don't waste a good hit:
+# a clean (medium) single is worth more on the bases than a weak one, which
+# raises the bar to stay on it. Staying only pays when the RISP upside clearly
+# beats the forgone hit (high risk → must pay off).
+STAY_RUN_BASELINE_WEAK: float    = 0.30   # forgoing a weak single — low bar
+STAY_RUN_BASELINE_MEDIUM: float  = 0.60   # forgoing a clean single — high bar
+STAY_EDGE_TO_PROB: float         = 0.90   # EV-edge → stay-probability slope
+STAY_MAX_PROB: float             = 0.85   # saturation cap
+STAY_JOKER_MULT: float           = 1.50   # jokers leverage 2C the most
+
+# (Legacy frequency multipliers — retained for any callers/tests; no longer
+# used by the EV-driven should_stay_prob.)
 STAY_RISP_MULT: float          = 1.40   # 2B or 3B occupied
 STAY_1B_ONLY_MULT: float       = 0.70   # only 1B occupied
 

@@ -263,14 +263,13 @@
    ============================================================ #}
 <h4 class="mt-4">Pitching · Result-Tier (the trio)</h4>
 <div class="row g-3 mb-3">
-  {{ card('wERA',        'werra',    '%.2f',  false, pitching, tooltip='Weighted ERA — runs allowed weighted by arc position (outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20)') }}
-  {{ card('xRA',        'xra',     '%.2f',  false, pitching, tooltip='Expected Runs Allowed — non-negative linear-weights formula (HR=1.4, single≈0.45, BB/HBP=0.32), multiplicatively anchored so league xRA = league wERA') }}
+  {{ card('xRA',        'xra',     '%.2f',  false, pitching, tooltip='Expected Runs Allowed — non-negative linear-weights formula (HR=1.4, single≈0.45, BB/HBP=0.32), anchored to league RA/27 (all runs)') }}
   {{ card('FIP (low)',  'fip',     '%.2f',  false, pitching, tooltip='Fielding Independent Pitching — classic DIPS estimator on the ERA scale: (13·HR + 3·(BB+HBP) − 2·K)/IP + league constant. Built only from the three true outcomes and outs (IP = outs/3), so it needs no arc data or play-by-play log and stays correct in fast-sim / archived seasons.') }}
-  {{ card('RA/27 (low)', 'ra27',   '%.2f',  false, pitching, tooltip='Runs Allowed per 27 outs — ALL runs (earned + unearned) on the same scale as wERA/xRA. Unlike ERA/wERA it includes Walk-Back and passed-ball runs, so RA/27 − wERA is the run damage the earned-run stats hide. Lower is better.') }}
+  {{ card('RA/27 (low)', 'ra27',   '%.2f',  false, pitching, tooltip='Runs Allowed per 27 outs — ALL runs (earned + unearned) on the same scale as xRA/xRA. Unlike ERA/xRA it includes Walk-Back and passed-ball runs, so RA/27 − xRA is the run damage the earned-run stats hide. Lower is better.') }}
   {{ card('LateK%',      'late_k_pct_pct', '%.1f%%', true, pitching, tooltip='Arc-3 K% (outs 19-27, incl foul-outs). The short-relief sibling to Decay — closers and back-of-arc specialists who never see arc-1 sample appear here.') }}
   {{ card('GSc+',        'gsc_plus', '%d',    true,  pitching, tooltip='League-relative Game Score (100 = league avg, higher = better)') }}
   {{ card('GSc Index',   'gsc_index','%d',    true,  pitching, tooltip='Z-score-normalized Game Score on an IQ-style 100 / 15 scale. Unlike GSc+ (mean-only), GSc Index also accounts for the spread of pitcher talent — a 130 reads as "+2 σ above average" in a deep 56-team league the same as in an 8-team league.') }}
-  {{ card('wERA+',       'wera_plus','%d',    true,  pitching, tooltip='Park-adjusted, league-relative wERA on the ERA+ scale (100 = avg). Boosts pitchers in hitter\'s parks (PF > 1) and discounts pitchers in pitcher\'s parks. Formula: (league_wERA × PF / wERA) × 100, where PF averages park_hr / park_hits with the home/road split.') }}
+  {{ card('xRA+',       'wera_plus','%d',    true,  pitching, tooltip='Park-adjusted, league-relative xRA on the ERA+ scale (100 = avg). Boosts pitchers in hitter\'s parks (PF > 1) and discounts pitchers in pitcher\'s parks. Formula: (league_xRA × PF / xRA) × 100, where PF averages park_hr / park_hits with the home/road split.') }}
 </div>
 
 <h4>Pitching · Workload &amp; Stuff</h4>
@@ -621,8 +620,8 @@
     <strong>2C</strong> (Second-Chance ABs) counts contact events where the batter chose to stay (and earned a hit while spending a strike from their AB-budget) instead of run. The load-bearing O27 mechanic. Listed as a counting stat — the underlying rate is 1-3% of PAs league-wide, too small to read as a percentage.
     <br><br>
     <strong>Pitching</strong> uses three result-tier metrics that each tell a different story.
-    <strong>wERA</strong> weights earned runs by arc position (outs 1–9 ×0.85, 10–18 ×1.00, 19–27 ×1.20) and league-anchors to raw ER/27.
-    <strong>xRA</strong> (Expected Runs Allowed) is a non-negative linear-weights formula — coefficients HR ≈ 1.4, single ≈ 0.45, BB / HBP ≈ 0.32, K / out = 0 — multiplicatively anchored so league xRA = league wERA. Replaces the previous xFIP column, which produced negative values for high-K small-sample pitchers because the FIP coefficient sign convention.
+    <strong>xRA</strong> weights earned runs by arc position (outs 1–9 ×0.85, 10–18 ×1.00, 19–27 ×1.20) and league-anchors to raw ER/27.
+    <strong>xRA</strong> (Expected Runs Allowed) is a non-negative linear-weights formula — coefficients HR ≈ 1.4, single ≈ 0.45, BB / HBP ≈ 0.32, K / out = 0 — anchored to league RA/27 (all runs). Replaces the previous xFIP column, which produced negative values for high-K small-sample pitchers because the FIP coefficient sign convention.
     <strong>Decay</strong> measures late-arc fade (K%_arc1 − K%_arc3 in points; lower = more durable).
     <strong>GSc</strong> is a per-appearance Game Score (50 = neutral, 100 = perfection). <strong>OS+</strong> is league-relative outs per appearance (100 = avg).
     PA-rate <strong>K%</strong> counts foul-outs as Ks. WAR uses an O27-fitted runs-per-win factor (~21 vs MLB's ~10). W/L credits an SP with ≥ 12 outs and the lead, otherwise the most-effective reliever.

@@ -2180,61 +2180,68 @@ def should_stay_prob(
     Applies all §4.5 hard rules first, then uses batter.stay_aggressiveness
     and batter.contact_quality_threshold as probabilistic gates.
     """
-    # Hard rule: stay unavailable (no runners).
+    # --- Hard rules (mechanically impossible / strictly dominated) ----------
     if not state.runners_on_base:
         return False
-    # Hard rule: home run → always run (forfeiting 4 bases for a single
-    # is never worth a strike-and-hit credit).
-    if is_hr:
+    # Cap: a stay burns a strike; only available with one to spare. (Also gated
+    # by stay_available, but kept here so the decision is self-contained.)
+    if state.count.strikes >= 2:
         return False
-    # Hard rule: triple → run (3 bases > 1 base of hit credit + a strike).
-    if is_triple:
+    if is_hr:                       # HR → take the bases (Walk-Back).
         return False
-    # Hard rule: hard contact → run (likely XBH; same forfeit logic).
-    if quality == "hard":
+    if is_triple:                   # triple → reaching 3B beats staying.
         return False
-    # Hard rule: caught fly → batter is out on contact; stay decision moot.
-    if caught_fly:
+    if caught_fly:                  # caught → batter out on contact; moot.
         return False
-    # NOTE: 2-strike and 2-out cases are NOT hard rules. Per the corrected
-    # stay rule:
-    #   - Stay credits a hit AND uses 1 strike. At 2 strikes, that 3rd-
-    #     strike-from-stay just ends the AB (with the hit credited, NOT
-    #     as a batter-out). So 2-strike stays are *good* on weak/medium
-    #     contact — you trade an AB-end for a free hit credit.
-    #   - 2 outs in the half: same logic. Stay never produces an out, so
-    #     it doesn't end the half. The runners advance, hit credited,
-    #     AB ends if strikes hit 3.
-    # Removing these hard rules lets the AI take the strategically right
-    # action in late-count / late-half situations.
+    if quality == "hard":           # likely XBH → take the base.
+        return False
 
-    # Probabilistic gate: stay_aggressiveness scaled by leverage signals.
-    # 2C is the engine's "advance runners / bring them home" mechanic,
-    # plus a "work the count / foul off pitches" mechanic for skilled
-    # hitters. Frequency lifts compose multiplicatively from:
-    #   - RISP leverage (real run-driving opportunity)
-    #   - Count state (patient hitter hunting; 2-strike protect)
-    #   - Late game push (manufacture runs even without RISP)
-    stay_p = batter.stay_aggressiveness
+    # --- EV-driven decision -------------------------------------------------
+    # Staying now has REAL downside: if this contact is an out in the field, a
+    # stay retires the batter. So the batter stays only when the expected value
+    # of advancing/scoring runners beats the out risk. No frequency multipliers,
+    # no stay_aggressiveness — purely the run-driving math (owner directive:
+    # "2C at-bats should be EV-driven exclusively").
+    pitcher = state.get_current_pitcher()
+    p_cmd = float(getattr(pitcher, "command", 0.5) or 0.5) if pitcher else 0.5
 
-    # RISP leverage.
-    if state.bases[1] is not None or state.bases[2] is not None:
-        stay_p *= cfg.STAY_RISP_MULT
-    elif state.bases[0] is not None:
-        stay_p *= cfg.STAY_1B_ONLY_MULT
+    # Out risk: probability this batted ball is an out if the batter commits to
+    # staying. Weak contact is riskier than medium; contact+eye vs command
+    # lowers it. (The actual out/hit was already resolved upstream, but the
+    # batter decides on feel — quality + skill — not on the resolved hit_type,
+    # which is what makes the stay a genuine gamble.)
+    skill = ((batter.contact + batter.eye) / 2.0) - p_cmd          # ~ -0.5..+0.5
+    base_out_risk = cfg.STAY_OUT_RISK_WEAK if quality == "weak" else cfg.STAY_OUT_RISK_MEDIUM
+    out_risk = max(0.05, min(0.85, base_out_risk - skill * cfg.STAY_OUT_RISK_SKILL_SCALE))
 
-    # Count awareness: patient hitter ahead in the count is "waiting for
-    # his pitch" — more inclined to stay on marginal contact and get
-    # another swing. NB: no 2-strike lift — O27 has no foul-off survival
-    # mechanic (3 fouls = FOUL OUT), so the MLB protect-mode metaphor
-    # doesn't apply.
-    if state.count.balls > state.count.strikes:
-        stay_p *= cfg.STAY_AHEAD_IN_COUNT_MULT
+    # Don't burn a half-ending out on a stay that can't plate a run.
+    last_out = state.outs >= state.out_cap() - 1
+    if last_out and state.bases[2] is None:
+        return False
 
-    # Late-game push: last third of the half, manufacture-runs mode.
-    if state.outs >= cfg.LATE_GAME_OUTS_THRESHOLD:
-        stay_p *= cfg.STAY_LATE_GAME_MULT
+    # Reward of advancing runners, weighted by how close they are to scoring.
+    reward = 0.0
+    if state.bases[2] is not None:
+        reward += cfg.STAY_REWARD_3B          # scores
+    if state.bases[1] is not None:
+        reward += cfg.STAY_REWARD_2B
+    if state.bases[0] is not None:
+        reward += cfg.STAY_REWARD_1B
 
+    # EV(stay) ≈ reward·P(success) − out_cost·P(out).
+    # EV(run)  ≈ value of the hit you'd forgo by staying — higher for cleaner
+    # contact, so you don't waste a good hit chasing a better one.
+    ev_stay = reward * (1.0 - out_risk) - cfg.STAY_OUT_COST * out_risk
+    ev_run  = cfg.STAY_RUN_BASELINE_MEDIUM if quality == "medium" else cfg.STAY_RUN_BASELINE_WEAK
+    edge = ev_stay - ev_run
+    if edge <= 0:
+        return False
+    # Convert the EV edge into a stay probability (some noise so identical
+    # situations aren't deterministic). Saturates for large edges.
+    stay_p = max(0.0, min(cfg.STAY_MAX_PROB, edge * cfg.STAY_EDGE_TO_PROB))
+    # Jokers are the designated offensive weapons — they leverage 2C the most.
+    if getattr(state, "batter_override", None) is batter:
+        stay_p = min(cfg.STAY_MAX_PROB, stay_p * cfg.STAY_JOKER_MULT)
     return rng.random() < stay_p
 
 
@@ -2997,75 +3004,31 @@ class ProbabilisticProvider:
         else:
             choice = "run"
 
-        # Talent-weighted 2C outcome resolution (Path A). Replaces Phase 11C's
-        # unconditional [2,2,2] for medium stays with a talent-gated version
-        # and adds a hit-credit gate for weak stays. Applies on every 2C
-        # event (including swing 1, which Path 2's swing-2+ scope didn't
-        # reach), so the eye/contact-vs-command signal differentiates the
-        # bulk of the 2C population.
-        if choice == "stay" and quality in ("weak", "medium"):
-            eye_dev = (batter.eye - 0.5) * 2
-            con_dev = (batter.contact - 0.5) * 2
-            cmd_dev = (pitcher.command - 0.5) * 2
-            # Talent factor — full batter contribution (no averaging),
-            # so eye and contact each contribute their full signed range
-            # to the gate. Theoretical range ±3.0; typical ±1.0.
-            talent_factor = eye_dev + con_dev - cmd_dev
-            # Talent-driven fractional advance. talent_factor maps to an
-            # EXPECTED advance value (continuous, talent-diverse), then
-            # one rng draw resolves the fractional part to an integer.
-            #   weak quality   expected ≈ 1.0 + 0.5*talent_factor
-            #     → low-talent  (factor ≈ -1):  expected ~0.5 → ~50% credit
-            #       neutral     (factor ≈  0):  expected ~1.0 → always +1
-            #       high-talent (factor ≈ +2):  expected ~2.0 → always +2
-            #   medium quality expected ≈ 1.5 + 0.75*talent_factor
-            #     → low-talent:  expected ~0.75 → mostly 1, sometimes 0
-            #       neutral:     expected ~1.5  → 50/50 between 1 and 2
-            #       high-talent: expected ~3.0  → always max (score from 1B)
-            # Floors are higher than Path A originals — earned 2Cs reliably
-            # move runners, so chained hits produce runs instead of just
-            # credit-only "free" hits. Pitchers pay via pitch count.
-            if quality == "weak":
-                # Floor lifted from 0.55 → 0.70: successful weak stays now
-                # average ~0.7 bases of advancement (vs ~0.55), bringing the
-                # mechanic's mean RV closer to neutral. Successful 2Cs are
-                # supposed to move runners; the previous floor underdelivered.
-                expected = 0.70 + 0.5 * talent_factor
-            else:  # medium
-                # Floor lifted from 1.05 → 1.20 for the same reason — a medium-
-                # contact 2C should reliably move runners more than one base
-                # when it succeeds.
-                expected = 1.20 + 0.75 * talent_factor
-            expected = max(0.0, min(3.0, expected))
-            floor_v = int(expected)
-            frac = expected - floor_v
-            adv = floor_v + (1 if rng.random() < frac else 0)
-            adv = max(0, min(3, adv))
-            outcome_dict["runner_advances"] = [adv, adv, adv]
-
-            # Defense-read on the 2C: a fraction of valid stays get
-            # broken up by the defense reading the play — catcher snaps
-            # a throw down, OF charges in to nip the lead runner at a
-            # bag, infielders rotate to a tag at second. Probability
-            # scales with team defense rating so good defenses make
-            # the 2C feel risky; bad defenses let it run wild.
-            if adv > 0 and any(state.bases):
-                team_def = float(getattr(state.fielding_team, "defense_rating", 0.5) or 0.5)
-                cat_arm = _catcher_arm_eff(state)
-                p_read = (cfg.STAY_DEFENSE_READ_BASE
-                          + (team_def - 0.5) * cfg.STAY_DEFENSE_READ_TEAM_SCALE
-                          + (cat_arm  - 0.5) * cfg.STAY_DEFENSE_READ_CATCHER_SCALE)
-                p_read = max(cfg.STAY_DEFENSE_READ_MIN,
-                             min(cfg.STAY_DEFENSE_READ_MAX, p_read))
-                if rng.random() < p_read:
-                    # Pick the lead runner (highest occupied base) — that's
-                    # the one most likely to get nailed on a heads-up play.
-                    lead_idx = next(
-                        (i for i in (2, 1, 0) if state.bases[i] is not None),
-                        None,
-                    )
-                    if lead_idx is not None:
-                        outcome_dict["runner_out_idx"] = lead_idx
+        # 2C-through-the-hitting-engine (see docs/design-2c-hitting-engine-rework).
+        # The old code flattened a stay's advancement to a flat talent-gated
+        # [adv,adv,adv], discarding the real hit type. That override is GONE: the
+        # runner_advances already on outcome_dict (from runner_advances_for_hit on
+        # the resolved hit_type) now stand, so a 2C single moves runners one base,
+        # a 2C double two, etc. — the real contact drives advancement. The defense
+        # can still read and break up the play on a stay.
+        if choice == "stay" and quality in ("weak", "medium") and any(state.bases):
+            team_def = float(getattr(state.fielding_team, "defense_rating", 0.5) or 0.5)
+            cat_arm = _catcher_arm_eff(state)
+            p_read = (cfg.STAY_DEFENSE_READ_BASE
+                      + (team_def - 0.5) * cfg.STAY_DEFENSE_READ_TEAM_SCALE
+                      + (cat_arm  - 0.5) * cfg.STAY_DEFENSE_READ_CATCHER_SCALE)
+            p_read = max(cfg.STAY_DEFENSE_READ_MIN,
+                         min(cfg.STAY_DEFENSE_READ_MAX, p_read))
+            # Defense reads the play and nips the lead runner: catcher snaps a
+            # throw down, OF charges to a bag, IF rotates to a tag. Good defenses
+            # make the 2C feel risky; bad ones let it run wild.
+            if rng.random() < p_read:
+                lead_idx = next(
+                    (i for i in (2, 1, 0) if state.bases[i] is not None),
+                    None,
+                )
+                if lead_idx is not None:
+                    outcome_dict["runner_out_idx"] = lead_idx
 
         # GIDP / triple play. A ground out with at least one runner on base
         # and < 2 outs can become a double play. Probability composes:

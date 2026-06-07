@@ -241,16 +241,15 @@
     {% if pt_totals %}
     {% if bt_totals %}<div style="border-left:1px solid var(--border-soft)"></div>{% endif %}
     <div><div class="score-label">W-L</div><div class="num fw-bold" style="font-size:1.35rem">{{ pt_totals.w or 0 }}-{{ pt_totals.l or 0 }}</div></div>
-    <div title="Weighted ERA"><div class="score-label">wERA</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.werra) }}</div></div>
-    <div title="Park-adjusted league-relative wERA — 100 = league avg AT THIS PARK; higher = better. PF {{ '%.3f'|format(pt_totals.park_factor or 1.0) }}.">
-      <div class="score-label">wERA+</div>
+    <div title="Park-adjusted league-relative xRA — 100 = league avg AT THIS PARK; higher = better. PF {{ '%.3f'|format(pt_totals.park_factor or 1.0) }}.">
+      <div class="score-label">xRA+</div>
       <div class="num fw-bold" style="font-size:1.35rem">{{ (pt_totals.wera_plus or 100)|round|int }}</div>
     </div>
     <div title="Z-score-normalized Game Score (100 / 15 scale). Cross-league-size comparable in both mean AND spread.">
       <div class="score-label">GSc Idx</div>
       <div class="num fw-bold" style="font-size:1.35rem">{{ (pt_totals.gsc_index or 100)|round|int }}</div>
     </div>
-    <div title="Expected Runs Allowed — non-negative linear weights, anchored to league wERA"><div class="score-label">xRA</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.xra) }}</div></div>
+    <div title="Expected Runs Allowed — non-negative linear weights, anchored to league RA/27"><div class="score-label">xRA</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.xra) }}</div></div>
     <div><div class="score-label">K</div><div class="num fw-bold" style="font-size:1.35rem">{{ pt_totals.k }}</div></div>
     <div><div class="score-label">pWAR</div><div class="num fw-bold" style="font-size:1.35rem">{{ '%.2f'|format(pt_totals.war) }}</div></div>
     {% endif %}
@@ -548,16 +547,14 @@
   </div>
 
   <div class="dense mb-3">
-    <div class="panel-title">Result-Tier (wERA / xRA / Decay)</div>
+    <div class="panel-title">Result-Tier (xRA / Decay)</div>
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
       <thead><tr>
-        <th class="num" title="Weighted ERA — outs 1-9 ×0.85, 10-18 ×1.00, 19-27 ×1.20. Lower better.">wERA</th>
-        <th class="num" title="Expected Runs Allowed — non-negative linear weights, multiplicatively anchored to league wERA. Lower better.">xRA</th>
+        <th class="num" title="Expected Runs Allowed — non-negative linear weights, anchored to league RA/27. Lower better.">xRA</th>
         <th class="num" title="Drift-corrected late-arc fade (points). 0 = matches league norm; positive = fades worse than lineup-cycle drift; negative = holds up better than league.">Decay</th>
       </tr></thead>
       <tbody><tr>
-        <td class="num fw-bold">{{ '%.2f'|format(pt_totals.werra) }}</td>
         <td class="num fw-bold">{{ '%.2f'|format(pt_totals.xra) }}</td>
         <td class="num">{% if pt_totals.decay_known %}{{ '%+.1f'|format(pt_totals.decay) }}{% else %}—{% endif %}</td>
       </tr></tbody>
@@ -621,7 +618,7 @@
       Walk-Back Stop% measures how often this pitcher strands the
       post-HR rule-placed runner on 3B. The bonus run, when it scores,
       is unearned (Manfred-runner precedent) and is excluded from ERA
-      but charged to runs allowed (and thus to wERA).
+      but charged to runs allowed (and thus to xRA).
     </p>
     <div class="table-responsive">
     <table class="table table-sm dense-table mb-0">
@@ -690,10 +687,10 @@
       <thead><tr>
         <th class="num" title="GSc relative to league average (100 = avg, higher = better)">GSc+</th>
         <th class="num" title="Z-score-normalized Game Score on a 100 / 15 (IQ) scale — cross-league-size comparable in both mean AND spread (unlike GSc+, which only normalizes mean)">GSc Idx</th>
-        <th class="num" title="Park-adjusted league-relative wERA (ERA+ scale; 100 = league avg AT THIS PARK, higher = better)">wERA+</th>
+        <th class="num" title="Park-adjusted league-relative xRA (ERA+ scale; 100 = league avg AT THIS PARK, higher = better)">xRA+</th>
         <th class="num" title="WPA — sum of Win Probability Added across PAs faced (pitcher's side = negation of opposing batters' gains). Positive = his arm moved the needle.">WPA</th>
         <th class="num" title="Average Leverage Index across PAs faced. 1.0 = league norm; >1 = high-stakes usage pattern (closer / bridge).">LI</th>
-        <th class="num" title="Runs saved vs replacement-level pitcher (rebased to wERA)">VORP</th>
+        <th class="num" title="Runs saved vs replacement-level pitcher (rebased to xRA)">VORP</th>
         <th class="num" title="Wins above replacement">WAR</th>
       </tr></thead>
       <tbody><tr>
@@ -925,7 +922,7 @@
   <div class="panel mb-3">
     <div class="panel-head">
       <span>Pitching Splits</span>
-      <span class="ms-auto sub">arc-bucketed metrics (wERA / Decay) recompute per split using only that subset's arc counts</span>
+      <span class="ms-auto sub">arc-bucketed metrics (xRA / Decay) recompute per split using only that subset's arc counts</span>
     </div>
     <div class="table-responsive">
     <table class="table dense-table mb-0">
@@ -952,7 +949,6 @@
         {{ prow('BB',   'bb') }}
         {{ prow('HR',   'hr_allowed') }}
         {{ prow('FO',   'fo_induced') }}
-        {{ prow('wERA', 'werra', '%.2f', 'fw-bold') }}
         {{ prow('xRA', 'xra',  '%.2f') }}
         <tr>
           <td class="text-secondary">Decay</td>
@@ -963,7 +959,7 @@
         {{ prow('GSc avg', 'gsc_avg', '%.1f') }}
         {{ prow('GSc+',    'gsc_plus', '%d') }}
         {{ prow('GSc Idx', 'gsc_index', '%d', 'fw-bold') }}
-        {{ prow('wERA+',   'wera_plus', '%d', 'fw-bold') }}
+        {{ prow('xRA+',   'wera_plus', '%d', 'fw-bold') }}
         {{ prow('OS+',     'os_plus',  '%d') }}
         <tr>
           <td class="text-secondary" title="(K + foul-outs) / BF">K%</td>

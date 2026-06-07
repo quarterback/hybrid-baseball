@@ -1246,13 +1246,11 @@ class Renderer:
             d["new_bases"] = state_after.bases_summary()
 
             if choice == "stay":
-                # The engine's stay rule (see o27/engine/stay.py) treats a
-                # caught fly as the ONLY thing that retires the batter on a
-                # stay — a 2-strike stay still credits a hit and burns the
-                # final strike but does NOT make a batter-out. Mirror that
-                # here so the renderer doesn't over-charge batter OR for
-                # 2-strike stays that the engine never recorded as outs.
-                stay_out = bool(caught_fly)
+                # The engine's stay rule (o27/engine/stay.py): the 2C resolves
+                # through the real hitting engine, so ANY out in the field —
+                # caught fly OR a ground/fly/line out (batter not safe) — retires
+                # the batter on a stay. A clean hit lets him stay. Mirror that.
+                stay_out = bool(caught_fly) or not batter_safe
                 d["stay_batter_out"] = stay_out
                 d["stay_valid"] = not stay_out
                 if not stay_out:
@@ -1560,6 +1558,8 @@ class Renderer:
             s.ab += 1
             s.k += 1
             s.outs_recorded += 1
+            if ab_hits_before:
+                s.c2_strand_out += 1
             _check_multi_hit()
 
         elif etype == "foul" and disp.get("is_foul_out"):
@@ -1568,6 +1568,8 @@ class Renderer:
             s.ab += 1
             s.fo += 1
             s.outs_recorded += 1
+            if ab_hits_before:
+                s.c2_strand_out += 1
             _check_multi_hit()
 
         elif etype == "stolen_base_attempt":
@@ -1605,6 +1607,8 @@ class Renderer:
             s.ab += 1
             s.k += 1
             s.outs_recorded += 1
+            if ab_hits_before:
+                s.c2_strand_out += 1   # struck out after advancing runners via 2C
             _check_multi_hit()
 
         elif etype == "hit_by_pitch":
@@ -1738,8 +1742,14 @@ class Renderer:
                     # as a separate plate appearance each.
                     s.sty += 1
                     if disp.get("stay_hit_credited"):
+                        # Credit the REAL hit type — a 2C is no longer capped at
+                        # a single. (HR can't reach a stay: it forces a run.)
                         s.hits += 1
                         s.stay_hits += 1
+                        if hit_type == "double":
+                            s.doubles += 1
+                        elif hit_type == "triple":
+                            s.triples += 1
                     # stay_rbi: credit RBI for runs that score on a valid stay.
                     if runs_scored > 0:
                         s.stay_rbi += runs_scored
@@ -1789,13 +1799,14 @@ class Renderer:
                     # Otherwise AB CONTINUES — do NOT check multi_hit_abs yet
                     # and do NOT credit a PA (intermediate stay only).
                 elif disp.get("stay_batter_out"):
-                    # Stay results in out → AB ends. The only path that
-                    # reaches here now is caught_fly (the rule was simplified
-                    # so 2-strike stays don't out the batter).
+                    # Stay resolved as an out in the field (caught fly / ground /
+                    # fly / line out) → batter out, AB ends.
                     s.pa += 1
                     s.ab += 1
                     s.rbi += runs_scored
                     s.outs_recorded += 1
+                    if ab_hits_before:
+                        s.c2_strand_out += 1   # advanced runners earlier, then out
                     _check_multi_hit(terminal_hit=False)
             else:
                 # Run chosen — AB ends. 1 PA, 1 AB.
@@ -1816,6 +1827,8 @@ class Renderer:
                 elif not disp.get("batter_safe", True):
                     # Batter retired (ground out, fly out, line out, DP etc.)
                     s.outs_recorded += 1
+                    if ab_hits_before:
+                        s.c2_strand_out += 1   # ran the forced ball, out, after 2C
                     # Credit the putout to the responsible fielder (PO++).
                     # Caught flies still credit a PO (the fielder caught it).
                     fielder_id_v = (event.get("outcome") or {}).get("fielder_id")
@@ -2104,7 +2117,7 @@ class Renderer:
         for f in ("pa", "ab", "runs", "hits", "doubles", "triples", "hr",
                   "rbi", "bb", "k", "hbp", "sty", "outs_recorded",
                   "sh", "bunt_att", "bunt_hits", "sqz", "sqz_rbi",
-                  "stay_rbi", "stay_hits", "walkback_runs", "multi_hit_abs",
+                  "stay_rbi", "stay_hits", "c2_strand_out", "walkback_runs", "multi_hit_abs",
                   "sb", "cs", "fo", "roe",
                   "po", "a", "e",
                   "gidp", "gitp",

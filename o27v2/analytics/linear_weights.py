@@ -70,19 +70,22 @@ _WALK_TRANSITION = {
 
 def _classify_bip(hit_type: str | None,
                   was_stay: int, stay_credited: int) -> str | None:
-    """Map a BIP-event row to one of {1B, 2B, 3B, HR, STAY, out}.
+    """Map a BIP-event row to one of {1B, 2B, 3B, HR, out}, or None to skip.
 
-    Stay-credit events get their own STAY bucket — they are NOT real
-    singles and conflating them with 1B drags the empirical RV of a
-    true single below the walk RV. With them separated, RV(1B) sits
-    above RV(BB) as it should.
+    2C events are EXCLUDED from the run-value fit (return None). Owner directive:
+    a 2C advancement is credited in wOBA exactly like the hit a runner-side
+    batter would have produced — the runner outcome is the same. A 2C single's
+    own empirical RE is lower (runners advance but the batter stays at the
+    plate), so letting 2C events into the fit would wrongly drag the 1B/2B/3B
+    run values below their true single/double values. 2C hits are still counted
+    in the standard h/d2/d3 buckets and are credited at these clean normal-hit
+    weights by the application. (The cost side — an out that ends a 2C AB being
+    valued like a runner put out — is handled separately, not in this fit.)
 
     Returns None if the row is uninterpretable (legacy NULL hit_type).
     """
-    if was_stay and stay_credited:
-        return "STAY"
-    if was_stay and not stay_credited:
-        return "out"
+    if was_stay:
+        return None
     if hit_type in ("hr", "home_run"):
         return "HR"
     if hit_type == "triple":
@@ -281,7 +284,7 @@ def derive_linear_weights(team_ids=None) -> dict:
     # no data → no signal) so this entire derivation is safe to call
     # before any games have been simmed. /team/<id>, /player/<id>,
     # /standings, etc. all funnel through here via _aggregate_batter_rows.
-    for _et in ("out", "1B", "2B", "3B", "HR", "STAY"):
+    for _et in ("out", "1B", "2B", "3B", "HR"):
         rv.setdefault(_et, 0.0)
     rv["BB"]  = _walk_run_value(re_map, state_p)
     rv["HBP"] = rv["BB"]   # same state transition
@@ -297,7 +300,7 @@ def derive_linear_weights(team_ids=None) -> dict:
 
     # ---- wOBA weights: OBP-scaled wRAA-per-PA.
     rv_out = rv.get("out", 0.0)
-    raw = {et: rv[et] - rv_out for et in ("BB", "HBP", "1B", "2B", "3B", "HR", "STAY")}
+    raw = {et: rv[et] - rv_out for et in ("BB", "HBP", "1B", "2B", "3B", "HR")}
 
     # Enforce baseball-intuitive ordering on the displayed wOBA weights:
     #   BB ≤ HBP ≤ 1B ≤ 2B ≤ 3B ≤ HR.
@@ -335,11 +338,10 @@ def derive_linear_weights(team_ids=None) -> dict:
         if cur in raw and prev in raw and raw[cur] < raw[prev]:
             raw[cur] = raw[prev]
 
-    # Compute league counts to derive the OBP-scale factor and to
-    # validate league wOBA == league OBP. `stay_hits` is a subset of
-    # `hits` (engine credits a stay-event 2C hit as a hit in
-    # game_batter_stats), so `true_singles = singles_total - stay_hits`
-    # to keep the 1B bucket free of stay-credit contamination.
+    # Compute league counts to derive the OBP-scale factor and to validate
+    # league wOBA == league OBP. Since the 2C rework a credited 2C hit is a real
+    # hit of its type and already sits in the h/d2/d3 buckets, so singles are
+    # just `h − d2 − d3 − hr` (no stay subtraction) and there is no STAY term.
     counts = db.fetchone(
         """
         SELECT COALESCE(SUM(pa), 0)         AS pa,
@@ -349,8 +351,7 @@ def derive_linear_weights(team_ids=None) -> dict:
                COALESCE(SUM(triples), 0)    AS d3,
                COALESCE(SUM(hr), 0)         AS hr,
                COALESCE(SUM(bb), 0)         AS bb,
-               COALESCE(SUM(hbp), 0)        AS hbp,
-               COALESCE(SUM(stay_hits), 0)  AS stay_h
+               COALESCE(SUM(hbp), 0)        AS hbp
         FROM game_batter_stats
         WHERE phase = 0"""
         + _team_in(team_ids, "team_id")
@@ -360,16 +361,14 @@ def derive_linear_weights(team_ids=None) -> dict:
     pa = counts.get("pa") or 0
     h, hr_ct, d2, d3 = counts.get("h", 0), counts.get("hr", 0), counts.get("d2", 0), counts.get("d3", 0)
     bb_ct, hbp_ct = counts.get("bb", 0), counts.get("hbp", 0)
-    stay_ct = counts.get("stay_h", 0)
-    true_singles = h - d2 - d3 - hr_ct - stay_ct
+    true_singles = h - d2 - d3 - hr_ct
     league_obp = (h + bb_ct + hbp_ct) / pa if pa > 0 else 0.0
 
     # Aggregate raw wRAA-per-PA across the league:
     raw_total = (
         raw["BB"]  * bb_ct      + raw["HBP"] * hbp_ct +
         raw["1B"]  * true_singles + raw["2B"]  * d2 +
-        raw["3B"]  * d3         + raw["HR"]  * hr_ct +
-        raw["STAY"]* stay_ct
+        raw["3B"]  * d3         + raw["HR"]  * hr_ct
     )
     raw_per_pa = (raw_total / pa) if pa > 0 else 0.0
     scale = (league_obp / raw_per_pa) if raw_per_pa > 0 else 1.0
@@ -381,9 +380,8 @@ def derive_linear_weights(team_ids=None) -> dict:
     PTS_PER_RUN = 2.0  # MLB convention preserved
     avg_h_rv = (
         rv["1B"] * true_singles + rv["2B"] * d2 +
-        rv["3B"] * d3           + rv["HR"] * hr_ct +
-        rv["STAY"] * stay_ct
-    ) / (true_singles + d2 + d3 + hr_ct + stay_ct) if (true_singles + d2 + d3 + hr_ct + stay_ct) > 0 else 0.0
+        rv["3B"] * d3           + rv["HR"] * hr_ct
+    ) / (true_singles + d2 + d3 + hr_ct) if (true_singles + d2 + d3 + hr_ct) > 0 else 0.0
     gsc = {
         "out":          1.0,
         "K_over_out":   round(rv["K_over_out"] * PTS_PER_RUN, 2),
@@ -445,6 +443,10 @@ def derive_linear_weights(team_ids=None) -> dict:
         "league_re_start": round(league_re_start, 3),
         "league_obp":      round(league_obp, 4),
         "league_woba":     round(league_woba, 4),
+        # wOBA scale: the OBP-scale factor (league_obp / raw-wRAA-per-PA) the
+        # weights are multiplied by. Dividing (wOBA - lgwOBA) by it recovers
+        # runs, so it IS the wOBAScale for wRC+/VORP — O27-native, not MLB's 1.20.
+        "woba_scale":      round(scale, 4),
         "rv":              {k: round(v, 4) for k, v in rv.items()},
         "woba_weights":    woba_weights,
         "gsc_coeffs":      gsc,
