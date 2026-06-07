@@ -17,6 +17,13 @@ from __future__ import annotations
 from .state import GameState, Player, SpellRecord, Substitution
 from typing import Optional
 from o27 import config as cfg
+from o27.engine import cricket_order
+
+
+def _in_regulation(state: GameState) -> bool:
+    """True only during a regulation half — not super-innings, not a Declared
+    Seconds frame. The Cricket Batting Order flip is regulation-only."""
+    return not state.is_super_inning and not getattr(state, "in_seconds_phase", False)
 
 
 # ---------------------------------------------------------------------------
@@ -611,6 +618,13 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     # every joker has been used heavily. Identity (1.0) early in the
     # game; near-zero past 8 PAs on the freshest joker.
     pool_mult = _pool_fatigue_mult(eligible, state)
+    # Cricket Batting Order opportunity cost: when the rule is on, in regulation,
+    # and this trip is still joker-free, deploying a joker forfeits the chance to
+    # EARN this cycle's flip. Flip-minded skippers damp their insertion rate;
+    # joker-happy ones barely flinch. Folds into BOTH insertion paths via
+    # pool_mult so the trade is situational — a high-leverage spot can still
+    # clear the (lowered) bar, which is exactly "weigh joker-now vs flip-next."
+    pool_mult *= joker_flip_damp(team, state)
 
     # --- Path 1: weak-hitter override ----------------------------------
     # Skip leverage entirely if the upcoming batter is below replacement
@@ -657,6 +671,77 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
         return None
 
     return _pick_freshest_joker(eligible, state)
+
+
+# ---------------------------------------------------------------------------
+# Cricket Batting Order (optional rule) — flip-vs-joker decisions
+# ---------------------------------------------------------------------------
+
+def joker_flip_damp(team, state: GameState) -> float:
+    """Multiplier (<=1.0) applied to joker-insertion probability to reflect the
+    opportunity cost of forfeiting this cycle's earned flip.
+
+    Returns 1.0 (no effect) unless ALL of:
+      - the Cricket Batting Order rule is on for this team,
+      - we're in a regulation half (the flip is regulation-only), and
+      - the current trip is still joker-free (deploying now is what forfeits
+        the flip; once a joker is used this cycle the flip is already gone, so
+        further jokers this cycle are undamped).
+
+    The cut scales with the skipper's flip aggression: a pure flip-minded
+    manager loses up to CRICKET_JOKER_FLIP_DAMP of his insert probability; a
+    joker-happy manager (low flip aggression) is barely affected.
+    """
+    if not cricket_order.cricket_order_on(team):
+        return 1.0
+    if not _in_regulation(state):
+        return 1.0
+    if team.jokers_used_this_cycle:
+        return 1.0   # flip already forfeited this cycle — no further cost
+    flip_agg = float(getattr(team, "mgr_flip_aggression", 0.5))
+    return max(0.0, 1.0 - cfg.CRICKET_JOKER_FLIP_DAMP * flip_agg)
+
+
+def should_use_flip(state: GameState, rng=None) -> bool:
+    """Decide whether the batting manager spends an EARNED cricket flip at the
+    top of a new cycle (use-or-lose). Persona-driven and situational.
+
+    Drivers:
+      - mgr_flip_aggression persona (0.5 neutral): a flip-loving skipper spends
+        readily, a fixed-order traditionalist rarely does.
+      - Score: trailing raises the desire to churn the order for offense; a
+        comfortable lead lowers it.
+      - Out-arc: later in the 27-out half raises the desire (less arc left to
+        wait for the order to come good on its own).
+
+    The caller (prob.py) has already gated rule-on + regulation + a pending
+    flip; this function only weighs the spend.
+    """
+    team = state.batting_team
+    flip_agg = float(getattr(team, "mgr_flip_aggression", 0.5))
+
+    # Persona multiplier centred on 1.0 at flip_agg=0.5, spanning
+    # (1 - S/2) .. (1 + S/2) across the [0,1] persona range.
+    S = cfg.CRICKET_FLIP_AGG_SCALE
+    persona_mult = 1.0 + S * (flip_agg - 0.5)
+    persona_mult = max(0.0, persona_mult)
+
+    own = state.score.get(team.team_id, 0)
+    opp_id = "home" if team.team_id == "visitors" else "visitors"
+    opp = state.score.get(opp_id, 0)
+    # +1.0 when trailing by 10+, -1.0 when leading by 10+, 0 when tied.
+    trail = max(-1.0, min(1.0, (opp - own) / 10.0))
+    arc = max(0.0, min(1.0, state.outs / 27.0))
+
+    situational = (1.0
+                   + cfg.CRICKET_FLIP_TRAIL_SCALE * trail
+                   + cfg.CRICKET_FLIP_ARC_SCALE * arc)
+
+    p = cfg.CRICKET_FLIP_BASE_PROB * persona_mult * situational
+    p = max(0.0, min(cfg.CRICKET_FLIP_MAX_PROB, p))
+
+    roll = (rng.random() if rng is not None else __import__("random").random())
+    return roll < p
 
 
 def should_intentional_walk(state: GameState, rng=None) -> bool:

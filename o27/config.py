@@ -1106,6 +1106,57 @@ POWER_PLAY_DEPLOY_BASE_FORCED: float = 0.90  # ≤ window outs remain (use-or-lo
 POWER_PLAY_CLOSE_GAME_MULT: float   = 1.4    # tight game raises deploy urgency
 
 # ---------------------------------------------------------------------------
+# Cricket Batting Order (optional league rule)
+# ---------------------------------------------------------------------------
+# An opt-in, per-league rule. When enabled, the batting order FLIPS at the end
+# of each trip through the order — the 1-9 order becomes 9-1 for the next cycle,
+# so the tail rotates to the top — BUT only on a trip in which the manager
+# deployed no joker. Using a joker locks the order for that cycle (no flip), so
+# the rule trades a tactical joker insertion against keeping a favorable
+# top-of-order. The flip persists across phases (regulation / Declared Seconds /
+# super-innings) exactly as the order does today.
+#
+# CRICKET_BATTING_ORDER_ENABLED is a plain bool, so o27v2.engine_config
+# auto-exposes it as a dashboard toggle that saves per environment — that IS the
+# global per-league default (off by default, so identical talent can be A/B-
+# tested on vs. off, and the per-league checkbox composes via "league opt-in OR
+# global default"). See o27/engine/cricket_order.py for the gate + flip logic.
+CRICKET_BATTING_ORDER_ENABLED: bool = False   # league opt-in; off = zero change
+
+# Manager flip decision (manager.should_use_flip). An earned flip is use-or-lose
+# at the top of the new cycle; whether the skipper spends it is persona-driven
+# (mgr_flip_aggression, 0.5 neutral) and situational (score + out-arc). The
+# probability is BASE × persona_mult × situational, capped at MAX.
+CRICKET_FLIP_BASE_PROB: float   = 0.55   # neutral-persona spend rate when earned
+CRICKET_FLIP_AGG_SCALE: float   = 1.4    # persona span: mult = (1-S/2)..(1+S/2)·… (see code)
+CRICKET_FLIP_TRAIL_SCALE: float = 0.30   # trailing (need offense) raises spend desire
+CRICKET_FLIP_ARC_SCALE: float   = 0.25   # later in the 27-out arc raises spend desire
+CRICKET_FLIP_MAX_PROB: float    = 0.97   # ceiling so it's never a certainty
+
+# Joker opportunity cost. While the rule is on, in regulation, and the current
+# trip is still joker-free, deploying a joker forfeits the chance to EARN this
+# cycle's flip. Flip-minded skippers (high mgr_flip_aggression) therefore damp
+# their joker insertion rate by up to this fraction; joker-happy skippers
+# (low flip aggression) are barely affected, so they keep spending jokers and
+# rarely flip. The first joker of a cycle pays this cost; once the flip is
+# already forfeited, further jokers that cycle are undamped.
+CRICKET_JOKER_FLIP_DAMP: float  = 0.60   # max fractional cut to joker-insert prob
+
+# Flip-aware lineup construction. A flip-minded skipper (mgr_flip_aggression at
+# or above this bar) whose league runs the rule builds his order to read well in
+# BOTH directions — strongest bats at the ends, weakest (the pitcher) buried in
+# the MIDDLE — so a flip doesn't hand the next cycle a tail-led order. Below the
+# bar, the order is built normally (best-to-worst, pitcher 9th).
+CRICKET_FLIP_LINEUP_AGG_MIN: float = 0.60
+
+# Flip-aware lineups optimize handedness alternation as a TIEBREAKER, but only
+# within arrangements that keep the valley's directional balance. This is the
+# hard cap: a candidate is rejected if its forward-vs-reverse talent disparity
+# exceeds this fraction of the standard (best-to-worst) order's disparity. So
+# platoon weighting can never reopen the directional gap the valley closes.
+CRICKET_FLIP_DISPARITY_MAX_RATIO: float = 0.25
+
+# ---------------------------------------------------------------------------
 # Pitch-quality range (per-pitch sampling around central rating)
 # ---------------------------------------------------------------------------
 # Each pitch samples uniformly in [rating - pitch_variance, rating + pitch_variance]

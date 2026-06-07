@@ -26,6 +26,7 @@ from . import manager as mgr
 from . import weather as wx
 from o27 import config as cfg
 from o27.engine import power_play
+from o27.engine import cricket_order
 from o27.engine.batted_ball import (
     generate_batted_ball as _generate_bb,
     resolve_batted_ball as _resolve_bb,
@@ -2571,6 +2572,29 @@ class ProbabilisticProvider:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _maybe_cricket_flip(self, state: GameState) -> Optional[dict]:
+        """Consume a pending cricket flip (use-or-lose) and, if the manager
+        elects to spend it, return a cricket_flip event. Returns None when there
+        is nothing pending, the rule is off, we're outside regulation, or the
+        manager declines. The pending flag is always cleared once we reach a
+        decision so the opportunity never re-fires or banks."""
+        team = state.batting_team
+        if not getattr(team, "pending_flip", False):
+            return None
+        team.pending_flip = False                       # use-or-lose: decided now
+        if not cricket_order.cricket_order_on(team):
+            return None
+        # Regulation-only: no flips in super-innings or Declared Seconds frames.
+        if state.is_super_inning or getattr(state, "in_seconds_phase", False):
+            return None
+        if not cricket_order.can_flip(team):
+            return None
+        if not mgr.should_use_flip(state, rng=self.rng):
+            return None
+        # Precompute the line now (names the post-reversal leadoff); apply_event
+        # performs the actual reversal.
+        return {"type": "cricket_flip", "msg": cricket_order.flip_line(team)}
+
     def _try_manager_action(self, state: GameState) -> Optional[dict]:
         """Return one manager event if conditions are met, else None.
 
@@ -2596,6 +2620,16 @@ class ProbabilisticProvider:
                 "at_out": state.outs,
                 "outs_banked": banked,
             }
+
+        # Cricket Batting Order (optional rule): at the top of a new cycle the
+        # batting manager spends or loses an earned, joker-free flip. Checked
+        # before the rest of the PA's manager actions so the order is reversed
+        # first; the reversal itself happens in apply_event (so the next PA's
+        # context is captured against the flipped order). Use-or-lose: the
+        # pending flag is consumed here regardless of the decision.
+        flip_evt = self._maybe_cricket_flip(state)
+        if flip_evt is not None:
+            return flip_evt
 
         # Pitching change check.
         if mgr.should_change_pitcher(state):

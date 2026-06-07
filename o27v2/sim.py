@@ -230,9 +230,100 @@ def _bat_score(p) -> float:
     )
 
 
+def _valley_order(by_talent_desc: list) -> list:
+    """Arrange a talent-sorted (best-first) list into a "valley": strongest bats
+    at the ends, weakest in the middle.
+
+    This is the flip-minded order — it reads well in BOTH directions, so when the
+    Cricket Batting Order rule flips it (1-9 -> 9-1) the next cycle is still
+    led by quality instead of by the tail. The standard order (best-to-worst,
+    pitcher 9th) reverses into a pitcher-led mess; the valley does not, because
+    the pitcher (lowest bat score) lands in the middle, untouched by the flip.
+
+    Placement alternates outer-in: best -> leadoff, 2nd -> last, 3rd -> 2nd,
+    4th -> 8th, ... so consecutive talent ranks sit at mirrored positions.
+    """
+    n = len(by_talent_desc)
+    result: list = [None] * n
+    left, right = 0, n - 1
+    for i, player in enumerate(by_talent_desc):
+        if i % 2 == 0:
+            result[left] = player
+            left += 1
+        else:
+            result[right] = player
+            right -= 1
+    return result
+
+
+def _bat_hand(p) -> str:
+    """Batting handedness ('L'/'R'/'S'/'') for platoon-alternation scoring."""
+    return getattr(p, "bats", "") or ""
+
+
+def _same_handed_adjacencies(order: list) -> int:
+    """Count adjacent same-handed pairs (the platoon penalty). Switch hitters
+    and unknown-handedness bats never clash. Reverse-invariant — a sequence and
+    its reverse have the same adjacency multiset — so optimizing it forward
+    optimizes it in both directions."""
+    pen = 0
+    for a, b in zip(order, order[1:]):
+        ha, hb = _bat_hand(a), _bat_hand(b)
+        if ha and hb and ha != "S" and hb != "S" and ha == hb:
+            pen += 1
+    return pen
+
+
+def _directional_disparity(order: list) -> float:
+    """Front-loaded PA-weighted talent gap between the order and its reverse.
+    Low = reads equally well in both directions (the valley's whole job)."""
+    n = len(order)
+    fwd = sum((n - i) * _bat_score(p) for i, p in enumerate(order))
+    rev = sum((n - i) * _bat_score(p) for i, p in enumerate(reversed(order)))
+    return abs(fwd - rev)
+
+
+def _handed_valley_order(by_talent_desc: list) -> list:
+    """Valley order (strong ends, weak middle) with handedness alternation as a
+    TIEBREAKER — never at the cost of the valley.
+
+    The talent valley seats near-equal-talent bats in mirror-position tiers
+    (ends hold the two best, next pair the next two, ... pitcher alone in the
+    middle). The only reordering that provably preserves the valley is swapping
+    the two members WITHIN a tier (which end each sits on). We enumerate those
+    per-tier orientations, keep only the ones whose directional disparity stays
+    under the hard cap (CRICKET_FLIP_DISPARITY_MAX_RATIO of the standard order's
+    disparity), then pick the fewest same-handed adjacencies, breaking ties by
+    tightest disparity. The middle bat (the pitcher) never moves.
+    """
+    from o27 import config as _ecfg
+    base = _valley_order(by_talent_desc)
+    n = len(base)
+    pairs = [(i, n - 1 - i) for i in range(n // 2)]   # mirror tiers; middle excluded
+    standard = sorted(by_talent_desc, key=_bat_score, reverse=True)
+    cap = getattr(_ecfg, "CRICKET_FLIP_DISPARITY_MAX_RATIO", 0.25) \
+        * _directional_disparity(standard)
+
+    best_order = base
+    best_key = None
+    for mask in range(1 << len(pairs)):
+        order = list(base)
+        for k, (i, j) in enumerate(pairs):
+            if mask & (1 << k):
+                order[i], order[j] = order[j], order[i]
+        disparity = _directional_disparity(order)
+        if disparity > cap:               # hard constraint: keep the valley tight
+            continue
+        key = (_same_handed_adjacencies(order), disparity)
+        if best_key is None or key < best_key:
+            best_key, best_order = key, order
+    return best_order
+
+
 def _ordered_lineup(
     starting_fielders: list,
     todays_sp: list,
+    flip_minded: bool = False,
 ) -> list:
     """Order the 9-batter base lineup by hitting talent.
 
@@ -244,11 +335,27 @@ def _ordered_lineup(
     Pitchers almost always hit 9th. Exception: a pitcher whose
     hitting `skill` clears 0.50 (top ~5-10% of arms in a fresh
     seed) slots in by talent like everyone else.
+
+    `flip_minded` (set for a high-flip-aggression manager in a Cricket
+    Batting Order league) instead builds a "valley" order — strong ends,
+    weak middle — so the order reads well after a flip. The pitcher lands
+    in the middle rather than at the tail. See _valley_order.
     """
     non_pitchers = list(starting_fielders)
     non_pitchers.sort(key=_bat_score, reverse=True)
 
     sp = todays_sp[0] if todays_sp else None
+
+    if flip_minded:
+        # Build a valley over ALL nine by talent (the SP included), so the
+        # weakest bat — usually the pitcher — sits in the middle, off the ends
+        # the flip swaps. No special "SP bats 9th" handling here on purpose.
+        full = non_pitchers + ([sp] if sp is not None else [])
+        full.sort(key=_bat_score, reverse=True)
+        if len(full) >= 3:
+            return _handed_valley_order(full)
+        return full
+
     if sp is None:
         return non_pitchers
 
@@ -753,7 +860,19 @@ def _db_team_to_engine(
     # Build the 9-batter base lineup: 8 fielders + SP. Jokers stay in
     # jokers_available for batter_override insertions — they're NOT
     # part of the batting order itself.
-    lineup = _ordered_lineup(starting_fielders, todays_sp)
+    #
+    # Flip-aware construction: when the Cricket Batting Order rule is on for this
+    # team (per-league flag or the global default) AND the skipper is flip-minded
+    # (mgr_flip_aggression at/over the bar), build a "valley" order that reads
+    # well in both directions instead of the standard best-to-worst order. This
+    # is the manager "building his lineup with the flip in mind."
+    from o27 import config as _ecfg
+    _rule_on = (bool(team_row.get("cricket_order_enabled"))
+                or bool(getattr(_ecfg, "CRICKET_BATTING_ORDER_ENABLED", False)))
+    _flip_agg = float(team_row.get("mgr_flip_aggression") or 0.5)
+    _flip_minded = _rule_on and _flip_agg >= getattr(
+        _ecfg, "CRICKET_FLIP_LINEUP_AGG_MIN", 0.60)
+    lineup = _ordered_lineup(starting_fielders, todays_sp, flip_minded=_flip_minded)
 
     # Reorder the roster so today's SP is the first pitcher. The engine's
     # `_set_fielding_pitcher` picks the first is_pitcher in roster order,
@@ -803,6 +922,10 @@ def _db_team_to_engine(
     team.mgr_ibb_aggression       = float(team_row.get("mgr_ibb_aggression") or 0.5)
     team.mgr_declare_aggression   = float(team_row.get("mgr_declare_aggression") or 0.5)
     team.mgr_bat_first_pref       = float(team_row.get("mgr_bat_first_pref") or 0.5)
+    # Cricket Batting Order persona — how readily this skipper spends an earned
+    # flip / how reluctant he is to burn a flip-forfeiting joker. Legacy rows
+    # seeded before this axis fall back to neutral 0.5.
+    team.mgr_flip_aggression      = float(team_row.get("mgr_flip_aggression") or 0.5)
     # Stamp the catcher's arm rating on the Team for SB-success scaling.
     pos_by_id = {str(r["id"]): str(r.get("position") or "") for r in players}
     catcher_arm = 0.5
@@ -1837,6 +1960,15 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
     # home row is authoritative.
     if bool((home_row.get("power_play_enabled") if home_row else 0) or 0):
         state.power_play_enabled = True
+    # Cricket Batting Order (optional rule) — same per-league opt-in shape as
+    # Power Play. When this league opted in, force the per-game override ON for
+    # BOTH teams (advance_lineup reads team.cricket_order_enabled, and both
+    # sides bat). When it did NOT, leave the override unset (None) so the rule
+    # falls back to the global Engine Settings toggle. Both teams share a
+    # league, so the home row is authoritative.
+    if bool((home_row.get("cricket_order_enabled") if home_row else 0) or 0):
+        home_team.cricket_order_enabled = True
+        visitors_team.cricket_order_enabled = True
     # Stamp the per-game weather context (drawn at schedule time). prob.py
     # reads this; everything else passes it through.
     from o27.engine.weather import Weather

@@ -619,6 +619,18 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
     # Manager events
     # ------------------------------------------------------------------
 
+    if etype == "cricket_flip":
+        # Cricket Batting Order (optional rule): the batting manager spends an
+        # earned, joker-free flip. Reverse the order now — BEFORE the next PA's
+        # context is captured — so the new leadoff bats this turn. The line is
+        # precomputed on the event (it names the post-reversal leadoff).
+        from o27.engine import cricket_order as _co
+        _co.apply_flip(state.batting_team)
+        msg = event.get("msg") or ""
+        if msg:
+            log.append(msg)
+        return log
+
     if etype == "joker_insertion":
         joker = event["joker"]
         log += mgr.insert_joker(state, joker)

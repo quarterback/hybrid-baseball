@@ -163,6 +163,11 @@ CREATE TABLE IF NOT EXISTS teams (
     -- mgr_bat_first_pref is the home-team bat-first/bat-second bias.
     mgr_declare_aggression   REAL  DEFAULT 0.5,
     mgr_bat_first_pref       REAL  DEFAULT 0.5,
+    -- mgr_flip_aggression — Cricket Batting Order (optional rule) persona:
+    -- how readily the skipper spends an earned joker-free flip, and inversely
+    -- how reluctant he is to burn a joker that would forfeit it. Read by
+    -- manager.should_use_flip / should_insert_joker.
+    mgr_flip_aggression      REAL  DEFAULT 0.5,
     org_strength             INTEGER DEFAULT 50,
     -- Front-office persona (see o27v2/front_office.py). Drives trade
     -- motivations and acceptance thresholds; drifts year over year.
@@ -184,7 +189,13 @@ CREATE TABLE IF NOT EXISTS teams (
     -- Power Play (optional rule) — per-league opt-in set at league creation
     -- (the checkbox on new_league.html). Stamped onto every team in the
     -- league; sim.py reads it into state.power_play_enabled per game. 0 = off.
-    power_play_enabled INTEGER DEFAULT 0
+    power_play_enabled INTEGER DEFAULT 0,
+    -- Cricket Batting Order (optional rule) — per-league opt-in, same plumbing
+    -- as power_play_enabled. Stamped onto every team in the league; sim.py
+    -- reads it into team.cricket_order_enabled per game. The order flips
+    -- 1-9 -> 9-1 at the end of every joker-free trip through the lineup.
+    -- 0 = off.
+    cricket_order_enabled INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -1367,7 +1378,8 @@ def init_db() -> None:
                     "mgr_leverage_aware", "mgr_joker_aggression",
                     "mgr_pinch_hit_aggression", "mgr_platoon_aggression",
                     "mgr_run_game", "mgr_bench_usage",
-                    "mgr_declare_aggression", "mgr_bat_first_pref"):
+                    "mgr_declare_aggression", "mgr_bat_first_pref",
+                    "mgr_flip_aggression"):
             try:
                 conn.execute(f"ALTER TABLE teams ADD COLUMN {col} REAL DEFAULT 0.5")
                 conn.commit()
@@ -1466,6 +1478,16 @@ def init_db() -> None:
         # byte-for-byte unchanged.
         try:
             conn.execute("ALTER TABLE teams ADD COLUMN power_play_enabled INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+        # Cricket Batting Order (optional rule) — per-league opt-in set at
+        # league creation (or flipped on an existing league via /league/edit).
+        # Stamped onto every team in the league, read by sim.py into
+        # team.cricket_order_enabled per game. Legacy rows default to 0 (rule
+        # off), so existing leagues are byte-for-byte unchanged.
+        try:
+            conn.execute("ALTER TABLE teams ADD COLUMN cricket_order_enabled INTEGER DEFAULT 0")
             conn.commit()
         except Exception:
             pass

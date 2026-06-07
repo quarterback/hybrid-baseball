@@ -3136,9 +3136,10 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
             "mgr_quick_hook, "
             "mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, "
             "mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, "
-            "mgr_bench_usage, mgr_shift_aggression, mgr_ibb_aggression, org_strength, "
+            "mgr_bench_usage, mgr_shift_aggression, mgr_ibb_aggression, "
+            "mgr_flip_aggression, org_strength, "
             "fo_strategy, fo_aggression, fo_archetype_bias, style_profile)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, abbrev, city, lat, lon, division, league_name,
              park_hr, park_hits, park_name, park_dims,
              park_shape, park_quirks,
@@ -3150,6 +3151,7 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
              mgr["mgr_bench_usage"],
              mgr.get("mgr_shift_aggression", 0.5),
              mgr.get("mgr_ibb_aggression", 0.5),
+             mgr.get("mgr_flip_aggression", 0.5),
              org_strength,
              fo["fo_strategy"], fo["fo_aggression"], fo["fo_archetype_bias"],
              team_style),

@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from o27 import config as _cfg
+from o27.engine import cricket_order as _cricket_order
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +474,22 @@ class Team:
     pp_xbh_held:        int = 0   # XBH the nickel cut down to singles
     pp_hits_converted:  int = 0   # outfield singles the nickel turned into outs
 
+    # Cricket Batting Order (optional rule) — per-game opt-in stamped by
+    # sim.py from the per-league flag. None = not opted in (fall back to the
+    # global cfg.CRICKET_BATTING_ORDER_ENABLED default). See
+    # o27/engine/cricket_order.py.
+    cricket_order_enabled: Optional[bool] = None
+    # Manager flip-aggression persona (0.5 neutral) — how readily this skipper
+    # SPENDS an earned cricket flip, and (inversely) how reluctant he is to
+    # burn a joker that would forfeit the flip. Stamped by sim.py from the
+    # teams row; read by manager.should_use_flip / should_insert_joker.
+    mgr_flip_aggression: float = 0.5
+    # Earned-but-unspent cricket flip. Armed by advance_lineup at a joker-free
+    # cycle boundary (only when the rule is on); consumed — used or lost — by
+    # the manager decision at the top of the new cycle. Never banks: at most
+    # one is pending at a time, and reset_half clears it.
+    pending_flip: bool = False
+
     # Joker pool — 3 tactical pinch-hitters available per game. They are
     # NOT in the base lineup; the manager AI inserts them per-PA based on
     # leverage. Cooldown is per-turnover: each joker may be deployed at
@@ -519,6 +536,13 @@ class Team:
         new_pos = (self.lineup_position + 1) % n
         if new_pos == 0 and n > 0:
             # Lineup wrapped to top of order — start of a new cycle.
+            # Cricket Batting Order (optional rule): arm a flip opportunity if
+            # this trip was joker-free (checked BEFORE clearing the cooldown
+            # set, which is the record of whether a joker was deployed). The
+            # manager decides at the top of the new cycle whether to spend it
+            # (prob.py / manager.should_use_flip). Inert when the rule is off.
+            if not self.jokers_used_this_cycle and _cricket_order.cricket_order_on(self):
+                self.pending_flip = True
             self.lineup_cycle_number += 1
             # Per-cycle joker cooldown resets here. A joker may be deployed
             # at most once per time through the order; once every base

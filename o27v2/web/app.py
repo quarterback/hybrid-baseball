@@ -9208,6 +9208,12 @@ def new_league_post():
     if request.form.get("power_play_enabled"):
         db.execute("UPDATE teams SET power_play_enabled = 1")
 
+    # Cricket Batting Order (optional rule) — same opt-in shape as Power Play.
+    # Stamp it onto every team so sim.py can read the per-league flag at game
+    # time; off by default leaves the column at 0.
+    if request.form.get("cricket_order_enabled"):
+        db.execute("UPDATE teams SET cricket_order_enabled = 1")
+
     # Optional pre-season auction. Opt-in at league creation via the
     # checkbox on new_league.html; works for any preset or custom config
     # (the auction module is mode-agnostic — it reads teams off the DB).
@@ -9426,6 +9432,9 @@ def universe_new_post():
     # by index with lg_name/lg_teams/etc. (unchecked checkboxes don't submit and
     # would break the positional getlist correspondence).
     power_plays = request.form.getlist("lg_power_play")
+    # Per-league Cricket Batting Order opt-in — a <select> (Off/On) for the
+    # same positional-alignment reason as lg_power_play above.
+    cricket_orders = request.form.getlist("lg_cricket_order")
     leagues = []
     for i, nm in enumerate(names):
         if not (nm or "").strip():
@@ -9461,6 +9470,7 @@ def universe_new_post():
             "locale":    loc_val,
             "park":      (parks[i] if i < len(parks) else "") or "",
             "power_play_enabled": (i < len(power_plays) and power_plays[i] == "1"),
+            "cricket_order_enabled": (i < len(cricket_orders) and cricket_orders[i] == "1"),
         })
 
     try:
@@ -9502,6 +9512,9 @@ def universe_new_post():
         if lg.get("power_play_enabled"):
             db.execute("UPDATE teams SET power_play_enabled = 1 WHERE league = ?",
                        (lg["name"],))
+        if lg.get("cricket_order_enabled"):
+            db.execute("UPDATE teams SET cricket_order_enabled = 1 WHERE league = ?",
+                       (lg["name"],))
     flash(f"Built universe '{cfg['label']}' — {len(leagues)} leagues, "
           f"{cfg['team_count']} teams.", "info")
     return redirect(url_for("index"))
@@ -9523,8 +9536,13 @@ def league_edit_get():
         r["league"]: bool(r["pp"]) for r in db.fetchall(
             "SELECT league, MAX(power_play_enabled) AS pp FROM teams GROUP BY league")
     }
+    # Same, for the Cricket Batting Order optional rule.
+    co_by_league = {
+        r["league"]: bool(r["co"]) for r in db.fetchall(
+            "SELECT league, MAX(cricket_order_enabled) AS co FROM teams GROUP BY league")
+    }
     return _serve("league_edit.html", leagues=leagues, divisions=div_rows,
-                  pp_by_league=pp_by_league)
+                  pp_by_league=pp_by_league, co_by_league=co_by_league)
 
 
 @app.route("/league/edit", methods=["POST"])
@@ -9534,6 +9552,7 @@ def league_edit_post():
     league_old = request.form.getlist("league_old")
     league_new = request.form.getlist("league_new")
     league_pp  = request.form.getlist("league_pp")   # "1"/"0" per league, aligned
+    league_co  = request.form.getlist("league_co")   # cricket order, same shape
     div_old    = request.form.getlist("division_old")
     div_new    = request.form.getlist("division_new")
 
@@ -9542,8 +9561,8 @@ def league_edit_post():
     for i, old in enumerate(league_old):
         new = (league_new[i] if i < len(league_new) else "") or ""
         new = new.strip()
-        # Resolve the league's name after any rename, so the Power Play update
-        # below targets the right rows.
+        # Resolve the league's name after any rename, so the optional-rule
+        # updates below target the right rows.
         name = old
         if new and new != old:
             db.execute("UPDATE teams SET league = ? WHERE league = ?", (new, old))
@@ -9558,6 +9577,14 @@ def league_edit_post():
                 db.execute("UPDATE teams SET power_play_enabled = ? WHERE league = ?",
                            (want, name))
                 pp_changed += 1
+        # Cricket Batting Order toggle (always submitted as 0/1 by the select).
+        if i < len(league_co):
+            want = 1 if league_co[i] == "1" else 0
+            cur = db.fetchone(
+                "SELECT MAX(cricket_order_enabled) AS c FROM teams WHERE league = ?", (name,))
+            if cur is not None and int(cur["c"] or 0) != want:
+                db.execute("UPDATE teams SET cricket_order_enabled = ? WHERE league = ?",
+                           (want, name))
 
     renamed_div = 0
     for old, new in zip(div_old, div_new):
