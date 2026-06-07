@@ -38,11 +38,27 @@ from o27v2 import db
 from o27v2 import auction as _au
 
 
-# Active roster target — sourced from the auction module so the two
-# modules stay in lockstep (auction.ROSTER_TARGET = 34 active; +13
-# reserve = 47 total). The old hard-coded 25 here was stale and
-# capped FA signings short of the real active-roster size.
-ROSTER_TARGET = _au.ROSTER_TARGET
+# Eligibility cap for the manual signing round. This is deliberately
+# HIGHER than the auction's re-roster target (_au.ROSTER_TARGET = 34):
+# the auction wipes everyone to keepers and rebuilds, whereas this round
+# tops teams up off the FA pool, so it needs headroom above the active
+# starter count to actually sign anyone. With the old cap pinned at 34,
+# seeded teams already carried ~42 active players, so NO team was ever
+# eligible and the round was a permanent no-op.
+#
+# Two rules keep youth flowing onto rosters (see _run_one_round):
+#   * Players under 21 don't count against this cap at all — a team
+#     stacked with prospects still has room to sign more.
+#   * Prospects (college signees and any FA under 21) ignore the cap
+#     AND the budget entirely; they always sign somewhere.
+SIGNING_ROSTER_CAP = 50
+
+# Below this age a player is treated as a prospect for signing purposes:
+# exempt from the roster cap and from any budget requirement.
+PROSPECT_MAX_AGE = 21
+
+# Kept for backwards-compat with any external callers / tests.
+ROSTER_TARGET = SIGNING_ROSTER_CAP
 
 
 def _fa_pool(scope: str) -> list[dict]:
@@ -78,11 +94,21 @@ def _fa_pool(scope: str) -> list[dict]:
 
 
 def _team_active_count(team_id: int) -> int:
+    """Active players that count against the signing cap. Players under
+    PROSPECT_MAX_AGE are exempt — youth never blocks a signing, so a team
+    full of prospects still reads as having open slots."""
     row = db.fetchone(
         "SELECT COUNT(*) AS n FROM players "
-        "WHERE team_id = ? AND is_active = 1", (team_id,)
+        "WHERE team_id = ? AND is_active = 1 AND COALESCE(age, 99) >= ?",
+        (team_id, PROSPECT_MAX_AGE),
     )
     return (row or {}).get("n") or 0
+
+
+def _is_prospect(p: dict, scope: str) -> bool:
+    """A player is a prospect (cap- and budget-exempt) if they were signed
+    from the college tier (the 'prospects' scope) or are simply young."""
+    return scope == "prospects" or int(p.get("age") or 99) < PROSPECT_MAX_AGE
 
 
 def _resolve_season() -> int:
@@ -133,20 +159,28 @@ def _run_one_round(scope: str, rng: random.Random) -> dict:
     signings: list[dict] = []
     tx_events: list[dict] = []
     for p in pool:
-        # Bidders: teams that still have an open active roster slot
-        # AND enough remaining budget to meet the player's asking price.
-        if has_budgets:
-            ask = _econ.player_ask(_au._player_overall(p), season)
+        prospect = _is_prospect(p, scope)
+        ask = _econ.player_ask(_au._player_overall(p), season) if has_budgets else None
+        # Bidders. Prospects (college signees + any FA under 21) always
+        # sign: they ignore the roster cap AND the budget, so every team
+        # is a candidate. Everyone else needs an open active slot and
+        # enough remaining budget to meet the asking price.
+        if prospect:
+            eligible = list(teams)
+        elif has_budgets:
             eligible = [t for t in teams
-                        if active_count[t["id"]] < ROSTER_TARGET
+                        if active_count[t["id"]] < SIGNING_ROSTER_CAP
                         and _econ.budget_for_team(t["id"], season)["remaining"] >= ask]
         else:
-            ask = None
-            eligible = [t for t in teams if active_count[t["id"]] < ROSTER_TARGET]
+            eligible = [t for t in teams if active_count[t["id"]] < SIGNING_ROSTER_CAP]
         if not eligible:
             continue   # nobody can afford this player today; leave in FA
         # Each eligible team computes a noise-free valuation; light
         # tie-breaking jitter so equal-valuing teams alternate winners.
+        # The valuation's position-need term recomputes from the live
+        # roster, so as a team signs at a position its appetite drops and
+        # the next prospect there flows to another team — even though the
+        # cap isn't gating prospects.
         best_val = -1
         best_team = None
         for t in eligible:
@@ -159,13 +193,19 @@ def _run_one_round(scope: str, rng: random.Random) -> dict:
         # — the player asks for `ask`; the winning team pays the higher
         # of ask or their internal valuation (clipped to remaining budget).
         if has_budgets:
-            cap = _econ.max_bid(best_team["id"], season)
-            price = max(int(ask or 0), min(best_val, cap))
-            ok = _econ.deduct(best_team["id"], season, price)
-            if not ok:
-                # Shouldn't happen — pre-filter already gated affordability,
-                # but be defensive in case of race.
-                continue
+            if prospect:
+                # Prospects never blocked by money: pay the ask, allowing
+                # the team to go over budget if need be.
+                price = int(ask or 0)
+                _econ.deduct(best_team["id"], season, price, allow_overdraft=True)
+            else:
+                cap = _econ.max_bid(best_team["id"], season)
+                price = max(int(ask or 0), min(best_val, cap))
+                ok = _econ.deduct(best_team["id"], season, price)
+                if not ok:
+                    # Shouldn't happen — pre-filter already gated affordability,
+                    # but be defensive in case of race.
+                    continue
         else:
             price = best_val
         # Sign the player to best_team
@@ -173,7 +213,10 @@ def _run_one_round(scope: str, rng: random.Random) -> dict:
             "UPDATE players SET team_id = ?, is_active = 1 WHERE id = ?",
             (best_team["id"], p["id"]),
         )
-        active_count[best_team["id"]] += 1
+        # Only players 21+ count toward the cap (youth is exempt), so only
+        # they advance a team toward "full".
+        if int(p.get("age") or 99) >= PROSPECT_MAX_AGE:
+            active_count[best_team["id"]] += 1
         signings.append({
             "player_id":  p["id"],
             "player_name": p["name"],
@@ -184,9 +227,9 @@ def _run_one_round(scope: str, rng: random.Random) -> dict:
             "price":      price,
             "overall":    _au._player_overall(p),
         })
-        # Queue a transaction event — scope tagging in the type so
-        # prospects vs existing FAs can be filtered separately.
-        et = "prospect_sign" if scope == "prospects" else "fa_sign"
+        # Queue a transaction event — prospects (college signees + youth)
+        # tag distinctly from veteran FAs so the two can be filtered apart.
+        et = "prospect_sign" if prospect else "fa_sign"
         detail = (f"Signed from FA pool · ƒ{price}"
                   + (f" (ask ƒ{ask})" if ask else ""))
         tx_events.append({
@@ -206,7 +249,7 @@ def _run_one_round(scope: str, rng: random.Random) -> dict:
                     if p["id"] not in {s["player_id"] for s in signings})
     return {"scope": scope, "signings": signings,
             "remaining_in_pool": remaining,
-            "teams_full": sum(1 for c in active_count.values() if c >= ROSTER_TARGET)}
+            "teams_full": sum(1 for c in active_count.values() if c >= SIGNING_ROSTER_CAP)}
 
 
 
