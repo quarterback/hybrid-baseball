@@ -84,7 +84,7 @@
     <tbody>
       {% for p in free_agents %}
       <tr>
-        <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}{{ p.name }}</td>
+        <td>{% if p.country %}<span class="player-flag" title="{{ p.country }}">{{ p.country | flag }}</span> {% endif %}<a href="{{ url_for('player_detail', player_id=p.id) }}">{{ p.name }}</a></td>
         <td><span class="badge bg-secondary">{{ p.position }}</span></td>
         <td class="text-secondary small">{{ p.archetype or '—' }}</td>
         <td class="text-end" data-sort-value="{{ p.overall }}">{{ overall_chip(p) }}</td>

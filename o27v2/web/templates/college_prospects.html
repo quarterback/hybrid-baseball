@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_pagination.html" import pager %}
 {% block title %}Prospect Index{% endblock %}
 {% block content %}
 
@@ -44,7 +45,7 @@
       {% for r in rows %}
       {% set hue = (240 - (r.ps_score * 2.4))|round|int %}
       <tr>
-        <td class="text-secondary">{{ loop.index }}</td>
+        <td class="text-secondary">{{ rank_offset + loop.index }}</td>
         <td><a href="{{ url_for('college_prospect_player', player_id=r.id) }}"
                class="ps-bubble text-decoration-none" style="background:hsl({{ hue }},65%,48%)">{{ r.ps_score }}</a></td>
         <td><a href="{{ url_for('college_player_view', player_id=r.id) }}">{{ r.name }}</a></td>
@@ -64,6 +65,7 @@
     </tbody>
   </table>
 </div>
+{{ pager('college_prospects', pager_args, page, page_count) }}
 <div class="text-secondary small mt-2">
   Each cell shows the grade/stat with its league percentile in parentheses.
   Prospect Score = mean of key-tool percentiles + a youth bonus (younger class

@@ -6104,9 +6104,13 @@ def compare():
 
 @app.route("/player/<int:player_id>")
 def player_detail(player_id: int):
+    # LEFT JOIN so free agents (team_id IS NULL) still resolve — an inner
+    # join silently 404'd every unrostered player, so FA cards were
+    # unreachable. team_abbrev / team_name come back NULL for FAs and the
+    # template guards on player.team_id.
     player = db.fetchone(
-        """SELECT p.*, t.abbrev as team_abbrev, t.name as team_name, t.id as team_id
-           FROM players p JOIN teams t ON p.team_id = t.id
+        """SELECT p.*, t.abbrev as team_abbrev, t.name as team_name
+           FROM players p LEFT JOIN teams t ON p.team_id = t.id
            WHERE p.id = ?""",
         (player_id,),
     )
@@ -7166,13 +7170,29 @@ def college_prospects():
     is_pitcher = ptype == "pit"
     rows = _prospect_rows(season, is_pitcher) if season else []
     metrics = _PROSPECT_PIT_METRICS if is_pitcher else _PROSPECT_BAT_METRICS
+
+    PER_PAGE = 50
+    n_total = len(rows)
+    page_count = max(1, (n_total + PER_PAGE - 1) // PER_PAGE)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    page = min(page, page_count)
+    start = (page - 1) * PER_PAGE
+    page_rows = rows[start:start + PER_PAGE]
+
     return _serve(
         "college_prospects.html",
-        rows=rows[:100],
+        rows=page_rows,
         metrics=metrics,
         ptype=ptype,
         season=season,
-        n_total=len(rows),
+        n_total=n_total,
+        page=page,
+        page_count=page_count,
+        rank_offset=start,
+        pager_args={"type": ptype, "season": season},
     )
 
 
@@ -11295,6 +11315,20 @@ def college_draft_view():
         position = None
     perspective = _get_perspective()
     draft = _cl.draft_class(season=requested_season, position=position)
+
+    # Paginate before the per-player report processing below — no point
+    # building variance flags for rows we won't render.
+    PER_PAGE = 50
+    n_total = len(draft)
+    page_count = max(1, (n_total + PER_PAGE - 1) // PER_PAGE)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    page = min(page, page_count)
+    start = (page - 1) * PER_PAGE
+    draft = draft[start:start + PER_PAGE]
+
     for p in draft:
         by_src: dict[str, dict] = {}
         for r in p["reports"]:
@@ -11321,13 +11355,20 @@ def college_draft_view():
         row = db.fetchone("SELECT abbrev FROM teams WHERE id = ?", (tid,))
         if row:
             perspective_label = f"{row['abbrev']} Scout"
+    pager_args: dict = {}
+    if position:
+        pager_args["position"] = position
+    if requested_season is not None:
+        pager_args["season"] = requested_season
     return _serve("college_draft.html", draft=draft,
                   position=position, positions=_cl.DRAFT_POSITIONS,
                   season=requested_season or current_season,
                   scoped_to_season=requested_season is not None,
                   perspective=perspective,
                   perspective_label=perspective_label,
-                  perspective_options=_perspective_options())
+                  perspective_options=_perspective_options(),
+                  n_total=n_total, page=page, page_count=page_count,
+                  pager_args=pager_args)
 
 
 @app.route("/api/college/sign/<int:college_player_id>", methods=["POST"])
@@ -11360,6 +11401,18 @@ def college_import_view():
     if position not in _cl.DRAFT_POSITIONS:
         position = None
     draft = _cl.draft_class(season=requested_season, position=position)
+
+    PER_PAGE = 50
+    n_total = len(draft)
+    page_count = max(1, (n_total + PER_PAGE - 1) // PER_PAGE)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    page = min(page, page_count)
+    start = (page - 1) * PER_PAGE
+    draft = draft[start:start + PER_PAGE]
+
     for p in draft:
         by_src: dict[str, dict] = {}
         for r in p["reports"]:
@@ -11370,10 +11423,17 @@ def college_import_view():
     teams = db.fetchall(
         "SELECT id, name, league FROM teams ORDER BY league, name"
     ) if _table_exists("teams") else []
+    pager_args: dict = {}
+    if position:
+        pager_args["position"] = position
+    if requested_season is not None:
+        pager_args["season"] = requested_season
     return _serve("college_import.html", draft=draft, teams=teams,
                   position=position, positions=_cl.DRAFT_POSITIONS,
                   season=requested_season or current_season,
-                  scoped_to_season=requested_season is not None)
+                  scoped_to_season=requested_season is not None,
+                  n_total=n_total, page=page, page_count=page_count,
+                  pager_args=pager_args)
 
 
 @app.route("/api/college/bulk-sign", methods=["POST"])
