@@ -2423,6 +2423,85 @@
         "lithuanian"
       ]
     },
+    "serbia": {
+      "_doc": [
+        "Balkan baseball nation (a founding member of the European federation",
+        "scene alongside Croatia/Slovenia). The curated Serbian pool already",
+        "existed in the name files but had no region wired to it — promoted",
+        "here so a Serbia side draws Serbian given + family names (the -ić",
+        "patronymic belt: Jovanović, Petrović, Nikolić) tagged RS."
+      ],
+      "label": "Serbia",
+      "country": "RS",
+      "first_keys": [
+        "serbian"
+      ],
+      "surname_keys": [
+        "serbian"
+      ]
+    },
+    "albania": {
+      "_doc": [
+        "Adriatic frontier baseball nation. The curated Albanian pool existed",
+        "in the name files with no region — promoted here so an Albania side",
+        "draws Albanian given + family names tagged AL."
+      ],
+      "label": "Albania",
+      "country": "AL",
+      "first_keys": [
+        "albanian"
+      ],
+      "surname_keys": [
+        "albanian"
+      ]
+    },
+    "estonia": {
+      "_doc": [
+        "Baltic baseball nation alongside Lithuania and Latvia. The curated",
+        "Estonian pool existed in the name files with no region — promoted",
+        "here so an Estonia side draws Estonian given + family names tagged EE."
+      ],
+      "label": "Estonia",
+      "country": "EE",
+      "first_keys": [
+        "estonian"
+      ],
+      "surname_keys": [
+        "estonian"
+      ]
+    },
+    "latvia": {
+      "_doc": [
+        "Baltic baseball nation (Latvia has a small but real federation).",
+        "The curated Latvian pool existed in the name files with no region —",
+        "promoted here so a Latvia side draws Latvian given + family names",
+        "(the gendered -s/-š masculine surname endings) tagged LV."
+      ],
+      "label": "Latvia",
+      "country": "LV",
+      "first_keys": [
+        "latvian"
+      ],
+      "surname_keys": [
+        "latvian"
+      ]
+    },
+    "georgia": {
+      "_doc": [
+        "Caucasus frontier baseball nation. The curated Georgian pool existed",
+        "in the name files with no region — promoted here so a Georgia side",
+        "draws Georgian given + family names (the -shvili / -dze surname",
+        "belts: Beridze, Kapanadze, Gelashvili) tagged GE."
+      ],
+      "label": "Georgia",
+      "country": "GE",
+      "first_keys": [
+        "georgian"
+      ],
+      "surname_keys": [
+        "georgian"
+      ]
+    },
     "cape_verde": {
       "_doc": [
         "Caribbean-adjacent Atlantic sleeper. The large Cape Verdean diaspora",
