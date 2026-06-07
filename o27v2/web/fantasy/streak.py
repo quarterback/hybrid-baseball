@@ -51,17 +51,25 @@ def settle() -> None:
     ensure_schema()
     picks = db.fetchall("SELECT * FROM streak_picks ORDER BY slate_date")
     streak = 0
+    best = 0
     to_pay = []  # (pick_id, gate_len, amount)
     for p in picks:
         res = _settle(p["slate_date"], p["player_id"])
         if res == "hit":
             streak += 1
+            best = max(best, streak)
             amt = GATES.get(streak)
             if amt and not p["gate_paid"]:
                 to_pay.append((p["id"], streak, amt))
         elif res == "miss":
             streak = 0
         # 'pending' / 'void' don't change the running streak
+    # Persist the best run so /api/wallet can show it without recomputing the
+    # whole grade walk on the request path (rec_max never lowers it).
+    try:
+        wallet.rec_max("best_streak", best)
+    except Exception:
+        pass
     if not to_pay:
         return
     # Mark the gates paid and commit FIRST (release the write lock), then credit

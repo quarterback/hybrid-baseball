@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -67,9 +69,12 @@ def _safe_slate() -> dict | None:
             except Exception:
                 _LOG.exception("CapSpace contest build failed; using mock contests")
             try:
-                blob["WALLET"] = _settle_all()
+                # Fast single-row read — do NOT settle inline (that blocked the
+                # page render for ~15 s). A background pass keeps it current.
+                blob["WALLET"] = wallet.balance()
             except Exception:
                 _LOG.exception("CapSpace wallet read failed")
+        _kick_settle()
         return blob
     except Exception:  # pragma: no cover - defensive; never 500 the app
         _LOG.exception("CapSpace slate build failed; falling back to mock data")
@@ -128,10 +133,9 @@ def api_activity():
     """Everything the user has live or settled across ALL games — DFS lineups,
     Sportsbook bets, and every game's buy-ins — in one feed."""
     items = []
-    try:
-        _settle_all()
-    except Exception:  # pragma: no cover
-        pass
+    # Settle in the background; render the feed off what's already persisted so
+    # this endpoint stays fast (it used to block ~26 s).
+    _kick_settle()
     try:
         for r in db.fetchall(
             "SELECT e.fee_paid fp, e.settled s, e.payout po, e.slate_date sd, c.name cn "
@@ -166,7 +170,11 @@ def api_activity():
 
 def _settle_all() -> int:
     """Settle every game that pays into the wallet, then return the balance —
-    so one bankroll reflects DFS contests and Sportsbook bets alike."""
+    so one bankroll reflects DFS contests and Sportsbook bets alike.
+
+    This is the SLOW path (it rebuilds slates and grades synthetic fields), so it
+    must never run inline on a page render or a wallet read — call _kick_settle()
+    instead. Kept callable directly for tests / explicit settle triggers."""
     for fn in (dfs.settle_entries, book.settle_bets, sluggergame.settle,
                pilotgame.settle, catgame.settle, bbgame.settle, streakgame.settle):
         try:
@@ -176,17 +184,54 @@ def _settle_all() -> int:
     return wallet.balance()
 
 
+# Settling is the dominant cost behind the fantasy app's lag — it re-derives the
+# slate pool and grades a synthetic field for every game type. It used to run
+# inline on home(), /api/wallet, /api/slate and /api/activity, so the document
+# and the wallet call each blocked ~15 s and the page read as "won't load".
+# Settling only needs to credit newly-final results, not gate the UI, so it now
+# runs in a debounced background thread: requests return immediately off the
+# already-persisted wallet, and winnings appear on the next poll a few seconds
+# later.
+_SETTLE_LOCK = threading.Lock()
+_SETTLE_LAST = [0.0]
+_SETTLE_MIN_INTERVAL = 6.0  # seconds between background settle passes
+
+
+def _kick_settle() -> None:
+    """Run _settle_all() once in the background — debounced and non-overlapping —
+    so settling NEVER blocks a request."""
+    if time.time() - _SETTLE_LAST[0] < _SETTLE_MIN_INTERVAL:
+        return
+    if not _SETTLE_LOCK.acquire(blocking=False):
+        return  # a pass is already running
+
+    def _run():
+        try:
+            _SETTLE_LAST[0] = time.time()
+            _settle_all()
+        except Exception:  # pragma: no cover
+            _LOG.exception("CapSpace background settle failed")
+        finally:
+            _SETTLE_LOCK.release()
+
+    threading.Thread(target=_run, name="capspace-settle", daemon=True).start()
+
+
 @capspace_bp.route("/api/wallet")
 def api_wallet():
-    """The save's live wallet balance + career records + onboarding state."""
+    """The save's live wallet balance + career records + onboarding state.
+
+    Fast path only: persisted balance + records (a handful of single-row reads).
+    Settling runs in the background (kicked here); best_streak is read from the
+    persisted record the streak settle keeps current, not recomputed inline."""
     try:
-        bal = _settle_all()
+        _kick_settle()
         rec = wallet.records()
         try:
-            rec["best_streak"] = streakgame.status().get("best", 0)
+            rec["best_streak"] = wallet.rec_get("best_streak")
         except Exception:
             rec["best_streak"] = 0
-        return jsonify({"balance": bal, "records": rec,
+        return jsonify({"balance": wallet.balance(), "records": rec,
                         "started": wallet.started(), "personas": wallet.PERSONAS})
     except Exception:  # pragma: no cover
         _LOG.exception("CapSpace wallet failed")

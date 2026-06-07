@@ -111,9 +111,52 @@ deploy:
   should return in ~1 s instead of 15-26 s, and the page paints a splash
   immediately. (Endpoint timings to be re-measured on the live deploy.)
 
+## Round 3 — the page was unreachable: settle was on the critical path
+
+Even with rounds 1-2 deployed, `/fantasy` still "wouldn't load." Timing the
+live deploy showed the **HTML document itself took 15.7 s** to return, then
+`/api/wallet` another ~12 s. The browser sat on a blank white page the whole
+time. Two compounding causes:
+
+* **Server:** `home()` → `_safe_slate()` ran `_settle_all()` **inline** before
+  emitting any HTML, and `/api/wallet` / `/api/activity` did the same.
+  `_settle_all()` is genuinely heavy — it grades a synthetic field and walks
+  every pick across seven game types (`streakgame.status()`, called for
+  `best_streak`, itself settles and game-queries per pick). None of that is
+  needed to *render* the page or *show* a balance.
+* **Client:** `capspace-app.jsx` gated the entire app on
+  `walletState === undefined`, rendering nothing until `/api/wallet` resolved.
+
+### Round-3 fix — settle is never on the request path
+1. **Background, debounced settle** (`blueprint.py`): `_settle_all()` is now
+   invoked via `_kick_settle()` — a non-overlapping (`Lock`), rate-limited
+   (≥6 s apart) daemon thread. `home()`/`_safe_slate`, `/api/wallet`,
+   `/api/activity` kick it and return immediately off the already-persisted
+   wallet. Winnings still credit; they just appear on the next poll.
+2. **Fast wallet read**: `_safe_slate` injects `wallet.balance()` (one row),
+   and `/api/wallet` returns balance + records + `started` with no settle.
+   `best_streak` now reads a persisted record (`wallet.rec_get`) that
+   `streak.settle()` keeps current (`rec_max("best_streak", …)`), instead of
+   recomputing the grade walk inline.
+3. **Non-blocking UI** (`capspace-app.jsx`): removed the
+   `walletState === undefined` gate. The app renders immediately using the
+   balance injected in `__CAPSPACE_DATA__`; `loadWallet()` only refreshes it and
+   decides onboarding in the background. Bundle rebuilt.
+
+### Round-3 validation (Flask test client + jsdom)
+- `GET /fantasy/` **14 ms**; `/api/wallet`, `/api/activity`, `/api/slate` each
+  **~15 ms** (were 15-26 s). Settle runs exactly once across rapid calls, on the
+  `capspace-settle` daemon thread — never the request thread.
+- jsdom: the full app (sidebar + balance) renders even while the wallet fetch is
+  *pending forever*; no blank/splash gate remains.
+
 ## Follow-ups (not done here)
-- `_settle_all()` still runs on every read endpoint (wallet/slate/activity);
-  longer term it belongs on a post-sim hook, not the request path.
+- A single `build_slate_data` still scans the season for the pool's recent-form
+  logs; the windowed query trims row transfer but not the scan. A date floor
+  (only games within N days of the slate) would cut it further.
 - The fantasy modules still open a connection in `ensure_schema()` without
   closing it; now bounded to once per module, but a `with get_conn()` would be
   tidier.
+- Background settle is per-process; with multiple workers a few passes can
+  overlap across processes (idempotent, lock-tolerant via the db retry), but a
+  shared/post-sim trigger would be cleaner.
