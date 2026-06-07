@@ -13,6 +13,7 @@ Usage:
     python o27v2/manage.py hof                    — evaluate Hall of Fame inductions and print the league + team Halls
     python o27v2/manage.py configs              — list available league configs
     python o27v2/manage.py tune [SEASON_GAMES]  — sim a full season, verify Phase 9 targets
+    python o27v2/manage.py dbmaint [--dry-run] [--keep-current-season]  — prune play-by-play blobs, checkpoint WAL + VACUUM to reclaim /data space
 
 CONFIG_ID defaults to '30teams'.  Valid values: 8teams 12teams 16teams 24teams 30teams 36teams
 """
@@ -389,6 +390,97 @@ def cmd_tune(n_games: int | None = None, config_id: str = "30teams"):
     print()
 
 
+def cmd_dbmaint(dry_run: bool = False, keep_current_season: bool = False):
+    """Reclaim disk space on the SQLite save volume.
+
+    Prunes the play-by-play TEXT blobs (game_pbp) for completed games — the
+    largest per-game artifact and pure cosmetics (the /game/<id>/pbp page) —
+    then WAL-checkpoints (TRUNCATE) and VACUUMs each save DB so freed pages are
+    returned to the filesystem. All stats / box scores / analytics are kept.
+
+    Sweeps EVERY save database (saves registry dir + the legacy single-DB
+    file), not just the active one, so a full /data volume is actually
+    relieved.
+
+    NOTE: VACUUM needs free space roughly equal to the DB size; on an already
+    full volume, extend it first, then run this.
+
+        --dry-run              report what would be freed, change nothing
+        --keep-current-season  keep PBP for the highest season in each DB
+    """
+    import glob
+    import sqlite3
+    from o27v2 import saves
+
+    targets: list[str] = []
+    env_db = os.environ.get("O27V2_DB_PATH")
+    if env_db:
+        targets.append(env_db)
+    else:
+        sd = saves.saves_dir()
+        targets += glob.glob(os.path.join(sd, "*.db"))
+        targets.append(os.path.join(os.path.dirname(sd), "o27v2.db"))  # legacy
+
+    seen: set[str] = set()
+    paths: list[str] = []
+    for p in targets:
+        ap = os.path.abspath(p)
+        if ap not in seen and os.path.exists(ap):
+            seen.add(ap)
+            paths.append(ap)
+    if not paths:
+        print("No save databases found.")
+        return
+
+    def _size(p: str) -> int:
+        return os.path.getsize(p) if os.path.exists(p) else 0
+
+    def _mb(n: int) -> str:
+        return f"{n / 1_048_576:.1f} MB"
+
+    total_before = total_after = 0
+    for path in paths:
+        name = os.path.basename(path)
+        before = _size(path) + _size(path + "-wal") + _size(path + "-shm")
+        total_before += before
+        conn = sqlite3.connect(path)
+        n = 0
+        try:
+            has_pbp = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='game_pbp'"
+            ).fetchone()
+            if has_pbp:
+                where = "WHERE game_id IN (SELECT id FROM games WHERE played = 1"
+                if keep_current_season:
+                    where += " AND season < (SELECT MAX(season) FROM games)"
+                where += ")"
+                n = conn.execute(
+                    f"SELECT COUNT(*) FROM game_pbp {where}"
+                ).fetchone()[0]
+                if not dry_run:
+                    conn.execute(f"DELETE FROM game_pbp {where}")
+                    conn.commit()
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    try:
+                        conn.execute("VACUUM")
+                    except sqlite3.OperationalError as exc:
+                        print(f"  {name}: VACUUM failed ({exc}) — extend the "
+                              "volume first (VACUUM needs free space ~= DB size).")
+        finally:
+            conn.close()
+        after = _size(path) + _size(path + "-wal") + _size(path + "-shm")
+        total_after += after
+        verb = "would prune" if dry_run else "pruned"
+        print(f"  {name}: {verb} {n} game_pbp rows  "
+              f"({_mb(before)}" + ("" if dry_run else f" -> {_mb(after)}") + ")")
+
+    if dry_run:
+        print(f"\n[DRY RUN] {_mb(total_before)} on disk across {len(paths)} DB(s).")
+    else:
+        print(f"\nTotal: {_mb(total_before)} -> {_mb(total_after)} "
+              f"(freed {_mb(total_before - total_after)}) across {len(paths)} DB(s).")
+
+
 def cmd_runserver(config_id: str = "30teams"):
     from o27v2.web.app import app
     from o27v2 import saves
@@ -420,7 +512,25 @@ def cmd_runserver(config_id: str = "30teams"):
             sid = saves.new_save("Save 1", config_id, 0)
             print(f"Created initial save slot 'Save 1' ({sid}).")
 
-    db.init_db()
+    try:
+        db.init_db()
+    except Exception as e:
+        if "disk i/o" in str(e).lower() or "disk full" in str(e).lower() \
+                or "database or disk is full" in str(e).lower():
+            print("FATAL: SQLite could not initialise the database — the /data "
+                  "volume is almost certainly full. Extend it (e.g. "
+                  "`fly volumes extend <id> -s <GB>`) or free space, then "
+                  "restart. To reclaim space afterwards run: "
+                  "`python o27v2/manage.py dbmaint`.", file=sys.stderr)
+        raise
+    # Keep the WAL bounded across reboots — a runaway *.db-wal on the /data
+    # volume is the usual cause of a disk-full crash loop. Best-effort.
+    try:
+        with db.get_conn() as _c:
+            _c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception as _e:
+        print(f"  WAL checkpoint skipped ({_e})")
+
     existing = db.fetchone("SELECT COUNT(*) as n FROM teams")
     if not existing or existing["n"] == 0:
         seed_league(config_id=config_id)
@@ -477,6 +587,10 @@ def main():
         config_id, rest = _parse_config_flag(args[1:])
         n_games = int(rest[0]) if rest else None
         cmd_tune(n_games, config_id)
+    elif args[0] == "dbmaint":
+        rest = args[1:]
+        cmd_dbmaint(dry_run="--dry-run" in rest,
+                    keep_current_season="--keep-current-season" in rest)
     else:
         print(__doc__)
         sys.exit(1)
