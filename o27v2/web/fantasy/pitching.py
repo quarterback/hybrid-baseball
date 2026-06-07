@@ -22,7 +22,7 @@ from __future__ import annotations
 import datetime as _dt
 import statistics
 
-from o27v2 import db
+from . import fdb as db  # CapSpace's own DB (separate file)
 from . import data as slate_data
 from ._schema_once import once
 from . import buyins
@@ -181,7 +181,8 @@ def _slate_entry(slate_date: str, dbids: list[int]) -> dict:
 
 def status() -> dict:
     ensure_schema()
-    settle()
+    # No inline settle on the read path (writes collided with the sim →
+    # "database is locked"); the background pass settles. Read + grade only.
     picks = db.fetchall("SELECT * FROM pilot_picks ORDER BY slate_date")
     by_slate: dict[str, list[int]] = {}
     for p in picks:

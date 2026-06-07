@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import datetime as _dt
 
-from o27v2 import db
+from . import fdb as db  # CapSpace's own DB (separate file)
 from . import data as slate_data
 from ._schema_once import once
 from . import wallet
@@ -135,7 +135,9 @@ def status() -> dict:
     """Full streak state: current / best run, today's pick or the eligible
     pool to pick from, and recent history."""
     ensure_schema()
-    settle()  # pay any newly-reached milestone pots
+    # No inline settle on the read path (it writes the wallet and collided with
+    # the sim → "database is locked"). The background pass pays pots; this only
+    # reads + grades for display.
     picks = db.fetchall("SELECT * FROM streak_picks ORDER BY slate_date")
 
     claimed = {p["gate_paid"] for p in picks if p["gate_paid"]}

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as _dt
 
-from o27v2 import db
+from . import fdb as db  # CapSpace's own DB (separate file)
 from . import wallet
 from ._schema_once import once
 
