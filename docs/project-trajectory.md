@@ -6,7 +6,7 @@ the snapshot — *what exists now*. This is the arc — *how it got here, and wh
 turn was taken*. New to the project and not sure where to start? Read the
 [user guide](user-guide.md) first; this doc is the history behind it.
 
-The design history in detail lives in the ~85 After-Action and feature reports
+The design history in detail lives in the ~100 After-Action and feature reports
 under [`docs/`](.). Each AAR records the ask, the tradeoffs, the verification
 numbers, and the honest open gaps. This document is the reading order through
 them: the spine that the AARs hang off.
@@ -230,6 +230,54 @@ a [mobile-responsiveness pass](aar-mobile-universe-builder-overflow.md) audited 
 templates and [finally gave the almanac media queries](aar-almanac-mobile-responsive.md)
 it had never had.
 
+### Phase 7 — Native-ification and reconciliation (June 6 → June 7)
+
+The most recent turn is not a feature burst — it's a **maturity pass on the
+engine and the stat surface**, driven by a single thesis the owner had been
+circling for weeks: *a fictional sport must generate its own ground truth and
+then measure it; borrowing baseball's constants is a category error.* Where the
+spectator economy (Phase 6) grew the apparatus *around* the sim, this phase went
+back into the sim's measurement layer and made it honest about itself. A
+[dedicated cross-section of the engine's iterations](comparison-sim-iterations.md)
+covers this in full; the spine is four coordinated moves.
+
+The big mechanic change was the [**2C rework**](aar-2c-hitting-engine-rework.md):
+the second-chance "stay" used to force `batter_safe = True` on every valid stay,
+credit a flat single regardless of contact, and run with *no cap* — a hot batter
+could stay forever. It now resolves through the **real hitting engine** (a 2C can
+come out a double, a triple, or an out), is **EV-driven and skill-differentiated**
+(stay-rate climbs poor 16% → elite 55%, jokers leverage it most), and caps at
+**three batted balls** per AB. This [reverses prior documented
+design](design-2c-hitting-engine-rework.md) — and the AAR says so in a warning
+box, because the design history is supposed to record reversals, not hide them.
+
+The other three moves replaced **imported MLB constants** with O27-native,
+self-derived values. Baserunning value was the worst offender — MLB's `+0.25` per
+extra base [*penalized fast runners*](aar-bsr-o27-native-and-into-war.md) in a
+27-out half (where a runner usually scores anyway, an extra base is worth ~0
+runs); re-deriving it from O27's own run-expectancy surface flipped BSR's speed
+correlation from −0.01 to +0.16. The [arc-weighted **wERA** was retired for
+**xRA**](aar-wera-retirement-xra-headline.md) — "late runs hurt more" is an
+artifact of innings, and O27 has none. And a
+[**WAR/OAA reconciliation**](aar-war-oaa-reconciliation-koalas.md) closed a drift
+where the season card read scout-grade DRS while the Savant page showed
+event-based OAA — two defensive pipelines that never met — by feeding the
+de-biased, reliability-regressed Field Runs (and BSR) into WAR and adding an
+invariant that the *surfaced* component must equal the *summed* one
+([deep-dive](aar-stat-surface-reconciliation-comprehensive.md) ·
+[fix](aar-war-oaa-fix-and-fielding-regression.md)). Supporting recalibrations —
+[native wOBA scale](aar-native-stat-audit-and-advancement-correction.md),
+[native league-baseline wOBA](aar-league-baseline-woba-native.md) (wRC+ re-centred
+91 → ~100), the [Finisher credited as a reliever stat](aar-finisher-reliever-credit-fix.md) —
+fell out of the same pass. The invariant suite grew 9 → **12**.
+
+Alongside the stat work, the **design tool** gained one more composable optional
+rule: [**Cricket Batting Order**](feature-cricket-batting-order.md) — a per-league,
+off-by-default lever that lets a side flip its order 1-9 → 9-1, *earned* by a
+joker-free trip and spent use-or-lose, so jokers and the flip trade off against
+each other. Like Power Play before it, off means the engine is byte-for-byte
+unchanged.
+
 ---
 
 ## Changelog
@@ -238,6 +286,45 @@ Grouped by phase, newest first. Each entry links to its AAR. Dates for the late-
 and June entries are the "date completed" recorded in the AAR; the earlier
 foundational work was built across the Replit era and mid-May and written up in
 the May 20 documentation wave.
+
+### Phase 7 — Native-ification & reconciliation (June 6 → June 7)
+
+Engine/stat-surface maturity pass — stop borrowing MLB constants, make the
+surfaces agree. Full cross-section in
+[comparison-sim-iterations.md](comparison-sim-iterations.md).
+
+**2026-06-07**
+- **Cricket Batting Order** — optional, per-league, off-by-default rule: an
+  earned, use-or-lose 1-9 → 9-1 lineup flip that trades off against jokers, with a
+  derived `mgr_flip_aggression` persona and a flip-aware "valley" lineup.
+  [Feature report](feature-cricket-batting-order.md) ·
+  [scaffold](aar-cricket-batting-order.md) ·
+  [manager decision](aar-cricket-batting-order-manager-decision.md) ·
+  [flip-aware lineups](aar-cricket-batting-order-flip-aware-lineups.md)
+
+**2026-06-06**
+- **2C resolves through the real hitting engine** — EV-driven, skill-differentiated,
+  max-3-batted-balls; a 2C can now be an extra-base hit or an out. Reverses prior
+  "no cap / runner-advancement-only" design.
+  [AAR](aar-2c-hitting-engine-rework.md) · [Spec](design-2c-hitting-engine-rework.md)
+- **Baserunning value (BSR) made O27-native** — RE-derived run values replace MLB
+  constants; BSR speed-correlation flips −0.01 → +0.16, then enters WAR.
+  [AAR](aar-bsr-o27-native-and-into-war.md)
+- **wERA retired → xRA** — dropped the arc-weighting fallacy; xRA anchored to
+  league RA/27 exactly. [AAR](aar-wera-retirement-xra-headline.md)
+- **WAR/OAA reconciliation ("surfaced ⇒ summed")** — de-biased + reliability-
+  regressed Field Runs and BSR fed into WAR so the displayed component is the
+  summed one; invariants 11–12 added.
+  [Finding](aar-war-oaa-reconciliation-koalas.md) ·
+  [Deep-dive](aar-stat-surface-reconciliation-comprehensive.md) ·
+  [Fix](aar-war-oaa-fix-and-fielding-regression.md)
+- **Native wOBA scale + native league-baseline wOBA** — wRC+ re-centres 91 → ~100;
+  one O27-native scale shared by wRC+/VORP.
+  [Audit](aar-native-stat-audit-and-advancement-correction.md) ·
+  [Baseline](aar-league-baseline-woba-native.md)
+- **Finisher (F) corrected to a reliever credit** — never the starter or the
+  winning pitcher; 4-out floor; no finish on a complete game.
+  [AAR](aar-finisher-reliever-credit-fix.md)
 
 ### Phase 6 — Spectator economy & rebrand (June 2 → June 6)
 
