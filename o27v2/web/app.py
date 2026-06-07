@@ -6354,6 +6354,46 @@ def player_detail(player_id: int):
         pt_totals["gs"]     = ws_starts
 
     # ---------------------------------------------------------------
+    # Postseason — playoff-only totals + game logs, kept entirely
+    # separate from the regular-season totals above (which are left
+    # as-is and still span every game the player appeared in). Reuses
+    # the same split aggregation so the rate stats are consistent.
+    # ---------------------------------------------------------------
+    _po_where = " AND COALESCE(g.is_playoff,0) = 1"
+    bt_playoff = _player_batting_split(
+        player_id, player["team_id"], _po_where, (), baselines)
+    pt_playoff = _player_pitching_split(
+        player_id, _po_where, (), wl, baselines)
+    if pt_playoff and pt_playoff.get("g"):
+        pt_playoff["os_pct"] = (pt_playoff["outs"] / (27.0 * pt_playoff["g"])
+                                ) if pt_playoff["g"] else 0.0
+    batting_log_playoff = pitching_log_playoff = []
+    if bt_playoff:
+        batting_log_playoff = db.fetchall(
+            """SELECT bs.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
+                      ht.abbrev as home_abbrev, at.abbrev as away_abbrev
+               FROM game_batter_stats bs
+               JOIN games g ON bs.game_id = g.id
+               JOIN teams ht ON g.home_team_id = ht.id
+               JOIN teams at ON g.away_team_id = at.id
+               WHERE bs.player_id = ? AND COALESCE(g.is_playoff,0) = 1
+               ORDER BY g.game_date DESC, g.id DESC LIMIT 50""",
+            (player_id,),
+        )
+    if pt_playoff:
+        pitching_log_playoff = db.fetchall(
+            f"""SELECT ps.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
+                      ht.abbrev as home_abbrev, at.abbrev as away_abbrev
+               FROM {_PSTATS_DEDUP_SQL} ps
+               JOIN games g ON ps.game_id = g.id
+               JOIN teams ht ON g.home_team_id = ht.id
+               JOIN teams at ON g.away_team_id = at.id
+               WHERE ps.player_id = ? AND COALESCE(g.is_playoff,0) = 1
+               ORDER BY g.game_date DESC, g.id DESC LIMIT 50""",
+            (player_id,),
+        )
+
+    # ---------------------------------------------------------------
     # Splits (home / away / last 30 days). Computed only if the player
     # has overall stats — saves the extra queries for cold rows.
     # ---------------------------------------------------------------
@@ -6513,6 +6553,10 @@ def player_detail(player_id: int):
         pitching_log=pitching_log,
         bt_totals=bt_totals,
         pt_totals=pt_totals,
+        bt_playoff=bt_playoff,
+        pt_playoff=pt_playoff,
+        batting_log_playoff=batting_log_playoff,
+        pitching_log_playoff=pitching_log_playoff,
         fld_totals=fld_totals,
         splits=splits,
         handedness_splits=handedness_splits,
@@ -8903,21 +8947,30 @@ def transactions():
 
 @app.route("/playoffs")
 def playoffs_view():
-    """Bracket + awards for the current season. Shows the field and
-    each round's series with current win counts and the champion when
-    the final concludes."""
+    """Per-league brackets + World Series + awards for the current season.
+
+    Each league runs its own bracket; the two league champions (when a save
+    has exactly two leagues and the WS is enabled) meet in the World Series.
+    Before initiation, surfaces the projected per-league field and a live
+    control to set qualifiers-per-league and series lengths.
+    """
     from o27v2.playoffs import (
-        get_bracket, champion as _champion, compute_field,
-        playoffs_initiated, regular_season_complete,
+        get_bracket_by_league, champion as _champion, league_champions,
+        compute_fields_by_league, playoffs_initiated, regular_season_complete,
+        playoff_settings, round_label, postseason_disabled,
     )
     from o27v2.awards import get_awards, get_award_results, award_labels
 
-    bracket = get_bracket()
+    grouped = get_bracket_by_league()
 
-    # Attach the list of games played (or scheduled) in each series so
-    # the bracket tile can render clickable G1/G2/… rows linking to the
-    # box score. Single bulk query, then group in Python.
-    series_ids = [s["id"] for s in bracket]
+    # Attach the list of games played (or scheduled) to each series so each
+    # tile can render clickable G1/G2/… rows. One bulk query, grouped in Python.
+    all_series: list[dict] = []
+    for rounds in grouped["leagues"].values():
+        for rnd in rounds:
+            all_series.extend(rnd["series"])
+    all_series.extend(grouped["world_series"])
+    series_ids = [s["id"] for s in all_series]
     games_by_series: dict[int, list[dict]] = {}
     if series_ids:
         qmarks = ",".join("?" * len(series_ids))
@@ -8932,37 +8985,28 @@ def playoffs_view():
         )
         for r in game_rows:
             games_by_series.setdefault(r["series_id"], []).append(r)
-    for s in bracket:
+    for s in all_series:
         s["games"] = games_by_series.get(s["id"], [])
 
-    # Group by round for the template.
-    rounds: dict[int, list[dict]] = {}
-    for s in bracket:
-        rounds.setdefault(s["round_idx"], []).append(s)
-    rounds_sorted = sorted(rounds.items())
-
-    # team_id → abbrev lookup for the bracket games list. Reused for the
-    # projected-field branch below.
     team_rows = db.fetchall(
         "SELECT id, name, abbrev, league, division, wins, losses FROM teams"
     )
     team_abbrev = {t["id"]: t["abbrev"] for t in team_rows}
 
-    # Round names — count from the final backwards.
-    def _round_name(rounds_to_final: int) -> str:
-        return ["Final", "Semifinals", "Quarterfinals", "Wild Card"][
-            min(rounds_to_final, 3)]
+    initiated = playoffs_initiated()
+    reg_complete = regular_season_complete()
+    settings = playoff_settings()
 
-    # If playoffs haven't initiated yet, surface the projected field.
-    projected_field: list[dict] = []
-    if not playoffs_initiated() and not regular_season_complete():
+    # Projected per-league field before the bracket locks.
+    projected_by_league: dict[str, list[dict]] = {}
+    if not initiated:
         try:
-            projected_field = compute_field(team_rows)
+            projected_by_league = compute_fields_by_league(
+                team_rows, settings["teams_per_league"])
         except Exception:
-            projected_field = []
+            projected_by_league = {}
 
-    # BBWAA-style top-5 per category. Falls through to the single-winner
-    # `awards` list for seasons that pre-date the ballots table.
+    # BBWAA-style top-5 per category. Falls through to the single-winner list.
     award_results: dict[str, list[dict]] = {}
     try:
         for cat in ("mvp", "cy_young", "roy", "ws_mvp"):
@@ -8974,16 +9018,135 @@ def playoffs_view():
 
     return _serve(
         "playoffs.html",
-        rounds=rounds_sorted,
-        round_name=_round_name,
+        leagues=grouped["leagues"],
+        world_series=grouped["world_series"],
+        round_label=round_label,
         champion=_champion(),
+        league_champions=league_champions(),
         awards=get_awards(),
         award_results=award_results,
         cat_labels=award_labels(),
         team_abbrev=team_abbrev,
-        projected_field=projected_field,
+        projected_by_league=projected_by_league,
+        settings=settings,
+        allowed_best_of=[3, 5, 7, 9],
+        playoffs_initiated=initiated,
+        regular_season_complete=reg_complete,
+        postseason_disabled=postseason_disabled(),
+    )
+
+
+@app.route("/playoffs/settings", methods=["POST"])
+def playoffs_settings_save():
+    """Persist the live postseason settings (qualifiers per league + series
+    lengths + World Series toggle). Only effective before the bracket is
+    initiated — once series exist the seeds and lengths are locked."""
+    from o27v2.playoffs import (
+        set_playoff_settings, playoffs_initiated, _DEFAULT_SERIES_LENGTHS,
+    )
+    if playoffs_initiated():
+        flash("Playoffs are already underway — settings are locked for this season.", "warning")
+        return redirect(url_for("playoffs_view"))
+
+    form = request.form
+    try:
+        tpl = int(form.get("teams_per_league", 4))
+    except (TypeError, ValueError):
+        tpl = 4
+    lengths: dict[str, int] = {}
+    for kind in _DEFAULT_SERIES_LENGTHS:
+        v = form.get(f"bestof_{kind}")
+        if v is not None:
+            try:
+                lengths[kind] = int(v)
+            except (TypeError, ValueError):
+                pass
+    ws = form.get("world_series") in ("1", "on", "true", "yes")
+    set_playoff_settings(teams_per_league=tpl, series_lengths=lengths,
+                         world_series=ws)
+    flash("Postseason settings saved.", "success")
+    return redirect(url_for("playoffs_view"))
+
+
+@app.route("/postseason/stats")
+def postseason_stats():
+    """Postseason-only stat leaderboards — computed exclusively from playoff
+    games, kept separate from the regular-season leaders at /leaders."""
+    baselines = _league_baselines()
+    wl = _pitcher_wl_map()
+
+    batting = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.defense, p.defense_infield, p.defense_outfield, p.defense_catcher,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(DISTINCT bs.game_id) as g,
+                  SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                  SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                  SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                  SUM(bs.bb) as bb, SUM(bs.k) as k, SUM(bs.stays) as stays,
+                  COALESCE(SUM(bs.hbp),0) as hbp, COALESCE(SUM(bs.sb),0) as sb,
+                  COALESCE(SUM(bs.cs),0) as cs, COALESCE(SUM(bs.fo),0) as fo,
+                  COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(bs.stay_rbi),0) as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0) as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0) as c2_strand_out,
+                  COALESCE(SUM(bs.roe),0) as roe
+           FROM game_batter_stats bs
+           JOIN players p ON bs.player_id = p.id
+           JOIN teams   t ON bs.team_id = t.id
+           JOIN games   g ON bs.game_id = g.id
+           WHERE COALESCE(g.is_playoff,0) = 1
+           GROUP BY p.id
+           HAVING SUM(bs.pa) >= 1""",
+    )
+    _aggregate_batter_rows(batting, baselines=baselines)
+    batting.sort(key=lambda r: (r.get("ops") or 0), reverse=True)
+
+    pitching = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(ps.game_id) as g,
+                  SUM(ps.batters_faced) as bf, SUM(ps.outs_recorded) as outs,
+                  SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
+                  SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
+                  SUM(ps.hr_allowed) as hr_allowed,
+                  SUM(ps.wb_faced) as wb_faced, SUM(ps.wb_runs) as wb_runs,
+                  COALESCE(SUM(ps.ir_inherited),0) as ir_inherited,
+                  COALESCE(SUM(ps.ir_scored),0)    as ir_scored,
+                  COALESCE(SUM(ps.terminal_outs),0)  as terminal_outs,
+                  COALESCE(SUM(ps.quality_finish),0) as quality_finish,
+                  COALESCE(SUM(ps.lead_entries),0)   as lead_entries,
+                  COALESCE(SUM(ps.lead_held),0)      as lead_held,
+                  COALESCE(SUM(ps.hbp_allowed),0) as hbp_allowed,
+                  COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
+                  COALESCE(SUM(ps.unearned_runs),0) as uer,
+                  COALESCE(SUM(ps.sb_allowed),0) as sb_allowed,
+                  COALESCE(SUM(ps.cs_caught),0) as cs_caught,
+                  COALESCE(SUM(ps.fo_induced),0) as fo_induced,
+                  COALESCE(SUM(ps.pitches),0) as pitches,
+                  COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                  COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
+                  COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                  COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                  COALESCE(SUM(ps.is_starter),0) as gs
+           FROM {_PSTATS_DEDUP_SQL} ps
+           JOIN players p ON ps.player_id = p.id
+           JOIN teams   t ON ps.team_id = t.id
+           JOIN games   g ON ps.game_id = g.id
+           WHERE COALESCE(g.is_playoff,0) = 1
+           GROUP BY p.id
+           HAVING SUM(ps.outs_recorded) >= 1""",
+    )
+    _aggregate_pitcher_rows(pitching, wl=wl, baselines=baselines)
+    pitching.sort(key=lambda r: (r.get("werra") if r.get("werra") is not None else 99))
+
+    from o27v2.playoffs import champion as _champion, playoffs_initiated
+    return _serve(
+        "postseason_stats.html",
+        batting=batting,
+        pitching=pitching,
+        champion=_champion(),
         playoffs_initiated=playoffs_initiated(),
-        regular_season_complete=regular_season_complete(),
     )
 
 

@@ -274,6 +274,14 @@
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-splits">Splits</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ratings">Ratings</button></li>
   <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-gamelog">Game Log</button></li>
+  {% if bt_playoff or pt_playoff %}
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-postseason"
+            title="Postseason stats — computed only from playoff games, kept separate from the regular-season totals above">
+      Postseason
+    </button>
+  </li>
+  {% endif %}
   <li class="nav-item">
     <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-transactions"
             title="Roster history — signings, trades, transfers, injuries">
@@ -1285,6 +1293,147 @@
   <div class="dense p-4 text-center"><div class="text-secondary">No game stats yet for this player.</div></div>
   {% endif %}
 </div>
+
+{# ======================== POSTSEASON TAB ======================== #}
+{% if bt_playoff or pt_playoff %}
+<div class="tab-pane fade" id="tab-postseason">
+  <p class="text-secondary small mb-3">Postseason only — computed exclusively from playoff games and tracked separately from the regular-season totals.</p>
+
+  {% if bt_playoff %}
+  <div class="dense mb-3">
+    <div class="panel-title">Postseason Batting</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num">G</th><th class="num">PA</th><th class="num">AB</th><th class="num">R</th>
+        <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
+        <th class="num">RBI</th><th class="num">BB</th><th class="num">SO</th>
+        <th class="num">SB</th>
+        <th class="num" title="Plate Average">PAVG</th><th class="num">OBP</th>
+        <th class="num">SLG</th><th class="num fw-bold">OPS</th><th class="num">wOBA</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num">{{ bt_playoff.g }}</td>
+        <td class="num">{{ bt_playoff.pa }}</td>
+        <td class="num">{{ bt_playoff.ab }}</td>
+        <td class="num">{{ bt_playoff.r }}</td>
+        <td class="num fw-bold">{{ bt_playoff.h }}</td>
+        <td class="num">{{ bt_playoff.d2 }}</td>
+        <td class="num">{{ bt_playoff.d3 }}</td>
+        <td class="num">{{ bt_playoff.hr }}</td>
+        <td class="num">{{ bt_playoff.rbi }}</td>
+        <td class="num">{{ bt_playoff.bb }}</td>
+        <td class="num">{{ bt_playoff.k }}</td>
+        <td class="num">{{ bt_playoff.sb }}</td>
+        <td class="num fw-bold">{{ '%.3f'|format(bt_playoff.pavg) }}</td>
+        <td class="num">{{ '%.3f'|format(bt_playoff.obp) }}</td>
+        <td class="num">{{ '%.3f'|format(bt_playoff.slg) }}</td>
+        <td class="num fw-bold">{{ '%.3f'|format(bt_playoff.ops) }}</td>
+        <td class="num">{{ '%.3f'|format(bt_playoff.woba) }}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pt_playoff %}
+  <div class="dense mb-3">
+    <div class="panel-title">Postseason Pitching</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th class="num">G</th><th class="num" title="Games Started">GS</th>
+        <th class="num">Outs</th><th class="num">BF</th>
+        <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+        <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
+        <th class="num" title="Weighted ERA">wERA</th>
+        <th class="num" title="Expected Runs Allowed">xRA</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="num">{{ pt_playoff.g }}</td>
+        <td class="num">{{ pt_playoff.gs }}</td>
+        <td class="num">{{ pt_playoff.outs }}</td>
+        <td class="num">{{ pt_playoff.bf }}</td>
+        <td class="num">{{ pt_playoff.h }}</td>
+        <td class="num">{{ pt_playoff.r }}</td>
+        <td class="num">{{ pt_playoff.er }}</td>
+        <td class="num">{{ pt_playoff.bb }}</td>
+        <td class="num fw-bold">{{ pt_playoff.k }}</td>
+        <td class="num">{{ pt_playoff.hr_allowed }}</td>
+        <td class="num fw-bold">{{ '%.2f'|format(pt_playoff.werra) }}</td>
+        <td class="num">{{ '%.2f'|format(pt_playoff.xra) }}</td>
+      </tr></tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if batting_log_playoff %}
+  <div class="dense mb-3">
+    <div class="panel-title">Postseason Game Log — Batting</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th>Date</th><th>Opp</th>
+        <th class="num">PA</th><th class="num">AB</th><th class="num">H</th>
+        <th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
+        <th class="num">R</th><th class="num">RBI</th><th class="num">BB</th><th class="num">SO</th>
+        <th data-nosort></th>
+      </tr></thead>
+      <tbody>
+        {% for g in batting_log_playoff %}
+        {% set is_home = (g.home_team_id == player.team_id) %}
+        {% set opp = g.away_abbrev if is_home else g.home_abbrev %}
+        <tr>
+          <td class="text-secondary small">{{ g.game_date }}</td>
+          <td>{% if is_home %}vs{% else %}@{% endif %} <span class="team-abbrev">{{ opp }}</span></td>
+          <td class="num">{{ g.pa }}</td><td class="num">{{ g.ab }}</td>
+          <td class="num fw-bold">{{ g.hits }}</td>
+          <td class="num">{{ g.doubles }}</td><td class="num">{{ g.triples }}</td>
+          <td class="num">{{ g.hr }}</td><td class="num">{{ g.runs }}</td>
+          <td class="num">{{ g.rbi }}</td><td class="num">{{ g.bb }}</td><td class="num">{{ g.k }}</td>
+          <td><a href="{{ url_for('game_detail', game_id=g.game_id) }}" class="small">Box</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pitching_log_playoff %}
+  <div class="dense mb-3">
+    <div class="panel-title">Postseason Game Log — Pitching</div>
+    <div class="table-responsive">
+    <table class="table table-sm dense-table mb-0">
+      <thead><tr>
+        <th>Date</th><th>Opp</th>
+        <th class="num">Outs</th><th class="num">BF</th>
+        <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+        <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
+        <th data-nosort></th>
+      </tr></thead>
+      <tbody>
+        {% for g in pitching_log_playoff %}
+        {% set is_home = (g.home_team_id == player.team_id) %}
+        {% set opp = g.away_abbrev if is_home else g.home_abbrev %}
+        <tr>
+          <td class="text-secondary small">{{ g.game_date }}</td>
+          <td>{% if is_home %}vs{% else %}@{% endif %} <span class="team-abbrev">{{ opp }}</span></td>
+          <td class="num">{{ g.outs_recorded }}</td><td class="num">{{ g.batters_faced }}</td>
+          <td class="num">{{ g.hits_allowed }}</td><td class="num">{{ g.runs_allowed }}</td>
+          <td class="num">{{ g.er }}</td><td class="num">{{ g.bb }}</td>
+          <td class="num fw-bold">{{ g.k }}</td><td class="num">{{ g.hr_allowed or 0 }}</td>
+          <td><a href="{{ url_for('game_detail', game_id=g.game_id) }}" class="small">Box</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 
 {# ======================== XO CROSSOVER TAB ======================== #}
 {% if (bt_totals and bt_totals.xo) or (pt_totals and pt_totals.xo) %}

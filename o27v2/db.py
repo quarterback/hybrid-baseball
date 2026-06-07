@@ -904,13 +904,20 @@ CREATE TABLE IF NOT EXISTS playoff_series (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     season              INTEGER DEFAULT 1,
     round_idx           INTEGER NOT NULL,        -- 0 = first round, increases toward final
-    rounds_to_final     INTEGER NOT NULL,        -- 0 = the final itself
+    rounds_to_final     INTEGER NOT NULL,        -- 0 = the final itself (within its bracket)
     bracket_position    INTEGER NOT NULL,        -- pairing slot within the round
-    high_seed           INTEGER NOT NULL,        -- numeric seed (1..N)
+    -- Which league's bracket this series belongs to. Each league runs its own
+    -- bracket; the interleague final (World Series) carries league = '' (no
+    -- single league owns it). See o27v2/playoffs.py.
+    league              TEXT    DEFAULT '',
+    -- Round flavour for display + series-length lookup:
+    -- 'wild_card' | 'division' | 'championship' (league final) | 'world_series'.
+    series_kind         TEXT    DEFAULT '',
+    high_seed           INTEGER NOT NULL,        -- numeric seed (1..N) within its league
     low_seed            INTEGER,                 -- NULL when bye
     high_seed_team_id   INTEGER NOT NULL REFERENCES teams(id),
     low_seed_team_id    INTEGER          REFERENCES teams(id),  -- NULL on bye
-    best_of             INTEGER NOT NULL,        -- 3, 5, 7
+    best_of             INTEGER NOT NULL,        -- 3, 5, 7, 9
     high_wins           INTEGER DEFAULT 0,
     low_wins            INTEGER DEFAULT 0,
     winner_team_id      INTEGER REFERENCES teams(id),
@@ -1214,6 +1221,21 @@ def init_db() -> None:
         ]:
             try:
                 conn.execute(f"ALTER TABLE games ADD COLUMN {col} {sql_type} DEFAULT {defval}")
+                conn.commit()
+            except Exception:
+                pass
+
+        # Per-league playoff brackets: each league runs its own bracket and the
+        # interleague final (World Series) is a separate series. Older DBs that
+        # predate the per-league model gain the columns without losing data; the
+        # CREATE TABLE below carries them for fresh DBs.
+        for col, sql_type, defval in [
+            ("league",      "TEXT", "''"),
+            ("series_kind", "TEXT", "''"),
+        ]:
+            try:
+                conn.execute(
+                    f"ALTER TABLE playoff_series ADD COLUMN {col} {sql_type} DEFAULT {defval}")
                 conn.commit()
             except Exception:
                 pass

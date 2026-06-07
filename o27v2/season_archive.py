@@ -707,12 +707,25 @@ def archive_current_season(
         if config_id  is None: config_id  = meta_cfg
 
     teams = db.fetchall(
-        "SELECT name, abbrev, wins, losses FROM teams "
+        "SELECT id, name, abbrev, wins, losses FROM teams "
         "ORDER BY (wins * 1.0 / NULLIF(wins+losses, 0)) DESC, "
         "wins DESC, losses ASC"
     )
-    champ = teams[0] if teams else None
     team_count = len(teams)
+
+    # Champion: the postseason winner when a bracket was played (World Series
+    # winner, or the lone league's champion). Fall back to the best
+    # regular-season team only for the soccer model (postseason disabled) or
+    # when no champion has been crowned yet — the table winner is the title.
+    champ = teams[0] if teams else None
+    try:
+        from o27v2 import playoffs as _po
+        won = _po.champion()
+        if won and won.get("winner_team_id"):
+            by_id = {t["id"]: t for t in teams}
+            champ = by_id.get(won["winner_team_id"], champ)
+    except Exception:
+        pass
 
     last = db.fetchone("SELECT MAX(season_number) AS n FROM seasons")
     season_number = ((last and last["n"]) or 0) + 1
