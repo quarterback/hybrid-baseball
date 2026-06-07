@@ -50,6 +50,7 @@ def ensure_schema() -> None:
         """
     )
     conn.commit()
+    conn.close()
 
 
 # --- odds math ---------------------------------------------------------------
@@ -136,6 +137,7 @@ def _line(game_id: int, home_id: int, away_id: int, stats: dict, lg: float) -> d
          line["over_odds"], line["under_odds"],
          _dt.datetime.utcnow().isoformat(timespec="seconds")))
     conn.commit()
+    conn.close()
     return line
 
 
@@ -199,6 +201,7 @@ def settle_bets() -> None:
     for st, payout, bid in graded:
         conn.execute("UPDATE sb_bets SET status = ?, payout = ? WHERE id = ?", (st, payout, bid))
     conn.commit()
+    conn.close()
     for st, payout, _bid in graded:
         if payout > 0:
             # a push returns the stake (not a "cash"); a win is a cash
@@ -309,4 +312,5 @@ def place(game_id, market: str, side: str, stake) -> dict:
         (int(game_id), market, side, lval, int(odds), stake,
          _dt.datetime.utcnow().isoformat(timespec="seconds")))
     conn.commit()
+    conn.close()
     return {"ok": True, "bankroll": round(wallet.balance())}

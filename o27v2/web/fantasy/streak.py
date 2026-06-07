@@ -43,6 +43,7 @@ def ensure_schema() -> None:
         conn.commit()
     except Exception:
         pass
+    conn.close()
 
 
 def settle() -> None:
@@ -78,6 +79,7 @@ def settle() -> None:
     for pid, gate, _amt in to_pay:
         conn.execute("UPDATE streak_picks SET gate_paid = ? WHERE id = ?", (gate, pid))
     conn.commit()
+    conn.close()
     for _pid, _gate, amt in to_pay:
         wallet.credit(amt)
 
@@ -207,4 +209,5 @@ def make_pick(player_id) -> dict:
         (slate, dbid, _dt.datetime.utcnow().isoformat(timespec="seconds")),
     )
     conn.commit()
+    conn.close()
     return {"ok": True, "slate_date": slate}

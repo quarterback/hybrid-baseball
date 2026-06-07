@@ -75,6 +75,7 @@ def ensure_schema() -> None:
         """
     )
     conn.commit()
+    conn.close()
 
 
 def _db_id(pid) -> int:
@@ -262,6 +263,7 @@ def pick(player_id) -> dict:
         (slate, dbid, _dt.datetime.utcnow().isoformat(timespec="seconds")),
     )
     conn.commit()
+    conn.close()
     return {"ok": True, "slate_date": slate}
 
 
@@ -277,4 +279,5 @@ def remove(player_id) -> dict:
     conn = db.get_conn()
     conn.execute("DELETE FROM slugger_picks WHERE slate_date = ? AND player_id = ?", (slate, dbid))
     conn.commit()
+    conn.close()
     return {"ok": True}

@@ -80,6 +80,7 @@ def ensure_schema() -> None:
         """
     )
     conn.commit()
+    conn.close()
 
 
 # --- records -----------------------------------------------------------------
@@ -94,6 +95,7 @@ def rec_set(key: str, value: int) -> None:
     conn.execute("INSERT INTO cap_records (key, value) VALUES (?, ?) "
                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, int(value)))
     conn.commit()
+    conn.close()
 
 
 def bump(key: str, delta: int = 1) -> None:
@@ -129,6 +131,7 @@ def start(persona_key: str) -> dict:
     conn.execute("INSERT OR REPLACE INTO cap_profile (id, persona, created_at) VALUES (1, ?, ?)",
                  (p["key"], _dt.datetime.utcnow().isoformat(timespec="seconds")))
     conn.commit()
+    conn.close()
     return {"ok": True, "balance": balance()}
 
 
@@ -146,6 +149,7 @@ def _set(v: int) -> None:
     conn.execute("INSERT INTO cap_wallet (id, balance) VALUES (1, ?) "
                  "ON CONFLICT(id) DO UPDATE SET balance = excluded.balance", (v,))
     conn.commit()
+    conn.close()
     rec_max("peak_bankroll", v)
 
 
