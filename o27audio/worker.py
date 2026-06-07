@@ -103,4 +103,31 @@ def _tick(mode: str, seen: dict[str, str], done: dict[str, str]) -> None:
                 except Exception:
                     pass
 
+    # Daily radio is ephemeral: once the new game-day's clips exist, drop every
+    # earlier day's audio for this save so the /data/audio dir doesn't grow
+    # without bound across a season. Best-effort — never let it break the loop.
+    try:
+        _purge_old_days(save_key, latest)
+    except Exception:
+        pass
+
     done[save_key] = latest
+
+
+def _purge_old_days(save_key: str, keep_date: str) -> None:
+    """Delete generated audio (files + manifest rows) for every game-day other
+    than ``keep_date`` within this save. Roundup refs carry the date directly;
+    game refs are mapped to their game_date via the save's DB. Clips whose date
+    can't be resolved are left alone (fail-safe — we never delete blindly)."""
+    for row in manifest.list_for_save(save_key):
+        ref = row["ref_id"]
+        tail = ref.rsplit(":", 1)[-1]
+        if row["kind"] == "roundup":
+            clip_date = tail
+        else:  # 'game' — resolve game_id -> its game_date
+            try:
+                clip_date = sources.load_game(int(tail)).game_date
+            except Exception:
+                clip_date = None
+        if clip_date is not None and clip_date != keep_date:
+            manifest.delete_clip(row["kind"], ref)
