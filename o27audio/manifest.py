@@ -113,3 +113,37 @@ def get(kind: str, ref_id: str) -> dict[str, Any] | None:
             (kind, ref_id),
         ).fetchone()
     return dict(row) if row else None
+
+
+def list_for_save(save_key: str) -> list[dict[str, Any]]:
+    """Every clip belonging to a save (refs are ``<save_key>:<date|game_id>``).
+
+    `_` and `%` in save_key would be LIKE wildcards, so they're escaped.
+    """
+    pat = save_key.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, kind, ref_id, wav_path, mp3_path FROM audio_clips "
+            "WHERE ref_id LIKE ? ESCAPE '\\'",
+            (pat + ":%",),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_clip(kind: str, ref_id: str) -> None:
+    """Remove a clip's audio files (wav + mp3) and its manifest row. Best-effort
+    on the files — a missing/already-deleted file is not an error."""
+    row = get(kind, ref_id)
+    if not row:
+        return
+    for p in (row.get("wav_path"), row.get("mp3_path")):
+        if p:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    with _conn() as c:
+        c.execute(
+            "DELETE FROM audio_clips WHERE kind = ? AND ref_id = ?",
+            (kind, ref_id),
+        )
