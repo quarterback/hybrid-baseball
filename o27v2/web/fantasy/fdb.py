@@ -90,7 +90,11 @@ def _ensure_migrated(conn: sqlite3.Connection, fan_path: str) -> None:
 def get_conn() -> sqlite3.Connection:
     fan_path = _fantasy_path()
     sim_path = _maindb._resolve_path()
-    conn = sqlite3.connect(fan_path)
+    # Same self-closing context-manager semantics as the main db layer: a
+    # bare ``with get_conn() as conn:`` commits AND closes, so the fantasy
+    # read/write paths (which ATTACH the sim DB, doubling the open handles)
+    # don't leak file descriptors and exhaust the open-file limit.
+    conn = sqlite3.connect(fan_path, factory=_maindb._ManagedConnection)
     conn.row_factory = sqlite3.Row
     # WAL + NORMAL + busy_timeout, same rationale as the main db layer.
     conn.execute("PRAGMA journal_mode = WAL")

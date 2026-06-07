@@ -120,6 +120,7 @@ def ensure_schema() -> None:
         """
     )
     conn.commit()
+    conn.close()
 
 
 def _db_id(pid) -> int:
@@ -449,6 +450,7 @@ def draft(format_key: str, player_ids: list) -> dict:
     conn.executemany("INSERT OR IGNORE INTO cat_rosters (format_key, player_id) VALUES (?,?)",
                      [(format_key, i) for i in ids])
     conn.commit()
+    conn.close()
     return {"ok": True}
 
 

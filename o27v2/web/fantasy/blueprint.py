@@ -250,6 +250,7 @@ def _reset_run() -> None:
         except Exception:
             pass
     conn.commit()
+    conn.close()
 
 
 @capspace_bp.route("/api/onboard", methods=["POST"])

@@ -32,6 +32,7 @@ def ensure_schema() -> None:
         """
     )
     conn.commit()
+    conn.close()
 
 
 def entry(game: str, ekey: str):
@@ -53,6 +54,7 @@ def enter(game: str, ekey: str, fee: int) -> dict:
         "INSERT INTO cs_buyins (game, ekey, fee, created_at) VALUES (?,?,?,?)",
         (game, str(ekey), fee, _dt.datetime.utcnow().isoformat(timespec="seconds")))
     conn.commit()
+    conn.close()
     return {"ok": True}
 
 
@@ -67,6 +69,7 @@ def settle_one(game: str, ekey: str, payout: int) -> None:
         "UPDATE cs_buyins SET settled = 1, payout = ? WHERE game = ? AND ekey = ?",
         (payout, game, str(ekey)))
     conn.commit()
+    conn.close()
     if payout > 0:
         wallet.credit(payout, cash=True)
 

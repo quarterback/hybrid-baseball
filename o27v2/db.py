@@ -63,8 +63,34 @@ def _resolve_path() -> str:
     return active or _DB_PATH
 
 
+class _ManagedConnection(sqlite3.Connection):
+    """A connection that *closes itself* when used as a context manager.
+
+    Python's stock ``sqlite3`` makes ``with conn:`` manage only the
+    *transaction* — it commits on success / rolls back on error and then
+    deliberately leaves the connection OPEN. Every ``with get_conn() as conn:``
+    in this codebase therefore leaked the underlying file descriptors (the DB
+    handle plus, in WAL mode, the ``-wal`` / ``-shm`` sidecars) until CPython's
+    GC eventually finalized the object. Under sustained request load (each page
+    fans out into many ``fetchone``/``fetchall`` calls) the process drifted up
+    against its open-file limit, at which point SQLite could no longer open the
+    DB or its sidecars and raised ``OperationalError: disk I/O error`` — even on
+    a bare ``PRAGMA`` at connect time, exactly the symptom we saw in the logs.
+
+    Overriding ``__exit__`` to close after the normal commit/rollback plugs the
+    leak while preserving the existing transaction semantics, so every
+    ``with get_conn() as conn:`` block is now both committed and closed.
+    """
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(_resolve_path())
+    conn = sqlite3.connect(_resolve_path(), factory=_ManagedConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     # synchronous=NORMAL is per-connection (not persisted like journal_mode).

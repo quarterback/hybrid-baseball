@@ -71,6 +71,7 @@ def ensure_schema() -> None:
             conn.commit()
         except Exception:
             pass
+    conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +130,7 @@ def settle_entries() -> None:
     for eid, payout in settled:
         conn.execute("UPDATE dfs_entries SET settled = 1, payout = ? WHERE id = ?", (payout, eid))
     conn.commit()
+    conn.close()
     for _eid, payout in settled:
         if payout > 0:
             wallet.credit(payout)
@@ -168,6 +170,7 @@ def list_contests(slate_date: str) -> list[dict]:
                  field, color, badge, base_seed + i),
             )
         conn.commit()
+        conn.close()
         rows = db.fetchall(
             "SELECT * FROM dfs_contests WHERE slate_date = ? ORDER BY id", (slate_date,)
         )
@@ -414,7 +417,9 @@ def enter(contest_id: int, player_ids: list) -> dict:
          _dt.datetime.utcnow().isoformat(timespec="seconds"), fee),
     )
     conn.commit()
-    return {"ok": True, "entry_id": cur.lastrowid, "contest_id": contest_id,
+    entry_id = cur.lastrowid
+    conn.close()
+    return {"ok": True, "entry_id": entry_id, "contest_id": contest_id,
             "balance": wallet.balance()}
 
 

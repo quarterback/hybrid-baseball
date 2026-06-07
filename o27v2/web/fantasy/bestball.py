@@ -101,6 +101,7 @@ def ensure_schema() -> None:
     conn = db.get_conn()
     conn.executescript("CREATE TABLE IF NOT EXISTS bb_roster (player_id INTEGER PRIMARY KEY);")
     conn.commit()
+    conn.close()
 
 
 def _db_id(pid) -> int:
@@ -361,6 +362,7 @@ def draft(player_ids: list) -> dict:
     conn.execute("DELETE FROM bb_roster")
     conn.executemany("INSERT OR IGNORE INTO bb_roster (player_id) VALUES (?)", [(i,) for i in ids])
     conn.commit()
+    conn.close()
     return {"ok": True}
 
 
