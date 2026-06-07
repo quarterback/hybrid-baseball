@@ -15,7 +15,9 @@ in the game" — which turned out to be two separate problems:
    name files but were wired to **no region and no team**, so they never
    surfaced anywhere. Promoted each to its own region in `regions.json` **and**
    its own Frontier Cup team in `youth.py`. Backfilled the two empty female
-   pools so each nation has both male and female names.
+   pools so each nation has both male and female names. A sixth — **Iceland** —
+   had given names but no surname bucket; backfilled Icelandic patronymic
+   surnames and wired it up too. Six new Frontier nations in total.
 2. **Scraped pollution, league-wide.** The same scrape origin documented in the
    earlier name-scrub AAR was far more prevalent than previously cleaned — the
    European/African/Latin buckets were riddled with football/basketball club
@@ -64,10 +66,14 @@ Tamar, Salome…). Serbian/Estonian/Latvian already had female names.
   as teams; their regions just draw from a shared pool (e.g. Austria uses
   `german`). The curated bucket is unused, but the nation is present, so it's not
   the reported bug. Left as-is.
-* **`icelandic`** — has male + female given names but **zero surnames** in the
-  data (Icelandic patronymics were never seeded). A region needs resolvable
-  `surname_keys`, so Iceland can't be added without a surname backfill. Left
-  orphaned and flagged.
+* **`icelandic`** — had male + female given names but **zero surnames** in the
+  data (Icelandic names are patronymic and were never seeded). Initially left
+  orphaned; **subsequently added** — seeded a `icelandic` surname bucket with
+  the `-son` patronymic belt (Sigurðsson, Guðmundsson, Jónsson…) plus a few
+  real inherited family names (Gudjohnsen, Laxness, Blöndal), then wired Iceland
+  (IS) as a region + Frontier team like the other five. (The surname bucket is
+  gender-agnostic, as all of them are; since rosters generate male players the
+  `-son` form is the right default and `-dóttir` was not split out.)
 * **Female-only fragment keys** (`belarusian`, `chilean`, `colombian`,
   `mexican`, `peruvian`, `taiwanese`, `zimbabwean`, …) — keys present only in
   `female_first.json` with no male/surname counterpart. Most correspond to
@@ -129,12 +135,20 @@ were left — they're real diaspora names, not pollution.
 
 ## What I did NOT change (honest caveats)
 
-* **The scrubber script was not extended.** The pollution was removed directly
-  from the committed JSON (the authoritative source), which keeps the
-  idempotency test green, but `scrub_name_pools.py` does not *know about* the new
-  junk types. A future re-seed from raw scrape would reintroduce club/place
-  tokens that the script wouldn't catch. Extending its blocklists is follow-up
-  work.
+* **The scrubber script *was* extended** (follow-up). `scrub_name_pools.py` now
+  carries a `SCRAPED_SPORTS_JUNK` set of **838 tokens** — the exact junk the
+  league-wide pass removed (clubs, league/sponsor words, sports terms,
+  cross-culture place names) — applied to all non-CJK pools via the existing
+  `mascots` union. The set was reconstructed by diffing the pre-scrub files
+  (git `b353fac`) against the cleaned ones and keeping only tokens **absent from
+  the entire current corpus**, so it provably removes nothing today (the
+  idempotency test stays at 0) and is pure forward protection: a re-seed that
+  drags in "Calcio"/"Wolfsberger"/"Wielkopolski"/"Žalgiris" is now caught.
+  Genuine ethnic names (Slavic `-ić`/`-ović`, Finnish `-nen`, Mārtiņš,
+  Markkanen, Þorsteinn) were filtered out of the set so real names aren't
+  blocklisted. It is **not** keyword/substring-based — only exact-token — to
+  guarantee it can never strip a legitimate name that merely contains a junk
+  substring.
 * **The subagent cleanup is heuristic.** ~2,370 tokens across ~90 buckets in
   languages I can't all read fluently — some misfiled cross-culture *given*
   names (diaspora footballers) almost certainly remain, and a few borderline
@@ -155,3 +169,6 @@ were left — they're real diaspora names, not pollution.
 * `feaad8b` — scrub `surnames.json`
 * `4c419ca` — scrub `male_first.json`
 * `691b609` — second-pass residual place/club surname removal
+* `1105dbc` — this AAR
+* (this commit) — extend `scrub_name_pools.py` with the 838-token
+  `SCRAPED_SPORTS_JUNK` guard; add Iceland (surname backfill + region + team)

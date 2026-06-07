@@ -2502,6 +2502,23 @@
         "georgian"
       ]
     },
+    "iceland": {
+      "_doc": [
+        "Nordic frontier baseball nation. The icelandic given-name pools",
+        "already existed but had no surname bucket (Icelandic names are",
+        "patronymic), so the region couldn't be wired. Surnames seeded with",
+        "the -son patronymic belt (Sigurðsson, Guðmundsson, Jónsson) plus a",
+        "few real inherited family names. Tagged IS."
+      ],
+      "label": "Iceland",
+      "country": "IS",
+      "first_keys": [
+        "icelandic"
+      ],
+      "surname_keys": [
+        "icelandic"
+      ]
+    },
     "cape_verde": {
       "_doc": [
         "Caribbean-adjacent Atlantic sleeper. The large Cape Verdean diaspora",

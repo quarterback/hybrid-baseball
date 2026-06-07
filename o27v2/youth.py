@@ -136,9 +136,10 @@ _FRONTIER_TEAMS: list[tuple[str, str, str, str]] = [
     ("EE", "Estonia",         "EST", "estonia"),
     ("LV", "Latvia",          "LAT", "latvia"),
     ("GE", "Georgia",         "GEO", "georgia"),
+    ("IS", "Iceland",         "ISL", "iceland"),
 ]
-# 33 frontier nations compete for 24 Cup berths: the seasonal draw
-# (draw_groups) shuffles the field and the bottom nine MISS OUT each year
+# 34 frontier nations compete for 24 Cup berths: the seasonal draw
+# (draw_groups) shuffles the field and the bottom ten MISS OUT each year
 # — a rotating qualification, surfaced on /youth as "Did not qualify".
 
 # Geographic region a country belongs to, for grouping the standings on
@@ -169,7 +170,7 @@ _COUNTRY_REGION: dict[str, str] = {
     "LT": "Europe",         "TR": "Europe",         "SM": "Europe",
     "ES": "Europe",         "PL": "Europe",         "BE": "Europe",
     "RS": "Europe",         "AL": "Europe",         "EE": "Europe",
-    "LV": "Europe",         "GE": "Europe",
+    "LV": "Europe",         "GE": "Europe",         "IS": "Europe",
     # Africa
     "ZA": "Africa",         "ZW": "Africa",         "NA": "Africa",
     # Africa (Frontier Cup)

@@ -106,6 +106,168 @@ CLUB_JUNK = {
     "Korea", "Zhongguo", "South", "North", "Red", "Aviv",
 }
 
+
+# ---------------------------------------------------------------------------
+# Scraped sports junk — league-wide sweep.
+#
+# The CJK/Japanese cleanup above was thorough for its pools, but the
+# EUROPEAN / AFRICAN / LATIN-AMERICAN buckets were left riddled with the same
+# class of scrape garbage: football & basketball CLUB names, league /
+# federation / sponsor words, sports terms in many languages (Calcio, Basket,
+# Bàsquet, Fotball...), and cross-culture place names sitting in the wrong
+# bucket (e.g. "Wielkopolski" in a Baltic pool, "Calcio" as a given name).
+# That produced roster names like "Nevena Calcio", "Elena Basket" and
+# "United Wielkopolski". The garbage was stripped from the data in a
+# league-wide pass (see docs/aar-orphan-nations-and-name-pollution.md); this
+# set bakes that pass into the scrubber so a re-seed can't quietly bring it
+# back, and so tests/test_name_pool_clean.py actually guards against it.
+#
+# Every token here is ALREADY absent from the committed pools, so applying it
+# removes nothing today — it is pure forward protection and cannot regress a
+# real name currently in the data. Genuine ethnic names (Slavic -ić/-ović,
+# Finnish -nen, Mārtiņš, Markkanen, Þorsteinn, ...) were deliberately excluded
+# from this list. Applied to ALL non-CJK pools (first + surname) via `mascots`.
+# ---------------------------------------------------------------------------
+SCRAPED_SPORTS_JUNK = {
+    'AaB', 'Aalen', 'Aalesunds', 'Abidjan', 'Academy', 'African',
+    'AfroBasket', 'Agadir', 'Agency', 'Agglomération', 'Ahlen', 'Aix',
+    'Ajaccio', 'Al-Quwa', 'Al-Wehdat', 'Alavés', 'Albirex', 'Alcoyano',
+    'Alger', 'Alianza', 'Alkmaar', 'Almelo', 'Almería', 'Alsace', 'Alvark',
+    'Americans', 'Amman', 'Andorra', 'Ankaragücü', 'Annis', 'Antigua',
+    'Aquila', 'Arabia', 'Araski', 'Arcus', 'Ardennes', 'Arena', 'Argentinos',
+    'Argonauts', 'Arminia', 'Ashdod', 'Asociación', 'Association',
+    'Associação', 'Atalanta', 'Atenas', 'Athletic', 'Atlético', 'Atomerőmű',
+    'Audax', 'Australian', 'Auvergne', 'Auvray', 'Auxerre', 'Avaldsnes',
+    'Avell', 'Avenida', 'Avranches', 'Azur', 'B-Corsairs', 'Bagatskis',
+    'Baggott', 'Ballarat', 'Baltimore', 'Bamenda', 'Banchi', 'Barangay',
+    'Bashundhara', 'Basket', 'Basket-Ball', 'Basketbol', 'Baskonia', 'Bateau',
+    'Battery', 'Bauermann', 'Bayno', 'Beermen', 'Belediyespor', 'Belgrade',
+    'Bendigo', 'Benevento', 'Bernhardt', 'Betis', 'Białystok', 'Bielefeld',
+    'Bielsko-Biała', 'Bigorre', 'Bizkaia', 'Blazers', 'Blues', 'BoIS', 'Boca',
+    'Bochum', 'Boldklub', 'Boleslav', 'Bolts', 'Bond-Flasza', 'Bonn',
+    'Borkelmans', 'Borussia', 'Botaş', 'Botev', 'Boulazac', 'Boulogne',
+    'Boys', 'Bragantino', 'Brann', 'Brasil', 'Bratanovic', 'Braunschweig',
+    'Brauzman', 'Breakers', 'Breda', 'Bremen', 'Bremerhaven', 'Breogán',
+    'Brescia', 'Bresciano', 'Brex', 'Brommapojkarna', 'Brøndby', 'Buccaneers',
+    'Bucks', 'Budivelnyk', 'Budućnost', 'Bullets', 'Bursaspor', 'Buscaglia',
+    'Bàsquet', 'Básquet', 'Cacereño', 'Cadamuro', 'Caen', 'Cagliari',
+    'Calcio', 'Caledonia', 'California', 'Calvados', 'Canadian', 'Canaria',
+    'Canarias', 'Cannes', 'Canterbury', 'Cantillana', 'Cape', 'Casa',
+    'Castelletto', 'Castelló', 'Cavaliers', 'Cavigal', 'Cel', 'Celtics',
+    'Center', 'Central', 'Cercle', 'Cerro', 'Chalon', 'Champagne',
+    'Championships', 'Chapelle', 'Charleville-Mézières', 'Chemidor',
+    'Chicago', 'Chinese', 'Chivas', 'Chlef', 'Cholet', 'Chorale',
+    'Châteauroux', 'Ciak', 'Cibona', 'Cittadella', 'Clippers', 'College',
+    'Coloma', 'Colombe', 'Colorado', 'Columbus', 'Concarneau', 'Concorde',
+    'Confesor', 'Connecticut', 'Constantine', 'Cools', 'Coquimbo', 'Coruña',
+    'Courage', 'Cracovia', 'Crailsheim', 'Craiova', 'Cremonese', 'Crew',
+    'Crown', 'Créteil-Lusitanos', 'Curicó', 'Current', 'Częstochowa',
+    'Círculo', 'Cúper', 'Da Rosa', 'Darüşşafaka', 'De Marco', 'Defensor',
+    'Degerfors', 'Demirspor', 'Denver', 'Deportes', 'Deportivo', 'Derthona',
+    'Detroit', 'Dettmann', 'Diamonds', 'Dikeoulakos', 'Dinamo', 'Djorkaeff',
+    'Djurgårdens', 'Dolonc', 'Dominican', 'Donetsk', 'Doradas', 'Dordogne',
+    'Douala', 'Dragonflies', 'Dream', 'Dräger', 'Duisburg', 'Durbin',
+    'Dushanbe', 'Dux', 'Dynamo', 'Dziewa', 'Düsseldorf', 'Earthquakes',
+    'Eggesvik', 'Egurrola', 'Eibar', 'Eintracht', 'Eisbären', 'Ekaterinburg',
+    'Ekrem', 'Eldstål', 'Elfsborg', 'Erciyesspor', 'Eskhata', 'Eskilsminne',
+    'Eskilstuna', 'Espanyol', 'Essen', 'Estudiantes', 'EuroBasket',
+    'Excellence', 'Fabril', 'Fagiano', 'Fajr', 'Falkesgaard', 'Farkhor',
+    'Fazer', 'Fehérvár', 'Feldeine', 'Femenino', 'Ferencvárosi', 'Fever',
+    'Fighters', 'Filipino', 'Fire', 'Firebonds', 'Fjellerup', 'Flamengo',
+    'Fodbold', 'Força', 'Fotball', 'Fotboll', 'Francs', 'Frankston',
+    'Fratello', 'Frenderup', 'Fuenlabrada', 'Fundación', 'Féminas', 'Féminin',
+    'Fürth', 'Galaxy', 'Geas', 'Gefle', 'Geraldton', 'Gernika', 'Gevitz',
+    'Giant', 'Giants', 'Gijón', 'Ginzburg', 'Gipuzkoa', 'GiroLive', 'Girona',
+    'Gjergja', 'Glenfield', 'Gliwice', 'Gloriosas', 'Goodes', 'Goree',
+    'Gorica', 'Gourevitch', 'Graafschap', 'Grameni', 'Grampus', 'Granada',
+    'Grandison', 'Gravelines-Dunkerque', 'Grecia', 'Gretter', 'Grouses',
+    'Grêmio', 'Guillou', 'Guingamp', 'Gwathmey', 'Gymnastikforening',
+    'Górnik', 'Göteborg', 'Göttingen', 'Hakkarigücü', 'Halcones', 'Halmstads',
+    'Hammarby', 'Hang-seo', 'Hapoel', 'Hassania', 'Heading', 'Heat',
+    'Helsingborgs', 'Helsingin', 'Heracles', 'Hermine', 'Heroes', 'Heroum',
+    'Hettsheimeir', 'Hilal', 'Hillal', 'Hiroshima', 'Hjørring', 'Hobro',
+    'Hokkaido', 'Hollingshed', 'Hollis-Jefferson', 'Hoopers', 'Hornets',
+    'Horoya', 'Hubner', 'Huesca', 'Ibiza', 'Independiente', 'Insa', 'Inter',
+    'Istaravshan', 'Italiano', 'Jablonec', 'JackJumpers', 'Jagiellonia',
+    'Jalkapalloklubi', 'Jaro', 'Jazz', 'Jean-Aimé', 'Jenner', 'Jeonnam',
+    'Jerv', 'Jeter', 'Jiangsu', 'Jonava', 'Juniors', 'Júbilo', 'Kabylie',
+    'Kalovelonis', 'Kangoeroes', 'Kansas', 'Kardemir', 'Karlslunds',
+    'Kashuba', 'Katanec', 'Kauhajoki', 'Kayseri', 'Kecskeméti', 'Keltern',
+    'Kennesaw', 'Kerkhof', 'Khartoum', 'Khimik', 'Khimki', 'Khujand',
+    'Kilsyth', 'Kindermann', 'Kingdom', 'Klok', 'Knattspyrnufélag',
+    'Knattspyrnufélagið', 'Knicks', 'Koblenz', 'Kocian', 'Kolbotn', 'Korona',
+    'Kortrijk', 'Krejčíková–Siniaková', 'Krestinin', 'Krimets',
+    'Kristianstads', 'Kuban', 'Kulob', 'Kuopion', 'Kursk', 'Körmend',
+    'La Calera', 'Lakers', 'Lakes', 'Landskrona', 'Langreo', 'Lanxess',
+    'Larkas', 'Larroquette', 'Las', 'Lazio', 'Le Portel', 'Lebanon', 'Lecce',
+    'Lech', 'Lechia', 'Lega', 'Leganés', 'Legia', 'Legnica', 'Leipzig',
+    'Levanga', 'Levante', 'Lezkano', 'Lietkabelis', 'Limassol', 'Limburg',
+    'Limeira', 'Lionesses', 'Liège', 'Lobos', 'Logroñés', 'Longhorns',
+    'Loria', 'Lorient', 'Los', 'Louves', 'Lublin', 'Lux', 'Lynx', 'Lyonnais',
+    'Maccabi', 'Machín', 'Magic', 'Magnano', 'Mahram', 'Maine', 'Major',
+    'Malatyaspor', 'Mallorca', 'Manresa', 'Markaz', 'Marrakech', 'Matyash',
+    'Maxhuni', 'Mažeikiai', 'McCowan', 'Meindl', 'Melbourne', 'Melipilla',
+    'Meralco', 'Mercury', 'Merk', 'Merlins', 'Mezőkövesdi', 'Miami',
+    'Mickelson', 'Miedź', 'Milano', 'Milwaukee', 'Mimosas', 'Minnesota',
+    'Minproff', 'Minsk', 'Mishchenko', 'Mitteldeutscher', 'Montella', 'Monza',
+    'Mudir', 'Mulders', 'Mustaki', 'Mystics', 'Métropole', 'Nacional',
+    'Nairobi', 'Naismith', 'Name', 'Namibian', 'Namur-Capitale',
+    'Navalcarnero', 'Needham', 'Neftçi', 'Nesterov', 'Nets', 'Nevėžis', 'New',
+    'Nice', 'Nicosia', 'Nijmegen', 'Nkamhoua', 'Norambuena', 'Norrby',
+    'Norrköping', 'NorthPort', 'Nouakchott', 'Novgorod', 'Novo', 'Nuggets',
+    'Numancia', 'Nîmes', 'Obradoiro', 'Obras', 'Okayama', 'Oklahoma',
+    'Olimpia', 'Olimpija', 'Olomoucko', 'Olympiakos', 'Olympic', 'Olympique',
+    'Olímpico', 'Omonia', 'Once', 'Onehunga', 'Oriente', 'Orléans', 'Osasuna',
+    'Osnabrück', 'Oud-Heverlee', 'Pabellón', 'Pacers', 'Palace', 'Palayesh',
+    'Palencia', 'Pallacanestro', 'Palloilijat', 'Palloseura', 'Palmas',
+    'Palmeiras', 'Palmi', 'Pan-gon', 'Panjshanbe', 'Panom', 'Parisien',
+    'Partizan', 'Patriots', 'Pauw', 'Pelicans', 'Persebaya', 'Persib',
+    'Persija', 'Persis', 'Petkim', 'Petrochimi', 'Petrolero', 'Piast', 'Pier',
+    'Piešťanské', 'Pistons', 'Piteå', 'Pizzi', 'Plovdiv', 'Podbeskidzie',
+    'Podgorica', 'Pogoń', 'Ponferradina', 'Porta', 'Portland', 'Potassa',
+    'Premier', 'Primorye', 'Prizren', 'Prometey', 'Puerto', 'Purdue',
+    'Pétange', 'Płock', 'Qarabağ', 'Queens', 'Raiders', 'Raków', 'Ramsay',
+    'Ranheim', 'Rapids', 'Raptors', 'Ratanakosin', 'Ratiopharm', 'Real',
+    'Records', 'Regar-TadAZ', 'Regatas', 'Reggiana', 'Regirl', 'Rehhagel',
+    'Reichelt', 'Republic', 'Revolution', 'Reyer', 'Reykjavíkur', 'Reynald',
+    'Riga', 'Rivadavia', 'Rizespor', 'Rockets', 'Roddar', 'Rodez', 'Roma',
+    'Rosenborg', 'Rouen', 'Rovers', 'Rowdies', 'Royale', 'Rutronik',
+    'Ružomberok', 'Rytas', 'Rīga', 'Saarlouis', 'Sabres', 'Sachs',
+    'Sacramento', 'Safar', 'Safari', 'Sagnol', 'Saint Petersburg',
+    'Saint-Chamond', 'Saint-Gilloise', 'Saint-Malo', 'Saint-Priest',
+    'Saint-Quentin', 'Saints', 'Sampdoria', 'San Felipe', 'Sandefjord',
+    'Sandringham', 'Sanfrisco', 'Sangalhos', 'Sanitarias', 'Sanon', 'Santa',
+    'Saphir', 'Sarajevo', 'Saski', 'Sassari', 'Saudi', 'Saville', 'Schilb',
+    'Schio', 'Seagulls', 'Seahawks', 'Seattle', 'Sežana', 'Sfaxien', 'Sheva',
+    'Shiga', 'Shkëndija', 'Sichuan', 'Sidorenko', 'Signeul', 'Sikh',
+    'Silkeborg', 'Sitak', 'Sittard', 'Skyliners', 'Skövde', 'Sociedad',
+    'Sociedade', 'Sopot', 'Sopron', 'Southeastern', 'SpVgg', 'Sparks',
+    'Sparta', 'Spellman', 'Spezia', 'Spirit', 'Spirou', 'Splitter', 'Spor',
+    'Sport', 'Sportif', 'Sporting', 'Sportive', 'Sportivo', 'Sports', 'Spurs',
+    'Stabæk', 'Stade', 'Stajcic', 'Stal', 'Stalbekov', 'Standard', 'Stange',
+    'Strathmore', 'Strauß', 'Strongest', 'Struick', 'Strømsgodset',
+    'Stubblefield', 'Styles', 'Subotica', 'Sud', 'Sudan', 'Sundhage', 'Suns',
+    'Suwannaphum', 'Szekszárd', 'Séance', 'Södertälje', 'Tae-yong', 'Taipans',
+    'Tamburrini', 'Tampa', 'Tango', 'Tanton', 'Tapiolan', 'Tarbes',
+    'Tarragona', 'Tasmania', 'Telekom', 'Texas', 'The', 'Three', 'Timbers',
+    'Tirana', 'Toaster', 'Tobey', 'Tokyo', 'Toronto', 'Torreforta', 'Toruń',
+    'Tours', 'Tovuz', 'Towers', 'Townsville', 'Toyama', 'Trefl', 'Trench',
+    'Trento', 'Trieste', 'Trophy', 'Troussier', 'TuS', 'Turbo', 'Turkey',
+    'Twarde', 'Tychy', 'Udinese', 'Ulinzi', 'Ulm', 'Uni', 'Unido', 'Union',
+    'United', 'Universo', 'Unión', 'Urawa', 'Utah', 'Utsiktens', 'Utsunomiya',
+    'Uşak', 'Vallecano', 'Van Zanten', 'Vannes', 'Vast', 'Venezia', 'Verdy',
+    'Verona', 'VfR', 'Viking', 'Villarrobledo', 'Vipers', 'Virtus', 'Vital',
+    'Vitesse', 'Vittsjö', 'Vojvodina', 'Vyškov', 'Växjö', 'Vålerenga',
+    'Værløse', 'Víkingur', 'Waalwijk', 'Waikato', 'Walkup', 'Wanderers',
+    'Warriors', 'Warta', 'Waverley', 'Welcome', 'Whales', 'Wielkopolski',
+    'Wien', 'Wiesbaden', 'Wilbekin', 'Wildcats', 'Windi', 'Windy', 'Wings',
+    'Wisła', 'Wizards', 'Wolfsberger', 'Wolfsburg', 'Women', 'Woodland',
+    'World', 'Wydad', 'Włocławek', 'Xerez', 'Yalovaspor', 'Yambol', 'Zabrze',
+    'Zaccheroni', 'Zagłębie', 'Zamarat', 'Zealand', 'Zob', 'Zwolle', 'Åland',
+    'Çaykur', 'Çukurova', 'Épinal', 'Étoile', 'Örebro', 'Östersunds',
+    'İstanbul', 'İzmit', 'ŠK', 'Šegrt', 'ŽKD', 'ŽKK', 'Žalgiris',
+}
+
 # Foreign cities that turned up in FIRST-NAME pools and are never given names.
 # (We intentionally do NOT sweep all cities from first names — Paris, Victoria,
 # Dallas, Milan, David, Carolina etc. are legitimate given names.)
@@ -414,7 +576,7 @@ def scrub(dry_run: bool = False) -> dict:
     female = _load("female_first.json")
     surnames = _load("surnames.json")
 
-    mascots = _mascot_words() | CLUB_JUNK
+    mascots = _mascot_words() | CLUB_JUNK | SCRAPED_SPORTS_JUNK
     surname_city_junk = (_surname_cities() | mascots) - SURNAME_CITY_KEEP
 
     report: dict[str, dict[str, list[str]]] = {
