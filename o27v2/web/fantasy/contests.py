@@ -96,10 +96,10 @@ def settle_entries() -> None:
     rows = db.fetchall("SELECT * FROM dfs_entries WHERE settled = 0")
     if not rows:
         return
-    conn = db.get_conn()
     ctx_by_slate: dict = {}
     contests: dict = {}
     samples: dict = {}
+    settled: list = []  # (entry_id, payout)
     for e in rows:
         sd = e["slate_date"]
         ctx = ctx_by_slate.get(sd)
@@ -119,10 +119,19 @@ def settle_entries() -> None:
         pts = ctx.score_lineup(json.loads(e["player_ids"]))
         field_total = int(contest["field_size"]) + 1
         payout = _payout(contest, _entry_rank(pts, sample, field_total), field_total)
-        conn.execute("UPDATE dfs_entries SET settled = 1, payout = ? WHERE id = ?", (payout, e["id"]))
+        settled.append((e["id"], payout))
+    if not settled:
+        return
+    # Write + commit the settlements FIRST so the write lock is released before
+    # wallet.credit() opens its own connection — holding it across the credit
+    # write self-deadlocks ("database is locked").
+    conn = db.get_conn()
+    for eid, payout in settled:
+        conn.execute("UPDATE dfs_entries SET settled = 1, payout = ? WHERE id = ?", (payout, eid))
+    conn.commit()
+    for _eid, payout in settled:
         if payout > 0:
             wallet.credit(payout)
-    conn.commit()
 
 
 # ---------------------------------------------------------------------------

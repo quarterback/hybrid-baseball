@@ -183,17 +183,26 @@ def settle_bets() -> None:
     open_bets = db.fetchall("SELECT * FROM sb_bets WHERE status = 'open'")
     if not open_bets:
         return
-    conn = db.get_conn()
+    graded = []  # (status, payout, bet_id)
     for b in open_bets:
         g = db.fetchone("SELECT played, home_score, away_score FROM games WHERE id = ?", (b["game_id"],))
         if not g or not g["played"]:
             continue
         st, payout = _grade(dict(b), dict(g))
-        conn.execute("UPDATE sb_bets SET status = ?, payout = ? WHERE id = ?", (st, round(payout), b["id"]))
+        graded.append((st, round(payout), b["id"]))
+    if not graded:
+        return
+    # Write + commit the gradings FIRST so the write lock is released before
+    # wallet.credit() opens its own connection — holding it across the credit
+    # write self-deadlocks ("database is locked").
+    conn = db.get_conn()
+    for st, payout, bid in graded:
+        conn.execute("UPDATE sb_bets SET status = ?, payout = ? WHERE id = ?", (st, payout, bid))
+    conn.commit()
+    for st, payout, _bid in graded:
         if payout > 0:
             # a push returns the stake (not a "cash"); a win is a cash
-            wallet.credit(round(payout), cash=(st == "won"))
-    conn.commit()
+            wallet.credit(payout, cash=(st == "won"))
 
 
 # --- public API --------------------------------------------------------------

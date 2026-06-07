@@ -195,6 +195,24 @@ rather than dropped, so the migration never writes to the sim DB).
 - Web smoke: `/fantasy/` and all `/fantasy/api/*` return 200 in <70 ms on the
   split DB.
 
+## Round 5 — a settle self-deadlock the split DB exposed
+
+After the split, the live logs still showed `database is locked`, but now from
+the **background** settle writing the *fantasy* DB: `settle_bets` →
+`wallet.credit` → `_set` → `INSERT cap_wallet`. Cause: `settle_bets` (and
+`contests.settle_entries`) held an open write transaction on connection A (the
+`UPDATE` loop, not yet committed) and, *inside the loop*, called
+`wallet.credit()`, which opens connection B to write the same DB — B waits on
+A's write lock, A doesn't commit until the loop (calling B) finishes →
+self-deadlock → `database is locked`. Because `_settle_all` catches per-game
+exceptions, this was silent: sportsbook/DFS winnings simply never credited.
+
+`streak.settle` and `buyins.settle_one` already avoided this ("commit FIRST,
+then credit"). Fixed `settle_bets` and `settle_entries` the same way: grade all
+rows, write + commit the settlements, **then** loop the `wallet.credit()` calls
+once the lock is released. Verified: a winning bet settles, credits exactly once
+(+payout), raises nothing, and is idempotent on a second pass.
+
 ## Follow-ups (not done here)
 - A single `build_slate_data` still scans the season for the pool's recent-form
   logs; the windowed query trims row transfer but not the scan. A date floor
