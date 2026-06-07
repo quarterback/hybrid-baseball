@@ -1,5 +1,5 @@
 app = "hybrid-baseball"
-primary_region = "iad"
+primary_region = "ams"
 
 [build]
   dockerfile = "Dockerfile"
