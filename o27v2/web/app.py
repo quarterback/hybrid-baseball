@@ -8975,6 +8975,7 @@ def playoffs_view():
         get_bracket_by_league, champion as _champion, league_champions,
         compute_fields_by_league, playoffs_initiated, regular_season_complete,
         playoff_settings, round_label, postseason_disabled,
+        table_winner_champions,
     )
     from o27v2.awards import get_awards, get_award_results, award_labels
 
@@ -9050,6 +9051,7 @@ def playoffs_view():
         playoffs_initiated=initiated,
         regular_season_complete=reg_complete,
         postseason_disabled=postseason_disabled(),
+        table_champions=table_winner_champions(),
     )
 
 
@@ -9381,6 +9383,17 @@ def new_league_post():
         flash(f"Could not create the league: {err}", "error")
         return redirect(url_for("new_league_get"))
 
+    # Postseason format — the per-save source of truth for whether this league
+    # runs a playoff bracket or crowns its regular-season table winner. Stamped
+    # into sim_meta so the choice sticks even for custom configs (whose dict
+    # isn't reloadable by id at runtime). playoffs.postseason_disabled() reads
+    # this key first, falling back to the config's `postseason` field.
+    pf = (request.form.get("postseason_format") or "").strip().lower()
+    if pf in ("bracket", "none"):
+        db.execute(
+            "INSERT OR REPLACE INTO sim_meta (key, value) VALUES "
+            "('postseason_format', ?)", (pf,))
+
     # Power Play (optional rule) — opt-in at league creation via the checkbox
     # on new_league.html. Stamp it onto every team so sim.py can read the
     # per-league flag at game time. Applies to whichever config (preset or
@@ -9662,6 +9675,7 @@ def universe_new_post():
             season_days=int(request.form.get("season_days", 150) or 150),
             season_year=int(request.form.get("season_year", 2026) or 2026),
             gender=(request.form.get("gender", "male") or "male"),
+            postseason=((request.form.get("postseason_format") or "none").strip().lower()),
         )
     except (ValueError, TypeError) as e:
         flash(f"Universe configuration error: {e}", "error")
@@ -9685,6 +9699,14 @@ def universe_new_post():
     if not ok:
         flash(f"Could not build the universe: {err}", "error")
         return redirect(url_for("universe_new_get"))
+    # Postseason format — stamp the per-save override so the choice sticks
+    # (mirrors /new-league). The written config also carries `postseason`, but
+    # this keeps the source of truth uniform across every creation path.
+    upf = (request.form.get("postseason_format") or "none").strip().lower()
+    if upf in ("bracket", "none"):
+        db.execute(
+            "INSERT OR REPLACE INTO sim_meta (key, value) VALUES "
+            "('postseason_format', ?)", (upf,))
     # Power Play (per-league) — stamp only the teams of leagues that opted in.
     # teams.league holds the league NAME verbatim (build_universe_config keeps
     # it unchanged), so the name match is exact.

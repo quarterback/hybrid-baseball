@@ -107,6 +107,66 @@
 </div>
 {% endif %}
 
+{# ── Table-winner champions (soccer model: no bracket) ───────────────────── #}
+{% if table_champions %}
+{% if table_champions|length == 1 %}
+{% set tc = table_champions[0] %}
+<div class="panel panel-body mb-3" style="border-left: 4px solid var(--accent)">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <div class="score-label">League Champion · best record</div>
+      <div style="font-size: 1.6rem; font-weight: 700">{{ tc.name }}
+        <span class="text-secondary" style="font-weight: 400">({{ tc.abbrev }}) · {{ tc.wins }}-{{ tc.losses }}</span>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="button" id="advance-season-btn"
+            onclick="advanceSeason(this)">Advance to Next Season →</button>
+  </div>
+</div>
+{% else %}
+<div class="panel panel-body mb-3" style="border-left: 4px solid var(--accent)">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+    <div class="score-label">League Champions · best record in each league</div>
+    <button class="btn btn-primary btn-sm" type="button" id="advance-season-btn"
+            onclick="advanceSeason(this)">Advance to Next Season →</button>
+  </div>
+  <div class="row g-2">
+    {% for tc in table_champions %}
+    <div class="col-12 col-md-4">
+      <div class="panel panel-body" style="padding: 10px">
+        <div class="text-secondary small">{{ tc.league }}</div>
+        <div style="font-weight: 700">{{ tc.name }}
+          <span class="text-secondary" style="font-weight:400">({{ tc.abbrev }})</span>
+        </div>
+        <div class="text-secondary small">{{ tc.wins }}-{{ tc.losses }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+<script>
+  function advanceSeason(btn) {
+    if (!confirm('Advance to the next season?\n\n• Every player ages +1\n• Development engine applies (growth + decline)\n• Org_strength rolls forward\n• W-L resets, schedule re-generates\n\nRosters are preserved.')) return;
+    btn.disabled = true; btn.textContent = 'Working…';
+    fetch('{{ url_for("api_season_advance") }}', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    }).then(r => r.json()).then(d => {
+      if (d.ok) {
+        alert('Advanced from season ' + d.from_season + ' to ' + d.to_season + '.');
+        window.location.href = '{{ url_for("league") }}';
+      } else {
+        alert('Failed: ' + (d.error || 'unknown'));
+        btn.disabled = false; btn.textContent = 'Advance to Next Season →';
+      }
+    }).catch(err => {
+      alert('Network error: ' + err);
+      btn.disabled = false; btn.textContent = 'Advance to Next Season →';
+    });
+  }
+</script>
+{% endif %}
+
 {% set CAT_LABELS = cat_labels | default({'mvp': 'MVP', 'cy_young': 'Cy Young', 'roy': 'Rookie of the Year', 'ws_mvp': 'World Series MVP'}) %}
 
 {% if award_results %}
@@ -209,7 +269,11 @@
 
 {% if not playoffs_initiated %}
   {% if postseason_disabled %}
-  <p class="text-secondary">This league uses the table-winner model — no postseason bracket.</p>
+  {% if table_champions %}
+  <p class="text-secondary">Table-winner model — the title is decided by regular-season record (crowned above). No postseason bracket.</p>
+  {% else %}
+  <p class="text-secondary">This league uses the table-winner model — the best regular-season record wins the title. No postseason bracket; champions are crowned once the season finishes. See <a href="{{ url_for('league') }}">Standings</a>.</p>
+  {% endif %}
   {% elif regular_season_complete %}
   <p class="text-secondary">Regular season is complete. Run the next sim step to initiate the bracket.</p>
   {% elif projected_by_league %}

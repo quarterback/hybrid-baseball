@@ -422,12 +422,43 @@ def league_champions() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def postseason_disabled() -> bool:
-    """True when the live league's config opts out of the postseason (soccer
-    model — the regular-season table winner is the champion)."""
+    """True when the live league opts out of the postseason (soccer model —
+    the regular-season table winner is the champion).
+
+    A per-save override (sim_meta 'postseason_format', stamped at league
+    creation) is the source of truth when present, so the choice sticks for
+    custom/universe saves whose config isn't reloadable by id. Older saves
+    without the key fall back to the league config's `postseason` field."""
+    ov = _meta_get("postseason_format")
+    if ov is not None and ov.strip():
+        return ov.strip().lower() == "none"
     cfg = _active_config()
     if not cfg:
         return False
     return (cfg.get("postseason") or "").lower() == "none"
+
+
+def table_winner_champions() -> list[dict]:
+    """Soccer model: each league's regular-season table winner is its champion.
+
+    Returns one row per league (best win pct; ties broken by more wins), but
+    only once the postseason is disabled AND the regular season is complete —
+    so the live postseason page can crown the title that a no-bracket league
+    actually decides. Returns [] otherwise."""
+    if not postseason_disabled() or not regular_season_complete():
+        return []
+    rows = db.fetchall(
+        "SELECT id, name, abbrev, league, division, wins, losses FROM teams")
+    best: dict[str, dict] = {}
+    for t in rows:
+        lg = t["league"] or "—"
+        w, l = (t["wins"] or 0), (t["losses"] or 0)
+        pct = w / max(1, w + l)
+        cur = best.get(lg)
+        if cur is None or pct > cur["_pct"] or (pct == cur["_pct"] and w > cur["wins"]):
+            best[lg] = {"league": lg, "name": t["name"], "abbrev": t["abbrev"],
+                        "wins": w, "losses": l, "_pct": pct}
+    return [best[k] for k in sorted(best)]
 
 
 def _insert_series(*, season: int, round_idx: int, rounds_to_final: int,

@@ -117,6 +117,13 @@
           <label class="{{ lbl }}">RNG seed</label>
           <input type="number" name="rng_seed" value="42" class="{{ ip }} font-mono">
         </div>
+        <div class="col-span-2 md:col-span-2 lg:col-span-2">
+          <label class="{{ lbl }}">Postseason</label>
+          <select name="postseason_format" class="{{ ip }}">
+            <option value="none" selected>Table winner — best record wins (no bracket)</option>
+            <option value="bracket">Playoff bracket — each league seeds a postseason</option>
+          </select>
+        </div>
       </div>
     </section>
 
