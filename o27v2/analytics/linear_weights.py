@@ -352,7 +352,7 @@ def derive_linear_weights(team_ids=None) -> dict:
                COALESCE(SUM(hr), 0)         AS hr,
                COALESCE(SUM(bb), 0)         AS bb,
                COALESCE(SUM(hbp), 0)        AS hbp
-        FROM game_batter_stats
+        FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0)
         WHERE phase = 0"""
         + _team_in(team_ids, "team_id")
         + """
@@ -409,7 +409,7 @@ def derive_linear_weights(team_ids=None) -> dict:
             AVG(hbp_allowed) AS hbp,
             AVG(hr_allowed)  AS hr,
             AVG(fo_induced) AS fo
-        FROM game_pitcher_stats
+        FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0)
         WHERE phase = 0 AND is_starter = 1"""
         + _team_in(team_ids, "team_id")
         + """

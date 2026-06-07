@@ -640,7 +640,11 @@ def _gb(leader: dict, team: dict) -> str:
 # "Frankenstein" totals you get from MAX-per-column, which can mix maxima from
 # different duplicate rows and overstate stats. Task #58 will add a UNIQUE
 # constraint on (player_id, game_id, phase) so this subquery becomes a no-op.
-_PSTATS_DEDUP_SQL = """(
+def _pstats_dedup_sql(inner_where: str = "") -> str:
+    """Per-game-appearance pitcher rows, deduped to one row per (game, player)
+    by best outs. `inner_where` scopes the underlying rows — e.g. regular
+    season vs postseason — without touching the dedup logic."""
+    return f"""(
     SELECT game_id, player_id, team_id, batters_faced, outs_recorded,
            hits_allowed, runs_allowed, er, bb, k, hr_allowed, pitches,
            hbp_allowed, unearned_runs, sb_allowed, cs_caught, fo_induced,
@@ -662,10 +666,21 @@ _PSTATS_DEDUP_SQL = """(
                    PARTITION BY game_id, player_id
                    ORDER BY outs_recorded DESC, rowid ASC
                ) AS _rn
-        FROM game_pitcher_stats
+        FROM game_pitcher_stats {inner_where}
     )
     WHERE _rn = 1
 )"""
+
+
+# All games — used only by per-game views (box scores), which must show a
+# game's lines whether it's a playoff game or not.
+_PSTATS_DEDUP_SQL = _pstats_dedup_sql()
+# Regular season only — for season, career and leaderboard aggregations, which
+# must NOT double-count playoff games. Postseason gets its own separate views
+# (the player Postseason tab and /postseason/stats, which filter is_playoff=1
+# via a games join). is_playoff is denormalized onto the stat rows (see db.py),
+# so batter / bare-pitcher aggregations filter it inline with a subquery.
+_REG_PSTATS_DEDUP_SQL = _pstats_dedup_sql("WHERE COALESCE(is_playoff, 0) = 0")
 
 
 # MLB-style 5-IP starter-win minimum, scaled to O27's 27-out half = 12 outs.
@@ -957,7 +972,7 @@ def _pitcher_per_game_decay_map() -> dict[int, dict[str, float]]:
                   MAX(COALESCE(ps.bf_arc3, 0)) AS bfa3,
                   MAX(COALESCE(ps.k_arc1,  0) + COALESCE(ps.fo_arc1, 0)) AS ka1,
                   MAX(COALESCE(ps.k_arc3,  0) + COALESCE(ps.fo_arc3, 0)) AS ka3
-             FROM game_pitcher_stats ps
+             FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
              JOIN games g ON g.id = ps.game_id
             WHERE g.played = 1
             GROUP BY ps.player_id, ps.game_id"""
@@ -1097,7 +1112,7 @@ def _pitcher_wl_map_compute(through_game: dict | None = None) -> dict[int, dict[
                   SUM(ps.er)            AS er,
                   MIN(ps.rowid)         AS rowid,
                   g.winner_id
-             FROM game_pitcher_stats ps
+             FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
              JOIN games g ON g.id = ps.game_id
             {where}
             GROUP BY ps.game_id, ps.team_id, ps.player_id
@@ -1220,7 +1235,7 @@ def _season_xbh_through(team_id: int, game_date: str,
     sums = ", ".join(f"SUM(bs.{f}) AS {f}" for f in _SEASON_ANNOT_FIELDS)
     rows = db.fetchall(
         f"""SELECT bs.player_id AS pid, {sums}
-           FROM game_batter_stats bs JOIN games g ON bs.game_id = g.id
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs JOIN games g ON bs.game_id = g.id
            WHERE bs.team_id = ?
              AND (g.game_date < ? OR (g.game_date = ? AND g.id <= ?))
            GROUP BY bs.player_id""",
@@ -1317,7 +1332,7 @@ def _terminal_outs_map() -> dict[int, int]:
 def _terminal_outs_map_compute() -> dict[int, int]:
     rows = db.fetchall(
         "SELECT player_id, SUM(terminal_outs) AS to_sum "
-        "FROM game_pitcher_stats GROUP BY player_id")
+        "FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) GROUP BY player_id")
     return {r["player_id"]: int(r["to_sum"] or 0) for r in rows}
 
 
@@ -1881,7 +1896,7 @@ def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
                    COALESCE(SUM(runs_allowed),0)      AS ra,
                    COALESCE(SUM(outs_recorded),0)     AS outs,
                    COUNT(*)                           AS g
-            FROM {_PSTATS_DEDUP_SQL} ps
+            FROM {_REG_PSTATS_DEDUP_SQL} ps
             JOIN games gm ON gm.id = ps.game_id WHERE gm.played = 1"""
     ) or {}
     outs = row.get("outs") or 0
@@ -1899,7 +1914,7 @@ def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
                   COALESCE(SUM(doubles),0) AS d2,
                   COALESCE(SUM(triples),0) AS d3,
                   COALESCE(SUM(hr),0)      AS hr
-           FROM game_batter_stats"""
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0)"""
     ) or {}
     bat_non_hr = max(0, (bat_row.get("h") or 0) - (bat_row.get("hr") or 0))
     if bat_non_hr > 0:
@@ -1930,7 +1945,7 @@ def _league_werra_consts() -> tuple[float, float, float, float, float, float]:
                        COALESCE(SUM(triples_allowed),0) AS t,
                        COALESCE(SUM(bb),0)              AS bb,
                        COALESCE(SUM(hbp_allowed),0)     AS hbp
-                FROM {_PSTATS_DEDUP_SQL} ps
+                FROM {_REG_PSTATS_DEDUP_SQL} ps
                 JOIN games gm ON gm.id = ps.game_id WHERE gm.played = 1
                 GROUP BY ps.player_id""") or []):
         if not (pr["outs"] or 0):
@@ -1961,7 +1976,7 @@ def _league_fip_constant() -> float:
                    COALESCE(SUM(k),0)             AS k,
                    COALESCE(SUM(er),0)            AS er,
                    COALESCE(SUM(outs_recorded),0) AS outs
-            FROM {_PSTATS_DEDUP_SQL} ps"""
+            FROM {_REG_PSTATS_DEDUP_SQL} ps"""
     ) or {}
     outs = row.get("outs") or 0
     if not outs:
@@ -1994,7 +2009,7 @@ def _league_dips_constant() -> float:
                    COALESCE(SUM(fo_induced),0)    AS fo,
                    COALESCE(SUM(er),0)            AS er,
                    COALESCE(SUM(outs_recorded),0) AS outs
-            FROM {_PSTATS_DEDUP_SQL} ps"""
+            FROM {_REG_PSTATS_DEDUP_SQL} ps"""
     ) or {}
     outs = row.get("outs") or 0
     if not outs:
@@ -2096,7 +2111,7 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
                    COALESCE(SUM(stay_hits),0) AS stay_hits,
                    COALESCE(SUM(c2_strand_out),0) AS c2_strand_out,
                    COALESCE(SUM(runs),0) AS r
-             FROM game_batter_stats{bat_where}""",
+             FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0){bat_where}""",
         bat_params,
     ) or {}
     pit = db.fetchone(
@@ -2120,7 +2135,7 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
                    COALESCE(SUM(bf_arc1),0)       AS bfa1,
                    COALESCE(SUM(bf_arc3),0)       AS bfa3,
                    COUNT(*)                       AS g
-              FROM {_PSTATS_DEDUP_SQL} ps{pit_where}""",
+              FROM {_REG_PSTATS_DEDUP_SQL} ps{pit_where}""",
         pit_params,
     ) or {}
 
@@ -2257,7 +2272,7 @@ def _league_baselines_compute(league: str | None = None) -> dict[str, float]:
                        SUM(ps.bb)            AS bb,
                        SUM(ps.hr_allowed)    AS hr,
                        SUM(ps.fo_induced)    AS fo
-                FROM {_PSTATS_DEDUP_SQL} ps{pit_where}
+                FROM {_REG_PSTATS_DEDUP_SQL} ps{pit_where}
                 GROUP BY ps.player_id
                 HAVING SUM(ps.outs_recorded) >= 9""",
             pit_params,
@@ -2387,7 +2402,7 @@ def _compute_xo_league_baselines(
                    SUM(hbp)        AS hbp,
                    COALESCE(SUM(stay_hits),0) AS stay_hits,
                    COALESCE(SUM(c2_strand_out),0) AS c2_strand_out
-              FROM game_batter_stats{bat_where}
+              FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0){bat_where}
              GROUP BY player_id
             HAVING SUM(pa) >= 50""",
         bat_params,
@@ -2457,7 +2472,7 @@ def _compute_xo_league_baselines(
                    SUM(ps.hbp_allowed)   AS hbp,
                    SUM(ps.doubles_allowed) AS d2,
                    SUM(ps.triples_allowed) AS d3
-              FROM {_PSTATS_DEDUP_SQL} ps{pit_where}
+              FROM {_REG_PSTATS_DEDUP_SQL} ps{pit_where}
              GROUP BY ps.player_id
             HAVING SUM(ps.outs_recorded) >= 9""",
         pit_params,
@@ -3097,7 +3112,7 @@ def index():
                       SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
                       SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
                       SUM(bs.rbi) as rbi, SUM(bs.bb) as bb
-               FROM game_batter_stats bs
+               FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
                JOIN players p ON bs.player_id = p.id
                JOIN teams   t ON bs.team_id = t.id
                GROUP BY p.id
@@ -3130,7 +3145,7 @@ def index():
                       SUM(ps.bf_arc1) as bf_arc1, SUM(ps.bf_arc2) as bf_arc2, SUM(ps.bf_arc3) as bf_arc3,
                       SUM(ps.is_starter) as gs,
                       COUNT(*) as g
-               FROM {_PSTATS_DEDUP_SQL} ps
+               FROM {_REG_PSTATS_DEDUP_SQL} ps
                JOIN players p ON ps.player_id = p.id
                JOIN teams   t ON ps.team_id = t.id
                GROUP BY p.id
@@ -4297,10 +4312,10 @@ def player_detail_export(player_id: int):
                   COALESCE(SUM(stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(stay_hits),0)    as stay_hits,
                   COALESCE(SUM(c2_strand_out),0)    as c2_strand_out
-           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
-           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) WHERE player_id = ?""", (player_id,))
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
                    SUM(hits_allowed) as h, SUM(runs_allowed) as r, SUM(er) as er,
@@ -4331,7 +4346,7 @@ def player_detail_export(player_id: int):
                    COALESCE(SUM(quality_finish),0) as quality_finish,
                    COALESCE(SUM(lead_entries),0)  as lead_entries,
                    COALESCE(SUM(lead_held),0)     as lead_held
-            FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
+            FROM {_REG_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     baselines = _league_baselines()
     wl = _pitcher_wl_map()
@@ -4431,7 +4446,7 @@ def leaders_export():
                   COALESCE(SUM(bs.roe),0) as roe,
                   COALESCE(SUM(bs.po),0)  as po,
                   COALESCE(SUM(bs.e),0)   as e
-           FROM game_batter_stats bs
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
            GROUP BY p.id
@@ -4463,7 +4478,7 @@ def leaders_export():
                   COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
                   COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
                   COALESCE(SUM(ps.is_starter),0) as gs
-           FROM {_PSTATS_DEDUP_SQL} ps
+           FROM {_REG_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
            GROUP BY p.id
@@ -4501,7 +4516,7 @@ def team_detail_export(team_id: int):
                        COALESCE(SUM(bs.sb),0) as sb, COALESCE(SUM(bs.cs),0) as cs,
                        COALESCE(SUM(bs.fo),0) as fo,
                        COALESCE(SUM(bs.stays),0) as stays
-               FROM game_batter_stats bs
+               FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
                WHERE bs.player_id IN ({ph}) GROUP BY bs.player_id""",
             tuple(ids))
     }
@@ -4523,7 +4538,7 @@ def team_detail_export(team_id: int):
                        COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1, COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2, COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
                        COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1, COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2, COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
                        COALESCE(SUM(ps.is_starter),0) AS gs
-               FROM {_PSTATS_DEDUP_SQL} ps
+               FROM {_REG_PSTATS_DEDUP_SQL} ps
                WHERE ps.player_id IN ({ph}) GROUP BY ps.player_id""",
             tuple(ids))
     }
@@ -4697,7 +4712,7 @@ def players():
                            SUM(bs.doubles) AS d2, SUM(bs.triples) AS d3, SUM(bs.hr) AS hr,
                            SUM(bs.runs) AS r, SUM(bs.rbi) AS rbi,
                            SUM(bs.bb) AS bb, SUM(bs.k) AS k
-                    FROM game_batter_stats bs
+                    FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
                     WHERE bs.player_id IN ({ph})
                     GROUP BY bs.player_id""",
                 tuple(page_ids),
@@ -4735,7 +4750,7 @@ def players():
                            SUM(ps.fo_arc1) AS fo_arc1, SUM(ps.fo_arc2) AS fo_arc2, SUM(ps.fo_arc3) AS fo_arc3,
                            SUM(ps.bf_arc1) AS bf_arc1, SUM(ps.bf_arc2) AS bf_arc2, SUM(ps.bf_arc3) AS bf_arc3,
                            SUM(ps.is_starter) AS gs
-                    FROM {_PSTATS_DEDUP_SQL} ps
+                    FROM {_REG_PSTATS_DEDUP_SQL} ps
                     WHERE ps.player_id IN ({ph})
                     GROUP BY ps.player_id""",
                 tuple(page_ids),
@@ -4915,7 +4930,7 @@ def stats_browse():
                        COALESCE(SUM(bs.sqz),0)       as sqz,
                        COALESCE(SUM(bs.sqz_rbi),0)   as sqz_rbi,
                        COALESCE(SUM(bs.roe),0)          as roe
-                FROM game_batter_stats bs
+                FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
                 JOIN players p ON bs.player_id = p.id
                 JOIN teams   t ON bs.team_id = t.id
                 WHERE {where_sql}
@@ -4976,7 +4991,7 @@ def stats_browse():
                        COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
                        COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
                        COALESCE(SUM(ps.is_starter),0) as gs
-                FROM {_PSTATS_DEDUP_SQL} ps
+                FROM {_REG_PSTATS_DEDUP_SQL} ps
                 JOIN players p ON ps.player_id = p.id
                 JOIN teams   t ON ps.team_id = t.id
                 WHERE {where_sql}
@@ -5070,7 +5085,7 @@ def _top_pitcher_outings(top_n: int = 10, team_ids: list[int] | None = None) -> 
                t.abbrev AS team_abbrev,
                ht.abbrev AS home_abbrev,
                at.abbrev AS away_abbrev
-        FROM game_pitcher_stats ps
+        FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
         JOIN games  g  ON ps.game_id = g.id
         JOIN players p ON ps.player_id = p.id
         JOIN teams   t ON ps.team_id   = t.id
@@ -5144,7 +5159,7 @@ def _top_batter_games(top_n: int = 10, team_ids: list[int] | None = None) -> lis
                t.abbrev AS team_abbrev,
                ht.abbrev AS home_abbrev,
                at.abbrev AS away_abbrev
-        FROM game_batter_stats bs
+        FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
         JOIN games  g  ON bs.game_id = g.id
         JOIN players p ON bs.player_id = p.id
         JOIN teams   t ON bs.team_id   = t.id
@@ -5289,7 +5304,7 @@ def leaders():
                   COALESCE(SUM(bs.roe),0)          as roe,
                   COALESCE(SUM(bs.po),0)           as po,
                   COALESCE(SUM(bs.e),0)            as e
-           FROM game_batter_stats bs
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
            {lg_where}
@@ -5359,7 +5374,7 @@ def leaders():
                   COALESCE(AVG(NULLIF(ps.fastball_pct,0)) * 100,0) as fastball_pct,
                   COALESCE(AVG(NULLIF(ps.breaking_pct,0)) * 100,0) as breaking_pct,
                   COALESCE(AVG(NULLIF(ps.offspeed_pct,0)) * 100,0) as offspeed_pct
-           FROM {_PSTATS_DEDUP_SQL} ps
+           FROM {_REG_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
            {lg_where}
@@ -5392,7 +5407,7 @@ def leaders():
                   COALESCE(SUM(bs.a),0)  as a,
                   COALESCE(SUM(bs.e),0)  as e,
                   COALESCE(SUM(bs.outs_recorded),0) as out_share
-           FROM game_batter_stats bs
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
            {lg_where}
@@ -5557,7 +5572,7 @@ def leaders():
                   SUM(pp.ppp_hits_saved)   as ppp_hits_saved,
                   SUM(pp.ppp_xbh_saved)    as ppp_xbh_saved,
                   (SELECT COALESCE(SUM(gps.outs_recorded),0)
-                     FROM game_pitcher_stats gps WHERE gps.player_id = p.id) as tot_outs
+                     FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) gps WHERE gps.player_id = p.id) as tot_outs
            FROM game_power_play_stats pp
            JOIN players p ON pp.player_id = p.id
            JOIN teams   t ON pp.team_id   = t.id
@@ -5750,7 +5765,7 @@ def team_stats():
                    COALESCE(SUM(bs.risp_rbi),0) as risp_rbi,
                    COALESCE(SUM(bs.rad_1b),0) + COALESCE(SUM(bs.rad_2b),0)
                      + COALESCE(SUM(bs.rad_3b),0) as rad
-              FROM game_batter_stats bs
+              FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
               JOIN teams t ON bs.team_id = t.id
               {lg_where}
              GROUP BY t.id""",
@@ -5770,7 +5785,7 @@ def team_stats():
                    SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
                    SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
                    SUM(ps.hr_allowed) as hr_allowed
-              FROM {_PSTATS_DEDUP_SQL} ps
+              FROM {_REG_PSTATS_DEDUP_SQL} ps
               JOIN teams t ON ps.team_id = t.id
               {lg_where}
              GROUP BY t.id""",
@@ -6042,10 +6057,10 @@ def _fetch_player_overview(player_id: int,
                   COALESCE(SUM(stay_rbi),0)     as stay_rbi,
                   COALESCE(SUM(stay_hits),0)    as stay_hits,
                   COALESCE(SUM(c2_strand_out),0)    as c2_strand_out
-           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) WHERE player_id = ?""", (player_id,))
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
-           FROM game_batter_stats WHERE player_id = ?""", (player_id,))
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) WHERE player_id = ?""", (player_id,))
     pt = db.fetchone(
         f"""SELECT COUNT(*) as g, SUM(batters_faced) as bf, SUM(outs_recorded) as outs,
                    SUM(hits_allowed) as h, SUM(runs_allowed) as r,
@@ -6077,7 +6092,7 @@ def _fetch_player_overview(player_id: int,
                    COALESCE(SUM(quality_finish),0) as quality_finish,
                    COALESCE(SUM(lead_entries),0)  as lead_entries,
                    COALESCE(SUM(lead_held),0)     as lead_held
-            FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
+            FROM {_REG_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""", (player_id,))
 
     bt_totals = None
     if bt and bt["pa"]:
@@ -6230,12 +6245,12 @@ def player_detail(player_id: int):
                   COALESCE(SUM(bunt_hits),0) as bunt_hits,
                   COALESCE(SUM(sqz),0)       as sqz,
                   COALESCE(SUM(sqz_rbi),0)   as sqz_rbi
-           FROM game_batter_stats WHERE player_id = ?""",
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) WHERE player_id = ?""",
         (player_id,),
     )
     fld = db.fetchone(
         """SELECT COALESCE(SUM(po),0) AS po, COALESCE(SUM(a),0) AS a, COALESCE(SUM(e),0) AS e
-           FROM game_batter_stats WHERE player_id = ?""",
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) WHERE player_id = ?""",
         (player_id,),
     ) or {"po": 0, "a": 0, "e": 0}
 
@@ -6271,7 +6286,7 @@ def player_detail(player_id: int):
                    COALESCE(SUM(quality_finish),0) as quality_finish,
                    COALESCE(SUM(lead_entries),0)  as lead_entries,
                    COALESCE(SUM(lead_held),0)     as lead_held
-            FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
+            FROM {_REG_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
         (player_id,),
     )
 
@@ -6345,13 +6360,53 @@ def player_detail(player_id: int):
                                      AND outs_recorded >= 18
                                      AND er <= 6
                                 THEN 1 ELSE 0 END),0) AS ws
-                FROM {_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
+                FROM {_REG_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
             (player_id,),
         ) or {}
         ws_starts = ws_row.get("gs") or 0
         ws_qual   = ws_row.get("ws") or 0
         pt_totals["ws_pct"] = (ws_qual / ws_starts) if ws_starts else 0.0
         pt_totals["gs"]     = ws_starts
+
+    # ---------------------------------------------------------------
+    # Postseason — playoff-only totals + game logs, kept entirely
+    # separate from the regular-season totals above (which are left
+    # as-is and still span every game the player appeared in). Reuses
+    # the same split aggregation so the rate stats are consistent.
+    # ---------------------------------------------------------------
+    _po_where = " AND COALESCE(g.is_playoff,0) = 1"
+    bt_playoff = _player_batting_split(
+        player_id, player["team_id"], _po_where, (), baselines)
+    pt_playoff = _player_pitching_split(
+        player_id, _po_where, (), wl, baselines)
+    if pt_playoff and pt_playoff.get("g"):
+        pt_playoff["os_pct"] = (pt_playoff["outs"] / (27.0 * pt_playoff["g"])
+                                ) if pt_playoff["g"] else 0.0
+    batting_log_playoff = pitching_log_playoff = []
+    if bt_playoff:
+        batting_log_playoff = db.fetchall(
+            """SELECT bs.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
+                      ht.abbrev as home_abbrev, at.abbrev as away_abbrev
+               FROM game_batter_stats bs
+               JOIN games g ON bs.game_id = g.id
+               JOIN teams ht ON g.home_team_id = ht.id
+               JOIN teams at ON g.away_team_id = at.id
+               WHERE bs.player_id = ? AND COALESCE(g.is_playoff,0) = 1
+               ORDER BY g.game_date DESC, g.id DESC LIMIT 50""",
+            (player_id,),
+        )
+    if pt_playoff:
+        pitching_log_playoff = db.fetchall(
+            f"""SELECT ps.*, g.game_date, g.id as game_id, g.home_team_id, g.away_team_id,
+                      ht.abbrev as home_abbrev, at.abbrev as away_abbrev
+               FROM {_PSTATS_DEDUP_SQL} ps
+               JOIN games g ON ps.game_id = g.id
+               JOIN teams ht ON g.home_team_id = ht.id
+               JOIN teams at ON g.away_team_id = at.id
+               WHERE ps.player_id = ? AND COALESCE(g.is_playoff,0) = 1
+               ORDER BY g.game_date DESC, g.id DESC LIMIT 50""",
+            (player_id,),
+        )
 
     # ---------------------------------------------------------------
     # Splits (home / away / last 30 days). Computed only if the player
@@ -6373,14 +6428,16 @@ def player_detail(player_id: int):
 
         # Each split is (label, where_extra, params_extra). The team_id
         # comes from the player; "home" means the player's team was home.
+        # All splits are regular-season only — the postseason is its own tab.
         team_id = player["team_id"]
+        _rs = " AND COALESCE(g.is_playoff,0) = 0"
         split_specs: list[tuple[str, str, tuple]] = [
-            ("Home", " AND g.home_team_id = ?", (team_id,)),
-            ("Away", " AND g.away_team_id = ?", (team_id,)),
+            ("Home", " AND g.home_team_id = ?" + _rs, (team_id,)),
+            ("Away", " AND g.away_team_id = ?" + _rs, (team_id,)),
         ]
         if last30_cutoff:
             split_specs.append(
-                ("Last 30 days", " AND g.game_date >= ?", (last30_cutoff,))
+                ("Last 30 days", " AND g.game_date >= ?" + _rs, (last30_cutoff,))
             )
 
         for label, extra, ext_params in split_specs:
@@ -6501,7 +6558,7 @@ def player_detail(player_id: int):
     # position so a fielder's record shows when he came in as the 10th defender.
     # Compound spots like "SS-NF" count.
     nickel_games = (db.fetchone(
-        """SELECT COUNT(DISTINCT game_id) AS g FROM game_batter_stats
+        """SELECT COUNT(DISTINCT game_id) AS g FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0)
            WHERE player_id = ? AND game_position LIKE '%NF%'""",
         (player_id,),
     ) or {}).get("g", 0) or 0
@@ -6513,6 +6570,10 @@ def player_detail(player_id: int):
         pitching_log=pitching_log,
         bt_totals=bt_totals,
         pt_totals=pt_totals,
+        bt_playoff=bt_playoff,
+        pt_playoff=pt_playoff,
+        batting_log_playoff=batting_log_playoff,
+        pitching_log_playoff=pitching_log_playoff,
         fld_totals=fld_totals,
         splits=splits,
         handedness_splits=handedness_splits,
@@ -6697,7 +6758,7 @@ def _staff_wera_dispersion(baselines: dict) -> dict[int, dict]:
                    COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2,
                    COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
                    COALESCE(SUM(ps.is_starter),0) AS gs
-             FROM {_PSTATS_DEDUP_SQL} ps
+             FROM {_REG_PSTATS_DEDUP_SQL} ps
              GROUP BY ps.team_id, ps.player_id
              HAVING outs > 0"""
     )
@@ -6907,7 +6968,7 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
                    COALESCE(SUM(b.risp_bb),0)  AS risp_bb,
                    COALESCE(SUM(b.risp_hbp),0) AS risp_hbp,
                    COALESCE(SUM(b.risp_rbi),0) AS risp_rbi
-            FROM game_batter_stats b
+            FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) b
             WHERE b.phase = 0{rate_team_in}
             GROUP BY b.player_id""")
     rate_by = {r["player_id"]: r for r in rate}
@@ -6998,7 +7059,7 @@ def _o27i_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
     rate = db.fetchall(
         f"""SELECT player_id, SUM(batters_faced) AS bf, SUM(k) AS k,
                    SUM(bb) AS bb, SUM(hr_allowed) AS hr
-            FROM game_pitcher_stats
+            FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0)
             WHERE phase = 0{team_in}
             GROUP BY player_id""")
     rate_by = {r["player_id"]: r for r in rate}
@@ -7669,7 +7730,7 @@ def analytics():
         SELECT outs_recorded AS o, k, hits_allowed AS h, er,
                unearned_runs AS uer, bb, hr_allowed AS hr,
                fo_induced AS fo
-        FROM game_pitcher_stats
+        FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0)
         WHERE phase = 0 AND is_starter = 1
         """
         + (f" AND team_id IN ({_team_csv})" if _team_csv else "")
@@ -7912,7 +7973,7 @@ def distributions():
                   COALESCE(SUM(bs.risp_hbp),0) as risp_hbp,
                   COALESCE(SUM(bs.risp_rbi),0) as risp_rbi,
                   COALESCE(SUM(bs.roe),0) as roe
-           FROM game_batter_stats bs
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
            JOIN players p ON bs.player_id = p.id
            JOIN teams   t ON bs.team_id = t.id
            GROUP BY p.id
@@ -7950,7 +8011,7 @@ def distributions():
                   COALESCE(AVG(NULLIF(ps.fastball_pct,0)) * 100,0) as fastball_pct,
                   COALESCE(AVG(NULLIF(ps.breaking_pct,0)) * 100,0) as breaking_pct,
                   COALESCE(AVG(NULLIF(ps.offspeed_pct,0)) * 100,0) as offspeed_pct
-           FROM {_PSTATS_DEDUP_SQL} ps
+           FROM {_REG_PSTATS_DEDUP_SQL} ps
            JOIN players p ON ps.player_id = p.id
            JOIN teams   t ON ps.team_id = t.id
            GROUP BY p.id
@@ -8094,7 +8155,7 @@ def team_detail(team_id: int):
                        COALESCE(SUM(cs),0)  AS cs,
                        COALESCE(SUM(fo),0)  AS fo,
                        COALESCE(SUM(multi_hit_abs),0) AS mhab
-                FROM game_batter_stats
+                FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0)
                 WHERE player_id IN ({ph}) GROUP BY player_id""",
             tuple(ids),
         ):
@@ -8122,7 +8183,7 @@ def team_detail(team_id: int):
                        COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1, COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2, COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
                        COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1, COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2, COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
                        COALESCE(SUM(ps.is_starter),0) AS gs
-                FROM {_PSTATS_DEDUP_SQL} ps
+                FROM {_REG_PSTATS_DEDUP_SQL} ps
                 WHERE ps.player_id IN ({ph}) GROUP BY ps.player_id""",
             tuple(ids),
         ):
@@ -8903,21 +8964,30 @@ def transactions():
 
 @app.route("/playoffs")
 def playoffs_view():
-    """Bracket + awards for the current season. Shows the field and
-    each round's series with current win counts and the champion when
-    the final concludes."""
+    """Per-league brackets + World Series + awards for the current season.
+
+    Each league runs its own bracket; the two league champions (when a save
+    has exactly two leagues and the WS is enabled) meet in the World Series.
+    Before initiation, surfaces the projected per-league field and a live
+    control to set qualifiers-per-league and series lengths.
+    """
     from o27v2.playoffs import (
-        get_bracket, champion as _champion, compute_field,
-        playoffs_initiated, regular_season_complete,
+        get_bracket_by_league, champion as _champion, league_champions,
+        compute_fields_by_league, playoffs_initiated, regular_season_complete,
+        playoff_settings, round_label, postseason_disabled,
     )
     from o27v2.awards import get_awards, get_award_results, award_labels
 
-    bracket = get_bracket()
+    grouped = get_bracket_by_league()
 
-    # Attach the list of games played (or scheduled) in each series so
-    # the bracket tile can render clickable G1/G2/… rows linking to the
-    # box score. Single bulk query, then group in Python.
-    series_ids = [s["id"] for s in bracket]
+    # Attach the list of games played (or scheduled) to each series so each
+    # tile can render clickable G1/G2/… rows. One bulk query, grouped in Python.
+    all_series: list[dict] = []
+    for rounds in grouped["leagues"].values():
+        for rnd in rounds:
+            all_series.extend(rnd["series"])
+    all_series.extend(grouped["world_series"])
+    series_ids = [s["id"] for s in all_series]
     games_by_series: dict[int, list[dict]] = {}
     if series_ids:
         qmarks = ",".join("?" * len(series_ids))
@@ -8932,37 +9002,28 @@ def playoffs_view():
         )
         for r in game_rows:
             games_by_series.setdefault(r["series_id"], []).append(r)
-    for s in bracket:
+    for s in all_series:
         s["games"] = games_by_series.get(s["id"], [])
 
-    # Group by round for the template.
-    rounds: dict[int, list[dict]] = {}
-    for s in bracket:
-        rounds.setdefault(s["round_idx"], []).append(s)
-    rounds_sorted = sorted(rounds.items())
-
-    # team_id → abbrev lookup for the bracket games list. Reused for the
-    # projected-field branch below.
     team_rows = db.fetchall(
         "SELECT id, name, abbrev, league, division, wins, losses FROM teams"
     )
     team_abbrev = {t["id"]: t["abbrev"] for t in team_rows}
 
-    # Round names — count from the final backwards.
-    def _round_name(rounds_to_final: int) -> str:
-        return ["Final", "Semifinals", "Quarterfinals", "Wild Card"][
-            min(rounds_to_final, 3)]
+    initiated = playoffs_initiated()
+    reg_complete = regular_season_complete()
+    settings = playoff_settings()
 
-    # If playoffs haven't initiated yet, surface the projected field.
-    projected_field: list[dict] = []
-    if not playoffs_initiated() and not regular_season_complete():
+    # Projected per-league field before the bracket locks.
+    projected_by_league: dict[str, list[dict]] = {}
+    if not initiated:
         try:
-            projected_field = compute_field(team_rows)
+            projected_by_league = compute_fields_by_league(
+                team_rows, settings["teams_per_league"])
         except Exception:
-            projected_field = []
+            projected_by_league = {}
 
-    # BBWAA-style top-5 per category. Falls through to the single-winner
-    # `awards` list for seasons that pre-date the ballots table.
+    # BBWAA-style top-5 per category. Falls through to the single-winner list.
     award_results: dict[str, list[dict]] = {}
     try:
         for cat in ("mvp", "cy_young", "roy", "ws_mvp"):
@@ -8974,16 +9035,135 @@ def playoffs_view():
 
     return _serve(
         "playoffs.html",
-        rounds=rounds_sorted,
-        round_name=_round_name,
+        leagues=grouped["leagues"],
+        world_series=grouped["world_series"],
+        round_label=round_label,
         champion=_champion(),
+        league_champions=league_champions(),
         awards=get_awards(),
         award_results=award_results,
         cat_labels=award_labels(),
         team_abbrev=team_abbrev,
-        projected_field=projected_field,
+        projected_by_league=projected_by_league,
+        settings=settings,
+        allowed_best_of=[3, 5, 7, 9],
+        playoffs_initiated=initiated,
+        regular_season_complete=reg_complete,
+        postseason_disabled=postseason_disabled(),
+    )
+
+
+@app.route("/playoffs/settings", methods=["POST"])
+def playoffs_settings_save():
+    """Persist the live postseason settings (qualifiers per league + series
+    lengths + World Series toggle). Only effective before the bracket is
+    initiated — once series exist the seeds and lengths are locked."""
+    from o27v2.playoffs import (
+        set_playoff_settings, playoffs_initiated, _DEFAULT_SERIES_LENGTHS,
+    )
+    if playoffs_initiated():
+        flash("Playoffs are already underway — settings are locked for this season.", "warning")
+        return redirect(url_for("playoffs_view"))
+
+    form = request.form
+    try:
+        tpl = int(form.get("teams_per_league", 4))
+    except (TypeError, ValueError):
+        tpl = 4
+    lengths: dict[str, int] = {}
+    for kind in _DEFAULT_SERIES_LENGTHS:
+        v = form.get(f"bestof_{kind}")
+        if v is not None:
+            try:
+                lengths[kind] = int(v)
+            except (TypeError, ValueError):
+                pass
+    ws = form.get("world_series") in ("1", "on", "true", "yes")
+    set_playoff_settings(teams_per_league=tpl, series_lengths=lengths,
+                         world_series=ws)
+    flash("Postseason settings saved.", "success")
+    return redirect(url_for("playoffs_view"))
+
+
+@app.route("/postseason/stats")
+def postseason_stats():
+    """Postseason-only stat leaderboards — computed exclusively from playoff
+    games, kept separate from the regular-season leaders at /leaders."""
+    baselines = _league_baselines()
+    wl = _pitcher_wl_map()
+
+    batting = db.fetchall(
+        """SELECT p.id as player_id, p.name as player_name, p.position,
+                  p.defense, p.defense_infield, p.defense_outfield, p.defense_catcher,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(DISTINCT bs.game_id) as g,
+                  SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                  SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                  SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                  SUM(bs.bb) as bb, SUM(bs.k) as k, SUM(bs.stays) as stays,
+                  COALESCE(SUM(bs.hbp),0) as hbp, COALESCE(SUM(bs.sb),0) as sb,
+                  COALESCE(SUM(bs.cs),0) as cs, COALESCE(SUM(bs.fo),0) as fo,
+                  COALESCE(SUM(bs.multi_hit_abs),0) as mhab,
+                  COALESCE(SUM(bs.stay_rbi),0) as stay_rbi,
+                  COALESCE(SUM(bs.stay_hits),0) as stay_hits,
+                  COALESCE(SUM(bs.c2_strand_out),0) as c2_strand_out,
+                  COALESCE(SUM(bs.roe),0) as roe
+           FROM game_batter_stats bs
+           JOIN players p ON bs.player_id = p.id
+           JOIN teams   t ON bs.team_id = t.id
+           JOIN games   g ON bs.game_id = g.id
+           WHERE COALESCE(g.is_playoff,0) = 1
+           GROUP BY p.id
+           HAVING SUM(bs.pa) >= 1""",
+    )
+    _aggregate_batter_rows(batting, baselines=baselines)
+    batting.sort(key=lambda r: (r.get("ops") or 0), reverse=True)
+
+    pitching = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name,
+                  t.abbrev as team_abbrev, t.id as team_id,
+                  COUNT(ps.game_id) as g,
+                  SUM(ps.batters_faced) as bf, SUM(ps.outs_recorded) as outs,
+                  SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
+                  SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
+                  SUM(ps.hr_allowed) as hr_allowed,
+                  SUM(ps.wb_faced) as wb_faced, SUM(ps.wb_runs) as wb_runs,
+                  COALESCE(SUM(ps.ir_inherited),0) as ir_inherited,
+                  COALESCE(SUM(ps.ir_scored),0)    as ir_scored,
+                  COALESCE(SUM(ps.terminal_outs),0)  as terminal_outs,
+                  COALESCE(SUM(ps.quality_finish),0) as quality_finish,
+                  COALESCE(SUM(ps.lead_entries),0)   as lead_entries,
+                  COALESCE(SUM(ps.lead_held),0)      as lead_held,
+                  COALESCE(SUM(ps.hbp_allowed),0) as hbp_allowed,
+                  COALESCE(SUM(ps.unearned_runs),0) as unearned_runs,
+                  COALESCE(SUM(ps.unearned_runs),0) as uer,
+                  COALESCE(SUM(ps.sb_allowed),0) as sb_allowed,
+                  COALESCE(SUM(ps.cs_caught),0) as cs_caught,
+                  COALESCE(SUM(ps.fo_induced),0) as fo_induced,
+                  COALESCE(SUM(ps.pitches),0) as pitches,
+                  COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                  COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
+                  COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                  COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                  COALESCE(SUM(ps.is_starter),0) as gs
+           FROM {_PSTATS_DEDUP_SQL} ps
+           JOIN players p ON ps.player_id = p.id
+           JOIN teams   t ON ps.team_id = t.id
+           JOIN games   g ON ps.game_id = g.id
+           WHERE COALESCE(g.is_playoff,0) = 1
+           GROUP BY p.id
+           HAVING SUM(ps.outs_recorded) >= 1""",
+    )
+    _aggregate_pitcher_rows(pitching, wl=wl, baselines=baselines)
+    pitching.sort(key=lambda r: (r.get("werra") if r.get("werra") is not None else 99))
+
+    from o27v2.playoffs import champion as _champion, playoffs_initiated
+    return _serve(
+        "postseason_stats.html",
+        batting=batting,
+        pitching=pitching,
+        champion=_champion(),
         playoffs_initiated=playoffs_initiated(),
-        regular_season_complete=regular_season_complete(),
     )
 
 

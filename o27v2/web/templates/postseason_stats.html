@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Postseason Stats{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2 mb-3">
+  <h2 class="mb-0">Postseason Stats</h2>
+  <a href="{{ url_for('playoffs_view') }}" class="btn btn-sm btn-outline-secondary">← Bracket</a>
+</div>
+<p class="text-secondary small">Computed only from playoff games — separate from the
+regular-season leaders. {% if champion %}Champion: <strong>{{ champion.name }}</strong>.{% endif %}</p>
+
+{% if not playoffs_initiated %}
+<div class="panel panel-body"><p class="text-secondary mb-0">The postseason hasn't started yet — no playoff stats to show.</p></div>
+{% else %}
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#ps-bat">Batting</button></li>
+  <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#ps-pit">Pitching</button></li>
+</ul>
+
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="ps-bat">
+    {% if batting %}
+    <div class="table-responsive">
+    <table class="table table-sm table-hover sortable align-middle mb-0">
+      <thead><tr>
+        <th>#</th><th>Player</th><th>Team</th>
+        <th class="num">G</th><th class="num">PA</th><th class="num">AB</th><th class="num">R</th>
+        <th class="num">H</th><th class="num">2B</th><th class="num">3B</th><th class="num">HR</th>
+        <th class="num">RBI</th><th class="num">BB</th><th class="num">SO</th><th class="num">SB</th>
+        <th class="num">PAVG</th><th class="num">OBP</th><th class="num">SLG</th>
+        <th class="num fw-bold">OPS</th><th class="num">wOBA</th>
+      </tr></thead>
+      <tbody>
+        {% for r in batting %}
+        <tr>
+          <td class="text-secondary small">{{ loop.index }}</td>
+          <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}" class="text-decoration-none">{{ r.player_name }}</a></td>
+          <td class="text-secondary">{{ r.team_abbrev }}</td>
+          <td class="num">{{ r.g }}</td><td class="num">{{ r.pa }}</td><td class="num">{{ r.ab }}</td>
+          <td class="num">{{ r.r }}</td><td class="num fw-bold">{{ r.h }}</td>
+          <td class="num">{{ r.d2 }}</td><td class="num">{{ r.d3 }}</td><td class="num">{{ r.hr }}</td>
+          <td class="num">{{ r.rbi }}</td><td class="num">{{ r.bb }}</td><td class="num">{{ r.k }}</td>
+          <td class="num">{{ r.sb }}</td>
+          <td class="num fw-bold">{{ '%.3f'|format(r.pavg) }}</td>
+          <td class="num">{{ '%.3f'|format(r.obp) }}</td>
+          <td class="num">{{ '%.3f'|format(r.slg) }}</td>
+          <td class="num fw-bold">{{ '%.3f'|format(r.ops) }}</td>
+          <td class="num">{{ '%.3f'|format(r.woba) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="text-secondary">No postseason batting yet.</p>{% endif %}
+  </div>
+
+  <div class="tab-pane fade" id="ps-pit">
+    {% if pitching %}
+    <div class="table-responsive">
+    <table class="table table-sm table-hover sortable align-middle mb-0">
+      <thead><tr>
+        <th>#</th><th>Player</th><th>Team</th>
+        <th class="num">G</th><th class="num">GS</th><th class="num">Outs</th><th class="num">BF</th>
+        <th class="num">H</th><th class="num">R</th><th class="num">ER</th>
+        <th class="num">BB</th><th class="num">SO</th><th class="num">HR</th>
+        <th class="num fw-bold">wERA</th><th class="num">xRA</th><th class="num">WHIP</th>
+      </tr></thead>
+      <tbody>
+        {% for r in pitching %}
+        <tr>
+          <td class="text-secondary small">{{ loop.index }}</td>
+          <td><a href="{{ url_for('player_detail', player_id=r.player_id) }}" class="text-decoration-none">{{ r.player_name }}</a></td>
+          <td class="text-secondary">{{ r.team_abbrev }}</td>
+          <td class="num">{{ r.g }}</td><td class="num">{{ r.gs }}</td>
+          <td class="num">{{ r.outs }}</td><td class="num">{{ r.bf }}</td>
+          <td class="num">{{ r.h }}</td><td class="num">{{ r.r }}</td><td class="num">{{ r.er }}</td>
+          <td class="num">{{ r.bb }}</td><td class="num fw-bold">{{ r.k }}</td><td class="num">{{ r.hr_allowed }}</td>
+          <td class="num fw-bold">{{ '%.2f'|format(r.werra) }}</td>
+          <td class="num">{{ '%.2f'|format(r.xra) }}</td>
+          <td class="num">{{ '%.2f'|format(r.whip) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="text-secondary">No postseason pitching yet.</p>{% endif %}
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}

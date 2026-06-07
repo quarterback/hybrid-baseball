@@ -140,6 +140,7 @@ def _snapshot_standings(season_id: int) -> None:
 def _snapshot_leaders(season_id: int) -> None:
     from o27v2.web.app import (
         _PSTATS_DEDUP_SQL,
+        _REG_PSTATS_DEDUP_SQL,
         _aggregate_batter_rows,
         _aggregate_pitcher_rows,
         _pitcher_wl_map,
@@ -163,7 +164,7 @@ def _snapshot_leaders(season_id: int) -> None:
                   SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
                   SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
                   SUM(bs.rbi) as rbi, SUM(bs.bb) as bb
-             FROM game_batter_stats bs
+             FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
              JOIN players p ON bs.player_id = p.id
              JOIN teams   t ON bs.team_id = t.id
             GROUP BY p.id
@@ -250,7 +251,7 @@ def _snapshot_leaders(season_id: int) -> None:
                    COALESCE(SUM(ps.doubles_allowed),0) as doubles_allowed,
                    COALESCE(SUM(ps.triples_allowed),0) as triples_allowed,
                    COALESCE(SUM(ps.is_starter),0) as gs
-              FROM {_PSTATS_DEDUP_SQL} ps
+              FROM {_REG_PSTATS_DEDUP_SQL} ps
               JOIN players p ON ps.player_id = p.id
               JOIN teams   t ON ps.team_id = t.id
              GROUP BY p.id
@@ -344,6 +345,7 @@ def _snapshot_career_lines(season_id: int, season_number: int,
     """
     from o27v2.web.app import (
         _PSTATS_DEDUP_SQL,
+        _REG_PSTATS_DEDUP_SQL,
         _aggregate_batter_rows,
         _aggregate_pitcher_rows,
         _pitcher_wl_map,
@@ -370,7 +372,7 @@ def _snapshot_career_lines(season_id: int, season_number: int,
                   SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
                   SUM(bs.runs) as r, SUM(bs.rbi) as rbi, SUM(bs.bb) as bb,
                   SUM(bs.k) as k, COALESCE(SUM(bs.sb),0) as sb
-             FROM game_batter_stats bs
+             FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
              JOIN players p ON bs.player_id = p.id
              JOIN teams   t ON bs.team_id = t.id
             GROUP BY p.id
@@ -412,7 +414,7 @@ def _snapshot_career_lines(season_id: int, season_number: int,
                    COALESCE(SUM(ps.fo_arc1),0) AS fo_arc1, COALESCE(SUM(ps.fo_arc2),0) AS fo_arc2, COALESCE(SUM(ps.fo_arc3),0) AS fo_arc3,
                    COALESCE(SUM(ps.bf_arc1),0) AS bf_arc1, COALESCE(SUM(ps.bf_arc2),0) AS bf_arc2, COALESCE(SUM(ps.bf_arc3),0) AS bf_arc3,
                    COALESCE(SUM(ps.is_starter),0) AS gs
-              FROM {_PSTATS_DEDUP_SQL} ps
+              FROM {_REG_PSTATS_DEDUP_SQL} ps
               JOIN players p ON ps.player_id = p.id
               JOIN teams   t ON ps.team_id = t.id
              GROUP BY p.id
@@ -521,7 +523,7 @@ def _snapshot_player_lines(season_id: int) -> None:
     keep the complete field keyed by the player row that survives history-
     mode season rollovers. Team / league are taken from the player's current
     club at archive time."""
-    from o27v2.web.app import _PSTATS_DEDUP_SQL, _pitcher_wl_map
+    from o27v2.web.app import _PSTATS_DEDUP_SQL, _REG_PSTATS_DEDUP_SQL, _pitcher_wl_map
 
     bat = db.fetchall(
         """SELECT bs.player_id AS player_id, p.name AS player_name,
@@ -546,7 +548,7 @@ def _snapshot_player_lines(season_id: int) -> None:
                   COALESCE(SUM(bs.bunt_hits),0) AS bunt_hits,
                   COALESCE(SUM(bs.sqz),0)       AS sqz,
                   COALESCE(SUM(bs.sqz_rbi),0)   AS sqz_rbi
-             FROM game_batter_stats bs
+             FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) bs
              JOIN players p ON bs.player_id = p.id
              LEFT JOIN teams t ON p.team_id = t.id
             GROUP BY bs.player_id
@@ -589,7 +591,7 @@ def _snapshot_player_lines(season_id: int) -> None:
                    COALESCE(SUM(ps.quality_finish),0) AS quality_finish,
                    COALESCE(SUM(ps.lead_entries),0)  AS lead_entries,
                    COALESCE(SUM(ps.lead_held),0)     AS lead_held
-              FROM {_PSTATS_DEDUP_SQL} ps
+              FROM {_REG_PSTATS_DEDUP_SQL} ps
               JOIN players p ON ps.player_id = p.id
               LEFT JOIN teams t ON p.team_id = t.id
              GROUP BY ps.player_id
@@ -707,12 +709,25 @@ def archive_current_season(
         if config_id  is None: config_id  = meta_cfg
 
     teams = db.fetchall(
-        "SELECT name, abbrev, wins, losses FROM teams "
+        "SELECT id, name, abbrev, wins, losses FROM teams "
         "ORDER BY (wins * 1.0 / NULLIF(wins+losses, 0)) DESC, "
         "wins DESC, losses ASC"
     )
-    champ = teams[0] if teams else None
     team_count = len(teams)
+
+    # Champion: the postseason winner when a bracket was played (World Series
+    # winner, or the lone league's champion). Fall back to the best
+    # regular-season team only for the soccer model (postseason disabled) or
+    # when no champion has been crowned yet — the table winner is the title.
+    champ = teams[0] if teams else None
+    try:
+        from o27v2 import playoffs as _po
+        won = _po.champion()
+        if won and won.get("winner_team_id"):
+            by_id = {t["id"]: t for t in teams}
+            champ = by_id.get(won["winner_team_id"], champ)
+    except Exception:
+        pass
 
     last = db.fetchone("SELECT MAX(season_number) AS n FROM seasons")
     season_number = ((last and last["n"]) or 0) + 1
