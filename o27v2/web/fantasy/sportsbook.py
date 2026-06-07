@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import datetime as _dt
 
-from o27v2 import db
+from . import fdb as db  # CapSpace's own DB (separate file)
 from . import data as slate_data
 from ._schema_once import once
 from . import wallet
@@ -219,7 +219,10 @@ def _bet_view(b: dict) -> dict:
 
 def status() -> dict:
     ensure_schema()
-    settle_bets()
+    # No inline settle: settling writes the wallet/sb_bets and must not run on
+    # the request path (it collided with the sim's writes → "database is
+    # locked"). The background pass (blueprint._kick_settle) does it; this just
+    # reads + grades for display.
     slate = slate_data._slate_date()
     games = _slate_games(slate) if slate else []
     open_bets = [_bet_view(dict(b)) for b in db.fetchall(
@@ -243,9 +246,20 @@ def status() -> dict:
     }
 
 
+def activity_bets() -> dict:
+    """Read-only open/settled bet feed for the cross-game activity page — no
+    settle and no live-odds rebuild (those made /api/activity slow and made it
+    write on the request path). Background settle keeps the wallet current."""
+    ensure_schema()
+    open_bets = [_bet_view(dict(b)) for b in db.fetchall(
+        "SELECT * FROM sb_bets WHERE status = 'open' ORDER BY id DESC")]
+    settled = [_bet_view(dict(b)) for b in db.fetchall(
+        "SELECT * FROM sb_bets WHERE status != 'open' ORDER BY id DESC LIMIT 20")]
+    return {"open": open_bets, "settled": settled}
+
+
 def place(game_id, market: str, side: str, stake) -> dict:
     ensure_schema()
-    settle_bets()
     try:
         stake = int(round(float(stake)))
     except (TypeError, ValueError):

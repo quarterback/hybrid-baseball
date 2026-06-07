@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import random
 
-from o27v2 import db
+from . import fdb as db  # CapSpace's own DB (separate file)
 from . import data as slate_data
 from ._schema_once import once
 from . import buyins

@@ -28,7 +28,8 @@ with the O27-native stay bonuses the design surfaces.
 
 from __future__ import annotations
 
-from o27v2 import db, currency
+from o27v2 import currency
+from . import fdb as db  # CapSpace's own DB (separate file); reads sim via ATTACH
 
 # CapSpace roster slot for each engine field position. O27 also has a 10th
 # fielder — the Nickelfielder (NF) — which has no dedicated CapSpace slot, so

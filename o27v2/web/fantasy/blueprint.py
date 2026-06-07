@@ -19,7 +19,8 @@ import time
 
 from flask import Blueprint, jsonify, render_template, request
 
-from o27v2 import currency, db
+from o27v2 import currency
+from . import fdb as db  # CapSpace's own DB (separate file)
 from . import data as slate_data
 from . import contests as dfs
 from . import streak as streakgame
@@ -146,7 +147,7 @@ def api_activity():
     except Exception:
         _LOG.exception("activity dfs")
     try:
-        sb = book.status()
+        sb = book.activity_bets()  # read-only; no settle, no odds rebuild
         for b in sb.get("open", []):
             items.append({"game": "Sportsbook", "title": b["desc"], "sub": b["matchup"],
                           "stake": b["stake"], "status": "open", "payout": 0})

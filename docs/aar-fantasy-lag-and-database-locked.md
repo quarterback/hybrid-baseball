@@ -150,6 +150,51 @@ time. Two compounding causes:
 - jsdom: the full app (sidebar + balance) renders even while the wallet fetch is
   *pending forever*; no blank/splash gate remains.
 
+## Round 4 — the real conflict: sims vs. the fantasy app on one DB
+
+The remaining `database is locked` came from the **sim and the fantasy app
+sharing one SQLite file**. A "sim a day" run holds the main DB's single WAL
+writer for a long stretch; meanwhile the fantasy app still *wrote* on some paths
+(the `status()` functions and `book.status()` settled inline; placing a
+bet/pick), and those writes collided with the sim's writer. Two fixes:
+
+### 4a — fantasy is read-only on the request path
+Removed every inline `settle()` / `settle_bets()` from the read paths
+(`sportsbook`/`streak`/`sluggers`/`pitching` `status()`, `sportsbook.place`),
+and `/api/activity` now reads the bet feed via a new read-only
+`sportsbook.activity_bets()` (no settle, no live-odds rebuild). Settling happens
+only in the background pass. `/api/activity` dropped from ~10 s to ~10 ms.
+
+### 4b — CapSpace gets its own database file
+CapSpace state is independent of the sim, so it now lives in
+`<sim-db>-capspace.db` (new `o27v2/web/fantasy/fdb.py`). The fantasy code opens
+that file as `main` and ATTACHes the sim DB as `sim`:
+
+* fantasy **writes** (wallet, bets, picks, settle) hit the fantasy file — they
+  never touch the sim's write lock, so using the app *during* a sim no longer
+  locks;
+* fantasy **reads** of games/players/stats keep working unchanged — the fantasy
+  and sim table names are disjoint, so SQLite resolves each unqualified name to
+  the right attached file, and reading an attached WAL DB never blocks the sim.
+
+Drop-in: each fantasy module simply imports the shim as `db`
+(`from . import fdb as db`), so all existing `db.get_conn/fetchall/...` calls
+route to the fantasy file. A one-time, best-effort migration (`fdb._ensure_
+migrated`) lifts any pre-split CapSpace tables out of the sim DB into the new
+file on first use (column-aware, idempotent; sim-side copies are left orphaned
+rather than dropped, so the migration never writes to the sim DB).
+
+### Round-4 validation
+- Migration: an existing `cap_wallet`/`cap_records` in the sim DB is copied into
+  the fantasy file; balance/records read correctly; the sim-side copy is left
+  untouched.
+- Isolation: a `wallet.credit()` **completes in ~10 ms while another connection
+  holds the sim DB's write lock** (`BEGIN IMMEDIATE`) — no `database is locked`.
+  Writes land in the fantasy file; the sim DB is unchanged.
+- `build_slate_data` still reads games/players/stats via the ATTACHed sim DB.
+- Web smoke: `/fantasy/` and all `/fantasy/api/*` return 200 in <70 ms on the
+  split DB.
+
 ## Follow-ups (not done here)
 - A single `build_slate_data` still scans the season for the pool's recent-form
   logs; the windowed query trims row transfer but not the scan. A date floor
