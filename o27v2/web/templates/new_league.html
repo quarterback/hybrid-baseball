@@ -350,6 +350,21 @@
       </div>
 
       <div class="row g-3 mb-4 align-items-end">
+        <div class="col-md-6">
+          <label class="form-label" for="postseason-format">Postseason format</label>
+          <select id="postseason-format" name="postseason_format" class="form-select form-select-sm" style="max-width:320px">
+            <option value="bracket" selected>Playoff bracket — postseason series crown the champion</option>
+            <option value="none">Table winner — best regular-season record wins (no bracket)</option>
+          </select>
+          <div class="text-secondary mt-1" style="font-size:.75rem">
+            Bracket: each league seeds a playoff (and a World Series with two leagues).
+            Table winner (soccer model): the regular-season leader of each league is champion.
+            Applies to any team count or division layout.
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4 align-items-end">
         <div class="col-md-12">
           <label class="form-label">Optional rules</label>
           <label style="cursor:pointer;display:flex;align-items:flex-start;gap:8px;font-size:.86rem">

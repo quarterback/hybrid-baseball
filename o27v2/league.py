@@ -313,6 +313,7 @@ def build_universe_config(
     all_star_break_days: int = 4,
     gender: str = "male",
     level: str = "MLB",
+    postseason: str = "none",
 ) -> dict:
     """Build a peer-universe config: several co-equal, fully-independent
     major leagues in one world, each with its own size, locale and playing
@@ -441,10 +442,11 @@ def build_universe_config(
         "season_days":            int(season_days),
         "leagues":                [s["name"] for s in league_specs],
         "schedule_mode":          "independent",
-        # Peer-universe leagues follow the soccer model: the regular-season
-        # table winner is the champion, with no postseason bracket. "none"
-        # suppresses playoff initiation entirely (no cross-league games).
-        "postseason":             "none",
+        # Postseason format. Peer-universe leagues default to the soccer model:
+        # the regular-season table winner is the champion, with no bracket
+        # ("none" suppresses playoff initiation — no cross-league games). The
+        # builder can opt into "bracket" so each league seeds its own playoff.
+        "postseason":             ("none" if (postseason or "none").lower() == "none" else "bracket"),
         # Peer universes use generic award names rather than MLB-specific ones.
         "award_names":            {"mvp": "Hitter of the Year",
                                    "cy_young": "Pitcher of the Year"},
