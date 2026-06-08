@@ -128,10 +128,11 @@ in this sandbox (no flask).
   deliberately reversed; it's been replaced by
   `test_pitcher_sacrifices_with_runner_on_first` +
   `test_pitcher_does_not_drag_or_squeeze`.
-- **New analytics tests:** `o27v2/tests/test_bunting_rates.py` → **7 passed**
+- **New analytics tests:** `o27v2/tests/test_bunting_rates.py` → **10 passed**
   (pure-math rates, league totals excluding playoff/non-reg rows, pitcher/
-  position split, per-team sort, league scoping, empty-DB zeros). Verified
-  against a synthetic temp DB — no flask.
+  position split, per-team sort, league scoping, empty-DB zeros, plus the
+  RE24 run-value cases added in the fast-follow). Verified against a synthetic
+  temp DB — no flask.
 - **Adjacent o27v2 analytics suites** (`test_linear_weights`,
   `test_streaks_records`, `test_engine_config`) → pass.
 - **Template:** `analytics.html` compiles under Jinja2.
@@ -148,12 +149,73 @@ in this sandbox (no flask).
   numbers above should be read as "this matchup," not "the league." A
   representative randomized-roster harness would tighten this; there's no live DB
   in this sandbox to sample from.
-- I did **not** build the article's headline metric, *leveraged run value per
-  100 bunts*. It's feasible on the existing `o27v2/analytics/run_expectancy.py`
-  RE24-O27 table (join bunt events from `game_pa_log` against RE-before/after),
-  but it's a meaningfully bigger lift and was scoped as a fast-follow, not part
-  of this pass.
+- The article's headline metric, *run value per 100 bunts*, was built as a
+  fast-follow — see the next section.
 - Sacrifice share (47%) is still on the high side of the target band. That
   residual is now mostly *pitcher* sacrifices — the realistic dynamic we just
   (correctly) added — so I stopped there rather than overfit the knobs to one
   speed-tilted sample.
+
+---
+
+## Fast-follow — RE24 run value per 100 bunts
+
+The article's signature number is "how many runs a given bunt added or
+subtracted from expected run scoring." O27 already has the RE24-O27 run-
+expectancy matrix (`o27v2/analytics/run_expectancy.py`), so the value is:
+
+```
+run value = RE(state after) − RE(state before) + runs scored
+```
+
+The blocker was data, not math: **bunts were never persisted per-event.**
+`render.py` only appended to `_pa_log` (→ `game_pa_log`) inside the
+`ball_in_play` branch; the `sac_bunt` branch recorded box-line stats but no
+game-state. With no before/after bases-outs stamp, a bunt couldn't be valued.
+
+**Why a new table, not `game_pa_log`.** Bunts carry no contact quality or
+batted-ball physics. Dropping them into `game_pa_log` would land them in the
+BIP-keyed aggregates with `quality`/`hit_type` NULL — polluting the xwOBA
+"unknown quality" bucket and the expected-stats EV/LA bins, none of which
+filter on `choice`. A dedicated `game_bunt_log` isolates the risk completely:
+the existing RE24 / xwOBA / expected-stats panels are byte-for-byte unchanged,
+and bunts are valued *against* the existing RE matrix as the league baseline.
+
+What changed:
+
+- **Schema** (`o27v2/db.py`): new `game_bunt_log` (game/team/batter/pitcher,
+  phase, is_playoff, bunt_type, outcome, runs_scored, and the
+  outs/bases before/after stamps). Added to the dev-reset DROP list.
+- **Engine** (`o27/render/render.py`): the `sac_bunt` branch now appends a
+  state-stamped row to a new `Renderer._bunt_log` (mirrors the BIP stamping;
+  bases as a 3-bit mask).
+- **Persistence** (`o27v2/sim.py`): idempotent `DELETE` + `executemany`
+  `INSERT` into `game_bunt_log`, reusing the PA-log role→db-team mapping.
+- **Analytics** (`o27v2/analytics/bunting.py`): `build_bunt_run_value(team_ids,
+  re_table=None)` joins `game_bunt_log` against the RE matrix and returns league
+  + per-team run value per 100 bunts. `build_bunting_rates` now folds
+  `rv_per_100` onto the league block and each team row, and accepts a prebuilt
+  `re_table` so the `/analytics` route reuses the matrix it already builds (no
+  second full scan).
+- **UI**: a "Run value / 100 bunts (RE24)" headline card + a per-team `RV/100`
+  column on the bunting panel, green/red signed.
+
+It is **RE24-based, not leverage-index weighted.** That's the substantive core
+of the article's metric; true LI weighting would layer the win-probability
+model on top and is a further extension, not done here.
+
+### Fast-follow validation
+
+- Full pipeline: `manage.py initdb` + `sim 20` on a fresh 30-team league →
+  `game_bunt_log` populated (28 bunts), `build_bunt_run_value` returns a sane
+  league +1.0 RV/100. (Per-team RV is noisy at 20 games — small sample, not a
+  bug; it stabilises over a season.)
+- That same full-league run also showed **bunt rate ≈ 1.8% of PA** — lower than
+  the speed-tilted Foxes-vs-Bears 3.5% and closer to a realistic clip, which is
+  reassuring evidence the calibration generalises beyond the one tuning matchup.
+- New tests in `o27v2/tests/test_bunting_rates.py` (now 10 cases): `_re_lookup`
+  bucketing + half-end + sparse-cell fallback; `build_bunt_run_value` against a
+  synthetic RE matrix with playoff/phase exclusion; and `build_bunting_rates`
+  carrying `rv_per_100` onto league + team rows.
+- `o27/tests` still 129 passed; adjacent o27v2 suites (incl. `test_saves`, which
+  sims through the new `sim.py` insert path) pass; `analytics.html` compiles.

@@ -7721,7 +7721,7 @@ def analytics():
     xwoba     = build_xwoba_table(min_pa=min_pa, team_ids=team_ids)
     pythag    = refit_pythag_exponent(team_ids=team_ids)
     base_runs = build_base_runs_table(team_ids=team_ids)
-    bunting   = build_bunting_rates(team_ids=team_ids)
+    bunting   = build_bunting_rates(team_ids=team_ids, re_table=re_table)
     lin_w     = derive_linear_weights(team_ids=team_ids) if team_ids else _linear_weights()
 
     # League mean / median Game Score across all starter outings, so the

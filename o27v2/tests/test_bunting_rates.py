@@ -17,7 +17,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from o27v2 import db
-from o27v2.analytics.bunting import build_bunting_rates, _rates
+from o27v2.analytics.bunting import (
+    build_bunting_rates, build_bunt_run_value, _rates, _re_lookup,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -146,3 +148,65 @@ def test_empty_db_is_all_zeros(tmp_path):
     assert r["league"]["bunt_att"] == 0
     assert r["teams"] == []
     assert r["pitchers"]["bunt_att"] == 0
+    assert r["league"]["rv_per_100"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# RE24 run value.
+# ---------------------------------------------------------------------------
+
+def test_re_lookup_bucketing_and_half_end():
+    # matrix[bases][outs_bucket] -> {n, re}. Outs bucket = outs // 3.
+    matrix = {1: {0: {"n": 5, "re": 0.9}, 2: {"n": 5, "re": 0.4}}}
+    assert _re_lookup(matrix, 1, 0) == 0.9      # bucket 0
+    assert _re_lookup(matrix, 1, 7) == 0.4      # 7 // 3 = 2
+    assert _re_lookup(matrix, 1, 27) == 0.0     # half over -> no future runs
+    assert _re_lookup(matrix, None, 3) is None  # unusable
+    # Sparse cell (bucket 1 missing) falls back to nearest populated bucket.
+    assert _re_lookup(matrix, 1, 3) in (0.9, 0.4)
+
+
+def _synth_matrix() -> dict:
+    """re[bases][bucket] = 0.1 * bases, flat across outs buckets."""
+    return {b: {ob: {"n": 1, "re": round(0.1 * b, 3)} for ob in range(9)}
+            for b in range(8)}
+
+
+def test_bunt_run_value(synth_db):
+    ex = db.execute
+
+    def bunt(team_id, *, runs, ob, bb, oa, ba, phase=0, is_playoff=0):
+        ex("""INSERT INTO game_bunt_log(game_id,team_id,batter_id,phase,
+              is_playoff,bunt_type,outcome,runs_scored,
+              outs_before,bases_before,outs_after,bases_after)
+              VALUES (1,?,10,?,?,'sac','sacrifice',?,?,?,?,?)""",
+           (team_id, phase, is_playoff, runs, ob, bb, oa, ba))
+
+    # rv = 0.1*bases_after - 0.1*bases_before + runs.
+    bunt(1, runs=1, ob=3, bb=4, oa=4, ba=0)   # 0 - 0.4 + 1 = 0.6
+    bunt(1, runs=0, ob=6, bb=1, oa=7, ba=2)   # 0.2 - 0.1 + 0 = 0.1
+    # Noise: a playoff bunt and a non-regulation phase must be excluded.
+    bunt(1, runs=9, ob=0, bb=0, oa=1, ba=0, is_playoff=1)
+    bunt(1, runs=9, ob=0, bb=0, oa=1, ba=0, phase=1)
+
+    rv = build_bunt_run_value(re_table={"matrix": _synth_matrix()})
+    assert rv["league"]["n"] == 2
+    assert rv["league"]["rv_total"] == pytest.approx(0.7)
+    assert rv["league"]["rv_per_100"] == pytest.approx(35.0)
+    assert rv["teams"][1]["n"] == 2
+    assert rv["teams"][1]["rv_per_100"] == pytest.approx(35.0)
+
+
+def test_rates_carry_run_value(synth_db):
+    db.execute(
+        """INSERT INTO game_bunt_log(game_id,team_id,batter_id,phase,is_playoff,
+           bunt_type,outcome,runs_scored,outs_before,bases_before,
+           outs_after,bases_after)
+           VALUES (1,1,10,0,0,'sac','sacrifice',1,3,4,4,0)""")
+    r = build_bunting_rates(re_table={"matrix": _synth_matrix()})
+    assert r["league"]["rv_n"] == 1
+    assert r["league"]["rv_per_100"] == pytest.approx(60.0)  # 0.6 * 100
+    # Team 1 row carries its own RV.
+    hom = next(t for t in r["teams"] if t["team_abbrev"] == "HOM")
+    assert hom["rv_n"] == 1
+    assert hom["rv_per_100"] == pytest.approx(60.0)

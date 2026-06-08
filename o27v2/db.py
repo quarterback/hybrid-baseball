@@ -543,6 +543,30 @@ CREATE TABLE IF NOT EXISTS game_pa_log (
 CREATE INDEX IF NOT EXISTS idx_pa_log_game ON game_pa_log(game_id);
 CREATE INDEX IF NOT EXISTS idx_pa_log_batter ON game_pa_log(batter_id);
 
+-- Per-bunt event log (manager-called bunts only). Kept out of game_pa_log
+-- because bunts carry no contact-quality / batted-ball physics and would
+-- pollute the BIP-keyed xwOBA / expected-stats aggregates. The pre/post
+-- game-state stamps (bases_* = 3-bit mask bit0=1B/bit1=2B/bit2=3B, outs_* =
+-- outs in the half) let analytics value each bunt against the RE24-O27
+-- matrix: run value = RE(after) − RE(before) + runs_scored.
+CREATE TABLE IF NOT EXISTS game_bunt_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id       INTEGER NOT NULL REFERENCES games(id),
+    team_id       INTEGER NOT NULL REFERENCES teams(id),
+    batter_id     INTEGER NOT NULL REFERENCES players(id),
+    pitcher_id    INTEGER REFERENCES players(id),
+    phase         INTEGER NOT NULL DEFAULT 0,
+    is_playoff    INTEGER NOT NULL DEFAULT 0,   -- denormalized from games
+    bunt_type     TEXT,                          -- sac | drag | suicide | safety
+    outcome       TEXT,                          -- hit | sacrifice | squeeze_* | ...
+    runs_scored   INTEGER NOT NULL DEFAULT 0,
+    outs_before   INTEGER,
+    bases_before  INTEGER,
+    outs_after    INTEGER,
+    bases_after   INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_bunt_log_game ON game_bunt_log(game_id);
+
 -- Pesäpallo-style scoring events log. One row per run that crosses the
 -- plate: the batter at bat when it happened, the runner who scored, the
 -- starting base of that runner at the PA's start, and the score after.
@@ -2080,6 +2104,7 @@ def drop_all() -> None:
                 DROP TABLE IF EXISTS auction_keepers;
                 DROP TABLE IF EXISTS transactions;
                 DROP TABLE IF EXISTS game_pa_log;
+                DROP TABLE IF EXISTS game_bunt_log;
                 DROP TABLE IF EXISTS game_pitcher_stats;
                 DROP TABLE IF EXISTS game_batter_stats;
                 DROP TABLE IF EXISTS team_phase_outs;
