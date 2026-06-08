@@ -772,12 +772,26 @@ HIT_AND_RUN_CONTACT_K_REDUCTION: float = 0.25  # multiplicative on K probability
 # Lower-`mgr_leverage_aware` skippers are more likely to call this (it's
 # generally a -EV play in modern analytics). Speed influences whether
 # the bunt becomes a hit.
-SAC_BUNT_BASE_PROB: float          = 0.16   # base call rate when conditions align
+SAC_BUNT_BASE_PROB: float          = 0.085  # base call rate when conditions align
+                                            # (2026 recalibration: position players
+                                            # were sacrificing ~5x too often; pure
+                                            # surrender sacs are mostly -EV, so the
+                                            # weak-bat sac is now a smaller slice and
+                                            # the pitcher carries the sac load below)
 SAC_BUNT_RUNGAME_SCALE: float      = 0.50   # mgr_run_game * this multiplies
 SAC_BUNT_LEVERAGE_DAMPER: float    = 0.50   # (1 - leverage_aware) * this multiplies
-SAC_BUNT_HIT_BASE: float           = 0.10   # baseline bunt-for-hit rate
-SAC_BUNT_HIT_SPEED_SCALE: float    = 0.30   # +(speed - 0.5) * this
+SAC_BUNT_HIT_BASE: float           = 0.21   # baseline bunt-for-hit rate (raised:
+                                            # good bunts reach base ~a third of the
+                                            # time; old 0.10 made bunts near-useless)
+SAC_BUNT_HIT_SPEED_SCALE: float    = 0.36   # +(speed - 0.5) * this
 SAC_BUNT_FAIL_RATE: float          = 0.10   # popups / runner forced at lead
+
+# Pitchers bat in O27 (no DH), and the weak-hitting pitcher is the classic
+# sacrifice bunter — historically why bunting was far more common when pitchers
+# hit. They give themselves up to move a runner; they don't drag (too slow) or
+# squeeze (rarely asked to execute under pressure). This is their own elevated
+# sacrifice rate, kept separate from the position-player SAC_BUNT_BASE_PROB.
+PITCHER_SAC_BUNT_BASE_PROB: float  = 0.34   # base sac call rate for a pitcher at bat
 
 # ---------------------------------------------------------------------------
 # Expanded bunting (multi-type). Layered on top of the legacy SAC_* knobs
@@ -795,13 +809,21 @@ BUNT_PITCHER_DIFFICULTY_SCALE: float = 0.25 # elite stuff/command suppresses suc
 SAC_LEAD_OUT_BASE: float           = 0.16   # poor bunters cost the lead runner
 SAC_BUNT_SKILL_SCALE: float        = 0.25   # +(bunt - 0.5) * this to clean-sac odds
 # Bunt-for-hit / drag: speed + skill beat-out attempt, no give-up intent.
-DRAG_BUNT_BASE_PROB: float         = 0.06   # base call rate (fast, weak-power bat)
-DRAG_BUNT_SPEED_GATE: float        = 0.55   # min speed to consider a drag
-DRAG_BUNT_HIT_BASE: float          = 0.30   # baseline safe rate (skill/speed add)
+DRAG_BUNT_BASE_PROB: float         = 0.095  # base call rate (fast, weak-power bat).
+                                            # Tilted UP relative to sac/squeeze so
+                                            # the bunt mix favors bunt-for-hit, the
+                                            # one bunt that meaningfully reaches base.
+DRAG_BUNT_SPEED_GATE: float        = 0.52   # min speed to consider a drag
+DRAG_BUNT_HIT_BASE: float          = 0.47   # baseline safe rate (skill/speed add).
+                                            # Raised so drags hit at a realistic
+                                            # clip and lift the overall bunt-hit rate.
 # Squeeze (runner on 3B, < 2 outs). Suicide = runner breaks (run scores on any
 # bunt down, but a missed bunt hangs him out); safety = runner holds (scores
 # only on a good bunt, never thrown out).
-SQUEEZE_BASE_PROB: float           = 0.07   # base call rate in a squeeze spot (rare, high-leverage)
+SQUEEZE_BASE_PROB: float           = 0.025  # base call rate in a squeeze spot (rare,
+                                            # high-leverage). Cut hard: squeezes were
+                                            # ~40% of all bunts (wildly over-represented);
+                                            # the squeeze is a small, situational slice.
 SQUEEZE_SUICIDE_SHARE: float       = 0.45   # of squeezes, fraction that are suicide
 SUICIDE_MISS_BASE: float           = 0.20   # missed/popped bunt → runner out at home
 SAFETY_SQUEEZE_SCORE_BASE: float   = 0.60   # baseline run-scores rate on a safety

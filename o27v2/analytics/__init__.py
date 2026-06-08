@@ -24,8 +24,10 @@ from o27v2.analytics.expanded import (
 )
 from o27v2.analytics.pythag import refit_pythag_exponent
 from o27v2.analytics.base_runs import build_base_runs_table
+from o27v2.analytics.bunting import build_bunting_rates
 
 __all__ = [
+    "build_bunting_rates",
     "build_re_table",
     "build_re_by_outs_remaining",
     "bases_label",

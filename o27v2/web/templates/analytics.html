@@ -91,6 +91,106 @@
 </div>
 
 {# ============================================================
+   1b. Bunting rates — league barometer (rate framing of the
+   persisted bunt counters: how often, how well, what mix)
+   ============================================================ #}
+{% if bunting and bunting.league.bunt_att > 0 %}
+{% set L = bunting.league %}
+<div class="panel mb-3">
+  <div class="panel-head">
+    <span>Bunting rates · league barometer</span>
+    <span class="ms-auto sub">{{ L.bunt_att }} bunts · {{ '%.2f' | format(100 * L.bunt_pct_pa) }}% of PA</span>
+  </div>
+  <div class="panel-body">
+    {# Headline league rates. #}
+    <div class="row g-2 mb-3">
+      <div class="col-6 col-md-3">
+        <div class="text-secondary small">Bunt rate (% of PA)</div>
+        <div class="num fw-bold" style="font-size:1.25rem">{{ '%.2f' | format(100 * L.bunt_pct_pa) }}%</div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-secondary small">Bunt-hit rate</div>
+        <div class="num fw-bold" style="font-size:1.25rem">{{ '%.1f' | format(100 * L.bunt_hit_rate) }}%</div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-secondary small">Productive (hit or advance)</div>
+        <div class="num fw-bold" style="font-size:1.25rem">{{ '%.1f' | format(100 * L.productive_pct) }}%</div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-secondary small">Squeeze share of bunts</div>
+        <div class="num fw-bold" style="font-size:1.25rem">{{ '%.1f' | format(100 * L.sqz_share) }}%</div>
+      </div>
+    </div>
+
+    {# Pitcher vs position split — O27 has no DH, so the pitcher is the
+       classic sacrifice bunter and carries a distinct rate. #}
+    <div class="table-responsive">
+      <table class="table dense-table mb-0">
+        <thead>
+          <tr>
+            <th>Split</th>
+            <th class="num">Bunts</th>
+            <th class="num">Bunt%PA</th>
+            <th class="num">Hit%</th>
+            <th class="num">Sac share</th>
+            <th class="num">Sqz share</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for label, R in [('Pitchers', bunting.pitchers), ('Position players', bunting.position)] %}
+          <tr>
+            <td>{{ label }}</td>
+            <td class="num">{{ R.bunt_att }}</td>
+            <td class="num">{{ '%.2f' | format(100 * R.bunt_pct_pa) }}%</td>
+            <td class="num">{{ '%.1f' | format(100 * R.bunt_hit_rate) }}%</td>
+            <td class="num">{{ '%.1f' | format(100 * R.sac_share) }}%</td>
+            <td class="num">{{ '%.1f' | format(100 * R.sqz_share) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Per-team — who's leading the small-ball charge. #}
+    {% if bunting.teams %}
+    <div class="table-responsive mt-3">
+      <table class="table dense-table sortable mb-0">
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th class="num">Bunts</th>
+            <th class="num">Bunt%PA</th>
+            <th class="num">Hit%</th>
+            <th class="num">Sac share</th>
+            <th class="num">Sqz share</th>
+            <th class="num">Sqz RBI</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in bunting.teams %}
+          <tr>
+            <td><a href="{{ url_for('team_detail', team_id=t.team_id) }}" class="team-abbrev">{{ t.team_abbrev }}</a></td>
+            <td class="num">{{ t.bunt_att }}</td>
+            <td class="num" data-sort-value="{{ t.bunt_pct_pa }}">{{ '%.2f' | format(100 * t.bunt_pct_pa) }}%</td>
+            <td class="num" data-sort-value="{{ t.bunt_hit_rate }}">{{ '%.1f' | format(100 * t.bunt_hit_rate) }}%</td>
+            <td class="num" data-sort-value="{{ t.sac_share }}">{{ '%.1f' | format(100 * t.sac_share) }}%</td>
+            <td class="num" data-sort-value="{{ t.sqz_share }}">{{ '%.1f' | format(100 * t.sqz_share) }}%</td>
+            <td class="num">{{ t.sqz_rbi }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    <div class="text-secondary small mt-2">
+      Bunt-hit rate = bunt singles ÷ bunts. Sac share = runners advanced or
+      squeezed home ÷ bunts. Productive = reached base or moved a runner.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================
    2. RE by outs-remaining — 1-D curve
    ============================================================ #}
 <div class="panel mb-3">
