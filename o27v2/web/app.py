@@ -7702,13 +7702,13 @@ def analytics():
         return _serve("analytics.html",
                       games_played=0, re_table=None, re_curve=None,
                       xwoba=None, pythag=None, base_runs=None,
-                      lin_w=None, gsc_summary=None,
+                      lin_w=None, gsc_summary=None, bunting=None,
                       leagues=leagues, selected_league=selected_league)
 
     from o27v2.analytics import (
         build_re_table, build_re_by_outs_remaining,
         build_xwoba_table, refit_pythag_exponent,
-        build_base_runs_table,
+        build_base_runs_table, build_bunting_rates,
     )
     from o27v2.analytics.linear_weights import derive_linear_weights
 
@@ -7721,6 +7721,7 @@ def analytics():
     xwoba     = build_xwoba_table(min_pa=min_pa, team_ids=team_ids)
     pythag    = refit_pythag_exponent(team_ids=team_ids)
     base_runs = build_base_runs_table(team_ids=team_ids)
+    bunting   = build_bunting_rates(team_ids=team_ids, re_table=re_table)
     lin_w     = derive_linear_weights(team_ids=team_ids) if team_ids else _linear_weights()
 
     # League mean / median Game Score across all starter outings, so the
@@ -7805,6 +7806,7 @@ def analytics():
         xwoba=xwoba,
         pythag=pythag,
         base_runs=base_runs,
+        bunting=bunting,
         lin_w=lin_w,
         gsc_summary=gsc_summary,
         min_pa=min_pa,

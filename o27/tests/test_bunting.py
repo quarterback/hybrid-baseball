@@ -117,9 +117,23 @@ def test_slugger_never_bunts():
     assert M.should_bunt(st, _Rng(0.0)) is None
 
 
-def test_pitcher_never_bunts():
+def test_pitcher_sacrifices_with_runner_on_first():
+    # O27 has no DH — the weak-hitting pitcher is the classic sacrifice
+    # bunter. With a runner on first and outs to spare he lays one down.
     st = _State(["r1", None, None], _Batter(power=0.3, is_pitcher=True))
+    ev = M.should_bunt(st, _Rng(0.0))
+    assert ev is not None and ev["bunt_type"] == "sac"
+
+
+def test_pitcher_does_not_drag_or_squeeze():
+    # Pitchers only ever sacrifice — never drag (too slow) and never squeeze.
+    # Bases empty: nothing to sacrifice, so no bunt despite the low roll.
+    st = _State([None, None, None], _Batter(speed=0.9, power=0.3, is_pitcher=True))
     assert M.should_bunt(st, _Rng(0.0)) is None
+    # Runner on third only (a squeeze spot for a position player): a pitcher
+    # still doesn't squeeze.
+    st3 = _State([None, None, "r3"], _Batter(power=0.3, is_pitcher=True))
+    assert M.should_bunt(st3, _Rng(0.0)) is None
 
 
 def test_no_runners_slow_bat_no_bunt():

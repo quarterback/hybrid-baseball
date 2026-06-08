@@ -2010,8 +2010,6 @@ def should_bunt(state: GameState, rng=None) -> Optional[dict]:
         import random as _r
         rng = _r.Random()
     batter = state.current_batter
-    if getattr(batter, "is_pitcher", False):
-        return None
     bases = state.bases
     on1, on2, on3 = bases[0] is not None, bases[1] is not None, bases[2] is not None
     speed = float(getattr(batter, "speed", 0.5) or 0.5)
@@ -2028,14 +2026,31 @@ def should_bunt(state: GameState, rng=None) -> Optional[dict]:
     margin = fld_score - bat_score          # +ve = batting team trails
     lev_mult = 1.0 + (1.0 - leverage) * cfg.SAC_BUNT_LEVERAGE_DAMPER
 
+    # --- Pitcher at bat: the classic sacrifice bunter ----------------------
+    # O27 has no DH, so pitchers hit — and the weak-bat pitcher gives himself
+    # up to move a runner far more readily than a position player would. He
+    # doesn't drag (too slow) or squeeze (rarely asked to under pressure);
+    # he lays down the standard sacrifice with a runner on and outs to spare.
+    if getattr(batter, "is_pitcher", False):
+        if on1 and state.outs < 24:
+            p = cfg.PITCHER_SAC_BUNT_BASE_PROB * lev_mult
+            if -2 <= margin <= 2:
+                p *= 1.3                     # one-score game: manufacture a run
+            elif margin <= -4:
+                p *= 0.5                      # down big, let him swing
+            if rng.random() < max(0.0, min(0.60, p)):
+                return _roll_sacrifice(rng, speed, bunt, pdiff,
+                                       single_runner=(on1 and not on2 and not on3))
+        return None
+
     # --- Squeeze: runner on 3B, outs to spare, not a slugger ---------------
     if on3 and state.outs < 24 and power <= 0.62:
-        sq_p = cfg.SQUEEZE_BASE_PROB * (run_game * 2.0) * lev_mult
+        sq_p = cfg.SQUEEZE_BASE_PROB * (run_game * 1.0) * lev_mult
         if -1 <= margin <= 1:
             sq_p *= 1.4                      # tied / one-run game, manufacture it
         elif margin <= -3:
             sq_p *= 0.4
-        if rng.random() < max(0.0, min(0.30, sq_p)):
+        if rng.random() < max(0.0, min(0.12, sq_p)):
             return _roll_squeeze(rng, speed, bunt, pdiff)
 
     # --- Sacrifice: force runner on 1B (maybe +2B), weak hitter -------------

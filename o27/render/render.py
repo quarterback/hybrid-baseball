@@ -118,6 +118,12 @@ class Renderer:
         # boundary is detected by comparing s.ab+1 to the batter's last
         # observed in-progress AB number (changes when prior AB completed).
         self._pa_log: list[dict] = []
+        # Per-bunt event log (manager-called bunts only). Kept separate from
+        # _pa_log because bunts carry no contact-quality / batted-ball physics
+        # and would pollute the BIP-keyed xwOBA / expected-stats aggregates.
+        # Each row stamps pre/post game-state so the bunt's RE24 run value can
+        # be computed downstream (analytics.bunting.build_bunt_run_value).
+        self._bunt_log: list[dict] = []
         self._batter_current_ab: dict = {}      # batter_id -> in-progress ab number
         # Power Play pitcher accumulator (keyed by pitcher player_id). Window
         # counters (pp_*) accrue only while the pitcher's defense had its nickel
@@ -1662,6 +1668,29 @@ class Renderer:
                            "squeeze_miss", "squeeze_hold"):
                 s.sqz += 1
                 s.sqz_rbi += runs_scored
+
+            # Stamp pre/post game-state so this bunt's RE24 run value can be
+            # measured downstream. Mirrors the BIP stamping but lands in its
+            # own log (bunts have no contact physics). Bases = 3-bit mask
+            # (bit0=1B, bit1=2B, bit2=3B).
+            def _mask(seq):
+                return sum((1 << i) for i, r in enumerate(seq or [None, None, None])
+                           if r is not None)
+            self._bunt_log.append({
+                "team_id":      ctx.get("batting_team_id"),
+                "batter_id":    batter.player_id,
+                "pitcher_id":   (ctx.get("pitcher").player_id
+                                 if ctx.get("pitcher") else None),
+                "phase":        ctx.get("phase", 0),
+                "bunt_type":    event.get("bunt_type", "sac"),
+                "outcome":      outcome,
+                "runs_scored":  runs_scored,
+                "outs_before":  ctx.get("outs", 0) or 0,
+                "bases_before": _mask(ctx.get("bases_list")),
+                "outs_after":   getattr(state_after, "outs", ctx.get("outs", 0)) or 0,
+                "bases_after":  _mask(list(getattr(state_after, "bases",
+                                                   [None, None, None]))),
+            })
 
         elif etype == "ball_in_play":
             choice = disp.get("choice", "run")

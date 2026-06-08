@@ -2053,6 +2053,7 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
         conn.execute("DELETE FROM game_batter_stats  WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM game_pitcher_stats WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM game_pa_log        WHERE game_id = ?", (game_id,))
+        conn.execute("DELETE FROM game_bunt_log      WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM team_phase_outs    WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM game_pbp           WHERE game_id = ?", (game_id,))
         conn.execute("DELETE FROM game_power_play_stats WHERE game_id = ?", (game_id,))
@@ -2240,6 +2241,32 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                   e.get("outs_after"),  e.get("bases_after"),  e.get("score_diff_after"))
                  for e in pa_log
                  if e["team_id"] in role_to_db],
+            )
+        # Per-bunt event log — RE24 run-value inputs for the bunting panel.
+        # Reuses the same role→db team mapping as the PA log above.
+        bunt_log = getattr(renderer, "_bunt_log", []) or []
+        if bunt_log and not lite:
+            _role_to_db = {
+                "home":     home_team_id,
+                "visitors": away_team_id,
+                "away":     away_team_id,
+            }
+            _isp = 1 if game.get("is_playoff") else 0
+            conn.executemany(
+                """INSERT INTO game_bunt_log
+                   (game_id, team_id, batter_id, pitcher_id, phase, is_playoff,
+                    bunt_type, outcome, runs_scored,
+                    outs_before, bases_before, outs_after, bases_after)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                [(game_id, _role_to_db.get(e["team_id"], None),
+                  int(e["batter_id"]) if e["batter_id"] is not None else None,
+                  int(e["pitcher_id"]) if e.get("pitcher_id") is not None else None,
+                  e.get("phase", 0), _isp,
+                  e.get("bunt_type"), e.get("outcome"), e.get("runs_scored", 0),
+                  e.get("outs_before"), e.get("bases_before"),
+                  e.get("outs_after"), e.get("bases_after"))
+                 for e in bunt_log
+                 if e["team_id"] in _role_to_db],
             )
         # Full text play-by-play blob (sponsor captions and all). Discarded
         # before this landed; now persisted for the read-only /game/<id>/pbp
