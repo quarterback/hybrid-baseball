@@ -793,6 +793,28 @@ CREATE TABLE IF NOT EXISTS season_standings (
     PRIMARY KEY (season_id, team_name)
 );
 
+-- Per-team, per-season franchise honors. Captured at season archive (while
+-- the playoff bracket still exists — playoff_series is wiped at rollover) so
+-- the team page can show a banner of accolades with the years they were won.
+-- Division titles and the overall champion are also reconstructable from
+-- season_standings / seasons for already-archived seasons (see
+-- season_archive.backfill_team_honors); pennants and wild-card berths are not,
+-- so for pre-existing seasons those stay 0.
+CREATE TABLE IF NOT EXISTS season_team_honors (
+    season_id       INTEGER NOT NULL REFERENCES seasons(id),
+    season_number   INTEGER,
+    year            INTEGER,
+    team_id         INTEGER,           -- stable franchise id (NULL if unresolved)
+    team_abbrev     TEXT,
+    league          TEXT,
+    division        TEXT,
+    division_title  INTEGER DEFAULT 0, -- finished 1st in its division
+    wild_card       INTEGER DEFAULT 0, -- made the playoff field as a non-winner
+    league_champion INTEGER DEFAULT 0, -- won its league final ('championship')
+    series_champion INTEGER DEFAULT 0, -- overall champion (World Series / lone league)
+    PRIMARY KEY (season_id, team_abbrev)
+);
+
 CREATE TABLE IF NOT EXISTS season_batting_leaders (
     season_id   INTEGER NOT NULL REFERENCES seasons(id),
     category    TEXT NOT NULL,

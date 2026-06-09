@@ -235,6 +235,9 @@ section { margin-bottom: 22px; }
 .streak-W { color: var(--good); font-weight: 600; }
 .streak-L { color: var(--bad);  font-weight: 600; }
 
+/* Division leader row in the grouped standings tables. */
+.div-leader-row > td { background: var(--good-soft); }
+
 /* Hot/cold performance-streak badge (almanac player header only). */
 .streak-badge {
   display: inline-block;

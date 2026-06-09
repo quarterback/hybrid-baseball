@@ -445,6 +445,77 @@ def _leagues_with_divisions() -> dict[str, dict[str, list[dict]]]:
     return out
 
 
+def _pct_f(t: dict) -> float:
+    """Win pct as a float (0.0 when winless/unplayed)."""
+    g = (t.get("wins") or 0) + (t.get("losses") or 0)
+    return (t.get("wins") or 0) / g if g else 0.0
+
+
+def _gb_value(leader: dict, team: dict) -> float:
+    """Raw games-back number (leader ahead of team). Negative = team ahead."""
+    return ((leader.get("wins") or 0) - (team.get("wins") or 0)
+            + (team.get("losses") or 0) - (leader.get("losses") or 0)) / 2.0
+
+
+def _playoff_picture(leagues: dict[str, dict[str, list[dict]]]) -> dict[str, dict]:
+    """Per-league wild-card / playoff picture, derived from the SAME seeding
+    rule the bracket uses (o27v2.playoffs): division winners qualify first,
+    then the best of the rest fill the wild-card spots. Config-driven — the
+    number of wild-card spots is (teams_per_league − division_count), so this
+    works for an 8-team league, a 30-team league, or anything else without
+    hardcoding an MLB-shaped "3 divisions / 6 seeds".
+
+    Returns {league: {champs, contenders, n_wc}} where:
+      * champs     — division winners, best record first (seeds 1..D).
+      * contenders — every non-winner sorted by win pct, each tagged
+                     `in_spot` (holds a wild-card berth) plus a WCGB display
+                     string (games up on the first team out / back of the
+                     last team in).
+    """
+    try:
+        import o27v2.playoffs as _playoffs
+        teams_per_league = int(_playoffs.playoff_settings()["teams_per_league"])
+    except Exception:
+        return {}
+
+    out: dict[str, dict] = {}
+    for lg, divs in leagues.items():
+        members = [t for grp in divs.values() for t in grp]
+        if len(members) < 2:
+            continue
+        champs = [max(grp, key=_pct_f) for grp in divs.values() if grp]
+        champs.sort(key=_pct_f, reverse=True)
+        champ_ids = {t["id"] for t in champs}
+        rest = sorted((t for t in members if t["id"] not in champ_ids),
+                      key=_pct_f, reverse=True)
+        n_wc = max(0, teams_per_league - len(champs))
+        if n_wc <= 0 or not rest:
+            out[lg] = {"champs": champs, "contenders": [], "n_wc": 0}
+            continue
+
+        last_in  = rest[n_wc - 1] if len(rest) >= n_wc else rest[-1]
+        first_out = rest[n_wc] if len(rest) > n_wc else None
+
+        contenders = []
+        for i, t in enumerate(rest):
+            in_spot = i < n_wc
+            if in_spot:
+                # Cushion: games up on the first team out (— if nobody is out).
+                wcgb = "—" if first_out is None else \
+                    f"+{_gb_value(t, first_out):.1f}".replace("+-", "-")
+            else:
+                # Deficit: games back of the last team holding a spot.
+                wcgb = f"{_gb_value(last_in, t):.1f}"
+            contenders.append({
+                "team": t,
+                "in_spot": in_spot,
+                "wcgb": wcgb,
+                "seed": len(champs) + i + 1 if in_spot else None,
+            })
+        out[lg] = {"champs": champs, "contenders": contenders, "n_wc": n_wc}
+    return out
+
+
 def _config_options() -> list[dict]:
     """All available league/universe configs as [{id, label}] for the
     sim dropdowns. Built dynamically so custom universes appear too."""
@@ -3280,8 +3351,13 @@ def standings():
     if not is_tiered and selected_league != "all" and selected_league in leagues:
         leagues = {selected_league: leagues[selected_league]}
 
+    # Wild-card / playoff picture per league (non-tiered universes only —
+    # tiered ladders use promotion/relegation, not a wild-card field).
+    playoff_picture = {} if is_tiered else _playoff_picture(leagues)
+
     return _serve("standings.html",
                            leagues=leagues,
+                           playoff_picture=playoff_picture,
                            extras=extras,
                            payrolls=payrolls,
                            win_pct=_win_pct,
@@ -8130,6 +8206,52 @@ def teams():
     return _serve("teams.html", teams=teams_list, win_pct=_win_pct)
 
 
+def _team_honors(team: dict) -> list[dict]:
+    """Franchise accolades across archived seasons, each with the years won,
+    for the team-page banner. Canonical labels mirror the in-game playoff
+    naming (World Series / League Championship / Division Series). The league
+    pill is suppressed in a single-league universe, where the league final IS
+    the overall title."""
+    try:
+        from o27v2.season_archive import _ensure_team_honors_backfilled
+        _ensure_team_honors_backfilled()
+    except Exception:
+        pass
+    rows = db.fetchall(
+        """SELECT season_number, year, division_title, wild_card,
+                  league_champion, series_champion
+           FROM season_team_honors
+           WHERE team_id = ? OR (team_id IS NULL AND team_abbrev = ?)
+           ORDER BY COALESCE(year, season_number)""",
+        (team["id"], team["abbrev"]),
+    )
+    if not rows:
+        return []
+    n_leagues = ((db.fetchone(
+        "SELECT COUNT(DISTINCT league) AS n FROM teams "
+        "WHERE COALESCE(league,'') <> ''") or {}).get("n")) or 1
+
+    buckets = {"series": [], "league": [], "division": [], "wildcard": []}
+    for r in rows:
+        label = str(r["year"]) if r["year"] else f"S{r['season_number']}"
+        if r["series_champion"]: buckets["series"].append(label)
+        if r["league_champion"]: buckets["league"].append(label)
+        if r["division_title"]:  buckets["division"].append(label)
+        if r["wild_card"]:       buckets["wildcard"].append(label)
+
+    series_label = "World Series Champion" if n_leagues >= 2 else "Champion"
+    out: list[dict] = []
+    if buckets["series"]:
+        out.append({"kind": "series", "label": series_label, "years": buckets["series"]})
+    if buckets["league"] and n_leagues >= 2:
+        out.append({"kind": "league", "label": "League Champion", "years": buckets["league"]})
+    if buckets["division"]:
+        out.append({"kind": "division", "label": "Division Title", "years": buckets["division"]})
+    if buckets["wildcard"]:
+        out.append({"kind": "wildcard", "label": "Wild Card", "years": buckets["wildcard"]})
+    return out
+
+
 @app.route("/team/<int:team_id>")
 def team_detail(team_id: int):
     team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
@@ -8264,6 +8386,7 @@ def team_detail(team_id: int):
                            win_pct=_win_pct,
                            team_payroll=team_payroll,
                            org_strength=org_strength_live,
+                           honors=_team_honors(team),
                            staff_wera=staff_disp)
 
 

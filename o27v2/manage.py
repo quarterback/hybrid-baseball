@@ -9,6 +9,7 @@ Usage:
     python o27v2/manage.py backfill_arc          — replay played games via stored seeds to populate arc-bucketed pitcher stats
     python o27v2/manage.py backfill_salaries     — recompute every player's salary in guilders from current attributes
     python o27v2/manage.py backfill_archetypes   — classify every non-pitcher / non-joker player's archetype from current grades
+    python o27v2/manage.py backfill_honors        — reconstruct derivable franchise honors (division titles + champions) for archived seasons
     python o27v2/manage.py smoke
     python o27v2/manage.py hof                    — evaluate Hall of Fame inductions and print the league + team Halls
     python o27v2/manage.py configs              — list available league configs
@@ -247,6 +248,17 @@ def cmd_backfill_salaries():
         conn.commit()
 
     print(f"Backfilled salaries on {len(updates)} player rows.")
+
+
+def cmd_backfill_honors():
+    """Reconstruct derivable franchise honors (division titles + overall
+    champion) for already-archived seasons. Pennants and wild-card berths can't
+    be recovered for past seasons — the playoff bracket is wiped at rollover."""
+    from o27v2 import season_archive
+    n = season_archive.backfill_team_honors()
+    db.execute("INSERT OR REPLACE INTO sim_meta (key, value) "
+               "VALUES ('team_honors_backfilled', '1')")
+    print(f"Backfilled franchise honors for {n} archived season(s).")
 
 
 def cmd_backfill_archetypes():
@@ -581,6 +593,8 @@ def main():
         cmd_backfill_salaries()
     elif args[0] == "backfill_archetypes":
         cmd_backfill_archetypes()
+    elif args[0] == "backfill_honors":
+        cmd_backfill_honors()
     elif args[0] == "configs":
         cmd_configs()
     elif args[0] == "tune":

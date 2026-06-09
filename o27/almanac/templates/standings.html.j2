@@ -5,18 +5,30 @@
 <p class="page-subtitle">{{ views.meta.team_count }} teams · {{ views.meta.game_count }} games played</p>
 
 <div class="btn-row" style="margin-bottom:8px;">
-  <button class="btn" data-export-csv="#standings-tbl" data-filename="standings.csv">Download CSV</button>
-  <a class="btn" href="exports/standings.csv">Pre-rendered CSV</a>
+  <a class="btn" href="exports/standings.csv">Download CSV (full)</a>
   <a class="btn" href="exports/season-bundle.json">JSON bundle</a>
 </div>
 
+{# Divisions are real containers, not a flat list. Each (league, division) is
+   its own table so a column-sort or heatmap is scoped to that division — a
+   team can't be pulled above another division's leader on overall record.
+   GB is already computed within (league, division) in compute._build_standings.
+   Rows arrive pre-sorted by (league, division, -pct), so groupby preserves the
+   within-division win-pct order for the rank column. #}
+{% for league_name, league_rows in views.standings | groupby('league') %}
+<h2 class="page-title" style="font-size:1.15rem;margin:18px 0 2px;">{{ league_name or 'League' }}</h2>
+{% for div_name, div_rows in league_rows | groupby('division') %}
+<h3 class="page-subtitle" style="font-weight:600;margin:10px 0 4px;">
+  {{ div_name or 'Division' }}
+  <span style="opacity:.6;font-weight:400;">· {{ div_rows | list | length }} teams</span>
+</h3>
 <div class="tablewrap">
-  <table id="standings-tbl" class="stat-table heatmap">
+  <table class="stat-table heatmap">
     <thead><tr>
+      <th data-type="number" title="Rank within division">#</th>
       <th class="sticky-col" data-type="text">Team</th>
-      <th data-type="text">Lg</th><th data-type="text">Div</th>
       <th>W</th><th>L</th><th data-heat="hi">PCT</th>
-      <th data-heat="lo">GB</th>
+      <th data-heat="lo" title="Games behind the division leader">GB</th>
       <th data-heat="hi">RS</th><th data-heat="lo">RA</th>
       <th data-heat="hi">Rd</th>
       <th data-heat="hi">R/G</th><th data-heat="lo">RA/G</th>
@@ -26,12 +38,11 @@
       <th>L10</th><th data-type="text">Strk</th>
     </tr></thead>
     <tbody>
-      {% for r in views.standings %}
+      {% for r in div_rows %}
       {% set py = views.team_pythag.get(r.abbrev) or {} %}
-      <tr>
-        <td class="sticky-col t-left"><a href="teams/{{ r.abbrev|lower }}.html"><span class="chip">{{ r.abbrev }}</span> {{ team_label(r) }}</a></td>
-        <td class="t-left">{{ r.league }}</td>
-        <td class="t-left">{{ r.division }}</td>
+      <tr{% if loop.first %} class="div-leader-row"{% endif %}>
+        <td>{{ loop.index }}</td>
+        <td class="sticky-col t-left"><a href="teams/{{ r.abbrev|lower }}.html"><span class="chip">{{ r.abbrev }}</span> {{ team_label(r) }}</a>{% if loop.first %} <span title="Division leader" style="color:#2fb858;">◆</span>{% endif %}</td>
         <td>{{ r.w }}</td>
         <td>{{ r.l }}</td>
         <td data-val="{{ r.pct }}">{{ '%.3f'|format(r.pct) }}</td>
@@ -51,6 +62,8 @@
     </tbody>
   </table>
 </div>
+{% endfor %}
+{% endfor %}
 <p class="page-subtitle" style="margin-top:8px;">
   Pythagorean: fitted exponent <b>{{ '%.2f'|format(views.pythag_summary.fitted_exponent) }}</b>
   (MLB default 1.83) · RMSE: <b>{{ '%.3f'|format(views.pythag_summary.rmse_fit) }}</b>

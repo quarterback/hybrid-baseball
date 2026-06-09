@@ -248,6 +248,34 @@
   </div>
 </form>
 {% endif %}
+{% macro div_row(t, rank, leader, extras, payrolls, win_pct, gb) %}
+  {% set ex = extras.get(t.id, {}) %}
+  <tr{% if rank == 1 %} class="div-leader"{% endif %}>
+    <td class="num text-secondary">{{ rank }}</td>
+    <td>
+      <a href="{{ url_for('team_detail', team_id=t.id) }}">
+        <span class="team-abbrev">{{ t.abbrev }}</span>
+        <span class="text-secondary small ms-1">{{ t.city }}</span>
+      </a>
+      {% if rank == 1 %}<span class="div-tag" title="Division leader">◆</span>{% endif %}
+    </td>
+    <td class="num fw-bold">{{ t.wins }}</td>
+    <td class="num text-secondary">{{ t.losses }}</td>
+    <td class="num" data-sort-value="{{ '%.4f'|format((t.wins / (t.wins + t.losses)) if (t.wins + t.losses) else 0) }}">{{ win_pct(t) }}</td>
+    <td class="num text-secondary" data-sort-value="{{ ((leader.wins - t.wins + t.losses - leader.losses) / 2) }}">{{ gb(leader, t) }}</td>
+    <td class="num text-secondary">{{ ex.l10 or '—' }}</td>
+    <td class="{% if ex.streak and ex.streak.startswith('W') %}strk-w{% elif ex.streak %}strk-l{% else %}text-secondary{% endif %}">{{ ex.streak or '—' }}</td>
+    <td class="num">{{ ex.rs if ex.rs is not none else '—' }}</td>
+    <td class="num">{{ ex.ra if ex.ra is not none else '—' }}</td>
+    <td class="num {% if ex.diff and ex.diff > 0 %}strk-w{% elif ex.diff and ex.diff < 0 %}strk-l{% endif %}" data-sort-value="{{ ex.diff if ex.diff is not none else 0 }}">{% if ex.diff is not none %}{% if ex.diff > 0 %}+{% endif %}{{ ex.diff }}{% else %}—{% endif %}</td>
+    <td class="num text-secondary" data-sort-value="{{ '%.4f'|format(ex.pyth_pct or 0) }}" title="Expected record from Pythagorean">{{ ex.pyth_wl or '—' }}</td>
+    <td>
+      {% for r in (ex.last5 or []) %}<span class="l5pill {{ r }}"></span>{% endfor %}
+    </td>
+    <td class="num" data-sort-value="{{ payrolls.get(t.id, 0) }}">{{ payrolls.get(t.id, 0) | money }}</td>
+  </tr>
+{% endmacro %}
+
 {% for league_name, league_divs in leagues.items() %}
 <div class="dense mb-4">
   <div class="panel-title d-flex flex-wrap align-items-center gap-2">
@@ -257,53 +285,174 @@
       {{ league_styles[league_name] }}
     </span>
     {% endif %}
+    <span class="text-secondary small">{{ league_divs|length }} division{{ 's' if league_divs|length != 1 else '' }}</span>
   </div>
-  <div class="table-responsive">
-  <table class="table table-sm dense-table sortable mb-0">
-    <thead><tr>
-      <th>Team</th>
-      <th class="num">W</th><th class="num">L</th>
-      <th class="num">PCT</th><th class="num">GB</th>
-      <th class="num">L10</th><th>Strk</th>
-      <th class="num">RS</th><th class="num">RA</th><th class="num">DIFF</th>
-      <th class="num" title="Pythagorean expected W-L (RS² / (RS² + RA²))">PYTH</th>
-      <th data-nosort>Last5</th>
-      <th class="num" title="Sum of player salaries on the active roster, in guilders.">PAYROLL</th>
-    </tr></thead>
-    <tbody>
-    {% for div_name, div_teams in league_divs.items() %}
-      {% set leader = div_teams[0] %}
-      <tr data-divider class="div-divider"><td colspan="13">{{ div_name }}</td></tr>
-      {% for t in div_teams %}
-        {% set ex = extras.get(t.id, {}) %}
-        <tr>
-          <td>
-            <a href="{{ url_for('team_detail', team_id=t.id) }}">
-              <span class="team-abbrev">{{ t.abbrev }}</span>
-              <span class="text-secondary small ms-1">{{ t.city }}</span>
-            </a>
-          </td>
-          <td class="num fw-bold">{{ t.wins }}</td>
-          <td class="num text-secondary">{{ t.losses }}</td>
-          <td class="num" data-sort-value="{{ '%.4f'|format((t.wins / (t.wins + t.losses)) if (t.wins + t.losses) else 0) }}">{{ win_pct(t) }}</td>
-          <td class="num text-secondary" data-sort-value="{{ ((leader.wins - t.wins + t.losses - leader.losses) / 2) }}">{{ gb(leader, t) }}</td>
-          <td class="num text-secondary">{{ ex.l10 or '—' }}</td>
-          <td class="{% if ex.streak and ex.streak.startswith('W') %}strk-w{% elif ex.streak %}strk-l{% else %}text-secondary{% endif %}">{{ ex.streak or '—' }}</td>
-          <td class="num">{{ ex.rs if ex.rs is not none else '—' }}</td>
-          <td class="num">{{ ex.ra if ex.ra is not none else '—' }}</td>
-          <td class="num {% if ex.diff and ex.diff > 0 %}strk-w{% elif ex.diff and ex.diff < 0 %}strk-l{% endif %}" data-sort-value="{{ ex.diff if ex.diff is not none else 0 }}">{% if ex.diff is not none %}{% if ex.diff > 0 %}+{% endif %}{{ ex.diff }}{% else %}—{% endif %}</td>
-          <td class="num text-secondary" data-sort-value="{{ '%.4f'|format(ex.pyth_pct or 0) }}" title="Expected record from Pythagorean">{{ ex.pyth_wl or '—' }}</td>
-          <td>
-            {% for r in (ex.last5 or []) %}<span class="l5pill {{ r }}"></span>{% endfor %}
-          </td>
-          <td class="num" data-sort-value="{{ payrolls.get(t.id, 0) }}">{{ payrolls.get(t.id, 0) | money }}</td>
-        </tr>
-      {% endfor %}
-    {% endfor %}
-    </tbody>
-  </table>
+
+  {# Each division is its own container: ranked within itself, sorted within
+     itself. A column-sort on one division never reorders another, and never
+     pulls a better-record team from another division above a division leader. #}
+  <div class="div-grid">
+  {% for div_name, div_teams in league_divs.items() %}
+    {% set leader = div_teams[0] %}
+    <div class="div-card">
+      <div class="div-card-title">
+        <span>{{ div_name }}</span>
+        <span class="text-secondary small">{{ div_teams|length }} teams</span>
+      </div>
+      <div class="table-responsive">
+      <table class="table table-sm dense-table sortable mb-0">
+        <thead><tr>
+          <th class="num" title="Rank within division">#</th>
+          <th>Team</th>
+          <th class="num">W</th><th class="num">L</th>
+          <th class="num">PCT</th>
+          <th class="num" title="Games behind the division leader">GB</th>
+          <th class="num">L10</th><th>Strk</th>
+          <th class="num">RS</th><th class="num">RA</th><th class="num">DIFF</th>
+          <th class="num" title="Pythagorean expected W-L (RS² / (RS² + RA²))">PYTH</th>
+          <th data-nosort>Last5</th>
+          <th class="num" title="Sum of player salaries on the active roster, in guilders.">PAYROLL</th>
+        </tr></thead>
+        <tbody>
+        {% for t in div_teams %}
+          {{ div_row(t, loop.index, leader, extras, payrolls, win_pct, gb) }}
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  {% endfor %}
   </div>
+
+  {# Wild-card / playoff picture: division winners are locked in by finishing
+     first in their division (regardless of records elsewhere); the remaining
+     berths go to the best records among everyone who did NOT win a division. #}
+  {% set pic = playoff_picture.get(league_name) %}
+  {% if pic and pic.n_wc > 0 %}
+  <div class="wc-panel">
+    <div class="div-card-title">
+      <span>Playoff Picture</span>
+      <span class="text-secondary small">
+        {{ pic.champs|length }} division winner{{ 's' if pic.champs|length != 1 else '' }}
+        · {{ pic.n_wc }} wild card{{ 's' if pic.n_wc != 1 else '' }}
+      </span>
+    </div>
+    <div class="wc-grid">
+      <div>
+        <div class="wc-subhead">Division winners (clinch on finishing 1st)</div>
+        <table class="table table-sm dense-table mb-0 wc-table">
+          <thead><tr><th class="num">Seed</th><th>Team</th><th>Div</th>
+            <th class="num">W</th><th class="num">L</th><th class="num">PCT</th></tr></thead>
+          <tbody>
+          {% for c in pic.champs %}
+            <tr class="wc-in">
+              <td class="num">{{ loop.index }}</td>
+              <td><a href="{{ url_for('team_detail', team_id=c.id) }}"><span class="team-abbrev">{{ c.abbrev }}</span></a>
+                  <span class="wc-badge wc-div">z</span></td>
+              <td class="text-secondary small">{{ c.division }}</td>
+              <td class="num fw-bold">{{ c.wins }}</td>
+              <td class="num text-secondary">{{ c.losses }}</td>
+              <td class="num">{{ win_pct(c) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div class="wc-subhead">Wild-card race (non-division-winners)</div>
+        <table class="table table-sm dense-table mb-0 wc-table">
+          <thead><tr><th class="num">#</th><th>Team</th><th>Div</th>
+            <th class="num">W</th><th class="num">L</th><th class="num">PCT</th>
+            <th class="num" title="Games up on the first team out (+) / games back of the last team in">WCGB</th></tr></thead>
+          <tbody>
+          {% for c in pic.contenders %}
+            {% if loop.index0 == pic.n_wc %}
+              <tr class="wc-cutline"><td colspan="7">— wild-card cut line —</td></tr>
+            {% endif %}
+            <tr class="{{ 'wc-in' if c.in_spot else 'wc-out' }}">
+              <td class="num text-secondary">{{ loop.index }}</td>
+              <td><a href="{{ url_for('team_detail', team_id=c.team.id) }}"><span class="team-abbrev">{{ c.team.abbrev }}</span></a>
+                  {% if c.in_spot %}<span class="wc-badge wc-wild" title="Wild-card berth">WC</span>{% endif %}</td>
+              <td class="text-secondary small">{{ c.team.division }}</td>
+              <td class="num fw-bold">{{ c.team.wins }}</td>
+              <td class="num text-secondary">{{ c.team.losses }}</td>
+              <td class="num">{{ win_pct(c.team) }}</td>
+              <td class="num {% if c.in_spot %}strk-w{% else %}text-secondary{% endif %}">{{ c.wcgb }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <div class="text-secondary small mt-1">
+          <span class="wc-badge wc-div">z</span> clinched division ·
+          <span class="wc-badge wc-wild">WC</span> in wild-card position
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endfor %}
+
+<style>
+.div-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr));
+  gap: 14px;
+}
+.div-card {
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-soft);
+}
+.div-card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 12px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  background: var(--bg-warm);
+  border-bottom: 1px solid var(--border-soft);
+}
+.div-leader td { background: rgba(40,167,69,.07); }
+.div-leader td:first-child { box-shadow: inset 3px 0 0 rgba(40,167,69,.55); }
+.div-tag { color: #2fb858; font-size: .8rem; margin-left: 4px; }
+.wc-panel { margin-top: 16px; }
+.wc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 14px;
+}
+.wc-subhead {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 6px 0 4px;
+}
+.wc-in  td { background: rgba(40,167,69,.07); }
+.wc-out td { color: var(--text); opacity: .82; }
+.wc-cutline td {
+  text-align: center;
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #e0606e;
+  border-top: 2px solid rgba(220,53,69,.55);
+  border-bottom: 2px solid rgba(220,53,69,.55);
+  padding: 2px 0;
+}
+.wc-badge {
+  display: inline-block;
+  padding: 0 5px;
+  margin-left: 4px;
+  border-radius: 3px;
+  font-size: .68rem;
+  font-weight: 700;
+}
+.wc-div  { background: rgba(40,167,69,.18);  color: #2fb858; border: 1px solid rgba(40,167,69,.40); }
+.wc-wild { background: rgba(13,110,253,.16); color: #5b9bff; border: 1px solid rgba(13,110,253,.40); }
+</style>
 {% endif %}
 {% endblock %}

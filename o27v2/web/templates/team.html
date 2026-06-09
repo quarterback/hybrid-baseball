@@ -46,6 +46,34 @@
   </div>
 </div>
 
+{# ---- Franchise honors banner: one pill per accolade, with the years won ---- #}
+{% if honors %}
+<div class="honors-banner">
+  {% for h in honors %}
+  <span class="honor-pill honor-{{ h.kind }}"
+        title="{{ h.label }} — {{ h.years | join(', ') }}">
+    <span class="honor-label">{{ h.label }}{% if h.years | length > 1 %} ×{{ h.years | length }}{% endif %}</span>
+    <span class="honor-years">{{ h.years | join(' · ') }}</span>
+  </span>
+  {% endfor %}
+</div>
+<style>
+.honors-banner { display:flex; flex-wrap:wrap; gap:8px; margin:-4px 0 16px; }
+.honor-pill {
+  display:inline-flex; align-items:center; gap:8px;
+  padding:4px 10px; border-radius:5px;
+  font-size:.74rem; line-height:1.3;
+  border:1px solid var(--border-soft);
+}
+.honor-label { font-weight:700; letter-spacing:.03em; text-transform:uppercase; }
+.honor-years { opacity:.85; font-variant-numeric:tabular-nums; }
+.honor-series   { background:rgba(212,175,55,.16);  color:#d4af37; border-color:rgba(212,175,55,.45); }
+.honor-league   { background:rgba(124,131,253,.15); color:#8b93ff; border-color:rgba(124,131,253,.40); }
+.honor-division { background:rgba(40,167,69,.15);   color:#2fb858; border-color:rgba(40,167,69,.40); }
+.honor-wildcard { background:rgba(13,110,253,.13);  color:#5b9bff; border-color:rgba(13,110,253,.35); }
+</style>
+{% endif %}
+
 {# ---- Quick stat tiles ---- #}
 <div class="stat-tiles">
   <div class="stat-tile accent">
