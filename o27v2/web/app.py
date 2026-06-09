@@ -8206,6 +8206,52 @@ def teams():
     return _serve("teams.html", teams=teams_list, win_pct=_win_pct)
 
 
+def _team_honors(team: dict) -> list[dict]:
+    """Franchise accolades across archived seasons, each with the years won,
+    for the team-page banner. Canonical labels mirror the in-game playoff
+    naming (World Series / League Championship / Division Series). The league
+    pill is suppressed in a single-league universe, where the league final IS
+    the overall title."""
+    try:
+        from o27v2.season_archive import _ensure_team_honors_backfilled
+        _ensure_team_honors_backfilled()
+    except Exception:
+        pass
+    rows = db.fetchall(
+        """SELECT season_number, year, division_title, wild_card,
+                  league_champion, series_champion
+           FROM season_team_honors
+           WHERE team_id = ? OR (team_id IS NULL AND team_abbrev = ?)
+           ORDER BY COALESCE(year, season_number)""",
+        (team["id"], team["abbrev"]),
+    )
+    if not rows:
+        return []
+    n_leagues = ((db.fetchone(
+        "SELECT COUNT(DISTINCT league) AS n FROM teams "
+        "WHERE COALESCE(league,'') <> ''") or {}).get("n")) or 1
+
+    buckets = {"series": [], "league": [], "division": [], "wildcard": []}
+    for r in rows:
+        label = str(r["year"]) if r["year"] else f"S{r['season_number']}"
+        if r["series_champion"]: buckets["series"].append(label)
+        if r["league_champion"]: buckets["league"].append(label)
+        if r["division_title"]:  buckets["division"].append(label)
+        if r["wild_card"]:       buckets["wildcard"].append(label)
+
+    series_label = "World Series Champion" if n_leagues >= 2 else "Champion"
+    out: list[dict] = []
+    if buckets["series"]:
+        out.append({"kind": "series", "label": series_label, "years": buckets["series"]})
+    if buckets["league"] and n_leagues >= 2:
+        out.append({"kind": "league", "label": "League Champion", "years": buckets["league"]})
+    if buckets["division"]:
+        out.append({"kind": "division", "label": "Division Title", "years": buckets["division"]})
+    if buckets["wildcard"]:
+        out.append({"kind": "wildcard", "label": "Wild Card", "years": buckets["wildcard"]})
+    return out
+
+
 @app.route("/team/<int:team_id>")
 def team_detail(team_id: int):
     team = db.fetchone("SELECT * FROM teams WHERE id = ?", (team_id,))
@@ -8340,6 +8386,7 @@ def team_detail(team_id: int):
                            win_pct=_win_pct,
                            team_payroll=team_payroll,
                            org_strength=org_strength_live,
+                           honors=_team_honors(team),
                            staff_wera=staff_disp)
 
 

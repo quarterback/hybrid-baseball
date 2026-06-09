@@ -678,6 +678,156 @@ def _mark_current_season_archived(season_id: int) -> None:
     )
 
 
+def _snapshot_team_honors(season_id: int, season_number: int,
+                          year: int | None) -> None:
+    """Capture this season's franchise honors *before* the playoff bracket is
+    wiped at rollover. Reads the live teams table (final standings) and the
+    current playoff_series rows (only this season's bracket is ever present,
+    so no season filter is needed). One row per team that earned an honor.
+
+    Canonical accolades:
+      * division_title  — finished 1st in its (league, division).
+      * wild_card       — reached the playoff field as a non-division-winner.
+      * league_champion — won its league final ('championship' series).
+      * series_champion — overall champion (World Series, or the lone league).
+    """
+    teams = db.fetchall(
+        "SELECT id, name, abbrev, league, division, wins, losses FROM teams"
+    )
+    if not teams:
+        return
+
+    def _pct(t: dict) -> float:
+        g = (t["wins"] or 0) + (t["losses"] or 0)
+        return (t["wins"] or 0) / g if g else 0.0
+
+    # Division winners: best record in each (league, division).
+    by_div: dict[tuple, list[dict]] = {}
+    for t in teams:
+        by_div.setdefault((t["league"] or "", t["division"] or ""), []).append(t)
+    div_winner_ids: set[int] = set()
+    for grp in by_div.values():
+        winner = sorted(
+            grp,
+            key=lambda t: (_pct(t), t["wins"] or 0, -(t["losses"] or 0), t["abbrev"]),
+            reverse=True,
+        )[0]
+        div_winner_ids.add(winner["id"])
+
+    # Playoff field + pennant winners, from the live bracket (current season).
+    appeared_ids: set[int] = set()
+    for r in db.fetchall(
+        "SELECT high_seed_team_id AS a, low_seed_team_id AS b FROM playoff_series"
+    ):
+        if r["a"]:
+            appeared_ids.add(r["a"])
+        if r["b"]:
+            appeared_ids.add(r["b"])
+    pennant_ids = {
+        r["winner_team_id"] for r in db.fetchall(
+            "SELECT winner_team_id FROM playoff_series "
+            "WHERE series_kind = 'championship' AND winner_team_id IS NOT NULL"
+        )
+    }
+
+    champ_id = None
+    try:
+        from o27v2 import playoffs as _po
+        won = _po.champion()
+        if won and won.get("winner_team_id"):
+            champ_id = won["winner_team_id"]
+    except Exception:
+        pass
+
+    for t in teams:
+        dt = 1 if t["id"] in div_winner_ids else 0
+        wc = 1 if (t["id"] in appeared_ids and t["id"] not in div_winner_ids) else 0
+        lc = 1 if t["id"] in pennant_ids else 0
+        sc = 1 if t["id"] == champ_id else 0
+        if not (dt or wc or lc or sc):
+            continue
+        db.execute(
+            """INSERT OR REPLACE INTO season_team_honors
+               (season_id, season_number, year, team_id, team_abbrev, league,
+                division, division_title, wild_card, league_champion,
+                series_champion)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (season_id, season_number, year, t["id"], t["abbrev"],
+             t["league"], t["division"], dt, wc, lc, sc),
+        )
+
+
+def backfill_team_honors() -> int:
+    """Reconstruct the derivable honors (division titles + overall champion) for
+    archived seasons that have no honors rows yet. Pennants and wild-card berths
+    cannot be recovered for past seasons — the bracket is wiped at rollover — so
+    they remain 0 there. Returns the number of seasons backfilled."""
+    seasons = db.fetchall(
+        "SELECT id, season_number, year, champion_abbrev FROM seasons "
+        "ORDER BY season_number"
+    )
+    if not seasons:
+        return 0
+    abbrev_to_id = {r["abbrev"]: r["id"]
+                    for r in db.fetchall("SELECT id, abbrev FROM teams")}
+    done = 0
+    for s in seasons:
+        sid = s["id"]
+        if db.fetchone("SELECT 1 FROM season_team_honors WHERE season_id = ? LIMIT 1",
+                       (sid,)):
+            continue
+        rows = db.fetchall(
+            "SELECT team_abbrev, league, division, wins, losses "
+            "FROM season_standings WHERE season_id = ?", (sid,))
+        if not rows:
+            continue
+        by_div: dict[tuple, list[dict]] = {}
+        for r in rows:
+            by_div.setdefault((r["league"] or "", r["division"] or ""), []).append(r)
+        winners: set[str] = set()
+        for grp in by_div.values():
+            w = sorted(
+                grp,
+                key=lambda r: ((r["wins"] or 0) / max(1, (r["wins"] or 0) + (r["losses"] or 0)),
+                               r["wins"] or 0, -(r["losses"] or 0), r["team_abbrev"]),
+                reverse=True,
+            )[0]
+            winners.add(w["team_abbrev"])
+        champ_abbrev = s["champion_abbrev"]
+        for r in rows:
+            dt = 1 if r["team_abbrev"] in winners else 0
+            sc = 1 if (champ_abbrev and r["team_abbrev"] == champ_abbrev) else 0
+            if not (dt or sc):
+                continue
+            db.execute(
+                """INSERT OR REPLACE INTO season_team_honors
+                   (season_id, season_number, year, team_id, team_abbrev, league,
+                    division, division_title, wild_card, league_champion,
+                    series_champion)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)""",
+                (sid, s["season_number"], s["year"],
+                 abbrev_to_id.get(r["team_abbrev"]), r["team_abbrev"],
+                 r["league"], r["division"], dt, sc),
+            )
+        done += 1
+    return done
+
+
+def _ensure_team_honors_backfilled() -> None:
+    """One-time lazy backfill so existing multi-season saves show the derivable
+    honors without a manual command. Guarded by a sim_meta flag."""
+    flag = db.fetchone(
+        "SELECT value FROM sim_meta WHERE key = 'team_honors_backfilled'")
+    if flag and str(flag.get("value")) == "1":
+        return
+    try:
+        backfill_team_honors()
+    except Exception:
+        traceback.print_exc()
+    db.execute("INSERT OR REPLACE INTO sim_meta (key, value) "
+               "VALUES ('team_honors_backfilled', '1')")
+
+
 def archive_current_season(
     rng_seed: int | None = None,
     config_id: str | None = None,
@@ -758,6 +908,13 @@ def archive_current_season(
          inv_pass, inv_fail, inv_summary),
     )
     _snapshot_standings(new_id)
+    # Franchise honors — must run before the offseason wipes the playoff
+    # bracket (playoff_series). Wrapped so a capture bug never aborts the
+    # season close.
+    try:
+        _snapshot_team_honors(new_id, season_number, year)
+    except Exception:
+        traceback.print_exc()
     _snapshot_leaders(new_id)
     _snapshot_player_lines(new_id)
     # Phase E archive — transactions + auction ledger. Wrapped so an
