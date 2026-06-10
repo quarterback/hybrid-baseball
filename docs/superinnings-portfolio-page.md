@@ -2,7 +2,7 @@
 ## SuperInnings
 Baseball restructured into one continuous 27-out half per side — a full simulated world with its own stats, its own economy, and its own history.
 
-Designer & sole engineer · 2026 · hybrid-baseball.fly.dev ↗
+Designer & sole engineer · 2026 · superinnings.com ↗
 
 Cricket figured something out with T20: keep the sport, compress the structure, and a new strategic shape falls out of it. I'd been carrying around the baseball version of that thought for years — what happens if you keep all 27 outs but play them as a single arc? Each side bats once, straight through, until they record 27 outs. The starter takes the mound at out 0 and pitches as long as he can hold the line. The top of the order comes up six or seven times. A marathon and a sprint at once.
 
@@ -44,6 +44,6 @@ The core is Python with SQLite underneath and a Flask app on top. It simulates a
 - **Tune the universe** — adjust engine constants, apply era presets, and build peer leagues with their own styles.
 - **Read the methodology** — the full stats reference, the design AARs, and the month-long project trajectory.
 
-Explore it at hybrid-baseball.fly.dev ↗
+Explore it at superinnings.com ↗
 
 Reach me at contact@ronbronson.com · more of my work lives at ronbronson.com.
