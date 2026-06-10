@@ -1,0 +1,172 @@
+{
+  "record_id": "hybrid-baseball--2026-05-25--ui-retheme-nav-mobile-baselines-web-modularization",
+  "source_path": "docs/aar-ui-retheme-nav-and-web-modularization.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-25",
+  "title": "After-Action Report — UI re-theme, nav IA, mobile, custom-league baselines, web modularization",
+  "scope": "The session opened as an open-ended \"does this codebase need refactoring?\" review, with three concrete asks from the user (later expanded to five): re-theme with light/dark toggle; grouped nav dropdowns; general refactoring and dead-code removal; mobile responsiveness of the universe-builder league table; baselines for the custom-league bias inputs.",
+  "rationale": [
+    {
+      "item": "The cream/navy/red \"Baseball-Reference\" theme read dated — move to a cohesive, WCAG-compliant, non-boilerplate palette with a light/dark toggle (the user specifically wanted a generated, readable scheme, not stock Bootstrap blue).",
+      "references": []
+    },
+    {
+      "item": "The top navigation was a flat list of 23 links with no grouping — hard to scan. Wanted grouped dropdowns.",
+      "references": []
+    },
+    {
+      "item": "Mobile responsiveness \"still not optimal\" — the universe-builder league table overflowed horizontally on a phone, cutting off the right-hand columns.",
+      "references": []
+    },
+    {
+      "item": "The custom-league bias inputs gave no sense of baselines: bare 0-default boxes with no indication of neutral, range, or what \"cranking up\" an attribute does to league output.",
+      "references": []
+    },
+    {
+      "item": "The theme was already centralized in CSS custom properties in o27v2/web/templates/base.html, so a re-theme was low-risk and high-impact; o27/almanac/static/almanac.css already had a [data-theme=\"dark\"] pattern to reuse.",
+      "references": []
+    },
+    {
+      "item": "o27v2/web/app.py is an 8,336-line monolith (84 routes, 168 defs) — the one real \"god file\". lib/ (TypeScript Zod schemas + a React API client) was unused — an abandoned rewrite scaffold.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Extract only the safe formatters slice this session rather than splitting all 84 routes into blueprints",
+      "decided_by": "agent",
+      "quote": "I deliberately did only the safe, fully-verifiable slice (pure formatters) this session — see Follow-ups for why."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Removed dead lib/ scaffold: four unused workspace packages, tsconfig project references, pnpm-workspace globs; refreshed pnpm-lock.yaml",
+      "artifacts": [
+        "lib/",
+        "pnpm-lock.yaml"
+      ],
+      "kind": "other"
+    },
+    {
+      "description": "Re-themed UI into \"Twilight Diamond\" palette with split theme-flipping and fixed --fill-* tokens, [data-theme=\"dark\"] override block, persisted light/dark toggle with pre-paint script, themeable flash banners",
+      "artifacts": [
+        "o27v2/web/templates/base.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Grouped nav into 6 dropdowns (Games / Players / Stats / League / History / Manage) with active-state highlighting and inline mobile sections; endpoint names and url_for targets unchanged",
+      "artifacts": [
+        "o27v2/web/templates/base.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Universe builder responsive: below 768px #league-table opts out of the min-width floor and stacks each league into a labelled card via data-label + media query",
+      "artifacts": [
+        "o27v2/web/templates/"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Custom-league builder baselines: labelled sliders with live ± readout, per-knob hints, 0 = neutral · −25…+25 legend, collapsible style reference, per-row \"Start from preset\" picker; metadata sourced from o27v2.league via _universe_custom_meta",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "o27v2.league"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Began breaking up web monolith: extracted nine pure presentation filters into o27v2/web/formatters.py, re-registered as Jinja filters from app.py",
+      "artifacts": [
+        "o27v2/web/formatters.py",
+        "o27v2/web/app.py"
+      ],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "Endpoint names and `url_for` targets are unchanged.",
+    "No behavior change; `app` and all endpoint names stay put so the many cross-module importers (`manage.py`, `sim.py`, `season_archive.py`, tests) are untouched.",
+    "Extract, don't rewrite.",
+    "CSS-only mobile stacking for the universe table (vs. rewriting the JS-cloned <template> into card markup) — keeps the row-serialization JS and the server's positional form parsing completely untouched, which is the lower-risk path.",
+    "The Dockerfile is pure-Python, so this has zero deploy impact."
+  ],
+  "validation_claims": [
+    {
+      "claim": "tests/test_template_renders.py (renders base.html on every page) — green throughout",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/test_template_renders.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Ad-hoc test-client renders of /universe/new confirmed theme toggle, dark block, 6 nav dropdowns with active-state, mobile stacking CSS, style reference + sliders + presets",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Render /universe/new via Flask test client and grep for the elements",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "End-to-end POST to /universe/new with a custom-bias league: 302 redirect, custom bias JSON persisted to teams.style_profile",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "POST via test client and inspect teams.style_profile",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Full suites: 213 passed, 7 skipped. The only failures (10) are test_stat_invariants.py erroring with no such table: games — a pre-existing environment issue",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the full pytest suites",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Route → blueprint split of web/app.py (the bulk of the refactor)",
+      "reason": "It touches all 84 routes, and this environment can't browser-verify the result; the automated tests cover only a handful of routes.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Aligning almanac palette hues to the new \"Twilight Diamond\" values",
+      "reason": "almanac.css already has its own light/dark tokens; a later pass should align",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Broader mobile audit of the widest stat tables on a real device",
+      "reason": "the universe table was the screenshotted offender and is fixed",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Verification had no browser and no populated DB — done via the Flask test client and test suites only."
+  ],
+  "open_hooks": [
+    "The formatters.py extraction establishes the pattern (extract + re-export, no endpoint churn); aggregations.py (the _aggregate_* / _pitcher_wl_map / _PSTATS_DEDUP_SQL cluster) is the next clean extraction target.",
+    "Blueprint-by-blueprint incremental split on a branch with staging / browser verification."
+  ],
+  "section_headers_original": [
+    "After-Action Report — UI re-theme, nav IA, mobile, custom-league baselines, web modularization",
+    "Context",
+    "What shipped",
+    "Decisions & tradeoffs",
+    "Verification",
+    "Follow-ups (open)"
+  ],
+  "unmapped_content": "Decisions & tradeoffs details: fixed-fill color tokens are the cleanest way to get a dark mode that passes contrast on solid controls without per-component overrides; sliders over number boxes communicate \"0 is neutral, here's the range\" better than a 0-default text field. Mobile root cause: a global .table-responsive .dense-table { min-width: 720px } floor plus an inline min-width:640px. Predecessor: aar-custom-league-editing.md. Branch claude/codebase-refactor-design-IgnTD. Each workstream is a separate commit on the branch.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date completed: 2026-05-25'. Clean AAR shape."
+}

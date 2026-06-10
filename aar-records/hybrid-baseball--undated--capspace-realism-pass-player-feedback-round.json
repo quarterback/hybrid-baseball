@@ -1,0 +1,36 @@
+{
+  "record_id": "hybrid-baseball--undated--capspace-realism-pass-player-feedback-round",
+  "source_path": "docs/aar-capspace-realism.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": null,
+  "title": "CapSpace realism pass (player feedback round)",
+  "scope": null,
+  "rationale": [],
+  "delegation_events": [],
+  "actions": [],
+  "risk_posture": [],
+  "validation_claims": [],
+  "non_actions": [],
+  "residual_risks": [],
+  "open_hooks": [],
+  "section_headers_original": [
+    "AAR \u2014 CapSpace realism pass (player feedback round)",
+    "Context",
+    "Findings (the audit)",
+    "What changed",
+    "Validation",
+    "What was NOT changed / notes"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": false,
+    "has_rationale": false,
+    "has_delegation_record": false,
+    "has_validation": false,
+    "has_negative_space": false,
+    "has_residual_risk": false
+  },
+  "parser_notes": "Structural skeleton only; full semantic extraction deferred."
+}

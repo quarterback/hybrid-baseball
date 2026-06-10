@@ -1,0 +1,181 @@
+{
+  "record_id": "hybrid-baseball--2026-05-25--fast-sim-stat-repair-wera-archive-outs-based-dips-leaderboards",
+  "source_path": "docs/aar-fast-sim-stat-repair-and-dips-leaderboards.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-25",
+  "title": "After-Action Report \u2014 fast-sim stat repair (wERA archive) + outs-based DIPS leaderboards",
+  "scope": "The session opened with screenshots of the archived-season leaderboards (wRC+ / WPA / wERA / wERA+ \u00b7 Top 10) where every value was degenerate: wRC+ identical -23 for all ten batters; WPA +0.00 for every batter and pitcher; wERA 0.00 for everyone; wERA+ 100 for everyone.",
+  "rationale": [
+    {
+      "item": "The user couldn't tell whether the stats were \"always broken or a specific issue with the fast sim context,\" noted that an ERA+ of 100 (and WPA) told them nothing, and asked for more useful, front-office-grade analytics \u2014 specifically flagging that total outs as an IP proxy would be an easy base for new rate stats.",
+      "references": []
+    },
+    {
+      "item": "WPA = +0.00 \u2014 fast-sim-specific: simulate_game(detail=\"lite\") skips the per-PA event log game_pa_log; build_player_wpa() walks that log.",
+      "references": [
+        "o27v2/sim.py:1720"
+      ]
+    },
+    {
+      "item": "wRC+ = \u221223 (constant) \u2014 fast-sim-specific: wOBA weights are empirically derived from game_pa_log; empty log \u2192 every weight 0 \u2192 every batter's wOBA = 0 \u2192 wRC+ collapses to one league-determined constant.",
+      "references": [
+        "analytics/linear_weights.py:derive_linear_weights"
+      ]
+    },
+    {
+      "item": "wERA = 0.00 / wERA+ = 100 \u2014 an archive bug, not fast-sim: season_archive._snapshot_leaders omitted the arc columns from its pitching SELECT, so _aggregate_pitcher_rows read every arc as 0.",
+      "references": []
+    },
+    {
+      "item": "Design read: WPA and the pa_log-derived '+' metrics are the least salvageable \u2014 reviving them in fast sim means re-simulating every PA, which defeats the point of fast sim. The durable answer is box-score analytics keyed off total outs (IP = outs/3); the gaps were FIP and K/BB, plus the archived boards surfacing the broken stats.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Do not revive pa_log metrics in fast sim by re-simulating every PA",
+      "decided_by": "owner",
+      "quote": "the user explicitly declined that option"
+    },
+    {
+      "decision": "Scope of the shipped work (fix wERA archive bug; add FIP + K/BB; swap broken archive columns; substitute OPS+ for wRC+ on the archive)",
+      "decided_by": "joint",
+      "quote": "Scope was confirmed with the user before implementing (fix the wERA archive bug; add FIP + K/BB; swap the broken archive columns; and \u2014 in a follow-up turn \u2014 substitute OPS+ for wRC+ on the archive)."
+    },
+    {
+      "decision": "Box-score-robust substitutes over a minimal lite-mode game_pa_log write",
+      "decided_by": "owner",
+      "quote": "Not done; the user preferred the box-score-robust substitutes."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Fixed the archived wERA bug: _snapshot_leaders pitching aggregation now selects arc-bucketed columns (er_arc*/k_arc*/fo_arc*/bf_arc*) plus true-outcome/hit-type columns that _aggregate_pitcher_rows consumes",
+      "artifacts": [
+        "season_archive._snapshot_leaders"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Added FIP and K/BB to the pitcher aggregate, with new _league_fip_constant() helper anchoring league FIP to league ERA; K/BB left None when no walks",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "_aggregate_pitcher_rows",
+        "_league_fip_constant"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Swapped dead boards on the archived season page: WPA pitching board \u2192 FIP/K/BB/WHIP/K9 boards; OPS+ substituted for wRC+ on batting; dropped both WPA boards; new persisted columns fip_dips/kbb/whip_v/k9 and ops_plus added via idempotent ALTER migration pattern + CREATE TABLE defaults; legacy archives fall back to original wRC+ table",
+      "artifacts": [
+        "season_pitching_leaders",
+        "season_batting_leaders"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Surfaced FIP + K/BB on the live /leaders page \u2014 FIP alongside the wERA/xRA run-estimator trio, K/BB with the command rates",
+      "artifacts": [
+        "leaders.html"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Diagnose, then fix the *right* layer.",
+    "Box-score-robust stats over reviving pa_log metrics. ... Chosen over making lite sim write a minimal `game_pa_log` (heavier, slows the very mode that exists to be fast).",
+    "OPS+ substitutes for wRC+ on the archive only. wRC+ stays on the live page (correct there).",
+    "New, clearly-named archive columns instead of reusing the legacy ones.",
+    "`_league_fip_constant()` as its own helper. One extra league query per `_aggregate_pitcher_rows` call ... in exchange for not changing that function's return-tuple arity."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Engine repro: ran 3 games through the core engine \u2014 er_arc populated ([25,24,8]), proving the arc data exists independent of lite mode.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run 3 engine games and inspect er_arc",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Archive repro: same pitcher row aggregates to werra=4.000 with the arc columns vs werra=0.000 without.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Aggregate one pitcher row with/without arc columns",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "End-to-end snapshot: wERA (2.01/5.99), wERA+ (199/67), FIP (0.83/7.17), K/BB (11.0/0.60), WHIP, K/9 all populated and correctly ranked; OPS+ board 157 vs 28 where wRC+ was constant.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Build throwaway DB, run _snapshot_leaders, read back season_pitching_leaders",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "/leaders and /seasons/1 both return 200; FIP and K/BB cards on /leaders, FIP/K/BB/WHIP/K9 + OPS+ tables on the archive page, WPA / wRC+ tables gone.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Flask test client render checks",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_new_stats.py \u2014 8 passed.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest tests/test_new_stats.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_stat_invariants.py errors with 'no such table: games' \u2014 the same pre-existing seeded-DB environment issue noted in the predecessor AAR, unrelated to these changes.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest tests/test_stat_invariants.py in a seeded environment",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Reviving wRC+ / WPA in fast sim (e.g. a minimal game_pa_log write under lite)",
+      "reason": "a deliberate, measured slowdown of fast sim. Not done; the user preferred the box-score-robust substitutes.",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Glossary entries for fip / kbb",
+      "reason": "the card() macro only links to the glossary when has_glossary(key) is true, so the new cards render fine without links",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "wRC+ / WPA in fast sim remain dead by design.",
+    "FIP and xRA now sit side by side on both pages; may read as redundant to players.",
+    "Other archive-adjacent aggregations (HoF, team pages) not swept for the 'snapshot SELECT drifted from the aggregator' bug class."
+  ],
+  "open_hooks": [
+    "Short glossary.py pass for fip/kbb parity",
+    "Consider folding FIP into the XO-crossover block and leaving xRA as the native headline",
+    "Sweep to confirm every archive-adjacent aggregation selects the full arc set"
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 fast-sim stat repair (wERA archive) + outs-based DIPS leaderboards",
+    "Context",
+    "Diagnosis (three distinct causes, not one)",
+    "Design read",
+    "What shipped",
+    "Decisions & tradeoffs",
+    "Verification",
+    "Follow-ups (open)"
+  ],
+  "unmapped_content": "**Branch:** `claude/sim-ahead-stats-analytics-8eqD0`\n**Predecessor:** `aar-ui-retheme-nav-and-web-modularization.md`\n\nDiagnosis note: \"Confirmed by reading the code and reproducing each failure against a throwaway DB. The headline finding: a normally-simmed current season viewed live computes all four correctly. The screenshots are the fast-sim + archived-season combination.\" Reproduced: two hitters with OPS 2.800 vs 0.500 both got wOBA 0.000 and identical wRC+. Verification preamble: \"No browser and no seeded DB in this environment, so verification was via throwaway DBs (O27V2_DB_PATH + init_db), the Flask test client, and the stat suite (flask/pytest installed ad hoc).\" FIP formula: (13\u00b7HR + 3\u00b7(BB+HBP) \u2212 2\u00b7K)/IP + C; a 27-out frame = 9 IP. The card() macro already filters None via selectattr(key,'ne',None), so walk-less pitchers are simply omitted from the K/BB board (no crash). Career/player-page lines already select the arc columns, so career wERA was unaffected.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Clear AAR with explicit Date completed line."
+}

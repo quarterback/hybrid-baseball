@@ -1,0 +1,281 @@
+{
+  "record_id": "hybrid-baseball--2026-05-27--times-through-order-familiarity-softball-arsenal",
+  "source_path": "docs/aar-times-through-order-and-softball-arsenal.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-27",
+  "title": "After-Action Report — Times-Through-the-Order Familiarity & the Softball/Underhand Arsenal",
+  "scope": "The through-line: O27's fiction needs un-timeable deception arms to be a *mathematically viable* counter to a bat-dominant, 12-batter, second-chance offense — not just flavor text in the README.",
+  "rationale": [
+    {
+      "item": "\"Any sport has arbitrage — guys eventually learn how to crack the code. The idea that everyone employs a bunch of flamethrowers or corner painters to navigate the strike zone and is content to have 9+ ERAs is unrealistic. There would be players who figure out a way around it, and those are knuckleballers, junkballers, and people who adapt the mechanics of softball pitching onto O27 baseball.\"",
+      "references": []
+    },
+    {
+      "item": "There was no familiarity model. A pitcher faced the leadoff hitter for the 6th time in one 27-out arc with byte-identical effectiveness as the 1st. In O27 the top of the order gets 5–7 PAs against the same arm in a single half-inning, so familiarity should be the dominant pitching dynamic — and it was absent entirely.",
+      "references": []
+    },
+    {
+      "item": "A second, detailed brief asked for a batch of softball-mechanics pitches and rare \"elite stopper\" archetypes built around gravity manipulation, timing disruption, and fatigue immunity from a true underhand / ultra-low submarine slot.",
+      "references": []
+    },
+    {
+      "item": "The first pass shipped the seven pitches but flagged that the engine had no way to separate \"grounder pitch\" from \"popup pitch\" — both collapsed to weak contact. The designer's response: \"then yes let's do that now. Feels like a good evolution in the game's modeling.\"",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "No offsetting run-environment calibration",
+      "decided_by": "owner",
+      "quote": "\"I do not want an offset tune. I don't care if runs scored are higher. I keep telling you this.\""
+    },
+    {
+      "decision": "Build launch-angle/foul levers (Part 3)",
+      "decided_by": "owner",
+      "quote": "The designer's response: \"then yes let's do that now. Feels like a good evolution in the game's modeling.\""
+    },
+    {
+      "decision": "Re-baseline the RE-curve heuristic 4× → 3.5× instead of tuning offense back down",
+      "decided_by": "agent",
+      "quote": "Since the higher-run environment is intentional and no offset tune is wanted, the heuristic was re-baselined 4× → 3.5× (with a comment), keeping it a guard against gross curve inversions while matching the new baseline."
+    },
+    {
+      "decision": "Do not add a redundant \"underhand spinner\" pitch",
+      "decided_by": "agent",
+      "quote": "The brief's \"underhand spinner\" eephus is mechanically identical to `peeled_drop` (topspin → weak grounders), so it was not added as a separate redundant entry."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Times-through-the-order familiarity model: timing_resistance per-pitch attribute on all 24 catalog pitches, FAMILIARITY_* constants, matchup_pa tracking, familiarity threaded into _pitch_probs and contact_quality",
+      "artifacts": [
+        "o27/config.py",
+        "o27/engine/state.py",
+        "o27/engine/pa.py",
+        "o27/engine/prob.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Seven new softball/underhand catalog pitches (riseball, peeled_drop, backhand_changeup, sky_eephus, slither_knuck, drop_knuck, rise_knuck), 17 → 24 catalog",
+      "artifacts": [
+        "o27/config.py"
+      ],
+      "kind": "data"
+    },
+    {
+      "description": "Three rare elite stopper archetypes (knuckleball_ace, softball_riseballer, underhand_eephus_artist) with new stamina_bonus archetype field",
+      "artifacts": [
+        "o27/data.py"
+      ],
+      "kind": "data"
+    },
+    {
+      "description": "Pitch-mix bucket classifier updated for the new pitches; display-name overrides",
+      "artifacts": [
+        "o27v2/sim.py",
+        "o27v2/web/formatters.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "launch_angle_bias per-pitch field redistributing ground_out ↔ fly_out (LAUNCH_REDIST_GO2FO = 0.35) plus synthetic launch-angle nudge; foul_delta per-pitch field added to the foul component",
+      "artifacts": [
+        "o27/config.py",
+        "o27/engine/prob.py",
+        "o27/engine/batted_ball.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "RE-curve heuristic re-baselined 4× → 3.5×",
+      "artifacts": [
+        "tests/test_analytics_invariants.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Glossary FB/BR/OFF% definitions extended; entries for deception, gb_pct, tto_hardhit_delta, tto_k_decay; decay reframed",
+      "artifacts": [
+        "o27v2/web/glossary.py"
+      ],
+      "kind": "docs"
+    },
+    {
+      "description": "Part 4 almanac stats: batted-ball profile (GB%/LD%/FB%/GO-AO), TTO hard-hit splits, Decay-vs-familiarity split, Deception grade, surfaced on player page",
+      "artifacts": [
+        "o27/almanac/compute.py",
+        "o27/almanac/templates/player.html.j2",
+        "o27/almanac/tests/test_build.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Part 5 engine-side TTO counters: {k,fo,bf}_tto buckets in SpellRecord/GameState, nine new game_pitcher_stats columns with idempotent migration, summed in sim, dedup view, almanac tto_k_decay, new invariant test",
+      "artifacts": [
+        "o27/engine/state.py",
+        "o27/engine/pa.py",
+        "o27/engine/game.py",
+        "o27/engine/manager.py",
+        "o27v2/db.py",
+        "o27v2/sim.py",
+        "o27v2/web/app.py",
+        "o27/almanac/compute.py",
+        "tests/test_stat_invariants.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "At `looks == 0` (first time facing this pitcher) `fam == 0` → every term collapses to the legacy probability surface. This preserves the realism identity invariant — `test_realism_identity` and all calibrated probabilities are untouched.",
+    "Identity at 0.0 (every pitch without the field). Sum-preserving, so total outs-vs-hits is unchanged — only the *type* of out shifts.",
+    "Per explicit instruction, no offsetting run-environment tune was applied.",
+    "Identity discipline: every lever added here collapses to the legacy surface at its neutral value — familiarity at `looks==0`, `launch_angle_bias`/`foul_delta` at `0.0`.",
+    "Exit velocity: unchanged by definition — `launch_angle_bias` is a launch-angle lever, not an EV one."
+  ],
+  "validation_claims": [
+    {
+      "claim": "python o27v2/manage.py smoke — 10/10 games complete (re-run after each part)",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Run python o27v2/manage.py smoke",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_realism_identity.py, o27/tests/ (incl. test_power_redistribute.py), o27v2/tests/test_archetypes.py — pass",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest the named modules",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_analytics_invariants.py — 7/7 after the RE-curve re-baseline",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/test_analytics_invariants.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Stat-invariant gate (make test-invariants) against freshly-simmed DBs — 10/10 throughout; gate is now 11/11 with invariant 10",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "O27V2_DB_PATH=… pytest tests/test_stat_invariants.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Familiarity table: flamethrower whiff% drops 10.1% → 7.0% by 6th look while knuckleballer only 10.1% → 9.3%",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-run the two-arms-same-lineup experiment",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Grounder/flyout split table (8-team, 224-game sim): drop_knuck 25.3%/13.1%, rise_knuck 23.4%/17.0%, etc.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-sim 8-team pool and aggregate batted-ball type by pitch",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "All 24 catalog pitches classified into exactly one pitch-mix bucket — verified none unbucketed and no typos",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Cross-check catalog pitch names against the bucket classifier in o27v2/sim.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Verified by o27/almanac/tests/test_build.py (_deception_grade, _attach_pitcher_battedball_tto) and a full almanac build (694 pages)",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest o27/almanac/tests/test_build.py and run an almanac build",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "League K% by look over an 8-team / 150-game sim: 1st 26.4%, 2nd 24.0%, 3rd+ 18.6%; League TTO K-Decay = +7.8 K%-pts",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-sim and aggregate the tto columns",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "test_invariant_10_tto_buckets_reconcile asserts per-row bf_tto1+2+3 == batters_faced and k_tto1+2+3 == k",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Read tests/test_stat_invariants.py and run the gate",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "RE start:end ratio compressed from ≥4× to ~3.71× — confirmed on the 30-team default config, not an 8-team artifact",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-derive RE curve from a 30-team sim",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "No offsetting run-environment calibration tune",
+      "reason": "\"I do not want an offset tune. I don't care if runs scored are higher. I keep telling you this.\"",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "No per-pitch movement variance keyed to weather",
+      "reason": "The \"knuckle-eephus catches every micro-current\" idea has no hook; folded into the high-resistance / high-bb_delta knuckle variants rather than add a fake field",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "\"Underhand spinner\" eephus not added",
+      "reason": "mechanically identical to peeled_drop (topspin → weak grounders), so it was not added as a separate redundant entry",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "K%-by-look not derivable from game_pa_log in Part 4",
+      "reason": "game_pa_log stores balls-in-play but no K/BB rows; that dimension needs engine-side TTO counters",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "The magnitudes (FAMILIARITY_*, the per-pitch timing_resistance values) were set by reasoning, not a season-scale calibration sweep, so the size of the junkball edge over a full 162 is an estimate.",
+    "Rare pitches like riseball/peeled_drop/sky_eephus have tiny samples in an 8-team pool.",
+    "Per-pitcher TTO K-Decay is a small-sample split (the 3rd+ bucket is thin), meaningful in aggregate / over a full season.",
+    "Two pre-existing test anomalies confirmed independent of this branch: test_season_archive_writer_runs_end_to_end asserts wrc_plus in a category set that doesn't contain it; test_stat_invariants ERRORs with sqlite when the whole suite runs together (test-isolation issue)."
+  ],
+  "open_hooks": [
+    "FAMILIARITY_PER_LOOK is the single dial to scale the whole effect up or down.",
+    "K%-by-look engine counters were 'the clean follow-up' (delivered in Part 5 within this AAR)."
+  ],
+  "section_headers_original": [
+    "After-Action Report — Times-Through-the-Order Familiarity & the Softball/Underhand Arsenal",
+    "What was asked for",
+    "The gap we found",
+    "What we did",
+    "Part 1 — Times-through-the-order familiarity",
+    "Part 2 — The softball / underhand arsenal",
+    "Part 3 — Making the grounder/popup split a real outcome (launch_angle_bias + foul_delta)",
+    "Remaining modeling gaps (still deliberately not faked)",
+    "Calibration stance",
+    "Verification",
+    "Files touched",
+    "Test notes (for the next agent)",
+    "Part 4 — Stats surfaced from the new mechanics",
+    "Files touched (Part 4)",
+    "Part 5 — Engine-side TTO counters: K%-by-look becomes real",
+    "Files touched (Part 5)"
+  ],
+  "unmapped_content": "FAMILIARITY constants table: FAMILIARITY_PER_LOOK 0.18, FAMILIARITY_MAX_LOOKS 7, FAMILIARITY_SWINGING −0.022, FAMILIARITY_CALLED −0.009, FAMILIARITY_CONTACT +0.020, FAMILIARITY_HARD_TILT +0.028, DEFAULT_TIMING_RESISTANCE 0.5. Shape: fam = FAMILIARITY_PER_LOOK * min(looks, MAX) * factor; factor = clamp((1 - timing_resistance) * 2, 0, 2). timing_resistance examples: knuckleball 0.95, sky_eephus 0.92, eephus 0.85, four_seam 0.20. Keying matchup_pa on the pitcher means a fresh reliever resets familiarity — bringing in a new look is itself a manager lever. Pitch profile table for the seven new pitches and archetype details (weights 0.03/0.04/0.03, slots, stamina bonuses +0.18/+0.15, repertoire resistances ≈0.93/0.69/0.84). launch_angle_bias values per pitch (sinker −0.45, spitter −0.55, curve_10_to_2 −0.50, peeled_drop −0.70, drop_knuck −0.60, splitter −0.25; four_seam +0.30, eephus +0.20, sky_eephus +0.30, riseball +0.70, rise_knuck +0.50; ±8° at full bias). foul_delta values (riseball +0.04, sky_eephus +0.03, rise_knuck +0.03, eephus +0.02, four_seam +0.01). End-to-end wiring audit details (primary_pitch max-of-counts, arsenal chips, almanac reuses sim's percentages, no hardcoded enumerations in scout/valuation/awards/managers/engine_config/o27v2/archetypes.py). Commits: 6274a12, 7566137, 4891095, 5e2d61e; branch claude/sports-arbitrage-pitcher-mechanics-vVNgT. Part 4 stat definitions (GB <10°, LD 10–25°, FB >25°; Deception grade 20–80 scale; look = rank of ab_seq within (game,pitcher,batter)). Part 5 mechanics (BF bucket captured before matchup_pa tick; legacy rows default 0).",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Five-part AAR with verbatim designer quotes; Parts 4 and 5 appended after the main verification section. Date from 'Date completed: 2026-05-27'."
+}

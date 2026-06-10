@@ -1,0 +1,145 @@
+{
+  "record_id": "hybrid-baseball--2026-06-01--llm-tuning-guide-softball-scoring",
+  "source_path": "docs/aar-llm-tuning-guide-and-softball-scoring-presets.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-01",
+  "title": "After-Action Report \u2014 LLM Tuning Guide + Softball-Derived Scoring Presets",
+  "scope": "Created a shareable tuning guide for LLMs and two scoring environment presets (college_scoring mimicking NCAA softball, put_it_in_play borrowing contact texture)",
+  "rationale": [
+    {
+      "item": "User wanted to share tuning guide with LLMs to generate override blobs for specific play styles",
+      "references": [
+        "User request for tuning guide"
+      ]
+    },
+    {
+      "item": "User asked to learn from college softball stats to inform scoring environment",
+      "references": [
+        "NCAA Div I national totals provided by user"
+      ]
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Scope narrowed from full sport conversion to scoring environment only",
+      "decided_by": "owner",
+      "quote": "i don't want to go to softball i just want the scoring environment"
+    },
+    {
+      "decision": "DP geometry correction: must NOT port softball's DP rarity due to 60 ft vs 90 ft basepaths",
+      "decided_by": "owner",
+      "quote": "DPs are rare in softball because the bases are 60 ft, and O27 plays on 90-ft basepaths"
+    },
+    {
+      "decision": "Keep contact texture but drop circle-suppressed scoring",
+      "decided_by": "owner",
+      "quote": "pitching in softball is more dominant but the low strikeouts and high hitting is what I want"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Created docs/tuning-guide-for-llms.md with mechanics explanation and worked examples",
+      "artifacts": [
+        "docs/tuning-guide-for-llms.md"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Added college_scoring preset to engine config",
+      "artifacts": [
+        "o27v2/engine_config.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Added put_it_in_play preset to engine config",
+      "artifacts": [
+        "o27v2/engine_config.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Linked tuning guide from README and engine settings page",
+      "artifacts": [
+        "README.md",
+        "o27v2/web/templates/engine_settings.html"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Data sourcing relied on user-provided NCAA totals after web scraping failed",
+    "Presets are additive and inert until explicitly loaded",
+    "No default constants were changed; existing behavior is unchanged unless preset is chosen"
+  ],
+  "validation_claims": [
+    {
+      "claim": "college_scoring benchmark: 6.57 R/team/game target, achieved 6.61",
+      "evidence_cited": "batch.py example-team harness",
+      "checkable_against_repo": "yes",
+      "check_method": "Run o27v2/batch.py with college_scoring preset",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "put_it_in_play benchmark: natural O27 scoring ~9.0-10.3, achieved 9.02",
+      "evidence_cited": "batch.py example-team harness",
+      "checkable_against_repo": "yes",
+      "check_method": "Run o27v2/batch.py with put_it_in_play preset",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "No code changes to engine defaults or config",
+      "evidence_cited": "manual inspection",
+      "checkable_against_repo": "yes",
+      "check_method": "Diff o27/config.py and o27v2/config.py against baseline",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Confirm absolute landing via in-app 'Sim the current working tuning'",
+      "reason": "Requires live environment",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Optional womens_o27 reseed target",
+      "reason": "put_it_in_play already covers the live feel",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Data sourcing relied on user-pasted tables rather than authoritative sources (web scraping blocked)",
+    "Baseline run-environment-coupled to one 8-team season's median line; may drift with league composition changes"
+  ],
+  "open_hooks": [
+    "Confirm put_it_in_play and college_scoring absolute landing via in-app simulation",
+    "Optional womens_o27 reseed targeting equipment-layer identity (lower power, higher contact)"
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 LLM Tuning Guide + Softball-Derived Scoring Presets",
+    "What was asked for",
+    "What was built",
+    "1 \u2014 docs/tuning-guide-for-llms.md (the deliverable)",
+    "2 \u2014 college_scoring preset (faithful softball scaling)",
+    "3 \u2014 put_it_in_play preset (texture on O27's natural state)",
+    "The data-sourcing problem",
+    "Corrections that changed the model",
+    "Verification",
+    "Files touched",
+    "Follow-ups (not done)"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Clear division between tuning guide (output) and presets (implementation). Strong emphasis on data sourcing challenges and iterative corrections. The three domain corrections (DP geometry, K% texture, pitcher dominance decoupling) drove significant design changes."
+}

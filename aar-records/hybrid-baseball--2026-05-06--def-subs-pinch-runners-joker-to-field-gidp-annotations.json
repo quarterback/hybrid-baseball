@@ -1,0 +1,162 @@
+{
+  "record_id": "hybrid-baseball--2026-05-06--def-subs-pinch-runners-joker-to-field-gidp-annotations",
+  "source_path": "docs/aar-def-subs-pinch-runners-joker-field-gidp.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-06",
+  "title": "After-Action Report — DEF Subs / Pinch Runners / Joker-to-Field / GIDP Annotations",
+  "scope": "Direct list from the user, scoped from the \"still rough\" section of the prior box-score AAR: \"Split defensive subs, emit pinch runners, surface gidp and double plays if you havent and joker in the field\". Four asks, all in the same shape: events that the engine wasn't emitting (or that the render layer was conflating with another event) need to flow through to the box score so they show up correctly.",
+  "rationale": [
+    {
+      "item": "Scoped from the \"still rough\" section of the prior box-score AAR.",
+      "references": [
+        "prior box-score AAR"
+      ]
+    },
+    {
+      "item": "Joker-to-field: by the user's rules (clarified earlier in the project), every team carries exactly 3 jokers in the DH-pool; the new event covers the rare case where a joker replaces a fielder; the trigger is deliberately tiny.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Four asks defining the work",
+      "decided_by": "owner",
+      "quote": "\"Split defensive subs, emit pinch runners, surface gidp and double plays if you havent and joker in the field\""
+    },
+    {
+      "decision": "J→<pos> typographic signal for joker-to-field",
+      "decided_by": "owner",
+      "quote": "The `J→<pos>` format is the typographic signal the user specified — a box-score reader sees `Joker     j→cf ....` and immediately knows what happened."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Defensive sub split: new defensive_sub arm in _build_disp setting entry_type=\"DEF\" and replaced_player_id; _NON_PA_EVENTS extended (defensive_sub, tactical_def_swap, pinch_runner, joker_to_field); box-score indent classifier extended; DEF position column reads the fielding slot, not \"ph\"",
+      "artifacts": [
+        "o27/render/render.py",
+        "o27v2/web/box_score.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Pinch runner — new event end-to-end: manager.pinch_run replaces the runner and takes the lineup slot; should_pinch_run conservative gate (not super-inning, ≥18 outs, |score_diff| ≤ 1, slowest runner speed < 0.40, faster bench bat exists, probabilistic fire 0.20 + (mgr_run_game − 0.5) × 0.30); wired via between_pitch_event, pa.py dispatch, render PR arm",
+      "artifacts": [
+        "o27/engine/manager.py",
+        "o27/engine/prob.py",
+        "o27/engine/pa.py",
+        "o27/render/render.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Joker-to-field — new event end-to-end: manager.joker_to_field moves a joker into a fielding slot (jokers_available decremented, game_position J→<pos>); should_joker_to_field gates (not super-inning, ≥24 outs, joker available, trailing ≥3, 0.005 base rate, joker ≥0.10 better glove); same wiring chain",
+      "artifacts": [
+        "o27/engine/manager.py",
+        "o27/engine/prob.py",
+        "o27/engine/pa.py",
+        "o27/render/render.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "GIDP/GITP annotations: gidp/gitp counters on BatterStats incremented from double_play/triple_play hit types; persisted via two new game_batter_stats columns with ALTER TABLE migrations; _BAT_NUM extended for dedup/consolidation; box-score renderer appends GIDP:/GITP: annotation lines",
+      "artifacts": [
+        "o27/stats/batter.py",
+        "o27/render/render.py",
+        "o27v2/db.py",
+        "o27v2/sim.py",
+        "o27v2/web/app.py",
+        "o27v2/web/box_score.py"
+      ],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "**`manager.should_pinch_run(state, rng)`** — conservative gate.",
+    "Is functionally never seen in real MLB (DH players don't usually swap into the field), so the trigger is deliberately tiny.",
+    "So in a typical game, this fires zero times. In an extended series of blowouts, it might fire once. That's the intended cadence.",
+    "The new `gidp` / `gitp` counters and the four new event types are additive over the existing event stream."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Smoke test with synthesized rows covering every entry type renders a correct sample box score: every entry type renders with the right position label, indents correctly under the player they replaced, and contributes to totals",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run the synthesized-rows box-score smoke test",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_realism_identity.py still passes 6/6",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/test_realism_identity.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Joker-to-field verified by direct call to manager.joker_to_field (no end-to-end fire in 5k _generate_pitch smoke samples)",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Direct call test; construct a blowout-with-bench-glove-mismatch state for end-to-end",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "DP fielding chains (DP: 6-4-3)",
+      "reason": "require tracking per-fielder participation in each double play; the engine knows the primary fielder but not the chain",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Pinch-runner PA/AB '0' display fix",
+      "reason": "the 0.000 H/AB rendering is cosmetic (_rate helper formats '.000' rather than computing zero-over-zero)",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Multi-level DEF-sub-of-a-DEF-sub indent chains",
+      "reason": "Realistic multi-level subbing is rare enough to defer",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "End-to-end joker-to-field test coverage",
+      "reason": "the trigger is so rare that _generate_pitch smoke runs don't produce one in 5k samples; would need a constructed blowout-with-bench-glove-mismatch state",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "DEF sub of a DEF sub: the second sub's replaced_player_id points at the first sub, not the original starter — chains of subs get flattened to the starter",
+    "Joker-to-field end-to-end path unexercised in smoke runs",
+    "Real-MLB DP fielding chains (6-4-3) aren't surfaced yet — only the batter who hit into one is tracked"
+  ],
+  "open_hooks": [
+    "First cut for DP chains could print the primary fielder's position; full chain-rendering needs a new event field listing all fielders who touched the ball"
+  ],
+  "section_headers_original": [
+    "After-Action Report — DEF Subs / Pinch Runners / Joker-to-Field / GIDP Annotations",
+    "What was asked for",
+    "What was built",
+    "1. Defensive sub split",
+    "2. Pinch runner — new event end-to-end",
+    "3. Joker-to-field — new event end-to-end",
+    "4. GIDP / GITP annotations",
+    "Sample box score (all four mechanisms in one team)",
+    "What's still rough",
+    "Identity / regression check",
+    "Files touched"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/decouple-hits-runs-rGteJ; commit ca29e4a. Detail: the engine already emitted defensive_sub (o27/engine/manager.py:777) but the renderer had no arm, so substitutes landed as entry_type='starter'. score_diff_for_batting/_for_fielding helpers didn't exist on GameState, so the new helpers compute the diff inline (code shown). Sample box score with annotated reading of each row (Biggio starter, Smith DEF sub, Speed PR, Joker j→cf, Bates GITP, McJoke bench joker). Multi-DP days collapse to 'Smith 2.' (same convention as 2B/3B/HR annotations). entry_type docstring updated to enumerate all six valid values (starter/PH/PR/DEF/joker/joker_field). Total diff: 339 insertions, 12 deletions across 9 files. manager.py also gained an inline _local_rng fallback.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date completed:' line."
+}

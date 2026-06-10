@@ -1,0 +1,38 @@
+{
+  "record_id": "hybrid-baseball--2026-05-21--box-score-pitcher-decisions-wl-seconds-display-clarification",
+  "source_path": "docs/aar-box-score-pitcher-decisions.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-21",
+  "title": "Box Score Pitcher Decisions (W/L) + Seconds-Display Clarification",
+  "scope": null,
+  "rationale": [],
+  "delegation_events": [],
+  "actions": [],
+  "risk_posture": [],
+  "validation_claims": [],
+  "non_actions": [],
+  "residual_risks": [],
+  "open_hooks": [],
+  "section_headers_original": [
+    "After-Action Report \u2014 Box Score Pitcher Decisions (W/L) + Seconds-Display Clarification",
+    "What the user reported",
+    "Issue 1 \u2014 the seconds display was not a bug",
+    "Issue 2 \u2014 pitcher W/L decisions were reading season totals",
+    "The fix",
+    "Note on saves",
+    "Files changed",
+    "Things to remember"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": false,
+    "has_rationale": false,
+    "has_delegation_record": false,
+    "has_validation": false,
+    "has_negative_space": false,
+    "has_residual_risk": false
+  },
+  "parser_notes": "Structural skeleton only; full semantic extraction deferred."
+}

@@ -1,0 +1,188 @@
+{
+ "record_id": "hybrid-baseball--undated--power-play-ui-and-stats-segment",
+ "source_path": "docs/aar-power-play-ui-and-stats-segment.md",
+ "repo": "hybrid-baseball",
+ "parsed_at": "2026-06-10",
+ "genre_confidence": "high",
+ "date": null,
+ "title": "AAR \u2014 Power Play, second segment: box score, presence effect, the toggle, and the stat rack",
+ "scope": "It records the work done *after* the base rule landed, the open design questions it surfaced, and \u2014 importantly \u2014 **why the checkbox isn't showing up in the deployed app**.",
+ "rationale": [
+  {
+   "item": "Records the work done after the base rule landed and explains why the checkbox isn't showing up in the deployed app.",
+   "references": [
+    "docs/aar-power-play-nickel-fielder.md"
+   ]
+  },
+  {
+   "item": "The base rule tracks power-play activity only in game state and none of it survives into the league DB \u2014 a full end-to-end stat family is needed in leagues where the rule is on.",
+   "references": []
+  }
+ ],
+ "delegation_events": [
+  {
+   "decision": "Stat-rack scope (defense + short-handed offense + leaderboards/glossary; pitching deferred)",
+   "decided_by": "joint",
+   "quote": "### Scope (decided with the user)"
+  },
+  {
+   "decision": "Storage as a dedicated table",
+   "decided_by": "agent",
+   "quote": "A new `game_power_play_stats` table (+ a season aggregate), rather than bolting always-NULL `pp_*` columns onto `game_batter_stats`/`game_pitcher_stats` for the 99% of leagues that never enable the rule."
+  },
+  {
+   "decision": "Pitching stats deferred as an open question",
+   "decided_by": "joint",
+   "quote": "what (if anything) to measure there is an open question we chose not to guess at in this pass"
+  },
+  {
+   "decision": "Per-league vs global toggle posed to the user (then built)",
+   "decided_by": "owner",
+   "quote": "should Power Play become a per-league flag on the new-league builder (recommended, matches \"by league\"), with the global Engine Settings toggle demoted to a default?"
+  }
+ ],
+ "actions": [
+  {
+   "description": "Box-score Powerplays footer names the nickel (NF) and his putouts; PO counted per deployment via credit_nickel_putout",
+   "artifacts": [
+    "e50f968"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Presence effect: banded team-wide defense + pitching multiplicative lift (0.1%\u20134.4%) on the per-PA stash-and-restore lifecycle",
+   "artifacts": [
+    "fed9749",
+    "_presence_for"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Grouped Power Play + IBB toggles under \"Optional rules\" on Engine Settings (/engine/settings)",
+   "artifacts": [
+    "0e0c0cc",
+    "o27v2/engine_config.py"
+   ],
+   "kind": "config"
+  },
+  {
+   "description": "Per-league checkbox: teams.power_play_enabled column (CREATE TABLE + ALTER migration, default 0); checkbox on new_league.html; new_league_post stamps teams; sim.py forces state.power_play_enabled when set (composes as per-league opt-in OR global default)",
+   "artifacts": [
+    "o27v2/db.py",
+    "o27v2/web/templates/new_league.html",
+    "o27v2/web/app.py",
+    "o27v2/sim.py"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Stat rack: dedicated game_power_play_stats table; defense PPD/PPO/XBHH/HC/NF-PO; short-handed offense SH-PA/SH-AB/SH-H/SH-AVG; engine snapshot state.power_play_sh_active + short_handed_for_batting(); _extract_power_play_stats; INSERT gated on power_play_on; /leaders Power Play section; glossary \"Power Play / Short-handed\" section",
+   "artifacts": [
+    "o27v2/db.py",
+    "o27v2/sim.py",
+    "o27/stats/batter.py",
+    "o27v2/web/app.py",
+    "o27v2/web/glossary.py",
+    "tests/test_power_play_stats.py"
+   ],
+   "kind": "new"
+  }
+ ],
+ "risk_posture": [
+  "Deliberately not a magic pill.",
+  "Gating principle throughout: write/aggregate/display PP stats **only for games/leagues where the rule was on**, so rule-off leagues are untouched.",
+  "the rule-off seed-replay identity test still passes (off = byte-for-byte unchanged)"
+ ],
+ "validation_claims": [
+  {
+   "claim": "o27/tests/test_power_play.py: 30 cases (box-score formats, presence band scaling, apply/restore, idempotency, inert-when-closed / non-deploying-team, window open/clear)",
+   "evidence_cited": "tests",
+   "checkable_against_repo": "yes",
+   "check_method": "Run pytest o27/tests/test_power_play.py",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Power-play + declared-seconds + realism-identity suites green; rule-off seed-replay identity test still passes",
+   "evidence_cited": "tests",
+   "checkable_against_repo": "yes",
+   "check_method": "Run the named suites",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Paired-CRN micro (N=300k): top-of-band lift shaves ~0.27% of hits through the fielding channel alone, fading to ~nil at the floor",
+   "evidence_cited": "metrics",
+   "checkable_against_repo": "no",
+   "check_method": "Re-run the paired-CRN micro-benchmark",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Per-league flag composition verified: global OFF + league ON \u21d2 on; global ON + league None \u21d2 on",
+   "evidence_cited": "manual verification",
+   "checkable_against_repo": "yes",
+   "check_method": "Set flag combinations and check state.power_play_enabled",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "tests/test_power_play_stats.py (5) + engine suite (30) green; rule-off leagues write zero rows and show no section; SH-AB \u2264 SH-PA holds with zero violations",
+   "evidence_cited": "tests",
+   "checkable_against_repo": "yes",
+   "check_method": "Run tests/test_power_play_stats.py and query the table on a rule-off league",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "After git fetch origin main: PR #136 is merged, main HEAD is 0be80a2, all five power-play commits on main",
+   "evidence_cited": "manual verification",
+   "checkable_against_repo": "yes",
+   "check_method": "Check git log / PR #136 on GitHub",
+   "verified": "not_checked"
+  }
+ ],
+ "non_actions": [
+  {
+   "item": "Power-play pitching stats",
+   "reason": "The pitcher backed by the nickel is on the advantaged side, not short-handed; what (if anything) to measure there is an open question we chose not to guess at in this pass.",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "(Originally) per-league rule flag \u2014 recommended fix deferred pending a decision",
+   "reason": "Recommended fix (deferred \u2014 needs a decision)",
+   "category": "deferred",
+   "status": "unknown"
+  }
+ ],
+ "residual_risks": [
+  "SH-H can exceed SH-AB \u2014 the engine's Second-Chance mechanic credits multiple hits per AB; the app leads with PA-denominated rates.",
+  "Pre-existing unrelated failure: tests/test_template_renders.py::test_season_archive_writer_runs_end_to_end (a wrc_plus category assertion) fails identically with our changes stashed \u2014 not caused by this work.",
+  "Possible secondary factor: fly.dev deploy lag if the app hadn't rebuilt from the freshly-merged main yet."
+ ],
+ "open_hooks": [
+  "Open decisions for the user \u00a76: per-league vs global framing; build the stat rack per \u00a75 (both subsequently built per the Status: BUILT section)"
+ ],
+ "section_headers_original": [
+  "AAR \u2014 Power Play, second segment: box score, presence effect, the toggle, and the stat rack",
+  "1. Box-score note \u2014 naming the nickel (`e50f968`)",
+  "2. Presence effect \u2014 the banded team-wide lift (`fed9749`)",
+  "3. The toggle (`0e0c0cc`) \u2014 and why it doesn't appear in the app",
+  "Why the checkbox seemed missing in the app",
+  "Recommended fix (deferred \u2014 needs a decision)",
+  "4. Test + regression status (this segment)",
+  "5. The stat rack \u2014 design (investigated, NOT yet built)",
+  "Scope (decided with the user)",
+  "Storage (decided): a dedicated table",
+  "End-to-end extension points (mapped, ready to implement)",
+  "Build order (when greenlit)",
+  "Status: BUILT (per-league checkbox + stat rack)",
+  "6. Open decisions for the user"
+ ],
+ "unmapped_content": "Branch claude/power-play-optional-rule-HmsMs; five commits table (c3d5b8c base rule, c98b4b1 AAR, e50f968 box-score note, fed9749 presence, 0e0c0cc toggle grouping). Correction: an earlier draft claimed the feature was unmerged \u2014 wrong, from a stale local origin/main; lesson: always git fetch before asserting merge state. Real reasons checkbox seemed missing: (1) wrong page \u2014 it lives on Engine Settings, user's screenshots were the new-league builder; (2) it's global, not per-league, but expectation is per-league (engine_config stores one override blob in sim_meta applying to every league). Terminology note (from review): the side with the nickel is the Power Play side; \"short-handed\" refers to the offense facing a loaded defense a man down \u2014 this drives the \u00a75 stat design. End-to-end extension-points table mapping engine accumulation, carrier, render credit, per-game DB, sim write, season aggregate, leaderboards, glossary with file:line anchors; 4-step build order.",
+ "quality_vector": {
+  "has_scope": true,
+  "has_rationale": true,
+  "has_delegation_record": true,
+  "has_validation": true,
+  "has_negative_space": true,
+  "has_residual_risk": true
+ },
+ "parser_notes": "No date in document; 'undated'. Document evolved in place: \u00a75 is titled 'investigated, NOT yet built' but a later 'Status: BUILT' subsection records that the per-league checkbox and stat rack subsequently shipped on the same branch; \u00a76 item 1 marked done."
+}

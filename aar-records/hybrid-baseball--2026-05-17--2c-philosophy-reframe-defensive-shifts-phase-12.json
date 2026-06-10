@@ -1,0 +1,241 @@
+{
+  "record_id": "hybrid-baseball--2026-05-17--2c-philosophy-reframe-defensive-shifts-phase-12",
+  "source_path": "docs/aar-2c-reframe-and-shifts.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-17",
+  "title": "After-Action Report — 2C philosophy reframe + defensive shifts (phase 12)",
+  "scope": "Session opened as an RBI-calculation investigation. The user reported runs dropping (10.62 → 9.95 R/half-game) after a 2C-rate lift even though hits and 2C events were both up. Root cause turned out to be conceptual rather than arithmetic: the 2C mechanic had drifted into a \"free hit credit\" generator that padded BA without moving runners enough to score. Two distinct arcs shipped this session: Arc 1 — 2C philosophy reframe + tuning; Arc 2 — Defensive shifts as the tactical counter. (Arc 3 — Pesäpallo-style runner-advancement analytics — added later in the doc.)",
+  "rationale": [
+    {
+      "item": "\"More 2C events should result in more runs, not just more credit-only hits.\" — The lifted 2C rate from prior work was producing dilutive low-RV hits. Per-event RV needed to come up.",
+      "references": ["aar-second-chance-hits-and-eye-command-modifier.md"]
+    },
+    {
+      "item": "\"2C opportunities should be costly to pitchers because the batter is getting more chances to hit your stuff and make you throw more pitches.\" — Confirmed behavior; no change.",
+      "references": []
+    },
+    {
+      "item": "\"I want skill to dictate what happens, not random gates.\"",
+      "references": []
+    },
+    {
+      "item": "\"2C is about advancing runners or bringing them home, not hits for hit's sake.\"",
+      "references": []
+    },
+    {
+      "item": "Connecting design philosophy (user): \"I want the tactical abilities of this sport to be more like tennis scoring in that it's easy to score but you have to score at critical times for you to win. So it's being able to keep and extend rallies in key positions risp, late arcs (20-27 outs) instead of it being predictable\"",
+      "references": []
+    },
+    {
+      "item": "Arc 3: 1B run value sat below BB run value (0.456 vs 0.671) because stay-credited \"1B\" events don't move the batter to a base; user shared pesistulokset.fi screenshots showing pesäpallo box scores headline per-base runner advancement (1V%/2V%/3V%); adding the same surface makes the 1B<BB collapse irrelevant.",
+      "references": ["pesistulokset.fi"]
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Credit a hit for every advancing 2C (correcting agent's 'credit hit only when a run scores' misread)",
+      "decided_by": "owner",
+      "quote": "Interpreted initially as \"credit hit only when a run scores,\" which the user immediately corrected: \"every one of those 2C hits is a hit!\""
+    },
+    {
+      "decision": "Remove the 2-strike multiplier (MLB foul-off metaphor doesn't apply to O27)",
+      "decided_by": "owner",
+      "quote": "\"Not foul-off mode — in O27 fouling off 3 is a Foul Out.\" — Removed the 2-strike multiplier I'd added"
+    },
+    {
+      "decision": "Build defensive shifts as the tactical counter, with adaptability rating",
+      "decided_by": "owner",
+      "quote": "in O27 hitters should have an adaptability rating that rolls along with their talent that can help them beat shifts vs your idea can roll with bunting"
+    },
+    {
+      "decision": "Do not build UI surfacing of shift stats",
+      "decided_by": "owner",
+      "quote": "uI isn't necessary irl we dont have shift stats outside normal defensive ones"
+    },
+    {
+      "decision": "2C should fire more often when RISP, when ahead in count, and late game",
+      "decided_by": "owner",
+      "quote": "\"2C should fire more often when RISP.\" — Implemented as a RISP multiplier on `should_stay_prob`."
+    },
+    {
+      "decision": "Rename pesäpallo 'V' labels to base positions and add RAD",
+      "decided_by": "owner",
+      "quote": "The user objected to the direct pesäpallo \"V\" label carry-over (pesäpallo *vaihto* = base, but in MLB language \"V\" reads as nothing)."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Arc 1: talent gate floors lifted on weak/medium 2C advancement; skill-conditional strike burn (successful stay costs no strike); should_stay_prob multipliers (STAY_RISP_MULT 1.40, STAY_1B_ONLY_MULT 0.70, STAY_AHEAD_IN_COUNT_MULT 1.15, STAY_LATE_GAME_MULT 1.55); removed contact_quality_threshold random gate; LATE_GAME_OUTS_THRESHOLD 18 → 20",
+      "artifacts": ["o27/engine/prob.py", "o27/engine/pa.py", "o27/config.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Arc 2 schema: players.pull_pct, players.adaptability, teams.mgr_shift_aggression, games home/away shift_outs_added/shift_hits_lost columns with identity defaults",
+      "artifacts": ["o27v2/db.py"],
+      "kind": "config"
+    },
+    {
+      "description": "Arc 2 generation: pull_pct and adaptability rolls in _player_dict; Archetype gains shift_aggression (default 0.50, overrides dead_ball 0.10 / iron_manager 0.20 / old_school 0.30 / modern 0.80 / sabermetric_max 0.95)",
+      "artifacts": ["o27v2/league.py", "o27v2/managers.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Arc 2 engine: shift decision + adaptation streak at AB start; shift resolution with adaptability erosion in resolve_contact; infield and outfield shift conversion logic; bunt-against-shift path at top of should_bunt; shift telemetry counters and per-event shift_effect log; end-of-game UPDATE writes shift counters; DB → engine wiring",
+      "artifacts": ["o27/engine/state.py", "o27/engine/prob.py", "o27/engine/pa.py", "o27/engine/manager.py", "o27/config.py", "o27v2/sim.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Arc 3: per-PA per-base advancement stats (adv_op_*/adv_adv_* on BatterStats), PA-boundary diff in renderer _credit_pa_advancement; game_scoring_events table + scoring events log; Runner Advancement UI on player + leaders pages; Scoring Events panel on game page; renamed labels to 1B%/2B%/3B% and added RAD (graded bases)",
+      "artifacts": ["o27/stats/batter.py", "o27/render/render.py", "o27v2/db.py", "o27v2/sim.py", "o27v2/web/app.py", "o27v2/web/templates/player.html", "o27v2/web/templates/leaders.html", "o27v2/web/templates/game.html", "35caa09", "2668497", "841229e"],
+      "kind": "new"
+    },
+    {
+      "description": "Fix bulk-sim \"Load failed\" on iOS Safari (shorter chunks + JS retry on transient fetch failures)",
+      "artifacts": ["7b8b2a9"],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "All defaults are identity — legacy rosters are shift-immune until a reseed populates `pull_pct` and `mgr_shift_aggression`.",
+    "Renderer mechanism (pure observation, no engine behavior change)",
+    "The `4b7efdb`/`136cd1f` pair is the visible record of the \"credit hit only on runs\" misinterpretation — kept in history rather than squashed, because it documents the conceptual correction the user made",
+    "Treatment not cure; iOS Safari can still kill fetches on backgrounded tabs."
+  ],
+  "validation_claims": [
+    {
+      "claim": "R/half lifted from 9.94 (pre-session floor) to 10.61 (post Arc 1 + Arc 2 across 942 games, 1884 halves)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Query games table on a re-simmed DB for runs per half",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Pythag k* settled at 2.864 (down from 3.126 smaller-sample but still far above MLB 1.83)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Recompute Pythag fit on analytics page after re-sim",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "BaseRuns refit SSE cut 36.7% vs MLB defaults",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-run BaseRuns refit comparison",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "League wOBA = 0.407, league xwOBA = 0.407 (calibration check); GSc starter mean = 50.45 (auto-tune target 50)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Check analytics page on re-simmed DB",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "UI surfacing of shift stats",
+      "reason": "explicit user direction NOT to build. The columns exist on `games`; query directly for tuning.",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Counter-counter-tactics: per-event spray-direction override; specific \"beats_shift\" pitching response",
+      "reason": "deferred (listed in What's deferred)",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "OF shift secondary effects: pull-side line drives → singles converted by 4th OFer; fly_out gaps from infielders-shallow positioning",
+      "reason": "only `double`/`triple` covered for now",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Across-game adaptation memory",
+      "reason": "Currently `last_shift_alignment` and `shift_streak` are transient — rebuilt from defaults each game.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Lifting the speed > 0.55 gate on bunt-against-shift",
+      "reason": "A slow batter bunting against an infield shift is realistic in real ball but currently skipped.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Pitcher-side adaptability",
+      "reason": "Currently the pitcher's command doesn't influence contact direction.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Verification of Arc 1/Arc 2 spec tables (O1-O8, D1-D7, S1-S3)",
+      "reason": "Numbers above all pending re-sim.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Arc 3 follow-ups: spray-chart / hit-location heatmap; filterable hit categories; TB column placement; bulk-sim resilience hardening (AbortController, progressive notification, server-side queueing)",
+      "reason": "out-of-scope follow-ups",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "2C pitcher cost change",
+      "reason": "Every 2C is a `ball_in_play` event, which already increments `pitcher_pitches_this_spell` — so the pitcher already pays in pitch count and fatigue. Confirmed behavior; no change.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Verification numbers all pending re-sim. If anything blows up (R/team-game collapses, shift conversion runs hot, adaptability invisible) the relevant constants are all in `o27/config.py` under clear section headers.",
+    "1B<BB linear-weight pattern persistent and structural per the \"every 2C is a hit\" design",
+    "iOS Safari can still kill fetches on backgrounded tabs.",
+    "Arc 3 new fields haven't been queried in the analytics pages yet"
+  ],
+  "open_hooks": [
+    "Shift telemetry columns on games exist for tuning queries",
+    "All SHIFT_*, ADAPTABILITY_SCALE, BUNT_AGAINST_SHIFT_BASE_PROB constants in o27/config.py",
+    "SQL queries provided for top-RAD and top-3B% leaderboards after next sim cycle",
+    "pull_pct rating gives the 1D pull/oppo axis to start a spray-chart heatmap from"
+  ],
+  "section_headers_original": [
+    "After-Action Report — 2C philosophy reframe + defensive shifts (phase 12)",
+    "Context",
+    "Arc 1 — 2C philosophy reframe + tuning",
+    "The conceptual corrections",
+    "What was built (Arc 1)",
+    "Arc 1 — files touched",
+    "Arc 2 — Defensive shifts",
+    "The user's design",
+    "Schema additions",
+    "Generation",
+    "Engine — Player / Team / GameState",
+    "Decision logic (prob.py, AB start)",
+    "Resolution (prob.py, resolve_contact)",
+    "Bunt-against-shift (manager.py should_bunt)",
+    "Telemetry",
+    "Arc 2 — files touched",
+    "Connecting design — tennis-scoring leverage",
+    "Verification plan (numbers pending re-sim)",
+    "Arc 1 — Offense",
+    "Arc 2 — Defense",
+    "Spot-checks",
+    "What's deferred",
+    "Commit trail",
+    "Arc 3 — Pesäpallo-style runner-advancement analytics",
+    "Context",
+    "What was built (Arc 3)",
+    "Arc 3 — files touched",
+    "Out-of-scope (Arc 3 follow-ups)",
+    "Verification"
+  ],
+  "unmapped_content": "Header metadata: Date completed 2026-05-17; Branch claude/investigate-rbi-calculation-ni8ou; Predecessor aar-second-chance-hits-and-eye-command-modifier.md (Path A / Phase 11C). | Detailed code snippets for talent-gate floors, skill-conditional strike burn, shift decision/resolution logic, bunt-against-shift, schema DDL, generation formulas, archetype shift_aggression table, engine state fields. | Connecting-design leverage-ratchet table (RISP ×1.40 / late ×1.55 / ahead-in-count ×1.15 offense; shift ×1.45 defense when RISP+late). | Verification plan tables: Arc 1 O1-O8, Arc 2 D1-D7, spot-checks S1-S3, all targets listed with results _pending_; reset cycle resetdb → sim 2430 → backfill_arc. | Commit trail: f286e3c, 14a17d5, 4b7efdb, 136cd1f, 63a39ed, 9d47fb4, 2a012bb, 58b61f8, 7b8b2a9, 35caa09, 2668497, 841229e with one-line messages. | RAD grading: 1B→2B +1, 1B→3B +2, 1B→home +3, 2B→3B +1, 2B→home +2, 3B→home +1, out 0; Total RAD = rad_1b + rad_2b + rad_3b. | Arc 3 scoring-events log walks scoring runners highest-base-first and ticks score backwards so each row shows cumulative score (matches Finnish UI 0-4 → 0-5 → 0-6 → 0-7).",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Very long AAR covering three arcs in one session-spanning document; verification section is split between a 'pending re-sim' plan (all _pending_) and a later Arc 3 verification with actual numbers. Duplicate 'Context' heading (top-level and Arc 3)."
+}

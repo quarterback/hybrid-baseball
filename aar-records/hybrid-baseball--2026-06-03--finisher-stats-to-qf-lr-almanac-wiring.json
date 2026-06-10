@@ -1,0 +1,195 @@
+{
+  "record_id": "hybrid-baseball--2026-06-03--finisher-stats-to-qf-lr-almanac-wiring",
+  "source_path": "docs/aar-finisher-stats-and-almanac.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-03",
+  "title": "After-Action Report \u2014 Finisher stats (TO/QF/LR) + almanac wiring",
+  "scope": "Two pieces: 1. Finisher counting stats \u2014 Terminal Outs (TO), Quality Finish (QF), and Lead-Retention % (LR%) \u2014 built on the relief entry-context spine. 2. Almanac wiring \u2014 every new stat from this arc (RISP, bunting, and the full relief/finisher suite) now flows through the almanac's own aggregation pipeline onto its player pages and leaderboards, matching the live app.",
+  "rationale": [
+    {
+      "item": "They measure who seals games in O27's continuous 27-out half, scaling with the \"back-stage finisher-starter\" strategy rather than assuming a one-inning closer.",
+      "references": []
+    },
+    {
+      "item": "O27 is one 27-out half per side, so the team that fields second is the one protecting a lead \u2014 all \"finishing\" is a second-half-fielding phenomenon, and a back-stage starter who enters with a lead and goes deep racks up TO exactly like a great closer would. The opening starter enters 0-0 (no lead) and so earns no TO, which is correct: TO measures closing, not opening.",
+      "references": []
+    },
+    {
+      "item": "Latent bug: the game-end pitching spell flush never recorded ir_inherited/ir_scored, so closers' inherited runners were being dropped.",
+      "references": []
+    },
+    {
+      "item": "Career follow-on: the almanac's career leaderboards aggregate the durable per-season snapshot tables, which didn't carry the new stats \u2014 so career (multi-season) views couldn't show them.",
+      "references": []
+    }
+  ],
+  "delegation_events": [],
+  "actions": [
+    {
+      "description": "Engine spine: SpellRecord gains entry_lead, min_lead, finished; pa.apply_event lazily captures entry lead and tracks running minimum; game._close_spell flushes half-finisher with finished=1; manager.pitching_change flushes replaced arms with finished=0",
+      "artifacts": [
+        "SpellRecord",
+        "pa.apply_event",
+        "game._close_spell",
+        "manager.pitching_change"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "sim.py derives TO, QF, lead_entries/lead_held per spell, sums to the game row; persisted on game_pitcher_stats (+ migration, dedup SQL); LR% computed in _aggregate_pitcher_rows",
+      "artifacts": [
+        "sim.py",
+        "game_pitcher_stats",
+        "_aggregate_pitcher_rows"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Surfaced on the player-card Relief & Finisher panel, the Stat Browser pitching views, and the glossary",
+      "artifacts": [],
+      "kind": "modified"
+    },
+    {
+      "description": "Fixed latent IR bug: game-end pitching spell flush now records ir_inherited/ir_scored",
+      "artifacts": [],
+      "kind": "modified"
+    },
+    {
+      "description": "Almanac wiring: compute._BATTING_SUM_FIELDS += RISP and bunting fields; _PITCHING_SUM_FIELDS += relief fields; _augment_batters computes RISP slash + risp_conv + bunt_avg; _augment_pitchers computes ir_stop_pct, lr_pct, late_er_per_bf",
+      "artifacts": [
+        "o27/almanac/compute"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Almanac player page: new Clutch \u00b7 RISP, Small Ball \u00b7 Bunting, and Relief & Finisher sections; leaderboards: RISP and Small Ball on the Situational board, Relief & Finisher on the Pitching board",
+      "artifacts": [
+        "player.html.j2"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Career archive wiring: schema + migration adding RISP/bunting columns to season_player_batting and relief/finisher columns to season_player_pitching (existing archives backfill to 0)",
+      "artifacts": [
+        "db.py",
+        "season_player_batting",
+        "season_player_pitching"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Rollover snapshot SUMs the new columns from the live game tables into the snapshot rows",
+      "artifacts": [
+        "season_archive._snapshot_player_lines"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Almanac career compute folds component sums across seasons and recomputes career rates (RISP slash + risp_conv, lra 0\u201310), ranks new boards; career template adds SH / Bunt H / Squeeze RBI / RISP RBI / RISP OPS (batting) and Terminal Outs / Quality Finish / LRA (pitching)",
+      "artifacts": [
+        "_career_batting",
+        "_career_pitching"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "`gmLI` is intentionally **not** in the almanac (it needs the WPA model the almanac doesn't run); it lives on the live leaders + player card.",
+    "Team-level RISP/bunting/walkback/usage-shape were left to the live `/teams/stats` page rather than duplicated on the almanac team page.",
+    "A career IR-Stop% board was skipped \u2014 the rank macro formats `r[key]` directly and can't append `%`; the counting boards + LRA are the meaningful career reads."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Fresh 150-game sim: finisher capture invariant-clean: lead_held \u2264 lead_entries (0 violations); TO \u2248 4.8/game, QF \u2248 0.16/game; top-TO arms read as finisher-starters (e.g. 54 TO over 81 outs).",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run 150-game sim and audit finisher columns",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "IR fix confirmed: league ir_inherited 687 \u2192 864.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Compare league IR totals pre/post fix on a 150-game sim",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "All 1312 almanac player pages render; the RISP / Small Ball / Relief & Finisher blocks and the new leaderboard sections all render 200.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Render all almanac pages",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "o27/tests + o27/almanac/tests + records/streaks (158) pass; all 11 stat invariants pass on the simmed DB.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest suites and the stat invariant suite",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Career follow-on: verified by simming a season, running the snapshot, and rendering the career page: columns persist with real values and all eight new boards render. 172 tests + 11 invariants pass.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Sim season, run snapshot, render career page, run tests",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "gmLI in the almanac",
+      "reason": "it needs the WPA model the almanac doesn't run",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Team-level RISP/bunting/walkback/usage-shape on the almanac team page",
+      "reason": "left to the live /teams/stats page rather than duplicated",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Career IR-Stop% board",
+      "reason": "the rank macro formats r[key] directly and can't append %; the counting boards + LRA are the meaningful career reads",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Extending player_career_lines (Hall of Fame and Streaks & Records cross-season records via records.py) with the new columns",
+      "reason": "a separate extension if those records should also carry RISP / bunting / relief",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "The IR \"scored\" attribution remains the documented heuristic from the prior pass (can mis-credit by one on a rare mixed score/out event).",
+    "min_lead-based \"never relinquished\" treats a tie (lead = 0) as relinquished for TO (strict lead required) but acceptable for QF (lead-or-tie).",
+    "LR% credits holding the lead on his watch, not strictly \"to the 27th out\".",
+    "Needs a resim to populate (sim-time capture), as with any box-stat addition."
+  ],
+  "open_hooks": [
+    "player_career_lines extension for RISP/bunting/relief in HoF and cross-season records"
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 Finisher stats (TO/QF/LR) + almanac wiring",
+    "TL;DR",
+    "Finisher stats \u2014 how",
+    "A note on O27's structure (why this is the right model)",
+    "Almanac wiring \u2014 how",
+    "Validation",
+    "Notable judgment calls / caveats",
+    "Follow-on: cross-season (career) archive wiring"
+  ],
+  "unmapped_content": "**Branch:** `claude/friendly-hypatia-ShSHm`\n\nStat definitions: Terminal Outs = outs in a spell entered with a lead (entry_lead > 0), never relinquished (min_lead > 0), and finished. Quality Finish = finished with \u2265 9 outs while never trailing (min_lead \u2265 0). LR% = lead_held / lead_entries. The almanac reads game_*_stats directly (cached by DB mtime), so the new columns appear after a resim.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": false,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Clear AAR with a follow-on section folded into the same record."
+}

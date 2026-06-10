@@ -1,0 +1,156 @@
+{
+  "record_id": "hybrid-baseball--2026-06-06--depth-chart-rotation-and-playing-time-burial-fix",
+  "source_path": "docs/aar-defensive-only-players-and-depth-chart.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-06",
+  "title": "After-Action Report — Depth Chart Rotation and Playing-Time Burial Fix",
+  "scope": "Depth charts should optimize daily to ensure every active player gets meaningful playing time, good players shouldn't sit indefinitely, and players who are truly buried (good but blocked) should end up somewhere they can contribute.",
+  "rationale": [
+    {
+      "item": "Initial player (Spencer Badosa) appeared to have no hitting ability; investigation revealed he had real hitting stats but zero game stats due to never appearing in a game",
+      "references": []
+    },
+    {
+      "item": "The 8 starters were literally the first 8 position players by DB row ID with no sort, so anyone inserted later started every game on the bench regardless of skill",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Depth charts should optimize daily for playing time and buried players should eventually force their way in",
+      "decided_by": "owner",
+      "quote": "The follow-up request was clearer: depth charts should optimize daily to ensure every active player gets meaningful playing time, good players shouldn't sit indefinitely, and players who are truly buried (good but blocked) should end up somewhere they can contribute."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Sort fielders by bat_score before slicing into starters and bench",
+      "artifacts": ["o27v2/sim.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Double the rest-day base rate from 0.06 to 0.12 for increased bench-player rotation",
+      "artifacts": ["o27v2/sim.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Add near-mandatory rest at 8+ consecutive starts to prevent iron-man crowding",
+      "artifacts": ["o27v2/sim.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Raise rest cap from 2 to 3 for deep benches (when len(bench_fielders) >= 4)",
+      "artifacts": ["o27v2/sim.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Add bench-starvation guard: force swap when a bench player absent from position_workload encounters starter with 5+ consecutive starts",
+      "artifacts": ["o27v2/sim.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Add playing_time_buried motivation to trade engine to identify and move buried players",
+      "artifacts": ["o27v2/trades.py"],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Deliberately not a hard cap on playing time; rest rates will need empirical validation",
+    "No position-aware bench swap; a 3B starting at SS because SS is resting is still possible",
+    "Position-aware bench swap is deferred for follow-up"
+  ],
+  "validation_claims": [
+    {
+      "claim": "Import check passed: python3 -c 'import o27v2.sim; import o27v2.trades'",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run import check command",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Syntax check passed: python3 -m py_compile o27v2/sim.py o27v2/trades.py",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run syntax check command",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Live game regression not run due to no seeded DB in environment",
+      "evidence_cited": "none",
+      "checkable_against_repo": "no",
+      "check_method": "Requires full season simulation",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Player generation changes",
+      "reason": "No changes to how players are created. All active players already have contact/power/eye ratings; there was never a defensive-only player type without hitting stats.",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "_try_habit_bench changes",
+      "reason": "The habit-cup swap was already working correctly; the only issue was the base ordering.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "position_workload lookback window (12 days) changes",
+      "reason": "Not changed. The starvation guard uses this as-is.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "role_hit / roster_slot flags",
+      "reason": "These exist and are loaded but drive manager AI substitution during a game, not pre-game lineup construction. That separation is correct.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Empirical playing-time validation needed after full season sim",
+    "Position-aware bench swap not implemented (3B at SS mismatch still possible)",
+    "Trades completing at reasonable rate is untested (acceptance rates may be too low)",
+    "Numbers are approximate pending clean re-measure"
+  ],
+  "open_hooks": [
+    "Empirical playing-time validation after simming a full season",
+    "Position-aware bench swap implementation",
+    "Verify trades actually complete at acceptable rates"
+  ],
+  "section_headers_original": [
+    "What was asked for",
+    "Starting state",
+    "How lineup selection actually worked",
+    "Why bench players rarely got in",
+    "The trade system's blind spot",
+    "What shipped",
+    "sim.py — lineup construction and rotation",
+    "Sort fielders by bat_score before slicing",
+    "Double the rest-day base rate: 0.06 → 0.12",
+    "Near-mandatory rest at 8+ consecutive starts",
+    "Raise rest cap from 2 to 3 for deep benches",
+    "Bench-starvation guard",
+    "trades.py — playing_time_buried motivation",
+    "Scoring function (_score_playing_time_buried)",
+    "Partner targeting (_candidate_partners)",
+    "Offer construction (_build_offer)",
+    "Strategy weights (STRATEGY_MULT)",
+    "Things that were not changed",
+    "Validation",
+    "Open items"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Clear diagnostic of lineup-selection bug (no sort, insertion-order only). Conservative on changes with clear open items for empirical validation. Good documentation of non-changes explaining why."
+}

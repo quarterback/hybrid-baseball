@@ -1,0 +1,184 @@
+{
+  "record_id": "hybrid-baseball--2026-05-13--ballparks-managers-arsenal-handedness-physics",
+  "source_path": "docs/aar-ballparks-managers-arsenal-physics.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-13",
+  "title": "After-Action Report — Ballparks, Named Managers, Arsenal Chips, Handedness Splits, Pitch-Type Matchup, Batted-Ball Physics",
+  "scope": "Open-ended continuation of the prior session. Items piled on over the course of the conversation: handedness UI, arsenal chips, handedness splits, ballparks, pitch-type matchup in pick_new_pitcher(), named managers with fog-of-war ratings, batted-ball physics (hybrid layer). Final ask: AAR covering the whole batch.",
+  "rationale": [
+    {
+      "item": "bats / throws were already persisted and consumed by the engine but invisible on the box score and team page",
+      "references": []
+    },
+    {
+      "item": "User asked for the hybrid approach specifically: keep the categorical contact engine canonical, layer EV/LA/spray for visualization only",
+      "references": []
+    },
+    {
+      "item": "A full physics rewrite would have invalidated the existing engine calibration AND required an O27-specific probability surface (MLB Statcast data is wrong for the 12-batter / 27-out / sidearm structure).",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "No flavor tags on ballparks",
+      "decided_by": "owner",
+      "quote": "No flavor tags (\"Bandbox\", \"Pitcher's Park\"). User ruled out."
+    },
+    {
+      "decision": "Generate ballpark dimensions",
+      "decided_by": "owner",
+      "quote": "generate dimensions (\"what does the ideal O27 ballpark look like? idk!\")"
+    },
+    {
+      "decision": "Hybrid batted-ball layer: categorical engine canonical, EV/LA/spray for visualization only",
+      "decided_by": "owner",
+      "quote": "User asked for the hybrid approach specifically: keep the categorical contact engine canonical, layer EV/LA/spray for visualization only."
+    },
+    {
+      "decision": "Manager tactical axes shown with customer-facing labels (fog of war)",
+      "decided_by": "owner",
+      "quote": "render the eight tactical axes with customer-facing labels (fog of war) so the underlying mechanism stays hidden, video-game-style"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Handedness UI: box score shows (L)/(R)/(S) after batter names and (LHP)/(RHP) after pitchers; team page B/T and T columns",
+      "artifacts": ["o27v2/web/templates/game.html", "o27v2/web/templates/team.html", "6dc8fcd"],
+      "kind": "modified"
+    },
+    {
+      "description": "Ballparks: new teams columns park_name, park_dimensions (JSON), manager_name; _roll_ballpark_name (o27v2/league.py:777-820) with templated names from regional surname pools; _roll_park_dimensions with asymmetry + wall-height heavy tail; Ballpark card on team page; box-score header renders 'at <Park Name>'",
+      "artifacts": ["o27v2/db.py", "o27v2/league.py", "o27v2/web/templates/team.html", "o27v2/web/box_score.py", "1686938"],
+      "kind": "new"
+    },
+    {
+      "description": "Named managers + fog-of-war ratings: per-team named manager via mgr_name_picker in seed_league; Manager card rewritten with name + archetype and eight 5-dot axes (Quick Hook · Bullpen Touch · Reads the Moment · Wild Card Energy · Matchup Hunter · Plays the Splits · Greenlight · Plays the Bench); new Jinja filter rating_stars",
+      "artifacts": ["o27v2/league.py", "o27v2/web/app.py", "o27v2/web/templates/team.html", "1686938"],
+      "kind": "new"
+    },
+    {
+      "description": "Arsenal chips: new Jinja filter repertoire mapping quality floats to 20-80 scout grades with tiers and humanized pitch names; pitcher page renders tier-colored chips sorted by usage_weight",
+      "artifacts": ["o27v2/web/app.py", "o27v2/web/templates/player.html", "1686938"],
+      "kind": "new"
+    },
+    {
+      "description": "Handedness splits: SQL helpers _player_handedness_split_batter/_pitcher aggregating game_pa_log by opposing handedness; new Handedness Splits panel on player page",
+      "artifacts": ["o27v2/web/app.py", "o27v2/web/templates/player.html", "1686938"],
+      "kind": "new"
+    },
+    {
+      "description": "Pitch-type matchup in pick_new_pitcher: _matchup_bonus reads next 3 batters' Power/Eye/handedness, scores k_delta, hard_contact_shift, opposite_heavy weighted by usage_weight × quality; scaled by mgr_platoon_aggression, capped ±0.12",
+      "artifacts": ["o27/engine/manager.py", "1686938"],
+      "kind": "modified"
+    },
+    {
+      "description": "Batted-ball physics hybrid layer: sample_batted_ball in new o27/engine/batted_ball.py (~110 lines); three new game_pa_log columns (exit_velocity, launch_angle, spray_angle); wiring in prob.py / render.py / sim.py; Spray Charts SVG panel on game page with _bip_distance_ft heuristic",
+      "artifacts": ["o27/engine/batted_ball.py", "o27v2/db.py", "o27/engine/prob.py", "o27/render/render.py", "o27v2/sim.py", "o27v2/web/templates/game.html"],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "Schema changes (additive only) ... All migrations idempotent. Fresh-DB SCHEMA blocks updated to match.",
+    "The engine never reads the new fields; they're flavor-and-charts only.",
+    "No new gameplay dials. Dimensions are visualization-only. park_hr / park_hits remain the mechanical multipliers.",
+    "The internal mechanism (`mgr_quick_hook` 0.78, etc.) is unchanged. The manager AI keeps reading the raw floats — only the display layer is reframed.",
+    "it can never override a real Stuff / Stamina / rest gap"
+  ],
+  "validation_claims": [
+    {
+      "claim": "Handedness ratios match design intent on a fresh seed: bats 54.3% R / 34.2% L / 11.4% S vs design 55 / 33 / 12; throws 73.2% R / 26.8% L vs design 70 / 30",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Seed a league and aggregate bats/throws distributions",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Sanity check on a 10-game sample: EV by quality weak μ 70.9 / medium μ 85.9 / hard μ 103.1; LA by hit_type ground_out μ -5°, single μ +14°, double μ +22°, triple μ +18°, hr μ +29°, fly_out μ +38°",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Sim 10 games and aggregate EV/LA from game_pa_log",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Test client hit on /game/<id> returned 200, SVG present, panel rendered",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Hit /game/<id> with Flask test client and check for spray-chart SVG",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Sri Lankan-named \"Hasaranga Ground\" actually showed up in a sample seed",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Seed with a Sri Lankan regional preset and inspect park names",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Ballpark flavor tags",
+      "reason": "User ruled out.",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "New gameplay dials from park dimensions",
+      "reason": "Dimensions are visualization-only. park_hr / park_hits remain the mechanical multipliers.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Full physics rewrite (EV/LA driving the fielding outcome)",
+      "reason": "Per the prior AAR's backlog plan: this is the hybrid layer. Full physics rewrite ... is still deferred.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Switch hitters in pitcher handedness splits",
+      "reason": "the engine doesn't resolve their effective side per AB",
+      "category": "blocked",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Handedness splits are BIP-only. K / BB / HBP outcomes don't appear in `game_pa_log` today, so the vs LHP / vs RHP split misses the K rate and walk rate.",
+    "Batted-ball physics is decorative. Engine fielding outcomes are still the categorical model.",
+    "Distance heuristic is non-physical. `_bip_distance_ft()` is a visual approximation.",
+    "Spray chart doesn't respect park dimensions. Every park's SVG uses the same 400-ft arc and ±45° foul lines.",
+    "Switch hitters are excluded from pitcher handedness splits.",
+    "Manager pitch-type matchup isn't surfaced — it's just a hidden bonus on top of the existing score.",
+    "No EV/LA/spray export. The plaintext box-score and markdown export still emit categorical hit_type only."
+  ],
+  "open_hooks": [
+    "The renderer would need to append pa_log rows for terminal-K / terminal-BB / terminal-HBP events to close the splits gap",
+    "A real projectile-physics distance would let the spray chart respect actual park dimensions and produce robbed-homer / wall-scraper narratives",
+    "Drawing the actual fence shape from park_dimensions",
+    "PITCH_CATALOG's hard_contact_shift and platoon_mode as one source of truth for both the matchup bonus and EV sampler"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Ballparks, Named Managers, Arsenal Chips, Handedness Splits, Pitch-Type Matchup, Batted-Ball Physics",
+    "What was asked for",
+    "What was built",
+    "1. Handedness UI (`6dc8fcd`)",
+    "2. Ballparks (`1686938`)",
+    "3. Named managers + fog-of-war ratings (`1686938`)",
+    "4. Arsenal chips on player page (`1686938`)",
+    "5. Handedness splits (`1686938`)",
+    "6. Pitch-type matchup in `pick_new_pitcher` (`1686938`)",
+    "7. Batted-ball physics — hybrid layer (THIS COMMIT)",
+    "Schema changes (additive only)",
+    "Files changed across the session",
+    "What's reused, what's new",
+    "Honest gaps / what's still open",
+    "Process notes"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/review-and-improve-NbhPy. | Sampler detail: EV distributions per contact quality (weak μ74 σ7.5 [52,88]; medium μ88 σ6 [76,100]; hard μ102 σ5.5 [92,119]); hit-type EV nudges (HR +4 mph, infield_single -3.5); batter Power ±10 mph; pitch hard_contact_shift up to ~1.5 mph; LA per hit_type; spray gaussian around pull skew (RHB μ-12°, LHB μ+12°, switch μ0°, σ16, clamped ±44°). | Files-changed table with line counts. | Honest limitation flagged in the splits panel header: game_pa_log captures BIP events only, so these read as 'contact production vs L/R-handed opposition'. | Process notes: ballpark scope shrank after pushback and manager work was added mid-migration — adapted by extending the same migration (one ALTER TABLE per column, not two passes); 5-dot scale chosen over stars (reads as rating bar, not review score); hybrid-physics was the right scope (<300 lines); tripped up by _stat_delta whitelist again — assists work earlier this session had the same pattern; EV/LA work avoided it because it lives entirely on game_pa_log.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Multi-feature batch AAR; 'Honest gaps' items 5-7 overlap non_actions/residual_risks and were recorded under residual_risks."
+}

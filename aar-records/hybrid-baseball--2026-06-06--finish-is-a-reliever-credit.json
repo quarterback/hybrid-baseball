@@ -1,0 +1,121 @@
+{
+  "record_id": "hybrid-baseball--2026-06-06--finish-is-a-reliever-credit",
+  "source_path": "docs/aar-finisher-reliever-credit-fix.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-06",
+  "title": "After-Action Report \u2014 the finish is a reliever credit (not the starter/winner)",
+  "scope": "`o27v2/sim.py` (terminal-out / quality-finish accrual), `o27v2/web/box_score.py` (`pick_finisher`), `o27v2/web/app.py` (the two finisher call sites).",
+  "rationale": [
+    {
+      "item": "The box-score F: line was credited to whichever pitcher on the winning team had the most terminal_outs \u2014 with no starter filter, no win-pitcher filter, and no minimum-outs floor. The code even documented it: \"a finisher can also be the winning pitcher.\"",
+      "references": []
+    },
+    {
+      "item": "terminal_outs accrue for any spell that entered with a lead, never let it slip, and finished \u2014 which a complete-game starter does for ~27 outs. So the starter got tagged the finisher, producing the nonsensical line the owner caught: a single game scored as a complete game + win + finish.",
+      "references": []
+    },
+    {
+      "item": "Why both layers: the sim.py change fixes the persisted counting stat going forward; the app.py/box_score change fixes the designation (the F: line) everywhere immediately, including historical games.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "The intended finisher rule (reliever-only, 4+ terminal outs, lead maintained, not starter nor decision-taker; no finish if nobody qualifies)",
+      "decided_by": "owner",
+      "quote": "The intended rule (owner spec): A finish is a **reliever** credit."
+    }
+  ],
+  "actions": [
+    {
+      "description": "terminal_outs and quality_finish no longer accrue to the starter (... and not is_starter); lead_entries/lead_held (LR%) unchanged",
+      "artifacts": [
+        "o27v2/sim.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "pick_finisher(win_rows, win_pid=None, min_outs=FINISH_MIN_OUTS=4) skips any is_starter row and the win_pid, requires terminal_outs >= 4, returns None when no reliever qualifies",
+      "artifacts": [
+        "o27v2/web/box_score.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Both finisher call sites (_game_finisher and the batch box-score decorator) now select is_starter and compute the win pitcher via credit_win, passing win_pid to pick_finisher \u2014 corrects the F: line on already-simmed DBs without a re-sim",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "(`lead_entries` / `lead_held`, which drive LR%, are unchanged \u2014 lead retention legitimately includes starters.)",
+    "This corrects the F: line on **already-simmed** DBs without a re-sim, since the exclusions are applied at display time."
+  ],
+  "validation_claims": [
+    {
+      "claim": "After a fresh sim, starters have 0 terminal_outs and 0 quality_finish; relievers accrue normally.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Fresh sim and query game_pitcher_stats by is_starter",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "A complete-game win shows no finisher (finisher=None).",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Find a CG win and check the F: line",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Across 30 played games: 7 finishers credited, 0 violations \u2014 none is the starter, none is the winning pitcher, every one has 4+ terminal outs.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Sim 30 games and audit finisher designations",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Stat-invariant suite + test_rotation pass; o27v2/tests 129 passed; the box score renders 200.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest and render a box score",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "One-off historical recompute of persisted terminal_outs / quality_finish counting totals for pre-fix games",
+      "reason": "it's not required for correctness going forward",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "The season-to-date parenthetical on the F: line (e.g. \"F: Brockman (33)\") can carry old inflation for historical games \u2014 even though the per-game designation is now correct everywhere. New sims are clean."
+  ],
+  "open_hooks": [
+    "A one-off historical recompute of those two columns (re-derive per spell with the not is_starter rule) would retroactively correct the r\u00e9sum\u00e9 totals if desired."
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 the finish is a reliever credit (not the starter/winner)",
+    "1. The bug",
+    "2. The intended rule (owner spec)",
+    "3. Root cause",
+    "4. The fix (three layers \u2014 data *and* display)",
+    "5. Validation",
+    "6. Follow-up / known limitation"
+  ],
+  "unmapped_content": "**Branch:** `claude/war-oaa-reconciliation-koalas-7t0pG`\n**Commit:** `be0e323`\n\nRoot-cause table (section 3): sim.py terminal-out accrual credited terminal_outs (and quality_finish) to any finishing lead-held spell, starters included \u2014 a starter finishing his own start isn't a \"finish\"; box_score.pick_finisher returned the winning team's max(terminal_outs) pitcher, full stop \u2014 no starter / win-pitcher / 4-out filter; app.py finisher call sites called pick_finisher(win_rows) with no win-pitcher context \u2014 couldn't exclude the decision-taker.\n\nOwner-spec detail: finished the game (recorded the last out), with 4 or more terminal outs, entered with a lead and never let it be tied or lost, and is neither the starter NOR the decision-taking pitcher (the win / majority-relief arm). If nobody qualifies \u2014 a complete game, or a game where the closer also took the win \u2014 no finish is credited. A complete game / a win is its own credit and is never also a finish. The same flaw tagged non-CG starters who led and finished, and let the winning pitcher double as the finisher.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Clear AAR; date from 'Date:' line."
+}

@@ -1,0 +1,183 @@
+{
+  "record_id": "hybrid-baseball--2026-05-21--concurrent-saves-leagues-restart-data-loss-fix",
+  "source_path": "docs/aar-concurrent-saves-and-restart-data-loss.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-21",
+  "title": "After-Action Report — Concurrent Saves / Leagues + Restart Data-Loss Fix",
+  "scope": "The user runs the public O27 site and wanted three things, in their words: the game \"is visible for anyone but it doesn't allow you to have a concurrent set of saves or leagues, and it's tough when I can't save the league or access it days later.\"",
+  "rationale": [
+    {
+      "item": "Privacy model: Shared named slots — no login. Anyone visiting can list the saved leagues and switch the active one.",
+      "references": []
+    },
+    {
+      "item": "Save behaviour: Both — switch between many leagues in-app and export/import a league as a file.",
+      "references": []
+    },
+    {
+      "item": "Persistence pain: Data disappears on its own — not just \"new league wipes the old,\" but leagues vanishing between visits.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Shared named slots, no login",
+      "decided_by": "owner",
+      "quote": "**Privacy model:** *Shared named slots* — no login. Anyone visiting can list the saved leagues and switch the active one."
+    },
+    {
+      "decision": "Both in-app switching and file export/import",
+      "decided_by": "owner",
+      "quote": "**Save behaviour:** *Both* — switch between many leagues in-app **and** export/import a league as a file."
+    },
+    {
+      "decision": "No PR opened",
+      "decided_by": "owner",
+      "quote": "**No PR opened**, per the user's preference at the time."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Multiple named leagues: each league its own SQLite file under a saves directory, tracked by a JSON registry with a single global active pointer; db.get_conn() resolves the active save's file at call time so all ~50 existing routes work unchanged; explicit O27V2_DB_PATH bypasses the registry",
+      "artifacts": [
+        "o27v2/saves.py",
+        "o27v2/db.py",
+        "_resolve_path()"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "/saves page (nav link Saves): list, activate, rename, delete, export, import; active league name in topbar",
+      "artifacts": [
+        "/saves"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "/new-league no longer wipes the active league — creates a new save file and switches to it",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "new_league_post"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Export via VACUUM INTO (merges WAL, no -wal/-shm sidecars); import validates a teams table before registering",
+      "artifacts": [
+        "VACUUM INTO"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Startup migration: adopts any legacy single DB as Save 1, or creates an initial slot on a fresh box",
+      "artifacts": [
+        "o27v2/manage.py",
+        "cmd_runserver"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "fly.toml: dropped O27V2_DB_PATH in favour of O27V2_SAVES_DIR=/data/saves",
+      "artifacts": [
+        "fly.toml"
+      ],
+      "kind": "config"
+    },
+    {
+      "description": "Data-loss fix: _wipe_if_stale() matched every healthy modern league (blank pitcher_role after Task #65); staleness signal now keys on a populated roster with zero archetypes (genuinely pre-Phase-8 data)",
+      "artifacts": [
+        "o27v2/db.py",
+        "_wipe_if_stale()",
+        "o27v2/league.py:1763",
+        "o27v2/sim.py:1157"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "New test module and realigned phase8 migration tests",
+      "artifacts": [
+        "o27v2/tests/test_saves.py",
+        "test_phase8_db_migration.py"
+      ],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "The test-bypass design held. Keying \"explicit override = single fixed DB\" off O27V2_DB_PATH / _DB_PATH let the existing suite pass untouched, which is what we want from a refactor this broad."
+  ],
+  "validation_claims": [
+    {
+      "claim": "New o27v2/tests/test_saves.py (7 tests) + realigned test_phase8_db_migration.py — all green",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest o27v2/tests/test_saves.py o27v2/tests/test_phase8_db_migration.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Full suite: 179 passed. Remaining failures are pre-existing and confirmed red on main",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run full pytest suite and compare with main baseline",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "End-to-end via the Flask test client: create two leagues → both preserved → activate switches the data → export produces a valid single-file DB → import round-trips → rename/delete work → activating no longer wipes",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Repeat the flow via Flask test client",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Deploy step unverified in prod (legacy /data/o27v2.db → Save 1 adoption)",
+      "reason": "tested locally but not on the live volume",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Fixing the two flaky statistical tests",
+      "reason": "Pre-existing; worth seeding or widening tolerances someday",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "No PR opened",
+      "reason": "per the user's preference at the time",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Deploy step unverified in prod — recommended: deploy, confirm /data/saves/registry.json + save_*.db exist, then restart the machine and confirm the active save survives",
+    "Switching saves mid-simulation is guarded against the multi-season runner, but a single long sim request racing an activate is theoretically possible — low risk on a single-user site",
+    "Two flaky statistical tests are order/RNG-sensitive (pass standalone, can flake in full-suite runs)"
+  ],
+  "open_hooks": [
+    "Seed or widen tolerances on the flaky statistical tests",
+    "Prod verification checklist for the Save 1 adoption"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Concurrent Saves / Leagues + Restart Data-Loss Fix",
+    "What was asked for",
+    "What shipped",
+    "What went well",
+    "What surprised us (the important part)",
+    "What was harder than expected",
+    "Lessons",
+    "Verification performed",
+    "Open risks / follow-ups"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/concurrent-saves-leagues-q6DrT; commit 417eb63. What went well: the architecture made the refactor cheap (get_conn() opens a fresh connection with no pooling/caching — ~15-line change in one place); verification caught the real bug (running an actual /new-league → activate flow surfaced the wipe-on-restart; a green unit suite alone would have shipped the latent bug). What surprised us: the root cause wasn't the feature; a destructive heuristic ran unconditionally on a hot path (auto drop_all() at startup is a footgun); tests encoded a dead data model (test_phase8 failures already red on main asserted pitcher_role == 'workhorse' and is_joker rows that no longer exist). What was harder than expected: telling 'my regression' from 'already broken' needed git stash baseline runs (three failures were pre-existing); fresh-install edge case would have seeded into the unregistered fallback file — fixed by creating the slot before seeding. Lessons: (1) Config looking correct ≠ data being safe. (2) A stale heuristic is created by a change elsewhere — Task #65 broke _wipe_if_stale from a distance. (3) Verify behaviour, not just the suite. (4) Tests that drift become camouflage. Restart trigger detail: each Fly restart (redeploy, 512 MB OOM, idle cycle) silently dropped the league and reseeded a fresh one.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date completed:' line."
+}

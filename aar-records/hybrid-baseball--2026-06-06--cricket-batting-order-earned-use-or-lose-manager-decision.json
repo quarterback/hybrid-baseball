@@ -1,0 +1,140 @@
+{
+  "record_id": "hybrid-baseball--2026-06-06--cricket-batting-order-earned-use-or-lose-manager-decision",
+  "source_path": "docs/aar-cricket-batting-order-manager-decision.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-06",
+  "title": "After-Action Report — Cricket Batting Order: the earned, use-or-lose manager decision",
+  "scope": "The first cut of the Cricket Batting Order rule flipped the order automatically at the end of every joker-free trip. The user reframed it: the flip is earned, use-or-lose, and a manager decision, and it is regulation-only. A joker-free trip earns one flip (1-9 → 9-1). It's use-or-lose at the top of the next cycle, and whether to spend it is a manager choice driven by a flip-aggression persona and the game situation (score + out-arc). Deploying a joker forfeits the chance to earn one, so jokers and flips trade off.",
+  "rationale": [
+    {
+      "item": "\"There is no use-or-lose [aggregation]. You get one if you cycle through the lineup without using a joker, and it's use-or-lose with the first batter of the new cycle … there are managers who prefer to use it … teams that use jokers more liberally would be less inclined to use this … and a segment who use both situationally based on the score and where in the arc of outs we are.\"",
+      "references": [
+        "docs/aar-cricket-batting-order.md"
+      ]
+    },
+    {
+      "item": "Plus a separate instruction: regulation only.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Reframe the flip as earned, use-or-lose, manager decision",
+      "decided_by": "owner",
+      "quote": "The user reframed it: the flip is **earned, use-or-lose, and a manager decision**, and it is **regulation-only**."
+    },
+    {
+      "decision": "Regulation only",
+      "decided_by": "owner",
+      "quote": "Plus a separate instruction: **regulation only**."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Engine earn/decide/apply split: cricket_order.py gains cricket_order_on, can_flip, flip_line, apply_flip; state.py Team.advance_lineup arms Team.pending_flip on a joker-free wrap and adds Team.mgr_flip_aggression; game.py run_half clears pending_flip at half start; prob.py _maybe_cricket_flip consumes the pending flip and returns a cricket_flip event; manager.py should_use_flip, joker_flip_damp, _in_regulation; pa.py/render.py apply and render the event; config.py CRICKET_FLIP_* and CRICKET_JOKER_FLIP_DAMP tunables",
+      "artifacts": [
+        "cricket_order.py",
+        "state.py",
+        "game.py",
+        "prob.py",
+        "manager.py",
+        "pa.py",
+        "render.py",
+        "config.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Persona axis mgr_flip_aggression derived inversely from joker_aggression with a leverage nudge (managers.py:_flip_aggression); stored on teams.mgr_flip_aggression (db.py column + migration), persisted in seeding INSERT (league.py), stamped onto the engine Team (sim.py)",
+      "artifacts": [
+        "managers.py",
+        "db.py",
+        "league.py",
+        "sim.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Use-or-lose, enforced in two places. The provider clears pending_flip the moment it reaches a decision (used or not); run_half clears it at every half start. So it never banks and never crosses a half boundary.",
+    "The joker trade is situational by construction... a genuinely high-leverage spot still clears the lowered bar — that is the \"weigh joker-now vs flip-next\" behaviour, not a hard veto."
+  ],
+  "validation_claims": [
+    {
+      "claim": "pytest o27/tests/test_cricket_order.py — pending-flip arming, flip helpers, should_use_flip persona/situational monotonicity, joker_flip_damp scaling + inertness, end-to-end",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest o27/tests/test_cricket_order.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "pytest o27/tests — full engine suite green",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest o27/tests",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Provider: regulation spends the flip (event + pending cleared); super-inning declines and still clears it. Live game: flip line names the new leadoff and that hitter bats next; render and no-render paths both show it",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run a live game with rule on and inspect both log paths",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "DB fresh + legacy migrations land cricket_order_enabled and mgr_flip_aggression; INSERT counts align 31/31/31",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run migrations on fresh and legacy DBs and count INSERT columns",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Verified spread: joker-happy archetypes ≈0.24–0.35, joker-sparing ≈0.63–0.73",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Compute _flip_aggression across archetypes",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Flip-aware lineup construction",
+      "reason": "addressed next; see docs/aar-cricket-batting-order-flip-aware-lineups.md",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "No new stat family; no dismissal/all-out model",
+      "reason": "breaks the 27-out half",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [],
+  "open_hooks": [
+    "Flip-aware lineup construction (delivered in the follow-on AAR)",
+    "CRICKET_FLIP_* and CRICKET_JOKER_FLIP_DAMP tunables"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Cricket Batting Order: the earned, use-or-lose manager decision",
+    "TL;DR",
+    "What was asked for",
+    "What changed",
+    "Design decisions worth recording",
+    "What bit me",
+    "Validation",
+    "Not changed / follow-ups"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/o27-cricket-batting-order-k6hhp; precedes docs/aar-cricket-batting-order.md (refined) and docs/aar-cricket-batting-order-flip-aware-lineups.md. Behaviour produced: managers self-sort into flip-minded (hoard jokers, live on the churn), joker-happy (rarely earn or spend a flip), and situational (weigh joker-now vs flip-next). Design decisions worth recording: the flip is a provider-returned event, not a mutation at the wrap (decision needs rng + manager which live in the provider; renderer captures PA context before the provider runs; same shape as joker_insertion / declaration); mgr_flip_aggression derived not authored per-archetype (avoided editing all 17 archetypes and threading a brittle new value through the single, already-partial seeding INSERT). What bit me: the first (automatic) version appended the flip line in pa.py and assumed it would render — it didn't, because run_half discards the raw apply_event log when a Renderer is present and rebuilds the play-by-play from the renderer; the event-based redesign fixes this structurally and the line was verified on both paths.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": false
+  },
+  "parser_notes": "Date from 'Date completed:' line. 'Precedes:' wording is slightly confusing — this AAR refines the original rule AAR."
+}

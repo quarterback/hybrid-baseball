@@ -1,0 +1,242 @@
+{
+  "record_id": "hybrid-baseball--2026-05-25--engine-style-library-randomizer-regional-leagues",
+  "source_path": "docs/aar-tuning-library-and-regional-leagues.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-25",
+  "title": "After-Action Report — Engine Style Library, Eclectic Randomizer, Reseed-into-Style + Infrastructure-Driven Regional Leagues",
+  "scope": "User wanted to \"start expanding the tuning engine library way more than what we have now & to add more presets for various worldwide leagues so [they] can just start testing and playing.\"",
+  "rationale": [
+    {
+      "item": "Initial ask: a much bigger preset library plus an eclectic randomizer; then \"national league\" / worldwide playstyles.",
+      "references": []
+    },
+    {
+      "item": "Correction on talent scope: styles should shape regens / new-gens, not retroactively rewrite existing players — and that's the point, not a caveat. They also wanted \"different kinds of resets\" — the ability to reseed a league into a style in one action.",
+      "references": []
+    },
+    {
+      "item": "Hard correction on calibration: \"I don't care if scores blow past 19-26 r/g, I never set that rule.\" R/G is NOT a target; presets are defined by direction/identity, never tuned to hit a number.",
+      "references": [
+        "o27v2/config.py:251"
+      ]
+    },
+    {
+      "item": "Reframe of \"worldwide\": \"O27 isn't baseball taking root in existing baseball countries. It's a new sport spreading through cricket countries, secondary markets, urban environments where a full baseball field is impossible.\" Play style must emerge from infrastructure, economics, and existing athletic culture — refusing tropes. Field size is the single biggest variable.",
+      "references": []
+    },
+    {
+      "item": "Field dimensions were previously rolled from one global shape distribution, so regions could only differ by talent/weather — which would have erased the user's central thesis (small urban footprint vs. converted cricket ground).",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Scoping: build the park-geometry hook; regions as standalone single-league configs; identity from geometry + talent + weather only",
+      "decided_by": "joint",
+      "quote": "I surfaced three scoping decisions; the user chose: (a) build the per-league park-geometry hook, (b) ship regions as standalone single-league configs (not a unified universe), (c) identity from geometry + talent + weather this round (no per-league joker-mix / stay biasing yet)."
+    },
+    {
+      "decision": "No R/G target tuning",
+      "decided_by": "owner",
+      "quote": "\"I don't care if scores blow past 19-26 r/g, I never set that rule.\""
+    },
+    {
+      "decision": "Styles shape regens, not existing players",
+      "decided_by": "owner",
+      "quote": "styles should shape regens / new-gens, not retroactively rewrite existing players — and that's the *point*, not a caveat."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Engine style-preset shelf grown 2 → 12 (era_1968, era_1987, era_2010s_tto, junkball, launch_circus, contact_carnival, speed_demon, workhorse, knifes_edge, pitchers_hellscape) bundling live mechanics knobs and GEN_SHIFT_* talent knobs",
+      "artifacts": [
+        "o27v2/engine_config.py"
+      ],
+      "kind": "data"
+    },
+    {
+      "description": "Eclectic randomizer: randomize_overrides(seed, n_knobs) + _RANDOMIZE_RANGES (27 guard-railed knobs); 🎲 Randomize button + seed field, action == \"randomize\" branch",
+      "artifacts": [
+        "o27v2/engine_config.py",
+        "o27v2/web/app.py",
+        "o27v2/web/templates/engine_settings.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Reseed-a-league-into-a-style: POST /api/league/reseed-with-style resolving the style bundle before the wipe, re-storing after init_db() but before seed_league(); confirm-gated UI",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "o27v2/web/templates/engine_settings.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Per-league park geometry hook: _roll_park_dimensions(rng, shape_weights), _PARK_PROFILES (six named geometries), _resolve_park_shape_weights(), park_profiles config block read in seed_league",
+      "artifacts": [
+        "o27v2/league.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Blended-locale cities: _resolve_locale_city_keys unions each region's city pools; fixed dict-locale crash on non-canonical league names",
+      "artifacts": [
+        "o27v2/team_naming.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Tropical/arid city coverage added to weather table (Davao, Quezon City, Medan, Semarang, Makassar, Johor Bahru, Kota Kinabalu, Ho Chi Minh, Abidjan, Kinshasa, Apia, Nukuʻalofa, Ahmedabad/Rawalpindi, etc.)",
+      "artifacts": [
+        "o27/engine/weather.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Six standalone region configs pairing park profile + talent style_profiles + name-region pipeline + host cities; universe spec docs updated (§5b park_profiles + weather note)",
+      "artifacts": [
+        "o27v2/data/league_configs/region_sea_urban.json",
+        "o27v2/data/league_configs/region_subcontinent.json",
+        "o27v2/data/league_configs/region_west_indies.json",
+        "o27v2/data/league_configs/region_africa.json",
+        "o27v2/data/league_configs/region_brazil.json",
+        "o27v2/data/league_configs/region_pacific.json",
+        "o27v2/data/league_configs/_UNIVERSE_SPEC.md"
+      ],
+      "kind": "config"
+    }
+  ],
+  "risk_posture": [
+    "No DB schema changes (`park_profiles` is config-time only; it feeds the existing `teams.park_shape` / `park_dimensions` columns from the prior ballpark work).",
+    "No target band enforced — overshoot is fine; only shape matters.",
+    "Existing players are never rewritten (structural: loading a style only setattrs config + writes sim_meta; nothing UPDATEs the players table).",
+    "Per the user's explicit instruction, no preset or region was tuned toward a target R/G. Verification checks direction/shape relative to default only."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Presets move in the intended direction (o27 fixture batch, 120 games): e.g. era_1968 25.5 R/G vs default 32.2; knifes_edge 47.1; pitchers_hellscape 20.3",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-run the fixture batch under each preset",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "200 seeds: every produced value within its _RANDOMIZE_RANGES bound, contact triple sums ~1.0, 8-12 knobs perturbed, no degenerate/crash output",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Loop randomize_overrides over 200 seeds and assert bounds",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Reseeding into era_1968 shifted the regenerated pool's mean PITCHING 38.2 → 42.8 and POWER 49.6 → 46.2, and the style survived the DB rebuild (15 overrides still live)",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Call the reseed route and inspect sim_meta + player means",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "HR% spans 3.69 → 9.46 (2.5×) purely from park geometry + talent pool (2-week sim, seed 7)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Seed each region config with seed 7 and sim 2 weeks",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Hot/humid team-city share after the coverage fix: region_sea_urban 14/14, region_subcontinent 11/12, region_brazil 9/10, region_west_indies 9/12, region_africa 8/12, region_pacific 5/8",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Seed regions and count climate archetypes per team city",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "pytest tests/ (excluding the DB-seed-dependent test_stat_invariants): 130 passed, 7 skipped. Existing configs o27_global (84 teams), international (36), 30teams all seed without regression.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest tests/ and seed the named configs",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Unified universe with inter-league signings (and the \"Japanese/Korean players in the SE Asian league\" cross-pollination)",
+      "reason": "declined this round; that cross-pollination is properly an emergent property of a unified universe, where inter-league signings are real",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Per-league joker-archetype mix and stay-skill biasing",
+      "reason": "would need a second engine hook (jokers + stay attrs are global today). Deferred.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Pushing triples/inside-the-park harder for oval parks",
+      "reason": "would need the global ITP knobs, left untouched per the geometry+talent+weather scope",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Postseason brackets for standalone regions",
+      "reason": "Standalone regions have postseason: \"none\" (mirrors the peer-universe convention)",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "True σ (spread) bump for talent",
+      "reason": "GEN_SHIFT_* is global; style_profiles is the per-league lever and it shifts the mean, not the spread.",
+      "category": "blocked",
+      "status": "unknown"
+    },
+    {
+      "item": "east_asia slice in SE Asia config",
+      "reason": "dropped to keep its climate coherent (it was dragging in cold Sapporo)",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "GEN_SHIFT_* is global; style_profiles shifts the mean, not the spread — \"widest variance\" (West Indies) is approximated via a mixed origin pipeline, not a true σ bump.",
+    "Player-origin and team-city are coupled in a standalone single-league config.",
+    "Oval parks suppress HRs strongly but boost triples/ITP only modestly.",
+    "Weather's mechanical effect is modest (stamina-decay ~0.95-1.07); regional fatigue identity leans more on the talent pool than on climate alone."
+  ],
+  "open_hooks": [
+    "More global styles can be added as pure data (a config + optional new park profile) with no engine change.",
+    "Per-league joker-mix / stay biasing as a second engine hook.",
+    "Unified universe with inter-league signings for cross-pollination."
+  ],
+  "section_headers_original": [
+    "After-Action Report — Engine Style Library, Eclectic Randomizer, Reseed-into-Style + Infrastructure-Driven Regional Leagues",
+    "What was asked for",
+    "What was built",
+    "Part 1 — Engine style-preset library (data)",
+    "Part 2 — Eclectic randomizer (code)",
+    "Part 3 — Reseed-a-league-into-a-style (code)",
+    "Part 4 — Per-league park geometry (engine hook)",
+    "Part 5 — Blended-locale cities + weather coverage (supporting fixes)",
+    "Part 6 — Six standalone region configs (data)",
+    "Files changed",
+    "Verification",
+    "Presets move in the intended direction (o27 fixture batch, 120 games)",
+    "Randomizer guard rails",
+    "Reseed-into-style end to end",
+    "Geometry drives regional style (2-week sim, seed 7)",
+    "Weather emerges from place",
+    "Regression",
+    "Reused vs new",
+    "Honest gaps / what's still open",
+    "Process notes"
+  ],
+  "unmapped_content": "Reseed footgun detail: /api/season/reset does db.drop_all(), which drops sim_meta — wiping the engine tuning — before it regenerates; the new route resolves the style bundle before the wipe. Region config table (parks/talent/origin pipelines per region, team counts 14/12/12/12/10/8). Preset metrics table and region R/g//HR/g//HR%//3B/g table. Reused-vs-new section: reused the ballpark-shape system (oval shape pre-labeled \"Cricket-Ground Revival\"), style_profiles + name_regions infrastructure and regions.json pipelines, weather climate-archetype system, preset persistence path; new: 10 presets, randomizer, reseed route, geometry hook + six park profiles, dict-locale resolution, six region configs. Process notes: scope corrected four times; the biggest pivot was rejecting national-character framing; mapping what the engine can express made the build small; regions.json already encoded the user's thesis; \"is a region a config or an engine change?\" answered as mostly config (~90-line hook); dict-locale crash caught before shipping; weather coverage gap caught by measuring (7/14 SE-Asian cities silently temperate). Files-changed diffstat block (engine_config +248, app.py +81, engine_settings.html +88, league.py +89, team_naming.py +27, weather.py +17, _UNIVERSE_SPEC.md +35, region_*.json NEW × 6). Talent means at seed 7 (subcontinent POWER 44 / CONTACT 55 / MOVEMENT 54 / PITCHING 35; Pacific POWER 56 / CMD 44; Brazil PITCHING 32).",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Well-formed AAR with explicit 'Honest gaps' and 'Process notes' sections. Date from 'Date completed: 2026-05-25'. Branch claude/tuning-library-expansion-3fFTu; no commit hashes listed."
+}

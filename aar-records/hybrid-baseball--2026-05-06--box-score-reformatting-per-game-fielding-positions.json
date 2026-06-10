@@ -1,0 +1,80 @@
+{
+  "record_id": "hybrid-baseball--2026-05-06--box-score-reformatting-per-game-fielding-positions",
+  "source_path": "docs/aar-newspaper-box-score-and-game-positions.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-06",
+  "title": "After-Action Report — Box Score Reformatting + Per-Game Fielding Positions",
+  "scope": "Two distinct asks emerged: 1. The data model is wrong — box scores show \"UT\" for half the lineup because the engine never assigns concrete fielding positions to utility players at game time. 2. The presentation is wrong — three styled HTML tables stacked vertically is a database-dump UI, not a box score; the reference target is a 1990s newspaper box score: monospace plaintext, dot leaders, no internal grid lines, sections separated by whitespace.",
+  "rationale": [
+    {"item": "\"Why arn't all 9 fielders (pitcher included) not represented in box scores, then DH separately (jokers) so I know who started and then any pinch hitters or defensjve subs. You need to explore how a baseball box score is designed.\"", "references": []},
+    {"item": "\"Nobody should ever be UT in the box score in real life a box score transmits all the info who played where if yoh moved positions jt can show that too\"", "references": []},
+    {"item": "\"Jokers should be J not DH every team has just 3 you cannot sub a joker for another guy only fielders jokers can play in the field to replace someone but you only then have 2 or 1 jokers. This should be a very rare thing\"", "references": []},
+    {"item": "User pasted a comprehensive spec referencing Henry Chadwick (the inventor of the modern box score in 1858) and the typographic conventions that became the standard format through the 20th century: single <pre> block, dot leaders, fixed column widths (name+pos 22 chars, stats 4 chars right-aligned), no HTML/markdown tables or grid lines, blank-line section separation, W/L/S inline with pitcher name, annotations indented 2 spaces, HR season totals in parens, O27 adaptations (REG/SI1/SI2 phase columns, OS% on pitching, 2C column on batting).", "references": []},
+    {"item": "\"This box score is rendering as separate HTML tables stacked vertically — three different tables ... Mobile-responsive UI design language, not newspaper box score language. ...\"", "references": []},
+    {"item": "The position column came straight off players.position — the player's primary position. There's no per-game record. The engine was already doing the position selection implicitly; it just wasn't recording the assignment.", "references": []}
+  ],
+  "delegation_events": [],
+  "actions": [
+    {"description": "Added game_position: str = \"\" field on Player — assigned at game start by the lineup builder; mid-game defensive moves can extend the string (e.g. \"SS-2B\"); renderer falls back to position when empty.", "artifacts": ["o27/engine/state.py"], "kind": "modified"},
+    {"description": "New helper _assign_game_positions(starters, sp, dhs) called from _db_team_to_engine: canonical-8 primary positions keep their slot first-come; remaining players greedy best-fit against open slots scored on defense_infield/defense_outfield/defense_catcher; SP gets \"P\"; jokers get \"J\" (explicitly not \"DH\").", "artifacts": ["o27v2/sim.py"], "kind": "modified"},
+    {"description": "game_position TEXT DEFAULT '' column on game_batter_stats with ALTER TABLE migration; _extract_batter_stats and both INSERT paths write it; box-score query exposes box_position with COALESCE fallback to primary position / J for jokers.", "artifacts": ["o27v2/db.py", "o27v2/sim.py", "o27v2/web/app.py"], "kind": "modified"},
+    {"description": "New file o27v2/web/box_score.py — pure plaintext newspaper renderer (top rule, title line, line score with REG/SI columns, batting blocks with dot leaders and Totals, annotation lines, pitching tables with inline W/L/S, game notes). Column constants NAME_POS_WIDTH=22, STAT_W=4, PIT_STAT_W=5, RULE_WIDTH=78; helpers _last_name, _pos_short, _name_pos_with_dots, _rj, _rate.", "artifacts": ["o27v2/web/box_score.py"], "kind": "new"},
+    {"description": "game.html reduced from 472 to 228 lines: removed styled scoreboard panel, styled line-score table, per-phase batting+pitching tables, Game Totals tables, Notable Plays card; replaced with a single <pre> block; Bootstrap nav strip (Prev/Next, JSON export) preserved.", "artifacts": ["o27v2/web/templates/game.html"], "kind": "modified"},
+    {"description": "game_detail calls box_score.render_box_score(...) with consolidated row sets and line-score totals; builds a decisions dict ({pitcher_id: \"W\"|\"L\"|\"S\"}) from W/L/SV columns.", "artifacts": ["o27v2/web/app.py"], "kind": "modified"},
+    {"description": "Follow-up commit 50d6f77: render.py captures pinch_hit and joker_inserted events; BatterStats gains entry_type (starter | PH | sub | joker) and replaced_player_id fields; persisted via two new game_batter_stats columns with ALTER TABLE migrations and read back in the box-score SELECT.", "artifacts": ["o27/stats/batter.py", "o27/render/render.py", "o27v2/db.py", "o27v2/sim.py", "o27v2/web/app.py"], "kind": "modified"},
+    {"description": "_ordered_rows_with_indent orders batting rows: starters in lineup order, PH/sub rows indented 2 chars immediately after the starter they replaced (position reads ph), jokers trail un-indented with position j; _name_pos_with_dots accepts an indent parameter.", "artifacts": ["o27v2/web/box_score.py"], "kind": "modified"},
+    {"description": "Season HR totals: one cheap per-side query in game_detail sums HR through this game; annotations renderer formats \"Smith 2 (12)\" / \"Lopez (4)\".", "artifacts": ["o27v2/web/app.py", "o27v2/web/box_score.py"], "kind": "modified"}
+  ],
+  "risk_posture": [
+    "Pure rendering — no DB access; takes already-built row sets and emits a single string.",
+    "(Legacy games with utility players will still show \"UT\" until they're re-simmed; new games render correctly.)",
+    "None of the rendering or schema changes touch the realism axes the identity contract pins."
+  ],
+  "validation_claims": [
+    {"claim": "tests/test_realism_identity.py still passes 6/6 across both commits.", "evidence_cited": "tests", "checkable_against_repo": "yes", "check_method": "pytest tests/test_realism_identity.py at commits b8bffbf and 50d6f77", "verified": "not_checked"},
+    {"claim": "Sample output shows every position concrete, no UT anywhere, jokers carry the j tag, pitcher's W inline with the name, dot leaders connecting names to stats, right-aligned locked stat columns.", "evidence_cited": "render/smoke", "checkable_against_repo": "yes", "check_method": "Render a game page and compare against the sample output in the AAR", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "Defensive subs split from PH — everything that flows through the dual-use pinch_hit event is tagged entry_type=\"PH\"", "reason": "A proper \"PH\" vs \"DEF\" split would need either a flag on the event or a separate event type. Punt.", "category": "deferred", "status": "unknown"},
+    {"item": "Pinch runners", "reason": "the engine doesn't currently emit a pinch-runner event. Would need engine support, then the same render plumbing pattern.", "category": "blocked", "status": "unknown"},
+    {"item": "Joker-into-the-field as defensive sub shown as \"J→SS\" with joker count dropping 3 → 2", "reason": "The plumbing exists (game_position is a free-form string that can extend), but the trigger event isn't being captured into the stats layer. Punt.", "category": "deferred", "status": "unknown"},
+    {"item": "GIDP annotation", "reason": "DPs are now tracked at the engine level (per the earlier hits/runs decoupling commits), but they're not surfaced in the box-score annotations yet. Easy follow-up.", "category": "deferred", "status": "unknown"},
+    {"item": "LOB-RISP (left on base with runners in scoring position)", "reason": "Not currently tracked.", "category": "deferred", "status": "unknown"}
+  ],
+  "residual_risks": [
+    "Legacy games with utility players will still show \"UT\" until they're re-simmed."
+  ],
+  "open_hooks": [
+    "game_position free-form string supports mid-game position moves (\"SS-2B\") and the future J→SS joker-sub display",
+    "GIDP annotation is an easy follow-up once surfaced from engine tracking"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Box Score Reformatting + Per-Game Fielding Positions",
+    "What was asked for",
+    "Diagnosis",
+    "Data model",
+    "Presentation",
+    "What was built (commit `b8bffbf`)",
+    "1. Per-game fielding positions",
+    "2. Persistence",
+    "3. Newspaper-style plaintext renderer",
+    "4. Template rewrite",
+    "5. App wiring",
+    "Sample output",
+    "Follow-up — PH/sub indent + season HR totals (commit `50d6f77`)",
+    "Capturing pinch hits",
+    "Indent ordering",
+    "Season HR totals",
+    "What's still rough",
+    "Identity / regression check",
+    "Files touched"
+  ],
+  "unmapped_content": "Branch: claude/decouple-hits-runs-rGteJ; Commits: b8bffbf (positions + plaintext box score), 50d6f77 (PH/sub indent + season HR). | Fourth user message: \"I'll search for current best practices on baseball box score formatting and Python implementation patterns. Now I have enough context. Here's a directive for an LLM agent on how to build a proper O27 box score in a Python sim ...\" (followed by a detailed spec). | Diagnosis SQL: the box-score query at o27v2/web/app.py:1387 selected CASE WHEN p.is_joker = 1 THEN 'J' ELSE p.position END straight off players.position. Screenshot showed SS, RF, LF, UT, CF, UT, C, 1B, P, UT, DH. | _rate formats H/AB to 3 decimals (or above 1.000 if 2C events produced multi-hit ABs — the H/AB column is intentionally unbounded). | Sample box-score output and PH-indent example blocks reproduced in the document. | Season-HR SQL groups game_batter_stats joined to games with (g.game_date < ? OR (g.game_date = ? AND g.id <= ?)). | Diff stats: commit b8bffbf 487 insertions, 262 deletions across 6 files; commit 50d6f77 160 insertions, 13 deletions across 6 files.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": false,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Two-commit AAR; user quotes drive the rationale. No explicit delegation decisions beyond the user's directive spec."
+}

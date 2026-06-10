@@ -1,0 +1,192 @@
+{
+  "record_id": "hybrid-baseball--2026-06-01--college-tier-sub-pro-ncaa-inspired-league",
+  "source_path": "docs/aar-college-tier.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-01",
+  "title": "After-Action Report — College Tier (Sub-Pro NCAA-Inspired League)",
+  "scope": "Started from a conversation about NCAA softball during the WCWS. User wanted to be able to simulate a sub-pro league in the game world — a collegiate tier with its own schedule, postseason, and draft pipeline that feeds the pro side. Big animating idea: an asymmetric reveal mechanic where college players play with suppressed grades, scouts get noisy reports of their true potential, and the player's actual ceiling is only revealed once they sign to the pro side.",
+  "rationale": [
+    {
+      "item": "\"the way we've modeled youth stats in my other games is that these players actually already have their full potential listed... what we have in the college or youth game is basically they get to access a percentage of it, but we never see their full current ratings... it creates nice asymmetry, especially with regard to exporting college players into a pro league.\"",
+      "references": []
+    },
+    {
+      "item": "\"pro side never sees full potential, they only get current grades, current stats and an end-of-season 'scouting service report'... every team's report is blurred by anywhere between +/- 7 to 31, meaning you can swing big and miss.\"",
+      "references": []
+    },
+    {
+      "item": "\"there's the single shared report and then there's your own scouting department. each rolls differently and your job is to figure out who is telling the truth\"",
+      "references": []
+    },
+    {
+      "item": "Hand-authored growth-math spec the user dropped in mid-design and asked to implement verbatim",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Real conferences and real schools, not made-up names",
+      "decided_by": "owner",
+      "quote": "\"i wanted real baseball conferences with real teams unless there's some reason not to do that\""
+    },
+    {
+      "decision": "No aluminum bats; smaller fields only",
+      "decided_by": "owner",
+      "quote": "\"i don't want to deal with aluminum bats at all, but smaller fields yes.\""
+    },
+    {
+      "decision": "Include softball-only schools",
+      "decided_by": "owner",
+      "quote": "\"if there are more softball schools than baseball schools, use them too\""
+    },
+    {
+      "decision": "Implement the user's growth-math spec verbatim",
+      "decided_by": "owner",
+      "quote": "Plus a hand-authored growth-math spec (see Section 4 below) that the user dropped in mid-design and asked me to implement verbatim."
+    },
+    {
+      "decision": "Per-attribute potential/access split; access static across college career; potential climbs yearly; interest rate drawn once in 75/20/5 tiers; per-player fog Uniform(7,31); two independent scouting reports; reveal on signing; WCWS = 8 teams; D3 academic powers and dropped-baseball schools included; team stats + conference filter added",
+      "decided_by": "joint",
+      "quote": "These got resolved interactively before any code shipped"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Pure growth math: interest tiers + cap formula, with both worked-example trajectories pinned as regression tests",
+      "artifacts": [
+        "o27v2/college_potential.py",
+        "tests/test_college_potential.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Player data model + engine adapter: generate_college_player, generate_college_roster, displayed_grade, advance_one_year, make_scouting_report, sign_to_pro, make_engine_player, build_engine_team, sim_college_game",
+      "artifacts": [
+        "o27v2/college.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "League infrastructure: schema (college_programs, college_players, college_games, college_batter_stats, college_pitcher_stats, college_scouting_reports, college_meta), 195-program catalogue across 18 real conferences, schedule generator, game sim to DB, postseason (regionals → super-regionals → CWS), scouting reports, annual rollover, pro signing, leaders/filters, team totals",
+      "artifacts": [
+        "o27v2/college_league.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Web UI: routes under /college (landing, program, player, leaders, game box, postseason bracket, draft board, seed/sim/postseason/rollover/sign APIs), pro player page 'Signed from college' panel, nav entry under League",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "o27v2/web/templates/college_*.html",
+        "templates/player.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Expanded college catalog to real conferences (195 programs across 18) embracing 2024+ NCAA realignment",
+      "artifacts": [
+        "o27v2/college_league.py"
+      ],
+      "kind": "data"
+    }
+  ],
+  "risk_posture": [],
+  "validation_claims": [
+    {
+      "claim": "Tests: tests/test_college*.py (28/28 green)",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/test_college*.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Both worked-example trajectories pinned as test_college_potential.py regression tests",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Read/run tests/test_college_potential.py",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Real recruiting class previews",
+      "reason": "currently freshmen auto-generate at rollover",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Conference championships (separate weekend tournament before regionals)",
+      "reason": "Currently regional seeding is straight win-pct",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Player development on the pro side after signing",
+      "reason": "once a college player signs, no further growth (he plays at his static potential). Could layer an aging curve later",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Sortable column headers on the leaders table",
+      "reason": "currently sort tabs, could be inline",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Recruiting filters on the draft board (position, conference, year)",
+      "reason": "Current view is name-ordered",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Save preset: new-league preset list doesn't include the college tier",
+      "reason": "Could add a 'Run college season alongside pro' toggle",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Per-conference standings page",
+      "reason": "currently grouped on the main index",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [],
+  "open_hooks": [
+    "Recruiting class previews view",
+    "Conference championship tournaments",
+    "Pro-side aging curve for signed college players",
+    "Inline sortable leader columns",
+    "Draft-board filters",
+    "College tier in the new-league save preset",
+    "Dedicated per-conference standings page"
+  ],
+  "section_headers_original": [
+    "After-Action Report — College Tier (Sub-Pro NCAA-Inspired League)",
+    "What was asked for",
+    "Starting state",
+    "Locked design decisions (all from user-confirmed choices)",
+    "What shipped",
+    "1. Pure growth math — `o27v2/college_potential.py` (commit `832f418`)",
+    "2. Player data model + engine adapter — `o27v2/college.py` (commit `c9a90f1`)",
+    "3. League infrastructure — `o27v2/college_league.py` (commits `2f7eb29` + later)",
+    "4. Web UI (commits `a748c74` + `477008f` + `5cffe43`)",
+    "How the asymmetry-reveal mechanic surfaces in play",
+    "Things that went sideways",
+    "Decisions you made along the way",
+    "Where things live (relay reference)",
+    "Open items (not yet started)"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/name-sets-cities-expansion-OxkeB; seven commits listed (832f418, c9a90f1, 2f7eb29, a748c74, dfcbe1a, 477008f, 5cffe43). Starting state: working pro engine (o27.engine.run_game), youth tier (o27v2/youth.py + youth_sim.py) using a YPI governor, Pro World Cup pattern (o27v2/pro_worldcup.py); no sub-pro tier, no hidden-potential mechanism, no blurred scouting machinery. Growth formula: raw_gain = (interest_rate_percent/100) × P_current; cap_base = round_half_up(C_MAX × (1 − (P − P_MIN)/(P_MAX − P_MIN))) clamped [4,15]; cap_effective = int(cap_base × tier_multiplier); tier multipliers 1.0×/1.3×/1.6×; worked examples 30@214% → 76 and 60@80% → 77 over four years. 'How the asymmetry-reveal mechanic surfaces in play': worked hidden-gem walkthrough (potential 62, access 0.42, interest 185%) and the mirror college-legend case. Things that went sideways: first conference catalogue was made-up names (user pushed back); bad hex literals during a sed pass; db.execute() returns lastrowid directly, not a cursor; run_game() returns (state, list[str]) not a renderer — mirrored the Pro World Cup pattern; college_year double-incremented during seed; players.position NOT NULL rejected graduated jokers — defaulted to 'P'/'RF'; a test asserting 'top batters' failed because rendered text is 'FSU top batters' (test was the bug). Joke item in locked decisions: '25% of creole names skip the Zaryanification filter — wait, that's the other AAR.' Catalogue/conference detail (SEC 16, ACC 18, Big 12 16, Big Ten 18, new Pac-12 8, G5/mid-D1/D3 lists), schedule cadence (~35-65 games, weekend 3-game series), postseason shape (64 → 16 regionals → 8 super-regionals best-of-3 → 8-team double-elim CWS), and the full 'Where things live' file/function table.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": false
+  },
+  "parser_notes": "Decision item 8 in 'Locked design decisions' is a self-aware joke referencing another AAR. Date from 'Date completed:' line."
+}

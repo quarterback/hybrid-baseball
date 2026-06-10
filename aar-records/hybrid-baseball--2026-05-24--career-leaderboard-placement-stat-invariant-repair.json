@@ -1,0 +1,251 @@
+{
+  "record_id": "hybrid-baseball--2026-05-24--career-leaderboard-placement-stat-invariant-repair",
+  "source_path": "docs/aar-career-leaderboard-and-stat-invariants.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-24",
+  "title": "After-Action Report — Career Leaderboard Placement + Stat-Invariant Repair",
+  "scope": "Two threads ran back-to-back: 1. Career leaderboard placement. A multi-season career-stats leaderboard had been built in the web app; the user chose the almanac as its home. Move it there, remove the interim web-app page, and prove it with real data. 2. \"Fix the bugs and errors only.\" The tests/test_stat_invariants.py harness was failing 6 of its checks against a multi-season sim. Turn it green.",
+  "rationale": [
+    {
+      "item": "The career data layer (snapshot tables season_player_batting / season_player_pitching, written at archive time) was already in place and is the right home for cross-season totals — raw game logs are wiped each season, so career accumulation must read the snapshots.",
+      "references": []
+    },
+    {
+      "item": "Moved the presentation into the almanac so it lives with the rest of the stat site.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Almanac chosen as the home for the career leaderboard",
+      "decided_by": "owner",
+      "quote": "A multi-season career-stats leaderboard had been built in the web app; the user chose the **almanac** as its home."
+    },
+    {
+      "decision": "Scope limited to fixing bugs/errors in invariants",
+      "decided_by": "owner",
+      "quote": "\"Fix the bugs and errors only.\""
+    }
+  ],
+  "actions": [
+    {
+      "description": "Almanac loader loads the two snapshot tables via the existing _try_query graceful-degradation path",
+      "artifacts": [
+        "loader.py",
+        "season_player_batting",
+        "season_player_pitching"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "compute.py aggregates snapshots per player into ranked career batting/pitching leaderboards (_career_leaderboards) attached to Views.career; rate stats gate on a career minimum (50 PA / 60 outs)",
+      "artifacts": [
+        "compute.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "New Career page renders in both static export (career.html) and live blueprint (/career.html), with a nav entry",
+      "artifacts": [
+        "career.html",
+        "_base.html.j2"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Removed the interim web-app /seasons/career route, helpers, template, and the seasons-page link",
+      "artifacts": [
+        "/seasons/career"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Fixed stale test #8: check xra instead of dead xfip key",
+      "artifacts": [
+        "tests/test_stat_invariants.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Fixed stale test #5: derive W straight from _pitcher_wl_map and keep W ≤ G and ΣW == decided-games checks",
+      "artifacts": [
+        "tests/test_stat_invariants.py",
+        "_pitcher_wl_map"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Phase-outs cap fix (#1, #4): single authoritative GameState.out_cap() reused by is_half_over; _record_out refuses to record once the cap is reached",
+      "artifacts": [
+        "GameState.out_cap()",
+        "_record_out",
+        "is_half_over"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Phantom HR out fix: strip all out-indices from any hr/home_run outcome at the point the contact event is emitted",
+      "artifacts": [
+        "prob.py",
+        "_generate_pitch"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Two-way reconciliation: replace the leftover block with a two-way reconciliation to state.outs — trim the batter's own structured charge first, then peel back TOA runner credits LIFO",
+      "artifacts": [
+        "render.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Declaration jump fix: treat the declaration event as zero engine outs in the reconciliation",
+      "artifacts": [
+        "render.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Pitcher spell drop fix: keep any spell with pitcher_outs_this_spell > 0",
+      "artifacts": [
+        "_close_current_spell",
+        "pitching_change"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Joker override leak fix: clear state.batter_override at the start of every half (run_half)",
+      "artifacts": [
+        "run_half",
+        "state.batter_override"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Steal-into-occupied-base fix (#9): a runner cannot steal an occupied base — the generator skips such attempts and the handler waves them off",
+      "artifacts": [
+        "pa.py",
+        "prob.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Walk-Back engine guard: a bonus runner only counts as a Walk-Back run when a run was actually booked on the current spell (pitcher_runs_this_spell >= 1); otherwise tick wb_faced but not wb_runs",
+      "artifacts": [
+        "_reconcile_walk_back"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Reverted the change rather than ship a no-op.",
+    "Reverted, because it changes ER system-wide for a result that's still red.",
+    "Held commits until verified. Engine changes that touch every box score were not committed before a fresh-sim harness run confirmed them.",
+    "It is a principled engine fix (it makes the path's long-standing documented assumption explicit), not an extraction-level clamp."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Ran a real 5-season carry-forward history; counting leaders showed seasons=5 with totals ≈ 5× a single season, confirming roster continuity and snapshot accumulation",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "no",
+      "check_method": "Rebuild a 5-season history DB and inspect the career boards",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "All 10 checks in tests/test_stat_invariants.py pass on a freshly-built single-season DB (~2466 games)",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Build a season DB and run pytest tests/test_stat_invariants.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Full-season spot-checks: batter_outs == opp_pitcher_outs for every (game, team, phase); SUM(wb_runs) <= SUM(unearned_runs) for every (game, team); er_arc1+er_arc2+er_arc3 == er and no er < 0 / unearned_runs > runs_allowed rows",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the same SQL spot-checks against a freshly built season DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "No regressions: o27/ (54) and o27v2/ (61) suites stay green",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest o27/tests o27v2/tests",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Invariants 1 and 4 went green; engine unit tests unaffected",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run invariant suite and engine unit tests",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Pitcher-side spell-drop fix (hypothesis A) was reverted",
+      "reason": "a re-sim showed the aggregate gap unchanged and it added a few reverse mismatches",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Two-way reconciliation in render.py (first attempt) reverted",
+      "reason": "On a full re-sim the gap was unchanged (≈3060 mismatched team-halves) — reverted the change rather than ship a no-op",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Persistence-boundary clamp in _extract_pitcher_stats reverted",
+      "reason": "it changes ER system-wide for a result that's still red",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Extraction-level team-aggregate reconciliation for #9 not pursued",
+      "reason": "would make the invariant green but only approximates per-pitcher attribution, so it was not pursued",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Pre-existing statistical flake test_weather_calibration.py::test_extreme_weather_within_calibration_envelope untouched",
+      "reason": "is unrelated and untouched",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Career totals only accrue from seasons archived after the snapshot tables existed",
+    "The career rate-stat minimums are low enough that a small-sample season can top a rate board (a tuning knob, not a bug)",
+    "A full-season rebuild surfaced one residual wb_runs > unearned group — proof there was at least one more base-erase path beyond the steal (closed via the engine guard rather than hunting every rare erase path)",
+    "The sim is not reproducible across processes; the archive build is not the one-shot loop — the last residual usually hides in the build-only population"
+  ],
+  "open_hooks": [
+    "Next attempt should instrument _update_stats with an independent engine-out counter (note: superseded by the UPDATE (FIXED) section)",
+    "Career rate-stat minimums are a tuning knob"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Career Leaderboard Placement + Stat-Invariant Repair",
+    "Intent",
+    "Thread 1 — Career leaderboard → almanac (delivered)",
+    "Thread 2 — Stat invariants",
+    "Stale tests (the test drifted from production)",
+    "Real engine bug — phase-outs cap (#1, #4)",
+    "Real bug — batter/pitcher out reconciliation (#2, #3) — OPEN",
+    "Real bug — walk-back run classification (#9) — OPEN",
+    "Final state",
+    "What went well",
+    "What cost time",
+    "Standing lessons for this codebase"
+  ],
+  "unmapped_content": "What went well: Query the data, don't trust the message (game 9875 vs the 27-out continuous + walk-off model settled by actual rows); Single source of truth (out_cap() replaced duplicated thresholds); Cheap trace beats expensive sim; Held commits until verified. What cost time: two full re-sim cycles on hypotheses a cheap single-game trace would have ruled out; a trace run that reseeded the DB and landed on a non-mismatch game; initially conflating #2/#3 with the cap bug; several re-sim cycles chasing #9 fix variants that were reverted. Standing lessons: (1) Trace one game before you sim a season. (2) state.outs is the spine — both stat ledgers must reconcile to it. (3) Half the 'engine failures' were test rot (xfip→xra, local W re-derivation vs _pitcher_wl_map). (4) Instrument with an INDEPENDENT ground truth, not the suspect baseline (wrapping pa._record_out exposed all five over-charge mechanisms). (5) The sim is not reproducible across processes; the archive build (random per-game seeds, roster evolution via injuries/trades) reaches states a static loop never does. (6) Prefer an invariant-enforcing engine rule over chasing every rare input. Header metadata: Branch claude/youth-teams-league-history-nYDmy; Commits 3011c91 (career → almanac), ece4271 (invariant 8 → xRA), 2814300 (phase-outs cap + W-bound); follow-up branch claude/stat-invariants-fixes-VuqBb. Outcome: all 6 originally-failing invariants fixed. Detailed root-cause narratives for #2/#3 (four over-charge mechanisms plus joker override leak) and #9 (false-positive scored detection from stealing into an occupied base, which blindly overwrote bases[2] and silently erased the bonus runner; also corrupted ordinary runners — a hidden source of run/LOB drift) are summarized in actions; the document's investigative dead-ends (wrong hypothesis A, single-process trace narrowing, contradictory per-event instrumentation, game 1472 team 21 pid 991 cross-pitcher analysis later shown wrong) are recorded here for fidelity.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Document contains two superseded 'OPEN' status sections each followed by 'UPDATE (FIXED — follow-up session)' notes; statuses in the body text conflict by design. Date taken from 'Date completed:' line."
+}

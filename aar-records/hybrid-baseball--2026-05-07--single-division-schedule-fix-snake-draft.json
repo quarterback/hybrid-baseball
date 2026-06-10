@@ -1,0 +1,70 @@
+{
+  "record_id": "hybrid-baseball--2026-05-07--single-division-schedule-fix-snake-draft",
+  "source_path": "docs/aar-single-div-schedule-and-snake-draft.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-07",
+  "title": "After-Action Report — Single-Division Schedule Fix + Snake-Draft Talent Dispersion",
+  "scope": "The user tried to create a new league with 14 teams in 1 subleague (a Finland setup) and got a 500 error; separately, a previously-seeded league showed 155-7 team records indicating not enough randomness/talent dispersion.",
+  "rationale": [
+    {"item": "\"the win models are such that there's clearly not enough randomness in this sport. teams should not win this much.\"", "references": []},
+    {"item": "\"the talent distribution should not be automatic roster generation by team quality, but rather a 'draft' style model so that players are disbursed more evenly.\"", "references": []},
+    {"item": "\"free agency and having players able to be released and signed would work. rather than having money to worry about, it could just be waivers... kind of like med school match day.\"", "references": []},
+    {"item": "\"phase 3 is a must, i want everyone to have bad days possible especially influenced by weather or other conditions along with tired and talent.\"", "references": []},
+    {"item": "Three threads, prioritised: 1. Unblock new-league creation (the 500). 2. Phase 1 — replace per-team org-strength multiplier with a snake draft. 3. Phase 2 — weekly Sunday match-day waivers (deferred). 4. Phase 3 — bad-day variance from weather + condition + fatigue (deferred).", "references": []}
+  ],
+  "delegation_events": [
+    {"decision": "Phase 1 (talent dispersion) addresses the dominant cause; per-PA / floor changes can wait for measurement", "decided_by": "joint", "quote": "The user agreed Phase 1 (talent dispersion) addresses the dominant cause and per-PA / floor changes can wait for measurement."},
+    {"decision": "FA pool storage: team_id IS NULL over a sentinel team", "decided_by": "agent", "quote": "chose `team_id IS NULL` over a \"Free Agents\" sentinel team because it keeps queries that JOIN players to teams naturally exclusive of FAs"},
+    {"decision": "Snake direction alternates globally, not per slot type", "decided_by": "agent", "quote": "Global alternation forces draft-equity to balance over the whole 55-round draft."},
+    {"decision": "Don't touch prob.py floor yet", "decided_by": "agent", "quote": "the explicit user comment \"let transcendent talent transcend\" (and the Aug 2025 task that lowered the floor) is a deliberate design choice. Phase 1 parity-fix may be sufficient on its own."}
+  ],
+  "actions": [
+    {"description": "Schedule generator fix: _generate_pairings detects empty intra/inter bucket and routes the full games_per_team target into the bucket that has pairs (fixes 14-team / 1-div RuntimeError); mirrored case (divisions of size 1) also handled", "artifacts": ["o27v2/schedule.py"], "kind": "modified"},
+    {"description": "Diagnostic: spawned a sub-agent to read the engine cold; found primary cause org_strength team_shift applied to every attribute roll (o27v2/league.py:939), secondary amplifier linear-additive per-pitch math with lowered noise floor (prob.py:356-360, 445-450), and fatigue threshold 24 + stamina*40 BF as a differential but secondary factor", "artifacts": ["o27v2/league.py", "o27/engine/prob.py"], "kind": "other"},
+    {"description": "Snake-draft seeding (Phase 1): _generate_draft_pool builds position-keyed pools at 1.4× roster slots with no team bias; _run_snake_draft walks slot types (CF, SS, 2B, 3B, RF, LF, 1B, C, UT, DH, P) with direction alternating across the entire draft; active vs reserve flagging; surplus players become free agents (team_id IS NULL, column now nullable); _team_org_strength_from_roster recomputes org_strength to reflect roster talent instead of biasing it", "artifacts": ["o27v2/league.py", "o27v2/db.py"], "kind": "new"},
+    {"description": "generate_players() and _roll_tier_grade() keep their old signatures — org_strength and team_shift parameters are no-ops on the league path but still honoured by non-league callers (smoke_test.py, batch.py)", "artifacts": ["o27v2/league.py"], "kind": "modified"}
+  ],
+  "risk_posture": [
+    "Don't touch `prob.py` floor yet: the explicit user comment \"let transcendent talent transcend\" ... is a deliberate design choice. Phase 1 parity-fix may be sufficient on its own.",
+    "Decision criterion: if post-Phase-3 standings still show any team above .700 over a 162-game season, do the floor restoration. Otherwise leave the explicit \"let transcendent talent transcend\" comment intact."
+  ],
+  "validation_claims": [
+    {"claim": "Smoke-tested 5 configurations (14×1, 30×6, 12×2, 8×1, 16×4 div counts) — every team gets exactly games_per_team games in all cases.", "evidence_cited": "render/smoke", "checkable_against_repo": "yes", "check_method": "Run schedule generation for those configs and check per-team game counts", "verified": "not_checked"},
+    {"claim": "Schedule generation with user's exact config (team_count=14, leagues_count=1, divisions_per_league=1, games_per_team=30, rng_seed=42): 210 games (was RuntimeError)", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Seed with that config and count games", "verified": "not_checked"},
+    {"claim": "Total players generated: 924 (658 rostered + 266 FA); all 14 teams have exactly 1 of each starter position", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Seed and query player counts/positions", "verified": "not_checked"},
+    {"claim": "org_strength spread across teams: 1 grade-point (recomputed mean) vs 20-95 before; mean active hitter rating spread 51.3 → 51.8 (0.5pt); pitcher 52.5 → 52.8 (0.3pt)", "evidence_cited": "metrics", "checkable_against_repo": "yes", "check_method": "Seed and compute per-team roster rating means", "verified": "not_checked"},
+    {"claim": "14-team / 30-game season top record 20-10 (.667) and bottom 8-22 (.267) simulated, win spread 12 games (vs reported 155-7 / 7-155, ~148-game spread)", "evidence_cited": "metrics", "checkable_against_repo": "yes", "check_method": "Seed with the config, sim the season, inspect standings", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "Phase 2 — Sunday match-day waiver sweep", "reason": "Specs locked in: runs weekly on Sundays, claims placed immediately as each round resolves, up to 5 rounds per sweep, teams can defer picks across rounds, worst-record-first ordering, auto-claim best available FA at weakest position; no money, no contracts. Out of scope for this PR.", "category": "deferred", "status": "unknown"},
+    {"item": "Phase 3 — bad-day variance from weather + condition + fatigue", "reason": "Phase 3 is about widening the per-game noise envelope so the standings have texture beyond pure parity. Likely levers: compress fatigue_threshold = 24 + stamina*40; per-game player \"form\" multiplier driven by weather + rest + recent workload. Deferred.", "category": "deferred", "status": "unknown"},
+    {"item": "Per-PA math review / restoring the 0.01 noise floor in prob.py", "reason": "With Phase 1 bringing the league back to realistic spread, restoring the 0.01 floor may not be needed; decision criterion set for post-Phase-3 standings.", "category": "deferred", "status": "unknown"},
+    {"item": "FA-pool UI surfaces (/free-agents page, match-day sweep results page)", "reason": "Free agents now exist in the players table with team_id IS NULL but nothing in the web UI lists them yet; Phase 2 will need them.", "category": "deferred", "status": "unknown"},
+    {"item": "Playoffs + awards", "reason": "User asked about both as part of the same conversation. Out of scope for this PR but on the radar.", "category": "out_of_scope", "status": "unknown"}
+  ],
+  "residual_risks": [],
+  "open_hooks": [
+    "players.team_id nullable FA pool is ready for Phase 2's match-day sweep",
+    "Decision criterion for prob.py floor restoration: any team above .700 over a 162-game season post-Phase-3"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Single-Division Schedule Fix + Snake-Draft Talent Dispersion",
+    "What was asked for",
+    "What was built",
+    "1. Schedule generator: handle single-division leagues",
+    "2. Diagnostic — root-cause the 155-7 records",
+    "3. Snake-draft seeding (Phase 1)",
+    "Verification numbers",
+    "What's still on the table (out of scope for this PR)",
+    "Files touched",
+    "Decision log"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/fix-machine-limit-error-KtDSp. The user mistakenly attributed the 500 to Fly's \"Machines limit\" dashboard notice — actual cause was a Python exception buried in the logs.\n\nSchedule bug trace: _generate_pairings defaults to a 0.46/0.54 intra/inter weight split; with 14 teams in one division every pair is intra-division, so inter_pairs = []; ~16 of 30 games allocated to the empty inter bucket silently disappeared, leaving ~14 games per team and a RuntimeError 'Schedule imbalance after generation' at o27v2/schedule.py:143.\n\nDiagnostic findings detail: o27v2/league.py:939 rolled a single org_strength per team from the same 9-tier ladder and added team_shift = org_strength - 50 to every attribute roll for every player; ~7% of teams rolled +30 to +45 on everyone, ~23% rolled -21 to -30; no parity mechanism existed. Secondary amplifier: per-pitch math is linear-additive (no sigmoid), noise floor deliberately dropped 0.01 → 0.001 (\"let transcendent talent actually transcend\"); gaps stack across pitcher_skill + command + movement vs skill + eye + contact + power and compound across ~150 pitches/game.\n\n_DRAFT_SLOTS definition mirrors the old per-team composition exactly: 1 each of CF/SS/2B/3B/RF/LF/1B/C, UT 4 active + 8 reserve, DH 3, P 19 active + 5 reserve.\n\nScaled projection: 162-game season top ~108 wins / bottom ~43 — inside realistic MLB territory (104-58 reached; 116-46 modern ceiling). Phase 3's per-game variance will add texture on top of this floor.\n\nDecision log items not captured above: single 1.4× oversample chosen over position-by-position tuning (FA pool composition naturally reflects slot-type proportions; pitchers dominate FA pool, 134 of 266); _player_overall composite uses the same attributes the engine actually rewards per-PA (raw skill alone would have ignored the realism-layer attributes).",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": false
+  },
+  "parser_notes": "Clear AAR with explicit decision log. Date from 'Date completed:' line."
+}

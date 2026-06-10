@@ -1,0 +1,143 @@
+{
+ "record_id": "hybrid-baseball--undated--power-play-deploy-and-eligibility-segment",
+ "source_path": "docs/aar-power-play-deploy-and-eligibility-segment.md",
+ "repo": "hybrid-baseball",
+ "parsed_at": "2026-06-10",
+ "genre_confidence": "high",
+ "date": null,
+ "title": "AAR \u2014 Power Play, third segment: why the nickel never deployed (and surfacing it)",
+ "scope": "This segment was driven by one operator report \u2014 \"no matter what I do, the nickel never activates\" \u2014 and is as much about the *debugging* as the fixes.",
+ "rationale": [
+  {
+   "item": "The operator had the feature merged, toggled it on (per-league box and the global Engine Settings checkbox), even lowered the eligibility thresholds \u2014 and no team ever deployed a nickel.",
+   "references": [
+    "docs/aar-power-play-nickel-fielder.md",
+    "docs/aar-power-play-ui-and-stats-segment.md"
+   ]
+  }
+ ],
+ "delegation_events": [
+  {
+   "decision": "Eligibility/roster fixes directed by the operator",
+   "decided_by": "owner",
+   "quote": "Fixes, all from the operator's direction:"
+  },
+  {
+   "decision": "Record nickel appearances in the stat record, not just eligibility",
+   "decided_by": "owner",
+   "quote": "the operator clarified the real intent: when reviewing a *fielder*, know he **played** nickel, not just that he's eligible."
+  }
+ ],
+ "actions": [
+  {
+   "description": "Stale-config fix: ensure_applied re-applies when the stored blob's signature changes (one cheap indexed lookup; full re-apply only on actual change); regression test added",
+   "artifacts": [
+    "engine_config",
+    "b66de86"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Ability-based nickel eligibility: any player whose arm AND best glove (general/infield/outfield) clear the bar, regardless of listed position",
+   "artifacts": [
+    "d3e42c0"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Cap dedicated DHs at 3 (jokers); 2 pinch-hit specialists became loud-bat fielders at thin corners; per-team DH 5 \u2192 3",
+   "artifacts": [
+    "07a07da"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Jokers listed at their actual field position, not \"DH\" \u2014 joker is a usage role (roster_slot=\"joker\"/game_position=\"J\"); new leagues carry zero \"DH\" position rows",
+   "artifacts": [
+    "1555ea8"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "\ud83e\ude99 nickel-eligible tag on team rosters using the engine's effective thresholds + scout.to_unit, shown only when the rule is active for that team",
+   "artifacts": [
+    "29632f7"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "NF recorded in a fielder's stat record: per-game game_position stamped NF (extends to SS-NF); box score shows NF; player page carries a \"\ud83e\ude99 Nickel \u2014 10th defender in N games\" badge",
+   "artifacts": [
+    "fe3fa98"
+   ],
+   "kind": "modified"
+  }
+ ],
+ "risk_posture": [
+  "when a user insists a shipped feature doesn't work and your tests say it does, the gap is in *what your test isn't reproducing* \u2014 environment, process lifecycle, or data shape \u2014 not in the user",
+  "Safe because every joker check keys on the role tags, never the position field."
+ ],
+ "validation_claims": [
+  {
+   "claim": "Stale-config: reproduced \u2192 fixed \u2192 regression test; 17 engine_config tests green; after fix the same scenario fires (104 rows / 12 games)",
+   "evidence_cited": "tests",
+   "checkable_against_repo": "yes",
+   "check_method": "Run the engine_config test suite",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Eligibility/firing: default thresholds now fire reliably (\u2248130 rows/14 games); rule-off still writes nothing",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "unclear",
+   "check_method": "Sim 14 games rule-on with default thresholds; count power-play rows",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Roster shape: per-team DH = 3 (was 5); corners better stocked; jokers at real positions; joker mechanic intact",
+   "evidence_cited": "manual verification",
+   "checkable_against_repo": "yes",
+   "check_method": "Seed a league and count DH-position rows / joker role tags",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Surfacing: PP-off team shows no coin; PP-on shows \ud83e\ude99 on eligible players; NF recorded and shown on box score + player page",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "yes",
+   "check_method": "Render roster and player pages with the rule on/off",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Power-play suite 31, engine_config 17 \u2014 green. (One test updated to encode the new ability-based policy)",
+   "evidence_cited": "tests",
+   "checkable_against_repo": "yes",
+   "check_method": "Run the power-play and engine_config suites",
+   "verified": "not_checked"
+  }
+ ],
+ "non_actions": [],
+ "residual_risks": [
+  "These all require a deploy + refresh to take effect \u2014 the stale-config fix is the linchpin: until it ships, the Engine Settings toggle still won't reach the simulator."
+ ],
+ "open_hooks": [],
+ "section_headers_original": [
+  "AAR \u2014 Power Play, third segment: why the nickel never deployed (and surfacing it)",
+  "Commits",
+  "The report",
+  "What went wrong in the diagnosis (the honest part)",
+  "Root cause #1 \u2014 stale config (the global toggle)",
+  "Root cause #2 \u2014 eligibility starved by DH-heavy benches",
+  "Surfacing (the operator wanted to *see* it)",
+  "Verification",
+  "For the operator"
+ ],
+ "unmapped_content": "Branch claude/power-play-optional-rule-HmsMs. Diagnosis honesty: for several rounds the agent kept reproducing success in fresh seeded test DBs and concluding the user's league must not be opted in \u2014 'a green repro that dodges the user's actual conditions is not evidence the user is wrong.' Root cause #1 detail: engine_config applied stored tuning once per process (_applied latch); ensure_applied() was a permanent no-op after the first call, so settings toggled after process start or saved by a different worker (the norm on fly.dev) were written to the DB but never re-read; cfg.POWER_PLAY_ENABLED stayed False. The per-league flag was always immune (read from the team row each sim) \u2014 which is why isolated tests passed and this hid so long. Root cause #2 detail: nickel could only be a bench player listed at OF or SS; O27 benches skewed to bat-only DH/joker/PH players (operator noticed seven DHs); the position gate failed, not the rating gate, which is why lowering arm/field to 0.25 didn't help. 'For the operator' closing instructions: after deploy, toggle Power Play, sim fresh games; no threshold fiddling needed.",
+ "quality_vector": {
+  "has_scope": true,
+  "has_rationale": true,
+  "has_delegation_record": true,
+  "has_validation": true,
+  "has_negative_space": false,
+  "has_residual_risk": true
+ },
+ "parser_notes": "No date in document (checked heading, intro, commits table); 'undated'. Note: filename says 'deploy-and-eligibility' but the heading calls it the 'third segment'; the box-score-notes AAR says it follows this one."
+}

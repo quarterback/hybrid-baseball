@@ -1,0 +1,97 @@
+{
+  "record_id": "hybrid-baseball--2026-05-19--substitution-tags-stripped",
+  "source_path": "docs/aar-substitution-tags-stripped-by-stat-delta.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-19",
+  "title": "After-Action Report — Substitution tags stripped by `_stat_delta`",
+  "scope": "Three-layer bug chain in substitution rendering pipeline where identity tags (entry_type, replaced_player_id, entered_inning) were lost between renderer and database persistence, causing box scores to show flat substitution data",
+  "rationale": [
+    {
+      "item": "Post-merge box scores showed jokers mid-lineup, duplicate DEF subs, phantom starter rows, and zero footnote letters despite engine producing correct stamps",
+      "references": ["user bug report on game #53 Missions 39 Sea Dogs 25"]
+    }
+  ],
+  "delegation_events": [],
+  "actions": [
+    {
+      "description": "Fixed renderer key-mismatch: substitution handlers now read correct provider event keys (player_in/player_out/runner_in/joker) instead of manager-side keys",
+      "artifacts": ["o27/render/render.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Added SQL-level fallback to recover joker entry_type from permanent is_joker identity flag for legacy games",
+      "artifacts": ["o27v2/web/app.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Fixed _stat_delta to preserve identity tags when constructing per-phase delta rows, the actual root cause",
+      "artifacts": ["o27/render/render.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Added regression test for entry_type tag preservation through _stat_delta",
+      "artifacts": ["tests/test_phase_delta_preserves_entry_type_tags"],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "Multi-layer diagnostic required: three separate bugs, each masking the one below",
+    "Solution is minimal (three lines in _stat_delta) but finding required unwinding two earlier fixes",
+    "Old games with already-persisted bad data are unrecoverable except for jokers (via is_joker fallback)"
+  ],
+  "validation_claims": [
+    {
+      "claim": "30-game synthetic sim: 5 jokers, 2 DEF subs, 1 PH — all stamped properly with correct entry_type and entered_inning",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run 30-game sim with substitution instrumentation and inspect game_batter_stats rows",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "107 tests green including test_phase_delta_preserves_entry_type_tags regression",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/ o27/tests/",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Re-simulation of affected games from before fix",
+      "reason": "Recommended but not done. Once a sub event fires without stamping entry_type, the DB row has no signal to reconstruct it from (except jokers). Re-simulating affected games is the only way to recover sub indentation, ph/pr labels, and footnotes.",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Old games: unrecoverable except for jokers via is_joker fallback",
+    "Process lesson: multi-layer pipelines require sampling field of interest at every layer between source and destination, even obvious pass-throughs"
+  ],
+  "open_hooks": [
+    "Consider re-simulating affected games from bug window if presentation fidelity on early-season box scores matters",
+    "Establish diagnostic protocol for multi-layer pipeline: test sim → renderer cumulative → renderer per-phase delta → DB row at each point"
+  ],
+  "section_headers_original": [
+    "TL;DR",
+    "The bug chain",
+    "Layer 1 — Renderer key-mismatch (shipped as fec36ab on main, also a185154 on this branch)",
+    "Layer 2 — Legacy joker rows had entry_type='starter' (shipped as 0cd078d)",
+    "Layer 3 — _stat_delta strips identity tags (shipped as 7952fec, the actual root cause)",
+    "Why two rounds of 'fixing' didn't catch the third bug",
+    "Status",
+    "Recommendation",
+    "Process lesson"
+  ],
+  "unmapped_content": "Branch: claude/normalize-game-scores-3AXlu. PRs: #74 → #78 → #79 → #80. Final commit: 7952fec. Root cause: _stat_delta at render.py:1665 constructed per-phase delta rows by subtracting counters but didn't copy identity fields (entry_type, replaced_player_id, entered_inning) which are static flags set once and never incremented. Fix is three-line addition of identity field assignments at top of _stat_delta. Process lesson covers three rounds of diagnosis: Layer 1 diagnosed by instrumenting should_* call counts vs events in cumulative dict (showed 168 PH / 4 PR / 54 DEF landing correctly); Layer 2 caught by user reporting jokers still mid-lineup post-fix; Layer 3 caught when inspecting batter_stats_for_phase delta dict instead of cumulative dict. General pattern: sampling field of interest at single layer isn't enough in multi-layer transformations.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": false,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "High-quality diagnostic AAR documenting three-layer bug chain with clear root-cause analysis and process lesson for future multi-layer pipeline debugging. No explicit delegation events but describes decision to add regression test and not touch legacy data."
+}

@@ -1,0 +1,184 @@
+{
+  "record_id": "hybrid-baseball--2026-05-19--substitution-economy",
+  "source_path": "docs/aar-substitution-economy.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-19",
+  "title": "After-Action Report — Substitution Economy Subsystem (Items 1–4)",
+  "scope": "Four-item spec for O27's continuous 27-out arc: role-capability tagging, 42-45 platoon roster, substitution mechanics and one-way invariant, and manager policy layer driving substitutions",
+  "rationale": [
+    {
+      "item": "O27 plays nine ironmen with no substitutions; real substitution mechanics match the 27-out continuous structure closer to basketball platoon rotation than MLB",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Phase transition: fully manager-timed, no wholesale unit swap",
+      "decided_by": "joint",
+      "quote": "There is no structural 'wholesale unit swap.' The substitution-trigger evaluation scores every potential swap; managers fire when leverage clears a persona-derived threshold."
+    },
+    {
+      "decision": "Special-teams archetype = roster-construction philosophy, not deployment mechanic",
+      "decided_by": "joint",
+      "quote": "Identity expresses in how the FO targets bat-only / glove-only / two-way / specialist counts within the 42–45 band; in-game everyone uses the same situational substitution path."
+    },
+    {
+      "decision": "Roster rollout: new seeds only",
+      "decided_by": "joint",
+      "quote": "Existing teams in the DB keep their 34-player shape; the next resetdb produces 42–45."
+    },
+    {
+      "decision": "Role tags: stored at generation on the player dict and DB row",
+      "decided_by": "joint",
+      "quote": "Pure derived attributes (no new talent fields). Re-derived during off-season development the same way archetype is."
+    },
+    {
+      "decision": "Jokers are subject to one-way",
+      "decided_by": "joint",
+      "quote": "Joker insertion still happens as today, but the replaced DH goes to substituted_out and is gone for the rest of the game."
+    },
+    {
+      "decision": "Pinch-runner fires only on-base",
+      "decided_by": "joint",
+      "quote": "Existing should_pinch_run already had this property; preserved."
+    },
+    {
+      "decision": "Trigger function scaffolded as part of Items 1–3",
+      "decided_by": "joint",
+      "quote": "Routes the new pinch-hit / pinch-run / pinch-field decisions through one seam from day one. Item 4 follow-up tunes the weights and migrates the legacy inline-scored should_* paths."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Role-capability tagging: is_hit_capable, is_field_capable_at, field_capable_positions, is_run_capable, is_two_way, classify_roster_slot, encode_field_positions",
+      "artifacts": ["o27v2/archetypes.py"],
+      "kind": "new"
+    },
+    {
+      "description": "Roster shape expanded to 42-45 active players with new slot classifications",
+      "artifacts": ["o27v2/league.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Database schema extended with role tags and roster slot columns",
+      "artifacts": ["o27v2/db.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Off-season development re-derives role tags",
+      "artifacts": ["o27v2/development.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Player hydration and bench population for substitution candidate selection",
+      "artifacts": ["o27v2/sim.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Substitution mechanics: Substitution dataclass, Team.bench, substituted_out, is_available, GameState.substitution_log",
+      "artifacts": ["o27/engine/state.py"],
+      "kind": "new"
+    },
+    {
+      "description": "Trigger function and substitution scoring: score_substitution, substitution_threshold, _log_substitution, one-way enforcement",
+      "artifacts": ["o27/engine/manager.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Super-innings respects substituted_out; _default_super_lineup helper",
+      "artifacts": ["o27/engine/game.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Test suite for substitution economy mechanics",
+      "artifacts": ["tests/test_substitution_oneway.py"],
+      "kind": "new"
+    },
+    {
+      "description": "End-to-end validation script for substitution economy",
+      "artifacts": ["scripts/validate_substitution_economy.py"],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "One-way invariant enforced at every substitution path",
+    "Specialist drafting (third pass) guarantees 1 PR + 2 PH per team",
+    "Substitution rates verified across manager personality spectrum showing 435× spread",
+    "Per-archetype roster tilt applies after snake draft before persistence"
+  ],
+  "validation_claims": [
+    {
+      "claim": "13/13 tests passing in test_substitution_oneway.py including new archetype tilt and threshold band tests",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/test_substitution_oneway.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "10-game validation: avg 42.0 active players per team, 2.05 subs per team per game, 0 one-way violations",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "scripts/validate_substitution_economy.py 10",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Roster slot mix: bat_first 6.0 / glove_first 8.4 / two_way 6.7 / ph_specialist 2.5 / pr_specialist 1.4 / pitcher 17.0",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Inspect roster generation output from validate_substitution_economy.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Substitution volume varies by manager personality: 0.03 (dead_ball) to 13.07 (platoon_manager) subs per team per game",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Run 20-game batches at fixed aggression levels per manager personality",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "In-place migration for existing 34-player rosters to 42-player shape",
+      "reason": "Deferred. Existing leagues stay at 34 active until reseed. Migration tooling would smooth this transition but isn't required for the mechanic to land.",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Roster-shape deviation: actual mix skews glove-heavier (8.4 vs 7 target) and bat-lighter (6 vs 10 target) than recipe",
+    "Classifier thresholds favor mid-tier hitters with adequate defense over bat-first placement",
+    "Existing 34-player rosters remain unchanged until next resetdb"
+  ],
+  "open_hooks": [
+    "Classifier tuning: ROLE_HIT_THRESHOLD and _FIELD_THRESHOLDS could be adjusted to pull mix back toward recipe targets",
+    "Per-archetype roster tilt could be extended to other archetypes beyond platoon_manager and special_teams",
+    "Migration tooling for in-place roster expansion if supporting long-running saves becomes necessary"
+  ],
+  "section_headers_original": [
+    "Update (second pass — follow-ups landed)",
+    "What was asked for",
+    "Decisions made",
+    "Architecture as built",
+    "Item 1 — Role-capability tagging",
+    "Item 2 — 42-player active roster",
+    "Item 3 — Substitution mechanics + one-way invariant",
+    "Verification",
+    "Test suite",
+    "Live sim batch",
+    "Roster-shape deviation from recipe",
+    "Files changed",
+    "Follow-ups (original list — most done in the second pass)"
+  ],
+  "unmapped_content": "Branch: claude/manager-policy-aggressiveness-Ah9Bl. Variety report showing 20-game batches at fixed aggression demonstrating substitution rate spread from 0.03 to 13.07 subs per team per game across manager personalities. Second pass (follow-ups) covered Item 4 trigger migration with pinch-hit, pinch-run, defensive-sub, and swap-offensive-for-defense routing through score_substitution. Platoon-edge logic for pinch-hit candidates moved to matchup factor in score_substitution. Classifier tuning raised ROLE_HIT_THRESHOLD from 45 to 50. Per-archetype roster tilt with platoon_manager at 45 active and special_teams at 44 active. Threshold calibration mapped substitution_threshold to [0.55, 0.85] across persona ladder. Explicit specialist drafting helper _make_specialist with new SPEC_PR and SPEC_PH pseudo-positions. DH slot count reduced 10 → 7 to absorb specialist headcount. Existing test suite includes test_declared_seconds (24/24), test_currency (36/36), test_realism_identity (6/6), test_power_redistribute (7/7). Pre-existing failures: test_new_stats, test_template_renders, test_tier_normalization fail on missing flask; test_phase8_db_migration checks hardcoded pitcher_role value removed in Task #65; test_stat_invariants requires pre-seeded DB.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "High-quality AAR with comprehensive design decisions, clear architecture description, detailed validation metrics, and follow-ups. Includes two passes of work (foundation + follow-ups) both documented together. Branch reference included. Second-pass updates covering four additional follow-up items integrated into narrative."
+}

@@ -1,0 +1,209 @@
+{
+  "record_id": "hybrid-baseball--2026-05-05--weather-model-newspaper-box-score-export",
+  "source_path": "docs/aar-weather-and-newspaper-box-score.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-05",
+  "title": "After-Action Report — Weather Model & Newspaper-Style Box Score Export",
+  "scope": "Two intertwined changes: 1. Weather model — game-conditions context drawn at schedule time and surfaced everywhere a game is rendered. 2. Newspaper-style box score — once the engine surface was right, the markdown box-score export needed a render rewrite.",
+  "rationale": [
+    {
+      "item": "User specified: five categorical variables with 3–4 tiers each; drawn at SCHEDULE time, stamped on the games row; city × month climatological lookup via 7 procedural archetypes; engine touch points limited to prob.py, fielding, state.py — bounded, no sprinkling; magnitude budget [0.85, 1.20] with extreme weather ≤ ~10% movement; box-score weather strip.",
+      "references": []
+    },
+    {
+      "item": "The user's actual complaint was \"the markdown file situation was copying an older version of the box score template\" — markdown pipe-tables render as HTML grids in every viewer that styles tables, which is the database-dump look they were trying to escape.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Weather model spec (variables, draw timing, archetypes, bounded engine seams, magnitude budget, scope exclusions)",
+      "decided_by": "owner",
+      "quote": "User specified: Five categorical variables (temperature, wind, humidity, precipitation, cloud cover) with 3–4 tiers each."
+    },
+    {
+      "decision": "Template-only W/L marker, no schema change",
+      "decided_by": "owner",
+      "quote": "The user said template-only — no new `is_winner` column."
+    },
+    {
+      "decision": "Pivot to fixing the markdown export rather than the HTML page",
+      "decided_by": "owner",
+      "quote": "The user pointed out the live HTML page is fine — the *markdown export* (\"Copy as Markdown\") is what was rendering as a database-dump grid because it still used `_md_table()` everywhere."
+    }
+  ],
+  "actions": [
+    {
+      "description": "New weather module: Weather dataclass, 5 tier vocabularies, archetype_for_city(), draw_weather(), 5 multiplier helpers; 7 hand-keyed archetypes from the team catalogue",
+      "artifacts": [
+        "o27/engine/weather.py",
+        "o27v2/data/teams_database.json"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Schedule-time weather draw: seed_schedule SELECTs city, forks RNG (rng_seed ^ 0xBA5EBA11), stamps 5 tier strings via extended INSERT",
+      "artifacts": [
+        "o27v2/schedule.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Schema: five new TEXT columns on games (temperature_tier, wind_tier, humidity_tier, precip_tier, cloud_tier) with ALTER-TABLE migrations, neutral-tier defaults",
+      "artifacts": [
+        "o27v2/db.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Bounded engine wiring (five reads): _pitch_probs (stamina decay + K multiplier), contact_quality (hard-share), resolve_contact (HR multiplier on park_hr + error roll), GameState.weather field, sim stamps state.weather",
+      "artifacts": [
+        "o27/engine/prob.py",
+        "o27/engine/state.py",
+        "o27v2/sim.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Calibration test simming 20 games each under HR-friendly extreme, HR-killer extreme, and neutral, with ratio envelopes",
+      "artifacts": [
+        "tests/test_weather_calibration.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "HTML weather strip under the scoreboard via Weather.from_row(game).short_label()",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "o27v2/web/templates/game.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Newspaper-style monospace box-score renderer (66-col rule, dot leaders, F. Lastname names, annotation sections, W/L heuristic, weather + seed footer); export_box_score delegates to it wrapped in a code fence",
+      "artifacts": [
+        "o27v2/web/box_text.py",
+        "o27v2/web/text_export.py"
+      ],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "Engine touch points limited to prob.py (HR / contact / K), fielding (errors), state.py (pitcher stamina decay) — bounded, no sprinkling.",
+    "Magnitude budget: individual multipliers in [0.85, 1.20]. Calibration test: extreme weather every game ≤ ~10% movement on league averages.",
+    "All multipliers collapse to 1.0 at NEUTRAL.",
+    "defaults are the neutral tiers so legacy rows are score-identical.",
+    "Weather lives on GameState.weather (Optional[object]) so legacy callers that don't supply one stay neutral.",
+    "No reads outside the five seams above.",
+    "Started looser (HR_WIND out=1.12, HR_TEMP hot=1.08) but the calibration test forced a tighter retune so an HR-friendly extreme stack lands inside ~+11% rather than ~+26%."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Calibration test (tests/test_weather_calibration.py): passing. Confirms 20-game extreme-stack samples stay inside the envelope.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/test_weather_calibration.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Smoke test: 30-team league seeded, 2,430 games scheduled, every game row has weather columns populated, first 3 games sim cleanly, HTML page renders with the weather strip, markdown export round-trips to monospace plaintext with the weather footer",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Seed a 30-team league and inspect games rows, the detail page, and the export",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Pre-existing failures in o27v2/tests/test_phase8_db_migration.py and tests/test_stat_invariants.py (no DB) are unrelated — confirmed by stashing changes and re-running",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Stash and re-run the failing tests",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Real weather data integration",
+      "reason": "draw_weather() is purely simulated; adding one is a separate task and would need to handle stale data and rate limits",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Park orientation / wind vectors",
+      "reason": "Wind is out/in/cross/neutral relative to the batter, not the field. Each park orientation entry would have to be authored.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Rain delays / postponements",
+      "reason": "Heavy rain is a flag — the game still plays. The error-rate multiplier captures the \"wet ball\" effect.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Indoor stadiums",
+      "reason": "Every park is treated as outdoor at v1.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Attendance effects",
+      "reason": "No attendance model exists, so weather does not feed one.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Per-batter score progression (proper W/L, hold, save, blown-save tracking)",
+      "reason": "The current heuristic gets the box score's W/L marker on the page without it.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "WP / balk annotation events",
+      "reason": "The engine doesn't track them",
+      "category": "blocked",
+      "status": "unknown"
+    },
+    {
+      "item": "Archetype-specific wind and cloud tables",
+      "reason": "those vary too much day-to-day for a small table to capture meaningfully and the engine effects are small",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "W/L heuristic is wrong on close games where the W properly belongs to the bridge arm rather than the closer; stable, deterministic, reads sensibly.",
+    "Wind direction is field-agnostic — a \"wind out\" day in San Francisco and at Wrigley have the same HR multiplier.",
+    "heavy rain still plays — whether it should blow up into a real schedule disruption is a design question for v2.",
+    "Surname >9 chars still truncates (F. Verylongname overflows the 13-char field). Rare in practice."
+  ],
+  "open_hooks": [
+    "Real W/L logic (pitcher-of-record at the final lead change) would need per-batter score tracking.",
+    "Park-orientation modeling is the next layer.",
+    "When indoor stadiums become a concept, pin those games to mild/neutral/normal/none/clear.",
+    "Widening the name field is cheap (rule + every subsequent column shifts by N)."
+  ],
+  "section_headers_original": [
+    "After-Action Report — Weather Model & Newspaper-Style Box Score Export",
+    "What was asked for",
+    "What was built",
+    "Stage 1 — Weather model (`a5d4056`)",
+    "Stage 2 — HTML weather strip (`a5d4056`)",
+    "Stage 3 — Newspaper-style markdown export (this commit)",
+    "Engine seams touched",
+    "What was deliberately left out",
+    "Verification",
+    "Known issues / follow-ups"
+  ],
+  "unmapped_content": "Tier vocabulary table (temperature cold/mild/warm/hot; wind out/neutral/in/cross; humidity dry/normal/humid; precipitation none/light/heavy; cloud clear/overcast/dusk). Archetypes: desert, coastal_cool, coastal_warm, continental_cold, continental_warm, tropical, mountain; unknown city falls back to continental_warm; months bucketed Apr–Sep (~7×6 tables). Final extreme-stack multipliers table (HR ×1.114/×0.876; hard contact ×1.020/×0.941; K ×1.040/×0.980; errors ×1.256; stamina decay ×1.113) with note that errors are rare so 25% moves league error rate a fraction of a point. Calibration envelopes: HR/PA (0.70, 1.30), H/AB (0.92, 1.10), K/PA (0.88, 1.12). box_text.py layout sample and column widths (name field 13 chars, rule width 68). Name format F. Lastname per AP-wire convention, replacing a full-name truncate approach (Kevin Aviles → Kevin Avile). W/L heuristic rules. Weather footer: representative °F per tier (cold 52 / mild 66 / warm 78 / hot 90); humidity descriptor suppressed when precipitation reported. Note on user's 'stamina decay in state.py' intent: ramp computation lives in prob.py:_pitch_probs, multiplier applied at that seam. Engine-seams table. Commits: weather model a5d4056; box-score rewrite this PR; branch claude/add-weather-model-qJ2sl.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date completed: 2026-05-05'. Three-stage AAR with an explicit 'What was deliberately left out' section."
+}

@@ -1,0 +1,190 @@
+{
+  "record_id": "hybrid-baseball--2026-05-03--defense-model",
+  "source_path": "docs/aar-defense-model.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-03",
+  "title": "After-Action Report — Defense Model (Range, Errors, Per-Position Ratings, DRS/dWAR, PP-Pitching)",
+  "scope": "Three intertwined goals: 1. Position-aware defense (INF/OF/catcher specialist groups, plus utility players legit across groups). 2. DRS / dWAR with positional value — surfaces defensive value in WAR alongside batting/pitching. 3. Emergency position-player pitcher in absolute blowouts — strong-arm bench bat takes the mound when team is down 17+ with 6 or fewer outs left.",
+  "rationale": [
+    {
+      "item": "Defense was the largest open lever called out in the previous AAR (aar-pitcher-tilt-and-elite-talent.md § Known issues)",
+      "references": ["aar-pitcher-tilt-and-elite-talent.md"]
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "User picked Errors + DRS depth with visible errors",
+      "decided_by": "owner",
+      "quote": "The user picked Errors + DRS depth with visible errors (errors charge UER, credit ROE to the batter, and surface as discrete events)."
+    },
+    {
+      "decision": "Mid-task expansion: position-aware defense attributes, DRS/dWAR, emergency position-player pitcher",
+      "decided_by": "owner",
+      "quote": "Adding defense attributes to players would make this easier for each player, arm, fielding ability by position grouped by most likelies."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Player attributes + schema (Stage 1, b376bcb): New fields on Player (defense, arm, defense_infield/outfield/catcher); new columns on players table; ALTER TABLE migrations",
+      "artifacts": ["o27/engine/state.py", "o27v2/db.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Engine wiring: range, errors, catcher arm (Stage 2, b376bcb): Team defense aggregator, range modifier in resolve_contact, error event, error→UER scoring, catcher arm in SB success, renderer updates",
+      "artifacts": ["o27/engine/prob.py", "o27/engine/pa.py", "o27/render/render.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Per-position fielding sub-ratings (Stage 3A, 7e3c3f9): league.py rolls primary specialty at full tier, off-group ratings attenuated; UT-slot players force-rolled as utility; 60/40 sub/general blend",
+      "artifacts": ["o27v2/league.py", "o27/engine/manager.py", "o27/render/render.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Emergency PP-pitcher in extreme blowouts (Stage 3B, 7e3c3f9): Config knobs PP_PITCH_DEFICIT_MIN=17, PP_PITCH_OUTS_LEFT_MAX=6, PP_PITCH_ARM_MIN=0.55; manager.pick_new_pitcher checks gates; prob._pitch_probs blends arm into raw_stuff",
+      "artifacts": ["o27/config.py", "o27/engine/manager.py", "o27/engine/prob.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "DRS / dWAR + UI (Stage 3C, 7e3c3f9): _POSITION_DRS_RANGE table per position; pos_def, DRS, dWAR computed; WAR now total (offense+defense); /stats template gets new columns",
+      "artifacts": ["o27v2/web/app.py", "o27v2/web/templates/stats_browse.html"],
+      "kind": "modified"
+    },
+    {
+      "description": "Renderer _stat_delta bug fix: added roe, sb, cs, fo to per-phase stat-delta computation field list",
+      "artifacts": ["o27/render/render.py"],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Conservative on error attribution: errors are team-attributed, not fielder-attributed (would require spray-angle modeling)",
+    "PP-pitcher gating is intentionally tight (17-run deficit AND 6 outs left) to keep feature rare",
+    "dWAR is small in small samples (±0.05 range in 18 games); full-season totals are where defense becomes WAR-significant",
+    "Range modifier is symmetric (equal magnitude shifts both ends), not asymmetric like MLB"
+  ],
+  "validation_claims": [
+    {
+      "claim": "6/6 identity tests pass — at all neutral inputs the engine still produces pre-realism / pre-defense output",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest o27/tests for identity suite",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "o27v2/smoke_test.py — 10/10 games complete cleanly",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run o27v2/smoke_test.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "All key web routes return 200 on a fresh-seeded 200-game league: /stats, /stats?side=pit, /standings, /leaders, /team/<id>",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Make HTTP requests to each route",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Defense profile distribution verified: SS specialists (IF >> OF), CF specialists (OF primary), legit utility players (IF + OF + C all ≥ 50), occasional sub-replacement-primary",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Inspect player defense ratings in seeded league",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "DRS scaling verified: top-end SS gets ~+0.6 in 18 games (~+5.4 / 162G), bottom-end C gets ~−0.5 in 12 games (~−6.7 / 162G)",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Check DRS leaders in seeded league",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Errors persist correctly post-_stat_delta-fix",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Check game_batter_stats.roe persists to DB",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Per-fielder error attribution",
+      "reason": "Would require modeling spray angle (play type determines which fielder makes the play). Without spray angle, attribution would be arbitrary. Per-fielder error attribution waits for spray-angle modeling.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Defensive substitution / late-inning defensive replacement",
+      "reason": "A real manager pulls a slugger for a defensive specialist in the bottom of the half with a 1-run lead. Not modeled.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Per-position ratings for batting",
+      "reason": "A C's defense_catcher rating doesn't affect batting stats. Correct for a defensive rating only.",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Position-player pitcher uses default command/movement",
+      "reason": "A PP-pitcher's effective Stuff blends with arm, but command/movement come from position-player defaults. Not threading through arm-derived command.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Renderer _stat_delta field list still hardcoded",
+      "reason": "Adding a new BatterStats field requires updating that list. A dataclasses.fields() iteration would be safer.",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Errors are team-attributed, not fielder-attributed",
+    "PP-pitcher rarely fires with current thresholds (once per several hundred games)",
+    "dWAR is small in small samples (±1 range in 18 games)",
+    "No defensive substitution / late-inning defensive replacement",
+    "Catcher arm uses a single rating per team-game (doesn't account for catcher rotation)",
+    "Range modifier is symmetric (not asymmetric like MLB)",
+    "Position-player pitcher uses pitcher.command/movement defaults of 0.5",
+    "Renderer _stat_delta field list still hardcoded (potential future bugs)"
+  ],
+  "open_hooks": [
+    "Verify PP-pitcher fires occasionally after a multi-season run (currently extremely rare)",
+    "Check DRS scaling in a full 162G season run (currently valid in small samples)",
+    "Per-fielder error attribution once spray-angle modeling is added",
+    "Defensive-substitution manager logic (for late-game defensive shifts)"
+  ],
+  "section_headers_original": [
+    "What was asked for",
+    "What was built",
+    "Stage 1 — Player attributes + schema (b376bcb)",
+    "Stage 2 — Engine wiring: range, errors, catcher arm (b376bcb)",
+    "Stage 3A — Per-position fielding sub-ratings (7e3c3f9)",
+    "Stage 3B — Emergency PP-pitcher in extreme blowouts (7e3c3f9)",
+    "Stage 3C — DRS / dWAR + UI (7e3c3f9)",
+    "Calibration evidence",
+    "Key decisions and trade-offs",
+    "Specialist vs utility model",
+    "UT-slot players force-rolled as utility",
+    "Errors charge UER over the rest of the spell",
+    "PP-pitcher gating: 17-run deficit AND 6 outs left",
+    "Catcher arm via team-stamped catcher_arm",
+    "POSITION_DRS_RANGE values",
+    "Engine-level vs DB-level error attribution",
+    "The renderer _stat_delta bug",
+    "What was verified",
+    "Files changed",
+    "Known issues / follow-up candidates"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Well-structured AAR with clear staged implementation. Bug finding (renderer _stat_delta) was significant and well-documented. Honest about limitations (team-level error attribution, symmetric range, etc.)."
+}

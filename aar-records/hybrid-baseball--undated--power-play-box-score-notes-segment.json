@@ -1,0 +1,119 @@
+{
+ "record_id": "hybrid-baseball--undated--power-play-box-score-notes-segment",
+ "source_path": "docs/aar-power-play-box-score-notes-segment.md",
+ "repo": "hybrid-baseball",
+ "parsed_at": "2026-06-10",
+ "genre_confidence": "high",
+ "date": null,
+ "title": "AAR \u2014 Power Play, box-score notes segment + a harness-honesty note",
+ "scope": "Follows the deploy/eligibility segment. Short segment, driven by the operator reviewing real box scores and finding the Power Play wasn't reported in the game notes.",
+ "rationale": [
+  {
+   "item": "\"Box scores don't tell me when a team activated their power play.\" A game with a nickel (`Frodin nf` in the 8th) showed NF only in the substitution footnotes \u2014 no game-note naming the deployment.",
+   "references": [
+    "deploy/eligibility segment"
+   ]
+  },
+  {
+   "item": "\"Show WHEN they deployed (out number), and only list the team that did.\"",
+   "references": []
+  },
+  {
+   "item": "\"Not the inning! What out number!\" \u2014 my first timing cut used the inning.",
+   "references": []
+  }
+ ],
+ "delegation_events": [
+  {
+   "decision": "Report deployment timing by out number, not inning",
+   "decided_by": "owner",
+   "quote": "\"Not the inning! What out number!\" \u2014 my first timing cut used the inning."
+  }
+ ],
+ "actions": [
+  {
+   "description": "Name the deployment: _powerplays_note helper reads batter rows tagged at position NF and renders a footer line in render_box_score",
+   "artifacts": [
+    "box_score.py",
+    "d536ac0"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Only the deploying side listed; whole line omitted when neither side deployed",
+   "artifacts": [
+    "d4013de"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Out number, not inning: persisted engine start_out as new game_power_play_stats.pp_start_outs CSV column via CREATE TABLE + ALTER migration; _extract_power_play_stats records each window's start_out; box route stamps it onto the nickel's batting row; note renders `Reyes NF (O6)` / `(O14, O25)`",
+   "artifacts": [
+    "game_power_play_stats.pp_start_outs",
+    "_extract_power_play_stats",
+    "0d6e8ea"
+   ],
+   "kind": "modified"
+  }
+ ],
+ "risk_posture": [
+  "under a flaky harness, trust only re-queried ground truth (git HEAD, on-disk grep, a fresh compile/run) \u2014 never the narration of a previous step \u2014 before reporting something as shipped"
+ ],
+ "validation_claims": [
+  {
+   "claim": "`Powerplays: Expos \u2014 Hammer NF (O6)` \u2014 verified end to end on a fresh rule-on sim (column present, start_out persisted, note rendered)",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "yes",
+   "check_method": "Sim a rule-on game and render its box score; check pp_start_outs column",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Power-play suites green (38)",
+   "evidence_cited": "tests",
+   "checkable_against_repo": "yes",
+   "check_method": "Run the power-play test suites",
+   "verified": "not_checked"
+  }
+ ],
+ "non_actions": [
+  {
+   "item": "Footnote name gaps: DEF/PH footnotes render with a missing replaced-player name",
+   "reason": "Looks like a real box-score rendering gap; not addressed here.",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "Refined nickel-DH rule (sanctioned \"take the pitcher's batting slot \u2192 become a DH; lose the nickel, pitcher hits\")",
+   "reason": "still the incidental path \u2014 a nickel bats only via an ordinary substitution ... Not built yet.",
+   "category": "deferred",
+   "status": "unknown"
+  }
+ ],
+ "residual_risks": [
+  "Footnote name gaps in DEF/PH footnotes remain.",
+  "Nickel-DH still only reachable via the incidental substitution path."
+ ],
+ "open_hooks": [
+  "Refined nickel-DH rule per report-nickel-fielders-as-hitters.md",
+  "Fix DEF/PH footnote missing-name rendering"
+ ],
+ "section_headers_original": [
+  "AAR \u2014 Power Play, box-score notes segment + a harness-honesty note",
+  "Commits",
+  "The reports",
+  "What was actually wrong",
+  "Fixes",
+  "Honesty note (process, not product)",
+  "Adjacent observations (logged, not yet built)"
+ ],
+ "unmapped_content": "Branch claude/power-play-optional-rule-HmsMs. Commits table: d536ac0 (Powerplays footer line), d4013de (list only deploying team(s); first cut used inning), 0d6e8ea (show team-OUT number). What was actually wrong: the o27v2 text/web box score (box_score.py) had never emitted a Powerplays line \u2014 the earlier footer lived only in the engine renderer, a different code path; render_game_notes(game) reads the game dict only and knew nothing about nickel deployments. Honesty note: mid-segment the tool harness became unstable and emitted phantom output \u2014 a patch script and verification appeared to succeed and the operator was told the note was working; a clean git check showed the change never committed (HEAD unchanged, helper absent from disk). The record was corrected, the harness stabilization confirmed with a write/read round-trip test, the work redone for real and verified by direct execution.",
+ "quality_vector": {
+  "has_scope": true,
+  "has_rationale": true,
+  "has_delegation_record": true,
+  "has_validation": true,
+  "has_negative_space": true,
+  "has_residual_risk": true
+ },
+ "parser_notes": "No date anywhere in document (checked heading, intro, commits table); record_id uses 'undated'. References sibling segments (deploy/eligibility) and report-nickel-fielders-as-hitters.md."
+}

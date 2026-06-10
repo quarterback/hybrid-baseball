@@ -1,0 +1,285 @@
+{
+  "record_id": "hybrid-baseball--undated--capspace-fantasy-lag-and-database-is-locked",
+  "source_path": "docs/aar-fantasy-lag-and-database-locked.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": null,
+  "title": "AAR \u2014 CapSpace (/fantasy) lag + `database is locked` on sim",
+  "scope": "Symptoms: 1. The fantasy app (`/fantasy`) \"still has a massive lag when I click it\" \u2014 even after the earlier precompile/Babel fix (`docs/aar-capspace-precompile.md`), which had only addressed the *client* cost. 2. Simming threw a popup: \"Simulation finished with 1 game(s) failing. Played 0 successfully. First error: database is locked.\"",
+  "rationale": [
+    {
+      "item": "Every fantasy submodule had its own ensure_schema() shaped as a full WAL write transaction (plus a leaked, never-closed connection) called on almost every public function, producing dozens of write+commit round-trips per request \u2014 causing both lag (fsync-class WAL commits serialized behind the single writer lock) and 'database is locked' (read\u2192write upgrade refused under contention with a running sim, which busy_timeout does not cover).",
+      "references": [
+        "docs/aar-capspace-precompile.md"
+      ]
+    },
+    {
+      "item": "Round 2: the real cost is build_slate_data() \u2014 which scans the whole season's game_*_stats for the ~175-player pool \u2014 rebuilt many times per request; capspace-app.jsx renders an empty div while walletState === undefined.",
+      "references": []
+    },
+    {
+      "item": "Round 3: home() ran _settle_all() inline before emitting any HTML, and the client gated the entire app on walletState === undefined.",
+      "references": []
+    },
+    {
+      "item": "Round 4: the sim and the fantasy app shared one SQLite file; fantasy writes collided with the sim's WAL writer.",
+      "references": []
+    },
+    {
+      "item": "Round 5: settle_bets/settle_entries held an open write transaction and called wallet.credit() (a second connection writing the same DB) inside the loop \u2192 self-deadlock, silently swallowed by _settle_all's per-game exception catch.",
+      "references": []
+    }
+  ],
+  "delegation_events": [],
+  "actions": [
+    {
+      "description": "Memoize ensure_schema() per resolved DB path via new @once decorator; applied to all nine ensure_schema() functions; reset() hook for tests",
+      "artifacts": [
+        "o27v2/web/fantasy/_schema_once.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Defensive retry-on-locked: execute()/executemany() run through _retry_on_locked(), a short bounded backoff (6 tries, 50ms\u2192\u2026); non-lock OperationalErrors propagate immediately",
+      "artifacts": [
+        "o27v2/db.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Round 2: memoize build_slate_data() per slate_date in data.py, invalidated by the played-game count; returns a shallow copy",
+      "artifacts": [
+        "o27v2/web/fantasy/data.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Round 2: windowed _build_logs() \u2014 ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY game_date DESC) caps each player to the latest 5 rows in SQL (~14k-row scan to ~875)",
+      "artifacts": [
+        "_build_logs"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Round 2: non-blank loading state \u2014 capspace-app.jsx loading branch renders a 'CapSpace \u00b7 Loading tonight's slate\u2026' splash; bundle rebuilt via tools/build_capspace.sh",
+      "artifacts": [
+        "capspace-app.jsx",
+        "capspace-app.js",
+        "tools/build_capspace.sh"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Round 3: background, debounced settle \u2014 _settle_all() invoked via _kick_settle(), a non-overlapping (Lock), rate-limited (\u22656 s apart) daemon thread; home()/_safe_slate, /api/wallet, /api/activity kick it and return immediately",
+      "artifacts": [
+        "o27v2/web/fantasy/blueprint.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Round 3: fast wallet read; best_streak reads a persisted record (wallet.rec_get) kept current by streak.settle() instead of recomputing the grade walk inline",
+      "artifacts": [
+        "_safe_slate",
+        "/api/wallet"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Round 3: removed the walletState === undefined gate; app renders immediately using balance injected in __CAPSPACE_DATA__; bundle rebuilt",
+      "artifacts": [
+        "capspace-app.jsx"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Round 4a: removed every inline settle()/settle_bets() from the read paths; /api/activity reads the bet feed via new read-only sportsbook.activity_bets()",
+      "artifacts": [
+        "sportsbook",
+        "streak",
+        "sluggers",
+        "pitching"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Round 4b: CapSpace gets its own database file <sim-db>-capspace.db via new fdb.py shim (opens fantasy file as main, ATTACHes sim DB as sim); modules import fdb as db; one-time best-effort migration fdb._ensure_migrated lifts pre-split CapSpace tables (column-aware, idempotent; sim-side copies left orphaned)",
+      "artifacts": [
+        "o27v2/web/fantasy/fdb.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Round 5: fixed settle_bets and settle_entries to grade all rows, write + commit settlements, then loop wallet.credit() calls once the lock is released (matching streak.settle / buyins.settle_one's 'commit FIRST, then credit')",
+      "artifacts": [
+        "settle_bets",
+        "contests.settle_entries"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "No engine, schema, or scoring logic changed \u2014 only *when* the lazy DDL runs and how transient lock collisions are handled.",
+    "Winnings still credit; they just appear on the next poll.",
+    "sim-side copies are left orphaned rather than dropped, so the migration never writes to the sim DB"
+  ],
+  "validation_claims": [
+    {
+      "claim": "Instrumented run: 45 ensure_schema() calls (5\u00d7 across all 9 modules) produce exactly 9 executescript runs; a further 30 wallet reads add 0; reset() forces a rebuild.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run the instrumented schema-once test",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Retry helper: succeeds after a transient lock; re-raises non-lock errors.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the retry helper tests",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "pytest o27/tests \u2192 106 passed. pytest o27v2/tests \u2192 129 passed, 1 skipped.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest suites",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Round 2: slate cache 20 calls \u2192 1 build; bumping the played count forces a rebuild; returned blobs are mutation-isolated.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run slate-cache tests",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Windowed _build_logs returns exactly the latest 5 games per player, most recent first, form sparkline oldest\u2192newest.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run _build_logs tests",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Rebuilt bundle: node --check passes; jsdom render shows the splash while the wallet fetch is pending and the full app (sidebar + 15 KB) once it resolves.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "node --check and jsdom harness",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Round 3: GET /fantasy/ 14 ms; /api/wallet, /api/activity, /api/slate each ~15 ms (were 15-26 s). Settle runs exactly once across rapid calls, on the capspace-settle daemon thread \u2014 never the request thread.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Time endpoints via Flask test client",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "jsdom: the full app (sidebar + balance) renders even while the wallet fetch is pending forever; no blank/splash gate remains.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "jsdom harness with stalled fetch",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "/api/activity dropped from ~10 s to ~10 ms.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Time /api/activity",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Round 4 migration: an existing cap_wallet/cap_records in the sim DB is copied into the fantasy file; balance/records read correctly; the sim-side copy is left untouched.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run migration test",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Isolation: a wallet.credit() completes in ~10 ms while another connection holds the sim DB's write lock (BEGIN IMMEDIATE) \u2014 no database is locked. Writes land in the fantasy file; the sim DB is unchanged.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Reproduce concurrent-write isolation test",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Web smoke: /fantasy/ and all /fantasy/api/* return 200 in <70 ms on the split DB.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Run app and hit endpoints",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Round 5: a winning bet settles, credits exactly once (+payout), raises nothing, and is idempotent on a second pass.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run settle/credit idempotency test",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Verification against the live deployed DB in a browser (round 1)",
+      "reason": "the page should be loaded once post-deploy to confirm the felt loads quickly and a concurrent sim no longer reports database is locked",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Date floor on build_slate_data's recent-form log scan",
+      "reason": "the windowed query trims row transfer but not the scan. A date floor (only games within N days of the slate) would cut it further.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Closing the connection opened in ensure_schema()",
+      "reason": "now bounded to once per module, but a `with get_conn()` would be tidier",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Shared/post-sim trigger for background settle across multiple workers",
+      "reason": "Background settle is per-process; with multiple workers a few passes can overlap across processes (idempotent, lock-tolerant via the db retry), but a shared/post-sim trigger would be cleaner.",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Background settle is per-process; with multiple workers a few passes can overlap across processes.",
+    "A single build_slate_data still scans the season for the pool's recent-form logs.",
+    "Endpoint timings to be re-measured on the live deploy (round 2)."
+  ],
+  "open_hooks": [
+    "reset() hook in _schema_once for test suites that drop the CapSpace tables",
+    "Date floor for slate log scan",
+    "with get_conn() cleanup in ensure_schema",
+    "Shared/post-sim settle trigger"
+  ],
+  "section_headers_original": [
+    "AAR \u2014 CapSpace (/fantasy) lag + `database is locked` on sim",
+    "Symptoms",
+    "Diagnosis \u2014 one root cause behind both",
+    "Fix",
+    "Validation",
+    "Round 2 \u2014 the page was *blank*, not just slow",
+    "Round-2 fix",
+    "Round-2 validation",
+    "Round 3 \u2014 the page was unreachable: settle was on the critical path",
+    "Round-3 fix \u2014 settle is never on the request path",
+    "Round-3 validation (Flask test client + jsdom)",
+    "Round 4 \u2014 the real conflict: sims vs. the fantasy app on one DB",
+    "4a \u2014 fantasy is read-only on the request path",
+    "4b \u2014 CapSpace gets its own database file",
+    "Round-4 validation",
+    "Round 5 \u2014 a settle self-deadlock the split DB exposed",
+    "Follow-ups (not done here)"
+  ],
+  "unmapped_content": "Round-2 net effect claim: \"the per-request build_slate_data work drops from N rebuilds of a full-season scan to a single windowed build, so /api/{wallet,slate,activity} should return in ~1 s instead of 15-26 s, and the page paints a splash immediately. (Endpoint timings to be re-measured on the live deploy.)\"\nRound-2 diagnosis detail: HTML, JS bundles (byte-identical to committed artifacts), MIME types, and the injected __CAPSPACE_DATA__ blob were all correct; live endpoint timings /api/wallet 14.9 s, /api/slate 18 s, /api/activity 26 s; all three funnel through _settle_all(). Round-3 diagnosis: the HTML document itself took 15.7 s to return, then /api/wallet another ~12 s. Round-4b detail: fantasy and sim table names are disjoint, so SQLite resolves each unqualified name to the right attached file, and reading an attached WAL DB never blocks the sim. Round-5 detail: because _settle_all catches per-game exceptions, this was silent: sportsbook/DFS winnings simply never credited.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": false,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "No date anywhere in document; marked undated. Multi-round AAR (5 rounds) collapsed into one record per instructions."
+}

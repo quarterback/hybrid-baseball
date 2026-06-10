@@ -1,0 +1,79 @@
+{
+  "record_id": "hybrid-baseball--2026-05-21--the-declared-seconds-rule-reference",
+  "source_path": "docs/aar-declared-seconds-rule.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "low",
+  "date": "2026-05-21",
+  "title": "After-Action Report — The Declared Seconds Rule (Reference)",
+  "scope": "This is a reference AAR, not a change log: Declared Seconds was built incrementally across several earlier branches and never had a single document explaining the rule end-to-end. A box-score reader getting confused by a `-` in the seconds column (the trigger for this PR) showed the gap. Everything below is the mechanic as it stands today, with file:line anchors.",
+  "rationale": [
+    {
+      "item": "A box-score reader getting confused by a `-` in the seconds column (the trigger for this PR) showed the gap.",
+      "references": [
+        "PR #73"
+      ]
+    }
+  ],
+  "delegation_events": [],
+  "actions": [
+    {
+      "description": "Documented the Declared Seconds mechanic end-to-end with file:line anchors (config constants, decision AI, seconds rounds, bat order, persistence, box-score rendering, tests)",
+      "artifacts": [
+        "o27/config.py:716-730",
+        "o27/engine/manager.py",
+        "o27/engine/game.py",
+        "o27/engine/pa.py",
+        "o27/engine/state.py",
+        "o27v2/db.py:194-209",
+        "o27v2/sim.py:1528-1597",
+        "o27v2/web/box_score.py",
+        "tests/test_declared_seconds.py",
+        "tests/test_stat_invariants.py"
+      ],
+      "kind": "docs"
+    }
+  ],
+  "risk_posture": [],
+  "validation_claims": [
+    {
+      "claim": "tests/test_declared_seconds.py covers eligibility gates, the two-layer decision, regulation and seconds walk-off rules, half caps, bat-first ~50% with a binomial CI, and end-to-end integration",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/test_declared_seconds.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_stat_invariants.py checks seconds-phase out caps per game, declaration values consistent with half lengths, and stranded runners not double-counted in LOB",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/test_stat_invariants.py",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [],
+  "residual_risks": [],
+  "open_hooks": [],
+  "section_headers_original": [
+    "After-Action Report — The Declared Seconds Rule (Reference)",
+    "What Declared Seconds is",
+    "The numbers (all in `o27/config.py:716-730`)",
+    "When the decision is made",
+    "The AI target-save model (`evaluate_declaration`, manager.py:1595-1749)",
+    "How the seconds round runs (`_run_seconds_rounds`, game.py:532-596)",
+    "Bat order (`should_bat_first`, manager.py:1558-1592)",
+    "Persistence & box-score rendering",
+    "Tests",
+    "Things to remember"
+  ],
+  "unmapped_content": "Header metadata: Date written 2026-05-21; Branch claude/fix-seconds-calculation-HszBM; PR #73. Rule summary: O27 plays 27-out halves; Declared Seconds is an optional manager decision to end the regulation half early and bank unused outs (min declare out 22, max 26, cap 6 banked) for a rebuttal half after both regulation halves. Constants table: SECONDS_MIN_DECLARE_OUT 22, SECONDS_MAX_DECLARE_OUT 26, SECONDS_MAX_BANKED 6, SECONDS_MAX_ROUNDS_PER_TEAM 2, SECONDS_INSURMOUNTABLE 25, SECONDS_BLOWOUT_MARGIN 20, DECLARE_BASE/LEAD_SCALE/PERSONA_SCALE 0.04/0.18/0.25; banked = min(27 − declared_at_out, cap); no v2 overrides. Decision AI: polled before every PA in the window via _try_manager_action → evaluate_declaration; hard gates (never in super-innings/seconds, out 21+, once per team); continuous target starting at −3.0 with factors (score differential −1.5…+3.0, pitcher fatigue −0.5…+2.5, lineup position −1.5…+0.8, bullpen depth, opp-declared override target = max(target, opp_banked*0.8), park/weather, persona multiplier (0.5+agg), Gaussian noise on marginal targets only); declare iff target_int > 0 and outs_left ≤ target_int. Seconds rounds: run in regulation batting order via first_batting_team/second_batting_team; seconds_first always plays banked outs, never walks off; seconds_second plays only if not already ahead and walks off on lead change; 0 banked = no seconds half; lineup resumes, _set_fielding_pitcher re-points the mound. Bat order: home manager coin flip BAT_FIRST_BASE 0.50, situational scalars capped ±1pp by BAT_FIRST_HOME_EDGE_CAP 0.01. Persistence: games columns home_bats_first, {away,home}_declared_at/_seconds_used/_declare_context/_declare_score_for/_against, seconds_outcome. Footer: 'Seconds: NYY o24 (7-5), BOS o25 (6-8).' — scores as-of declaration; line score column 2 cell '-' means no banked outs (correct, not a bug). Things to remember: 27 outs per half not 9 innings; footer score is as-of declaration; '-' = no banked outs; seconds order follows pre-game bat-order choice; all tuning in o27/config.py:716-730.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": false,
+    "has_validation": true,
+    "has_negative_space": false,
+    "has_residual_risk": false
+  },
+  "parser_notes": "Flagged as ambiguous: titled '(Reference)' and explicitly 'a reference AAR, not a change log' — genre_confidence set to low. Uses 'Date written:' rather than 'Date completed:'. No actions/risk/non-action AAR structure; bulk of document is rule reference mapped to unmapped_content."
+}

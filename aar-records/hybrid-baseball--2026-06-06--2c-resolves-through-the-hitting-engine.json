@@ -1,0 +1,171 @@
+{
+  "record_id": "hybrid-baseball--2026-06-06--2c-resolves-through-the-hitting-engine",
+  "source_path": "docs/aar-2c-hitting-engine-rework.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-06",
+  "title": "After-Action Report — 2C resolves through the hitting engine",
+  "scope": "Stage 1 + Stage 2 shipped & validated. Balance is tunable via `config.py` `STAY_*`; see follow-ups.",
+  "rationale": [
+    {
+      "item": "It started as a wOBA seam (the league baseline still used MLB weights). Fixing that surfaced the `stay_hits ⊆ singles` assumption, which the owner flagged as flat-out wrong: \"a 2C hit can be anything — why wouldn't it be?\" Pulling that thread exposed that the 2C mechanic was structurally broken, and the owner chose to fix it properly with heavy documentation of the learnings.",
+      "references": ["design-2c-hitting-engine-rework.md", "README", "aar-2c-reframe-and-shifts.md"]
+    },
+    {
+      "item": "Root-cause findings: `pa.py:902` forced `batter_safe = True` on every valid stay; `prob.py` overrode `runner_advances` with a flat talent-gated `[adv,adv,adv]`; `render.py` credited `s.hits += 1` (a single) regardless of type; no max-3 cap; wOBA derivation bucketed a 2C as a separate STAY type while counting stats credited it a single.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Reverse prior documented 2C design and fix the mechanic properly",
+      "decided_by": "owner",
+      "quote": "The README and `aar-2c-reframe-and-shifts.md` framed 2C as \"a runner-advancement tool, not a hit-creation tool,\" \"multiple stays per AB, no cap,\" batter \"stays at the plate,\" and \"caught fly is the only out.\" The owner evolved all of that."
+    },
+    {
+      "decision": "2C decision must be EV-driven exclusively, no frequency knobs",
+      "decided_by": "owner",
+      "quote": "EV-driven, exclusively (owner: \"2C should be EV-driven exclusively\"). No `stay_aggressiveness` frequency knobs."
+    },
+    {
+      "decision": "2C is a RISP tool; high risk must pay off; skill-differentiated with jokers leveraging it most",
+      "decided_by": "owner",
+      "quote": "High risk, must pay off, don't waste a good hit (owner) ... 2C is a RISP tool (owner) ... Skill-differentiated (owner)"
+    },
+    {
+      "decision": "2C wOBA credit: credit a 2C advancement like the hit a runner-side batter would produce; exclude 2C events from the run-value fit",
+      "decided_by": "owner",
+      "quote": "2C wOBA credit — DONE (owner directive)."
+    },
+    {
+      "decision": "\"Max 3 batted balls\" implemented as strike-gated; any fielding out retires the batter; EV is a heuristic not a true RE calc",
+      "decided_by": "agent",
+      "quote": "Design decisions I had to infer (flagged for the owner)"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Stage 1 — engine + renderer: stay_available caps at strikes < 2; stay_results_in_out retires batter on any fielding out; deleted [adv,adv,adv] override; should_stay_prob rewritten EV-driven; stay branch routes outs to batter-out path; every stay burns a strike; replay mirrors new out rule; 2C hits credit real type; new STAY_* EV constants",
+      "artifacts": ["o27/engine/stay.py", "o27/engine/prob.py", "o27/engine/pa.py", "o27/render/render.py", "o27/config.py", "4770f1a", "a26ac85"],
+      "kind": "modified"
+    },
+    {
+      "description": "Stage 2 — wOBA reconciliation: _classify_bip buckets a credited 2C by hit_type (no STAY bucket); STAY removed from weight construction and league-wOBA build; app.py dropped the singles − stay_hits split + STAY weight in per-player aggregator and league baseline",
+      "artifacts": ["linear_weights.py", "app.py", "9eaf3a9"],
+      "kind": "modified"
+    },
+    {
+      "description": "2C cost side: new stat c2_strand_out (BatterStats + game_batter_stats, incremented in render's batter-out paths when ab_hits_before > 0); wOBA numerator subtracts ww[\"1B\"] × c2_strand_out in per-player aggregator and league baseline",
+      "artifacts": ["render", "o27v2/sim.py", "o27v2/db.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Spec document for the rework",
+      "artifacts": ["design-2c-hitting-engine-rework.md", "a724e80"],
+      "kind": "docs"
+    }
+  ],
+  "risk_posture": [
+    "⚠️ This reverses prior documented design.",
+    "Balance is first-pass and tunable.",
+    "EV is a heuristic, not a true RE calc — the engine has no run-expectancy matrix at sim time."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Run environment preserved. Standalone 8.9 R/half (5 seeds); DB sims 11.4 R/half — both near O27's ~10 baseline.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-sim with same seeds and compare R/half",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "2C behaves as specified: 1.12 stays/game, 100% with RISP, 87% with multiple runners in scoring position",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-sim and aggregate stay events by base state",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Deterministic — seed replay byte-identical.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run python -m o27.main --seed N twice and diff output",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "PA == AB+BB+HBP+SH holds; o27/tests 106 pass; o27v2/tests 130 pass; wRC+ centers ~101, league wOBA≈OBP, woba_weights has no STAY and keeps RV(1B)>RV(BB). Stat invariants 11/12.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest o27/tests o27v2/tests and tests/test_stat_invariants.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "On a 200-game sim, 2C attempt-rate correlates +0.19 with hitting skill (contact+eye)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Sim 200 games and compute correlation of 2C attempt rate vs contact+eye",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Probing should_stay_prob directly: stay-rate climbs poor 16% → avg 33% → good 44% → elite 55% (medium contact, RISP); jokers poor 23% → elite 81%; run env 11.95 R/half, 2C 1.23/game",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Probe should_stay_prob across skill tiers in a script",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "wRC+ centers at exactly 100 after run-value fit exclusion; c2_strand_out ~0.6/game; wRC+ stays centered at 100",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-sim and check league wRC+ mean",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Defense-read balance re-check",
+      "reason": "Defense-read was retained but decoupled from the old advance gate; its balance should be re-checked.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "wERA-fit retune",
+      "reason": "league wERA 10.47 vs raw ERA 10.53 — diff 0.062 vs the 0.05 tolerance ... A small wERA-fit retune (separate subsystem), not a 2C correctness bug.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Sharpening the per-player success-rate delta and joker lean as a tuning follow-up",
+      "reason": "The per-player success-rate delta isn't cleanly measurable at the current 2C rarity (~1/game → too few stays per player)",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Stat invariants 11/12 — the one miss is the wERA outs-weighted reconstruction on a 40-game DB (league wERA==ERA is exact); rechecked on a larger sim.",
+    "wERA outs-weighted invariant is borderline: diff 0.062 vs the 0.05 tolerance; the fixed wERA arc weights (0.85/1.00/1.20) are slightly loose under the 2C-shifted arc distribution.",
+    "Balance is first-pass and tunable."
+  ],
+  "open_hooks": [
+    "STAY_REWARD_*, STAY_OUT_RISK_*, STAY_RUN_BASELINE_* are single-knob levers for 2C frequency, the RISP focus, the skill delta, and XBH rate",
+    "The c2_strand_out penalty value (one single-weight) is tunable",
+    "STAY_JOKER_MULT knob for joker leverage"
+  ],
+  "section_headers_original": [
+    "After-Action Report — 2C resolves through the hitting engine",
+    "1. Why this happened",
+    "2. Root-cause findings (the learnings)",
+    "3. The mechanic now (owner spec, captured across the session)",
+    "4. What changed",
+    "5. Validation",
+    "6. Design decisions I had to infer (flagged for the owner)",
+    "7. Follow-ups / not done"
+  ],
+  "unmapped_content": "Learning: the stat read 0 at first because the per-phase delta helper `render._stat_delta` carries an explicit field list — any new BatterStats counter must be added there or it's silently zeroed before `o27v2/sim.py` persists it. (Same trap applies to the migration list in `o27v2/db.py` and both INSERT column/placeholder lists.) | Mechanic spec (section 3): A 2C AB = at most 3 batted balls; each stay burns a strike; stay available only at strikes < 2. Resolves through the real hitting engine: hit non-HR → batter stays, runners advance by real type; fielding out → batter OUT, AB ends (sac fly possible) — 'This is the pesäpallo conflict, finally resolved'; HR → batter runs (Walk-Back), never stays. | Header metadata: Branch claude/war-oaa-reconciliation-koalas-7t0pG; Commits a724e80 (spec) → 4770f1a (Stage 1 mechanic) → a26ac85 (EV tuning) → 9eaf3a9 (Stage 2 wOBA). | Before the EV rewrite, a naïve port cratered offense to 0–1 R/half — outs are now a real 2C risk; the EV decision is the balance fix.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Several '§7 Follow-ups / not done' items are marked DONE inline (the doc was updated after initial writing), so the follow-ups section mixes completed and deferred work; DONE items recorded under actions, remaining ones under non_actions."
+}

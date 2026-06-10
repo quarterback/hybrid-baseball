@@ -1,0 +1,146 @@
+{
+  "record_id": "hybrid-baseball--undated--fantasy-capspace-blank-page-duplicate-const-across-bundles",
+  "source_path": "docs/aar-fantasy-blank-page-react-scope-collision.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": null,
+  "title": "AAR \u2014 Fantasy (CapSpace) blank page: duplicate top-level `const` across bundles",
+  "scope": "`/fantasy` returned HTTP 200 with all assets loading, but the page was blank. The React app never mounted because several precompiled bundles each declared the same names at the top level of a **classic `<script>`**, and classic scripts share one global lexical environment.",
+  "rationale": [
+    {
+      "item": "This was a regression from the JSX precompile work (`119b149`, \"pre-compile JSX + self-host React\"). In-browser Babel had isolated each file; the plain classic-script artifacts do not.",
+      "references": [
+        "commit 119b149"
+      ]
+    },
+    {
+      "item": "None of the later lag/`database is locked` fixes caught it because their validation measured **server** response time (`curl /fantasy/ ~14ms`), never an actual browser render.",
+      "references": [
+        "docs/aar-fantasy-lag-and-database-locked.md (implied prior fixes)"
+      ]
+    },
+    {
+      "item": "The bundles are *designed* to share global scope (e.g. `app.js` references `AppShell`/`HubScreen` defined in other files; `CurrencyCtx` is shared via `window.CurrencyCtx`), so wrapping each file in an IIFE was not an option.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "CapSpace will eventually be moved off React (de-React), but not in this change",
+      "decided_by": "owner",
+      "quote": "the owner wants CapSpace off React eventually, to match the rest of the tools (server-rendered Flask + plain JS). Not done here \u2014 this change only un-blanks the existing app."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Changed colliding top-level const declarations to var in four .jsx sources and rebuilt the served .js with tools/build_capspace.sh; added '// Do NOT change back to const' comments",
+      "artifacts": [
+        "o27v2/web/fantasy/static/",
+        "capspace-app.jsx",
+        "capspace-ui.jsx",
+        "capspace-screens.jsx",
+        "capspace-builder.jsx",
+        "tools/build_capspace.sh"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "capspace-app.jsx/.js \u2014 useState/useEffect and CurrencyCtx \u2192 var",
+      "artifacts": [
+        "capspace-app.jsx",
+        "capspace-app.js"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "capspace-ui.jsx/.js \u2014 useState/useEffect/useRef and CurrencyCtx \u2192 var",
+      "artifacts": [
+        "capspace-ui.jsx",
+        "capspace-ui.js"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "capspace-screens.jsx/.js \u2014 useState/useEffect \u2192 var",
+      "artifacts": [
+        "capspace-screens.jsx",
+        "capspace-screens.js"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "capspace-builder.jsx/.js \u2014 useState/useEffect \u2192 var",
+      "artifacts": [
+        "capspace-builder.jsx",
+        "capspace-builder.js"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "`capspace-data.jsx` declared no colliding globals and was left unchanged (its rebuilt `.js` is byte-identical).",
+    "this was purely the client bundle scope collision."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Before: #root had 0 children; 3\u00d7 SyntaxError: Identifier 'useState' has already been declared. After (rebuilt bundles): #root mounts (1 child, ~15 KB of markup), 0 console/jsdom errors.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Load bundles as real <script> elements in jsdom and inspect #root/console",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Against the live manage.py runserver (jsdom JSDOM.fromURL, scripts run, real /fantasy/api/* fetches): #root child count 1, 0 errors \u2014 was 0 children + SyntaxErrors before the rebuild.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Run server and load /fantasy in jsdom",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Verified with a full save (866 games simmed; real player logs / slate).",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "unclear",
+      "check_method": "Reproduce with a fully simmed save",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Any server-side route, the slate/settle logic, or the separate CapSpace DB work from the prior bug report",
+      "reason": "this was purely the client bundle scope collision",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "De-React rewrite of CapSpace (every screen: Hub, Lobby, Builder, Live, Entries, Streak, Sluggers, Pilots, Categories, Sportsbook, Best Ball, Onboarding, Player drawer)",
+      "reason": "a separate, larger effort",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "A JS failure currently shows a blank page rather than a diagnostic."
+  ],
+  "open_hooks": [
+    "Future guard worth considering: a tiny CI/check that greps the built bundles for duplicate top-level lexical declarations, or an error boundary + bootstrap try/catch so a JS failure shows a diagnostic instead of a blank page."
+  ],
+  "section_headers_original": [
+    "AAR \u2014 Fantasy (CapSpace) blank page: duplicate top-level `const` across bundles",
+    "Summary",
+    "Root cause",
+    "Fix",
+    "Validation",
+    "Notes / follow-ups"
+  ],
+  "unmapped_content": "**Status:** Fixed (branch `claude/clever-knuth-hgguw`)\n**Area:** `o27v2/web/fantasy/static/` (CapSpace React bundles)\n**Severity:** High \u2014 `/fantasy` rendered a blank page for everyone, not just one save.\n\nRoot cause detail: `capspace-{app,ui,screens,builder}.jsx` each had, at module top level: `const { useState, useEffect } = React;   // ui also: useRef` and both `ui` and `app` declared `const CurrencyCtx = \u2026`. Across separate classic scripts these go into the same global lexical scope, so the 2nd declaration is a redeclaration \u2192 SyntaxError, and that whole script is skipped. Load order is data, ui, screens, builder, app, so everything after ui died and the root stayed empty.\n\nValidation note: an earlier debugging pass that loaded each file via `eval` masked the bug, because `eval` gives top-level `const` its own scope \u2014 only real `<script>` tags share the global lexical env.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "No date anywhere in document (checked status line, headings, body); marked undated."
+}

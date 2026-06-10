@@ -1,0 +1,300 @@
+{
+ "record_id": "hybrid-baseball--2026-05-07--playoffs-dynasty-development-and-supporting-fixes",
+ "source_path": "docs/aar-playoffs-development-and-supporting-fixes.md",
+ "repo": "hybrid-baseball",
+ "parsed_at": "2026-06-10",
+ "genre_confidence": "high",
+ "date": "2026-05-07",
+ "title": "After-Action Report \u2014 Playoffs, Dynasty Development, and Supporting Fixes",
+ "scope": "After Phase 1 + 2 + 3 produced a properly-distributed standings shape (see prior AARs) the user pivoted to two longer-term mechanics and a short list of operational fixes:",
+ "rationale": [
+  {
+   "item": "Playoffs were never built and were blocking everything that needed a \"season-end\" hook.",
+   "references": []
+  },
+  {
+   "item": "A dynasty model. The user wanted talent to start in true parity (no Elite+ outliers handed out at seed) and let elite talent emerge across multiple seasons, gated by team development infrastructure. Org_strength becomes the development-rate multiplier instead of the per-pitch multiplier (which was the bug we removed in Phase 1). Org_strength itself rolls year-over-year \"like a stock or bond market\".",
+   "references": [
+    "aar-single-div-schedule-and-snake-draft.md",
+    "aar-match-day-waivers-and-bad-day-variance.md"
+   ]
+  },
+  {
+   "item": "Operational fixes that surfaced once the user actually tried to use the deployed app: match-day sweep \"impossibly slow\" (stuck at April 4); version footer printed \"build dev\" in production; new-league creation crashed with FOREIGN KEY constraint failed (race with multi-season runner background thread).",
+   "references": []
+  }
+ ],
+ "delegation_events": [
+  {
+   "decision": "Refuse to silently wait when the multi-season runner is active; surface an error instead",
+   "decided_by": "agent",
+   "quote": "Refusing to silently wait was the right call \u2014 the runner takes 10+ minutes per season."
+  },
+  {
+   "decision": "Field formula matched to user's spec",
+   "decided_by": "owner",
+   "quote": "Matches the user's spec exactly: 30-team \u2192 9, 36-team \u2192 12, 14-team single-div \u2192 4 (floor)."
+  },
+  {
+   "decision": "Best-of-N progression 3/5/7/7",
+   "decided_by": "owner",
+   "quote": "**Best-of-N progression** (per the user's spec \u2014 3/5/7/7), keyed off rounds-from-final:"
+  },
+  {
+   "decision": "Cap at 80 at seed, but org_strength uncapped at 95",
+   "decided_by": "owner",
+   "quote": "The user's exact spec \u2014 \"81-95 happens but it's a slow growth developmental improvement.\""
+  },
+  {
+   "decision": "Single league-wide bracket, not per-subleague",
+   "decided_by": "agent",
+   "quote": "The user's spec (\"30-team league: division champions and 3 wild cards\") parses as a total field count."
+  },
+  {
+   "decision": "work_ethic / habits via \u03bc shift, not a separate multiplier",
+   "decided_by": "agent",
+   "quote": "Rejected because the existing `today_condition` machinery already supports the exact shape we needed (gauss draw with a \u03bc shift), and the user's spec was \"boost attributes 1-5 points during a season\" \u2014 folding into the \u03bc shift gets us roughly that magnitude without touching prob.py at all."
+  },
+  {
+   "decision": "Drop UT as a position",
+   "decided_by": "owner",
+   "quote": "The user noticed UT-tagged bench players kept showing up in places where canonical positions or jokers should \u2014 box scores read as \"UT\" instead of \"backup CF\", the FA browser was a UT-heavy soup, and the rest-day / habit-bench passes pulled UT bodies into canonical-position slots without typing the swap."
+  }
+ ],
+ "actions": [
+  {
+   "description": "Multi-season-runner guard: /new-league flashes a wait error and /api/season/reset returns HTTP 409 while the runner is active, fixing the FK-violation race",
+   "artifacts": [
+    "o27v2/web/app.py",
+    "o27v2/season_archive._run_multi_season_thread",
+    "8e09967"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Version footer: app_version.sha + booted_at context processor; replaced subprocess git rev-parse with direct .git/HEAD read (loose ref or packed-refs); +dirty tag best-effort",
+   "artifacts": [
+    "o27v2/web/app.py",
+    "o27v2/web/templates/base.html",
+    "f27a0cd",
+    "5465209"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Match-day waiver sweep rewrite: one bulk SELECT into in-memory buckets, pure-Python rounds, batched executemany writes; ~5 SQL statements per sweep instead of ~10K queries",
+   "artifacts": [
+    "o27v2/waivers.py",
+    "f9015f3"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Phase 4 postseason bracket + regular-season awards: field sizing formula, bye logic, best-of-N progression, incremental series scheduling, sim driver hooks, MVP/Cy Young/RoY/WS MVP awards, /playoffs UI route",
+   "artifacts": [
+    "o27v2/playoffs.py",
+    "o27v2/awards.py",
+    "o27v2/db.py",
+    "o27v2/sim.py",
+    "o27v2/web/app.py",
+    "o27v2/web/templates/playoffs.html",
+    "o27v2/web/templates/base.html",
+    "95705ed"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Phase 5 cap-80 seed + multi-season development engine: seed attributes capped at 80, org_strength rolled uncapped at 95, development pass with age curves, org bonus, grit-modulated pitcher decline, bust events, org-strength bond-market roll, /api/season/advance dynasty rollover endpoint",
+   "artifacts": [
+    "o27v2/league.py",
+    "o27v2/development.py",
+    "o27v2/web/app.py",
+    "e20e1cc"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Phase 5e work_ethic + work_habits with in-season habit_cup: 3 new players columns + migration, game-day \u03bc integration, per-game cup updates, off-season soft re-rolls with age locks, player-page work_ethic display",
+   "artifacts": [
+    "o27v2/db.py",
+    "o27v2/league.py",
+    "o27v2/sim.py",
+    "o27v2/development.py",
+    "o27v2/web/templates/player.html",
+    "96ec734"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Phase 5f manager-AI habit-bench pass: swaps slumping starters for similar-skill bench fielders with healthier cups, runs before the rest-day pass; thresholds scale with mgr_bench_usage",
+   "artifacts": [
+    "o27v2/sim.py",
+    "75b1b79",
+    "756209a"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Phase 5g motivator-archetype cup-fill: per-game per-player dice roll on players_manager/iron_manager/fiery teams for +0.02 cup boost gated by grit, talent, last-10 form",
+   "artifacts": [
+    "o27v2/sim.py",
+    "_motivator_cup_fill",
+    "_team_last10_winpct"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Drop UT as a position: per-position bench layout in _DRAFT_SLOTS, _generate_draft_pool aggregation, _make_hitter UT short-circuit removed, waivers bucket slots rewritten",
+   "artifacts": [
+    "o27v2/league.py",
+    "o27v2/waivers.py",
+    "1e54168"
+   ],
+   "kind": "modified"
+  }
+ ],
+ "risk_posture": [
+  "Behavior unchanged: same auto-policy (largest positive overall delta), same banking (single `picks_available` counter), same `is_active` reflag rule (top-N per bucket).",
+  "Both are idempotent \u2014 re-running won't dupe rows.",
+  "(That role was the bug we removed in Phase 1; not coming back.)",
+  "Backward-compat fallbacks ... are left in place. They won't fire on rosters seeded post-1e54168 and can be removed when no DB rows with UT exist.",
+  "League shape unchanged: `.367-.633` win-pct spread, consistent with prior smoke runs. The mechanism doesn't distort parity \u2014 it just tactically rotates within talent-similar bands.",
+  "Safety property: no permanent burial. The cup resets to 0.5 every off-season ... No bench-and-forget failure mode."
+ ],
+ "validation_claims": [
+  {
+   "claim": "Single sweep (50 claims): hung the sim before \u2192 0.18s after; full 30-game season: jammed at 4/4 before \u2192 21.5s for 210 games + 5 sweeps after",
+   "evidence_cited": "metrics",
+   "checkable_against_repo": "unclear",
+   "check_method": "Re-run a seeded season sim and time the waiver sweep",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Smoke (14-team / 30-game): 17 playoff games, Athletics crowned in 6 (final 4-2). MVP Tavoy Moss 1.409 OPS / 51 RBI; CY Amier Guzman 4.58 ERA; WS MVP Jay Herrera 1.340 OPS",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "no",
+   "check_method": "Re-run a 14-team smoke; exact players/values are seed-dependent",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Smoke (30-team / 30-game): 9-team field with 7 byes in WC round, 4-round bracket through bo7 final. Cubs (CHC) crowned over Orcas (VCO) 4-1",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "no",
+   "check_method": "Re-run a 30-team smoke and inspect bracket structure",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Phase 5 smoke: all seed-time attributes \u2264 80; org_strength range 29-69; after offseason max hitter skill 83, max pitcher_skill 83; 14 teams + 266 free agents all developed",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "unclear",
+   "check_method": "Seed a league and query player attribute maxima before/after run_offseason",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Phase 5e smoke: seed work_ethic range 20-80; post-season cup mean 0.555, \u03c3 0.158, range 0.180-1.000; locks fire correctly; cup resets to 0.5 at off-season",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "unclear",
+   "check_method": "Run season + offseason and query habit_cup / work_ethic distributions",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Phase 5f smoke: Kaliq Dawkins (cold cup) got 24 PA vs ~120 expected; benched ~26 of 30 games; hot-cup backups rotated in",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "no",
+   "check_method": "Replicate the artificial cup-crash scenario and count PA",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Phase 5g smoke A/B: motivator teams mean cup 0.594 vs non-motivator 0.579 (+0.014); ~10% of player-games trigger a fill",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "no",
+   "check_method": "Re-run A/B season with motivator vs set_and_forget managers",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "UT-drop smoke: 0 players with UT position; canonical distribution correct; full season + playoffs in 25s; champion crowned (Astros); standings spread .233-.667",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "unclear",
+   "check_method": "Seed a league post-1e54168 and query for position='UT'",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Org-strength bond-market roll smoke: WSN 29\u219236, MIL 65\u219251, CHW 69\u219257, VAN 59\u219265",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "no",
+   "check_method": "Run a season-end org roll and inspect deltas vs W-L",
+   "verified": "not_checked"
+  }
+ ],
+ "non_actions": [
+  {
+   "item": "Playoff travel days / 2-2-1 / 2-3-2 home patterns",
+   "reason": "Current v1 alternates home strictly \u2014 higher seed hosts odd games. ... Easy follow-up; just a scheduler change.",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "Champion's parade page / season recap",
+   "reason": "`season_archive` already persists most of this; needs a UI route.",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "Re-running awards selection (no 'reselect' button)",
+   "reason": "if the user wants to re-run after fixing an aggregator bug, they'd have to clear `season_awards` rows by hand",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "Multi-season-runner UX after the guard (surface multi_season_status on /league)",
+   "reason": "Right now you get flashed \"wait for it to finish.\"",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "No today_form / today_condition widening",
+   "reason": "Phase 3's per-game variance already produces a healthy score-diff distribution ... Adding more variance on top of the new dynasty mechanics could over-correct toward soup. Will revisit if standings don't have enough texture after a multi-season run.",
+   "category": "declined_by_owner",
+   "status": "unknown"
+  }
+ ],
+ "residual_risks": [
+  "Backward-compat UT fallbacks left in place; can be removed when no DB rows with UT exist.",
+  "+dirty tag is best-effort \u2014 only runs when git is on PATH, which is dev-only.",
+  "When 2 leagues exist, the AL champ might still meet the NL champ in the final under chalk seeding \u2014 but it's not guaranteed by structure."
+ ],
+ "open_hooks": [
+  "2-2-1 / 2-3-2 home-pattern scheduler change",
+  "Season recap UI route on top of season_archive",
+  "Awards reselect button",
+  "Surface multi_season_status on /league",
+  "Revisit variance widening after a multi-season run"
+ ],
+ "section_headers_original": [
+  "After-Action Report \u2014 Playoffs, Dynasty Development, and Supporting Fixes",
+  "What was asked for",
+  "What was built",
+  "1. Multi-season-runner guard (`8e09967`)",
+  "2. Version footer (`f27a0cd` + `5465209`)",
+  "3. Match-day waiver sweep performance (`f9015f3`)",
+  "4. Phase 4 \u2014 Postseason bracket + regular-season awards (`95705ed`)",
+  "5. Phase 5 \u2014 Cap-80 seed + multi-season development engine (`e20e1cc`)",
+  "6. Phase 5e \u2014 `work_ethic` + `work_habits` with in-season cup (`96ec734`)",
+  "7. Phase 5f \u2014 Manager-AI habit-bench pass (`75b1b79`)",
+  "9. Phase 5g \u2014 Motivator-archetype cup-fill",
+  "10. Drop UT as a position (`1e54168`)",
+  "What's still on the table",
+  "Files touched",
+  "Decision log"
+ ],
+ "unmapped_content": "Branch: claude/fix-machine-limit-error-KtDSp. Builds on: aar-single-div-schedule-and-snake-draft.md (Phase 1) and aar-match-day-waivers-and-bad-day-variance.md (Phases 2 + 3). Extensive implementation detail retained in source: field formula (n_wild_cards = max(0, (team_count - 24) // 2); playoff_teams = max(4, ...)); bye logic; award eligibility formulas (MVP pa >= 3.1 \u00d7 team_games; Cy Young outs >= 3.0 \u00d7 team_games; RoY age \u226423 by max of OPS/0.800 and 4.0/ERA; WS MVP 4+ PA hitters / 9+ outs pitchers, pitchers on 1.6 - era/8.0); age-curve and org-bonus tables; bust events 1.5% per attribute N(-3,1.5); org roll formula new_org = 0.7\u00d7old + 0.3\u00d750 + (winpct-0.5)\u00d760 + N(0,3) clamped [20,95]; ethic/habits \u03bc formulas and cup-update rules; habit-bench pseudocode and mgr_bench_usage threshold table (threshold = 0.15 + bench_usage \u00d7 0.30, required_delta = 0.40 \u2212 bench_usage \u00d7 0.20, skill_tolerance = 6.0); motivator chance formula (0.02 + 0.08\u00d7grit + 0.08\u00d7talent + 0.05\u00d7max(0,form), floor 2%, ceiling 23%, fill +0.02, participation-gated); per-position roster table totaling 47/team; full Files-touched table; decision-log entries on W-L excluding playoffs, bond-market \u03b1=0.30, bust per-attribute not per-player, snake-draft jitter \u00b16 stays, cup step \u00b10.04 over \u00b10.10, idle days don't move the cup (pa >= 2 hitters / outs >= 1 pitchers), soft 60/40 re-roll over full re-roll. Note: section numbering skips 8; section 6 ends with \"What was deferred \u2014 actually, *not* deferred. See section 7 below. The manager-AI habit-bench pass shipped in `75b1b79` the same day.\"",
+ "quality_vector": {
+  "has_scope": true,
+  "has_rationale": true,
+  "has_delegation_record": true,
+  "has_validation": true,
+  "has_negative_space": true,
+  "has_residual_risk": true
+ },
+ "parser_notes": "Very long multi-workstream AAR (10 numbered build sections, numbering skips 8). Date from 'Date completed:' line. Slug shortened from full title; dropped 'dynasty' to match ~8-word guidance while staying deterministic from title words 'Playoffs ... Supporting Fixes' \u2014 used playoffs-dynasty-development-and-supporting-fixes."
+}

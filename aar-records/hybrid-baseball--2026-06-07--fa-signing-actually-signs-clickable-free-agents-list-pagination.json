@@ -1,0 +1,169 @@
+{
+  "record_id": "hybrid-baseball--2026-06-07--fa-signing-actually-signs-clickable-free-agents-list-pagination",
+  "source_path": "docs/aar-fa-signing-and-list-pagination.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-07",
+  "title": "After-Action Report \u2014 FA signing actually signs, clickable free agents, list pagination",
+  "scope": "Four complaints about the free-agent / college-prospect tooling, all real:",
+  "rationale": [
+    {
+      "item": "Free agents weren't clickable, and even if they had been, the card 404'd. `free_agents.html` rendered names as plain text, and `player_detail`'s `JOIN teams` was an *inner* join \u2014 so any player with `team_id IS NULL` (every FA) returned no row and 404'd.",
+      "references": []
+    },
+    {
+      "item": "\"Run signing round\" was a permanent no-op. The eligibility gate was `active_count < ROSTER_TARGET (34)`, but seeded teams already carry ~42\u201344 active players, so *no team was ever eligible* and nobody \u2014 prospects or veterans \u2014 ever signed.",
+      "references": []
+    },
+    {
+      "item": "The college Draft Board, Prospect Index, and Import list dumped hundreds of unpaginated rows.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Rework of signing-round eligibility and prospect signing rules",
+      "decided_by": "owner",
+      "quote": "Reworked per the owner's direction."
+    },
+    {
+      "decision": "Cap raise, under-21 exclusion, prospects always sign ignoring cap and budget",
+      "decided_by": "owner",
+      "quote": "Per the owner's explicit direction:"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Free-agent player names now link to player cards",
+      "artifacts": [
+        "o27v2/web/templates/free_agents.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "player_detail JOIN teams changed to LEFT JOIN; dropped `t.id as team_id` alias so player['team_id'] keeps the player's own (NULL) value",
+      "artifacts": [
+        "o27v2/web/app.py::player_detail"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Breadcrumb and header guard on player.team_id: rostered players link to team; FAs get a 'Free Agents' breadcrumb and a Free Agent badge instead of a broken team_detail link",
+      "artifacts": [
+        "o27v2/web/templates/player.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Signing round rework: cap raised to 50 (SIGNING_ROSTER_CAP), under-21 players don't count against the cap, prospects always sign ignoring cap and budget (allow_overdraft=True), veterans keep original cap + budget gating, distribution via _team_valuation_noisefree position-need term",
+      "artifacts": [
+        "o27v2/fa_signing.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "New shared pagination macro `pager(endpoint, args, page, page_count)`",
+      "artifacts": [
+        "o27v2/web/templates/_pagination.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "college_draft_view, college_import_view, college_prospects now slice to 50/page, pass page/page_count/pager_args; Draft Board and Import slice before per-row report processing; Prospect Index passes rank_offset",
+      "artifacts": [
+        "college_draft_view",
+        "college_import_view",
+        "college_prospects"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "**Cap raised to 50** (`SIGNING_ROSTER_CAP`), separate from the auction's re-roster target so raising it here doesn't perturb the auction.",
+    "Everything downstream already tolerates a NULL team (splits return nothing, transfer-target list shows all teams, league badge is skipped)."
+  ],
+  "validation_claims": [
+    {
+      "claim": "`pytest o27/tests o27v2/tests` \u2014 236 passed.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest o27/tests o27v2/tests",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Seeded a 30-team DB + college tier, ran a rollover to produce 1,560 graduates, and drove the live app: FA name links resolve; an FA player card (/player/<fa_id>) returns 200 and shows the Free Agent badge.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Seed DB, run app, request an FA player page",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Draft Board paginates (32 pages), ?position=P \u2192 12 pages, pager links preserve position=P; Import paginates (32 pages); Prospect Index paginates (83 hitter pages / 47 pitcher pages) and page 2 starts at rank 51.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Drive the live app pages with seeded data",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "POST /api/fa/sign-round returns 302 \u2192 /free-agents.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "POST endpoint on running app",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Injected 60 youth FAs (age 18) and zeroed every team's budget; the round signed all 60, driving budgets negative \u2014 confirming prospects bypass both the roster cap and the budget.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run the direct engine signing-round test with zeroed budgets",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "The Sunday match-day waiver sweep (waivers.py)",
+      "reason": "it already does replacement-based claims and was working; the signing-round button is a separate, manual mechanism",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Veteran signing economics, salary values on signed players, or the auction",
+      "reason": null,
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Prospect-distribution fairness beyond what the valuation need-term gives",
+      "reason": "with budgets exhausted a stress batch of 60 youths concentrated on the highest-need teams (max 14 on one team). That's consistent with the \"sign always, over any limits\" directive; revisit if distribution matters.",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "With budgets exhausted a stress batch of 60 youths concentrated on the highest-need teams (max 14 on one team)."
+  ],
+  "open_hooks": [
+    "Revisit prospect distribution if distribution matters."
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 FA signing actually signs, clickable free agents, list pagination",
+    "TL;DR",
+    "What changed",
+    "Clickable free agents \u2192 working player cards",
+    "Signing round that actually signs (`o27v2/fa_signing.py`)",
+    "Pagination",
+    "Validation",
+    "What I did NOT change"
+  ],
+  "unmapped_content": "**Branch:** `claude/jolly-planck-AUmgY`",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Clear AAR. Date from 'Date completed:' line."
+}

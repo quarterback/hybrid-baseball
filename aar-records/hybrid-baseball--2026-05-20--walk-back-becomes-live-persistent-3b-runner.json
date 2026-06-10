@@ -1,0 +1,167 @@
+{
+  "record_id": "hybrid-baseball--2026-05-20--walk-back-becomes-live-persistent-3b-runner",
+  "source_path": "docs/aar-walk-back-persistent-runner.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-20",
+  "title": "After-Action Report — Walk-Back Becomes a Live, Persistent 3B Runner",
+  "scope": "The Walk-Back rule places the HR-hitter back on third for a bonus run. The old implementation resolved it in a one-PA window: a phantom flag (walk_back_pending) that the very next plate appearance either cashed in (batted home) or \"evaporated.\" The user flagged that as wrong.",
+  "rationale": [
+    {
+      "item": "\"the walk back runner [is] no different than the runner on second base in extra innings and normal baseball. They can stay there as long as they need to until the inning is over to be scored home or put out or whatever. It shouldn't just be a conditional next-ball play\"",
+      "references": []
+    },
+    {
+      "item": "It contradicted the precedent it cited: the code tagged the bonus run a \"Manfred-runner\" run, but the MLB ghost runner is a persistent real runner, not a next-pitch coin flip.",
+      "references": []
+    },
+    {
+      "item": "It special-cased every PA terminus: _resolve_walk_back_at_pa_end was called from seven places with bespoke logic, duplicating what ordinary baserunning already does.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Walk-Back runner is a live baserunner indifferent from any other runner at 3rd",
+      "decided_by": "owner",
+      "quote": "\"Once back on third they are a live baserunner indifferent from any other runner at 3rd.\""
+    },
+    {
+      "decision": "Walk-Back run is unearned",
+      "decided_by": "owner",
+      "quote": "\"The walkback run scored is unearned.\""
+    },
+    {
+      "decision": "A subsequent homer scores the existing 3B runner and places a new one",
+      "decided_by": "owner",
+      "quote": "\"A subsequent homer puts a new runner at third and the runner at third scores the walkback (bonus) run.\""
+    },
+    {
+      "decision": "Implementation approach: resolve HR first, then place the batter back on 3B as a separate runner instance",
+      "decided_by": "owner",
+      "quote": "\"Resolve the home run first and then immediately… create a new runner who is the same batter back on third base in a separate instance… and then everything else should continue like normal.\""
+    },
+    {
+      "decision": "Pinch-running a Walk-Back runner is disallowed (decided after a pinch-runner edge case surfaced)",
+      "decided_by": "owner",
+      "quote": "\"I would not allow you in this simulation to replace a walk back runner with a pinch runner.\""
+    }
+  ],
+  "actions": [
+    {
+      "description": "Replaced walk_back_pending: Optional[str] with walk_back_runner_ids: set",
+      "artifacts": [
+        "o27/engine/state.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "After a HR resolves MLB-exactly, the HR-hitter is placed on bases[2] and added to walk_back_runner_ids; from there he is an ordinary baserunner",
+      "artifacts": [
+        "o27/engine/pa.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Centralized resolution: deleted _walk_back_should_fire, _WALK_BACK_BAT_DRIVES, _resolve_walk_back_at_pa_end and all seven call sites; _reconcile_walk_back after every event, _record_out drops retired runners, resolve_stranded_walk_backs at end of run_half; earned-run demotion via er_arc bucket",
+      "artifacts": [
+        "o27/engine/pa.py",
+        "o27/engine/game.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "wb_faced charged at resolution to the pitcher on the mound (inherited-runner simplification); walk-off block ported (_walkoff_blocks_walk_back)",
+      "artifacts": [
+        "o27/engine/pa.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Pinch-running disallowed for Walk-Back runners: should_pinch_run skips, pinch_run refuses with a log line",
+      "artifacts": [
+        "o27/engine/manager.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Rendering keys off walk_back_runner_ids; bonus run renders as ordinary \"scores from 3B\" event",
+      "artifacts": [
+        "o27/render/render.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Rewrote walk-back test suite for the persistent model (scores on single/double/sac-fly/productive-out/subsequent-HR; persists through K/BB/line-out/foul-out; stop on pickoff/CS-home/strand; unearned; pinch-run refused)",
+      "artifacts": [
+        "o27/tests/test_walk_back.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "The fix is to stop modelling the bonus runner as a flag and start modelling him as what he is: a runner on third.",
+    "From there he is an ordinary baserunner — no other code path knows or cares that he is \"special.\"",
+    "This keeps `wb_runs ≤ wb_faced` *per pitcher* even across a mid-inning pitching change."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Engine suite: o27/tests/ — 26 passed",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest o27/tests",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Repo suites: o27v2/tests/ + tests/ — 171 passed, 7 skipped; only failures are two pre-existing test_phase8_db_migration cases and the known-flaky test_weather_calibration",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the repo pytest suites",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "80-game integration sim (8-team config, seed 7): 0 reconcile anomalies; aggregate wb_runs (362) ≤ wb_faced (440) and wb_runs ≤ unearned (636); test_invariant_9_walk_back_runs_le_faced passes against the simmed DB",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run the 80-game sim with seed 7 and the invariant test",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "800-game scoring-log reconcile sweep not re-run on this branch",
+      "reason": "Suggested deeper check … to confirm the diff-based log still balances now that Walk-Back runs are real 3B scores (expected: it does, by construction)",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "An intermediate version leaked a false-positive \"scored\" when a pinch-runner swapped onto third for a Walk-Back runner (wb_runs > unearned) — removed entirely by the no-pinch-run rule; documented as the bug the invariant caught.",
+    "Merged main mid-task (super-innings → 3-out-extra-innings refactor plus scoring-log fixes); strand sweep and walk-off block re-fitted to the new inning structure."
+  ],
+  "open_hooks": [
+    "Re-run the 800-game scoring-log reconcile sweep on this branch."
+  ],
+  "section_headers_original": [
+    "After-Action Report — Walk-Back Becomes a Live, Persistent 3B Runner",
+    "What was asked for",
+    "Diagnosis",
+    "What changed",
+    "Engine",
+    "Rendering",
+    "Tests",
+    "Verification",
+    "Notes / follow-ups"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date completed: 2026-05-20'; branch claude/add-foul-outs-stat-OXRYr. Heavy verbatim user-quote record of rule decisions."
+}
